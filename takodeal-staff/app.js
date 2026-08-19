@@ -2550,111 +2550,181 @@ window.viewPastPayslip = function(encodedData) {
 
     let logoUrl = "https://takodeal-owner.vercel.app/payslip%20logo.jpg";
 
-    let html = `
-        <div style="background: white; padding: 20px; font-family: 'Segoe UI', Arial, sans-serif; color: black; text-align: left; max-width: 100%; box-sizing: border-box;">
-            
-            <div style="border: 3px solid black; padding: 2px;">
-                <div style="border: 1px solid black; padding: 20px;">
-                    
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid black; padding-bottom: 15px; margin-bottom: 15px;">
-                        <div style="width: 140px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-                            <img src="${logoUrl}" alt="Takodeal Logo" style="width: 90px; object-fit: contain; border-radius: 8px;">
-                        </div>
-                        <div style="text-align: center; flex: 1;">
-                            <h1 style="margin: 0; font-size: 32px; letter-spacing: 2px;">TAKODEÁL</h1>
-                            <p style="margin: 5px 0 0 0; font-size: 16px;">Payslip</p>
-                        </div>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 14px;">
-                        <div style="display: grid; grid-template-columns: 120px 1fr; gap: 5px;">
-                            <strong style="text-align: right; padding-right: 10px;">Employee Name:</strong> <span style="border-bottom: 1px solid black; font-weight: bold;">${d.name || d.staffName}</span>
-                            <strong style="text-align: right; padding-right: 10px;">Department:</strong> <span style="border-bottom: 1px solid black;">${d.branch || 'N/A'}</span>
-                            <strong style="text-align: right; padding-right: 10px;">Date Hired:</strong> <span>${d.dateHired || '---'}</span>
-                        </div>
-                        <div style="display: grid; grid-template-columns: 140px 1fr; gap: 5px;">
-                            <strong style="text-align: right; padding-right: 10px;">Cutoff Started:</strong> <span style="border-bottom: 1px solid black;">${d.start || d.startDate}</span>
-                            <strong style="text-align: right; padding-right: 10px;">Cutoff Ended:</strong> <span style="border-bottom: 1px solid black;">${d.end || d.endDate}</span>
-                            <strong style="text-align: right; padding-right: 10px;">Pay Distributed:</strong> <span style="border-bottom: 1px solid black;">${disbursedDateStr}</span>
-                        </div>
-                    </div>
-
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid black;">
-                        
-                        <div style="border-right: 1px solid black;">
-                            <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black; text-align: left;">INCOME</div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px dashed #cbd5e1;">
-                                <span>Basic Pay (${d.shiftsWorked || 0} days)</span> <span style="font-weight: bold;">${basicPay}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
-                                <span>Overtime / Night Diff</span> <span>${otPay}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
-                                <span>Straight Duty Bonus</span> <span>${straightPay}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid black;">
-                                <span>Holiday Pay</span> <span>${holPay}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; padding: 12px 8px; font-weight: bold; font-size: 16px;">
-                                <span>GROSS INCOME</span> <span>${grossIncome}</span>
-                            </div>
-                        </div>
-
-                        <div>
-                            <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black; text-align: left;">DEDUCTIONS</div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                <span>Late/Undertime</span> <span>${lateDeduct}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                <span>SSS</span> <span>${sss}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                <span>PhilHealth</span> <span>${phil}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                <span>Pag-IBIG</span> <span>${pagibig}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                <span>Cash Advance (Vale)</span> <span>${vale}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                <span>Company Loans</span> <span>${loans}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                <span>Foods / Custom</span> <span>${(parseFloat(meals) + parseFloat(customDeducts)).toFixed(2)}</span>
-                            </div>
-                            <div style="display: flex; justify-content: space-between; padding: 8px; font-weight: bold; background: #f1f5f9; border-top: 1px solid black;">
-                                <span>TOTAL DEDUCTIONS</span> <span>${totalDeduct}</span>
-                            </div>
-                        </div>
-
-                    </div>
-
-                    <div style="display: flex; justify-content: flex-start; align-items: center; margin-top: 20px;">
-                        <div style="background: #cbd5e1; padding: 10px 20px; font-weight: bold; font-size: 18px; border: 1px solid black; width: 120px; text-align: center;">
-                            NET PAY
-                        </div>
-                        <div style="padding: 10px 20px; font-weight: bold; font-size: 22px; margin-left: 20px; border-bottom: 2px solid black;">
-                            ${netPay}
-                        </div>
-                    </div>
-
-                </div>
+    let sigHtml = '';
+    if (d.staffSignature) {
+        sigHtml = `
+            <div style="margin-top: 15px; border-top: 1px dashed #cbd5e1; padding-top: 15px; text-align: center;">
+                <span style="font-size: 11px; font-weight: bold; color: #16a34a; text-transform: uppercase;">Digitally Acknowledged & Signed</span>
+                <img src="${d.staffSignature}" style="height: 60px; display: block; margin: 5px auto 0 auto; background: white; border-radius: 6px;">
             </div>
+        `;
+    }
+
+    // 🔥 THE MOBILE FIX: Enforce an ironclad 750px width inside a scrollable div!
+    let html = `
+        <div style="overflow-x: auto; width: 100%; background: #f1f5f9; padding: 15px; border-radius: 8px;">
             
-            <div style="text-align: center; margin-top: 15px; font-size: 10px; color: #64748b; font-style: italic;">
-                System Generated Digital Payslip • Takodeal POS
+            <div style="text-align: right; margin-bottom: 15px; position: sticky; top: 0; left: 0;">
+                <button id="btnDownloadStaffPayslip" onclick="window.downloadStaffPayslipImage('${encodedData}')" style="background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);">⬇️ Download HD Image</button>
+            </div>
+
+            <div id="printableStaffPayslip" style="width: 750px; background: white; padding: 25px; font-family: 'Segoe UI', Arial, sans-serif; color: black; text-align: left; box-sizing: border-box; margin: 0 auto; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+                
+                <div style="border: 3px solid black; padding: 2px;">
+                    <div style="border: 1px solid black; padding: 20px;">
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid black; padding-bottom: 15px; margin-bottom: 15px;">
+                            <div style="width: 140px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                                <img src="${logoUrl}" alt="Takodeal Logo" style="width: 90px; object-fit: contain; border-radius: 8px;">
+                            </div>
+                            <div style="text-align: center; flex: 1;">
+                                <h1 style="margin: 0; font-size: 32px; letter-spacing: 2px;">TAKODEÁL</h1>
+                                <p style="margin: 5px 0 0 0; font-size: 16px;">Payslip</p>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 14px;">
+                            <div style="display: grid; grid-template-columns: 120px 1fr; gap: 5px;">
+                                <strong style="text-align: right; padding-right: 10px;">Employee Name:</strong> <span style="border-bottom: 1px solid black; font-weight: bold;">${d.name || d.staffName}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Department:</strong> <span style="border-bottom: 1px solid black;">${d.branch || 'N/A'}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Date Hired:</strong> <span>${d.dateHired || '---'}</span>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 140px 1fr; gap: 5px;">
+                                <strong style="text-align: right; padding-right: 10px;">Cutoff Started:</strong> <span style="border-bottom: 1px solid black;">${d.start || d.startDate}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Cutoff Ended:</strong> <span style="border-bottom: 1px solid black;">${d.end || d.endDate}</span>
+                                <strong style="text-align: right; padding-right: 10px;">Pay Distributed:</strong> <span style="border-bottom: 1px solid black;">${disbursedDateStr}</span>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid black;">
+                            
+                            <div style="border-right: 1px solid black;">
+                                <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black; text-align: left;">INCOME</div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px dashed #cbd5e1;">
+                                    <span>Basic Pay (${d.shiftsWorked || 0} days)</span> <span style="font-weight: bold;">${basicPay}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
+                                    <span>Overtime / Night Diff</span> <span>${otPay}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
+                                    <span>Straight Duty Bonus</span> <span>${straightPay}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid black;">
+                                    <span>Holiday Pay</span> <span>${holPay}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 12px 8px; font-weight: bold; font-size: 16px;">
+                                    <span>GROSS INCOME</span> <span>${grossIncome}</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black; text-align: left;">DEDUCTIONS</div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                    <span>Late/Undertime</span> <span>${lateDeduct}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                    <span>SSS</span> <span>${sss}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                    <span>PhilHealth</span> <span>${phil}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                    <span>Pag-IBIG</span> <span>${pagibig}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                    <span>Cash Advance (Vale)</span> <span>${vale}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                    <span>Company Loans</span> <span>${loans}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
+                                    <span>Foods / Penalties</span> <span>${(parseFloat(meals) + parseFloat(customDeducts)).toFixed(2)}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; padding: 8px; font-weight: bold; background: #f1f5f9; border-top: 1px solid black;">
+                                    <span>TOTAL DEDUCTIONS</span> <span>${totalDeduct}</span>
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <div style="display: flex; justify-content: flex-start; align-items: center; margin-top: 20px;">
+                            <div style="background: #cbd5e1; padding: 10px 20px; font-weight: bold; font-size: 18px; border: 1px solid black; width: 120px; text-align: center;">
+                                NET PAY
+                            </div>
+                            <div style="padding: 10px 20px; font-weight: bold; font-size: 22px; margin-left: 20px; border-bottom: 2px solid black;">
+                                ${netPay}
+                            </div>
+                        </div>
+
+                        ${sigHtml}
+
+                        <div style="text-align: center; margin-top: 15px; font-size: 10px; color: #64748b; font-style: italic;">
+                            System Generated Digital Payslip • Takodeal POS
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     `;
 
     Swal.fire({
         html: html,
-        width: '750px', // Wider to accommodate the new 2-column layout
+        width: '100%', 
         showConfirmButton: true,
         confirmButtonText: 'Close',
         confirmButtonColor: '#0f172a',
         customClass: { popup: 'rounded-2xl shadow-2xl p-0' }
+    });
+};
+
+// 🔥 NEW: DEDICATED IMAGE DOWNLOADER FOR STAFF PHONES
+window.downloadStaffPayslipImage = function(encodedData) {
+    let d = JSON.parse(decodeURIComponent(encodedData));
+    let payslipNode = document.getElementById('printableStaffPayslip');
+    if (!payslipNode) return;
+
+    let btn = document.getElementById('btnDownloadStaffPayslip');
+    let origText = btn ? btn.innerText : "⬇️ Download HD Image";
+    if (btn) { btn.innerText = "⏳ Generating..."; btn.disabled = true; }
+
+    // Create an invisible, perfect 800px wrapper so the phone doesn't compress it
+    const printWrapper = document.createElement('div');
+    printWrapper.style.position = 'absolute';
+    printWrapper.style.left = '-9999px'; 
+    printWrapper.style.top = '0';
+    printWrapper.style.background = '#ffffff';
+    printWrapper.style.width = '800px'; 
+    printWrapper.style.padding = '20px';
+    printWrapper.style.boxSizing = 'border-box';
+    
+    const clone = payslipNode.cloneNode(true);
+    clone.style.overflow = 'visible';
+    clone.style.maxHeight = 'none';
+    clone.style.height = 'auto';
+    clone.style.width = '100%';
+    
+    printWrapper.appendChild(clone);
+    document.body.appendChild(printWrapper);
+
+    // Blast it into an HD Canvas!
+    html2canvas(printWrapper, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
+        let imgData = canvas.toDataURL("image/png");
+        let link = document.createElement('a');
+        
+        let staffName = (d.name || d.staffName || "Staff").replace(/\s+/g, '_');
+        let endDate = d.end || d.endDate || "Date";
+        link.download = `Payslip_${staffName}_${endDate}.png`;
+        
+        link.href = imgData;
+        link.click();
+
+        document.body.removeChild(printWrapper); 
+        if (btn) { btn.innerText = origText; btn.disabled = false; }
+    }).catch(err => {
+        console.error("Error generating image:", err);
+        Swal.fire('Error', 'Failed to generate image.', 'error');
+        document.body.removeChild(printWrapper);
+        if (btn) { btn.innerText = origText; btn.disabled = false; }
     });
 };
 
