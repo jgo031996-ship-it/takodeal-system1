@@ -2246,20 +2246,30 @@ window.loadPayslipVault = async function() {
 
         // Fetch Universal Deductions & Loans
         const dedSnap = await getDocs(query(collection(db, "staff_deductions"), where("status", "==", "Unpaid")));
+        
         let unpaidVales = 0; let activeDeductions = [];
-        let cutoffEndTimestamp = new Date(endDateStr + 'T23:59:59'); // 🔥 STRICT DATE CUTOFF
+        let prevUnpaidVales = 0; // 🔥 THE FIX: A separate memory bank for the pending cutoff!
+        
+        let cutoffEndTimestamp = new Date(endDateStr + 'T23:59:59'); 
+        let prevCutoffEndTimestamp = new Date(prevEndStr + 'T23:59:59'); // 🔥 STRICT DATE CUTOFF FOR PENDING TAB
         
         dedSnap.forEach(d => { 
             let data = d.data();
             if (isMatch(data.staffName)) {
                 let dDate = safeDate(data.dateAdded || data.timestamp);
                 
-                // 🔥 STRICT MIRROR FIX: Only include items from THIS cutoff, and ONLY Vales/Meals!
+                // 1. Calculate for the Live Tab (Current Cutoff)
                 if (dDate <= cutoffEndTimestamp) {
                     if (data.type === "Cash Advance" || data.type === "Staff Meal") {
-                        let val = parseFloat(data.amount) || 0; 
-                        unpaidVales += val; 
+                        unpaidVales += (parseFloat(data.amount) || 0); 
                         activeDeductions.push(data); 
+                    }
+                }
+                
+                // 2. Calculate for the Pending Tab (Previous Cutoff)
+                if (dDate <= prevCutoffEndTimestamp) {
+                    if (data.type === "Cash Advance" || data.type === "Staff Meal") {
+                        prevUnpaidVales += (parseFloat(data.amount) || 0); 
                     }
                 }
             }
@@ -2404,7 +2414,7 @@ window.loadPayslipVault = async function() {
             pendingCount++;
             
             let prevEstGross = prevData.shiftsWorked * dailyRate;
-            let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - unpaidVales - cutoffLoanDeduction;
+            let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - prevUnpaidVales - cutoffLoanDeduction;
 
             let prevLoanStr = (cutoffLoanDeduction > 0) ? `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Company Loan:</span> <strong style="color:#ef4444;">-₱${cutoffLoanDeduction.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>` : '';
 
@@ -2426,7 +2436,7 @@ window.loadPayslipVault = async function() {
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Estimated Basic Pay:</span> <strong style="color:#16a34a;">₱${prevEstGross.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Overtime / Bonuses:</span> <strong style="color:#0ea5e9;">+₱${prevData.totalBonuses.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Late Penalties:</span> <strong style="color:#ef4444;">-₱${prevData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Unpaid Vales/Meals:</span> <strong style="color:#ef4444;">-₱${unpaidVales.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Unpaid Vales/Meals:</span> <strong style="color:#ef4444;">-₱${prevUnpaidVales.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
                         ${prevLoanStr}
                     </div>
                     
