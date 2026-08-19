@@ -872,45 +872,44 @@ window.loadHRModule = async function() {
 };
 
 window.addNewStaff = function() {
-    // Clear the modal for a fresh entry
-    document.getElementById('empProfileId').value = '';
-    document.getElementById('empFullName').value = '';
-    document.getElementById('empBranchAssign').value = 'Cabantian';
-    document.getElementById('empRole').value = 'Crew';
-    document.getElementById('empDateHired').value = '';
-    document.getElementById('empHourlyRate').value = '';
-    document.getElementById('empPin').value = '';
+    // Force update ALL duplicate HTML elements so they match perfectly
+    const setAllVals = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.value = val);
+    const setAllChecks = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.checked = val);
+
+    setAllVals('empProfileId', '');
+    setAllVals('empFullName', '');
+    setAllVals('empBranchAssign', 'Cabantian');
+    setAllVals('empRole', 'Crew');
+    setAllVals('empDateHired', '');
+    setAllVals('empHourlyRate', '');
+    setAllVals('empPin', '');
     
     // 🔥 THE FIX: Set the new custom rate box to a default of 50
-    if (document.getElementById('empNightDiffRate')) document.getElementById('empNightDiffRate').value = '50';
+    setAllVals('empNightDiffRate', '50');
     
     // 🎓 STUDENT FIX: Uncheck the student status for new hires
-    if (document.getElementById('staffWorkingStudent')) document.getElementById('staffWorkingStudent').checked = false;
+    setAllChecks('staffWorkingStudent', false);
 
-    document.getElementById('empPhone').value = '';
-    document.getElementById('empAddress').value = '';
-    document.getElementById('empGcashName').value = '';
-    document.getElementById('empGcashNum').value = '';
-    document.getElementById('empGotymeName').value = '';
-    document.getElementById('empGotymeNum').value = '';
-    document.getElementById('empSSS').value = '';
-    document.getElementById('empPhilhealth').value = '';
-    document.getElementById('empPagibig').value = '';
-    document.getElementById('empScheduleName').value = '';
+    setAllVals('empPhone', '');
+    setAllVals('empAddress', '');
+    setAllVals('empGcashName', '');
+    setAllVals('empGcashNum', '');
+    setAllVals('empGotymeName', '');
+    setAllVals('empGotymeNum', '');
+    setAllVals('empSSS', '');
+    setAllVals('empPhilhealth', '');
+    setAllVals('empPagibig', '');
+    setAllVals('empScheduleName', '');
 
     // Reset Profile Picture and Links for a blank form
-    let profilePicEl = document.getElementById('masterProfilePic');
-    if (profilePicEl) profilePicEl.src = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
+    let defaultPic = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
+    document.querySelectorAll('[id="masterProfilePic"]').forEach(el => el.src = defaultPic);
     
-    let sssLink = document.getElementById('masterSssLink');
-    let philLink = document.getElementById('masterPhilLink');
-    let pagLink = document.getElementById('masterPagibigLink');
-    
-    if (sssLink) sssLink.style.display = 'none';
-    if (philLink) philLink.style.display = 'none';
-    if (pagLink) pagLink.style.display = 'none';
+    document.querySelectorAll('[id="masterSssLink"]').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('[id="masterPhilLink"]').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('[id="masterPagibigLink"]').forEach(el => el.style.display = 'none');
 
-    document.getElementById('employeeProfileModal').style.display = 'flex';
+    document.querySelectorAll('[id="employeeProfileModal"]').forEach(el => el.style.display = 'flex');
 };
 
 window.openEmployeeProfile = function(docId) {
@@ -920,6 +919,7 @@ window.openEmployeeProfile = function(docId) {
     // Force update ALL duplicate HTML elements
     const setAllVals = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.value = val);
     const setAllHtml = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.innerHTML = val);
+    const setAllChecks = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.checked = val);
 
     setAllVals('empProfileId', docId);
     setAllVals('empFullName', data.cashierName || '');
@@ -930,12 +930,11 @@ window.openEmployeeProfile = function(docId) {
     setAllVals('empPin', data.pin || '');
     
     // 🔥 THE FIX: Load their individual custom rate, with a legacy fallback!
-    document.querySelectorAll('[id="empNightDiffRate"]').forEach(el => {
-        let legacyRate = (data.eligibleNightDiff === false) ? 0 : 50;
-        el.value = data.nightDiffRate !== undefined ? data.nightDiffRate : legacyRate;
-    });
+    let legacyRate = (data.eligibleNightDiff === false) ? 0 : 50;
+    let finalNightRate = data.nightDiffRate !== undefined ? data.nightDiffRate : legacyRate;
+    setAllVals('empNightDiffRate', finalNightRate);
     
-    document.querySelectorAll('[id="staffWorkingStudent"]').forEach(el => el.checked = data.isWorkingStudent || false);
+    setAllChecks('staffWorkingStudent', data.isWorkingStudent || false);
     setAllVals('empPhone', data.phone || '');
     setAllVals('empAddress', data.address || '');
     setAllVals('empGcashName', data.gcashName || '');
@@ -965,6 +964,17 @@ window.openEmployeeProfile = function(docId) {
     document.querySelectorAll('[id="masterProfilePic"]').forEach(el => {
         el.src = data.profilePicUrl ? data.profilePicUrl : defaultPic;
     });
+
+    const setupMasterLink = (linkId, url) => {
+        document.querySelectorAll(`[id="${linkId}"]`).forEach(el => {
+            if (url) { el.href = url; el.style.display = 'inline-block'; } 
+            else { el.style.display = 'none'; }
+        });
+    };
+    
+    setupMasterLink('masterSssLink', data.sssIdUrl);
+    setupMasterLink('masterPhilLink', data.philhealthIdUrl);
+    setupMasterLink('masterPagibigLink', data.pagibigIdUrl);
 
     document.querySelectorAll('[id="employeeProfileModal"]').forEach(el => el.style.display = 'flex');
 
@@ -1032,14 +1042,28 @@ window.openEmployeeProfile = function(docId) {
 };
 
 window.saveEmployeeProfile = async function() {
-    let docId = document.getElementById('empProfileId').value;
+    // 🔥 THE BULLETPROOF DOM EXTRACTOR: Ignores hidden duplicate modals completely!
+    const getVal = (id) => {
+        let els = document.querySelectorAll(`[id="${id}"]`);
+        let activeEl = Array.from(els).find(el => el.closest('.overlay') && el.closest('.overlay').style.display !== 'none');
+        return activeEl ? activeEl.value : (els[0] ? els[0].value : '');
+    };
+    const getCheck = (id) => {
+        let els = document.querySelectorAll(`[id="${id}"]`);
+        let activeEl = Array.from(els).find(el => el.closest('.overlay') && el.closest('.overlay').style.display !== 'none');
+        return activeEl ? activeEl.checked : (els[0] ? els[0].checked : false);
+    };
+
+    let docId = getVal('empProfileId');
+    let name = getVal('empFullName').trim();
+    let branch = getVal('empBranchAssign');
+    let rate = parseFloat(getVal('empHourlyRate'));
+    let newRole = getVal('empRole').trim();
+    let isWorkingStudent = getCheck('staffWorkingStudent');
+    let pin = getVal('empPin').trim();
     
-    let name = document.getElementById('empFullName').value.trim();
-    let branch = document.getElementById('empBranchAssign').value;
-    let rate = parseFloat(document.getElementById('empHourlyRate').value);
-    let newRole = document.getElementById('empRole').value.trim();
-    let isWorkingStudent = document.getElementById('staffWorkingStudent') ? document.getElementById('staffWorkingStudent').checked : false;
-    let pin = document.getElementById('empPin').value.trim();
+    // Safely parse the custom rate!
+    let nightRate = parseFloat(getVal('empNightDiffRate')) || 0;
 
     if (!name || isNaN(rate) || !pin || pin.length < 4) {
         alert("❌ Error: Name, Hourly Rate, and a Password (minimum 4 characters) are strictly required!");
@@ -1047,7 +1071,8 @@ window.saveEmployeeProfile = async function() {
     }
 
     let customDeductionsArray = [];
-    document.querySelectorAll('.custom-deduct-row').forEach(row => {
+    let activeModal = Array.from(document.querySelectorAll('.overlay')).find(el => el.style.display !== 'none') || document;
+    activeModal.querySelectorAll('.custom-deduct-row').forEach(row => {
         let n = row.querySelector('.cd-name').value.trim();
         let a = parseFloat(row.querySelector('.cd-amount').value) || 0;
         if (n && a > 0) customDeductionsArray.push({ name: n, amount: a });
@@ -1069,32 +1094,32 @@ window.saveEmployeeProfile = async function() {
         branch: branch,
         role: newRole,
         roleHistory: currentHistory,
-        dateHired: document.getElementById('empDateHired').value,
+        dateHired: getVal('empDateHired'),
         hourlyRate: rate,
         pin: pin,
         customDeductions: customDeductionsArray,
         
-        // 🔥 THE FIX: Capture the individual rate perfectly, while keeping legacy support
-        nightDiffRate: document.getElementById('empNightDiffRate') ? (parseFloat(document.getElementById('empNightDiffRate').value) || 0) : 0,
-        eligibleNightDiff: document.getElementById('empNightDiffRate') ? (parseFloat(document.getElementById('empNightDiffRate').value) > 0) : true, 
+        // 🔥 THE FIX: Captures the individual rate perfectly!
+        nightDiffRate: nightRate,
+        eligibleNightDiff: nightRate > 0, 
         
         isWorkingStudent: isWorkingStudent, 
-        phone: document.getElementById('empPhone').value.trim(),
-        address: document.getElementById('empAddress').value.trim(),
-        gcashName: document.getElementById('empGcashName').value.trim(),
-        gcashNum: document.getElementById('empGcashNum').value.trim(),
-        gotymeName: document.getElementById('empGotymeName').value.trim(),
-        gotymeNum: document.getElementById('empGotymeNum').value.trim(),
-        sss: document.getElementById('empSSS').value.trim(),
-        philhealth: document.getElementById('empPhilhealth').value.trim(),
-        pagibig: document.getElementById('empPagibig').value.trim(),
-        sssAmount: parseFloat(document.getElementById('empSSSAmount').value) || 0,
-        philHealthAmount: parseFloat(document.getElementById('empPhilAmount').value) || 0,
-        pagibigAmount: parseFloat(document.getElementById('empPagibigAmount').value) || 0,
-        emergencyName: document.getElementById('empEmergencyName').value.trim(),
-        emergencyPhone: document.getElementById('empEmergencyPhone').value.trim(),
-        email: document.getElementById('empEmail').value.trim(),
-        scheduleNickname: document.getElementById('empScheduleName').value.trim(),
+        phone: getVal('empPhone').trim(),
+        address: getVal('empAddress').trim(),
+        gcashName: getVal('empGcashName').trim(),
+        gcashNum: getVal('empGcashNum').trim(),
+        gotymeName: getVal('empGotymeName').trim(),
+        gotymeNum: getVal('empGotymeNum').trim(),
+        sss: getVal('empSSS').trim(),
+        philhealth: getVal('empPhilhealth').trim(),
+        pagibig: getVal('empPagibig').trim(),
+        sssAmount: parseFloat(getVal('empSSSAmount')) || 0,
+        philHealthAmount: parseFloat(getVal('empPhilAmount')) || 0,
+        pagibigAmount: parseFloat(getVal('empPagibigAmount')) || 0,
+        emergencyName: getVal('empEmergencyName').trim(),
+        emergencyPhone: getVal('empEmergencyPhone').trim(),
+        email: getVal('empEmail').trim(),
+        scheduleNickname: getVal('empScheduleName').trim(),
     };
 
     if (!docId) {
@@ -1103,7 +1128,7 @@ window.saveEmployeeProfile = async function() {
     }
 
     let btn = document.getElementById('btnSaveEmpProfile');
-    btn.innerText = "⏳ Saving to Cloud..."; btn.disabled = true;
+    if(btn) { btn.innerText = "⏳ Saving to Cloud..."; btn.disabled = true; }
 
     try {
         if (docId) {
@@ -1113,12 +1138,12 @@ window.saveEmployeeProfile = async function() {
             await addDoc(collection(db, "cashiers"), payload);
             Swal.fire({ toast: true, position: 'top', icon: 'success', title: `✅ ${name} added to database!`, showConfirmButton: false, timer: 3000, customClass: { popup: 'rounded-xl shadow-lg border border-gray-200' }});
         }
-        document.getElementById('employeeProfileModal').style.display = 'none';
+        document.querySelectorAll('[id="employeeProfileModal"]').forEach(el => el.style.display = 'none');
         window.loadHRModule(); 
     } catch (e) {
         console.error(e); Swal.fire('Error', 'Failed to save employee data.', 'error');
     } finally {
-        btn.innerText = "💾 Save Employee Data"; btn.disabled = false;
+        if(btn) { btn.innerText = "💾 Save Employee Data"; btn.disabled = false; }
     }
 };
 
@@ -11884,7 +11909,7 @@ window.generateAutoPayslips = async function() {
                         }
                     }
 
-                    // 🔥 THE FIX: Custom Individual Rates & Math Injection!
+                    // 🔥 THE FIX: Custom Individual Rates Math Injection!
                     let dailyRate = staffDict[name] ? (parseFloat(staffDict[name].hourlyRate) || 0) : 0;
                     let isNightEligibleLegacy = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
                     let customNightRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) : (isNightEligibleLegacy ? 50 : 0)) : 50;
