@@ -6185,28 +6185,42 @@ let currentEditingMenuItem = "";
 window.activeCostingTab = 'All';
 
 window.switchCostingTab = function (element, tabName) {
-    document.querySelectorAll('#costingTabsContainer .costing-tab, #tabGlobalAddons').forEach(el => {
-        el.style.color = 'var(--text-muted)'; el.style.borderBottomColor = 'transparent';
-    });
-    if (element) {
-        element.style.color = tabName === 'GlobalAddons' ? '#d97706' : 'var(--primary)';
-        element.style.borderBottomColor = tabName === 'GlobalAddons' ? '#d97706' : 'var(--primary)';
-    }
+        document.querySelectorAll('#costingTabsContainer .costing-tab').forEach(el => {
+            el.style.color = '#64748b'; 
+            el.style.borderBottomColor = 'transparent';
+        });
+        let globalTab = document.getElementById('tabGlobalAddons');
+        if (globalTab) {
+            globalTab.style.background = 'white';
+            globalTab.style.color = '#d97706';
+            globalTab.style.borderColor = '#cbd5e1';
+            globalTab.style.boxShadow = 'none';
+        }
 
-    let menuSec = document.getElementById('menuCostingSection');
-    let addonSec = document.getElementById('globalAddonsSection');
+        if (element && tabName !== 'GlobalAddons') {
+            element.style.color = '#0ea5e9';
+            element.style.borderBottomColor = '#0ea5e9';
+        } else if (tabName === 'GlobalAddons' && globalTab) {
+            globalTab.style.background = '#fffbeb';
+            globalTab.style.color = '#d97706';
+            globalTab.style.borderColor = '#fcd34d';
+            globalTab.style.boxShadow = '0 2px 4px rgba(217, 119, 6, 0.1)';
+        }
 
-    if (tabName === 'GlobalAddons') {
-        if (menuSec) menuSec.style.display = 'none';
-        if (addonSec) addonSec.style.display = 'block';
-        if (typeof window.loadGlobalAddons === 'function') window.loadGlobalAddons();
-    } else {
-        if (addonSec) addonSec.style.display = 'none';
-        if (menuSec) menuSec.style.display = 'block';
-        window.activeCostingTab = tabName;
-        if (typeof window.loadMenuCosting === 'function') window.loadMenuCosting(); 
-    }
-};
+        let menuSec = document.getElementById('menuCostingSection');
+        let addonSec = document.getElementById('globalAddonsSection');
+
+        if (tabName === 'GlobalAddons') {
+            if (menuSec) menuSec.style.display = 'none';
+            if (addonSec) addonSec.style.display = 'block';
+            if (typeof window.loadGlobalAddons === 'function') window.loadGlobalAddons();
+        } else {
+            if (addonSec) addonSec.style.display = 'none';
+            if (menuSec) menuSec.style.display = 'block';
+            window.activeCostingTab = tabName;
+            if (typeof window.loadMenuCosting === 'function') window.loadMenuCosting(); 
+        }
+    };
 
 window.loadMenuCosting = async function() {
   const tbody = document.getElementById('bomTableBody');
@@ -6254,17 +6268,16 @@ window.loadMenuCosting = async function() {
     });
 
     // 🔥 GENERATE THE DYNAMIC TABS
-    let tabsHtml = `<div class="costing-tab" style="padding-bottom: 10px; font-weight: bold; cursor: pointer; ${window.activeCostingTab === 'All' ? 'color: var(--primary); border-bottom: 3px solid var(--primary);' : 'color: var(--text-muted); border-bottom: none;'}" onclick="switchCostingTab(this, 'All')">All Items</div>`;
+    let tabsHtml = `<div class="costing-tab" style="padding-bottom: 15px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; transition: 0.2s; ${window.activeCostingTab === 'All' ? 'color: #0ea5e9; border-bottom: 3px solid #0ea5e9;' : 'color: #64748b; border-bottom: 3px solid transparent;'}" onclick="switchCostingTab(this, 'All')">All Items</div>`;
 
     let sortedCats = Array.from(uniqueCategories).sort();
     sortedCats.forEach(cat => {
       let isActive = (window.activeCostingTab === cat);
-      let style = isActive ? 'color: var(--primary); border-bottom: 3px solid var(--primary);' : 'color: var(--text-muted); border-bottom: none;';
-      tabsHtml += `<div class="costing-tab" style="padding-bottom: 10px; font-weight: bold; cursor: pointer; ${style}" onclick="switchCostingTab(this, '${cat}')">${cat}</div>`;
+      let style = isActive ? 'color: #0ea5e9; border-bottom: 3px solid #0ea5e9;' : 'color: #64748b; border-bottom: 3px solid transparent;';
+      tabsHtml += `<div class="costing-tab" style="padding-bottom: 15px; font-weight: 900; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; transition: 0.2s; ${style}" onclick="switchCostingTab(this, '${cat}')">${cat}</div>`;
     });
 
     // Inject the new tabs into the HTML
-    // Inject the new tabs and PROTECT them from getting squished by Flexbox!
     document.querySelectorAll('#costingTabsContainer').forEach(container => {
         container.style.minHeight = "45px"; 
         container.style.flexShrink = "0";
@@ -13957,10 +13970,10 @@ window.renderGlobalAddons = function() {
                 <td style="font-weight: bold; color: #16a34a; padding: 12px;">₱${d.price}</td>
                 <td style="color: #64748b; padding: 12px;">${d.linkedIngredient || 'None'} <span style="font-size:11px;">(Deducts: ${d.deductQty || 0})</span></td>
                 <td style="padding: 12px;"><span class="badge badge-open" style="white-space: normal; text-align: center; line-height: 1.4;">${catStr}</span></td>
-                <td style="padding: 12px; display:flex; gap: 5px;">
-                    <button onclick="window.openGlobalAddonModal('${d.id}', '${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}', '${safeCat}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ Edit</button>
-                    <button onclick="window.duplicateGlobalAddon('${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">📋 Clone</button>
-                    <button onclick="window.deleteGlobalAddon('${d.id}', '${safeName}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 12px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>
+                <td style="padding: 12px; display:flex; gap: 5px; justify-content: flex-end;">
+                    <button onclick="window.openGlobalAddonModal('${d.id}', '${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}', '${safeCat}')" style="background:#fffbeb; color:#d97706; border:1px solid #fcd34d; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">✏️ Edit</button>
+                    <button onclick="window.duplicateGlobalAddon('${safeName}', ${d.price || 0}, ${d.deductQty || 0}, '${safeIng}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">📋 Clone</button>
+                    <button onclick="window.deleteGlobalAddon('${d.id}', '${safeName}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fecaca; padding:6px 12px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">🗑️ Delete</button>
                 </td>
             </tr>
         `;
