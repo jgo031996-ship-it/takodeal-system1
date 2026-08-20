@@ -446,10 +446,14 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
     let hasSizes = phantomSizes && phantomSizes.length > 0;
     
     if (hasSizes && !existingItem) {
+        let sizePriceToUse = phantomSizes[0].price;
+        if (window.posPlatform === 'Grab') sizePriceToUse = phantomSizes[0].grabPrice || phantomSizes[0].price;
+        if (window.posPlatform === 'Foodpanda') sizePriceToUse = phantomSizes[0].foodpandaPrice || phantomSizes[0].price;
+   
         window.pendingItem.isGrouped = true;
         window.pendingItem.realName = phantomSizes[0].realName;
-        window.pendingItem.basePrice = phantomSizes[0].price;
-        window.pendingItem.variantPrice = phantomSizes[0].price;
+        window.pendingItem.basePrice = sizePriceToUse;
+        window.pendingItem.variantPrice = sizePriceToUse;
     }
 
     // 🛡️ ARMOR CHECK: Safely update Name and Price
@@ -5272,7 +5276,8 @@ window.runAutonomousRestockAI = async function() {
             let dailyBurnPurch = dailyBurnBase / conv;
 
             // Dynamic 3-day safety threshold
-            let dynamicThresholdPurch = dailyBurnPurch > 0 
+            let userSetMinSafety = (parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv;
+            let dynamicThresholdPurch = Math.max((dailyBurnPurch * 3), userSetMinSafety); 
                 ? (dailyBurnPurch * 3) 
                 : ((parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv);
 
@@ -5420,7 +5425,8 @@ window.loadStockRequestUI = async function() {
                 let dailyBurnBase = window.itemVelocityCache[normName] || 0;
                 let dailyBurnPurch = dailyBurnBase / conv;
 
-                let dynamicThresholdPurch = dailyBurnPurch > 0 
+                let userSetMinSafety = (parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv;
+                let dynamicThresholdPurch = Math.max((dailyBurnPurch * 3), userSetMinSafety);
                     ? (dailyBurnPurch * 3) 
                     : ((parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv);
 
@@ -8254,12 +8260,12 @@ window.viewAnnouncement = function(encodedData) {
     let imagesHtml = '';
     
     if (data.images && data.images.length > 0) {
-        imagesHtml = `<div style="display: flex; gap: 10px; overflow-x: auto; margin-top: 15px; padding-bottom: 5px;">`;
-        data.images.forEach(img => {
-            imagesHtml += `<img src="${img}" style="height: 120px; border-radius: 6px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer;" onclick="window.open('${img}', '_blank')">`;
-        });
-        imagesHtml += `</div>`;
-    }
+     imagesHtml = `<div style="display: flex; gap: 10px; overflow-x: auto; margin-top: 15px; padding-bottom: 5px;">`;
+     data.images.forEach(img => {
+         imagesHtml += `<img src="${img}" style="height: 120px; border-radius: 6px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer;" onclick="Swal.fire({imageUrl: '${img}', imageAlt: 'Attached Image', width: 'auto', showConfirmButton: false, showCloseButton: true, customClass: {popup: 'rounded-2xl shadow-2xl'}})">`;
+     });
+     imagesHtml += `</div>`;
+ }
 
     let sigHtml = '';
 
