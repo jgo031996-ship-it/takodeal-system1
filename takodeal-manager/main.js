@@ -1059,6 +1059,10 @@ window.saveEmployeeProfile = async function() {
         return activeEl ? activeEl.checked : (els[0] ? els[0].checked : false);
     };
 
+    // 🔐 FRANCHISEE FIX: Temporarily unlock the dropdown so the browser can read it
+    let bAssign = document.getElementById('empBranchAssign');
+    if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = false;
+
     let docId = getVal('empProfileId');
     let name = getVal('empFullName').trim();
     let branch = getVal('empBranchAssign');
@@ -1069,6 +1073,9 @@ window.saveEmployeeProfile = async function() {
     
     // Safely parse the custom night rate!
     let nightRate = parseFloat(getVal('empNightDiffRate')) || 0;
+
+    // Lock the dropdown back immediately!
+    if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = true;
 
     if (!name || isNaN(rate) || !pin || pin.length < 4) {
         alert("❌ Error: Name, Hourly Rate, and a Password (minimum 4 characters) are strictly required!");
@@ -23789,17 +23796,6 @@ window.renderLogisticsUI = function() {
             if (b.innerText.includes('Delete Selected')) b.style.display = 'none';
         });
     }
-};
-
-// 🔐 CORE 6: Save Profile Fix (Unlocks dropdown briefly so value passes)
-if (typeof window.originalSaveEmployeeProfile === 'undefined') {
-    window.originalSaveEmployeeProfile = window.saveEmployeeProfile;
-}
-window.saveEmployeeProfile = async function() {
-    let bAssign = document.getElementById('empBranchAssign');
-    if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = false; 
-    await window.originalSaveEmployeeProfile.apply(this, arguments);
-    if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = true; 
 };
 
 // 🔐 CORE 7: Hide SOP Builder completely
