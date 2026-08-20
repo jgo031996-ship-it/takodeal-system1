@@ -369,9 +369,9 @@
               <a href="#" class="nav-subitem" id="subnav-Schedule" onclick="window.navToHr('Schedule')">📅 Schedule Manager</a>
               <a href="#" class="nav-subitem" id="subnav-Ledger" onclick="window.navToHr('Ledger')">💳 Loans & Ledger</a>
               <a href="#" class="nav-subitem" id="subnav-Sanctions" onclick="window.navToHr('Sanctions')">⚖️ Disciplinary Actions</a>
+              <a href="#" class="nav-subitem" id="subnav-Inbox" onclick="window.navToHr('Inbox')">📥 Request Inbox <span id="inboxBadge" style="display:none; background:#ef4444; color:white; border-radius:10px; padding:2px 6px; font-size:10px; margin-left:auto; font-weight:bold; box-shadow: 0 0 5px rgba(239, 68, 68, 0.5);">0</span></a>
           </div>
       </div>
-      <a href="#" class="nav-item" id="nav-inbox" onclick="switchView('inbox')"><span class="nav-icon">📥</span> <span class="nav-text">Request Inbox</span> <span id="inboxBadge" style="display:none; background:var(--danger); color:white; border-radius:10px; padding:2px 6px; font-size:11px; margin-left:5px; font-weight:bold;">0</span></a>
       <a href="#" class="nav-item" id="nav-products" onclick="switchView('products')"><span class="nav-icon">🏷️</span> <span class="nav-text">Menu Costing & BOM</span></a>
       <a href="#" class="nav-item" id="nav-dispatch" onclick="switchView('dispatch')"><span class="nav-icon">🚚</span> <span class="nav-text">Dispatch Stock</span> <span id="poNotificationBadge" style="display:none; background:var(--danger); color:white; border-radius:10px; padding:2px 6px; font-size:11px; margin-left:5px; font-weight:bold;">0</span></a>
       <a href="#" class="nav-item" id="nav-zreadings" onclick="switchView('zreadings')"><span class="nav-icon">📊</span> <span class="nav-text">Z-Reading Reports</span></a>
@@ -2495,59 +2495,60 @@
       </div>
     </div>
 
-    <div id="view-inbox" class="view">
-      <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <div>
-            <h2>📥 Staff Request Inbox</h2>
-            <span style="font-size: 12px; color: var(--text-muted);">Review and approve Cash Advances, Leaves, Meals, and Reason Letters.</span>
+    <div id="view-inbox" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+      <div style="max-width: 1400px; margin: 0 auto;">
+        
+        <div class="card" style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); margin-bottom: 30px; overflow: hidden;">
+          <div class="card-header" style="background: #f8fafc; padding: 25px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+            <div>
+              <h2 style="margin: 0; color: #1e293b; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">📥</span> Staff Request Inbox</h2>
+              <span style="font-size: 13px; color: #64748b; margin-top: 6px; display: block; font-weight: 500;">Review and approve Cash Advances, Leaves, Meals, and Reason Letters.</span>
+            </div>
+            <button class="btn-refresh" style="background: white; color: #0ea5e9; border: 1px solid #bae6fd; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: 0.2s;" onclick="loadInbox()">🔄 Refresh Inbox</button>
           </div>
-          <button class="btn-refresh" style="background: white; border: 1px solid var(--border); color: var(--text-main);" onclick="loadInbox()">🔄 Refresh Inbox</button>
+          <div class="table-responsive">
+            <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+              <thead style="background: white; border-bottom: 2px solid #e2e8f0;">
+                <tr>
+                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Date Submitted</th>
+                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Staff Name</th>
+                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Branch</th>
+                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Request Type</th>
+                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Details / Amount</th>
+                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="inboxTableBody">
+                <tr>
+                  <td colspan="6" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold; font-size: 15px;">Loading requests...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Date Submitted</th>
-                <th>Staff Name</th>
-                <th>Branch</th>
-                <th>Request Type</th>
-                <th>Details / Amount</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="inboxTableBody">
-              <tr>
-                <td colspan="6" class="text-center">Loading requests...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
 
-      <div class="card" style="margin-top: 30px;">
-        <div class="card-header" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
-          <h2 style="color: #334155;">✅ Resolved Requests History</h2>
-          <span style="font-size: 12px; color: var(--text-muted);">Past approved and rejected staff requests.</span>
+        <div class="card" style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); overflow: hidden;">
+          <div class="card-header" style="background: #f8fafc; padding: 25px 30px; border-bottom: 1px solid #e2e8f0;">
+            <h2 style="margin: 0; color: #1e293b; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 8px;"><span style="font-size: 24px;">✅</span> Resolved Requests History</h2>
+            <span style="font-size: 13px; color: #64748b; margin-top: 6px; display: block; font-weight: 500;">Past approved and rejected staff requests.</span>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+              <thead style="background: white; border-bottom: 2px solid #e2e8f0;">
+                <tr>
+                  <th colspan="4" style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Staff & Branch</th>
+                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="resolvedRequestsBody">
+                <tr>
+                  <td colspan="5" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold; font-size: 15px;">Loading history...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Date Submitted</th>
-                <th>Staff & Branch</th>
-                <th>Request Type</th>
-                <th>Details (Amount/Item)</th>
-                <th>Final Status</th>
-              </tr>
-            </thead>
-            <tbody id="resolvedRequestsBody">
-              <tr>
-                <td colspan="5" class="text-center">Loading history...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+
       </div>
     </div>
 
