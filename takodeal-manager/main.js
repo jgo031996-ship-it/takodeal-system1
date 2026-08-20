@@ -21922,7 +21922,7 @@ window.loadFinancialFlow = async function() {
         Object.keys(expenseBreakdown).sort((a,b) => expenseBreakdown[b] - expenseBreakdown[a]).forEach(cat => {
             let safeCat = cat.replace(/'/g, "\\'");
             opExBoxes += `
-                <div onclick="window.openFlowOpExModal('${safeCat}')" style="background: white; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; width: 220px; cursor: pointer; transition: all 0.2s ease; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); position: relative; overflow: hidden;" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 15px -3px rgba(0,0,0,0.1)'; this.style.borderColor='#0ea5e9';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.05)'; this.style.borderColor='#e2e8f0';">
+                <div onclick="window.openFlowOpExModal('${safeCat}')" style="background: white; border: 2px dashed #cbd5e1; padding: 15px; border-radius: 12px; width: 220px; cursor: pointer; transition: all 0.2s ease; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); position: relative; overflow: hidden;" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 15px -3px rgba(0,0,0,0.1)'; this.style.borderColor='#0ea5e9';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.05)'; this.style.borderColor='#cbd5e1';">
                     <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">${cat}</div>
                     <div style="font-size: 22px; font-weight: 900; color: #0f172a; margin-top: 5px;">-₱${expenseBreakdown[cat].toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                     <div style="font-size: 11px; color: #0ea5e9; margin-top: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 4px;">🔍 Trace Logs</div>
@@ -21931,18 +21931,31 @@ window.loadFinancialFlow = async function() {
         });
         if (opExBoxes === '') opExBoxes = '<div style="color: #94a3b8; font-style: italic; font-size: 14px; padding: 20px;">No operational expenses logged.</div>';
 
+        // 🔥 THE FIX: Injected Mobile-Responsive CSS directly into the UI!
         let flowHtml = `
+            <style>
+                @media (max-width: 768px) {
+                    .waterfall-lines { display: none !important; }
+                    .waterfall-card { width: 100% !important; min-width: 100% !important; margin-bottom: 10px !important; box-sizing: border-box !important; }
+                    .waterfall-container { flex-direction: column !important; gap: 10px !important; margin-top: 10px !important; }
+                    .waterfall-opex-row { padding-left: 0 !important; width: 100% !important; padding-right: 0 !important; }
+                    .waterfall-opex-grid { flex-direction: column !important; width: 100% !important; box-sizing: border-box !important; }
+                    .waterfall-opex-grid > div { width: 100% !important; box-sizing: border-box !important; }
+                    .waterfall-net-profit { padding: 25px 20px !important; }
+                    .waterfall-net-profit-val { font-size: 40px !important; }
+                }
+            </style>
             <div style="display: flex; flex-direction: column; align-items: center; font-family: 'Segoe UI', Tahoma, sans-serif; padding: 20px 0;">
                 
                 <!-- TOP NODE: REVENUE -->
-                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px 50px; border-radius: 20px; box-shadow: 0 15px 30px rgba(16, 185, 129, 0.3); z-index: 2; position: relative; color: white; border: 1px solid #047857; min-width: 320px;">
+                <div class="waterfall-card" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px 50px; border-radius: 20px; box-shadow: 0 15px 30px rgba(16, 185, 129, 0.3); z-index: 2; position: relative; color: white; border: 1px solid #047857; min-width: 320px; box-sizing: border-box;">
                     <div style="font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.9;">Gross Revenue</div>
                     <div style="font-size: 46px; font-weight: 900; margin-top: 5px; line-height: 1;">₱${totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                     <div style="font-size: 12px; margin-top: 10px; font-weight: bold; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; display: inline-block;">${periodLabel} • ${branch}</div>
                 </div>
 
                 <!-- MAIN SPLIT ARROWS -->
-                <div style="display: flex; justify-content: center; width: 680px; height: 40px; border-top: 3px solid #cbd5e1; border-left: 3px solid #cbd5e1; border-right: 3px solid #cbd5e1; margin-top: 20px; position: relative;">
+                <div class="waterfall-lines" style="display: flex; justify-content: center; width: 100%; max-width: 680px; height: 40px; border-top: 3px solid #cbd5e1; border-left: 3px solid #cbd5e1; border-right: 3px solid #cbd5e1; margin-top: 20px; position: relative;">
                     <div style="position: absolute; top: -22px; left: 50%; transform: translateX(-50%); width: 3px; height: 20px; background: #cbd5e1;"></div>
                     <!-- Dropdown lines -->
                     <div style="position: absolute; top: 40px; left: 0; width: 3px; height: 20px; background: #cbd5e1;"></div>
@@ -21951,45 +21964,45 @@ window.loadFinancialFlow = async function() {
                 </div>
 
                 <!-- ROW 2: THE DEDUCTIONS -->
-                <div style="display: flex; justify-content: center; gap: 30px; width: 100%; margin-top: 20px; position: relative; flex-wrap: wrap;">
+                <div class="waterfall-container" style="display: flex; justify-content: center; gap: 30px; width: 100%; margin-top: 20px; position: relative; flex-wrap: wrap;">
                     
                     <!-- COGS -->
-                    <div onclick="window.openFlowCogsModal()" style="background: white; border: 2px dashed #fca5a5; padding: 25px; border-radius: 16px; width: 240px; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);" onmouseover="this.style.background='#fff1f2'; this.style.boxShadow='0 10px 15px -3px rgba(220, 38, 38, 0.1)';" onmouseout="this.style.background='white'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.05)';">
+                    <div onclick="window.openFlowCogsModal()" class="waterfall-card" style="background: white; border: 2px dashed #fca5a5; padding: 25px; border-radius: 16px; width: 240px; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); box-sizing: border-box;" onmouseover="this.style.background='#fff1f2'; this.style.boxShadow='0 10px 15px -3px rgba(220, 38, 38, 0.1)';" onmouseout="this.style.background='white'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.05)';">
                         <div style="font-size: 12px; font-weight: 800; color: #dc2626; text-transform: uppercase; letter-spacing: 0.5px;">Cost of Goods (COGS)</div>
                         <div style="font-size: 26px; font-weight: 900; color: #b91c1c; margin-top: 5px;">-₱${totalCOGS.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                         <div style="font-size: 11px; color: #ef4444; margin-top: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 4px;">🔍 Trace Logs</div>
                     </div>
 
                     <!-- PAYROLL -->
-                    <div style="background: white; border: 1px solid #cbd5e1; padding: 25px; border-radius: 16px; width: 240px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                    <div class="waterfall-card" style="background: white; border: 1px solid #cbd5e1; padding: 25px; border-radius: 16px; width: 240px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); box-sizing: border-box;">
                         <div style="font-size: 12px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Payroll Paid</div>
                         <div style="font-size: 26px; font-weight: 900; color: #334155; margin-top: 5px;">-₱${totalPayroll.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                     </div>
 
                     <!-- OPEX -->
-                    <div style="background: white; border: 1px solid #fcd34d; padding: 25px; border-radius: 16px; width: 240px; position: relative; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                    <div class="waterfall-card" style="background: white; border: 1px solid #fcd34d; padding: 25px; border-radius: 16px; width: 240px; position: relative; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); box-sizing: border-box;">
                         <div style="font-size: 12px; font-weight: 800; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px;">Operating Expenses</div>
                         <div style="font-size: 26px; font-weight: 900; color: #b45309; margin-top: 5px;">-₱${totalExpenses.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                         
                         <!-- Mini Dropdown Line to OpEx Boxes -->
-                        <div style="position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); width: 3px; height: 20px; background: #cbd5e1;"></div>
+                        <div class="waterfall-lines" style="position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); width: 3px; height: 20px; background: #cbd5e1;"></div>
                     </div>
 
                 </div>
 
                 <!-- OPEX BREAKDOWN ROW -->
-                <div style="display: flex; justify-content: center; width: 100%; max-width: 900px; margin-top: 20px; position: relative; margin-left: auto; margin-right: auto; padding-left: 510px;">
-                    <div style="display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; padding: 25px; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 16px; max-width: 550px;">
+                <div class="waterfall-opex-row" style="display: flex; justify-content: center; width: 100%; max-width: 900px; margin-top: 20px; position: relative; margin-left: auto; margin-right: auto; padding-left: 510px; box-sizing: border-box;">
+                    <div class="waterfall-opex-grid" style="display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; padding: 25px; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 16px; max-width: 550px; width: 100%; box-sizing: border-box;">
                         ${opExBoxes}
                     </div>
                 </div>
 
                 <!-- FINAL NET PROFIT -->
-                <div style="margin-top: 50px; position: relative;">
-                    <div style="position: absolute; top: -40px; left: 50%; transform: translateX(-50%); font-size: 32px; color: #94a3b8; font-weight: 900;">↓</div>
-                    <div style="background: ${netProfit >= 0 ? 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)' : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)'}; color: white; padding: 35px 70px; border-radius: 24px; box-shadow: 0 15px 40px ${netProfit >= 0 ? 'rgba(14, 165, 233, 0.35)' : 'rgba(239, 68, 68, 0.35)'}; border: 1px solid ${netProfit >= 0 ? '#0284c7' : '#9f1239'};">
+                <div class="waterfall-card" style="margin-top: 50px; position: relative; width: 100%; max-width: 450px; box-sizing: border-box;">
+                    <div class="waterfall-lines" style="position: absolute; top: -40px; left: 50%; transform: translateX(-50%); font-size: 32px; color: #94a3b8; font-weight: 900;">↓</div>
+                    <div class="waterfall-net-profit" style="background: ${netProfit >= 0 ? 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)' : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)'}; color: white; padding: 35px 50px; border-radius: 24px; box-shadow: 0 15px 40px ${netProfit >= 0 ? 'rgba(14, 165, 233, 0.35)' : 'rgba(239, 68, 68, 0.35)'}; border: 1px solid ${netProfit >= 0 ? '#0284c7' : '#9f1239'}; box-sizing: border-box; width: 100%;">
                         <div style="font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: rgba(255,255,255,0.9);">Remaining Net Profit</div>
-                        <div style="font-size: 56px; font-weight: 900; margin-top: 5px; line-height: 1; text-shadow: 0 4px 6px rgba(0,0,0,0.2);">₱${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                        <div class="waterfall-net-profit-val" style="font-size: 56px; font-weight: 900; margin-top: 5px; line-height: 1; text-shadow: 0 4px 6px rgba(0,0,0,0.2);">₱${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                         <div style="font-size: 15px; margin-top: 15px; font-weight: bold; background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 20px; display: inline-block;">${totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : 0}% Profit Margin</div>
                     </div>
                 </div>
@@ -22145,6 +22158,34 @@ window.openFlowOpExModal = function(catName) {
 
     Swal.fire({
         title: `📑 Trace: ${catName}`,
+        html: `<div style="max-height: 50vh; overflow-y: auto; text-align: left; padding-right: 10px;">${html || '<i>No details found.</i>'}</div>`,
+        confirmButtonText: 'Close',
+        confirmButtonColor: '#0f766e',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+};
+
+// 🔥 NEW: COGS Trace Breakdown Modal
+window.openFlowCogsModal = function() {
+    let items = Object.keys(window.tempCogsBreakdown || {}).map(name => {
+        return { name: name, ...window.tempCogsBreakdown[name] };
+    }).sort((a, b) => b.cogs - a.cogs);
+
+    let html = '';
+    items.forEach(d => {
+        html += `
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #f1f5f9; padding: 12px 0; align-items: center;">
+                <div>
+                    <strong style="color: #334155; font-size: 14px;">${d.name}</strong><br>
+                    <span style="font-size: 11px; color: #64748b;">Quantity Sold: ${d.qty}x</span>
+                </div>
+                <strong style="color: #dc2626; font-size: 15px;">-₱${d.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+            </div>
+        `;
+    });
+
+    Swal.fire({
+        title: `🥩 Trace: Cost of Goods`,
         html: `<div style="max-height: 50vh; overflow-y: auto; text-align: left; padding-right: 10px;">${html || '<i>No details found.</i>'}</div>`,
         confirmButtonText: 'Close',
         confirmButtonColor: '#0f766e',
