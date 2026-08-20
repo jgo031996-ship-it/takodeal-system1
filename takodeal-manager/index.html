@@ -3287,66 +3287,75 @@
         </div>
     </div>
     
-    <div id="view-admin" class="view">
-      <div class="card" style="max-width: 800px; margin: 0 auto;">
-        <div class="card-header">
-          <h2>⚙️ HQ Access Control</h2>
-          <span style="font-size: 12px; color: var(--text-muted);">Manage who can log into the Control Center.</span>
-        </div>
-        <div style="padding: 24px;">
-
-          <div style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
-            <input type="email" id="newManagerEmail" placeholder="Enter Google Email Address (e.g., partner@gmail.com)"
-              style="flex: 1; padding: 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; min-width: 250px;">
-            <button onclick="addHqManager()"
-              style="background: var(--primary); color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;">➕
-              Grant Access</button>
+    <div id="view-admin" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+      <div style="max-width: 1000px; margin: 0 auto;">
+        
+        <!-- ⚙️ HQ ACCESS CONTROL CARD -->
+        <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 30px;">
+          <div style="background: #f8fafc; padding: 25px 30px; border-bottom: 1px solid #e2e8f0;">
+            <h2 style="margin: 0; color: #1e293b; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 26px;">⚙️</span> HQ Access Control
+            </h2>
+            <span style="font-size: 13px; color: #64748b; margin-top: 6px; display: block; font-weight: 500;">Manage who can log into the Control Center.</span>
           </div>
-
-          <table class="data-table"
-            style="background: white; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; width: 100%;">
-            <thead style="background: #fafafa;">
-              <tr>
-                <th>Authorized Email</th>
-                <th>Role</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="adminTableBody">
-              <tr>
-                <td colspan="3" class="text-center">Loading authorized personnel...</td>
-              </tr>
-            </tbody>
-          </table>
-
-        </div>
-      </div>
-      <div class="card" style="max-width: 800px; margin: 20px auto 0 auto; border-top: 4px solid #8b5cf6;">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <div>
-                <h2 style="margin: 0; color: #6d28d9;">🏢 Branch Expansion Manager</h2>
-                <span style="font-size: 12px; color: var(--text-muted);">Manage active locations and multi-tenant scaling.</span>
+          <div style="padding: 30px;">
+            <div style="display: flex; gap: 15px; margin-bottom: 25px; flex-wrap: wrap; align-items: stretch;">
+              <input type="email" id="newManagerEmail" placeholder="Enter Google Email Address (e.g., partner@gmail.com)"
+                style="flex: 1; padding: 14px 18px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; outline: none; font-weight: bold; color: #334155; min-width: 250px;">
+              <button onclick="addHqManager()"
+                style="background: #d97706; color: white; border: none; padding: 0 24px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3); transition: 0.2s;">➕ Grant Access</button>
             </div>
-            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <button onclick="window.announceNewGlobalUpdate()" style="background: #ef4444; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3);">📢 Register New Update</button>
-                <button onclick="window.openAddBranchModal()" style="background: #8b5cf6; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3);">➕ Add New Branch</button>
-            </div>
-        </div>
-        <div class="table-responsive">
-            <table class="data-table">
-                <thead style="background: #f5f3ff;">
-                    <tr>
-                        <th style="color: #4c1d95;">Branch Name</th>
-                        <th style="color: #4c1d95;">Status</th>
-                        <th style="color: #4c1d95;">Date Added</th>
-                        <th style="color: #4c1d95;">Actions</th>
-                    </tr>
+
+            <div class="table-responsive" style="border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+              <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                <thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
+                  <tr>
+                    <th style="padding: 15px 20px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Authorized Email</th>
+                    <th style="padding: 15px 20px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Role</th>
+                    <th style="padding: 15px 20px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Action</th>
+                  </tr>
                 </thead>
-                <tbody id="branchManagerListBody">
-                    <tr><td colspan="4" class="text-center">Loading branches...</td></tr>
+                <tbody id="adminTableBody">
+                  <tr>
+                    <td colspan="3" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">Loading authorized personnel...</td>
+                  </tr>
                 </tbody>
-            </table>
+              </table>
+            </div>
+          </div>
         </div>
+
+        <!-- 🏢 BRANCH EXPANSION MANAGER CARD -->
+        <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; border-top: 4px solid #8b5cf6; overflow: hidden; margin-bottom: 30px;">
+          <div style="background: #fdf4ff; padding: 25px 30px; border-bottom: 1px solid #f5d0fe; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+              <div>
+                  <h2 style="margin: 0; color: #7e22ce; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;">
+                      <span style="font-size: 26px;">🏢</span> Branch Expansion Manager
+                  </h2>
+                  <span style="font-size: 13px; color: #a21caf; margin-top: 6px; display: block; font-weight: 500;">Manage active locations and multi-tenant scaling.</span>
+              </div>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                  <button onclick="window.announceNewGlobalUpdate()" style="background: #ef4444; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); font-size: 13px; transition: 0.2s;">📢 Register New Update</button>
+                  <button onclick="window.openAddBranchModal()" style="background: #8b5cf6; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); font-size: 13px; transition: 0.2s;">➕ Add New Branch</button>
+              </div>
+          </div>
+          <div class="table-responsive">
+              <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                  <thead style="background: #f5f3ff; border-bottom: 2px solid #ddd6fe;">
+                      <tr>
+                          <th style="padding: 15px 25px; font-size: 11px; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Branch Name</th>
+                          <th style="padding: 15px 25px; font-size: 11px; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Status</th>
+                          <th style="padding: 15px 25px; font-size: 11px; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Date Added</th>
+                          <th style="padding: 15px 25px; font-size: 11px; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Actions</th>
+                      </tr>
+                  </thead>
+                  <tbody id="branchManagerListBody">
+                      <tr><td colspan="4" class="text-center" style="padding: 40px; color: #8b5cf6; font-weight: bold;">Loading branches...</td></tr>
+                  </tbody>
+              </table>
+          </div>
+        </div>
+
       </div>
     </div>
 
