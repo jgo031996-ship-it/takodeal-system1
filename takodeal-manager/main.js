@@ -1781,10 +1781,12 @@ window.updateRestockUomLabel = function () {
   let itemName = document.getElementById('restockItemSelect').value.trim();
   let label = document.getElementById('restockQtyLabel');
   let unitCostInput = document.getElementById('restockUnitCost');
+  let prevCostLabel = document.getElementById('restockPrevCostLabel'); 
   
   if (!itemName) { 
-      label.innerText = "No. of packs"; 
-      if(unitCostInput) unitCostInput.value = "";
+      if (label) label.innerText = "No. of packs"; 
+      if (unitCostInput) unitCostInput.value = "";
+      if (prevCostLabel) prevCostLabel.innerHTML = "Previous Price: ₱0.00"; 
       window.calcRestockSubtotal();
       return; 
   }
@@ -1794,14 +1796,23 @@ window.updateRestockUomLabel = function () {
       let pUom = item.purchaseUom || item.uom || 'units';
       let cRate = parseFloat(item.conversionRate) || 1;
       
-      label.innerHTML = `No. of <span style="color:#0ea5e9;">${pUom}s</span> <br><span style="font-size:10px; color:#94a3b8;">(1 ${pUom} = ${cRate} ${item.uom})</span>`;
+      if (label) {
+          label.innerHTML = `No. of <span style="color:#0ea5e9;">${pUom}s</span> <br><span style="font-size:10px; color:#94a3b8; text-transform:none;">(1 ${pUom} = ${cRate} ${item.uom})</span>`;
+      }
       
       // Auto-fill the unit cost based on history
+      let pCost = parseFloat(item.purchaseCost) || parseFloat(item.purchCost) || 0;
+      if (pCost === 0 && item.baseCost) pCost = parseFloat(item.baseCost) * cRate;
+      
       if (unitCostInput) {
-          let pCost = parseFloat(item.purchaseCost) || parseFloat(item.purchCost) || 0;
-          if (pCost === 0 && item.baseCost) pCost = parseFloat(item.baseCost) * cRate;
           unitCostInput.value = pCost > 0 ? pCost.toFixed(2) : "";
       }
+
+      // 🔥 Populates the new sub-line so you can see if prices inflated!
+      if (prevCostLabel) {
+          prevCostLabel.innerHTML = `Previous Price: <span style="color:#dc2626;">₱${pCost.toFixed(2)}</span>`;
+      }
+
       window.calcRestockSubtotal();
   }
 };
