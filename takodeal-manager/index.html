@@ -668,68 +668,68 @@
     <!-- ========================================== -->
     <!-- 🌊 FINANCIAL FLOW & P&L WATERFALL VIEW -->
     <!-- ========================================== -->
-    <div id="view-financial-flow" class="view" style="display: none;">
+    <div id="view-financial-flow" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
       
       <!-- Filters -->
-      <div style="background: white; padding: 15px 20px; border-radius: 12px; border: 1px solid #cbd5e1; margin-bottom: 20px; display: flex; gap: 15px; align-items: center; flex-wrap: wrap; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+      <div style="background: white; padding: 20px 25px; border-radius: 16px; border: 1px solid #e2e8f0; margin-bottom: 25px; display: flex; gap: 20px; align-items: center; flex-wrap: wrap; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05);">
           <div style="flex: 1; min-width: 200px;">
-              <label style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 5px; display: block;">Target Branch</label>
-              <select id="flowBranchFilter" onchange="window.loadFinancialFlow()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0f172a; cursor: pointer;">
+              <label style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">Target Branch</label>
+              <select id="flowBranchFilter" onchange="window.loadFinancialFlow()" style="width: 100%; padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0f172a; cursor: pointer; background: #f8fafc; font-size: 14px;">
                   <!-- Injected via JS -->
               </select>
           </div>
           <div style="flex: 1; min-width: 200px;">
-              <label style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 5px; display: block;">Timeframe</label>
-              <select id="flowTimeFilter" onchange="window.toggleFlowTimePicker()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0f172a; cursor: pointer;">
+              <label style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">Timeframe</label>
+              <select id="flowTimeFilter" onchange="window.toggleFlowTimePicker()" style="width: 100%; padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0f172a; cursor: pointer; background: #f8fafc; font-size: 14px;">
                   <option value="month">Specific Month</option>
                   <option value="year">Entire Year</option>
               </select>
           </div>
           <div style="flex: 1; min-width: 200px;" id="flowMonthContainer">
-              <label style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 5px; display: block;">Select Month</label>
-              <input type="month" id="flowMonthPicker" onchange="window.loadFinancialFlow()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0ea5e9;">
+              <label style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">Select Month</label>
+              <input type="month" id="flowMonthPicker" onchange="window.loadFinancialFlow()" style="width: 100%; padding: 11px 15px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0ea5e9; background: white; font-size: 14px;">
           </div>
           <div style="flex: 1; min-width: 200px; display: none;" id="flowYearContainer">
-              <label style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 5px; display: block;">Select Year</label>
-              <input type="number" id="flowYearPicker" value="2026" min="2024" max="2099" onchange="window.loadFinancialFlow()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0ea5e9;">
+              <label style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; display: block;">Select Year</label>
+              <input type="number" id="flowYearPicker" value="2026" min="2024" max="2099" onchange="window.loadFinancialFlow()" style="width: 100%; padding: 11px 15px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0ea5e9; background: white; font-size: 14px;">
           </div>
       </div>
 
       <!-- 🌊 The Visual Waterfall Engine -->
-      <div id="financialFlowchartContainer" style="margin-bottom: 30px; text-align: center; padding: 20px; overflow-x: auto;">
+      <div id="financialFlowchartContainer" style="margin-bottom: 40px; text-align: center; padding: 10px; overflow-x: auto;">
           <!-- Generated via JS -->
       </div>
 
       <!-- 📊 The Charts Overview -->
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; margin-bottom: 30px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 25px; margin-bottom: 40px;">
           
-          <div class="card">
-              <div class="card-header">
-                  <h3 style="margin: 0; color: #0f172a;">📊 Monthly Spend Breakdown</h3>
+          <div style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); overflow: hidden; display: flex; flex-direction: column;">
+              <div style="background: #f8fafc; padding: 20px 25px; border-bottom: 1px solid #e2e8f0;">
+                  <h3 style="margin: 0; color: #1e293b; font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px;">📊 Monthly Spend Breakdown</h3>
               </div>
-              <div style="padding: 20px; height: 300px; position: relative;">
+              <div style="padding: 25px; height: 320px; position: relative;">
                   <canvas id="flowSpendChart"></canvas>
               </div>
           </div>
 
-          <div class="card">
-              <div class="card-header">
-                  <h3 style="margin: 0; color: #0f172a;">📉 Budgeted vs. Actuals</h3>
+          <div style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); overflow: hidden; display: flex; flex-direction: column;">
+              <div style="background: #f8fafc; padding: 20px 25px; border-bottom: 1px solid #e2e8f0;">
+                  <h3 style="margin: 0; color: #1e293b; font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px;">📉 Budgeted vs. Actuals</h3>
               </div>
-              <div style="padding: 20px; height: 300px; position: relative;">
+              <div style="padding: 25px; height: 320px; position: relative;">
                   <canvas id="flowBudgetChart"></canvas>
               </div>
           </div>
 
           <!-- 🤖 GEMINI FINANCIAL MENTOR AI -->
-          <div class="card" style="margin-bottom: 30px; border-top: 4px solid #8b5cf6;">
-              <div class="card-header" style="background: #f5f3ff;">
-                  <h3 style="margin: 0; color: #4c1d95; display: flex; align-items: center; gap: 10px;">
-                      <span style="font-size: 20px;">✨</span> Financial Mentor AI Analysis
+          <div style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); overflow: hidden; display: flex; flex-direction: column; grid-column: 1 / -1; border-top: 4px solid #8b5cf6;">
+              <div style="background: #f5f3ff; padding: 20px 25px; border-bottom: 1px solid #ede9fe;">
+                  <h3 style="margin: 0; color: #4c1d95; font-size: 18px; font-weight: 900; display: flex; align-items: center; gap: 10px;">
+                      <span style="font-size: 22px;">✨</span> Financial Mentor AI Analysis
                   </h3>
               </div>
-              <div id="financialAiMentorContent" style="padding: 25px; line-height: 1.6; font-size: 14px; color: #334155;">
-                  <div style="text-align: center; color: #94a3b8; font-weight: bold;">⏳ Analyzing financial diagnostics...</div>
+              <div id="financialAiMentorContent" style="padding: 30px; line-height: 1.6; font-size: 14px; color: #334155;">
+                  <div style="text-align: center; color: #94a3b8; font-weight: bold; padding: 40px;">⏳ Analyzing financial diagnostics...</div>
               </div>
           </div>
       </div>
