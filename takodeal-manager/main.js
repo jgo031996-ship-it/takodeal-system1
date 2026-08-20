@@ -1776,18 +1776,135 @@ window.renderRestockCart = function () {
   tbody.innerHTML = html;
 };
 
+window.updateRestockUomLabel = function () {
+  let itemName = document.getElementById('restockItemSelect').value.trim();
+  let label = document.getElementById('restockQtyLabel');
+  let unitCostInput = document.getElementById('restockUnitCost');
+  
+  if (!itemName) { 
+      label.innerText = "No. of packs"; 
+      if(unitCostInput) unitCostInput.value = "";
+      window.calcRestockSubtotal();
+      return; 
+  }
+
+  let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
+  if (item) {
+      let pUom = item.purchaseUom || item.uom || 'units';
+      let cRate = parseFloat(item.conversionRate) || 1;
+      
+      label.innerHTML = `No. of <span style="color:#0ea5e9;">${pUom}s</span> <br><span style="font-size:10px; color:#94a3b8;">(1 ${pUom} = ${cRate} ${item.uom})</span>`;
+      
+      // Auto-fill the unit cost based on history
+      if (unitCostInput) {
+          let pCost = parseFloat(item.purchaseCost) || parseFloat(item.purchCost) || 0;
+          if (pCost === 0 && item.baseCost) pCost = parseFloat(item.baseCost) * cRate;
+          unitCostInput.value = pCost > 0 ? pCost.toFixed(2) : "";
+      }
+      window.calcRestockSubtotal();
+  }
+};
+
+window.calcRestockSubtotal = function() {
+    let qty = parseFloat(document.getElementById('restockQtyInput').value) || 0;
+    let unitCost = parseFloat(document.getElementById('restockUnitCost').value) || 0;
+    let subtotal = qty * unitCost;
+    
+    let subInput = document.getElementById('restockSubtotal');
+    if (subInput) subInput.value = subtotal > 0 ? subtotal.toFixed(2) : "";
+};
+
+window.addRestockToCart = function () {
+  let itemName = document.getElementById('restockItemSelect').value.trim();
+  let purchQty = parseFloat(document.getElementById('restockQtyInput').value);
+  let subtotal = parseFloat(document.getElementById('restockSubtotal').value) || 0; 
+  let unitCost = parseFloat(document.getElementById('restockUnitCost').value) || 0;
+
+  if (!itemName || isNaN(purchQty) || purchQty <= 0) { alert("Select an item and enter a valid quantity."); return; }
+
+  let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
+  if (!item) { alert("Item not found in Main Office."); return; }
+
+  let convRate = parseFloat(item.conversionRate) || 1;
+  let baseQtyToAdd = purchQty * convRate;
+
+  if (typeof window.restockCart === 'undefined') window.restockCart = [];
+  
+  let existing = window.restockCart.find(i => i.id === item.id);
+  if (existing) {
+      existing.purchQty += purchQty;
+      existing.qty += purchQty; 
+      existing.baseQtyToAdd += baseQtyToAdd;
+      existing.subtotal += subtotal;
+      existing.unitCost = unitCost; 
+  } else {
+      window.restockCart.push({
+        id: item.id, 
+        name: item.name, 
+        branch: item.branch, 
+        purchQty: purchQty, 
+        qty: purchQty, 
+        conversionRate: convRate, 
+        purchUom: item.purchaseUom || 'units',
+        baseQtyToAdd: baseQtyToAdd, 
+        baseUom: item.uom, 
+        unitCost: unitCost,
+        subtotal: subtotal
+      });
+  }
+
+  document.getElementById('restockQtyInput').value = '';
+  document.getElementById('restockItemSelect').value = ''; 
+  document.getElementById('restockUnitCost').value = '';
+  document.getElementById('restockSubtotal').value = '';
+  
+  window.renderRestockCart();
+};
+
+window.removeRestockItem = function (index) {
+  window.restockCart.splice(index, 1);
+  window.renderRestockCart();
+};
+
+window.renderRestockCart = function () {
+  let tbody = document.getElementById('restockCartBody');
+  
+  if (!window.restockCart || window.restockCart.length === 0) { 
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:var(--text-muted); padding:20px; font-weight:bold;">Cart is empty.</td></tr>'; 
+      document.getElementById('restockCostInput').value = '';
+      return; 
+  }
+
+  let html = '';
+  let grandTotal = 0;
+  
+  window.restockCart.forEach((cartItem, idx) => {
+    grandTotal += cartItem.subtotal;
+    html += `
+      <tr style="border-bottom: 1px dashed #e2e8f0; background: white;">
+        <td style="padding: 10px 15px;">
+          <strong style="font-size: 13px; color:#0f172a;">${cartItem.name}</strong><br>
+          <span style="font-size:10px; color:#16a34a; font-weight:bold;">+${cartItem.baseQtyToAdd.toLocaleString()} ${cartItem.baseUom}</span>
+        </td>
+        <td style="font-weight:bold; font-size: 13px; padding: 10px 15px; color:#0ea5e9;">${cartItem.purchQty} <span style="font-size:10px; color:#64748b;">${cartItem.purchUom}</span></td>
+        <td style="font-weight:bold; font-size: 13px; padding: 10px 15px; color:#d97706; text-align:right;">₱${cartItem.subtotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+        <td style="padding: 10px 15px; text-align:right;">
+            <button onclick="window.removeRestockItem(${idx})" style="color:#ef4444; border:none; background:#fef2f2; padding:4px 8px; border-radius:6px; font-size:11px; font-weight:bold; cursor:pointer;">✖</button>
+        </td>
+      </tr>
+    `;
+  });
+  
+  tbody.innerHTML = html;
+  document.getElementById('restockCostInput').value = grandTotal.toFixed(2);
+};
+
 window.confirmMultiRestock = async function() {
     let selectedItem = document.getElementById('restockItemSelect');
     let qtyInput = document.getElementById('restockQtyInput');
     
     if (selectedItem && selectedItem.value !== "" && qtyInput && qtyInput.value !== "" && parseFloat(qtyInput.value) > 0) {
-        return Swal.fire({
-            title: 'Hanging Item Detected!',
-            text: 'You have an item selected but haven\'t clicked "Add". Please click the "➕ Add" button to put it in your cart, or clear the selection before confirming.',
-            icon: 'warning',
-            confirmButtonColor: '#f59e0b',
-            customClass: { popup: 'rounded-2xl' }
-        });
+        return Swal.fire({ title: 'Hanging Item Detected!', text: 'You have an item selected but haven\'t clicked "Add".', icon: 'warning', confirmButtonColor: '#f59e0b', customClass: { popup: 'rounded-2xl' }});
     }
 
     if (!window.restockCart || window.restockCart.length === 0) {
@@ -1796,53 +1913,52 @@ window.confirmMultiRestock = async function() {
 
     let supplier = document.getElementById('restockSupplierInput').value || "HQ Restock";
     let totalCostInput = document.getElementById('restockCostInput').value;
-    let totalCost = parseFloat(totalCostInput);
+    let totalCost = parseFloat(totalCostInput) || 0;
 
-    // 🔥 THE FIX: Auto-compute the exact cost if the manager leaves the box blank!
-    if (isNaN(totalCost) || totalCostInput.trim() === "") {
-        totalCost = 0;
-        window.restockCart.forEach(item => {
-            // Find the item in live memory to get its exact cost
-            let invData = window.globalInventoryList.find(i => i.id === item.id);
-            if (invData) {
-                let unitCost = parseFloat(invData.purchaseCost) || parseFloat(invData.purchCost) || parseFloat(invData.cost) || 0;
-                
-                // Fallback to base cost if purchase cost isn't set yet
-                if (unitCost === 0) {
-                    unitCost = (parseFloat(invData.baseCost) || 0) * parseFloat(item.conversionRate || 1);
-                }
-                
-                totalCost += (unitCost * parseFloat(item.purchQty));
-            }
-        });
-    }
     let cashier = localStorage.getItem('cashierName') || 'Manager';
-
     let btn = document.getElementById('btnConfirmRestock');
     let origText = btn.innerText;
-    btn.innerText = "⏳ Processing..."; btn.disabled = true;
+    btn.innerText = "⏳ Uploading & Averaging Costs..."; btn.disabled = true;
 
     try {
-        // 1. Process each item mathematically into the inventory
+        // 1. Process each item mathematically into the inventory and Average the Cost!
         for (let item of window.restockCart) {
-            let docRef = doc(db, "inventory", item.id);
-            let snap = await getDoc(docRef);
+            let docRef = window.doc(window.db, "inventory", item.id);
+            let snap = await window.getDoc(docRef);
             if (snap.exists()) {
                 let data = snap.data();
                 let oldQty = parseFloat(data.currentStock || 0);
-                
                 let convRate = parseFloat(item.conversionRate || data.conversionRate || data.conversion || 1);
-                // 🔥 THE FIX: Now perfectly calculates using the newly mapped item.qty
-                let addBaseQty = parseFloat(item.qty) * convRate; 
                 
+                let addBaseQty = parseFloat(item.qty) * convRate; 
                 let baseStockMath = oldQty < 0 ? 0 : oldQty;
                 let newQty = baseStockMath + addBaseQty;
 
-                await updateDoc(docRef, { currentStock: newQty });
+                // 🧠 THE AVERAGE COSTING ENGINE
+                let oldBaseCost = parseFloat(data.baseCost) || 0;
+                let totalOldValue = baseStockMath * oldBaseCost;
+                let addedValue = parseFloat(item.subtotal) || 0; // Total money spent on this specific item batch
+                
+                let newTotalValue = totalOldValue + addedValue;
+                // If they received free stock (subtotal 0), the average goes down!
+                let newBaseCost = newQty > 0 ? (newTotalValue / newQty) : oldBaseCost; 
+                let newPurchCost = newBaseCost * convRate;
+
+                // Protect against weird math causing infinite negative costs
+                if (newBaseCost < 0) newBaseCost = 0;
+                if (newPurchCost < 0) newPurchCost = 0;
+
+                await window.updateDoc(docRef, { 
+                    currentStock: newQty,
+                    baseCost: newBaseCost,
+                    purchaseCost: newPurchCost,
+                    purchCost: newPurchCost,
+                    cost: newPurchCost
+                });
 
                 let wipeNote = oldQty < 0 ? ` (Wiped ${oldQty.toFixed(2)} negative ghost debt)` : '';
 
-                await addDoc(collection(db, "stock_logs"), {
+                await window.addDoc(window.collection(window.db, "stock_logs"), {
                     branch: data.branch || "Main Office",
                     item: data.name || item.name,
                     uom: data.uom || 'units',
@@ -1850,7 +1966,7 @@ window.confirmMultiRestock = async function() {
                     newQty: newQty,
                     variance: addBaseQty,
                     type: "HQ Delivery Restock",
-                    note: `Supplier: ${supplier}${wipeNote}`,
+                    note: `Supplier: ${supplier}${wipeNote}. Old Cost: ₱${oldBaseCost.toFixed(2)}, New Avg Cost: ₱${newBaseCost.toFixed(2)}`,
                     user: cashier,
                     timestamp: new Date()
                 });
@@ -1858,7 +1974,7 @@ window.confirmMultiRestock = async function() {
         }
 
         // 2. Save the Grouped "Invoice" Document
-        await addDoc(collection(db, "hq_restocks"), {
+        await window.addDoc(window.collection(window.db, "hq_restocks"), {
             supplier: supplier,
             totalCost: totalCost,
             items: window.restockCart,
@@ -1867,17 +1983,18 @@ window.confirmMultiRestock = async function() {
             branch: "Main Office" 
         });
 
-        Swal.fire({title: '✅ Restock Complete!', text: 'Inventory updated and grouped invoice saved.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+        Swal.fire({title: '✅ Restock Complete!', text: 'Inventory updated and new Average Costs applied.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
         
         document.getElementById('restockModal').style.display = 'none';
         window.restockCart = [];
-        if (typeof window.renderRestockCart === 'function') window.renderRestockCart();
+        window.renderRestockCart();
         document.getElementById('restockSupplierInput').value = '';
         document.getElementById('restockCostInput').value = '';
 
         if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
         if (typeof window.loadStockLogs === 'function') window.loadStockLogs();
         if (typeof window.updateLifetimeRestockCost === 'function') window.updateLifetimeRestockCost();
+        if (typeof window.loadGroupedRestocks === 'function') window.loadGroupedRestocks();
 
     } catch (e) {
         console.error(e);
@@ -1928,8 +2045,8 @@ window.loadGroupedRestocks = async function() {
     tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">⏳ Fetching HQ Restock Invoices...</td></tr>';
     
     try {
-        const q = query(collection(db, "hq_restocks"), orderBy("timestamp", "desc"));
-        const snap = await getDocs(q);
+        const q = window.query(window.collection(window.db, "hq_restocks"), window.orderBy("timestamp", "desc"));
+        const snap = await window.getDocs(q);
         
         let html = '';
 
@@ -1940,25 +2057,34 @@ window.loadGroupedRestocks = async function() {
                 let d = docSnap.data();
                 let dateStr = d.timestamp?.toDate ? d.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
                 
-                // Fallback computation just in case old data doesn't have a total cost
                 let cost = parseFloat(d.totalCost) || 0;
 
-                // Format the chips so they don't break the layout
-                let itemsList = (d.items || []).map(i => `<span style="background:#f1f5f9; padding:6px 10px; border-radius:6px; margin:4px; display:inline-block; border:1px solid #cbd5e1; font-size:12px; color:#334155; font-weight:bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">${i.purchQty || i.qty}x ${i.name}</span>`).join('');
+                // 🔥 THE FIX: Sub-columns for Items - Qty - Subtotal inside the invoice row!
+                let itemsList = `<table style="width:100%; border-collapse:collapse; font-size:12px; margin-top:5px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden;">`;
+                (d.items || []).forEach(i => {
+                    let sub = parseFloat(i.subtotal) || 0;
+                    itemsList += `
+                        <tr style="border-bottom:1px dashed #e2e8f0;">
+                            <td style="padding: 6px 10px; font-weight:bold; color:#334155; width: 60%;">${i.name}</td>
+                            <td style="padding: 6px 10px; color:#64748b; text-align:center; width: 20%;">${i.purchQty || i.qty} ${i.purchUom || 'units'}</td>
+                            <td style="padding: 6px 10px; text-align:right; font-weight:bold; color:#0ea5e9; width: 20%;">₱${sub.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                        </tr>`;
+                });
+                itemsList += `</table>`;
                 
                 let encodedData = encodeURIComponent(JSON.stringify({id: docSnap.id, ...d}));
 
                 html += `
                     <tr style="border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                        <td style="padding: 15px; vertical-align: middle;">
-                            <strong style="color: #0f172a; font-size: 14px;">${dateStr}</strong><br>
-                            <span style="color:#64748b; font-size: 12px; font-weight: bold;">👤 ${d.user || 'Admin'}</span>
+                        <td style="padding: 15px; vertical-align: top;">
+                            <strong style="color: #0f172a; font-size: 13px;">${dateStr}</strong><br>
+                            <span style="color:#64748b; font-size: 11px; font-weight: bold;">👤 ${d.user || 'Admin'}</span>
                         </td>
-                        <td style="padding: 15px; font-weight: 900; color: #0ea5e9; font-size: 14px; vertical-align: middle;">${d.supplier || 'HQ Restock'}</td>
-                        <td style="padding: 15px; font-weight: 900; color: #dc2626; font-size: 16px; vertical-align: middle;">₱${cost.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                        <td style="padding: 15px; line-height: 1.8; vertical-align: middle;">${itemsList}</td>
-                        <td style="padding: 15px; text-align: right; vertical-align: middle;">
-                            <button onclick="window.revertAndEditRestock('${encodedData}')" style="background: white; color: #f59e0b; border: 2px solid #fcd34d; padding: 10px 15px; border-radius: 6px; font-weight: 900; cursor: pointer; font-size: 12px; white-space: nowrap; box-shadow: 0 2px 4px rgba(245, 158, 11, 0.1); transition: 0.2s;" onmouseover="this.style.background='#fffbeb'" onmouseout="this.style.background='white'">↩️ Revert & Edit</button>
+                        <td style="padding: 15px; font-weight: 900; color: #0ea5e9; font-size: 13px; vertical-align: top;">${d.supplier || 'HQ Restock'}</td>
+                        <td style="padding: 15px; font-weight: 900; color: #dc2626; font-size: 16px; vertical-align: top;">₱${cost.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                        <td style="padding: 15px; vertical-align: top;">${itemsList}</td>
+                        <td style="padding: 15px; text-align: right; vertical-align: top;">
+                            <button onclick="window.revertAndEditRestock('${encodedData}')" style="background: white; color: #f59e0b; border: 1px solid #fcd34d; padding: 8px 12px; border-radius: 6px; font-weight: 900; cursor: pointer; font-size: 11px; white-space: nowrap; box-shadow: 0 1px 2px rgba(245, 158, 11, 0.1); transition: 0.2s;" onmouseover="this.style.background='#fffbeb'" onmouseout="this.style.background='white'">↩️ Revert & Edit</button>
                         </td>
                     </tr>
                 `;
@@ -1993,7 +2119,6 @@ window.revertAndEditRestock = async function(encodedData) {
     Swal.fire({title: 'Reverting Stock...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
     try {
-        // 1. Subtract the stock mathematically back out of the system
         for (let item of invoice.items) {
             let docRef = window.doc(window.db, "inventory", item.id);
             let snap = await window.getDoc(docRef);
@@ -2007,30 +2132,27 @@ window.revertAndEditRestock = async function(encodedData) {
 
                 await window.updateDoc(docRef, { currentStock: newQty });
 
-                // Log the Reversal
-                await window.addDoc(window.collection(window.db, "stock_history"), {
-                    itemId: item.id,
-                    itemName: data.name || item.name,
+                await window.addDoc(window.collection(window.db, "stock_logs"), {
                     branch: data.branch || "Main Office",
+                    item: data.name || item.name,
                     oldQty: oldQty,
                     newQty: newQty,
-                    variance: `-${subBaseQty} ${data.uom || 'units'}`,
+                    variance: -subBaseQty,
+                    uom: data.uom || 'units',
                     type: "HQ Restock Reverted (Edit)",
+                    note: `Invoice undone by ${localStorage.getItem('cashierName') || 'Manager'}`,
                     user: localStorage.getItem('cashierName') || 'Manager',
                     timestamp: new Date()
                 });
             }
         }
 
-        // 2. Delete the old invoice
         await window.deleteDoc(window.doc(window.db, "hq_restocks", invoice.id));
 
-        // 3. Load items back into the local cart
         window.restockCart = invoice.items;
         document.getElementById('restockSupplierInput').value = invoice.supplier || '';
         document.getElementById('restockCostInput').value = invoice.totalCost || '';
 
-        // 4. Open Modal & Render so they can edit
         Swal.close();
         document.getElementById('restockModal').style.display = 'flex';
         if (typeof window.renderRestockCart === 'function') window.renderRestockCart();
@@ -2038,11 +2160,7 @@ window.revertAndEditRestock = async function(encodedData) {
         if (typeof window.loadStockLogs === 'function') window.loadStockLogs();
         window.updateLifetimeRestockCost();
 
-        Swal.fire({
-            toast: true, position: 'top-end', icon: 'success', 
-            title: 'Restock Reverted! Edit your cart now.', 
-            showConfirmButton: false, timer: 3000
-        });
+        Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Restock Reverted! Edit your cart now.', showConfirmButton: false, timer: 3000 });
 
     } catch (e) {
         console.error(e);
@@ -2050,13 +2168,163 @@ window.revertAndEditRestock = async function(encodedData) {
     }
 };
 
-// Auto-load the lifetime cost when the page boots up
-setTimeout(() => { window.updateLifetimeRestockCost(); }, 2000);
+// 🔥 TABS FOR PREP AND STOCK HISTORY 🔥
+window.activePrepBranch = 'All';
+window.switchPrepBranch = function(branch) {
+    window.activePrepBranch = branch;
+    window.loadPrepBatchLogs();
+};
 
+window.loadPrepBatchLogs = async function() {
+    const tbody = document.getElementById('prepBatchLogsBody');
+    const tabContainer = document.getElementById('prepBranchTabs');
+    if (!tbody || !tabContainer) return;
+    
+    // Inject Branch Tabs!
+    let branches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
+    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+    if (isFranchisee) branches = [window.sessionUser.branch];
 
+    let allActive = window.activePrepBranch === 'All';
+    let bHtml = `<div onclick="window.switchPrepBranch('All')" style="min-width: 120px; background: ${allActive ? '#f3e8ff' : 'white'}; border: 2px solid ${allActive ? '#a855f7' : '#e2e8f0'}; padding: 10px; border-radius: 8px; cursor: pointer; text-align: center; font-weight: bold; font-size: 13px; color: ${allActive ? '#7e22ce' : '#64748b'}; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">🌐 All Branches</div>`;
+    
+    if (isFranchisee) {
+        bHtml = ''; 
+        window.activePrepBranch = window.sessionUser.branch;
+    }
 
+    branches.forEach(b => {
+        let isAct = window.activePrepBranch === b;
+        bHtml += `<div onclick="window.switchPrepBranch('${b}')" style="min-width: 120px; background: ${isAct ? '#f3e8ff' : 'white'}; border: 2px solid ${isAct ? '#a855f7' : '#e2e8f0'}; padding: 10px; border-radius: 8px; cursor: pointer; text-align: center; font-weight: bold; font-size: 13px; color: ${isAct ? '#7e22ce' : '#64748b'}; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">📍 ${b}</div>`;
+    });
+    tabContainer.innerHTML = bHtml;
 
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #8b5cf6; font-weight: bold;">Loading prep history...</td></tr>';
+    
+    let today = new Date();
+    today.setHours(0,0,0,0);
 
+    try {
+        const q = window.query(window.collection(window.db, "stock_logs"), window.where("type", "in", ["Manager Prep Batch", "End-of-Shift Kitchen Prep"]), window.orderBy("timestamp", "desc"), window.limit(50));
+        const snap = await window.getDocs(q);
+        
+        let logs = [];
+        snap.forEach(doc => {
+            let d = doc.data();
+            if (window.activePrepBranch !== "All" && d.branch !== window.activePrepBranch) return;
+            logs.push({ id: doc.id, ...d });
+        });
+
+        logs.sort((a,b) => b.timestamp - a.timestamp); // Newest first
+
+        let html = '';
+        logs.forEach(log => {
+            let timeStr = log.timestamp ? log.timestamp.toDate().toLocaleTimeString('en-PH', {month: 'short', day:'numeric', hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+            let pUom = log.purchUom || 'Batch';
+            let pQty = log.purchQty ? log.purchQty : '-';
+            let purchDisplay = log.purchQty ? `(${pQty} ${pUom}s)` : '';
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 12px 15px; color: #64748b; font-size: 12px;">${timeStr}</td>
+                    <td style="padding: 12px 15px;"><span class="badge badge-open">${log.branch}</span></td>
+                    <td style="padding: 12px 15px; font-weight: bold; color: #334155;">👤 ${log.user || log.cashier || 'System'}</td>
+                    <td style="padding: 12px 15px; font-weight: bold; color: #8b5cf6;">${log.item}</td>
+                    <td style="padding: 12px 15px;">
+                        <strong style="color: #10b981; font-size: 15px;">+${log.variance} ${log.uom}</strong><br>
+                        <span style="color: #0ea5e9; font-size: 11px; font-weight: bold;">${purchDisplay}</span>
+                    </td>
+                    <td style="padding: 12px 15px;">
+                        <button onclick="window.undoKitchenPrep('${log.id}', '${log.item.replace(/'/g, "\\'")}', ${log.variance})" style="background: white; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✖ Undo</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="6" style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold;">No prep batches logged.</td></tr>';
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: #dc2626; padding: 40px; font-weight: bold;">Error loading history.</td></tr>';
+    }
+};
+
+window.activeStockLogBranch = 'All';
+window.switchStockLogBranch = function(branch) {
+    window.activeStockLogBranch = branch;
+    window.loadStockLogs();
+};
+
+window.loadStockLogs = async function() {
+  const tbody = document.getElementById('stockLogsBody');
+  const tabContainer = document.getElementById('stockLogBranchTabs');
+  if (!tbody || !tabContainer) return;
+
+  // Inject Branch Tabs!
+  let branches = window.globalActiveBranches ? window.globalActiveBranches : ["Main Office", "Cabantian", "Citygate", "Maa"];
+  let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+  if (isFranchisee) branches = [window.sessionUser.branch];
+
+  let allActive = window.activeStockLogBranch === 'All';
+  let bHtml = `<div onclick="window.switchStockLogBranch('All')" style="min-width: 120px; background: ${allActive ? '#e0f2fe' : 'white'}; border: 2px solid ${allActive ? '#0ea5e9' : '#e2e8f0'}; padding: 10px; border-radius: 8px; cursor: pointer; text-align: center; font-weight: bold; font-size: 13px; color: ${allActive ? '#0284c7' : '#64748b'}; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">🌐 All Branches</div>`;
+  
+  if (isFranchisee) {
+      bHtml = ''; 
+      window.activeStockLogBranch = window.sessionUser.branch;
+  }
+
+  branches.forEach(b => {
+      let isAct = window.activeStockLogBranch === b;
+      bHtml += `<div onclick="window.switchStockLogBranch('${b}')" style="min-width: 120px; background: ${isAct ? '#e0f2fe' : 'white'}; border: 2px solid ${isAct ? '#0ea5e9' : '#e2e8f0'}; padding: 10px; border-radius: 8px; cursor: pointer; text-align: center; font-weight: bold; font-size: 13px; color: ${isAct ? '#0284c7' : '#64748b'}; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">📍 ${b}</div>`;
+  });
+  tabContainer.innerHTML = bHtml;
+
+  tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">Loading history...</td></tr>';
+
+  try {
+    const qLogs = window.query(window.collection(window.db, "stock_logs"), window.orderBy("timestamp", "desc"), window.limit(100));
+    const snap = await window.getDocs(qLogs);
+    let html = '';
+
+    snap.forEach(doc => {
+      let data = doc.data();
+      if (window.activeStockLogBranch !== "All" && data.branch !== window.activeStockLogBranch) return;
+
+      let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
+
+      let user = data.user || data.cashier || "System";
+      let uom = data.uom || "";
+      let oldQty = data.oldQty !== undefined ? data.oldQty : "-";
+      let newQty = data.newQty !== undefined ? data.newQty : "-";
+      let logType = data.type || "System Update";
+
+      let varHtml = '';
+      if (data.variance > 0) {
+          varHtml = `<span style="color: #16a34a; font-weight: 900; font-size: 15px;">+${data.variance} ${uom} <br><span style="font-size:10px; color:#64748b; font-weight: bold;">(${logType})</span></span>`;
+      } else if (data.variance < 0) {
+          varHtml = `<span style="color: #dc2626; font-weight: 900; font-size: 15px;">${data.variance} ${uom} <br><span style="font-size:10px; color:#64748b; font-weight: bold;">(${logType})</span></span>`;
+      } else {
+          varHtml = `<span style="color: #94a3b8; font-weight: bold; font-size: 13px;">No Change <br><span style="font-size:10px; color:#64748b;">(${logType})</span></span>`;
+      }
+
+      html += `
+        <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+          <td style="font-size: 12px; color: #64748b; padding: 15px 20px;">${dateStr}</td>
+          <td style="padding: 15px 20px;"><span class="badge badge-open">${data.branch || 'Unknown'}</span></td>
+          <td style="font-weight: bold; color: #334155; padding: 15px 20px;">👤 ${user}</td>
+          <td style="font-weight: 900; color: #0f172a; padding: 15px 20px;">${data.item || 'Unknown Item'}</td>
+          <td style="color: #64748b; padding: 15px 20px; font-weight: bold;">${oldQty} <span style="font-size:11px; font-weight:normal;">${uom}</span></td>
+          <td style="font-weight: 900; color: #0284c7; padding: 15px 20px;">${newQty} <span style="font-size:11px; font-weight:normal;">${uom}</span></td>
+          <td style="padding: 15px 20px;">${varHtml}</td>
+        </tr>
+      `;
+    });
+
+    tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No stock history found.</td></tr>';
+  } catch (e) { 
+    console.error("Stock Logs Error:", e); 
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 40px; font-weight: bold;">Error loading logs. Check console.</td></tr>'; 
+  }
+};
 
 window.activeLogisticsTab = 'Requests'; // Default tab memory
 
@@ -4925,31 +5193,6 @@ window.refreshActiveInventoryTab = function() {
 
 window.openInventoryLogs = function() { window.switchInvTab('StockLogs'); };
 
-window.loadPrepBatchLogs = async function() {
-    const tbody = document.getElementById('prepBatchLogsBody');
-    if (!tbody) return;
-    let branchFilter = document.getElementById('invBranchFilter').value;
-    try {
-        const q = query(collection(db, "stock_logs"), where("type", "in", ["Manager Prep Batch", "End-of-Shift Kitchen Prep"]), orderBy("timestamp", "desc"), limit(50));
-        const snap = await getDocs(q);
-        let html = '';
-        snap.forEach(doc => {
-            let d = doc.data();
-            if (branchFilter !== "All" && d.branch !== branchFilter) return;
-            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
-            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 12px; color: #64748b; font-size: 12px;">${dateStr}</td>
-                <td style="padding: 12px;"><span class="badge badge-open">${d.branch}</span></td>
-                <td style="padding: 12px; font-weight: bold; color: #334155;">${d.user || 'System'}</td>
-                <td style="padding: 12px; font-weight: bold; color: #8b5cf6;">${d.item}</td>
-                <td style="padding: 12px; font-weight: 900; color: #10b981; font-size: 14px;">+${d.variance} <span style="font-size:11px; font-weight:normal; color:#64748b;">${d.uom}</span></td>
-                <td style="padding: 12px;"><span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold;">Completed</span></td>
-            </tr>`;
-        });
-        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #64748b;">No prep batches logged.</td></tr>';
-    } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color:red;">Error loading logs.</td></tr>'; }
-};
-
 window.openInventoryLogs = function() {
     let overviewTab = document.getElementById('tabInvOverview');
     let auditsTab = document.getElementById('tabInvAudits');
@@ -7015,64 +7258,6 @@ window.processCsvUpload = function (event) {
     }
   };
   reader.readAsText(file);
-};
-
-// ========================================================
-// 🔥 STOCK HISTORY & LOGGING ENGINE (UPGRADED)
-// ========================================================
-window.loadStockLogs = async function() {
-  const tbody = document.getElementById('stockLogsBody');
-  if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 20px;">Loading history...</td></tr>';
-
-  let branchFilter = document.getElementById('invBranchFilter').value;
-
-  try {
-    // Added limit(150) so your app doesn't crash trying to load 10,000 logs at once!
-    const qLogs = query(collection(db, "stock_logs"), orderBy("timestamp", "desc"), limit(150));
-    const snap = await getDocs(qLogs);
-    let html = '';
-
-    snap.forEach(doc => {
-      let data = doc.data();
-      if (branchFilter !== "All" && data.branch !== branchFilter) return;
-
-      let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
-
-      // 🔥 THE CLEANUP FIX: Safely intercept missing data from the Cashier App!
-      let user = data.user || data.cashier || "System Auto-Deduct";
-      let uom = data.uom || "";
-      let oldQty = data.oldQty !== undefined ? data.oldQty : "-";
-      let newQty = data.newQty !== undefined ? data.newQty : "-";
-      let logType = data.type || "System Update";
-
-      let varHtml = '';
-      if (data.variance > 0) {
-          varHtml = `<span style="color: var(--success); font-weight: bold;">+${data.variance} ${uom} <br><span style="font-size:10px; color:#64748b;">(${logType})</span></span>`;
-      } else if (data.variance < 0) {
-          varHtml = `<span style="color: var(--danger); font-weight: bold;">${data.variance} ${uom} <br><span style="font-size:10px; color:#64748b;">(${logType})</span></span>`;
-      } else {
-          varHtml = `<span style="color: var(--text-muted);">No Change <br><span style="font-size:10px; color:#64748b;">(${logType})</span></span>`;
-      }
-
-      html += `
-        <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-          <td style="font-size: 12px; color: var(--text-muted); font-family: monospace; padding: 12px;">${dateStr}</td>
-          <td style="padding: 12px;"><span class="badge badge-open">${data.branch || 'Unknown'}</span></td>
-          <td style="font-weight: bold; color: #334155; padding: 12px;">👤 ${user}</td>
-          <td style="font-weight: 600; color: #0f172a; padding: 12px;">${data.item || 'Unknown Item'}</td>
-          <td style="color: #64748b; padding: 12px;">${oldQty} <span style="font-size:11px;">${uom}</span></td>
-          <td style="font-weight: bold; color: #0284c7; padding: 12px;">${newQty} <span style="font-size:11px;">${uom}</span></td>
-          <td style="padding: 12px;">${varHtml}</td>
-        </tr>
-      `;
-    });
-
-    tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #64748b;">No stock history found.</td></tr>';
-  } catch (e) { 
-    console.error("Stock Logs Error:", e); 
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 20px;">Error loading logs. Check console.</td></tr>'; 
-  }
 };
 
 // ==========================================
