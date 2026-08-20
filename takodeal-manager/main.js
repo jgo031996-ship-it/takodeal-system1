@@ -1530,15 +1530,28 @@ window.navToHr = function(tabName) {
     if (tabName === 'Feed' || tabName === 'Sanctions') {
         if (typeof window.switchView === 'function') window.switchView('payroll');
         
-        // Find the cards inside view-payroll to toggle them dynamically
-        let feedCards = document.querySelectorAll('#view-payroll > .card');
+        // 🔥 THE FIX: Safely find the cards regardless of the new wrapper divs!
+        let viewPayroll = document.getElementById('view-payroll');
+        if (!viewPayroll) return;
+        
+        let allCards = viewPayroll.querySelectorAll('.card');
         let sanctionsEl = document.getElementById('payrollSectionSanctions');
         
         if (tabName === 'Feed') {
-            feedCards.forEach(card => card.style.display = 'block');
+            // Show Payslip & Attendance, hide Sanctions
+            allCards.forEach(card => {
+                if (sanctionsEl && !sanctionsEl.contains(card)) {
+                    card.style.display = 'block';
+                }
+            });
             if (sanctionsEl) sanctionsEl.style.display = 'none';
         } else {
-            feedCards.forEach(card => card.style.display = 'none');
+            // Hide Payslip & Attendance, show Sanctions
+            allCards.forEach(card => {
+                if (sanctionsEl && !sanctionsEl.contains(card)) {
+                    card.style.display = 'none';
+                }
+            });
             if (sanctionsEl) sanctionsEl.style.display = 'block';
             if (typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard();
         }
