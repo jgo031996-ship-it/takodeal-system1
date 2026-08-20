@@ -5697,7 +5697,7 @@ window.cancelPendingRequest = async function(docId) {
 window.loadStockRequestHistory = async function() {
     let branch = localStorage.getItem('takodeal_device_branch');
     const tbody = document.getElementById('stockReqHistoryBody');
-    tbody.innerHTML = '<tr><td colspan="4" class="text-center">Loading history...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; font-weight: bold; color: #94a3b8; font-size: 15px;">⏳ Loading history...</td></tr>';
 
     try {
         const q = window.query(window.collection(window.db, "purchase_orders"), window.where("branch", "==", branch), window.orderBy("timestamp", "desc"), window.limit(20));
@@ -5710,37 +5710,40 @@ window.loadStockRequestHistory = async function() {
             
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : 'Unknown';
             
-            let statusBg = '#f1f5f9'; let statusColor = '#475569';
-            if (d.status === 'Pending') { statusBg = '#fef3c7'; statusColor = '#d97706'; }
-            else if (d.status === 'Rejected') { statusBg = '#fee2e2'; statusColor = '#dc2626'; d.status = '❌ Rejected by HQ'; }
-            else if (d.status === 'Drafting') { statusBg = '#bae6fd'; statusColor = '#0284c7'; d.status = 'Preparing (HQ)'; }
-            else if (d.status === 'Approved' || d.status === 'In Transit') { statusBg = '#dcfce7'; statusColor = '#16a34a'; d.status = 'Dispatch on the way 🚚'; }
-            else if (d.status === 'Completed') { statusBg = '#f1f5f9'; statusColor = '#64748b'; }
-            else if (d.status === 'Partially Dispatched') { statusBg = '#e0e7ff'; statusColor = '#0284c7'; }
-            else if (d.status === 'Delayed') { statusBg = '#fef2f2'; statusColor = '#dc2626'; d.status = 'Delayed (Out of Stock)'; }
+            // 🔥 PREMIUM STATUS BADGES
+            let statusBg = '#f8fafc'; let statusColor = '#64748b'; let statusBorder = '#cbd5e1';
+            if (d.status === 'Pending') { statusBg = '#fffbeb'; statusColor = '#d97706'; statusBorder = '#fcd34d'; }
+            else if (d.status === 'Rejected') { statusBg = '#fef2f2'; statusColor = '#dc2626'; statusBorder = '#fca5a5'; d.status = '❌ Rejected by HQ'; }
+            else if (d.status === 'Drafting') { statusBg = '#f0f9ff'; statusColor = '#0284c7'; statusBorder = '#bae6fd'; d.status = 'Preparing (HQ)'; }
+            else if (d.status === 'Approved' || d.status === 'In Transit') { statusBg = '#dcfce7'; statusColor = '#16a34a'; statusBorder = '#bbf7d0'; d.status = 'Dispatch on the way 🚚'; }
+            else if (d.status === 'Completed') { statusBg = '#f8fafc'; statusColor = '#475569'; statusBorder = '#cbd5e1'; }
+            else if (d.status === 'Partially Dispatched') { statusBg = '#e0f2fe'; statusColor = '#0369a1'; statusBorder = '#7dd3fc'; }
+            else if (d.status === 'Delayed') { statusBg = '#fef2f2'; statusColor = '#b91c1c'; statusBorder = '#fca5a5'; d.status = 'Delayed (Out of Stock)'; }
 
             let encodedOrder = encodeURIComponent(JSON.stringify(d));
-            let itemsButton = `<button onclick="window.viewStockRequestItems('${encodedOrder}')" style="background: white; border: 1px solid #cbd5e1; color: #0f766e; font-weight: bold; padding: 8px 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); font-size: 13px; transition: 0.2s;">📦 View Items (${(d.items || []).length})</button>`;
             
-            let msgHtml = d.managerMessage ? `<div style="margin-top: 8px; padding: 8px; background: white; border: 1px dashed #fca5a5; font-size: 11px; color: #b91c1c; border-radius: 6px;"><b>HQ Note:</b> ${d.managerMessage}</div>` : '';
+            // 🔥 UPGRADED PREMIUM VIEW BUTTON
+            let itemsButton = `<button onclick="window.viewStockRequestItems('${encodedOrder}')" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; font-weight: 900; padding: 10px 18px; border-radius: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.1); font-size: 13px; transition: 0.2s;" onmouseover="this.style.background='#bae6fd';" onmouseout="this.style.background='#e0f2fe';">📦 View Items (${(d.items || []).length})</button>`;
+            
+            let msgHtml = d.managerMessage ? `<div style="margin-top: 10px; padding: 10px; background: #fff1f2; border: 1px dashed #fca5a5; font-size: 12px; color: #b91c1c; border-radius: 8px;"><b>HQ Note:</b> ${d.managerMessage}</div>` : '';
 
             html += `
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 15px 12px; color: #64748b; font-size: 13px; font-weight: bold;">${dateStr}</td>
-                    <td style="padding: 15px 12px; font-weight: bold; color: #334155; font-size: 14px;">👤 ${d.requestedBy || 'System'}</td>
-                    <td style="padding: 15px 12px;">
-                        <span style="background: ${statusBg}; color: ${statusColor}; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: bold; display: inline-block;">${d.status}</span>
+                <tr style="border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 20px 15px; color: #64748b; font-size: 13px; font-weight: bold;">${dateStr}</td>
+                    <td style="padding: 20px 15px; font-weight: 900; color: #1e293b; font-size: 14px;">👤 ${d.requestedBy || 'System'}</td>
+                    <td style="padding: 20px 15px;">
+                        <span style="background: ${statusBg}; color: ${statusColor}; border: 1px solid ${statusBorder}; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 900; display: inline-block;">${d.status}</span>
                         ${msgHtml}
                     </td>
-                    <td style="padding: 15px 12px;">${itemsButton}</td>
+                    <td style="padding: 20px 15px; text-align: right;">${itemsButton}</td>
                 </tr>
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 20px;">No reports found.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 40px; font-size: 15px; color: #94a3b8; font-weight: bold;">No reports found.</td></tr>';
     } catch(e) {
         console.error(e);
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red; padding: 20px;">Error loading history.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red; padding: 40px; font-weight: bold;">Error loading history.</td></tr>';
     }
 };
 
@@ -5748,7 +5751,24 @@ window.viewStockRequestItems = function(encodedOrder) {
     let order = JSON.parse(decodeURIComponent(encodedOrder));
     let items = order.items || [];
     
-    let html = `<div style="max-height: 55vh; overflow-y: auto; text-align: left;"><table style="width: 100%; border-collapse: collapse; font-size: 14px;"><thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);"><tr><th style="padding: 12px; color: #475569; border-bottom: 2px solid #cbd5e1;">Item Description</th><th style="padding: 12px; color: #475569; border-bottom: 2px solid #cbd5e1; text-align: center;">Actual Count</th><th style="padding: 12px; color: #475569; border-bottom: 2px solid #cbd5e1;">HQ Status</th></tr></thead><tbody>`;
+    // 🔥 UPGRADED MODAL HEADER & TABLE STRUCTURE
+    let html = `
+        <div style="background: #0f172a; padding: 20px 25px; color: white; display: flex; justify-content: space-between; align-items: center; border-radius: 16px 16px 0 0; margin: -1.25em -1.25em 15px -1.25em; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+            <h2 style="margin: 0; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 24px;">📦</span> Reported Items
+            </h2>
+            <button onclick="Swal.close()" style="background: rgba(255,255,255,0.1); border: none; font-size: 20px; width: 36px; height: 36px; border-radius: 8px; color: white; cursor: pointer; font-weight: bold; transition: 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.8)';" onmouseout="this.style.background='rgba(255,255,255,0.1)';">✖</button>
+        </div>
+        <div style="max-height: 55vh; overflow-y: auto; text-align: left; padding: 0 5px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); z-index: 10;">
+                    <tr>
+                        <th style="padding: 15px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900; border-bottom: 2px solid #cbd5e1; letter-spacing: 0.5px;">Item Description</th>
+                        <th style="padding: 15px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900; border-bottom: 2px solid #cbd5e1; text-align: center; letter-spacing: 0.5px;">Actual Count</th>
+                        <th style="padding: 15px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900; border-bottom: 2px solid #cbd5e1; text-align: center; letter-spacing: 0.5px;">HQ Status</th>
+                    </tr>
+                </thead>
+                <tbody>`;
 
     items.forEach(i => {
         let itemStatus = 'Pending';
@@ -5757,17 +5777,31 @@ window.viewStockRequestItems = function(encodedOrder) {
         else if (order.status === '❌ Rejected by HQ') itemStatus = 'Rejected';
         
         let statusBadge = '';
-        if (itemStatus === 'Processed') statusBadge = '<span style="color: #16a34a; background: #dcfce7; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">Processed</span>';
-        else if (itemStatus === 'Out of Stock') statusBadge = '<span style="color: #dc2626; background: #fef2f2; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">Out of Stock</span>';
-        else statusBadge = `<span style="color: #d97706; background: #fffbeb; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px;">${itemStatus}</span>`;
+        if (itemStatus === 'Processed') statusBadge = '<span style="color: #16a34a; background: #dcfce7; border: 1px solid #bbf7d0; padding: 6px 10px; border-radius: 6px; font-weight: 900; font-size: 11px;">Processed</span>';
+        else if (itemStatus === 'Out of Stock') statusBadge = '<span style="color: #dc2626; background: #fef2f2; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; font-weight: 900; font-size: 11px;">Out of Stock</span>';
+        else statusBadge = `<span style="color: #d97706; background: #fffbeb; border: 1px solid #fcd34d; padding: 6px 10px; border-radius: 6px; font-weight: 900; font-size: 11px;">${itemStatus}</span>`;
 
-        html += `<tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 12px; font-weight: bold; color: #1e293b;">${i.itemName || i.name}</td><td style="padding: 12px; text-align: center; font-weight: bold; color: #0284c7;">${i.displayQty !== undefined ? i.displayQty : i.qty} <span style="font-size: 11px; color: #64748b;">${i.displayUom || i.uom || ''}</span></td><td style="padding: 12px;">${statusBadge}</td></tr>`;
+        html += `
+            <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                <td style="padding: 15px; font-weight: 900; color: #1e293b; font-size: 14px;">${i.itemName || i.name}</td>
+                <td style="padding: 15px; text-align: center; font-weight: 900; color: #0284c7; font-size: 15px;">
+                    ${i.displayQty !== undefined ? i.displayQty : i.qty} <span style="font-size: 11px; color: #64748b; font-weight: bold;">${i.displayUom || i.uom || ''}</span>
+                </td>
+                <td style="padding: 15px; text-align: center;">${statusBadge}</td>
+            </tr>`;
     });
 
     html += `</tbody></table></div>`;
-    html += `<div style="margin-top: 20px; display: flex; justify-content: center; gap: 10px;"><button onclick="Swal.close()" style="background: #64748b; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; transition: 0.2s;">Close Window</button></div>`;
-
-    Swal.fire({ title: '📦 Reported Items', html: html, width: 700, showConfirmButton: false, customClass: { popup: 'rounded-2xl shadow-2xl' } });
+    
+    // We removed the standard "Close Window" button since we built a beautiful custom `X` into the modal header!
+    Swal.fire({ 
+        html: html, 
+        width: 750, 
+        showConfirmButton: false, 
+        showCloseButton: false, 
+        padding: '1.25em 1.25em 2em 1.25em',
+        customClass: { popup: 'rounded-2xl shadow-2xl' } 
+    });
 };
 
 // ==========================================
