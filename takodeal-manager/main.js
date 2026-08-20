@@ -21898,21 +21898,24 @@ window.generateSupplierPurchaseOrders = async function() {
 };
 
 // ==========================================
-// 🍔 MALL BRANCH MENU FILTER ENGINE
+// 🍔 MALL BRANCH MENU & PREP FILTER ENGINE
 // ==========================================
 
-// Intercept POS Config load to populate the branch dropdown automatically
+// Intercept POS Config load to populate the branch dropdowns automatically
 const originalLoadPosConfigHub = window.loadPosConfigHub || function(){};
 window.loadPosConfigHub = async function() {
     await originalLoadPosConfigHub();
     
     let sel = document.getElementById('restrictBranchSelect');
-    if(sel && window.globalActiveBranches) {
+    let prepSel = document.getElementById('restrictPrepBranchSelect');
+    
+    if(window.globalActiveBranches) {
         let html = '<option value="">-- Select Branch --</option>';
         window.globalActiveBranches.forEach(b => {
             if (b !== "Main Office") html += `<option value="${b}">${b}</option>`;
         });
-        sel.innerHTML = html;
+        if (sel) sel.innerHTML = html;
+        if (prepSel) prepSel.innerHTML = html;
     }
 };
 
@@ -21928,11 +21931,9 @@ window.loadBranchMenuRestrictions = async function() {
     listDiv.innerHTML = '<div style="color: #e11d48; font-weight: bold;">⏳ Loading categories...</div>';
 
     try {
-        // Fetch Global POS Categories from Config
         const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
         let allCats = configSnap.exists() && configSnap.data().posTabs ? configSnap.data().posTabs : [];
 
-        // Fetch Branch Settings
         const bQ = query(collection(db, "branches"), where("name", "==", branch));
         const bSnap = await getDocs(bQ);
         let allowed = [];
@@ -21945,7 +21946,6 @@ window.loadBranchMenuRestrictions = async function() {
             html = '<div style="color: #ef4444; font-weight: bold;">No POS Menu Tabs found in Master POS Configuration. Add some first!</div>';
         } else {
             allCats.forEach(cat => {
-                // If array is empty, it means "Show All" by default
                 let isChecked = (allowed.length === 0 || allowed.includes(cat)) ? 'checked' : ''; 
                 html += `
                 <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; cursor: pointer; background: white; padding: 10px 15px; border-radius: 6px; border: 1px solid #fda4af; color: #9f1239; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
@@ -21970,7 +21970,6 @@ window.saveBranchMenuRestrictions = async function() {
     let allowed = [];
     checkboxes.forEach(cb => { if(cb.checked) allowed.push(cb.value); });
 
-    // If they checked ALL of them, we save an empty array so it defaults to showing EVERYTHING
     if(allowed.length === checkboxes.length) allowed = [];
 
     try {
@@ -21981,6 +21980,83 @@ window.saveBranchMenuRestrictions = async function() {
         if(!bSnap.empty) {
             await updateDoc(bSnap.docs[0].ref, { allowedCategories: allowed });
             Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Menu filter saved for ' + branch, showConfirmButton: false, timer: 2500 });
+        } else {
+            Swal.fire('Error', 'Branch data not found in database.', 'error');
+        }
+    } catch(e) {
+        console.error("Filter Save Error:", e);
+        Swal.fire('Error', 'Failed to save restrictions.', 'error');
+    }
+};
+
+// 🔪 NEW: BRANCH PREP FILTER LOGIC
+window.loadBranchPrepRestrictions = async function() {
+    let branch = document.getElementById('restrictPrepBranchSelect').value;
+    let listDiv = document.getElementById('restrictPrepItemsList');
+    
+    if(!branch) {
+        listDiv.innerHTML = '<div style="color: #fcd34d; font-size: 13px; font-style: italic; font-weight: bold;">Select a branch above to load its allowed prep items...</div>';
+        return;
+    }
+
+    listDiv.innerHTML = '<div style="color: #d97706; font-weight: bold;">⏳ Loading prep items...</div>';
+
+    try {
+        // Fetch Master List of Prep Items from Inventory (using Main Office as reference)
+        const invQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"), where("showInPrep", "==", true));
+        const invSnap = await getDocs(invQ);
+        let allPrepItems = [];
+        invSnap.forEach(d => allPrepItems.push(d.data().name));
+        allPrepItems.sort();
+
+        // Fetch Branch Settings
+        const bQ = query(collection(db, "branches"), where("name", "==", branch));
+        const bSnap = await getDocs(bQ);
+        let allowed = [];
+        if (!bSnap.empty && bSnap.docs[0].data().allowedPrepItems) {
+            allowed = bSnap.docs[0].data().allowedPrepItems;
+        }
+
+        let html = '';
+        if(allPrepItems.length === 0) {
+            html = '<div style="color: #ef4444; font-weight: bold;">No prep items found in Main Office inventory. Ensure "Show in Kitchen Prep" is checked for items.</div>';
+        } else {
+            allPrepItems.forEach(item => {
+                let isChecked = (allowed.length === 0 || allowed.includes(item)) ? 'checked' : ''; 
+                html += `
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; cursor: pointer; background: white; padding: 10px 15px; border-radius: 6px; border: 1px solid #fcd34d; color: #92400e; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
+                    <input type="checkbox" value="${item.replace(/"/g, '&quot;')}" class="branch-prep-checkbox" ${isChecked} style="width: 16px; height: 16px; accent-color: #d97706;">
+                    ${item}
+                </label>`;
+            });
+            html += `<div style="width: 100%; font-size: 11px; color: #d97706; margin-top: 5px;">* Uncheck items to hide them from the ${branch} Kitchen Prep Station. (Leave all checked to show full list).</div>`;
+        }
+        listDiv.innerHTML = html;
+    } catch(e) {
+        console.error("Filter Error:", e);
+        listDiv.innerHTML = '<div style="color: #ef4444; font-weight: bold;">Error loading data.</div>';
+    }
+};
+
+window.saveBranchPrepRestrictions = async function() {
+    let branch = document.getElementById('restrictPrepBranchSelect').value;
+    if(!branch) return Swal.fire('Error', 'Please select a branch first.', 'error');
+
+    let checkboxes = document.querySelectorAll('.branch-prep-checkbox');
+    let allowed = [];
+    checkboxes.forEach(cb => { if(cb.checked) allowed.push(cb.value); });
+
+    // If they checked ALL of them, we save an empty array so it defaults to showing EVERYTHING
+    if(allowed.length === checkboxes.length) allowed = [];
+
+    try {
+        Swal.fire({title: 'Saving Filter...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        const bQ = query(collection(db, "branches"), where("name", "==", branch));
+        const bSnap = await getDocs(bQ);
+        
+        if(!bSnap.empty) {
+            await updateDoc(bSnap.docs[0].ref, { allowedPrepItems: allowed });
+            Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Prep filter saved for ' + branch, showConfirmButton: false, timer: 2500 });
         } else {
             Swal.fire('Error', 'Branch data not found in database.', 'error');
         }
