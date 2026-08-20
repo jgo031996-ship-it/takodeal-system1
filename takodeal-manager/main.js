@@ -1041,15 +1041,21 @@ window.openEmployeeProfile = function(docId) {
 };
 
 window.saveEmployeeProfile = async function() {
-    // 🔥 THE BULLETPROOF DOM EXTRACTOR: Ignores hidden duplicate modals completely!
+    // 🔥 THE REAL BULLETPROOF DOM EXTRACTOR: Grabs values ONLY from the actively visible modal!
     const getVal = (id) => {
         let els = document.querySelectorAll(`[id="${id}"]`);
-        let activeEl = Array.from(els).find(el => el.closest('.overlay') && el.closest('.overlay').style.display !== 'none');
+        let activeEl = Array.from(els).find(el => {
+            let modal = el.closest('[id="employeeProfileModal"]');
+            return modal && modal.style.display !== 'none';
+        });
         return activeEl ? activeEl.value : (els[0] ? els[0].value : '');
     };
     const getCheck = (id) => {
         let els = document.querySelectorAll(`[id="${id}"]`);
-        let activeEl = Array.from(els).find(el => el.closest('.overlay') && el.closest('.overlay').style.display !== 'none');
+        let activeEl = Array.from(els).find(el => {
+            let modal = el.closest('[id="employeeProfileModal"]');
+            return modal && modal.style.display !== 'none';
+        });
         return activeEl ? activeEl.checked : (els[0] ? els[0].checked : false);
     };
 
@@ -1061,7 +1067,7 @@ window.saveEmployeeProfile = async function() {
     let isWorkingStudent = getCheck('staffWorkingStudent');
     let pin = getVal('empPin').trim();
     
-    // Safely parse the custom rate!
+    // Safely parse the custom night rate!
     let nightRate = parseFloat(getVal('empNightDiffRate')) || 0;
 
     if (!name || isNaN(rate) || !pin || pin.length < 4) {
@@ -1070,8 +1076,10 @@ window.saveEmployeeProfile = async function() {
     }
 
     let customDeductionsArray = [];
-    let activeModal = Array.from(document.querySelectorAll('.overlay')).find(el => el.style.display !== 'none') || document;
-    activeModal.querySelectorAll('.custom-deduct-row').forEach(row => {
+    let activeModals = document.querySelectorAll('[id="employeeProfileModal"]');
+    let visibleModal = Array.from(activeModals).find(m => m.style.display !== 'none') || document;
+    
+    visibleModal.querySelectorAll('.custom-deduct-row').forEach(row => {
         let n = row.querySelector('.cd-name').value.trim();
         let a = parseFloat(row.querySelector('.cd-amount').value) || 0;
         if (n && a > 0) customDeductionsArray.push({ name: n, amount: a });
@@ -1098,7 +1106,7 @@ window.saveEmployeeProfile = async function() {
         pin: pin,
         customDeductions: customDeductionsArray,
         
-        // 🔥 THE FIX: Captures the individual rate perfectly!
+        // 🔥 THE FIX: Captures the precise individual rate!
         nightDiffRate: nightRate,
         eligibleNightDiff: nightRate > 0, 
         
@@ -1126,8 +1134,14 @@ window.saveEmployeeProfile = async function() {
         payload.signedContracts = {};
     }
 
-    let btn = document.getElementById('btnSaveEmpProfile');
-    if(btn) { btn.innerText = "⏳ Saving to Cloud..."; btn.disabled = true; }
+    // Find the actively visible save button to update its text safely
+    let btns = document.querySelectorAll('[id="btnSaveEmpProfile"]');
+    let visibleBtn = Array.from(btns).find(btn => {
+        let modal = btn.closest('[id="employeeProfileModal"]');
+        return modal && modal.style.display !== 'none';
+    }) || btns[0];
+    
+    if(visibleBtn) { visibleBtn.innerText = "⏳ Saving to Cloud..."; visibleBtn.disabled = true; }
 
     try {
         if (docId) {
@@ -1142,7 +1156,7 @@ window.saveEmployeeProfile = async function() {
     } catch (e) {
         console.error(e); Swal.fire('Error', 'Failed to save employee data.', 'error');
     } finally {
-        if(btn) { btn.innerText = "💾 Save Employee Data"; btn.disabled = false; }
+        if(visibleBtn) { visibleBtn.innerText = "💾 Save Data"; visibleBtn.disabled = false; }
     }
 };
 
