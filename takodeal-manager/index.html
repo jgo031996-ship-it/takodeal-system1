@@ -1854,31 +1854,31 @@
          </div>
        </div>
 
-      </div>
-    </div>
+       <!-- 🔪 BRANCH KITCHEN PREP RESTRICTIONS -->
+       <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 40px;">
+         <div style="background: #fffbeb; padding: 25px 30px; border-bottom: 1px solid #fde68a; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+           <div>
+             <h2 style="margin: 0; color: #b45309; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">🔪</span> Branch Kitchen Prep Filter</h2>
+             <span style="font-size: 13px; color: #d97706; margin-top: 6px; display: block; font-weight: 500;">Restrict which prep items appear on specific branch POS tablets.</span>
+           </div>
+         </div>
+         <div style="padding: 30px; background: #fffcf0;">
+           <div style="display: flex; gap: 10px; margin-bottom: 20px;">
+             <select id="restrictPrepBranchSelect" style="padding: 12px 15px; border-radius: 8px; font-weight: bold; width: 280px; border: 1px solid #fcd34d; outline: none; cursor: pointer; font-size: 14px; color: #b45309; background: white;" onchange="window.loadBranchPrepRestrictions()">
+               <option value="">-- Select Branch --</option>
+             </select>
+           </div>
+            
+           <div id="restrictPrepItemsList" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 25px;">
+             <div style="color: #fcd34d; font-size: 14px; font-style: italic; font-weight: bold; padding: 10px;">Select a branch above to load its allowed prep items...</div>
+           </div>
+            
+           <button onclick="window.saveBranchPrepRestrictions()" style="background: #d97706; color: white; border: none; padding: 16px 24px; border-radius: 10px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 6px 12px rgba(217, 119, 6, 0.25); transition: 0.2s;">💾 Save Allowed Prep Items</button>
+         </div>
+       </div>
 
-    <!-- 🔪 BRANCH KITCHEN PREP RESTRICTIONS -->
-    <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 40px;">
-      <div style="background: #fffbeb; padding: 25px 30px; border-bottom: 1px solid #fde68a; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-        <div>
-          <h2 style="margin: 0; color: #b45309; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">🔪</span> Branch Kitchen Prep Filter</h2>
-          <span style="font-size: 13px; color: #d97706; margin-top: 6px; display: block; font-weight: 500;">Restrict which prep items appear on specific branch POS tablets.</span>
-        </div>
-      </div>
-      <div style="padding: 30px; background: #fffcf0;">
-        <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-          <select id="restrictPrepBranchSelect" style="padding: 12px 15px; border-radius: 8px; font-weight: bold; width: 280px; border: 1px solid #fcd34d; outline: none; cursor: pointer; font-size: 14px; color: #b45309; background: white;" onchange="window.loadBranchPrepRestrictions()">
-            <option value="">-- Select Branch --</option>
-          </select>
-        </div>
-            
-        <div id="restrictPrepItemsList" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 25px;">
-          <div style="color: #fcd34d; font-size: 14px; font-style: italic; font-weight: bold; padding: 10px;">Select a branch above to load its allowed prep items...</div>
-        </div>
-            
-        <button onclick="window.saveBranchPrepRestrictions()" style="background: #d97706; color: white; border: none; padding: 16px 24px; border-radius: 10px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 6px 12px rgba(217, 119, 6, 0.25); transition: 0.2s;">💾 Save Allowed Prep Items</button>
-      </div>
-    </div>
+      </div> <!-- CLOSES MAX-WIDTH: 1400px -->
+    </div> <!-- CLOSES VIEW-POSCONFIG -->
 
     <!-- 🛠️ ASSETS & EQUIPMENT MANAGER -->
     <div id="view-equipment" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
