@@ -4459,6 +4459,112 @@
         </div>
       </div>
     </div>
+    <!-- 🧠 SECTION 6: TAKODEAL FORECASTER & AI SCHEDULER -->
+        <div id="invSectionForecaster" style="display: none; padding-top: 5px;">
+            <div style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; padding: 30px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); margin-bottom: 25px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 25px;">
+                    <div>
+                        <h2 style="margin: 0; color: #6d28d9; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">🧠</span> TAKODEAL Forecaster</h2>
+                        <p style="margin: 6px 0 0 0; color: #64748b; font-size: 13px; font-weight: 500;">Analyzing the last 14 days of stock logs to predict run-out dates.</p>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <select id="forecasterBranchSelect" onchange="window.loadForecasterEngine()" style="padding: 12px 18px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; outline: none; cursor: pointer; font-size: 14px; color: #0f172a; background: #f8fafc;">
+                            <option value="Cabantian">Cabantian</option>
+                            <option value="Citygate">Citygate</option>
+                            <option value="Maa">Maa</option>
+                            <option value="Main Office">Main Office</option>
+                        </select>
+                        <button onclick="window.loadForecasterEngine()" id="btnRunForecaster" style="background: #8b5cf6; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 900; color: white; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); font-size: 14px; transition: 0.2s;">🔄 Run Calculation</button>
+                    </div>
+                </div>
+
+                <!-- 🤖 AI SCHEDULER CONTROLS -->
+                <div id="forecasterHeaderControls" style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 25px; margin-bottom: 25px;">
+                    <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px;">
+                        <div style="display: flex; gap: 10px; flex: 1; min-width: 300px; position: relative;">
+                            <span style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 16px;">🔍</span>
+                            <input type="text" id="fcSearch" placeholder="Search item..." onkeyup="window.filterForecaster()" style="flex: 1; padding: 12px 12px 12px 42px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; font-size: 14px;">
+                            <select id="fcCategory" onchange="window.filterForecaster()" style="flex: 1; padding: 12px 18px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; cursor: pointer; color: #334155; font-size: 14px;">
+                                <option value="All">All Categories</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                        <div>
+                            <h3 style="margin: 0; color: #6d28d9; font-size: 18px; font-weight: 900;">🤖 AI Delivery Auto-Scheduler</h3>
+                            <span style="font-size: 13px; color: #64748b; font-weight: 500;">Set target delivery date. AI calculates exact quantities to dispatch.</span>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <div style="display: flex; flex-direction: column;">
+                                <span style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">Next Delivery Date</span>
+                                <input type="date" id="fcTargetDate" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #8b5cf6; color: #6d28d9; font-weight: bold; outline: none; font-size: 14px; background: white;">
+                            </div>
+                            <div style="display: flex; flex-direction: column;">
+                                <span style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">Buffer Days</span>
+                                <input type="number" id="fcBuffer" value="2" style="width: 80px; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; outline: none; color: #334155; font-size: 14px; background: white;">
+                            </div>
+                            <button id="btnBroadcastDate" onclick="window.broadcastDeliveryDate()" style="background: #ef4444; color: white; border: none; padding: 12px 18px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); margin-top: 18px; font-size: 14px; transition: 0.2s;">📢 Alert Branches</button>
+                            <button onclick="window.generateAiDispatchList()" style="background: #8b5cf6; color: white; border: none; padding: 12px 18px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); margin-top: 18px; font-size: 14px; transition: 0.2s;">⚡ Generate Dispatch List</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="forecasterGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px;">
+                    <div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #94a3b8; font-size: 16px; font-weight: bold;">
+                        Click "Run Calculation" to scan your inventory burn rate.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 🚨 SECTION 7: LOW STOCK ALERTS -->
+        <div id="invSectionAlerts" style="display: none; padding-top: 5px;">
+            <div style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; padding: 25px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); overflow: hidden;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;">
+                    <div>
+                        <h2 style="margin: 0; color: #ef4444; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">⚠️</span> Low Stock Alerts</h2>
+                        <span style="font-size: 13px; color: #64748b; margin-top: 6px; display: block; font-weight: 500;">Automatically tracks items that fall below your set re-order levels.</span>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <div style="position: relative;">
+                            <span style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 16px;">🔍</span>
+                            <input type="text" id="alertSearchInput" onkeyup="filterAlertsTable()" placeholder="Search alerts..." style="padding: 10px 15px 10px 42px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; outline: none; font-weight: bold; background: #f8fafc; min-width: 200px;">
+                        </div>
+                        <select id="branchAlertFilter" onchange="window.loadPurchasesAndAlerts()" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; font-weight: bold; outline: none; cursor: pointer; background: #f8fafc; color: #0f172a;">
+                            <option value="All Branches">🌐 All Branches</option>
+                            <option value="Cabantian">📍 Cabantian</option>
+                            <option value="Maa">📍 Maa</option>
+                            <option value="Citygate">📍 Citygate</option>
+                        </select>
+                        <button onclick="window.generateSupplierPurchaseOrders()" style="background: #0ea5e9; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: 900; font-size: 14px; box-shadow: 0 4px 6px rgba(14,165,233,0.3); transition: 0.2s;">📑 Generate Supplier PO</button>
+                        <button onclick="window.loadPurchasesAndAlerts()" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: 900; font-size: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;">🔄 Refresh</button>
+                    </div>
+                </div>
+                
+                <div class="table-responsive" style="border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+                    <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                        <thead style="background: #fef2f2; border-bottom: 2px solid #fca5a5;">
+                            <tr>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Branch</th>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Category</th>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Item Name</th>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Current Stock</th>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Re-order Level</th>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Suggested Replenish</th>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; text-align: center;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alertsPurchasesBody">
+                            <tr><td colspan="7" class="text-center" style="padding: 40px; color: #b91c1c; font-weight: bold; font-size: 15px;">Loading alerts...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+      </div>
+    </div>
   </div>
 
   <!-- 🕵️‍♂️ FORENSIC ITEM TRACE MODAL -->
