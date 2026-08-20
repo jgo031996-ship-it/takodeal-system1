@@ -785,29 +785,32 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-// --- THE HR & SECURITY ENGINE (ENTERPRISE FRANCHISE UPGRADE) ---
+window.showArchivedStaff = false;
+
+window.toggleArchivedStaff = function() {
+    window.showArchivedStaff = !window.showArchivedStaff;
+    let btn = document.getElementById('archiveToggleBtn');
+    if (btn) {
+        if (window.showArchivedStaff) {
+            btn.innerHTML = '📂 Hide Archived Staff';
+            btn.style.background = '#0ea5e9';
+            btn.style.color = 'white';
+            btn.style.borderColor = '#0ea5e9';
+        } else {
+            btn.innerHTML = '📁 View Archived / Resigned';
+            btn.style.background = 'white';
+            btn.style.color = '#475569';
+            btn.style.borderColor = '#cbd5e1';
+        }
+    }
+    window.loadHRModule();
+};
+
 window.loadHRModule = async function() {
   const tbody = document.getElementById('staffTableBody');
   if (!tbody) return;
 
-  // 🔥 THE ARCHIVE FIX: Safely tucked INSIDE the function where it belongs!
-  window.showArchivedStaff = window.showArchivedStaff || false;
-  let archiveBtnHtml = `
-      <button onclick="window.showArchivedStaff = !window.showArchivedStaff; window.loadHRModule();" style="margin-bottom: 15px; background: ${window.showArchivedStaff ? '#0ea5e9' : '#f8fafc'}; color: ${window.showArchivedStaff ? 'white' : '#475569'}; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer;">
-          ${window.showArchivedStaff ? '📂 Hide Archived Staff' : '📁 View Archived / Resigned Staff'}
-      </button>
-  `;
-  
-  if (!document.getElementById('archiveToggleBtn')) {
-      let btnWrapper = document.createElement('div');
-      btnWrapper.id = 'archiveToggleBtn';
-      btnWrapper.innerHTML = archiveBtnHtml;
-      tbody.closest('table').parentNode.insertBefore(btnWrapper, tbody.closest('table'));
-  } else {
-      document.getElementById('archiveToggleBtn').innerHTML = archiveBtnHtml;
-  }
-
-  tbody.innerHTML = '<tr><td colspan="5" class="text-center">Fetching secure staff records...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">⚡ Fetching secure staff records...</td></tr>';
 
   try {
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
@@ -822,51 +825,87 @@ window.loadHRModule = async function() {
     let html = '';
     const isOwner = window.sessionUser && window.sessionUser.isOwner;
 
-    if (snap.empty) {
-      html = '<tr><td colspan="5" class="text-center">No staff found. Click "Add New Staff" to create one.</td></tr>';
-    } else {
-      window.globalStaffData = {};
-      let staffList = [];
-      snap.forEach(docSnap => { staffList.push({ id: docSnap.id, ...docSnap.data() }); });
-      staffList.sort((a, b) => (a.cashierName || "").localeCompare(b.cashierName || ""));
+    let activeCount = 0;
+    let archivedCount = 0;
+    let totalDailyRate = 0;
 
-      staffList.forEach(data => {
+    window.globalStaffData = {};
+    let staffList = [];
+    snap.forEach(docSnap => { staffList.push({ id: docSnap.id, ...docSnap.data() }); });
+    staffList.sort((a, b) => (a.cashierName || "").localeCompare(b.cashierName || ""));
+
+    staffList.forEach(data => {
         if (!window.isBranchAllowed(data.branch)) return; // 🔥 SECURITY LOCK
-        // 🛑 THE ARCHIVE FILTER
+        
+        // 📊 Math Tally Engine (Runs on all staff before the visual filter!)
+        if (data.status === 'Resigned') {
+            archivedCount++;
+        } else {
+            activeCount++;
+            totalDailyRate += (parseFloat(data.hourlyRate) || parseFloat(data.dailyRate) || 0); 
+        }
+
+        // 🛑 THE ARCHIVE FILTER (Stops resigned staff from rendering on the screen)
         if (!window.showArchivedStaff && data.status === 'Resigned') return; 
         if (window.showArchivedStaff && data.status !== 'Resigned') return;  
 
         window.globalStaffData[data.id] = data; 
+        
+        // Pin Security Matrix
         let pinDisplay = isOwner ? (data.pin || '0000') : '****';
-        if (data.pin === 'REVOKED') pinDisplay = 'REVOKED'; 
+        if (data.pin === 'REVOKED') pinDisplay = '<span style="font-size: 11px; background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; border: 1px dashed #fca5a5;">REVOKED</span>'; 
         
         let rateDisplay = data.hourlyRate ? `₱${data.hourlyRate}/day` : `<span style="color:#ef4444; font-size:11px;">Rate Missing</span>`;
 
+        // Profile Picture Check
+        let profilePicUrl = data.profilePicUrl || "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
+
         html += `
-          <tr>
-            <td>
-                <strong style="font-size: 15px; color: var(--primary);">👤 ${data.cashierName || 'Unknown'}</strong><br>
-                <span style="font-size: 11px; color: var(--text-muted);">${data.phone || 'No Phone'}</span>
+          <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+            <td style="padding: 15px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <img src="${profilePicUrl}" style="width: 45px; height: 45px; border-radius: 50%; object-fit: cover; border: 2px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <div>
+                        <strong style="font-size: 15px; color: #1e293b;">${data.cashierName || 'Unknown'}</strong><br>
+                        <span style="font-size: 11px; color: #64748b; font-weight: bold;">📞 ${data.phone || 'No Phone'}</span>
+                    </div>
+                </div>
             </td>
-            <td>📍 ${data.branch || 'Unassigned'}</td>
-            <td>
-                <span class="badge badge-active">${data.role || 'Crew'}</span><br>
-                <span style="font-size: 12px; font-weight: bold; color: #16a34a; margin-top: 4px; display: inline-block;">${rateDisplay}</span>
+            <td style="padding: 15px; color: #334155; font-weight: bold;">📍 ${data.branch || 'Unassigned'}</td>
+            <td style="padding: 15px;">
+                <span style="background: #e0f2fe; color: #0284c7; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #bae6fd;">${data.role || 'Crew'}</span><br>
+                <span style="font-size: 13px; font-weight: 900; color: #16a34a; margin-top: 6px; display: inline-block;">${rateDisplay}</span>
             </td>
-            <td style="font-family: monospace; font-size: 18px; letter-spacing: 2px; color: var(--danger); font-weight: bold;">
+            <td style="font-family: monospace; font-size: 16px; letter-spacing: 2px; color: #dc2626; font-weight: bold; padding: 15px;">
               ${pinDisplay}
             </td>
-            <td>
-              <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 8px 12px; font-weight: bold; border-radius: 6px;" onclick="window.openEmployeeProfile('${data.id}')">📂 Open Profile</button>
+            <td style="padding: 15px; text-align: right;">
+              <button style="background: white; border: 1px solid #cbd5e1; color: #0f766e; padding: 8px 15px; font-weight: bold; font-size: 12px; border-radius: 6px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;" onmouseover="this.style.background='#f0fdf4'; this.style.borderColor='#16a34a';" onmouseout="this.style.background='white'; this.style.borderColor='#cbd5e1';" onclick="window.openEmployeeProfile('${data.id}')">📂 Open Profile</button>
             </td>
           </tr>
         `;
-      });
+    });
+
+    if (staffList.length === 0) {
+        html = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No staff found. Click "Add New Staff" to create one.</td></tr>';
+    } else if (html === '') {
+        html = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No staff in this view. Check the active/archive toggle.</td></tr>';
     }
+
     tbody.innerHTML = html;
+
+    // Update the UI Counters!
+    let activeEl = document.getElementById('hrActiveStaffCount');
+    let archivedEl = document.getElementById('hrArchivedStaffCount');
+    let rateEl = document.getElementById('hrTotalDailyRate');
+
+    if(activeEl) activeEl.innerText = activeCount;
+    if(archivedEl) archivedEl.innerText = archivedCount;
+    if(rateEl) rateEl.innerText = '₱' + totalDailyRate.toLocaleString(undefined, {minimumFractionDigits: 2});
+
   } catch (error) {
     console.error("HR Engine Error:", error);
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red;">Error loading staff records.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red; padding: 30px; font-weight: bold;">Error loading staff records.</td></tr>';
   }
 };
 
