@@ -1486,6 +1486,8 @@ window.switchView = function (viewId) {
   if (viewId === 'admin') title = "HQ Access Control";
   if (viewId === 'payables') title = "Supplier Payables & Terms";
   if (viewId === 'equipment') title = "Assets & Equipment Tracker";
+  if (viewId === 'posconfig') title = "Master POS Config Hub";
+  if (viewId === 'sop') title = "SOP Manager";
   if (viewId === 'schedule') {
       if (typeof loadFromCloud === 'function') loadFromCloud(); 
   }
