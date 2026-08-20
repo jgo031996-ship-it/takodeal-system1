@@ -424,46 +424,47 @@
     </div>
   </nav>
 
-  <!-- ⚡ LIGHTWEIGHT FAST LOGIN OVERLAY -->
-  <div id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100dvh; background: #0f172a; z-index: 99999; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box;">
+  <!-- ⚡ LIGHTWEIGHT FAST LOGIN OVERLAY (ENTERPRISE ULTRA MODE) -->
+  <div id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100dvh; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('logo.jpg') center/cover no-repeat; z-index: 99999; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; backdrop-filter: blur(8px);">
     
     <!-- STAGE 1: GOOGLE AUTH -->
-    <div id="loginStage1" style="background: white; padding: 35px 25px; border-radius: 16px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.3); width: 100%; max-width: 360px; box-sizing: border-box;">
-      <h2 style="margin: 0 0 8px 0; color: #0f172a; font-size: 20px;">TAKODEÁL HQ</h2>
-      <p style="color: #64748b; font-size: 13px; margin-bottom: 25px;">Secure Control Center</p>
+    <div id="loginStage1" style="background: rgba(255, 255, 255, 0.95); padding: 40px 30px; border-radius: 24px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); width: 100%; max-width: 380px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px);">
+      <img src="logo.jpg" alt="Logo" style="width: 80px; height: 80px; border-radius: 20px; object-fit: cover; border: 3px solid #0ea5e9; box-shadow: 0 6px 15px rgba(0,0,0,0.1); margin-bottom: 15px;">
+      <h2 style="margin: 0 0 5px 0; color: #0f172a; font-size: 26px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL HQ</h2>
+      <p style="color: #64748b; font-size: 13px; font-weight: 900; margin-top: 0; margin-bottom: 30px; text-transform: uppercase; letter-spacing: 1px;">Secure Control Center</p>
 
-      <button onclick="loginWithGoogle()" style="background: white; color: #334155; border: 1.5px solid #cbd5e1; padding: 14px 20px; border-radius: 10px; font-size: 15px; font-weight: bold; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 15px;">
-        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width: 20px; height: 20px;">
+      <button onclick="loginWithGoogle()" style="background: white; color: #334155; border: 2px solid #e2e8f0; padding: 14px 20px; border-radius: 12px; font-size: 15px; font-weight: 900; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; transition: 0.2s;" onmouseover="this.style.borderColor='#cbd5e1'; this.style.boxShadow='0 6px 12px rgba(0,0,0,0.08)';" onmouseout="this.style.borderColor='#e2e8f0'; this.style.boxShadow='0 4px 6px rgba(0,0,0,0.05)';">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width: 22px; height: 22px;">
         Sign in with Google
       </button>
 
-      <button onclick="window.promptMobileInstall()" style="background: transparent; color: #0ea5e9; border: none; font-size: 13px; font-weight: bold; cursor: pointer; width: 100%;">
+      <button onclick="window.promptMobileInstall()" style="background: #f8fafc; color: #0ea5e9; border: 1px dashed #bae6fd; padding: 12px; border-radius: 10px; font-size: 13px; font-weight: 900; cursor: pointer; width: 100%; transition: 0.2s;" onmouseover="this.style.background='#f0f9ff';" onmouseout="this.style.background='#f8fafc';">
         📱 Install Native Mobile App
       </button>
     </div>
 
     <!-- STAGE 2: FAST PIN ENTRY -->
-    <div id="loginStage2" style="display: none; background: white; padding: 40px 30px; border-radius: 16px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.3); width: 100%; max-width: 400px; box-sizing: border-box;">
+    <div id="loginStage2" style="display: none; background: rgba(255, 255, 255, 0.95); padding: 40px 30px; border-radius: 24px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); width: 100%; max-width: 400px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px);">
       
-      <div style="width: 60px; height: 60px; background: #dcfce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 15px auto; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.2);">
-          <span style="font-size: 30px;">🛡️</span>
+      <div style="position: relative; display: inline-block; margin-bottom: 20px;">
+          <img src="logo.jpg" alt="Logo" style="width: 80px; height: 80px; border-radius: 20px; object-fit: cover; border: 3px solid #10b981; box-shadow: 0 6px 15px rgba(16, 163, 116, 0.2);">
+          <div style="position: absolute; bottom: -5px; right: -5px; background: #10b981; color: white; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: bold; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">✓</div>
       </div>
 
-      <h3 id="authWelcomeName" style="margin: 0 0 5px 0; color: #0f172a; font-size: 22px; font-weight: 900;">Welcome, Owner</h3>
+      <h3 id="authWelcomeName" style="margin: 0 0 5px 0; color: #0f172a; font-size: 22px; font-weight: 900;">Manager: Chery Ann Fonda</h3>
       <div style="margin-bottom: 25px;">
-          <span style="color: #16a34a; font-size: 12px; font-weight: bold; background: #f0fdf4; padding: 6px 12px; border-radius: 20px; border: 1px solid #bbf7d0;">[✓] Identity Verified</span>
+          <span style="color: #15803d; font-size: 12px; font-weight: 900; background: #dcfce7; padding: 6px 14px; border-radius: 20px; border: 1px solid #bbf7d0; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">[✓] Identity Verified</span>
       </div>
       
-      <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Enter Security PIN / Password</label>
+      <label style="font-size: 12px; font-weight: 900; color: #64748b; display: block; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Enter Security PIN / Password</label>
       
-      <!-- Removed maxlength so you can type as long of a password as you want! -->
-      <input type="password" id="managerPinInput" placeholder="••••" onkeypress="if(event.key === 'Enter') window.checkManagerPin()" style="width: 100%; padding: 16px; font-size: 24px; text-align: center; letter-spacing: 8px; border: 2px solid #cbd5e1; border-radius: 10px; outline: none; font-family: monospace; color: #0f172a; transition: border-color 0.2s; box-sizing: border-box; background: #f8fafc;">
+      <input type="password" id="managerPinInput" placeholder="••••" onkeypress="if(event.key === 'Enter') window.checkManagerPin()" style="width: 100%; padding: 18px; font-size: 28px; text-align: center; letter-spacing: 12px; border: 2px solid #cbd5e1; border-radius: 12px; outline: none; font-family: monospace; color: #0f172a; transition: all 0.2s; box-sizing: border-box; background: white; font-weight: 900; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);" onfocus="this.style.borderColor='#0ea5e9'; this.style.boxShadow='0 0 0 3px rgba(14,165,233,0.2)';" onblur="this.style.borderColor='#cbd5e1'; this.style.boxShadow='inset 0 2px 4px rgba(0,0,0,0.02)';">
       
-      <div id="pinErrorMsg" style="color: #ef4444; font-size: 13px; margin-top: 12px; font-weight: bold; display: none;">❌ ACCESS DENIED. INVALID PIN.</div>
+      <div id="pinErrorMsg" style="color: #dc2626; font-size: 13px; margin-top: 12px; font-weight: 900; display: none; background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px dashed #fca5a5;">❌ ACCESS DENIED. INVALID PIN.</div>
       
-      <button onclick="window.checkManagerPin()" style="width: 100%; padding: 16px; margin-top: 20px; background: #0ea5e9; color: white; border: none; border-radius: 10px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;">🔓 Unlock System</button>
+      <button onclick="window.checkManagerPin()" style="width: 100%; padding: 18px; margin-top: 25px; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); color: white; border: none; border-radius: 12px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 6px 15px rgba(14, 165, 233, 0.4); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 20px rgba(14, 165, 233, 0.5)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 6px 15px rgba(14, 165, 233, 0.4)';">🔓 Unlock System</button>
 
-      <button onclick="window.cancelLoginAndSignOut()" style="width: 100%; padding: 12px; margin-top: 15px; background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; transition: 0.2s;">Cancel & Sign Out</button>
+      <button onclick="window.cancelLoginAndSignOut()" style="width: 100%; padding: 14px; margin-top: 15px; background: #f8fafc; color: #475569; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 14px; font-weight: 900; cursor: pointer; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.02);" onmouseover="this.style.background='#f1f5f9';" onmouseout="this.style.background='#f8fafc';">Cancel & Sign Out</button>
     </div>
 
   </div>
