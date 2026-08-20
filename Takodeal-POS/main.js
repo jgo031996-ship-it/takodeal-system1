@@ -8475,12 +8475,22 @@ window.loadKitchenPrep = async function() {
     container.innerHTML = `<div style="text-align:center; padding:20px; color:#64748b; grid-column:1/-1;">Fetching Prep Items for ${branch}...</div>`;
 
     try {
+        // 1. Fetch Global Allowed Categories
         const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
         let allowedCats = ["Prepared Batch"]; 
         if (configSnap.exists() && configSnap.data().kitchenPrepCats && configSnap.data().kitchenPrepCats.length > 0) {
             allowedCats = configSnap.data().kitchenPrepCats.map(c => c.trim().toLowerCase());
         }
 
+        // 2. 🔥 NEW: Fetch Branch-Specific Allowed Prep Items Filter!
+        let allowedPrepItems = [];
+        const bQ = query(collection(db, "branches"), where("name", "==", branch));
+        const bSnap = await getDocs(bQ);
+        if (!bSnap.empty && bSnap.docs[0].data().allowedPrepItems) {
+            allowedPrepItems = bSnap.docs[0].data().allowedPrepItems;
+        }
+
+        // 3. Fetch Inventory
         const q = query(collection(db, "inventory"), where("branch", "==", branch));
         const snap = await getDocs(q);
         
@@ -8493,8 +8503,14 @@ window.loadKitchenPrep = async function() {
 
         items.forEach(d => {
             let itemCat = (d.category || "").trim().toLowerCase();
+            
+            // FILTER 1: Must be in the right category
             if (!allowedCats.includes(itemCat)) return;
+            // FILTER 2: Must not be manually hidden via global inventory settings
             if (d.showInPrep === false) return;
+            // FILTER 3: 🔥 Must pass the Mall Branch Prep Filter!
+            // (If the array has items, it acts as a whitelist. If empty, show everything).
+            if (allowedPrepItems.length > 0 && !allowedPrepItems.includes(d.name)) return;
             
             hasItems = true;
          
