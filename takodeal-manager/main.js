@@ -20835,32 +20835,55 @@ window.formatDisplayName = function(realName) {
     return realName;
 };
 
-window.deleteCurrentStaff = function() {
-    // Prompt the user to type the name manually to prevent accidental clicks
-    let staffName = prompt("⚠️ WARNING: This will permanently delete this staff member and all their data.\n\nTo confirm, type the exact Full Name of the staff member:");
-    
-    if (!staffName) return; // User clicked cancel or left it blank
+window.deleteCurrentStaff = async function() {
+    // 🔥 BULLETPROOF EXTRACTOR: Grabs the ID and Name directly from the active modal!
+    const getVal = (id) => {
+        let els = document.querySelectorAll(`[id="${id}"]`);
+        let activeEl = Array.from(els).find(el => {
+            let modal = el.closest('[id="employeeProfileModal"]');
+            return modal && modal.style.display !== 'none';
+        });
+        return activeEl ? activeEl.value : (els[0] ? els[0].value : '');
+    };
 
-    // Check how many employees we have before filtering
-    let initialCount = window.employees.length;
-    
-    // Filter out the staff member
-    window.employees = window.employees.filter(emp => emp.name.toLowerCase() !== staffName.toLowerCase());
+    let docId = getVal('empProfileId');
+    let expectedName = getVal('empFullName').trim();
 
-    // If the count didn't change, the name was typed wrong
-    if (window.employees.length === initialCount) {
-        return alert("❌ Deletion Failed: Staff name not found. Make sure the spelling is exact.");
+    if (!docId) {
+        return Swal.fire('Error', 'No profile selected to delete. Please save the profile first.', 'error');
     }
 
-    // Save the changes and update the UI
-    if (typeof window.saveToCloud === 'function') window.saveToCloud();
-    alert(`✅ Successfully deleted ${staffName}.`);
-    
-    // Close the modal and refresh the table
-    let modal = document.getElementById('employeeProfileModal'); // Change ID if yours is different
-    if (modal) modal.style.display = 'none';
-    
-    location.reload(); // Refresh the page to update all lists safely
+    // Prompt the user to type the name manually to prevent accidental clicks
+    let typedName = prompt(`⚠️ WARNING: This will permanently delete ${expectedName} and remove them from the entire system.\n\nTo confirm, type their exact Full Name:`);
+
+    if (!typedName) return; // User clicked cancel or left it blank
+
+    // Check if the typed name matches the expected name (case-insensitive)
+    if (typedName.trim().toLowerCase() !== expectedName.toLowerCase()) {
+        return alert("❌ Deletion Failed: Staff name did not match exactly.");
+    }
+
+    Swal.fire({title: 'Deleting Staff...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        // 1. Permanently delete from Firebase Cloud!
+        await deleteDoc(doc(db, "cashiers", docId));
+
+        // 2. Clear them out of the local app memory
+        if (window.globalStaffData && window.globalStaffData[docId]) {
+            delete window.globalStaffData[docId];
+        }
+
+        Swal.fire('✅ Deleted!', `${expectedName} has been permanently removed from the system.`, 'success');
+
+        // 3. Close the modal and instantly refresh the HR table
+        document.querySelectorAll('[id="employeeProfileModal"]').forEach(el => el.style.display = 'none');
+        window.loadHRModule();
+
+    } catch (error) {
+        console.error("Error deleting staff:", error);
+        Swal.fire('Error', 'Failed to delete staff member. Check your internet connection.', 'error');
+    }
 };
 
 // Link the new Logistics Feed buttons to the Review Modal
