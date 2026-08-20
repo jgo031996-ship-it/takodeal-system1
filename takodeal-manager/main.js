@@ -1481,6 +1481,7 @@ window.switchView = function (viewId) {
   if (viewId === 'purchases') title = "Purchases & Alerts";
   if (viewId === 'dispatch') title = "Logistics & Dispatch";
   if (viewId === 'zreadings') title = "Z-Reading Reports";
+  if (viewId === 'history') title = "Sales History";
   if (viewId === 'expenses') title = "Expense & Restock Feed";
   if (viewId === 'admin') title = "HQ Access Control";
   if (viewId === 'payables') title = "Supplier Payables & Terms";
