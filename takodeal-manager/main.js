@@ -1457,7 +1457,7 @@ window.switchView = function (viewId) {
   if (viewEl) viewEl.classList.add('active');
 
   // Special handling for the HR Hub so the main sidebar tab stays lit up
-  if (viewId === 'payroll' || viewId === 'ledger' || viewId === 'schedule') {
+  if (viewId === 'payroll' || viewId === 'ledger' || viewId === 'schedule' || viewId === 'inbox') {
       let hrNav = document.getElementById('nav-payroll');
       if (hrNav) hrNav.classList.add('active');
   } else {
@@ -1476,18 +1476,16 @@ window.switchView = function (viewId) {
   if (viewId === 'alerts') title = "Security Alerts";
   if (viewId === 'inventory') title = "Live Inventory Dashboard";
   if (viewId === 'accounts') title = "Financial Control Center";
-  if (viewId === 'payroll') title = "Human Resources Hub";
+  if (viewId === 'payroll' || viewId === 'ledger' || viewId === 'schedule' || viewId === 'inbox') title = "Human Resources Hub"; // 🔥 THE TITLE BUG FIX!
   if (viewId === 'products') title = "Menu Costing & BOM";
   if (viewId === 'purchases') title = "Purchases & Alerts";
   if (viewId === 'dispatch') title = "Logistics & Dispatch";
   if (viewId === 'zreadings') title = "Z-Reading Reports";
   if (viewId === 'expenses') title = "Expense & Restock Feed";
   if (viewId === 'admin') title = "HQ Access Control";
-  if (viewId === 'ledger') title = "Staff Loans & Ledger";
   if (viewId === 'payables') title = "Supplier Payables & Terms";
   if (viewId === 'equipment') title = "Assets & Equipment Tracker";
   if (viewId === 'schedule') {
-      title = "Schedule & Shift Manager";
       if (typeof loadFromCloud === 'function') loadFromCloud(); 
   }
   
@@ -1502,7 +1500,7 @@ window.switchView = function (viewId) {
   if (viewId === 'addons') window.loadGlobalAddons();
   if (viewId === 'inventory') window.loadInventoryData();
   if (viewId === 'accounts') window.loadAccountsAndBudget();
-  if (viewId === 'inbox') window.loadInbox();
+  if (viewId === 'inbox') { if(typeof window.loadInbox === 'function') window.loadInbox(); } // Auto-load data!
   if (viewId === 'products') window.loadMenuCosting();
   if (viewId === 'purchases') window.loadPurchasesAndAlerts();
   if (viewId === 'dispatch') window.loadDispatchDashboard();
@@ -1514,6 +1512,42 @@ window.switchView = function (viewId) {
       window.loadAdminDashboard(); 
       if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
   }
+};
+
+window.navToHr = function(tabName) {
+    // 1. Visually update the Sidebar Sub-items instantly!
+    document.querySelectorAll('#hrSubmenu .nav-subitem').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    let activeBtn = document.getElementById('subnav-' + tabName);
+    if (activeBtn) activeBtn.classList.add('active');
+
+    // 2. Route to the correct Master View securely
+    if (tabName === 'Feed' || tabName === 'Sanctions') {
+        if (typeof window.switchView === 'function') window.switchView('payroll');
+        
+        // Find the cards inside view-payroll to toggle them dynamically
+        let feedCards = document.querySelectorAll('#view-payroll > .card');
+        let sanctionsEl = document.getElementById('payrollSectionSanctions');
+        
+        if (tabName === 'Feed') {
+            feedCards.forEach(card => card.style.display = 'block');
+            if (sanctionsEl) sanctionsEl.style.display = 'none';
+        } else {
+            feedCards.forEach(card => card.style.display = 'none');
+            if (sanctionsEl) sanctionsEl.style.display = 'block';
+            if (typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard();
+        }
+    } 
+    else if (tabName === 'Schedule') {
+        if (typeof window.switchView === 'function') window.switchView('schedule');
+    } 
+    else if (tabName === 'Ledger') {
+        if (typeof window.switchView === 'function') window.switchView('ledger');
+    }
+    else if (tabName === 'Inbox') {
+        if (typeof window.switchView === 'function') window.switchView('inbox');
+    }
 };
 
 // ========================================================
@@ -18941,39 +18975,6 @@ window.toggleHrDropdown = function(e) {
             let target = activeSub.id.split('-')[1];
             window.navToHr(target);
         }
-    }
-};
-
-window.navToHr = function(tabName) {
-    // 1. Visually update the Sidebar Sub-items instantly!
-    document.querySelectorAll('#hrSubmenu .nav-subitem').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    let activeBtn = document.getElementById('subnav-' + tabName);
-    if (activeBtn) activeBtn.classList.add('active');
-
-    // 2. Route to the correct Master View securely
-    if (tabName === 'Feed' || tabName === 'Sanctions') {
-        if (typeof window.switchView === 'function') window.switchView('payroll');
-        
-        // Find the cards inside view-payroll to toggle them dynamically
-        let feedCards = document.querySelectorAll('#view-payroll > .card');
-        let sanctionsEl = document.getElementById('payrollSectionSanctions');
-        
-        if (tabName === 'Feed') {
-            feedCards.forEach(card => card.style.display = 'block');
-            if (sanctionsEl) sanctionsEl.style.display = 'none';
-        } else {
-            feedCards.forEach(card => card.style.display = 'none');
-            if (sanctionsEl) sanctionsEl.style.display = 'block';
-            if (typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard();
-        }
-    } 
-    else if (tabName === 'Schedule') {
-        if (typeof window.switchView === 'function') window.switchView('schedule');
-    } 
-    else if (tabName === 'Ledger') {
-        if (typeof window.switchView === 'function') window.switchView('ledger');
     }
 };
 
