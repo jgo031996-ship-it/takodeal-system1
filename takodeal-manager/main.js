@@ -21333,6 +21333,7 @@ window.openEmployeeProfile = function(docId) {
     // Force update ALL duplicate HTML elements
     const setAllVals = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.value = val);
     const setAllHtml = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.innerHTML = val);
+    const setAllChecks = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.checked = val);
 
     setAllVals('empProfileId', docId);
     setAllVals('empFullName', data.cashierName || '');
@@ -21341,8 +21342,13 @@ window.openEmployeeProfile = function(docId) {
     setAllVals('empDateHired', data.dateHired || '');
     setAllVals('empHourlyRate', data.hourlyRate || '');
     setAllVals('empPin', data.pin || '');
-    document.querySelectorAll('[id="empNightDiff"]').forEach(el => el.checked = (data.eligibleNightDiff !== false));
-    document.querySelectorAll('[id="staffWorkingStudent"]').forEach(el => el.checked = data.isWorkingStudent || false);
+    
+    // 🔥 THE FIX: Load their individual custom rate, with a legacy fallback!
+    let legacyRate = (data.eligibleNightDiff === false) ? 0 : 50;
+    let finalNightRate = data.nightDiffRate !== undefined ? data.nightDiffRate : legacyRate;
+    setAllVals('empNightDiffRate', finalNightRate);
+    
+    setAllChecks('staffWorkingStudent', data.isWorkingStudent || false);
     setAllVals('empPhone', data.phone || '');
     setAllVals('empAddress', data.address || '');
     setAllVals('empGcashName', data.gcashName || '');
@@ -21373,13 +21379,46 @@ window.openEmployeeProfile = function(docId) {
         el.src = data.profilePicUrl ? data.profilePicUrl : defaultPic;
     });
 
+    const setupMasterLink = (linkId, url) => {
+        document.querySelectorAll(`[id="${linkId}"]`).forEach(el => {
+            if (url) { el.href = url; el.style.display = 'inline-block'; } 
+            else { el.style.display = 'none'; }
+        });
+    };
+    
+    setupMasterLink('masterSssLink', data.sssIdUrl);
+    setupMasterLink('masterPhilLink', data.philhealthIdUrl);
+    setupMasterLink('masterPagibigLink', data.pagibigIdUrl);
+
     document.querySelectorAll('[id="employeeProfileModal"]').forEach(el => el.style.display = 'flex');
+
+    // 🔥 HR ENGINE: Render the Document Vault Buttons
+    let vaultContainer = document.getElementById('contractVaultContainer');
+    let vaultBtns = document.getElementById('contractVaultButtons');
+    if (vaultContainer && vaultBtns) {
+        vaultBtns.innerHTML = '';
+        if (data.signedContracts && Object.keys(data.signedContracts).length > 0) {
+            vaultContainer.style.display = 'block';
+            let safeData = encodeURIComponent(JSON.stringify(data));
+            
+            if (data.signedContracts.initial) {
+                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Initial', '${safeData}', '${data.signedContracts.initial}')" style="background:#0f766e; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 Initial Employment</button>`;
+            }
+            if (data.signedContracts.extension) {
+                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Extension', '${safeData}', '${data.signedContracts.extension}')" style="background:#0ea5e9; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 6-Mo Extension</button>`;
+            }
+            if (data.signedContracts.regularization) {
+                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Regularization', '${safeData}', '${data.signedContracts.regularization}')" style="background:#10b981; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 Regularization</button>`;
+            }
+        } else {
+            vaultContainer.style.display = 'none';
+        }
+    }
 
     document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
         tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 15px;">Loading...</td></tr>';
     });
 
-    // 🔥 CRASH FIX: Removed "window." from query, collection, where, orderBy, and limit!
     getDocs(query(collection(db, "staff_deductions"), where("staffName", "==", data.cashierName), orderBy("dateAdded", "desc"), limit(30)))
     .then(snap => {
         let histHtml = '';
@@ -21388,7 +21427,6 @@ window.openEmployeeProfile = function(docId) {
             let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
             let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
 
-            // 🔥 CLEAN UI FIX: Perfectly aligned buttons and badges!
             let actionHtml = d.status === 'Unpaid' 
                 ? `<button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">Mark Paid</button>`
                 : `<div style="background:#f0fdf4; color:#15803d; border: 1px solid #bbf7d0; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:bold; width: 85px; text-align: center; box-sizing: border-box;">✔️ Paid</div>`;
