@@ -10228,3 +10228,24 @@ window.submitOpenShift = async function() {
         if (btn) { btn.innerText = origText; btn.disabled = false; }
     }
 };
+
+// ==========================================
+// ⛶ FULL SCREEN TOGGLE ENGINE
+// ==========================================
+window.toggleFullScreen = function() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+            console.log(`Error attempting to enable fullscreen: ${err.message}`);
+            Swal.fire({
+                title: 'Blocked by Browser',
+                text: 'Your device or browser settings are preventing Full Screen mode.',
+                icon: 'warning',
+                customClass: { popup: 'rounded-2xl' }
+            });
+        });
+    } else {
+        if (document.exitFullscreen) {
+            document.exitFullscreen();
+        }
+    }
+};
