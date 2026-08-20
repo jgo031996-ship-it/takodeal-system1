@@ -612,14 +612,22 @@
         </div>
     </div>
 
+    <!-- 🔒 GLOBAL SHIFT LOCKOUT OVERLAY -->
+    <div id="globalShiftLockout" style="display: none; position: absolute; top: 75px; left: 0; right: 0; bottom: 0; z-index: 9999; background: rgba(248, 250, 252, 0.90); backdrop-filter: blur(12px); flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px;">
+        <div style="background: white; border-radius: 24px; padding: 50px; box-shadow: 0 25px 50px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; max-width: 600px; width: 100%;">
+            <span style="font-size: 70px; margin-bottom: 20px; display: block; animation: bounce 2s infinite;">🔒</span>
+            <h2 style="color: #1e293b; font-size: 32px; font-weight: 900; margin: 0 0 15px 0;">Register is Closed</h2>
+            <div id="lockoutQuote" style="color: #0f766e; font-size: 18px; font-weight: bold; margin-bottom: 10px;">Hard work pays off. Thank you for your dedication! 🙌</div>
+            <p style="color: #64748b; font-size: 15px; margin-bottom: 35px;">Open a shift to access the POS, Inventory, and Dispatch features.</p>
+            <button onclick="openShiftModal()" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; padding: 18px 40px; border-radius: 12px; font-size: 20px; font-weight: 900; cursor: pointer; box-shadow: 0 10px 25px rgba(245, 158, 11, 0.4); transition: transform 0.2s;" onmouseover="this.style.transform='scale(1.05)';" onmouseout="this.style.transform='scale(1)';">
+                🟢 Start Shift & Open Register
+            </button>
+        </div>
+    </div>
+   
     <div class="view-container active" id="view-pos">
       <div class="pos-layout">
         <div class="menu-panel">
-          <div class="shift-lockout" id="shiftLockout" style="display: flex;">
-            <h2 style="color: var(--primary); margin-bottom: 8px;">Register is Closed</h2>
-            <p style="color: #777; margin-bottom: 25px;">Open a shift to begin taking orders.</p>
-            <button class="btn-shift-open" onclick="openShiftModal()">Open Shift</button>
-          </div>
           
           <!-- TOP CATEGORIES -->
           <div class="category-header" id="topCategoryHeader"></div>
@@ -1829,6 +1837,17 @@
       }
       else if (viewName === 'bulletin') { topBar.innerText = "📢 Bulletin Board"; }
       else if (viewName === 'mobilehub') { topBar.innerText = "📱 Mobile App Hub"; window.loadMenuManager(); }
+
+      // 🔥 ENFORCE GLOBAL SHIFT LOCKOUT 🔥
+      let lock = document.getElementById('globalShiftLockout');
+      let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'sales'];
+      if (lock) {
+          if (!currentShift && !exemptViews.includes(viewName)) {
+              lock.style.display = 'flex';
+          } else {
+              lock.style.display = 'none';
+          }
+      }
     }
     function closeModal(id) { document.getElementById(id).style.display = 'none'; }
     function toggleShiftSection(contentId, arrowId) { let el = document.getElementById(contentId); let arrow = document.getElementById(arrowId); if (el.style.display === 'none') { el.style.display = 'block'; arrow.innerText = '▼'; } else { el.style.display = 'none'; arrow.innerText = '▶'; } }
@@ -2133,12 +2152,12 @@ window.buildUltraGridDOM = function() {
     }
 
     function updateShiftUI(status) {
-      let btn = document.getElementById('btnTopShift'); let lock = document.getElementById('shiftLockout'); let placeBtn = document.getElementById('btnMainPlaceOrder');
+      let btn = document.getElementById('btnTopShift'); 
+      let lock = document.getElementById('globalShiftLockout'); 
+      let placeBtn = document.getElementById('btnMainPlaceOrder');
       
       if (status && status.active) { 
           currentShift = status; 
-          
-          // 🔥 NEW: Turn button Green when active!
           if (btn) {
               btn.innerHTML = "🟢 Active Shift"; 
               btn.style.background = "#dcfce7"; 
@@ -2150,16 +2169,12 @@ window.buildUltraGridDOM = function() {
       }
       else { 
           currentShift = null; 
-          
-          // 🔥 NEW: Turn button Gray/Red when closed!
           if (btn) {
               btn.innerHTML = "🔴 Shift Closed"; 
               btn.style.background = "#f1f5f9"; 
               btn.style.color = "#475569"; 
               btn.style.borderColor = "#cbd5e1";
           }
-          if (lock) lock.style.display = "flex"; 
-          if (placeBtn) placeBtn.disabled = true; 
           
           const quotes = [
               "Great job today! Rest up and see you tomorrow. 🌟",
@@ -2171,17 +2186,19 @@ window.buildUltraGridDOM = function() {
           ];
           let randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
           
-          let lockoutTitle = lock ? lock.querySelector('h2') : null;
-          let lockoutDesc = lock ? lock.querySelector('p') : null;
-          if (lockoutTitle) lockoutTitle.innerText = "Register is Closed";
+          let lockoutQuote = document.getElementById('lockoutQuote');
+          if (lockoutQuote) lockoutQuote.innerText = randomQuote;
+
+          // Only show the lockout if the current tab requires a shift!
+          let currentView = document.querySelector('.view-container.active');
+          let viewId = currentView ? currentView.id.replace('view-', '') : 'pos';
+          let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'sales'];
           
-          if (lockoutDesc) {
-              lockoutDesc.innerHTML = `
-                <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 12px; margin-top: 10px; margin-bottom: 20px; width: 100%;">
-                    <span style="font-size: 16px; font-weight: bold; color: #0f766e;">${randomQuote}</span>
-                    <span style="font-size: 14px; color: #777;">Open a shift to begin taking orders.</span>
-                </div>`;
+          if (lock && !exemptViews.includes(viewId)) {
+              lock.style.display = "flex"; 
           }
+          
+          if (placeBtn) placeBtn.disabled = true; 
       }
     }
 
