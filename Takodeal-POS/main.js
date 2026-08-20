@@ -4358,29 +4358,40 @@ setTimeout(() => {
     let safeBranch = localStorage.getItem('takodeal_device_branch');
     if (!safeBranch) return;
 
-    // 🔥 THE FIX: Tell the Cashier App to listen for BOTH "In Transit" AND "Arrived" statuses!
     onSnapshot(query(collection(db, "dispatch_logs"), where("toBranch", "==", safeBranch), where("status", "in", ["In Transit", "Arrived"])), (snap) => {
         window.incomingDeliveriesList = [];
         snap.forEach(doc => window.incomingDeliveriesList.push({ id: doc.id, ...doc.data() }));
 
-        // Light up the Notification Badge
         let badge = document.getElementById('deliveryBadge');
-        if (badge) {
-            if (window.incomingDeliveriesList.length > 0) {
+        let navTab = document.getElementById('nav-deliveries'); // Grab the Sidebar Tab!
+
+        if (window.incomingDeliveriesList.length > 0) {
+            // 🔥 SHOW THE TAB AND BADGE
+            if (navTab) navTab.style.display = 'flex';
+            if (badge) {
                 badge.innerText = window.incomingDeliveriesList.length;
                 badge.style.display = 'inline-block';
                 badge.style.animation = 'pulse 2s infinite';
-            } else {
+            }
+        } else {
+            // 🔥 HIDE THE TAB AND BADGE
+            if (navTab) navTab.style.display = 'none';
+            if (badge) {
                 badge.style.display = 'none';
                 badge.style.animation = 'none';
             }
+            // If they are currently looking at the tab when it empties, kick them to the POS screen automatically!
+            let viewDeliveries = document.getElementById('view-deliveries');
+            if (viewDeliveries && viewDeliveries.classList.contains('active')) {
+                window.switchView('pos');
+            }
         }
 
-        // If they are currently looking at the tab, refresh it instantly
+        // If they are currently looking at the Stock Request tab, refresh it instantly
         if (document.getElementById('view-stockreq') && document.getElementById('view-stockreq').classList.contains('active')) {
              if (typeof window.loadStockRequestUI === 'function') window.loadStockRequestUI();
         }
-        // Also refresh the Deliveries tab if they are in it!
+        // Also refresh the Deliveries tab if they are actively looking at it!
         if (document.getElementById('view-deliveries') && document.getElementById('view-deliveries').classList.contains('active')) {
              if (typeof window.renderDeliveriesTab === 'function') window.renderDeliveriesTab();
         }
@@ -4392,7 +4403,7 @@ window.renderDeliveriesTab = function() {
     if (!container) return;
 
     if (window.incomingDeliveriesList.length === 0) {
-        container.innerHTML = '<div style="text-align:center; padding: 40px; color: #94a3b8; font-size: 16px; background: #f8fafc; border-radius: 8px;">No incoming deliveries at this time.</div>';
+        container.innerHTML = '<div style="text-align:center; padding: 60px; color: #64748b; font-size: 16px; font-weight: bold; background: white; border: 2px dashed #cbd5e1; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">No incoming deliveries at this time.</div>';
         return;
     }
 
@@ -4406,7 +4417,7 @@ window.renderDeliveriesTab = function() {
                 date: del.date || 'Recent Date',
                 time: del.time || '--:--',
                 driver: del.driver || 'Assigned Driver',
-                status: del.status || 'In Transit', // 🔥 WE NOW TRACK THE STATUS
+                status: del.status || 'In Transit', 
                 items: []
             };
         }
@@ -4417,8 +4428,6 @@ window.renderDeliveriesTab = function() {
     let html = '';
     for (let key in dispatchGroups) {
         let dispatch = dispatchGroups[key];
-        
-        // 🔥 SECURITY LOCK: Check if it actually arrived!
         let isArrived = dispatch.status === 'Arrived';
         
         let itemsTableRows = '';
@@ -4426,78 +4435,79 @@ window.renderDeliveriesTab = function() {
             let friendlyQty = item.displayQty || item.qty;
             let friendlyUom = item.displayUom || item.uom;
             
-            // Generate the inputs ONLY if it has arrived
             let inputHtml = '';
             let exceptionHtml = '';
             
             if (isArrived) {
-                inputHtml = `<input type="number" id="recv_val_${item.id}" data-expected="${friendlyQty}" placeholder="${friendlyQty}" style="width: 85px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; font-weight: bold; outline: none;">`;
+                inputHtml = `<input type="number" id="recv_val_${item.id}" data-expected="${friendlyQty}" placeholder="${friendlyQty}" style="width: 85px; padding: 10px; border: 2px solid #bae6fd; background: #f0f9ff; color: #0284c7; border-radius: 6px; text-align: center; font-weight: 900; font-size: 14px; outline: none;">`;
                 exceptionHtml = `
-                    <label style="display: flex; align-items: center; justify-content: center; gap: 4px; background: #fff5f5; border: 1px dashed #fca5a5; padding: 6px 10px; border-radius: 6px; color: #dc2626; font-size: 11px; font-weight: bold; cursor: pointer; margin-bottom: 6px; width: 100%; box-sizing: border-box;">
-                        <input type="checkbox" id="missing_check_${item.id}" onchange="window.toggleMissingItemRow('${item.id}')" style="accent-color: #dc2626; cursor: pointer;"> Not Delivered
+                    <label style="display: flex; align-items: center; justify-content: center; gap: 6px; background: #fff5f5; border: 1px dashed #fca5a5; padding: 8px 12px; border-radius: 6px; color: #dc2626; font-size: 11px; font-weight: 900; cursor: pointer; margin-bottom: 6px; width: 100%; box-sizing: border-box; text-transform: uppercase;">
+                        <input type="checkbox" id="missing_check_${item.id}" onchange="window.toggleMissingItemRow('${item.id}')" style="accent-color: #dc2626; cursor: pointer; width: 16px; height: 16px;"> Not Delivered
                     </label>
-                    <input type="text" id="remark_val_${item.id}" placeholder="Remarks / Reason..." style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 11px; box-sizing: border-box; outline: none; text-align: center;">
+                    <input type="text" id="remark_val_${item.id}" placeholder="Remarks / Reason..." style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; box-sizing: border-box; outline: none; text-align: center; font-weight: bold;">
                 `;
             } else {
-                inputHtml = `<span style="color: #94a3b8; font-size: 12px; font-style: italic;">🔒 Locked</span>`;
-                exceptionHtml = `<span style="color: #94a3b8; font-size: 12px; font-style: italic;">🔒 Locked</span>`;
+                inputHtml = `<span style="color: #94a3b8; font-size: 12px; font-weight: bold; font-style: italic;">🔒 Locked</span>`;
+                exceptionHtml = `<span style="color: #94a3b8; font-size: 12px; font-weight: bold; font-style: italic;">🔒 Locked</span>`;
             }
             
             itemsTableRows += `
-                <tr style="border-bottom: 1px solid #f1f5f9;" id="row_${item.id}">
-                    <td style="padding: 12px 8px; font-weight: bold; color: #334155;">📦 ${item.item}</td>
-                    <td style="padding: 12px 8px; font-weight: bold; color: #0284c7; text-align: center;">${friendlyQty} ${friendlyUom}</td>
-                    <td style="padding: 12px 8px; text-align: center;">${inputHtml}</td>
-                    <td style="padding: 12px 8px; text-align: center; vertical-align: top;">${exceptionHtml}</td>
+                <tr style="border-bottom: 1px solid #e2e8f0; background: white;" id="row_${item.id}">
+                    <td style="padding: 15px 20px; font-weight: 900; color: #1e293b; font-size: 14px;">📦 ${item.item}</td>
+                    <td style="padding: 15px 20px; font-weight: 900; color: #0ea5e9; text-align: center; font-size: 15px;">${friendlyQty} <span style="font-size: 11px; color: #64748b; font-weight: bold;">${friendlyUom}</span></td>
+                    <td style="padding: 15px 20px; text-align: center;">${inputHtml}</td>
+                    <td style="padding: 15px 20px; text-align: center; vertical-align: top;">${exceptionHtml}</td>
                 </tr>
             `;
         });
 
-        // Toggle the Bottom Action Area
         let actionHtml = '';
         if (isArrived) {
             actionHtml = `
-                <div style="background: #fff1f2; color: #be123c; padding: 10px; border-radius: 6px; font-size: 12px; font-weight: bold; margin-bottom: 15px; border: 1px dashed #fecaca;">
-                    ⚠️ IMPORTANT: Enter the physical quantity using the UNIT SHOWN below (e.g. Jars, Bottles, Sacks). DO NOT type grams or mL. The system will convert it automatically!
+                <div style="background: #fff1f2; color: #be123c; padding: 15px; border-radius: 8px; font-size: 13px; font-weight: 900; margin-bottom: 20px; border: 1px dashed #fca5a5; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 24px;">⚠️</span> 
+                    <span>IMPORTANT: Enter the physical quantity using the UNIT SHOWN ABOVE (e.g. Jars, Bottles, Sacks). DO NOT type grams or mL. The system will convert it automatically!</span>
                 </div>
-                <button id="btn_submit_dispatch_${key}" onclick="window.submitGroupedDispatch('${key}', '${encodeURIComponent(JSON.stringify(dispatch.items))}'); setTimeout(()=>window.loadStockRequestUI(), 2000);" style="width: 100%; background: #16a34a; color: white; border: none; padding: 15px; font-weight: bold; font-size: 15px; border-radius: 8px; cursor: pointer; box-shadow: 0 4px 12px rgba(22,163,74,0.2); transition: 0.2s;">
+                <button id="btn_submit_dispatch_${key}" onclick="window.submitGroupedDispatch('${key}', '${encodeURIComponent(JSON.stringify(dispatch.items))}'); setTimeout(()=>window.loadStockRequestUI(), 2000);" style="width: 100%; background: #16a34a; color: white; border: none; padding: 18px; font-weight: 900; font-size: 16px; border-radius: 10px; cursor: pointer; box-shadow: 0 4px 12px rgba(22,163,74,0.3); transition: 0.2s;">
                     📥 Confirm and Receive Complete Shipment
                 </button>`;
         } else {
             actionHtml = `
-                <div style="background: #eff6ff; color: #0369a1; border: 2px dashed #bae6fd; padding: 15px; text-align: center; font-weight: bold; border-radius: 8px; font-size: 14px;">
-                    🚚 This shipment is still In Transit. The receiving controls will unlock once HQ/Driver marks it as "Arrived".
+                <div style="background: #f0f9ff; color: #0284c7; border: 2px dashed #bae6fd; padding: 20px; text-align: center; font-weight: 900; border-radius: 10px; font-size: 15px;">
+                    🚚 This shipment is still In Transit. The receiving controls will unlock once HQ or the Driver marks it as "Arrived".
                 </div>`;
         }
 
         let statusBadge = isArrived 
-            ? `<span style="background:#dcfce7; color:#16a34a; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display: inline-block;">📍 Status: Arrived</span>`
-            : `<span style="background:#fef3c7; color:#d97706; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display: inline-block;">🚚 Status: In Transit</span>`;
+            ? `<span style="background:#dcfce7; color:#16a34a; padding:8px 16px; border-radius:8px; font-size:13px; font-weight:900; display: inline-block; border: 1px solid #bbf7d0;">📍 Status: Arrived</span>`
+            : `<span style="background:#fffbeb; color:#d97706; padding:8px 16px; border-radius:8px; font-size:13px; font-weight:900; display: inline-block; border: 1px solid #fcd34d;">🚚 Status: In Transit</span>`;
 
         html += `
-            <div style="background: white; border: 2px solid #cbd5e1; padding: 20px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.03);">
-                <div style="display:flex; justify-content:space-between; margin-bottom:15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; align-items: center;">
+            <div style="background: white; border: 1px solid #e2e8f0; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.05); margin-bottom: 25px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:20px; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; align-items: center; flex-wrap: wrap; gap: 15px;">
                     <div>
-                        <h3 style="margin: 0; color: #0f172a; font-size: 16px; letter-spacing: 0.3px;">📋 SHIPMENT DISPATCH TRACK SHEET</h3>
-                        <span style="font-size: 12px; color: #64748b; font-weight: 500;">Dispatched: <strong>${dispatch.date} @ ${dispatch.time}</strong></span>
+                        <h3 style="margin: 0; color: #1e293b; font-size: 18px; font-weight: 900; display: flex; align-items: center; gap: 8px;">📋 SHIPMENT DISPATCH TRACK SHEET</h3>
+                        <span style="font-size: 13px; color: #64748b; font-weight: 600; margin-top: 6px; display: block;">Dispatched: <strong>${dispatch.date} @ ${dispatch.time}</strong></span>
                     </div>
-                    <div style="text-align: right;">
-                        <div style="margin-bottom: 5px;">${statusBadge}</div>
-                        <span style="background:#e0f2fe; color:#0369a1; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display: inline-block;">Driver: ${dispatch.driver}</span>
+                    <div style="text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+                        ${statusBadge}
+                        <span style="background:#f8fafc; color:#475569; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; display: inline-block; border: 1px solid #cbd5e1;">Driver: ${dispatch.driver}</span>
                     </div>
                 </div>
                 
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; text-align: left; font-size: 13px;">
-                    <thead>
-                        <tr style="background: #f8fafc; color: #475569; border-bottom: 1px solid #cbd5e1;">
-                            <th style="padding: 10px 8px;">Item Description</th>
-                            <th style="padding: 10px 8px; text-align: center;">Expected</th>
-                            <th style="padding: 10px 8px; text-align: center;">Actual Received</th>
-                            <th style="padding: 10px 8px; text-align: center;">Security Exception</th>
-                        </tr>
-                    </thead>
-                    <tbody>${itemsTableRows}</tbody>
-                </table>
+                <div style="border: 1px solid #cbd5e1; border-radius: 10px; overflow: hidden; margin-bottom: 25px;">
+                    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
+                        <thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
+                            <tr>
+                                <th style="padding: 15px 20px; color: #475569; font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Item Description</th>
+                                <th style="padding: 15px 20px; text-align: center; color: #475569; font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Expected</th>
+                                <th style="padding: 15px 20px; text-align: center; color: #475569; font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Actual Received</th>
+                                <th style="padding: 15px 20px; text-align: center; color: #475569; font-weight: 800; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;">Security Exception</th>
+                            </tr>
+                        </thead>
+                        <tbody>${itemsTableRows}</tbody>
+                    </table>
+                </div>
                 ${actionHtml}
             </div>
         `;
@@ -6833,7 +6843,16 @@ window.applySidebarLayout = async function() {
                     if (tabData.isHidden) {
                         el.style.display = 'none';
                     } else {
-                        el.style.display = 'flex'; 
+                        // 🔥 PROTECT THE INCOMING STOCK TAB SO IT ONLY SHOWS WHEN NEEDED!
+                        if (id === 'nav-deliveries') {
+                            if (!window.incomingDeliveriesList || window.incomingDeliveriesList.length === 0) {
+                                el.style.display = 'none';
+                            } else {
+                                el.style.display = 'flex';
+                            }
+                        } else {
+                            el.style.display = 'flex'; 
+                        }
                     }
                 }
             });
