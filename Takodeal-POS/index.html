@@ -503,7 +503,7 @@
         <span style="font-size: 18px;">🧹</span>
         <div class="nav-item-text">Consumables</div>
       </div>
-      <div class="nav-item" id="nav-deliveries" onclick="switchView('deliveries'); window.renderDeliveriesTab();">
+      <div class="nav-item" id="nav-deliveries" onclick="switchView('deliveries'); window.renderDeliveriesTab();" style="display: none;">
         <span style="font-size: 18px;">🚚</span>
         <div class="nav-item-text">
             Incoming Stock <span id="deliveryBadge" style="display:none; background:#ef4444; color:white; border-radius:10px; padding:2px 6px; font-size:11px; font-weight:bold; margin-left:8px;">0</span>
@@ -997,14 +997,23 @@
       </div>
     </div>
     
-    <div class="view-container" id="view-deliveries" style="padding: 20px; width: 100%; overflow-y: auto; background: var(--bg-color);">
-        <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1200px; margin: 0 auto; border: 1px solid var(--border);">
-              <h2 style="margin-top: 0; color: #1e293b; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">🚚 Incoming Deliveries</h2>
-              <p style="color: #64748b; font-size: 14px; margin-bottom: 20px;">Verify and receive stock dispatched from the Main Office.</p>
-              
-              <div id="deliveriesContainer"></div>
+    <div class="view-container" id="view-deliveries" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+        <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; width: 100%; max-width: 1400px; margin: 0 auto; overflow: hidden; display: flex; flex-direction: column; min-height: 80vh;">
+            <div style="background: #f8fafc; padding: 25px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <h2 style="margin: 0; color: #0ea5e9; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 26px;">🚚</span> Incoming Stock Deliveries
+                    </h2>
+                    <span style="font-size: 13px; color: #64748b; margin-top: 6px; display: block; font-weight: 500;">Verify and receive stock dispatched from the Main Office.</span>
+                </div>
+                <button class="btn-refresh" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 12px 24px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: 0.2s;" onclick="window.renderDeliveriesTab()">🔄 Refresh</button>
+            </div>
+            <div style="padding: 30px; background: #f1f5f9; flex: 1; overflow-y: auto;">
+                <div id="deliveriesContainer" style="display: flex; flex-direction: column; gap: 25px;"></div>
+            </div>
         </div>
     </div>
+   
     <!-- 📢 CORPORATE BULLETIN BOARD VIEW -->
     <div class="view-container" id="view-bulletin" style="padding: 30px 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
       <div style="width: 100%; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 25px; padding-bottom: 50px;">
