@@ -2338,6 +2338,113 @@
                 </div>
             </div>
         </div>
+
+        <!-- 🧠 SECTION 6: TAKODEAL FORECASTER & AI SCHEDULER -->
+        <div id="invSectionForecaster" style="display: none; padding-top: 5px;">
+            <div style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; padding: 30px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); margin-bottom: 25px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; margin-bottom: 25px;">
+                    <div>
+                        <h2 style="margin: 0; color: #6d28d9; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">🧠</span> TAKODEAL Forecaster</h2>
+                        <p style="margin: 6px 0 0 0; color: #64748b; font-size: 13px; font-weight: 500;">Analyzing the last 14 days of stock logs to predict run-out dates.</p>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <select id="forecasterBranchSelect" onchange="window.loadForecasterEngine()" style="padding: 12px 18px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; outline: none; cursor: pointer; font-size: 14px; color: #0f172a; background: #f8fafc;">
+                            <option value="Cabantian">Cabantian</option>
+                            <option value="Citygate">Citygate</option>
+                            <option value="Maa">Maa</option>
+                            <option value="Main Office">Main Office</option>
+                        </select>
+                        <button onclick="window.loadForecasterEngine()" id="btnRunForecaster" style="background: #8b5cf6; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 900; color: white; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); font-size: 14px; transition: 0.2s;">🔄 Run Calculation</button>
+                    </div>
+                </div>
+
+                <!-- 🤖 AI SCHEDULER CONTROLS -->
+                <div id="forecasterHeaderControls" style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 25px; margin-bottom: 25px;">
+                    <div style="display: flex; flex-wrap: wrap; gap: 15px; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 20px;">
+                        <div style="display: flex; gap: 10px; flex: 1; min-width: 300px; position: relative;">
+                            <span style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 16px;">🔍</span>
+                            <input type="text" id="fcSearch" placeholder="Search item..." onkeyup="window.filterForecaster()" style="flex: 1; padding: 12px 12px 12px 42px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; font-size: 14px;">
+                            <select id="fcCategory" onchange="window.filterForecaster()" style="flex: 1; padding: 12px 18px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; cursor: pointer; color: #334155; font-size: 14px;">
+                                <option value="All">All Categories</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                        <div>
+                            <h3 style="margin: 0; color: #6d28d9; font-size: 18px; font-weight: 900;">🤖 AI Delivery Auto-Scheduler</h3>
+                            <span style="font-size: 13px; color: #64748b; font-weight: 500;">Set target delivery date. AI calculates exact quantities to dispatch.</span>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                            <div style="display: flex; flex-direction: column;">
+                                <span style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">Next Delivery Date</span>
+                                <input type="date" id="fcTargetDate" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #8b5cf6; color: #6d28d9; font-weight: bold; outline: none; font-size: 14px; background: white;">
+                            </div>
+                            <div style="display: flex; flex-direction: column;">
+                                <span style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">Buffer Days</span>
+                                <input type="number" id="fcBuffer" value="2" style="width: 80px; padding: 10px; border-radius: 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; outline: none; color: #334155; font-size: 14px; background: white;">
+                            </div>
+                            <button id="btnBroadcastDate" onclick="window.broadcastDeliveryDate()" style="background: #ef4444; color: white; border: none; padding: 12px 18px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); margin-top: 18px; font-size: 14px; transition: 0.2s;">📢 Alert Branches</button>
+                            <button onclick="window.generateAiDispatchList()" style="background: #8b5cf6; color: white; border: none; padding: 12px 18px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); margin-top: 18px; font-size: 14px; transition: 0.2s;">⚡ Generate Dispatch List</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="forecasterGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 20px;">
+                    <div style="grid-column: 1/-1; text-align: center; padding: 50px; color: #94a3b8; font-size: 16px; font-weight: bold;">
+                        Click "Run Calculation" to scan your inventory burn rate.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 🚨 SECTION 7: LOW STOCK ALERTS -->
+        <div id="invSectionAlerts" style="display: none; padding-top: 5px;">
+            <div style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; padding: 25px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); overflow: hidden;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px;">
+                    <div>
+                        <h2 style="margin: 0; color: #ef4444; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">⚠️</span> Low Stock Alerts</h2>
+                        <span style="font-size: 13px; color: #64748b; margin-top: 6px; display: block; font-weight: 500;">Automatically tracks items that fall below your set re-order levels.</span>
+                    </div>
+                    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                        <div style="position: relative;">
+                            <span style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 16px;">🔍</span>
+                            <input type="text" id="alertSearchInput" onkeyup="filterAlertsTable()" placeholder="Search alerts..." style="padding: 10px 15px 10px 42px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; outline: none; font-weight: bold; background: #f8fafc; min-width: 200px;">
+                        </div>
+                        <select id="branchAlertFilter" onchange="window.loadPurchasesAndAlerts()" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; font-weight: bold; outline: none; cursor: pointer; background: #f8fafc; color: #0f172a;">
+                            <option value="All Branches">🌐 All Branches</option>
+                            <option value="Cabantian">📍 Cabantian</option>
+                            <option value="Maa">📍 Maa</option>
+                            <option value="Citygate">📍 Citygate</option>
+                        </select>
+                        <button onclick="window.generateSupplierPurchaseOrders()" style="background: #0ea5e9; color: white; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: 900; font-size: 14px; box-shadow: 0 4px 6px rgba(14,165,233,0.3); transition: 0.2s;">📑 Generate Supplier PO</button>
+                        <button onclick="window.loadPurchasesAndAlerts()" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-weight: 900; font-size: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;">🔄 Refresh</button>
+                    </div>
+                </div>
+                
+                <div class="table-responsive" style="border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+                    <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                        <thead style="background: #fef2f2; border-bottom: 2px solid #fca5a5;">
+                            <tr>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Branch</th>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Category</th>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Item Name</th>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Current Stock</th>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Re-order Level</th>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Suggested Replenish</th>
+                                <th style="padding: 15px 25px; font-size: 11px; color: #b91c1c; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; text-align: center;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="alertsPurchasesBody">
+                            <tr><td colspan="7" class="text-center" style="padding: 40px; color: #b91c1c; font-weight: bold; font-size: 15px;">Loading alerts...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+      </div> <!-- CLOSES MAX-WIDTH: 1400px -->
+    </div> <!-- CLOSES VIEW-INVENTORY -->
     
     <div id="view-accounts" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
       
@@ -3044,36 +3151,40 @@
       </div>
     </div>
 
-    <div id="view-alerts" class="view">
-      <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-          <div>
-            <h2 style="margin: 0;">🚨 Live Security Feed</h2>
-            <span style="font-size: 12px; color: var(--text-muted);">Monitoring all unauthorized actions across branches.</span>
+    <div id="view-alerts" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+      <div style="max-width: 1400px; margin: 0 auto;">
+        <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 30px;">
+          <div style="background: #fff1f2; padding: 25px 30px; border-bottom: 1px solid #fecaca; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+            <div>
+              <h2 style="margin: 0; color: #be123c; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 26px;">🚨</span> Live Security Feed
+              </h2>
+              <span style="font-size: 13px; color: #e11d48; margin-top: 6px; display: block; font-weight: 500;">Monitoring all unauthorized actions across branches.</span>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <button onclick="window.bulkResolveAlerts()" style="background: #16a34a; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.3); font-size: 13px; transition: 0.2s;">✅ Mark Selected Resolved</button>
+              <button onclick="window.bulkDeleteAlerts()" style="background: #ef4444; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); font-size: 13px; transition: 0.2s;">🗑️ Delete Selected</button>
+              <button onclick="downloadExcel('alertsTableBody', 'TAKODEAL_Security_Alerts')" style="background: white; color: #0ea5e9; border: 1px solid #bae6fd; padding: 10px 18px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;">📥 Export Excel</button>
+            </div>
           </div>
-          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-            <button onclick="window.bulkResolveAlerts()" style="background: #16a34a; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(22,163,74,0.3);">✅ Mark Selected Resolved</button>
-            <button onclick="window.bulkDeleteAlerts()" style="background: #ef4444; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(239,68,68,0.3);">🗑️ Delete Selected</button>
-            <button onclick="downloadExcel('alertsTableBody', 'TAKODEAL_Security_Alerts')" style="background: #0ea5e9; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">📥 Export Excel</button>
+          <div class="table-responsive">
+            <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+              <thead style="background: white; border-bottom: 2px solid #cbd5e1;">
+                <tr>
+                  <th style="width: 50px; text-align: center; padding: 15px 10px;"><input type="checkbox" id="selectAllAlerts" onchange="window.toggleAllAlertCheckboxes(this)" style="cursor: pointer; width: 16px; height: 16px; accent-color: #ef4444;"></th>
+                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Time</th>
+                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Branch Location</th>
+                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Alert Details</th>
+                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="alertsTableBody">
+                <tr>
+                  <td colspan="5" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">Loading security feed...</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </div>
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th style="width: 40px; text-align: center;"><input type="checkbox" id="selectAllAlerts" onchange="window.toggleAllAlertCheckboxes(this)" style="cursor: pointer; width: 16px; height: 16px;"></th>
-                <th>Time</th>
-                <th>Branch Location</th>
-                <th>Alert Details</th>
-                <th style="text-align: right;">Action</th>
-              </tr>
-            </thead>
-            <tbody id="alertsTableBody">
-              <tr>
-                <td colspan="5" class="text-center">Loading security feed...</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </div>
     </div>
@@ -3569,73 +3680,72 @@
           </div>
       </div>
   </div>
-  <!-- ========================================== -->
-  <!-- 📢 BULLETIN BOARD & AI PROMPT ENGINE -->
-  <!-- ========================================== -->
-  <div id="view-bulletin" class="view">
-      <div class="card" style="background: transparent; border: none; box-shadow: none;">
-            
-          <div style="background: linear-gradient(135deg, #0f766e, #064e3b); color: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.15);">
-              <h2 style="margin: 0; font-size: 24px; font-weight: 900;">📢 Corporate Announcements & AI Hub</h2>
-              <p style="margin: 5px 0 0 0; font-size: 13px; opacity: 0.9;">Force-push visual announcements to Cashier tablets with mandatory signature tracking.</p>
-          </div>
-
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; align-items: start; margin-bottom: 20px;">
-                
-              <!-- THE MINI GEMINI AI PROMPT BUILDER -->
-              <div style="background: white; padding: 20px; border-radius: 12px; border: 2px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                  <h3 style="margin-top: 0; color: #8b5cf6;">✨ Mini Gemini Prompt Builder</h3>
-                  <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Type a rough idea, and the engine will build a highly detailed prompt to copy-paste into Google Gemini to generate your presentation image.</p>
-                  <textarea id="aiRoughIdea" placeholder="e.g., Staff must wash hands every 30 minutes..." style="width: 100%; height: 80px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; margin-bottom: 10px; font-family: inherit; resize: vertical;"></textarea>
-                  <select id="aiStyle" class="input-box" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; margin-bottom: 15px; cursor: pointer;">
-                      <option value="corporate infographic poster, clean vector graphics, modern UI/UX style, highly legible">Corporate Infographic</option>
-                      <option value="bold typography, high contrast, urgent announcement poster, red and white safety theme">Urgent Notice (High Contrast)</option>
-                      <option value="friendly 3D isometric illustration, cute characters, bright colors, welcoming poster">Friendly 3D Cartoon</option>
-                  </select>
-                  <button onclick="window.generateAIPrompt()" style="background: #8b5cf6; color: white; padding: 12px 15px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 14px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);">Generate Perfect Prompt</button>
-                  <textarea id="aiFinalPrompt" readonly style="width: 100%; height: 100px; padding: 10px; border: 2px dashed #8b5cf6; background: #f5f3ff; border-radius: 6px; box-sizing: border-box; margin-top: 15px; color: #4c1d95; font-weight: bold; resize: none;"></textarea>
-                  <button onclick="window.copyAIPrompt()" style="background: white; color: #8b5cf6; border: 1px solid #8b5cf6; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px;">📋 Copy Prompt</button>
-              </div>
-
-              <!-- THE UPLOADER -->
-              <div style="background: white; padding: 20px; border-radius: 12px; border: 2px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
-                  <h3 style="margin-top: 0; color: #0f766e;">📤 Publish Announcement</h3>
-                  <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Upload the images generated by Gemini to blast them to all branches.</p>
-                  <input type="text" id="announceTitle" placeholder="Announcement Title (e.g. Q3 Rules)" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; margin-bottom: 15px; font-weight: bold;">
-                  <input type="text" id="announceSubHeadline" placeholder="Sub-Headline / Catchphrase (Optional)" class="input-box" style="width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0ea5e9;">
-                  <textarea id="announceMessage" placeholder="Detailed description or message (Optional)..." style="width: 100%; height: 80px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; margin-bottom: 15px; font-family: inherit; resize: vertical;"></textarea>
-                  <input type="text" id="announceFooter" placeholder="Footer Note (e.g. 'By Management', 'Strictly Implemented') (Optional)" class="input-box" style="width: 100%; padding: 12px; margin-bottom: 15px; border-radius: 6px; border: 1px dashed #94a3b8; outline: none; font-style: italic; color: #64748b; background: #f8fafc;">
-                  <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Upload Slides/Images (Hold CTRL/CMD to select multiple)</label>
-                  <input type="file" id="announceImages" multiple accept="image/*" style="width: 100%; padding: 12px; border: 1px dashed #0f766e; background: #f0fdfa; border-radius: 6px; box-sizing: border-box; margin-bottom: 25px; cursor: pointer; color: #0f766e; font-weight: bold;">
-                  <button onclick="window.publishAnnouncement()" id="btnPublishAnnounce" style="background: #0f766e; color: white; padding: 15px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; font-size: 16px; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3);">🚀 Push to All Tablets</button>
-              </div>
-          </div>
-
-          <!-- TRACKING DASHBOARD -->
-          <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                  <h3 style="margin: 0; color: #334155;">📜 Acknowledgment Tracking</h3>
-                  <button class="btn-refresh" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;" onclick="window.loadAnnouncementHistory()">🔄 Refresh Logs</button>
-              </div>
-              <div class="table-responsive">
-                  <table class="data-table">
-                      <thead style="background: #f8fafc;">
-                          <tr>
-                              <th>Date Published</th>
-                              <th>Title</th>
-                              <th>Status</th>
-                              <th style="text-align: right;">Signatures & Actions</th>
-                          </tr>
-                      </thead>
-                      <tbody id="announcementHistoryBody">
-                          <tr><td colspan="4" style="text-align:center; padding: 20px;">Loading history...</td></tr>
-                      </tbody>
-                  </table>
-              </div>
-          </div>
-
-      </div>
-  </div>
+  
+   <!-- ========================================== -->
+   <!-- 📢 BULLETIN BOARD & AI PROMPT ENGINE -->
+   <!-- ========================================== -->
+   <div id="view-bulletin" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+       <div style="max-width: 1400px; margin: 0 auto;">
+           <div style="background: linear-gradient(135deg, #0f766e, #064e3b); color: white; padding: 30px; border-radius: 16px; margin-bottom: 25px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); border: 1px solid #047857;">
+               <h2 style="margin: 0; font-size: 24px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 28px;">📢</span> Corporate Announcements & AI Hub</h2>
+               <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.9;">Force-push visual announcements to Cashier tablets with mandatory signature tracking.</p>
+           </div>
+ 
+           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 25px; align-items: start; margin-bottom: 25px;">
+                 
+               <!-- THE MINI GEMINI AI PROMPT BUILDER -->
+               <div style="background: white; padding: 30px; border-radius: 16px; border: 2px solid #cbd5e1; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05);">
+                   <h3 style="margin-top: 0; color: #8b5cf6; font-size: 18px; font-weight: 900; display: flex; align-items: center; gap: 8px;"><span style="font-size: 22px;">✨</span> Mini Gemini Prompt Builder</h3>
+                   <p style="font-size: 13px; color: #64748b; margin-bottom: 20px;">Type a rough idea, and the engine will build a highly detailed prompt to copy-paste into Google Gemini to generate your presentation image.</p>
+                   <textarea id="aiRoughIdea" placeholder="e.g., Staff must wash hands every 30 minutes..." style="width: 100%; height: 100px; padding: 15px; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; margin-bottom: 15px; font-family: inherit; resize: vertical; font-size: 14px; outline: none; font-weight: bold; color: #334155;"></textarea>
+                   <select id="aiStyle" style="width: 100%; padding: 12px 15px; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; margin-bottom: 20px; cursor: pointer; outline: none; font-weight: bold; color: #1e293b; background: #f8fafc; font-size: 14px;">
+                       <option value="corporate infographic poster, clean vector graphics, modern UI/UX style, highly legible">Corporate Infographic</option>
+                       <option value="bold typography, high contrast, urgent announcement poster, red and white safety theme">Urgent Notice (High Contrast)</option>
+                       <option value="friendly 3D isometric illustration, cute characters, bright colors, welcoming poster">Friendly 3D Cartoon</option>
+                   </select>
+                   <button onclick="window.generateAIPrompt()" style="background: #8b5cf6; color: white; padding: 14px 20px; border: none; border-radius: 8px; font-weight: 900; cursor: pointer; width: 100%; font-size: 15px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); transition: 0.2s;">Generate Perfect Prompt</button>
+                   <textarea id="aiFinalPrompt" readonly style="width: 100%; height: 120px; padding: 15px; border: 2px dashed #8b5cf6; background: #f5f3ff; border-radius: 8px; box-sizing: border-box; margin-top: 20px; color: #4c1d95; font-weight: bold; resize: none; font-size: 13px; outline: none; line-height: 1.5;"></textarea>
+                   <button onclick="window.copyAIPrompt()" style="background: white; color: #8b5cf6; border: 1px solid #8b5cf6; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; width: 100%; margin-top: 10px; font-size: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;">📋 Copy Prompt</button>
+               </div>
+ 
+               <!-- THE UPLOADER -->
+               <div style="background: white; padding: 30px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05);">
+                   <h3 style="margin-top: 0; color: #0f766e; font-size: 18px; font-weight: 900; display: flex; align-items: center; gap: 8px;"><span style="font-size: 22px;">📤</span> Publish Announcement</h3>
+                   <p style="font-size: 13px; color: #64748b; margin-bottom: 20px;">Upload the images generated by Gemini to blast them to all branches.</p>
+                   <input type="text" id="announceTitle" placeholder="Announcement Title (e.g. Q3 Rules)" style="width: 100%; padding: 14px 15px; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; margin-bottom: 15px; font-weight: 900; font-size: 15px; color: #0f172a; outline: none;">
+                   <input type="text" id="announceSubHeadline" placeholder="Sub-Headline / Catchphrase (Optional)" style="width: 100%; padding: 14px 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #bae6fd; outline: none; font-weight: bold; color: #0284c7; background: #f0f9ff; font-size: 14px; box-sizing: border-box;">
+                   <textarea id="announceMessage" placeholder="Detailed description or message (Optional)..." style="width: 100%; height: 100px; padding: 14px 15px; border: 1px solid #cbd5e1; border-radius: 8px; box-sizing: border-box; margin-bottom: 15px; font-family: inherit; resize: vertical; font-size: 14px; outline: none;"></textarea>
+                   <input type="text" id="announceFooter" placeholder="Footer Note (e.g. 'By Management') (Optional)" style="width: 100%; padding: 14px 15px; margin-bottom: 20px; border-radius: 8px; border: 1px dashed #94a3b8; outline: none; font-style: italic; color: #64748b; background: #f8fafc; font-size: 13px; box-sizing: border-box;">
+                   <label style="font-size: 12px; font-weight: 900; color: #475569; display: block; margin-bottom: 8px; text-transform: uppercase;">Upload Slides/Images (Hold CTRL/CMD for multiple)</label>
+                   <input type="file" id="announceImages" multiple accept="image/*" style="width: 100%; padding: 12px; border: 2px dashed #0f766e; background: #f0fdfa; border-radius: 8px; box-sizing: border-box; margin-bottom: 25px; cursor: pointer; color: #0f766e; font-weight: bold; outline: none;">
+                   <button onclick="window.publishAnnouncement()" id="btnPublishAnnounce" style="background: #0f766e; color: white; padding: 16px 20px; border: none; border-radius: 10px; font-weight: 900; cursor: pointer; width: 100%; font-size: 16px; box-shadow: 0 6px 12px rgba(15, 118, 110, 0.3); transition: 0.2s;">🚀 Push to All Tablets</button>
+               </div>
+           </div>
+ 
+           <!-- TRACKING DASHBOARD -->
+           <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden;">
+               <div style="display: flex; justify-content: space-between; align-items: center; padding: 25px 30px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+                   <h3 style="margin: 0; color: #1e293b; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 8px;"><span style="font-size: 24px;">📜</span> Acknowledgment Tracking</h3>
+                   <button class="btn-refresh" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: 0.2s;" onclick="window.loadAnnouncementHistory()">🔄 Refresh Logs</button>
+               </div>
+               <div class="table-responsive">
+                   <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                       <thead style="background: white; border-bottom: 2px solid #cbd5e1;">
+                           <tr>
+                               <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Date Published</th>
+                               <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Title</th>
+                               <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Status</th>
+                               <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; text-align: right;">Signatures & Actions</th>
+                           </tr>
+                       </thead>
+                       <tbody id="announcementHistoryBody">
+                           <tr><td colspan="4" style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold;">Loading history...</td></tr>
+                       </tbody>
+                   </table>
+               </div>
+           </div>
+       </div>
+   </div>
    
     <!-- 🤝 FRANCHISE HQ HUB (PERFORMANCE, BILLING, CHAT) -->
     <div id="view-franchise-hub" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
