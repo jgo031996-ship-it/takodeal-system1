@@ -5277,10 +5277,8 @@ window.runAutonomousRestockAI = async function() {
 
             // Dynamic 3-day safety threshold
             let userSetMinSafety = (parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv;
-            let dynamicThresholdPurch = Math.max((dailyBurnPurch * 3), userSetMinSafety); 
-                ? (dailyBurnPurch * 3) 
-                : ((parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv);
-
+            let dynamicThresholdPurch = Math.max((dailyBurnPurch * 3), userSetMinSafety);
+         
             // 7-day target stock
             let targetStockPurch = (dailyBurnPurch * cycleDays) + dynamicThresholdPurch;
             if (targetStockPurch <= 0) targetStockPurch = dynamicThresholdPurch * 2;
@@ -5427,8 +5425,6 @@ window.loadStockRequestUI = async function() {
 
                 let userSetMinSafety = (parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv;
                 let dynamicThresholdPurch = Math.max((dailyBurnPurch * 3), userSetMinSafety);
-                    ? (dailyBurnPurch * 3) 
-                    : ((parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv);
 
                 let isCriticallyLow = currentStockPurch <= dynamicThresholdPurch;
                 let stockColor = isCriticallyLow ? '#ef4444' : '#334155';
