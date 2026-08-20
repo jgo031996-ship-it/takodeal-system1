@@ -393,6 +393,8 @@
           document.getElementById('displayBranch').innerText = "📍 " + sessionUser.branch;
           document.getElementById('displayCashier').innerText = "👤 " + identity.cashierName;
           document.getElementById('loginOverlay').style.display = 'none';
+          let ownerBtn = document.getElementById('ownerAccessBtnContainer');
+          if (ownerBtn) ownerBtn.style.display = 'none';
 
           // Check for Shortages on Login!
           if (typeof window.checkLoginShortage === 'function') {
@@ -413,9 +415,10 @@
           if (typeof window.autoConnectPrinters === 'function') window.autoConnectPrinters();
       }
   </script>
-  <div class="login-overlay" id="loginOverlay">
+  <div class="login-overlay" id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('logo.jpg') center/cover no-repeat; z-index: 10000; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; backdrop-filter: blur(8px);">
+    
     <!-- 🏆 LIVE LEADERBOARD WIDGET -->
-    <div id="loginRankingWidget" style="position: absolute; top: 20px; left: 20px; background: rgba(15, 23, 42, 0.85); padding: 15px 20px; border-radius: 12px; color: white; border: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(8px); z-index: 10; display: none; min-width: 260px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+    <div id="loginRankingWidget" style="position: absolute; top: 20px; left: 20px; background: rgba(255, 255, 255, 0.1); padding: 15px 20px; border-radius: 16px; color: white; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(12px); z-index: 10; display: none; min-width: 260px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
         <div style="font-size: 11px; font-weight: 900; color: #fcd34d; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
             <span style="font-size: 16px; animation: pulse 2s infinite;">🔥</span> Live Daily Ranking
         </div>
@@ -426,28 +429,26 @@
             Loading motivation...
         </div>
     </div>
-    <div style="text-align: center; margin-bottom: 20px;">
-        <h1 style="margin: 0; color: #ffffff; font-size: 56px; font-weight: 900; letter-spacing: 3px; text-shadow: 2px 4px 15px rgba(0,0,0,0.6);">TAKODEÁL</h1>
-        <h3 id="loginBranchDisplay" style="margin: 5px 0 0 0; color: #fcd34d; font-size: 22px; font-weight: bold; letter-spacing: 1px; text-shadow: 1px 2px 8px rgba(0,0,0,0.6);">📍 Loading Location...</h3>
-    </div>
-    <div class="login-box">
-      <h2 style="margin: 0 0 10px 0; color: #555;">Cashier Login</h2>
-      <p style="font-size: 13px; color: #888; margin-bottom: 20px;">Enter your secure password to continue.</p>
-      
-      <input type="password" id="loginPasswordInput" placeholder="Enter Password" 
-        style="width: 100%; padding: 15px; margin-bottom: 20px; border: 2px solid #ddd; border-radius: 8px; font-size: 18px; text-align: center; letter-spacing: 2px; outline: none; box-sizing: border-box;" 
-        onkeypress="if(event.key === 'Enter') submitLoginPin()">
-      
-      <button onclick="submitLoginPin()" id="btnSubmitPin" 
-        style="width: 100%; padding: 15px; font-size: 18px; font-weight: bold; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; transition: 0.2s;">
-        Secure Login
-      </button>
 
-      <!-- 🔥 NEW: SMART HARD REFRESH BUTTON FOR STAFF 🔥 -->
-      <div style="margin-top: 25px; font-size: 13px; color: #94a3b8; cursor: pointer; font-weight: bold; padding: 10px; border: 1px dashed #cbd5e1; border-radius: 8px; background: #f8fafc;" onclick="window.manualHardUpdate()">
-          🔄 Force System Update (Clear Cache)
-      </div>
+    <!-- 🔐 NEW LOGIN BOX -->
+    <div style="background: rgba(255, 255, 255, 0.95); padding: 40px 30px; border-radius: 24px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); width: 100%; max-width: 400px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px);">
+        
+        <div style="position: relative; display: inline-block; margin-bottom: 15px;">
+            <img src="logo.jpg" alt="Logo" style="width: 80px; height: 80px; border-radius: 20px; object-fit: cover; border: 3px solid #0ea5e9; box-shadow: 0 6px 15px rgba(14, 165, 233, 0.2);">
+        </div>
 
+        <h2 style="margin: 0 0 5px 0; color: #0f172a; font-size: 26px; font-weight: 900; letter-spacing: 1.5px;">TAKODEÁL</h2>
+        <h3 id="loginBranchDisplay" style="margin: 0 0 25px 0; color: #0ea5e9; font-size: 15px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">📍 Loading Location...</h3>
+        
+        <label style="font-size: 12px; font-weight: 900; color: #64748b; display: block; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Enter Security PIN / Password</label>
+        
+        <input type="password" id="loginPasswordInput" placeholder="••••" onkeypress="if(event.key === 'Enter') submitLoginPin()" style="width: 100%; padding: 18px; font-size: 28px; text-align: center; letter-spacing: 12px; border: 2px solid #cbd5e1; border-radius: 12px; outline: none; font-family: monospace; color: #0f172a; transition: all 0.2s; box-sizing: border-box; background: white; font-weight: 900; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);" onfocus="this.style.borderColor='#0ea5e9'; this.style.boxShadow='0 0 0 3px rgba(14,165,233,0.2)';" onblur="this.style.borderColor='#cbd5e1'; this.style.boxShadow='inset 0 2px 4px rgba(0,0,0,0.02)';">
+        
+        <button onclick="submitLoginPin()" id="btnSubmitPin" style="width: 100%; padding: 18px; margin-top: 25px; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); color: white; border: none; border-radius: 12px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 6px 15px rgba(14, 165, 233, 0.4); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 20px rgba(14, 165, 233, 0.5)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 6px 15px rgba(14, 165, 233, 0.4)';">🔓 Secure Login</button>
+
+        <div style="margin-top: 20px; font-size: 13px; color: #475569; cursor: pointer; font-weight: 900; padding: 14px; border: 1px dashed #cbd5e1; border-radius: 10px; background: #f8fafc; transition: 0.2s;" onmouseover="this.style.background='#f1f5f9';" onmouseout="this.style.background='#f8fafc';" onclick="window.manualHardUpdate()">
+            🔄 Force System Update (Clear Cache)
+        </div>
     </div>
   </div>
 
@@ -4006,10 +4007,10 @@ window.showMobileOrders = function() {
   </div>
 
 <!-- 🛡️ SECRET OWNER BYPASS BUTTON -->
-<div style="position: fixed; bottom: 15px; right: 15px; z-index: 99999;">
+<div id="ownerAccessBtnContainer" style="position: fixed; bottom: 15px; right: 15px; z-index: 99999;">
     <button onclick="window.ownerBypassLogin()" style="background: rgba(15, 23, 42, 0.4); color: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.2); padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; backdrop-filter: blur(4px);" onmouseover="this.style.background='rgba(15, 23, 42, 0.9)'; this.style.color='white';" onmouseout="this.style.background='rgba(15, 23, 42, 0.4)'; this.style.color='rgba(255,255,255,0.6)';">
         🛡️ Owner Access
     </button>
-</div> 
+</div>
 </body>
 </html>
