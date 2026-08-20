@@ -69,24 +69,33 @@
     .log-btn:active { background: #e9ecef; }
     .log-btn.action { font-size: 16px; background: #eee; }
 
-    .sidebar { width: 220px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; transition: width 0.3s ease; z-index: 20; flex-shrink: 0; }
-    .sidebar.collapsed { width: 75px; }
-    .sidebar-header { padding: 15px 20px; font-size: 20px; font-weight: bold; border-bottom: 1px solid rgba(255, 255, 255, 0.1); display: flex; justify-content: space-between; align-items: center; height: 60px; box-sizing: border-box; }
-    .brand-container { display: flex; align-items: center; gap: 10px; overflow: hidden; white-space: nowrap; transition: 0.3s; }
-    .sidebar.collapsed .brand-container { display: none; }
-    .brand-icon { display: none; font-size: 26px; text-align: center; flex: 1; }
-    .sidebar.collapsed .brand-icon { display: block; }
-    .sidebar-toggle { cursor: pointer; color: rgba(255, 255, 255, 0.6); padding: 5px; font-size: 14px; }
-    .sidebar-toggle:hover { color: white; }
+    /* ========================================== */
+    /* 🌟 CASHIER SIDEBAR ULTRA UI 🌟 */
+    /* ========================================== */
+    .sidebar { width: 240px; background: var(--sidebar-bg); color: white; display: flex; flex-direction: column; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); z-index: 20; flex-shrink: 0; box-shadow: 4px 0 15px rgba(0,0,0,0.05); }
+    .sidebar.collapsed { width: 85px; }
+    .sidebar-header { padding: 0; font-size: 20px; font-weight: bold; border-bottom: 1px solid rgba(255, 255, 255, 0.05); display: flex; justify-content: center; align-items: center; height: 80px; box-sizing: border-box; }
+    .brand-container { display: flex; align-items: center; gap: 12px; overflow: hidden; white-space: nowrap; transition: 0.3s; padding: 10px; border-radius: 12px; cursor: pointer; }
+    .brand-container:hover { background: rgba(255,255,255,0.05); }
+    .sidebar.collapsed .brand-text { display: none; }
+    .brand-icon { font-size: 26px; text-align: center; }
 
     .nav-menu { flex: 1; padding: 15px 0; overflow-y: auto; overflow-x: hidden; }
-    .nav-item { padding: 15px 20px; font-size: 14px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 15px; transition: 0.2s; color: rgba(255, 255, 255, 0.8); border-left: 4px solid transparent; white-space: nowrap; }
-    .nav-item span { font-size: 18px; min-width: 25px; text-align: center; }
-    .nav-item:hover { background: var(--sidebar-hover); color: white; }
-    .nav-item.active { background: rgba(255, 255, 255, 0.15); color: white; border-left-color: var(--primary); }
+    .nav-menu::-webkit-scrollbar { width: 4px; }
+    .nav-menu::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+    .nav-item { padding: 14px 18px; margin: 4px 16px; border-radius: 12px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 15px; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); color: rgba(255, 255, 255, 0.6); white-space: nowrap; }
+    .nav-item span { font-size: 18px; min-width: 28px; text-align: center; transition: 0.2s; }
+    .nav-item:hover { background: rgba(255,255,255,0.05); color: white; transform: translateX(4px); }
+    .nav-item:hover span { transform: scale(1.15) rotate(-5deg); }
+    .nav-item.active { background: var(--primary); color: white; box-shadow: 0 4px 12px rgba(229, 169, 61, 0.35); font-weight: 800; transform: translateX(4px); }
+    .nav-item.active span { transform: scale(1.1); }
+    
+    .sidebar.collapsed .nav-item { margin: 4px 12px; padding: 14px 0; justify-content: center; transform: none; }
+    .sidebar.collapsed .nav-item:hover { transform: translateY(-2px); }
+    .sidebar.collapsed .nav-item.active { transform: none; }
     .sidebar.collapsed .nav-item-text { display: none; }
-    .sidebar-footer { padding: 20px; border-top: 1px solid rgba(255, 255, 255, 0.1); font-size: 13px; color: rgba(255, 255, 255, 0.6); white-space: nowrap; overflow: hidden; }
-    .sidebar.collapsed .sidebar-footer { display: none; }
+    
+    .sidebar-footer { padding: 20px; border-top: 1px solid rgba(255, 255, 255, 0.05); font-size: 13px; color: rgba(255, 255, 255, 0.7); white-space: nowrap; overflow: hidden; background: rgba(0,0,0,0.1); }
 
     .content-area { flex: 1; display: flex; flex-direction: column; position: relative; width: 100%; overflow: hidden; }
     .top-bar { height: 60px; background: var(--card-bg); display: flex; justify-content: space-between; align-items: center; padding: 0 25px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03); z-index: 10; }
@@ -459,12 +468,11 @@
           .sidebar.collapsed .sidebar-header { justify-content: center !important; padding: 15px 0 !important; }
       </style>
 
-      <div class="sidebar-header" style="display: flex; align-items: center; justify-content: space-between; padding: 15px; overflow: hidden; white-space: nowrap; width: 100%;">
-          <div style="display: flex; align-items: center; gap: 10px;">
-              <img src="logo.jpg" alt="Logo" style="width: 32px; border-radius: 6px; flex-shrink: 0;">
-              <span class="brand-text" style="font-size: 18px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL</span>
+      <div class="sidebar-header" style="display: flex; align-items: center; justify-content: center; padding: 15px; overflow: hidden; white-space: nowrap; width: 100%; height: 80px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+          <div class="brand-container" onclick="toggleSidebar()" title="Toggle Sidebar">
+              <img src="logo.jpg" alt="Logo" style="width: 38px; height: 38px; border-radius: 8px; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+              <span class="brand-text" style="font-size: 20px; font-weight: 900; letter-spacing: 1.5px; color: white;">TAKODEÁL</span>
           </div>
-          <div class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarIcon" style="cursor: pointer; flex-shrink: 0;">◀</div>
       </div>
     </div>
     <div class="nav-menu">
@@ -990,19 +998,19 @@
         </div>
     </div>
     <!-- 📢 CORPORATE BULLETIN BOARD VIEW -->
-    <div class="view-container" id="view-bulletin" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-      <div style="background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1000px; margin: 0 auto; border: 1px solid var(--border);">
+    <div class="view-container" id="view-bulletin" style="padding: 30px 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+      <div style="width: 100%; max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 25px; padding-bottom: 50px;">
           
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 15px; margin-bottom: 15px;">
+          <div style="background: linear-gradient(135deg, #0f766e, #064e3b); color: white; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.15); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
               <div>
-                  <h2 style="margin: 0; color: #0f766e; font-size: 1.5rem;">📢 Corporate Bulletin Board</h2>
-                  <p style="color: #64748b; font-size: 13px; margin: 5px 0 0 0;">Review past company announcements and verify your signature records.</p>
+                  <h2 style="margin: 0; font-size: 26px; font-weight: 900; display: flex; align-items: center; gap: 12px;"><span style="font-size: 32px;">📢</span> Corporate Bulletin Board</h2>
+                  <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.9;">Review past company announcements and verify your signature records.</p>
               </div>
-              <button class="btn-refresh" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.3);" onclick="window.loadBulletinHistory()">🔄 Refresh</button>
+              <button class="btn-refresh" style="background: white; color: #0f766e; border: none; padding: 14px 28px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); font-size: 15px; transition: transform 0.2s;" onclick="window.loadBulletinHistory()" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">🔄 Refresh Feed</button>
           </div>
 
-          <div id="bulletinHistoryList" style="display: flex; flex-direction: column; gap: 15px;">
-              <div style="text-align: center; color: #94a3b8; padding: 40px; font-weight: bold;">Loading announcements...</div>
+          <div id="bulletinHistoryList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px;">
+              <div style="grid-column: 1/-1; text-align: center; color: #94a3b8; padding: 60px; font-weight: bold; font-size: 16px;">⏳ Scanning corporate memos...</div>
           </div>
       </div>
     </div>
@@ -1777,7 +1785,7 @@
     });
 
     // --- 1. UI HELPERS ---
-    function toggleSidebar() { const sidebar = document.getElementById('mainSidebar'); sidebar.classList.toggle('collapsed'); document.getElementById('sidebarIcon').innerText = sidebar.classList.contains('collapsed') ? '▶' : '◀'; }
+    function toggleSidebar() { const sidebar = document.getElementById('mainSidebar'); sidebar.classList.toggle('collapsed'); }
     function switchView(viewName) {
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.view-container').forEach(el => el.classList.remove('active'));
