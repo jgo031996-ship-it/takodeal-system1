@@ -8162,14 +8162,16 @@ window.loadBulletinHistory = async function() {
             if (!sigData) unreadAnnouncements.push(modalData);
 
             html += `
-                <div onclick="window.viewAnnouncement('${modalData}')" style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 15px; cursor: pointer; transition: transform 0.2s;">
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px;">
-                        <h3 style="margin: 0; color: #0f172a; font-size: 16px;">${ann.title}</h3>
-                        ${statusBadge}
+                <div onclick="window.viewAnnouncement('${modalData}')" style="background: white; border: 1px solid #cbd5e1; border-radius: 16px; padding: 25px; box-shadow: 0 4px 10px rgba(0,0,0,0.03); cursor: pointer; transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); display: flex; flex-direction: column; justify-content: space-between; height: 100%; box-sizing: border-box;" onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 12px 20px rgba(0,0,0,0.08)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 10px rgba(0,0,0,0.03)';">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 10px;">
+                            <h3 style="margin: 0; color: #0f172a; font-size: 18px; font-weight: 900; line-height: 1.3;">${ann.title}</h3>
+                            <div style="flex-shrink: 0;">${statusBadge}</div>
+                        </div>
+                        <div style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 15px; text-transform: uppercase; letter-spacing: 0.5px;">📅 ${dateStr}</div>
+                        <div style="font-size: 14px; color: #475569; line-height: 1.6; margin-bottom: 20px;">${shortMsg}</div>
                     </div>
-                    <div style="font-size: 11px; color: #94a3b8; margin-bottom: 10px;">Published: ${dateStr}</div>
-                    <div style="margin-top: 10px; font-size: 13px; color: #334155; line-height: 1.5;">${shortMsg}</div>
-                    <div style="font-size: 12px; color: #0ea5e9; font-weight: bold; text-align: right; margin-top: 10px;">View Full Details & Sign &rarr;</div>
+                    <div style="font-size: 13px; color: #0ea5e9; font-weight: 900; text-align: right; border-top: 1px dashed #e2e8f0; padding-top: 15px;">View Details & Sign ➡</div>
                 </div>
             `;
         });
