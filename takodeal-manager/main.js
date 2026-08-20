@@ -1474,6 +1474,7 @@ window.switchView = function (viewId) {
   if (viewId === 'menu') title = "Central Menu Editor";
   if (viewId === 'addons') title = "Global Add-Ons Hub";
   if (viewId === 'alerts') title = "Security Alerts";
+  if (viewId === 'bulletin') title = "Bulletin & AI";
   if (viewId === 'inventory') title = "Live Inventory Dashboard";
   if (viewId === 'accounts') title = "Financial Control Center";
   if (viewId === 'payroll' || viewId === 'ledger' || viewId === 'schedule' || viewId === 'inbox') title = "Human Resources Hub"; // 🔥 THE TITLE BUG FIX!
