@@ -8984,11 +8984,21 @@ window.connectSpecificPrinter = async function(target) {
 };
 
 // ==========================================
-// 🛡️ RAW BYTE ENGINE & BULLETPROOF IMAGE PROCESSOR
+// 🛡️ RAW BYTE ENGINE & BULLETPROOF SANITIZER
 // ==========================================
 window.stringToBuffer = function(str) {
-    let buffer = new Uint8Array(str.length);
-    for (let i = 0; i < str.length; i++) buffer[i] = str.charCodeAt(i) & 0xFF;
+    // 🔥 THE ALIEN TEXT FIX 1: Convert Peso signs before they hit the hardware!
+    // Thermal printers panic when they see Unicode characters.
+    let safeStr = str.replace(/₱/g, "PHP ");
+    
+    // 🔥 THE ALIEN TEXT FIX 2: Strip out any other hidden Unicode/Emoji characters
+    // that could accidentally trigger a Chinese character codepage shift!
+    safeStr = safeStr.replace(/[^\x00-\x7F]/g, ""); 
+
+    let buffer = new Uint8Array(safeStr.length);
+    for (let i = 0; i < safeStr.length; i++) {
+        buffer[i] = safeStr.charCodeAt(i) & 0xFF;
+    }
     return buffer;
 };
 
@@ -9072,39 +9082,41 @@ window.bluetoothPrintQueue = [];
 window.isBluetoothPrinting = false;
 
 window.processBluetoothQueue = async function() {
-    // If it's already printing, or the line is empty, do nothing!
     if (window.isBluetoothPrinting || window.bluetoothPrintQueue.length === 0) return;
     
-    window.isBluetoothPrinting = true; // Lock the door!
-    let job = window.bluetoothPrintQueue.shift(); // Grab the first receipt in line
+    window.isBluetoothPrinting = true; 
+    let job = window.bluetoothPrintQueue.shift(); 
     
     try {
         let buffer = (job.data instanceof Uint8Array) ? job.data : window.stringToBuffer(job.data);
         
-        // 🔥 THE LIGHTNING SPEED UPGRADE 🔥
-        // Tripled chunk size so it blasts data to the printer way faster!
-        const CHUNK_SIZE = 300; 
+        // 🔥 THE ALIEN TEXT FIX 3 (BUFFER OVERFLOW PROTECTION) 🔥
+        // Back down to 100 chunks. 300 was overflowing the tiny thermal printer brain!
+        const CHUNK_SIZE = 100; 
         
         for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
             let chunk = buffer.slice(i, i + CHUNK_SIZE);
             
             if (job.activeChar.properties.writeWithoutResponse) {
                 await job.activeChar.writeValueWithoutResponse(chunk);
-                // Lightning fast 10ms micro-buffer
-                await new Promise(resolve => setTimeout(resolve, 10)); 
+                // Give the printer 30ms to digest the data before sending more
+                await new Promise(resolve => setTimeout(resolve, 30)); 
             } else {
                 await job.activeChar.writeValue(chunk);
-                await new Promise(resolve => setTimeout(resolve, 20)); 
+                await new Promise(resolve => setTimeout(resolve, 30)); 
             }
         }
+        
+        // Give the printer a tiny breather before cutting the paper
+        await new Promise(resolve => setTimeout(resolve, 100)); 
+        
     } catch(e) {
         console.error("Print Error:", e);
         if (job.activeChar === window.kitchenPrinterChar) window.kitchenPrinterChar = null;
         else if (job.activeChar === window.barPrinterChar) window.barPrinterChar = null;
         else window.mainPrinterChar = null;
     } finally {
-        window.isBluetoothPrinting = false; // Unlock the door!
-        // Process the next receipt instantly
+        window.isBluetoothPrinting = false; 
         setTimeout(window.processBluetoothQueue, 50); 
     }
 };
