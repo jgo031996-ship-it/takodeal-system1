@@ -21742,6 +21742,24 @@ window.toggleFlowTimePicker = function() {
     window.loadFinancialFlow();
 };
 
+// ==========================================
+// 🌊 FINANCIAL FLOW & P&L WATERFALL ENGINE
+// ==========================================
+window.flowSpendChartInstance = null;
+window.flowBudgetChartInstance = null;
+
+window.toggleFlowTimePicker = function() {
+    let type = document.getElementById('flowTimeFilter').value;
+    if (type === 'month') {
+        document.getElementById('flowMonthContainer').style.display = 'block';
+        document.getElementById('flowYearContainer').style.display = 'none';
+    } else {
+        document.getElementById('flowMonthContainer').style.display = 'none';
+        document.getElementById('flowYearContainer').style.display = 'block';
+    }
+    window.loadFinancialFlow();
+};
+
 window.loadFinancialFlow = async function() {
     let container = document.getElementById('financialFlowchartContainer');
     if (!container) return;
@@ -21858,7 +21876,6 @@ window.loadFinancialFlow = async function() {
         let expenseBreakdown = {}; 
         window.tempOpExBreakdown = {}; // 🔥 NEW: Store exact logs for the modal!
 
-        // 🔥 THE INDEX-FREE FIX: Timestamp only!
         let expQ = query(collection(db, "expenses"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
         const expSnap = await getDocs(expQ);
 
@@ -21876,7 +21893,6 @@ window.loadFinancialFlow = async function() {
                 if (!expenseBreakdown[cat]) expenseBreakdown[cat] = 0;
                 expenseBreakdown[cat] += amt;
 
-                // 🔥 NEW: Store the actual logs for clicking!
                 if (!window.tempOpExBreakdown[cat]) window.tempOpExBreakdown[cat] = [];
                 window.tempOpExBreakdown[cat].push({
                     date: exp.timestamp ? (exp.timestamp.toDate ? exp.timestamp.toDate() : new Date(exp.timestamp)) : new Date(),
@@ -21906,75 +21922,75 @@ window.loadFinancialFlow = async function() {
         Object.keys(expenseBreakdown).sort((a,b) => expenseBreakdown[b] - expenseBreakdown[a]).forEach(cat => {
             let safeCat = cat.replace(/'/g, "\\'");
             opExBoxes += `
-                <div onclick="window.openFlowOpExModal('${safeCat}')" style="background: white; border: 2px dashed #cbd5e1; padding: 15px; border-radius: 12px; width: 200px; cursor: pointer; transition: 0.2s; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.05);" onmouseover="this.style.background='#f0f9ff'; this.style.borderColor='#0ea5e9';" onmouseout="this.style.background='white'; this.style.borderColor='#cbd5e1';">
-                    <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">${cat}</div>
-                    <div style="font-size: 20px; font-weight: 900; color: #0f172a; margin-top: 5px;">-₱${expenseBreakdown[cat].toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                    <div style="font-size: 10px; color: #0ea5e9; margin-top: 8px; font-weight: bold;">🔍 Click to see trace logs</div>
+                <div onclick="window.openFlowOpExModal('${safeCat}')" style="background: white; border: 1px solid #e2e8f0; padding: 20px; border-radius: 12px; width: 220px; cursor: pointer; transition: all 0.2s ease; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); position: relative; overflow: hidden;" onmouseover="this.style.transform='translateY(-3px)'; this.style.boxShadow='0 10px 15px -3px rgba(0,0,0,0.1)'; this.style.borderColor='#0ea5e9';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.05)'; this.style.borderColor='#e2e8f0';">
+                    <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">${cat}</div>
+                    <div style="font-size: 22px; font-weight: 900; color: #0f172a; margin-top: 5px;">-₱${expenseBreakdown[cat].toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="font-size: 11px; color: #0ea5e9; margin-top: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 4px;">🔍 Trace Logs</div>
                 </div>
             `;
         });
-        if (opExBoxes === '') opExBoxes = '<div style="color: #94a3b8; font-style: italic; font-size: 12px;">No operational expenses logged.</div>';
+        if (opExBoxes === '') opExBoxes = '<div style="color: #94a3b8; font-style: italic; font-size: 14px; padding: 20px;">No operational expenses logged.</div>';
 
         let flowHtml = `
-            <div style="display: flex; flex-direction: column; align-items: center; font-family: 'Segoe UI', sans-serif;">
+            <div style="display: flex; flex-direction: column; align-items: center; font-family: 'Segoe UI', Tahoma, sans-serif; padding: 20px 0;">
                 
                 <!-- TOP NODE: REVENUE -->
-                <div style="background: #f0fdf4; border: 2px solid #16a34a; padding: 20px 40px; border-radius: 16px; box-shadow: 0 10px 25px rgba(22,163,74,0.15); z-index: 2; position: relative;">
-                    <div style="font-size: 13px; font-weight: bold; color: #15803d; text-transform: uppercase; letter-spacing: 1px;">Gross Revenue</div>
-                    <div style="font-size: 32px; font-weight: 900; color: #16a34a;">₱${totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                    <div style="font-size: 11px; color: #16a34a; margin-top: 5px;">${periodLabel} • ${branch}</div>
+                <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px 50px; border-radius: 20px; box-shadow: 0 15px 30px rgba(16, 185, 129, 0.3); z-index: 2; position: relative; color: white; border: 1px solid #047857; min-width: 320px;">
+                    <div style="font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.9;">Gross Revenue</div>
+                    <div style="font-size: 46px; font-weight: 900; margin-top: 5px; line-height: 1;">₱${totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="font-size: 12px; margin-top: 10px; font-weight: bold; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; display: inline-block;">${periodLabel} • ${branch}</div>
                 </div>
 
                 <!-- MAIN SPLIT ARROWS -->
-                <div style="display: flex; justify-content: center; width: 600px; height: 30px; border-top: 2px solid #cbd5e1; border-left: 2px solid #cbd5e1; border-right: 2px solid #cbd5e1; margin-top: 20px; position: relative;">
-                    <div style="position: absolute; top: -22px; left: 50%; transform: translateX(-50%); width: 2px; height: 20px; background: #cbd5e1;"></div>
+                <div style="display: flex; justify-content: center; width: 680px; height: 40px; border-top: 3px solid #cbd5e1; border-left: 3px solid #cbd5e1; border-right: 3px solid #cbd5e1; margin-top: 20px; position: relative;">
+                    <div style="position: absolute; top: -22px; left: 50%; transform: translateX(-50%); width: 3px; height: 20px; background: #cbd5e1;"></div>
                     <!-- Dropdown lines -->
-                    <div style="position: absolute; top: 30px; left: 0; width: 2px; height: 20px; background: #cbd5e1;"></div>
-                    <div style="position: absolute; top: 30px; left: 50%; transform: translateX(-50%); width: 2px; height: 20px; background: #cbd5e1;"></div>
-                    <div style="position: absolute; top: 30px; right: 0; width: 2px; height: 20px; background: #cbd5e1;"></div>
+                    <div style="position: absolute; top: 40px; left: 0; width: 3px; height: 20px; background: #cbd5e1;"></div>
+                    <div style="position: absolute; top: 40px; left: 50%; transform: translateX(-50%); width: 3px; height: 20px; background: #cbd5e1;"></div>
+                    <div style="position: absolute; top: 40px; right: 0; width: 3px; height: 20px; background: #cbd5e1;"></div>
                 </div>
 
                 <!-- ROW 2: THE DEDUCTIONS -->
-                <div style="display: flex; justify-content: center; gap: 40px; width: 100%; margin-top: 20px; position: relative;">
+                <div style="display: flex; justify-content: center; gap: 30px; width: 100%; margin-top: 20px; position: relative; flex-wrap: wrap;">
                     
                     <!-- COGS -->
-                    <div onclick="window.openFlowCogsModal()" style="background: #fff1f2; border: 2px dashed #fca5a5; padding: 15px; border-radius: 12px; width: 200px; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#ffe4e6';" onmouseout="this.style.background='#fff1f2';">
-                        <div style="font-size: 11px; font-weight: bold; color: #dc2626; text-transform: uppercase;">Cost of Goods (COGS)</div>
-                        <div style="font-size: 20px; font-weight: 900; color: #b91c1c;">-₱${totalCOGS.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                        <div style="font-size: 10px; color: #ef4444; margin-top: 5px; font-weight: bold;">🔍 Click to see trace logs</div>
+                    <div onclick="window.openFlowCogsModal()" style="background: white; border: 2px dashed #fca5a5; padding: 25px; border-radius: 16px; width: 240px; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);" onmouseover="this.style.background='#fff1f2'; this.style.boxShadow='0 10px 15px -3px rgba(220, 38, 38, 0.1)';" onmouseout="this.style.background='white'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.05)';">
+                        <div style="font-size: 12px; font-weight: 800; color: #dc2626; text-transform: uppercase; letter-spacing: 0.5px;">Cost of Goods (COGS)</div>
+                        <div style="font-size: 26px; font-weight: 900; color: #b91c1c; margin-top: 5px;">-₱${totalCOGS.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                        <div style="font-size: 11px; color: #ef4444; margin-top: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 4px;">🔍 Trace Logs</div>
                     </div>
 
                     <!-- PAYROLL -->
-                    <div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 15px; border-radius: 12px; width: 200px;">
-                        <div style="font-size: 11px; font-weight: bold; color: #475569; text-transform: uppercase;">Payroll Paid</div>
-                        <div style="font-size: 20px; font-weight: 900; color: #334155;">-₱${totalPayroll.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="background: white; border: 1px solid #cbd5e1; padding: 25px; border-radius: 16px; width: 240px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                        <div style="font-size: 12px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Payroll Paid</div>
+                        <div style="font-size: 26px; font-weight: 900; color: #334155; margin-top: 5px;">-₱${totalPayroll.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                     </div>
 
                     <!-- OPEX -->
-                    <div style="background: #fffbeb; border: 1px solid #fcd34d; padding: 15px; border-radius: 12px; width: 200px; position: relative;">
-                        <div style="font-size: 11px; font-weight: bold; color: #d97706; text-transform: uppercase;">Operating Expenses</div>
-                        <div style="font-size: 20px; font-weight: 900; color: #b45309;">-₱${totalExpenses.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="background: white; border: 1px solid #fcd34d; padding: 25px; border-radius: 16px; width: 240px; position: relative; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                        <div style="font-size: 12px; font-weight: 800; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px;">Operating Expenses</div>
+                        <div style="font-size: 26px; font-weight: 900; color: #b45309; margin-top: 5px;">-₱${totalExpenses.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
                         
                         <!-- Mini Dropdown Line to OpEx Boxes -->
-                        <div style="position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); width: 2px; height: 20px; background: #cbd5e1;"></div>
+                        <div style="position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); width: 3px; height: 20px; background: #cbd5e1;"></div>
                     </div>
 
                 </div>
 
                 <!-- OPEX BREAKDOWN ROW -->
-                <div style="display: flex; justify-content: flex-end; width: 100%; max-width: 800px; margin-top: 20px; padding-right: 20px;">
-                    <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; padding: 15px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; max-width: 500px;">
+                <div style="display: flex; justify-content: center; width: 100%; max-width: 900px; margin-top: 20px; position: relative; margin-left: auto; margin-right: auto; padding-left: 510px;">
+                    <div style="display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; padding: 25px; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 16px; max-width: 550px;">
                         ${opExBoxes}
                     </div>
                 </div>
 
                 <!-- FINAL NET PROFIT -->
-                <div style="margin-top: 30px;">
-                    <div style="font-size: 24px; color: #94a3b8; font-weight: 900; margin-bottom: 10px;">↓</div>
-                    <div style="background: ${netProfit >= 0 ? '#0f766e' : '#dc2626'}; color: white; padding: 25px 50px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
-                        <div style="font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: rgba(255,255,255,0.8);">Remaining Net Profit</div>
-                        <div style="font-size: 38px; font-weight: 900;">₱${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                        <div style="font-size: 12px; margin-top: 5px; color: rgba(255,255,255,0.7);">${((netProfit / totalRevenue) * 100).toFixed(1)}% Profit Margin</div>
+                <div style="margin-top: 50px; position: relative;">
+                    <div style="position: absolute; top: -40px; left: 50%; transform: translateX(-50%); font-size: 32px; color: #94a3b8; font-weight: 900;">↓</div>
+                    <div style="background: ${netProfit >= 0 ? 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)' : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)'}; color: white; padding: 35px 70px; border-radius: 24px; box-shadow: 0 15px 40px ${netProfit >= 0 ? 'rgba(14, 165, 233, 0.35)' : 'rgba(239, 68, 68, 0.35)'}; border: 1px solid ${netProfit >= 0 ? '#0284c7' : '#9f1239'};">
+                        <div style="font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: rgba(255,255,255,0.9);">Remaining Net Profit</div>
+                        <div style="font-size: 56px; font-weight: 900; margin-top: 5px; line-height: 1; text-shadow: 0 4px 6px rgba(0,0,0,0.2);">₱${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                        <div style="font-size: 15px; margin-top: 15px; font-weight: bold; background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 20px; display: inline-block;">${totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : 0}% Profit Margin</div>
                     </div>
                 </div>
 
@@ -22004,7 +22020,7 @@ window.loadFinancialFlow = async function() {
                 labels: spendLabels,
                 datasets: [{ data: spendData, backgroundColor: spendColors, borderWidth: 2, borderColor: '#ffffff' }]
             },
-            options: { responsive: true, maintainAspectRatio: false, cutout: '60%', plugins: { legend: { position: 'right' } } }
+            options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'right', labels: { font: { weight: 'bold', family: 'Segoe UI' } } } } }
         });
 
         // Bar Chart: Budget vs Actual
@@ -22020,11 +22036,11 @@ window.loadFinancialFlow = async function() {
             data: {
                 labels: budgetLabels,
                 datasets: [
-                    { label: 'Actual Spent', data: budgetActuals, backgroundColor: '#ea580c' },
-                    { label: 'Budget Limit', data: budgetLimitsArr, backgroundColor: '#e2e8f0' }
+                    { label: 'Actual Spent', data: budgetActuals, backgroundColor: '#ea580c', borderRadius: 4 },
+                    { label: 'Budget Limit', data: budgetLimitsArr, backgroundColor: '#e2e8f0', borderRadius: 4 }
                 ]
             },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true } } }
+            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, grid: { borderDash: [5, 5] }, ticks: { font: { weight: 'bold' } } }, x: { grid: { display: false }, ticks: { font: { weight: 'bold' } } } } }
         });
 
         // ==========================================
@@ -22039,41 +22055,41 @@ window.loadFinancialFlow = async function() {
 
             let cogsTarget = 35; let laborTarget = 20; let opexTarget = 25;
 
-            let html = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px;">`;
+            let html = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 25px; margin-bottom: 20px;">`;
 
             if (cogsPct > cogsTarget) {
-                html += `<div style="background: #fff1f2; padding: 15px; border-radius: 8px; border-left: 4px solid #e11d48;">
-                    <strong style="color: #be123c;">🥩 Food Cost Leakage (${cogsPct.toFixed(1)}%)</strong><br>
-                    Your COGS is exceeding the ${cogsTarget}% target. You are losing <b>₱${(totalCOGS - (totalRevenue * (cogsTarget/100))).toLocaleString(undefined, {minimumFractionDigits:0})}</b> to potential spoilage, over-portioning, or supplier price hikes. Check your Waste Logs and Audit Variances immediately.
+                html += `<div style="background: #fff1f2; padding: 20px; border-radius: 12px; border-left: 5px solid #e11d48; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <strong style="color: #be123c; font-size: 15px;">🥩 Food Cost Leakage (${cogsPct.toFixed(1)}%)</strong><br>
+                    <div style="margin-top: 8px;">Your COGS is exceeding the ${cogsTarget}% target. You are losing <b>₱${(totalCOGS - (totalRevenue * (cogsTarget/100))).toLocaleString(undefined, {minimumFractionDigits:0})}</b> to potential spoilage, over-portioning, or supplier price hikes. Check your Waste Logs and Audit Variances immediately.</div>
                 </div>`;
             } else {
-                html += `<div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #16a34a;">
-                    <strong style="color: #15803d;">🥩 Food Cost Optimal (${cogsPct.toFixed(1)}%)</strong><br>
-                    Excellent recipe management. You are keeping ingredients well within the healthy F&B benchmark.
+                html += `<div style="background: #f0fdf4; padding: 20px; border-radius: 12px; border-left: 5px solid #16a34a; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <strong style="color: #15803d; font-size: 15px;">🥩 Food Cost Optimal (${cogsPct.toFixed(1)}%)</strong><br>
+                    <div style="margin-top: 8px;">Excellent recipe management. You are keeping ingredients well within the healthy F&B benchmark.</div>
                 </div>`;
             }
 
             if (laborPct > laborTarget) {
-                html += `<div style="background: #fff1f2; padding: 15px; border-radius: 8px; border-left: 4px solid #e11d48;">
-                    <strong style="color: #be123c;">👥 High Labor Ratio (${laborPct.toFixed(1)}%)</strong><br>
-                    You are over-staffed relative to your sales volume. Consider optimizing the schedule during slow hours to keep payroll under ${laborTarget}%.
+                html += `<div style="background: #fff1f2; padding: 20px; border-radius: 12px; border-left: 5px solid #e11d48; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <strong style="color: #be123c; font-size: 15px;">👥 High Labor Ratio (${laborPct.toFixed(1)}%)</strong><br>
+                    <div style="margin-top: 8px;">You are over-staffed relative to your sales volume. Consider optimizing the schedule during slow hours to keep payroll under ${laborTarget}%.</div>
                 </div>`;
             } else {
-                html += `<div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #16a34a;">
-                    <strong style="color: #15803d;">👥 Labor Optimized (${laborPct.toFixed(1)}%)</strong><br>
-                    Your scheduling is highly efficient. Your staff is generating strong revenue relative to their payroll cost.
+                html += `<div style="background: #f0fdf4; padding: 20px; border-radius: 12px; border-left: 5px solid #16a34a; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <strong style="color: #15803d; font-size: 15px;">👥 Labor Optimized (${laborPct.toFixed(1)}%)</strong><br>
+                    <div style="margin-top: 8px;">Your scheduling is highly efficient. Your staff is generating strong revenue relative to their payroll cost.</div>
                 </div>`;
             }
 
             if (opexPct > opexTarget) {
-                html += `<div style="background: #fffbeb; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
-                    <strong style="color: #b45309;">💡 Heavy Operating Expenses (${opexPct.toFixed(1)}%)</strong><br>
-                    Overhead is eating your profit. You are spending <b>₱${totalExpenses.toLocaleString(undefined, {minimumFractionDigits:0})}</b> on non-food/labor costs. Ensure these are categorized properly in your Budget Tracker to spot the exact leak.
+                html += `<div style="background: #fffbeb; padding: 20px; border-radius: 12px; border-left: 5px solid #f59e0b; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <strong style="color: #b45309; font-size: 15px;">💡 Heavy Operating Expenses (${opexPct.toFixed(1)}%)</strong><br>
+                    <div style="margin-top: 8px;">Overhead is eating your profit. You are spending <b>₱${totalExpenses.toLocaleString(undefined, {minimumFractionDigits:0})}</b> on non-food/labor costs. Ensure these are categorized properly in your Budget Tracker to spot the exact leak.</div>
                 </div>`;
             } else {
-                html += `<div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border-left: 4px solid #16a34a;">
-                    <strong style="color: #15803d;">💡 OpEx Controlled (${opexPct.toFixed(1)}%)</strong><br>
-                    Operating expenses are lean and well within the ${opexTarget}% benchmark.
+                html += `<div style="background: #f0fdf4; padding: 20px; border-radius: 12px; border-left: 5px solid #16a34a; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <strong style="color: #15803d; font-size: 15px;">💡 OpEx Controlled (${opexPct.toFixed(1)}%)</strong><br>
+                    <div style="margin-top: 8px;">Operating expenses are lean and well within the ${opexTarget}% benchmark.</div>
                 </div>`;
             }
 
@@ -22091,9 +22107,9 @@ window.loadFinancialFlow = async function() {
             }
 
             html += `
-                <div style="padding: 15px; border-radius: 8px; border: 1px solid; margin-top: 10px; ${summaryClass}">
-                    <strong style="font-size: 16px;">CEO Executive Summary:</strong><br>
-                    ${summaryText}
+                <div style="padding: 20px; border-radius: 12px; border: 1px solid; margin-top: 15px; ${summaryClass} box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <strong style="font-size: 18px;">CEO Executive Summary:</strong><br>
+                    <div style="margin-top: 8px; font-size: 15px;">${summaryText}</div>
                 </div>
             `;
 
