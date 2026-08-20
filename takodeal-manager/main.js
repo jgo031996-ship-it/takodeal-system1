@@ -335,58 +335,63 @@ window.promptMobileInstall = function() {
 window.loadAdminDashboard = async function() {
   const tbody = document.getElementById('adminTableBody');
   if (!tbody) return;
-  tbody.innerHTML = '<tr><td colspan="3" class="text-center">Loading personnel...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="3" class="text-center">Loading authorized personnel...</td></tr>';
 
   try {
-    const snap = await getDocs(collection(db, "hq_managers"));
-    let html = `
-      <tr>
-        <td style="padding: 15px 10px;"><strong>${MASTER_EMAIL}</strong></td>
-        <td style="padding: 15px 10px;"><span class="badge badge-open">System Architect (Master Key)</span></td>
-        <td style="padding: 15px 10px; color: var(--text-muted); font-size: 12px;">Cannot be removed</td>
-      </tr>
-    `;
+    const snap = await window.getDocs(window.collection(window.db, "hq_managers"));
+    let html = '';
 
     snap.forEach(docSnap => {
       let data = docSnap.data();
+      let isMaster = data.email === "jgo031996@gmail.com"; // Your Master Email
+      
       let perms = data.permissions ? data.permissions.join(', ') : 'all';
       
       // 🔥 BEAUTIFUL PROFILE INJECTION
       let nameStr = data.fullName ? `<br><span style="color:#0f766e; font-size:13px; font-weight:bold;">👤 ${data.fullName}</span>` : '';
       let phoneStr = data.phone ? `<br><span style="color:#64748b; font-size:11px;">📞 ${data.phone}</span>` : '';
+      let pinStr = data.pin ? `<br><span style="color:#dc2626; font-size:11px; font-weight:bold;">🔑 PIN Set</span>` : `<br><span style="color:#f59e0b; font-size:11px; font-weight:bold;">⚠️ No PIN Set</span>`;
       
       let roleBadge = data.role === 'Franchisee' 
           ? `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px;">Franchise Owner (${data.assignedBranch})</span>`
-          : `<span class="badge badge-closed">Appointed Manager</span>`;
+          : (isMaster ? `<span style="background:#e0e7ff; color:#4338ca; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px;">System Architect (Master Key)</span>` : `<span style="background:#e2e8f0; color:#475569; padding:4px 8px; border-radius:4px; font-weight:bold; font-size:11px;">Appointed Manager</span>`);
       
-      // Pass safe strings for the edit buttons
       let safePerms = data.permissions ? data.permissions.join(',') : 'all';
       let safeName = data.fullName ? data.fullName.replace(/'/g, "\\'") : '';
 
+      let actionBtns = `<div style="display: flex; gap: 5px; flex-wrap: wrap;">
+          <button class="btn-refresh" style="background: #f8fafc; color: #334155; border: 1px solid #cbd5e1; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" onclick="window.editManagerProfile('${docSnap.id}', '${safeName}', '${data.phone || ''}', '${data.email}')">✏️ Profile & PIN</button>`;
+          
+      if (isMaster) {
+          actionBtns += `<span style="color: #94a3b8; font-size: 11px; padding: 6px; font-style: italic;">Cannot revoke Master Key</span></div>`;
+      } else {
+          actionBtns += `<button class="btn-refresh" style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" onclick="window.editManagerPermissions('${docSnap.id}', '${data.email}', '${safePerms}')">🔐 Access</button>
+          <button class="btn-refresh" style="background: #fef2f2; color:var(--danger); border: 1px solid #fecaca; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" onclick="window.removeHqManager('${docSnap.id}', '${data.email}')">✖ Revoke</button></div>`;
+      }
+
       html += `
-        <tr style="border-bottom: 1px solid #f1f5f9;">
+        <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
           <td style="padding: 15px 10px;">
             <strong style="font-size: 14px; color: #1e293b;">${data.email}</strong>
             ${nameStr}
             ${phoneStr}
+            ${pinStr}
             <br><span style="font-size: 11px; color: #94a3b8; display:inline-block; margin-top:4px;">Access: [${perms}]</span>
           </td>
           <td style="padding: 15px 10px;">${roleBadge}</td>
-          <td style="padding: 15px 10px;">
-            <div style="display: flex; gap: 5px; flex-wrap: wrap;">
-                <button class="btn-refresh" style="background: #f8fafc; color: #334155; border: 1px solid #cbd5e1; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" onclick="window.editManagerProfile('${docSnap.id}', '${safeName}', '${data.phone || ''}', '${data.email}')">✏️ Profile</button>
-                <button class="btn-refresh" style="background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" onclick="window.editManagerPermissions('${docSnap.id}', '${data.email}', '${safePerms}')">🔐 Access</button>
-                <button class="btn-refresh" style="background: #fef2f2; color:var(--danger); border: 1px solid #fecaca; padding:6px 10px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;" onclick="removeHqManager('${docSnap.id}', '${data.email}')">✖ Revoke</button>
-            </div>
-          </td>
+          <td style="padding: 15px 10px;">${actionBtns}</td>
         </tr>
       `;
     });
 
+    if (html === '') {
+        html = '<tr><td colspan="3" class="text-center" style="color:#64748b; padding:20px;">No managers found. Please sign in again.</td></tr>';
+    }
+
     tbody.innerHTML = html;
   } catch (e) {
-    console.error(e);
-    tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:red;">Error loading VIP list.</td></tr>';
+    console.error("Admin Dashboard Error:", e);
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:red;">Error loading VIP list. Check console.</td></tr>';
   }
 };
 
@@ -461,7 +466,7 @@ window.addHqManager = async function () {
                 return { 
                     name: document.getElementById('swal-name').value,
                     phone: document.getElementById('swal-phone').value,
-                    pin: pinVal, // 🛡️ Grabs the PIN
+                    pin: pinVal, 
                     role: document.getElementById('swal-role').value, 
                     branch: document.getElementById('swal-branch').value 
                 };
@@ -477,11 +482,11 @@ window.addHqManager = async function () {
             ? ['dashboard', 'accounts', 'financial-flow', 'transfers', 'devices', 'payroll', 'inbox', 'dispatch', 'zreadings', 'history', 'expenses', 'branches', 'sop', 'equipment', 'inventory', 'alerts', 'bulletin'] 
             : ['all'];
 
-        await addDoc(collection(db, "hq_managers"), {
+        await window.addDoc(window.collection(window.db, "hq_managers"), {
             email: email, 
             fullName: formValues.name,
             phone: formValues.phone,
-            pin: formValues.pin, // 🛡️ Saves PIN to Firebase
+            pin: formValues.pin, 
             role: roleStr, 
             assignedBranch: branchStr, 
             permissions: permissions, 
@@ -499,27 +504,30 @@ window.addHqManager = async function () {
 
 window.editManagerProfile = async function(docId, currentName, currentPhone, email) {
     const { value: formValues, isConfirmed } = await Swal.fire({
-        title: '✏️ Edit Profile',
+        title: '✏️ Edit Profile & PIN',
         html: `
             <div style="text-align: left; margin-top: 10px;">
                 <label style="font-size: 12px; font-weight: bold; color: #475569;">Email (Uneditable):</label>
                 <input type="text" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; background: #f1f5f9; outline: none; color: #94a3b8;" value="${email}" readonly>
 
                 <label style="font-size: 12px; font-weight: bold; color: #475569;">Full Name:</label>
-                <input type="text" id="edit-profile-name" class="input-box" placeholder="e.g. Juan Dela Cruz" value="${currentName}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
+                <input type="text" id="edit-profile-name" class="input-box" placeholder="e.g. Juan Dela Cruz" value="${currentName}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none; font-weight: bold; color: #1e293b;">
 
                 <label style="font-size: 12px; font-weight: bold; color: #475569;">Contact Number:</label>
-                <input type="text" id="edit-profile-phone" class="input-box" placeholder="09XX XXX XXXX" value="${currentPhone}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
+                <input type="text" id="edit-profile-phone" class="input-box" placeholder="09XX XXX XXXX" value="${currentPhone}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; font-weight: bold; color: #1e293b;">
                 
                 <!-- 🛡️ EDIT PIN BOX -->
-                <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Update Security PIN:</label>
-                <input type="password" id="edit-profile-pin" class="input-box" placeholder="Leave blank to keep current PIN" style="width: 100%; padding: 10px; border-radius: 6px; border: 2px dashed #bae6fd; background: #f8fafc; margin-bottom: 10px; outline: none; text-align: center; letter-spacing: 2px;">
+                <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border: 1px dashed #bae6fd;">
+                    <label style="font-size: 12px; font-weight: 900; color: #0ea5e9; display: block; margin-bottom: 5px;">Update Security PIN / Password:</label>
+                    <input type="password" id="edit-profile-pin" class="input-box" placeholder="Leave blank to keep current PIN" style="width: 100%; padding: 12px; border-radius: 6px; border: 2px solid #7dd3fc; background: white; margin-bottom: 10px; outline: none; text-align: center; letter-spacing: 4px; font-weight: bold; font-size: 16px; color: #0f172a;">
+                    <div style="font-size: 11px; color: #0284c7; margin-top: 5px; font-weight: bold; text-align: center;">Minimum 4 characters required.</div>
+                </div>
             </div>
         `,
         focusConfirm: false,
         showCancelButton: true,
         confirmButtonColor: '#0f766e',
-        confirmButtonText: 'Save Profile',
+        confirmButtonText: '💾 Save Profile',
         customClass: { popup: 'rounded-2xl shadow-xl' },
         preConfirm: () => {
             let newPin = document.getElementById('edit-profile-pin').value.trim();
@@ -538,6 +546,8 @@ window.editManagerProfile = async function(docId, currentName, currentPhone, ema
     if (!isConfirmed) return;
 
     try {
+        Swal.fire({title: 'Saving Profile...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
         // 🛡️ Smart Payload: Only update the PIN if they actually typed a new one!
         let updatePayload = {
             fullName: formValues.name,
@@ -548,19 +558,28 @@ window.editManagerProfile = async function(docId, currentName, currentPhone, ema
             updatePayload.pin = formValues.pin;
         }
 
-        await updateDoc(doc(db, "hq_managers", docId), updatePayload);
+        // 🔥 Bulletproof execution using window context
+        await window.updateDoc(window.doc(window.db, "hq_managers", docId), updatePayload);
         
         Swal.fire({
             title: '✅ Profile Saved!',
+            text: 'The profile details and PIN have been successfully updated.',
             icon: 'success',
-            timer: 1500,
+            timer: 2000,
             showConfirmButton: false,
             customClass: { popup: 'rounded-2xl' }
         });
+
+        // Update temporary memory so they don't get locked out!
+        if (window.tempAuthData && window.tempAuthData.docId === docId) {
+            if (formValues.pin) window.tempAuthData.pin = formValues.pin;
+            window.tempAuthData.fullName = formValues.name;
+        }
+
         window.loadAdminDashboard();
     } catch(e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to update profile.', 'error');
+        console.error("Profile Edit Error:", e);
+        Swal.fire('Error', 'Failed to update profile. Firebase says: ' + e.message, 'error');
     }
 };
 
@@ -2136,7 +2155,7 @@ window.revertAndEditRestock = async function(encodedData) {
         confirmButtonColor: '#f59e0b',
         cancelButtonColor: '#64748b',
         confirmButtonText: 'Yes, Revert it!',
-        customClass: { popup: 'rounded-2xl' }
+        customClass: { popup: 'rounded-2xl shadow-xl' }
     });
 
     if (!confirm.isConfirmed) return;
@@ -2145,51 +2164,71 @@ window.revertAndEditRestock = async function(encodedData) {
 
     try {
         for (let item of invoice.items) {
-            let docRef = window.doc(window.db, "inventory", item.id);
-            let snap = await window.getDoc(docRef);
-            if (snap.exists()) {
-                let data = snap.data();
-                let oldQty = parseFloat(data.currentStock || 0);
-                
-                let convRate = parseFloat(item.conversionRate || data.conversionRate || data.conversion || 1);
-                let subBaseQty = parseFloat(item.qty) * convRate;
-                let newQty = oldQty - subBaseQty;
+            
+            // 🛡️ THE FALLBACK FIX: Hunt down the item even if it's missing its ID!
+            let docRef;
+            if (item.id) {
+                docRef = window.doc(window.db, "inventory", item.id);
+            } else {
+                let itemName = item.name || item.itemName;
+                const invQ = window.query(window.collection(window.db, "inventory"), window.where("name", "==", itemName), window.where("branch", "==", "Main Office"));
+                const invSnap = await window.getDocs(invQ);
+                if (!invSnap.empty) docRef = invSnap.docs[0].ref;
+            }
 
-                await window.updateDoc(docRef, { currentStock: newQty });
+            if (docRef) {
+                let snap = await window.getDoc(docRef);
+                if (snap.exists()) {
+                    let data = snap.data();
+                    let oldQty = parseFloat(data.currentStock || 0);
+                    
+                    // Safely extract the amount that was originally added
+                    let itemPurchQty = parseFloat(item.purchQty) || parseFloat(item.qty) || 0;
+                    let convRate = parseFloat(item.conversionRate || data.conversionRate || data.conversion || 1);
+                    let subBaseQty = parseFloat(item.baseQtyToAdd) || (itemPurchQty * convRate);
+                    
+                    let newQty = oldQty - subBaseQty;
 
-                await window.addDoc(window.collection(window.db, "stock_logs"), {
-                    branch: data.branch || "Main Office",
-                    item: data.name || item.name,
-                    oldQty: oldQty,
-                    newQty: newQty,
-                    variance: -subBaseQty,
-                    uom: data.uom || 'units',
-                    type: "HQ Restock Reverted (Edit)",
-                    note: `Invoice undone by ${localStorage.getItem('cashierName') || 'Manager'}`,
-                    user: localStorage.getItem('cashierName') || 'Manager',
-                    timestamp: new Date()
-                });
+                    // Reverse the math!
+                    await window.updateDoc(docRef, { currentStock: newQty });
+
+                    await window.addDoc(window.collection(window.db, "stock_logs"), {
+                        branch: "Main Office",
+                        item: item.name || item.itemName,
+                        oldQty: oldQty,
+                        newQty: newQty,
+                        variance: -subBaseQty,
+                        uom: data.uom || 'units',
+                        type: "HQ Restock Reverted (Edit)",
+                        note: `Invoice undone by ${localStorage.getItem('cashierName') || 'Manager'}`,
+                        user: localStorage.getItem('cashierName') || 'Manager',
+                        timestamp: new Date()
+                    });
+                }
             }
         }
 
+        // Delete the grouped invoice document
         await window.deleteDoc(window.doc(window.db, "hq_restocks", invoice.id));
 
+        // Load the items back into the cart UI so the manager can fix them
         window.restockCart = invoice.items;
         document.getElementById('restockSupplierInput').value = invoice.supplier || '';
         document.getElementById('restockCostInput').value = invoice.totalCost || '';
 
         Swal.close();
         document.getElementById('restockModal').style.display = 'flex';
+        
         if (typeof window.renderRestockCart === 'function') window.renderRestockCart();
         if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
         if (typeof window.loadStockLogs === 'function') window.loadStockLogs();
-        window.updateLifetimeRestockCost();
+        if (typeof window.updateLifetimeRestockCost === 'function') window.updateLifetimeRestockCost();
 
         Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Restock Reverted! Edit your cart now.', showConfirmButton: false, timer: 3000 });
 
     } catch (e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to revert stock safely.', 'error');
+        console.error("Revert Error:", e);
+        Swal.fire('Error', 'Failed to revert stock safely. ' + e.message, 'error');
     }
 };
 
