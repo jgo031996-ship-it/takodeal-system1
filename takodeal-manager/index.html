@@ -1516,41 +1516,44 @@
       </div>
     </div>
 
-    <div id="view-devices" class="view">
-      <div
-        style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); display: flex; flex-wrap: wrap; gap: 15px; justify-content: space-between; align-items: center;">
-        <div>
-          <h2 style="margin: 0; color: var(--text-main);">📱 Registered POS Devices</h2>
-          <p style="margin: 5px 0 0 0; color: var(--text-muted); font-size: 14px;">Manage, block, or delete tablets
-            currently locked to your branches.</p>
-        </div>
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-            <button class="btn-refresh" style="background: #ef4444; color: white; border: none; padding: 10px 20px; font-weight: bold; box-shadow: 0 2px 4px rgba(239,68,68,0.3);" onclick="window.bulkDeleteDevices()">🗑️ Delete Selected</button>
-            <button class="btn-refresh" style="background: var(--primary); color: white; border: none; padding: 10px 20px;"
-              onclick="loadDeviceFleet()">🔄 Refresh Devices</button>
-        </div>
-      </div>
+    <div id="view-devices" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+      <div style="max-width: 1400px; margin: 0 auto;">
+          <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden;">
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; padding: 25px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
+              <div>
+                <h2 style="margin: 0; color: #1e293b; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 24px;">📱</span> Registered POS Devices
+                </h2>
+                <span style="font-size: 13px; color: #64748b; margin-top: 4px; display: block; font-weight: 500;">Manage, block, or delete tablets currently locked to your branches.</span>
+              </div>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                  <button class="btn-refresh" style="background: #ef4444; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); transition: 0.2s;" onclick="window.bulkDeleteDevices()">🗑️ Delete Selected</button>
+                  <button class="btn-refresh" style="background: #0ea5e9; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;" onclick="loadDeviceFleet()">🔄 Refresh Devices</button>
+              </div>
+            </div>
 
-      <div class="card">
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th style="width: 40px; text-align: center;"><input type="checkbox" id="selectAllDevices" onchange="window.toggleAllDeviceCheckboxes(this)" style="cursor: pointer; width: 16px; height: 16px;"></th>
-                <th>Device Name / ID</th>
-                <th>Assigned Branch</th>
-                <th>Registration Date</th>
-                <th>Status</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="deviceFleetBody">
-              <tr>
-                <td colspan="6" class="text-center">Loading device fleet...</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+            <div class="table-responsive">
+              <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                <thead style="background: white; border-bottom: 2px solid #cbd5e1;">
+                  <tr>
+                    <th style="width: 50px; text-align: center; padding: 15px 10px;"><input type="checkbox" id="selectAllDevices" onchange="window.toggleAllDeviceCheckboxes(this)" style="cursor: pointer; width: 16px; height: 16px; accent-color: #0ea5e9;"></th>
+                    <th style="padding: 15px 20px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Device Name / ID</th>
+                    <th style="padding: 15px 20px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Assigned Branch</th>
+                    <th style="padding: 15px 20px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Registration Date</th>
+                    <th style="padding: 15px 20px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Status</th>
+                    <th style="padding: 15px 20px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="deviceFleetBody">
+                  <tr>
+                    <td colspan="6" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">Loading device fleet...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+          </div>
       </div>
     </div>
 
