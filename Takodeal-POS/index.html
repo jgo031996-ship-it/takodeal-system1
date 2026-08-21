@@ -2399,6 +2399,26 @@ window.loadSalesDashboard = async function () {
       });
       
       // Re-sort with parked orders included
+      // 🚨 THE OFFLINE QUEUE INJECTOR 🚨
+      // This pulls orders from the tablet's hard drive so they show up even without Wi-Fi!
+      try {
+          let offlineQ = JSON.parse(localStorage.getItem('takodeal_offline_queue')) || [];
+          let validStartTime = currentShift.startTime instanceof Date ? currentShift.startTime : (currentShift.startTime && currentShift.startTime.toDate ? currentShift.startTime.toDate() : new Date(currentShift.startTime));
+          
+          offlineQ.forEach(p => {
+              let pTime = p.localTimestamp ? new Date(p.localTimestamp) : new Date();
+              // Only inject it if it belongs to THIS shift!
+              if (pTime >= validStartTime) {
+                  transactions.push({
+                      ...p,
+                      id: "OFFLINE-" + p.receiptId,
+                      timestamp: pTime,
+                      isPendingSync: true, // Custom flag to trigger the yellow badge!
+                      status: "Paid"
+                  });
+              }
+          });
+      } catch(e) { console.error("Offline queue injection error", e); }
       transactions.sort((a, b) => {
           let tA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime()) : 0;
           let tB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime()) : 0;
@@ -2414,7 +2434,12 @@ window.loadSalesDashboard = async function () {
       tBody = '<tr><td colspan="8" style="text-align:center;">No transactions found for this shift.</td></tr>'; 
   } else {
     transactions.forEach((tx, idx) => {
-      let statusBadge = tx.status === 'Voided' ? '<span class="status-badge status-out">Voided</span>' : (tx.status === 'Parked' ? '<span class="status-badge" style="background:#fef3c7; color:#d97706; border:1px solid #fcd34d;">Parked</span>' : '<span class="status-badge status-good">Paid</span>');
+      // 🔥 UPDATED BADGE LOGIC FOR OFFLINE SYNC 🔥
+      let statusBadge = '';
+      if (tx.status === 'Voided') statusBadge = '<span class="status-badge status-out">Voided</span>';
+      else if (tx.status === 'Parked') statusBadge = '<span class="status-badge" style="background:#fef3c7; color:#d97706; border:1px solid #fcd34d;">Parked</span>';
+      else if (tx.isPendingSync) statusBadge = '<span class="status-badge" style="background:#fef9c3; color:#ca8a04; border:1px solid #fde047; animation: pulse 2s infinite;">⏳ Pending Sync</span>';
+      else statusBadge = '<span class="status-badge status-good">Paid</span>';
       let txDate = "Today"; let txTime = "--:--";
       if (tx.timestamp && tx.timestamp.toDate) { 
           let d = tx.timestamp.toDate(); 
