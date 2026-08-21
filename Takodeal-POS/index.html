@@ -2430,14 +2430,17 @@ window.loadSalesDashboard = async function () {
         <td>${txDate}</td>
         <td>${txTime}</td>
         <td style="font-weight:bold; color: var(--primary);">${displayAmount}</td>
-        <td style="text-align:right;">
-          <div class="dot-menu" onclick="toggleTxMenu('txMenu-${idx}')">⋮
-            <div class="action-dropdown" id="txMenu-${idx}">
-              <div class="action-item" onclick="window.viewReceiptDetails('${tx.receiptId}')">View Details</div>
-              <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')">🖨️ Print Receipt</div>
-              <div class="action-item danger" onclick="voidTx('${tx.receiptId}')">Void Transaction</div>
+        <td style="padding: 12px 10px; text-align: center; vertical-align: middle;">
+            <div style="position: relative; display: inline-block;">
+                <button class="dot-menu" onclick="toggleTxMenu('txMenu-${idx}')" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='white';">
+                    ⚙️ Action ▼
+                </button>
+                <div class="action-dropdown" id="txMenu-${idx}" style="right: 0; top: 100%; margin-top: 5px; text-align: left; width: 160px; font-weight: bold; cursor: default; z-index: 100;">
+                    div class="action-item" onclick="window.viewReceiptDetails('${tx.receiptId}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${txNet}, '${safeCart}')" style="border-bottom: 1px solid #f1f5f9; padding: 10px 15px;">🔍 View Details</div>
+                    <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')" style="border-bottom: 1px solid #f1f5f9; padding: 10px 15px;">🖨️ Print Receipt</div>
+                    <div class="action-item danger" onclick="voidTx('${tx.receiptId}')" style="color: #dc2626; padding: 10px 15px;">🗑️ Void Transaction</div>
+                </div>
             </div>
-          </div>
         </td>
       </tr>`;
     });
