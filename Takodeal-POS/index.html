@@ -243,7 +243,7 @@
     /* 🔥 SIDEBAR & BADGE SQUISH FIX 🔥 */
     .nav-item { flex-wrap: wrap; }
     .nav-item-text { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: space-between; }
-    .sidebar-footer { flex-shrink: 0; padding-bottom: 35px; z-index: 50; } /* Prevents the Sign Out button from hiding behind the tablet OS bar! */
+    .sidebar-footer { flex-shrink: 0; padding-bottom: 35px; z-index: 50; } 
     .nav-menu { padding-bottom: 30px; }
 
     /* 💻 MEDIUM DESKTOP */
@@ -251,42 +251,53 @@
         .top-bar-right div { gap: 5px !important; }
         .top-bar-right button { padding: 8px 12px !important; font-size: 13px !important; white-space: nowrap !important; }
         .top-title { font-size: 16px !important; }
+        .ticket-panel { width: 340px; } /* Slightly reduce cart size on medium laptops */
     }
     
-    /* 📱 STANDARD TABLET (e.g., iPad, Honor Pad x9) */
+    /* 📱 STANDARD TABLET (e.g., iPad, Honor Pad x9 Landscape) */
     @media screen and (max-width: 1024px) {
-        .sidebar { width: 85px; } /* Auto-collapse the sidebar */
+        .sidebar { width: 75px; } /* Maximum collapse to save space */
         .sidebar .brand-container .brand-text, .sidebar .nav-item-text, .sidebar .sidebar-footer { display: none !important; }
         .sidebar .sidebar-header { justify-content: center; padding: 15px 0; }
-        .sidebar .nav-item { justify-content: center; padding: 15px 0; margin: 4px 12px; }
-        .sidebar .nav-item .nav-icon { margin: 0; font-size: 22px; }
+        .sidebar .nav-item { justify-content: center; padding: 15px 0; margin: 4px 8px; }
+        .sidebar .nav-item .nav-icon { margin: 0; font-size: 20px; }
         
-        .pos-layout { gap: 15px; padding: 15px; }
-        .ticket-panel { width: 330px; } /* Shrinks the cart to fit the screen */
-        .item-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
-        .item-card { height: 160px; border-radius: 12px; }
-        .item-name-overlay { font-size: 12px; padding: 25px 10px 10px 10px; }
-        .cat-btn { padding: 10px 16px; font-size: 13px; }
-        .ticket-footer { padding: 15px; }
-        .total-line.grand { margin-top: 10px; margin-bottom: 10px; padding-top: 10px; font-size: 20px; }
-        .btn-place { padding: 14px; font-size: 16px; }
+        /* Maximize POS Area by killing dead space */
+        .pos-layout { gap: 10px; padding: 10px; }
+        .ticket-panel { width: 290px; } /* Slimmer cart so the menu has space */
+        
+        /* Tighten Top Bar */
+        .top-bar { padding: 0 15px; }
+        
+        /* Scale Menu Grid to fit 3-4 columns perfectly */
+        .item-grid-container { padding: 15px; }
+        .category-header { padding: 15px; gap: 8px; }
+        .item-grid { grid-template-columns: repeat(auto-fill, minmax(115px, 1fr)); gap: 10px; }
+        .item-card { height: 135px; border-radius: 10px; }
+        .item-name-overlay { font-size: 11px; padding: 25px 8px 8px 8px; }
+        .cat-btn { padding: 8px 12px; font-size: 12px; }
+        
+        /* Tighten Cart Elements */
+        .ticket-header { padding: 15px; }
+        .ticket-footer { padding: 12px; }
+        .cart-item { padding: 12px 15px; font-size: 13px; }
+        .total-line.grand { margin-top: 8px; margin-bottom: 8px; padding-top: 8px; font-size: 18px; }
+        .btn-place { padding: 12px; font-size: 15px; }
+        .action-row button { padding: 10px; font-size: 13px; }
     }
     
-    /* 📱 SMALL TABLET */
+    /* 📱 SMALL TABLET (Portrait or very small screens) */
     @media screen and (max-width: 850px) {
-        .ticket-panel { width: 280px; } 
-        .item-grid-container { padding: 15px; }
-        .item-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
-        .item-card { height: 140px; border-radius: 10px; }
-        .item-name-overlay { font-size: 11px; padding: 20px 8px 8px 8px; }
-        .top-bar-right button { padding: 6px 10px !important; font-size: 12px !important; }
+        .ticket-panel { width: 260px; } 
+        .item-grid { grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); gap: 8px; }
+        .item-card { height: 120px; border-radius: 8px; }
+        .item-name-overlay { font-size: 10px; padding: 15px 5px 5px 5px; }
+        .top-bar-right button { padding: 6px 8px !important; font-size: 11px !important; }
     }
     
     /* 📱 MOBILE PHONES */
     @media (max-width: 768px) {
       body { flex-direction: column; overflow: auto; height: 100dvh; }
-      
-      /* Move sidebar to a bottom app bar */
       .sidebar { position: fixed; bottom: 0; left: 0; right: 0; width: 100%; height: 70px; flex-direction: row; z-index: 1000; box-shadow: 0 -4px 15px rgba(0,0,0,0.1); }
       .sidebar-header, .sidebar-footer, .nav-item-text { display: none !important; }
       .nav-menu { display: flex; flex-direction: row; justify-content: space-around; align-items: center; padding: 0; width: 100%; overflow-x: auto; overflow-y: hidden; }
@@ -298,7 +309,6 @@
       .content-area { width: 100%; display: block; margin-bottom: 70px; overflow-y: auto; height: calc(100dvh - 70px); }
       .top-bar { position: sticky; top: 0; left: 0; width: 100%; z-index: 10; padding: 0 15px; }
       
-      /* Stack the Grid on top of the Cart for phones */
       .pos-layout { display: flex; flex-direction: column; height: auto; overflow: visible; padding: 10px; gap: 15px; }
       .menu-panel { width: 100%; border-right: none; height: auto; min-height: 50vh; overflow: visible; }
       .item-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
