@@ -727,7 +727,8 @@
             <h2 style="margin: 0; color: #1e293b; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">📊</span> Daily Stock Report</h2>
             <p style="color: #64748b; font-size: 13px; margin: 6px 0 0 0; font-weight: 500;">Report your physical count. HQ will see the variance and dispatch new stock.</p>
           </div>
-          <div style="display: flex; gap: 10px;">
+          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+             <button onclick="window.openDeliveryHistoryModal()" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.1);" onmouseover="this.style.background='#bae6fd';" onmouseout="this.style.background='#e0f2fe';">🚚 Delivery History</button>
              <button id="btnTabReqHist" onclick="window.switchStockReqTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">📜 View History</button>
              <button id="btnTabReqNew" onclick="window.switchStockReqTab('New')" style="background: #0ea5e9; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;">➕ New Request</button>
           </div>
