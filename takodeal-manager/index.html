@@ -3093,28 +3093,32 @@
                 </div>
               </div>
 
-              <div style="display: flex; gap: 15px; margin-bottom: 15px; align-items: flex-end; flex-wrap: wrap;">
-                <div style="flex: 2; min-width: 200px;">
-                  <label style="font-size: 12px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 6px;">Item to Send</label>
-                  <select id="dispItem" onchange="window.updateDispatchUomLabel()" style="width: 100%; padding: 12px 15px; border: 1px solid #cbd5e1; border-radius: 8px; outline: none; font-weight: bold; box-sizing: border-box; cursor: pointer; background: white; font-size: 14px;">
-                    <option value="">Loading stock...</option>
-                  </select>
-                </div>
-
-                <div style="flex: 1; min-width: 250px;">
-                  <label style="font-size: 12px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 6px;">Quantity</label>
-                  <div style="display: flex; gap: 8px; align-items: center; height: 46px;">
-                    <input type="number" id="dispQty" placeholder="0" style="flex: 1; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; outline: none; font-weight: 900; height: 100%; box-sizing: border-box; font-size: 15px; color: #f59e0b;">
-                    
-                    <select id="dispUomSelect" style="padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-weight: 900; color: #0ea5e9; background: #f8fafc; outline: none; cursor: pointer; height: 100%; box-sizing: border-box; font-size: 13px;">
-                      <option value="base">Units</option>
-                    </select>
-
-                    <button onclick="window.addToDispatchCart()" style="background: #0f172a; color: white; border: none; padding: 0 20px; border-radius: 8px; font-weight: 900; cursor: pointer; height: 100%; box-sizing: border-box; white-space: nowrap; transition: 0.2s; font-size: 14px;">
-                      ➕ Add
-                    </button>
+              <!-- 📦 UPGRADED RESPONSIVE DISPATCH INPUTS -->
+              <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px dashed #cbd5e1; margin-bottom: 20px;">
+                  <div style="margin-bottom: 15px;">
+                      <label style="font-size: 11px; font-weight: 900; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;">Item to Send</label>
+                      <select id="dispItem" onchange="window.updateDispatchUomLabel()" style="width: 100%; padding: 14px 15px; border: 1px solid #cbd5e1; border-radius: 8px; outline: none; font-weight: bold; box-sizing: border-box; cursor: pointer; background: white; font-size: 14px; color: #0f172a;">
+                          <option value="">Loading stock...</option>
+                      </select>
                   </div>
-                </div>
+                  
+                  <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+                      <div style="flex: 1; min-width: 120px;">
+                          <label style="font-size: 11px; font-weight: 900; color: #0ea5e9; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;">Quantity</label>
+                          <input type="number" id="dispQty" placeholder="0" style="width: 100%; padding: 14px 15px; border: 2px solid #bae6fd; border-radius: 8px; outline: none; font-weight: 900; box-sizing: border-box; font-size: 16px; color: #0284c7; background: #f0f9ff; transition: 0.2s;">
+                      </div>
+                      <div style="flex: 1; min-width: 120px;">
+                          <label style="font-size: 11px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;">Unit</label>
+                          <select id="dispUomSelect" style="width: 100%; padding: 14px 15px; border: 1px solid #cbd5e1; border-radius: 8px; font-weight: 900; color: #475569; background: white; outline: none; cursor: pointer; box-sizing: border-box; font-size: 14px; transition: 0.2s;">
+                              <option value="base">Units</option>
+                          </select>
+                      </div>
+                      <div style="min-width: 120px; flex: 1;">
+                          <button onclick="window.addToDispatchCart()" style="width: 100%; background: #0ea5e9; color: white; border: none; padding: 14px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; box-sizing: border-box; white-space: nowrap; transition: 0.2s; font-size: 15px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3);" onmouseover="this.style.background='#0284c7'; this.style.transform='translateY(-2px)';" onmouseout="this.style.background='#0ea5e9'; this.style.transform='translateY(0)';">
+                              ➕ Add to List
+                          </button>
+                      </div>
+                  </div>
               </div>
 
               <!-- 🤖 AI TRACKER SECURE CONTAINER -->
