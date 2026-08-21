@@ -239,45 +239,74 @@
     /* ========================================== */
     /* 📱 FLUID TABLET RESPONSIVENESS ENGINE */
     /* ========================================== */
+    
+    /* 🔥 SIDEBAR & BADGE SQUISH FIX 🔥 */
+    .nav-item { flex-wrap: wrap; }
+    .nav-item-text { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: space-between; }
+    .sidebar-footer { flex-shrink: 0; padding-bottom: 35px; z-index: 50; } /* Prevents the Sign Out button from hiding behind the tablet OS bar! */
+    .nav-menu { padding-bottom: 30px; }
+
+    /* 💻 MEDIUM DESKTOP */
     @media screen and (max-width: 1250px) {
         .top-bar-right div { gap: 5px !important; }
-        .top-bar-right button { padding: 6px 10px !important; font-size: 12px !important; white-space: nowrap !important; }
-        .top-title { font-size: 15px !important; }
+        .top-bar-right button { padding: 8px 12px !important; font-size: 13px !important; white-space: nowrap !important; }
+        .top-title { font-size: 16px !important; }
     }
+    
+    /* 📱 STANDARD TABLET (e.g., iPad, Honor Pad x9) */
     @media screen and (max-width: 1024px) {
-        .sidebar { width: 75px; }
-        .sidebar .brand-container, .sidebar .nav-item-text, .sidebar .sidebar-footer { display: none; }
-        .sidebar .brand-icon { display: block; }
-        .ticket-panel { width: 330px; } 
+        .sidebar { width: 85px; } /* Auto-collapse the sidebar */
+        .sidebar .brand-container .brand-text, .sidebar .nav-item-text, .sidebar .sidebar-footer { display: none !important; }
+        .sidebar .sidebar-header { justify-content: center; padding: 15px 0; }
+        .sidebar .nav-item { justify-content: center; padding: 15px 0; margin: 4px 12px; }
+        .sidebar .nav-item .nav-icon { margin: 0; font-size: 22px; }
+        
+        .pos-layout { gap: 15px; padding: 15px; }
+        .ticket-panel { width: 330px; } /* Shrinks the cart to fit the screen */
         .item-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
-        .item-card { height: 150px; border-radius: 12px; }
-        .item-name-overlay { font-size: 12px; padding: 20px 10px 10px 10px; }
-        .cat-btn { padding: 8px 16px; font-size: 12px; }
-        .ticket-footer { padding: 10px 15px; }
-        .total-line.grand { margin-top: 10px; margin-bottom: 10px; padding-top: 10px; font-size: 18px; }
-        .btn-place { padding: 12px; font-size: 16px; }
+        .item-card { height: 160px; border-radius: 12px; }
+        .item-name-overlay { font-size: 12px; padding: 25px 10px 10px 10px; }
+        .cat-btn { padding: 10px 16px; font-size: 13px; }
+        .ticket-footer { padding: 15px; }
+        .total-line.grand { margin-top: 10px; margin-bottom: 10px; padding-top: 10px; font-size: 20px; }
+        .btn-place { padding: 14px; font-size: 16px; }
     }
+    
+    /* 📱 SMALL TABLET */
     @media screen and (max-width: 850px) {
         .ticket-panel { width: 280px; } 
-        .item-grid { grid-template-columns: repeat(auto-fill, minmax(115px, 1fr)); gap: 10px; padding: 10px; }
-        .item-card { height: 130px; border-radius: 10px; }
-        .item-name-overlay { font-size: 11px; padding: 15px 8px 8px 8px; }
+        .item-grid-container { padding: 15px; }
+        .item-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+        .item-card { height: 140px; border-radius: 10px; }
+        .item-name-overlay { font-size: 11px; padding: 20px 8px 8px 8px; }
+        .top-bar-right button { padding: 6px 10px !important; font-size: 12px !important; }
     }
+    
+    /* 📱 MOBILE PHONES */
     @media (max-width: 768px) {
-      body { flex-direction: column; overflow: auto; }
-      .sidebar { position: fixed; bottom: 0; left: 0; right: 0; width: 100%; height: 60px; flex-direction: row; z-index: 100; }
-      .sidebar-header, .sidebar-footer, .nav-item-text { display: none; }
-      .nav-menu { display: flex; flex-direction: row; justify-content: space-around; padding: 0; width: 100%; }
-      .nav-item { flex: 1; text-align: center; border-left: none; border-bottom: 4px solid transparent; flex-direction: column; padding: 10px 0; gap: 0; }
-      .nav-item.active { background: none; border-bottom-color: var(--primary); }
-      .nav-item span { font-size: 20px; }
-      .content-area { width: 100%; display: block; margin-bottom: 60px; overflow-y: auto; }
-      .top-bar { position: sticky; top: 0; left: 0; width: 100%; z-index: 10; }
-      .pos-layout { display: block; height: auto; }
-      .menu-panel { width: 100%; border-right: none; height: auto; border-bottom: 3px solid var(--primary); display: block; margin-top: 10px; }
-      .item-grid { grid-template-columns: 1fr 1fr; }
-      .ticket-panel { width: 100%; display: block; height: auto; min-width: 100%; max-width: 100%; border-left: none; }
-      .modal { width: 90% !important; margin: 20px; }
+      body { flex-direction: column; overflow: auto; height: 100dvh; }
+      
+      /* Move sidebar to a bottom app bar */
+      .sidebar { position: fixed; bottom: 0; left: 0; right: 0; width: 100%; height: 70px; flex-direction: row; z-index: 1000; box-shadow: 0 -4px 15px rgba(0,0,0,0.1); }
+      .sidebar-header, .sidebar-footer, .nav-item-text { display: none !important; }
+      .nav-menu { display: flex; flex-direction: row; justify-content: space-around; align-items: center; padding: 0; width: 100%; overflow-x: auto; overflow-y: hidden; }
+      .nav-item { flex: 1; text-align: center; border-left: none; border-bottom: 4px solid transparent; flex-direction: column; padding: 15px 10px; gap: 0; min-width: 60px; margin: 0; border-radius: 0; }
+      .nav-item.active { background: none; border-bottom-color: var(--primary); box-shadow: none; transform: none; }
+      .nav-item span { font-size: 24px; transform: none !important; }
+      .nav-item:hover { transform: none; background: rgba(255,255,255,0.05); }
+      
+      .content-area { width: 100%; display: block; margin-bottom: 70px; overflow-y: auto; height: calc(100dvh - 70px); }
+      .top-bar { position: sticky; top: 0; left: 0; width: 100%; z-index: 10; padding: 0 15px; }
+      
+      /* Stack the Grid on top of the Cart for phones */
+      .pos-layout { display: flex; flex-direction: column; height: auto; overflow: visible; padding: 10px; gap: 15px; }
+      .menu-panel { width: 100%; border-right: none; height: auto; min-height: 50vh; overflow: visible; }
+      .item-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+      .ticket-panel { width: 100%; display: flex; height: auto; min-width: 100%; max-width: 100%; border-left: none; min-height: 60vh; margin-bottom: 20px; }
+      
+      .modal { width: 95% !important; margin: 10px auto; max-height: 90vh; }
+      .modal-body { max-height: 70vh; overflow-y: auto; }
+      .discount-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
