@@ -10304,3 +10304,120 @@ window.toggleFullScreen = function() {
         }
     }
 };
+
+// ==========================================
+// 🚚 DELIVERY HISTORY MODAL ENGINE
+// ==========================================
+window.openDeliveryHistoryModal = async function() {
+    Swal.fire({title: 'Fetching Deliveries...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    let branch = localStorage.getItem('takodeal_device_branch');
+    
+    try {
+        const q = window.query(window.collection(window.db, "dispatch_logs"), window.where("toBranch", "==", branch));
+        const snap = await window.getDocs(q);
+
+        let historyItems = [];
+        snap.forEach(doc => {
+            let d = doc.data();
+            // 🛡️ ONLY pull deliveries that have been completed by the cashier!
+            if (d.status === "Received" || d.status === "Discrepancy" || d.status === "Lost in Transit") {
+                historyItems.push({id: doc.id, ...d});
+            }
+        });
+
+        // Sort newest first
+        historyItems.sort((a, b) => {
+            let tA = a.receivedAt ? (a.receivedAt.toDate ? a.receivedAt.toDate().getTime() : new Date(a.receivedAt).getTime()) : 0;
+            let tB = b.receivedAt ? (b.receivedAt.toDate ? b.receivedAt.toDate().getTime() : new Date(b.receivedAt).getTime()) : 0;
+            return tB - tA;
+        });
+
+        let grouped = {};
+        historyItems.forEach(item => {
+            let key = item.dispatchId || `${item.date}_${item.driver}`;
+            if (!grouped[key]) {
+                grouped[key] = {
+                    dispatchId: key,
+                    date: item.date,
+                    driver: item.driver,
+                    receivedBy: item.receivedBy || 'System',
+                    receivedAt: item.receivedAt ? (item.receivedAt.toDate ? item.receivedAt.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown') : 'Unknown',
+                    items: []
+                };
+            }
+            grouped[key].items.push(item);
+        });
+
+        let html = `<div style="max-height: 65vh; overflow-y: auto; text-align: left; padding-right: 5px;">`;
+
+        if (Object.keys(grouped).length === 0) {
+            html += `<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold; font-size: 15px;">No past deliveries found.</div>`;
+        } else {
+            for (let key in grouped) {
+                let group = grouped[key];
+                html += `
+                <div style="background: white; border: 1px solid #cbd5e1; border-radius: 16px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.03);">
+                    <div style="background: #f8fafc; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <div>
+                            <h4 style="margin: 0; color: #0f172a; font-size: 15px; font-weight: 900; display: flex; align-items: center; gap: 6px;"><span>🚚</span> Dispatched: ${group.date}</h4>
+                            <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: bold;">Driver: ${group.driver}</div>
+                        </div>
+                        <div style="text-align: right;">
+                            <div style="font-size: 11px; color: #0ea5e9; font-weight: 900; background: #e0f2fe; padding: 4px 8px; border-radius: 6px; border: 1px solid #bae6fd; display: inline-block;">Received By: ${group.receivedBy}</div>
+                            <div style="font-size: 11px; color: #64748b; margin-top: 6px; font-weight: bold;">${group.receivedAt}</div>
+                        </div>
+                    </div>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <thead style="background: white; border-bottom: 2px solid #e2e8f0;">
+                            <tr>
+                                <th style="padding: 10px 15px; text-align: left; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Item</th>
+                                <th style="padding: 10px 15px; text-align: center; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Expected</th>
+                                <th style="padding: 10px 15px; text-align: center; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Received</th>
+                                <th style="padding: 10px 15px; text-align: left; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                group.items.forEach(item => {
+                    let expectedQty = item.displayQty !== undefined ? item.displayQty : item.qty;
+                    let rcvQty = item.receivedDisplayQty !== undefined ? item.receivedDisplayQty : expectedQty;
+                    let friendlyUom = item.displayUom || item.uom;
+
+                    let statusBadge = '';
+                    if (item.status === 'Received') statusBadge = '<span style="color: #16a34a; font-weight: 900;">✅ Complete</span>';
+                    else if (item.status === 'Discrepancy') statusBadge = `<span style="color: #d97706; font-weight: 900;">⚠️ Discrepancy</span>`;
+                    else if (item.status === 'Lost in Transit') statusBadge = `<span style="color: #dc2626; font-weight: 900;">❌ Lost</span>`;
+                    else statusBadge = `<span style="color: #64748b; font-weight: 900;">${item.status}</span>`;
+
+                    let remarksHtml = item.receivingRemarks ? `<div style="font-size: 11px; color: #dc2626; margin-top: 6px; font-weight: bold; background: #fef2f2; padding: 6px 8px; border-radius: 6px; border: 1px dashed #fca5a5;">"${item.receivingRemarks}"</div>` : '';
+
+                    html += `
+                            <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                                <td style="padding: 15px; font-weight: 900; color: #1e293b;">${item.item}</td>
+                                <td style="padding: 15px; text-align: center; color: #64748b; font-weight: bold; font-size: 14px;">${expectedQty} <span style="font-size: 10px;">${friendlyUom}</span></td>
+                                <td style="padding: 15px; text-align: center; color: #0284c7; font-weight: 900; font-size: 15px;">${rcvQty} <span style="font-size: 10px;">${friendlyUom}</span></td>
+                                <td style="padding: 15px;">${statusBadge}${remarksHtml}</td>
+                            </tr>
+                    `;
+                });
+
+                html += `</tbody></table></div>`;
+            }
+        }
+        html += `</div>`;
+
+        Swal.fire({
+            title: '<div style="text-align:left; font-size: 22px; font-weight: 900; color: #0f172a; display: flex; align-items: center; gap: 10px;"><span style="font-size: 28px;">🚚</span> Delivery History</div>',
+            html: html,
+            width: 850,
+            showCloseButton: true,
+            showConfirmButton: false,
+            customClass: { popup: 'rounded-2xl shadow-2xl' }
+        });
+
+    } catch (e) {
+        console.error("Delivery History Error:", e);
+        Swal.fire('Error', 'Failed to load delivery history. Check console.', 'error');
+    }
+};
