@@ -735,8 +735,9 @@
               </div>
               <button class="btn-refresh" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 12px 24px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: 0.2s;" onclick="loadSalesDashboard()">🔄 Refresh Sales</button>
           </div>
-          <div class="table-responsive" style="flex: 1; overflow-y: auto;">
-            <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+          <!-- 🔥 UPGRADED ANTI-SQUISH SWIPEABLE TABLE 🔥 -->
+          <div class="table-responsive" style="flex: 1; overflow: auto; -webkit-overflow-scrolling: touch; width: 100%;">
+            <table class="data-table" style="width: 100%; min-width: 950px; border-collapse: collapse; text-align: left; white-space: nowrap;">
               <thead style="background: white; border-bottom: 2px solid #cbd5e1; position: sticky; top: 0; z-index: 10;">
                 <tr>
                   <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; font-weight: 800; letter-spacing: 0.5px;">OR#</th>
