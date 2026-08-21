@@ -272,112 +272,191 @@ window.processRawItemsIntoMenu = function(rawItems) {
     return groupedMenu;
 };
 
+// --- 🔥 INSTANT-BOOT & LIVE REAL-TIME MENU ENGINE ---
+window.processRawItemsIntoMenu = function(rawItems) {
+    let groupedMenu = [];
+    if (!window.masterPOSData) window.masterPOSData = {};
+    window.masterPOSData.phantomVariants = {}; 
+
+    rawItems.forEach(item => {
+        let name = item.name;
+        let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio|Squad)$/i);
+        
+        if (match) {
+            let baseName = match[1].trim(); 
+            let sizeName = match[2].trim(); 
+            
+            let existingBase = groupedMenu.find(i => i.name === baseName && i.category === item.category);
+            if (!existingBase) {
+                let baseItem = { ...item, name: baseName, isGrouped: true };
+                groupedMenu.push(baseItem);
+                window.masterPOSData.phantomVariants[baseName] = [];
+            }
+            
+            // 🔥 PLATFORM PRICING FIX: Store Grab/FP prices inside the variant memory!
+            window.masterPOSData.phantomVariants[baseName].push({
+                realName: item.name,
+                sizeLabel: sizeName,
+                price: parseFloat(item.price || item.basePrice) || 0,
+                grabPrice: parseFloat(item.grabPrice) || parseFloat(item.price || item.basePrice) || 0,
+                foodpandaPrice: parseFloat(item.foodpandaPrice) || parseFloat(item.price || item.basePrice) || 0,
+                id: item.id
+            });
+            window.masterPOSData.phantomVariants[baseName].sort((a, b) => a.price - b.price);
+        } else {
+            groupedMenu.push(item);
+        }
+    });
+    return groupedMenu;
+};
+
 window.menuListenerUnsubscribe = null;
 
 window.loadPOSData = async function() {
     window.applySidebarLayout(); 
-    
-    // 1. Load Global Configs & Addons FIRST
-    try {
-        const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
-        if (configSnap.exists()) {
-            let configData = configSnap.data();
-            window.masterPOSData.settings = {
-                orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery", "Grab"],
-                payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
-            };
-        }
-        
-        const catLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_layout"));
-        if (catLayoutSnap.exists() && catLayoutSnap.data().categories) {
-            window.masterPOSData.categories = catLayoutSnap.data().categories;
-        }
 
-        const itemLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_item_layout"));
-        if (itemLayoutSnap.exists()) {
-            window.globalItemLayout = itemLayoutSnap.data().items || [];
-        }
-        
-        const addonLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
-        if (addonLayoutSnap.exists() && addonLayoutSnap.data().itemNames) {
-            window.masterPOSData.addonLayoutNames = addonLayoutSnap.data().itemNames;
-        }
-        
-        window.masterPOSData.addons = [];
-        const addonsSnap = await window.getDocs(window.collection(window.db, "global_addons"));
-        addonsSnap.forEach(doc => window.masterPOSData.addons.push(doc.data()));
-        
-        // Mix match configs
-        window.masterPOSData.globalMixMatch = { categories: [], flavors: [], mappings: [] };
-        const mmSnap = await window.getDoc(window.doc(window.db, "settings", "global_mixmatch"));
-        if (mmSnap.exists()) window.masterPOSData.globalMixMatch = mmSnap.data();
-        
-    } catch(e) { console.warn("Config load error", e); }
-
-    // 2. Start LIVE Menu Listener (Never caches old prices again!)
-    if (window.menuListenerUnsubscribe) window.menuListenerUnsubscribe();
-    
+    // ========================================================================
+    // 🚀 1. THE LIGHTNING-FAST OFFLINE ENGINE (INSTANT BOOT IN 1ms)
+    // ========================================================================
     let currentBranch = localStorage.getItem('takodeal_device_branch');
-    let allowedCats = [];
-    try {
-        if (currentBranch) {
-            const bSnap = await window.getDocs(window.query(window.collection(window.db, "branches"), window.where("name", "==", currentBranch)));
-            if (!bSnap.empty && bSnap.docs[0].data().allowedCategories) {
-                allowedCats = bSnap.docs[0].data().allowedCategories;
-            }
-        }
-    } catch(e) {}
-
-    // 🔥 ADD THIS NEW LINE RIGHT HERE:
+    
+    // Hydrate everything from the Tablet's Local Hard Drive instantly
+    let cachedMenu = window.getMenuFromLocalHardDrive();
+    let allowedCats = JSON.parse(localStorage.getItem('takodeal_cached_allowed_cats') || '[]');
     window.branchAllowedCategories = allowedCats;
 
+    window.masterPOSData.settings = JSON.parse(localStorage.getItem('takodeal_cached_settings') || '{"orderTypes":["Dine-In", "Take-Out", "Delivery", "Grab"], "payMethods":["Cash", "GCash"]}');
+    window.masterPOSData.categories = JSON.parse(localStorage.getItem('takodeal_cached_categories') || '[]');
+    window.globalItemLayout = JSON.parse(localStorage.getItem('takodeal_cached_item_layout') || '[]');
+    window.masterPOSData.addonLayoutNames = JSON.parse(localStorage.getItem('takodeal_cached_addon_layout') || '[]');
+    window.masterPOSData.addons = JSON.parse(localStorage.getItem('takodeal_cached_addons') || '[]');
+    window.masterPOSData.globalMixMatch = JSON.parse(localStorage.getItem('takodeal_cached_mixmatch') || '{"categories": [], "flavors": [], "mappings": []}');
+
+    if (cachedMenu && cachedMenu.length > 0) {
+        let filteredMenu = cachedMenu;
+        if (allowedCats.length > 0) filteredMenu = cachedMenu.filter(item => allowedCats.includes(item.category));
+        window.masterPOSData.items = window.processRawItemsIntoMenu(filteredMenu);
+        
+        // Instantly draw the screen! No loading time!
+        if (typeof window.buildCategories === 'function') window.buildCategories();
+        window.renderOrderAndPaymentUI(); 
+        console.log("⚡ INSTANT BOOT: POS Engine loaded from local tablet cache in 1ms!");
+    }
+
+    // ========================================================================
+    // ☁️ 2. SILENT BACKGROUND SYNC (FIREBASE)
+    // ========================================================================
+    // We do NOT wait for this. It runs invisibly in the background to update the cache.
+    (async () => {
+        try {
+            if (currentBranch) {
+                const bSnap = await window.getDocs(window.query(window.collection(window.db, "branches"), window.where("name", "==", currentBranch)));
+                if (!bSnap.empty && bSnap.docs[0].data().allowedCategories) {
+                    window.branchAllowedCategories = bSnap.docs[0].data().allowedCategories;
+                    localStorage.setItem('takodeal_cached_allowed_cats', JSON.stringify(window.branchAllowedCategories));
+                }
+            }
+
+            const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
+            if (configSnap.exists()) {
+                let configData = configSnap.data();
+                window.masterPOSData.settings = {
+                    orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery", "Grab"],
+                    payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
+                };
+                localStorage.setItem('takodeal_cached_settings', JSON.stringify(window.masterPOSData.settings));
+            }
+            
+            const catLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_layout"));
+            if (catLayoutSnap.exists() && catLayoutSnap.data().categories) {
+                window.masterPOSData.categories = catLayoutSnap.data().categories;
+                localStorage.setItem('takodeal_cached_categories', JSON.stringify(window.masterPOSData.categories));
+            }
+
+            const itemLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_item_layout"));
+            if (itemLayoutSnap.exists()) {
+                window.globalItemLayout = itemLayoutSnap.data().items || [];
+                localStorage.setItem('takodeal_cached_item_layout', JSON.stringify(window.globalItemLayout));
+            }
+            
+            const addonLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_addon_layout"));
+            if (addonLayoutSnap.exists() && addonLayoutSnap.data().itemNames) {
+                window.masterPOSData.addonLayoutNames = addonLayoutSnap.data().itemNames;
+                localStorage.setItem('takodeal_cached_addon_layout', JSON.stringify(window.masterPOSData.addonLayoutNames));
+            }
+            
+            window.masterPOSData.addons = [];
+            const addonsSnap = await window.getDocs(window.collection(window.db, "global_addons"));
+            addonsSnap.forEach(doc => window.masterPOSData.addons.push(doc.data()));
+            localStorage.setItem('takodeal_cached_addons', JSON.stringify(window.masterPOSData.addons));
+            
+            const mmSnap = await window.getDoc(window.doc(window.db, "settings", "global_mixmatch"));
+            if (mmSnap.exists()) {
+                window.masterPOSData.globalMixMatch = mmSnap.data();
+                localStorage.setItem('takodeal_cached_mixmatch', JSON.stringify(window.masterPOSData.globalMixMatch));
+            }
+
+            // If it's the very first time booting, draw the UI after the background sync finishes
+            if (!cachedMenu || cachedMenu.length === 0) window.renderOrderAndPaymentUI();
+
+        } catch(e) { console.warn("Cloud sync paused. Using local tablet storage.", e); }
+    })();
+
+    // ========================================================================
+    // 📡 3. THE LIVE MENU LISTENER (CACHES EVERY CHANGE IMMEDIATELY)
+    // ========================================================================
+    if (window.menuListenerUnsubscribe) window.menuListenerUnsubscribe();
     const menuQ = window.query(window.collection(window.db, "menu"));
     
     window.menuListenerUnsubscribe = window.onSnapshot(menuQ, async (snapshot) => {
         let rawItems = [];
         snapshot.forEach(doc => rawItems.push({ id: doc.id, ...doc.data() }));
         
-        // 🔥 THE PRICE FIX: Forcefully update the memory cache so old prices are DESTROYED
-        localStorage.setItem('takodeal_offline_menu', JSON.stringify(rawItems));
+        // 🔥 BACKUP TO TABLET HARD DRIVE INSTANTLY
+        window.saveMenuToLocalHardDrive(rawItems);
         
-        if (allowedCats.length > 0) {
-            rawItems = rawItems.filter(item => allowedCats.includes(item.category));
+        if (window.branchAllowedCategories.length > 0) {
+            rawItems = rawItems.filter(item => window.branchAllowedCategories.includes(item.category));
         }
 
         let processed = window.processRawItemsIntoMenu(rawItems);
         window.masterPOSData.items = processed;
 
-        // 🔥 FORCE THE UI TO REDRAW INSTANTLY
+        // 🔥 SILENTLY REDRAW UI IF CLOUD PUSHED A NEW PRICE OR ITEM
         if (typeof window.buildCategories === 'function') {
             window.buildCategories();
         }
-        
-        // 🔥 IF A CATEGORY IS ALREADY OPEN, REDRAW THE GRID TO SHOW NEW PRICES!
         if (window.currentDepartment && typeof window.renderTopCategories === 'function') {
             window.renderTopCategories();
         }
     });
+};
 
+// ========================================================================
+// 🎨 4. OFFLINE UI RENDERER FOR PAYMENTS & ORDER TYPES
+// ========================================================================
+window.renderOrderAndPaymentUI = function() {
     let otHtml = '<option value="" disabled selected>-- Select Type --</option>'; 
     window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
     let otSelect = document.getElementById('mainOrderType');
-    otSelect.innerHTML = otHtml;
-    // 🔥 THE FIX: Force the dropdown to reset to blank so they MUST select an option!
-    otSelect.value = "";
-
-    // 🔥 NEW: Auto-sync Payment Method when Grab/Foodpanda is selected 🔥
-    otSelect.addEventListener('change', function() {
-        let val = this.value.toLowerCase();
+    if(otSelect) {
+        otSelect.innerHTML = otHtml;
+        otSelect.value = ""; 
         
-        if (val.includes('grab')) {
-            let btn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('grab'));
-            if (btn) btn.click();
-        } else if (val.includes('foodpanda') || val.includes('panda')) {
-            let btn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('foodpanda') || b.innerText.toLowerCase().includes('panda'));
-            if (btn) btn.click();
-        }
-    });
-    // 🔥 THE FIX: Added the missing declarations right here!
+        otSelect.removeEventListener('change', window.handleOrderTypeChange); 
+        window.handleOrderTypeChange = function() {
+            let val = this.value.toLowerCase();
+            if (val.includes('grab')) {
+                let btn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('grab'));
+                if (btn) btn.click();
+            } else if (val.includes('foodpanda') || val.includes('panda')) {
+                let btn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('foodpanda') || b.innerText.toLowerCase().includes('panda'));
+                if (btn) btn.click();
+            }
+        };
+        otSelect.addEventListener('change', window.handleOrderTypeChange);
+    }
+
     let pmHtml = ''; 
     let optHtml = '';
 
@@ -408,8 +487,8 @@ window.loadPOSData = async function() {
                 </div>
             `);
         } else {
-            document.getElementById('splitMethod1').innerHTML = optHtml;
-            document.getElementById('splitMethod2').innerHTML = optHtml;
+            let m1 = document.getElementById('splitMethod1'); if(m1) m1.innerHTML = optHtml;
+            let m2 = document.getElementById('splitMethod2'); if(m2) m2.innerHTML = optHtml;
         }
     }
 };
