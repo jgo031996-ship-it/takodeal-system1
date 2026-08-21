@@ -8256,12 +8256,12 @@ window.viewAnnouncement = function(encodedData) {
     let imagesHtml = '';
     
     if (data.images && data.images.length > 0) {
-     imagesHtml = `<div style="display: flex; gap: 10px; overflow-x: auto; margin-top: 15px; padding-bottom: 5px;">`;
-     data.images.forEach(img => {
-         imagesHtml += `<img src="${img}" style="height: 120px; border-radius: 6px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer;" onclick="Swal.fire({imageUrl: '${img}', imageAlt: 'Attached Image', width: 'auto', showConfirmButton: false, showCloseButton: true, customClass: {popup: 'rounded-2xl shadow-2xl'}})">`;
-     });
-     imagesHtml += `</div>`;
- }
+        imagesHtml = `<div style="display: flex; gap: 10px; overflow-x: auto; margin-top: 15px; padding-bottom: 5px;">`;
+        data.images.forEach(img => {
+            imagesHtml += `<img src="${img}" style="height: 120px; border-radius: 6px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer;" onclick="Swal.fire({imageUrl: '${img}', imageAlt: 'Attached Image', width: 'auto', showConfirmButton: false, showCloseButton: true, customClass: {popup: 'rounded-2xl shadow-2xl'}})">`;
+        });
+        imagesHtml += `</div>`;
+    }
 
     let sigHtml = '';
 
