@@ -13740,7 +13740,7 @@ window.loadSalesHistoryTab = async function() {
         allTxArray.sort((a,b) => b.timestamp - a.timestamp);
 
         let txHtml = '';
-        let tNet = 0; let tCogs = 0; let tGrab = 0; let tGrabCount = 0; 
+        let tNet = 0; let tCogs = 0; let tGrab = 0; let tGrabCount = 0; let tFoodpanda = 0; let tFoodpandaCount = 0;
         let dailyAggregates = {}; let monthlyAggregates = {}; 
         let distOrderType = {}; let distPayment = {}; let distTotalSales = 0;
 
@@ -13840,7 +13840,11 @@ window.loadSalesHistoryTab = async function() {
             if (!isVoid) {
                 tNet += txNet; tCogs += txCogs; shiftRef.sales += txNet; shiftRef.cogs += txCogs; shiftRef.txCount += 1;
 
-                if (tx.paymentMethod === "Grab" || tx.orderType === "Grab") { tGrab += txNet; tGrabCount += 1; }
+                if (tx.paymentMethod === "Grab" || tx.orderType === "Grab" || (tx.paymentMethod && tx.paymentMethod.toLowerCase().includes('grab'))) { 
+                     tGrab += txNet; tGrabCount += 1; 
+                 } else if (tx.paymentMethod === "Foodpanda" || tx.orderType === "Foodpanda" || tx.paymentMethod === "Panda" || tx.orderType === "Panda" || (tx.paymentMethod && tx.paymentMethod.toLowerCase().includes('foodpanda'))) {
+                     tFoodpanda += txNet; tFoodpandaCount += 1;
+                 }
 
                 let oType = tx.orderType || "Take-out"; let pMeth = tx.paymentMethod || "Cash";
                 distTotalSales += txNet;
@@ -13956,6 +13960,11 @@ window.loadSalesHistoryTab = async function() {
 
         let grabCountEl = document.getElementById('histCountGrab');
         if (grabCountEl) grabCountEl.innerText = `${tGrabCount} Order${tGrabCount !== 1 ? 's' : ''}`;
+        // 🔥 FOODPANDA UI UPDATE
+        let fpSumEl = document.getElementById('histSumFoodpanda');
+        if (fpSumEl) fpSumEl.innerText = `₱${tFoodpanda.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        let fpCountEl = document.getElementById('histCountFoodpanda');
+        if (fpCountEl) fpCountEl.innerText = `${tFoodpandaCount} Order${tFoodpandaCount !== 1 ? 's' : ''}`;
 
         let cogsCirc = document.getElementById('histCogsPct');
         if (cogsCirc) { let cPct = tNet>0 ? (tCogs/tNet)*100 : 0; cogsCirc.innerText = `${cPct.toFixed(0)}%`; cogsCirc.style.borderColor = cPct>50?'#ef4444':'#10b981'; cogsCirc.style.color = cPct>50?'#ef4444':'#10b981'; }
