@@ -623,6 +623,11 @@
                       ⏸️ Audit Mode
                     </button>
 
+                    <!-- 👨‍🍳 KDS TOGGLE (NEW) -->
+                    <button id="btnKdsToggle" onclick="window.toggleKDS(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; position: relative; background: #f8fafc; color: #0f172a; border: 1px solid #cbd5e1; border-radius: 10px; padding: 12px; display: flex; justify-content: center; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: 0.2s; margin-top: 10px;">
+                      👨‍🍳 KDS Tracking: OFF
+                    </button>
+
                     <div style="border-top: 2px dashed #e2e8f0; margin-top: 4px; padding-top: 15px; display: flex; flex-direction: column; gap: 10px;">
                         <label style="font-size: 13px; font-weight: 900; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 10px; justify-content: center; background: #f1f5f9; padding: 10px; border-radius: 8px;">
                             <input type="checkbox" id="autoDrawerToggle" onchange="localStorage.setItem('takodeal_auto_drawer', this.checked)" style="transform: scale(1.3); accent-color: #0ea5e9;" checked>
@@ -1849,6 +1854,36 @@
     window.currentShift = null; 
     window.activeShiftDetails = null; 
     window.systemReady = false;
+    window.isKdsEnabled = localStorage.getItem('takodeal_kds_enabled') === 'true';
+
+    window.toggleKDS = function() {
+        window.isKdsEnabled = !window.isKdsEnabled;
+        localStorage.setItem('takodeal_kds_enabled', window.isKdsEnabled);
+        
+        let btn = document.getElementById('btnKdsToggle');
+        if (btn) {
+            btn.innerHTML = window.isKdsEnabled ? '👨‍🍳 KDS Tracking: ON' : '👨‍🍳 KDS Tracking: OFF';
+            btn.style.background = window.isKdsEnabled ? '#dcfce7' : '#f8fafc';
+            btn.style.borderColor = window.isKdsEnabled ? '#16a34a' : '#cbd5e1';
+            btn.style.color = window.isKdsEnabled ? '#15803d' : '#0f172a';
+        }
+        
+        // Instantly refresh the sales table to show/hide the badges!
+        if (typeof window.loadSalesDashboard === 'function') window.loadSalesDashboard();
+    };
+
+    // Auto-load the button's color when the app boots up
+    document.addEventListener("DOMContentLoaded", () => {
+        setTimeout(() => {
+            let btn = document.getElementById('btnKdsToggle');
+            if (btn) {
+                btn.innerHTML = window.isKdsEnabled ? '👨‍🍳 KDS Tracking: ON' : '👨‍🍳 KDS Tracking: OFF';
+                btn.style.background = window.isKdsEnabled ? '#dcfce7' : '#f8fafc';
+                btn.style.borderColor = window.isKdsEnabled ? '#16a34a' : '#cbd5e1';
+                btn.style.color = window.isKdsEnabled ? '#15803d' : '#0f172a';
+            }
+        }, 1500);
+    });
 
     document.addEventListener("DOMContentLoaded", function () {
       let loginBox = document.getElementById('loginOverlay');
@@ -2466,13 +2501,15 @@ window.loadSalesDashboard = async function () {
           txTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); 
       }
 
-      // 🔥 KITCHEN KDS SYNC ENGINE (Only applies to Standard POS orders)
+      // 🔥 KITCHEN KDS SYNC ENGINE (Only applies if KDS is Turned ON)
       let kdsBadge = '';
-      let pmCheck = (tx.paymentMethod || '').toLowerCase();
-      if (!pmCheck.includes('grab') && !pmCheck.includes('foodpanda') && !pmCheck.includes('panda') && tx.status !== 'Voided' && tx.status !== 'Parked') {
-          if (tx.kdsStatus === 'Preparing') kdsBadge = `<br><span style="color: #d97706; font-size: 10px; font-weight: bold; background: #fef3c7; padding: 2px 6px; border-radius: 4px; border: 1px solid #fcd34d;">👨‍🍳 Preparing</span>`;
-          else if (tx.kdsStatus === 'Completed') kdsBadge = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold; background: #dcfce7; padding: 2px 6px; border-radius: 4px; border: 1px solid #bbf7d0;">✅ Ready</span>`;
-          else kdsBadge = `<br><span style="color: #64748b; font-size: 10px; font-weight: bold; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; border: 1px solid #cbd5e1;">⏳ Queue</span>`;
+      if (window.isKdsEnabled) {
+          let pmCheck = (tx.paymentMethod || '').toLowerCase();
+          if (!pmCheck.includes('grab') && !pmCheck.includes('foodpanda') && !pmCheck.includes('panda') && tx.status !== 'Voided' && tx.status !== 'Parked') {
+              if (tx.kdsStatus === 'Preparing') kdsBadge = `<br><span style="color: #d97706; font-size: 10px; font-weight: bold; background: #fef3c7; padding: 2px 6px; border-radius: 4px; border: 1px solid #fcd34d;">👨‍🍳 Preparing</span>`;
+              else if (tx.kdsStatus === 'Completed') kdsBadge = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold; background: #dcfce7; padding: 2px 6px; border-radius: 4px; border: 1px solid #bbf7d0;">✅ Ready</span>`;
+              else kdsBadge = `<br><span style="color: #64748b; font-size: 10px; font-weight: bold; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; border: 1px solid #cbd5e1;">⏳ Queue</span>`;
+          }
       }
 
       // 🔥 TALLY ONLY DIGITAL TOTALS FOR VERIFICATION (CASE-INSENSITIVE)
