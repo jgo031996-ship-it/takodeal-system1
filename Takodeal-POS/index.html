@@ -2113,7 +2113,7 @@ window.buildUltraGridDOM = function() {
     let html = '';
     filteredItems.forEach((item, index) => {
         
-        // 🔥 MULTI-PLATFORM PRICE ENGINE 🔥
+        // 🔥 MULTI-PLATFORM PRICE ENGINE (Still calculates silently in background for checkout)
         let safePrice = parseFloat(item.price) || 0;
         if (window.posPlatform === 'Grab' && item.grabPrice) safePrice = parseFloat(item.grabPrice) || safePrice;
         if (window.posPlatform === 'Foodpanda' && item.foodpandaPrice) safePrice = parseFloat(item.foodpandaPrice) || safePrice;
@@ -2138,27 +2138,46 @@ window.buildUltraGridDOM = function() {
         }
         
         let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
-        
-        // 🔥 REMOVED "Select Size ➡", just clean prices!
-        let priceLabel = `₱${safePrice.toFixed(2)}`;
         let safeName = item.name.replace(/'/g, "\\'");
         let catSafe = (item.category || '').replace(/'/g, "\\'");
 
         if (item.image) { let img = new Image(); img.src = item.image; }
 
-        // 🔥 THE NEW ACCESSIBLE SPLIT-CARD DESIGN 🔥
+        // 🔥 1. THE DISPLAY NAME ENGINE (Removes Redundant Category Text)
+        let displayName = item.name;
+        if (item.category && displayName.toLowerCase().startsWith(item.category.toLowerCase())) {
+            // Cut out the category name, then trim any leftover spaces or dashes!
+            displayName = displayName.substring(item.category.length).trim();
+            displayName = displayName.replace(/^[-–—]\s*/, ''); 
+        }
+        if (displayName === "") displayName = item.name; // Failsafe fallback
+        
+        // 🔥 2. THE AVAILABILITY SYNC ENGINE (Reads from Mobile Hub Toggle & Live Stock)
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let isManuallyUnavailable = item.unavailableAt && item.unavailableAt.includes(branch);
+        let isSoldOut = isManuallyUnavailable || possibleOrders <= 0;
+        
+        let statusText = isSoldOut ? 'Not Available' : 'Available';
+        let statusColor = isSoldOut ? '#dc2626' : '#16a34a';
+        let statusBg = isSoldOut ? '#fef2f2' : '#dcfce7';
+        let statusBorder = isSoldOut ? '#fca5a5' : '#bbf7d0';
+
+        // 🔥 3. THE NEW CLEAN SPLIT-CARD UI
         html += `
-            <div class="item-card ultra-card" data-category="${catSafe}" data-name="${item.name.toLowerCase()}" onclick="if(systemReady) openAddOrderModal('${safeName}', ${safePrice})" style="height: 155px; background: white; border: 1px solid #cbd5e1; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); cursor: pointer; padding: 0;">
+            <div class="item-card ultra-card" data-category="${catSafe}" data-name="${item.name.toLowerCase()}" onclick="if(systemReady) openAddOrderModal('${safeName}', ${safePrice})" style="height: 155px; background: white; border: 1px solid #cbd5e1; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); cursor: pointer; padding: 0; ${isSoldOut ? 'opacity: 0.6;' : ''}">
                 
-                <!-- TOP HALF: IMAGE -->
-                <div style="height: 60%; width: 100%; ${bgStyle} background-size: cover; background-position: center; position: relative;">
+                <!-- TOP HALF: PICTURE -->
+                <div style="height: 55%; width: 100%; ${bgStyle} background-size: cover; background-position: center; position: relative;">
                     ${badgeHtml}
                 </div>
                 
-                <!-- BOTTOM HALF: CLEAN TEXT BOX -->
-                <div style="height: 40%; padding: 8px 10px; display: flex; flex-direction: column; justify-content: center; background: white; z-index: 2; border-top: 1px solid #f1f5f9;">
-                    <div style="font-weight: 900; color: #1e293b; font-size: 13px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; white-space: normal;">${item.name}</div>
-                    <div style="color: #0ea5e9; font-size: 14px; font-weight: 900; margin-top: 4px;">${priceLabel}</div>
+                <!-- BOTTOM HALF: CLEAN TEXT & STATUS BADGE -->
+                <div style="height: 45%; padding: 8px 10px; display: flex; flex-direction: column; justify-content: space-between; background: white; z-index: 2; border-top: 1px solid #f1f5f9;">
+                    <div style="font-weight: 900; color: #1e293b; font-size: 13px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; white-space: normal;">${displayName}</div>
+                    
+                    <div style="margin-top: 4px;">
+                        <span style="background: ${statusBg}; color: ${statusColor}; border: 1px solid ${statusBorder}; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 900; display: inline-block; width: 100%; box-sizing: border-box; text-align: center;">${statusText}</span>
+                    </div>
                 </div>
                 
             </div>
