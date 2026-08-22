@@ -17,10 +17,38 @@ window.kdsCart = [];
 window.branchName = localStorage.getItem('takodeal_kds_branch');
 window.staffName = localStorage.getItem('takodeal_kds_staff') || 'Kitchen Staff';
 
-// --- INITIALIZATION ---
+// --- INITIALIZATION & DYNAMIC BRANCH FETCHER ---
+window.fetchKDSBranches = async function() {
+    let branchDropdown = document.getElementById('kdsBranch');
+    if (!branchDropdown) return;
+
+    try {
+        branchDropdown.innerHTML = '<option value="">⏳ Fetching live branches...</option>';
+        const snap = await getDocs(query(collection(db, "branches")));
+        let html = '<option value="" disabled selected>-- Select Branch --</option>';
+        let branches = [];
+        
+        snap.forEach(doc => {
+            let name = doc.data().name;
+            if (name) branches.push(name);
+        });
+
+        // Sort alphabetically so it's easy for staff to find their branch
+        branches.sort((a, b) => a.localeCompare(b)).forEach(b => {
+            html += `<option value="${b}">${b}</option>`;
+        });
+
+        branchDropdown.innerHTML = html;
+    } catch (e) {
+        console.error("Error fetching branches:", e);
+        branchDropdown.innerHTML = '<option value="">❌ Database Error. Check Wi-Fi.</option>';
+    }
+};
+
 document.addEventListener("DOMContentLoaded", () => {
     if (!window.branchName) {
         document.getElementById('setupOverlay').style.display = 'flex';
+        window.fetchKDSBranches(); // 🔥 Fetches all branches (including Franchisees) dynamically!
     } else {
         document.getElementById('setupOverlay').style.display = 'none';
         document.getElementById('displayBranch').innerText = `📍 ${window.branchName} | 👤 ${window.staffName}`;
