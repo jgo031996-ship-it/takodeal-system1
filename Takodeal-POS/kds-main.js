@@ -69,13 +69,16 @@ async function loadPrepItems() {
                 let bUom = d.uom || 'units';
                 let pUom = d.purchaseUom || d.purchUom || 'Batch';
                 let stock = parseFloat(d.currentStock) || 0;
-                let bgStyle = d.image ? `background-image: url('${d.image}'); background-size: cover;` : `background-color: #475569;`;
+                // 🔥 THE SMART PHOTO FALLBACK ENGINE
+                let imgCircle = d.image 
+                    ? `<div style="width: 70px; height: 70px; border-radius: 50%; margin: 0 auto 12px auto; background-image: url('${d.image}'); background-size: cover; background-position: center; border: 3px solid #0ea5e9; box-shadow: 0 4px 10px rgba(0,0,0,0.4);"></div>`
+                    : `<div style="width: 70px; height: 70px; border-radius: 50%; margin: 0 auto 12px auto; background-color: #0f172a; border: 3px solid #38bdf8; display: flex; align-items: center; justify-content: center; font-size: 32px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5);">🥣</div>`;
                 
                 html += `
                     <div class="prep-card" onclick="addToCart('${docSnap.id}', '${d.name.replace(/'/g, "\\'")}', '${pUom}', '${bUom}')">
-                        <div style="width: 70px; height: 70px; border-radius: 50%; margin: 0 auto 10px auto; ${bgStyle} border: 3px solid #0ea5e9;"></div>
-                        <h3 style="margin: 0 0 5px 0; font-size: 15px; font-weight: 900; color: white;">${d.name}</h3>
-                        <span style="background: #0f172a; color: #38bdf8; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">Shelf: ${stock.toFixed(1)} ${bUom}</span>
+                        ${imgCircle}
+                        <h3 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 900; color: white; line-height: 1.2;">${d.name}</h3>
+                        <span style="background: #0f172a; color: #38bdf8; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #334155;">Shelf: ${stock.toFixed(1)} ${bUom}</span>
                     </div>
                 `;
             }
