@@ -3,104 +3,130 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>TAKODEÁL - Kitchen Hub</title>
+    <title>TAKODEÁL - Kitchen KDS</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;900&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-dark: #0f172a;
-            --panel-bg: #1e293b;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --accent: #0ea5e9;
-            --success: #10b981;
-            --danger: #ef4444;
-            --warning: #f59e0b;
+            --bg-dark: #0f172a; --panel-bg: #1e293b; --text-main: #f8fafc; --text-muted: #94a3b8;
+            --accent: #0ea5e9; --success: #10b981; --danger: #ef4444; --warning: #f59e0b;
         }
         body { font-family: 'Inter', sans-serif; margin: 0; background: var(--bg-dark); color: var(--text-main); height: 100vh; display: flex; flex-direction: column; overflow: hidden; user-select: none; }
         
-        /* TOP NAVIGATION */
         .top-nav { background: #020617; padding: 15px 25px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
         .nav-tabs { display: flex; gap: 10px; }
-        .tab-btn { background: transparent; color: var(--text-muted); border: none; padding: 12px 24px; font-size: 16px; font-weight: 900; border-radius: 8px; cursor: pointer; transition: 0.2s; }
-        .tab-btn.active { background: var(--accent); color: white; box-shadow: 0 4px 10px rgba(14, 165, 233, 0.4); }
+        .tab-btn { background: transparent; color: var(--text-muted); border: none; padding: 12px 20px; font-size: 15px; font-weight: 900; border-radius: 8px; cursor: pointer; transition: 0.2s; position: relative; display: flex; align-items: center; gap: 8px; }
+        .tab-btn.active { background: #334155; color: white; border: 1px solid #475569; }
+        .tab-btn.active-orders { background: var(--accent); color: white; box-shadow: 0 4px 10px rgba(14, 165, 233, 0.4); border: none; }
         
-        /* MAIN CONTENT AREA */
-        .content-area { flex: 1; display: flex; overflow: hidden; padding: 20px; gap: 20px; }
+        .content-area { flex: 1; display: none; overflow: hidden; padding: 20px; gap: 20px; }
+        .content-area.active { display: flex; }
+        
         .panel { background: var(--panel-bg); border-radius: 16px; border: 1px solid #334155; display: flex; flex-direction: column; overflow: hidden; }
-        
-        /* PREP GRID */
         .grid-container { flex: 2; padding: 20px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px; align-content: start; }
+        .cart-panel { flex: 1; min-width: 320px; max-width: 400px; display: flex; flex-direction: column; background: #0f172a; border-left: 1px solid #334155; }
+        
         .prep-card { background: #334155; border: 2px solid #475569; border-radius: 12px; padding: 15px; text-align: center; cursor: pointer; transition: 0.1s; }
         .prep-card:active { transform: scale(0.95); border-color: var(--accent); }
-        .prep-img { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; margin-bottom: 10px; border: 2px solid #64748b; }
         
-        /* CART / TICKET SIDEBAR */
-        .cart-panel { flex: 1; min-width: 320px; max-width: 400px; display: flex; flex-direction: column; background: #0f172a; border-left: 1px solid #334155; }
-        .cart-header { padding: 20px; background: #1e293b; font-size: 18px; font-weight: 900; border-bottom: 1px solid #334155; }
-        .cart-body { flex: 1; overflow-y: auto; padding: 15px; }
-        .cart-footer { padding: 20px; background: #1e293b; border-top: 1px solid #334155; }
+        .kds-ticket { background: #f8fafc; color: #0f172a; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 6px 12px rgba(0,0,0,0.2); }
+        .ticket-head { background: #cbd5e1; padding: 15px; display: flex; justify-content: space-between; align-items: center; font-weight: 900; border-bottom: 2px dashed #94a3b8; }
+        .ticket-body { padding: 15px; flex: 1; overflow-y: auto; font-size: 15px; font-weight: bold; }
         
-        /* CART ITEMS */
-        .cart-item { background: #1e293b; border: 1px solid #475569; padding: 15px; border-radius: 8px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
-        .cart-item-info { display: flex; flex-direction: column; gap: 5px; }
-        
-        /* SETUP OVERLAY */
-        #setupOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #020617; z-index: 9999; display: flex; flex-direction: column; justify-content: center; align-items: center; }
-        .setup-box { background: #1e293b; padding: 40px; border-radius: 16px; border: 1px solid #334155; width: 400px; text-align: center; }
+        #setupOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #020617; z-index: 9999; display: flex; justify-content: center; align-items: center; }
         .input-dark { width: 100%; padding: 15px; margin-bottom: 20px; background: #0f172a; border: 1px solid #475569; color: white; border-radius: 8px; font-size: 16px; font-weight: bold; box-sizing: border-box; outline: none; }
     </style>
 </head>
 <body>
 
-    <!-- KDS SETUP SCREEN -->
     <div id="setupOverlay">
-        <div class="setup-box">
+        <div style="background: #1e293b; padding: 40px; border-radius: 16px; border: 1px solid #334155; width: 400px; text-align: center;">
             <h1 style="color: var(--accent); margin-top: 0;">👨‍🍳 Kitchen Hub Setup</h1>
-            <p style="color: var(--text-muted); margin-bottom: 25px;">Select the branch for this Kitchen Station.</p>
-            <select id="kdsBranch" class="input-dark">
-                <option value="Cabantian">Cabantian</option>
-                <option value="Citygate">Citygate</option>
-                <option value="Maa">Maa</option>
-                <option value="Main Office">Main Office</option>
-            </select>
+            <select id="kdsBranch" class="input-dark"><option value="">Loading Branches...</option></select>
             <input type="text" id="kdsStaff" class="input-dark" placeholder="Enter your Name (e.g. Chef John)">
             <button onclick="lockKDS()" style="width: 100%; padding: 15px; background: var(--success); color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: 900; cursor: pointer;">Connect Kitchen 🚀</button>
         </div>
     </div>
 
-    <!-- MAIN UI -->
     <div class="top-nav">
         <div style="display: flex; align-items: center; gap: 15px;">
             <span style="font-size: 24px;">🔪</span>
             <div style="display: flex; flex-direction: column;">
-                <span style="font-weight: 900; font-size: 18px; letter-spacing: 1px;">TAKODEÁL KITCHEN</span>
+                <span style="font-weight: 900; font-size: 18px;">TAKODEÁL KITCHEN</span>
                 <span id="displayBranch" style="color: var(--accent); font-size: 12px; font-weight: bold;">Loading Location...</span>
             </div>
         </div>
         <div class="nav-tabs">
-            <button class="tab-btn" id="tabTickets" onclick="switchTab('tickets')" style="display: none;">🧾 Live Tickets</button>
-            <button class="tab-btn active" id="tabPrep" onclick="switchTab('prep')">🥣 Prep Station</button>
+            <button class="tab-btn active-orders" id="btn-orders" onclick="switchTab('orders')">
+                🧾 Live Orders
+                <span id="kdsOrderBadge" style="display:none; background:var(--danger); color:white; border-radius:50%; width:22px; height:22px; justify-content:center; align-items:center; font-size:11px; animation: pulse 1s infinite;">0</span>
+            </button>
+            <button class="tab-btn" id="btn-prep" onclick="switchTab('prep')">🥣 Kitchen Prep</button>
+            <button class="tab-btn" id="btn-cons" onclick="switchTab('cons')">🧹 Consumables</button>
+            <button class="tab-btn" id="btn-waste" onclick="switchTab('waste')">🗑️ Log Waste</button>
         </div>
         <div style="color: var(--text-muted); font-weight: bold;" id="clockDisplay">00:00 AM</div>
     </div>
 
-    <!-- PREP STATION TAB -->
-    <div class="content-area" id="viewPrep">
-        <div class="panel grid-container" id="prepGrid">
-            <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 50px;">Fetching Prep Items...</div>
-        </div>
-        <div class="cart-panel">
-            <div class="cart-header">🛒 Prep Batch Cart</div>
-            <div class="cart-body" id="prepCart">
-                <div style="text-align: center; color: var(--text-muted); padding: 50px; font-size: 14px;">Cart is empty.<br>Tap a batch to start.</div>
+    <!-- 1. LIVE ORDERS TAB -->
+    <div class="content-area active" id="view-orders">
+        <div class="panel" style="flex: 1; padding: 20px; overflow-y: auto; background: var(--bg-dark); border: none;">
+            <div id="kdsOrdersContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; align-content: start;">
+                <div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 50px; font-size: 18px;">⏳ Waiting for orders...</div>
             </div>
-            <div class="cart-footer">
+        </div>
+    </div>
+
+    <!-- 2. KITCHEN PREP TAB -->
+    <div class="content-area" id="view-prep">
+        <div class="panel grid-container" id="prepGrid"></div>
+        <div class="cart-panel">
+            <div style="padding: 20px; background: #1e293b; font-size: 18px; font-weight: 900; border-bottom: 1px solid #334155;">🛒 Prep Batch Cart</div>
+            <div id="prepCart" style="flex: 1; overflow-y: auto; padding: 15px;"></div>
+            <div style="padding: 20px; background: #1e293b; border-top: 1px solid #334155;">
                 <button onclick="submitKitchenPrep()" style="width: 100%; padding: 18px; background: var(--success); color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: 900; cursor: pointer;">✅ Log Batch to Vault</button>
             </div>
         </div>
     </div>
 
+    <!-- 3. CONSUMABLES TAB -->
+    <div class="content-area" id="view-cons">
+        <div class="panel grid-container" id="consGrid"></div>
+        <div class="cart-panel">
+            <div style="padding: 20px; background: #1e293b; font-size: 18px; font-weight: 900; border-bottom: 1px solid #334155;">📦 Store Use Cart</div>
+            <div id="consCart" style="flex: 1; overflow-y: auto; padding: 15px;"></div>
+            <div style="padding: 20px; background: #1e293b; border-top: 1px solid #334155;">
+                <button onclick="submitConsumables()" style="width: 100%; padding: 18px; background: var(--accent); color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: 900; cursor: pointer;">📥 Deduct Supplies</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. WASTE TAB -->
+    <div class="content-area" id="view-waste" style="justify-content: center; align-items: flex-start;">
+        <div class="panel" style="width: 500px; padding: 30px; margin-top: 20px;">
+            <h2 style="margin-top: 0; color: var(--danger);">🗑️ Log Waste & Spoilage</h2>
+            
+            <label style="font-size: 12px; color: var(--text-muted); font-weight: bold;">Select Item</label>
+            <select id="wasteItemSelect" class="input-dark" style="margin-top: 5px; cursor: pointer;"></select>
+            
+            <div style="display: flex; gap: 15px;">
+                <div style="flex: 1;">
+                    <label style="font-size: 12px; color: var(--text-muted); font-weight: bold;">Qty Lost</label>
+                    <input type="number" id="wasteQty" class="input-dark" placeholder="0" style="margin-top: 5px; color: var(--danger);">
+                </div>
+                <div style="flex: 2;">
+                    <label style="font-size: 12px; color: var(--text-muted); font-weight: bold;">Reason</label>
+                    <select id="wasteReason" class="input-dark" style="margin-top: 5px; cursor: pointer;">
+                        <option>Dropped / Spilled</option><option>Burnt / Overcooked</option>
+                        <option>Spoiled / Expired</option><option>Customer Replacement</option>
+                    </select>
+                </div>
+            </div>
+
+            <button onclick="submitWaste()" style="width: 100%; padding: 15px; background: #7f1d1d; color: #fca5a5; border: 1px solid #b91c1c; border-radius: 8px; font-size: 16px; font-weight: 900; cursor: pointer; margin-top: 10px;">🚨 Report Waste to HQ</button>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script type="module" src="kds-main.js?v=1.0"></script>
+    <script type="module" src="kds-main.js?v=2.0"></script>
 </body>
 </html>
