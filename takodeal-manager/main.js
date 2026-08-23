@@ -598,10 +598,14 @@ window.loadGlobalDashboard = async function() {
     if (!startDateInput.value) startDateInput.valueAsDate = new Date();
     if (!endDateInput.value) endDateInput.valueAsDate = new Date();
 
+    // 🔥 THE 5:00 AM "BUSINESS DAY" FIX 🔥
+    // Shifts ending at 2 AM are now mathematically locked to the previous day!
     const startOfDay = new Date(startDateInput.value);
-    startOfDay.setHours(0, 0, 0, 0);
+    startOfDay.setHours(5, 0, 0, 0); // 5:00 AM
+
     const endOfDay = new Date(endDateInput.value);
-    endOfDay.setHours(23, 59, 59, 999);
+    endOfDay.setDate(endOfDay.getDate() + 1); // Move to the next calendar day
+    endOfDay.setHours(4, 59, 59, 999); // 4:59:59 AM
 
     let dashFilter = document.getElementById('dashBranchFilter');
     if (!dashFilter) {
@@ -641,49 +645,52 @@ window.loadGlobalDashboard = async function() {
             ? window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay))
             : window.query(window.collection(window.db, "transactions"), window.where("branch", "==", selectedBranch), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
             
-        const expRangeQ = selectedBranch === "All"
-            ? window.query(window.collection(window.db, "expenses"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay))
-            : window.query(window.collection(window.db, "expenses"), window.where("branch", "==", selectedBranch), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
+        // We fetch ALL expenses and filter them in Javascript to guarantee we never miss a cashier's Cash-Out!
+        const expRangeQ = window.collection(window.db, "expenses");
 
         const [txRangeSnap, expRangeSnap] = await Promise.all([window.getDocs(txRangeQ), window.getDocs(expRangeQ)]);
 
         txRangeSnap.forEach(tDoc => {
             let tx = tDoc.data();
             if (tx.status !== "Voided") {
-                globalNet += (tx.netTotal || 0);
-                let txGross = 0;
-                if (tx.cart) { 
-                    tx.cart.forEach(item => { txGross += ((item.variantPrice || item.basePrice || item.price || 0) * (item.qty || 1)); }); 
-                } else { 
-                    txGross = tx.netTotal; 
+                let txNet = parseFloat(tx.netTotal) || 0;
+                globalNet += txNet;
+                
+                // Gross Sales fix: Ensures it grabs the pre-discount total properly
+                let txGross = parseFloat(tx.subTotalBeforeDiscount);
+                if (isNaN(txGross) || txGross < txNet) {
+                    txGross = txNet; // Fallback so Gross is never lower than Net
                 }
                 globalGross += txGross;
             }
         });
 
         expRangeSnap.forEach(eDoc => {
-            globalExp += (parseFloat(eDoc.data().amount) || 0);
+            let exp = eDoc.data();
+            let expDate = exp.timestamp ? (exp.timestamp.toDate ? exp.timestamp.toDate() : new Date(exp.timestamp)) : new Date(0);
+            
+            // Javascript Date Filter (Catches everything, even if Firebase Indexes fail)
+            if (expDate >= startOfDay && expDate <= endOfDay) {
+                if (selectedBranch === "All" || exp.branch === selectedBranch) {
+                    globalExp += (parseFloat(exp.amount) || 0);
+                }
+            }
         });
 
         document.getElementById('globalGross').innerText = formatMoney(globalGross);
         document.getElementById('globalNet').innerText = formatMoney(globalNet);
         document.getElementById('globalExpenses').innerText = formatMoney(globalExp);
 
-        // Update KPI Titles Dynamically!
-        let isToday = (startDateInput.value === endDateInput.value) && (startDateInput.value === new Date().toISOString().split('T')[0]);
-        let titleSuffix = isToday ? "(Today)" : "(Selected Range)";
-        let lblGross = document.getElementById('lblTitleGross');
-        let lblNet = document.getElementById('lblTitleNet');
-        let lblExp = document.getElementById('lblTitleExp');
-        if(lblGross) lblGross.innerText = `Total Gross Sales ${titleSuffix}`;
-        if(lblNet) lblNet.innerText = `Total Net Sales ${titleSuffix}`;
-        if(lblExp) lblExp.innerText = `Total Cash Out ${titleSuffix}`;
 
-
-        // 🔥 2. LIGHTNING FAST PARALLEL BRANCH SCANNER FOR LIVE TABLE 🔥
+        // 🔥 2. LIVE TABLE SCANNER (RESPECTS THE 2 AM NIGHT SHIFT) 🔥
         let tableHtml = '';
         let liveStartOfDay = new Date(); 
-        liveStartOfDay.setHours(0,0,0,0); // Always forces the table to show TODAY'S live shift
+        
+        // If the manager checks the app at 2:00 AM, it still considers it "Yesterday's Shift"
+        if (liveStartOfDay.getHours() < 5) {
+            liveStartOfDay.setDate(liveStartOfDay.getDate() - 1);
+        }
+        liveStartOfDay.setHours(5,0,0,0); // Starts at 5 AM of the active business day
 
         const branchPromises = branches.map(async (branch) => {
             const shiftQ = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", branch), window.where("startTime", ">=", liveStartOfDay), window.orderBy("startTime", "desc"), window.limit(1));
@@ -767,10 +774,7 @@ window.loadGlobalDashboard = async function() {
         });
 
         const results = await Promise.all(branchPromises);
-
-        results.forEach(res => {
-            if (res) { tableHtml += res; }
-        });
+        results.forEach(res => { if (res) { tableHtml += res; } });
 
         document.getElementById('branchTableBody').innerHTML = tableHtml;
 
@@ -778,31 +782,6 @@ window.loadGlobalDashboard = async function() {
         console.error("Radar Engine Error:", error);
         document.getElementById('branchTableBody').innerHTML = '<tr><td colspan="7" class="text-center" style="color: red;">Error connecting to Cloud Database.</td></tr>';
     }
-
-    try {
-        let dashFilter = document.getElementById('dashBranchFilter');
-        let selectedBranch = dashFilter ? dashFilter.value : "All";
-        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-        if (isFranchisee) selectedBranch = window.sessionUser.branch;
-
-        const statsSnap = await window.getDoc(window.doc(window.db, "settings", "global_stats"));
-        if (statsSnap.exists()) {
-            let data = statsSnap.data();
-            let totalBalls = 0;
-            if (selectedBranch !== "All") totalBalls = data[`balls_${selectedBranch}`] || 0;
-            else totalBalls = data.totalTakoyakiBalls || 0;
-            
-            let milestoneDiv = document.getElementById('milestoneCounter');
-            let titleDiv = milestoneDiv ? milestoneDiv.previousElementSibling : null; 
-            if (titleDiv) {
-                titleDiv.innerText = selectedBranch !== "All" ? `ROAD TO 1 MILLION TAKOYAKI BALLS - ${selectedBranch.toUpperCase()} 🐙` : `ROAD TO 1 MILLION TAKOYAKI BALLS 🐙`;
-            }
-            if (milestoneDiv) {
-                if (totalBalls === 0 && selectedBranch !== "All") milestoneDiv.innerText = "Tracking Initial Sales...";
-                else milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
-            }
-        }
-    } catch(e) { console.log("Tracker still waiting for first sale."); }
 
     if (typeof window.calculatePlatformFinancials === 'function') window.calculatePlatformFinancials();
     if (typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, selectedBranch);
@@ -21260,28 +21239,26 @@ window.renderDashboardCharts = async function() {
         const endDateInput = document.getElementById('dashEndDate');
         
         let startDay = startDateInput && startDateInput.value ? new Date(startDateInput.value) : new Date();
-        startDay.setHours(0,0,0,0);
+        startDay.setHours(5,0,0,0); // 5 AM Business Day
+        
         let endDay = endDateInput && endDateInput.value ? new Date(endDateInput.value) : new Date();
-        endDay.setHours(23,59,59,999);
+        endDay.setDate(endDay.getDate() + 1);
+        endDay.setHours(4,59,59,999); // 4:59 AM Next Day
 
         let daysDiff = Math.ceil((endDay - startDay) / (1000 * 60 * 60 * 24));
-        let isMonthly = daysDiff > 31;
+        let isMonthly = daysDiff > 31; // Flips to Monthly view automatically!
         
         let labels = [];
         let dateKeys = []; 
 
-        // If today or no range, default to last 7 days
         if (daysDiff <= 1 && startDay.toDateString() === new Date().toDateString()) {
             for (let i = 6; i >= 0; i--) {
                 let d = new Date(); d.setDate(new Date().getDate() - i);
                 dateKeys.push(toLocalISODate(d));
                 labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
             }
-            startDay = new Date();
-            startDay.setDate(startDay.getDate() - 6);
-            startDay.setHours(0,0,0,0);
-            endDay = new Date();
-            endDay.setHours(23,59,59,999);
+            startDay = new Date(); startDay.setDate(startDay.getDate() - 6); startDay.setHours(5,0,0,0);
+            endDay = new Date(); endDay.setDate(endDay.getDate() + 1); endDay.setHours(4,59,59,999);
         } 
         else if (isMonthly) {
             let curr = new Date(startDay.getFullYear(), startDay.getMonth(), 1);
@@ -21302,22 +21279,6 @@ window.renderDashboardCharts = async function() {
             }
         }
 
-        // Updating the chart title dynamically
-        let titleEl = document.getElementById('revenueChartTitle');
-        if (titleEl) {
-            let spanIcon = `<span style="font-size: 20px;">📈</span>`;
-            if (isMonthly) {
-                titleEl.innerHTML = `${spanIcon} Monthly Gross Revenue Trend`;
-            } else if (daysDiff <= 1 && startDay.toDateString() !== new Date().toDateString()) {
-                titleEl.innerHTML = `${spanIcon} Daily Gross Revenue Trend`;
-            } else if (daysDiff <= 1) {
-                titleEl.innerHTML = `${spanIcon} 7-Day Gross Revenue Trend`;
-            } else {
-                titleEl.innerHTML = `${spanIcon} ${daysDiff}-Day Gross Revenue Trend`;
-            }
-        }
-
-        // 1. Fetch Transactions from the date range
         const q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startDay), window.where("timestamp", "<=", endDay));
         const snap = await window.getDocs(q);
 
@@ -21333,9 +21294,7 @@ window.renderDashboardCharts = async function() {
         };
 
         let activeBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
-        if (window.sessionUser && window.sessionUser.isFranchisee) {
-            activeBranches = window.sessionUser.allowedBranches;
-        }
+        if (window.sessionUser && window.sessionUser.isFranchisee) activeBranches = window.sessionUser.allowedBranches;
         
         let branchSalesData = {};
         activeBranches.forEach(b => { 
@@ -21344,7 +21303,11 @@ window.renderDashboardCharts = async function() {
         });
 
         let categorySales = {}; 
-        let todayStr = toLocalISODate(new Date());
+        
+        // Identify what the current business day is
+        let liveBusinessDay = new Date();
+        if (liveBusinessDay.getHours() < 5) liveBusinessDay.setDate(liveBusinessDay.getDate() - 1);
+        let todayStr = toLocalISODate(liveBusinessDay);
 
         snap.forEach(docSnap => {
             let tx = docSnap.data();
@@ -21352,13 +21315,19 @@ window.renderDashboardCharts = async function() {
 
             let txBranch = tx.branch || "Unknown";
             let txDateObj = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : null;
-            let exactLocalStr = txDateObj ? toLocalISODate(txDateObj) : null;
 
             if (txDateObj) {
+                // 🔥 THE CHART FIX: Push 2AM transactions backwards into yesterday's chart bar!
+                let businessDateObj = new Date(txDateObj.getTime());
+                if (businessDateObj.getHours() < 5) {
+                    businessDateObj.setDate(businessDateObj.getDate() - 1);
+                }
+                let exactLocalStr = toLocalISODate(businessDateObj);
+
                 let keyToUse = "";
                 if (isMonthly) {
-                    let y = txDateObj.getFullYear();
-                    let m = String(txDateObj.getMonth() + 1).padStart(2, '0');
+                    let y = businessDateObj.getFullYear();
+                    let m = String(businessDateObj.getMonth() + 1).padStart(2, '0');
                     keyToUse = `${y}-${m}`;
                 } else {
                     keyToUse = exactLocalStr;
@@ -21366,16 +21335,7 @@ window.renderDashboardCharts = async function() {
 
                 if (branchSalesData[txBranch] && branchSalesData[txBranch][keyToUse] !== undefined) {
                     let txGross = parseFloat(tx.subTotalBeforeDiscount);
-                    if (isNaN(txGross) || txGross <= 0) {
-                        txGross = 0;
-                        if (tx.cart && Array.isArray(tx.cart)) {
-                            tx.cart.forEach(item => { 
-                                txGross += ((parseFloat(item.variantPrice) || parseFloat(item.basePrice) || parseFloat(item.price) || 0) * (parseFloat(item.qty) || 1)); 
-                            });
-                        } else {
-                            txGross = parseFloat(tx.netTotal) || 0;
-                        }
-                    }
+                    if (isNaN(txGross) || txGross < tx.netTotal) txGross = parseFloat(tx.netTotal) || 0;
 
                     if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
                         tx.splitDetails.forEach(split => {
@@ -21404,8 +21364,11 @@ window.renderDashboardCharts = async function() {
             }
 
             // Today's Sales Mix Logic
-            if (exactLocalStr === todayStr && pieCanvas && tx.cart) {
-                if (window.isBranchAllowed(txBranch)) { 
+            if (txDateObj) {
+                let businessDateObj = new Date(txDateObj.getTime());
+                if (businessDateObj.getHours() < 5) businessDateObj.setDate(businessDateObj.getDate() - 1);
+                
+                if (toLocalISODate(businessDateObj) === todayStr && pieCanvas && tx.cart && window.isBranchAllowed(txBranch)) {
                     tx.cart.forEach(item => {
                         let itemName = item.name || item.itemName;
                         let cat = menuCategories[itemName] || item.category || "Uncategorized";
