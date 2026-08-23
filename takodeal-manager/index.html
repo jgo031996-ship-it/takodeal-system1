@@ -503,17 +503,17 @@
       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 25px;">
           <div style="background: white; padding: 25px; border-radius: 16px; border: 1px solid #e2e8f0; border-top: 4px solid #3b82f6; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); transition: transform 0.2s; position: relative; overflow: hidden;">
               <div style="position: absolute; right: -10px; top: -10px; font-size: 80px; opacity: 0.03;">💰</div>
-              <h3 style="margin: 0 0 8px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">Total Gross Sales (Today)</h3>
+              <h3 id="lblTitleGross" style="margin: 0 0 8px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">Total Gross Sales (Today)</h3>
               <div class="value" id="globalGross" style="font-size: 36px; font-weight: 900; color: #1e293b;">₱0.00</div>
           </div>
           <div style="background: white; padding: 25px; border-radius: 16px; border: 1px solid #e2e8f0; border-top: 4px solid #10b981; box-shadow: 0 10px 25px -5px rgba(16, 185, 129, 0.15); transition: transform 0.2s; position: relative; overflow: hidden;">
               <div style="position: absolute; right: -10px; top: -10px; font-size: 80px; opacity: 0.03;">📈</div>
-              <h3 style="margin: 0 0 8px 0; font-size: 12px; color: #15803d; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">Total Net Sales (Today)</h3>
+              <h3 id="lblTitleNet" style="margin: 0 0 8px 0; font-size: 12px; color: #15803d; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">Total Net Sales (Today)</h3>
               <div class="value" id="globalNet" style="font-size: 36px; font-weight: 900; color: #10b981;">₱0.00</div>
           </div>
           <div style="background: white; padding: 25px; border-radius: 16px; border: 1px solid #e2e8f0; border-top: 4px solid #ef4444; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); transition: transform 0.2s; position: relative; overflow: hidden;">
               <div style="position: absolute; right: -10px; top: -10px; font-size: 80px; opacity: 0.03;">📉</div>
-              <h3 style="margin: 0 0 8px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">Total Cash Out (Expenses)</h3>
+              <h3 id="lblTitleExp" style="margin: 0 0 8px 0; font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; font-weight: 800;">Total Cash Out (Expenses)</h3>
               <div class="value" id="globalExpenses" style="font-size: 36px; font-weight: 900; color: #dc2626;">₱0.00</div>
           </div>
       </div>
@@ -522,7 +522,7 @@
       <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 25px;">
           <div style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; padding: 25px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); box-sizing: border-box; display: flex; flex-direction: column;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
-                  <h3 style="margin: 0; color: #1e293b; font-size: 18px; font-weight: 900; display: flex; align-items: center; gap: 8px;"><span style="font-size: 20px;">📈</span> 7-Day Gross Revenue Trend</h3>
+                  <h3 id="revenueChartTitle" style="margin: 0; color: #1e293b; font-size: 18px; font-weight: 900; display: flex; align-items: center; gap: 8px;"><span style="font-size: 20px;">📈</span> 7-Day Gross Revenue Trend</h3>
                   
                   <div id="chartPaymentFilters" style="display: flex; gap: 8px; align-items: center; background: #f8fafc; padding: 6px; border-radius: 20px; border: 1px solid #e2e8f0;">
                       <button type="button" id="btnFilterCash" onclick="window.toggleChartFilter('cash')" style="padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 900; cursor: pointer; border: none; background: #334155; color: white; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">💵 Cash</button>
