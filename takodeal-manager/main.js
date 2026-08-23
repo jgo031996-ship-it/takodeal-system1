@@ -591,7 +591,6 @@ window.removeHqManager = async function (docId, email) {
   } catch (e) { console.error(e); alert("Failed to remove manager."); }
 };
 
-// --- THE GLOBAL RADAR ENGINE (FRANCHISE ISOLATION UPGRADE) ---
 window.loadGlobalDashboard = async function() {
     const startDateInput = document.getElementById('dashStartDate');
     const endDateInput = document.getElementById('dashEndDate');
@@ -627,8 +626,6 @@ window.loadGlobalDashboard = async function() {
         dashFilter.disabled = true;
     }
 
-    let globalGross = 0; let globalNet = 0; let globalExp = 0;
-    
     let branches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : [];
     if (selectedBranch !== "All") {
         branches = [selectedBranch];
@@ -636,14 +633,61 @@ window.loadGlobalDashboard = async function() {
         branches = window.sessionUser.allowedBranches;
     }
 
-    let tableHtml = '';
-
     try {
-        // 🔥 LIGHTNING FAST PARALLEL BRANCH SCANNER 🔥
-        // Blasts all branch queries to Firebase simultaneously!
+        // 🔥 1. AGGREGATE ENTIRE DATE RANGE FOR TOP KPI CARDS 🔥
+        let globalGross = 0; let globalNet = 0; let globalExp = 0;
+
+        const txRangeQ = selectedBranch === "All" 
+            ? window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay))
+            : window.query(window.collection(window.db, "transactions"), window.where("branch", "==", selectedBranch), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
+            
+        const expRangeQ = selectedBranch === "All"
+            ? window.query(window.collection(window.db, "expenses"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay))
+            : window.query(window.collection(window.db, "expenses"), window.where("branch", "==", selectedBranch), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
+
+        const [txRangeSnap, expRangeSnap] = await Promise.all([window.getDocs(txRangeQ), window.getDocs(expRangeQ)]);
+
+        txRangeSnap.forEach(tDoc => {
+            let tx = tDoc.data();
+            if (tx.status !== "Voided") {
+                globalNet += (tx.netTotal || 0);
+                let txGross = 0;
+                if (tx.cart) { 
+                    tx.cart.forEach(item => { txGross += ((item.variantPrice || item.basePrice || item.price || 0) * (item.qty || 1)); }); 
+                } else { 
+                    txGross = tx.netTotal; 
+                }
+                globalGross += txGross;
+            }
+        });
+
+        expRangeSnap.forEach(eDoc => {
+            globalExp += (parseFloat(eDoc.data().amount) || 0);
+        });
+
+        document.getElementById('globalGross').innerText = formatMoney(globalGross);
+        document.getElementById('globalNet').innerText = formatMoney(globalNet);
+        document.getElementById('globalExpenses').innerText = formatMoney(globalExp);
+
+        // Update KPI Titles Dynamically!
+        let isToday = (startDateInput.value === endDateInput.value) && (startDateInput.value === new Date().toISOString().split('T')[0]);
+        let titleSuffix = isToday ? "(Today)" : "(Selected Range)";
+        let lblGross = document.getElementById('lblTitleGross');
+        let lblNet = document.getElementById('lblTitleNet');
+        let lblExp = document.getElementById('lblTitleExp');
+        if(lblGross) lblGross.innerText = `Total Gross Sales ${titleSuffix}`;
+        if(lblNet) lblNet.innerText = `Total Net Sales ${titleSuffix}`;
+        if(lblExp) lblExp.innerText = `Total Cash Out ${titleSuffix}`;
+
+
+        // 🔥 2. LIGHTNING FAST PARALLEL BRANCH SCANNER FOR LIVE TABLE 🔥
+        let tableHtml = '';
+        let liveStartOfDay = new Date(); 
+        liveStartOfDay.setHours(0,0,0,0); // Always forces the table to show TODAY'S live shift
+
         const branchPromises = branches.map(async (branch) => {
-            const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"), limit(1));
-            const shiftSnap = await getDocs(shiftQ);
+            const shiftQ = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", branch), window.where("startTime", ">=", liveStartOfDay), window.orderBy("startTime", "desc"), window.limit(1));
+            const shiftSnap = await window.getDocs(shiftQ);
 
             let shiftData = !shiftSnap.empty ? shiftSnap.docs[0].data() : null;
             let shiftDocId = !shiftSnap.empty ? shiftSnap.docs[0].id : null;
@@ -653,7 +697,6 @@ window.loadGlobalDashboard = async function() {
             let displayCashier = '-';
             let branchGross = 0; let branchNet = 0; let branchCashIn = 0; let branchExp = 0;
             let parkedCount = 0;
-            
             let latestTxTime = 0;
             let activeCashierNow = null;
 
@@ -661,24 +704,19 @@ window.loadGlobalDashboard = async function() {
                 let shiftStart = shiftData.startTime.toDate();
                 let shiftEnd = isActive ? new Date() : shiftData.endTime.toDate();
 
-                // Fire all 3 data logs at the exact same time!
-                const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", shiftStart), where("timestamp", "<=", shiftEnd));
-                const expQ = query(collection(db, "expenses"), where("shiftId", "==", shiftDocId));
-                const parkedQ = query(collection(db, "parked_orders"), where("branch", "==", branch));
+                const txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branch), window.where("timestamp", ">=", shiftStart), window.where("timestamp", "<=", shiftEnd));
+                const expQ = window.query(window.collection(window.db, "expenses"), window.where("shiftId", "==", shiftDocId));
+                const parkedQ = window.query(window.collection(window.db, "parked_orders"), window.where("branch", "==", branch));
 
-                const [txSnap, expSnap, parkedSnap] = await Promise.all([getDocs(txQ), getDocs(expQ), getDocs(parkedQ)]);
+                const [txSnapLive, expSnapLive, parkedSnap] = await Promise.all([window.getDocs(txQ), window.getDocs(expQ), window.getDocs(parkedQ)]);
 
-                txSnap.forEach(tDoc => {
+                txSnapLive.forEach(tDoc => {
                     let tx = tDoc.data();
                     if (tx.status !== "Voided") {
                         branchNet += (tx.netTotal || 0);
-                        let txGross = 0;
-                        if (tx.cart) { tx.cart.forEach(item => { txGross += ((item.variantPrice || 0) * (item.qty || 1)); }); } else { txGross = tx.netTotal; }
-                        branchGross += txGross;
                         if (tx.paymentMethod === 'Cash') branchCashIn += (tx.netTotal || 0);
                     }
                     
-                    // Track the cashier from the most recent transaction to know who is actively punching orders!
                     let txTimeMs = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate().getTime() : new Date(tx.timestamp).getTime()) : 0;
                     if (txTimeMs > latestTxTime && tx.cashier) {
                         latestTxTime = txTimeMs;
@@ -686,16 +724,13 @@ window.loadGlobalDashboard = async function() {
                     }
                 });
 
-                // 🧠 SMART CASHIER DETECTOR: 
-                // 1. Use the cashier from the most recent transaction.
-                // 2. If no transactions yet, split the shift cashier string and grab the last name!
                 if (activeCashierNow) {
                     displayCashier = activeCashierNow;
                 } else if (shiftData.cashier) {
                     displayCashier = shiftData.cashier.split('/').pop().trim();
                 }
 
-                expSnap.forEach(eDoc => { branchExp += (eDoc.data().amount || 0); });
+                expSnapLive.forEach(eDoc => { branchExp += (eDoc.data().amount || 0); });
                 parkedCount = parkedSnap.size;
             }
 
@@ -707,7 +742,6 @@ window.loadGlobalDashboard = async function() {
             if (isClosed) varianceHtml = `<span style="color: #10b981; font-weight: bold; font-style: italic;">Saved to Z-Reading ✓</span>`;
             else if (isActive) varianceHtml = `<span style="color: #64748b; font-style: italic;">Shift in progress...</span>`;
 
-            // Skip rendering if ghost branch
             if (branchGross === 0 && branchExp === 0 && !shiftData) return null;
 
             let parkedAlert = parkedCount > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: bold; margin-left: 8px; animation: pulse 1s infinite; box-shadow: 0 0 5px rgba(239,68,68,0.5);">⚠️ ${parkedCount} Parked</span>` : '';
@@ -718,7 +752,7 @@ window.loadGlobalDashboard = async function() {
 
             let displayStartingCash = (isActive || isClosed) ? formatMoney(shiftData.startingCash || 0) : '-';
 
-            let rowHtml = `
+            return `
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                 <td style="padding: 15px 25px;"><strong style="cursor:pointer; color:#0f766e; font-size: 14px; text-decoration:none;" onclick="openBranchDetails('${branch}')">${branch} </strong></td>
                 <td style="padding: 15px 25px;">${shiftBadge}</td>
@@ -730,25 +764,14 @@ window.loadGlobalDashboard = async function() {
                 <td style="padding: 15px 25px;">${varianceHtml}</td>
                 </tr>
             `;
-
-            return { html: rowHtml, gross: branchGross, net: branchNet, exp: branchExp };
         });
 
-        // Wait for all branches to finish their simultaneous math
         const results = await Promise.all(branchPromises);
 
         results.forEach(res => {
-            if (res) {
-                tableHtml += res.html;
-                globalGross += res.gross;
-                globalNet += res.net;
-                globalExp += res.exp;
-            }
+            if (res) { tableHtml += res; }
         });
 
-        document.getElementById('globalGross').innerText = formatMoney(globalGross);
-        document.getElementById('globalNet').innerText = formatMoney(globalNet);
-        document.getElementById('globalExpenses').innerText = formatMoney(globalExp);
         document.getElementById('branchTableBody').innerHTML = tableHtml;
 
     } catch (error) {
@@ -762,7 +785,7 @@ window.loadGlobalDashboard = async function() {
         let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
         if (isFranchisee) selectedBranch = window.sessionUser.branch;
 
-        const statsSnap = await getDoc(doc(db, "settings", "global_stats"));
+        const statsSnap = await window.getDoc(window.doc(window.db, "settings", "global_stats"));
         if (statsSnap.exists()) {
             let data = statsSnap.data();
             let totalBalls = 0;
@@ -21231,34 +21254,76 @@ window.renderDashboardCharts = async function() {
     if (!lineCanvas) return;
 
     try {
-        // 🔥 THE TIMEZONE FIX: Forces exact Philippine Local Time Dates
         const toLocalISODate = (d) => new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
         
-        let labels = [];
-        let dateKeys = [];
-        let today = new Date();
-        let todayStr = toLocalISODate(today);
+        const startDateInput = document.getElementById('dashStartDate');
+        const endDateInput = document.getElementById('dashEndDate');
+        
+        let startDay = startDateInput && startDateInput.value ? new Date(startDateInput.value) : new Date();
+        startDay.setHours(0,0,0,0);
+        let endDay = endDateInput && endDateInput.value ? new Date(endDateInput.value) : new Date();
+        endDay.setHours(23,59,59,999);
 
-        for (let i = 6; i >= 0; i--) {
-            let d = new Date(); d.setDate(today.getDate() - i);
-            dateKeys.push(toLocalISODate(d));
-            labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+        let daysDiff = Math.ceil((endDay - startDay) / (1000 * 60 * 60 * 24));
+        let isMonthly = daysDiff > 31;
+        
+        let labels = [];
+        let dateKeys = []; 
+
+        // If today or no range, default to last 7 days
+        if (daysDiff <= 1 && startDay.toDateString() === new Date().toDateString()) {
+            for (let i = 6; i >= 0; i--) {
+                let d = new Date(); d.setDate(new Date().getDate() - i);
+                dateKeys.push(toLocalISODate(d));
+                labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            }
+            startDay = new Date();
+            startDay.setDate(startDay.getDate() - 6);
+            startDay.setHours(0,0,0,0);
+            endDay = new Date();
+            endDay.setHours(23,59,59,999);
+        } 
+        else if (isMonthly) {
+            let curr = new Date(startDay.getFullYear(), startDay.getMonth(), 1);
+            let endMonth = new Date(endDay.getFullYear(), endDay.getMonth(), 1);
+            while (curr <= endMonth) {
+                let y = curr.getFullYear();
+                let m = String(curr.getMonth() + 1).padStart(2, '0');
+                dateKeys.push(`${y}-${m}`);
+                labels.push(curr.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
+                curr.setMonth(curr.getMonth() + 1);
+            }
+        } else {
+            for (let i = 0; i < daysDiff; i++) {
+                let d = new Date(startDay);
+                d.setDate(startDay.getDate() + i);
+                dateKeys.push(toLocalISODate(d));
+                labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            }
         }
 
-        let startDate = new Date();
-        startDate.setDate(today.getDate() - 6);
-        startDate.setHours(0, 0, 0, 0);
+        // Updating the chart title dynamically
+        let titleEl = document.getElementById('revenueChartTitle');
+        if (titleEl) {
+            let spanIcon = `<span style="font-size: 20px;">📈</span>`;
+            if (isMonthly) {
+                titleEl.innerHTML = `${spanIcon} Monthly Gross Revenue Trend`;
+            } else if (daysDiff <= 1 && startDay.toDateString() !== new Date().toDateString()) {
+                titleEl.innerHTML = `${spanIcon} Daily Gross Revenue Trend`;
+            } else if (daysDiff <= 1) {
+                titleEl.innerHTML = `${spanIcon} 7-Day Gross Revenue Trend`;
+            } else {
+                titleEl.innerHTML = `${spanIcon} ${daysDiff}-Day Gross Revenue Trend`;
+            }
+        }
 
-        // 1. Fetch Transactions from the last 7 days
-        const q = query(collection(db, "transactions"), where("timestamp", ">=", startDate));
-        const snap = await getDocs(q);
+        // 1. Fetch Transactions from the date range
+        const q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startDay), window.where("timestamp", "<=", endDay));
+        const snap = await window.getDocs(q);
 
-        // 2. FETCH TRUE MENU CATEGORIES
-        const menuSnap = await getDocs(collection(db, "menu"));
+        const menuSnap = await window.getDocs(window.collection(window.db, "menu"));
         let menuCategories = {};
-        menuSnap.forEach(doc => {
-            menuCategories[doc.data().name] = doc.data().category || 'Uncategorized';
-        });
+        menuSnap.forEach(doc => { menuCategories[doc.data().name] = doc.data().category || 'Uncategorized'; });
 
         const branchColors = {
             "Cabantian": { border: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" },
@@ -21271,10 +21336,15 @@ window.renderDashboardCharts = async function() {
         if (window.sessionUser && window.sessionUser.isFranchisee) {
             activeBranches = window.sessionUser.allowedBranches;
         }
+        
         let branchSalesData = {};
-        activeBranches.forEach(b => { branchSalesData[b] = { '0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0 }; });
+        activeBranches.forEach(b => { 
+            branchSalesData[b] = {}; 
+            dateKeys.forEach(k => branchSalesData[b][k] = 0); 
+        });
 
         let categorySales = {}; 
+        let todayStr = toLocalISODate(new Date());
 
         snap.forEach(docSnap => {
             let tx = docSnap.data();
@@ -21282,14 +21352,19 @@ window.renderDashboardCharts = async function() {
 
             let txBranch = tx.branch || "Unknown";
             let txDateObj = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : null;
-            let txDate = txDateObj ? toLocalISODate(txDateObj) : null;
+            let exactLocalStr = txDateObj ? toLocalISODate(txDateObj) : null;
 
-            // Trend Chart Logic
-            if (branchSalesData[txBranch]) {
-                let dayIndex = dateKeys.indexOf(txDate);
-                if (dayIndex !== -1) {
-                    
-                    // 🔥 THE GROSS SALES UPGRADE 🔥
+            if (txDateObj) {
+                let keyToUse = "";
+                if (isMonthly) {
+                    let y = txDateObj.getFullYear();
+                    let m = String(txDateObj.getMonth() + 1).padStart(2, '0');
+                    keyToUse = `${y}-${m}`;
+                } else {
+                    keyToUse = exactLocalStr;
+                }
+
+                if (branchSalesData[txBranch] && branchSalesData[txBranch][keyToUse] !== undefined) {
                     let txGross = parseFloat(tx.subTotalBeforeDiscount);
                     if (isNaN(txGross) || txGross <= 0) {
                         txGross = 0;
@@ -21309,9 +21384,8 @@ window.renderDashboardCharts = async function() {
                                 (method.includes('gcash') && window.chartFilters.gcash) || 
                                 (method.includes('grab') && window.chartFilters.grab) || 
                                 (method.includes('foodpanda') && window.chartFilters.foodpanda)) {
-                                // Use mathematical ratio to split the gross amount perfectly!
                                 let ratio = (tx.netTotal > 0) ? (parseFloat(split.amount) / parseFloat(tx.netTotal)) : 0;
-                                branchSalesData[txBranch][dayIndex] += (txGross * ratio);
+                                branchSalesData[txBranch][keyToUse] += (txGross * ratio);
                             }
                         });
                     } else {
@@ -21323,14 +21397,14 @@ window.renderDashboardCharts = async function() {
                         let isOtherDigital = !isCash && !isGcash && !isGrab && !isFoodpanda && window.chartFilters.gcash; 
 
                         if (isCash || isGcash || isGrab || isFoodpanda || isOtherDigital) {
-                            branchSalesData[txBranch][dayIndex] += txGross;
+                            branchSalesData[txBranch][keyToUse] += txGross;
                         }
                     }
                 }
             }
 
             // Today's Sales Mix Logic
-            if (txDate === todayStr && pieCanvas && tx.cart) {
+            if (exactLocalStr === todayStr && pieCanvas && tx.cart) {
                 if (window.isBranchAllowed(txBranch)) { 
                     tx.cart.forEach(item => {
                         let itemName = item.name || item.itemName;
@@ -21348,7 +21422,8 @@ window.renderDashboardCharts = async function() {
         activeBranches.forEach(branch => {
             let color = branchColors[branch] || { border: "#0f766e", bg: "rgba(15, 118, 110, 0.1)" };
             lineDatasets.push({
-                label: branch, data: dateKeys.map((_, idx) => branchSalesData[branch][idx]),
+                label: branch, 
+                data: dateKeys.map(k => branchSalesData[branch][k]), 
                 borderColor: color.border, backgroundColor: color.bg, borderWidth: 3, tension: 0.4, fill: true, pointRadius: 4, pointHoverRadius: 6
             });
         });
