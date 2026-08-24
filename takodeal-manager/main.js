@@ -924,337 +924,6 @@ window.loadHRModule = async function() {
   }
 };
 
-window.addNewStaff = function() {
-    // Force update ALL duplicate HTML elements so they match perfectly
-    const setAllVals = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.value = val);
-    const setAllChecks = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.checked = val);
-
-    setAllVals('empProfileId', '');
-    setAllVals('empFullName', '');
-    setAllVals('empBranchAssign', 'Cabantian');
-    setAllVals('empRole', 'Crew');
-    setAllVals('empDateHired', '');
-    setAllVals('empHourlyRate', '');
-    setAllVals('empPin', '');
-    
-    // 🔥 THE FIX: Set the new custom rate box to a default of 50
-    setAllVals('empNightDiffRate', '50');
-    
-    // 🎓 STUDENT FIX: Uncheck the student status for new hires
-    setAllChecks('staffWorkingStudent', false);
-
-    setAllVals('empPhone', '');
-    setAllVals('empAddress', '');
-    setAllVals('empGcashName', '');
-    setAllVals('empGcashNum', '');
-    setAllVals('empGotymeName', '');
-    setAllVals('empGotymeNum', '');
-    setAllVals('empSSS', '');
-    setAllVals('empPhilhealth', '');
-    setAllVals('empPagibig', '');
-    setAllVals('empScheduleName', '');
-    setAllVals('profEmpId', '');
-    setAllVals('profBloodType', '');
-
-    // Reset Profile Picture and Links for a blank form
-    let defaultPic = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
-    document.querySelectorAll('[id="masterProfilePic"]').forEach(el => el.src = defaultPic);
-    
-    document.querySelectorAll('[id="masterSssLink"]').forEach(el => el.style.display = 'none');
-    document.querySelectorAll('[id="masterPhilLink"]').forEach(el => el.style.display = 'none');
-    document.querySelectorAll('[id="masterPagibigLink"]').forEach(el => el.style.display = 'none');
-
-    document.querySelectorAll('[id="employeeProfileModal"]').forEach(el => el.style.display = 'flex');
-};
-
-window.openEmployeeProfile = function(docId) {
-    let data = window.globalStaffData[docId];
-    if (!data) return;
-
-    // Force update ALL duplicate HTML elements
-    const setAllVals = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.value = val);
-    const setAllHtml = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.innerHTML = val);
-    const setAllChecks = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.checked = val);
-
-    setAllVals('empProfileId', docId);
-    setAllVals('empFullName', data.cashierName || '');
-    setAllVals('empBranchAssign', data.branch || 'Cabantian');
-    setAllVals('empRole', data.role || 'Crew');
-    setAllVals('empDateHired', data.dateHired || '');
-    setAllVals('empHourlyRate', data.hourlyRate || '');
-    setAllVals('empPin', data.pin || '');
-    
-    // 🔥 THE FIX: Load their individual custom rate, with a legacy fallback!
-    let legacyRate = (data.eligibleNightDiff === false) ? 0 : 50;
-    let finalNightRate = data.nightDiffRate !== undefined ? data.nightDiffRate : legacyRate;
-    setAllVals('empNightDiffRate', finalNightRate);
-    
-    setAllChecks('staffWorkingStudent', data.isWorkingStudent || false);
-    setAllVals('empPhone', data.phone || '');
-    setAllVals('empAddress', data.address || '');
-    setAllVals('empGcashName', data.gcashName || '');
-    setAllVals('empGcashNum', data.gcashNum || '');
-    setAllVals('empGotymeName', data.gotymeName || '');
-    setAllVals('empGotymeNum', data.gotymeNum || '');
-    setAllVals('empSSS', data.sss || '');
-    setAllVals('empPhilhealth', data.philhealth || '');
-    setAllVals('empPagibig', data.pagibig || '');
-
-    setAllHtml('customDeductionsContainer', '');
-    if (data.customDeductions && data.customDeductions.length > 0) {
-        data.customDeductions.forEach(d => {
-            if(typeof window.addCustomDeductionRow === 'function') window.addCustomDeductionRow(d.name, d.amount);
-        });
-    }
-
-    setAllVals('empSSSAmount', data.sssAmount || '');
-    setAllVals('empPhilAmount', data.philHealthAmount || '');
-    setAllVals('empPagibigAmount', data.pagibigAmount || '');
-    setAllVals('empEmergencyName', data.emergencyName || '');
-    setAllVals('empEmergencyPhone', data.emergencyPhone || '');
-    setAllVals('empEmail', data.email || '');
-    setAllVals('empScheduleName', data.scheduleNickname || data.scheduleName || '');
-    setAllVals('profEmpId', data.empId || 'Pending Generation...');
-    setAllVals('profBloodType', data.bloodType || '');
-
-    let defaultPic = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
-    document.querySelectorAll('[id="masterProfilePic"]').forEach(el => {
-        el.src = data.profilePicUrl ? data.profilePicUrl : defaultPic;
-    });
-
-    const setupMasterLink = (linkId, url) => {
-        document.querySelectorAll(`[id="${linkId}"]`).forEach(el => {
-            if (url) { el.href = url; el.style.display = 'inline-block'; } 
-            else { el.style.display = 'none'; }
-        });
-    };
-    
-    setupMasterLink('masterSssLink', data.sssIdUrl);
-    setupMasterLink('masterPhilLink', data.philhealthIdUrl);
-    setupMasterLink('masterPagibigLink', data.pagibigIdUrl);
-
-    document.querySelectorAll('[id="employeeProfileModal"]').forEach(el => el.style.display = 'flex');
-
-    // 🔥 HR ENGINE: Render the Document Vault Buttons
-    let vaultContainer = document.getElementById('contractVaultContainer');
-    let vaultBtns = document.getElementById('contractVaultButtons');
-    if (vaultContainer && vaultBtns) {
-        vaultBtns.innerHTML = '';
-        if (data.signedContracts && Object.keys(data.signedContracts).length > 0) {
-            vaultContainer.style.display = 'block';
-            let safeData = encodeURIComponent(JSON.stringify(data));
-            
-            if (data.signedContracts.initial) {
-                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Initial', '${safeData}', '${data.signedContracts.initial}')" style="background:#0f766e; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 Initial Employment</button>`;
-            }
-            if (data.signedContracts.extension) {
-                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Extension', '${safeData}', '${data.signedContracts.extension}')" style="background:#0ea5e9; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 6-Mo Extension</button>`;
-            }
-            if (data.signedContracts.regularization) {
-                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Regularization', '${safeData}', '${data.signedContracts.regularization}')" style="background:#10b981; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 Regularization</button>`;
-            }
-        } else {
-            vaultContainer.style.display = 'none';
-        }
-    }
-
-    document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 15px;">Loading...</td></tr>';
-    });
-
-    getDocs(query(collection(db, "staff_deductions"), where("staffName", "==", data.cashierName), orderBy("dateAdded", "desc"), limit(30)))
-    .then(snap => {
-        let histHtml = '';
-        snap.forEach(dDoc => {
-            let d = dDoc.data();
-            let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
-            let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
-
-            let actionHtml = d.status === 'Unpaid' 
-                ? `<button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">Mark Paid</button>`
-                : `<div style="background:#f0fdf4; color:#15803d; border: 1px solid #bbf7d0; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:bold; width: 85px; text-align: center; box-sizing: border-box;">✔️ Paid</div>`;
-                
-            actionHtml += `<button onclick="window.deleteStaffDeduction('${dDoc.id}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">🗑️ Delete</button>`;
-
-            histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                <td style="padding:12px 8px; color: #64748b;">${dateStr}</td>
-                <td style="padding:12px 8px; font-weight: bold; color: #334155;">${d.type}</td>
-                <td style="padding:12px 8px; font-weight:900; color:#ea580c;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                <td style="padding:12px 8px; color:${color}; font-weight:bold;">${d.status}</td>
-                <td style="padding:12px 8px;">
-                    <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">${actionHtml}</div>
-                </td>
-            </tr>`;
-        });
-
-        document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
-            tbody.innerHTML = histHtml || '<tr><td colspan="5" style="text-align: center; padding: 15px; color: #94a3b8;">No deduction history.</td></tr>';
-        });
-    }).catch(e => {
-        console.error(e);
-        document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>';
-        });
-    });
-};
-
-window.saveEmployeeProfile = async function() {
-    const getVal = (id) => {
-        let els = document.querySelectorAll(`[id="${id}"]`);
-        let activeEl = Array.from(els).find(el => {
-            let modal = el.closest('[id="employeeProfileModal"]');
-            return modal && modal.style.display !== 'none';
-        });
-        return activeEl ? activeEl.value : (els[0] ? els[0].value : '');
-    };
-    const getCheck = (id) => {
-        let els = document.querySelectorAll(`[id="${id}"]`);
-        let activeEl = Array.from(els).find(el => {
-            let modal = el.closest('[id="employeeProfileModal"]');
-            return modal && modal.style.display !== 'none';
-        });
-        return activeEl ? activeEl.checked : (els[0] ? els[0].checked : false);
-    };
-
-    let bAssign = document.getElementById('empBranchAssign');
-    if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = false;
-
-    // 1. EXTRACT ALL VARIABLES FIRST
-    let docId = getVal('empProfileId');
-    let name = getVal('empFullName').trim();
-    let branch = getVal('empBranchAssign');
-    let rate = parseFloat(getVal('empHourlyRate'));
-    let newRole = getVal('empRole').trim();
-    let isWorkingStudent = getCheck('staffWorkingStudent');
-    let pin = getVal('empPin').trim();
-    let nightRate = parseFloat(getVal('empNightDiffRate')) || 0;
-
-    if (!name || isNaN(rate) || !pin || pin.length < 4) {
-        alert("❌ Error: Name, Hourly Rate, and a Password (minimum 4 characters) are strictly required!");
-        if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = true;
-        return;
-    }
-
-    let btns = document.querySelectorAll('[id="btnSaveEmpProfile"]');
-    let visibleBtn = Array.from(btns).find(btn => {
-        let modal = btn.closest('[id="employeeProfileModal"]');
-        return modal && modal.style.display !== 'none';
-    }) || btns[0];
-    
-    if(visibleBtn) { visibleBtn.innerText = "⏳ Generating ID & Saving..."; visibleBtn.disabled = true; }
-
-    // 2. 🧠 SMART ID GENERATOR (Sorts by Hire Date to give oldest staff the 0001 number!)
-    let empId = getVal('profEmpId');
-    if (!empId || empId === 'Pending Generation...' || empId === 'undefined') {
-        let bCode = branch === 'Cabantian' ? '33025' : (branch === 'Citygate' ? '11526' : (branch === 'Maa' ? '21026' : '101010'));
-        
-        let dHired = getVal('empDateHired');
-        let dObj = dHired ? new Date(dHired) : new Date();
-        let dhStr = (dObj.getMonth() + 1) + '' + dObj.getDate() + '' + dObj.getFullYear();
-        
-        // Ask Firebase for everyone in this branch
-        const q = window.query(window.collection(window.db, "cashiers"), window.where("branch", "==", branch));
-        const snap = await window.getDocs(q);
-        let staffInBranch = [];
-        snap.forEach(d => staffInBranch.push({id: d.id, ...d.data()}));
-        
-        // Sort them mathematically by the date they were hired!
-        staffInBranch.sort((a, b) => new Date(a.dateHired || 0) - new Date(b.dateHired || 0));
-        
-        // Find out where this employee ranks in history
-        let myIndex = staffInBranch.findIndex(s => s.id === docId);
-        let count = (myIndex !== -1) ? (myIndex + 1) : (staffInBranch.length + 1);
-        
-        empId = `${bCode}-${dhStr}-${String(count).padStart(4, '0')}`;
-        
-        // Push it to the UI immediately so you can see it!
-        document.querySelectorAll('[id="profEmpId"]').forEach(el => el.value = empId);
-    }
-
-    if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = true;
-
-    let customDeductionsArray = [];
-    let activeModals = document.querySelectorAll('[id="employeeProfileModal"]');
-    let visibleModal = Array.from(activeModals).find(m => m.style.display !== 'none') || document;
-    
-    visibleModal.querySelectorAll('.custom-deduct-row').forEach(row => {
-        let n = row.querySelector('.cd-name').value.trim();
-        let a = parseFloat(row.querySelector('.cd-amount').value) || 0;
-        if (n && a > 0) customDeductionsArray.push({ name: n, amount: a });
-    });
-
-    let oldData = docId ? window.globalStaffData[docId] : null;
-    let currentHistory = (oldData && oldData.roleHistory) ? oldData.roleHistory : [];
-    
-    if (!oldData || oldData.role !== newRole) {
-        let dObj = new Date();
-        currentHistory.push({ 
-            role: newRole, 
-            date: dObj.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) 
-        });
-    }
-
-    let payload = {
-        empId: empId,
-        bloodType: getVal('profBloodType').trim(),
-        cashierName: name,
-        branch: branch,
-        role: newRole,
-        roleHistory: currentHistory,
-        dateHired: getVal('empDateHired'),
-        hourlyRate: rate,
-        pin: pin,
-        customDeductions: customDeductionsArray,
-        nightDiffRate: nightRate,
-        eligibleNightDiff: nightRate > 0, 
-        isWorkingStudent: isWorkingStudent, 
-        phone: getVal('empPhone').trim(),
-        address: getVal('empAddress').trim(),
-        gcashName: getVal('empGcashName').trim(),
-        gcashNum: getVal('empGcashNum').trim(),
-        gotymeName: getVal('empGotymeName').trim(),
-        gotymeNum: getVal('empGotymeNum').trim(),
-        sss: getVal('empSSS').trim(),
-        philhealth: getVal('empPhilhealth').trim(),
-        pagibig: getVal('empPagibig').trim(),
-        sssAmount: parseFloat(getVal('empSSSAmount')) || 0,
-        philHealthAmount: parseFloat(getVal('empPhilAmount')) || 0,
-        pagibigAmount: parseFloat(getVal('empPagibigAmount')) || 0,
-        emergencyName: getVal('empEmergencyName').trim(),
-        emergencyPhone: getVal('empEmergencyPhone').trim(),
-        email: getVal('empEmail').trim(),
-        scheduleNickname: getVal('empScheduleName').trim(),
-    };
-
-    if (!docId) {
-        payload.contractStatus = 'Pending Initial Contract';
-        payload.signedContracts = {};
-    }
-
-    try {
-        if (docId) {
-            await window.updateDoc(window.doc(window.db, "cashiers", docId), payload);
-            Swal.fire({ toast: true, position: 'top', icon: 'success', title: `✅ ${name}'s profile updated!`, showConfirmButton: false, timer: 3000, customClass: { popup: 'rounded-xl shadow-lg border border-gray-200' }});
-        } else {
-            let newDocRef = await window.addDoc(window.collection(window.db, "cashiers"), payload);
-            docId = newDocRef.id;
-            document.querySelectorAll('[id="empProfileId"]').forEach(el => el.value = docId); // Set the ID so they can print right away!
-            Swal.fire({ toast: true, position: 'top', icon: 'success', title: `✅ ${name} added to database!`, showConfirmButton: false, timer: 3000, customClass: { popup: 'rounded-xl shadow-lg border border-gray-200' }});
-        }
-        
-        window.globalStaffData[docId] = payload;
-        
-        if(visibleBtn) { visibleBtn.innerText = "💾 Save Data"; visibleBtn.disabled = false; }
-        window.loadHRModule(); 
-        
-        // 🚨 INTENTIONAL FIX: We DO NOT close the modal anymore! 
-        // This lets you visually see the ID appear and click "Print ID Card" immediately!
-    } catch (e) {
-        console.error(e); Swal.fire('Error', 'Failed to save employee data.', 'error');
-        if(visibleBtn) { visibleBtn.innerText = "💾 Save Data"; visibleBtn.disabled = false; }
-    }
-};
-
 // ========================================================
 // 🔐 STAFF PASSWORD RESET ENGINE
 // ========================================================
@@ -15410,54 +15079,6 @@ window.viewLedgerHistory = async function(staffName) {
     }
 };
 
-// ==========================================
-// 🛡️ BULLETPROOF: MARK DEDUCTION PAID ENGINE
-// ==========================================
-window.forceMarkDeductionPaid = async function(docId, staffName, staffDocId) {
-    if (!confirm(`⚠️ Are you sure you want to manually mark this Vale/Meal as PAID?\n\nThis will instantly remove it from ${staffName}'s outstanding balance and clear it from their next payslip.`)) return;
-    
-    try {
-        // 1. Force the database to clear the debt (Using new Date() ensures it never crashes!)
-        await updateDoc(doc(db, "staff_deductions", docId), {
-            status: "Paid",
-            paidAt: new Date(), 
-            manualOverride: true
-        });
-        
-        alert(`✅ Success! The ₱ deduction for ${staffName} is officially cleared.`);
-        
-        // 2. AGGRESSIVE UI REFRESH: Refresh whichever modal you are currently looking at!
-        if (document.getElementById('ledgerHistoryModal') && document.getElementById('ledgerHistoryModal').style.display === 'flex') {
-            if (typeof window.viewLedgerHistory === 'function') window.viewLedgerHistory(staffName);
-        }
-        
-        if (document.getElementById('employeeProfileModal') && document.getElementById('employeeProfileModal').style.display === 'flex') {
-            if (staffDocId && typeof window.openEmployeeProfile === 'function') window.openEmployeeProfile(staffDocId);
-        }
-        
-        // 3. BACKGROUND REFRESH: Force the Ledger table to recalculate its math!
-        if (typeof window.loadLedger === 'function') {
-            window.loadLedger();
-        }
-        
-        // 4. PAYROLL REFRESH: If you are on the Payroll tab, force it to wipe the old math and regenerate!
-        let payrollTab = document.getElementById('view-payroll');
-        if (payrollTab && payrollTab.classList.contains('active')) {
-            let startRaw = document.getElementById('payrollStart').value;
-            let endRaw = document.getElementById('payrollEnd').value;
-            
-            // Only trigger the recalculation if they have dates entered
-            if (startRaw && endRaw && typeof window.generateAutoPayslips === 'function') {
-                window.generateAutoPayslips();
-            }
-        }
-        
-    } catch (e) {
-        console.error("Error marking paid:", e);
-        alert("❌ Failed to update deduction status. Please check your internet connection.");
-    }
-};
-
 // ========================================================
 // 🗑️ MANAGER APP WASTE LOG DASHBOARD (UPGRADED TABS & PHOTOS)
 // ========================================================
@@ -21718,158 +21339,6 @@ window.generateAiDispatchList = function() {
 
 window.loadSmartSupplyChain = window.loadForecasterEngine;
 
-// ========================================================
-// 🛡️ THE ULTIMATE EMPLOYEE PROFILE OVERRIDE (CACHE-BUSTER)
-// ========================================================
-window.deleteStaffDeduction = async function(docId) {
-    if(!confirm("Are you sure you want to permanently delete this deduction?")) return;
-    try {
-        // 🔥 CRASH FIX: Removed "window." from Firebase commands
-        await deleteDoc(doc(db, "staff_deductions", docId));
-        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Deleted!', showConfirmButton: false, timer: 2000});
-        let currentProfileId = document.getElementById('empProfileId').value;
-        if (currentProfileId) window.openEmployeeProfile(currentProfileId);
-    } catch(e) { console.error(e); }
-};
-
-window.forceMarkDeductionPaid = async function(docId, staffName, profileId) {
-     try {
-         // 🔥 CRASH FIX: Removed "window." from Firebase commands
-         await updateDoc(doc(db, "staff_deductions", docId), { status: 'Paid' });
-         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Marked as Paid!', showConfirmButton: false, timer: 2000});
-         window.openEmployeeProfile(profileId);
-     } catch(e) { console.error(e); }
-};
-
-window.openEmployeeProfile = function(docId) {
-    let data = window.globalStaffData[docId];
-    if (!data) return;
-
-    // Force update ALL duplicate HTML elements
-    const setAllVals = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.value = val);
-    const setAllHtml = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.innerHTML = val);
-    const setAllChecks = (id, val) => document.querySelectorAll(`[id="${id}"]`).forEach(el => el.checked = val);
-
-    setAllVals('empProfileId', docId);
-    setAllVals('empFullName', data.cashierName || '');
-    setAllVals('empBranchAssign', data.branch || 'Cabantian');
-    setAllVals('empRole', data.role || 'Crew');
-    setAllVals('empDateHired', data.dateHired || '');
-    setAllVals('empHourlyRate', data.hourlyRate || '');
-    setAllVals('empPin', data.pin || '');
-    
-    // 🔥 THE FIX: Load their individual custom rate, with a legacy fallback!
-    let legacyRate = (data.eligibleNightDiff === false) ? 0 : 50;
-    let finalNightRate = data.nightDiffRate !== undefined ? data.nightDiffRate : legacyRate;
-    setAllVals('empNightDiffRate', finalNightRate);
-    
-    setAllChecks('staffWorkingStudent', data.isWorkingStudent || false);
-    setAllVals('empPhone', data.phone || '');
-    setAllVals('empAddress', data.address || '');
-    setAllVals('empGcashName', data.gcashName || '');
-    setAllVals('empGcashNum', data.gcashNum || '');
-    setAllVals('empGotymeName', data.gotymeName || '');
-    setAllVals('empGotymeNum', data.gotymeNum || '');
-    setAllVals('empSSS', data.sss || '');
-    setAllVals('empPhilhealth', data.philhealth || '');
-    setAllVals('empPagibig', data.pagibig || '');
-
-    setAllHtml('customDeductionsContainer', '');
-    if (data.customDeductions && data.customDeductions.length > 0) {
-        data.customDeductions.forEach(d => {
-            if(typeof window.addCustomDeductionRow === 'function') window.addCustomDeductionRow(d.name, d.amount);
-        });
-    }
-
-    setAllVals('empSSSAmount', data.sssAmount || '');
-    setAllVals('empPhilAmount', data.philHealthAmount || '');
-    setAllVals('empPagibigAmount', data.pagibigAmount || '');
-    setAllVals('empEmergencyName', data.emergencyName || '');
-    setAllVals('empEmergencyPhone', data.emergencyPhone || '');
-    setAllVals('empEmail', data.email || '');
-    setAllVals('empScheduleName', data.scheduleNickname || data.scheduleName || '');
-
-    let defaultPic = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
-    document.querySelectorAll('[id="masterProfilePic"]').forEach(el => {
-        el.src = data.profilePicUrl ? data.profilePicUrl : defaultPic;
-    });
-
-    const setupMasterLink = (linkId, url) => {
-        document.querySelectorAll(`[id="${linkId}"]`).forEach(el => {
-            if (url) { el.href = url; el.style.display = 'inline-block'; } 
-            else { el.style.display = 'none'; }
-        });
-    };
-    
-    setupMasterLink('masterSssLink', data.sssIdUrl);
-    setupMasterLink('masterPhilLink', data.philhealthIdUrl);
-    setupMasterLink('masterPagibigLink', data.pagibigIdUrl);
-
-    document.querySelectorAll('[id="employeeProfileModal"]').forEach(el => el.style.display = 'flex');
-
-    // 🔥 HR ENGINE: Render the Document Vault Buttons
-    let vaultContainer = document.getElementById('contractVaultContainer');
-    let vaultBtns = document.getElementById('contractVaultButtons');
-    if (vaultContainer && vaultBtns) {
-        vaultBtns.innerHTML = '';
-        if (data.signedContracts && Object.keys(data.signedContracts).length > 0) {
-            vaultContainer.style.display = 'block';
-            let safeData = encodeURIComponent(JSON.stringify(data));
-            
-            if (data.signedContracts.initial) {
-                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Initial', '${safeData}', '${data.signedContracts.initial}')" style="background:#0f766e; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 Initial Employment</button>`;
-            }
-            if (data.signedContracts.extension) {
-                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Extension', '${safeData}', '${data.signedContracts.extension}')" style="background:#0ea5e9; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 6-Mo Extension</button>`;
-            }
-            if (data.signedContracts.regularization) {
-                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Regularization', '${safeData}', '${data.signedContracts.regularization}')" style="background:#10b981; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 Regularization</button>`;
-            }
-        } else {
-            vaultContainer.style.display = 'none';
-        }
-    }
-
-    document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 15px;">Loading...</td></tr>';
-    });
-
-    getDocs(query(collection(db, "staff_deductions"), where("staffName", "==", data.cashierName), orderBy("dateAdded", "desc"), limit(30)))
-    .then(snap => {
-        let histHtml = '';
-        snap.forEach(dDoc => {
-            let d = dDoc.data();
-            let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
-            let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
-
-            let actionHtml = d.status === 'Unpaid' 
-                ? `<button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">Mark Paid</button>`
-                : `<div style="background:#f0fdf4; color:#15803d; border: 1px solid #bbf7d0; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:bold; width: 85px; text-align: center; box-sizing: border-box;">✔️ Paid</div>`;
-                
-            actionHtml += `<button onclick="window.deleteStaffDeduction('${dDoc.id}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);">🗑️ Delete</button>`;
-
-            histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                <td style="padding:12px 8px; color: #64748b;">${dateStr}</td>
-                <td style="padding:12px 8px; font-weight: bold; color: #334155;">${d.type}</td>
-                <td style="padding:12px 8px; font-weight:900; color:#ea580c;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                <td style="padding:12px 8px; color:${color}; font-weight:bold;">${d.status}</td>
-                <td style="padding:12px 8px;">
-                    <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">${actionHtml}</div>
-                </td>
-            </tr>`;
-        });
-
-        document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
-            tbody.innerHTML = histHtml || '<tr><td colspan="5" style="text-align: center; padding: 15px; color: #94a3b8;">No deduction history.</td></tr>';
-        });
-    }).catch(e => {
-        console.error(e);
-        document.querySelectorAll('[id="empProfileHistoryBody"]').forEach(tbody => {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>';
-        });
-    });
-};
-
 // Start the watchdog 3 seconds after the Manager App loads!
 setTimeout(window.initVersionWatchdog, 3000);
 
@@ -25124,9 +24593,317 @@ window.generateIDCard = function() {
     });
 };
 
+// Auto-inject the Mass Generator button into the HR View
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => {
+        let hrHeader = document.querySelector('#view-branches .btn-refresh')?.parentElement;
+        if (hrHeader && !document.getElementById('btnMassGenIds')) {
+            hrHeader.insertAdjacentHTML('afterbegin', `<button id="btnMassGenIds" class="btn-refresh" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); margin-right: 10px;" onclick="window.massGenerateStaffIDs()">🪄 Fix & Generate All IDs</button>`);
+        }
+    }, 2000);
+});
+
+// Auto-inject the Mass Generator button into the HR View
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => {
+        let hrHeader = document.querySelector('#view-branches .btn-refresh')?.parentElement;
+        if (hrHeader && !document.getElementById('btnMassGenIds')) {
+            hrHeader.insertAdjacentHTML('afterbegin', `<button id="btnMassGenIds" class="btn-refresh" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); margin-right: 10px;" onclick="window.massGenerateStaffIDs()">🪄 Auto-Generate Missing IDs</button>`);
+        }
+    }, 2000);
+});
+
 // ========================================================
-// 🪄 MASS EMPLOYEE ID GENERATOR ENGINE (V2 - AUTOCORRECTOR)
+// 🛡️ THE ULTIMATE EMPLOYEE PROFILE OVERRIDE ENGINE 
 // ========================================================
+
+window.addNewStaff = function() {
+    const setVal = (id, val) => { let el = document.getElementById(id); if(el) el.value = val; };
+    const setCheck = (id, val) => { let el = document.getElementById(id); if(el) el.checked = val; };
+
+    setVal('empProfileId', '');
+    setVal('empFullName', '');
+    setVal('empBranchAssign', 'Cabantian');
+    setVal('empRole', 'Crew');
+    setVal('empDateHired', '');
+    setVal('empHourlyRate', '');
+    setVal('empPin', '');
+    setVal('empNightDiffRate', '50');
+    setCheck('staffWorkingStudent', false);
+    setVal('empPhone', '');
+    setVal('empAddress', '');
+    setVal('empGcashName', '');
+    setVal('empGcashNum', '');
+    setVal('empGotymeName', '');
+    setVal('empGotymeNum', '');
+    setVal('empSSS', '');
+    setVal('empPhilhealth', '');
+    setVal('empPagibig', '');
+    setVal('empScheduleName', '');
+    setVal('profEmpId', 'Pending Generation...');
+    setVal('profBloodType', '');
+
+    let container = document.getElementById('customDeductionsContainer');
+    if(container) container.innerHTML = '';
+
+    let defaultPic = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
+    let picEl = document.getElementById('masterProfilePic');
+    if (picEl) picEl.src = defaultPic;
+    
+    ['masterSssLink', 'masterPhilLink', 'masterPagibigLink'].forEach(id => {
+        let el = document.getElementById(id);
+        if (el) el.style.display = 'none';
+    });
+
+    document.getElementById('employeeProfileModal').style.display = 'flex';
+};
+
+window.openEmployeeProfile = function(docId) {
+    let data = window.globalStaffData[docId];
+    if (!data) return;
+
+    const setVal = (id, val) => { let el = document.getElementById(id); if(el) el.value = val; };
+    const setHtml = (id, val) => { let el = document.getElementById(id); if(el) el.innerHTML = val; };
+    const setCheck = (id, val) => { let el = document.getElementById(id); if(el) el.checked = val; };
+
+    setVal('empProfileId', docId);
+    setVal('empFullName', data.cashierName || '');
+    setVal('empBranchAssign', data.branch || 'Cabantian');
+    setVal('empRole', data.role || 'Crew');
+    setVal('empDateHired', data.dateHired || '');
+    setVal('empHourlyRate', data.hourlyRate || '');
+    setVal('empPin', data.pin || '');
+    
+    let legacyRate = (data.eligibleNightDiff === false) ? 0 : 50;
+    setVal('empNightDiffRate', data.nightDiffRate !== undefined ? data.nightDiffRate : legacyRate);
+    
+    setCheck('staffWorkingStudent', data.isWorkingStudent || false);
+    setVal('empPhone', data.phone || '');
+    setVal('empAddress', data.address || '');
+    setVal('empGcashName', data.gcashName || '');
+    setVal('empGcashNum', data.gcashNum || '');
+    setVal('empGotymeName', data.gotymeName || '');
+    setVal('empGotymeNum', data.gotymeNum || '');
+    setVal('empSSS', data.sss || '');
+    setVal('empPhilhealth', data.philhealth || '');
+    setVal('empPagibig', data.pagibig || '');
+
+    setHtml('customDeductionsContainer', '');
+    if (data.customDeductions && data.customDeductions.length > 0) {
+        data.customDeductions.forEach(d => {
+            if(typeof window.addCustomDeductionRow === 'function') window.addCustomDeductionRow(d.name, d.amount);
+        });
+    }
+
+    setVal('empSSSAmount', data.sssAmount || '');
+    setVal('empPhilAmount', data.philHealthAmount || '');
+    setVal('empPagibigAmount', data.pagibigAmount || '');
+    setVal('empEmergencyName', data.emergencyName || '');
+    setVal('empEmergencyPhone', data.emergencyPhone || '');
+    setVal('empEmail', data.email || '');
+    setVal('empScheduleName', data.scheduleNickname || data.scheduleName || '');
+    
+    setVal('profEmpId', data.empId || 'Pending Generation...');
+    setVal('profBloodType', data.bloodType || '');
+
+    let defaultPic = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
+    let picEl = document.getElementById('masterProfilePic');
+    if (picEl) picEl.src = data.profilePicUrl ? data.profilePicUrl : defaultPic;
+
+    const setupLink = (linkId, url) => {
+        let el = document.getElementById(linkId);
+        if (el) {
+            if (url) { el.href = url; el.style.display = 'inline-block'; } 
+            else { el.style.display = 'none'; }
+        }
+    };
+    
+    setupLink('masterSssLink', data.sssIdUrl);
+    setupLink('masterPhilLink', data.philhealthIdUrl);
+    setupLink('masterPagibigLink', data.pagibigIdUrl);
+
+    document.getElementById('employeeProfileModal').style.display = 'flex';
+
+    // Render Contracts
+    let vaultContainer = document.getElementById('contractVaultContainer');
+    let vaultBtns = document.getElementById('contractVaultButtons');
+    if (vaultContainer && vaultBtns) {
+        vaultBtns.innerHTML = '';
+        if (data.signedContracts && Object.keys(data.signedContracts).length > 0) {
+            vaultContainer.style.display = 'block';
+            let safeData = encodeURIComponent(JSON.stringify(data));
+            
+            if (data.signedContracts.initial) {
+                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Initial', '${safeData}', '${data.signedContracts.initial}')" style="background:#0f766e; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 Initial</button>`;
+            }
+            if (data.signedContracts.extension) {
+                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Extension', '${safeData}', '${data.signedContracts.extension}')" style="background:#0ea5e9; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 6-Mo Ext</button>`;
+            }
+            if (data.signedContracts.regularization) {
+                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Regularization', '${safeData}', '${data.signedContracts.regularization}')" style="background:#10b981; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 Regularization</button>`;
+            }
+        } else {
+            vaultContainer.style.display = 'none';
+        }
+    }
+
+    // Render History
+    let tbody = document.getElementById('empProfileHistoryBody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 15px;">Loading...</td></tr>';
+
+    window.getDocs(window.query(window.collection(window.db, "staff_deductions"), window.where("staffName", "==", data.cashierName), window.orderBy("dateAdded", "desc"), window.limit(30)))
+    .then(snap => {
+        let histHtml = '';
+        snap.forEach(dDoc => {
+            let d = dDoc.data();
+            let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
+            let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
+
+            let actionHtml = d.status === 'Unpaid' 
+                ? `<button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px;">Mark Paid</button>`
+                : `<div style="background:#f0fdf4; color:#15803d; border: 1px solid #bbf7d0; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:bold; width: 85px; text-align: center; box-sizing: border-box;">✔️ Paid</div>`;
+                
+            actionHtml += `<button onclick="window.deleteStaffDeduction('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px;">🗑️ Delete</button>`;
+
+            histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                <td style="padding:12px 8px; color: #64748b;">${dateStr}</td>
+                <td style="padding:12px 8px; font-weight: bold; color: #334155;">${d.type}</td>
+                <td style="padding:12px 8px; font-weight:900; color:#ea580c;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                <td style="padding:12px 8px; color:${color}; font-weight:bold;">${d.status}</td>
+                <td style="padding:12px 8px;">
+                    <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">${actionHtml}</div>
+                </td>
+            </tr>`;
+        });
+
+        if (tbody) tbody.innerHTML = histHtml || '<tr><td colspan="5" style="text-align: center; padding: 15px; color: #94a3b8;">No deduction history.</td></tr>';
+    }).catch(e => {
+        console.error(e);
+        if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>';
+    });
+};
+
+window.saveEmployeeProfile = async function() {
+    let bAssignEl = document.getElementById('empBranchAssign');
+    if (window.sessionUser && window.sessionUser.isFranchisee && bAssignEl) bAssignEl.disabled = false;
+
+    let docId = document.getElementById('empProfileId').value;
+    let name = document.getElementById('empFullName').value.trim();
+    let branch = document.getElementById('empBranchAssign').value;
+    let rate = parseFloat(document.getElementById('empHourlyRate').value);
+    let newRole = document.getElementById('empRole').value.trim();
+    let isWorkingStudent = document.getElementById('staffWorkingStudent').checked;
+    let pin = document.getElementById('empPin').value.trim();
+    let nightRate = parseFloat(document.getElementById('empNightDiffRate').value) || 0;
+
+    if (!name || isNaN(rate) || !pin || pin.length < 4) {
+        alert("❌ Error: Name, Hourly Rate, and a Password (minimum 4 characters) are strictly required!");
+        if (window.sessionUser && window.sessionUser.isFranchisee && bAssignEl) bAssignEl.disabled = true;
+        return;
+    }
+
+    let btn = document.getElementById('btnSaveEmpProfile');
+    if (btn) { btn.innerText = "⏳ Generating ID & Saving..."; btn.disabled = true; }
+
+    let empId = document.getElementById('profEmpId').value;
+    if (!empId || empId === 'Pending Generation...' || empId === 'undefined') {
+        let bCode = branch === 'Cabantian' ? '33025' : (branch === 'Citygate' ? '11526' : (branch === 'Maa' ? '21026' : '101010'));
+        let dHired = document.getElementById('empDateHired').value;
+        let dObj = dHired ? new Date(dHired) : new Date();
+        let mStr = String(dObj.getMonth() + 1).padStart(2, '0');
+        let dStr = String(dObj.getDate()).padStart(2, '0');
+        let yStr = dObj.getFullYear();
+        let dhStr = `${mStr}${dStr}${yStr}`;
+        
+        const q = window.query(window.collection(window.db, "cashiers"), window.where("branch", "==", branch));
+        const snap = await window.getDocs(q);
+        let staffInBranch = [];
+        snap.forEach(d => staffInBranch.push({id: d.id, ...d.data()}));
+        
+        staffInBranch.sort((a, b) => {
+            let dA = a.dateHired ? new Date(a.dateHired).getTime() : new Date('2099-01-01').getTime();
+            let dB = b.dateHired ? new Date(b.dateHired).getTime() : new Date('2099-01-01').getTime();
+            return dA - dB;
+        });
+        
+        let myIndex = staffInBranch.findIndex(s => s.id === docId);
+        let count = (myIndex !== -1) ? (myIndex + 1) : (staffInBranch.length + 1);
+        empId = `${bCode}-${dhStr}-${String(count).padStart(4, '0')}`;
+        document.getElementById('profEmpId').value = empId;
+    }
+
+    if (window.sessionUser && window.sessionUser.isFranchisee && bAssignEl) bAssignEl.disabled = true;
+
+    let customDeductionsArray = [];
+    document.querySelectorAll('.custom-deduct-row').forEach(row => {
+        let n = row.querySelector('.cd-name').value.trim();
+        let a = parseFloat(row.querySelector('.cd-amount').value) || 0;
+        if (n && a > 0) customDeductionsArray.push({ name: n, amount: a });
+    });
+
+    let oldData = docId ? window.globalStaffData[docId] : null;
+    let currentHistory = (oldData && oldData.roleHistory) ? oldData.roleHistory : [];
+    if (!oldData || oldData.role !== newRole) {
+        let dObj = new Date();
+        currentHistory.push({ role: newRole, date: dObj.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) });
+    }
+
+    let payload = {
+        empId: empId,
+        bloodType: document.getElementById('profBloodType').value.trim(),
+        cashierName: name,
+        branch: branch,
+        role: newRole,
+        roleHistory: currentHistory,
+        dateHired: document.getElementById('empDateHired').value,
+        hourlyRate: rate,
+        pin: pin,
+        customDeductions: customDeductionsArray,
+        nightDiffRate: nightRate,
+        eligibleNightDiff: nightRate > 0, 
+        isWorkingStudent: isWorkingStudent, 
+        phone: document.getElementById('empPhone').value.trim(),
+        address: document.getElementById('empAddress').value.trim(),
+        gcashName: document.getElementById('empGcashName').value.trim(),
+        gcashNum: document.getElementById('empGcashNum').value.trim(),
+        gotymeName: document.getElementById('empGotymeName').value.trim(),
+        gotymeNum: document.getElementById('empGotymeNum').value.trim(),
+        sss: document.getElementById('empSSS').value.trim(),
+        philhealth: document.getElementById('empPhilhealth').value.trim(),
+        pagibig: document.getElementById('empPagibig').value.trim(),
+        sssAmount: parseFloat(document.getElementById('empSSSAmount').value) || 0,
+        philHealthAmount: parseFloat(document.getElementById('empPhilAmount').value) || 0,
+        pagibigAmount: parseFloat(document.getElementById('empPagibigAmount').value) || 0,
+        emergencyName: document.getElementById('empEmergencyName').value.trim(),
+        emergencyPhone: document.getElementById('empEmergencyPhone').value.trim(),
+        email: document.getElementById('empEmail').value.trim(),
+        scheduleNickname: document.getElementById('empScheduleName').value.trim(),
+    };
+
+    if (!docId) {
+        payload.contractStatus = 'Pending Initial Contract';
+        payload.signedContracts = {};
+    }
+
+    try {
+        if (docId) {
+            await window.updateDoc(window.doc(window.db, "cashiers", docId), payload);
+            Swal.fire({ toast: true, position: 'top', icon: 'success', title: `✅ Profile updated!`, showConfirmButton: false, timer: 3000, customClass: { popup: 'rounded-xl' }});
+        } else {
+            let newDocRef = await window.addDoc(window.collection(window.db, "cashiers"), payload);
+            docId = newDocRef.id;
+            document.getElementById('empProfileId').value = docId; 
+            Swal.fire({ toast: true, position: 'top', icon: 'success', title: `✅ Added to database!`, showConfirmButton: false, timer: 3000, customClass: { popup: 'rounded-xl' }});
+        }
+        window.globalStaffData[docId] = payload;
+        window.loadHRModule(); 
+    } catch (e) {
+        console.error(e); Swal.fire('Error', 'Failed to save data.', 'error');
+    } finally {
+        if(btn) { btn.innerText = "💾 Save Data"; btn.disabled = false; }
+    }
+};
+
 window.massGenerateStaffIDs = async function() {
     let confirmFix = await Swal.fire({
         title: 'Regenerate & Fix IDs?',
@@ -25146,10 +24923,9 @@ window.massGenerateStaffIDs = async function() {
         const snap = await window.getDocs(window.collection(window.db, "cashiers"));
         let staffByBranch = {};
         
-        // 1. Group everyone by their branch
         snap.forEach(doc => {
             let d = doc.data();
-            if (d.status === 'Resigned' || d.pin === 'REVOKED') return; // Skip archived
+            if (d.status === 'Resigned' || d.pin === 'REVOKED') return; 
             let b = d.branch || 'Unknown';
             if (!staffByBranch[b]) staffByBranch[b] = [];
             staffByBranch[b].push({ id: doc.id, ...d });
@@ -25159,7 +24935,6 @@ window.massGenerateStaffIDs = async function() {
         let updatedCount = 0;
         
         for (let branch in staffByBranch) {
-            // 2. Sort staff mathematically by exact hire date (Oldest gets 0001)
             staffByBranch[branch].sort((a, b) => {
                 let dA = a.dateHired ? new Date(a.dateHired).getTime() : new Date('2099-01-01').getTime();
                 let dB = b.dateHired ? new Date(b.dateHired).getTime() : new Date('2099-01-01').getTime();
@@ -25168,21 +24943,16 @@ window.massGenerateStaffIDs = async function() {
             
             let bCode = branch === 'Cabantian' ? '33025' : (branch === 'Citygate' ? '11526' : (branch === 'Maa' ? '21026' : '101010'));
             
-            // 3. Loop and force assign sequential IDs
             staffByBranch[branch].forEach((staff, index) => {
                 let dObj = staff.dateHired ? new Date(staff.dateHired) : new Date();
-                
-                // Format: MMDDYYYY (Ensures 02 instead of 2 for February)
                 let mStr = String(dObj.getMonth() + 1).padStart(2, '0');
                 let dStr = String(dObj.getDate()).padStart(2, '0');
                 let yStr = dObj.getFullYear();
-                
                 let dhStr = `${mStr}${dStr}${yStr}`;
-                let count = index + 1;
                 
+                let count = index + 1;
                 let newEmpId = `${bCode}-${dhStr}-${String(count).padStart(4, '0')}`;
                 
-                // We OVERWRITE the ID regardless to fix the previous bug!
                 if (staff.empId !== newEmpId) {
                     batchPromises.push(window.updateDoc(window.doc(window.db, "cashiers", staff.id), { empId: newEmpId }));
                     updatedCount++;
@@ -25204,22 +24974,21 @@ window.massGenerateStaffIDs = async function() {
     }
 };
 
-// Auto-inject the Mass Generator button into the HR View
-document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => {
-        let hrHeader = document.querySelector('#view-branches .btn-refresh')?.parentElement;
-        if (hrHeader && !document.getElementById('btnMassGenIds')) {
-            hrHeader.insertAdjacentHTML('afterbegin', `<button id="btnMassGenIds" class="btn-refresh" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); margin-right: 10px;" onclick="window.massGenerateStaffIDs()">🪄 Fix & Generate All IDs</button>`);
-        }
-    }, 2000);
-});
+window.deleteStaffDeduction = async function(docId, staffName, staffDocId) {
+    if(!confirm("Are you sure you want to permanently delete this deduction?")) return;
+    try {
+        await window.deleteDoc(window.doc(window.db, "staff_deductions", docId));
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Deleted!', showConfirmButton: false, timer: 2000});
+        if (staffDocId) window.openEmployeeProfile(staffDocId);
+        if (typeof window.loadLedger === 'function') window.loadLedger();
+    } catch(e) { console.error(e); }
+};
 
-// Auto-inject the Mass Generator button into the HR View
-document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => {
-        let hrHeader = document.querySelector('#view-branches .btn-refresh')?.parentElement;
-        if (hrHeader && !document.getElementById('btnMassGenIds')) {
-            hrHeader.insertAdjacentHTML('afterbegin', `<button id="btnMassGenIds" class="btn-refresh" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); margin-right: 10px;" onclick="window.massGenerateStaffIDs()">🪄 Auto-Generate Missing IDs</button>`);
-        }
-    }, 2000);
-});
+window.forceMarkDeductionPaid = async function(docId, staffName, staffDocId) {
+     try {
+         await window.updateDoc(window.doc(window.db, "staff_deductions", docId), { status: 'Paid', manualOverride: true, paidAt: new Date() });
+         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Marked as Paid!', showConfirmButton: false, timer: 2000});
+         if (staffDocId) window.openEmployeeProfile(staffDocId);
+         if (typeof window.loadLedger === 'function') window.loadLedger();
+     } catch(e) { console.error(e); }
+};
