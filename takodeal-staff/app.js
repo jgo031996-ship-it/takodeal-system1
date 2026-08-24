@@ -478,23 +478,23 @@ window.checkContractLifecycle = async function(staffId) {
         
         if (d.role && (d.role.toLowerCase().includes('owner') || d.role.toLowerCase().includes('manager'))) return;
 
-        // 🔥 1. INTERCEPT NEW HIRES
+        // 1. INTERCEPT NEW HIRES
         if (d.contractStatus === 'Pending Initial Contract') {
-            window.showInitialContract(staffId, d);
+            window.showContractUI(staffId, d, 'Initial');
             return;
         }
 
         if (d.contractStatus === 'Regular' || d.contractStatus === 'Extended' || d.contractStatus === 'Active') return;
 
-        // 🔥 2. INTERCEPT REGULARIZATION OFFERS
+        // 2. INTERCEPT REGULARIZATION OFFERS (Issued from Manager App)
         if (d.contractStatus === 'Pending Regularization') {
-            window.showRegularizationContract(staffId, d);
+            window.showContractUI(staffId, d, 'Regularization');
             return;
         }
 
-        // 🔥 3. INTERCEPT 6-MONTH EXTENSION OFFERS
+        // 3. INTERCEPT 6-MONTH EXTENSION OFFERS (Issued from Manager App)
         if (d.contractStatus === 'Pending Renewal') {
-            window.showRenewalContract(staffId, d);
+            window.showContractUI(staffId, d, 'Extension');
             return;
         }
 
@@ -506,27 +506,9 @@ window.checkContractLifecycle = async function(staffId) {
         let daysLeft = Math.ceil((contractEnd - today) / (1000 * 60 * 60 * 24));
 
         if (daysLeft <= 0) {
-            window.coePendingData = d; 
-            document.getElementById('loginOverlay').style.display = 'none';
-            document.getElementById('appContainer').style.display = 'none';
-            
-            let overlay = document.getElementById('coeFarewellOverlay');
-            overlay.style.display = 'flex';
-            
-            let msgEl = overlay.querySelector('p');
-            if (msgEl) {
-                msgEl.innerHTML = `Your probationary contract period with <b>TAKODEÁL</b> has officially concluded.<br><br><span style="color: #c2410c; font-weight: bold;">Please wait for Management to issue your Regularization, a Contract Extension, or your final Clearance.</span>`;
-            }
-
-            // 🔥 THE FIX: Injecting the Bypass Button dynamically so staff can still Time In!
-            let whiteBox = overlay.firstElementChild;
-            if (whiteBox && !document.getElementById('btnBypassCOE')) {
-                whiteBox.insertAdjacentHTML('beforeend', `<button id="btnBypassCOE" onclick="window.dismissCOEWarning()" style="margin-top: 15px; width: 100%; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">⏳ Remind Me Later (Go to Time Clock)</button>`);
-            }
-
-            document.getElementById('coeStaffName').innerText = d.cashierName;
-            document.getElementById('coeDateHired').innerText = hiredDate.toLocaleDateString();
-            document.getElementById('coeDateEnded').innerText = today.toLocaleDateString();
+            // 🔥 THE AUTO-REGULARIZATION UPGRADE!
+            // If they hit 6 months and haven't been fired by the manager, they automatically get Regularized!
+            window.showContractUI(staffId, d, 'Regularization');
         } else if (daysLeft <= 30) {
             let lastWarn = localStorage.getItem('takodeal_last_contract_warn');
             let todayStr = today.toDateString();
@@ -548,89 +530,44 @@ window.checkContractLifecycle = async function(staffId) {
 // ========================================================
 // 📄 UNIFIED DOLE CONTRACT CONTENT GENERATOR
 // ========================================================
-window.getUnifiedContractContent = function(data, signDate) {
+window.getUnifiedContractContent = function(data, signDate, type) {
     let dailySalary = parseFloat((data.hourlyRate || 0) * 8).toFixed(2);
     if (dailySalary === "0.00" && data.dailyRate) dailySalary = parseFloat(data.dailyRate).toFixed(2);
     if (dailySalary === "0.00") dailySalary = "400.00"; // Fallback to template standard
 
-    return `
-        <div style="font-size: 13px; line-height: 1.5; text-align: justify; color: #1e293b;">
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">1. Position and Probationary Status</h4>
-            <ul style="margin: 0 0 10px 0; padding-left: 20px;">
-                <li>The Employer hereby employs the Employee as a <b>${data.role || 'Service Crew'}</b> for Takodeal. The Employee agrees to faithfully and diligently perform duties and responsibilities assigned by the Employer.</li>
-                <li>Employment shall commence on <b>${data.dateHired || signDate}</b>, and shall be on a probationary basis for a period not exceeding six (6) months. During this period, the Employee's performance will be evaluated based on the standards of the Employer. Upon satisfactory completion of the probationary period, the Employee shall automatically attain regular employment status.</li>
-            </ul>
+    let content = "";
+    if (type === 'Initial') {
+        content = `
+            <p><b>1. POSITION AND COMMENCEMENT</b><br>The Employer hereby employs the Employee as a <b>${data.role || 'Service Crew'}</b>. Employment shall commence on <b>${data.dateHired || signDate}</b> and shall be valid for a period of six (6) months.</p>
+            <p><b>2. WORK SCHEDULE AND COMPENSATION</b><br>The Employee shall receive a daily basic salary of <b>₱${dailySalary}</b>. Entitled to one (1) day off per week.</p>
+            <p><b>3. ATTENDANCE AND ABSENCES POLICY</b><br>Unexcused absences and tardiness are subject to progressive disciplinary action (Verbal Warning, Written Warning, Suspension, Termination).</p>
+            <p><b>4. CONFIDENTIALITY AGREEMENT</b><br>Strict maintenance of proprietary recipes under penalty of <b>₱1,000,000.00</b> for breaches.</p>
+            <p><b>5. HEALTH DECLARATION</b><br>Employee affirms physical fitness for a food-handling environment.</p>
+            <p><b>6. NOTICE OF RESIGNATION</b><br>Mandatory 30-day notice prior to voluntary resignation.</p>
+            <p><b>7. COMPANY UNIFORM AND PROPERTY</b><br>Obligation to care for and return provided items to avoid payroll deductions.</p>
+        `;
+    } else if (type === 'Extension') {
+        let contractEnd = new Date(data.dateHired || signDate); contractEnd.setMonth(contractEnd.getMonth() + 6);
+        content = `
+            <p><b>1. EXTENSION OF EMPLOYMENT</b><br>Employment is extended as <b>${data.role || 'Service Crew'}</b> for an additional six (6) months from <b>${signDate}</b> to <b>${contractEnd.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'})}</b>. This is the final probationary phase.</p>
+            <p><b>2. COMPENSATION</b><br>Daily basic salary remains <b>₱${dailySalary}</b>.</p>
+            <p><b>3. REAFFIRMATION OF TERMS</b><br>All original policies (Attendance, ₱1M Confidentiality penalty, 30-Day Notice) remain in full force.</p>
+            <p><b>4. PATHWAY TO REGULARIZATION</b><br>Upon successful completion, the Employee may be offered a regularized contract.</p>
+        `;
+    } else {
+        content = `
+            <p><b>1. REGULARIZATION</b><br>Effective <b>${signDate}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.</p>
+            <p><b>2. COMPENSATION</b><br>Daily basic salary of <b>₱${dailySalary}</b>.</p>
+            <p><b>3. REAFFIRMATION OF TERMS</b><br>All original policies (Attendance, ₱1M Confidentiality penalty, 30-Day Notice) remain in full force.</p>
+            <p><b>4. TERMINATION</b><br>Employment may only be terminated for just or authorized causes as provided by the Philippine Labor Code.</p>
+        `;
+    }
 
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">2. Work Schedule and Compensation</h4>
-            <ul style="margin: 0 0 10px 0; padding-left: 20px;">
-                <li><b>Basic Wage:</b> The Employee shall receive a daily basic salary of <b>₱${dailySalary}</b>.</li>
-                <li><b>Work Schedule:</b> The Employee shall be scheduled to work for five (5) days per week, subject to the scheduling and operational needs of the business.</li>
-                <li><b>Working Hours:</b> Working hours shall be determined by the Employer and may vary depending on business requirements.</li>
-                <li><b>Payroll Cut-off & Distribution:</b>
-                    <ul style="margin: 5px 0; padding-left: 20px;">
-                        <li>The payroll cut-off periods are the 15th (1st to 15th) and the end of each month (16th to 30th/31st).</li>
-                        <li>Salary shall be distributed five (5) days after each cut-off period (every 20th and 5th of the succeeding month).</li>
-                    </ul>
-                </li>
-            </ul>
-
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">3. Attendance and Absences Policy</h4>
-            <p style="margin: 0 0 5px 0;"><b>Purpose</b><br>This policy establishes clear rules and sanctions regarding employee attendance, punctuality, and absences to ensure efficient operations and workplace discipline.</p>
-            <p style="margin: 0 0 5px 0;"><b>Work Attendance</b><br>All employees are required to report for work on their scheduled days and time as assigned by management. Employees must be present, punctual, and fit for duty during working hours.</p>
-            <p style="margin: 0 0 5px 0;"><b>Absences</b><br>An absence is defined as failure to report for work during a scheduled workday without prior approval or valid reason.</p>
-            <ul style="margin: 0 0 5px 0; padding-left: 20px;">
-                <li><b>Excused Absence:</b> Absences due to valid reasons such as illness or emergencies, provided that proper notice and supporting documents are submitted.</li>
-                <li><b>Unexcused Absence:</b> Absences without prior approval, notice, or valid supporting documents. Failure to notify management before the start of the scheduled shift shall be considered an unexcused absence unless justified and approved by management.</li>
-            </ul>
-            <p style="margin: 0 0 5px 0;"><b>Tardiness</b><br>Tardiness is defined as failure to report for work at the scheduled start time.</p>
-            <ul style="margin: 0 0 5px 0; padding-left: 20px;">
-                <li>Repeated tardiness shall be subject to disciplinary action.</li>
-                <li>Excessive tardiness may be treated as a violation equivalent to an absence, at the discretion of management.</li>
-                <li>Management reserves the right to deduct corresponding time or wages for late arrivals, in accordance with labor laws.</li>
-            </ul>
-            <p style="margin: 0 0 5px 0;"><b>Disciplinary Actions and Sanctions</b><br>Any violation of this Attendance and Absences Policy shall be subject to progressive disciplinary action, depending on the frequency and severity of the offense:</p>
-            <ul style="margin: 0 0 5px 0; padding-left: 20px;">
-                <li>1st Offense: Verbal Warning / Documented Coaching</li>
-                <li>2nd Offense: Written Warning / Strict Reprimand</li>
-                <li>3rd Offense: 1-Day Suspension</li>
-                <li>4th Offense: 3-Day Suspension</li>
-                <li>5th Offense: 7-Day Suspension</li>
-                <li>6th Offense: 14-Day Suspension</li>
-                <li>7th Offense: Termination of Employment / Dismissal</li>
-            </ul>
-            <p style="margin: 0 0 5px 0;"><b>Suspension Rule:</b> In accordance with the "No Work, No Pay" principle, all disciplinary suspensions imposed shall be strictly without pay.</p>
-            <p style="margin: 0 0 10px 0;"><b>Management Discretion:</b> Management reserves the right to impose stricter penalties or immediate disciplinary action, including suspension or termination, for severe or repeated violations, subject to due process and applicable labor laws.</p>
-
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">4. Confidentiality Agreement</h4>
-            <ul style="margin: 0 0 10px 0; padding-left: 20px;">
-                <li>The Employee agrees to keep all proprietary information strictly confidential, including recipes, ingredients, preparation processes, supplier lists, and branding materials.</li>
-                <li>Disclosure of any confidential information to outside parties shall be considered a serious breach of this Agreement.</li>
-                <li>In the event of such a breach, the Employee shall be liable for actual damages incurred by the Employer and shall be subject to immediate termination, without prejudice to the Employer’s right to pursue civil or criminal remedies.</li>
-            </ul>
-
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">5. Health Declaration</h4>
-            <p style="margin: 0 0 10px 0;">Upon signing this contract, the Employee affirms that he/she does not suffer from any critical illness and is physically fit to work in a food-handling environment. Should it later be discovered that the Employee concealed any critical illness, the Employer shall not be responsible for any related non-work medical expenses. However, in the event of any work-related injury, the Employer shall provide appropriate assistance in accordance with applicable labor laws and health policies.</p>
-
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">6. Notice of Resignation</h4>
-            <ul style="margin: 0 0 10px 0; padding-left: 20px;">
-                <li>The Employee agrees to render a standard thirty (30) days written notice prior to voluntarily resigning from their position.</li>
-                <li>Failure to comply with the required notice period shall be considered a breach of contract. The Employer reserves the right to hold the Employee liable for damages caused by the abrupt departure, which may be deducted from the Employee's final pay, in accordance with DOLE regulations. The Employee expressly agrees and understands the enforcement of this clause as a condition of employment.</li>
-            </ul>
-
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">7. Company Uniform and Property</h4>
-            <p style="margin: 0 0 10px 0;">The Employer will provide the Employee with the following items on a borrowed basis: one (1) cap, one (1) apron, and one (1) t-shirt bearing the store logo. The Employee is strictly obliged to take proper care of these items during the course of their employment. Upon resignation or termination of employment, the Employee must immediately return the aforementioned items to the Employer. In the event the Employee is unable to return the items (due to loss, severe damage, or otherwise), the equivalent replacement cost of the unreturned items shall be deducted from the Employee's final payroll.</p>
-
-            <h4 style="color: #0f172a; margin: 15px 0 5px 0; text-transform: uppercase; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px;">8. Other Terms and Conditions</h4>
-            <ul style="margin: 0 0 10px 0; padding-left: 20px;">
-                <li>The Employer reserves the right to amend company policies or impose additional guidelines as may be necessary for the efficient operation of the business.</li>
-                <li>The Employee agrees to abide by all lawful instructions, regulations, and policies issued by the Employer.</li>
-            </ul>
-        </div>
-    `;
+    return `<div style="font-size: 13px; line-height: 1.6; text-align: justify; color: #1e293b;">${content}</div>`;
 };
 
 // 📄 1. UNIFIED EMPLOYMENT CONTRACT UI
-window.showInitialContract = window.showRenewalContract = window.showRegularizationContract = function(staffId, data) {
+window.showContractUI = function(staffId, data, type) {
     let dateToday = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     let dateHired = data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : dateToday;
     
@@ -639,21 +576,22 @@ window.showInitialContract = window.showRenewalContract = window.showRegularizat
     if (data.branch === 'Citygate') branchAddress = "Citygate, Buhangin, Davao City";
     if (data.branch === 'Maa') branchAddress = "Maa, Davao City";
 
+    let isRegular = (type === 'Regularization' || type === 'Extension');
+    let title = isRegular ? "REGULARIZATION OF EMPLOYMENT AGREEMENT" : "EMPLOYMENT CONTRACT";
+
     let contractHtml = `
-        <h2 style="text-align: center; color: #0f766e; text-transform: uppercase; margin-bottom: 20px;">Employment Contract</h2>
-        <p>This Employment Contract ("Agreement") is made and entered into by and between:</p>
-        <p><b>TAKODEAL TAKOYAKI FOODCART</b>, a duly registered business engaged in food operations, with principal place of business located at ${branchAddress}, herein referred to as the "Employer";</p>
-        <p>-and-</p>
-        <p><b>${(data.cashierName || 'Employee').toUpperCase()}</b>, of legal age, residing at ${data.address || 'Davao City, Philippines'}, herein referred to as the "Employee".</p>
-        <p>Collectively referred to as the "Parties."</p>
+        <h2 style="text-align: center; color: #0f766e; text-transform: uppercase; margin-bottom: 20px;">${title}</h2>
+        <p>This Agreement is executed on <b>${dateToday}</b> between <b>TAKODEAL TAKOYAKI FOODCART</b> ("Employer") and <b>${(data.cashierName || 'Employee').toUpperCase()}</b> ("Employee").</p>
         
-        ${window.getUnifiedContractContent(data, dateHired)}
+        <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #cbd5e1; margin-bottom: 20px;">
+            ${window.getUnifiedContractContent(data, dateToday, type)}
+        </div>
 
         <div style="margin-top: 20px; font-weight: bold; text-align: center;">
             IN WITNESS WHEREOF, the Parties have hereunto affixed their signatures on this ${dateToday} at Davao City, Philippines.
         </div>
 
-        ${window.getSignaturePadHTML(staffId, 'Regularization')}
+        ${window.getSignaturePadHTML(staffId, type)}
     `;
     window.renderContractOverlay(contractHtml, data);
 };
@@ -669,7 +607,7 @@ window.getSignaturePadHTML = function(staffId, type) {
             </div>
             <div style="display: flex; gap: 10px;">
                 <button onclick="window.clearContractSignature()" style="flex: 1; background: white; color: #64748b; border: 1px solid #cbd5e1; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">Clear Signature</button>
-                <button onclick="window.acceptContract('${staffId}', '${type}')" style="flex: 2; background: #10b981; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);">📝 Sign & Accept Contract</button>
+                <button onclick="window.acceptContract('${staffId}', '${type}')" style="flex: 2; background: #10b981; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3); transition: 0.2s;">📝 Sign & Accept Contract</button>
             </div>
         </div>
     `;
@@ -717,27 +655,17 @@ window.initContractSignaturePad = function() {
         const scaleY = canvas.height / rect.height;
         const clientX = e.touches ? e.touches[0].clientX : e.clientX;
         const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        return {
-            x: (clientX - rect.left) * scaleX,
-            y: (clientY - rect.top) * scaleY
-        };
+        return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
     };
 
     const startDraw = (e) => { 
-        drawing = true; 
-        window.isContractSignatureBlank = false;
-        const pos = getPos(e); 
-        ctx.beginPath(); 
-        ctx.moveTo(pos.x, pos.y); 
-        e.preventDefault(); 
+        drawing = true; window.isContractSignatureBlank = false;
+        const pos = getPos(e); ctx.beginPath(); ctx.moveTo(pos.x, pos.y); e.preventDefault(); 
     };
 
     const draw = (e) => { 
         if (!drawing) return; 
-        const pos = getPos(e); 
-        ctx.lineTo(pos.x, pos.y); 
-        ctx.stroke(); 
-        e.preventDefault(); 
+        const pos = getPos(e); ctx.lineTo(pos.x, pos.y); ctx.stroke(); e.preventDefault(); 
     };
 
     const stopDraw = (e) => { drawing = false; ctx.closePath(); };
@@ -773,11 +701,15 @@ window.acceptContract = async function(staffId, type) {
 
         let todayStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
         
-        // This triggers the 1-time signature event.
+        let newStatus = 'Active';
+        let contractKey = 'initial';
+        if (type === 'Regularization') { newStatus = 'Regular'; contractKey = 'regularization'; }
+        if (type === 'Extension') { newStatus = 'Extended'; contractKey = 'extension'; }
+        
         let updatePayload = { 
-            contractStatus: 'Regular', // Automatically flips them to Regular/Active!
+            contractStatus: newStatus, 
             contractSignature: signatureBase64,
-            ['signedContracts.regularization']: todayStr
+            [`signedContracts.${contractKey}`]: todayStr
         };
 
         await updateDoc(doc(db, "cashiers", staffId), updatePayload);
@@ -803,10 +735,11 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
     if (data.branch === 'Citygate') branchAddress = "Citygate, Buhangin, Davao City";
     if (data.branch === 'Maa') branchAddress = "Maa, Davao City";
 
-    let title = "EMPLOYMENT CONTRACT";
-    let content = window.getUnifiedContractContent(data, data.dateHired || signDate);
+    let isRegular = (type === 'Regularization' || type === 'Extension');
+    let title = isRegular ? "REGULARIZATION OF EMPLOYMENT AGREEMENT" : "EMPLOYMENT CONTRACT";
+    let content = window.getUnifiedContractContent(data, signDate, type);
 
-    // 4. Gather Uploaded IDs from Database for Page 2
+    // Gather Uploaded IDs from Database for Page 2
     let idImagesHtml = "";
     let ids = [];
     if (data.sssIdUrl) ids.push(data.sssIdUrl);
@@ -828,7 +761,7 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
         ? `<img src="${data.contractSignature}" style="height: 60px; display: block; margin-bottom: -10px;">` 
         : `<div style="height: 50px; display: block; margin-bottom: 5px;"></div>`;
 
-    // 5. Combine into Final PDF Container
+    // Combine into Final PDF Container
     let container = document.createElement('div');
     container.innerHTML = `
         <div style="padding: 40px 50px; font-family: 'Helvetica', 'Arial', sans-serif; color: #1e293b; background: white; width: 800px; box-sizing: border-box;">
@@ -858,7 +791,7 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
     
     Swal.fire({title: 'Generating PDF...', text: 'Attaching IDs and formatting contract...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     
-    // 6. Execute PDF Engine
+    // Execute PDF Engine
     let opt = {
         margin: 0,
         filename: `${title.replace(/\s+/g, '_')}_${(data.cashierName || 'Employee').replace(/\s+/g, '_')}.pdf`,
