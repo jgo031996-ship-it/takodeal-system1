@@ -24531,8 +24531,7 @@ window.voidAndReplenishTransaction = async function(receiptId, branch, cartEncod
 // ========================================================
 // 🪪 AUTOMATED HD EMPLOYEE ID CARD GENERATOR
 // ========================================================
-window.generateIDCard = function() {
-    // 1. Ghost-Proof Data Extractor
+window.generateIDCard = async function() { // 🔥 Added 'async'
     const getVal = (id) => {
         let els = document.querySelectorAll(`[id="${id}"]`);
         let el = els[els.length - 1]; 
@@ -24552,20 +24551,18 @@ window.generateIDCard = function() {
         return Swal.fire('Save Required', 'Please click "Save Data" first to automatically generate the new Employee ID number before printing the ID Card.', 'warning');
     }
 
-    // 2. Fetch the active Profile Picture
     let picSrc = 'payslip logo.jpg'; 
     let previewImg = document.getElementById('masterProfilePic'); 
-    // Ignore the blank placeholder image
     if (previewImg && previewImg.src && !previewImg.src.includes('data:image/svg+xml')) {
         picSrc = previewImg.src;
     }
 
-    // 3. Inject data into the Hidden Template
     let template = document.getElementById('idCardTemplate');
     template.style.display = 'flex';
     
-    // 🔥 THE FIX: Correctly targeting the HTML IDs (idFrontPic, idFrontName, etc.)
-    document.getElementById('idFrontPic').src = picSrc;
+    let frontPic = document.getElementById('idFrontPic');
+    frontPic.src = picSrc;
+    
     document.getElementById('idFrontName').innerText = name.toUpperCase();
     document.getElementById('idFrontRole').innerText = role.toUpperCase();
     document.getElementById('idFrontNo').innerText = empId;
@@ -24580,14 +24577,25 @@ window.generateIDCard = function() {
 
     Swal.fire({title: 'Generating ID Card...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
-    // 4. Capture the High-Definition screenshot of the template!
+    // 🔥 THE CRASH FIX: Force the system to wait for the profile picture to download from Firebase!
+    await new Promise((resolve) => {
+        if (frontPic.complete) resolve();
+        else {
+            frontPic.onload = resolve;
+            frontPic.onerror = resolve; // Move forward even if it fails so it doesn't freeze
+        }
+    });
+
+    // Give the CSS 300 milliseconds to render perfectly
+    await new Promise(r => setTimeout(r, 300));
+
     html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true }).then(canvas => {
         let link = document.createElement('a');
         link.download = `ID_Card_${name.replace(/\s+/g, '_')}.png`;
         link.href = canvas.toDataURL("image/png");
         link.click();
         
-        template.style.display = 'none'; // Hide it again so it doesn't break the UI
+        template.style.display = 'none'; 
         Swal.close();
         Swal.fire({
             title: '✅ Downloaded!',
