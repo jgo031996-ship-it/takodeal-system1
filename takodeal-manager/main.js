@@ -953,6 +953,8 @@ window.addNewStaff = function() {
     setAllVals('empPhilhealth', '');
     setAllVals('empPagibig', '');
     setAllVals('empScheduleName', '');
+    setAllVals('profEmpId', '');
+    setAllVals('profBloodType', '');
 
     // Reset Profile Picture and Links for a blank form
     let defaultPic = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
@@ -1012,6 +1014,8 @@ window.openEmployeeProfile = function(docId) {
     setAllVals('empEmergencyPhone', data.emergencyPhone || '');
     setAllVals('empEmail', data.email || '');
     setAllVals('empScheduleName', data.scheduleNickname || data.scheduleName || '');
+    setAllVals('profEmpId', data.empId || 'Pending Generation...');
+    setAllVals('profBloodType', data.bloodType || '');
 
     let defaultPic = "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
     document.querySelectorAll('[id="masterProfilePic"]').forEach(el => {
@@ -1104,6 +1108,24 @@ window.saveEmployeeProfile = async function() {
         });
         return activeEl ? activeEl.value : (els[0] ? els[0].value : '');
     };
+    let empId = getVal('profEmpId');
+    if (!empId || empId === 'Pending Generation...') {
+        // Map Branch Codes
+        let bCode = branch === 'Cabantian' ? '33025' : (branch === 'Citygate' ? '11526' : (branch === 'Maa' ? '21026' : '101010'));
+        
+        // Parse Date Hired (e.g. 07/21/2025 -> 7212025)
+        let dHired = getVal('empDateHired');
+        let dObj = dHired ? new Date(dHired) : new Date();
+        let dhStr = (dObj.getMonth() + 1) + '' + dObj.getDate() + '' + dObj.getFullYear();
+        
+        // Count staff to get sequential number
+        const q = window.query(window.collection(window.db, "cashiers"), window.where("branch", "==", branch));
+        const snap = await window.getDocs(q);
+        let count = snap.size + 1;
+        
+        // Assemble final ID!
+        empId = `${bCode}-${dhStr}-${String(count).padStart(4, '0')}`;
+    }
     const getCheck = (id) => {
         let els = document.querySelectorAll(`[id="${id}"]`);
         let activeEl = Array.from(els).find(el => {
@@ -1188,6 +1210,8 @@ window.saveEmployeeProfile = async function() {
         emergencyPhone: getVal('empEmergencyPhone').trim(),
         email: getVal('empEmail').trim(),
         scheduleNickname: getVal('empScheduleName').trim(),
+        empId: empId,
+        bloodType: getVal('profBloodType').trim(),
     };
 
     if (!docId) {
@@ -25013,4 +25037,79 @@ window.voidAndReplenishTransaction = async function(receiptId, branch, cartEncod
         console.error("Void Error:", e);
         Swal.fire('Error', 'Failed to void and replenish. Check console.', 'error');
     }
+};
+
+// ========================================================
+// 🪪 AUTOMATED HD EMPLOYEE ID CARD GENERATOR
+// ========================================================
+window.generateIDCard = function() {
+    // 1. Grab all the live values dynamically from the open modal
+    const getVal = (id) => {
+        let els = document.querySelectorAll(`[id="${id}"]`);
+        let activeEl = Array.from(els).find(el => {
+            let modal = el.closest('[id="employeeProfileModal"]');
+            return modal && modal.style.display !== 'none';
+        });
+        return activeEl ? activeEl.value : (els[0] ? els[0].value : '');
+    };
+
+    let name = getVal('empFullName');
+    let role = getVal('empRole');
+    let branch = getVal('empBranchAssign');
+    let hired = getVal('empDateHired');
+    let empId = getVal('profEmpId');
+    let emergName = getVal('empEmergencyName');
+    let emergNum = getVal('empEmergencyPhone');
+    let blood = getVal('profBloodType');
+
+    if (!empId || empId === 'Pending Generation...') {
+        return Swal.fire('Save Required', 'Please click "Save Data" first to automatically generate the new Employee ID number before printing the ID Card.', 'warning');
+    }
+
+    // 2. Fetch the active Profile Picture
+    let picSrc = 'payslip logo.jpg'; // Blank fallback
+    let previewImg = document.getElementById('profilePreview');
+    if (previewImg && previewImg.style.display !== 'none') {
+        picSrc = previewImg.src;
+    }
+
+    // 3. Inject data into the Hidden Template
+    let template = document.getElementById('idCardTemplate');
+    template.style.display = 'flex';
+    
+    document.getElementById('idCardPic').src = picSrc;
+    document.getElementById('idCardName').innerText = name.toUpperCase();
+    document.getElementById('idCardRole').innerText = role.toUpperCase();
+    document.getElementById('idFrontNo').innerText = empId;
+    document.getElementById('idFrontBranch').innerText = branch.toUpperCase() + ' BRANCH';
+    
+    let hiredDate = hired ? new Date(hired).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A';
+    document.getElementById('idFrontHired').innerText = hiredDate;
+
+    document.getElementById('idBackNotify').innerText = emergName;
+    document.getElementById('idBackNum').innerText = emergNum;
+    document.getElementById('idBackBlood').innerText = blood;
+
+    Swal.fire({title: 'Generating ID Card...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    // 4. Capture the High-Definition screenshot of the template!
+    html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true }).then(canvas => {
+        let link = document.createElement('a');
+        link.download = `ID_Card_${name.replace(/\s+/g, '_')}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        
+        template.style.display = 'none'; // Hide it again so it doesn't break the UI
+        Swal.close();
+        Swal.fire({
+            title: '✅ Downloaded!',
+            text: 'The Employee ID Card has been generated perfectly and saved to your device.',
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+    }).catch(err => {
+        console.error("ID Generation Error:", err);
+        template.style.display = 'none';
+        Swal.fire('Error', 'Failed to generate ID image. Please try again.', 'error');
+    });
 };
