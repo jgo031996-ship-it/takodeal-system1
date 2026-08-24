@@ -25125,10 +25125,22 @@ window.generateIDCard = function() {
 };
 
 // ========================================================
-// 🪄 MASS EMPLOYEE ID GENERATOR ENGINE
+// 🪄 MASS EMPLOYEE ID GENERATOR ENGINE (V2 - AUTOCORRECTOR)
 // ========================================================
 window.massGenerateStaffIDs = async function() {
-    Swal.fire({title: 'Generating IDs...', text: 'Scanning all staff by branch and hire date...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    let confirmFix = await Swal.fire({
+        title: 'Regenerate & Fix IDs?',
+        text: 'This will instantly recalculate everyone\'s Employee ID based on their Branch and Hire Date, fixing any duplicates or errors.',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, Fix Everything!',
+        confirmButtonColor: '#8b5cf6',
+        customClass: { popup: 'rounded-2xl' }
+    });
+
+    if (!confirmFix.isConfirmed) return;
+
+    Swal.fire({title: 'Fixing IDs...', text: 'Sorting staff by hire date...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     
     try {
         const snap = await window.getDocs(window.collection(window.db, "cashiers"));
@@ -25137,7 +25149,7 @@ window.massGenerateStaffIDs = async function() {
         // 1. Group everyone by their branch
         snap.forEach(doc => {
             let d = doc.data();
-            if (d.status === 'Resigned' || d.pin === 'REVOKED') return; // Skip archived staff
+            if (d.status === 'Resigned' || d.pin === 'REVOKED') return; // Skip archived
             let b = d.branch || 'Unknown';
             if (!staffByBranch[b]) staffByBranch[b] = [];
             staffByBranch[b].push({ id: doc.id, ...d });
@@ -25147,21 +25159,31 @@ window.massGenerateStaffIDs = async function() {
         let updatedCount = 0;
         
         for (let branch in staffByBranch) {
-            // 2. Sort staff in this branch by the exact date they were hired (Oldest first)
-            staffByBranch[branch].sort((a, b) => new Date(a.dateHired || 0) - new Date(b.dateHired || 0));
+            // 2. Sort staff mathematically by exact hire date (Oldest gets 0001)
+            staffByBranch[branch].sort((a, b) => {
+                let dA = a.dateHired ? new Date(a.dateHired).getTime() : new Date('2099-01-01').getTime();
+                let dB = b.dateHired ? new Date(b.dateHired).getTime() : new Date('2099-01-01').getTime();
+                return dA - dB;
+            });
             
             let bCode = branch === 'Cabantian' ? '33025' : (branch === 'Citygate' ? '11526' : (branch === 'Maa' ? '21026' : '101010'));
             
-            // 3. Loop through them and assign sequential IDs
+            // 3. Loop and force assign sequential IDs
             staffByBranch[branch].forEach((staff, index) => {
-                // If they don't have a valid ID yet, generate one!
-                if (!staff.empId || staff.empId === 'Pending Generation...' || staff.empId === 'undefined') {
-                    let dObj = staff.dateHired ? new Date(staff.dateHired) : new Date();
-                    let dhStr = (dObj.getMonth() + 1) + '' + dObj.getDate() + '' + dObj.getFullYear();
-                    let count = index + 1; // Since it's sorted, the oldest gets 1!
-                    
-                    let newEmpId = `${bCode}-${dhStr}-${String(count).padStart(4, '0')}`;
-                    
+                let dObj = staff.dateHired ? new Date(staff.dateHired) : new Date();
+                
+                // Format: MMDDYYYY (Ensures 02 instead of 2 for February)
+                let mStr = String(dObj.getMonth() + 1).padStart(2, '0');
+                let dStr = String(dObj.getDate()).padStart(2, '0');
+                let yStr = dObj.getFullYear();
+                
+                let dhStr = `${mStr}${dStr}${yStr}`;
+                let count = index + 1;
+                
+                let newEmpId = `${bCode}-${dhStr}-${String(count).padStart(4, '0')}`;
+                
+                // We OVERWRITE the ID regardless to fix the previous bug!
+                if (staff.empId !== newEmpId) {
                     batchPromises.push(window.updateDoc(window.doc(window.db, "cashiers", staff.id), { empId: newEmpId }));
                     updatedCount++;
                 }
@@ -25170,10 +25192,10 @@ window.massGenerateStaffIDs = async function() {
         
         if (batchPromises.length > 0) {
             await Promise.all(batchPromises);
-            Swal.fire('✅ Success!', `Auto-generated and saved ${updatedCount} missing Employee IDs.`, 'success');
+            Swal.fire('✅ Success!', `Recalculated and fixed ${updatedCount} Employee IDs.`, 'success');
             window.loadHRModule();
         } else {
-            Swal.fire('All Good!', 'All active staff members already have an Employee ID assigned.', 'info');
+            Swal.fire('All Good!', 'All IDs are already perfectly formatted and sequenced.', 'info');
         }
         
     } catch (e) {
@@ -25181,6 +25203,16 @@ window.massGenerateStaffIDs = async function() {
         Swal.fire('Error', 'Failed to generate IDs. Check console.', 'error');
     }
 };
+
+// Auto-inject the Mass Generator button into the HR View
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => {
+        let hrHeader = document.querySelector('#view-branches .btn-refresh')?.parentElement;
+        if (hrHeader && !document.getElementById('btnMassGenIds')) {
+            hrHeader.insertAdjacentHTML('afterbegin', `<button id="btnMassGenIds" class="btn-refresh" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); margin-right: 10px;" onclick="window.massGenerateStaffIDs()">🪄 Fix & Generate All IDs</button>`);
+        }
+    }, 2000);
+});
 
 // Auto-inject the Mass Generator button into the HR View
 document.addEventListener("DOMContentLoaded", () => {
