@@ -1099,7 +1099,6 @@ window.openEmployeeProfile = function(docId) {
 };
 
 window.saveEmployeeProfile = async function() {
-    // 🔥 THE REAL BULLETPROOF DOM EXTRACTOR: Grabs values ONLY from the actively visible modal!
     const getVal = (id) => {
         let els = document.querySelectorAll(`[id="${id}"]`);
         let activeEl = Array.from(els).find(el => {
@@ -1117,11 +1116,10 @@ window.saveEmployeeProfile = async function() {
         return activeEl ? activeEl.checked : (els[0] ? els[0].checked : false);
     };
 
-    // 🔐 FRANCHISEE FIX: Temporarily unlock the dropdown so the browser can read it
     let bAssign = document.getElementById('empBranchAssign');
     if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = false;
 
-    // 1. WE MUST DECLARE ALL VARIABLES FIRST!
+    // 1. EXTRACT ALL VARIABLES FIRST
     let docId = getVal('empProfileId');
     let name = getVal('empFullName').trim();
     let branch = getVal('empBranchAssign');
@@ -1131,28 +1129,49 @@ window.saveEmployeeProfile = async function() {
     let pin = getVal('empPin').trim();
     let nightRate = parseFloat(getVal('empNightDiffRate')) || 0;
 
-    // 2. NOW WE CAN SAFELY GENERATE THE ID USING THE 'branch' VARIABLE
+    if (!name || isNaN(rate) || !pin || pin.length < 4) {
+        alert("❌ Error: Name, Hourly Rate, and a Password (minimum 4 characters) are strictly required!");
+        if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = true;
+        return;
+    }
+
+    let btns = document.querySelectorAll('[id="btnSaveEmpProfile"]');
+    let visibleBtn = Array.from(btns).find(btn => {
+        let modal = btn.closest('[id="employeeProfileModal"]');
+        return modal && modal.style.display !== 'none';
+    }) || btns[0];
+    
+    if(visibleBtn) { visibleBtn.innerText = "⏳ Generating ID & Saving..."; visibleBtn.disabled = true; }
+
+    // 2. 🧠 SMART ID GENERATOR (Sorts by Hire Date to give oldest staff the 0001 number!)
     let empId = getVal('profEmpId');
-    if (!empId || empId === 'Pending Generation...') {
+    if (!empId || empId === 'Pending Generation...' || empId === 'undefined') {
         let bCode = branch === 'Cabantian' ? '33025' : (branch === 'Citygate' ? '11526' : (branch === 'Maa' ? '21026' : '101010'));
+        
         let dHired = getVal('empDateHired');
         let dObj = dHired ? new Date(dHired) : new Date();
         let dhStr = (dObj.getMonth() + 1) + '' + dObj.getDate() + '' + dObj.getFullYear();
         
+        // Ask Firebase for everyone in this branch
         const q = window.query(window.collection(window.db, "cashiers"), window.where("branch", "==", branch));
         const snap = await window.getDocs(q);
-        let count = snap.size + 1;
+        let staffInBranch = [];
+        snap.forEach(d => staffInBranch.push({id: d.id, ...d.data()}));
+        
+        // Sort them mathematically by the date they were hired!
+        staffInBranch.sort((a, b) => new Date(a.dateHired || 0) - new Date(b.dateHired || 0));
+        
+        // Find out where this employee ranks in history
+        let myIndex = staffInBranch.findIndex(s => s.id === docId);
+        let count = (myIndex !== -1) ? (myIndex + 1) : (staffInBranch.length + 1);
         
         empId = `${bCode}-${dhStr}-${String(count).padStart(4, '0')}`;
+        
+        // Push it to the UI immediately so you can see it!
+        document.querySelectorAll('[id="profEmpId"]').forEach(el => el.value = empId);
     }
 
-    // Lock the dropdown back immediately!
     if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = true;
-
-    if (!name || isNaN(rate) || !pin || pin.length < 4) {
-        alert("❌ Error: Name, Hourly Rate, and a Password (minimum 4 characters) are strictly required!");
-        return;
-    }
 
     let customDeductionsArray = [];
     let activeModals = document.querySelectorAll('[id="employeeProfileModal"]');
@@ -1186,11 +1205,8 @@ window.saveEmployeeProfile = async function() {
         hourlyRate: rate,
         pin: pin,
         customDeductions: customDeductionsArray,
-        
-        // 🔥 THE FIX: Captures the precise individual rate!
         nightDiffRate: nightRate,
         eligibleNightDiff: nightRate > 0, 
-        
         isWorkingStudent: isWorkingStudent, 
         phone: getVal('empPhone').trim(),
         address: getVal('empAddress').trim(),
@@ -1215,28 +1231,26 @@ window.saveEmployeeProfile = async function() {
         payload.signedContracts = {};
     }
 
-    // Find the actively visible save button to update its text safely
-    let btns = document.querySelectorAll('[id="btnSaveEmpProfile"]');
-    let visibleBtn = Array.from(btns).find(btn => {
-        let modal = btn.closest('[id="employeeProfileModal"]');
-        return modal && modal.style.display !== 'none';
-    }) || btns[0];
-    
-    if(visibleBtn) { visibleBtn.innerText = "⏳ Saving to Cloud..."; visibleBtn.disabled = true; }
-
     try {
         if (docId) {
-            await updateDoc(doc(db, "cashiers", docId), payload);
+            await window.updateDoc(window.doc(window.db, "cashiers", docId), payload);
             Swal.fire({ toast: true, position: 'top', icon: 'success', title: `✅ ${name}'s profile updated!`, showConfirmButton: false, timer: 3000, customClass: { popup: 'rounded-xl shadow-lg border border-gray-200' }});
         } else {
-            await addDoc(collection(db, "cashiers"), payload);
+            let newDocRef = await window.addDoc(window.collection(window.db, "cashiers"), payload);
+            docId = newDocRef.id;
+            document.querySelectorAll('[id="empProfileId"]').forEach(el => el.value = docId); // Set the ID so they can print right away!
             Swal.fire({ toast: true, position: 'top', icon: 'success', title: `✅ ${name} added to database!`, showConfirmButton: false, timer: 3000, customClass: { popup: 'rounded-xl shadow-lg border border-gray-200' }});
         }
-        document.querySelectorAll('[id="employeeProfileModal"]').forEach(el => el.style.display = 'none');
+        
+        window.globalStaffData[docId] = payload;
+        
+        if(visibleBtn) { visibleBtn.innerText = "💾 Save Data"; visibleBtn.disabled = false; }
         window.loadHRModule(); 
+        
+        // 🚨 INTENTIONAL FIX: We DO NOT close the modal anymore! 
+        // This lets you visually see the ID appear and click "Print ID Card" immediately!
     } catch (e) {
         console.error(e); Swal.fire('Error', 'Failed to save employee data.', 'error');
-    } finally {
         if(visibleBtn) { visibleBtn.innerText = "💾 Save Data"; visibleBtn.disabled = false; }
     }
 };
@@ -25109,3 +25123,71 @@ window.generateIDCard = function() {
         Swal.fire('Error', 'Failed to generate ID image. Please try again.', 'error');
     });
 };
+
+// ========================================================
+// 🪄 MASS EMPLOYEE ID GENERATOR ENGINE
+// ========================================================
+window.massGenerateStaffIDs = async function() {
+    Swal.fire({title: 'Generating IDs...', text: 'Scanning all staff by branch and hire date...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    
+    try {
+        const snap = await window.getDocs(window.collection(window.db, "cashiers"));
+        let staffByBranch = {};
+        
+        // 1. Group everyone by their branch
+        snap.forEach(doc => {
+            let d = doc.data();
+            if (d.status === 'Resigned' || d.pin === 'REVOKED') return; // Skip archived staff
+            let b = d.branch || 'Unknown';
+            if (!staffByBranch[b]) staffByBranch[b] = [];
+            staffByBranch[b].push({ id: doc.id, ...d });
+        });
+        
+        let batchPromises = [];
+        let updatedCount = 0;
+        
+        for (let branch in staffByBranch) {
+            // 2. Sort staff in this branch by the exact date they were hired (Oldest first)
+            staffByBranch[branch].sort((a, b) => new Date(a.dateHired || 0) - new Date(b.dateHired || 0));
+            
+            let bCode = branch === 'Cabantian' ? '33025' : (branch === 'Citygate' ? '11526' : (branch === 'Maa' ? '21026' : '101010'));
+            
+            // 3. Loop through them and assign sequential IDs
+            staffByBranch[branch].forEach((staff, index) => {
+                // If they don't have a valid ID yet, generate one!
+                if (!staff.empId || staff.empId === 'Pending Generation...' || staff.empId === 'undefined') {
+                    let dObj = staff.dateHired ? new Date(staff.dateHired) : new Date();
+                    let dhStr = (dObj.getMonth() + 1) + '' + dObj.getDate() + '' + dObj.getFullYear();
+                    let count = index + 1; // Since it's sorted, the oldest gets 1!
+                    
+                    let newEmpId = `${bCode}-${dhStr}-${String(count).padStart(4, '0')}`;
+                    
+                    batchPromises.push(window.updateDoc(window.doc(window.db, "cashiers", staff.id), { empId: newEmpId }));
+                    updatedCount++;
+                }
+            });
+        }
+        
+        if (batchPromises.length > 0) {
+            await Promise.all(batchPromises);
+            Swal.fire('✅ Success!', `Auto-generated and saved ${updatedCount} missing Employee IDs.`, 'success');
+            window.loadHRModule();
+        } else {
+            Swal.fire('All Good!', 'All active staff members already have an Employee ID assigned.', 'info');
+        }
+        
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to generate IDs. Check console.', 'error');
+    }
+};
+
+// Auto-inject the Mass Generator button into the HR View
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => {
+        let hrHeader = document.querySelector('#view-branches .btn-refresh')?.parentElement;
+        if (hrHeader && !document.getElementById('btnMassGenIds')) {
+            hrHeader.insertAdjacentHTML('afterbegin', `<button id="btnMassGenIds" class="btn-refresh" style="background: #8b5cf6; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); margin-right: 10px;" onclick="window.massGenerateStaffIDs()">🪄 Auto-Generate Missing IDs</button>`);
+        }
+    }, 2000);
+});
