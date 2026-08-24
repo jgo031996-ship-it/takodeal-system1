@@ -1134,20 +1134,15 @@ window.saveEmployeeProfile = async function() {
     // 2. NOW WE CAN SAFELY GENERATE THE ID USING THE 'branch' VARIABLE
     let empId = getVal('profEmpId');
     if (!empId || empId === 'Pending Generation...') {
-        // Map Branch Codes
         let bCode = branch === 'Cabantian' ? '33025' : (branch === 'Citygate' ? '11526' : (branch === 'Maa' ? '21026' : '101010'));
-        
-        // Parse Date Hired (e.g. 07/21/2025 -> 7212025)
         let dHired = getVal('empDateHired');
         let dObj = dHired ? new Date(dHired) : new Date();
         let dhStr = (dObj.getMonth() + 1) + '' + dObj.getDate() + '' + dObj.getFullYear();
         
-        // Count staff to get sequential number
         const q = window.query(window.collection(window.db, "cashiers"), window.where("branch", "==", branch));
         const snap = await window.getDocs(q);
         let count = snap.size + 1;
         
-        // Assemble final ID!
         empId = `${bCode}-${dhStr}-${String(count).padStart(4, '0')}`;
     }
 
@@ -1181,6 +1176,8 @@ window.saveEmployeeProfile = async function() {
     }
 
     let payload = {
+        empId: empId,
+        bloodType: getVal('profBloodType').trim(),
         cashierName: name,
         branch: branch,
         role: newRole,
@@ -1211,8 +1208,6 @@ window.saveEmployeeProfile = async function() {
         emergencyPhone: getVal('empEmergencyPhone').trim(),
         email: getVal('empEmail').trim(),
         scheduleNickname: getVal('empScheduleName').trim(),
-        empId: empId,
-        bloodType: getVal('profBloodType').trim(),
     };
 
     if (!docId) {
