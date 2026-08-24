@@ -6265,28 +6265,39 @@ window.openBudgetLogsModal = async function() {
     tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px;">⏳ Fetching recent budget expenses...</td></tr>';
 
     try {
-        // Grab the 30 most recent expenses (ignoring Payroll to keep it clean)
-        const q = query(collection(db, "expenses"), orderBy("timestamp", "desc"), limit(50));
-        const snap = await getDocs(q);
+        // Grab the 50 most recent expenses (ignoring Payroll to keep it clean)
+        // 🔥 Added window. prefixes to prevent ReferenceErrors
+        const q = window.query(window.collection(window.db, "expenses"), window.orderBy("timestamp", "desc"), window.limit(50));
+        const snap = await window.getDocs(q);
         let html = '';
 
         snap.forEach(docSnap => {
             let d = docSnap.data();
             if (d.category === "Payroll" || d.category === "Supplier Payment") return; // Keep it focused on Budgets
 
-            let timeStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            let timeStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : new Date(d.timestamp).toLocaleString()) : 'Unknown';
             
+            // 🔥 THE "UNKNOWN" FIX: Intelligently fallback to other account fields or default to the POS Drawer!
+            let accountName = d.account || d.paidFrom || d.paidFromAccount;
+            if (!accountName || accountName.trim() === '') {
+                // If it came from a branch, it was taken from the Cashier's Drawer. 
+                accountName = (d.branch && d.branch !== "Main Office") ? "POS Drawer" : "Uncategorized Cash";
+            }
+
+            // Handle missing notes gracefully
+            let desc = d.note || d.description || '-';
+
             html += `
             <tr style="border-bottom: 1px dashed #e2e8f0;">
                 <td style="padding: 12px 10px; color: #64748b; font-size: 12px;">${timeStr}</td>
                 <td style="padding: 12px 10px; font-weight: bold; color: #334155;">📍 ${d.branch || 'Unknown'}</td>
                 <td style="padding: 12px 10px;">
                     <strong style="color: #0f766e;">${d.category || 'Expense'}</strong><br>
-                    <span style="font-size: 11px; color: #64748b; font-style: italic;">${d.note || '-'}</span>
+                    <span style="font-size: 11px; color: #64748b; font-style: italic;">${desc}</span>
                 </td>
-                <td style="padding: 12px 10px; font-weight: bold; color: #b45309;">${d.account || 'Unknown'}</td>
+                <td style="padding: 12px 10px; font-weight: bold; color: #b45309;">${accountName}</td>
                 <td style="padding: 12px 10px; font-weight: bold; color: #dc2626; text-align: right; font-size: 15px;">
-                    -₱${(d.amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}
+                    -₱${(parseFloat(d.amount) || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}
                 </td>
             </tr>`;
         });
