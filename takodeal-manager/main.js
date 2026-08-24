@@ -12911,21 +12911,25 @@ window.confirmPayableSettlement = async function() {
 };
 
 // ========================================================
-// 📈 PRODUCT OPTIMIZATION & ANALYTICS ENGINE
+// 📈 PRODUCT OPTIMIZATION & ANALYTICS ENGINE (DUAL-SYNC UPGRADE)
 // ========================================================
 window.loadProductAnalytics = async function(startOfDay, endOfDay, branchFilter) {
-    const tbody = document.getElementById('productAnalyticsBody');
-    if(!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 20px; color: #0ea5e9; font-weight: bold;">⏳ Crunching big data & COGS...</td></tr>';
+    // 🔥 THE FIX: Finds EVERY Product Analytics table on the app (Dashboard AND History)
+    const tbodies = document.querySelectorAll('[id="productAnalyticsBody"]');
+    if(tbodies.length === 0) return;
+    
+    tbodies.forEach(tbody => {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 20px; color: #0ea5e9; font-weight: bold;">⏳ Crunching big data & COGS...</td></tr>';
+    });
 
     try {
         // 1. Fetch Latest Inventory Unit Costs
-        const invSnap = await getDocs(collection(db, "inventory"));
+        const invSnap = await window.getDocs(window.collection(window.db, "inventory"));
         let invCosts = {};
         invSnap.forEach(d => invCosts[d.data().name] = parseFloat(d.data().baseCost) || 0);
 
         // 2. Fetch Recipes to calculate Base COGS
-        const bomSnap = await getDocs(collection(db, "bom"));
+        const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
         let recipeCosts = {};
         bomSnap.forEach(d => {
             let bom = d.data();
@@ -12934,11 +12938,11 @@ window.loadProductAnalytics = async function(startOfDay, endOfDay, branchFilter)
         });
 
         // 3. Fetch Transactions within the Date Range (🔒 FRANCHISE LOCKED)
-        let txQ = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        let txQ = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
         if (branchFilter && branchFilter !== "All") {
-            txQ = query(collection(db, "transactions"), where("branch", "==", branchFilter), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+            txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branchFilter), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
         }
-        const txSnap = await getDocs(txQ);
+        const txSnap = await window.getDocs(txQ);
 
         let productStats = {};
 
@@ -13013,11 +13017,17 @@ window.loadProductAnalytics = async function(startOfDay, endOfDay, branchFilter)
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="padding: 20px; color: #64748b;">No sales data available for this period.</td></tr>';
+        // 🔥 THE FIX: Inject the data into BOTH tables!
+        let finalHtml = html || '<tr><td colspan="7" class="text-center" style="padding: 20px; color: #64748b;">No sales data available for this period.</td></tr>';
+        tbodies.forEach(tbody => {
+            tbody.innerHTML = finalHtml;
+        });
 
     } catch(e) {
         console.error("Product Analytics Error:", e);
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 20px;">Error loading analytics. Check console.</td></tr>';
+        tbodies.forEach(tbody => {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 20px;">Error loading analytics. Check console.</td></tr>';
+        });
     }
 };
 
