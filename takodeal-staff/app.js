@@ -3866,11 +3866,18 @@ window.generateCOE = function() {
         
         Swal.fire({
             title: '✅ Downloaded!',
-            text: 'Your Certificate of Employment has been successfully downloaded.',
+            text: 'Your Certificate of Employment has been successfully downloaded. Your access will now be securely locked.',
             icon: 'success',
-            confirmButtonText: 'Okay',
-            confirmButtonColor: '#10b981',
+            confirmButtonText: 'Log Out',
+            confirmButtonColor: '#dc2626',
+            allowOutsideClick: false,
             customClass: { popup: 'rounded-2xl shadow-xl' }
+        }).then(() => {
+            // 🔥 THE LOCKOUT FIX: Automatically clear their login session and reload the page!
+            localStorage.removeItem('takodeal_staff_name');
+            localStorage.removeItem('takodeal_staff_id');
+            localStorage.removeItem('takodeal_staff_pic');
+            location.reload();
         });
     }).catch(err => {
         console.error(err);
