@@ -1108,6 +1108,30 @@ window.saveEmployeeProfile = async function() {
         });
         return activeEl ? activeEl.value : (els[0] ? els[0].value : '');
     };
+    const getCheck = (id) => {
+        let els = document.querySelectorAll(`[id="${id}"]`);
+        let activeEl = Array.from(els).find(el => {
+            let modal = el.closest('[id="employeeProfileModal"]');
+            return modal && modal.style.display !== 'none';
+        });
+        return activeEl ? activeEl.checked : (els[0] ? els[0].checked : false);
+    };
+
+    // 🔐 FRANCHISEE FIX: Temporarily unlock the dropdown so the browser can read it
+    let bAssign = document.getElementById('empBranchAssign');
+    if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = false;
+
+    // 1. WE MUST DECLARE ALL VARIABLES FIRST!
+    let docId = getVal('empProfileId');
+    let name = getVal('empFullName').trim();
+    let branch = getVal('empBranchAssign');
+    let rate = parseFloat(getVal('empHourlyRate'));
+    let newRole = getVal('empRole').trim();
+    let isWorkingStudent = getCheck('staffWorkingStudent');
+    let pin = getVal('empPin').trim();
+    let nightRate = parseFloat(getVal('empNightDiffRate')) || 0;
+
+    // 2. NOW WE CAN SAFELY GENERATE THE ID USING THE 'branch' VARIABLE
     let empId = getVal('profEmpId');
     if (!empId || empId === 'Pending Generation...') {
         // Map Branch Codes
@@ -1126,29 +1150,6 @@ window.saveEmployeeProfile = async function() {
         // Assemble final ID!
         empId = `${bCode}-${dhStr}-${String(count).padStart(4, '0')}`;
     }
-    const getCheck = (id) => {
-        let els = document.querySelectorAll(`[id="${id}"]`);
-        let activeEl = Array.from(els).find(el => {
-            let modal = el.closest('[id="employeeProfileModal"]');
-            return modal && modal.style.display !== 'none';
-        });
-        return activeEl ? activeEl.checked : (els[0] ? els[0].checked : false);
-    };
-
-    // 🔐 FRANCHISEE FIX: Temporarily unlock the dropdown so the browser can read it
-    let bAssign = document.getElementById('empBranchAssign');
-    if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = false;
-
-    let docId = getVal('empProfileId');
-    let name = getVal('empFullName').trim();
-    let branch = getVal('empBranchAssign');
-    let rate = parseFloat(getVal('empHourlyRate'));
-    let newRole = getVal('empRole').trim();
-    let isWorkingStudent = getCheck('staffWorkingStudent');
-    let pin = getVal('empPin').trim();
-    
-    // Safely parse the custom night rate!
-    let nightRate = parseFloat(getVal('empNightDiffRate')) || 0;
 
     // Lock the dropdown back immediately!
     if (window.sessionUser && window.sessionUser.isFranchisee && bAssign) bAssign.disabled = true;
