@@ -5035,6 +5035,7 @@
       </div>
   </div>
 
+  <!-- 🧑‍🍳 MASTER EMPLOYEE PROFILE MODAL -->
   <div id="employeeProfileModal" class="overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.8); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(5px);">
     <div style="background: #f8fafc; width: 95%; max-width: 850px; height: 92vh; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid #cbd5e1;">
       
@@ -5255,20 +5256,13 @@
       <!-- Action Buttons Footer -->
       <div class="modal-foot" style="display: flex; gap: 10px; padding: 20px 30px; background: #f8fafc; border-top: 1px solid #e2e8f0; align-items: center; flex-wrap: wrap;">
           <button onclick="document.getElementById('employeeProfileModal').style.display='none'" style="flex: 1; padding: 14px; font-weight: bold; border-radius: 8px; font-size: 14px; border: 1px solid #cbd5e1; background: white; color: #475569; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">Cancel</button>
-          
           <button style="flex: 1; background: #3b82f6; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3);" onclick="window.viewStaffSignedPayslips()">🧾 Signed Payslips</button>
-          
           <button style="flex: 1; background: #10b981; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);" onclick="window.offerOfficialContract()">📄 Issue Contract</button>
-          
           <button style="flex: 1; background: #fff1f2; color: #dc2626; border: 1px solid #fecaca; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s;" onclick="window.processResignation()">📜 Offboard</button>
-
           <button style="flex: 1; background: #0f172a; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(15, 23, 42, 0.3);" onclick="window.generateIDCard()">🪪 Print ID Card</button>
-          
-          <button onclick="deleteCurrentStaff()" style="background: #ef4444; color: white; border: none; padding: 14px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3);">🗑️ Delete Staff</button>
-          
+          <button onclick="window.deleteCurrentStaff()" style="background: #ef4444; color: white; border: none; padding: 14px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3);">🗑️ Delete Staff</button>
           <button id="btnSaveEmpProfile" onclick="window.saveEmployeeProfile()" style="flex: 1.5; padding: 14px; font-weight: 900; border-radius: 8px; font-size: 16px; background: #d97706; color: white; border: none; cursor: pointer; box-shadow: 0 6px 12px rgba(217, 119, 6, 0.3);">💾 Save Data</button>
       </div>
-
     </div>
   </div>
 
