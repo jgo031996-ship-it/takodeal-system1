@@ -24531,7 +24531,7 @@ window.voidAndReplenishTransaction = async function(receiptId, branch, cartEncod
 // ========================================================
 // 🪪 AUTOMATED HD EMPLOYEE ID CARD GENERATOR
 // ========================================================
-window.generateIDCard = async function() { // 🔥 Added 'async'
+window.generateIDCard = async function() { 
     const getVal = (id) => {
         let els = document.querySelectorAll(`[id="${id}"]`);
         let el = els[els.length - 1]; 
@@ -24551,7 +24551,7 @@ window.generateIDCard = async function() { // 🔥 Added 'async'
         return Swal.fire('Save Required', 'Please click "Save Data" first to automatically generate the new Employee ID number before printing the ID Card.', 'warning');
     }
 
-    let picSrc = 'payslip logo.jpg'; 
+    let picSrc = 'logo_id.png'; // Fallback to the transparent logo if they don't have a picture
     let previewImg = document.getElementById('masterProfilePic'); 
     if (previewImg && previewImg.src && !previewImg.src.includes('data:image/svg+xml')) {
         picSrc = previewImg.src;
@@ -24559,9 +24559,6 @@ window.generateIDCard = async function() { // 🔥 Added 'async'
 
     let template = document.getElementById('idCardTemplate');
     template.style.display = 'flex';
-    
-    let frontPic = document.getElementById('idFrontPic');
-    frontPic.src = picSrc;
     
     document.getElementById('idFrontName').innerText = name.toUpperCase();
     document.getElementById('idFrontRole').innerText = role.toUpperCase();
@@ -24575,18 +24572,38 @@ window.generateIDCard = async function() { // 🔥 Added 'async'
     document.getElementById('idBackNum').innerText = emergNum;
     document.getElementById('idBackBlood').innerText = blood;
 
-    Swal.fire({title: 'Generating ID Card...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    Swal.fire({title: 'Generating ID Card...', text: 'Downloading secure photo...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
-    // 🔥 THE CRASH FIX: Force the system to wait for the profile picture to download from Firebase!
+    // 🔥 THE BULLETPROOF BASE64 CONVERTER 🔥
+    // Firebase Storage blocks html2canvas. We must convert the image to raw data first!
+    let base64Img = picSrc;
+    try {
+        if (picSrc.startsWith('http')) {
+            const response = await fetch(picSrc);
+            const blob = await response.blob();
+            base64Img = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+            });
+        }
+    } catch (e) {
+        console.warn("Could not convert image to base64, falling back to direct URL.");
+    }
+
+    let frontPic = document.getElementById('idFrontPic');
+    frontPic.src = base64Img;
+
+    // Wait for the converted image to render on the screen
     await new Promise((resolve) => {
         if (frontPic.complete) resolve();
         else {
             frontPic.onload = resolve;
-            frontPic.onerror = resolve; // Move forward even if it fails so it doesn't freeze
+            frontPic.onerror = resolve; 
         }
     });
 
-    // Give the CSS 300 milliseconds to render perfectly
+    // Give the CSS 300 milliseconds to snap the design into place
     await new Promise(r => setTimeout(r, 300));
 
     html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true }).then(canvas => {
