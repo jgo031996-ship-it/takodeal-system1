@@ -599,13 +599,24 @@ window.loadGlobalDashboard = async function() {
     if (!endDateInput.value) endDateInput.valueAsDate = new Date();
 
     // 🔥 THE 5:00 AM "BUSINESS DAY" FIX 🔥
-    // Shifts ending at 2 AM are now mathematically locked to the previous day!
     const startOfDay = new Date(startDateInput.value);
-    startOfDay.setHours(5, 0, 0, 0); // 5:00 AM
+    startOfDay.setHours(5, 0, 0, 0); 
 
     const endOfDay = new Date(endDateInput.value);
-    endOfDay.setDate(endOfDay.getDate() + 1); // Move to the next calendar day
-    endOfDay.setHours(4, 59, 59, 999); // 4:59:59 AM
+    endOfDay.setDate(endOfDay.getDate() + 1); 
+    endOfDay.setHours(4, 59, 59, 999); 
+
+    // 🔥 DYNAMIC TITLE FIX 🔥
+    let isToday = (startDateInput.value === endDateInput.value) && (startDateInput.value === new Date().toISOString().split('T')[0]);
+    let titleSuffix = isToday ? "(Today)" : "(Selected Range)";
+    
+    let grossEl = document.getElementById('globalGross');
+    let netEl = document.getElementById('globalNet');
+    let expEl = document.getElementById('globalExpenses');
+    
+    if (grossEl && grossEl.previousElementSibling) grossEl.previousElementSibling.innerText = `Total Gross Sales ${titleSuffix}`;
+    if (netEl && netEl.previousElementSibling) netEl.previousElementSibling.innerText = `Total Net Sales ${titleSuffix}`;
+    if (expEl && expEl.previousElementSibling) expEl.previousElementSibling.innerText = `Total Cash Out ${titleSuffix}`;
 
     let dashFilter = document.getElementById('dashBranchFilter');
     if (!dashFilter) {
@@ -623,44 +634,30 @@ window.loadGlobalDashboard = async function() {
 
     let selectedBranch = dashFilter ? dashFilter.value : "All";
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-    
-    if (isFranchisee && dashFilter) {
-        selectedBranch = window.sessionUser.branch;
-        dashFilter.value = selectedBranch;
-        dashFilter.disabled = true;
-    }
+    if (isFranchisee && dashFilter) { selectedBranch = window.sessionUser.branch; dashFilter.value = selectedBranch; dashFilter.disabled = true; }
 
     let branches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : [];
-    if (selectedBranch !== "All") {
-        branches = [selectedBranch];
-    } else if (isFranchisee) {
-        branches = window.sessionUser.allowedBranches;
-    }
+    if (selectedBranch !== "All") { branches = [selectedBranch]; } 
+    else if (isFranchisee) { branches = window.sessionUser.allowedBranches; }
 
     try {
-        // 🔥 1. AGGREGATE ENTIRE DATE RANGE FOR TOP KPI CARDS 🔥
         let globalGross = 0; let globalNet = 0; let globalExp = 0;
 
         const txRangeQ = selectedBranch === "All" 
-            ? window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay))
-            : window.query(window.collection(window.db, "transactions"), window.where("branch", "==", selectedBranch), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
+            ? query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay))
+            : query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
             
-        // We fetch ALL expenses and filter them in Javascript to guarantee we never miss a cashier's Cash-Out!
-        const expRangeQ = window.collection(window.db, "expenses");
+        const expRangeQ = collection(db, "expenses");
 
-        const [txRangeSnap, expRangeSnap] = await Promise.all([window.getDocs(txRangeQ), window.getDocs(expRangeQ)]);
+        const [txRangeSnap, expRangeSnap] = await Promise.all([getDocs(txRangeQ), getDocs(expRangeQ)]);
 
         txRangeSnap.forEach(tDoc => {
             let tx = tDoc.data();
             if (tx.status !== "Voided") {
                 let txNet = parseFloat(tx.netTotal) || 0;
                 globalNet += txNet;
-                
-                // Gross Sales fix: Ensures it grabs the pre-discount total properly
                 let txGross = parseFloat(tx.subTotalBeforeDiscount);
-                if (isNaN(txGross) || txGross < txNet) {
-                    txGross = txNet; // Fallback so Gross is never lower than Net
-                }
+                if (isNaN(txGross) || txGross < txNet) txGross = txNet;
                 globalGross += txGross;
             }
         });
@@ -668,8 +665,6 @@ window.loadGlobalDashboard = async function() {
         expRangeSnap.forEach(eDoc => {
             let exp = eDoc.data();
             let expDate = exp.timestamp ? (exp.timestamp.toDate ? exp.timestamp.toDate() : new Date(exp.timestamp)) : new Date(0);
-            
-            // Javascript Date Filter (Catches everything, even if Firebase Indexes fail)
             if (expDate >= startOfDay && expDate <= endOfDay) {
                 if (selectedBranch === "All" || exp.branch === selectedBranch) {
                     globalExp += (parseFloat(exp.amount) || 0);
@@ -677,45 +672,36 @@ window.loadGlobalDashboard = async function() {
             }
         });
 
-        document.getElementById('globalGross').innerText = formatMoney(globalGross);
-        document.getElementById('globalNet').innerText = formatMoney(globalNet);
-        document.getElementById('globalExpenses').innerText = formatMoney(globalExp);
+        if (grossEl) grossEl.innerText = formatMoney(globalGross);
+        if (netEl) netEl.innerText = formatMoney(globalNet);
+        if (expEl) expEl.innerText = formatMoney(globalExp);
 
-
-        // 🔥 2. LIVE TABLE SCANNER (RESPECTS THE 2 AM NIGHT SHIFT) 🔥
         let tableHtml = '';
         let liveStartOfDay = new Date(); 
-        
-        // If the manager checks the app at 2:00 AM, it still considers it "Yesterday's Shift"
-        if (liveStartOfDay.getHours() < 5) {
-            liveStartOfDay.setDate(liveStartOfDay.getDate() - 1);
-        }
-        liveStartOfDay.setHours(5,0,0,0); // Starts at 5 AM of the active business day
+        if (liveStartOfDay.getHours() < 5) liveStartOfDay.setDate(liveStartOfDay.getDate() - 1);
+        liveStartOfDay.setHours(5,0,0,0);
 
         const branchPromises = branches.map(async (branch) => {
-            const shiftQ = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", branch), window.where("startTime", ">=", liveStartOfDay), window.orderBy("startTime", "desc"), window.limit(1));
-            const shiftSnap = await window.getDocs(shiftQ);
+            const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("startTime", ">=", liveStartOfDay), orderBy("startTime", "desc"), limit(1));
+            const shiftSnap = await getDocs(shiftQ);
 
             let shiftData = !shiftSnap.empty ? shiftSnap.docs[0].data() : null;
             let shiftDocId = !shiftSnap.empty ? shiftSnap.docs[0].id : null;
             let isActive = shiftData && shiftData.active === true;
             let isClosed = shiftData && shiftData.status === "Closed";
 
-            let displayCashier = '-';
-            let branchGross = 0; let branchNet = 0; let branchCashIn = 0; let branchExp = 0;
-            let parkedCount = 0;
-            let latestTxTime = 0;
-            let activeCashierNow = null;
+            let displayCashier = '-'; let branchNet = 0; let branchCashIn = 0; let branchExp = 0; let parkedCount = 0;
+            let latestTxTime = 0; let activeCashierNow = null;
 
             if (shiftData) {
                 let shiftStart = shiftData.startTime.toDate();
                 let shiftEnd = isActive ? new Date() : shiftData.endTime.toDate();
 
-                const txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branch), window.where("timestamp", ">=", shiftStart), window.where("timestamp", "<=", shiftEnd));
-                const expQ = window.query(window.collection(window.db, "expenses"), window.where("shiftId", "==", shiftDocId));
-                const parkedQ = window.query(window.collection(window.db, "parked_orders"), window.where("branch", "==", branch));
+                const txQLive = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", shiftStart), where("timestamp", "<=", shiftEnd));
+                const expQLive = query(collection(db, "expenses"), where("shiftId", "==", shiftDocId));
+                const parkedQ = query(collection(db, "parked_orders"), where("branch", "==", branch));
 
-                const [txSnapLive, expSnapLive, parkedSnap] = await Promise.all([window.getDocs(txQ), window.getDocs(expQ), window.getDocs(parkedQ)]);
+                const [txSnapLive, expSnapLive, parkedSnap] = await Promise.all([getDocs(txQLive), getDocs(expQLive), getDocs(parkedQ)]);
 
                 txSnapLive.forEach(tDoc => {
                     let tx = tDoc.data();
@@ -723,21 +709,14 @@ window.loadGlobalDashboard = async function() {
                         branchNet += (tx.netTotal || 0);
                         if (tx.paymentMethod === 'Cash') branchCashIn += (tx.netTotal || 0);
                     }
-                    
                     let txTimeMs = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate().getTime() : new Date(tx.timestamp).getTime()) : 0;
-                    if (txTimeMs > latestTxTime && tx.cashier) {
-                        latestTxTime = txTimeMs;
-                        activeCashierNow = tx.cashier;
-                    }
+                    if (txTimeMs > latestTxTime && tx.cashier) { latestTxTime = txTimeMs; activeCashierNow = tx.cashier; }
                 });
 
-                if (activeCashierNow) {
-                    displayCashier = activeCashierNow;
-                } else if (shiftData.cashier) {
-                    displayCashier = shiftData.cashier.split('/').pop().trim();
-                }
+                if (activeCashierNow) displayCashier = activeCashierNow;
+                else if (shiftData.cashier) displayCashier = shiftData.cashier.split('/').pop().trim();
 
-                expSnapLive.forEach(eDoc => { branchExp += (eDoc.data().amount || 0); });
+                expSnapLive.forEach(eDoc => { branchExp += (parseFloat(eDoc.data().amount) || 0); });
                 parkedCount = parkedSnap.size;
             }
 
@@ -749,22 +728,17 @@ window.loadGlobalDashboard = async function() {
             if (isClosed) varianceHtml = `<span style="color: #10b981; font-weight: bold; font-style: italic;">Saved to Z-Reading ✓</span>`;
             else if (isActive) varianceHtml = `<span style="color: #64748b; font-style: italic;">Shift in progress...</span>`;
 
-            if (branchGross === 0 && branchExp === 0 && !shiftData) return null;
+            if (branchNet === 0 && branchExp === 0 && !shiftData) return null;
 
-            let parkedAlert = parkedCount > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: bold; margin-left: 8px; animation: pulse 1s infinite; box-shadow: 0 0 5px rgba(239,68,68,0.5);">⚠️ ${parkedCount} Parked</span>` : '';
-
-            let shiftBadge = isActive
-                ? `<span class="badge badge-active"><span class="status-dot green"></span> Active</span> ${parkedAlert}`
-                : (isClosed ? '<span class="badge badge-closed"><span class="status-dot gray"></span> Closed</span>' : '<span class="badge badge-closed">No Shift</span>');
-
-            let displayStartingCash = (isActive || isClosed) ? formatMoney(shiftData.startingCash || 0) : '-';
+            let parkedAlert = parkedCount > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: bold; margin-left: 8px; animation: pulse 1s infinite;">⚠️ ${parkedCount} Parked</span>` : '';
+            let shiftBadge = isActive ? `<span class="badge badge-active"><span class="status-dot green"></span> Active</span> ${parkedAlert}` : (isClosed ? '<span class="badge badge-closed"><span class="status-dot gray"></span> Closed</span>' : '<span class="badge badge-closed">No Shift</span>');
 
             return `
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                 <td style="padding: 15px 25px;"><strong style="cursor:pointer; color:#0f766e; font-size: 14px; text-decoration:none;" onclick="openBranchDetails('${branch}')">${branch} </strong></td>
                 <td style="padding: 15px 25px;">${shiftBadge}</td>
                 <td style="padding: 15px 25px; font-weight: bold; color: #334155;">${displayCashier}</td>
-                <td style="padding: 15px 25px; color: #64748b; font-weight: 600;">${displayStartingCash}</td>
+                <td style="padding: 15px 25px; color: #64748b; font-weight: 600;">${(isActive || isClosed) ? formatMoney(shiftData.startingCash || 0) : '-'}</td>
                 <td style="padding: 15px 25px; font-weight: 900; color: #0f766e;">${formatMoney(branchNet)}</td>
                 <td style="padding: 15px 25px; color: #dc2626; font-weight: bold;">${formatMoney(branchExp)}</td>
                 <td style="padding: 15px 25px; font-weight: 900; color: #0f172a;">${(isActive || isClosed) ? formatMoney(expectedCash) : '-'}</td>
@@ -775,13 +749,33 @@ window.loadGlobalDashboard = async function() {
 
         const results = await Promise.all(branchPromises);
         results.forEach(res => { if (res) { tableHtml += res; } });
-
         document.getElementById('branchTableBody').innerHTML = tableHtml;
 
-    } catch (error) {
-        console.error("Radar Engine Error:", error);
-        document.getElementById('branchTableBody').innerHTML = '<tr><td colspan="7" class="text-center" style="color: red;">Error connecting to Cloud Database.</td></tr>';
-    }
+        // 🔥 THE LOADING BUG FIX: Fetches the milestone safely and defaults to 0 if none!
+        try {
+            let dashFilter = document.getElementById('dashBranchFilter');
+            let selectedBranch = dashFilter ? dashFilter.value : "All";
+            let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
+            if (isFranchisee) selectedBranch = window.sessionUser.branch;
+
+            // Added strict window. prefixes to prevent ReferenceErrors!
+            const statsSnap = await window.getDoc(window.doc(window.db, "settings", "global_stats"));
+            let totalBalls = 0;
+            if (statsSnap.exists()) {
+                let data = statsSnap.data();
+                totalBalls = selectedBranch !== "All" ? (data[`balls_${selectedBranch}`] || 0) : (data.totalTakoyakiBalls || 0);
+            }
+            let milestoneDiv = document.getElementById('milestoneCounter');
+            let titleDiv = milestoneDiv ? milestoneDiv.previousElementSibling : null; 
+            if (titleDiv) titleDiv.innerText = selectedBranch !== "All" ? `ROAD TO 1 MILLION TAKOYAKI BALLS - ${selectedBranch.toUpperCase()} 🐙` : `ROAD TO 1 MILLION TAKOYAKI BALLS 🐙`;
+            if (milestoneDiv) milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
+        } catch(e) { 
+            console.error("Milestone Error:", e); 
+            let milestoneDiv = document.getElementById('milestoneCounter');
+            if (milestoneDiv) milestoneDiv.innerText = "0 Balls Sold!";
+        }
+
+    } catch(e) { console.error("Global Dash Error:", e); }
 
     if (typeof window.calculatePlatformFinancials === 'function') window.calculatePlatformFinancials();
     if (typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, selectedBranch);
@@ -13501,7 +13495,7 @@ window.recalcModalNetSales = function() {
 // ==========================================
 // 🧾 DYNAMIC DIGITAL RECEIPT VIEWER (UNDEFINED FIX)
 // ==========================================
-window.viewReceiptDetails = function(receiptId, customer, time, payment, total, cartEncoded) {
+window.viewReceiptDetails = function(receiptId, customer, time, payment, total, cartEncoded, docId = null, branch = null, status = 'Paid') {
     let safeCashierName = "Cashier";
     try {
         let fullCashierName = window.globalShiftReports && Object.values(window.globalShiftReports).find(s => s.transactions && s.transactions.some(t => t.receiptId === receiptId))?.cashier || 'System';
@@ -13514,17 +13508,14 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
     cart.forEach(item => {
         let qty = item.qty || item.quantity || 1;
         let price = parseFloat(item.variantPrice || item.basePrice || item.price) || 0;
-        
         let lineTotal = parseFloat(item.lineTotalFinal);
         if (isNaN(lineTotal)) lineTotal = (qty * price);
         
-        // Unpack Add-ons if they exist
         let addonsHtml = '';
         if (item.addons) {
             for (let key in item.addons) {
                 let addon = item.addons[key];
                 if (addon.qty > 0) {
-                    // 🔥 THE FIX: Fallback to the 'key' (which holds the flavor name) if addon.name is missing!
                     let addonName = addon.name || key; 
                     let addonPrice = parseFloat(addon.price) || 0;
                     addonsHtml += `<div style="font-size: 11px; color: #64748b; margin-left: 10px;">+ ${addonName} (₱${addonPrice} x ${addon.qty})</div>`;
@@ -13543,10 +13534,17 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
         `;
     });
 
+    // 🔥 THE VOID BUTTON INJECTOR
+    let voidBtnHtml = '';
+    if (receiptId && branch && status !== 'Voided' && status !== 'Parked') {
+        voidBtnHtml = `<button onclick="window.voidAndReplenishTransaction('${receiptId}', '${branch}', '${cartEncoded}')" style="width: 100%; margin-top: 15px; background: #dc2626; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(220,38,38,0.3); transition: 0.2s;">🚨 VOID RECEIPT & REPLENISH STOCK</button>`;
+    } else if (status === 'Voided') {
+        voidBtnHtml = `<div style="width: 100%; margin-top: 15px; background: #fef2f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 12px; border-radius: 8px; font-weight: bold; text-align: center; font-size: 14px;">❌ This receipt is Voided.</div>`;
+    }
+
     const modalHtml = `
         <div id="dynamicReceiptModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 10001; backdrop-filter: blur(4px);">
             <div style="background: white; padding: 25px; border-radius: 12px; width: 400px; max-width: 90%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 80vh; display: flex; flex-direction: column;">
-                
                 <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; margin-bottom: 15px;">
                     <div>
                         <h3 style="margin: 0; color: #0f172a; font-size: 18px;">🧾 Receipt Details</h3>
@@ -13554,7 +13552,6 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
                     </div>
                     <button onclick="document.getElementById('dynamicReceiptModal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #94a3b8;">&times;</button>
                 </div>
-
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0;">
                     <div>
                         <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Customer</div>
@@ -13565,17 +13562,15 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
                         <div style="font-size: 13px; font-weight: bold; color: #334155;">${time} • ${payment}</div>
                     </div>
                 </div>
-
                 <div style="flex: 1; overflow-y: auto; margin-bottom: 15px; padding-right: 5px;">
                     <div style="font-size: 11px; font-weight: bold; color: #94a3b8; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; margin-bottom: 5px;">ORDER ITEMS</div>
                     ${itemsHtml || '<i style="color: #94a3b8; font-size: 12px;">No items recorded.</i>'}
                 </div>
-
                 <div style="border-top: 2px dashed #cbd5e1; padding-top: 15px; display: flex; justify-content: space-between; align-items: center;">
                     <span style="font-size: 14px; font-weight: bold; color: #334155;">TOTAL PAID</span>
                     <span style="font-size: 22px; font-weight: 900; color: #16a34a;">₱${total.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
                 </div>
-                
+                ${voidBtnHtml}
             </div>
         </div>
     `;
@@ -14052,7 +14047,7 @@ window.viewShiftReportModal = function(shiftId) {
                     <td style="padding: 10px; color: #475569;">${tx.paymentMethod}</td>
                     <td style="padding: 10px;">${statusBadge}</td>
                     <td style="padding: 10px; text-align: center;">
-                        <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${(tx.customer || 'Guest').replace(/'/g, "\\'")}', '${tx.time}', '${tx.paymentMethod}', ${tx.netTotal}, '${tx.cartEncoded}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
+                        <button onclick="window.viewReceiptDetails('${tx.receiptId}', '${(tx.customer || 'Guest').replace(/'/g, "\\'")}', '${tx.time}', '${tx.paymentMethod}', ${tx.netTotal}, '${tx.cartEncoded}', null, '${s.branch}', '${tx.status}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 View</button>
                     </td>
                 </tr>
             `;
@@ -20815,7 +20810,7 @@ window.loadUnverifiedHistory = async function() {
                     <td style="padding: 15px; text-align: center; vertical-align: top;">
                         <div style="display: flex; gap: 5px; justify-content: center; align-items: center; flex-direction: column;">
                             <button onclick="window.verifySingleHistoryPayment('${tx.id}')" style="background: #16a34a; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 12px; width: 100%; box-shadow: 0 2px 4px rgba(22,163,74,0.3);">✅ Verify</button>
-                            <button onclick="window.viewReceiptDetails('${tx.receiptId || tx.id}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${tx.netTotal}, '${safeCart}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; width: 100%;">🔍 View Full</button>
+                            <button onclick="window.viewReceiptDetails('${tx.receiptId || tx.id}', '${safeCustomer}', '${timeStr}', '${tx.paymentMethod}', ${tx.netTotal}, '${safeCart}', null, '${tx.branch}', '${tx.status}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 6px 12px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer; width: 100%;">🔍 View Full</button>
                         </div>
                     </td>
                 </tr>
@@ -24785,5 +24780,226 @@ window.viewStaffSignedPayslips = async function() {
         });
     } catch(e) {
         console.error(e); Swal.fire('Error', 'Failed to fetch payslips.', 'error');
+    }
+};
+
+window.viewReceiptDetails = function(receiptId, customer, time, payment, total, cartEncoded, docId = null, branch = null, status = 'Paid') {
+    let safeCashierName = "Cashier";
+    try {
+        let fullCashierName = window.globalShiftReports && Object.values(window.globalShiftReports).find(s => s.transactions && s.transactions.some(t => t.receiptId === receiptId))?.cashier || 'System';
+        safeCashierName = fullCashierName.split(' ')[0]; 
+    } catch(e) {}
+    
+    let cart = JSON.parse(decodeURIComponent(cartEncoded));
+    let itemsHtml = '';
+
+    cart.forEach(item => {
+        let qty = item.qty || item.quantity || 1;
+        let price = parseFloat(item.variantPrice || item.basePrice || item.price) || 0;
+        let lineTotal = parseFloat(item.lineTotalFinal);
+        if (isNaN(lineTotal)) lineTotal = (qty * price);
+        
+        let addonsHtml = '';
+        if (item.addons) {
+            for (let key in item.addons) {
+                let addon = item.addons[key];
+                if (addon.qty > 0) {
+                    let addonName = addon.name || key; 
+                    let addonPrice = parseFloat(addon.price) || 0;
+                    addonsHtml += `<div style="font-size: 11px; color: #64748b; margin-left: 10px;">+ ${addonName} (₱${addonPrice} x ${addon.qty})</div>`;
+                }
+            }
+        }
+
+        itemsHtml += `
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding: 8px 0;">
+                <div>
+                    <strong style="color: #334155; font-size: 13px;">${qty}x ${item.name || item.itemName}</strong>
+                    ${addonsHtml}
+                </div>
+                <strong style="color: #0f766e; font-size: 13px;">₱${lineTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+            </div>
+        `;
+    });
+
+    // 🔥 THE VOID BUTTON INJECTOR
+    let voidBtnHtml = '';
+    if (docId && branch && status !== 'Voided') {
+        voidBtnHtml = `<button onclick="window.voidAndReplenishTransaction('${docId}', '${branch}', '${cartEncoded}')" style="width: 100%; margin-top: 15px; background: #dc2626; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(220,38,38,0.3); transition: 0.2s;">🚨 VOID RECEIPT & REPLENISH STOCK</button>`;
+    } else if (status === 'Voided') {
+        voidBtnHtml = `<div style="width: 100%; margin-top: 15px; background: #fef2f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 12px; border-radius: 8px; font-weight: bold; text-align: center; font-size: 14px;">❌ This receipt is Voided.</div>`;
+    }
+
+    const modalHtml = `
+        <div id="dynamicReceiptModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 10001; backdrop-filter: blur(4px);">
+            <div style="background: white; padding: 25px; border-radius: 12px; width: 400px; max-width: 90%; box-shadow: 0 25px 50px rgba(0,0,0,0.5); max-height: 80vh; display: flex; flex-direction: column;">
+                <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; margin-bottom: 15px;">
+                    <div>
+                        <h3 style="margin: 0; color: #0f172a; font-size: 18px;">🧾 Receipt Details</h3>
+                        <div style="font-size: 11px; color: #64748b; margin-top: 4px; font-family: monospace;">${receiptId}</div>
+                    </div>
+                    <button onclick="document.getElementById('dynamicReceiptModal').remove()" style="background: none; border: none; font-size: 24px; cursor: pointer; color: #94a3b8;">&times;</button>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                    <div>
+                        <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Customer</div>
+                        <div style="font-size: 13px; font-weight: bold; color: #0284c7;">${customer}</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Time & Payment</div>
+                        <div style="font-size: 13px; font-weight: bold; color: #334155;">${time} • ${payment}</div>
+                    </div>
+                </div>
+                <div style="flex: 1; overflow-y: auto; margin-bottom: 15px; padding-right: 5px;">
+                    <div style="font-size: 11px; font-weight: bold; color: #94a3b8; border-bottom: 1px solid #cbd5e1; padding-bottom: 5px; margin-bottom: 5px;">ORDER ITEMS</div>
+                    ${itemsHtml || '<i style="color: #94a3b8; font-size: 12px;">No items recorded.</i>'}
+                </div>
+                <div style="border-top: 2px dashed #cbd5e1; padding-top: 15px; display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 14px; font-weight: bold; color: #334155;">TOTAL PAID</span>
+                    <span style="font-size: 22px; font-weight: 900; color: #16a34a;">₱${total.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                </div>
+                ${voidBtnHtml}
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+};
+
+window.voidAndReplenishTransaction = async function(receiptId, branch, cartEncoded) {
+    const confirm = await Swal.fire({
+        title: '⚠️ VOID TRANSACTION?',
+        html: `Are you sure you want to void this receipt?<br><br><b>This will:</b><br>1. Mark the sale as Voided.<br>2. Deduct Takoyaki Balls from the 1 Million Milestone.<br>3. Return all ingredients back to ${branch} Inventory.`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, Void & Replenish!',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (!confirm.isConfirmed) return;
+    Swal.fire({title: 'Voiding & Replenishing...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        // 1. Locate the exact transaction document via the Receipt ID
+        const txQ = window.query(window.collection(window.db, "transactions"), window.where("receiptId", "==", receiptId), window.limit(1));
+        const txSnap = await window.getDocs(txQ);
+        if (txSnap.empty) {
+            Swal.fire('Error', 'Could not locate the transaction in the database.', 'error');
+            return;
+        }
+        let docId = txSnap.docs[0].id;
+
+        let cart = JSON.parse(decodeURIComponent(cartEncoded));
+        let ballsToDeduct = 0;
+        let itemsToReturn = {}; 
+
+        const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
+        let recipes = {};
+        bomSnap.forEach(d => {
+            let r = d.data();
+            if (!recipes[r.menuItem]) recipes[r.menuItem] = [];
+            recipes[r.menuItem].push({ ingredient: r.ingredientName, qty: parseFloat(r.qty) || 0 });
+        });
+
+        cart.forEach(item => {
+            let qty = parseFloat(item.qty) || 1;
+            let itemName = item.name || item.itemName || "";
+            let itemCategory = (item.category || "").toLowerCase();
+
+            // Calculate Takoyaki Balls to deduct based on portions!
+            let normalizedName = itemName.toLowerCase();
+            if (normalizedName.includes("takoyaki") || itemCategory.includes("takoyaki")) {
+                if (normalizedName.includes("4pcs") || normalizedName.includes("4 pcs")) ballsToDeduct += (4 * qty);
+                else if (normalizedName.includes("8pcs") || normalizedName.includes("8 pcs")) ballsToDeduct += (8 * qty);
+                else if (normalizedName.includes("12pcs") || normalizedName.includes("12 pcs")) ballsToDeduct += (12 * qty);
+                else ballsToDeduct += (4 * qty); // Fallback standard
+            }
+
+            let recipe = recipes[itemName] || [];
+            recipe.forEach(ing => {
+                if (!itemsToReturn[ing.ingredient]) itemsToReturn[ing.ingredient] = 0;
+                itemsToReturn[ing.ingredient] += (ing.qty * qty);
+            });
+
+            if (item.addons) {
+                for (let key in item.addons) {
+                    let addon = item.addons[key];
+                    if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                        if (!itemsToReturn[addon.linkedIngredient]) itemsToReturn[addon.linkedIngredient] = 0;
+                        itemsToReturn[addon.linkedIngredient] += (addon.deductQty * addon.qty * qty);
+                    }
+                }
+            }
+        });
+
+        // 2. Mark Transaction as Voided
+        await window.updateDoc(window.doc(window.db, "transactions", docId), {
+            status: "Voided",
+            voidedAt: window.serverTimestamp(),
+            voidedBy: window.sessionUser ? window.sessionUser.cashierName : 'Manager'
+        });
+
+        // 3. Deduct Milestone Balls safely!
+        if (ballsToDeduct > 0) {
+            const statsRef = window.doc(window.db, "settings", "global_stats");
+            const statsSnap = await window.getDoc(statsRef);
+            if (statsSnap.exists()) {
+                let currentTotal = statsSnap.data().totalTakoyakiBalls || 0;
+                let currentBranchTotal = statsSnap.data()[`balls_${branch}`] || 0;
+                
+                let payload = { totalTakoyakiBalls: Math.max(0, currentTotal - ballsToDeduct) };
+                payload[`balls_${branch}`] = Math.max(0, currentBranchTotal - ballsToDeduct);
+                
+                await window.updateDoc(statsRef, payload);
+            }
+        }
+
+        // 4. Return Inventory safely via Batch!
+        const batch = window.writeBatch(window.db);
+        let returnCount = 0;
+
+        for (let ingName in itemsToReturn) {
+            let returnQty = itemsToReturn[ingName];
+            const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", ingName));
+            const invSnap = await window.getDocs(invQ);
+            
+            if (!invSnap.empty) {
+                let invDoc = invSnap.docs[0];
+                let currentStock = parseFloat(invDoc.data().currentStock) || 0;
+                let newStock = currentStock + returnQty;
+                
+                batch.update(invDoc.ref, { currentStock: newStock });
+                
+                let newLogRef = window.doc(window.collection(window.db, "stock_logs"));
+                batch.set(newLogRef, {
+                    branch: branch,
+                    item: ingName,
+                    uom: invDoc.data().uom || 'units',
+                    oldQty: currentStock,
+                    newQty: newStock,
+                    variance: returnQty,
+                    type: "Voided Sale Return",
+                    note: `Refunded from voided receipt: ${receiptId}`,
+                    user: window.sessionUser ? window.sessionUser.cashierName : 'Manager',
+                    timestamp: window.serverTimestamp()
+                });
+                returnCount++;
+            }
+        }
+
+        if (returnCount > 0) await batch.commit();
+
+        Swal.fire('✅ Voided & Replenished!', `Receipt marked as Voided.\n-${ballsToDeduct} Takoyaki Balls deducted.\nIngredients returned to ${branch} stock.`, 'success');
+        
+        let modal = document.getElementById('dynamicReceiptModal');
+        if (modal) modal.remove();
+        
+        if (typeof window.loadGlobalDashboard === 'function') window.loadGlobalDashboard();
+        if (typeof window.loadSalesHistoryTab === 'function') window.loadSalesHistoryTab();
+        
+    } catch(e) {
+        console.error("Void Error:", e);
+        Swal.fire('Error', 'Failed to void and replenish. Check console.', 'error');
     }
 };
