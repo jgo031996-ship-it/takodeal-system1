@@ -3841,10 +3841,6 @@ window.generateVirtualID = async function() {
         let template = document.getElementById('virtualIdTemplate');
         template.style.display = 'flex';
 
-        let picSrc = data.profilePicUrl || 'payslip logo.jpg'; 
-        let frontPic = document.getElementById('vIdFrontPic');
-        frontPic.src = picSrc;
-        
         document.getElementById('vIdFrontName').innerText = (data.cashierName || 'Staff Member').toUpperCase();
         document.getElementById('vIdFrontRole').innerText = (data.role || 'Service Crew').toUpperCase();
         document.getElementById('vIdFrontNo').innerText = data.empId || 'PENDING';
@@ -3861,7 +3857,26 @@ window.generateVirtualID = async function() {
         document.getElementById('vIdBackNum').innerText = emergNum;
         document.getElementById('vIdBackBlood').innerText = blood;
 
-        // 🔥 THE CRASH FIX: Force the system to wait for the profile picture to download from Firebase!
+        // 🔥 THE BULLETPROOF BASE64 CONVERTER 🔥
+        let picSrc = data.profilePicUrl || 'logo_id.png'; 
+        let base64Img = picSrc;
+        try {
+            if (picSrc.startsWith('http')) {
+                const response = await fetch(picSrc);
+                const blob = await response.blob();
+                base64Img = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+            }
+        } catch (e) {
+            console.warn("Could not convert image to base64.");
+        }
+
+        let frontPic = document.getElementById('vIdFrontPic');
+        frontPic.src = base64Img;
+
         await new Promise((resolve) => {
             if (frontPic.complete) resolve();
             else {
@@ -3870,7 +3885,6 @@ window.generateVirtualID = async function() {
             }
         });
 
-        // Give the CSS 300 milliseconds to render perfectly
         await new Promise(r => setTimeout(r, 300));
 
         html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true }).then(canvas => {
