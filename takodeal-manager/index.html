@@ -5035,235 +5035,238 @@
       </div>
   </div>
 
-  <div id="employeeProfileModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
-    <div style="background: var(--bg-color); width: 95%; max-width: 800px; height: 90vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+  <div id="employeeProfileModal" class="overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.8); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(5px);">
+    <div style="background: #f8fafc; width: 95%; max-width: 850px; height: 92vh; border-radius: 16px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid #cbd5e1;">
       
-      <div style="background: var(--primary); padding: 20px 30px; display: flex; justify-content: space-between; align-items: center;">
-        <h2 style="margin: 0; font-size: 20px; color: white;">📋 Master Employee Profile</h2>
-        <button onclick="document.getElementById('employeeProfileModal').style.display='none'" style="background: none; border: none; font-size: 28px; cursor: pointer; color: white;">✖</button>
+      <!-- Top Header -->
+      <div style="background: #d97706; padding: 18px 25px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #b45309;">
+        <h2 style="margin: 0; font-size: 20px; color: white; font-weight: 900; letter-spacing: 0.5px;">📋 Master Employee Profile</h2>
+        <button onclick="document.getElementById('employeeProfileModal').style.display='none'" style="background: rgba(255,255,255,0.2); border: none; font-size: 24px; cursor: pointer; color: white; width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; transition: 0.2s;">✖</button>
       </div>
 
       <div style="padding: 30px; overflow-y: auto; flex: 1;">
         <input type="hidden" id="empProfileId">
 
-        <!-- 🔥 NEW: STAFF PROFILE PICTURE -->
-        <div style="text-align: center; margin-bottom: 20px;">
-            <img id="masterProfilePic" src="data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E" style="width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 4px solid #ccfbf1; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-        </div>
-
-        <h3 style="margin-top: 0; color: var(--primary); border-bottom: 2px solid var(--border); padding-bottom: 5px;">🏢 Employment Details</h3>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-          <div style="grid-column: span 2;">
-            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Full Name *</label>
-            <input type="text" id="empFullName" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; font-weight: bold;">
-          </div>
-          <div>
-            <label style="font-size: 12px; font-weight: bold; color: #d97706;">Schedule Nickname</label>
-            <input type="text" id="empScheduleName" placeholder="e.g. Bern" style="width: 100%; padding: 10px; border: 1px dashed #d97706; border-radius: 6px; box-sizing: border-box; background: #fffbeb;">
-          </div>
-          <div>
-            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Branch Assignment *</label>
-            <select id="empBranchAssign" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
-              <option value="Cabantian">Cabantian</option>
-              <option value="Citygate">Citygate</option>
-              <option value="Maa">Maa</option>
-              <option value="Main Office">Main Office (Roving)</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Role / Position</label>
-            <input type="text" id="empRole" value="Crew" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
-          </div>
-          <div>
-            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Date Hired</label>
-            <input type="date" id="empDateHired" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
-          </div>
-          <div style="grid-column: span 3; background: #f8fafc; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 8px; margin-bottom: 5px;">
-            <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Employee ID Number</label>
-            <input type="text" id="profEmpId" style="width: 100%; padding: 5px 0 0 0; border: none; background: transparent; font-weight: 900; font-size: 16px; color: #0f172a; outline: none;" readonly placeholder="Pending Generation...">
-          </div>
-        </div>
-
-        <!-- 🔥 NEW: DOCUMENT VAULT FOR SIGNED CONTRACTS -->
-        <div id="contractVaultContainer" style="grid-column: span 3; background: #f0fdf4; padding: 15px; border-radius: 8px; border: 1px dashed #16a34a; margin-bottom: 20px; display: none;">
-            <label style="font-size: 12px; font-weight: bold; color: #166534; display: block; margin-bottom: 10px;">📄 Signed Digital Contracts</label>
-            <div style="display: flex; gap: 10px; flex-wrap: wrap;" id="contractVaultButtons">
-                <!-- Javascript will inject the download buttons here -->
+        <!-- Profile Picture -->
+        <div style="text-align: center; margin-bottom: 25px;">
+            <img id="masterProfilePic" src="data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E" style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 4px solid white; box-shadow: 0 10px 15px -3px rgba(0,165,233,0.3);">
+            <div style="margin-top: 10px;">
+                <input type="file" id="profileImageInput" accept="image/*" style="display: none;" onchange="window.previewProfileImage(event)">
+                <button onclick="document.getElementById('profileImageInput').click()" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 20px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">📸 Upload Photo</button>
             </div>
         </div>
-        
-        <h3 style="margin-top: 0; color: #16a34a; border-bottom: 2px solid var(--border); padding-bottom: 5px;">💸 Payroll & Rates</h3>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-          <div>
-            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Daily Rate (₱) *</label>
-            <input type="number" id="empHourlyRate" placeholder="e.g. 50" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; font-weight: bold; color: #16a34a; font-size: 16px;">
-          </div>
-          <div>
-            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Login Password *</label>
-            <input type="text" id="empPin" placeholder="e.g. SecretWord123" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; font-weight: bold; font-size: 16px; color: var(--danger);">
-          </div>
-          
-          <div style="grid-column: span 2; background: #f0fdf4; padding: 15px; border-radius: 8px; border: 1px dashed #bbf7d0; margin-top: 5px; display: flex; justify-content: space-between; align-items: center;">
-              <div>
-                  <strong style="color: #166534; font-size: 14px; display: block;">🌙 Night / Mid-Shift Bonus Rate (₱)</strong>
-                  <span style="font-size: 11px; color: #15803d;">Set the specific bonus amount added to their daily rate for night shifts. Enter 0 if none.</span>
-              </div>
-              <input type="number" id="empNightDiffRate" placeholder="e.g. 50" style="width: 100px; padding: 10px; border: 2px solid #bbf7d0; border-radius: 6px; box-sizing: border-box; font-weight: 900; color: #16a34a; font-size: 16px; text-align: center; outline: none; background: white;">
-          </div>
 
-          <!-- 🔥 NEW: WORKING STUDENT TOGGLE 🔥 -->
-          <style>
-              #staffWorkingStudent:checked + span { background-color: #10b981; }
-              #staffWorkingStudent:checked + span + span { transform: translateX(24px); }
-          </style>
-          <div style="grid-column: span 2; padding: 15px; background: #fffbeb; border: 1px dashed #f59e0b; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
-              <div>
-                  <strong style="color: #b45309; font-size: 14px; display: block;">🎓 Working Student Status</strong>
-                  <span style="font-size: 11px; color: #d97706;">Allows multiple Time Ins/Outs per day and disables the Undertime alarm for split shifts.</span>
-              </div>
-              <label style="position: relative; display: inline-block; width: 50px; height: 26px;">
-                  <input type="checkbox" id="staffWorkingStudent" style="opacity: 0; width: 0; height: 0;">
-                  <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .4s; border-radius: 34px;"></span>
-                  <span style="position: absolute; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></span>
-              </label>
-          </div>
-        </div>
-        
-        <h3 style="margin-top: 0; color: #0284c7; border-bottom: 2px solid var(--border); padding-bottom: 5px;">📱 Contact & Disbursement</h3>
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
-          <div>
-            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Phone Number</label>
-            <input type="text" id="empPhone" placeholder="09xx..." style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
-          </div>
-          <div>
-            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Address</label>
-            <input type="text" id="empAddress" placeholder="Full Address" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
-          </div>
-          
-          <!-- MOVED EMAIL BOX HERE -->
-          <div style="grid-column: span 2;">
-              <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Staff Email Address (Optional)</label>
-              <input type="email" id="empEmail" placeholder="staff@gmail.com" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; outline: none; background: white; color: #334155; font-weight: 500;">
-          </div>
-
-          <div style="grid-column: span 2; background: #fff1f2; padding: 18px; border-radius: 8px; border: 1px solid #fecaca; margin-top: 5px;">
-              <h4 style="margin: 0 0 12px 0; color: #be123c; font-size: 13px;">🚨 Emergency Contact</h4>
-              
-              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
-                  <div>
-                      <label style="font-size: 11px; font-weight: bold; color: #e11d48; display: block; margin-bottom: 5px;">Contact Name</label>
-                      <input type="text" id="empEmergencyName" placeholder="e.g. Maria Laude" style="width: 100%; padding: 10px; border: 1px solid #fda4af; border-radius: 6px; box-sizing: border-box; outline: none; background: white; color: #334155; font-weight: 500;">
-                  </div>
-                  <div>
-                      <label style="font-size: 11px; font-weight: bold; color: #e11d48; display: block; margin-bottom: 5px;">Emergency Number</label>
-                      <input type="text" id="empEmergencyPhone" placeholder="09xx..." style="width: 100%; padding: 10px; border: 1px solid #fda4af; border-radius: 6px; box-sizing: border-box; outline: none; background: white; color: #334155; font-weight: 500;">
-                  </div>
-              </div>
-          </div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
-              <div>
-                  <label style="font-size: 11px; font-weight: bold; color: #e11d48; display: block; margin-bottom: 5px;">Contact Name</label>
-                  <input type="text" id="empEmergencyName" placeholder="e.g. Maria Laude" style="width: 100%; padding: 10px; border: 1px solid #fda4af; border-radius: 6px; box-sizing: border-box; outline: none; background: white; color: #334155; font-weight: 500;">
-              </div>
-              <div>
-                  <label style="font-size: 11px; font-weight: bold; color: #e11d48; display: block; margin-bottom: 5px;">Emergency Number</label>
-                  <input type="text" id="empEmergencyPhone" placeholder="09xx..." style="width: 100%; padding: 10px; border: 1px solid #fda4af; border-radius: 6px; box-sizing: border-box; outline: none; background: white; color: #334155; font-weight: 500;">
-               </div>
-              <div>
-                  <label style="font-size: 11px; font-weight: bold; color: #e11d48; display: block; margin-bottom: 5px;">Blood Type</label>
-                  <input type="text" id="profBloodType" placeholder="e.g. O+" style="width: 100%; padding: 10px; border: 1px solid #fda4af; border-radius: 6px; box-sizing: border-box; outline: none; background: white; color: #334155; font-weight: 900;">
-              </div>
-          </div>
-          <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border: 1px solid #bae6fd;">
-            <label style="font-size: 12px; font-weight: bold; color: #0284c7;">GCash Details</label>
-            <input type="text" id="empGcashName" placeholder="Account Name" style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #bae6fd; border-radius: 4px; box-sizing: border-box; margin-bottom: 5px;">
-            <input type="text" id="empGcashNum" placeholder="GCash Number" style="width: 100%; padding: 8px; border: 1px solid #bae6fd; border-radius: 4px; box-sizing: border-box;">
-          </div>
-          <div style="background: #fdf4ff; padding: 15px; border-radius: 8px; border: 1px solid #e0f2fe;">
-            <label style="font-size: 12px; font-weight: bold; color: #0284c7;">GoTyme Details</label>
-            <input type="text" id="empGotymeName" placeholder="Account Name" style="width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #e0f2fe; border-radius: 4px; box-sizing: border-box; margin-bottom: 5px;">
-            <input type="text" id="empGotymeNum" placeholder="Account Number" style="width: 100%; padding: 8px; border: 1px solid #e0f2fe; border-radius: 4px; box-sizing: border-box;">
-          </div>
+        <!-- Section 1: Employment Details -->
+        <div style="background: white; border-radius: 12px; padding: 25px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+            <h3 style="margin-top: 0; color: #d97706; font-size: 18px; border-bottom: 2px solid #fde68a; padding-bottom: 8px; margin-bottom: 20px;">🏢 Employment Details</h3>
+            <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 15px; margin-bottom: 15px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Full Name *</label>
+                    <input type="text" id="empFullName" placeholder="e.g. Alwinna Carupo" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-weight: 900; color: #0f172a; font-size: 15px; outline: none;">
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 800; color: #d97706; margin-bottom: 5px; display: block;">Schedule Nickname</label>
+                    <input type="text" id="empScheduleName" placeholder="e.g. Wenna" style="width: 100%; padding: 12px; border: 1px dashed #fcd34d; background: #fffbeb; border-radius: 6px; box-sizing: border-box; font-weight: bold; color: #b45309; outline: none;">
+                </div>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Branch Assignment *</label>
+                    <select id="empBranchAssign" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-weight: bold; outline: none; background: white; cursor: pointer;">
+                        <option value="Cabantian">Cabantian</option>
+                        <option value="Citygate">Citygate</option>
+                        <option value="Maa">Maa</option>
+                        <option value="Main Office">Main Office (Roving)</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Role / Position</label>
+                    <input type="text" id="empRole" value="Staff Crew" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-weight: bold; outline: none;">
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Date Hired</label>
+                    <input type="date" id="empDateHired" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-weight: bold; outline: none;">
+                </div>
+            </div>
+            
+            <div style="background: #f0f9ff; border: 1px dashed #bae6fd; padding: 15px; border-radius: 8px;">
+                <label style="font-size: 12px; font-weight: 900; color: #0284c7; display: block; margin-bottom: 5px;">Employee ID Number</label>
+                <input type="text" id="profEmpId" style="width: 100%; border: none; background: transparent; font-weight: 900; font-size: 18px; color: #0369a1; outline: none;" readonly placeholder="Pending Generation...">
+            </div>
+            
+            <div id="contractVaultContainer" style="background: #f0fdf4; padding: 15px; border-radius: 8px; border: 1px dashed #16a34a; margin-top: 15px; display: none;">
+                <label style="font-size: 12px; font-weight: bold; color: #166534; display: block; margin-bottom: 10px;">📄 Signed Digital Contracts</label>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;" id="contractVaultButtons"></div>
+            </div>
         </div>
 
-        <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px; margin-top: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-              <h3 style="margin-top: 0; color: #b45309; border-bottom: 2px solid #fde68a; padding-bottom: 8px; font-size: 15px;">🏛️ Government & Recurring Deductions</h3>
-              
-              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                  <div>
-                      <label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">SSS Number</label>
-                      <input type="text" id="empSSS" class="input-box" style="width: 100%; box-sizing: border-box; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; outline: none;">
-                      <a id="masterSssLink" href="#" target="_blank" style="display:none; font-size:11px; color:#0ea5e9; font-weight:bold; margin-top:5px; text-decoration:none; display: inline-block;">🖼️ View SSS ID</a>
-                  </div>
-                  <div>
-                      <label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">PhilHealth Number</label>
-                      <input type="text" id="empPhilhealth" class="input-box" style="width: 100%; box-sizing: border-box; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; outline: none;">
-                      <a id="masterPhilLink" href="#" target="_blank" style="display:none; font-size:11px; color:#0ea5e9; font-weight:bold; margin-top:5px; text-decoration:none; display: inline-block;">🖼️ View PhilHealth ID</a>
-                  </div>
-                  <div>
-                      <label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Pag-IBIG Number</label>
-                      <input type="text" id="empPagibig" class="input-box" style="width: 100%; box-sizing: border-box; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; outline: none;">
-                      <a id="masterPagibigLink" href="#" target="_blank" style="display:none; font-size:11px; color:#0ea5e9; font-weight:bold; margin-top:5px; text-decoration:none; display: inline-block;">🖼️ View Pag-IBIG ID</a>
-                  </div>
-              </div>
+        <!-- Section 2: Payroll & Rates -->
+        <div style="background: white; border-radius: 12px; padding: 25px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+            <h3 style="margin-top: 0; color: #16a34a; font-size: 18px; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px; margin-bottom: 20px;">💸 Payroll & Rates</h3>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Daily Rate (₱) *</label>
+                    <input type="number" id="empHourlyRate" placeholder="e.g. 450" style="width: 100%; padding: 12px; border: 2px solid #16a34a; background: white; border-radius: 6px; box-sizing: border-box; font-weight: 900; color: #15803d; font-size: 18px; outline: none;">
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Login Password *</label>
+                    <input type="text" id="empPin" placeholder="e.g. 1234" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; background: white; border-radius: 6px; box-sizing: border-box; font-weight: 900; font-size: 18px; color: #dc2626; outline: none; letter-spacing: 2px;">
+                </div>
+            </div>
 
-              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
-                  <div>
-                      <label style="font-size: 11px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 5px;">SSS Deduction (₱/Cutoff)</label>
-                      <input type="number" id="empSSSAmount" placeholder="0.00" class="input-box" style="width: 100%; box-sizing: border-box; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; padding: 10px; outline: none; font-weight: bold; color: #b91c1c;">
-                  </div>
-                  <div>
-                      <label style="font-size: 11px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 5px;">PhilHealth Deduction (₱/Cutoff)</label>
-                      <input type="number" id="empPhilAmount" placeholder="0.00" class="input-box" style="width: 100%; box-sizing: border-box; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; padding: 10px; outline: none; font-weight: bold; color: #b91c1c;">
-                  </div>
-                  <div>
-                      <label style="font-size: 11px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 5px;">Pag-IBIG Deduction (₱/Cutoff)</label>
-                      <input type="number" id="empPagibigAmount" placeholder="0.00" class="input-box" style="width: 100%; box-sizing: border-box; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; padding: 10px; outline: none; font-weight: bold; color: #b91c1c;">
-                  </div>
-              </div>
+            <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border: 1px dashed #bbf7d0; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <div>
+                    <strong style="color: #166534; font-size: 14px; display: block;">🌙 Night / Mid-Shift Bonus Rate (₱)</strong>
+                    <span style="font-size: 11px; color: #15803d;">Set the specific bonus amount added to their daily rate for night shifts. Enter 0 if none.</span>
+                </div>
+                <input type="number" id="empNightDiffRate" placeholder="50" style="width: 100px; padding: 10px; border: 2px solid #bbf7d0; border-radius: 6px; box-sizing: border-box; font-weight: 900; color: #16a34a; font-size: 18px; text-align: center; outline: none; background: white;">
+            </div>
 
-              <div style="border-top: 1px dashed #cbd5e1; padding-top: 15px;">
-                  <label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 10px;">Other Custom Deductions (Wi-Fi, Uniforms, etc.)</label>
-                  <div id="customDeductionsContainer" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px;"></div>
-                  <button type="button" onclick="window.addCustomDeductionRow()" style="background: #f8fafc; color: #0ea5e9; border: 1px dashed #0ea5e9; padding: 10px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; width: 100%; transition: 0.2s;">
-                      + Add Custom Deduction
-                  </button>
-              </div>
-          </div>
+            <div style="padding: 15px; background: #fffbeb; border: 1px dashed #fcd34d; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <strong style="color: #b45309; font-size: 14px; display: block;">🎓 Working Student Status</strong>
+                    <span style="font-size: 11px; color: #d97706;">Allows multiple Time Ins/Outs per day and disables the Undertime alarm for split shifts.</span>
+                </div>
+                <label style="position: relative; display: inline-block; width: 50px; height: 26px;">
+                    <input type="checkbox" id="staffWorkingStudent" style="opacity: 0; width: 0; height: 0;">
+                    <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbd5e1; transition: .4s; border-radius: 34px;"></span>
+                    <span style="position: absolute; height: 18px; width: 18px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 0 2px 4px rgba(0,0,0,0.2);"></span>
+                </label>
+            </div>
+        </div>
 
-          <h3 style="margin-top: 0; color: #b91c1c; border-bottom: 2px solid #fecaca; padding-bottom: 5px; font-size: 15px;">📜 Staff Advances & Meal Deductions History</h3>
-          <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; margin-bottom: 15px;">
-              <thead style="background: #f8fafc; color: #475569; border-bottom: 2px solid #e2e8f0;">
-                  <tr>
-                      <th style="padding: 10px;">Date</th>
-                      <th style="padding: 10px;">Type</th>
-                      <th style="padding: 10px;">Amount</th>
-                      <th style="padding: 10px;">Status</th>
-                      <th style="padding: 10px; text-align: center;">Action</th>
-                  </tr>
-              </thead>
-              <tbody id="empProfileHistoryBody">
-                  <tr><td colspan="5" class="text-center" style="padding: 15px; color: #94a3b8;">No deduction history.</td></tr>
-              </tbody>
-          </table>
+        <!-- Section 3: Contact & Disbursement -->
+        <div style="background: white; border-radius: 12px; padding: 25px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+            <h3 style="margin-top: 0; color: #0284c7; font-size: 18px; border-bottom: 2px solid #bae6fd; padding-bottom: 8px; margin-bottom: 20px;">📱 Contact & Disbursement</h3>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                <div>
+                    <label style="font-size: 11px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Phone Number</label>
+                    <input type="text" id="empPhone" placeholder="09xxxxxxxxx" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold;">
+                </div>
+                <div>
+                    <label style="font-size: 11px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Address</label>
+                    <input type="text" id="empAddress" placeholder="Full Address" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold;">
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="font-size: 11px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Staff Email Address (Optional)</label>
+                <input type="email" id="empEmail" placeholder="staff@gmail.com" style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold;">
+            </div>
 
+            <div style="background: #fff1f2; padding: 20px; border-radius: 12px; border: 1px dashed #fca5a5; margin-bottom: 20px;">
+                <h4 style="margin: 0 0 15px 0; color: #be123c; font-size: 14px; text-transform: uppercase;">🚨 Emergency Contact</h4>
+                <div style="display: grid; grid-template-columns: 1.5fr 1fr 100px; gap: 15px;">
+                    <div>
+                        <label style="font-size: 11px; font-weight: 800; color: #e11d48; margin-bottom: 5px; display: block;">Contact Name</label>
+                        <input type="text" id="empEmergencyName" placeholder="e.g. Maria Laude" style="width: 100%; padding: 12px; border: 1px solid #fda4af; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold;">
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; font-weight: 800; color: #e11d48; margin-bottom: 5px; display: block;">Emergency Number</label>
+                        <input type="text" id="empEmergencyPhone" placeholder="09xx..." style="width: 100%; padding: 12px; border: 1px solid #fda4af; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold;">
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; font-weight: 800; color: #e11d48; margin-bottom: 5px; display: block;">Blood Type</label>
+                        <input type="text" id="profBloodType" placeholder="e.g. O+" style="width: 100%; padding: 12px; border: 1px solid #fda4af; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: 900; color: #dc2626; text-align: center;">
+                    </div>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border: 1px solid #bae6fd;">
+                    <label style="font-size: 12px; font-weight: 900; color: #0284c7; display: block; border-bottom: 1px dashed #bae6fd; padding-bottom: 5px; margin-bottom: 10px;">🔵 GCash Details</label>
+                    <input type="text" id="empGcashName" placeholder="Account Name" style="width: 100%; padding: 10px; margin-bottom: 8px; border: 1px solid #bae6fd; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold; font-size: 13px;">
+                    <input type="text" id="empGcashNum" placeholder="GCash Number" style="width: 100%; padding: 10px; border: 1px solid #bae6fd; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold; font-size: 13px;">
+                </div>
+                <div style="background: #fdf4ff; padding: 15px; border-radius: 8px; border: 1px solid #e879f9;">
+                    <label style="font-size: 12px; font-weight: 900; color: #a21caf; display: block; border-bottom: 1px dashed #f5d0fe; padding-bottom: 5px; margin-bottom: 10px;">🟣 GoTyme Details</label>
+                    <input type="text" id="empGotymeName" placeholder="Account Name" style="width: 100%; padding: 10px; margin-bottom: 8px; border: 1px solid #f5d0fe; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold; font-size: 13px;">
+                    <input type="text" id="empGotymeNum" placeholder="Account Number" style="width: 100%; padding: 10px; border: 1px solid #f5d0fe; border-radius: 6px; box-sizing: border-box; outline: none; font-weight: bold; font-size: 13px;">
+                </div>
+            </div>
+        </div>
+
+        <!-- Section 4: Government Deductions -->
+        <div style="background: white; border-radius: 12px; padding: 25px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+            <h3 style="margin-top: 0; color: #b45309; font-size: 18px; border-bottom: 2px solid #fde68a; padding-bottom: 8px; margin-bottom: 20px;">🏛️ Government & Recurring Deductions</h3>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                <div>
+                    <label style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase;">SSS Number</label>
+                    <input type="text" id="empSSS" style="width: 100%; padding: 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; margin-top: 5px; box-sizing: border-box;">
+                    <a id="masterSssLink" href="#" target="_blank" style="display:none; font-size:11px; color:#0ea5e9; font-weight:bold; margin-top:8px; text-decoration:none;">🖼️ View SSS ID</a>
+                </div>
+                <div>
+                    <label style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase;">PhilHealth Number</label>
+                    <input type="text" id="empPhilhealth" style="width: 100%; padding: 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; margin-top: 5px; box-sizing: border-box;">
+                    <a id="masterPhilLink" href="#" target="_blank" style="display:none; font-size:11px; color:#0ea5e9; font-weight:bold; margin-top:8px; text-decoration:none;">🖼️ View PhilHealth ID</a>
+                </div>
+                <div>
+                    <label style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase;">Pag-IBIG Number</label>
+                    <input type="text" id="empPagibig" style="width: 100%; padding: 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; margin-top: 5px; box-sizing: border-box;">
+                    <a id="masterPagibigLink" href="#" target="_blank" style="display:none; font-size:11px; color:#0ea5e9; font-weight:bold; margin-top:8px; text-decoration:none;">🖼️ View Pag-IBIG ID</a>
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+                <div>
+                    <label style="font-size: 11px; font-weight: 800; color: #dc2626; text-transform: uppercase;">SSS Deduction (₱)</label>
+                    <input type="number" id="empSSSAmount" placeholder="0.00" style="width: 100%; padding: 12px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; outline: none; font-weight: 900; color: #b91c1c; margin-top: 5px; box-sizing: border-box;">
+                </div>
+                <div>
+                    <label style="font-size: 11px; font-weight: 800; color: #dc2626; text-transform: uppercase;">PhilHealth Deduction (₱)</label>
+                    <input type="number" id="empPhilAmount" placeholder="0.00" style="width: 100%; padding: 12px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; outline: none; font-weight: 900; color: #b91c1c; margin-top: 5px; box-sizing: border-box;">
+                </div>
+                <div>
+                    <label style="font-size: 11px; font-weight: 800; color: #dc2626; text-transform: uppercase;">Pag-IBIG Deduction (₱)</label>
+                    <input type="number" id="empPagibigAmount" placeholder="0.00" style="width: 100%; padding: 12px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 6px; outline: none; font-weight: 900; color: #b91c1c; margin-top: 5px; box-sizing: border-box;">
+                </div>
+            </div>
+
+            <div style="border-top: 1px dashed #cbd5e1; padding-top: 20px;">
+                <label style="font-size: 11px; font-weight: 800; color: #64748b; display: block; margin-bottom: 10px; text-transform: uppercase;">Other Custom Deductions (Wi-Fi, Uniforms, etc.)</label>
+                <div id="customDeductionsContainer" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;"></div>
+                <button type="button" onclick="window.addCustomDeductionRow()" style="background: #f8fafc; color: #0ea5e9; border: 1px dashed #0ea5e9; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; width: 100%; transition: 0.2s;">+ Add Custom Deduction</button>
+            </div>
+        </div>
+
+        <!-- Section 5: History -->
+        <div style="background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+            <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; text-transform: uppercase;">📜 Advances & Deductions History</h3>
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
+                <thead style="background: #f8fafc; color: #475569; border-bottom: 2px solid #e2e8f0;">
+                    <tr>
+                        <th style="padding: 12px 10px;">Date</th>
+                        <th style="padding: 12px 10px;">Type</th>
+                        <th style="padding: 12px 10px;">Amount</th>
+                        <th style="padding: 12px 10px;">Status</th>
+                        <th style="padding: 12px 10px; text-align: center;">Action</th>
+                    </tr>
+                </thead>
+                <tbody id="empProfileHistoryBody">
+                    <tr><td colspan="5" class="text-center" style="padding: 20px; color: #94a3b8;">No deduction history.</td></tr>
+                </tbody>
+            </table>
+        </div>
       </div>
 
-      <div class="modal-foot" style="display: flex; gap: 8px; padding: 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; border-radius: 0 0 12px 12px; flex-wrap: wrap;">
-          <button class="btn-clear" onclick="closeModal('employeeProfileModal')" style="flex: 1; padding: 12px; font-weight: bold; border-radius: 8px; font-size: 13px; border: 1px solid #cbd5e1; background: white; color: #475569; cursor: pointer;">Cancel</button>
+      <!-- Action Buttons Footer -->
+      <div class="modal-foot" style="display: flex; gap: 10px; padding: 20px 30px; background: #f8fafc; border-top: 1px solid #e2e8f0; align-items: center; flex-wrap: wrap;">
+          <button onclick="document.getElementById('employeeProfileModal').style.display='none'" style="flex: 1; padding: 14px; font-weight: bold; border-radius: 8px; font-size: 14px; border: 1px solid #cbd5e1; background: white; color: #475569; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">Cancel</button>
           
-          <button style="flex: 1.5; background: #3b82f6; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 13px; padding: 12px; transition: 0.2s; box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);" onclick="window.viewStaffSignedPayslips()">🧾 Signed Payslips</button>
+          <button style="flex: 1; background: #3b82f6; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3);" onclick="window.viewStaffSignedPayslips()">🧾 Signed Payslips</button>
           
-          <button style="flex: 1.5; background: #10b981; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 13px; padding: 12px; transition: 0.2s; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);" onclick="window.offerOfficialContract()">📄 Issue Contract</button>
+          <button style="flex: 1; background: #10b981; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);" onclick="window.offerOfficialContract()">📄 Issue Contract</button>
           
-          <button style="flex: 1.5; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 13px; padding: 12px; transition: 0.2s;" onclick="window.processResignation()">📜 Offboard</button>
+          <button style="flex: 1; background: #fff1f2; color: #dc2626; border: 1px solid #fecaca; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s;" onclick="window.processResignation()">📜 Offboard</button>
 
-          <button style="flex: 1.5; background: #0f172a; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 13px; padding: 12px; transition: 0.2s; box-shadow: 0 4px 6px rgba(15, 23, 42, 0.3);" onclick="window.generateIDCard()">🪪 Print ID Card</button>
+          <button style="flex: 1; background: #0f172a; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(15, 23, 42, 0.3);" onclick="window.generateIDCard()">🪪 Print ID Card</button>
           
-          <button type="button" class="btn-delete" onclick="deleteCurrentStaff()" style="background: #dc3545; color: white; border: none; padding: 8px 16px; border-radius: 5px; cursor: pointer; font-weight: bold;">🗑️ Delete Staff</button>
+          <button onclick="deleteCurrentStaff()" style="background: #ef4444; color: white; border: none; padding: 14px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3);">🗑️ Delete Staff</button>
           
-          <button class="btn-place" id="btnSaveEmpProfile" onclick="window.saveEmployeeProfile()" style="flex: 2; padding: 12px; font-weight: bold; border-radius: 8px; font-size: 13px; background: #d97706; color: white; border: none; cursor: pointer; box-shadow: 0 4px 6px rgba(217, 119, 6, 0.2);">💾 Save Data</button>
+          <button id="btnSaveEmpProfile" onclick="window.saveEmployeeProfile()" style="flex: 1.5; padding: 14px; font-weight: 900; border-radius: 8px; font-size: 16px; background: #d97706; color: white; border: none; cursor: pointer; box-shadow: 0 6px 12px rgba(217, 119, 6, 0.3);">💾 Save Data</button>
       </div>
 
     </div>
