@@ -3834,18 +3834,16 @@ window.generateVirtualID = async function() {
         
         let data = docSnap.data();
 
-        // 1. Check if ID exists. If not, notify them!
         if (!data.empId || data.empId === 'Pending Generation...') {
             return Swal.fire('ID Not Assigned', 'HQ has not formally assigned your Employee ID Number yet. Please ask the Manager to click "Save Data" on your profile.', 'warning');
         }
 
-        // 2. Open the Hidden Template
         let template = document.getElementById('virtualIdTemplate');
         template.style.display = 'flex';
 
-        // 3. Inject the Data
-        let picSrc = data.profilePicUrl || 'payslip logo.jpg'; // Fallback to store logo if they have no picture
-        document.getElementById('vIdFrontPic').src = picSrc;
+        let picSrc = data.profilePicUrl || 'payslip logo.jpg'; 
+        let frontPic = document.getElementById('vIdFrontPic');
+        frontPic.src = picSrc;
         
         document.getElementById('vIdFrontName').innerText = (data.cashierName || 'Staff Member').toUpperCase();
         document.getElementById('vIdFrontRole').innerText = (data.role || 'Service Crew').toUpperCase();
@@ -3855,7 +3853,6 @@ window.generateVirtualID = async function() {
         let hiredDate = data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A';
         document.getElementById('vIdFrontHired').innerText = hiredDate;
 
-        // Emergency Details 
         let emergName = data.emergencyName || 'N/A';
         let emergNum = data.emergencyNumber || data.emergencyPhone || data.emergencyContact || 'N/A';
         let blood = data.bloodType || 'N/A';
@@ -3864,14 +3861,25 @@ window.generateVirtualID = async function() {
         document.getElementById('vIdBackNum').innerText = emergNum;
         document.getElementById('vIdBackBlood').innerText = blood;
 
-        // 4. Capture the High-Definition screenshot of the template!
+        // 🔥 THE CRASH FIX: Force the system to wait for the profile picture to download from Firebase!
+        await new Promise((resolve) => {
+            if (frontPic.complete) resolve();
+            else {
+                frontPic.onload = resolve;
+                frontPic.onerror = resolve; 
+            }
+        });
+
+        // Give the CSS 300 milliseconds to render perfectly
+        await new Promise(r => setTimeout(r, 300));
+
         html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true }).then(canvas => {
             let link = document.createElement('a');
             link.download = `Virtual_ID_${(data.cashierName || 'Staff').replace(/\s+/g, '_')}.png`;
             link.href = canvas.toDataURL("image/png");
             link.click();
             
-            template.style.display = 'none'; // Hide it again so it doesn't break the UI
+            template.style.display = 'none'; 
             Swal.close();
             
             Swal.fire({
