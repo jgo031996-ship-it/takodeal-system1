@@ -24522,33 +24522,31 @@ window.voidAndReplenishTransaction = async function(receiptId, branch, cartEncod
 // 🪪 AUTOMATED HD EMPLOYEE ID CARD GENERATOR
 // ========================================================
 window.generateIDCard = function() {
-    // 1. Grab all the live values dynamically from the open modal
+    // 1. Ghost-Proof Data Extractor
     const getVal = (id) => {
         let els = document.querySelectorAll(`[id="${id}"]`);
-        let activeEl = Array.from(els).find(el => {
-            let modal = el.closest('[id="employeeProfileModal"]');
-            return modal && modal.style.display !== 'none';
-        });
-        return activeEl ? activeEl.value : (els[0] ? els[0].value : '');
+        let el = els[els.length - 1]; 
+        return el ? el.value : '';
     };
 
-    let name = getVal('empFullName');
-    let role = getVal('empRole');
-    let branch = getVal('empBranchAssign');
+    let name = getVal('empFullName') || 'Staff Member';
+    let role = getVal('empRole') || 'Service Crew';
+    let branch = getVal('empBranchAssign') || 'Unassigned';
     let hired = getVal('empDateHired');
     let empId = getVal('profEmpId');
-    let emergName = getVal('empEmergencyName');
-    let emergNum = getVal('empEmergencyPhone');
-    let blood = getVal('profBloodType');
+    let emergName = getVal('empEmergencyName') || 'N/A';
+    let emergNum = getVal('empEmergencyPhone') || 'N/A';
+    let blood = getVal('profBloodType') || 'N/A';
 
-    if (!empId || empId === 'Pending Generation...') {
+    if (!empId || empId === 'Pending Generation...' || empId === 'undefined') {
         return Swal.fire('Save Required', 'Please click "Save Data" first to automatically generate the new Employee ID number before printing the ID Card.', 'warning');
     }
 
     // 2. Fetch the active Profile Picture
-    let picSrc = 'payslip logo.jpg'; // Blank fallback
-    let previewImg = document.getElementById('profilePreview');
-    if (previewImg && previewImg.style.display !== 'none') {
+    let picSrc = 'payslip logo.jpg'; 
+    let previewImg = document.getElementById('masterProfilePic'); 
+    // Ignore the blank placeholder image
+    if (previewImg && previewImg.src && !previewImg.src.includes('data:image/svg+xml')) {
         picSrc = previewImg.src;
     }
 
@@ -24556,9 +24554,10 @@ window.generateIDCard = function() {
     let template = document.getElementById('idCardTemplate');
     template.style.display = 'flex';
     
-    document.getElementById('idCardPic').src = picSrc;
-    document.getElementById('idCardName').innerText = name.toUpperCase();
-    document.getElementById('idCardRole').innerText = role.toUpperCase();
+    // 🔥 THE FIX: Correctly targeting the HTML IDs (idFrontPic, idFrontName, etc.)
+    document.getElementById('idFrontPic').src = picSrc;
+    document.getElementById('idFrontName').innerText = name.toUpperCase();
+    document.getElementById('idFrontRole').innerText = role.toUpperCase();
     document.getElementById('idFrontNo').innerText = empId;
     document.getElementById('idFrontBranch').innerText = branch.toUpperCase() + ' BRANCH';
     
@@ -24807,7 +24806,8 @@ window.saveEmployeeProfile = async function() {
 
     let empId = document.getElementById('profEmpId').value;
     if (!empId || empId === 'Pending Generation...' || empId === 'undefined') {
-        let bCode = branch === 'Cabantian' ? '33025' : (branch === 'Citygate' ? '11526' : (branch === 'Maa' ? '21026' : '101010'));
+        // 🔥 Updated Branch Codes based on Opening Dates
+        let bCode = branch === 'Cabantian' ? '033025' : (branch === 'Citygate' ? '071424' : (branch === 'Maa' ? '022226' : '101010'));
         let dHired = document.getElementById('empDateHired').value;
         let dObj = dHired ? new Date(dHired) : new Date();
         let mStr = String(dObj.getMonth() + 1).padStart(2, '0');
@@ -24941,7 +24941,8 @@ window.massGenerateStaffIDs = async function() {
                 return dA - dB;
             });
             
-            let bCode = branch === 'Cabantian' ? '33025' : (branch === 'Citygate' ? '11526' : (branch === 'Maa' ? '21026' : '101010'));
+            // 🔥 Updated Branch Codes based on Opening Dates
+            let bCode = branch === 'Cabantian' ? '033025' : (branch === 'Citygate' ? '071424' : (branch === 'Maa' ? '022226' : '101010'));
             
             staffByBranch[branch].forEach((staff, index) => {
                 let dObj = staff.dateHired ? new Date(staff.dateHired) : new Date();
