@@ -518,6 +518,12 @@ window.checkContractLifecycle = async function(staffId) {
                 msgEl.innerHTML = `Your probationary contract period with <b>TAKODEÁL</b> has officially concluded.<br><br><span style="color: #c2410c; font-weight: bold;">Please wait for Management to issue your Regularization, a Contract Extension, or your final Clearance.</span>`;
             }
 
+            // 🔥 THE FIX: Injecting the Bypass Button dynamically so staff can still Time In!
+            let whiteBox = overlay.firstElementChild;
+            if (whiteBox && !document.getElementById('btnBypassCOE')) {
+                whiteBox.insertAdjacentHTML('beforeend', `<button id="btnBypassCOE" onclick="window.dismissCOEWarning()" style="margin-top: 15px; width: 100%; background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">⏳ Remind Me Later (Go to Time Clock)</button>`);
+            }
+
             document.getElementById('coeStaffName').innerText = d.cashierName;
             document.getElementById('coeDateHired').innerText = hiredDate.toLocaleDateString();
             document.getElementById('coeDateEnded').innerText = today.toLocaleDateString();
@@ -3813,4 +3819,62 @@ window.loadMyLoanLedger = async function() {
         console.error(e);
         container.innerHTML = '<div style="text-align:center; color:red; padding: 20px;">Failed to load ledger.</div>';
     }
+};
+
+// ==========================================
+// 🎓 END OF CONTRACT & COE ENGINE (BYPASS & DOWNLOAD FIX)
+// ==========================================
+window.dismissCOEWarning = function() {
+    document.getElementById('coeFarewellOverlay').style.display = 'none';
+    document.getElementById('appContainer').style.display = 'flex';
+    window.switchView('timeclock'); // Automatically push them to the time clock to start their shift!
+};
+
+window.generateCOE = function() {
+    let d = window.coePendingData;
+    if (!d) return Swal.fire('Error', 'Missing employee data.', 'error');
+
+    let name = d.cashierName;
+    let dateHired = d.dateHired;
+    let role = d.role || "Service Crew";
+
+    let template = document.getElementById('coeTemplate');
+    if (!template) {
+        return Swal.fire('Error', 'COE Template not found in the HTML.', 'error');
+    }
+
+    template.style.display = 'block'; 
+    
+    document.getElementById('coeName').innerText = name.toUpperCase();
+    document.getElementById('coeRole').innerText = role;
+    
+    let hiredDate = dateHired ? new Date(dateHired).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : "their start date";
+    let todayDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    
+    document.getElementById('coeDateHired').innerText = hiredDate;
+    document.getElementById('coeDateToday').innerText = todayDate;
+    
+    Swal.fire({title: 'Generating COE...', text: 'Please wait...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    html2canvas(template, { scale: 2, backgroundColor: "#ffffff" }).then(async (canvas) => {
+        let link = document.createElement('a');
+        link.download = `Certificate_of_Employment_${name.replace(/\s+/g, '_')}.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        
+        template.style.display = 'none'; 
+        
+        Swal.fire({
+            title: '✅ Downloaded!',
+            text: 'Your Certificate of Employment has been successfully downloaded.',
+            icon: 'success',
+            confirmButtonText: 'Okay',
+            confirmButtonColor: '#10b981',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+    }).catch(err => {
+        console.error(err);
+        Swal.fire('Error', 'Failed to generate COE image.', 'error');
+        template.style.display = 'none';
+    });
 };
