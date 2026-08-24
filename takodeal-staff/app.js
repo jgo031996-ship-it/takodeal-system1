@@ -3885,3 +3885,78 @@ window.generateCOE = function() {
         template.style.display = 'none';
     });
 };
+
+// ========================================================
+// 🪪 AUTOMATED HD VIRTUAL ID GENERATOR (STAFF APP)
+// ========================================================
+window.generateVirtualID = async function() {
+    let staffId = localStorage.getItem('takodeal_staff_id');
+    if (!staffId) return Swal.fire('Error', 'You must be logged in to download your ID.', 'error');
+
+    Swal.fire({title: 'Generating Virtual ID...', text: 'Fetching your verified records from HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        const docSnap = await window.getDoc(window.doc(window.db, "cashiers", staffId));
+        if (!docSnap.exists()) return Swal.fire('Error', 'Profile not found.', 'error');
+        
+        let data = docSnap.data();
+
+        // 1. Check if ID exists. If not, notify them!
+        if (!data.empId || data.empId === 'Pending Generation...') {
+            return Swal.fire('ID Not Assigned', 'HQ has not formally assigned your Employee ID Number yet. Please ask the Manager to click "Save Data" on your profile.', 'warning');
+        }
+
+        // 2. Open the Hidden Template
+        let template = document.getElementById('virtualIdTemplate');
+        template.style.display = 'flex';
+
+        // 3. Inject the Data
+        let picSrc = data.profilePicUrl || 'payslip logo.jpg'; // Fallback to store logo if they have no picture
+        document.getElementById('vIdFrontPic').src = picSrc;
+        
+        document.getElementById('vIdFrontName').innerText = (data.cashierName || 'Staff Member').toUpperCase();
+        document.getElementById('vIdFrontRole').innerText = (data.role || 'Service Crew').toUpperCase();
+        document.getElementById('vIdFrontNo').innerText = data.empId || 'PENDING';
+        document.getElementById('vIdFrontBranch').innerText = (data.branch || 'UNASSIGNED').toUpperCase() + ' BRANCH';
+        
+        let hiredDate = data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A';
+        document.getElementById('vIdFrontHired').innerText = hiredDate;
+
+        // Emergency Details 
+        let emergName = data.emergencyName || 'N/A';
+        let emergNum = data.emergencyNumber || data.emergencyPhone || data.emergencyContact || 'N/A';
+        let blood = data.bloodType || 'N/A';
+
+        document.getElementById('vIdBackNotify').innerText = emergName;
+        document.getElementById('vIdBackNum').innerText = emergNum;
+        document.getElementById('vIdBackBlood').innerText = blood;
+
+        // 4. Capture the High-Definition screenshot of the template!
+        html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true }).then(canvas => {
+            let link = document.createElement('a');
+            link.download = `Virtual_ID_${(data.cashierName || 'Staff').replace(/\s+/g, '_')}.png`;
+            link.href = canvas.toDataURL("image/png");
+            link.click();
+            
+            template.style.display = 'none'; // Hide it again so it doesn't break the UI
+            Swal.close();
+            
+            Swal.fire({
+                title: '✅ Virtual ID Downloaded!',
+                text: 'Your official TAKODEÁL Virtual ID has been saved to your camera roll/downloads.',
+                icon: 'success',
+                confirmButtonColor: '#0ea5e9',
+                customClass: { popup: 'rounded-2xl shadow-xl' }
+            });
+        }).catch(err => {
+            console.error("ID Generation Error:", err);
+            template.style.display = 'none';
+            Swal.fire('Error', 'Failed to generate ID image. Please try again.', 'error');
+        });
+
+    } catch (e) {
+        console.error("Fetch Error:", e);
+        document.getElementById('virtualIdTemplate').style.display = 'none';
+        Swal.fire('Error', 'Failed to fetch profile data from HQ.', 'error');
+    }
+};
