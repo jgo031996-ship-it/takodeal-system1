@@ -7103,6 +7103,27 @@ window.openEditInvModal = async function(id) {
             }
 
             document.getElementById('editInvLowStock').value = branchLowPurch;
+            // 🧠 SPLIT MATH: Populate the Maintaining Stock Boxes
+            let maintainBase = parseFloat(itemData.maintainingStock) || 0;
+            let mWholePurch = 0;
+            let mRemainderBase = maintainBase;
+
+            if (convRate > 1 && (itemData.purchaseUom || '').toLowerCase() !== (itemData.uom || '').toLowerCase()) {
+                mWholePurch = Math.floor(maintainBase / convRate);
+                mRemainderBase = maintainBase - (mWholePurch * convRate);
+                if (maintainBase < 0) {
+                    mWholePurch = Math.ceil(maintainBase / convRate);
+                    mRemainderBase = maintainBase - (mWholePurch * convRate);
+                }
+            } else {
+                mWholePurch = maintainBase;
+                mRemainderBase = 0;
+            }
+
+            let mPurchEl = document.getElementById('editInvMaintainPurch');
+            let mBaseEl = document.getElementById('editInvMaintainBase');
+            if (mPurchEl) mPurchEl.value = mWholePurch > 0 ? mWholePurch : '';
+            if (mBaseEl) mBaseEl.value = mRemainderBase > 0 ? mRemainderBase : '';
             document.getElementById('editInvHqLowStock').value = hqLowPurch;
             
             // Set the hidden total stock
@@ -7178,6 +7199,12 @@ window.calcEditVariance = function() {
     let labelBase = document.getElementById('editInvLabelBase');
     if (labelPurch) labelPurch.innerText = pUom;
     if (labelBase) labelBase.innerText = bUom;
+    
+    // Update the Maintaining Stock Labels!
+    let mLabelPurch = document.getElementById('editInvMaintainLabelPurch');
+    let mLabelBase = document.getElementById('editInvMaintainLabelBase');
+    if (mLabelPurch) mLabelPurch.innerText = pUom;
+    if (mLabelBase) mLabelBase.innerText = bUom;
 
     let varLabel = document.getElementById('editInvVarianceLabel');
     if (varLabel) varLabel.innerText = `Calculated Variance (${bUom}): `;
@@ -7244,6 +7271,17 @@ window.saveInventoryEdit = async function() {
         if (!note) { alert("You must provide an Adjustment Note/Reason if you are changing the stock quantity."); return; }
     }
 
+    // 🧠 Read the Maintaining Stock Boxes!
+    let mPurchRaw = document.getElementById('editInvMaintainPurch') ? document.getElementById('editInvMaintainPurch').value : "";
+    let mBaseRaw = document.getElementById('editInvMaintainBase') ? document.getElementById('editInvMaintainBase').value : "";
+    let finalMaintainBase = 0;
+    
+    if (mPurchRaw !== "" || mBaseRaw !== "") {
+        let mPVal = parseFloat(mPurchRaw) || 0;
+        let mBVal = parseFloat(mBaseRaw) || 0;
+        finalMaintainBase = (mPVal * conversion) + mBVal;
+    }
+
     let btn = document.getElementById('btnSaveInvEdit');
     if (btn) { btn.innerText = "⏳ Uploading & Syncing..."; btn.disabled = true; }
 
@@ -7273,6 +7311,7 @@ window.saveInventoryEdit = async function() {
             baseUom: baseUom, uom: baseUom, conversion: conversion, conversionRate: conversion, 
             purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion), 
             lowStockAlert: targetLowBaseForCurrentItem, reorderLevel: targetLowBaseForCurrentItem, 
+            maintainingStock: finalMaintainBase, // 🔥 NEW!
             currentStock: finalQty, showInPrep: showPrepVal, allowRequest: allowReqVal,
         };
 
@@ -7292,7 +7331,7 @@ window.saveInventoryEdit = async function() {
             let syncPayload = {
                 name: name, category: category, purchaseUom: purchUom, purchUom: purchUom, baseUom: baseUom, uom: baseUom, 
                 conversion: conversion, conversionRate: conversion, purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion),
-                lowStockAlert: targetLowBase, reorderLevel: targetLowBase, allowRequest: allowReqVal, showInPrep: showPrepVal 
+                lowStockAlert: targetLowBase, reorderLevel: targetLowBase, maintainingStock: finalMaintainBase, allowRequest: allowReqVal, showInPrep: showPrepVal 
             };
             if (photoUrl !== undefined) syncPayload.image = photoUrl;
             
@@ -20015,6 +20054,7 @@ window.reviewStockRequest = async function(docId) {
             hqDetails[d.data().name] = d.data(); 
         });
 
+        // 🔥 WIDER MODAL WITH CLEANER TEXT ALIGNMENTS
         let itemsHtml = `
             <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; text-align: left;">
                 <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Requested By</div>
@@ -20022,13 +20062,13 @@ window.reviewStockRequest = async function(docId) {
                 <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Date Submitted</div>
                 <div style="font-size: 14px; color: #334155; font-weight: bold;">📅 ${dateStr}</div>
             </div>
-            <div style="max-height: 250px; overflow-y: auto; border: 1px solid #cbd5e1; border-radius: 8px;">
+            <div style="max-height: 350px; overflow-y: auto; border: 1px solid #cbd5e1; border-radius: 8px;">
                 <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
-                    <thead style="background: #1e293b; color: white; position: sticky; top: 0;">
+                    <thead style="background: #1e293b; color: white; position: sticky; top: 0; z-index: 10;">
                         <tr>
                             <th style="padding: 10px; width: 45%;">Item Description</th>
-                            <th style="padding: 10px; text-align: center; width: 35%;">Count / Request</th>
-                            <th style="padding: 10px; text-align: center; width: 20%;">Alert Type</th>
+                            <th style="padding: 10px; text-align: right; width: 25%;">Count / Request</th>
+                            <th style="padding: 10px; text-align: center; width: 30%;">Status</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -20052,25 +20092,29 @@ window.reviewStockRequest = async function(docId) {
                     let physCount = item.displayQty !== undefined ? item.displayQty : (item.physicalStock !== undefined ? item.physicalStock : (item.qty || 0));
                     let sysCount = item.systemStock !== undefined ? item.systemStock : '---';
 
-                    // Convert system stock to Purchase UOM to display cleanly if possible
                     if (sysCount !== '---' && item.conversionRate) {
                         sysCount = (parseFloat(sysCount) / parseFloat(item.conversionRate)).toFixed(2);
                     }
 
                     qtyDisplay = `
-                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900;">Phys: ${physCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
-                        <div style="font-size: 11px; color: #64748b; font-weight: bold;">Sys: ${sysCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900; white-space: nowrap;">Phys: ${physCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                        <div style="font-size: 11px; color: #64748b; font-weight: bold; white-space: nowrap;">Sys: ${sysCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
                     `;
                 } else {
                     let reqQty = item.displayQty || item.qty || 0;
-                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px;">Requested: ${reqQty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></div>`;
+                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px; white-space: nowrap;">Req: ${reqQty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></div>`;
                 }
 
                 itemsHtml += `
                     <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
-                        <td style="padding: 10px; font-weight: bold; color: #334155; vertical-align: middle;">${item.itemName || item.name}</td>
-                        <td style="padding: 10px; text-align: center; vertical-align: middle;">${qtyDisplay}</td>
-                        <td style="padding: 10px; text-align: center; vertical-align: middle;"><span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid ${alertColor}50; white-space: nowrap;">${badgeText}</span></td>
+                        <td style="padding: 10px; font-weight: bold; color: #334155; vertical-align: middle;">
+                            ${item.itemName || item.name}<br>
+                            <span style="font-size: 10px; color: #94a3b8; font-weight: normal;">HQ Stock: ${hqStock[item.itemName || item.name] || 0}</span>
+                        </td>
+                        <td style="padding: 10px; text-align: right; vertical-align: middle;">${qtyDisplay}</td>
+                        <td style="padding: 10px; text-align: center; vertical-align: middle;">
+                            <span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid ${alertColor}50; display: inline-block; text-align: center; line-height: 1.2;">${badgeText}</span>
+                        </td>
                     </tr>
                 `;
             });
@@ -20088,7 +20132,7 @@ window.reviewStockRequest = async function(docId) {
             confirmButtonColor: '#16a34a',
             denyButtonColor: '#dc2626',
             cancelButtonColor: '#64748b',
-            width: 650,
+            width: 750,
             customClass: { popup: 'rounded-2xl shadow-2xl' }
         });
 
@@ -21401,7 +21445,7 @@ window.filterForecaster = function() {
     grid.innerHTML = html;
 };
 
-window.generateAiDispatchList = function() {
+window.generateAiDispatchList = async function() {
     if (window.isForecasterLoading) return Swal.fire('Loading', 'Please wait for the calculation to finish scanning before generating a list.', 'info');
     
     if (!window.globalForecasterData || window.globalForecasterData.length === 0) {
@@ -21427,47 +21471,67 @@ window.generateAiDispatchList = function() {
     let totalDaysToCover = daysUntilDelivery + bufferDays;
     let itemsToDispatch = [];
 
+    // 🔥 THE NEW FORECASTER BRAIN: Prioritizes Par Levels first, falls back to Burn Rate!
     window.globalForecasterData.forEach(item => {
-        if (item.dailyBurn > 0) {
-            let requiredStockForPeriod = item.dailyBurn * totalDaysToCover;
-            let deficit = requiredStockForPeriod - item.currentStock;
+        let targetPar = parseFloat(item.maintainingStock) || 0;
+        let deficit = 0;
+        let requestType = "";
 
-            if (deficit > 0) {
-                let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-                let purchQtyNeeded = Math.ceil(deficit / convRate); 
-                let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
-                let bUom = item.uom || 'units';
-                
-                itemsToDispatch.push({
-                    itemName: item.name, name: item.name, sourceId: item.id, qty: purchQtyNeeded * convRate, rawQty: purchQtyNeeded,
-                    origRawQty: purchQtyNeeded, origBaseQty: purchQtyNeeded * convRate, uom: bUom, baseUom: bUom,
-                    purchaseUom: pUom, friendlyUom: pUom, selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
-                    convRate: convRate, conversionRate: convRate, category: item.category || 'Ingredients', hqStock: 0, requestType: 'AI Schedule Draft'
-                });
-            }
+        if (targetPar > 0) {
+            deficit = targetPar - item.currentStock;
+            requestType = "Maintaining Stock (Par Fill)";
+        } else if (item.dailyBurn > 0) {
+            let requiredStockForPeriod = item.dailyBurn * totalDaysToCover;
+            deficit = requiredStockForPeriod - item.currentStock;
+            requestType = "Restock (AI Forecast)";
+        }
+
+        if (deficit > 0) {
+            let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+            let purchQtyNeeded = Math.ceil(deficit / convRate); 
+            let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+            let bUom = item.uom || 'units';
+            
+            itemsToDispatch.push({
+                itemName: item.name, name: item.name, sourceId: item.id, qty: purchQtyNeeded * convRate, rawQty: purchQtyNeeded,
+                origRawQty: purchQtyNeeded, origBaseQty: purchQtyNeeded * convRate, uom: bUom, baseUom: bUom,
+                purchaseUom: pUom, displayUom: pUom, friendlyUom: pUom, selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
+                convRate: convRate, conversionRate: convRate, category: item.category || 'Ingredients', hqStock: 0, requestType: requestType
+            });
         }
     });
 
-    if (itemsToDispatch.length === 0) return Swal.fire('Sufficient Stock', `Based on current burn rates, ${branch} has enough stock to comfortably survive until ${targetDateStr}. No dispatch needed.`, 'success');
+    if (itemsToDispatch.length === 0) return Swal.fire('Sufficient Stock', `Based on current settings and burn rates, ${branch} has enough stock. No dispatch needed.`, 'success');
 
-    if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
-    window.dispatchCart = itemsToDispatch;
-    
-    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-    localStorage.setItem('takodeal_dispatch_to', branch);
-    
-    Swal.fire({
-        title: '⚡ AI Schedule Complete!', html: `Generated a smart dispatch list of <b style="color: #0ea5e9;">${itemsToDispatch.length} items</b> to sustain ${branch} for ${totalDaysToCover} days.<br><br>They have been loaded into your Dispatch Cart.`,
-        icon: 'success', confirmButtonText: 'Go to Dispatch Cart', confirmButtonColor: '#0ea5e9', customClass: { popup: 'rounded-2xl' }
-    }).then(() => {
-        let dispatchTab = document.getElementById('nav-dispatch');
-        if (dispatchTab) dispatchTab.click();
-        setTimeout(() => {
-            let toDrop = document.getElementById('dispTo');
-            if (toDrop) toDrop.value = branch;
-            if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
-        }, 500);
-    });
+    Swal.fire({title: 'Generating Auto-Request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        // 🔥 Sends an official Stock Request automatically!
+        await window.addDoc(window.collection(window.db, "purchase_orders"), {
+            branch: branch,
+            items: itemsToDispatch,
+            status: "Pending",
+            type: "AI Auto-Forecast",
+            requestedBy: "TAKODEÁL AI FORECASTER",
+            timestamp: window.serverTimestamp()
+        });
+
+        Swal.fire({
+            title: '⚡ AI Schedule Complete!', 
+            html: `Generated a smart stock request of <b style="color: #0ea5e9;">${itemsToDispatch.length} items</b> to sustain ${branch}.<br><br>It has been sent directly to your Logistics Feed for review!`,
+            icon: 'success', 
+            confirmButtonText: 'Review in Logistics Feed', 
+            confirmButtonColor: '#0ea5e9', 
+            customClass: { popup: 'rounded-2xl' }
+        }).then(() => {
+            if (typeof window.loadDispatchLogs === 'function') window.loadDispatchLogs();
+            window.activeLogisticsTab = 'Requests';
+            window.renderLogisticsFeed();
+        });
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to generate AI request.', 'error');
+    }
 };
 
 window.loadSmartSupplyChain = window.loadForecasterEngine;
