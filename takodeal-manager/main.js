@@ -15735,6 +15735,11 @@ window.loadAuditModalItems = async function() {
     }
 };
 
+// 🔥 THE FIX: Alias to fix the Search Bar error!
+window.filterAuditTable = function() {
+    window.renderAuditModalItems();
+};
+
 window.renderAuditModalItems = function() {
     let search = document.getElementById('auditModalSearch').value.toLowerCase();
     let tbody = document.getElementById('auditModalBody');
@@ -15743,29 +15748,63 @@ window.renderAuditModalItems = function() {
     window.globalAuditItems.forEach((item, index) => {
         if (search && !item.name.toLowerCase().includes(search) && !item.category.toLowerCase().includes(search)) return;
 
-        let uomDropdownHtml = '';
-        if (item.purchUom !== item.uom && item.convRate !== 1) {
-            uomDropdownHtml = `
-                <select id="auditUom_${index}" style="padding: 10px 5px; border: 2px solid #fdba74; border-left: none; border-radius: 0 6px 6px 0; background: #fffcf0; color: #92400e; font-weight: bold; outline: none; cursor: pointer; box-sizing: border-box; height: 100%;">
-                    <option value="base" data-conv="1">${item.uom}</option>
-                    <option value="purch" data-conv="${item.convRate}">${item.purchUom}</option>
-                </select>
-            `;
+        let pUom = item.purchUom || item.uom || 'units';
+        let bUom = item.uom || 'units';
+        let conv = parseFloat(item.convRate) || 1;
+
+        // 🧠 SPLIT MATH: Calculate Expected Packs & Grams for the Placeholders!
+        let expWholePurch = 0;
+        let expRemainderBase = item.systemQty;
+
+        if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+            expWholePurch = Math.floor(item.systemQty / conv);
+            expRemainderBase = item.systemQty - (expWholePurch * conv);
+            // Handle negative ghost stock safely
+            if (item.systemQty < 0) {
+                expWholePurch = Math.ceil(item.systemQty / conv);
+                expRemainderBase = item.systemQty - (expWholePurch * conv);
+            }
         } else {
-            uomDropdownHtml = `<span style="padding: 11px 10px; background: #f8fafc; color: #64748b; border: 2px solid #e2e8f0; border-left: none; border-radius: 0 6px 6px 0; font-size: 11px; font-weight: bold; display: flex; align-items: center; box-sizing: border-box; height: 100%;">${item.uom}</span>`;
+            expWholePurch = item.systemQty;
+            expRemainderBase = 0;
         }
 
-        // 🔥 THE FIX: We use a static ID for the input box so Javascript can grab it reliably!
+        // 🎨 DUAL INPUT UI: Only shows two boxes if the item actually has a conversion!
+        let inputHtml = '';
+        if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+            inputHtml = `
+                <div style="display: flex; gap: 6px; align-items: center; justify-content: flex-end;">
+                    <div style="display: flex; align-items: center; border: 2px solid #bae6fd; border-radius: 6px; background: #f0f9ff; overflow: hidden; width: 110px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+                        <input type="number" id="auditInputPurch_${index}" placeholder="${expWholePurch}" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #0284c7; font-size: 15px; background: transparent;">
+                        <span style="font-size: 9px; font-weight: 800; color: #0ea5e9; padding-right: 8px; text-transform: uppercase;">${pUom}</span>
+                    </div>
+                    <span style="font-weight: 900; color: #cbd5e1;">+</span>
+                    <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; width: 110px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+                        <input type="number" id="auditInputBase_${index}" placeholder="${expRemainderBase.toLocaleString(undefined, {maximumFractionDigits: 1})}" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
+                        <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
+                    </div>
+                </div>
+            `;
+        } else {
+            // Standard single box for things without conversions (like Eggs)
+            inputHtml = `
+                <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; max-width: 140px; margin-left: auto;">
+                    <input type="number" id="auditInputBase_${index}" placeholder="${item.systemQty.toFixed(1)}" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
+                    <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
+                    <input type="hidden" id="auditInputPurch_${index}" value="">
+                </div>
+            `;
+        }
+
         html += `
             <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
                 <td style="padding: 12px; font-weight: bold; color: #1e293b; font-size: 14px;">${item.name}</td>
                 <td style="padding: 12px; text-align: center;"><span class="badge badge-closed">${item.category}</span></td>
-                <td style="padding: 12px; text-align: center; font-weight: bold; color: #64748b; font-size: 15px;">${item.systemQty.toFixed(1)} <span style="font-size:11px; font-weight:normal;">${item.uom}</span></td>
+                <td style="padding: 12px; text-align: center; font-weight: bold; color: #64748b; font-size: 13px;">
+                    ${item.systemQty.toFixed(1)} <span style="font-size:10px; font-weight:normal;">${item.uom}</span>
+                </td>
                 <td style="padding: 12px; border-left: 2px dashed #e2e8f0; background: #fffcf0;">
-                    <div style="display: flex; justify-content: center; align-items: stretch; max-width: 180px; margin: 0 auto; height: 42px;">
-                        <input type="number" id="auditInput_${index}" placeholder="${item.systemQty.toFixed(1)}" style="flex: 1; width: 100%; padding: 10px; border: 2px solid #fdba74; border-radius: 6px 0 0 6px; text-align: center; font-weight: 900; color: #ea580c; font-size: 16px; outline: none; box-sizing: border-box; height: 100%;">
-                        ${uomDropdownHtml}
-                    </div>
+                    ${inputHtml}
                 </td>
             </tr>
         `;
@@ -15790,34 +15829,47 @@ window.submitGeneralAudit = async function() {
         for (let i = 0; i < window.globalAuditItems.length; i++) {
             let item = window.globalAuditItems[i];
             
-            // 🔥 THE FIX: Grab the exact value they typed from the screen!
-            let inputEl = document.getElementById(`auditInput_${i}`);
+            // 1. Grab both inputs
+            let pInputEl = document.getElementById(`auditInputPurch_${i}`);
+            let bInputEl = document.getElementById(`auditInputBase_${i}`);
             
-            // 🚨 STRICT CHECK: If the box is blank, WE SKIP IT ENTIRELY! It will NOT affect accuracy.
-            if (!inputEl || inputEl.value.trim() === "") continue;
+            let pValRaw = pInputEl ? pInputEl.value.trim() : "";
+            let bValRaw = bInputEl ? bInputEl.value.trim() : "";
 
-            let rawVal = parseFloat(inputEl.value);
+            // 🚨 STRICT CHECK: If BOTH boxes are blank, WE SKIP IT ENTIRELY! It will NOT affect accuracy.
+            if (pValRaw === "" && bValRaw === "") continue;
+
+            let pVal = parseFloat(pValRaw) || 0;
+            let bVal = parseFloat(bValRaw) || 0;
+            
             itemsAudited++;
 
-            let uomSelect = document.getElementById(`auditUom_${i}`);
-            let convRate = 1;
+            let convRate = parseFloat(item.convRate) || 1;
             let displayUom = item.uom;
+            let pUom = item.purchUom || 'units';
 
-            if (uomSelect && uomSelect.tagName === 'SELECT') {
-                let selOpt = uomSelect.options[uomSelect.selectedIndex];
-                convRate = parseFloat(selOpt.getAttribute('data-conv')) || 1;
-                displayUom = selOpt.text;
+            // 2. 🧠 DUAL INPUT MATH: Combine them seamlessly into Base Grams/Pieces!
+            let physicalQty = (pVal * convRate) + bVal;
+            
+            // 3. Format the historical log note dynamically based on what they typed
+            let noteText = "";
+            if (convRate > 1 && pUom.toLowerCase() !== displayUom.toLowerCase()) {
+                let countStrParts = [];
+                if (pValRaw !== "") countStrParts.push(`${pVal} ${pUom}s`);
+                if (bValRaw !== "") countStrParts.push(`${bVal} ${displayUom}s`);
+                let countStr = countStrParts.join(" + ");
+                noteText = `General Audit [Counted as ${countStr}]`;
+            } else {
+                noteText = `General Audit (${physicalQty} ${displayUom})`;
             }
 
-            let physicalQty = rawVal * convRate;
-            let noteText = `General Audit (${rawVal} ${displayUom})`;
             let variance = physicalQty - item.systemQty;
 
             // If a variance is detected, push it to the database
             if (variance !== 0) {
-                await updateDoc(doc(db, "inventory", item.id), { currentStock: physicalQty });
+                await window.updateDoc(window.doc(window.db, "inventory", item.id), { currentStock: physicalQty });
 
-                await addDoc(collection(db, "stock_logs"), {
+                await window.addDoc(window.collection(window.db, "stock_logs"), {
                     branch: branch,
                     item: item.name,
                     uom: item.uom,
@@ -15827,7 +15879,7 @@ window.submitGeneralAudit = async function() {
                     type: "Manager General Audit",
                     note: noteText,
                     user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-                    timestamp: serverTimestamp()
+                    timestamp: window.serverTimestamp()
                 });
             }
 
@@ -15835,7 +15887,9 @@ window.submitGeneralAudit = async function() {
             auditCounts.push({
                 name: item.name,
                 systemQty: item.systemQty,
-                physicalQty: physicalQty
+                physicalQty: physicalQty,
+                uom: item.uom,
+                cost: item.baseCost || item.cost || 0 // Ensuring historical cost is locked in!
             });
         }
 
@@ -15846,14 +15900,14 @@ window.submitGeneralAudit = async function() {
             return;
         }
 
-        await addDoc(collection(db, "stock_counts"), {
+        await window.addDoc(window.collection(window.db, "stock_counts"), {
             branch: branch,
             cashier: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-            timestamp: serverTimestamp(),
+            timestamp: window.serverTimestamp(),
             counts: auditCounts
         });
 
-        alert(`✅ Audit Complete! ${itemsAudited} items were accurately audited and synced.`);
+        Swal.fire('✅ Audit Complete!', `${itemsAudited} items were accurately audited and synced.`, 'success');
         document.getElementById('generalAuditModal').style.display = 'none';
         
         if (typeof window.loadInventoryAudits === 'function') window.loadInventoryAudits(); 
@@ -15861,7 +15915,7 @@ window.submitGeneralAudit = async function() {
 
     } catch (e) {
         console.error("Audit Sync Error:", e);
-        alert("❌ Failed to sync audit. Check F12 console.");
+        Swal.fire('Error', 'Failed to sync audit. Check console.', 'error');
     } finally {
         btn.innerText = "💾 Sync & Finalize Audit"; btn.disabled = false;
     }
