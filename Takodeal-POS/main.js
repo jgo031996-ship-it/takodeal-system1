@@ -5615,12 +5615,12 @@ window.loadStockRequestUI = async function() {
 
     let headerGrid = document.querySelector('#stockReqTabNew > div:nth-child(2)');
     if (headerGrid) {
-        headerGrid.style.gridTemplateColumns = "2fr 1fr 1fr 1.5fr";
+        headerGrid.style.gridTemplateColumns = "2fr 1.2fr 1fr 1.5fr"; // Widened the stock column slightly
         headerGrid.innerHTML = `
             <div>Item & HQ Status</div>
-            <div style="text-align: center;">Live Stock</div>
-            <div style="text-align: center; color: #d97706;">7-Day Dynamic Need</div>
-            <div style="text-align: center; color: #0ea5e9;">Restock Status</div>
+            <div style="text-align: center; color: #dc2626; font-size: 12px; font-weight: 900;">Live Expected Stock</div>
+            <div style="text-align: center; color: #d97706; font-size: 12px; font-weight: 900;">7-Day Dynamic Need</div>
+            <div style="text-align: center; color: #0ea5e9; font-size: 12px; font-weight: 900;">AI Restock Status</div>
         `;
     }
 
@@ -5722,13 +5722,14 @@ window.loadStockRequestUI = async function() {
                 }
 
                 html += `
-                <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1fr 1fr 1.5fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9; ${isAlreadyPending ? 'opacity: 0.75; background: #f8fafc;' : 'background: white;'}">
+                <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1.2fr 1fr 1.5fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9; ${isAlreadyPending ? 'opacity: 0.75; background: #f8fafc;' : 'background: white;'}">
                     <div style="font-weight: bold; color: #334155; font-size: 14px;">
                         ${item.name} <br>
                         ${hqStatus}
                     </div>
-                    <div style="text-align: center; font-family: monospace; font-size: 13px; color: #64748b; display: flex; flex-direction: column; gap: 2px;">
-                        <strong style="font-size: 15px; color: ${stockColor};">${safeStockDisplay} ${displayUomLabel}</strong>
+                    <div style="text-align: center; font-family: monospace; font-size: 13px; color: #64748b; display: flex; flex-direction: column; gap: 4px; background: #fef2f2; border: 1px dashed #fca5a5; border-radius: 6px; padding: 6px;">
+                        <span style="font-size: 9px; font-weight: 900; color: #dc2626; text-transform: uppercase;">Expected System Stock</span>
+                        <strong style="font-size: 18px; color: #b91c1c;">${safeStockDisplay} <span style="font-size: 12px; font-weight: normal; color: #ef4444;">${displayUomLabel}</span></strong>
                         ${velocityBadge}
                     </div>
                     <div style="text-align: center; font-family: monospace; font-size: 13px; color: #d97706; display: flex; flex-direction: column;">
