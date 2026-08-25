@@ -557,7 +557,7 @@
       </div>
       <div class="nav-item" id="nav-stockreq" onclick="switchView('stockreq'); window.loadStockRequestUI();">
         <span style="font-size: 18px;">📦</span>
-        <div class="nav-item-text">Stock Report</div>
+        <div class="nav-item-text">Live Stock & AI</div>
       </div>
       <div class="nav-item" id="nav-waste" onclick="switchView('waste'); window.loadWasteItems(); window.loadWasteHistory();">
         <span style="font-size: 18px;">🗑️</span>
@@ -769,13 +769,13 @@
 
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding: 25px 30px; background: #f8fafc; flex-wrap: wrap; gap: 15px;">
           <div>
-            <h2 style="margin: 0; color: #1e293b; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">📊</span> Daily Stock Report</h2>
-            <p style="color: #64748b; font-size: 13px; margin: 6px 0 0 0; font-weight: 500;">Report your physical count. HQ will see the variance and dispatch new stock.</p>
+            <h2 style="margin: 0; color: #1e293b; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">📊</span> Live Expected Stock & AI Requests</h2>
+            <p style="color: #dc2626; font-size: 13px; margin: 8px 0 0 0; font-weight: 900; background: #fef2f2; padding: 10px 15px; border-radius: 8px; border: 1px dashed #fca5a5;">⚠️ WARNING: The quantities below are your LIVE EXPECTED STOCKS. Any shortages found during the blind count will be automatically deducted from your payroll. Follow exact ingredient portions strictly!</p>
           </div>
           <div style="display: flex; gap: 10px; flex-wrap: wrap;">
              <button onclick="window.openDeliveryHistoryModal()" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.1);" onmouseover="this.style.background='#bae6fd';" onmouseout="this.style.background='#e0f2fe';">🚚 Delivery History</button>
              <button id="btnTabReqHist" onclick="window.switchStockReqTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">📜 View History</button>
-             <button id="btnTabReqNew" onclick="window.switchStockReqTab('New')" style="background: #0ea5e9; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;">➕ New Request</button>
+             <button id="btnTabReqNew" onclick="window.switchStockReqTab('New')" style="background: #0ea5e9; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;">📦 Live Stock View</button>
           </div>
         </div>
 
