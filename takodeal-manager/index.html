@@ -4896,7 +4896,7 @@
 
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: #64748b;">Purchase UOM</label>
-                      <input type="text" id="editInvPurchUom" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;" placeholder="e.g. Sack, Gallon">
+                      <input type="text" id="editInvPurchUom" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;" placeholder="e.g. Sack, Gallon" oninput="window.calcEditVariance()">
                   </div>
                   <div>
                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Base UOM</label>
@@ -4924,8 +4924,18 @@
                       <input type="file" id="editInvPhoto" accept="image/jpeg, image/png, image/webp" class="input-box" style="width: 100%; box-sizing: border-box; background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; outline: none; cursor: pointer; font-size: 13px; color: #475569;">
                   </div>
                   <div>
-                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">System Qty (Expected Base UOMs)</label>
-                      <input type="number" id="editInvOldQty" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f1f5f9; font-weight: bold; color: #475569;" readonly>
+                      <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">System Qty (In Stock)</label>
+                      <input type="hidden" id="editInvOldQty">
+                      <div style="display: flex; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; height: 38px;">
+                          <div style="flex: 1; background: #f8fafc; padding: 6px 10px; border-right: 1px solid #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
+                              <span id="editInvOldQtyPurch" style="font-weight: 900; color: #0ea5e9; font-size: 15px;">0</span>
+                              <span id="editInvOldUomPurch" style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase; max-width: 60px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Packs</span>
+                          </div>
+                          <div style="flex: 1; background: #f1f5f9; padding: 6px 10px; display: flex; justify-content: space-between; align-items: center;">
+                              <span id="editInvOldQtyBase" style="font-weight: 900; color: #334155; font-size: 15px;">0</span>
+                              <span id="editInvOldUomBase" style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase; max-width: 60px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">grams</span>
+                          </div>
+                      </div>
                   </div>
               </div>
 
