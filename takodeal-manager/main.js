@@ -606,9 +606,12 @@ window.loadGlobalDashboard = async function() {
     endOfDay.setDate(endOfDay.getDate() + 1); 
     endOfDay.setHours(4, 59, 59, 999); 
 
+    // 🔥 CHECK IF VIEWING "LIVE TODAY" 🔥
+    const localToday = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    const isLiveToday = (startDateInput.value === endDateInput.value) && (startDateInput.value === localToday);
+
     // 🔥 DYNAMIC TITLE FIX 🔥
-    let isToday = (startDateInput.value === endDateInput.value) && (startDateInput.value === new Date().toISOString().split('T')[0]);
-    let titleSuffix = isToday ? "(Today)" : "(Selected Range)";
+    let titleSuffix = isLiveToday ? "(Live Shift)" : "(Selected Range)";
     
     let grossEl = document.getElementById('globalGross');
     let netEl = document.getElementById('globalNet');
@@ -643,38 +646,37 @@ window.loadGlobalDashboard = async function() {
     try {
         let globalGross = 0; let globalNet = 0; let globalExp = 0;
 
-        const txRangeQ = selectedBranch === "All" 
-            ? query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay))
-            : query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-            
-        const expRangeQ = collection(db, "expenses");
+        // 🛑 ONLY query the full day history if we are looking at past dates!
+        if (!isLiveToday) {
+            const txRangeQ = selectedBranch === "All" 
+                ? query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay))
+                : query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+                
+            const expRangeQ = collection(db, "expenses");
 
-        const [txRangeSnap, expRangeSnap] = await Promise.all([getDocs(txRangeQ), getDocs(expRangeQ)]);
+            const [txRangeSnap, expRangeSnap] = await Promise.all([getDocs(txRangeQ), getDocs(expRangeQ)]);
 
-        txRangeSnap.forEach(tDoc => {
-            let tx = tDoc.data();
-            if (tx.status !== "Voided") {
-                let txNet = parseFloat(tx.netTotal) || 0;
-                globalNet += txNet;
-                let txGross = parseFloat(tx.subTotalBeforeDiscount);
-                if (isNaN(txGross) || txGross < txNet) txGross = txNet;
-                globalGross += txGross;
-            }
-        });
-
-        expRangeSnap.forEach(eDoc => {
-            let exp = eDoc.data();
-            let expDate = exp.timestamp ? (exp.timestamp.toDate ? exp.timestamp.toDate() : new Date(exp.timestamp)) : new Date(0);
-            if (expDate >= startOfDay && expDate <= endOfDay) {
-                if (selectedBranch === "All" || exp.branch === selectedBranch) {
-                    globalExp += (parseFloat(exp.amount) || 0);
+            txRangeSnap.forEach(tDoc => {
+                let tx = tDoc.data();
+                if (tx.status !== "Voided") {
+                    let txNet = parseFloat(tx.netTotal) || 0;
+                    globalNet += txNet;
+                    let txGross = parseFloat(tx.subTotalBeforeDiscount);
+                    if (isNaN(txGross) || txGross < txNet) txGross = txNet;
+                    globalGross += txGross;
                 }
-            }
-        });
+            });
 
-        if (grossEl) grossEl.innerText = formatMoney(globalGross);
-        if (netEl) netEl.innerText = formatMoney(globalNet);
-        if (expEl) expEl.innerText = formatMoney(globalExp);
+            expRangeSnap.forEach(eDoc => {
+                let exp = eDoc.data();
+                let expDate = exp.timestamp ? (exp.timestamp.toDate ? exp.timestamp.toDate() : new Date(exp.timestamp)) : new Date(0);
+                if (expDate >= startOfDay && expDate <= endOfDay) {
+                    if (selectedBranch === "All" || exp.branch === selectedBranch) {
+                        globalExp += (parseFloat(exp.amount) || 0);
+                    }
+                }
+            });
+        }
 
         let tableHtml = '';
         let liveStartOfDay = new Date(); 
@@ -690,7 +692,7 @@ window.loadGlobalDashboard = async function() {
             let isActive = shiftData && shiftData.active === true;
             let isClosed = shiftData && shiftData.status === "Closed";
 
-            let displayCashier = '-'; let branchNet = 0; let branchCashIn = 0; let branchExp = 0; let parkedCount = 0;
+            let displayCashier = '-'; let branchNet = 0; let branchGross = 0; let branchCashIn = 0; let branchExp = 0; let parkedCount = 0;
             let latestTxTime = 0; let activeCashierNow = null;
 
             if (shiftData) {
@@ -706,7 +708,13 @@ window.loadGlobalDashboard = async function() {
                 txSnapLive.forEach(tDoc => {
                     let tx = tDoc.data();
                     if (tx.status !== "Voided") {
-                        branchNet += (tx.netTotal || 0);
+                        let txNet = parseFloat(tx.netTotal) || 0;
+                        branchNet += txNet;
+                        
+                        let txGross = parseFloat(tx.subTotalBeforeDiscount);
+                        if (isNaN(txGross) || txGross < txNet) txGross = txNet;
+                        branchGross += txGross;
+                        
                         if (tx.paymentMethod === 'Cash') branchCashIn += (tx.netTotal || 0);
                     }
                     let txTimeMs = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate().getTime() : new Date(tx.timestamp).getTime()) : 0;
@@ -718,6 +726,13 @@ window.loadGlobalDashboard = async function() {
 
                 expSnapLive.forEach(eDoc => { branchExp += (parseFloat(eDoc.data().amount) || 0); });
                 parkedCount = parkedSnap.size;
+
+                // 🔥 IF LIVE TODAY, MIRROR THE TABLE INTO THE TOP CARDS!
+                if (isLiveToday && (isActive || isClosed)) {
+                    globalGross += branchGross;
+                    globalNet += branchNet;
+                    globalExp += branchExp;
+                }
             }
 
             let expectedCash = 0;
@@ -751,14 +766,18 @@ window.loadGlobalDashboard = async function() {
         results.forEach(res => { if (res) { tableHtml += res; } });
         document.getElementById('branchTableBody').innerHTML = tableHtml;
 
-        // 🔥 THE LOADING BUG FIX: Fetches the milestone safely and defaults to 0 if none!
+        // Display Final Totals
+        if (grossEl) grossEl.innerText = formatMoney(globalGross);
+        if (netEl) netEl.innerText = formatMoney(globalNet);
+        if (expEl) expEl.innerText = formatMoney(globalExp);
+
+        // Fetch Takoyaki Milestone
         try {
             let dashFilter = document.getElementById('dashBranchFilter');
             let selectedBranch = dashFilter ? dashFilter.value : "All";
             let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
             if (isFranchisee) selectedBranch = window.sessionUser.branch;
 
-            // Added strict window. prefixes to prevent ReferenceErrors!
             const statsSnap = await window.getDoc(window.doc(window.db, "settings", "global_stats"));
             let totalBalls = 0;
             if (statsSnap.exists()) {
@@ -20916,20 +20935,30 @@ window.renderDashboardCharts = async function() {
         endDay.setDate(endDay.getDate() + 1);
         endDay.setHours(4,59,59,999); // 4:59 AM Next Day
 
-        let daysDiff = Math.ceil((endDay - startDay) / (1000 * 60 * 60 * 24));
-        let isMonthly = daysDiff > 31; // Flips to Monthly view automatically!
+        let daysDiff = Math.round((endDay - startDay) / (1000 * 60 * 60 * 24));
+        let isMonthly = daysDiff > 31; 
         
         let labels = [];
         let dateKeys = []; 
 
-        if (daysDiff <= 1 && startDay.toDateString() === new Date().toDateString()) {
+        // 🔥 THE CHART FIX: If you select 1 to 6 days, FORCE it to look back 7 days automatically!
+        if (daysDiff <= 6) {
+            let anchorDate = new Date(endDay.getTime());
+            anchorDate.setDate(anchorDate.getDate() - 1); 
+            
             for (let i = 6; i >= 0; i--) {
-                let d = new Date(); d.setDate(new Date().getDate() - i);
+                let d = new Date(anchorDate.getTime());
+                d.setDate(anchorDate.getDate() - i);
                 dateKeys.push(toLocalISODate(d));
                 labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
             }
-            startDay = new Date(); startDay.setDate(startDay.getDate() - 6); startDay.setHours(5,0,0,0);
-            endDay = new Date(); endDay.setDate(endDay.getDate() + 1); endDay.setHours(4,59,59,999);
+            
+            // Push the database query window backward so it actually fetches all 7 days of data!
+            startDay = new Date(anchorDate.getTime());
+            startDay.setDate(startDay.getDate() - 6);
+            startDay.setHours(5,0,0,0);
+            
+            daysDiff = 7; // Trick the title into printing "7-Day"
         } 
         else if (isMonthly) {
             let curr = new Date(startDay.getFullYear(), startDay.getMonth(), 1);
@@ -20942,11 +20971,22 @@ window.renderDashboardCharts = async function() {
                 curr.setMonth(curr.getMonth() + 1);
             }
         } else {
+            // Standard daily range (7 to 31 days)
             for (let i = 0; i < daysDiff; i++) {
                 let d = new Date(startDay);
                 d.setDate(startDay.getDate() + i);
                 dateKeys.push(toLocalISODate(d));
                 labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            }
+        }
+
+        let titleEl = document.getElementById('revenueChartTitle');
+        if (titleEl) {
+            let spanIcon = `<span style="font-size: 20px;">📈</span>`;
+            if (isMonthly) {
+                titleEl.innerHTML = `${spanIcon} Monthly Gross Revenue Trend`;
+            } else {
+                titleEl.innerHTML = `${spanIcon} ${daysDiff}-Day Gross Revenue Trend`;
             }
         }
 
@@ -20975,7 +21015,6 @@ window.renderDashboardCharts = async function() {
 
         let categorySales = {}; 
         
-        // Identify what the current business day is
         let liveBusinessDay = new Date();
         if (liveBusinessDay.getHours() < 5) liveBusinessDay.setDate(liveBusinessDay.getDate() - 1);
         let todayStr = toLocalISODate(liveBusinessDay);
@@ -20988,7 +21027,6 @@ window.renderDashboardCharts = async function() {
             let txDateObj = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : null;
 
             if (txDateObj) {
-                // 🔥 THE CHART FIX: Push 2AM transactions backwards into yesterday's chart bar!
                 let businessDateObj = new Date(txDateObj.getTime());
                 if (businessDateObj.getHours() < 5) {
                     businessDateObj.setDate(businessDateObj.getDate() - 1);
@@ -21034,7 +21072,6 @@ window.renderDashboardCharts = async function() {
                 }
             }
 
-            // Today's Sales Mix Logic
             if (txDateObj) {
                 let businessDateObj = new Date(txDateObj.getTime());
                 if (businessDateObj.getHours() < 5) businessDateObj.setDate(businessDateObj.getDate() - 1);
@@ -21051,7 +21088,6 @@ window.renderDashboardCharts = async function() {
             }
         });
 
-        // Draw Line Chart
         let lineDatasets = [];
         activeBranches.forEach(branch => {
             let color = branchColors[branch] || { border: "#0f766e", bg: "rgba(15, 118, 110, 0.1)" };
@@ -21068,7 +21104,6 @@ window.renderDashboardCharts = async function() {
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { weight: 'bold', size: 12 } } }, tooltip: { callbacks: { label: function(context) { return ` ${context.dataset.label}: ₱${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } } }, scales: { y: { beginAtZero: true, ticks: { callback: function(value) { return '₱' + value.toLocaleString(); } } } } }
         });
 
-        // Draw Top 5 Sales Mix
         if (pieCanvas) {
             let sortedCats = Object.keys(categorySales).map(cat => ({ name: cat, sales: categorySales[cat] })).sort((a, b) => b.sales - a.sales);
             let top5 = sortedCats.slice(0, 5); 
