@@ -3857,21 +3857,35 @@ window.generateVirtualID = async function() {
         document.getElementById('vIdBackNum').innerText = emergNum;
         document.getElementById('vIdBackBlood').innerText = blood;
 
-        // 🔥 THE BULLETPROOF BASE64 CONVERTER 🔥
+        // 🔥 THE BULLETPROOF BASE64 CONVERTER (WITH CORS BYPASS PROXY) 🔥
         let picSrc = data.profilePicUrl || 'logo_id.png'; 
         let base64Img = picSrc;
         try {
             if (picSrc.startsWith('http')) {
-                const response = await fetch(picSrc);
-                const blob = await response.blob();
-                base64Img = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result);
-                    reader.readAsDataURL(blob);
-                });
+                try {
+                    // 1. Try direct fetch first
+                    const response = await fetch(picSrc);
+                    const blob = await response.blob();
+                    base64Img = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.readAsDataURL(blob);
+                    });
+                } catch (err) {
+                    console.warn("Firebase CORS blocked direct download. Routing through secure proxy...");
+                    // 2. If Firebase blocks it, forcefully bypass CORS using a proxy!
+                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(picSrc)}`;
+                    const proxyResponse = await fetch(proxyUrl);
+                    const proxyBlob = await proxyResponse.blob();
+                    base64Img = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.readAsDataURL(proxyBlob);
+                    });
+                }
             }
         } catch (e) {
-            console.warn("Could not convert image to base64.");
+            console.error("Could not convert image. The photo may appear blank.", e);
         }
 
         let frontPic = document.getElementById('vIdFrontPic');
