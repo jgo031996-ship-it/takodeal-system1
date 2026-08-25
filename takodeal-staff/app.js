@@ -3857,13 +3857,15 @@ window.generateVirtualID = async function() {
         document.getElementById('vIdBackNum').innerText = emergNum;
         document.getElementById('vIdBackBlood').innerText = blood;
 
-        // 🔥 THE BULLETPROOF BASE64 CONVERTER (WITH CORS BYPASS PROXY) 🔥
+        // 🔥 THE BULLETPROOF BASE64 CONVERTER (CRASH-PROOF EDITION) 🔥
         let picSrc = data.profilePicUrl || 'logo_id.png'; 
-        let base64Img = picSrc;
+        let base64Img = 'logo_id.png'; // Safe default
+        
         try {
-            if (picSrc.startsWith('http')) {
+            if (picSrc.startsWith('data:')) {
+                base64Img = picSrc;
+            } else if (picSrc.startsWith('http')) {
                 try {
-                    // 1. Try direct fetch first
                     const response = await fetch(picSrc);
                     const blob = await response.blob();
                     base64Img = await new Promise((resolve) => {
@@ -3872,23 +3874,30 @@ window.generateVirtualID = async function() {
                         reader.readAsDataURL(blob);
                     });
                 } catch (err) {
-                    console.warn("Firebase CORS blocked direct download. Routing through secure proxy...");
-                    // 2. If Firebase blocks it, forcefully bypass CORS using a proxy!
-                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(picSrc)}`;
-                    const proxyResponse = await fetch(proxyUrl);
-                    const proxyBlob = await proxyResponse.blob();
-                    base64Img = await new Promise((resolve) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => resolve(reader.result);
-                        reader.readAsDataURL(proxyBlob);
-                    });
+                    console.warn("Direct fetch blocked. Routing through premium proxy...");
+                    try {
+                        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(picSrc)}`;
+                        const proxyResponse = await fetch(proxyUrl);
+                        const proxyBlob = await proxyResponse.blob();
+                        base64Img = await new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result);
+                            reader.readAsDataURL(proxyBlob);
+                        });
+                    } catch (proxyErr) {
+                        console.error("Proxy failed. Falling back to local logo.");
+                        base64Img = 'logo_id.png';
+                    }
                 }
+            } else {
+                base64Img = picSrc;
             }
         } catch (e) {
-            console.error("Could not convert image. The photo may appear blank.", e);
+            console.error("Image conversion error:", e);
         }
 
         let frontPic = document.getElementById('vIdFrontPic');
+        frontPic.removeAttribute('crossorigin');
         frontPic.src = base64Img;
 
         await new Promise((resolve) => {
@@ -3901,7 +3910,7 @@ window.generateVirtualID = async function() {
 
         await new Promise(r => setTimeout(r, 300));
 
-        html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true }).then(canvas => {
+        html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true, allowTaint: false }).then(canvas => {
             let link = document.createElement('a');
             link.download = `Virtual_ID_${(data.cashierName || 'Staff').replace(/\s+/g, '_')}.png`;
             link.href = canvas.toDataURL("image/png");
