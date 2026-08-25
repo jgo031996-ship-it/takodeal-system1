@@ -19666,21 +19666,69 @@ window.generateFranchiseProposal = async function() {
     }
 };
 
-window.printElement = function(elementId) {
-    let printContents = document.getElementById(elementId).innerHTML;
-    let originalContents = document.body.innerHTML;
-    
-    // Hide print button in the print view!
-    printContents = printContents.replace(/<button class="no-print".*?<\/button>/g, '');
+// ========================================================
+// 🖨️ OFFICIAL PROSPECTUS PDF GENERATOR
+// ========================================================
+window.exportProspectusPDF = function() {
+    let container = document.getElementById('proposalContainer');
+    if (!container) return;
 
-    document.body.innerHTML = `
-        <div style="padding: 20px; font-family: 'Segoe UI', sans-serif;">
-            ${printContents}
-        </div>
-    `;
-    window.print();
-    document.body.innerHTML = originalContents;
-    location.reload(); // Reload to restore event listeners
+    let btn = document.getElementById('btnExportProspectus');
+    let origText = btn ? btn.innerText : '🖨️ Download Official PDF';
+    
+    // Hide button so it doesn't appear in the PDF
+    if (btn) { btn.innerText = "⏳ Generating PDF..."; btn.disabled = true; btn.style.display = 'none'; } 
+
+    // 1. Inject the Custom Footer requested by the user
+    let customFooter = document.getElementById('tempPdfFooter');
+    if (!customFooter) {
+        customFooter = document.createElement('div');
+        customFooter.id = 'tempPdfFooter';
+        customFooter.style.cssText = "margin-top: 30px; text-align: left; font-size: 14px; color: #ef4444; font-weight: 900; padding-top: 15px; border-top: 2px solid #ef4444;";
+        customFooter.innerHTML = "➔ Digital Franchise Package Takodeal";
+        container.appendChild(customFooter);
+    }
+
+    // 2. Temporarily strip UI shadows/borders so the PDF looks like a clean document
+    let origShadow = container.style.boxShadow;
+    let origBorder = container.style.border;
+    container.style.boxShadow = 'none';
+    container.style.border = 'none';
+    
+    // 3. Force strict width to avoid any squishing or scrollbars
+    let origWidth = container.style.width;
+    let origMaxWidth = container.style.maxWidth;
+    container.style.width = '800px';
+    container.style.maxWidth = '800px';
+
+    Swal.fire({title: 'Generating PDF...', text: 'Formatting high-quality document...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    // 4. Generate the PDF!
+    let opt = {
+        margin:       [0.3, 0.3, 0.3, 0.3], // Margins (Top, Left, Bottom, Right)
+        filename:     `Takodeal_Franchise_Prospectus_${new Date().toISOString().split('T')[0]}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true, windowWidth: 850 },
+        jsPDF:        { unit: 'in', format: 'a4', orientation: 'portrait' }
+    };
+
+    html2pdf().set(opt).from(container).save().then(() => {
+        // Restore everything back to normal UI mode
+        if (btn) { btn.style.display = 'inline-block'; btn.innerText = origText; btn.disabled = false; }
+        if (customFooter) customFooter.remove();
+        container.style.boxShadow = origShadow;
+        container.style.border = origBorder;
+        container.style.width = origWidth;
+        container.style.maxWidth = origMaxWidth;
+        
+        Swal.close();
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'PDF Downloaded!', showConfirmButton: false, timer: 3000});
+    }).catch(err => {
+        console.error("PDF Error:", err);
+        if (btn) { btn.style.display = 'inline-block'; btn.innerText = origText; btn.disabled = false; }
+        if (customFooter) customFooter.remove();
+        Swal.fire('Error', 'Failed to generate PDF.', 'error');
+    });
 };
 
 // ========================================================
