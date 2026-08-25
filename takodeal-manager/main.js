@@ -598,20 +598,18 @@ window.loadGlobalDashboard = async function() {
     if (!startDateInput.value) startDateInput.valueAsDate = new Date();
     if (!endDateInput.value) endDateInput.valueAsDate = new Date();
 
-    // 🔥 THE 5:00 AM "BUSINESS DAY" FIX 🔥
+    // 🔥 THE 8:30 AM TO 4:00 AM "BUSINESS DAY" FIX 🔥
     const startOfDay = new Date(startDateInput.value);
-    startOfDay.setHours(5, 0, 0, 0); 
+    startOfDay.setHours(8, 30, 0, 0); 
 
     const endOfDay = new Date(endDateInput.value);
     endOfDay.setDate(endOfDay.getDate() + 1); 
-    endOfDay.setHours(4, 59, 59, 999); 
-
-    // 🔥 CHECK IF VIEWING "LIVE TODAY" 🔥
-    const localToday = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-    const isLiveToday = (startDateInput.value === endDateInput.value) && (startDateInput.value === localToday);
+    endOfDay.setHours(3, 59, 59, 999); 
 
     // 🔥 DYNAMIC TITLE FIX 🔥
-    let titleSuffix = isLiveToday ? "(Live Shift)" : "(Selected Range)";
+    const localToday = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+    const isToday = (startDateInput.value === endDateInput.value) && (startDateInput.value === localToday);
+    let titleSuffix = isToday ? "(Today's Total)" : "(Selected Range)";
     
     let grossEl = document.getElementById('globalGross');
     let netEl = document.getElementById('globalNet');
@@ -646,75 +644,72 @@ window.loadGlobalDashboard = async function() {
     try {
         let globalGross = 0; let globalNet = 0; let globalExp = 0;
 
-        // 🛑 ONLY query the full day history if we are looking at past dates!
-        if (!isLiveToday) {
-            const txRangeQ = selectedBranch === "All" 
-                ? query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay))
-                : query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-                
-            const expRangeQ = collection(db, "expenses");
+        // 🛑 ALWAYS query the full day history for the Top KPI Cards so it survives shift changes!
+        const txRangeQ = selectedBranch === "All" 
+            ? window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay))
+            : window.query(window.collection(window.db, "transactions"), window.where("branch", "==", selectedBranch), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
+            
+        const expRangeQ = window.collection(window.db, "expenses");
 
-            const [txRangeSnap, expRangeSnap] = await Promise.all([getDocs(txRangeQ), getDocs(expRangeQ)]);
+        const [txRangeSnap, expRangeSnap] = await Promise.all([window.getDocs(txRangeQ), window.getDocs(expRangeQ)]);
 
-            txRangeSnap.forEach(tDoc => {
-                let tx = tDoc.data();
-                if (tx.status !== "Voided") {
-                    let txNet = parseFloat(tx.netTotal) || 0;
-                    globalNet += txNet;
-                    let txGross = parseFloat(tx.subTotalBeforeDiscount);
-                    if (isNaN(txGross) || txGross < txNet) txGross = txNet;
-                    globalGross += txGross;
+        txRangeSnap.forEach(tDoc => {
+            let tx = tDoc.data();
+            if (tx.status !== "Voided") {
+                let txNet = parseFloat(tx.netTotal) || 0;
+                globalNet += txNet;
+                let txGross = parseFloat(tx.subTotalBeforeDiscount);
+                if (isNaN(txGross) || txGross < txNet) txGross = txNet;
+                globalGross += txGross;
+            }
+        });
+
+        expRangeSnap.forEach(eDoc => {
+            let exp = eDoc.data();
+            let expDate = exp.timestamp ? (exp.timestamp.toDate ? exp.timestamp.toDate() : new Date(exp.timestamp)) : new Date(0);
+            if (expDate >= startOfDay && expDate <= endOfDay) {
+                if (selectedBranch === "All" || exp.branch === selectedBranch) {
+                    globalExp += (parseFloat(exp.amount) || 0);
                 }
-            });
-
-            expRangeSnap.forEach(eDoc => {
-                let exp = eDoc.data();
-                let expDate = exp.timestamp ? (exp.timestamp.toDate ? exp.timestamp.toDate() : new Date(exp.timestamp)) : new Date(0);
-                if (expDate >= startOfDay && expDate <= endOfDay) {
-                    if (selectedBranch === "All" || exp.branch === selectedBranch) {
-                        globalExp += (parseFloat(exp.amount) || 0);
-                    }
-                }
-            });
-        }
+            }
+        });
 
         let tableHtml = '';
+        
+        // Ensure the live shift table below also follows the 8:30 AM reset logic!
         let liveStartOfDay = new Date(); 
-        if (liveStartOfDay.getHours() < 5) liveStartOfDay.setDate(liveStartOfDay.getDate() - 1);
-        liveStartOfDay.setHours(5,0,0,0);
+        if (liveStartOfDay.getHours() < 8 || (liveStartOfDay.getHours() === 8 && liveStartOfDay.getMinutes() < 30)) {
+            liveStartOfDay.setDate(liveStartOfDay.getDate() - 1);
+        }
+        liveStartOfDay.setHours(8, 30, 0, 0);
 
         const branchPromises = branches.map(async (branch) => {
-            const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("startTime", ">=", liveStartOfDay), orderBy("startTime", "desc"), limit(1));
-            const shiftSnap = await getDocs(shiftQ);
+            const shiftQ = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", branch), window.where("startTime", ">=", liveStartOfDay), window.orderBy("startTime", "desc"), window.limit(1));
+            const shiftSnap = await window.getDocs(shiftQ);
 
             let shiftData = !shiftSnap.empty ? shiftSnap.docs[0].data() : null;
             let shiftDocId = !shiftSnap.empty ? shiftSnap.docs[0].id : null;
             let isActive = shiftData && shiftData.active === true;
             let isClosed = shiftData && shiftData.status === "Closed";
 
-            let displayCashier = '-'; let branchNet = 0; let branchGross = 0; let branchCashIn = 0; let branchExp = 0; let parkedCount = 0;
+            let displayCashier = '-'; let branchNet = 0; let branchCashIn = 0; let branchExp = 0; let parkedCount = 0;
             let latestTxTime = 0; let activeCashierNow = null;
 
             if (shiftData) {
                 let shiftStart = shiftData.startTime.toDate();
                 let shiftEnd = isActive ? new Date() : shiftData.endTime.toDate();
 
-                const txQLive = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", shiftStart), where("timestamp", "<=", shiftEnd));
-                const expQLive = query(collection(db, "expenses"), where("shiftId", "==", shiftDocId));
-                const parkedQ = query(collection(db, "parked_orders"), where("branch", "==", branch));
+                const txQLive = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branch), window.where("timestamp", ">=", shiftStart), window.where("timestamp", "<=", shiftEnd));
+                const expQLive = window.query(window.collection(window.db, "expenses"), window.where("shiftId", "==", shiftDocId));
+                const parkedQ = window.query(window.collection(window.db, "parked_orders"), window.where("branch", "==", branch));
 
-                const [txSnapLive, expSnapLive, parkedSnap] = await Promise.all([getDocs(txQLive), getDocs(expQLive), getDocs(parkedQ)]);
+                const [txSnapLive, expSnapLive, parkedSnap] = await Promise.all([window.getDocs(txQLive), window.getDocs(expQLive), window.getDocs(parkedQ)]);
 
                 txSnapLive.forEach(tDoc => {
                     let tx = tDoc.data();
                     if (tx.status !== "Voided") {
                         let txNet = parseFloat(tx.netTotal) || 0;
                         branchNet += txNet;
-                        
-                        let txGross = parseFloat(tx.subTotalBeforeDiscount);
-                        if (isNaN(txGross) || txGross < txNet) txGross = txNet;
-                        branchGross += txGross;
-                        
                         if (tx.paymentMethod === 'Cash') branchCashIn += (tx.netTotal || 0);
                     }
                     let txTimeMs = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate().getTime() : new Date(tx.timestamp).getTime()) : 0;
@@ -726,13 +721,6 @@ window.loadGlobalDashboard = async function() {
 
                 expSnapLive.forEach(eDoc => { branchExp += (parseFloat(eDoc.data().amount) || 0); });
                 parkedCount = parkedSnap.size;
-
-                // 🔥 IF LIVE TODAY, MIRROR THE TABLE INTO THE TOP CARDS!
-                if (isLiveToday && (isActive || isClosed)) {
-                    globalGross += branchGross;
-                    globalNet += branchNet;
-                    globalExp += branchExp;
-                }
             }
 
             let expectedCash = 0;
@@ -766,7 +754,7 @@ window.loadGlobalDashboard = async function() {
         results.forEach(res => { if (res) { tableHtml += res; } });
         document.getElementById('branchTableBody').innerHTML = tableHtml;
 
-        // Display Final Totals
+        // Display Final Totals for the Top Cards!
         if (grossEl) grossEl.innerText = formatMoney(globalGross);
         if (netEl) netEl.innerText = formatMoney(globalNet);
         if (expEl) expEl.innerText = formatMoney(globalExp);
@@ -790,8 +778,6 @@ window.loadGlobalDashboard = async function() {
             if (milestoneDiv) milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
         } catch(e) { 
             console.error("Milestone Error:", e); 
-            let milestoneDiv = document.getElementById('milestoneCounter');
-            if (milestoneDiv) milestoneDiv.innerText = "0 Balls Sold!";
         }
 
     } catch(e) { console.error("Global Dash Error:", e); }
@@ -21061,11 +21047,11 @@ window.renderDashboardCharts = async function() {
         const endDateInput = document.getElementById('dashEndDate');
         
         let startDay = startDateInput && startDateInput.value ? new Date(startDateInput.value) : new Date();
-        startDay.setHours(5,0,0,0); // 5 AM Business Day
+        startDay.setHours(8, 30, 0, 0); // 🔥 8:30 AM Business Day
         
         let endDay = endDateInput && endDateInput.value ? new Date(endDateInput.value) : new Date();
         endDay.setDate(endDay.getDate() + 1);
-        endDay.setHours(4,59,59,999); // 4:59 AM Next Day
+        endDay.setHours(3, 59, 59, 999); // 🔥 3:59 AM Next Day
 
         let daysDiff = Math.round((endDay - startDay) / (1000 * 60 * 60 * 24));
         let isMonthly = daysDiff > 31; 
@@ -21088,9 +21074,9 @@ window.renderDashboardCharts = async function() {
             // Push the database query window backward so it actually fetches all 7 days of data!
             startDay = new Date(anchorDate.getTime());
             startDay.setDate(startDay.getDate() - 6);
-            startDay.setHours(5,0,0,0);
+            startDay.setHours(8, 30, 0, 0);
             
-            daysDiff = 7; // Trick the title into printing "7-Day"
+            daysDiff = 7; 
         } 
         else if (isMonthly) {
             let curr = new Date(startDay.getFullYear(), startDay.getMonth(), 1);
@@ -21103,7 +21089,6 @@ window.renderDashboardCharts = async function() {
                 curr.setMonth(curr.getMonth() + 1);
             }
         } else {
-            // Standard daily range (7 to 31 days)
             for (let i = 0; i < daysDiff; i++) {
                 let d = new Date(startDay);
                 d.setDate(startDay.getDate() + i);
@@ -21148,7 +21133,10 @@ window.renderDashboardCharts = async function() {
         let categorySales = {}; 
         
         let liveBusinessDay = new Date();
-        if (liveBusinessDay.getHours() < 5) liveBusinessDay.setDate(liveBusinessDay.getDate() - 1);
+        // 🔥 Apply the new 8:30 AM logic to the Pie Chart as well!
+        if (liveBusinessDay.getHours() < 8 || (liveBusinessDay.getHours() === 8 && liveBusinessDay.getMinutes() < 30)) {
+            liveBusinessDay.setDate(liveBusinessDay.getDate() - 1);
+        }
         let todayStr = toLocalISODate(liveBusinessDay);
 
         snap.forEach(docSnap => {
@@ -21160,7 +21148,7 @@ window.renderDashboardCharts = async function() {
 
             if (txDateObj) {
                 let businessDateObj = new Date(txDateObj.getTime());
-                if (businessDateObj.getHours() < 5) {
+                if (businessDateObj.getHours() < 8 || (businessDateObj.getHours() === 8 && businessDateObj.getMinutes() < 30)) {
                     businessDateObj.setDate(businessDateObj.getDate() - 1);
                 }
                 let exactLocalStr = toLocalISODate(businessDateObj);
@@ -21206,7 +21194,9 @@ window.renderDashboardCharts = async function() {
 
             if (txDateObj) {
                 let businessDateObj = new Date(txDateObj.getTime());
-                if (businessDateObj.getHours() < 5) businessDateObj.setDate(businessDateObj.getDate() - 1);
+                if (businessDateObj.getHours() < 8 || (businessDateObj.getHours() === 8 && businessDateObj.getMinutes() < 30)) {
+                    businessDateObj.setDate(businessDateObj.getDate() - 1);
+                }
                 
                 if (toLocalISODate(businessDateObj) === todayStr && pieCanvas && tx.cart && window.isBranchAllowed(txBranch)) {
                     tx.cart.forEach(item => {
