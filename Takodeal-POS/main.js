@@ -1465,11 +1465,33 @@ window.renderStockCountUI = function(searchTerm = '') {
         html += '<div style="text-align:center; padding:20px; color:#888;">No items found.</div>';
     } else {
         filtered.forEach(i => { 
-            let existingVal = window.tempCountData ? (window.tempCountData[i.name] || '') : '';
-            html += `<div class="count-row" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f1f1f1;">
-                <div style="flex: 2; font-weight:600; color:#444; font-size:14px;">${i.name}</div>
-                <div style="flex: 1; color:#888; font-size:12px; text-align: center;">${i.uom || 'units'}</div>
-                <div style="flex: 1;"><input type="number" class="count-input count-target-input" data-item="${i.name}" placeholder="Qty" value="${existingVal}" onchange="window.saveTempCount(this)" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 6px; text-align: center;"></div>
+            let bUom = i.uom || 'units';
+            let pUom = i.purchaseUom || i.purchUom || bUom;
+            let conv = parseFloat(i.conversionRate) || parseFloat(i.conversion) || 1;
+            
+            // Retrieve memories so inputs don't vanish when searching
+            let pVal = window.tempCountData ? (window.tempCountData[i.name + '_purch'] || '') : '';
+            let bVal = window.tempCountData ? (window.tempCountData[i.name + '_base'] || '') : '';
+
+            let inputHtml = '';
+            if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                inputHtml = `
+                    <input type="number" class="count-input-purch" data-item="${i.name.replace(/"/g, '&quot;')}" value="${pVal}" placeholder="Packs" onchange="window.saveTempCount(this, 'purch')" style="width: 55px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none; font-size: 13px;">
+                    <span style="font-size: 10px; color: #64748b; font-weight: bold;">${pUom}</span>
+                    <span style="font-size: 12px; color: #94a3b8; font-weight: bold; margin: 0 2px;">+</span>
+                    <input type="number" class="count-input-base" data-item="${i.name.replace(/"/g, '&quot;')}" data-conv="${conv}" value="${bVal}" placeholder="Loose" onchange="window.saveTempCount(this, 'base')" style="width: 55px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none; font-size: 13px;">
+                    <span style="font-size: 10px; color: #64748b; font-weight: bold;">${bUom}</span>
+                `;
+            } else {
+                inputHtml = `
+                    <input type="number" class="count-input-base" data-item="${i.name.replace(/"/g, '&quot;')}" data-conv="1" value="${bVal}" placeholder="Qty" onchange="window.saveTempCount(this, 'base')" style="width: 70px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none; font-size: 13px;">
+                    <span style="font-size: 10px; color: #64748b; font-weight: bold;">${bUom}</span>
+                `;
+            }
+
+            html += `<div class="count-row" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px dashed #e2e8f0;">
+                <div style="flex: 2; font-weight:900; color:#334155; font-size:14px;">${i.name}</div>
+                <div style="display: flex; align-items: center; gap: 4px;">${inputHtml}</div>
             </div>`; 
         }); 
     }
@@ -1477,35 +1499,64 @@ window.renderStockCountUI = function(searchTerm = '') {
     container.innerHTML = html;
 };
 
-window.saveTempCount = function(input) {
+window.saveTempCount = function(input, type) {
     if(!window.tempCountData) window.tempCountData = {};
-    window.tempCountData[input.getAttribute('data-item')] = input.value;
+    let itemName = input.getAttribute('data-item');
+    window.tempCountData[itemName + '_' + type] = input.value;
 };
 
 window.submitInventoryCheck = async function () {
     let counts = [];
+    
+    // Group the memory items
+    let processedItems = new Set();
+
     if(window.tempCountData) {
-        Object.keys(window.tempCountData).forEach(name => {
-            let val = parseFloat(window.tempCountData[name]);
-            if(!isNaN(val)) counts.push({ name: name, physicalQty: val });
+        Object.keys(window.tempCountData).forEach(key => {
+            let itemName = key.replace('_purch', '').replace('_base', '');
+            if (processedItems.has(itemName)) return;
+            processedItems.add(itemName);
+
+            let pValStr = window.tempCountData[itemName + '_purch'] || "";
+            let bValStr = window.tempCountData[itemName + '_base'] || "";
+            
+            if (pValStr !== "" || bValStr !== "") {
+                let pQty = parseFloat(pValStr) || 0;
+                let bQty = parseFloat(bValStr) || 0;
+                
+                // Find conversion rate from the live list
+                let masterItem = window.tempStockList.find(i => i.name === itemName);
+                let conv = masterItem ? (parseFloat(masterItem.conversionRate) || parseFloat(masterItem.conversion) || 1) : 1;
+                
+                let finalQty = (pQty * conv) + bQty;
+                counts.push({ name: itemName, physicalQty: finalQty });
+            }
         });
     }
-    if (counts.length === 0) { alert("Please enter at least one quantity before submitting."); return; }
     
-    let btn = document.getElementById('btnSubmitInvCheck'); btn.innerText = "Submitting..."; btn.disabled = true;
+    if (counts.length === 0) { 
+        Swal.fire('Empty Count', 'Please enter at least one quantity before submitting.', 'info'); 
+        return; 
+    }
+    
+    let btn = document.getElementById('btnSubmitInvCheck'); 
+    btn.innerText = "Submitting..."; btn.disabled = true;
+    
     try { 
-        await addDoc(collection(db, "stock_counts"), {
+        await window.addDoc(window.collection(window.db, "stock_counts"), {
             branch: sessionUser.branch,
             cashier: sessionUser.cashierName,
             counts: counts,
-            timestamp: serverTimestamp()
+            timestamp: window.serverTimestamp()
         });
-        alert("End-of-day stock count submitted securely!"); 
+        Swal.fire('✅ Success', 'End-of-day stock count submitted securely!', 'success'); 
         window.tempCountData = {}; // Clear temp memory
         closeModal('inventoryCheckModal'); 
+    } catch (e) { 
+        Swal.fire('Error', 'Error submitting stock count. Check connection.', 'error'); 
+    } finally {
+        btn.innerText = "Submit Count"; btn.disabled = false;
     }
-    catch (e) { alert("Error submitting stock count. Check connection."); } 
-    btn.innerText = "Submit Count"; btn.disabled = false;
 };
 
 // --- PARKED ORDERS ENGINE ---
@@ -2040,30 +2091,44 @@ window.submitComprehensiveCloseShift = async function () {
         let physicalStockCount = [];
         let missingBlindCounts = false;
         
-        document.querySelectorAll('.blind-count-input').forEach(input => {
-            let val = input.value.trim();
-            if (val === "") {
-                missingBlindCounts = true;
-            } else {
-                let itemName = input.getAttribute('data-name');
-                let actualCount = parseFloat(val);
-                let memItem = window.currentBlindCountItems.find(i => i.name === itemName);
+        if (window.currentBlindCountItems && window.currentBlindCountItems.length > 0) {
+            window.currentBlindCountItems.forEach(item => {
+                // Grab both inputs using the exact classes from the HTML!
+                let purchInput = document.querySelector(`.blind-count-purch[data-name="${item.name.replace(/"/g, '\\"')}"]`);
+                let baseInput = document.querySelector(`.blind-count-base[data-name="${item.name.replace(/"/g, '\\"')}"]`);
                 
-                if (memItem) {
+                let pValStr = purchInput ? purchInput.value.trim() : "0";
+                let bValStr = baseInput ? baseInput.value.trim() : ""; 
+                
+                // Reject if they left both boxes blank
+                if (bValStr === "" && (!purchInput || pValStr === "")) {
+                    missingBlindCounts = true;
+                } else {
+                    let pQty = parseFloat(pValStr) || 0;
+                    let bQty = parseFloat(bValStr) || 0;
+                    
+                    // 🧠 DUAL MATH: Combine Packs and Grams into the final base quantity!
+                    let totalBaseQty = (pQty * item.convRate) + bQty;
+
                     physicalStockCount.push({
-                        name: itemName,
-                        systemExpected: memItem.systemExpected,
-                        actualCount: actualCount,
-                        baseCost: memItem.baseCost,
-                        uom: memItem.uom
+                        name: item.name,
+                        systemExpected: item.systemExpected,
+                        actualCount: totalBaseQty,
+                        baseCost: item.baseCost,
+                        uom: item.uom,
+                        purchUom: item.purchUom || item.uom,
+                        convRate: item.convRate || 1,
+                        rawPurchCount: pQty,
+                        rawBaseCount: bQty
                     });
                 }
+            });
+            
+            if (missingBlindCounts) {
+                Swal.fire('⛔ INCOMPLETE COUNT', `You must physically count and enter the quantity for ALL mandatory items before ending your shift.`, 'error');
+                if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
+                return;
             }
-        });
-    
-        if (missingBlindCounts) {
-            Swal.fire('⛔ INCOMPLETE COUNT', `You must physically count and enter the quantity for ALL mandatory items before ending your shift.`, 'error');
-            return;
         }
         // 1. Read Cash Drawer Securely
         let declaredCash = 0;
