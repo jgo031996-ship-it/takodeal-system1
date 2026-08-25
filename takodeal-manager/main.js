@@ -7064,7 +7064,6 @@ window.openEditInvModal = async function(id) {
         if (docSnap.exists()) {
             let itemData = docSnap.data();
             
-            // 🔥 THE GHOST FILE FIX: Wipe the photo uploader memory so it doesn't cross-contaminate!
             let fileInput = document.getElementById('editInvPhoto');
             if (fileInput) fileInput.value = '';
 
@@ -7080,15 +7079,9 @@ window.openEditInvModal = async function(id) {
             document.getElementById('editInvConversion').value = convRate;
             document.getElementById('editInvPurchCost').value = itemData.purchaseCost || itemData.purchCost || itemData.cost || 0;
             
-            // 🔥 THE UOM MATH FIX: Convert the database Base UOM back to Purchase UOM for easy editing!
-            // 🔥 THE ROUNDING FIX: Keeps the UI clean by rounding to 2 decimal places max
-            // 🔥 THE INDEX-FREE FIX: Fetch HQ Limit and Branch Limit simultaneously!
-            let hqLowPurch = 0;
-            let branchLowPurch = 0;
-            let foundHq = false;
-            let foundBranch = false;
+            let hqLowPurch = 0; let branchLowPurch = 0;
+            let foundHq = false; let foundBranch = false;
 
-            // We only query by name, bypassing the need for a Firebase Index!
             const invQ = query(collection(db, "inventory"), where("name", "==", itemData.name));
             const invSnap = await getDocs(invQ);
 
@@ -7097,16 +7090,10 @@ window.openEditInvModal = async function(id) {
                 let limitVal = parseFloat(d.lowStockAlert) || parseFloat(d.reorderLevel) || 0;
                 let valInPurchUom = parseFloat((limitVal / convRate).toFixed(2));
 
-                if (d.branch === "Main Office") {
-                    hqLowPurch = valInPurchUom;
-                    foundHq = true;
-                } else {
-                    branchLowPurch = valInPurchUom;
-                    foundBranch = true;
-                }
+                if (d.branch === "Main Office") { hqLowPurch = valInPurchUom; foundHq = true; } 
+                else { branchLowPurch = valInPurchUom; foundBranch = true; }
             });
 
-            // Smart fallbacks in case one of the limits hasn't been set yet
             if (foundHq && !foundBranch) branchLowPurch = hqLowPurch;
             if (foundBranch && !foundHq) hqLowPurch = branchLowPurch;
             if (!foundHq && !foundBranch) {
@@ -7118,19 +7105,14 @@ window.openEditInvModal = async function(id) {
             document.getElementById('editInvLowStock').value = branchLowPurch;
             document.getElementById('editInvHqLowStock').value = hqLowPurch;
             
+            // Set the hidden total stock
             document.getElementById('editInvOldQty').value = itemData.currentStock || 0;
             
-            let newQtyEl = document.getElementById('editInvNewQty');
-            if (newQtyEl) {
-                newQtyEl.value = '';
-                newQtyEl.onkeyup = window.calcEditVariance;
-            }
-            
-            let countTypeEl = document.getElementById('editInvCountType');
-            if (countTypeEl) {
-                countTypeEl.value = 'base';
-                countTypeEl.onchange = window.calcEditVariance;
-            }
+            // 🔥 Clear both Dual-Input boxes!
+            let newQtyPurchEl = document.getElementById('editInvNewQtyPurch');
+            let newQtyBaseEl = document.getElementById('editInvNewQtyBase');
+            if (newQtyPurchEl) newQtyPurchEl.value = '';
+            if (newQtyBaseEl) newQtyBaseEl.value = '';
             
             document.getElementById('editInvNote').value = '';
             
@@ -7149,69 +7131,71 @@ window.openEditInvModal = async function(id) {
             
             document.getElementById('editInvModal').style.display = 'flex';
 
-            // 🔥 FORCE THE UI CALCULATION ENGINE TO WAKE UP IMMEDIATELY
             window.calcEditVariance();
             if(typeof window.calcEditCost === 'function') window.calcEditCost();
 
-        } else {
-            alert("The requested inventory item could not be located in the central database.");
-        }
-    } catch (e) {
-        console.error("Error opening edit modal:", e);
-        alert("Failed to successfully load item details: " + e.message);
-    }
+        } else { alert("Item not found in database."); }
+    } catch (e) { console.error("Error opening edit modal:", e); alert("Failed to load item."); }
 };
 
 window.calcEditVariance = function() {
     let oldQ = parseFloat(document.getElementById('editInvOldQty').value) || 0;
-    let newQRaw = document.getElementById('editInvNewQty').value;
-    let countTypeEl = document.getElementById('editInvCountType');
-    let countType = countTypeEl ? countTypeEl.value : 'base';
     let conv = parseFloat(document.getElementById('editInvConversion').value) || 1;
     let varianceEl = document.getElementById('editInvVariance');
 
-    // Dynamically grab the labels you type in
     let pUom = document.getElementById('editInvPurchUom').value || 'Purchase UOM';
     let bUom = document.getElementById('editInvBaseUom').value || 'Base UOM';
 
-    // 🔥 DUAL-DISPLAY ENGINE: Split the raw base stock into visual Purchase / Base UOMs
-    let expectedPurchQty = conv > 0 ? (oldQ / conv) : oldQ;
+    // 1. DUAL-DISPLAY ENGINE: Split the raw base stock into Whole Packs + Remaining Base
+    let wholePurch = 0;
+    let remainderBase = oldQ;
+
+    if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+        wholePurch = Math.floor(oldQ / conv);
+        remainderBase = oldQ - (wholePurch * conv);
+        // Handle negative numbers safely
+        if (oldQ < 0) {
+            wholePurch = Math.ceil(oldQ / conv);
+            remainderBase = oldQ - (wholePurch * conv);
+        }
+    } else {
+        wholePurch = oldQ;
+        remainderBase = 0; 
+    }
+
     let elQtyPurch = document.getElementById('editInvOldQtyPurch');
     let elUomPurch = document.getElementById('editInvOldUomPurch');
     let elQtyBase = document.getElementById('editInvOldQtyBase');
     let elUomBase = document.getElementById('editInvOldUomBase');
 
-    if (elQtyPurch) elQtyPurch.innerText = expectedPurchQty.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2});
+    if (elQtyPurch) elQtyPurch.innerText = wholePurch.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2});
     if (elUomPurch) elUomPurch.innerText = pUom;
-    if (elQtyBase) elQtyBase.innerText = oldQ.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2});
+    if (elQtyBase) elQtyBase.innerText = remainderBase.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2});
     if (elUomBase) elUomBase.innerText = bUom;
 
-    // 1. Inject the real names into the Count Type Dropdown Options instantly
-    if (countTypeEl) {
-        let currentSel = countTypeEl.value; 
-        countTypeEl.innerHTML = `
-            <option value="base">Count in ${bUom}</option>
-            <option value="purch">Count in ${pUom}</option>
-        `;
-        countTypeEl.value = currentSel; 
-    }
+    // Update Labels inside the input boxes!
+    let labelPurch = document.getElementById('editInvLabelPurch');
+    let labelBase = document.getElementById('editInvLabelBase');
+    if (labelPurch) labelPurch.innerText = pUom;
+    if (labelBase) labelBase.innerText = bUom;
 
-    // 2. Inject the real name into the Variance Label
-    if (varianceEl && varianceEl.previousElementSibling) {
-        varianceEl.previousElementSibling.innerText = `Calculated Variance (${bUom}): `;
-    }
+    let varLabel = document.getElementById('editInvVarianceLabel');
+    if (varLabel) varLabel.innerText = `Calculated Variance (${bUom}): `;
 
-    // 3. Do the Variance Math if they typed something!
-    if (newQRaw === "") {
-        if(varianceEl) {
-            varianceEl.innerText = "0";
-            varianceEl.style.color = "#d97706";
-        }
+    // 2. Do the Variance Math if they typed something!
+    let purchInput = document.getElementById('editInvNewQtyPurch').value;
+    let baseInput = document.getElementById('editInvNewQtyBase').value;
+
+    if (purchInput === "" && baseInput === "") {
+        if(varianceEl) { varianceEl.innerText = "0"; varianceEl.style.color = "#d97706"; }
         return;
     }
 
-    let parsedInput = parseFloat(newQRaw);
-    let finalBaseQty = countType === 'purch' ? (parsedInput * conv) : parsedInput;
+    let pVal = parseFloat(purchInput) || 0;
+    let bVal = parseFloat(baseInput) || 0;
+    
+    // Combine both boxes mathematically!
+    let finalBaseQty = (pVal * conv) + bVal;
     
     let diff = finalBaseQty - oldQ;
     let sign = diff > 0 ? "+" : "";
@@ -7222,7 +7206,7 @@ window.calcEditVariance = function() {
 };
 
 // ==========================================
-// ✏️ UPGRADED INVENTORY EDIT ENGINE (GLOBAL SYNC & RENAME)
+// ✏️ UPGRADED INVENTORY EDIT ENGINE (DUAL INPUT)
 // ==========================================
 window.saveInventoryEdit = async function() {
     let docId = document.getElementById('editInvId').value;
@@ -7240,8 +7224,10 @@ window.saveInventoryEdit = async function() {
     let hqLowBase = hqLowPurch * conversion;
     
     let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
-    let newQtyRaw = document.getElementById('editInvNewQty').value;
-    let countType = document.getElementById('editInvCountType') ? document.getElementById('editInvCountType').value : 'base';
+    
+    // 🧠 Read both boxes!
+    let purchInputRaw = document.getElementById('editInvNewQtyPurch').value;
+    let baseInputRaw = document.getElementById('editInvNewQtyBase').value;
     let note = document.getElementById('editInvNote').value.trim();
 
     if (!name) { alert("Item name is required!"); return; }
@@ -7249,9 +7235,11 @@ window.saveInventoryEdit = async function() {
     let finalQty = oldQty;
     let isAdjusting = false;
 
-    if (newQtyRaw !== "") {
-        let parsedInput = parseFloat(newQtyRaw);
-        finalQty = countType === 'purch' ? (parsedInput * conversion) : parsedInput;
+    if (purchInputRaw !== "" || baseInputRaw !== "") {
+        let pVal = parseFloat(purchInputRaw) || 0;
+        let bVal = parseFloat(baseInputRaw) || 0;
+        
+        finalQty = (pVal * conversion) + bVal;
         isAdjusting = true;
         if (!note) { alert("You must provide an Adjustment Note/Reason if you are changing the stock quantity."); return; }
     }
@@ -7290,14 +7278,9 @@ window.saveInventoryEdit = async function() {
 
         if (photoUrl !== undefined) updatePayload.image = photoUrl;
 
-        // 🔥 INITIALIZE THE BATCH ENGINE
-        if (btn) btn.innerText = "⚡ Blasting Updates...";
         const batch = window.writeBatch(window.db);
-
-        // 1. Package the Main Item
         batch.update(itemRef, updatePayload);
 
-        // 2. Package Global Syncs (Other Branches)
         const syncQ = window.query(window.collection(window.db, "inventory"), window.where("name", "==", oldName));
         const syncSnap = await window.getDocs(syncQ);
         
@@ -7316,7 +7299,6 @@ window.saveInventoryEdit = async function() {
             batch.update(window.doc(window.db, "inventory", d.id), syncPayload);
         });
 
-        // 3. Package Cascade Renames (BOM & Addons)
         if (oldName !== name) {
             const bomQ = window.query(window.collection(window.db, "bom"), window.where("ingredientName", "==", oldName));
             const bomSnap = await window.getDocs(bomQ);
@@ -7327,11 +7309,16 @@ window.saveInventoryEdit = async function() {
             addonSnap.forEach(a => { batch.update(window.doc(window.db, "global_addons", a.id), { linkedIngredient: name }); });
         }
 
-        // 4. Package Physical Adjustments Log
+        // 4. Package Physical Adjustments Log with Dual-Count Record
         if (isAdjusting && finalQty !== oldQty) {
             let variance = finalQty - oldQty;
             let safeCashierName = window.sessionUser ? window.sessionUser.cashierName : 'Manager';
-            let finalNote = countType === 'purch' ? `[Counted as ${newQtyRaw} ${purchUom}s] ${note}` : note;
+            
+            // Format what they counted into the note automatically!
+            let pValStr = purchInputRaw !== "" ? parseFloat(purchInputRaw) || 0 : 0;
+            let bValStr = baseInputRaw !== "" ? parseFloat(baseInputRaw) || 0 : 0;
+            let countStr = `${pValStr} ${purchUom}s + ${bValStr} ${baseUom}s`;
+            let finalNote = `[Counted as ${countStr}] ${note}`;
 
             let newLogRef = window.doc(window.collection(window.db, "stock_logs"));
             batch.set(newLogRef, {
@@ -7340,13 +7327,11 @@ window.saveInventoryEdit = async function() {
             });
         }
 
-        // 🔥 FIRE THE ENTIRE PACKAGE IN ONE GO
         await batch.commit();
 
         Swal.fire({ title: '✅ Success!', text: 'Item updated and synced globally!', icon: 'success', customClass: { popup: 'rounded-2xl' } });
         document.getElementById('editInvModal').style.display = 'none';
 
-        // Smart Scroll Memory
         let scrollContainer = document.querySelector('.main-content');
         let savedScrollPosition = scrollContainer ? scrollContainer.scrollTop : 0;
         await window.loadInventoryData(); 
@@ -7357,7 +7342,6 @@ window.saveInventoryEdit = async function() {
         console.error(e); alert("Failed to save changes.");
     } finally {
         if (btn) { btn.innerText = "💾 Save All Changes"; btn.disabled = false; }
-        if (document.getElementById('editInvCountType')) document.getElementById('editInvCountType').value = 'base';
     }
 };
 
