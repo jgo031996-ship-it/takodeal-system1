@@ -24657,21 +24657,35 @@ window.generateIDCard = async function() {
 
     Swal.fire({title: 'Generating ID Card...', text: 'Downloading secure photo...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
-    // 🔥 THE BULLETPROOF BASE64 CONVERTER 🔥
-    // Firebase Storage blocks html2canvas. We must convert the image to raw data first!
+    // 🔥 THE BULLETPROOF BASE64 CONVERTER (WITH CORS BYPASS PROXY) 🔥
+    // Firebase Storage blocks html2canvas. We must safely extract the image data!
     let base64Img = picSrc;
     try {
         if (picSrc.startsWith('http')) {
-            const response = await fetch(picSrc);
-            const blob = await response.blob();
-            base64Img = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result);
-                reader.readAsDataURL(blob);
-            });
+            try {
+                // 1. Try direct fetch first
+                const response = await fetch(picSrc);
+                const blob = await response.blob();
+                base64Img = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(blob);
+                });
+            } catch (err) {
+                console.warn("Firebase CORS blocked direct download. Routing through secure proxy...");
+                // 2. If Firebase blocks it, forcefully bypass CORS using a proxy!
+                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(picSrc)}`;
+                const proxyResponse = await fetch(proxyUrl);
+                const proxyBlob = await proxyResponse.blob();
+                base64Img = await new Promise((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.readAsDataURL(proxyBlob);
+                });
+            }
         }
     } catch (e) {
-        console.warn("Could not convert image to base64, falling back to direct URL.");
+        console.error("Could not convert image. The photo may appear blank.", e);
     }
 
     let frontPic = document.getElementById('idFrontPic');
