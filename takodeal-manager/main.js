@@ -24636,7 +24636,7 @@ window.generateIDCard = async function() {
         return Swal.fire('Save Required', 'Please click "Save Data" first to automatically generate the new Employee ID number before printing the ID Card.', 'warning');
     }
 
-    let picSrc = 'logo_id.png'; // Fallback to the transparent logo if they don't have a picture
+    let picSrc = 'logo_id.png'; 
     let previewImg = document.getElementById('masterProfilePic'); 
     if (previewImg && previewImg.src && !previewImg.src.includes('data:image/svg+xml')) {
         picSrc = previewImg.src;
@@ -24659,13 +24659,14 @@ window.generateIDCard = async function() {
 
     Swal.fire({title: 'Generating ID Card...', text: 'Downloading secure photo...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
-    // 🔥 THE BULLETPROOF BASE64 CONVERTER (WITH CORS BYPASS PROXY) 🔥
-    // Firebase Storage blocks html2canvas. We must safely extract the image data!
-    let base64Img = picSrc;
+    // 🔥 THE BULLETPROOF BASE64 CONVERTER (CRASH-PROOF EDITION) 🔥
+    let base64Img = 'logo_id.png'; // Safe default to prevent Tainted Canvas crash!
     try {
-        if (picSrc.startsWith('http')) {
+        if (picSrc.startsWith('data:')) {
+            base64Img = picSrc; // Already Base64, safe to use immediately!
+        } else if (picSrc.startsWith('http')) {
             try {
-                // 1. Try direct fetch first
+                // 1. Try direct fetch
                 const response = await fetch(picSrc);
                 const blob = await response.blob();
                 base64Img = await new Promise((resolve) => {
@@ -24674,23 +24675,31 @@ window.generateIDCard = async function() {
                     reader.readAsDataURL(blob);
                 });
             } catch (err) {
-                console.warn("Firebase CORS blocked direct download. Routing through secure proxy...");
-                // 2. If Firebase blocks it, forcefully bypass CORS using a proxy!
-                const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(picSrc)}`;
-                const proxyResponse = await fetch(proxyUrl);
-                const proxyBlob = await proxyResponse.blob();
-                base64Img = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result);
-                    reader.readAsDataURL(proxyBlob);
-                });
+                console.warn("Direct fetch blocked. Routing through premium proxy...");
+                try {
+                    // 2. Try Stronger Proxy (corsproxy.io)
+                    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(picSrc)}`;
+                    const proxyResponse = await fetch(proxyUrl);
+                    const proxyBlob = await proxyResponse.blob();
+                    base64Img = await new Promise((resolve) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.readAsDataURL(proxyBlob);
+                    });
+                } catch (proxyErr) {
+                    console.error("Proxy failed. Falling back to local logo to prevent system crash.");
+                    base64Img = 'logo_id.png'; // Keeps canvas clean!
+                }
             }
+        } else {
+            base64Img = picSrc; // Local files are safe
         }
     } catch (e) {
-        console.error("Could not convert image. The photo may appear blank.", e);
+        console.error("Image conversion error:", e);
     }
 
     let frontPic = document.getElementById('idFrontPic');
+    frontPic.removeAttribute('crossorigin'); // Remove this as it causes conflicts with Base64
     frontPic.src = base64Img;
 
     // Wait for the converted image to render on the screen
@@ -24702,10 +24711,10 @@ window.generateIDCard = async function() {
         }
     });
 
-    // Give the CSS 300 milliseconds to snap the design into place
     await new Promise(r => setTimeout(r, 300));
 
-    html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true }).then(canvas => {
+    // Force allowTaint to false so it completely rejects bad data instead of crashing the browser
+    html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true, allowTaint: false }).then(canvas => {
         let link = document.createElement('a');
         link.download = `ID_Card_${name.replace(/\s+/g, '_')}.png`;
         link.href = canvas.toDataURL("image/png");
