@@ -1406,121 +1406,11 @@ window.openMultiRestockModal = async function (preSelectId = null) {
 window.updateRestockUomLabel = function () {
   let itemName = document.getElementById('restockItemSelect').value.trim();
   let label = document.getElementById('restockQtyLabel');
-  
-  let costContainer = document.getElementById('restockCostContainer');
-  if (!costContainer) {
-      let qtyInputParent = document.getElementById('restockQtyInput').parentElement;
-      qtyInputParent.insertAdjacentHTML('afterend', `
-        <div id="restockCostContainer" style="margin-top: 10px;">
-            <label style="font-size:12px; font-weight:bold; color:#64748b;">Total Cost of Purchase (₱)</label>
-            <input type="number" id="restockCostInput" class="input-box" placeholder="e.g. 1500" style="border: 2px solid #cbd5e1;">
-        </div>
-      `);
-  }
-
-  if (!itemName) { label.innerText = "No. of packs"; return; }
-
-  let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
-  if (item) {
-    label.innerHTML = `No. of <span style="color:#0ea5e9;">${item.purchaseUom || 'units'}s</span> <br><span style="font-size:10px; color:#94a3b8;">(1 ${item.purchaseUom || 'unit'} = ${item.conversionRate || 1} ${item.uom})</span>`;
-  }
-};
-
-window.addRestockToCart = function () {
-  let itemName = document.getElementById('restockItemSelect').value.trim();
-  let purchQty = parseFloat(document.getElementById('restockQtyInput').value);
-  let totalCost = parseFloat(document.getElementById('restockCostInput') ? document.getElementById('restockCostInput').value : 0); 
-  let supplierName = document.getElementById('restockSupplierInput') ? document.getElementById('restockSupplierInput').value.trim() : "Walk-in/Supplier";
-
-  if (!itemName || isNaN(purchQty) || purchQty <= 0) { alert("Select an item and enter a valid quantity."); return; }
-
-  let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
-  if (!item) { alert("Item not found in Main Office."); return; }
-
-  let convRate = parseFloat(item.conversionRate) || 1;
-  let baseQtyToAdd = purchQty * convRate;
-
-  // 🔥 THE FIX: Strictly use window.restockCart
-  if (typeof window.restockCart === 'undefined') window.restockCart = [];
-  
-  let existing = window.restockCart.find(i => i.id === item.id);
-  if (existing) {
-      existing.purchQty += purchQty;
-      existing.qty += purchQty; // Update the missing qty reference!
-      existing.baseQtyToAdd += baseQtyToAdd;
-      existing.totalCost += (totalCost || 0);
-  } else {
-      window.restockCart.push({
-        id: item.id, 
-        name: item.name, 
-        branch: item.branch, 
-        purchQty: purchQty, 
-        qty: purchQty, // 🔥 THE FIX: Added so the Confirm math and Invoice Viewer work perfectly!
-        conversionRate: convRate, // 🔥 THE FIX: Saves the exact conversion rate for reverting!
-        purchUom: item.purchaseUom || 'units',
-        baseQtyToAdd: baseQtyToAdd, 
-        baseUom: item.uom, 
-        totalCost: totalCost || 0, 
-        supplier: supplierName 
-      });
-  }
-
-  document.getElementById('restockQtyInput').value = '';
-  document.getElementById('restockItemSelect').value = ''; 
-  if(document.getElementById('restockCostInput')) document.getElementById('restockCostInput').value = '';
-  window.renderRestockCart();
-};
-
-window.removeRestockItem = function (index) {
-  window.restockCart.splice(index, 1);
-  window.renderRestockCart();
-};
-
-window.renderRestockCart = function () {
-  let tbody = document.getElementById('restockCartBody');
-  
-  let table = tbody.closest('table');
-  if (table && !table.parentElement.classList.contains('table-scroll-wrapper')) {
-      let wrapper = document.createElement('div');
-      wrapper.className = 'table-scroll-wrapper';
-      wrapper.style.maxHeight = '220px';
-      wrapper.style.overflowY = 'auto';
-      wrapper.style.borderBottom = '1px solid #e2e8f0';
-      wrapper.style.marginBottom = '10px';
-      table.parentNode.insertBefore(wrapper, table);
-      wrapper.appendChild(table);
-  }
-
-  // 🔥 THE FIX: Strictly use window.restockCart
-  if (!window.restockCart || window.restockCart.length === 0) { 
-      tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color:var(--text-muted); padding:15px;">Cart is empty.</td></tr>'; 
-      return; 
-  }
-
-  let html = '';
-  window.restockCart.forEach((cartItem, idx) => {
-    html += `
-      <tr>
-        <td style="padding: 10px;">
-          <strong style="font-size: 15px; color:#0f172a;">${cartItem.name}</strong> <span style="font-size:11px; color:var(--text-muted);">(${cartItem.branch})</span><br>
-          <span style="font-size:12px; color:var(--success); font-weight:bold;">(+${cartItem.baseQtyToAdd.toLocaleString()} ${cartItem.baseUom} to stock)</span>
-        </td>
-        <td style="font-weight:bold; font-size: 16px; padding: 10px; color:#0f766e;">${cartItem.purchQty} <span style="font-size:12px; color:var(--text-muted); font-weight:normal;">${cartItem.purchUom}s</span></td>
-        <td style="padding: 10px; text-align:right;"><button onclick="window.removeRestockItem(${idx})" style="color:var(--danger); border:1px solid var(--danger); background:#fef2f2; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">✖ Remove</button></td>
-      </tr>
-    `;
-  });
-  tbody.innerHTML = html;
-};
-
-window.updateRestockUomLabel = function () {
-  let itemName = document.getElementById('restockItemSelect').value.trim();
-  let label = document.getElementById('restockQtyLabel');
   let unitCostInput = document.getElementById('restockUnitCost');
   let prevCostLabel = document.getElementById('restockPrevCostLabel'); 
   
   if (!itemName) { 
-      if (label) label.innerText = "No. of packs"; 
+      if (label) label.innerHTML = `No. of packs<br><span style="font-size: 10px; color: #94a3b8; font-weight: bold; text-transform: none;">(1 Pack = 1 units)</span>`; 
       if (unitCostInput) unitCostInput.value = "";
       if (prevCostLabel) prevCostLabel.innerHTML = "Previous Price: ₱0.00"; 
       window.calcRestockSubtotal();
@@ -1530,10 +1420,12 @@ window.updateRestockUomLabel = function () {
   let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
   if (item) {
       let pUom = item.purchaseUom || item.uom || 'units';
+      let bUom = item.baseUom || item.uom || 'units';
       let cRate = parseFloat(item.conversionRate) || 1;
       
       if (label) {
-          label.innerHTML = `No. of <span style="color:#0ea5e9;">${pUom}s</span> <br><span style="font-size:10px; color:#94a3b8; text-transform:none;">(1 ${pUom} = ${cRate} ${item.uom})</span>`;
+          // 🔥 The beautiful dynamic label injection!
+          label.innerHTML = `No. of <span style="color:#0ea5e9;">${pUom}s</span> <br><span style="font-size: 10px; color: #94a3b8; font-weight: bold; text-transform: none;">(1 ${pUom} = ${cRate} ${bUom})</span>`;
       }
       
       // Auto-fill the unit cost based on history
@@ -1544,7 +1436,6 @@ window.updateRestockUomLabel = function () {
           unitCostInput.value = pCost > 0 ? pCost.toFixed(2) : "";
       }
 
-      // 🔥 Populates the new sub-line so you can see if prices inflated!
       if (prevCostLabel) {
           prevCostLabel.innerHTML = `Previous Price: <span style="color:#dc2626;">₱${pCost.toFixed(2)}</span>`;
       }
