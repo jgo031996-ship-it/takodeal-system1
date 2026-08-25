@@ -7162,15 +7162,6 @@ window.openEditInvModal = async function(id) {
     }
 };
 
-window.calcEditCost = function() {
-    let cost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
-    let conv = parseFloat(document.getElementById('editInvConversion').value) || 1;
-    let baseCost = cost / conv;
-    let baseUom = document.getElementById('editInvBaseUom').value || 'unit';
-    let summaryEl = document.getElementById('editInvCostSummary');
-    if (summaryEl) summaryEl.innerText = `Calculated Base Cost: ₱${baseCost.toFixed(4)} per ${baseUom}`;
-};
-
 window.calcEditVariance = function() {
     let oldQ = parseFloat(document.getElementById('editInvOldQty').value) || 0;
     let newQRaw = document.getElementById('editInvNewQty').value;
@@ -7179,18 +7170,30 @@ window.calcEditVariance = function() {
     let conv = parseFloat(document.getElementById('editInvConversion').value) || 1;
     let varianceEl = document.getElementById('editInvVariance');
 
-    // 🔥 DYNAMIC UI REDESIGN: Fetch the actual UOM names you typed!
+    // Dynamically grab the labels you type in
     let pUom = document.getElementById('editInvPurchUom').value || 'Purchase UOM';
     let bUom = document.getElementById('editInvBaseUom').value || 'Base UOM';
 
-    // 1. Inject the real names into the Dropdown Options instantly
+    // 🔥 DUAL-DISPLAY ENGINE: Split the raw base stock into visual Purchase / Base UOMs
+    let expectedPurchQty = conv > 0 ? (oldQ / conv) : oldQ;
+    let elQtyPurch = document.getElementById('editInvOldQtyPurch');
+    let elUomPurch = document.getElementById('editInvOldUomPurch');
+    let elQtyBase = document.getElementById('editInvOldQtyBase');
+    let elUomBase = document.getElementById('editInvOldUomBase');
+
+    if (elQtyPurch) elQtyPurch.innerText = expectedPurchQty.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2});
+    if (elUomPurch) elUomPurch.innerText = pUom;
+    if (elQtyBase) elQtyBase.innerText = oldQ.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2});
+    if (elUomBase) elUomBase.innerText = bUom;
+
+    // 1. Inject the real names into the Count Type Dropdown Options instantly
     if (countTypeEl) {
-        let currentSel = countTypeEl.value; // Remember what they clicked
+        let currentSel = countTypeEl.value; 
         countTypeEl.innerHTML = `
             <option value="base">Count in ${bUom}</option>
             <option value="purch">Count in ${pUom}</option>
         `;
-        countTypeEl.value = currentSel; // Put the selection back
+        countTypeEl.value = currentSel; 
     }
 
     // 2. Inject the real name into the Variance Label
@@ -7198,7 +7201,7 @@ window.calcEditVariance = function() {
         varianceEl.previousElementSibling.innerText = `Calculated Variance (${bUom}): `;
     }
 
-    // 3. Do the Math
+    // 3. Do the Variance Math if they typed something!
     if (newQRaw === "") {
         if(varianceEl) {
             varianceEl.innerText = "0";
@@ -7207,14 +7210,13 @@ window.calcEditVariance = function() {
         return;
     }
 
-    // Convert to Base UOM if they are counting in Purchase UOM
     let parsedInput = parseFloat(newQRaw);
     let finalBaseQty = countType === 'purch' ? (parsedInput * conv) : parsedInput;
     
     let diff = finalBaseQty - oldQ;
     let sign = diff > 0 ? "+" : "";
     if (varianceEl) {
-        varianceEl.innerText = `${sign}${diff.toFixed(2)}`; // Clean 2 decimal places
+        varianceEl.innerText = `${sign}${diff.toLocaleString(undefined, {minimumFractionDigits: 0, maximumFractionDigits: 2})}`; 
         varianceEl.style.color = diff < 0 ? "#ef4444" : "#16a34a";
     }
 };
