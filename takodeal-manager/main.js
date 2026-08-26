@@ -21955,6 +21955,7 @@ window.loadFinancialFlow = async function() {
         if (opExBoxes === '') opExBoxes = '<div style="color: #94a3b8; font-style: italic; font-size: 14px; padding: 20px;">No operational expenses logged.</div>';
 
         // 🔥 THE FIX: Injected Mobile-Responsive CSS directly into the UI!
+        // 🔥 THE FIX: Injected Mobile-Responsive CSS directly into the UI!
         let flowHtml = `
             <style>
                 @media (max-width: 768px) {
@@ -21973,12 +21974,12 @@ window.loadFinancialFlow = async function() {
                 <!-- TOP NODE: REVENUE -->
                 <div class="waterfall-card" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px 50px; border-radius: 20px; box-shadow: 0 15px 30px rgba(16, 185, 129, 0.3); z-index: 2; position: relative; color: white; border: 1px solid #047857; min-width: 320px; box-sizing: border-box;">
                     <div style="font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.9;">Gross Revenue</div>
-                    <div style="font-size: 46px; font-weight: 900; margin-top: 5px; line-height: 1;">₱${totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="font-size: 46px; font-weight: 900; margin-top: 5px; line-height: 1;">₱${totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                     <div style="font-size: 12px; margin-top: 10px; font-weight: bold; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; display: inline-block;">${periodLabel} • ${branch}</div>
                 </div>
 
                 <!-- MAIN SPLIT ARROWS -->
-                <div class="waterfall-lines" style="display: flex; justify-content: center; width: 100%; max-width: 680px; height: 40px; border-top: 3px solid #cbd5e1; border-left: 3px solid #cbd5e1; border-right: 3px solid #cbd5e1; margin-top: 20px; position: relative;">
+                <div class="waterfall-lines" style="display: flex; justify-content: center; width: 100%; max-width: 540px; height: 40px; border-top: 3px solid #cbd5e1; border-left: 3px solid #cbd5e1; border-right: 3px solid #cbd5e1; margin-top: 20px; position: relative; margin-left: auto; margin-right: auto;">
                     <div style="position: absolute; top: -22px; left: 50%; transform: translateX(-50%); width: 3px; height: 20px; background: #cbd5e1;"></div>
                     <!-- Dropdown lines -->
                     <div style="position: absolute; top: 40px; left: 0; width: 3px; height: 20px; background: #cbd5e1;"></div>
@@ -21992,20 +21993,20 @@ window.loadFinancialFlow = async function() {
                     <!-- COGS -->
                     <div onclick="window.openFlowCogsModal()" class="waterfall-card" style="background: white; border: 2px dashed #fca5a5; padding: 25px; border-radius: 16px; width: 240px; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); box-sizing: border-box;" onmouseover="this.style.background='#fff1f2'; this.style.boxShadow='0 10px 15px -3px rgba(220, 38, 38, 0.1)';" onmouseout="this.style.background='white'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.05)';">
                         <div style="font-size: 12px; font-weight: 800; color: #dc2626; text-transform: uppercase; letter-spacing: 0.5px;">Cost of Goods (COGS)</div>
-                        <div style="font-size: 26px; font-weight: 900; color: #b91c1c; margin-top: 5px;">-₱${totalCOGS.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                        <div style="font-size: 26px; font-weight: 900; color: #b91c1c; margin-top: 5px;">-₱${totalCOGS.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                         <div style="font-size: 11px; color: #ef4444; margin-top: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 4px;">🔍 Trace Logs</div>
                     </div>
 
                     <!-- PAYROLL -->
                     <div class="waterfall-card" style="background: white; border: 1px solid #cbd5e1; padding: 25px; border-radius: 16px; width: 240px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); box-sizing: border-box;">
                         <div style="font-size: 12px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Payroll Paid</div>
-                        <div style="font-size: 26px; font-weight: 900; color: #334155; margin-top: 5px;">-₱${totalPayroll.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                        <div style="font-size: 26px; font-weight: 900; color: #334155; margin-top: 5px;">-₱${totalPayroll.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                     </div>
 
                     <!-- OPEX -->
                     <div class="waterfall-card" style="background: white; border: 1px solid #fcd34d; padding: 25px; border-radius: 16px; width: 240px; position: relative; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); box-sizing: border-box;">
                         <div style="font-size: 12px; font-weight: 800; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px;">Operating Expenses</div>
-                        <div style="font-size: 26px; font-weight: 900; color: #b45309; margin-top: 5px;">-₱${totalExpenses.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                        <div style="font-size: 26px; font-weight: 900; color: #b45309; margin-top: 5px;">-₱${totalExpenses.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                         
                         <!-- Mini Dropdown Line to OpEx Boxes -->
                         <div class="waterfall-lines" style="position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); width: 3px; height: 20px; background: #cbd5e1;"></div>
@@ -22023,9 +22024,9 @@ window.loadFinancialFlow = async function() {
                 <!-- FINAL NET PROFIT -->
                 <div class="waterfall-card" style="margin-top: 50px; position: relative; width: 100%; max-width: 450px; box-sizing: border-box;">
                     <div class="waterfall-lines" style="position: absolute; top: -40px; left: 50%; transform: translateX(-50%); font-size: 32px; color: #94a3b8; font-weight: 900;">↓</div>
-                    <div class="waterfall-net-profit" style="background: ${netProfit >= 0 ? 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)' : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)'}; color: white; padding: 35px 50px; border-radius: 24px; box-shadow: 0 15px 40px ${netProfit >= 0 ? 'rgba(14, 165, 233, 0.35)' : 'rgba(239, 68, 68, 0.35)'}; border: 1px solid ${netProfit >= 0 ? '#0284c7' : '#9f1239'}; box-sizing: border-box; width: 100%;">
+                    <div class="waterfall-net-profit" style="background: ${netProfit >= 0 ? 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)' : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)'}; color: white; padding: 35px 50px; border-radius: 24px; box-shadow: 0 15px 40px ${netProfit >= 0 ? 'rgba(14, 165, 233, 0.35)' : 'rgba(239, 68, 68, 0.35)'}; border: 1px solid ${netProfit >= 0 ? '#0284c7' : '#9f1239'}; box-sizing: border-box; width: 100%; overflow: hidden;">
                         <div style="font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: rgba(255,255,255,0.9);">Remaining Net Profit</div>
-                        <div class="waterfall-net-profit-val" style="font-size: 56px; font-weight: 900; margin-top: 5px; line-height: 1; text-shadow: 0 4px 6px rgba(0,0,0,0.2);">₱${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                        <div class="waterfall-net-profit-val" style="font-size: clamp(36px, 6vw, 56px); font-weight: 900; margin-top: 5px; line-height: 1; text-shadow: 0 4px 6px rgba(0,0,0,0.2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%;">₱${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
                         <div style="font-size: 15px; margin-top: 15px; font-weight: bold; background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 20px; display: inline-block;">${totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : 0}% Profit Margin</div>
                     </div>
                 </div>
