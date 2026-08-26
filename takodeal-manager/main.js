@@ -19931,7 +19931,7 @@ window.reviewStockRequest = async function(docId) {
             hqDetails[d.data().name] = d.data(); 
         });
 
-        // 🔥 WIDER MODAL WITH CLEANER TEXT ALIGNMENTS
+        // 🔥 WIDER MODAL WITH RIGHT-ALIGNED TEXT TO CLOSE THE GAP
         let itemsHtml = `
             <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; text-align: left;">
                 <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Requested By</div>
@@ -19943,9 +19943,9 @@ window.reviewStockRequest = async function(docId) {
                 <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
                     <thead style="background: #1e293b; color: white; position: sticky; top: 0; z-index: 10;">
                         <tr>
-                            <th style="padding: 10px; width: 45%;">Item Description</th>
-                            <th style="padding: 10px; text-align: right; width: 25%;">Count / Request</th>
-                            <th style="padding: 10px; text-align: center; width: 30%;">Status</th>
+                            <th style="padding: 10px; width: 50%;">Item Description</th>
+                            <th style="padding: 10px; text-align: right; width: 20%;">Count / Request</th>
+                            <th style="padding: 10px; text-align: right; width: 30%;">Status</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -19963,6 +19963,10 @@ window.reviewStockRequest = async function(docId) {
 
                 let alertColor = badgeText === 'Out of Stock' ? '#dc2626' : (badgeText === 'Low Stock' ? '#d97706' : (badgeText === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
                 if (badgeText === 'Emergency Override') alertColor = '#dc2626';
+                
+                // AI Color Blue
+                let isAI = badgeText.includes('AI') || badgeText.includes('Maintaining') || badgeText.includes('Restock') || badgeText.includes('Par Fill');
+                if (isAI) alertColor = '#0ea5e9';
 
                 let qtyDisplay = '';
                 if (isAudit) {
@@ -19973,8 +19977,11 @@ window.reviewStockRequest = async function(docId) {
                         sysCount = (parseFloat(sysCount) / parseFloat(item.conversionRate)).toFixed(2);
                     }
 
+                    // 🔥 DYNAMIC LABEL: Uses "Qty Need" if it was sent by the AI Forecaster
+                    let topLabel = isAI ? 'Qty Need' : 'Phys';
+
                     qtyDisplay = `
-                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900; white-space: nowrap;">Phys: ${physCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
+                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900; white-space: nowrap;">${topLabel}: ${physCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
                         <div style="font-size: 11px; color: #64748b; font-weight: bold; white-space: nowrap;">Sys: ${sysCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
                     `;
                 } else {
@@ -19989,8 +19996,8 @@ window.reviewStockRequest = async function(docId) {
                             <span style="font-size: 10px; color: #94a3b8; font-weight: normal;">HQ Stock: ${hqStock[item.itemName || item.name] || 0}</span>
                         </td>
                         <td style="padding: 10px; text-align: right; vertical-align: middle;">${qtyDisplay}</td>
-                        <td style="padding: 10px; text-align: center; vertical-align: middle;">
-                            <span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid ${alertColor}50; display: inline-block; text-align: center; line-height: 1.2;">${badgeText}</span>
+                        <td style="padding: 10px; text-align: right; vertical-align: middle;">
+                            <span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid ${alertColor}50; display: inline-block; text-align: center; line-height: 1.2; white-space: nowrap;">${badgeText}</span>
                         </td>
                     </tr>
                 `;
@@ -20009,7 +20016,7 @@ window.reviewStockRequest = async function(docId) {
             confirmButtonColor: '#16a34a',
             denyButtonColor: '#dc2626',
             cancelButtonColor: '#64748b',
-            width: 750,
+            width: 750, // Ensures it stays wide
             customClass: { popup: 'rounded-2xl shadow-2xl' }
         });
 
@@ -20028,7 +20035,6 @@ window.reviewStockRequest = async function(docId) {
 
             let totalPenaltiesIssued = 0;
 
-            // 🔥 LOOP THROUGH REQUESTED ITEMS TO OVERRIDE INVENTORY IMMEDIATELY!
             for (let reqItem of data.items) {
                 let itemName = reqItem.itemName || reqItem.name;
                 let hqData = hqDetails[itemName] || {}; 
@@ -20050,7 +20056,6 @@ window.reviewStockRequest = async function(docId) {
                     badgeText = (physStockToPass <= 0) ? 'Out of Stock' : 'Low Stock';
                 }
 
-                // 🚨 INSTANT INVENTORY OVERRIDE & PENALTY ENGINE 🚨
                 if (isAudit && reqItem.physicalStock !== undefined) {
                     const branchInvQ = query(collection(db, "inventory"), where("branch", "==", data.branch), where("name", "==", itemName));
                     const branchInvSnap = await getDocs(branchInvQ);
@@ -20082,7 +20087,6 @@ window.reviewStockRequest = async function(docId) {
                     }
                 }
 
-                // Force the Dispatch Cart to 0 so we don't accidentally ship their counted inventory!
                 let rawReqQty = isAudit ? 0 : originalQty;
                 let baseReqQty = isAudit ? 0 : originalBaseQty;
                 
@@ -20104,7 +20108,6 @@ window.reviewStockRequest = async function(docId) {
                         selectedUom: (reqItem.displayUom !== reqItem.uom) ? 'purch' : 'base',
                         convRate: cRate, conversionRate: cRate, category: reqItem.category || "Ingredients",
                         requestType: badgeText
-                        // Notice: We omit physicalStock and systemStock so it doesn't double-trigger in dispatch!
                     });
                 }
             }
