@@ -24087,6 +24087,42 @@ setInterval(function() {
     });
 }, 500);
 
+// ========================================================
+// 🔢 NUMPAD LOGIC ENGINE
+// ========================================================
+window.appendManagerPin = function(num) {
+    let pinInput = document.getElementById('managerPinInput');
+    if (pinInput) {
+        pinInput.value += num;
+        // Clean up any error styling when they start typing
+        pinInput.style.borderColor = '#cbd5e1';
+        let err = document.getElementById('pinErrorMsg');
+        if (err) err.style.display = 'none';
+        
+        // Auto-submit feature: If they hit 4 digits, automatically try to log them in!
+        if (pinInput.value.length === 6) {
+            window.checkManagerPin();
+        }
+    }
+};
+
+window.clearManagerPin = function() {
+    let pinInput = document.getElementById('managerPinInput');
+    if (pinInput) {
+        pinInput.value = '';
+        pinInput.style.borderColor = '#cbd5e1';
+        let err = document.getElementById('pinErrorMsg');
+        if (err) err.style.display = 'none';
+    }
+};
+
+window.backspaceManagerPin = function() {
+    let pinInput = document.getElementById('managerPinInput');
+    if (pinInput && pinInput.value.length > 0) {
+        pinInput.value = pinInput.value.slice(0, -1);
+    }
+};
+
 // 2. The Bulletproof Debounced PIN Checker
 window.isLoggingIn = false;
 window.checkManagerPin = function() {
