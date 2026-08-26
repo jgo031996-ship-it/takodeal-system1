@@ -12727,9 +12727,12 @@ window.renderPayableItems = function() {
     container.innerHTML = html;
 };
 
-// 3. The Grand Double-Save (Updates Payables AND Live Inventory)
+// ========================================================
+// 📦 MASTER SAVE: PAYABLES & AVERAGE COSTING ENGINE
+// ========================================================
 window.saveNewPayable = async function() {
-    let pendingItemBox = document.getElementById('payItemSelect');
+    // Automatically add pending item in the box if they forgot to click '+'
+    let pendingItemBox = document.getElementById('payItemSearch');
     let pendingQtyBox = document.getElementById('payItemQty');
     if (pendingItemBox && pendingItemBox.value && pendingQtyBox && pendingQtyBox.value) {
         window.addPayableItem(); 
@@ -12745,8 +12748,7 @@ window.saveNewPayable = async function() {
     let invoice = invBox ? invBox.value.trim() : '';
     let amount = amtBox ? parseFloat(amtBox.value) : 0;
     
-    // 🔥 THE FIX: Safely parse the terms. If it's text like "Cash / COD", it becomes NaN. 
-    // We catch that and force it to be 0 days!
+    // Safely parse the terms. If it's text like "Cash / COD", force it to be 0 days!
     let termsRaw = termsBox ? termsBox.value : "0";
     let terms = parseInt(termsRaw);
     if (isNaN(terms)) {
@@ -12770,42 +12772,79 @@ window.saveNewPayable = async function() {
             const file = fileInput.files[0];
             const fileExt = file.name.split('.').pop();
             const fileName = `payables/inv_${Date.now()}.${fileExt}`;
-            const storageRef = ref(window.storage, fileName);
-            const snapshot = await uploadBytes(storageRef, file);
-            photoUrl = await getDownloadURL(snapshot.ref);
+            const storageRef = window.ref(window.storage, fileName);
+            const snapshot = await window.uploadBytes(storageRef, file);
+            photoUrl = await window.getDownloadURL(snapshot.ref);
         }
 
-        // Calculate exact due date based on the safe number
+        // Calculate exact due date
         let deliveryDate = new Date(); 
         let dueDate = new Date(); 
         dueDate.setDate(deliveryDate.getDate() + terms);
         
-        await addDoc(collection(db, "payables"), {
+        await window.addDoc(window.collection(window.db, "payables"), {
             supplier: supplier, invoiceNum: invoice, amount: amount, termsDays: terms, deliveryDate: deliveryDate, dueDate: dueDate, status: "Unpaid",
-            hasLinkedItems: window.payableItemsCart.length > 0, linkedItems: window.payableItemsCart,
+            hasLinkedItems: window.payableCart.length > 0, linkedItems: window.payableCart,
             photoUrl: photoUrl, 
-            loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: serverTimestamp()
+            loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: window.serverTimestamp()
         });
 
-        if (window.payableItemsCart.length > 0) {
-            for (let item of window.payableItemsCart) {
-                let invRef = doc(db, "inventory", item.id);
-                let invData = window.payableInventoryOptions.find(i => i.id === item.id);
-                let currentStock = parseFloat(invData.currentStock) || 0;
-                let newStock = currentStock + item.baseQtyToAdd;
+        if (window.payableCart.length > 0) {
+            // 🧠 AVERAGE COST & INVENTORY INJECTION ENGINE
+            for (let item of window.payableCart) {
+                const invRef = window.doc(window.db, "inventory", item.id);
+                const invSnap = await window.getDoc(invRef);
                 
-                await updateDoc(invRef, { currentStock: newStock });
-                await addDoc(collection(db, "stock_logs"), {
-                    branch: "Main Office", item: item.name, uom: item.baseUom, oldQty: currentStock, newQty: newStock, variance: item.baseQtyToAdd,
-                    type: "Supplier Delivery", note: `Linked to Invoice: ${invoice || 'N/A'}, Supplier: ${supplier}`,
-                    user: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: new Date()
-                });
+                if (invSnap.exists()) {
+                    let invData = invSnap.data();
+                    let currentStockBase = parseFloat(invData.currentStock) || 0;
+                    let conv = parseFloat(invData.conversionRate) || parseFloat(invData.conversion) || 1;
+                    
+                    // Convert current system stock into "Purchase UOMs" so we can average the prices properly
+                    let currentStockPurch = currentStockBase / conv;
+                    let currentPurchCost = parseFloat(invData.purchaseCost) || parseFloat(invData.purchCost) || parseFloat(invData.cost) || 0;
+                    
+                    // 📊 Moving Average Formula: ((Old Stock * Old Price) + (New Stock * New Price)) / Total Stock
+                    let oldTotalValue = currentStockPurch * currentPurchCost;
+                    let newTotalValue = item.purchQty * item.unitCost;
+                    let combinedStockPurch = currentStockPurch + item.purchQty;
+                    
+                    // Failsafe: If math results in <= 0, just adopt the new price!
+                    let newAveragePurchCost = combinedStockPurch > 0 ? ((oldTotalValue + newTotalValue) / combinedStockPurch) : item.unitCost;
+                    let newAverageBaseCost = newAveragePurchCost / conv;
+                    
+                    await window.updateDoc(invRef, { 
+                        currentStock: currentStockBase + item.baseQty,
+                        purchaseCost: newAveragePurchCost,
+                        purchCost: newAveragePurchCost,
+                        cost: newAveragePurchCost,
+                        baseCost: newAverageBaseCost // Very important for menu profitability!
+                    });
+
+                    // Drop an audit log so you can see exactly how the price changed!
+                    let priceNote = item.unitCost !== currentPurchCost 
+                        ? `Price shifted from ₱${currentPurchCost.toFixed(2)} to Avg ₱${newAveragePurchCost.toFixed(2)}` 
+                        : `Price stable at ₱${newAveragePurchCost.toFixed(2)}`;
+
+                    await window.addDoc(window.collection(window.db, "stock_logs"), {
+                        branch: "Main Office",
+                        item: item.name,
+                        uom: item.baseUom,
+                        oldQty: currentStockBase,
+                        newQty: currentStockBase + item.baseQty,
+                        variance: item.baseQty,
+                        type: "Supplier Delivery",
+                        note: `Received ${item.purchQty} ${item.purchUom}. ${priceNote}`,
+                        user: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+                        timestamp: window.serverTimestamp()
+                    });
+                }
             }
         }
 
         Swal.fire({
             title: '✅ Success!',
-            text: 'Invoice logged and inventory added to Main Office.',
+            text: 'Invoice logged, costs averaged, and inventory added to Main Office.',
             icon: 'success',
             confirmButtonColor: '#0f766e',
             customClass: { popup: 'rounded-2xl shadow-2xl' }
@@ -12815,6 +12854,13 @@ window.saveNewPayable = async function() {
         if(modal) modal.style.display = 'none';
         
         if (fileInput) fileInput.value = '';
+        
+        // Reset the UI and memory arrays completely
+        window.payableCart = [];
+        window.renderPayableCart();
+        document.getElementById('paySupplierName').value = '';
+        document.getElementById('payInvoiceNum').value = '';
+        document.getElementById('payAmount').value = '';
         
         window.loadPayablesDashboard();
         if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
