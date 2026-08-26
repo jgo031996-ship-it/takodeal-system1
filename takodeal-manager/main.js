@@ -21530,62 +21530,101 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // ========================================================
-// 📦 SUPPLIER PO AGGREGATOR & AUTO-REORDER ENGINE
+// 📦 MAIN OFFICE AI SUPPLIER PURCHASE ORDER ENGINE
 // ========================================================
 window.generateSupplierPurchaseOrders = async function() {
-    Swal.fire({ title: 'Scanning Inventory Levels...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+    Swal.fire({ 
+        title: '🤖 AI Analyzing HQ Stock...', 
+        text: 'Scanning Main Office inventory against Target Par Levels...', 
+        allowOutsideClick: false, 
+        didOpen: () => Swal.showLoading() 
+    });
 
     try {
-        const invSnap = await getDocs(collection(db, "inventory"));
+        // 1. Fetch strictly Main Office inventory
+        const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", "Main Office"));
+        const invSnap = await window.getDocs(q);
+        
         let supplierOrders = {};
+        let itemsScanned = 0;
 
         invSnap.forEach(docSnap => {
             let item = docSnap.data();
-            let stock = parseFloat(item.currentStock) || 0;
-            let reorderLevel = parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5;
+            itemsScanned++;
+            
+            let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+            let currentStockBase = parseFloat(item.currentStock) || 0;
+            let currentStockPurch = currentStockBase / conv;
 
-            // Trigger reorder if stock is at or below reorder level
-            if (stock <= reorderLevel) {
+            // 🧠 Priority 1: Target Par Levels (Maintaining Stock)
+            let targetParBase = parseFloat(item.maintainingStock) || 0;
+            let targetParPurch = targetParBase / conv;
+            
+            // Priority 2: Fallback to old HQ Low Stock Alert if Par Level isn't set
+            let reorderLevelBase = parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 0;
+            let reorderLevelPurch = reorderLevelBase / conv;
+
+            let deficitPurch = 0;
+            let isCritical = false;
+
+            if (targetParPurch > 0) {
+                // Par Level Engine
+                if (currentStockPurch < targetParPurch) {
+                    deficitPurch = Math.ceil(targetParPurch - currentStockPurch);
+                    isCritical = true;
+                }
+            } else if (reorderLevelPurch > 0) {
+                // Standard Reorder Level Engine
+                if (currentStockPurch <= reorderLevelPurch) {
+                    let neededStock = (reorderLevelPurch * 2) - currentStockPurch;
+                    deficitPurch = Math.ceil(neededStock > 0 ? neededStock : reorderLevelPurch);
+                    isCritical = true;
+                }
+            }
+
+            // If it triggered an alert, add it to the Supplier Cart!
+            if (isCritical && deficitPurch > 0) {
                 let supplier = item.supplier || "General Supplier";
-                let neededStock = (reorderLevel * 2) - stock;
-                if (neededStock <= 0) neededStock = reorderLevel;
-
-                let convRate = parseFloat(item.conversionRate) || 1;
-                let purchQty = Math.ceil(neededStock / convRate);
-                let purchUom = item.purchaseUom || item.uom || 'units';
+                let purchUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+                let cost = parseFloat(item.purchaseCost) || parseFloat(item.purchCost) || parseFloat(item.cost) || 0;
 
                 if (!supplierOrders[supplier]) supplierOrders[supplier] = [];
 
                 supplierOrders[supplier].push({
-                    branch: item.branch,
                     itemName: item.name,
-                    purchQty: purchQty,
+                    purchQty: deficitPurch,
                     purchUom: purchUom,
-                    estCost: (purchQty * (parseFloat(item.purchaseCost) || 0))
+                    estCost: (deficitPurch * cost)
                 });
             }
         });
 
         let html = '';
         let totalPOCost = 0;
+        let totalItemsToOrder = 0;
 
+        // 2. Build the Beautiful UI Grouped by Supplier
         for (let supplier in supplierOrders) {
             let items = supplierOrders[supplier];
             let supplierTotal = items.reduce((sum, i) => sum + i.estCost, 0);
             totalPOCost += supplierTotal;
+            totalItemsToOrder += items.length;
 
             let itemListHtml = items.map(i => `
-                <div style="display:flex; justify-content:space-between; font-size:12px; padding:4px 0; border-bottom:1px dashed #e2e8f0;">
-                    <span>📍 <b>${i.branch}:</b> ${i.itemName}</span>
-                    <b>${i.purchQty} ${i.purchUom} (₱${i.estCost.toLocaleString()})</b>
+                <div style="display:flex; justify-content:space-between; font-size:13px; padding:10px 0; border-bottom:1px dashed #cbd5e1; align-items: center;">
+                    <span style="color: #334155; font-weight: bold; font-size: 14px;">📦 ${i.itemName}</span>
+                    <div style="text-align: right;">
+                        <span style="color: #0ea5e9; font-weight: 900; font-size: 16px;">${i.purchQty} <span style="font-size: 11px; color: #64748b;">${i.purchUom}</span></span><br>
+                        <span style="color: #dc2626; font-size: 12px; font-weight: bold;">₱${i.estCost.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                    </div>
                 </div>
             `).join('');
 
             html += `
-                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:8px; padding:15px; margin-bottom:15px; text-align:left;">
-                    <div style="display:flex; justify-content:space-between; border-bottom:2px solid #0f766e; padding-bottom:8px; margin-bottom:10px;">
-                        <strong style="color:#0f766e; font-size:15px;">🚚 ${supplier}</strong>
-                        <strong style="color:#16a34a; font-size:15px;">₱${supplierTotal.toLocaleString()}</strong>
+                <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:12px; padding:20px; margin-bottom:20px; text-align:left; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                    <div style="display:flex; justify-content:space-between; border-bottom:2px solid #8b5cf6; padding-bottom:12px; margin-bottom:10px; align-items: center;">
+                        <strong style="color:#6d28d9; font-size:16px; display: flex; align-items: center; gap: 8px;"><span>🚚</span> ${supplier}</strong>
+                        <strong style="background: #fef2f2; color:#dc2626; border: 1px solid #fca5a5; padding: 6px 12px; border-radius: 8px; font-size:14px; box-shadow: 0 2px 4px rgba(220,38,38,0.1);">₱${supplierTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
                     </div>
                     ${itemListHtml}
                 </div>
@@ -21593,23 +21632,30 @@ window.generateSupplierPurchaseOrders = async function() {
         }
 
         if (Object.keys(supplierOrders).length === 0) {
-            return Swal.fire('Optimal Inventory', 'All branch inventory levels are currently optimal. No reorders needed!', 'success');
+            return Swal.fire('Optimal Inventory', 'All Main Office inventory levels are currently optimal. No supplier reorders needed!', 'success');
         }
 
         Swal.fire({
-            title: '📦 Master Supplier Purchase Orders',
-            html: `<div style="max-height:50vh; overflow-y:auto;">${html}</div><div style="font-size:16px; font-weight:900; color:#0f172a; text-align:right; margin-top:10px;">Total Procurement Cost: ₱${totalPOCost.toLocaleString()}</div>`,
-            width: 650,
+            title: '<div style="display: flex; align-items: center; gap: 10px; color: #0f172a;"><span style="font-size: 28px;">🤖</span> AI Supplier Orders</div>',
+            html: `
+                <div style="text-align: left; font-size: 13px; color: #64748b; margin-bottom: 20px; background: #f1f5f9; padding: 10px; border-radius: 8px; border: 1px dashed #cbd5e1;">Scanned ${itemsScanned} items in Main Office. Found <b>${totalItemsToOrder} item(s)</b> below Target Par Levels.</div>
+                <div style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">${html}</div>
+                <div style="background: #f0fdf4; border: 2px dashed #16a34a; padding: 20px; border-radius: 12px; font-size: 16px; font-weight: 900; color: #15803d; text-align: right; margin-top: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.1);">
+                    <span style="font-size: 12px; color: #166534; text-transform: uppercase;">Total Procurement Cost:</span>
+                    <span style="font-size: 24px;">₱${totalPOCost.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>
+                </div>
+            `,
+            width: 700,
             showCancelButton: true,
-            confirmButtonText: 'Close Window',
-            confirmButtonColor: '#64748b',
-            showCancelButton: false,
-            customClass: { popup: 'rounded-2xl shadow-xl' }
+            showConfirmButton: false, // Hide confirm since we don't have a direct PDF API linked to this specific modal yet
+            cancelButtonText: 'Close Window',
+            cancelButtonColor: '#64748b',
+            customClass: { popup: 'rounded-2xl shadow-2xl' }
         });
 
     } catch(e) {
         console.error("PO Aggregator Error:", e);
-        Swal.fire('Error', 'Failed to generate supplier orders.', 'error');
+        Swal.fire('Error', 'Failed to generate AI supplier orders. Check console.', 'error');
     }
 };
 
