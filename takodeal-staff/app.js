@@ -3857,36 +3857,71 @@ window.generateVirtualID = async function() {
         document.getElementById('vIdBackNum').innerText = emergNum;
         document.getElementById('vIdBackBlood').innerText = blood;
 
-        // 🔥 THE BULLETPROOF BASE64 CONVERTER (CRASH-PROOF EDITION) 🔥
+        // 🔥 THE BULLETPROOF 3-TIER IMAGE FETCHER 🔥
         let picSrc = data.profilePicUrl || 'logo_id.png'; 
         let base64Img = 'logo_id.png'; // Safe default
+        
+        // Smart Check: If they just uploaded it, grab it straight from the live screen!
+        let previewImg = document.getElementById('profilePreview');
+        if (previewImg && previewImg.src && previewImg.src.startsWith('data:image')) {
+            picSrc = previewImg.src; 
+        }
         
         try {
             if (picSrc.startsWith('data:')) {
                 base64Img = picSrc;
             } else if (picSrc.startsWith('http')) {
                 try {
+                    // Tier 1: Try Direct Fetch
                     const response = await fetch(picSrc);
+                    if (!response.ok) throw new Error("Direct fetch blocked");
                     const blob = await response.blob();
+                    
+                    // 🚨 PREVENTS THE WHITE BOX: Ensure it is ACTUALLY a picture, not a JSON error!
+                    if (!blob.type.includes('image')) throw new Error("File is an error text, not an image");
+                    
                     base64Img = await new Promise((resolve) => {
                         const reader = new FileReader();
                         reader.onloadend = () => resolve(reader.result);
                         reader.readAsDataURL(blob);
                     });
                 } catch (err) {
-                    console.warn("Direct fetch blocked. Routing through premium proxy...");
+                    console.warn("Direct fetch failed. Routing through Proxy 1...");
                     try {
-                        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(picSrc)}`;
-                        const proxyResponse = await fetch(proxyUrl);
-                        const proxyBlob = await proxyResponse.blob();
+                        // Tier 2: Try AllOrigins Proxy
+                        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(picSrc)}`;
+                        const response = await fetch(proxyUrl);
+                        if (!response.ok) throw new Error("Proxy 1 blocked");
+                        const blob = await response.blob();
+                        
+                        if (!blob.type.includes('image')) throw new Error("Proxy 1 returned text");
+
                         base64Img = await new Promise((resolve) => {
                             const reader = new FileReader();
                             reader.onloadend = () => resolve(reader.result);
-                            reader.readAsDataURL(proxyBlob);
+                            reader.readAsDataURL(blob);
                         });
-                    } catch (proxyErr) {
-                        console.error("Proxy failed. Falling back to local logo.");
-                        base64Img = 'logo_id.png';
+                    } catch (err2) {
+                        console.warn("Proxy 1 failed. Routing through Proxy 2...");
+                        try {
+                            // Tier 3: Try CorsProxy
+                            const proxyUrl2 = `https://corsproxy.io/?${encodeURIComponent(picSrc)}`;
+                            const response = await fetch(proxyUrl2);
+                            if (!response.ok) throw new Error("Proxy 2 blocked");
+                            const blob = await response.blob();
+                            
+                            if (!blob.type.includes('image')) throw new Error("Proxy 2 returned text");
+
+                            base64Img = await new Promise((resolve) => {
+                                const reader = new FileReader();
+                                reader.onloadend = () => resolve(reader.result);
+                                reader.readAsDataURL(blob);
+                            });
+                        } catch (err3) {
+                            console.error("All proxies failed. Bypassing safely.");
+                            // Ultimate Fallback: Append a cache buster and let html2canvas try to useCORS natively
+                            base64Img = picSrc + (picSrc.includes('?') ? '&' : '?') + 'cb=' + new Date().getTime();
+                        }
                     }
                 }
             } else {
@@ -3897,14 +3932,27 @@ window.generateVirtualID = async function() {
         }
 
         let frontPic = document.getElementById('vIdFrontPic');
-        frontPic.removeAttribute('crossorigin');
+        
+        // If it's still an HTTP link (proxies failed), we MUST add crossorigin back so html2canvas doesn't crash!
+        if (base64Img.startsWith('http')) {
+            frontPic.setAttribute('crossorigin', 'anonymous');
+        } else {
+            frontPic.removeAttribute('crossorigin');
+        }
+        
         frontPic.src = base64Img;
 
+        // Wait for the image to paint onto the screen
         await new Promise((resolve) => {
             if (frontPic.complete) resolve();
             else {
                 frontPic.onload = resolve;
-                frontPic.onerror = resolve; 
+                frontPic.onerror = () => {
+                    console.warn("Image rejected by browser. Securing fallback.");
+                    frontPic.removeAttribute('crossorigin');
+                    frontPic.src = 'logo_id.png';
+                    resolve();
+                };
             }
         });
 
