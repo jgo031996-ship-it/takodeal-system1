@@ -5489,9 +5489,22 @@ window.calculateBranchVelocity = async function(branch) {
     }
 };
 
-window.runAutonomousRestockAI = async function() {
+// ========================================================
+// 🤖 ULTRA AI: AUTONOMOUS 7-DAY FORECASTER & RESTOCK ENGINE
+// ========================================================
+window.runAutonomousRestockAI = async function(forceRun = false) {
     let branch = localStorage.getItem('takodeal_device_branch');
     if (!branch) return;
+
+    let todayStr = new Date().toDateString();
+    let isFriday = new Date().getDay() === 5; // 5 = Friday
+    let lastRunDate = localStorage.getItem('takodeal_last_ai_restock_date');
+
+    // 🔥 WEEKLY LOCK: Only auto-run on Fridays, and only ONCE per Friday!
+    if (!forceRun) {
+        if (!isFriday) return; 
+        if (lastRunDate === todayStr) return; // Already generated the Friday report today!
+    }
 
     try {
         // 1. Fetch live velocity & inventory
@@ -5519,7 +5532,10 @@ window.runAutonomousRestockAI = async function() {
             window.where("status", "in", ["Pending", "Drafting", "Delayed"])
         );
         const pendingSnap = await window.getDocs(pendingQ);
-        if (!pendingSnap.empty) return; // Wait until HQ fulfills active PO batch
+        if (!pendingSnap.empty) {
+            if (forceRun && typeof Swal !== 'undefined') Swal.fire('Queue Full', 'HQ is still processing your active stock requests. Please wait until they are dispatched before generating new ones.', 'info');
+            return;
+        }
 
         let aiDraftCart = [];
         let hasCriticalTrigger = false;
@@ -5536,21 +5552,29 @@ window.runAutonomousRestockAI = async function() {
             let dailyBurnBase = window.itemVelocityCache[normName] || 0;
             let dailyBurnPurch = dailyBurnBase / conv;
 
-            // Dynamic 3-day safety threshold
-            let userSetMinSafety = (parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv;
-            let dynamicThresholdPurch = Math.max((dailyBurnPurch * 3), userSetMinSafety);
-         
-            // 7-day target stock
-            let targetStockPurch = (dailyBurnPurch * cycleDays) + dynamicThresholdPurch;
-            if (targetStockPurch <= 0) targetStockPurch = dynamicThresholdPurch * 2;
+            // Priority 1: Manager Par Levels (Maintaining Stock)
+            let targetPar = parseFloat(item.maintainingStock) || 0;
+            let targetParPurch = targetPar / conv;
+            let deficitPurch = 0;
+            let requestType = "";
 
-            if (currentStockPurch <= dynamicThresholdPurch) {
-                hasCriticalTrigger = true;
+            if (targetPar > 0) {
+                deficitPurch = Math.ceil(targetParPurch - currentStockPurch);
+                requestType = "Maintaining Stock (Par Fill)";
+            } else {
+                // Priority 2: AI Dynamic Forecasting
+                let userSetMinSafety = (parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv;
+                let dynamicThresholdPurch = Math.max((dailyBurnPurch * 3), userSetMinSafety);
+             
+                let targetStockPurch = (dailyBurnPurch * cycleDays) + dynamicThresholdPurch;
+                if (targetStockPurch <= 0) targetStockPurch = dynamicThresholdPurch * 2;
+                
+                deficitPurch = Math.ceil(targetStockPurch - currentStockPurch);
+                requestType = currentStockPurch <= 0 ? "Out of Stock (AI Auto)" : "Weekly Restock (AI Forecast)";
             }
 
-            let deficitPurch = Math.ceil(targetStockPurch - currentStockPurch);
-
-            if (deficitPurch > 0 && currentStockPurch <= dynamicThresholdPurch * 1.5) {
+            if (deficitPurch > 0) {
+                hasCriticalTrigger = true;
                 let pUom = item.purchaseUom || item.uom || 'units';
                 let bUom = item.uom || 'units';
 
@@ -5561,7 +5585,7 @@ window.runAutonomousRestockAI = async function() {
                     uom: bUom, baseUom: bUom, purchaseUom: pUom, friendlyUom: pUom, displayUom: pUom,
                     selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
                     convRate: conv, conversionRate: conv, category: item.category || "Ingredients",
-                    requestType: currentStockPurch <= 0 ? "Out of Stock (AI Auto)" : "Weekly Restock (AI Forecast)",
+                    requestType: requestType,
                     systemStock: currentStockBase, physicalStock: currentStockBase, displayQty: deficitPurch,
                     dailyBurnPurch: dailyBurnPurch.toFixed(2), runwayDays: dailyBurnPurch > 0 ? (currentStockPurch / dailyBurnPurch).toFixed(1) : "N/A"
                 });
@@ -5572,12 +5596,15 @@ window.runAutonomousRestockAI = async function() {
         if (hasCriticalTrigger && aiDraftCart.length > 0) {
             await window.addDoc(window.collection(window.db, "purchase_orders"), {
                 branch: branch,
-                type: "AI 7-Day Auto Forecast",
+                type: "AI Weekly Auto Forecast",
                 items: aiDraftCart,
                 status: "Pending",
                 requestedBy: "TAKODEÁL AI FORECASTER",
                 timestamp: window.serverTimestamp()
             });
+
+            // Lock it so it doesn't run again today!
+            localStorage.setItem('takodeal_last_ai_restock_date', todayStr);
 
             if (document.getElementById('view-stockreq') && document.getElementById('view-stockreq').classList.contains('active')) {
                 if (typeof window.loadStockRequestUI === 'function') window.loadStockRequestUI();
@@ -5587,16 +5614,18 @@ window.runAutonomousRestockAI = async function() {
                 Swal.fire({
                     toast: true, position: 'top-end', icon: 'info',
                     title: '🤖 AI Forecaster: Weekly Restock PO Dispatched!',
-                    showConfirmButton: false, timer: 3500
+                    showConfirmButton: false, timer: 4500
                 });
             }
+        } else if (forceRun && typeof Swal !== 'undefined') {
+            Swal.fire('Optimal Inventory', 'Based on the Maintaining Stock numbers and Burn Rate, you have enough inventory for the week. No request is needed.', 'success');
         }
     } catch (e) {
         console.error("AI Forecaster Error:", e);
     }
 };
 
-// Periodic Background Evaluation (Every 15 minutes)
+// Periodic Background Evaluation (Every 15 minutes) - Will silently abort if it's not Friday!
 setInterval(window.runAutonomousRestockAI, 15 * 60 * 1000);
 
 // ========================================================
@@ -5615,19 +5644,21 @@ window.loadStockRequestUI = async function() {
 
     let headerGrid = document.querySelector('#stockReqTabNew > div:nth-child(2)');
     if (headerGrid) {
-        headerGrid.style.gridTemplateColumns = "2fr 1.2fr 1fr 1.5fr"; // Widened the stock column slightly
+        headerGrid.style.gridTemplateColumns = "2fr 1fr 1fr 1.5fr";
         headerGrid.innerHTML = `
             <div>Item & HQ Status</div>
-            <div style="text-align: center; color: #dc2626; font-size: 12px; font-weight: 900;">Live Expected Stock</div>
-            <div style="text-align: center; color: #d97706; font-size: 12px; font-weight: 900;">7-Day Dynamic Need</div>
-            <div style="text-align: center; color: #0ea5e9; font-size: 12px; font-weight: 900;">AI Restock Status</div>
+            <div style="text-align: center;">Live Stock</div>
+            <div style="text-align: center; color: #d97706;">7-Day Dynamic Need</div>
+            <div style="text-align: center; color: #0ea5e9;">Restock Status</div>
         `;
     }
 
-    let sendBtn = document.querySelector('button[onclick="window.submitStockRequest()"]');
+    // 🔥 Hook up the Manual Override button!
+    let sendBtn = document.querySelector('button[onclick="window.submitStockRequest()"]') || document.querySelector('button[onclick*="runAutonomousRestockAI"]');
     if (sendBtn) {
         sendBtn.innerHTML = "🤖 Run AI 7-Day Forecaster";
-        sendBtn.setAttribute("onclick", "window.runAutonomousRestockAI()");
+        // Passing 'true' bypasses the Friday-only lock!
+        sendBtn.setAttribute("onclick", "window.runAutonomousRestockAI(true)");
         sendBtn.style.background = "#8b5cf6";
         sendBtn.style.boxShadow = "0 2px 4px rgba(139, 92, 246, 0.3)";
     }
