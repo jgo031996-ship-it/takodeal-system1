@@ -894,8 +894,8 @@
             </div>
 
             <!-- EXECUTIVE SUMMARY -->
-            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 30px; margin-bottom: 40px;">
-                <div>
+            <div style="display: flex; flex-wrap: wrap; gap: 30px; margin-bottom: 40px;">
+                <div style="flex: 2; min-width: 320px;">
                     <h3 style="margin: 0 0 15px 0; color: #0ea5e9; font-size: 18px; border-bottom: 2px solid #e0f2fe; padding-bottom: 5px;">💼 Franchise Package Overview</h3>
                     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; font-size: 14px;">
                         <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">
@@ -913,7 +913,7 @@
                     </div>
                 </div>
 
-                <div style="background: #fffbeb; padding: 25px; border-radius: 12px; border: 2px dashed #fcd34d; text-align: center; display: flex; flex-direction: column; justify-content: center;">
+                <div style="flex: 1; min-width: 280px; background: #fffbeb; padding: 25px; border-radius: 12px; border: 2px dashed #fcd34d; text-align: center; display: flex; flex-direction: column; justify-content: center;">
                     <div style="font-size: 12px; font-weight: 900; color: #b45309; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px;">Total Initial Investment</div>
                     <div id="propTotalInvestment" style="font-size: 38px; font-weight: 900; color: #d97706;">₱0.00</div>
                     <div style="font-size: 12px; color: #92400e; margin-top: 5px; font-weight: bold;">(Includes Franchise Fee + Buildout)</div>
@@ -921,8 +921,8 @@
             </div>
 
             <!-- INVESTMENT BREAKDOWN & TIMELINE -->
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 40px;">
-                <div>
+            <div style="display: flex; flex-wrap: wrap; gap: 30px; margin-bottom: 40px;">
+                <div style="flex: 1; min-width: 320px;">
                     <h3 style="margin: 0 0 15px 0; color: #4c1d95; font-size: 18px; border-bottom: 2px solid #ddd6fe; padding-bottom: 5px;">🏗️ Capital Expenditure (CapEx)</h3>
                     <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
                         <tbody>
@@ -946,7 +946,7 @@
                     </table>
                 </div>
 
-                <div>
+                <div style="flex: 1; min-width: 280px;">
                     <h3 style="margin: 0 0 15px 0; color: #16a34a; font-size: 18px; border-bottom: 2px solid #bbf7d0; padding-bottom: 5px;">🚀 Estimated Launch Timeline</h3>
                     <div style="background: #f0fdf4; padding: 20px; border-radius: 8px; border: 1px solid #bbf7d0;">
                         <div style="font-size: 32px; font-weight: 900; color: #15803d; margin-bottom: 10px;" id="propTimeline">-- Weeks</div>
@@ -965,8 +965,9 @@
                 <h3 style="margin: 0 0 15px 0; color: #0f172a; font-size: 18px; border-bottom: 2px solid #cbd5e1; padding-bottom: 5px;">📈 Projected Monthly Profit & Loss (P&L)</h3>
                 <p style="font-size: 12px; color: #64748b; font-style: italic; margin-top: 0; margin-bottom: 20px;">* Projections are based directly on real historical sales data from the <strong><span id="propModelBranch">--</span></strong> model branch over the last <span id="propModelDays">--</span> days, filtered exclusively for your selected menu modules.</p>
 
-                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 30px;">
-                    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                <div style="display: flex; flex-wrap: wrap; gap: 30px;">
+                    <div style="flex: 2; min-width: 320px;">
+                      <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
                         <tbody>
                             <tr style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
                                 <td style="padding: 12px 10px; color: #0f172a; font-weight: 900;">Gross Monthly Revenue</td>
