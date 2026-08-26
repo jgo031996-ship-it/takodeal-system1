@@ -3857,7 +3857,7 @@ window.generateVirtualID = async function() {
         document.getElementById('vIdBackNum').innerText = emergNum;
         document.getElementById('vIdBackBlood').innerText = blood;
 
-        // 🔥 THE BULLETPROOF 3-TIER IMAGE FETCHER 🔥
+        // 🔥 THE CLEAN JSON-BASE64 CONVERTER (ZERO RED ERRORS) 🔥
         let picSrc = data.profilePicUrl || 'logo_id.png'; 
         let base64Img = 'logo_id.png'; // Safe default
         
@@ -3872,93 +3872,61 @@ window.generateVirtualID = async function() {
                 base64Img = picSrc;
             } else if (picSrc.startsWith('http')) {
                 try {
-                    // Tier 1: Try Direct Fetch
-                    const response = await fetch(picSrc);
-                    if (!response.ok) throw new Error("Direct fetch blocked");
-                    const blob = await response.blob();
+                    // 🛡️ TIER 1: AllOrigins JSON Converter
+                    // This asks the server to convert the image to text BEFORE sending it to us.
+                    // This completely bypasses all CORS security blocks with zero console errors!
+                    const proxyUrl1 = `https://api.allorigins.win/get?url=${encodeURIComponent(picSrc)}`;
+                    const response1 = await fetch(proxyUrl1);
+                    const json1 = await response1.json();
                     
-                    // 🚨 PREVENTS THE WHITE BOX: Ensure it is ACTUALLY a picture, not a JSON error!
-                    if (!blob.type.includes('image')) throw new Error("File is an error text, not an image");
-                    
-                    base64Img = await new Promise((resolve) => {
-                        const reader = new FileReader();
-                        reader.onloadend = () => resolve(reader.result);
-                        reader.readAsDataURL(blob);
-                    });
-                } catch (err) {
-                    console.warn("Direct fetch failed. Routing through Proxy 1...");
+                    if (json1.contents && json1.contents.startsWith('data:image')) {
+                        base64Img = json1.contents;
+                    } else {
+                        throw new Error("Proxy 1 failed to convert image.");
+                    }
+                } catch (err1) {
+                    console.warn("Proxy 1 failed. Trying CodeTabs proxy...");
                     try {
-                        // Tier 2: Try AllOrigins Proxy
-                        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(picSrc)}`;
-                        const response = await fetch(proxyUrl);
-                        if (!response.ok) throw new Error("Proxy 1 blocked");
-                        const blob = await response.blob();
+                        // 🛡️ TIER 2: CodeTabs Raw Proxy
+                        const proxyUrl2 = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(picSrc)}`;
+                        const response2 = await fetch(proxyUrl2);
+                        const blob2 = await response2.blob();
                         
-                        if (!blob.type.includes('image')) throw new Error("Proxy 1 returned text");
+                        if (!blob2.type.includes('image')) throw new Error("Proxy 2 returned invalid data.");
 
                         base64Img = await new Promise((resolve) => {
                             const reader = new FileReader();
                             reader.onloadend = () => resolve(reader.result);
-                            reader.readAsDataURL(blob);
+                            reader.readAsDataURL(blob2);
                         });
                     } catch (err2) {
-                        console.warn("Proxy 1 failed. Routing through Proxy 2...");
-                        try {
-                            // Tier 3: Try CorsProxy
-                            const proxyUrl2 = `https://corsproxy.io/?${encodeURIComponent(picSrc)}`;
-                            const response = await fetch(proxyUrl2);
-                            if (!response.ok) throw new Error("Proxy 2 blocked");
-                            const blob = await response.blob();
-                            
-                            if (!blob.type.includes('image')) throw new Error("Proxy 2 returned text");
-
-                            base64Img = await new Promise((resolve) => {
-                                const reader = new FileReader();
-                                reader.onloadend = () => resolve(reader.result);
-                                reader.readAsDataURL(blob);
-                            });
-                        } catch (err3) {
-                            console.error("All proxies failed. Bypassing safely.");
-                            // Ultimate Fallback: Append a cache buster and let html2canvas try to useCORS natively
-                            base64Img = picSrc + (picSrc.includes('?') ? '&' : '?') + 'cb=' + new Date().getTime();
-                        }
+                        console.error("All proxies blocked by network. Using Takodeal logo gracefully.");
+                        base64Img = 'logo_id.png'; // Safely fails without forcing a red HTTP error
                     }
                 }
             } else {
-                base64Img = picSrc;
+                base64Img = picSrc; // It's already a safe local file
             }
         } catch (e) {
-            console.error("Image conversion error:", e);
+            console.error("Image processing error:", e);
+            base64Img = 'logo_id.png';
         }
 
         let frontPic = document.getElementById('vIdFrontPic');
-        
-        // If it's still an HTTP link (proxies failed), we MUST add crossorigin back so html2canvas doesn't crash!
-        if (base64Img.startsWith('http')) {
-            frontPic.setAttribute('crossorigin', 'anonymous');
-        } else {
-            frontPic.removeAttribute('crossorigin');
-        }
-        
+        frontPic.removeAttribute('crossorigin'); // Never needed because we strictly use Base64 now!
         frontPic.src = base64Img;
 
-        // Wait for the image to paint onto the screen
         await new Promise((resolve) => {
             if (frontPic.complete) resolve();
             else {
                 frontPic.onload = resolve;
-                frontPic.onerror = () => {
-                    console.warn("Image rejected by browser. Securing fallback.");
-                    frontPic.removeAttribute('crossorigin');
-                    frontPic.src = 'logo_id.png';
-                    resolve();
-                };
+                frontPic.onerror = resolve; 
             }
         });
 
         await new Promise(r => setTimeout(r, 300));
 
-        // 🔥 THE TAINTED VIDEO CRASH FIX IS APPLIED HERE!
+        // 🔥 CAMERA BYPASS
         html2canvas(template, { 
             scale: 3, 
             backgroundColor: "#ffffff", 
