@@ -12592,24 +12592,122 @@ window.openAddPayableModal = async function() {
     } catch (e) { console.error(e); }
 };
 
-// 2. Adds Items to the Temporary Delivery Cart
+// ========================================================
+// 📦 SUPPLIER DELIVERY CART & MATH ENGINE
+// ========================================================
+window.updatePayItemDetails = function() {
+    let itemName = document.getElementById('payItemSearch').value.trim();
+    let label = document.getElementById('payItemQtyLabel');
+    let costInput = document.getElementById('payItemCost');
+    let prevCostLabel = document.getElementById('payItemPrevCost');
+
+    if (!itemName) {
+        if(label) label.innerHTML = "QTY";
+        if(costInput) costInput.value = "";
+        if(prevCostLabel) prevCostLabel.innerHTML = "Prev Cost: ₱0.00";
+        window.calcPayItemSubtotal();
+        return;
+    }
+
+    let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
+    if (item) {
+        let pUom = item.purchaseUom || item.uom || 'units';
+        let bUom = item.baseUom || item.uom || 'units';
+        let cRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+
+        if(label) label.innerHTML = `No. of <span style="color:#0ea5e9;">${pUom}s</span> <br><span style="font-size:9px; font-weight:bold; text-transform:none; color:#94a3b8;">(1 = ${cRate} ${bUom})</span>`;
+
+        let pCost = parseFloat(item.purchaseCost) || parseFloat(item.purchCost) || parseFloat(item.cost) || 0;
+        if (pCost === 0 && item.baseCost) pCost = parseFloat(item.baseCost) * cRate;
+
+        if(costInput) costInput.value = pCost > 0 ? pCost.toFixed(2) : "";
+        if(prevCostLabel) prevCostLabel.innerHTML = `Prev Cost: <span style="color:#dc2626;">₱${pCost.toFixed(2)}</span>`;
+
+        window.calcPayItemSubtotal();
+    }
+};
+
+window.calcPayItemSubtotal = function() {
+    let qty = parseFloat(document.getElementById('payItemQty').value) || 0;
+    let cost = parseFloat(document.getElementById('payItemCost').value) || 0;
+    let sub = qty * cost;
+    document.getElementById('payItemSubtotal').value = sub > 0 ? sub.toFixed(2) : "";
+};
+
+window.payableCart = window.payableCart || [];
+
 window.addPayableItem = function() {
-    let itemName = document.getElementById('payItemSelect').value;
+    let itemName = document.getElementById('payItemSearch').value.trim();
     let qty = parseFloat(document.getElementById('payItemQty').value);
-    if (!itemName || isNaN(qty) || qty <= 0) return;
-    let itemData = window.payableInventoryOptions.find(i => i.name === itemName);
-    if (!itemData) return;
+    let cost = parseFloat(document.getElementById('payItemCost').value);
+    let subtotal = parseFloat(document.getElementById('payItemSubtotal').value);
 
-    let convRate = parseFloat(itemData.conversionRate) || 1;
-    let baseQtyToAdd = qty * convRate;
+    if (!itemName || isNaN(qty) || qty <= 0 || isNaN(cost) || cost < 0) {
+        return Swal.fire('Missing Data', 'Please enter a valid item, quantity, and unit cost.', 'warning');
+    }
 
-    window.payableItemsCart.push({
-        id: itemData.id, name: itemData.name, purchQty: qty,
-        purchUom: itemData.purchaseUom || itemData.uom, baseQtyToAdd: baseQtyToAdd, baseUom: itemData.uom
+    let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
+    if (!item) return Swal.fire('Error', 'Item not found in Main Office inventory.', 'error');
+
+    let pUom = item.purchaseUom || item.uom || 'units';
+    let bUom = item.baseUom || item.uom || 'units';
+    let cRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+
+    window.payableCart.push({
+        id: item.id,
+        name: item.name,
+        purchQty: qty,
+        purchUom: pUom,
+        baseQty: qty * cRate,
+        baseUom: bUom,
+        unitCost: cost,
+        subtotal: subtotal
     });
 
-    document.getElementById('payItemQty').value = ''; document.getElementById('payItemSelect').value = '';
-    window.renderPayableItems();
+    // Reset fields for the next item
+    document.getElementById('payItemSearch').value = '';
+    document.getElementById('payItemQty').value = '';
+    document.getElementById('payItemCost').value = '';
+    document.getElementById('payItemSubtotal').value = '';
+    document.getElementById('payItemPrevCost').innerText = 'Prev Cost: ₱0.00';
+    document.getElementById('payItemQtyLabel').innerText = 'No. of Packs';
+
+    window.renderPayableCart();
+};
+
+window.renderPayableCart = function() {
+    let list = document.getElementById('payCartList');
+    let grandTotal = 0;
+    let html = '';
+
+    window.payableCart.forEach((item, index) => {
+        grandTotal += item.subtotal;
+        html += `
+            <li style="display: flex; justify-content: space-between; align-items: center; padding: 10px 10px; border-bottom: 1px dashed #cbd5e1; font-size: 13px; background: white; border-radius: 6px; margin-bottom: 4px;">
+                <div style="flex: 2; color: #1e293b; font-weight: bold;">
+                    ${item.name} <br>
+                    <span style="color: #64748b; font-size: 11px;">${item.purchQty} <span style="color:#0ea5e9;">${item.purchUom}</span> @ ₱${item.unitCost.toFixed(2)}</span>
+                    <div style="color: #10b981; font-size: 10px; margin-top: 2px;">Adds +${item.baseQty} ${item.baseUom} to stock</div>
+                </div>
+                <div style="flex: 1; text-align: right; color: #0f766e; font-weight: 900; font-size: 15px;">
+                    ₱${item.subtotal.toFixed(2)}
+                </div>
+                <button onclick="window.payableCart.splice(${index}, 1); window.renderPayableCart();" style="margin-left: 15px; background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 11px; font-weight: bold; transition: 0.2s;">✖</button>
+            </li>
+        `;
+    });
+
+    list.innerHTML = html;
+
+    // 🔥 AUTO-LINK TO THE INVOICE TOTAL BOX 🔥
+    let totalBox = document.getElementById('payableAmount'); // Make sure this ID matches your HTML!
+    if (totalBox) {
+        totalBox.value = grandTotal > 0 ? grandTotal.toFixed(2) : "";
+        // Flash it green to show it updated automatically
+        totalBox.style.transition = "background-color 0.3s";
+        totalBox.style.backgroundColor = "#dcfce7";
+        setTimeout(() => totalBox.style.backgroundColor = "white", 500);
+    }
 };
 
 window.removePayableItem = function(index) { window.payableItemsCart.splice(index, 1); window.renderPayableItems(); };
