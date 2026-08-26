@@ -3910,7 +3910,14 @@ window.generateVirtualID = async function() {
 
         await new Promise(r => setTimeout(r, 300));
 
-        html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true, allowTaint: false }).then(canvas => {
+        // 🔥 THE TAINTED VIDEO CRASH FIX IS APPLIED HERE!
+        html2canvas(template, { 
+            scale: 3, 
+            backgroundColor: "#ffffff", 
+            useCORS: true, 
+            allowTaint: false,
+            ignoreElements: (node) => node.nodeName === 'VIDEO' || node.tagName === 'VIDEO'
+        }).then(canvas => {
             let link = document.createElement('a');
             link.download = `Virtual_ID_${(data.cashierName || 'Staff').replace(/\s+/g, '_')}.png`;
             link.href = canvas.toDataURL("image/png");
