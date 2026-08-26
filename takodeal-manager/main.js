@@ -24587,12 +24587,6 @@ window.generateIDCard = async function() {
         return Swal.fire('Save Required', 'Please click "Save Data" first to automatically generate the new Employee ID number before printing the ID Card.', 'warning');
     }
 
-    let picSrc = 'logo_id.png'; 
-    let previewImg = document.getElementById('masterProfilePic'); 
-    if (previewImg && previewImg.src && !previewImg.src.includes('data:image/svg+xml')) {
-        picSrc = previewImg.src;
-    }
-
     let template = document.getElementById('idCardTemplate');
     template.style.display = 'flex';
     
@@ -24610,47 +24604,69 @@ window.generateIDCard = async function() {
 
     Swal.fire({title: 'Generating ID Card...', text: 'Downloading secure photo...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
-    // 🔥 THE BULLETPROOF BASE64 CONVERTER (CRASH-PROOF EDITION) 🔥
-    let base64Img = 'logo_id.png'; // Safe default to prevent Tainted Canvas crash!
+    // 🔥 THE CLEAN JSON-BASE64 CONVERTER (ZERO RED ERRORS) 🔥
+    let picSrc = 'logo_id.png'; 
+    let previewImg = document.getElementById('masterProfilePic'); 
+    if (previewImg && previewImg.src && !previewImg.src.includes('data:image/svg+xml')) {
+        picSrc = previewImg.src;
+    }
+
+    let base64Img = 'logo_id.png'; // Safe default
+    
     try {
         if (picSrc.startsWith('data:')) {
-            base64Img = picSrc; // Already Base64, safe to use immediately!
+            base64Img = picSrc;
         } else if (picSrc.startsWith('http')) {
             try {
-                // 1. Try direct fetch
-                const response = await fetch(picSrc);
-                const blob = await response.blob();
-                base64Img = await new Promise((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result);
-                    reader.readAsDataURL(blob);
-                });
-            } catch (err) {
-                console.warn("Direct fetch blocked. Routing through premium proxy...");
+                // 🛡️ TIER 1: AllOrigins JSON Converter
+                // This asks the server to convert the image to text BEFORE sending it to us.
+                // This completely bypasses all CORS security blocks with zero console errors!
+                const proxyUrl1 = `https://api.allorigins.win/get?url=${encodeURIComponent(picSrc)}`;
+                const response1 = await fetch(proxyUrl1);
+                const json1 = await response1.json();
+                
+                if (json1.contents && json1.contents.startsWith('data:image')) {
+                    base64Img = json1.contents;
+                } else {
+                    throw new Error("Proxy 1 failed to convert image.");
+                }
+            } catch (err1) {
+                console.warn("Proxy 1 failed. Trying CodeTabs proxy...");
                 try {
-                    // 2. Try Stronger Proxy (corsproxy.io)
-                    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(picSrc)}`;
-                    const proxyResponse = await fetch(proxyUrl);
-                    const proxyBlob = await proxyResponse.blob();
+                    // 🛡️ TIER 2: CodeTabs Raw Proxy
+                    const proxyUrl2 = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(picSrc)}`;
+                    const response2 = await fetch(proxyUrl2);
+                    const blob2 = await response2.blob();
+                    
+                    if (!blob2.type.includes('image')) throw new Error("Proxy 2 returned invalid data.");
+
                     base64Img = await new Promise((resolve) => {
                         const reader = new FileReader();
                         reader.onloadend = () => resolve(reader.result);
-                        reader.readAsDataURL(proxyBlob);
+                        reader.readAsDataURL(blob2);
                     });
-                } catch (proxyErr) {
-                    console.error("Proxy failed. Falling back to local logo to prevent system crash.");
-                    base64Img = 'logo_id.png'; // Keeps canvas clean!
+                } catch (err2) {
+                    console.error("All proxies blocked by network. Using Takodeal logo gracefully.");
+                    base64Img = 'logo_id.png'; // Safely fails without forcing a red HTTP error
                 }
             }
         } else {
-            base64Img = picSrc; // Local files are safe
+            base64Img = picSrc; // It's already a safe local file
         }
     } catch (e) {
-        console.error("Image conversion error:", e);
+        console.error("Image processing error:", e);
+        base64Img = 'logo_id.png';
     }
 
     let frontPic = document.getElementById('idFrontPic');
-    frontPic.removeAttribute('crossorigin'); // Remove this as it causes conflicts with Base64
+    
+    // If it's still an HTTP link (proxies failed), we MUST add crossorigin back so html2canvas doesn't crash!
+    if (base64Img.startsWith('http')) {
+        frontPic.setAttribute('crossorigin', 'anonymous');
+    } else {
+        frontPic.removeAttribute('crossorigin');
+    }
+    
     frontPic.src = base64Img;
 
     // Wait for the converted image to render on the screen
@@ -24658,14 +24674,25 @@ window.generateIDCard = async function() {
         if (frontPic.complete) resolve();
         else {
             frontPic.onload = resolve;
-            frontPic.onerror = resolve; 
+            frontPic.onerror = () => {
+                console.warn("Image rejected by browser. Securing fallback.");
+                frontPic.removeAttribute('crossorigin');
+                frontPic.src = 'logo_id.png';
+                resolve();
+            };
         }
     });
 
     await new Promise(r => setTimeout(r, 300));
 
     // Force allowTaint to false so it completely rejects bad data instead of crashing the browser
-    html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true, allowTaint: false }).then(canvas => {
+    html2canvas(template, { 
+        scale: 3, 
+        backgroundColor: "#ffffff", 
+        useCORS: true, 
+        allowTaint: false,
+        ignoreElements: (node) => node.nodeName === 'VIDEO' || node.tagName === 'VIDEO' || (node.id && node.id.includes('Chart')) 
+    }).then(canvas => {
         let link = document.createElement('a');
         link.download = `ID_Card_${name.replace(/\s+/g, '_')}.png`;
         link.href = canvas.toDataURL("image/png");
