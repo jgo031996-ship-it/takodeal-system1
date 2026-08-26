@@ -24094,15 +24094,14 @@ window.appendManagerPin = function(num) {
     let pinInput = document.getElementById('managerPinInput');
     if (pinInput) {
         pinInput.value += num;
+        
         // Clean up any error styling when they start typing
         pinInput.style.borderColor = '#cbd5e1';
         let err = document.getElementById('pinErrorMsg');
         if (err) err.style.display = 'none';
         
-        // Auto-submit feature: If they hit 4 digits, automatically try to log them in!
-        if (pinInput.value.length === 6) {
-            window.checkManagerPin();
-        }
+        // Removed the 4-digit auto-submit! 
+        // Now you can type as many numbers as you need.
     }
 };
 
