@@ -3910,14 +3910,7 @@ window.generateVirtualID = async function() {
 
         await new Promise(r => setTimeout(r, 300));
 
-        // 🔥 THE TAINTED VIDEO CRASH FIX: Added "ignoreElements" to bypass the camera!
-        html2canvas(template, { 
-            scale: 3, 
-            backgroundColor: "#ffffff", 
-            useCORS: true, 
-            allowTaint: false,
-            ignoreElements: (node) => node.nodeName === 'VIDEO' || node.tagName === 'VIDEO'
-        }).then(canvas => {
+        html2canvas(template, { scale: 3, backgroundColor: "#ffffff", useCORS: true, allowTaint: false }).then(canvas => {
             let link = document.createElement('a');
             link.download = `Virtual_ID_${(data.cashierName || 'Staff').replace(/\s+/g, '_')}.png`;
             link.href = canvas.toDataURL("image/png");
