@@ -3857,65 +3857,64 @@ window.generateVirtualID = async function() {
         document.getElementById('vIdBackNum').innerText = emergNum;
         document.getElementById('vIdBackBlood').innerText = blood;
 
-        // 🔥 THE CLEAN JSON-BASE64 CONVERTER (ZERO RED ERRORS) 🔥
-        let picSrc = data.profilePicUrl || 'logo_id.png'; 
-        let base64Img = 'logo_id.png'; // Safe default
+        // 🔥 THE UNBREAKABLE OFF-SCREEN CANVAS PRELOADER 🔥
+        let picSrc = data.profilePicUrl; 
         
-        // Smart Check: If they just uploaded it, grab it straight from the live screen!
+        // Smart Check: If they just uploaded it, grab the local data straight from the live screen!
         let previewImg = document.getElementById('profilePreview');
         if (previewImg && previewImg.src && previewImg.src.startsWith('data:image')) {
             picSrc = previewImg.src; 
         }
-        
-        try {
-            if (picSrc.startsWith('data:')) {
-                base64Img = picSrc;
-            } else if (picSrc.startsWith('http')) {
-                try {
-                    // 🛡️ TIER 1: AllOrigins JSON Converter
-                    // This asks the server to convert the image to text BEFORE sending it to us.
-                    // This completely bypasses all CORS security blocks with zero console errors!
-                    const proxyUrl1 = `https://api.allorigins.win/get?url=${encodeURIComponent(picSrc)}`;
-                    const response1 = await fetch(proxyUrl1);
-                    const json1 = await response1.json();
-                    
-                    if (json1.contents && json1.contents.startsWith('data:image')) {
-                        base64Img = json1.contents;
-                    } else {
-                        throw new Error("Proxy 1 failed to convert image.");
-                    }
-                } catch (err1) {
-                    console.warn("Proxy 1 failed. Trying CodeTabs proxy...");
-                    try {
-                        // 🛡️ TIER 2: CodeTabs Raw Proxy
-                        const proxyUrl2 = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(picSrc)}`;
-                        const response2 = await fetch(proxyUrl2);
-                        const blob2 = await response2.blob();
-                        
-                        if (!blob2.type.includes('image')) throw new Error("Proxy 2 returned invalid data.");
 
-                        base64Img = await new Promise((resolve) => {
-                            const reader = new FileReader();
-                            reader.onloadend = () => resolve(reader.result);
-                            reader.readAsDataURL(blob2);
-                        });
-                    } catch (err2) {
-                        console.error("All proxies blocked by network. Using Takodeal logo gracefully.");
-                        base64Img = 'logo_id.png'; // Safely fails without forcing a red HTTP error
+        let base64Img = 'logo_id.png'; // Failsafe fallback
+
+        if (picSrc) {
+            if (picSrc.startsWith('data:') || !picSrc.startsWith('http')) {
+                base64Img = picSrc; // Already safe!
+            } else {
+                // Secretly paints the image on an invisible canvas to bypass CORS security!
+                const getBase64 = (url) => new Promise((resolve, reject) => {
+                    let img = new Image();
+                    img.crossOrigin = "anonymous";
+                    img.onload = () => {
+                        let canvas = document.createElement("canvas");
+                        canvas.width = img.width;
+                        canvas.height = img.height;
+                        let ctx = canvas.getContext("2d");
+                        ctx.drawImage(img, 0, 0);
+                        resolve(canvas.toDataURL("image/png"));
+                    };
+                    img.onerror = reject;
+                    img.src = url;
+                });
+
+                try {
+                    // Tier 1: Premium CDN Image Proxy (wsrv.nl) - Extremely Reliable
+                    base64Img = await getBase64(`https://wsrv.nl/?url=${encodeURIComponent(picSrc)}`);
+                } catch (e1) {
+                    console.warn("Proxy 1 failed, trying Proxy 2...");
+                    try {
+                        // Tier 2: AllOrigins Raw Data Proxy
+                        base64Img = await getBase64(`https://api.allorigins.win/raw?url=${encodeURIComponent(picSrc)}`);
+                    } catch (e2) {
+                        console.warn("Proxy 2 failed, trying direct fetch...");
+                        try {
+                            // Tier 3: Direct Fetch (Just in case Firebase CORS is open)
+                            base64Img = await getBase64(picSrc);
+                        } catch (e3) {
+                            console.error("All image fetch attempts failed due to strict network security. Falling back to logo.");
+                            base64Img = 'logo_id.png';
+                        }
                     }
                 }
-            } else {
-                base64Img = picSrc; // It's already a safe local file
             }
-        } catch (e) {
-            console.error("Image processing error:", e);
-            base64Img = 'logo_id.png';
         }
 
         let frontPic = document.getElementById('vIdFrontPic');
-        frontPic.removeAttribute('crossorigin'); // Never needed because we strictly use Base64 now!
+        frontPic.removeAttribute('crossorigin'); // It is pure text now, so security tags are unnecessary!
         frontPic.src = base64Img;
 
+        // Ensure it's fully painted before proceeding
         await new Promise((resolve) => {
             if (frontPic.complete) resolve();
             else {
@@ -3926,7 +3925,7 @@ window.generateVirtualID = async function() {
 
         await new Promise(r => setTimeout(r, 300));
 
-        // 🔥 CAMERA BYPASS
+        // 🔥 THE SCREENSHOT ENGINE (Camera Ignored)
         html2canvas(template, { 
             scale: 3, 
             backgroundColor: "#ffffff", 
