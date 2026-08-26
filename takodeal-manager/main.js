@@ -15813,7 +15813,14 @@ window.loadAuditModalItems = async function() {
     }
 };
 
-// 🔥 THE FIX: Alias to fix the Search Bar error!
+// 🔥 THE MEMORY ENGINE: Saves your typing instantly so it survives searches!
+window.saveAuditTempCount = function(index, type, val) {
+    if (window.globalAuditItems[index]) {
+        if (type === 'purch') window.globalAuditItems[index].tempPurch = val;
+        if (type === 'base') window.globalAuditItems[index].tempBase = val;
+    }
+};
+
 window.filterAuditTable = function() {
     window.renderAuditModalItems();
 };
@@ -15847,18 +15854,22 @@ window.renderAuditModalItems = function() {
             expRemainderBase = 0;
         }
 
+        // 🔥 THE FIX: Inject the saved values back into the boxes when it redraws!
+        let savedPurch = item.tempPurch !== undefined ? item.tempPurch : '';
+        let savedBase = item.tempBase !== undefined ? item.tempBase : '';
+
         // 🎨 DUAL INPUT UI: Only shows two boxes if the item actually has a conversion!
         let inputHtml = '';
         if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
             inputHtml = `
                 <div style="display: flex; gap: 6px; align-items: center; justify-content: flex-end;">
                     <div style="display: flex; align-items: center; border: 2px solid #bae6fd; border-radius: 6px; background: #f0f9ff; overflow: hidden; width: 110px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
-                        <input type="number" id="auditInputPurch_${index}" placeholder="${expWholePurch}" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #0284c7; font-size: 15px; background: transparent;">
+                        <input type="number" id="auditInputPurch_${index}" value="${savedPurch}" oninput="window.saveAuditTempCount(${index}, 'purch', this.value)" placeholder="${expWholePurch}" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #0284c7; font-size: 15px; background: transparent;">
                         <span style="font-size: 9px; font-weight: 800; color: #0ea5e9; padding-right: 8px; text-transform: uppercase;">${pUom}</span>
                     </div>
                     <span style="font-weight: 900; color: #cbd5e1;">+</span>
                     <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; width: 110px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
-                        <input type="number" id="auditInputBase_${index}" placeholder="${expRemainderBase.toLocaleString(undefined, {maximumFractionDigits: 1})}" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
+                        <input type="number" id="auditInputBase_${index}" value="${savedBase}" oninput="window.saveAuditTempCount(${index}, 'base', this.value)" placeholder="${expRemainderBase.toLocaleString(undefined, {maximumFractionDigits: 1})}" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
                         <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
                     </div>
                 </div>
@@ -15867,7 +15878,7 @@ window.renderAuditModalItems = function() {
             // Standard single box for things without conversions (like Eggs)
             inputHtml = `
                 <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; max-width: 140px; margin-left: auto;">
-                    <input type="number" id="auditInputBase_${index}" placeholder="${item.systemQty.toFixed(1)}" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
+                    <input type="number" id="auditInputBase_${index}" value="${savedBase}" oninput="window.saveAuditTempCount(${index}, 'base', this.value)" placeholder="${item.systemQty.toFixed(1)}" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
                     <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
                     <input type="hidden" id="auditInputPurch_${index}" value="">
                 </div>
@@ -15907,14 +15918,15 @@ window.submitGeneralAudit = async function() {
         for (let i = 0; i < window.globalAuditItems.length; i++) {
             let item = window.globalAuditItems[i];
             
-            // 1. Grab both inputs
+            // 1. Grab both inputs from the screen. 
+            // 🔥 THE FIX: If they are hidden by the search bar, grab them safely from Memory!
             let pInputEl = document.getElementById(`auditInputPurch_${i}`);
             let bInputEl = document.getElementById(`auditInputBase_${i}`);
             
-            let pValRaw = pInputEl ? pInputEl.value.trim() : "";
-            let bValRaw = bInputEl ? bInputEl.value.trim() : "";
+            let pValRaw = pInputEl ? pInputEl.value.trim() : (item.tempPurch !== undefined ? String(item.tempPurch).trim() : "");
+            let bValRaw = bInputEl ? bInputEl.value.trim() : (item.tempBase !== undefined ? String(item.tempBase).trim() : "");
 
-            // 🚨 STRICT CHECK: If BOTH boxes are blank, WE SKIP IT ENTIRELY! It will NOT affect accuracy.
+            // 🚨 STRICT CHECK: If BOTH boxes and memory are blank, WE SKIP IT ENTIRELY!
             if (pValRaw === "" && bValRaw === "") continue;
 
             let pVal = parseFloat(pValRaw) || 0;
@@ -15967,7 +15979,7 @@ window.submitGeneralAudit = async function() {
                 systemQty: item.systemQty,
                 physicalQty: physicalQty,
                 uom: item.uom,
-                cost: item.baseCost || item.cost || 0 // Ensuring historical cost is locked in!
+                cost: item.baseCost || item.cost || 0 
             });
         }
 
