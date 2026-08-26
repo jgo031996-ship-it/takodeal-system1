@@ -4563,13 +4563,12 @@
           style="background: none; border: none; font-size: 28px; cursor: pointer; color: var(--text-muted);">✖</button>
       </div>
 
-      <div style="padding: 30px; overflow-y: auto; max-height: 70vh;">
+      <div style="padding: 30px; overflow-y: auto; max-height: 75vh;">
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
           <div>
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Branch</label>
-            <select id="newInvBranch"
-              style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
+            <select id="newInvBranch" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
               <option value="Main Office">Main Office</option>
               <option value="Cabantian">Cabantian</option>
               <option value="Citygate">Citygate</option>
@@ -4591,74 +4590,90 @@
         </div>
 
         <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Item Name *</label>
-        <input type="text" id="newInvName" placeholder="e.g. F1 Flour, Takoyaki Sauce"
-          style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 15px; box-sizing: border-box;">
+        <input type="text" id="newInvName" placeholder="e.g. F1 Flour, Burger Box" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; margin-bottom: 15px; box-sizing: border-box; font-weight: bold; color: #1e293b; outline: none;">
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
           <div>
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Purchase UOM</label>
-            <input type="text" id="newInvPurchUom" placeholder="e.g. Sack, Gallon, Pack"
-              style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;"
-              onkeyup="updateInvSummary()">
+            <input type="text" id="newInvPurchUom" placeholder="e.g. Pack, Gallon" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; outline: none;" onkeyup="updateInvSummary()">
           </div>
           <div>
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Base UOM</label>
-            <input type="text" id="newInvBaseUom" placeholder="e.g. gram, ml, piece"
-              style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;"
-              onkeyup="updateInvSummary()">
+            <input type="text" id="newInvBaseUom" placeholder="e.g. piece, gram" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; outline: none;" onkeyup="updateInvSummary()">
           </div>
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
           <div>
-            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Conversion (Base UOMs in 1
-              Purch UOM)</label>
-            <input type="number" id="newInvConv" placeholder="e.g. 25000"
-              style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;"
-              onkeyup="updateInvSummary()">
+            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Conversion (Base UOMs in 1 Purch UOM)</label>
+            <input type="number" id="newInvConv" placeholder="e.g. 50" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; outline: none;" onkeyup="updateInvSummary()">
           </div>
           <div>
-            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Cost per Purchase UOM
-              (₱)</label>
-            <input type="number" id="newInvCost" placeholder="e.g. 1160"
-              style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;"
-              onkeyup="updateInvSummary()">
+            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Cost per Purchase UOM (₱)</label>
+            <input type="number" id="newInvCost" placeholder="e.g. 150" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; outline: none;" onkeyup="updateInvSummary()">
           </div>
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
           <div>
-            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Initial Qty (in Purchase
-              UOM)</label>
-            <input type="number" id="newInvInitQty" placeholder="e.g. 1"
-              style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;"
-              onkeyup="updateInvSummary()">
+            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Initial Qty (in Purchase UOM)</label>
+            <input type="number" id="newInvInitQty" placeholder="e.g. 1" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box; outline: none;" onkeyup="updateInvSummary()">
           </div>
           <div>
-            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Low Stock Alert (in Purchase UOM)</label>
-            <input type="number" id="newInvReorder" placeholder="e.g. 10"
-              style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
+              <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Item Photo (For Kitchen Prep)</label>
+              <input type="file" id="newInvPhoto" accept="image/jpeg, image/png, image/webp" class="input-box" style="width: 100%; box-sizing: border-box; background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; outline: none; cursor: pointer; font-size: 13px; color: #475569;">
           </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+            <div>
+                <label style="font-size: 12px; font-weight: bold; color: #d97706;">Branch Low Stock Alert (Purch UOM)</label>
+                <input type="number" id="newInvBranchReorder" style="width: 100%; padding: 10px; border: 1px solid #fcd34d; border-radius: 6px; outline: none; background: #fffbeb; box-sizing: border-box;" placeholder="e.g. 1">
+            </div>
+            <div>
+                <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Main Office Low Stock Alert (Purch UOM)</label>
+                <input type="number" id="newInvHqReorder" style="width: 100%; padding: 10px; border: 1px solid #bae6fd; border-radius: 6px; outline: none; background: #f0f9ff; box-sizing: border-box;" placeholder="e.g. 4">
+            </div>
+        </div>
+
+        <div style="background: #f0fdf4; border: 1px dashed #16a34a; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+            <div style="margin-bottom: 8px;">
+                <label style="font-size: 13px; font-weight: bold; color: #15803d;">Maintaining Stock Qty Balance (Target Par Level)</label>
+                <div style="font-size: 10px; color: #166534; margin-top: 2px;">The AI Forecaster will use this to automatically request restocks up to this exact amount.</div>
+            </div>
+            <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <div style="display: flex; align-items: center; flex: 1; border: 2px solid #bbf7d0; border-radius: 8px; background: white; padding-right: 10px; overflow: hidden;">
+                    <input type="number" id="newInvMaintainPurch" style="width: 100%; padding: 10px; border: none; outline: none; font-size: 15px; font-weight: 900; color: #16a34a; background: transparent; text-align: center;" placeholder="0">
+                    <span id="newInvMaintainLabelPurch" style="font-size: 11px; font-weight: 800; color: #15803d; text-transform: uppercase;">Pack</span>
+                </div>
+                <div style="font-weight: 900; color: #cbd5e1; font-size: 20px;">+</div>
+                <div style="display: flex; align-items: center; flex: 1; border: 2px solid #cbd5e1; border-radius: 8px; background: #f8fafc; padding-right: 10px; overflow: hidden;">
+                    <input type="number" id="newInvMaintainBase" style="width: 100%; padding: 10px; border: none; outline: none; font-size: 15px; font-weight: 900; color: #334155; background: transparent; text-align: center;" placeholder="0">
+                    <span id="newInvMaintainLabelBase" style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase;">Piece</span>
+                </div>
+            </div>
         </div>
 
         <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; color: #0284c7; cursor: pointer; margin-bottom: 15px;">
-            <input type="checkbox" id="newInvAllowRequest" checked style="width: 18px; height: 18px; accent-color: #0284c7;">
+            <input type="checkbox" id="newInvAllowRequest" checked style="width: 18px; height: 18px; accent-color: #0284c7; cursor: pointer;">
             🚚 Allow Branches to Request this from HQ
         </label>
         
         <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; color: #d97706; cursor: pointer; margin-bottom: 15px;">
-            <input type="checkbox" id="newInvShowPrep" checked style="width: 18px; height: 18px; accent-color: #f59e0b;">
-            🔪 Show in Kitchen Prep Station (Allow this branch to cook it)
+            <input type="checkbox" id="newInvShowPrep" checked style="width: 18px; height: 18px; accent-color: #f59e0b; cursor: pointer;">
+            🔪 Show in Kitchen Prep Station (Allow branch cashiers to see/cook this)
         </label>
-        <div
-          style="background: #fff3cd; color: #856404; padding: 15px; border-radius: 6px; border: 1px solid #ffeeba; margin-bottom: 20px; font-size: 13px;"
-          id="newInvSummary">
+
+        <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; color: #16a34a; cursor: pointer; margin-bottom: 15px; background: #f0fdf4; padding: 10px; border-radius: 8px; border: 1px dashed #bbf7d0;">
+            <input type="checkbox" id="newInvBroadcastAll" checked style="width: 18px; height: 18px; accent-color: #16a34a; cursor: pointer;">
+            🌐 Broadcast to all active branches (Start them at 0 stock)
+        </label>
+
+        <div style="background: #fff3cd; color: #856404; padding: 15px; border-radius: 6px; border: 1px solid #ffeeba; margin-bottom: 20px; font-size: 13px;" id="newInvSummary">
           <strong>Summary:</strong> Fill out the form to see calculation.
         </div>
 
-        <button onclick="saveAdvancedInventoryItem()" id="btnSaveInv"
-          style="width: 100%; background: #f59e0b; color: white; border: none; padding: 14px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer;">💾
-          Save Item to Cloud</button>
+        <button onclick="saveAdvancedInventoryItem()" id="btnSaveInv" style="width: 100%; background: #f59e0b; color: white; border: none; padding: 16px; border-radius: 8px; font-size: 16px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); transition: 0.2s;">💾 Save Item to Cloud</button>
       </div>
     </div>
   </div>
