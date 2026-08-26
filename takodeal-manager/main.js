@@ -2150,20 +2150,20 @@ window.renderLogisticsFeed = function() {
     }
 };
 
-// ==========================================
-// 🔍 THE REVIEW REQUEST MODAL (WIDTH & ALIGNMENT FIX)
-// ==========================================
+// ========================================================
+// 🔍 STOCK REQUEST REVIEW ENGINE (INSTANT INVENTORY OVERRIDE)
+// ========================================================
 window.reviewPurchaseOrder = async function(poId) {
     try {
-        Swal.fire({ title: 'Cross-checking inventory...', didOpen: () => Swal.showLoading() });
-        const poRef = doc(db, "purchase_orders", poId);
-        const poSnap = await getDoc(poRef);
-        if (!poSnap.exists()) return Swal.fire('Error', 'Request not found.', 'error');
+        Swal.fire({title: 'Loading Request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        const docRef = window.doc(window.db, "purchase_orders", poId);
+        const snap = await window.getDoc(docRef);
+        if (!snap.exists()) return Swal.fire('Error', 'This request could not be found.', 'error');
         
-        let po = poSnap.data();
-        let dateStr = po.timestamp ? po.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+        let data = snap.data();
+        let dateStr = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp)).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
         
-        const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
+        const hqSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", "Main Office")));
         let hqStock = {};
         let hqDetails = {}; 
         hqSnap.forEach(d => {
@@ -2171,34 +2171,36 @@ window.reviewPurchaseOrder = async function(poId) {
             hqDetails[d.data().name] = d.data(); 
         });
 
-        let html = `
-            <div style="margin-bottom: 15px;">
-                <button onclick="window.deleteStockRequest('${poId}')" style="width: 100%; padding: 14px; background: #fef2f2; border: 2px solid #fca5a5; color: #b91c1c; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.15); text-transform: uppercase;">
-                    🗑️ Permanently Delete Request
-                </button>
-            </div>
-
-            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: left;">
-                <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Requested By</div>
-                <div style="font-size: 15px; color: #0f172a; font-weight: 900; margin-bottom: 10px;">👤 ${po.requestedBy || 'Staff'}</div>
-                <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Date Submitted</div>
+        // 🔥 THE LAYOUT FIX: table-layout: fixed and strict % widths pull the columns closer and stop horizontal scrolling!
+        let itemsHtml = `
+            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; text-align: left;">
+                <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Requested By</div>
+                <div style="font-size: 16px; color: #0f172a; font-weight: 900; margin-bottom: 10px;">👤 ${data.requestedBy || 'Staff'}</div>
+                <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Date Submitted</div>
                 <div style="font-size: 14px; color: #334155; font-weight: bold;">📅 ${dateStr}</div>
             </div>
-
-            <div style="max-height: 40vh; overflow-y: auto; overflow-x: hidden; text-align: left; border: 1px solid #cbd5e1; border-radius: 8px; border-bottom: none;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                <thead style="background: #0f172a; color: white; position: sticky; top: 0; z-index: 10;">
-                    <tr>
-                        <th style="padding: 12px 15px; text-align: left; width: 45%;">Item Description</th>
-                        <th style="padding: 12px 15px; text-align: right; width: 30%;">Count / Request</th>
-                        <th style="padding: 12px 15px; text-align: right; width: 25%;">Status</th>
-                    </tr>
-                </thead>
-                <tbody>`;
+            <div style="max-height: 350px; overflow-y: auto; overflow-x: hidden; border: 1px solid #cbd5e1; border-radius: 8px;">
+                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px; table-layout: fixed;">
+                    <thead style="background: #1e293b; color: white; position: sticky; top: 0; z-index: 10;">
+                        <tr>
+                            <th style="padding: 10px 15px; width: 45%; box-sizing: border-box;">Item Description</th>
+                            <th style="padding: 10px 15px; text-align: right; width: 25%; box-sizing: border-box;">Count / Request</th>
+                            <th style="padding: 10px 15px; text-align: right; width: 30%; box-sizing: border-box;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
         
-        if (po.items && po.items.length > 0) {
-            po.items.forEach(item => {
-                let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.physicalStock !== undefined);
+        if (data.items && data.items.length > 0) {
+            data.items.forEach(item => {
+                let itemName = item.itemName || item.name;
+                let hqData = hqDetails[itemName] || {};
+                
+                let masterCRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(item.convRate) || parseFloat(item.conversionRate) || 1;
+                let printUom = item.displayUom || item.purchaseUom || hqData.purchaseUom || hqData.purchUom || item.uom;
+                let baseUom = item.baseUom || hqData.uom || hqData.baseUom || item.uom;
+
+                let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.requestType === 'Emergency Override' || item.physicalStock !== undefined);
                 let badgeText = item.requestType || 'Request';
                 
                 if (badgeText === 'Delayed / Backlogged' && isAudit) {
@@ -2207,16 +2209,11 @@ window.reviewPurchaseOrder = async function(poId) {
                 }
 
                 let alertColor = badgeText === 'Out of Stock' ? '#dc2626' : (badgeText === 'Low Stock' ? '#d97706' : (badgeText === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
-                let alertStyle = badgeText === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: white; border: 1px solid ${alertColor}50;`;
-                let rowBg = badgeText === 'Lost in Transit' ? '#fff1f2' : 'white';
-
-                let itemName = item.itemName || item.name;
-                let hqData = hqDetails[itemName] || {};
+                if (badgeText === 'Emergency Override') alertColor = '#dc2626';
                 
-                let masterCRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(item.convRate) || parseFloat(item.conversionRate) || 1;
-                
-                let printUom = hqData.purchaseUom || hqData.purchUom || item.purchaseUom || item.displayUom || item.uom;
-                let baseUom = hqData.uom || hqData.baseUom || item.uom || item.baseUom;
+                // 🔥 THE AI LABEL & COLOR FIX 🔥
+                let isAI = badgeText.includes('AI') || badgeText.includes('Maintaining') || badgeText.includes('Restock') || badgeText.includes('Par Fill');
+                if (isAI) alertColor = '#0ea5e9';
 
                 let formatNum = (num) => (num % 1 === 0 ? num : parseFloat(num).toFixed(2));
 
@@ -2227,37 +2224,37 @@ window.reviewPurchaseOrder = async function(poId) {
 
                     let physCount = item.displayQty !== undefined ? parseFloat(item.displayQty) : (physBase / masterCRate);
                     let sysCount = sysBase !== '---' ? (sysBase / masterCRate) : '---';
-                    
-                    printUom = item.displayUom || printUom;
 
-                    // 🔥 THE FIX: White-space nowrap forces the numbers to never stack weirdly!
+                    // Dynamic Labels and Colors based on if it's an AI prediction or a physical count!
+                    let topLabel = isAI ? 'Qty Need' : 'Phys';
+                    let topColor = isAI ? '#0ea5e9' : '#b91c1c';
+
                     qtyDisplay = `
-                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900; text-align: right; white-space: nowrap;">Phys: ${formatNum(physCount)} <span style="font-size:10px;">${printUom}</span></div>
-                        <div style="font-size: 11px; color: #64748b; font-weight: bold; text-align: right; white-space: nowrap;">Sys: ${sysCount !== '---' ? formatNum(sysCount) : '---'} <span style="font-size:10px;">${printUom}</span></div>
+                        <div style="font-size: 13px; color: ${topColor}; font-weight: 900; white-space: nowrap;">${topLabel}: ${formatNum(physCount)} <span style="font-size:10px;">${printUom}</span></div>
+                        <div style="font-size: 11px; color: #64748b; font-weight: bold; white-space: nowrap;">Sys: ${sysCount !== '---' ? formatNum(sysCount) : '---'} <span style="font-size:10px;">${printUom}</span></div>
                     `;
                 } else {
-                    let reqBase = parseFloat(item.qty) || 0;
-                    let reqCount = reqBase / masterCRate;
-                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px; text-align: right; white-space: nowrap;">Req: ${formatNum(reqCount)} <span style="font-size: 10px; color: #64748b;">${printUom}</span></div>`;
+                    let reqQty = item.displayQty || item.qty || 0;
+                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px; white-space: nowrap;">Req: ${formatNum(reqQty)} <span style="font-size: 10px; color: #64748b;">${printUom}</span></div>`;
                 }
 
-                html += `
-                    <tr style="border-bottom: 1px solid #e2e8f0; background: ${rowBg};">
-                        <td style="padding: 12px 15px; font-weight: bold; color: #334155;">
+                itemsHtml += `
+                    <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
+                        <td style="padding: 12px 15px; font-weight: bold; color: #334155; vertical-align: middle; word-wrap: break-word;">
                             ${itemName}<br>
-                            <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${formatNum(hqStock[itemName] || 0)} ${baseUom}</span>
+                            <span style="font-size: 10px; color: #94a3b8; font-weight: normal;">HQ Stock: ${formatNum(hqStock[itemName] || 0)} ${baseUom}</span>
                         </td>
                         <td style="padding: 12px 15px; text-align: right; vertical-align: middle;">${qtyDisplay}</td>
                         <td style="padding: 12px 15px; text-align: right; vertical-align: middle;">
-                            <span style="${alertStyle} padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; white-space: nowrap; display: inline-block;">${badgeText}</span>
+                            <span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid ${alertColor}50; display: inline-block; text-align: center; line-height: 1.2;">${badgeText}</span>
                         </td>
                     </tr>
                 `;
             });
         }
-        html += `</tbody></table></div>`;
+        itemsHtml += `</tbody></table></div>`;
         
-        html += `
+        itemsHtml += `
             <div style="margin-top: 15px;">
                 <button type="button" onclick="window.processRejectRequest('${poId}')" style="width: 100%; background: #dc2626; color: white; border: none; padding: 12px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.2); transition: 0.2s;">
                     🛑 Reject Request & Notify Branch
@@ -2265,16 +2262,15 @@ window.reviewPurchaseOrder = async function(poId) {
             </div>
         `;
         
-        let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📦 Request from ${po.branch}`;
+        let titleTxt = data.type === 'Internal Request' ? `📢 Issue Report: ${data.branch}` : `📦 Request from ${data.branch}`;
         
-        // 🔥 THE FIX: Modal widened to 850px so everything fits on one screen perfectly!
         let actionResult = await Swal.fire({
             title: titleTxt, 
-            html: html, 
+            html: itemsHtml, 
             showCancelButton: true, showDenyButton: true,
             confirmButtonColor: '#16a34a', cancelButtonColor: '#64748b', denyButtonColor: '#d97706',
             confirmButtonText: '🛒 Load to Dispatch Cart', denyButtonText: '⏸️ Postpone / Set Aside', cancelButtonText: 'Close Window',
-            width: '850px',
+            width: 750, 
             customClass: { popup: 'rounded-2xl shadow-xl' }
         });
 
@@ -2282,11 +2278,11 @@ window.reviewPurchaseOrder = async function(poId) {
             if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
             
             let storedDest = localStorage.getItem('takodeal_dispatch_to');
-            if (window.dispatchCart.length > 0 && storedDest && storedDest !== po.branch) {
+            if (window.dispatchCart.length > 0 && storedDest && storedDest !== data.branch) {
                 await window.clearDispatchCart(); 
                 Swal.fire({
                     toast: true, position: 'top-end', icon: 'info',
-                    title: `Previous cart set aside. Loading ${po.branch}...`,
+                    title: `Previous cart set aside. Loading ${data.branch}...`,
                     showConfirmButton: false, timer: 3000
                 });
             }
@@ -2295,48 +2291,63 @@ window.reviewPurchaseOrder = async function(poId) {
                 Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
             }
 
-            po.items.forEach(newItem => {
-                let itemName = newItem.itemName || newItem.name;
+            let totalPenaltiesIssued = 0;
+
+            for (let reqItem of data.items) {
+                let itemName = reqItem.itemName || reqItem.name;
                 let hqData = hqDetails[itemName] || {}; 
 
-                let pUom = hqData.purchaseUom || hqData.purchUom || newItem.purchaseUom || newItem.uom || 'units';
-                let bUom = hqData.uom || hqData.baseUom || newItem.uom || newItem.baseUom || 'units';
-                let cRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(newItem.convRate) || parseFloat(newItem.conversionRate) || 1;
+                let pUom = hqData.purchaseUom || hqData.purchUom || reqItem.purchaseUom || reqItem.uom || 'units';
+                let bUom = hqData.uom || hqData.baseUom || reqItem.uom || reqItem.baseUom || 'units';
+                let cRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(reqItem.convRate) || parseFloat(reqItem.conversionRate) || 1;
 
-                let originalBaseQty = parseFloat(newItem.qty) || 0;
-                let originalDisplayQty = originalBaseQty / cRate; 
+                let originalQty = parseFloat(reqItem.displayQty || reqItem.qty) || 0;
+                let originalBaseQty = parseFloat(reqItem.qty) || 0;
                 
-                let physStockToPass = newItem.physicalStock !== undefined ? newItem.physicalStock : originalBaseQty;
-                let sysStockToPass = newItem.systemStock !== undefined ? newItem.systemStock : 0;
-                
-                let isAudit = (newItem.requestType === 'Low Stock' || newItem.requestType === 'Out of Stock' || newItem.physicalStock !== undefined);
-                let badgeText = newItem.requestType || 'Request';
+                let physStockToPass = reqItem.physicalStock !== undefined ? reqItem.physicalStock : originalQty;
+                let sysStockToPass = reqItem.systemStock !== undefined ? reqItem.systemStock : 0;
+
+                let isAudit = (reqItem.requestType === 'Low Stock' || reqItem.requestType === 'Out of Stock' || reqItem.requestType === 'Emergency Override' || reqItem.physicalStock !== undefined);
+                let badgeText = reqItem.requestType || 'Request';
+
                 if (badgeText === 'Delayed / Backlogged' && isAudit) {
                     badgeText = (physStockToPass <= 0) ? 'Out of Stock' : 'Low Stock';
                 }
-                
-                let rawReqQty = isAudit ? 0 : originalDisplayQty;
+
+                if (isAudit && reqItem.physicalStock !== undefined) {
+                    const branchInvQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", data.branch), window.where("name", "==", itemName));
+                    const branchInvSnap = await window.getDocs(branchInvQ);
+                    
+                    if (!branchInvSnap.empty) {
+                        let bDoc = branchInvSnap.docs[0]; 
+                        let bData = bDoc.data();
+                        let sysStock = parseFloat(bData.currentStock) || 0; 
+                        let physStock = parseFloat(reqItem.physicalStock) || 0;
+
+                        if (sysStock > 0 && physStock < sysStock) {
+                            let missingQty = sysStock - physStock;
+                            let costPerUnit = parseFloat(bData.baseCost) || parseFloat(bData.cost) || parseFloat(reqItem.cost) || 0;
+                            let penaltyValue = missingQty * costPerUnit;
+
+                            await window.updateDoc(bDoc.ref, { currentStock: physStock });
+                            await window.addDoc(window.collection(window.db, "stock_logs"), { branch: data.branch, item: itemName, uom: bData.uom || 'units', oldQty: sysStock, newQty: physStock, variance: -missingQty, type: "Audit Adjustment (Penalty)", note: `System expected ${sysStock.toFixed(2)}, staff reported ${physStock.toFixed(2)}.`, user: "System (HQ)", timestamp: window.serverTimestamp() });
+
+                            if (penaltyValue > 0) {
+                                await window.addDoc(window.collection(window.db, "staff_deductions"), { staffName: `Team ${data.branch}`, type: "Missing Stock Penalty", amount: penaltyValue, dateAdded: new Date(), status: "Unpaid", remarks: `Missing ${missingQty.toFixed(2)} ${bData.uom} of ${itemName} before restock.` });
+                                await window.addDoc(window.collection(window.db, "manager_alerts"), { type: "STOCK_PENALTY_APPLIED", branch: data.branch, cashier: "Team", message: `🚨 PENALTY APPLIED: ${itemName} baseline reset to ${physStock}. ₱${penaltyValue.toFixed(2)} penalty issued to Team ${data.branch}.`, timestamp: window.serverTimestamp(), isRead: false });
+                                totalPenaltiesIssued++;
+                            }
+                        } 
+                        else if (sysStock <= 0 || physStock >= sysStock) {
+                            await window.updateDoc(bDoc.ref, { currentStock: physStock });
+                            await window.addDoc(window.collection(window.db, "stock_logs"), { branch: data.branch, item: itemName, uom: bData.uom || 'units', oldQty: sysStock, newQty: physStock, variance: physStock - sysStock, type: "Baseline Reset", note: `Clean slate reset before restock.`, user: "System (HQ)", timestamp: window.serverTimestamp() });
+                        }
+                    }
+                }
+
+                let rawReqQty = isAudit ? 0 : originalQty;
                 let baseReqQty = isAudit ? 0 : originalBaseQty;
-
-                let mappedItem = {
-                    ...newItem, 
-                    rawQty: rawReqQty,
-                    qty: baseReqQty,
-                    origRawQty: rawReqQty, 
-                    origBaseQty: baseReqQty,
-                    purchaseUom: pUom,
-                    baseUom: bUom,
-                    conversionRate: cRate,
-                    selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
-                    hqStock: parseFloat(hqData.currentStock) || 0,
-                    requestType: badgeText,
-                    physicalStock: physStockToPass, 
-                    systemStock: sysStockToPass
-                };
-
-                mappedItem.convRate = (mappedItem.selectedUom === 'purch') ? cRate : 1;
-                mappedItem.friendlyUom = (mappedItem.selectedUom === 'purch') ? pUom : bUom;
-
+                
                 let existing = window.dispatchCart.find(i => (i.itemName || i.name) === itemName);
                 
                 if (existing) {
@@ -2344,56 +2355,63 @@ window.reviewPurchaseOrder = async function(poId) {
                     existing.qty = (parseFloat(existing.qty) || 0) + baseReqQty;
                     existing.origRawQty = existing.rawQty;
                     existing.origBaseQty = existing.qty;
-                    existing.requestType = badgeText;
-                    existing.physicalStock = physStockToPass;
-                    existing.systemStock = sysStockToPass;
-                    existing.purchaseUom = mappedItem.purchaseUom;
-                    existing.baseUom = mappedItem.baseUom;
-                    existing.conversionRate = mappedItem.conversionRate;
-                    existing.hqStock = mappedItem.hqStock;
+                    existing.requestType = badgeText; 
                 } else {
-                    window.dispatchCart.push(mappedItem);
+                    window.dispatchCart.push({
+                        itemName: itemName, name: itemName, sourceId: reqItem.sourceId || reqItem.id,
+                        rawQty: rawReqQty, qty: baseReqQty,
+                        origRawQty: rawReqQty, origBaseQty: baseReqQty,
+                        uom: reqItem.displayUom || reqItem.uom, baseUom: reqItem.baseUom || reqItem.uom,
+                        purchaseUom: pUom, friendlyUom: reqItem.displayUom || reqItem.uom,
+                        selectedUom: (reqItem.displayUom !== reqItem.uom) ? 'purch' : 'base',
+                        convRate: cRate, conversionRate: cRate, category: reqItem.category || "Ingredients",
+                        requestType: badgeText
+                    });
                 }
-            });
+            }
 
             document.getElementById('dispFrom').value = "Main Office"; 
-            document.getElementById('dispTo').value = po.branch;
+            document.getElementById('dispTo').value = data.branch;
             
             let activePos = localStorage.getItem('takodeal_active_po') || "";
             let poArray = activePos ? activePos.split(',') : [];
             if (!poArray.includes(poId)) poArray.push(poId);
             
             localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-            localStorage.setItem('takodeal_dispatch_to', po.branch);
+            localStorage.setItem('takodeal_dispatch_to', data.branch);
             localStorage.setItem('takodeal_active_po', poArray.join(','));
             
-            await updateDoc(poRef, { status: "Drafting" });
+            await window.updateDoc(docRef, { status: "Drafting", managerMessage: 'Approved. Inventory synced and loaded into Dispatch Cart.', processedAt: window.serverTimestamp() });
             
             window.renderDispatchCart(); 
             window.loadDispatchLogs();
             
-            Swal.fire({title: 'Loaded to Cart! 🛒', text: `Items moved to Dispatch for ${po.branch}.`, icon: 'success', timer: 2000, showConfirmButton: false});
+            let penaltyMsg = totalPenaltiesIssued > 0 ? `<br><br>🚨 <b>${totalPenaltiesIssued} Penalty Deduction(s)</b> automatically issued to Team ${data.branch} for missing stock!` : '';
+            Swal.fire({title: 'Loaded to Cart! 🛒', html: `Items moved to Dispatch for ${data.branch}. Branch inventory has been corrected.${penaltyMsg}`, icon: 'success', timer: 4000, showConfirmButton: false});
+            
+            if (typeof window.switchView === 'function') window.switchView('dispatch'); 
+            if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
             
         } else if (actionResult.isDenied) {
             const { value: rejectReason } = await Swal.fire({
-                title: 'Postpone Request',
+                title: 'Set Aside Request',
                 input: 'text',
-                inputLabel: 'Reason for postponing',
-                inputPlaceholder: 'Out of stock at HQ...',
+                inputLabel: 'Reason for postponement',
+                inputPlaceholder: 'e.g., Out of stock at HQ, arriving tomorrow',
                 showCancelButton: true,
-                confirmButtonColor: '#d97706',
-                confirmButtonText: 'Set Aside',
+                confirmButtonColor: '#dc2626',
+                confirmButtonText: 'Submit Reason',
                 inputValidator: (value) => { if (!value) return 'You need to provide a reason!'; }
             });
             
             if (rejectReason) {
                 Swal.fire({title: 'Updating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-                await updateDoc(poRef, { status: 'Delayed', managerMessage: rejectReason, processedAt: serverTimestamp() });
+                await window.updateDoc(docRef, { status: 'Delayed', managerMessage: rejectReason, processedAt: window.serverTimestamp() });
                 Swal.fire('Postponed', 'The request was set aside.', 'info');
                 window.loadDispatchLogs(); 
             }
         }
-    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load details.', 'error'); }
+    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load request details.', 'error'); }
 };
 
 // ==========================================
@@ -20054,252 +20072,7 @@ window.switchLogisticsTimeFilter = function(filter) {
     window.renderLogisticsUI();
 };
 
-// ========================================================
-// 🔍 STOCK REQUEST REVIEW ENGINE (INSTANT INVENTORY OVERRIDE)
-// ========================================================
-window.reviewStockRequest = async function(docId) {
-    try {
-        Swal.fire({title: 'Loading Request...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-        const docRef = doc(db, "purchase_orders", docId);
-        const snap = await getDoc(docRef);
-        if (!snap.exists()) return Swal.fire('Error', 'This request could not be found.', 'error');
-        
-        let data = snap.data();
-        let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
-        
-        const hqSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
-        let hqStock = {};
-        let hqDetails = {}; 
-        hqSnap.forEach(d => {
-            hqStock[d.data().name] = parseFloat(d.data().currentStock || 0);
-            hqDetails[d.data().name] = d.data(); 
-        });
-
-        // 🔥 WIDER MODAL WITH RIGHT-ALIGNED TEXT TO CLOSE THE GAP
-        let itemsHtml = `
-            <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px; text-align: left;">
-                <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Requested By</div>
-                <div style="font-size: 16px; color: #0f172a; font-weight: 900; margin-bottom: 10px;">👤 ${data.requestedBy || 'Staff'}</div>
-                <div style="font-size: 12px; color: #64748b; font-weight: bold; text-transform: uppercase;">Date Submitted</div>
-                <div style="font-size: 14px; color: #334155; font-weight: bold;">📅 ${dateStr}</div>
-            </div>
-            <div style="max-height: 350px; overflow-y: auto; border: 1px solid #cbd5e1; border-radius: 8px;">
-                <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
-                    <thead style="background: #1e293b; color: white; position: sticky; top: 0; z-index: 10;">
-                        <tr>
-                            <th style="padding: 10px; width: 50%;">Item Description</th>
-                            <th style="padding: 10px; text-align: right; width: 20%;">Count / Request</th>
-                            <th style="padding: 10px; text-align: right; width: 30%;">Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
-        
-        if (data.items && data.items.length > 0) {
-            data.items.forEach(item => {
-                let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.requestType === 'Emergency Override' || item.physicalStock !== undefined);
-                let badgeText = item.requestType || 'Request';
-                
-                if (badgeText === 'Delayed / Backlogged' && isAudit) {
-                    let phys = item.physicalStock !== undefined ? item.physicalStock : (item.displayQty || item.qty || 0);
-                    badgeText = (phys <= 0) ? 'Out of Stock' : 'Low Stock';
-                }
-
-                let alertColor = badgeText === 'Out of Stock' ? '#dc2626' : (badgeText === 'Low Stock' ? '#d97706' : (badgeText === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
-                if (badgeText === 'Emergency Override') alertColor = '#dc2626';
-                
-                // AI Color Blue
-                let isAI = badgeText.includes('AI') || badgeText.includes('Maintaining') || badgeText.includes('Restock') || badgeText.includes('Par Fill');
-                if (isAI) alertColor = '#0ea5e9';
-
-                let qtyDisplay = '';
-                if (isAudit) {
-                    let physCount = item.displayQty !== undefined ? item.displayQty : (item.physicalStock !== undefined ? item.physicalStock : (item.qty || 0));
-                    let sysCount = item.systemStock !== undefined ? item.systemStock : '---';
-
-                    if (sysCount !== '---' && item.conversionRate) {
-                        sysCount = (parseFloat(sysCount) / parseFloat(item.conversionRate)).toFixed(2);
-                    }
-
-                    // 🔥 DYNAMIC LABEL: Uses "Qty Need" if it was sent by the AI Forecaster
-                    let topLabel = isAI ? 'Qty Need' : 'Phys';
-
-                    qtyDisplay = `
-                        <div style="font-size: 13px; color: #b91c1c; font-weight: 900; white-space: nowrap;">${topLabel}: ${physCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
-                        <div style="font-size: 11px; color: #64748b; font-weight: bold; white-space: nowrap;">Sys: ${sysCount} <span style="font-size:10px;">${item.displayUom || item.uom}</span></div>
-                    `;
-                } else {
-                    let reqQty = item.displayQty || item.qty || 0;
-                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px; white-space: nowrap;">Req: ${reqQty} <span style="font-size: 10px; color: #64748b;">${item.displayUom || item.uom}</span></div>`;
-                }
-
-                itemsHtml += `
-                    <tr style="border-bottom: 1px solid #e2e8f0; background: white;">
-                        <td style="padding: 10px; font-weight: bold; color: #334155; vertical-align: middle;">
-                            ${item.itemName || item.name}<br>
-                            <span style="font-size: 10px; color: #94a3b8; font-weight: normal;">HQ Stock: ${hqStock[item.itemName || item.name] || 0}</span>
-                        </td>
-                        <td style="padding: 10px; text-align: right; vertical-align: middle;">${qtyDisplay}</td>
-                        <td style="padding: 10px; text-align: right; vertical-align: middle;">
-                            <span style="color: ${alertColor}; background: ${alertColor}15; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid ${alertColor}50; display: inline-block; text-align: center; line-height: 1.2; white-space: nowrap;">${badgeText}</span>
-                        </td>
-                    </tr>
-                `;
-            });
-        }
-        itemsHtml += `</tbody></table></div>`;
-
-        let actionResult = await Swal.fire({
-            title: `📦 Request from ${data.branch}`,
-            html: itemsHtml,
-            showDenyButton: true,
-            showCancelButton: true,
-            confirmButtonText: '🛒 Accept & Load Cart',
-            denyButtonText: '❌ Postpone / Set Aside',
-            cancelButtonText: 'Close Window',
-            confirmButtonColor: '#16a34a',
-            denyButtonColor: '#dc2626',
-            cancelButtonColor: '#64748b',
-            width: 750, // Ensures it stays wide
-            customClass: { popup: 'rounded-2xl shadow-2xl' }
-        });
-
-        if (actionResult.isConfirmed) {
-            Swal.fire({title: 'Syncing Inventory & Penalties...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-            if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
-            let storedDest = localStorage.getItem('takodeal_dispatch_to');
-            if (window.dispatchCart.length > 0 && storedDest && storedDest !== data.branch) {
-                await window.clearDispatchCart(); 
-            }
-
-            if (window.dispatchCart.length === 0) {
-                Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
-            }
-
-            let totalPenaltiesIssued = 0;
-
-            for (let reqItem of data.items) {
-                let itemName = reqItem.itemName || reqItem.name;
-                let hqData = hqDetails[itemName] || {}; 
-
-                let pUom = hqData.purchaseUom || hqData.purchUom || reqItem.purchaseUom || reqItem.uom || 'units';
-                let bUom = hqData.uom || hqData.baseUom || reqItem.uom || reqItem.baseUom || 'units';
-                let cRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(reqItem.convRate) || parseFloat(reqItem.conversionRate) || 1;
-
-                let originalQty = parseFloat(reqItem.displayQty || reqItem.qty) || 0;
-                let originalBaseQty = parseFloat(reqItem.qty) || 0;
-                
-                let physStockToPass = reqItem.physicalStock !== undefined ? reqItem.physicalStock : originalQty;
-                let sysStockToPass = reqItem.systemStock !== undefined ? reqItem.systemStock : 0;
-
-                let isAudit = (reqItem.requestType === 'Low Stock' || reqItem.requestType === 'Out of Stock' || reqItem.requestType === 'Emergency Override' || reqItem.physicalStock !== undefined);
-                let badgeText = reqItem.requestType || 'Request';
-
-                if (badgeText === 'Delayed / Backlogged' && isAudit) {
-                    badgeText = (physStockToPass <= 0) ? 'Out of Stock' : 'Low Stock';
-                }
-
-                if (isAudit && reqItem.physicalStock !== undefined) {
-                    const branchInvQ = query(collection(db, "inventory"), where("branch", "==", data.branch), where("name", "==", itemName));
-                    const branchInvSnap = await getDocs(branchInvQ);
-                    
-                    if (!branchInvSnap.empty) {
-                        let bDoc = branchInvSnap.docs[0]; 
-                        let bData = bDoc.data();
-                        let sysStock = parseFloat(bData.currentStock) || 0; 
-                        let physStock = parseFloat(reqItem.physicalStock) || 0;
-
-                        if (sysStock > 0 && physStock < sysStock) {
-                            let missingQty = sysStock - physStock;
-                            let costPerUnit = parseFloat(bData.baseCost) || parseFloat(bData.cost) || parseFloat(reqItem.cost) || 0;
-                            let penaltyValue = missingQty * costPerUnit;
-
-                            await updateDoc(bDoc.ref, { currentStock: physStock });
-                            await addDoc(collection(db, "stock_logs"), { branch: data.branch, item: itemName, uom: bData.uom || 'units', oldQty: sysStock, newQty: physStock, variance: -missingQty, type: "Audit Adjustment (Penalty)", note: `System expected ${sysStock.toFixed(2)}, staff reported ${physStock.toFixed(2)}.`, user: "System (HQ)", timestamp: serverTimestamp() });
-
-                            if (penaltyValue > 0) {
-                                await addDoc(collection(db, "staff_deductions"), { staffName: `Team ${data.branch}`, type: "Missing Stock Penalty", amount: penaltyValue, dateAdded: new Date(), status: "Unpaid", remarks: `Missing ${missingQty.toFixed(2)} ${bData.uom} of ${itemName} before restock.` });
-                                await addDoc(collection(db, "manager_alerts"), { type: "STOCK_PENALTY_APPLIED", branch: data.branch, cashier: "Team", message: `🚨 PENALTY APPLIED: ${itemName} baseline reset to ${physStock}. ₱${penaltyValue.toFixed(2)} penalty issued to Team ${data.branch}.`, timestamp: serverTimestamp(), isRead: false });
-                                totalPenaltiesIssued++;
-                            }
-                        } 
-                        else if (sysStock <= 0 || physStock >= sysStock) {
-                            await updateDoc(bDoc.ref, { currentStock: physStock });
-                            await addDoc(collection(db, "stock_logs"), { branch: data.branch, item: itemName, uom: bData.uom || 'units', oldQty: sysStock, newQty: physStock, variance: physStock - sysStock, type: "Baseline Reset", note: `Clean slate reset before restock.`, user: "System (HQ)", timestamp: serverTimestamp() });
-                        }
-                    }
-                }
-
-                let rawReqQty = isAudit ? 0 : originalQty;
-                let baseReqQty = isAudit ? 0 : originalBaseQty;
-                
-                let existing = window.dispatchCart.find(i => (i.itemName || i.name) === itemName);
-                
-                if (existing) {
-                    existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawReqQty;
-                    existing.qty = (parseFloat(existing.qty) || 0) + baseReqQty;
-                    existing.origRawQty = (parseFloat(existing.origRawQty) || 0) + rawReqQty;
-                    existing.origBaseQty = (parseFloat(existing.origBaseQty) || 0) + baseReqQty;
-                    existing.requestType = badgeText; 
-                } else {
-                    window.dispatchCart.push({
-                        itemName: itemName, name: itemName, sourceId: reqItem.sourceId || reqItem.id,
-                        rawQty: rawReqQty, qty: baseReqQty,
-                        origRawQty: rawReqQty, origBaseQty: baseReqQty,
-                        uom: reqItem.displayUom || reqItem.uom, baseUom: reqItem.baseUom || reqItem.uom,
-                        purchaseUom: pUom, friendlyUom: reqItem.displayUom || reqItem.uom,
-                        selectedUom: (reqItem.displayUom !== reqItem.uom) ? 'purch' : 'base',
-                        convRate: cRate, conversionRate: cRate, category: reqItem.category || "Ingredients",
-                        requestType: badgeText
-                    });
-                }
-            }
-
-            localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-            localStorage.setItem('takodeal_dispatch_to', data.branch);
-
-            let activePo = localStorage.getItem('takodeal_active_po') || "";
-            if (!activePo.includes(docId)) {
-                activePo = activePo ? activePo + ',' + docId : docId;
-                localStorage.setItem('takodeal_active_po', activePo);
-            }
-
-            if (typeof window.switchView === 'function') window.switchView('dispatch'); 
-            
-            await updateDoc(docRef, {
-                status: 'Drafting',
-                managerMessage: 'Approved. Inventory synced and loaded into Dispatch Cart.',
-                processedAt: serverTimestamp()
-            });
-
-            let penaltyMsg = totalPenaltiesIssued > 0 ? `<br><br>🚨 <b>${totalPenaltiesIssued} Penalty Deduction(s)</b> automatically issued to Team ${data.branch} for missing stock!` : '';
-            
-            Swal.fire({title: 'Loaded to Cart! 🛒', html: `Items moved to Dispatch for ${data.branch}. Branch inventory has been corrected.${penaltyMsg}`, icon: 'success', timer: 4000, showConfirmButton: false});
-            
-            if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
-            
-        } else if (actionResult.isDenied) {
-            const { value: rejectReason } = await Swal.fire({
-                title: 'Set Aside Request',
-                input: 'text',
-                inputLabel: 'Reason for postponement',
-                inputPlaceholder: 'e.g., Out of stock at HQ, arriving tomorrow',
-                showCancelButton: true,
-                confirmButtonColor: '#dc2626',
-                confirmButtonText: 'Submit Reason',
-                inputValidator: (value) => { if (!value) return 'You need to provide a reason!'; }
-            });
-            
-            if (rejectReason) {
-                Swal.fire({title: 'Updating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-                await updateDoc(docRef, { status: 'Delayed', managerMessage: rejectReason, processedAt: serverTimestamp() });
-                Swal.fire('Postponed', 'The request was set aside.', 'info');
-                window.loadDispatchLogs(); 
-            }
-        }
-    } catch (e) { console.error(e); Swal.fire('Error', 'Failed to load request details.', 'error'); }
-};
+window.reviewStockRequest = window.reviewPurchaseOrder;
 
 // ========================================================
 // 🚨 AUTO-SANCTION ENGINE: GHOST PUNCH DETECTOR
