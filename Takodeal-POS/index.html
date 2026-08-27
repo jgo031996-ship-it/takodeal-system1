@@ -904,7 +904,7 @@
         <!-- Master Header & Tab Switches -->
         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding: 25px 30px; background: #f8fafc; flex-wrap: wrap; gap: 15px;">
           <div>
-            <h2 style="margin: 0; color: #1e293b; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">📋</span> Stock Counts & History</h2>
+            <h2 style="margin: 0; color: #0f172a; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">📋</span> Stock Counts & History</h2>
             <p style="color: #64748b; font-size: 13px; margin: 8px 0 0 0; font-weight: 500;">Enter physical counts to trigger silent AI restocks, or view history.</p>
           </div>
           <div style="display: flex; gap: 10px; flex-wrap: wrap;">
@@ -917,9 +917,17 @@
         <!-- TAB 1: MANUAL COUNT (SPREADSHEET) -->
         <div id="stockReqTabNew" style="display: block;">
             
-            <!-- Controls Bar -->
+            <!-- Controls Bar (With Search!) -->
             <div style="display: flex; justify-content: space-between; padding: 20px 30px; background: white; border-bottom: 2px solid #e2e8f0; align-items: center; flex-wrap: wrap; gap: 15px;">
-                <button onclick="window.loadStockRequestUI()" style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: 0.2s;">🔄 Refresh List</button>
+                <div style="display: flex; gap: 15px; align-items: center; flex: 1; min-width: 300px;">
+                    <button onclick="window.loadStockRequestUI()" style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: 0.2s; flex-shrink: 0;">🔄 Refresh List</button>
+                    
+                    <div style="position: relative; flex: 1; max-width: 400px;">
+                        <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 16px;">🔍</span>
+                        <input type="text" id="manualCountSearch" placeholder="Search item..." onkeyup="window.filterManualStockCount()" style="width: 100%; padding: 12px 12px 12px 40px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #334155; font-size: 14px; box-sizing: border-box; background: #f8fafc;">
+                    </div>
+                </div>
+
                 <button id="btnSubmitAllCounts" onclick="window.submitAllManualCounts()" style="background: #10b981; color: white; border: none; padding: 12px 30px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3); transition: 0.2s; display: flex; align-items: center; gap: 8px;">
                     <span style="font-size: 18px;">💾</span> Submit All Counts
                 </button>
