@@ -5655,6 +5655,7 @@ window.switchStockReqTab = function(tab) {
     }
 };
 
+// Memory Saver
 window.saveCountMemory = function(itemId, type, val) {
     let key = `${itemId}_${type}`;
     if (val === '') {
@@ -5665,12 +5666,12 @@ window.saveCountMemory = function(itemId, type, val) {
     localStorage.setItem('takodeal_stock_count_memory', JSON.stringify(window.stockCountMemory));
 };
 
+// Search Filter - uses display:none so inputs aren't wiped!
 window.filterManualStockCount = function() {
     let input = document.getElementById('manualCountSearch').value.toLowerCase();
     let rows = document.querySelectorAll('.manual-count-row');
     let categories = document.querySelectorAll('.manual-count-category');
 
-    // 1. Filter the item rows instantly
     rows.forEach(row => {
         let itemName = row.getAttribute('data-name');
         if (itemName.includes(input)) {
@@ -5682,15 +5683,14 @@ window.filterManualStockCount = function() {
         }
     });
 
-    // 2. Hide category headers if all their items are hidden
     categories.forEach(cat => {
         let nextEl = cat.nextElementSibling;
         let hasVisible = false;
         while(nextEl && nextEl.classList.contains('manual-count-row')) {
-            if (nextEl.classList.contains('visible-row')) { hasVisible = true; break; }
+            if (nextEl.style.display !== 'none') { hasVisible = true; break; }
             nextEl = nextEl.nextElementSibling;
         }
-        cat.style.display = (hasVisible || input === '') ? '' : 'none';
+        cat.style.display = hasVisible ? '' : 'none';
     });
 };
 
@@ -5699,7 +5699,7 @@ window.loadStockRequestUI = async function() {
     if (!tbody) return;
     
     tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 15px;">⏳ Loading stock checklist...</td></tr>';
-    window.currentStockChecklist = []; // Clear memory
+    window.currentStockChecklist = []; 
 
     try {
         const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.sessionUser.branch));
@@ -5734,11 +5734,10 @@ window.loadStockRequestUI = async function() {
                 let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
                 let parLevelBase = parseFloat(item.maintainingStock) || 0;
 
-                // Restoring saved input from memory!
+                // Load from memory
                 let memPurch = window.stockCountMemory[`${item.id}_purch`] !== undefined ? window.stockCountMemory[`${item.id}_purch`] : '';
                 let memBase = window.stockCountMemory[`${item.id}_base`] !== undefined ? window.stockCountMemory[`${item.id}_base`] : '';
 
-                // Format Maintaining Stock
                 let maintainingHtml = `<span style="color:#94a3b8; font-size:11px; font-style:italic;">Not Set</span>`;
                 if (parLevelBase > 0) {
                     let wPurch = 0; let rBase = parLevelBase;
@@ -5752,7 +5751,6 @@ window.loadStockRequestUI = async function() {
                     maintainingHtml = str;
                 }
 
-                // Format Dual Input Boxes
                 let inputHtml = '';
                 if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
                     inputHtml = `
@@ -5789,7 +5787,7 @@ window.loadStockRequestUI = async function() {
 
         tbody.innerHTML = html || '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No inventory items available to count.</td></tr>';
 
-        // Ensure search applies if there's already text in the box
+        // Re-apply search if exists
         window.filterManualStockCount();
 
     } catch (e) {
