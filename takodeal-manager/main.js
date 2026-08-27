@@ -13400,6 +13400,9 @@ window.submitManualAttendance = async function() {
     }
 };
 
+window.otCache = { staff: {}, schedule: null };
+window.currentCalculatedOtAmount = 0;
+
 window.openManualOvertimeModal = async function() {
     document.getElementById('manualOvertimeModal').style.display = 'flex';
     let select = document.getElementById('manOtStaff');
@@ -13409,17 +13412,28 @@ window.openManualOvertimeModal = async function() {
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     document.getElementById('manOtDate').value = now.toISOString().split('T')[0];
     
-    document.getElementById('manOtAmount').value = '';
+    document.getElementById('manOtHours').value = '';
     document.getElementById('manOtRemarks').value = '';
+    document.getElementById('manOtCalcAmount').innerText = '₱0.00';
+    document.getElementById('manOtRateInfo').innerText = 'Select staff, date, and hours to calculate...';
+    window.currentCalculatedOtAmount = 0;
 
     try {
+        // 1. Fetch Schedule Engine
+        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+        if (schedSnap.exists()) window.otCache.schedule = schedSnap.data();
+
+        // 2. Fetch Staff Profiles
         const snap = await getDocs(collection(db, "cashiers"));
         let html = '<option value="">-- Select Staff --</option>';
         let staffList = [];
+        window.otCache.staff = {}; 
         
-        snap.forEach(doc => {
-            if (doc.data().status === 'Resigned') return; // 🛑 ARCHIVE FIX
-            staffList.push(doc.data().cashierName);
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            if (d.status === 'Resigned' || d.pin === 'REVOKED') return; 
+            staffList.push(d.cashierName);
+            window.otCache.staff[d.cashierName] = d; 
         });
         
         staffList.sort().forEach(name => {
@@ -13432,14 +13446,113 @@ window.openManualOvertimeModal = async function() {
     }
 };
 
+window.calcAutoOvertime = function() {
+    let staffName = document.getElementById('manOtStaff').value;
+    let dateRaw = document.getElementById('manOtDate').value;
+    let hoursRaw = document.getElementById('manOtHours').value;
+    let calcDisplay = document.getElementById('manOtCalcAmount');
+    let infoDisplay = document.getElementById('manOtRateInfo');
+
+    if (!staffName || !dateRaw || !hoursRaw) {
+        calcDisplay.innerText = '₱0.00';
+        infoDisplay.innerText = 'Select staff, date, and hours to calculate...';
+        window.currentCalculatedOtAmount = 0;
+        return;
+    }
+
+    let hours = parseFloat(hoursRaw) || 0;
+    let profile = window.otCache.staff[staffName];
+    if (!profile) return;
+
+    // Retrieve rates (Note: hourlyRate field acts as Daily Rate in Takodeal DB)
+    let dailyRate = parseFloat(profile.hourlyRate) || 0; 
+    let isNightEligibleLegacy = (profile.eligibleNightDiff !== false);
+    let nightRate = profile.nightDiffRate !== undefined ? parseFloat(profile.nightDiffRate) : (isNightEligibleLegacy ? 50 : 0);
+    
+    // Determine Shift via Schedule Calendar
+    let isNightShift = false;
+    let shiftName = "Unscheduled";
+    let schedData = window.otCache.schedule;
+    
+    if (schedData && schedData.currentSchedule) {
+        let otDate = new Date(dateRaw + 'T12:00:00');
+        let lDay = otDate.getDate(); let lMonth = otDate.getMonth() + 1; let lYear = otDate.getFullYear();
+
+        if (schedData.currentYear === lYear && schedData.currentMonth === lMonth) {
+            let branchSched = schedData.currentSchedule[lDay] ? schedData.currentSchedule[lDay][profile.branch] : null;
+            if (branchSched && branchSched.scheduled) {
+                let nickname = profile.scheduleNickname || profile.cashierName;
+                let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname);
+                
+                if (assignedShiftId && schedData.branchConfig[profile.branch]) {
+                    let shiftConfig = schedData.branchConfig[profile.branch].find(s => s.id === assignedShiftId);
+                    if (shiftConfig) {
+                        shiftName = shiftConfig.name;
+                        let expectedStartHour = null;
+                        
+                        if (shiftConfig.startTime) {
+                            let parts = shiftConfig.startTime.split(':');
+                            expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
+                        } else {
+                            let match = shiftConfig.name.match(/\((.*?)-/);
+                            if (match && match[1]) {
+                                let t = match[1].toLowerCase().replace(/\s/g, '');
+                                let isPM = t.includes('pm'); let isNN = t.includes('nn');
+                                let parts = t.replace(/(am|pm|nn)/, '').split(':');
+                                let hour = parseInt(parts[0]) || 0; let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
+                                if ((isPM || isNN) && hour < 12) hour += 12;
+                                if (t.includes('am') && hour === 12) hour = 0;
+                                expectedStartHour = hour + (minute / 60);
+                            }
+                        }
+
+                        // Shifts starting at or after 2 PM (14:00) trigger the Night Rate
+                        if (expectedStartHour !== null && expectedStartHour >= 14) {
+                            isNightShift = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Mathematical Engine
+    let effectiveDailyRate = dailyRate;
+    let appliedNightRate = 0;
+    
+    if (isNightShift) {
+        effectiveDailyRate += nightRate;
+        appliedNightRate = nightRate;
+    }
+
+    let ratePerHour = effectiveDailyRate / 8;
+    window.currentCalculatedOtAmount = ratePerHour * hours;
+
+    // Update UI
+    calcDisplay.innerText = `₱${window.currentCalculatedOtAmount.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}`;
+    let shiftTypeStr = isNightShift ? `Night Shift (+₱${appliedNightRate} diff)` : `Standard Shift`;
+    
+    infoDisplay.innerHTML = `
+        <span style="color: #92400e;">[${shiftName}]</span><br>
+        Base: ₱${dailyRate}/day | Applied: ₱${effectiveDailyRate}/day<br>
+        Rate: <b>₱${ratePerHour.toFixed(2)}/hr</b> (${shiftTypeStr})
+    `;
+};
+
 window.submitManualOvertime = async function() {
     let staffName = document.getElementById('manOtStaff').value;
     let dateRaw = document.getElementById('manOtDate').value;
-    let amount = parseFloat(document.getElementById('manOtAmount').value);
+    let hours = parseFloat(document.getElementById('manOtHours').value);
     let remarks = document.getElementById('manOtRemarks').value.trim();
+    let amount = window.currentCalculatedOtAmount || 0;
 
-    if (!staffName || !dateRaw || isNaN(amount) || amount <= 0 || !remarks) {
-        alert("❌ Please fill out all fields correctly (Amount must be greater than 0).");
+    if (!staffName || !dateRaw || isNaN(hours) || hours <= 0 || !remarks) {
+        alert("❌ Please select a staff member, enter valid hours, and provide a reason.");
+        return;
+    }
+
+    if (amount <= 0) {
+        alert("❌ The calculated amount is 0. Please verify the staff's Daily Rate in their profile.");
         return;
     }
 
@@ -13447,23 +13560,23 @@ window.submitManualOvertime = async function() {
     btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
     try {
-        // Set the date to midday so it safely falls within payroll cutoff ranges!
         let otDate = new Date(dateRaw + 'T12:00:00');
 
         await addDoc(collection(db, "staff_bonuses"), {
             staffName: staffName,
             amount: amount,
+            hours: hours,
             dateAdded: otDate,
             type: "Overtime",
-            remarks: remarks,
+            remarks: `[${hours} hrs] ${remarks}`, 
             loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
             timestamp: serverTimestamp()
         });
 
-        alert(`✅ Success! ₱${amount.toLocaleString()} Overtime Bonus added for ${staffName}.`);
+        alert(`✅ Success! ₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})} Overtime Bonus added for ${staffName}.`);
         document.getElementById('manualOvertimeModal').style.display = 'none';
         
-        alert("Reminder: If you are calculating payroll, click 'Generate List' again to apply this new bonus.");
+        alert("Reminder: If you are currently generating payroll, click 'Generate List' again to automatically inject this new bonus into their payslip.");
 
     } catch (error) {
         console.error("OT Log Error:", error);
