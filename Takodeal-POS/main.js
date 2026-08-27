@@ -10891,3 +10891,293 @@ window.toggleFullScreen = function() {
         }
     }
 };
+
+// ========================================================
+// 📋 MANUAL STOCK COUNT & SILENT AI REQUEST ENGINE
+// ========================================================
+window.stockCountMemory = JSON.parse(localStorage.getItem('takodeal_stock_count_memory')) || {};
+window.currentStockChecklist = [];
+
+window.switchStockReqTab = function(tab) {
+    document.getElementById('stockReqTabNew').style.display = tab === 'New' ? 'block' : 'none';
+    document.getElementById('stockReqTabHistory').style.display = tab === 'History' ? 'block' : 'none';
+    
+    document.getElementById('btnTabReqNew').style.background = tab === 'New' ? '#0ea5e9' : 'white';
+    document.getElementById('btnTabReqNew').style.color = tab === 'New' ? 'white' : '#475569';
+    document.getElementById('btnTabReqNew').style.border = tab === 'New' ? 'none' : '1px solid #cbd5e1';
+
+    document.getElementById('btnTabReqHist').style.background = tab === 'History' ? '#0ea5e9' : 'white';
+    document.getElementById('btnTabReqHist').style.color = tab === 'History' ? 'white' : '#475569';
+    document.getElementById('btnTabReqHist').style.border = tab === 'History' ? 'none' : '1px solid #cbd5e1';
+
+    if (tab === 'History') {
+        if (typeof window.loadStockRequestHistory === 'function') window.loadStockRequestHistory();
+    }
+};
+
+window.saveCountMemory = function(itemId, type, val) {
+    let key = `${itemId}_${type}`;
+    if (val === '') {
+        delete window.stockCountMemory[key];
+    } else {
+        window.stockCountMemory[key] = val;
+    }
+    localStorage.setItem('takodeal_stock_count_memory', JSON.stringify(window.stockCountMemory));
+};
+
+// Search Filter - instantly hides/shows rows so typed data is never lost!
+window.filterManualStockCount = function() {
+    let searchInput = document.getElementById('manualCountSearch');
+    if (!searchInput) return;
+    
+    let input = searchInput.value.toLowerCase();
+    let rows = document.querySelectorAll('.manual-count-row');
+    let categories = document.querySelectorAll('.manual-count-category');
+
+    rows.forEach(row => {
+        let itemName = row.getAttribute('data-name') || '';
+        if (itemName.includes(input)) {
+            row.style.display = ''; 
+            row.classList.add('visible-row');
+        } else {
+            row.style.display = 'none'; 
+            row.classList.remove('visible-row');
+        }
+    });
+
+    categories.forEach(cat => {
+        let nextEl = cat.nextElementSibling;
+        let hasVisible = false;
+        while(nextEl && nextEl.classList.contains('manual-count-row')) {
+            if (nextEl.style.display !== 'none') { hasVisible = true; break; }
+            nextEl = nextEl.nextElementSibling;
+        }
+        cat.style.display = hasVisible ? '' : 'none';
+    });
+};
+
+window.loadStockRequestUI = async function() {
+    const tbody = document.getElementById('manualStockCountBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 15px;">⏳ Loading stock checklist...</td></tr>';
+    window.currentStockChecklist = []; 
+
+    try {
+        const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.sessionUser.branch));
+        const snap = await window.getDocs(q);
+
+        let itemsByCategory = {};
+        
+        snap.forEach(docSnap => {
+            let item = docSnap.data();
+            item.id = docSnap.id;
+            
+            if (item.allowRequest !== false) {
+                window.currentStockChecklist.push(item);
+                let cat = (item.category || "Uncategorized").toUpperCase();
+                if (!itemsByCategory[cat]) itemsByCategory[cat] = [];
+                itemsByCategory[cat].push(item);
+            }
+        });
+
+        let html = '';
+
+        Object.keys(itemsByCategory).sort().forEach(cat => {
+            html += `
+                <tr class="manual-count-category" style="background: #e2e8f0; border-top: 3px solid #cbd5e1;">
+                    <td colspan="3" style="padding: 12px 25px; font-weight: 900; color: #0f172a; font-size: 15px; letter-spacing: 1px;">📁 ${cat}</td>
+                </tr>
+            `;
+
+            itemsByCategory[cat].sort((a,b) => a.name.localeCompare(b.name)).forEach(item => {
+                let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+                let bUom = item.baseUom || item.uom || 'units';
+                let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+                let parLevelBase = parseFloat(item.maintainingStock) || 0;
+
+                // Load saved numbers from local memory
+                let memPurch = window.stockCountMemory[`${item.id}_purch`] !== undefined ? window.stockCountMemory[`${item.id}_purch`] : '';
+                let memBase = window.stockCountMemory[`${item.id}_base`] !== undefined ? window.stockCountMemory[`${item.id}_base`] : '';
+
+                let maintainingHtml = `<span style="color:#94a3b8; font-size:11px; font-style:italic;">Not Set</span>`;
+                if (parLevelBase > 0) {
+                    let wPurch = 0; let rBase = parLevelBase;
+                    if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                        wPurch = Math.floor(parLevelBase / conv);
+                        rBase = parLevelBase - (wPurch * conv);
+                    }
+                    let str = '';
+                    if (wPurch > 0) str += `<strong style="font-size:15px; color:#334155;">${wPurch}</strong> <span style="font-size:10px; color:#64748b; text-transform:uppercase;">${pUom}</span> `;
+                    if (rBase > 0 || wPurch === 0) str += `<strong style="font-size:15px; color:#334155;">${rBase.toFixed(1)}</strong> <span style="font-size:10px; color:#64748b; text-transform:uppercase;">${bUom}</span>`;
+                    maintainingHtml = str;
+                }
+
+                let inputHtml = '';
+                if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                    inputHtml = `
+                        <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                            <div style="display: flex; align-items: center; border: 2px solid #bae6fd; border-radius: 6px; background: #f0f9ff; overflow: hidden; width: 110px;">
+                                <input type="number" id="countPurch_${item.id}" value="${memPurch}" oninput="window.saveCountMemory('${item.id}', 'purch', this.value)" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #0284c7; font-size: 15px; background: transparent;">
+                                <span style="font-size: 9px; font-weight: 800; color: #0ea5e9; padding-right: 8px; text-transform: uppercase;">${pUom}</span>
+                            </div>
+                            <span style="font-weight: 900; color: #cbd5e1;">+</span>
+                            <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; width: 110px;">
+                                <input type="number" id="countBase_${item.id}" value="${memBase}" oninput="window.saveCountMemory('${item.id}', 'base', this.value)" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
+                                <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    inputHtml = `
+                        <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; max-width: 140px; margin: 0 auto;">
+                            <input type="number" id="countBase_${item.id}" value="${memBase}" oninput="window.saveCountMemory('${item.id}', 'base', this.value)" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
+                            <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
+                        </div>
+                    `;
+                }
+
+                html += `
+                    <tr class="manual-count-row visible-row" data-name="${(item.name || '').toLowerCase()}" style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                        <td style="padding: 15px 25px; font-weight: bold; color: #1e293b; font-size: 14px; vertical-align: middle;">${item.name}</td>
+                        <td style="padding: 15px 25px; text-align: center; vertical-align: middle; background: #f8fafc; border-left: 1px dashed #e2e8f0; border-right: 1px dashed #e2e8f0;">${maintainingHtml}</td>
+                        <td style="padding: 15px 25px; text-align: center; vertical-align: middle;">${inputHtml}</td>
+                    </tr>
+                `;
+            });
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No inventory items available to count.</td></tr>';
+
+        // Re-apply search filter if the user already typed something in the box!
+        window.filterManualStockCount();
+
+    } catch (e) {
+        console.error("Manual Count Error:", e);
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #dc2626; font-weight: bold;">❌ Database Error. Please refresh.</td></tr>';
+    }
+};
+
+window.submitAllManualCounts = async function() {
+    let btn = document.getElementById('btnSubmitAllCounts');
+    let itemsToProcess = [];
+
+    window.currentStockChecklist.forEach(item => {
+        let memPurch = window.stockCountMemory[`${item.id}_purch`];
+        let memBase = window.stockCountMemory[`${item.id}_base`];
+        
+        if ((memPurch === undefined || memPurch === '') && (memBase === undefined || memBase === '')) {
+            return; 
+        }
+
+        let pVal = parseFloat(memPurch) || 0;
+        let bVal = parseFloat(memBase) || 0;
+        let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+
+        let physicalTotalBase = (pVal * convRate) + bVal;
+
+        itemsToProcess.push({
+            item: item,
+            pVal: pVal,
+            bVal: bVal,
+            physicalTotalBase: physicalTotalBase
+        });
+    });
+
+    if (itemsToProcess.length === 0) {
+        return Swal.fire('Blank Form', 'You have not entered any counts. Please enter your quantities before submitting.', 'warning');
+    }
+
+    let origText = btn.innerHTML;
+    btn.innerHTML = "⏳ Syncing..."; btn.disabled = true;
+
+    try {
+        const batch = window.writeBatch(window.db);
+        let itemsForAutoRequest = [];
+        let cashier = window.sessionUser.cashierName || 'Staff';
+
+        for (let data of itemsToProcess) {
+            let item = data.item;
+            let currentSystemStock = parseFloat(item.currentStock) || 0;
+            let parLevelBase = parseFloat(item.maintainingStock) || 0;
+            
+            let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+            let bUom = item.baseUom || item.uom || 'units';
+            let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+
+            const invRef = window.doc(window.db, "inventory", item.id);
+            batch.update(invRef, { currentStock: data.physicalTotalBase });
+
+            let noteText = `Manual Count: ${data.physicalTotalBase} ${bUom}`;
+            if (convRate > 1 && pUom !== bUom) {
+                noteText = `Manual Count: ${data.pVal} ${pUom} + ${data.bVal} ${bUom}`;
+            }
+
+            const logRef = window.doc(window.collection(window.db, "stock_logs"));
+            batch.set(logRef, {
+                branch: window.sessionUser.branch,
+                item: item.name,
+                uom: bUom,
+                oldQty: currentSystemStock,
+                newQty: data.physicalTotalBase,
+                variance: data.physicalTotalBase - currentSystemStock,
+                type: "Staff Physical Count",
+                note: noteText,
+                user: cashier,
+                timestamp: window.serverTimestamp()
+            });
+
+            if (parLevelBase > 0 && data.physicalTotalBase < parLevelBase) {
+                let deficitBase = parLevelBase - data.physicalTotalBase;
+                let requestPurchQty = Math.ceil(deficitBase / convRate);
+
+                itemsForAutoRequest.push({
+                    itemName: item.name,
+                    name: item.name,
+                    qty: requestPurchQty * convRate,
+                    rawQty: requestPurchQty,
+                    uom: bUom,
+                    purchaseUom: pUom,
+                    displayUom: pUom,
+                    requestType: "Maintaining Stock (Auto-Fill)",
+                    physicalStock: data.physicalTotalBase,
+                    systemStock: currentSystemStock
+                });
+            }
+        }
+
+        if (itemsForAutoRequest.length > 0) {
+            const poRef = window.doc(window.collection(window.db, "purchase_orders"));
+            batch.set(poRef, {
+                branch: window.sessionUser.branch,
+                items: itemsForAutoRequest,
+                status: "Pending",
+                type: "Silent Auto-Request",
+                requestedBy: "System (via Staff Count)",
+                timestamp: window.serverTimestamp()
+            });
+        }
+
+        await batch.commit();
+
+        window.stockCountMemory = {};
+        localStorage.removeItem('takodeal_stock_count_memory');
+        let searchInput = document.getElementById('manualCountSearch');
+        if (searchInput) searchInput.value = '';
+        
+        Swal.fire({
+            title: '✅ Batch Complete!',
+            text: `Successfully saved counts for ${itemsToProcess.length} items. Automated requests were sent to HQ.`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+        window.loadStockRequestUI(); 
+
+    } catch (e) {
+        console.error("Batch Submission Error:", e);
+        Swal.fire('Error', 'Failed to save all counts to cloud.', 'error');
+    } finally {
+        if (btn) { btn.innerHTML = origText; btn.disabled = false; }
+    }
+};
