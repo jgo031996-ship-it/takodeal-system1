@@ -657,20 +657,26 @@
         <div class="nav-item-text">Consumables</div>
       </div>
       <div class="nav-item" id="nav-deliveries" onclick="switchView('deliveries'); window.renderDeliveriesTab();" style="display: none;">
-        <span style="font-size: 18px;">🚚</span>
-        <div class="nav-item-text">
-            Incoming Stock <span id="deliveryBadge" style="display:none; background:#ef4444; color:white; border-radius:10px; padding:2px 6px; font-size:11px; font-weight:bold; margin-left:8px;">0</span>
+        <div class="nav-icon-wrapper">
+            <span style="font-size: 18px;">🚚</span>
+            <span id="deliveryBadge" class="sidebar-icon-badge" style="display:none;">0</span>
         </div>
+        <div class="nav-item-text">Incoming Stock</div>
       </div>
+
       <div class="nav-item" id="nav-mobilehub" onclick="switchView('mobilehub'); window.loadMenuManager();">
-        <span style="font-size: 18px;">📱</span>
-        <div class="nav-item-text">
-            Mobile Hub 
-            <span id="mobileSidebarBadge" style="display:none; background:#ef4444; color:white; border-radius:10px; padding:2px 6px; font-size:11px; font-weight:bold; margin-left:8px;">0</span>
+        <div class="nav-icon-wrapper">
+            <span style="font-size: 18px;">📱</span>
+            <span id="mobileSidebarBadge" class="sidebar-icon-badge" style="display:none;">0</span>
         </div>
+        <div class="nav-item-text">Mobile Hub</div>
       </div>
+
       <div class="nav-item" id="nav-stockreq" onclick="switchView('stockreq'); window.loadStockRequestUI();">
-        <span style="font-size: 18px;">📦</span>
+        <div class="nav-icon-wrapper">
+            <span style="font-size: 18px;">📦</span>
+            <span id="stockReqBadge" class="sidebar-icon-badge" style="display:none;">0</span>
+        </div>
         <div class="nav-item-text">Live Stock & AI</div>
       </div>
       <div class="nav-item" id="nav-waste" onclick="switchView('waste'); window.loadWasteItems(); window.loadWasteHistory();">
@@ -700,9 +706,16 @@
       </div>
     </div>
     <div class="sidebar-footer">
-      <div id="displayCashier">👤 Loading...</div>
-      <div id="displayBranch" style="margin-top: 5px; margin-bottom: 15px;">📍 Loading...</div>
-      <button onclick="window.logoutCashier()" style="width: 100%; background: #dc2626; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">🚪 Sign Out</button>
+      <div class="footer-info" id="displayCashierContainer">
+          <span class="f-icon">👤</span><span class="f-text" id="displayCashierText">Loading...</span>
+      </div>
+      <div class="footer-info" id="displayBranchContainer" style="margin-bottom: 15px;">
+          <span class="f-icon">📍</span><span class="f-text" id="displayBranchText">Loading...</span>
+      </div>
+      <button onclick="window.logoutCashier()" class="logout-btn">
+          <span class="logout-icon">🚪</span>
+          <span class="logout-text">Sign Out</span>
+      </button>
     </div>
   </div>
 
@@ -4279,6 +4292,108 @@ window.showMobileOrders = function() {
     @keyframes slideDownBanner {
         from { transform: translateY(-100%); }
         to { transform: translateY(0); }
+    }
+
+ /* ========================================== */
+    /* 🚨 SMART NOTIFICATION BADGES & FOOTER FIX  */
+    /* ========================================== */
+    
+    /* 1. Icon & Badge Wrapper */
+    .nav-icon-wrapper {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    /* 2. The Floating Red Badge */
+    .sidebar-icon-badge {
+        position: absolute;
+        top: -6px;
+        right: -8px;
+        background: #ef4444;
+        color: white;
+        border-radius: 12px;
+        padding: 2px 5px;
+        font-size: 9px;
+        font-weight: 900;
+        border: 2px solid var(--sidebar-bg); /* Match sidebar background to cut out */
+        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        z-index: 10;
+        line-height: 1;
+        min-width: 10px;
+        text-align: center;
+        transition: all 0.2s ease;
+    }
+    
+    /* 3. Morph to a tiny dot when collapsed */
+    .sidebar.collapsed .sidebar-icon-badge {
+        padding: 4px;
+        font-size: 0; /* Hide the number */
+        top: -2px;
+        right: -2px;
+        min-width: 0;
+        border-width: 1px;
+        height: 4px;
+        width: 4px;
+    }
+
+    /* 4. The Smart Footer */
+    .sidebar-footer {
+        padding: 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.05);
+        background: rgba(0,0,0,0.1);
+        transition: padding 0.3s;
+        overflow: hidden;
+    }
+    
+    .footer-info {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.7);
+        white-space: nowrap;
+        margin-bottom: 5px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .footer-info .f-icon { font-size: 16px; }
+    .footer-info .f-text { font-weight: 600; text-overflow: ellipsis; overflow: hidden; }
+
+    .logout-btn {
+        width: 100%;
+        background: #dc2626;
+        color: white;
+        border: none;
+        padding: 10px;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        transition: 0.2s;
+        white-space: nowrap;
+    }
+
+    /* 5. Footer Collapsed State Overrides */
+    .sidebar.collapsed .sidebar-footer { padding: 15px 10px; }
+    .sidebar.collapsed .footer-info { justify-content: center; margin-bottom: 12px; }
+    .sidebar.collapsed .footer-info .f-text { display: none; }
+    .sidebar.collapsed .logout-btn { padding: 10px 0; }
+    .sidebar.collapsed .logout-text { display: none; }
+    .sidebar.collapsed .logout-icon { font-size: 18px; margin: 0; }
+
+    /* 6. Tablet Safe Mode Overrides */
+    @media screen and (max-width: 1024px) {
+        .sidebar .sidebar-footer { display: block !important; padding: 15px 10px !important; }
+        .sidebar .footer-info { justify-content: center; margin-bottom: 12px; }
+        .sidebar .footer-info .f-text { display: none !important; }
+        .sidebar .logout-btn { padding: 10px 0; justify-content: center; }
+        .sidebar .logout-text { display: none !important; }
+        .sidebar .logout-icon { margin: 0; font-size: 18px; }
     }
 </style>
 <div id="updateAppBanner" onclick="window.forceAppUpdate()" style="display:none; position:fixed; top:0; left:0; width:100%; background:#ef4444; color:white; padding:12px 20px; font-weight:900; box-shadow:0 4px 15px rgba(239, 68, 68, 0.4); z-index:9999999; cursor:pointer; justify-content:center; align-items:center; gap:15px; border-bottom: 3px solid #b91c1c; box-sizing: border-box; animation: slideDownBanner 0.5s ease-out;">
