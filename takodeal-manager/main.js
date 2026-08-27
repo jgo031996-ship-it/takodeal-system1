@@ -21218,6 +21218,60 @@ window.filterForecaster = function() {
             let statusText = item.currentStock < 0 ? "NEGATIVE STOCK (Audit Needed)" : (item.daysLeft <= 0 ? "Out of Stock Now" : (item.daysLeft <= 3 ? "Critical (Reorder Immediately)" : "Sufficient Stock"));
             let statusColor = item.currentStock < 0 ? "#dc2626" : (item.daysLeft <= 0 ? "#dc2626" : (item.daysLeft <= 3 ? "#ea580c" : "#16a34a"));
 
+            // 🔥 THE PAR LEVEL INTEGRATION 🔥
+            let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+            let bUom = item.uom || 'units';
+            let pUom = item.purchaseUom || item.purchUom || bUom;
+            
+            let targetParBase = parseFloat(item.maintainingStock) || 0;
+            let parHtml = '';
+
+            if (targetParBase > 0) {
+                let deficitBase = targetParBase - item.currentStock;
+                let isDeficit = deficitBase > 0;
+                
+                // Helper to cleanly format [Pack] + [Piece] based on Conversion Rates
+                let formatDualQty = (totalBase) => {
+                    let wPurch = 0; let rBase = totalBase;
+                    if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                        wPurch = Math.floor(totalBase / conv);
+                        rBase = totalBase - (wPurch * conv);
+                        if (totalBase < 0) {
+                            wPurch = Math.ceil(totalBase / conv);
+                            rBase = totalBase - (wPurch * conv);
+                        }
+                    }
+                    let str = '';
+                    if (wPurch !== 0) str += `<strong style="font-size: 16px;">${wPurch}</strong> <span style="font-size:10px; color:#64748b; text-transform: uppercase;">${pUom}</span> `;
+                    if (rBase !== 0 || wPurch === 0) str += `<strong style="font-size: 16px;">${rBase.toFixed(1)}</strong> <span style="font-size:10px; color:#64748b; text-transform: uppercase;">${bUom}</span>`;
+                    return str;
+                };
+
+                let defStr = isDeficit ? formatDualQty(deficitBase) : '<span style="color:#16a34a; font-size: 13px;">✅ Stock is Full</span>';
+                
+                parHtml = `
+                    <div style="background: #f0fdf4; border: 1px dashed #16a34a; padding: 12px; border-radius: 8px; margin-bottom: 15px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                            <span style="font-size: 11px; color: #15803d; font-weight: 800; text-transform: uppercase;">Target Par Level:</span>
+                            <span style="color: #16a34a;">${formatDualQty(targetParBase)}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed #bbf7d0; padding-top: 8px;">
+                            <span style="font-size: 11px; color: #b91c1c; font-weight: 800; text-transform: uppercase;">Qty to Restock:</span>
+                            <span style="color: #dc2626;">${isDeficit ? '+ ' + defStr : defStr}</span>
+                        </div>
+                    </div>
+                `;
+                
+                // Adjust status text to match par level override
+                if (isDeficit) {
+                    statusText = "Below Par Level (Needs Restock)";
+                    statusColor = "#d97706";
+                } else {
+                    statusText = "At or Above Par Level";
+                    statusColor = "#16a34a";
+                }
+            }
+
             html += `
             <div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; transition: 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 10px 15px -3px rgba(0,0,0,0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.05)';">
                 <div style="display: flex; gap: 15px; margin-bottom: 20px;">
@@ -21227,7 +21281,7 @@ window.filterForecaster = function() {
                         <div style="font-size: 11px; color: #94a3b8; font-weight: bold; text-transform: uppercase;">${item.branch}</div>
                     </div>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0;">
                     <div>
                         <div style="font-size: 13px; color: #64748b; margin-bottom: 5px;">Current Stock: <strong style="color: ${stockColor}; font-size: 15px;">${item.currentStock.toFixed(1)} <span style="font-size: 11px;">${item.uom}</span></strong></div>
                         <div style="font-size: 13px; color: #64748b;">Daily Burn Rate: <strong style="color: ${burnColor}; font-size: 14px;">${item.dailyBurn.toFixed(2)} <span style="font-size: 11px;">${item.uom} / day</span></strong></div>
@@ -21237,6 +21291,7 @@ window.filterForecaster = function() {
                         <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; margin-top: 4px;">Days Left</div>
                     </div>
                 </div>
+                ${parHtml}
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold;">
                     <span style="display: flex; align-items: center; gap: 5px; color: ${statusColor};"><span style="background: ${statusColor}; color: white; border-radius: 4px; padding: 2px 4px; font-size: 10px;">Status</span> ${statusText}</span>
                 </div>
