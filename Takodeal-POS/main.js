@@ -5633,153 +5633,267 @@ window.runAutonomousRestockAI = async function(forceRun = false) {
 setInterval(window.runAutonomousRestockAI, 15 * 60 * 1000);
 
 // ========================================================
-// 📦 READ-ONLY STOCK TRACKER UI
+// 📋 MANUAL STOCK COUNT & SILENT AI REQUEST ENGINE
 // ========================================================
+window.stockCountMemory = JSON.parse(localStorage.getItem('takodeal_stock_count_memory')) || {};
+window.currentStockChecklist = [];
+
+window.switchStockReqTab = function(tab) {
+    document.getElementById('stockReqTabNew').style.display = tab === 'New' ? 'block' : 'none';
+    document.getElementById('stockReqTabHistory').style.display = tab === 'History' ? 'block' : 'none';
+    
+    document.getElementById('btnTabReqNew').style.background = tab === 'New' ? '#0ea5e9' : 'white';
+    document.getElementById('btnTabReqNew').style.color = tab === 'New' ? 'white' : '#475569';
+    document.getElementById('btnTabReqNew').style.border = tab === 'New' ? 'none' : '1px solid #cbd5e1';
+
+    document.getElementById('btnTabReqHist').style.background = tab === 'History' ? '#0ea5e9' : 'white';
+    document.getElementById('btnTabReqHist').style.color = tab === 'History' ? 'white' : '#475569';
+    document.getElementById('btnTabReqHist').style.border = tab === 'History' ? 'none' : '1px solid #cbd5e1';
+
+    if (tab === 'History') {
+        if (typeof window.loadStockRequestHistory === 'function') window.loadStockRequestHistory();
+    }
+};
+
+window.saveCountMemory = function(itemId, type, val) {
+    let key = `${itemId}_${type}`;
+    if (val === '') {
+        delete window.stockCountMemory[key];
+    } else {
+        window.stockCountMemory[key] = val;
+    }
+    localStorage.setItem('takodeal_stock_count_memory', JSON.stringify(window.stockCountMemory));
+};
+
 window.loadStockRequestUI = async function() {
-    let container = document.getElementById('stockReqList');
-    let branch = localStorage.getItem('takodeal_device_branch');
-    if (!branch) return;
-
-    let oldCss = document.getElementById('historyOverflowFix');
-    if (oldCss) oldCss.remove();
-    document.head.insertAdjacentHTML('beforeend', `<style id="historyOverflowFix">td div[style*="color"], td ul { max-height: 150px; overflow-y: auto; padding-right: 5px; display: block; }</style>`);
-
-    if (typeof window.listenToStockRequests === 'function') window.listenToStockRequests(branch);
-
-    let headerGrid = document.querySelector('#stockReqTabNew > div:nth-child(2)');
-    if (headerGrid) {
-        headerGrid.style.gridTemplateColumns = "2fr 1fr 1fr 1.5fr";
-        headerGrid.innerHTML = `
-            <div>Item & HQ Status</div>
-            <div style="text-align: center;">Live Stock</div>
-            <div style="text-align: center; color: #d97706;">7-Day Dynamic Need</div>
-            <div style="text-align: center; color: #0ea5e9;">Restock Status</div>
-        `;
-    }
-
-    // 🔥 Hook up the Manual Override button!
-    let sendBtn = document.querySelector('button[onclick="window.submitStockRequest()"]') || document.querySelector('button[onclick*="runAutonomousRestockAI"]');
-    if (sendBtn) {
-        sendBtn.innerHTML = "🤖 Run AI 7-Day Forecaster";
-        // Passing 'true' bypasses the Friday-only lock!
-        sendBtn.setAttribute("onclick", "window.runAutonomousRestockAI(true)");
-        sendBtn.style.background = "#8b5cf6";
-        sendBtn.style.boxShadow = "0 2px 4px rgba(139, 92, 246, 0.3)";
-    }
+    const tbody = document.getElementById('manualStockCountBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 15px;">⏳ Loading stock checklist...</td></tr>';
+    window.currentStockChecklist = []; // Clear memory
 
     try {
-        await window.calculateBranchVelocity(branch);
-
-        const pendingQ = window.query(window.collection(window.db, "purchase_orders"), window.where("branch", "==", branch));
-        const pendingSnap = await window.getDocs(pendingQ);
-        let pendingItemsMap = {};
-
-        pendingSnap.forEach(doc => {
-            let po = doc.data();
-            if (po.status === "Pending" || po.status === "Drafting" || po.status === "Delayed") {
-                if (po.items) po.items.forEach(i => pendingItemsMap[(i.itemName || i.name).toLowerCase()] = i);
-            }
-        });
-
-        const qBranch = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch));
-        const snapBranch = await window.getDocs(qBranch);
-
-        const qHQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", "Main Office"));
-        const snapHQ = await window.getDocs(qHQ);
-        let hqStockMap = {};
-        snapHQ.forEach(doc => { hqStockMap[doc.data().name] = parseFloat(doc.data().currentStock || 0); });
+        const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.sessionUser.branch));
+        const snap = await window.getDocs(q);
 
         let itemsByCategory = {};
-        snapBranch.forEach(docSnap => {
-            let data = docSnap.data();
-            if (data.allowRequest !== false) {
-                let cat = data.category || "Uncategorized";
+        
+        snap.forEach(docSnap => {
+            let item = docSnap.data();
+            item.id = docSnap.id;
+            
+            if (item.allowRequest !== false) {
+                window.currentStockChecklist.push(item);
+                let cat = (item.category || "Uncategorized").toUpperCase();
                 if (!itemsByCategory[cat]) itemsByCategory[cat] = [];
-                itemsByCategory[cat].push({ id: docSnap.id, ...data });
+                itemsByCategory[cat].push(item);
             }
         });
 
-        window.stockReqItemsFlat = [];
         let html = '';
 
-        Object.keys(itemsByCategory).sort().forEach(category => {
-            html += `<div class="stock-req-category" style="background: #e2e8f0; padding: 10px 15px; font-weight: bold; color: #334155; margin-top: 10px; font-size: 14px; text-transform: uppercase; border-radius: 6px;">📁 ${category}</div>`;
+        Object.keys(itemsByCategory).sort().forEach(cat => {
+            html += `
+                <tr style="background: #e2e8f0; border-top: 3px solid #cbd5e1;">
+                    <td colspan="3" style="padding: 12px 25px; font-weight: 900; color: #0f172a; font-size: 15px; letter-spacing: 1px;">📁 ${cat}</td>
+                </tr>
+            `;
 
-            let items = itemsByCategory[category];
-            items.sort((a, b) => a.name.localeCompare(b.name));
-
-            items.forEach((item) => {
-                window.stockReqItemsFlat.push(item);
+            itemsByCategory[cat].sort((a,b) => a.name.localeCompare(b.name)).forEach(item => {
+                let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+                let bUom = item.baseUom || item.uom || 'units';
                 let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-                let currentStockPurch = parseFloat(item.currentStock || 0) / conv;
-                let safeStockDisplay = currentStockPurch.toFixed(2);
-                let displayUomLabel = item.purchaseUom || item.purchUom || item.uom || 'units';
+                let parLevelBase = parseFloat(item.maintainingStock) || 0;
 
-                let normName = (item.name || "").trim().toLowerCase();
-                let dailyBurnBase = window.itemVelocityCache[normName] || 0;
-                let dailyBurnPurch = dailyBurnBase / conv;
+                // Restoring saved input from memory!
+                let memPurch = window.stockCountMemory[`${item.id}_purch`] !== undefined ? window.stockCountMemory[`${item.id}_purch`] : '';
+                let memBase = window.stockCountMemory[`${item.id}_base`] !== undefined ? window.stockCountMemory[`${item.id}_base`] : '';
 
-                let userSetMinSafety = (parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv;
-                let dynamicThresholdPurch = Math.max((dailyBurnPurch * 3), userSetMinSafety);
+                // Format Maintaining Stock
+                let maintainingHtml = `<span style="color:#94a3b8; font-size:11px; font-style:italic;">Not Set</span>`;
+                if (parLevelBase > 0) {
+                    let wPurch = 0; let rBase = parLevelBase;
+                    if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                        wPurch = Math.floor(parLevelBase / conv);
+                        rBase = parLevelBase - (wPurch * conv);
+                    }
+                    let str = '';
+                    if (wPurch > 0) str += `<strong style="font-size:15px; color:#334155;">${wPurch}</strong> <span style="font-size:10px; color:#64748b; text-transform:uppercase;">${pUom}</span> `;
+                    if (rBase > 0 || wPurch === 0) str += `<strong style="font-size:15px; color:#334155;">${rBase.toFixed(1)}</strong> <span style="font-size:10px; color:#64748b; text-transform:uppercase;">${bUom}</span>`;
+                    maintainingHtml = str;
+                }
 
-                let isCriticallyLow = currentStockPurch <= dynamicThresholdPurch;
-                let stockColor = isCriticallyLow ? '#ef4444' : '#334155';
-
-                let runwayDays = dailyBurnPurch > 0 ? (currentStockPurch / dailyBurnPurch).toFixed(1) : '∞';
-                let velocityBadge = dailyBurnPurch > 0 
-                    ? `<span style="font-size: 9px; color: #0284c7; background: #e0f2fe; padding: 2px 4px; border-radius: 4px;">⚡ Velocity: ${dailyBurnPurch.toFixed(2)}/day (Runway: ${runwayDays}d)</span>`
-                    : `<span style="font-size: 9px; color: #64748b;">⚡ Minimal Movement</span>`;
-
-                let hqStock = hqStockMap[item.name] || 0;
-                let hqStatus = hqStock > 0
-                    ? `<span style="color: #16a34a; font-weight: bold; font-size: 10px; background: #dcfce7; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">🟢 HQ HAS STOCK</span>`
-                    : `<span style="color: #dc2626; font-weight: bold; font-size: 10px; background: #fee2e2; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;">🔴 HQ OUT OF STOCK</span>`;
-
-                let pendingData = pendingItemsMap[item.name.toLowerCase()];
-                let isAlreadyPending = !!pendingData;
-                let actionHtml = '';
-
-                if (isAlreadyPending) {
-                    let badgeColor = pendingData.requestType.includes("Out of Stock") ? "#dc2626" : (pendingData.requestType.includes("Low Stock") ? "#d97706" : "#0f766e");
-                    let badgeBg = pendingData.requestType.includes("Out of Stock") ? "#fef2f2" : (pendingData.requestType.includes("Low Stock") ? "#fffbeb" : "#f0fdf4");
-                    let badgeBorder = pendingData.requestType.includes("Out of Stock") ? "#fca5a5" : (pendingData.requestType.includes("Low Stock") ? "#fcd34d" : "#bbf7d0");
-                    let displayUomText = pendingData.displayUom || pendingData.uom || 'units';
-
-                    actionHtml = `
-                        <div style="text-align: center;"><span style="background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${badgeBorder}; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: bold;">${pendingData.requestType}</span></div>
-                        <div style="text-align: center; color: #0284c7; font-weight: 900; font-size: 16px; background: #f0f9ff; border: 1px dashed #bae6fd; padding: 4px; border-radius: 6px; margin-top: 4px;">${pendingData.displayQty} ${displayUomText} Ordered</div>
+                // Format Dual Input Boxes
+                let inputHtml = '';
+                if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                    inputHtml = `
+                        <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                            <div style="display: flex; align-items: center; border: 2px solid #bae6fd; border-radius: 6px; background: #f0f9ff; overflow: hidden; width: 110px;">
+                                <input type="number" id="countPurch_${item.id}" value="${memPurch}" oninput="window.saveCountMemory('${item.id}', 'purch', this.value)" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #0284c7; font-size: 15px; background: transparent;">
+                                <span style="font-size: 9px; font-weight: 800; color: #0ea5e9; padding-right: 8px; text-transform: uppercase;">${pUom}</span>
+                            </div>
+                            <span style="font-weight: 900; color: #cbd5e1;">+</span>
+                            <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; width: 110px;">
+                                <input type="number" id="countBase_${item.id}" value="${memBase}" oninput="window.saveCountMemory('${item.id}', 'base', this.value)" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
+                                <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
+                            </div>
+                        </div>
                     `;
-                } else if (isCriticallyLow) {
-                    actionHtml = `<div style="text-align: center;"><span style="background: #dcfce7; color: #16a34a; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #bbf7d0;">🤖 Scheduled in Next Cycle</span></div>`;
                 } else {
-                    let safeItemStr = encodeURIComponent(JSON.stringify(item));
-                    actionHtml = `<div style="text-align: center;"><button onclick="window.triggerEmergencyRequest('${safeItemStr}')" style="background: white; border: 1px solid #ef4444; color: #ef4444; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 1px 2px rgba(239, 68, 68, 0.1);">🚨 Emergency Req</button></div>`;
+                    inputHtml = `
+                        <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; max-width: 140px; margin: 0 auto;">
+                            <input type="number" id="countBase_${item.id}" value="${memBase}" oninput="window.saveCountMemory('${item.id}', 'base', this.value)" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
+                            <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
+                        </div>
+                    `;
                 }
 
                 html += `
-                <div class="stock-req-row" data-name="${item.name.toLowerCase()}" style="display: grid; grid-template-columns: 2fr 1.2fr 1fr 1.5fr; gap: 10px; align-items: center; padding: 12px 10px; border-bottom: 1px solid #f1f5f9; ${isAlreadyPending ? 'opacity: 0.75; background: #f8fafc;' : 'background: white;'}">
-                    <div style="font-weight: bold; color: #334155; font-size: 14px;">
-                        ${item.name} <br>
-                        ${hqStatus}
-                    </div>
-                    <div style="text-align: center; font-family: monospace; font-size: 13px; color: #64748b; display: flex; flex-direction: column; gap: 4px; background: #fef2f2; border: 1px dashed #fca5a5; border-radius: 6px; padding: 6px;">
-                        <span style="font-size: 9px; font-weight: 900; color: #dc2626; text-transform: uppercase;">Expected System Stock</span>
-                        <strong style="font-size: 18px; color: #b91c1c;">${safeStockDisplay} <span style="font-size: 12px; font-weight: normal; color: #ef4444;">${displayUomLabel}</span></strong>
-                        ${velocityBadge}
-                    </div>
-                    <div style="text-align: center; font-family: monospace; font-size: 13px; color: #d97706; display: flex; flex-direction: column;">
-                        <strong style="font-size: 14px;">${(dynamicThresholdPurch * 2.3).toFixed(1)} ${displayUomLabel}</strong>
-                        <span style="font-size: 10px; color: #94a3b8;">Min Safety: ${dynamicThresholdPurch.toFixed(1)}</span>
-                    </div>
-                    ${actionHtml}
-                </div>`;
+                    <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                        <td style="padding: 15px 25px; font-weight: bold; color: #1e293b; font-size: 14px; vertical-align: middle;">${item.name}</td>
+                        <td style="padding: 15px 25px; text-align: center; vertical-align: middle; background: #f8fafc; border-left: 1px dashed #e2e8f0; border-right: 1px dashed #e2e8f0;">${maintainingHtml}</td>
+                        <td style="padding: 15px 25px; text-align: center; vertical-align: middle;">${inputHtml}</td>
+                    </tr>
+                `;
             });
         });
 
-        if (container) container.innerHTML = html;
+        tbody.innerHTML = html || '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No inventory items available to count.</td></tr>';
+
     } catch (e) {
-        console.error(e);
-        if (container) container.innerHTML = '<div style="text-align:center; padding:20px; color:red;">Failed to calculate stock forecasts. Check console.</div>';
+        console.error("Manual Count Error:", e);
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #dc2626; font-weight: bold;">❌ Database Error. Please refresh.</td></tr>';
+    }
+};
+
+window.submitAllManualCounts = async function() {
+    let btn = document.getElementById('btnSubmitAllCounts');
+    let itemsToProcess = [];
+
+    // 1. Scan memory/inputs for items that actually have data
+    window.currentStockChecklist.forEach(item => {
+        let memPurch = window.stockCountMemory[`${item.id}_purch`];
+        let memBase = window.stockCountMemory[`${item.id}_base`];
+        
+        // If neither box was filled, skip this item entirely!
+        if ((memPurch === undefined || memPurch === '') && (memBase === undefined || memBase === '')) {
+            return; 
+        }
+
+        let pVal = parseFloat(memPurch) || 0;
+        let bVal = parseFloat(memBase) || 0;
+        let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+
+        let physicalTotalBase = (pVal * convRate) + bVal;
+
+        itemsToProcess.push({
+            item: item,
+            pVal: pVal,
+            bVal: bVal,
+            physicalTotalBase: physicalTotalBase
+        });
+    });
+
+    if (itemsToProcess.length === 0) {
+        return Swal.fire('Blank Form', 'You have not entered any counts. Please enter your quantities before submitting.', 'warning');
+    }
+
+    let origText = btn.innerHTML;
+    btn.innerHTML = "⏳ Syncing..."; btn.disabled = true;
+
+    try {
+        const batch = window.writeBatch(window.db);
+        let itemsForAutoRequest = [];
+        let cashier = window.sessionUser.cashierName || 'Staff';
+
+        // 2. Loop through all counted items and prepare the database payload
+        for (let data of itemsToProcess) {
+            let item = data.item;
+            let currentSystemStock = parseFloat(item.currentStock) || 0;
+            let parLevelBase = parseFloat(item.maintainingStock) || 0;
+            
+            let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+            let bUom = item.baseUom || item.uom || 'units';
+            let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+
+            // A. Update live stock count
+            const invRef = window.doc(window.db, "inventory", item.id);
+            batch.update(invRef, { currentStock: data.physicalTotalBase });
+
+            // B. Write to Stock History Logs
+            let noteText = `Manual Count: ${data.physicalTotalBase} ${bUom}`;
+            if (convRate > 1 && pUom !== bUom) {
+                noteText = `Manual Count: ${data.pVal} ${pUom} + ${data.bVal} ${bUom}`;
+            }
+
+            const logRef = window.doc(window.collection(window.db, "stock_logs"));
+            batch.set(logRef, {
+                branch: window.sessionUser.branch,
+                item: item.name,
+                uom: bUom,
+                oldQty: currentSystemStock,
+                newQty: data.physicalTotalBase,
+                variance: data.physicalTotalBase - currentSystemStock,
+                type: "Staff Physical Count",
+                note: noteText,
+                user: cashier,
+                timestamp: window.serverTimestamp()
+            });
+
+            // C. Silent AI Request Generator
+            if (parLevelBase > 0 && data.physicalTotalBase < parLevelBase) {
+                let deficitBase = parLevelBase - data.physicalTotalBase;
+                let requestPurchQty = Math.ceil(deficitBase / convRate);
+
+                itemsForAutoRequest.push({
+                    itemName: item.name,
+                    name: item.name,
+                    qty: requestPurchQty * convRate,
+                    rawQty: requestPurchQty,
+                    uom: bUom,
+                    purchaseUom: pUom,
+                    displayUom: pUom,
+                    requestType: "Maintaining Stock (Auto-Fill)",
+                    physicalStock: data.physicalTotalBase,
+                    systemStock: currentSystemStock
+                });
+            }
+        }
+
+        // D. Create a single combined Purchase Order for all missing items!
+        if (itemsForAutoRequest.length > 0) {
+            const poRef = window.doc(window.collection(window.db, "purchase_orders"));
+            batch.set(poRef, {
+                branch: window.sessionUser.branch,
+                items: itemsForAutoRequest,
+                status: "Pending",
+                type: "Silent Auto-Request",
+                requestedBy: "System (via Staff Count)",
+                timestamp: window.serverTimestamp()
+            });
+        }
+
+        // 3. BLAST IT TO FIREBASE SIMULTANEOUSLY!
+        await batch.commit();
+
+        // 4. Clean up and Reset
+        window.stockCountMemory = {};
+        localStorage.removeItem('takodeal_stock_count_memory');
+        
+        Swal.fire({
+            title: '✅ Batch Complete!',
+            text: `Successfully saved counts for ${itemsToProcess.length} items. Automated requests were sent to HQ.`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+        window.loadStockRequestUI(); // Redraw table clean
+
+    } catch (e) {
+        console.error("Batch Submission Error:", e);
+        Swal.fire('Error', 'Failed to save all counts to cloud.', 'error');
+    } finally {
+        if (btn) { btn.innerHTML = origText; btn.disabled = false; }
     }
 };
 
