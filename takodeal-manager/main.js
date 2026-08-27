@@ -12396,18 +12396,166 @@ window.generateAutoPayslips = async function() {
 // Run the date setter when the dashboard loads!
 window.setDefaultCutoffDates();
 
-window.autoFill7DaySupply = function() {
-    if (!window.latestSupplyChainData || window.latestSupplyChainData.length === 0) {
-        alert("⚠️ Please click 'Calculate' first to run the AI engine for a branch."); 
+// ========================================================
+// 🧠 DEDICATED SMART SUPPLY CHAIN ENGINE (DISPATCH TAB)
+// ========================================================
+window.loadSmartSupplyChain = async function() {
+    let branchSelect = document.getElementById('burnRateBranch');
+    let catSelect = document.getElementById('burnRateCategory');
+    let tbody = document.getElementById('burnRateTableBody');
+    let btn = document.querySelector('button[onclick="window.loadSmartSupplyChain()"]');
+
+    if (!branchSelect || !branchSelect.value) {
+        Swal.fire('Select Branch', 'Please select a branch first.', 'warning');
         return;
     }
 
-    // Ensure the manager has selected the destination branch
+    let branch = branchSelect.value;
+    let category = catSelect ? catSelect.value : 'All';
+
+    if (btn) { btn.innerText = "⏳ Scanning..."; btn.disabled = true; }
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 15px;">⏳ Running AI Supply Chain Engine...</td></tr>';
+
+    try {
+        let fourteenDaysAgo = new Date();
+        fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
+        let fourteenDaysMs = fourteenDaysAgo.getTime();
+
+        const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch));
+        const invSnap = await window.getDocs(invQ);
+        
+        let inventoryItems = [];
+        invSnap.forEach(doc => {
+            let data = doc.data();
+            data.id = doc.id;
+            inventoryItems.push(data);
+        });
+
+        if (inventoryItems.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="6" class="text-center" style="padding: 40px; color: #dc2626; font-weight: bold;">No inventory found for ${branch}.</td></tr>`;
+            return;
+        }
+
+        const logsQ = window.query(window.collection(window.db, "stock_logs"), window.where("branch", "==", branch));
+        const logsSnap = await window.getDocs(logsQ);
+
+        let burnData = {};
+        
+        logsSnap.forEach(doc => {
+            let log = doc.data();
+            let logTimeMs = log.timestamp ? (log.timestamp.toDate ? log.timestamp.toDate().getTime() : new Date(log.timestamp).getTime()) : 0;
+            
+            if (logTimeMs >= fourteenDaysMs) {
+                let v = parseFloat(log.variance) || 0;
+                let t = (log.type || "").toLowerCase();
+                let itemName = (log.item || "").trim().toLowerCase(); 
+                
+                if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty"))) {
+                    if (!burnData[itemName]) burnData[itemName] = 0;
+                    burnData[itemName] += Math.abs(v);
+                }
+            }
+        });
+
+        // 🧠 The Math Engine
+        window.latestSupplyChainData = inventoryItems.map(item => {
+            let normalizedItemName = (item.name || "").trim().toLowerCase();
+            let totalBurn14 = burnData[normalizedItemName] || 0;
+            let dailyBurn = totalBurn14 / 14;
+            let stock = parseFloat(item.currentStock) || 0;
+            let daysLeft = dailyBurn > 0 ? (stock / dailyBurn) : Infinity;
+
+            // Suggest 7-day restock amount
+            let targetStock = dailyBurn * 7;
+            let suggestedRestock = targetStock - stock;
+            if (suggestedRestock < 0) suggestedRestock = 0;
+
+            // Prioritize Target Par Level if set!
+            let parLevel = parseFloat(item.maintainingStock) || 0;
+            if (parLevel > 0) {
+                let parDeficit = parLevel - stock;
+                if (parDeficit > suggestedRestock) suggestedRestock = parDeficit;
+            }
+
+            // Convert Base UOM to Purchase UOM for dispatch logic
+            let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+            let purchRestock = Math.ceil(suggestedRestock / convRate);
+
+            return { 
+                ...item, 
+                totalBurn: totalBurn14 / 2, // Approximate 7-day burn
+                dailyBurn: dailyBurn, 
+                daysLeft: daysLeft, 
+                suggestedRestock: purchRestock 
+            };
+        });
+
+        // Apply Filters
+        let filteredData = window.latestSupplyChainData.filter(item => {
+            if (category === "All") return true;
+            if (category === "Ingredients" && item.category !== "Packaging" && item.category !== "Consumables" && item.category !== "Cleaning Supplies") return true;
+            if (category === "Packaging" && (item.category === "Packaging" || item.category === "Consumables" || item.category === "Cleaning Supplies")) return true;
+            return false;
+        });
+
+        // Sort by most critical items first
+        filteredData.sort((a, b) => a.daysLeft - b.daysLeft);
+
+        let html = '';
+        filteredData.forEach(item => {
+            let daysText = item.daysLeft === Infinity ? "∞" : item.daysLeft.toFixed(1) + " Days";
+            let daysColor = item.daysLeft <= 3 ? "#dc2626" : (item.daysLeft <= 7 ? "#ea580c" : "#16a34a");
+            let burnColor = item.dailyBurn > 0 ? "#16a34a" : "#94a3b8";
+            let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+            
+            let actionHtml = item.suggestedRestock > 0 
+                ? `<span style="background: #fef2f2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #fca5a5;">Need ${item.suggestedRestock} ${pUom}</span>`
+                : `<span style="background: #f0fdf4; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; border: 1px solid #bbf7d0;">Stock OK</span>`;
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 15px 25px; font-weight: bold; color: #1e293b;">${item.name}<br><span style="font-size:10px; color:#64748b;">${item.category || 'Uncategorized'}</span></td>
+                    <td style="padding: 15px 25px; font-weight: bold; color: #334155;">${item.currentStock.toFixed(1)} <span style="font-size:11px;">${item.uom}</span></td>
+                    <td style="padding: 15px 25px; color: #64748b;">${item.totalBurn.toFixed(1)} <span style="font-size:11px;">${item.uom}</span></td>
+                    <td style="padding: 15px 25px; font-weight: bold; color: ${burnColor};">${item.dailyBurn.toFixed(2)} <span style="font-size:11px;">${item.uom}/day</span></td>
+                    <td style="padding: 15px 25px; font-weight: 900; color: ${daysColor};">${daysText}</td>
+                    <td style="padding: 15px 25px; text-align: center;">${actionHtml}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No items match this category.</td></tr>';
+
+    } catch (e) {
+        console.error("Smart Supply Chain Error:", e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #dc2626; font-weight: bold;">❌ Database Error. Check F12 Console.</td></tr>';
+    } finally {
+        if (btn) { btn.innerText = "🔄 Calculate"; btn.disabled = false; }
+    }
+};
+
+window.autoFill7DaySupply = function() {
+    if (!window.latestSupplyChainData || window.latestSupplyChainData.length === 0) {
+        Swal.fire('No Data', '⚠️ Please click "Calculate" on the Smart Analytics panel first to run the AI engine for a branch.', 'warning'); 
+        return;
+    }
+
     let toBranch = document.getElementById('dispTo').value;
+    let fromBranch = document.getElementById('dispFrom').value;
     let aiTargetBranch = document.getElementById('burnRateBranch').value;
     
+    if (!fromBranch || !window.dispatchInventoryList || window.dispatchInventoryList.length === 0) {
+        Swal.fire('Missing Source', '⚠️ Please select "Main Office" as the Source (From) so the system knows what stock is available to send.', 'warning');
+        return;
+    }
+
+    if (!toBranch) {
+        Swal.fire('Missing Destination', '⚠️ Please select a Destination Branch (To) in the Dispatch form first.', 'warning');
+        return;
+    }
+
     if (toBranch !== aiTargetBranch) {
-        alert(`⚠️ Mismatch: The AI just calculated for ${aiTargetBranch}, but your Dispatch Destination is set to ${toBranch || "Nothing"}. Please match them up!`);
+        Swal.fire('Branch Mismatch', `⚠️ The AI just calculated needs for <b>${aiTargetBranch}</b>, but your Dispatch Destination is set to <b>${toBranch}</b>. Please match them up!`, 'error');
         return;
     }
 
@@ -12415,43 +12563,68 @@ window.autoFill7DaySupply = function() {
     let missingFromHQ = [];
 
     window.latestSupplyChainData.forEach(need => {
-        // Only pack items that are actually burning down
-        if (need.suggestedRestock > 0 && need.currentStock <= need.suggestedRestock) {
+        if (need.suggestedRestock > 0) {
             
             // 1. Find the item in the Main Office Warehouse
-            let hqItem = dispatchInventoryList.find(i => i.name === need.itemName);
+            let hqItem = window.dispatchInventoryList.find(i => i.name === need.name);
             
             if (hqItem && hqItem.currentStock > 0) {
-                // 2. Only send what the branch needs (or whatever HQ has left)
-                let amountToSend = Math.min(need.suggestedRestock, hqItem.currentStock);
+                // Convert HQ stock to Purchase UOM to compare apples to apples
+                let hqConvRate = parseFloat(hqItem.conversionRate) || parseFloat(hqItem.conversion) || 1;
+                let hqPurchStock = Math.floor(hqItem.currentStock / hqConvRate);
                 
-                // 3. Check if it's already in the cart, if so, update it
-                let existing = dispatchCart.find(i => i.itemName === need.itemName);
-                if (existing) {
-                    existing.qty = amountToSend; 
-                    existing.displayMsg = `${amountToSend} ${hqItem.uom} (AI Auto-Fill)`;
+                if (hqPurchStock > 0) {
+                    // 2. Only send what the branch needs (or whatever HQ has left)
+                    let amountToSend = Math.min(need.suggestedRestock, hqPurchStock);
+                    let baseQtyToAdd = amountToSend * hqConvRate;
+
+                    // 3. Add to the cart perfectly matched to your new UOM requirements
+                    let existing = window.dispatchCart.find(i => (i.itemName || i.name) === need.name);
+                    if (existing) {
+                        existing.rawQty = amountToSend;
+                        existing.qty = baseQtyToAdd;
+                    } else {
+                        let pUom = hqItem.purchaseUom || hqItem.purchUom || hqItem.uom || 'units';
+                        let bUom = hqItem.baseUom || hqItem.uom || 'units';
+                        
+                        window.dispatchCart.push({
+                            itemName: hqItem.name,
+                            name: hqItem.name,
+                            sourceId: hqItem.id,
+                            qty: baseQtyToAdd,
+                            rawQty: amountToSend,
+                            origRawQty: amountToSend,
+                            origBaseQty: baseQtyToAdd,
+                            uom: bUom,
+                            baseUom: bUom,
+                            friendlyUom: pUom,
+                            purchaseUom: pUom,
+                            selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
+                            convRate: hqConvRate,
+                            conversionRate: hqConvRate,
+                            category: hqItem.category || "Ingredients",
+                            hqStock: parseFloat(hqItem.currentStock) || 0,
+                            requestType: "AI Auto-Fill"
+                        });
+                    }
+                    itemsAdded++;
                 } else {
-                    dispatchCart.push({
-                        itemName: hqItem.name,
-                        qty: amountToSend,
-                        uom: hqItem.uom,
-                        sourceId: hqItem.id,
-                        displayMsg: `${amountToSend} ${hqItem.uom} (AI Auto-Fill)`
-                    });
+                    missingFromHQ.push(need.name);
                 }
-                itemsAdded++;
             } else {
-                missingFromHQ.push(need.itemName);
+                missingFromHQ.push(need.name);
             }
         }
     });
     
-    renderDispatchCart();
+    window.renderDispatchCart();
     
     if (missingFromHQ.length > 0) {
-        alert(`✅ Auto-filled ${itemsAdded} items.\n\n⚠️ Warning: The following required items are OUT OF STOCK at the Main Office and were skipped: ${missingFromHQ.join(", ")}`);
+        Swal.fire('Partial Success', `✅ Auto-filled ${itemsAdded} items.\n\n⚠️ Skipped because OUT OF STOCK at Main Office: ${missingFromHQ.join(", ")}`, 'warning');
+    } else if (itemsAdded > 0) {
+        Swal.fire('✅ Cart Loaded!', `${itemsAdded} items added to your Dispatch List based on the 7-Day Burn Rate.`, 'success');
     } else {
-        alert(`✅ Cart loaded! ${itemsAdded} items added based on the 7-Day Burn Rate.`);
+        Swal.fire('No Items Needed', `Branch is fully stocked according to the AI.`, 'info');
     }
 };
 
@@ -21740,8 +21913,6 @@ window.generateAiDispatchList = async function() {
         Swal.fire('Error', 'Failed to generate AI request.', 'error');
     }
 };
-
-window.loadSmartSupplyChain = window.loadForecasterEngine;
 
 // Start the watchdog 3 seconds after the Manager App loads!
 setTimeout(window.initVersionWatchdog, 3000);
