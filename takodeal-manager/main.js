@@ -11115,12 +11115,13 @@ window.openPayslipModal = async function(staffName) {
                 outColor = '#dc2626'; // Red if undertime/missed
             }
 
+            a// 🔥 THE FIX: Added white-space: normal and word-break: break-word directly to the cells!
             attHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 8px 4px; text-align: center; word-wrap: break-word;">${log.date || ''}</td>
-                <td style="padding: 8px 4px; font-weight: bold; color: ${inColor}; text-align: center; vertical-align: middle; word-wrap: break-word;">${inTimeHtml}</td>
-                <td style="padding: 8px 4px; font-weight: bold; color: ${outColor}; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.out || ''}</td>
-                <td style="padding: 8px 4px; font-weight: bold; text-align: center; vertical-align: middle;">${log.hrs || 0}h</td>
-                <td style="padding: 8px 4px; font-size:11px; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.remark || ''}</td>
+                <td style="padding: 8px 4px; text-align: center; white-space: normal; word-break: break-word; vertical-align: middle;">${log.date || ''}</td>
+                <td style="padding: 8px 4px; font-weight: bold; color: ${inColor}; text-align: center; vertical-align: middle; white-space: normal; word-break: break-word;">${inTimeHtml}</td>
+                <td style="padding: 8px 4px; font-weight: bold; color: ${outColor}; text-align: center; vertical-align: middle; white-space: normal; word-break: break-word;">${log.out || ''}</td>
+                <td style="padding: 8px 4px; font-weight: bold; text-align: center; vertical-align: middle; white-space: normal; word-break: break-word;">${log.hrs || 0}h</td>
+                <td style="padding: 8px 4px; font-size:11px; text-align: center; vertical-align: middle; white-space: normal; word-break: break-word; line-height: 1.3;">${log.remark || ''}</td>
             </tr>`;
         });
     } else {
