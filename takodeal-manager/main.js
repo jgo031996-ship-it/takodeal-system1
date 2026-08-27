@@ -20122,12 +20122,19 @@ window.switchLogisticsTimeFilter = function(filter) {
 // ========================================================
 // 🚨 AUTO-SANCTION ENGINE: GHOST PUNCH DETECTOR
 // ========================================================
+window.issuedGhostSanctions = window.issuedGhostSanctions || new Set();
+
 window.triggerAutoSanctionForMissedTimeOut = async function(staffName, timeInDate, branch) {
     let dateStr = timeInDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
     let details = `Failed to Time Out for the shift starting on ${dateStr}. Please explain why you left the system clocked in without timing out.`;
     
+    // 🛑 ANTI-SPAM LOCK: Prevents the same ghost punch from creating duplicate sanctions during live database syncs!
+    let cacheKey = `${staffName}_${dateStr}`;
+    if (window.issuedGhostSanctions.has(cacheKey)) return;
+    window.issuedGhostSanctions.add(cacheKey);
+
     try {
-        // Check if we already issued a sanction for this exact ghost punch so we don't spam them!
+        // Check if we already issued a sanction for this exact ghost punch
         const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("details", "==", details));
         const snap = await getDocs(q);
         
@@ -20213,16 +20220,27 @@ window.fetchLiveStaffOnDuty = async function() {
                 let staff = data.staffName;
                 let punchTime = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date();
                 
-                if (data.type === "TIME IN") {
+                // 🔥 THE CASE-SENSITIVITY FIX: Converts everything to uppercase to perfectly match Staff App & POS App variations!
+                let pType = (data.type || "").toUpperCase();
+                
+                if (pType.includes("IN") && !pType.includes("OUT")) {
                     // 🚨 GHOST DETECTOR: If they were ALREADY timed in, the previous one was a missed time out!
                     if (staffState[staff] && staffState[staff].status === "IN") {
                         let isStudent = staffProfiles[staff] ? staffProfiles[staff].isWorkingStudent : false;
-                        if (!isStudent && !data.isManual) {
+                        
+                        // 🔥 THE DOUBLE-TAP GLITCH PROTECTOR 🔥
+                        // Only trigger the Ghost Punch Sanction if the previous Time In was more than 5 hours ago!
+                        // This entirely prevents the system from punishing staff who accidentally double-tapped due to lag.
+                        let hrsSinceLastIn = (punchTime - staffState[staff].time) / (1000 * 60 * 60);
+                        
+                        if (!isStudent && !data.isManual && hrsSinceLastIn > 5) {
                             window.triggerAutoSanctionForMissedTimeOut(staff, staffState[staff].time, staffState[staff].branch);
                         }
                     }
                     staffState[staff] = { status: "IN", time: punchTime, branch: data.branch, lateExempted: data.lateExempted };
-                } else if (data.type.includes("TIME OUT")) {
+                
+                } else if (pType.includes("OUT")) {
+                    // Accurately catches "Time Out", "TIME OUT", "TIME OUT (AUTO)", etc.
                     staffState[staff] = { status: "OUT", time: punchTime, branch: data.branch };
                 }
             });
