@@ -5096,14 +5096,23 @@
               </div>
               <span onclick="document.getElementById('itemLedgerModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">×</span>
           </div>
-          <div style="padding: 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between;">
-              <div>
-                  <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">Current System Stock</div>
-                  <div id="ledgerCurrentStock" style="font-size: 24px; font-weight: 900; color: #0f172a;">0.00</div>
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; padding: 20px; background: #f8fafc; border-bottom: 1px solid #e2e8f0;">
+              <div style="background: white; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                  <div style="font-size: 10px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Current System Stock</div>
+                  <div id="ledgerCurrentStock" style="font-size: 20px; font-weight: 900; color: #0f172a; margin-top: 4px;">0.00</div>
+                  <div id="ledgerLastDeliveryUi" style="margin-top: 8px; font-size: 11px; color: #475569; border-top: 1px dashed #cbd5e1; padding-top: 8px;"></div>
               </div>
-              <div style="text-align: right;">
-                  <div style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">Lifetime Total Purchased / Received</div>
-                  <div id="ledgerLifetimeBought" style="font-size: 24px; font-weight: 900; color: #16a34a;">0.00</div>
+              <div style="background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                  <div style="font-size: 10px; font-weight: 800; color: #b45309; text-transform: uppercase; letter-spacing: 0.5px;">AI Velocity (Daily Burn)</div>
+                  <div id="ledgerVelocity" style="font-size: 20px; font-weight: 900; color: #ea580c; margin-top: 4px;">0.00</div>
+              </div>
+              <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border: 1px dashed #bbf7d0; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                  <div style="font-size: 10px; font-weight: 800; color: #15803d; text-transform: uppercase; letter-spacing: 0.5px;">Est. Runway (Days Left)</div>
+                  <div id="ledgerRunway" style="font-size: 20px; font-weight: 900; color: #16a34a; margin-top: 4px;">∞</div>
+              </div>
+              <div style="background: #f0f9ff; padding: 15px; border-radius: 8px; border: 1px dashed #bae6fd; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                  <div style="font-size: 10px; font-weight: 800; color: #0369a1; text-transform: uppercase; letter-spacing: 0.5px;">7-Day Dynamic Need</div>
+                  <div id="ledger7DayNeed" style="font-size: 20px; font-weight: 900; color: #0ea5e9; margin-top: 4px;">0.00</div>
               </div>
           </div>
           <div style="padding: 20px; overflow-y: auto; background: white; flex: 1;">
