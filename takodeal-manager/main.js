@@ -6288,27 +6288,20 @@ window.openNewProductModal = async function () {
 // --- ADVANCED INVENTORY ADDER ---
 window.openAddInventoryModal = function () {
   document.getElementById('addInvModal').style.display = 'flex';
-  
-  // Clear old inputs to keep it fresh
+  // Clear old inputs
   document.getElementById('newInvName').value = '';
   document.getElementById('newInvPurchUom').value = '';
   document.getElementById('newInvBaseUom').value = '';
   document.getElementById('newInvConv').value = '';
   document.getElementById('newInvCost').value = '';
   document.getElementById('newInvInitQty').value = '';
-  document.getElementById('newInvBranchReorder').value = '';
-  document.getElementById('newInvHqReorder').value = '';
-  document.getElementById('newInvMaintainPurch').value = '';
-  document.getElementById('newInvMaintainBase').value = '';
-  document.getElementById('newInvPhoto').value = '';
-  document.getElementById('newInvBroadcastAll').checked = true; // Auto-check broadcast by default
-  
+  document.getElementById('newInvReorder').value = '';
   window.updateInvSummary();
 };
 
 window.updateInvSummary = function () {
-  let pUom = document.getElementById('newInvPurchUom').value || 'Pack';
-  let bUom = document.getElementById('newInvBaseUom').value || 'Piece';
+  let pUom = document.getElementById('newInvPurchUom').value || '[Purch UOM]';
+  let bUom = document.getElementById('newInvBaseUom').value || '[Base UOM]';
   let conv = parseFloat(document.getElementById('newInvConv').value) || 0;
   let cost = parseFloat(document.getElementById('newInvCost').value) || 0;
   let qty = parseFloat(document.getElementById('newInvInitQty').value) || 0;
@@ -6319,12 +6312,6 @@ window.updateInvSummary = function () {
   document.getElementById('newInvSummary').innerHTML =
     `<strong>Summary:</strong> You are adding <strong>${totalBaseUnits.toLocaleString()} ${bUom}</strong> to the cloud.<br>
      The system will calculate the recipe cost at <strong>₱${costPerBaseUnit.toFixed(4)} per ${bUom}</strong>.`;
-
-  // Dynamically update the labels inside the Par Level boxes!
-  let lblPurch = document.getElementById('newInvMaintainLabelPurch');
-  let lblBase = document.getElementById('newInvMaintainLabelBase');
-  if (lblPurch) lblPurch.innerText = pUom;
-  if (lblBase) lblBase.innerText = bUom;
 };
 
 window.saveAdvancedInventoryItem = async function () {
@@ -6338,36 +6325,29 @@ window.saveAdvancedInventoryItem = async function () {
   let cost = parseFloat(document.getElementById('newInvCost').value);
   let initQty = parseFloat(document.getElementById('newInvInitQty').value);
   
-  // Convert new Alert & Par Level inputs from Purchase UOM to Base UOM
-  let branchLowPurch = parseFloat(document.getElementById('newInvBranchReorder').value) || 0;
-  let hqLowPurch = parseFloat(document.getElementById('newInvHqReorder').value) || 0;
-  let branchLowBase = branchLowPurch * conv;
-  let hqLowBase = hqLowPurch * conv;
-
-  // Combine Maintaining Stock boxes mathematically
-  let mPurch = parseFloat(document.getElementById('newInvMaintainPurch').value) || 0;
-  let mBase = parseFloat(document.getElementById('newInvMaintainBase').value) || 0;
-  let finalMaintainBase = (mPurch * conv) + mBase;
+  // Convert Purchase UOM input to Base UOM for the low-stock alarm!
+  let reorderPurch = parseFloat(document.getElementById('newInvReorder').value) || 0;
+  let reorderBase = reorderPurch * conv;
 
   if (!name || !purchUom || !baseUom || isNaN(conv) || isNaN(cost) || isNaN(initQty)) {
     Swal.fire("Error", "Please fill out all required fields with valid numbers.", "error"); return;
   }
 
   let btn = document.getElementById('btnSaveInv');
-  btn.innerText = "⏳ Processing..."; btn.disabled = true;
+  btn.innerText = "⏳ Broadcasting to All Branches..."; btn.disabled = true;
 
   try {
         let totalBaseStock = conv * initQty;
         let baseCost = cost / conv; 
         
-        let showCashier = document.getElementById('newInvShowCashier') ? document.getElementById('newInvShowCashier').checked : true; 
+        let checkboxEl = document.getElementById('newInvShowCashier');
+        let showCashier = checkboxEl ? checkboxEl.checked : true; 
         let showPrep = document.getElementById('newInvShowPrep') ? document.getElementById('newInvShowPrep').checked : true;
         let allowReq = document.getElementById('newInvAllowRequest') ? document.getElementById('newInvAllowRequest').checked : true;
-        let doBroadcast = document.getElementById('newInvBroadcastAll').checked;
 
         // 1. CRASH PROTECTOR: Scan the whole system to ensure this item doesn't exist already!
-        const duplicateQuery = window.query(window.collection(window.db, "inventory"), window.where("name", "==", name));
-        const duplicateSnap = await window.getDocs(duplicateQuery);
+        const duplicateQuery = query(collection(db, "inventory"), where("name", "==", name));
+        const duplicateSnap = await getDocs(duplicateQuery);
         let existingBranches = [];
         duplicateSnap.forEach(d => existingBranches.push(d.data().branch));
 
@@ -6377,22 +6357,8 @@ window.saveAdvancedInventoryItem = async function () {
             return;
         }
 
-        // 2. UPLOAD PHOTO SECURELY IF ATTACHED
-        let photoUrl = undefined;
-        let fileInput = document.getElementById('newInvPhoto');
-        if (fileInput && fileInput.files.length > 0) {
-            btn.innerText = "⏳ Uploading Photo...";
-            const file = fileInput.files[0];
-            const fileExt = file.name.split('.').pop();
-            const fileName = `inventory_images/new_${Date.now()}.${fileExt}`;
-            const storageReference = window.ref(window.storage, fileName);
-            const snapshot = await window.uploadBytes(storageReference, file);
-            photoUrl = await window.getDownloadURL(snapshot.ref);
-            btn.innerText = "⏳ Broadcasting to Network...";
-        }
-
-        // 3. THE SMART BROADCASTER ENGINE
-        let branchesToCreate = doBroadcast ? (window.globalActiveBranches || ["Main Office", "Cabantian", "Citygate", "Maa"]) : [selectedBranch];
+        // 2. THE GLOBAL BROADCASTER ENGINE: Map out all active branches in your company
+        let branchesToCreate = window.globalActiveBranches || ["Main Office", "Cabantian", "Citygate", "Maa"];
         let creationPromises = [];
         let createdCount = 0;
 
@@ -6400,50 +6366,42 @@ window.saveAdvancedInventoryItem = async function () {
             // Prevent double-creating if it miraculously already exists in another branch
             if (existingBranches.includes(branch)) continue;
             
-            // The selected branch gets the initial stock! The broadcasted branches get exactly 0.
+            // 🔥 THE SMART LOGIC: Only the selected branch gets the initial stock! The rest get exactly 0.
             let branchInitialStock = (branch === selectedBranch) ? totalBaseStock : 0;
-            let targetLowBase = (branch === "Main Office") ? hqLowBase : branchLowBase;
             
             let payload = {
               branch: branch,
               name: name,
               category: category,
               purchaseUom: purchUom,
-              uom: baseUom,
-              baseUom: baseUom, 
+              uom: baseUom, 
               conversionRate: conv,
-              conversion: conv,
               purchaseCost: cost,
-              cost: cost,
               baseCost: baseCost, 
               currentStock: branchInitialStock, 
-              reorderLevel: targetLowBase, 
-              lowStockAlert: targetLowBase,
-              maintainingStock: finalMaintainBase,
+              reorderLevel: reorderBase, 
               showToCashier: showCashier, 
               showInPrep: showPrep,
               allowRequest: allowReq,
             };
 
-            if (photoUrl !== undefined) payload.image = photoUrl;
-
-            creationPromises.push(window.addDoc(window.collection(window.db, "inventory"), payload));
+            creationPromises.push(addDoc(collection(db, "inventory"), payload));
             createdCount++;
         }
 
         // Send all instructions to Firebase simultaneously!
         await Promise.all(creationPromises);
     
-        Swal.fire({
-            title: '✅ Item Created!',
-            html: `<b>${name}</b> has been successfully added to <b>${createdCount}</b> branches.<br><br><span style="color: #64748b; font-size: 13px;">(Stock was set to ${initQty} ${purchUom} for ${selectedBranch}, and 0 for the others).</span>`,
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl shadow-xl' }
-        });
-        
-        document.getElementById('addInvModal').style.display = 'none';
-        window.loadInventoryData(); // Redraws the table to show your newly created items
-        
+    Swal.fire({
+        title: '✅ Global Sync Complete!',
+        html: `<b>${name}</b> has been successfully added to all <b>${createdCount}</b> branches.<br><br><span style="color: #64748b; font-size: 13px;">(Stock was set to ${initQty} ${purchUom} for ${selectedBranch}, and 0 for the others).</span>`,
+        icon: 'success',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+    
+    document.getElementById('addInvModal').style.display = 'none';
+    window.loadInventoryData(); // Redraws the table to show your newly created items
+    
   } catch (error) {
     console.error("Item Creation Error:", error); 
     Swal.fire("Error", "Failed to broadcast item to branches. Check your internet connection.", "error");
@@ -11115,13 +11073,12 @@ window.openPayslipModal = async function(staffName) {
                 outColor = '#dc2626'; // Red if undertime/missed
             }
 
-            // 🔥 THE FIX: Added white-space: normal and word-break: break-word directly to the cells!
             attHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td style="padding: 8px 4px; text-align: center; white-space: normal; word-break: break-word; vertical-align: middle;">${log.date || ''}</td>
-                <td style="padding: 8px 4px; font-weight: bold; color: ${inColor}; text-align: center; vertical-align: middle; white-space: normal; word-break: break-word;">${inTimeHtml}</td>
-                <td style="padding: 8px 4px; font-weight: bold; color: ${outColor}; text-align: center; vertical-align: middle; white-space: normal; word-break: break-word;">${log.out || ''}</td>
-                <td style="padding: 8px 4px; font-weight: bold; text-align: center; vertical-align: middle; white-space: normal; word-break: break-word;">${log.hrs || 0}h</td>
-                <td style="padding: 8px 4px; font-size:11px; text-align: center; vertical-align: middle; white-space: normal; word-break: break-word; line-height: 1.3;">${log.remark || ''}</td>
+                <td style="padding: 8px 4px; text-align: center; word-wrap: break-word;">${log.date || ''}</td>
+                <td style="padding: 8px 4px; font-weight: bold; color: ${inColor}; text-align: center; vertical-align: middle; word-wrap: break-word;">${inTimeHtml}</td>
+                <td style="padding: 8px 4px; font-weight: bold; color: ${outColor}; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.out || ''}</td>
+                <td style="padding: 8px 4px; font-weight: bold; text-align: center; vertical-align: middle;">${log.hrs || 0}h</td>
+                <td style="padding: 8px 4px; font-size:11px; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.remark || ''}</td>
             </tr>`;
         });
     } else {
@@ -20122,19 +20079,12 @@ window.switchLogisticsTimeFilter = function(filter) {
 // ========================================================
 // 🚨 AUTO-SANCTION ENGINE: GHOST PUNCH DETECTOR
 // ========================================================
-window.issuedGhostSanctions = window.issuedGhostSanctions || new Set();
-
 window.triggerAutoSanctionForMissedTimeOut = async function(staffName, timeInDate, branch) {
     let dateStr = timeInDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
     let details = `Failed to Time Out for the shift starting on ${dateStr}. Please explain why you left the system clocked in without timing out.`;
     
-    // 🛑 ANTI-SPAM LOCK: Prevents the same ghost punch from creating duplicate sanctions during live database syncs!
-    let cacheKey = `${staffName}_${dateStr}`;
-    if (window.issuedGhostSanctions.has(cacheKey)) return;
-    window.issuedGhostSanctions.add(cacheKey);
-
     try {
-        // Check if we already issued a sanction for this exact ghost punch
+        // Check if we already issued a sanction for this exact ghost punch so we don't spam them!
         const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("details", "==", details));
         const snap = await getDocs(q);
         
@@ -20220,27 +20170,16 @@ window.fetchLiveStaffOnDuty = async function() {
                 let staff = data.staffName;
                 let punchTime = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date();
                 
-                // 🔥 THE CASE-SENSITIVITY FIX: Converts everything to uppercase to perfectly match Staff App & POS App variations!
-                let pType = (data.type || "").toUpperCase();
-                
-                if (pType.includes("IN") && !pType.includes("OUT")) {
+                if (data.type === "TIME IN") {
                     // 🚨 GHOST DETECTOR: If they were ALREADY timed in, the previous one was a missed time out!
                     if (staffState[staff] && staffState[staff].status === "IN") {
                         let isStudent = staffProfiles[staff] ? staffProfiles[staff].isWorkingStudent : false;
-                        
-                        // 🔥 THE DOUBLE-TAP GLITCH PROTECTOR 🔥
-                        // Only trigger the Ghost Punch Sanction if the previous Time In was more than 5 hours ago!
-                        // This entirely prevents the system from punishing staff who accidentally double-tapped due to lag.
-                        let hrsSinceLastIn = (punchTime - staffState[staff].time) / (1000 * 60 * 60);
-                        
-                        if (!isStudent && !data.isManual && hrsSinceLastIn > 5) {
+                        if (!isStudent && !data.isManual) {
                             window.triggerAutoSanctionForMissedTimeOut(staff, staffState[staff].time, staffState[staff].branch);
                         }
                     }
                     staffState[staff] = { status: "IN", time: punchTime, branch: data.branch, lateExempted: data.lateExempted };
-                
-                } else if (pType.includes("OUT")) {
-                    // Accurately catches "Time Out", "TIME OUT", "TIME OUT (AUTO)", etc.
+                } else if (data.type.includes("TIME OUT")) {
                     staffState[staff] = { status: "OUT", time: punchTime, branch: data.branch };
                 }
             });
@@ -21279,60 +21218,6 @@ window.filterForecaster = function() {
             let statusText = item.currentStock < 0 ? "NEGATIVE STOCK (Audit Needed)" : (item.daysLeft <= 0 ? "Out of Stock Now" : (item.daysLeft <= 3 ? "Critical (Reorder Immediately)" : "Sufficient Stock"));
             let statusColor = item.currentStock < 0 ? "#dc2626" : (item.daysLeft <= 0 ? "#dc2626" : (item.daysLeft <= 3 ? "#ea580c" : "#16a34a"));
 
-            // 🔥 THE PAR LEVEL INTEGRATION 🔥
-            let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-            let bUom = item.uom || 'units';
-            let pUom = item.purchaseUom || item.purchUom || bUom;
-            
-            let targetParBase = parseFloat(item.maintainingStock) || 0;
-            let parHtml = '';
-
-            if (targetParBase > 0) {
-                let deficitBase = targetParBase - item.currentStock;
-                let isDeficit = deficitBase > 0;
-                
-                // Helper to cleanly format [Pack] + [Piece] based on Conversion Rates
-                let formatDualQty = (totalBase) => {
-                    let wPurch = 0; let rBase = totalBase;
-                    if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
-                        wPurch = Math.floor(totalBase / conv);
-                        rBase = totalBase - (wPurch * conv);
-                        if (totalBase < 0) {
-                            wPurch = Math.ceil(totalBase / conv);
-                            rBase = totalBase - (wPurch * conv);
-                        }
-                    }
-                    let str = '';
-                    if (wPurch !== 0) str += `<strong style="font-size: 16px;">${wPurch}</strong> <span style="font-size:10px; color:#64748b; text-transform: uppercase;">${pUom}</span> `;
-                    if (rBase !== 0 || wPurch === 0) str += `<strong style="font-size: 16px;">${rBase.toFixed(1)}</strong> <span style="font-size:10px; color:#64748b; text-transform: uppercase;">${bUom}</span>`;
-                    return str;
-                };
-
-                let defStr = isDeficit ? formatDualQty(deficitBase) : '<span style="color:#16a34a; font-size: 13px;">✅ Stock is Full</span>';
-                
-                parHtml = `
-                    <div style="background: #f0fdf4; border: 1px dashed #16a34a; padding: 12px; border-radius: 8px; margin-bottom: 15px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                            <span style="font-size: 11px; color: #15803d; font-weight: 800; text-transform: uppercase;">Target Par Level:</span>
-                            <span style="color: #16a34a;">${formatDualQty(targetParBase)}</span>
-                        </div>
-                        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed #bbf7d0; padding-top: 8px;">
-                            <span style="font-size: 11px; color: #b91c1c; font-weight: 800; text-transform: uppercase;">Qty to Restock:</span>
-                            <span style="color: #dc2626;">${isDeficit ? '+ ' + defStr : defStr}</span>
-                        </div>
-                    </div>
-                `;
-                
-                // Adjust status text to match par level override
-                if (isDeficit) {
-                    statusText = "Below Par Level (Needs Restock)";
-                    statusColor = "#d97706";
-                } else {
-                    statusText = "At or Above Par Level";
-                    statusColor = "#16a34a";
-                }
-            }
-
             html += `
             <div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; transition: 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 10px 15px -3px rgba(0,0,0,0.1)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.05)';">
                 <div style="display: flex; gap: 15px; margin-bottom: 20px;">
@@ -21342,7 +21227,7 @@ window.filterForecaster = function() {
                         <div style="font-size: 11px; color: #94a3b8; font-weight: bold; text-transform: uppercase;">${item.branch}</div>
                     </div>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px dashed #e2e8f0;">
                     <div>
                         <div style="font-size: 13px; color: #64748b; margin-bottom: 5px;">Current Stock: <strong style="color: ${stockColor}; font-size: 15px;">${item.currentStock.toFixed(1)} <span style="font-size: 11px;">${item.uom}</span></strong></div>
                         <div style="font-size: 13px; color: #64748b;">Daily Burn Rate: <strong style="color: ${burnColor}; font-size: 14px;">${item.dailyBurn.toFixed(2)} <span style="font-size: 11px;">${item.uom} / day</span></strong></div>
@@ -21352,7 +21237,6 @@ window.filterForecaster = function() {
                         <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; margin-top: 4px;">Days Left</div>
                     </div>
                 </div>
-                ${parHtml}
                 <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: bold;">
                     <span style="display: flex; align-items: center; gap: 5px; color: ${statusColor};"><span style="background: ${statusColor}; color: white; border-radius: 4px; padding: 2px 4px; font-size: 10px;">Status</span> ${statusText}</span>
                 </div>
@@ -21457,6 +21341,112 @@ window.loadSmartSupplyChain = window.loadForecasterEngine;
 
 // Start the watchdog 3 seconds after the Manager App loads!
 setTimeout(window.initVersionWatchdog, 3000);
+
+// ========================================================
+// 📱 RESPONSIVE MOBILE ENGINE & TABLE AUTO-WRAPPER
+// ========================================================
+document.addEventListener("DOMContentLoaded", () => {
+    
+    // 1. INJECT BULLETPROOF MOBILE CSS GLOBALLY
+    if (!document.getElementById('manager-mobile-fixes')) {
+        const mobileStyle = document.createElement('style');
+        mobileStyle.id = 'manager-mobile-fixes';
+        mobileStyle.innerHTML = `
+            /* Prevent the entire app body from scrolling sideways */
+            body, html { overflow-x: hidden !important; width: 100%; max-width: 100vw; }
+            
+            /* Make the table wrapper actually scrollable */
+            .mobile-table-wrapper {
+                width: 100% !important;
+                max-width: 100vw !important;
+                overflow-x: auto !important;
+                -webkit-overflow-scrolling: touch !important;
+                border-radius: 8px;
+                border: 1px solid #e2e8f0;
+                margin-bottom: 15px;
+                background: white;
+            }
+
+            /* 📱 TRIGGER MOBILE MODE ON PHONES & SMALL TABLETS */
+            @media (max-width: 850px) {
+                /* Force side-by-side grids to stack vertically */
+                div[style*="grid-template-columns"] {
+                    grid-template-columns: 1fr !important;
+                    gap: 15px !important;
+                }
+
+                /* Force Flex containers to wrap their contents so buttons don't hide */
+                div[style*="display: flex"] {
+                    flex-wrap: wrap !important;
+                }
+
+                /* Exclude flex-wrap from certain structural elements so they don't break */
+                .sidebar-header, .brand-container, td > div[style*="display: flex"], .swal2-title, .swal2-header {
+                    flex-wrap: nowrap !important;
+                }
+
+                /* Make standard inputs and dropdowns full width */
+                input[type="text"], input[type="number"], input[type="date"], input[type="month"], select, textarea {
+                    width: 100% !important;
+                    min-width: 100% !important;
+                    box-sizing: border-box !important;
+                }
+
+                /* Make action buttons stretch to full width so they are easy to tap */
+                button {
+                    flex: 1 1 100% !important;
+                    width: 100% !important;
+                    margin-bottom: 5px !important;
+                    white-space: normal !important;
+                    height: auto !important;
+                }
+
+                /* Prevent table cells from squishing */
+                table th, table td {
+                    white-space: nowrap !important;
+                }
+
+                /* Make SweetAlert Modals fit the phone screen perfectly */
+                .swal2-popup {
+                    width: 95% !important;
+                    max-width: 95% !important;
+                    padding: 20px 15px !important;
+                    margin: 10px auto !important;
+                    box-sizing: border-box !important;
+                }
+                
+                /* Reduce padding on the main view container to maximize screen space */
+                .view-container {
+                    padding: 10px !important;
+                }
+            }
+        `;
+        document.head.appendChild(mobileStyle);
+    }
+
+    // 2. THE TABLE AUTO-WRAPPER (MUTATION OBSERVER)
+    const tableObserver = new MutationObserver(() => {
+        // Find every table currently on the screen
+        document.querySelectorAll('table').forEach(table => {
+            // If the table isn't already wrapped, wrap it!
+            if (!table.parentElement.classList.contains('mobile-table-wrapper') && !table.closest('.mobile-table-wrapper')) {
+                let wrapper = document.createElement('div');
+                wrapper.className = 'mobile-table-wrapper';
+                
+                // Move the table inside our smooth-scrolling wrapper
+                table.parentNode.insertBefore(wrapper, table);
+                wrapper.appendChild(table);
+                
+                // Force the table to stay wide so the user can swipe through it
+                table.style.minWidth = "800px"; 
+                table.style.width = "100%";
+            }
+        });
+    });
+
+    // Tell the observer to actively watch the whole app for changes
+    tableObserver.observe(document.body, { childList: true, subtree: true });
+});
 
 // ========================================================
 // 📦 MAIN OFFICE AI SUPPLIER PURCHASE ORDER ENGINE
@@ -24084,40 +24074,18 @@ if (typeof window.originalCheckManagerPin === 'undefined' && typeof window.check
 }
 
 // ========================================================
-// 🔢 NUMPAD LOGIC ENGINE
+// 🛡️ EMERGENCY LOGIN FIX (UNDEFINED & PIN FREEZE)
 // ========================================================
-window.appendManagerPin = function(num) {
-    let pinInput = document.getElementById('managerPinInput');
-    if (pinInput) {
-        pinInput.value += num;
-        // Clean up any error styling when they start typing
-        pinInput.style.borderColor = '#cbd5e1';
-        let err = document.getElementById('pinErrorMsg');
-        if (err) err.style.display = 'none';
-        
-        // Auto-submit feature: If they hit 4 digits, automatically try to log them in!
-        if (pinInput.value.length === 6) {
-            window.checkManagerPin();
+// 1. Instantly fix the "undefined" text on the screen
+setInterval(function() {
+    document.querySelectorAll('h2, h3, h1, span, div').forEach(function(el) {
+        if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
+            if (el.innerText && el.innerText.includes('undefined:')) {
+                el.innerText = el.innerText.replace('undefined:', 'Manager:');
+            }
         }
-    }
-};
-
-window.clearManagerPin = function() {
-    let pinInput = document.getElementById('managerPinInput');
-    if (pinInput) {
-        pinInput.value = '';
-        pinInput.style.borderColor = '#cbd5e1';
-        let err = document.getElementById('pinErrorMsg');
-        if (err) err.style.display = 'none';
-    }
-};
-
-window.backspaceManagerPin = function() {
-    let pinInput = document.getElementById('managerPinInput');
-    if (pinInput && pinInput.value.length > 0) {
-        pinInput.value = pinInput.value.slice(0, -1);
-    }
-};
+    });
+}, 500);
 
 // 2. The Bulletproof Debounced PIN Checker
 window.isLoggingIn = false;
