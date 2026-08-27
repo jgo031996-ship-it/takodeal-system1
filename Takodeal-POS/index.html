@@ -478,11 +478,44 @@
 
         <h2 style="margin: 0 0 5px 0; color: #0f172a; font-size: 26px; font-weight: 900; letter-spacing: 1.5px;">TAKODEÁL</h2>
         <h3 id="loginBranchDisplay" style="margin: 0 0 25px 0; color: #0ea5e9; font-size: 15px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">📍 Loading Location...</h3>
-        
+
+        <style>
+          /* 🔥 THE FIX: We use a class with !important so the mobile auto-stacker ignores it! */
+          .login-numpad-container {
+              display: grid !important;
+              grid-template-columns: repeat(3, 1fr) !important;
+              gap: 10px !important;
+              margin-bottom: 15px;
+          }
+          .numpad-btn { padding: 15px; font-size: 24px; font-weight: 900; border-radius: 12px; border: 1px solid #cbd5e1; background: #ffffff; color: #1e293b; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.1s; touch-action: manipulation; }
+          .numpad-btn:active { transform: scale(0.92); box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: #f1f5f9; }
+          .numpad-btn-clear { padding: 15px; font-size: 20px; font-weight: 900; border-radius: 12px; border: 1px solid #fca5a5; background: #fef2f2; color: #dc2626; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.1s; touch-action: manipulation; }
+          .numpad-btn-clear:active { transform: scale(0.92); box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: #fee2e2; }
+          .numpad-btn-action { padding: 15px; font-size: 20px; font-weight: 900; border-radius: 12px; border: 1px solid #cbd5e1; background: #f8fafc; color: #64748b; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.1s; touch-action: manipulation; }
+          .numpad-btn-action:active { transform: scale(0.92); box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: #e2e8f0; }
+        </style>
+  
         <label style="font-size: 12px; font-weight: 900; color: #64748b; display: block; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;">Enter Security PIN / Password</label>
+          
+        <!-- 🔥 READONLY PREVENTS TABLET KEYBOARD FROM POPPING UP! -->
+        <input type="password" id="loginPasswordInput" readonly placeholder="••••" style="width: 100%; padding: 18px; font-size: 32px; text-align: center; letter-spacing: 12px; border: 2px solid #cbd5e1; border-radius: 12px; outline: none; font-family: monospace; color: #0f172a; transition: all 0.2s; box-sizing: border-box; background: white; font-weight: 900; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 15px;">
         
-        <input type="password" id="loginPasswordInput" placeholder="••••" onkeypress="if(event.key === 'Enter') submitLoginPin()" style="width: 100%; padding: 18px; font-size: 28px; text-align: center; letter-spacing: 12px; border: 2px solid #cbd5e1; border-radius: 12px; outline: none; font-family: monospace; color: #0f172a; transition: all 0.2s; box-sizing: border-box; background: white; font-weight: 900; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);" onfocus="this.style.borderColor='#0ea5e9'; this.style.boxShadow='0 0 0 3px rgba(14,165,233,0.2)';" onblur="this.style.borderColor='#cbd5e1'; this.style.boxShadow='inset 0 2px 4px rgba(0,0,0,0.02)';">
-        
+        <!-- 🔢 THE NEW TACTILE NUMPAD -->
+        <div class="login-numpad-container">
+            <button class="numpad-btn" onclick="window.appendCashierPin('1')">1</button>
+            <button class="numpad-btn" onclick="window.appendCashierPin('2')">2</button>
+            <button class="numpad-btn" onclick="window.appendCashierPin('3')">3</button>
+            <button class="numpad-btn" onclick="window.appendCashierPin('4')">4</button>
+            <button class="numpad-btn" onclick="window.appendCashierPin('5')">5</button>
+            <button class="numpad-btn" onclick="window.appendCashierPin('6')">6</button>
+            <button class="numpad-btn" onclick="window.appendCashierPin('7')">7</button>
+            <button class="numpad-btn" onclick="window.appendCashierPin('8')">8</button>
+            <button class="numpad-btn" onclick="window.appendCashierPin('9')">9</button>
+            <button class="numpad-btn-clear" onclick="window.clearCashierPin()">C</button>
+            <button class="numpad-btn" onclick="window.appendCashierPin('0')">0</button>
+            <button class="numpad-btn-action" onclick="window.backspaceCashierPin()">⌫</button>
+        </div>
+     
         <button onclick="submitLoginPin()" id="btnSubmitPin" style="width: 100%; padding: 18px; margin-top: 25px; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); color: white; border: none; border-radius: 12px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 6px 15px rgba(14, 165, 233, 0.4); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 20px rgba(14, 165, 233, 0.5)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 6px 15px rgba(14, 165, 233, 0.4)';">🔓 Secure Login</button>
 
         <div style="margin-top: 20px; font-size: 13px; color: #475569; cursor: pointer; font-weight: 900; padding: 14px; border: 1px dashed #cbd5e1; border-radius: 10px; background: #f8fafc; transition: 0.2s;" onmouseover="this.style.background='#f1f5f9';" onmouseout="this.style.background='#f8fafc';" onclick="window.manualHardUpdate()">
