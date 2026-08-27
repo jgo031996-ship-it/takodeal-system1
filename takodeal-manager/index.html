@@ -3663,21 +3663,28 @@
             <span onclick="document.getElementById('manualOvertimeModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">×</span>
         </div>
         <div style="padding: 25px; background: #f8fafc;">
-            <p style="font-size: 12px; color: #64748b; margin-top: 0; margin-bottom: 20px;">Grant manual overtime pay to a specific staff member for a specific date. This will automatically add to their next payslip.</p>
+            <p style="font-size: 12px; color: #64748b; margin-top: 0; margin-bottom: 20px;">Input the hours. The system will automatically check their schedule to apply Morning or Night shift rates.</p>
 
             <label style="font-size: 12px; font-weight: bold; color: #334155;">Staff Name</label>
-            <select id="manOtStaff" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold;"></select>
+            <select id="manOtStaff" onchange="window.calcAutoOvertime()" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; cursor: pointer;"></select>
 
             <label style="font-size: 12px; font-weight: bold; color: #334155;">Date of Overtime</label>
-            <input type="date" id="manOtDate" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #334155;">
+            <input type="date" id="manOtDate" onchange="window.calcAutoOvertime()" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #334155; cursor: pointer;">
 
-            <label style="font-size: 12px; font-weight: bold; color: #334155;">Overtime Amount (₱)</label>
-            <input type="number" id="manOtAmount" placeholder="e.g. 150" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: 900; color: #ea580c; font-size: 18px;">
+            <label style="font-size: 12px; font-weight: bold; color: #334155;">Overtime Hours</label>
+            <input type="number" id="manOtHours" oninput="window.calcAutoOvertime()" placeholder="e.g. 2.5" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: 900; color: #0f172a; font-size: 18px;">
+
+            <!-- 🔥 THE SMART CALCULATOR DISPLAY 🔥 -->
+            <div style="background: #fffbeb; padding: 12px; border-radius: 8px; border: 1px dashed #fcd34d; margin-bottom: 15px; text-align: center;">
+                <div style="font-size: 11px; color: #b45309; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;">Calculated Overtime Pay (₱)</div>
+                <div id="manOtCalcAmount" style="font-size: 28px; font-weight: 900; color: #ea580c; margin: 4px 0;">₱0.00</div>
+                <div id="manOtRateInfo" style="font-size: 11px; color: #d97706; font-weight: bold;">Select staff, date, and hours to calculate...</div>
+            </div>
 
             <label style="font-size: 12px; font-weight: bold; color: #334155;">Manager Remarks / Reason</label>
             <input type="text" id="manOtRemarks" placeholder="e.g. Extended 2 hours for deep cleaning" style="width: 100%; padding: 10px; margin: 5px 0 25px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
 
-            <button id="btnSaveManualOt" onclick="window.submitManualOvertime()" style="width: 100%; background: #ea580c; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Save Overtime Bonus</button>
+            <button id="btnSaveManualOt" onclick="window.submitManualOvertime()" style="width: 100%; background: #ea580c; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(234, 88, 12, 0.3);">💾 Save Overtime Bonus</button>
         </div>
     </div>
   </div>
