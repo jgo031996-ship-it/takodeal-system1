@@ -447,11 +447,18 @@
     <div id="loginStage2" style="display: none; background: rgba(255, 255, 255, 0.95); padding: 35px 25px; border-radius: 24px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); width: 100%; max-width: 400px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px);">
       
       <style>
-          .numpad-btn { padding: 15px; font-size: 24px; font-weight: 900; border-radius: 12px; border: 1px solid #cbd5e1; background: #ffffff; color: #1e293b; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.1s; }
+          /* 🔥 THE FIX: We use a class with !important so the mobile auto-stacker ignores it! */
+          .login-numpad-container {
+              display: grid !important;
+              grid-template-columns: repeat(3, 1fr) !important;
+              gap: 10px !important;
+              margin-bottom: 15px;
+          }
+          .numpad-btn { padding: 15px; font-size: 24px; font-weight: 900; border-radius: 12px; border: 1px solid #cbd5e1; background: #ffffff; color: #1e293b; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.1s; touch-action: manipulation; }
           .numpad-btn:active { transform: scale(0.92); box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: #f1f5f9; }
-          .numpad-btn-clear { padding: 15px; font-size: 20px; font-weight: 900; border-radius: 12px; border: 1px solid #fca5a5; background: #fef2f2; color: #dc2626; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.1s; }
+          .numpad-btn-clear { padding: 15px; font-size: 20px; font-weight: 900; border-radius: 12px; border: 1px solid #fca5a5; background: #fef2f2; color: #dc2626; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.1s; touch-action: manipulation; }
           .numpad-btn-clear:active { transform: scale(0.92); box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: #fee2e2; }
-          .numpad-btn-action { padding: 15px; font-size: 20px; font-weight: 900; border-radius: 12px; border: 1px solid #cbd5e1; background: #f8fafc; color: #64748b; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.1s; }
+          .numpad-btn-action { padding: 15px; font-size: 20px; font-weight: 900; border-radius: 12px; border: 1px solid #cbd5e1; background: #f8fafc; color: #64748b; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.1s; touch-action: manipulation; }
           .numpad-btn-action:active { transform: scale(0.92); box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: #e2e8f0; }
       </style>
 
@@ -469,7 +476,7 @@
       <input type="password" id="managerPinInput" readonly placeholder="••••" style="width: 100%; padding: 15px; font-size: 32px; text-align: center; letter-spacing: 15px; border: 2px solid #cbd5e1; border-radius: 12px; outline: none; font-family: monospace; color: #0f172a; transition: all 0.2s; box-sizing: border-box; background: white; font-weight: 900; box-shadow: inset 0 4px 6px rgba(0,0,0,0.04); margin-bottom: 15px;">
       
       <!-- 🔢 THE NEW TACTILE NUMPAD -->
-      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px;">
+      <div class="login-numpad-container">
           <button class="numpad-btn" onclick="window.appendManagerPin('1')">1</button>
           <button class="numpad-btn" onclick="window.appendManagerPin('2')">2</button>
           <button class="numpad-btn" onclick="window.appendManagerPin('3')">3</button>
