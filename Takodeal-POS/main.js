@@ -7162,47 +7162,192 @@ window.applySidebarLayout = async function() {
 };
 
 // ========================================================
-// 📦 SMART BRANCH STOCK REQUEST ENGINE (WITH HISTORY)
+// 📋 MANUAL STOCK COUNT & SILENT AI REQUEST ENGINE
 // ========================================================
-window.switchStockReqTab = function(tab) {
-    document.getElementById('stockReqTabNew').style.display = tab === 'New' ? 'block' : 'none';
-    document.getElementById('stockReqTabHistory').style.display = tab === 'History' ? 'block' : 'none';
+
+window.loadStockRequestUI = async function() {
+    const tbody = document.getElementById('manualStockCountBody');
+    if (!tbody) return;
     
-    document.getElementById('btnTabReqNew').style.background = tab === 'New' ? '#0ea5e9' : 'white';
-    document.getElementById('btnTabReqNew').style.color = tab === 'New' ? 'white' : '#475569';
-    document.getElementById('btnTabReqNew').style.border = tab === 'New' ? 'none' : '1px solid #cbd5e1';
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 15px;">⏳ Loading stock checklist...</td></tr>';
 
-    document.getElementById('btnTabReqHist').style.background = tab === 'History' ? '#0ea5e9' : 'white';
-    document.getElementById('btnTabReqHist').style.color = tab === 'History' ? 'white' : '#475569';
-    document.getElementById('btnTabReqHist').style.border = tab === 'History' ? 'none' : '1px solid #cbd5e1';
+    try {
+        const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.sessionUser.branch));
+        const snap = await window.getDocs(q);
 
-    if (tab === 'History') window.loadStockRequestHistory();
+        let itemsByCategory = {};
+        
+        snap.forEach(docSnap => {
+            let item = docSnap.data();
+            item.id = docSnap.id;
+            
+            // Only show items that are allowed to be requested/counted
+            if (item.allowRequest !== false) {
+                let cat = (item.category || "Uncategorized").toUpperCase();
+                if (!itemsByCategory[cat]) itemsByCategory[cat] = [];
+                itemsByCategory[cat].push(item);
+            }
+        });
+
+        let html = '';
+
+        // Loop through Categories to create the spreadsheet-style sections
+        Object.keys(itemsByCategory).sort().forEach(cat => {
+            
+            // Inject Category Header Row
+            html += `
+                <tr style="background: #e2e8f0; border-top: 3px solid #cbd5e1;">
+                    <td colspan="4" style="padding: 12px 25px; font-weight: 900; color: #0f172a; font-size: 15px; letter-spacing: 1px;">📁 ${cat}</td>
+                </tr>
+            `;
+
+            itemsByCategory[cat].sort((a,b) => a.name.localeCompare(b.name)).forEach(item => {
+                let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+                let bUom = item.baseUom || item.uom || 'units';
+                let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+                let parLevelBase = parseFloat(item.maintainingStock) || 0;
+
+                // 🧠 Format the Maintaining Stock for the staff to read easily
+                let maintainingHtml = `<span style="color:#94a3b8; font-size:11px; font-style:italic;">Not Set</span>`;
+                if (parLevelBase > 0) {
+                    let wPurch = 0; let rBase = parLevelBase;
+                    if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                        wPurch = Math.floor(parLevelBase / conv);
+                        rBase = parLevelBase - (wPurch * conv);
+                    }
+                    let str = '';
+                    if (wPurch > 0) str += `<strong style="font-size:15px; color:#334155;">${wPurch}</strong> <span style="font-size:10px; color:#64748b; text-transform:uppercase;">${pUom}</span> `;
+                    if (rBase > 0 || wPurch === 0) str += `<strong style="font-size:15px; color:#334155;">${rBase.toFixed(1)}</strong> <span style="font-size:10px; color:#64748b; text-transform:uppercase;">${bUom}</span>`;
+                    maintainingHtml = str;
+                }
+
+                // 🎨 DUAL INPUT UI: Generates the dual boxes exactly like Shift Closing
+                let inputHtml = '';
+                if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                    inputHtml = `
+                        <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                            <div style="display: flex; align-items: center; border: 2px solid #bae6fd; border-radius: 6px; background: #f0f9ff; overflow: hidden; width: 110px;">
+                                <input type="number" id="countPurch_${item.id}" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #0284c7; font-size: 15px; background: transparent;">
+                                <span style="font-size: 9px; font-weight: 800; color: #0ea5e9; padding-right: 8px; text-transform: uppercase;">${pUom}</span>
+                            </div>
+                            <span style="font-weight: 900; color: #cbd5e1;">+</span>
+                            <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; width: 110px;">
+                                <input type="number" id="countBase_${item.id}" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
+                                <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    inputHtml = `
+                        <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; max-width: 140px; margin: 0 auto;">
+                            <input type="number" id="countBase_${item.id}" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
+                            <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
+                            <input type="hidden" id="countPurch_${item.id}" value="">
+                        </div>
+                    `;
+                }
+
+                html += `
+                    <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                        <td style="padding: 15px 25px; font-weight: bold; color: #1e293b; font-size: 14px; vertical-align: middle;">${item.name}</td>
+                        <td style="padding: 15px 25px; text-align: center; vertical-align: middle; background: #f8fafc; border-left: 1px dashed #e2e8f0; border-right: 1px dashed #e2e8f0;">${maintainingHtml}</td>
+                        <td style="padding: 15px 25px; text-align: center; vertical-align: middle;">${inputHtml}</td>
+                        <td style="padding: 15px 25px; text-align: center; vertical-align: middle;">
+                            <button id="btnSubmit_${item.id}" onclick="window.submitManualCount('${item.id}', '${item.name.replace(/'/g, "\\'")}', ${conv}, '${bUom}', '${pUom}', ${parLevelBase}, ${item.currentStock || 0})" style="background: #0f766e; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3); transition: 0.2s;">💾 Submit Count</button>
+                        </td>
+                    </tr>
+                `;
+            });
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No inventory items available to count.</td></tr>';
+
+    } catch (e) {
+        console.error("Manual Count Error:", e);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #dc2626; font-weight: bold;">❌ Database Error. Please refresh.</td></tr>';
+    }
 };
 
-window.globalHqStockCache = [];
-
-window.toggleActualCount = function(id) {
-    let select = document.getElementById(`reqType_${id}`);
-    let container = document.getElementById(`actualCountContainer_${id}`);
-    let actualInput = document.getElementById(`actualCount_${id}`);
+window.submitManualCount = async function(itemId, itemName, convRate, bUom, pUom, parLevelBase, currentSystemStock) {
+    let purchInput = document.getElementById(`countPurch_${itemId}`);
+    let baseInput = document.getElementById(`countBase_${itemId}`);
     
-    if (select.value === "Low Stock") {
-        if (container) container.style.display = "flex";
-        actualInput.value = "";
-        actualInput.readOnly = false;
-        actualInput.style.background = "#fffbeb";
-        actualInput.style.borderColor = "#fcd34d";
-        actualInput.style.color = "#d97706";
-    } else if (select.value === "Out of Stock") {
-        if (container) container.style.display = "flex";
-        actualInput.value = "0"; 
-        actualInput.readOnly = true; 
-        actualInput.style.background = "#fee2e2";
-        actualInput.style.borderColor = "#f87171";
-        actualInput.style.color = "#dc2626";
-    } else {
-        if (container) container.style.display = "none";
-        actualInput.value = "";
+    let pValRaw = purchInput ? purchInput.value.trim() : "";
+    let bValRaw = baseInput ? baseInput.value.trim() : "";
+
+    if (pValRaw === "" && bValRaw === "") {
+        return Swal.fire('Empty Field', 'Please enter your physical count before submitting.', 'warning');
+    }
+
+    let pVal = parseFloat(pValRaw) || 0;
+    let bVal = parseFloat(bValRaw) || 0;
+    let physicalTotalBase = (pVal * convRate) + bVal;
+
+    let btn = document.getElementById(`btnSubmit_${itemId}`);
+    let origText = btn.innerText;
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    try {
+        await window.updateDoc(window.doc(window.db, "inventory", itemId), { 
+            currentStock: physicalTotalBase 
+        });
+
+        let noteText = `Manual Count: ${physicalTotalBase} ${bUom}`;
+        if (convRate > 1 && pUom !== bUom) {
+            noteText = `Manual Count: ${pVal} ${pUom} + ${bVal} ${bUom}`;
+        }
+
+        await window.addDoc(window.collection(window.db, "stock_logs"), {
+            branch: window.sessionUser.branch,
+            item: itemName,
+            uom: bUom,
+            oldQty: currentSystemStock,
+            newQty: physicalTotalBase,
+            variance: physicalTotalBase - currentSystemStock,
+            type: "Staff Physical Count",
+            note: noteText,
+            user: window.sessionUser.cashierName,
+            timestamp: window.serverTimestamp()
+        });
+
+        // 🤖 SILENT AI ENGINE: Generates the request without telling the cashier!
+        if (parLevelBase > 0 && physicalTotalBase < parLevelBase) {
+            let deficitBase = parLevelBase - physicalTotalBase;
+            let requestPurchQty = Math.ceil(deficitBase / convRate);
+
+            await window.addDoc(window.collection(window.db, "purchase_orders"), {
+                branch: window.sessionUser.branch,
+                items: [{
+                    itemName: itemName,
+                    name: itemName,
+                    qty: requestPurchQty * convRate,
+                    rawQty: requestPurchQty,
+                    uom: bUom,
+                    purchaseUom: pUom,
+                    displayUom: pUom,
+                    requestType: "Maintaining Stock (Auto-Fill)",
+                    physicalStock: physicalTotalBase,
+                    systemStock: currentSystemStock
+                }],
+                status: "Pending",
+                type: "Silent Auto-Request",
+                requestedBy: "System (via Staff Count)",
+                timestamp: window.serverTimestamp()
+            });
+        }
+
+        btn.innerHTML = "✅ Count Saved";
+        btn.style.background = "#16a34a"; 
+        btn.style.boxShadow = "none";
+        
+        if(purchInput) purchInput.disabled = true;
+        if(baseInput) baseInput.disabled = true;
+
+    } catch(e) {
+        console.error("Submit Count Error:", e);
+        Swal.fire('Error', 'Failed to save count to the cloud.', 'error');
+        btn.innerText = origText;
+        btn.disabled = false;
     }
 };
 
