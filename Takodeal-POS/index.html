@@ -510,8 +510,14 @@
           if (lockedDeviceBranch) { sessionUser.branch = lockedDeviceBranch; }
 
           localStorage.setItem('cashierName', identity.cashierName);
-          document.getElementById('displayBranch').innerText = "📍 " + sessionUser.branch;
-          document.getElementById('displayCashier').innerText = "👤 " + identity.cashierName;
+          
+          // 🔥 THE CRASH PREVENTER: Checks for both the old and new HTML IDs!
+          let branchEl = document.getElementById('displayBranchText') || document.getElementById('displayBranch');
+          if (branchEl) branchEl.innerText = sessionUser.branch;
+          
+          let cashierEl = document.getElementById('displayCashierText') || document.getElementById('displayCashier');
+          if (cashierEl) cashierEl.innerText = identity.cashierName;
+          
           document.getElementById('loginOverlay').style.display = 'none';
           let ownerBtn = document.getElementById('ownerAccessBtnContainer');
           if (ownerBtn) ownerBtn.style.display = 'none';
