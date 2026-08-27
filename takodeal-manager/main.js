@@ -9160,16 +9160,20 @@ window.loadAttendanceLogs = async function () {
 
         let html = '';
         logsArray.forEach(data => {
-            if (!window.isBranchAllowed(data.branch)) return; // 🔥 SECURITY LOCK
+            if (!window.isBranchAllowed(data.branch)) return; 
             let timeStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH') : 'Just now';
-            let badgeColor = data.type === "TIME IN" ? "#dcfce7" : "#fee2e2";
-            let textColor = data.type === "TIME IN" ? "#16a34a" : "#b91c1c";
+            
+            // 🔥 CASE SENSITIVITY FIX
+            let pType = (data.type || "").toUpperCase(); 
+
+            let badgeColor = pType === "TIME IN" ? "#dcfce7" : "#fee2e2";
+            let textColor = pType === "TIME IN" ? "#16a34a" : "#b91c1c";
             let logDate = data.timestamp ? data.timestamp.toDate() : new Date();
             
             let lateTag = '';
             let lateMinutes = 0;
 
-            if (data.type === "TIME IN" && scheduleData && scheduleData.currentSchedule) {
+            if (pType === "TIME IN" && scheduleData && scheduleData.currentSchedule) {
                 let logDay = logDate.getDate(); let logMonth = logDate.getMonth() + 1; let logYear = logDate.getFullYear();
 
                 if (scheduleData.currentYear === logYear && scheduleData.currentMonth === logMonth) {
@@ -9178,7 +9182,6 @@ window.loadAttendanceLogs = async function () {
                         let nickname = staffProfiles[data.staffName] || data.staffName;
                         let assignedShiftId = Object.keys(branchSched.scheduled).find(key => branchSched.scheduled[key] === nickname);
                         
-                        // 🔥 THE FIX: If they have NO assigned shift ID, it skips the Late check entirely!
                         if (assignedShiftId && scheduleData.branchConfig[data.branch]) {
                             let shiftConfig = scheduleData.branchConfig[data.branch].find(s => s.id === assignedShiftId);
                             if (shiftConfig) {
@@ -9231,7 +9234,7 @@ window.loadAttendanceLogs = async function () {
                     <button onclick="window.deleteAttendanceLog('${data.id}', '${data.staffName}')" style="background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 14px;" title="Delete Log">🗑️</button>
             `;
             
-            if (lateMinutes > 0 && !data.lateExempted && data.type === "TIME IN") {
+            if (lateMinutes > 0 && !data.lateExempted && pType === "TIME IN") {
                 actionHtml += `<button onclick="window.exemptLatePunch('${data.id}', '${data.staffName}')" style="background: #eff6ff; border: 1px solid #bfdbfe; color: #2563eb; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: bold; width: 100%; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" title="Exempt Late Penalty">⭐ Exempt Late</button>`;
             }
             actionHtml += `</div>`;
@@ -10932,30 +10935,183 @@ window.loadPayrollGenerator = async function() {
         // 2. 🔥 AGGREGATE PENALTIES & ATTACH TO SHIFTS
         attSnap.forEach(docSnap => {
             let log = docSnap.data();
-            let name = log.staffName;
-            if (!name || !payrollData[name]) return;
-            
-            let penalty = parseFloat(log.penaltyAmount) || 0;
-            if (penalty > 0) {
-                // Add to the main money totals
-                payrollData[name].latePenalty += penalty;
-                payrollData[name].deductions += penalty; 
-                
-                if (log.timestamp) {
-                    let logTimeMs = log.timestamp.toDate().getTime();
-                    
-                    // SMART MATCHER: Check if the penalty punch falls within 4 hours of the shift boundaries
-                    // This perfectly links 12 AM punches back to the 6 PM shift!
-                    let targetShift = payrollData[name].logs.find(s => {
-                        let sMs = s.dateObj.getTime();
-                        let eMs = s.endDateObj.getTime();
-                        return logTimeMs >= (sMs - 14400000) && logTimeMs <= (eMs + 14400000);
-                    });
+            let rawName = log.staffName;
+            if (!rawName) return;
 
-                    if (targetShift) {
-                        targetShift.remark += `<br><span style="color:#b91c1c; font-size:10px; font-weight:900;">-₱${penalty.toFixed(2)} Penalty</span>`;
+            let lowerName = rawName.toLowerCase();
+            let strippedName = lowerName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim();
+            let name = nameMap[lowerName] || nameMap[strippedName] || rawName;
+            
+            if (!staffData[name]) {
+                staffData[name] = { branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
+            }
+
+            let manualPenalty = parseFloat(log.penaltyAmount) || 0;
+            // 🔥 CASE SENSITIVITY FIX
+            let pType = (log.type || "").toUpperCase(); 
+
+            if (pType === "TIME IN") {
+                if (log.timestamp.toDate() <= trueEndDate) {
+                    if (activeShifts[name]) {
+                        let missedIn = activeShifts[name].time;
+                        staffData[name].logs.push({ date: missedIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: missedIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: "MISSED", hrs: "0.00", remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>` });
+                    }
+
+                    let logDate = log.timestamp.toDate();
+                    let lateMinutes = 0;
+                    let wasScheduled = false; 
+                    let expectedStartHour = null; 
+                    
+                    if (scheduleData && scheduleData.currentSchedule) {
+                        let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
+                        if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
+                            let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][log.branch] : null;
+                            if (branchSched && branchSched.scheduled) {
+                                let nickname = staffDict[name] ? (staffDict[name].scheduleNickname || name) : name;
+                                let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname);
+                                
+                                if (assignedShiftId && scheduleData.branchConfig[log.branch]) {
+                                    wasScheduled = true; 
+                                    let shiftConfig = scheduleData.branchConfig[log.branch].find(s => s.id === assignedShiftId);
+                                    if (shiftConfig) {
+                                        if (shiftConfig.startTime) {
+                                            let parts = shiftConfig.startTime.split(':');
+                                            expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
+                                        } else {
+                                            let match = shiftConfig.name.match(/\((.*?)-/);
+                                            if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
+                                        }
+
+                                        if (expectedStartHour !== null) {
+                                            let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
+                                            let diffHours = actualHour - expectedStartHour;
+                                            if (diffHours > -1.5 && diffHours < 4) {
+                                                lateMinutes = Math.floor(diffHours * 60);
+                                                if (lateMinutes < 0) lateMinutes = 0;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let dailyRate = staffDict[name] ? (parseFloat(staffDict[name].hourlyRate) || 0) : 0;
+                    let isNightEligibleLegacy = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
+                    let customNightRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) : (isNightEligibleLegacy ? 50 : 0)) : 50;
+                    
+                    let effectiveDailyRate = dailyRate;
+                    if (customNightRate > 0 && expectedStartHour !== null && expectedStartHour >= 14) {
+                        effectiveDailyRate += customNightRate; 
+                    }
+                    
+                    let ratePerHour = effectiveDailyRate / 8; 
+                    let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
+                    let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * ratePerHour) : 0;
+
+                    activeShifts[name] = { 
+                        time: logDate, 
+                        lateMinutes: lateMinutes, 
+                        lateAmount: lateAmount, 
+                        lateExempted: log.lateExempted || false,
+                        lateHoursToDeduct: lateHoursToDeduct,
+                        manualPenalty: manualPenalty,
+                        wasScheduled: wasScheduled 
+                    };
+                }
+            } else if (pType.includes("TIME OUT") && activeShifts[name]) {
+                let timeIn = activeShifts[name].time;
+                let lMins = activeShifts[name].lateMinutes;
+                let lAmt = activeShifts[name].lateAmount;
+                let lExempt = activeShifts[name].lateExempted;
+                let lHrsDeduct = activeShifts[name].lateHoursToDeduct || 0;
+                let wasScheduled = activeShifts[name].wasScheduled; 
+                
+                let totalManualPenaltyForShift = (activeShifts[name].manualPenalty || 0) + manualPenalty;
+                
+                let timeOut = log.timestamp.toDate();
+                let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
+                
+                if (hoursWorked > 18) {
+                    staffData[name].logs.push({ date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), hrs: hoursWorked.toFixed(2), remark: `<span style="color:#ef4444; font-weight:bold;">INVALID (${hoursWorked.toFixed(1)}h) - Use Manual Log</span>` });
+                    delete activeShifts[name]; return; 
+                }
+
+                let isAutoClosed = pType === "TIME OUT (AUTO)";
+                let remark = isAutoClosed ? `<span style="color:#d97706; font-weight:bold;">Auto-Closed (Forgot to punch out)</span>` : `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
+                
+                let shiftMultiplier = 1; let thisShiftStraightBonus = 0; 
+        
+                if (hoursWorked < 1 && !isAutoClosed) {
+                    shiftMultiplier = 0; remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`;
+                } else if (hoursWorked >= 13.5) {
+                    shiftMultiplier = 2; thisShiftStraightBonus = 50; 
+                    staffData[name].straightDutyBonusTotal = (staffData[name].straightDutyBonusTotal || 0) + thisShiftStraightBonus;
+                    remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty (2 Shifts)</span>`;
+                } else if (hoursWorked < 8 && !isAutoClosed) {
+                    if (wasScheduled) {
+                        let missingHours = (8 - hoursWorked).toFixed(1);
+                        remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
+                    } else {
+                        remark = `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`;
                     }
                 }
+
+                if (lMins > 0) {
+                    if (lExempt) {
+                        remark += `<br><span style="color:#16a34a; font-weight:bold;">(Late Exempted)</span>`;
+                    } else {
+                        remark += `<br><span style="color:#dc2626; font-weight:bold;">(Late ${lMins}m = -${lHrsDeduct}hr: -₱${lAmt.toFixed(2)})</span>`;
+                        staffData[name].lateDeduction += lAmt; 
+                    }
+                }
+
+                if (totalManualPenaltyForShift > 0) {
+                    remark += `<br><span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${totalManualPenaltyForShift.toFixed(2)} Manual Penalty</span>`;
+                    staffData[name].lateDeduction += totalManualPenaltyForShift;
+                }
+
+                let outHour = timeOut.getHours();
+                
+                let isNightEligibleLegacy = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
+                let customNightRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) : (isNightEligibleLegacy ? 50 : 0)) : 50;
+                let thisShiftNightBonus = 0;
+
+                if (outHour >= 0 && outHour <= 4) {
+                    staffData[name].nightShifts += 1;
+                    if (customNightRate > 0) { thisShiftNightBonus = customNightRate; staffData[name].nightBonusTotal += thisShiftNightBonus; }
+                }
+
+                let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
+                let hType = holidaysObj[logDateStr];
+                let dailyRate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
+                let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
+                let hBonus = 0;
+
+                if (hType === 'Regular') { hBonus = baseForHoliday * 0.50; remark += ` <span style="color:#ea580c; font-weight:bold;">(Reg Hol: +₱${hBonus.toFixed(2)})</span>`; } 
+                else if (hType === 'Special') { hBonus = baseForHoliday * 0.10; remark += ` <span style="color:#ea580c; font-weight:bold;">(Spl Hol: +₱${hBonus.toFixed(2)})</span>`; }
+
+                staffData[name].logs.push({ 
+                    date: timeIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), 
+                    in: timeIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
+                    out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
+                    hrs: hoursWorked.toFixed(2), 
+                    remark: remark,
+                    lateMins: (!lExempt && lMins > 0) ? lMins : 0 
+                });
+                staffData[name].totalHours += hoursWorked; staffData[name].shiftsWorked += shiftMultiplier; staffData[name].holidayPayTotal += hBonus;
+                delete activeShifts[name];
+            } else if (manualPenalty > 0) {
+                staffData[name].lateDeduction += manualPenalty;
+                let logTime = log.timestamp ? log.timestamp.toDate() : new Date();
+                staffData[name].logs.push({ 
+                    date: logTime.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), 
+                    in: logTime.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
+                    out: "---", 
+                    hrs: "0.00", 
+                    remark: `<span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${manualPenalty.toFixed(2)} Manual Penalty</span>`,
+                    lateMins: 0 
+                });
             }
         });
 
@@ -20212,7 +20368,10 @@ window.fetchLiveStaffOnDuty = async function() {
                 let staff = data.staffName;
                 let punchTime = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date();
                 
-                if (data.type === "TIME IN") {
+                // 🔥 ANTI-FALSE FLAG FIX: Force to uppercase so it catches both apps!
+                let pType = (data.type || "").toUpperCase(); 
+
+                if (pType === "TIME IN") {
                     // 🚨 GHOST DETECTOR: If they were ALREADY timed in, the previous one was a missed time out!
                     if (staffState[staff] && staffState[staff].status === "IN") {
                         let isStudent = staffProfiles[staff] ? staffProfiles[staff].isWorkingStudent : false;
@@ -20221,7 +20380,7 @@ window.fetchLiveStaffOnDuty = async function() {
                         }
                     }
                     staffState[staff] = { status: "IN", time: punchTime, branch: data.branch, lateExempted: data.lateExempted };
-                } else if (data.type.includes("TIME OUT")) {
+                } else if (pType.includes("TIME OUT")) {
                     staffState[staff] = { status: "OUT", time: punchTime, branch: data.branch };
                 }
             });
