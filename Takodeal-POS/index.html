@@ -897,60 +897,37 @@
       </div>
     </div>
 
+    <!-- 📦 MANUAL STOCK COUNT TAB -->
     <div class="view-container" id="view-stockreq" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-      <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); width: 100%; max-width: 1400px; margin: 0 auto; border: 1px solid #e2e8f0; overflow: hidden;">
-
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding: 25px 30px; background: #f8fafc; flex-wrap: wrap; gap: 15px;">
-          <div>
-            <h2 style="margin: 0; color: #1e293b; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">📊</span> Live Expected Stock & AI Requests</h2>
-            <p style="color: #dc2626; font-size: 13px; margin: 8px 0 0 0; font-weight: 900; background: #fef2f2; padding: 10px 15px; border-radius: 8px; border: 1px dashed #fca5a5;">⚠️ WARNING: The quantities below are your LIVE EXPECTED STOCKS. Any shortages found during the blind count will be automatically deducted from your payroll. Follow exact ingredient portions strictly!</p>
+      <div style="max-width: 1200px; margin: 0 auto;">
+        
+        <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 30px;">
+          
+          <div style="background: #f8fafc; padding: 25px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+            <div>
+              <h2 style="margin: 0; color: #0f172a; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">📋</span> Manual Stock Count</h2>
+              <span style="font-size: 13px; color: #64748b; margin-top: 6px; display: block; font-weight: 500;">Enter your exact physical count. The system will automatically maintain your branch stock.</span>
+            </div>
+            <button onclick="window.loadStockRequestUI()" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;">🔄 Refresh List</button>
           </div>
-          <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-             <button onclick="window.openDeliveryHistoryModal()" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.1);" onmouseover="this.style.background='#bae6fd';" onmouseout="this.style.background='#e0f2fe';">🚚 Delivery History</button>
-             <button id="btnTabReqHist" onclick="window.switchStockReqTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">📜 View History</button>
-             <button id="btnTabReqNew" onclick="window.switchStockReqTab('New')" style="background: #0ea5e9; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;">📦 Live Stock View</button>
+
+          <div class="table-responsive">
+            <table style="width: 100%; border-collapse: collapse; text-align: left; background: white;">
+              <thead style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1;">
+                <tr>
+                  <th style="padding: 15px 25px; font-size: 12px; color: #475569; text-transform: uppercase; font-weight: 900;">Item Name</th>
+                  <th style="padding: 15px 25px; font-size: 12px; color: #475569; text-transform: uppercase; font-weight: 900; text-align: center;">Maintaining Qty</th>
+                  <th style="padding: 15px 25px; font-size: 12px; color: #0ea5e9; text-transform: uppercase; font-weight: 900; text-align: center;">Actual Physical Count</th>
+                  <th style="padding: 15px 25px; font-size: 12px; color: #475569; text-transform: uppercase; font-weight: 900; text-align: center;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="manualStockCountBody">
+                <tr><td colspan="4" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">Loading inventory checklist...</td></tr>
+              </tbody>
+            </table>
           </div>
+          
         </div>
-
-        <div id="stockReqTabNew" style="display: block; padding: 30px;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 20px; gap: 15px; flex-wrap: wrap;">
-              <div style="position: relative; flex: 1; min-width: 300px;">
-                  <span style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 16px;">🔍</span>
-                  <input type="text" id="stockReqSearch" placeholder="Search item to request..." onkeyup="window.filterStockReq()" style="width: 100%; padding: 14px 15px 14px 42px; border: 1px solid #cbd5e1; border-radius: 8px; outline: none; font-weight: bold; color: #334155; font-size: 14px; box-sizing: border-box; background: #f8fafc;">
-              </div>
-              <button onclick="window.submitStockRequest()" style="background: #8b5cf6; color: white; border: none; padding: 14px 24px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); transition: 0.2s; display: flex; align-items: center; gap: 8px;"><span style="font-size: 18px;">🤖</span> Run AI 7-Day Forecaster</button>
-            </div>
-
-            <div style="display: grid; grid-template-columns: 2fr 1fr 1.5fr 1.5fr; gap: 10px; padding: 15px 20px; background: #f1f5f9; border-radius: 8px; font-weight: 900; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px;">
-              <div>Item & HQ Status</div>
-              <div style="text-align: center;">Live Stock</div>
-              <div style="text-align: center; color: #d97706;">7-Day Dynamic Need</div>
-              <div style="text-align: center; color: #0ea5e9;">Restock Status</div>
-            </div>
-
-            <div id="stockReqList" style="display: flex; flex-direction: column; max-height: 60vh; overflow-y: auto; padding-right: 5px;">
-              <div style="text-align: center; color: #94a3b8; padding: 50px; font-weight: bold; font-size: 15px;">Loading inventory...</div>
-            </div>
-        </div>
-
-        <div id="stockReqTabHistory" style="display: none;">
-            <div class="table-responsive">
-                <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
-                    <thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
-                        <tr>
-                            <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Date & Time</th>
-                            <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Reported By</th> 
-                            <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Status</th>
-                            <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Items Reported</th>
-                        </tr>
-                    </thead>
-                    <tbody id="stockReqHistoryBody">
-                        <tr><td colspan="4" class="text-center" style="padding: 50px; color: #94a3b8; font-weight: bold; font-size: 15px;">Loading history...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
       </div>
     </div>
     
