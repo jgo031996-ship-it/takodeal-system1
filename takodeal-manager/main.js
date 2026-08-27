@@ -17082,7 +17082,7 @@ window.openItemLedger = async function(branch, itemName) {
     document.getElementById('itemLedgerModal').style.display = 'flex';
     document.getElementById('ledgerModalSubtitle').innerText = `${itemName} | ${branch}`;
     const tbody = document.getElementById('itemLedgerBody');
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Compiling forensic data...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 30px;">⏳ Compiling forensic data & AI metrics...</td></tr>';
 
     try {
         const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", itemName));
@@ -17122,15 +17122,8 @@ window.openItemLedger = async function(branch, itemName) {
             lastDelHtml = '<span style="color:#64748b; font-size:11px;">(HQ Source)</span>';
         }
         
-        if (curStockEl && curStockEl.parentNode) {
-            if (!document.getElementById('ledgerLastDeliveryUi')) {
-                let uiDiv = document.createElement('div');
-                uiDiv.id = 'ledgerLastDeliveryUi';
-                uiDiv.style.cssText = "margin-top: 10px; font-size: 13px; color: #475569; border-top: 1px dashed #cbd5e1; padding-top: 10px;";
-                curStockEl.parentNode.appendChild(uiDiv);
-            }
-            document.getElementById('ledgerLastDeliveryUi').innerHTML = `Last Branch Delivery: ${lastDelHtml}`;
-        }
+        let lastDelEl = document.getElementById('ledgerLastDeliveryUi');
+        if (lastDelEl) lastDelEl.innerHTML = `Last Delivery: ${lastDelHtml}`;
 
         let headerRow = tbody.previousElementSibling.querySelector('tr');
         if (headerRow) {
@@ -17158,27 +17151,58 @@ window.openItemLedger = async function(branch, itemName) {
         });
 
         let runningNewQty = currentStock;
-        let lifetimeBought = 0;
+
+        // 🔥 AI BURN RATE ENGINE SETUP (14-Day Lookback)
+        let today = new Date();
+        let fourteenDaysAgo = new Date();
+        fourteenDaysAgo.setDate(today.getDate() - 14);
+        let fourteenDaysMs = fourteenDaysAgo.getTime();
+        let totalBurn14Days = 0;
 
         logsArray.forEach(d => {
             let variance = parseFloat(d.variance) || 0;
-            let type = d.type || "Unknown";
+            let type = (d.type || "Unknown").toLowerCase();
 
-            // 🔥 CRITICAL FIX: Safely parse strings like "Shift" or "Summary" from sales deductions!
             let pNew = parseFloat(d.newQty);
             let pOld = parseFloat(d.oldQty);
 
             d._renderNew = !isNaN(pNew) ? pNew : runningNewQty;
             d._renderOld = !isNaN(pOld) ? pOld : (d._renderNew - variance);
-
-            // Update running qty just as a fallback for extremely old legacy logs
             runningNewQty = d._renderOld; 
 
-            if (variance > 0 && (type.includes("Restock") || type.includes("Delivery") || type.includes("Received") || type.includes("Purchase"))) {
-                lifetimeBought += variance;
+            // 🧠 CALCULATE BURN RATE (Only negative variances from operational use)
+            let logTimeMs = d.timestamp ? (d.timestamp.toMillis ? d.timestamp.toMillis() : new Date(d.timestamp).getTime()) : 0;
+            if (logTimeMs >= fourteenDaysMs) {
+                if (variance < 0 && (type.includes("sales") || type.includes("deduction") || type.includes("waste") || type.includes("spoilage") || type.includes("store use") || type.includes("prep") || type.includes("adjustment") || type.includes("voided") || type.includes("penalty"))) {
+                    totalBurn14Days += Math.abs(variance);
+                }
             }
         });
 
+        // 🧠 AI METRICS CALCULATION
+        let dailyBurn = totalBurn14Days / 14;
+        let daysLeft = dailyBurn > 0 ? (currentStock / dailyBurn) : Infinity;
+        let dynamic7DayNeed = dailyBurn * 7;
+
+        let velEl = document.getElementById('ledgerVelocity');
+        if (velEl) velEl.innerHTML = `⚡ ${dailyBurn.toFixed(2)} <span style="font-size:11px; font-weight:normal; color:#b45309;">${uom}/day</span>`;
+
+        let needEl = document.getElementById('ledger7DayNeed');
+        if (needEl) needEl.innerHTML = `🛒 ${dynamic7DayNeed.toFixed(2)} <span style="font-size:11px; font-weight:normal; color:#0284c7;">${uom}</span>`;
+
+        let runEl = document.getElementById('ledgerRunway');
+        if (runEl) {
+            if (currentStock <= 0) {
+                runEl.innerHTML = `<span style="color: #dc2626;">Out of Stock</span>`;
+            } else if (daysLeft === Infinity) {
+                runEl.innerHTML = `<span style="color: #64748b;">∞ (No Burn)</span>`;
+            } else {
+                let rColor = daysLeft <= 3 ? '#dc2626' : (daysLeft <= 7 ? '#d97706' : '#16a34a');
+                runEl.innerHTML = `<span style="color: ${rColor};">${daysLeft.toFixed(1)} Days</span>`;
+            }
+        }
+
+        // --- Standard Table Render Below ---
         let html = '';
         logsArray.forEach(d => {
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
@@ -17200,9 +17224,6 @@ window.openItemLedger = async function(branch, itemName) {
                 </tr>
             `;
         });
-
-        let ltBoughtEl = document.getElementById('ledgerLifetimeBought');
-        if (ltBoughtEl) ltBoughtEl.innerText = `${lifetimeBought.toFixed(2)} ${uom}`;
         
         tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="padding: 30px; color: #94a3b8;">No historical data found.</td></tr>';
 
