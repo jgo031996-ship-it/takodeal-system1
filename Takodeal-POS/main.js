@@ -5665,6 +5665,35 @@ window.saveCountMemory = function(itemId, type, val) {
     localStorage.setItem('takodeal_stock_count_memory', JSON.stringify(window.stockCountMemory));
 };
 
+window.filterManualStockCount = function() {
+    let input = document.getElementById('manualCountSearch').value.toLowerCase();
+    let rows = document.querySelectorAll('.manual-count-row');
+    let categories = document.querySelectorAll('.manual-count-category');
+
+    // 1. Filter the item rows instantly
+    rows.forEach(row => {
+        let itemName = row.getAttribute('data-name');
+        if (itemName.includes(input)) {
+            row.style.display = ''; 
+            row.classList.add('visible-row');
+        } else {
+            row.style.display = 'none'; 
+            row.classList.remove('visible-row');
+        }
+    });
+
+    // 2. Hide category headers if all their items are hidden
+    categories.forEach(cat => {
+        let nextEl = cat.nextElementSibling;
+        let hasVisible = false;
+        while(nextEl && nextEl.classList.contains('manual-count-row')) {
+            if (nextEl.classList.contains('visible-row')) { hasVisible = true; break; }
+            nextEl = nextEl.nextElementSibling;
+        }
+        cat.style.display = (hasVisible || input === '') ? '' : 'none';
+    });
+};
+
 window.loadStockRequestUI = async function() {
     const tbody = document.getElementById('manualStockCountBody');
     if (!tbody) return;
@@ -5694,7 +5723,7 @@ window.loadStockRequestUI = async function() {
 
         Object.keys(itemsByCategory).sort().forEach(cat => {
             html += `
-                <tr style="background: #e2e8f0; border-top: 3px solid #cbd5e1;">
+                <tr class="manual-count-category" style="background: #e2e8f0; border-top: 3px solid #cbd5e1;">
                     <td colspan="3" style="padding: 12px 25px; font-weight: 900; color: #0f172a; font-size: 15px; letter-spacing: 1px;">📁 ${cat}</td>
                 </tr>
             `;
@@ -5749,7 +5778,7 @@ window.loadStockRequestUI = async function() {
                 }
 
                 html += `
-                    <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <tr class="manual-count-row visible-row" data-name="${item.name.toLowerCase()}" style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                         <td style="padding: 15px 25px; font-weight: bold; color: #1e293b; font-size: 14px; vertical-align: middle;">${item.name}</td>
                         <td style="padding: 15px 25px; text-align: center; vertical-align: middle; background: #f8fafc; border-left: 1px dashed #e2e8f0; border-right: 1px dashed #e2e8f0;">${maintainingHtml}</td>
                         <td style="padding: 15px 25px; text-align: center; vertical-align: middle;">${inputHtml}</td>
@@ -5759,6 +5788,9 @@ window.loadStockRequestUI = async function() {
         });
 
         tbody.innerHTML = html || '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No inventory items available to count.</td></tr>';
+
+        // Ensure search applies if there's already text in the box
+        window.filterManualStockCount();
 
     } catch (e) {
         console.error("Manual Count Error:", e);
@@ -5879,6 +5911,7 @@ window.submitAllManualCounts = async function() {
         // 4. Clean up and Reset
         window.stockCountMemory = {};
         localStorage.removeItem('takodeal_stock_count_memory');
+        document.getElementById('manualCountSearch').value = '';
         
         Swal.fire({
             title: '✅ Batch Complete!',
