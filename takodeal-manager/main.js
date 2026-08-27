@@ -24084,20 +24084,6 @@ if (typeof window.originalCheckManagerPin === 'undefined' && typeof window.check
 }
 
 // ========================================================
-// 🛡️ EMERGENCY LOGIN FIX (UNDEFINED & PIN FREEZE)
-// ========================================================
-// 1. Instantly fix the "undefined" text on the screen
-setInterval(function() {
-    document.querySelectorAll('h2, h3, h1, span, div').forEach(function(el) {
-        if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
-            if (el.innerText && el.innerText.includes('undefined:')) {
-                el.innerText = el.innerText.replace('undefined:', 'Manager:');
-            }
-        }
-    });
-}, 500);
-
-// ========================================================
 // 🔢 NUMPAD LOGIC ENGINE
 // ========================================================
 window.appendManagerPin = function(num) {
