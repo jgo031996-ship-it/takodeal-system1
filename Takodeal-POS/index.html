@@ -389,6 +389,32 @@
     </div>
 
   <script>
+      // ========================================================
+      // 🔢 NUMPAD LOGIC ENGINE (CASHIER APP)
+      // ========================================================
+      window.appendCashierPin = function(num) {
+          let pinInput = document.getElementById('loginPasswordInput');
+          if (pinInput) {
+              pinInput.value += num;
+              pinInput.style.borderColor = '#0ea5e9'; // Lights up blue to show activity
+          }
+      };
+
+      window.clearCashierPin = function() {
+          let pinInput = document.getElementById('loginPasswordInput');
+          if (pinInput) {
+              pinInput.value = '';
+              pinInput.style.borderColor = '#cbd5e1';
+          }
+      };
+
+      window.backspaceCashierPin = function() {
+          let pinInput = document.getElementById('loginPasswordInput');
+          if (pinInput && pinInput.value.length > 0) {
+              pinInput.value = pinInput.value.slice(0, -1);
+          }
+      };
+
       async function submitLoginPin() {
           // 🔥 THE CRASH PREVENTER: Stops the red console error!
           if (typeof window.verifyPin !== 'function') {
