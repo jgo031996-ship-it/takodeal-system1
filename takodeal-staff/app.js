@@ -1263,43 +1263,62 @@ window.punchTime = async function(type) {
         Swal.fire({title: 'Verifying with HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
         // 1. ☁️ LIVE CLOUD DOUBLE-PUNCH SHIELD
-        let lookBack = new Date();
-        lookBack.setHours(lookBack.getHours() - 18); 
-        
-        const q = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
-        const snap = await getDocs(q);
-        
+        const q = window.query(window.collection(window.db, "attendance_logs"), window.where("staffName", "==", staffName));
+        const snap = await window.getDocs(q);
+
         let userLogs = [];
         snap.forEach(doc => {
             let d = doc.data();
-            if (d.timestamp && d.timestamp.toDate() >= lookBack) {
-                userLogs.push(d);
-            }
+            userLogs.push(d);
         });
-        
-        userLogs.sort((a,b) => b.timestamp.toDate() - a.timestamp.toDate());
+
+        // 🛡️ Bulletproof Sorting (Handles both live cloud timestamps and pending offline writes)
+        const getMs = (fbTime) => {
+            if (!fbTime) return Date.now(); // If offline and pending, it happened just now
+            if (fbTime.toMillis) return fbTime.toMillis();
+            if (fbTime.toDate) return fbTime.toDate().getTime();
+            return new Date(fbTime).getTime();
+        };
+
+        userLogs.sort((a,b) => getMs(b.timestamp) - getMs(a.timestamp));
 
         if (userLogs.length > 0) {
             let lastLog = userLogs[0];
-            let lastType = lastLog.type;
-            let lastTime = lastLog.timestamp.toDate();
-            let hoursSince = (new Date() - lastTime) / (1000 * 60 * 60);
+            let lastType = (lastLog.type || "").toUpperCase();
+            let lastTimeMs = getMs(lastLog.timestamp);
+            let hoursSince = (Date.now() - lastTimeMs) / (1000 * 60 * 60);
 
-            if (type === "TIME IN" && lastType === "TIME IN" && hoursSince < 12) {
-                Swal.fire('Already Timed In', 'You are already clocked in! (Checked via cloud). Please Time Out first.', 'error');
+            if (type === "TIME OUT") {
+                // ERROR 1: They already timed out.
+                if (lastType.includes("OUT")) {
+                    Swal.fire('Already Timed Out', 'Your last recorded punch was a TIME OUT. You must TIME IN to start a new shift.', 'error');
+                    return;
+                }
+                // ERROR 2: They are trying to time out of a shift that started over 16 hours ago!
+                // This means they forgot to time out yesterday, and clicked Time Out today by mistake!
+                if (lastType.includes("IN") && hoursSince > 16) {
+                    Swal.fire('Shift Expired', 'You cannot Time Out of a shift that started over 16 hours ago. Please click TIME IN to start your shift for today.', 'error');
+                    return;
+                }
+                // ERROR 3: Accidental double tap (Timed in less than 3 minutes ago)
+                if (lastType.includes("IN") && hoursSince < 0.05) {
+                    Swal.fire('Too Soon', 'You just timed in! Please wait a few minutes before timing out to avoid errors.', 'warning');
+                    return;
+                }
+            } 
+            else if (type === "TIME IN") {
+                // ERROR 4: They are already timed in and the shift is still fresh.
+                if (lastType.includes("IN") && hoursSince < 16) {
+                    Swal.fire('Already Timed In', 'You are currently clocked in. Please TIME OUT of your active shift first.', 'error');
+                    return;
+                }
+            }
+        } else {
+            // User has ZERO logs in the entire system
+            if (type === "TIME OUT") {
+                Swal.fire('No Active Shift', 'You have no active shift to clock out of. Please click TIME IN first.', 'error');
                 return;
             }
-            if (type === "TIME OUT" && lastType.includes("TIME OUT")) {
-                Swal.fire('Already Timed Out', 'You are already clocked out! (Checked via cloud). Please Time In first.', 'error');
-                return;
-            }
-            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSince < 0.25) {
-                Swal.fire('Too Soon', 'You just timed in less than 15 minutes ago. Please wait before timing out.', 'warning');
-                return;
-            }
-        } else if (type === "TIME OUT") {
-            Swal.fire('No Time In Found', 'You cannot Time Out without Timing In first today.', 'error');
-            return;
         }
 
         // 2. 📋 THE DAILY SOP COMPLIANCE BLOCKER (ONLY ON TIME OUT)
