@@ -6288,20 +6288,27 @@ window.openNewProductModal = async function () {
 // --- ADVANCED INVENTORY ADDER ---
 window.openAddInventoryModal = function () {
   document.getElementById('addInvModal').style.display = 'flex';
-  // Clear old inputs
+  
+  // Clear old inputs to keep it fresh
   document.getElementById('newInvName').value = '';
   document.getElementById('newInvPurchUom').value = '';
   document.getElementById('newInvBaseUom').value = '';
   document.getElementById('newInvConv').value = '';
   document.getElementById('newInvCost').value = '';
   document.getElementById('newInvInitQty').value = '';
-  document.getElementById('newInvReorder').value = '';
+  document.getElementById('newInvBranchReorder').value = '';
+  document.getElementById('newInvHqReorder').value = '';
+  document.getElementById('newInvMaintainPurch').value = '';
+  document.getElementById('newInvMaintainBase').value = '';
+  document.getElementById('newInvPhoto').value = '';
+  document.getElementById('newInvBroadcastAll').checked = true; // Auto-check broadcast by default
+  
   window.updateInvSummary();
 };
 
 window.updateInvSummary = function () {
-  let pUom = document.getElementById('newInvPurchUom').value || '[Purch UOM]';
-  let bUom = document.getElementById('newInvBaseUom').value || '[Base UOM]';
+  let pUom = document.getElementById('newInvPurchUom').value || 'Pack';
+  let bUom = document.getElementById('newInvBaseUom').value || 'Piece';
   let conv = parseFloat(document.getElementById('newInvConv').value) || 0;
   let cost = parseFloat(document.getElementById('newInvCost').value) || 0;
   let qty = parseFloat(document.getElementById('newInvInitQty').value) || 0;
@@ -6312,6 +6319,12 @@ window.updateInvSummary = function () {
   document.getElementById('newInvSummary').innerHTML =
     `<strong>Summary:</strong> You are adding <strong>${totalBaseUnits.toLocaleString()} ${bUom}</strong> to the cloud.<br>
      The system will calculate the recipe cost at <strong>₱${costPerBaseUnit.toFixed(4)} per ${bUom}</strong>.`;
+
+  // Dynamically update the labels inside the Par Level boxes!
+  let lblPurch = document.getElementById('newInvMaintainLabelPurch');
+  let lblBase = document.getElementById('newInvMaintainLabelBase');
+  if (lblPurch) lblPurch.innerText = pUom;
+  if (lblBase) lblBase.innerText = bUom;
 };
 
 window.saveAdvancedInventoryItem = async function () {
@@ -6325,29 +6338,36 @@ window.saveAdvancedInventoryItem = async function () {
   let cost = parseFloat(document.getElementById('newInvCost').value);
   let initQty = parseFloat(document.getElementById('newInvInitQty').value);
   
-  // Convert Purchase UOM input to Base UOM for the low-stock alarm!
-  let reorderPurch = parseFloat(document.getElementById('newInvReorder').value) || 0;
-  let reorderBase = reorderPurch * conv;
+  // Convert new Alert & Par Level inputs from Purchase UOM to Base UOM
+  let branchLowPurch = parseFloat(document.getElementById('newInvBranchReorder').value) || 0;
+  let hqLowPurch = parseFloat(document.getElementById('newInvHqReorder').value) || 0;
+  let branchLowBase = branchLowPurch * conv;
+  let hqLowBase = hqLowPurch * conv;
+
+  // Combine Maintaining Stock boxes mathematically
+  let mPurch = parseFloat(document.getElementById('newInvMaintainPurch').value) || 0;
+  let mBase = parseFloat(document.getElementById('newInvMaintainBase').value) || 0;
+  let finalMaintainBase = (mPurch * conv) + mBase;
 
   if (!name || !purchUom || !baseUom || isNaN(conv) || isNaN(cost) || isNaN(initQty)) {
     Swal.fire("Error", "Please fill out all required fields with valid numbers.", "error"); return;
   }
 
   let btn = document.getElementById('btnSaveInv');
-  btn.innerText = "⏳ Broadcasting to All Branches..."; btn.disabled = true;
+  btn.innerText = "⏳ Processing..."; btn.disabled = true;
 
   try {
         let totalBaseStock = conv * initQty;
         let baseCost = cost / conv; 
         
-        let checkboxEl = document.getElementById('newInvShowCashier');
-        let showCashier = checkboxEl ? checkboxEl.checked : true; 
+        let showCashier = document.getElementById('newInvShowCashier') ? document.getElementById('newInvShowCashier').checked : true; 
         let showPrep = document.getElementById('newInvShowPrep') ? document.getElementById('newInvShowPrep').checked : true;
         let allowReq = document.getElementById('newInvAllowRequest') ? document.getElementById('newInvAllowRequest').checked : true;
+        let doBroadcast = document.getElementById('newInvBroadcastAll').checked;
 
         // 1. CRASH PROTECTOR: Scan the whole system to ensure this item doesn't exist already!
-        const duplicateQuery = query(collection(db, "inventory"), where("name", "==", name));
-        const duplicateSnap = await getDocs(duplicateQuery);
+        const duplicateQuery = window.query(window.collection(window.db, "inventory"), window.where("name", "==", name));
+        const duplicateSnap = await window.getDocs(duplicateQuery);
         let existingBranches = [];
         duplicateSnap.forEach(d => existingBranches.push(d.data().branch));
 
@@ -6357,8 +6377,22 @@ window.saveAdvancedInventoryItem = async function () {
             return;
         }
 
-        // 2. THE GLOBAL BROADCASTER ENGINE: Map out all active branches in your company
-        let branchesToCreate = window.globalActiveBranches || ["Main Office", "Cabantian", "Citygate", "Maa"];
+        // 2. UPLOAD PHOTO SECURELY IF ATTACHED
+        let photoUrl = undefined;
+        let fileInput = document.getElementById('newInvPhoto');
+        if (fileInput && fileInput.files.length > 0) {
+            btn.innerText = "⏳ Uploading Photo...";
+            const file = fileInput.files[0];
+            const fileExt = file.name.split('.').pop();
+            const fileName = `inventory_images/new_${Date.now()}.${fileExt}`;
+            const storageReference = window.ref(window.storage, fileName);
+            const snapshot = await window.uploadBytes(storageReference, file);
+            photoUrl = await window.getDownloadURL(snapshot.ref);
+            btn.innerText = "⏳ Broadcasting to Network...";
+        }
+
+        // 3. THE SMART BROADCASTER ENGINE
+        let branchesToCreate = doBroadcast ? (window.globalActiveBranches || ["Main Office", "Cabantian", "Citygate", "Maa"]) : [selectedBranch];
         let creationPromises = [];
         let createdCount = 0;
 
@@ -6366,42 +6400,50 @@ window.saveAdvancedInventoryItem = async function () {
             // Prevent double-creating if it miraculously already exists in another branch
             if (existingBranches.includes(branch)) continue;
             
-            // 🔥 THE SMART LOGIC: Only the selected branch gets the initial stock! The rest get exactly 0.
+            // The selected branch gets the initial stock! The broadcasted branches get exactly 0.
             let branchInitialStock = (branch === selectedBranch) ? totalBaseStock : 0;
+            let targetLowBase = (branch === "Main Office") ? hqLowBase : branchLowBase;
             
             let payload = {
               branch: branch,
               name: name,
               category: category,
               purchaseUom: purchUom,
-              uom: baseUom, 
+              uom: baseUom,
+              baseUom: baseUom, 
               conversionRate: conv,
+              conversion: conv,
               purchaseCost: cost,
+              cost: cost,
               baseCost: baseCost, 
               currentStock: branchInitialStock, 
-              reorderLevel: reorderBase, 
+              reorderLevel: targetLowBase, 
+              lowStockAlert: targetLowBase,
+              maintainingStock: finalMaintainBase,
               showToCashier: showCashier, 
               showInPrep: showPrep,
               allowRequest: allowReq,
             };
 
-            creationPromises.push(addDoc(collection(db, "inventory"), payload));
+            if (photoUrl !== undefined) payload.image = photoUrl;
+
+            creationPromises.push(window.addDoc(window.collection(window.db, "inventory"), payload));
             createdCount++;
         }
 
         // Send all instructions to Firebase simultaneously!
         await Promise.all(creationPromises);
     
-    Swal.fire({
-        title: '✅ Global Sync Complete!',
-        html: `<b>${name}</b> has been successfully added to all <b>${createdCount}</b> branches.<br><br><span style="color: #64748b; font-size: 13px;">(Stock was set to ${initQty} ${purchUom} for ${selectedBranch}, and 0 for the others).</span>`,
-        icon: 'success',
-        customClass: { popup: 'rounded-2xl shadow-xl' }
-    });
-    
-    document.getElementById('addInvModal').style.display = 'none';
-    window.loadInventoryData(); // Redraws the table to show your newly created items
-    
+        Swal.fire({
+            title: '✅ Item Created!',
+            html: `<b>${name}</b> has been successfully added to <b>${createdCount}</b> branches.<br><br><span style="color: #64748b; font-size: 13px;">(Stock was set to ${initQty} ${purchUom} for ${selectedBranch}, and 0 for the others).</span>`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+        
+        document.getElementById('addInvModal').style.display = 'none';
+        window.loadInventoryData(); // Redraws the table to show your newly created items
+        
   } catch (error) {
     console.error("Item Creation Error:", error); 
     Swal.fire("Error", "Failed to broadcast item to branches. Check your internet connection.", "error");
