@@ -331,6 +331,12 @@
         box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
         transform: scale(1.02);
     }
+    /* 🔥 SAFE MOBILE TABLE SCROLL FIX */
+    @media (max-width: 768px) {
+        .table-responsive table {
+            min-width: 800px !important;
+        }
+    }
 </style>
 </head>
 
