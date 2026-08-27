@@ -3495,14 +3495,21 @@ window.submitAttendance = async function(type) {
     }
 
     try {
+        let lastType = "";
+        let lastTime = null;
+        let hoursSinceLastLog = 0;
+
         if (userLogs.length > 0) {
             let lastLog = userLogs[0]; // The absolute most recent log
-            let lastType = lastLog.type; 
-            let lastTime = lastLog.timestamp.toDate();
+            // 🔥 FIX: Make case-insensitive so it perfectly matches the Staff App!
+            lastType = lastLog.type ? lastLog.type.toUpperCase() : ""; 
+            lastTime = lastLog.timestamp.toDate();
             let now = new Date();
-            let hoursSinceLastLog = (now - lastTime) / (1000 * 60 * 60);
+            hoursSinceLastLog = (now - lastTime) / (1000 * 60 * 60);
+        }
 
-            if (type === "TIME IN" && lastType === "TIME IN") {
+        if (type === "TIME IN") {
+            if (lastType === "TIME IN") {
                 if (hoursSinceLastLog > 12) {
                     const penaltyConfirm = await Swal.fire({
                         title: '⚠️ Missing Time-Out Detected',
@@ -3523,13 +3530,13 @@ window.submitAttendance = async function(type) {
                     
                     await addDoc(collection(db, "attendance_logs"), {
                         staffName: staffName, 
-                        branch: lastLog.branch, 
+                        branch: userLogs[0].branch, 
                         type: "AUTO TIME OUT (Penalty)", 
                         timestamp: autoOutTime, 
-                        locationLat: lastLog.locationLat || 0, 
-                        locationLng: lastLog.locationLng || 0, 
-                        distanceMeters: lastLog.distanceMeters || 0, 
-                        photoBase64: "", // 🔥 THE FIX: Blank photo so it is explicitly obvious they missed it!
+                        locationLat: userLogs[0].locationLat || 0, 
+                        locationLng: userLogs[0].locationLng || 0, 
+                        distanceMeters: userLogs[0].distanceMeters || 0, 
+                        photoBase64: "", 
                         penaltyApplied: true,
                         notes: "Forced Auto-Out. Paid next cut-off."
                     });
@@ -3539,25 +3546,26 @@ window.submitAttendance = async function(type) {
                         message: `HR PENALTY: ${staffName} forgot to Time Out yesterday. System auto-closed their shift at 9 hours and applied the 'Paid Next Cut-Off' penalty.`,
                         timestamp: new Date(), isRead: false
                     });
-                    
                 } else {
                     alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.`);
                     document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
                 }
             }
+        }
 
-            // 🔥 UPGRADE: Strict Double Time Out Blocker!
-            if (type === "TIME OUT" && lastType === "TIME OUT") {
-                alert(`❌ You already Timed Out!\n\nYou cannot Time Out twice in a row. Please Time In first.`);
+        // 🔥 THE PHANTOM PUNCH FIX: Strict block for Time Outs without a Time In!
+        if (type === "TIME OUT") {
+            if (userLogs.length === 0 || lastType !== "TIME IN") {
+                alert(`❌ Invalid Punch!\n\nYou cannot Time Out because the system has no record of you Timing In today.\n\nIf you timed in on the Staff App, make sure your phone has internet so it syncs to the cloud!`);
                 document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
             }
-
-            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 0.25) {
+            
+            if (hoursSinceLastLog < 0.25) {
                 alert(`❌ You just Timed In a few minutes ago!\n\nTo prevent double-shifts and payroll errors, you must wait at least 15 minutes before Timing Out.`);
                 document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
             }
 
-            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog > 14) {
+            if (hoursSinceLastLog > 14) {
                 await addDoc(collection(db, "manager_alerts"), {
                     type: "ATTENDANCE_ALERT", branch: localStorage.getItem('takodeal_device_branch') || 'Unknown', cashier: staffName,
                     message: `URGENT HR ALERT: ${staffName} just timed out after ${hoursSinceLastLog.toFixed(1)} hours. Straight Duties MUST be logged as two separate shifts.`,
@@ -3566,12 +3574,9 @@ window.submitAttendance = async function(type) {
                 alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit. The Manager has been notified to review this time punch.`);
             }
 
-            // 🔥 Check if the staff profile has the Working Student toggle enabled!
             let isWorkingStudent = staffProfile.isWorkingStudent === true;
 
-            // 🔥 THE UNDERTIME FIX: Intercept Time Outs under 8 hours (BUT IGNORE WORKING STUDENTS!)
-            if (type === "TIME OUT" && lastType === "TIME IN" && hoursSinceLastLog < 8 && hoursSinceLastLog >= 0.25 && !isWorkingStudent) {
-                
+            if (hoursSinceLastLog < 8 && hoursSinceLastLog >= 0.25 && !isWorkingStudent) {
                 const { value: reason, isConfirmed } = await Swal.fire({
                     title: '⚠️ Undertime Detected',
                     html: `You have only worked <b>${hoursSinceLastLog.toFixed(1)} hours</b> today.<br><br>You must provide a valid reason for timing out early. This will be submitted directly to the Manager's Inbox.`,
@@ -3588,7 +3593,6 @@ window.submitAttendance = async function(type) {
                     unlockUI(); return; 
                 }
 
-                // Auto-submit Reason Letter to the Manager App
                 let finalBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
                 await addDoc(collection(db, "staff_requests"), {
                     type: "Reason Letter",
