@@ -11115,7 +11115,7 @@ window.openPayslipModal = async function(staffName) {
                 outColor = '#dc2626'; // Red if undertime/missed
             }
 
-            a// 🔥 THE FIX: Added white-space: normal and word-break: break-word directly to the cells!
+            // 🔥 THE FIX: Added white-space: normal and word-break: break-word directly to the cells!
             attHtml += `<tr style="border-bottom: 1px solid #f1f5f9;">
                 <td style="padding: 8px 4px; text-align: center; white-space: normal; word-break: break-word; vertical-align: middle;">${log.date || ''}</td>
                 <td style="padding: 8px 4px; font-weight: bold; color: ${inColor}; text-align: center; vertical-align: middle; white-space: normal; word-break: break-word;">${inTimeHtml}</td>
