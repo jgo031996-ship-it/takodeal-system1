@@ -4605,6 +4605,16 @@
               <option value="Maa">Maa</option>
             </select>
           </div>
+          <!-- 🔥 ADDED RESTOCK CYCLE DROPDOWN 🔥 -->
+          <div>
+            <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Restock Cycle</label>
+            <select id="newInvCycle" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; background: #f0f9ff; font-weight: bold; color: #0ea5e9; box-sizing: border-box;">
+                <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
+                <option value="Daily">Daily</option>
+                <option value="As Needed" selected>As Needed</option>
+            </select>
+          </div>
           <div>
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Category</label>
             <select id="newInvCat" class="input-box" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; background: white; box-sizing: border-box; font-weight: bold; color: #1e293b;" onchange="window.handleCategoryDropdown(this)">
@@ -4980,6 +4990,16 @@
                           <option value="Cabantian">Cabantian</option>
                           <option value="Citygate">Citygate</option>
                           <option value="Maa">Maa</option>
+                      </select>
+                  </div>
+                  <!-- 🔥 ADDED RESTOCK CYCLE DROPDOWN 🔥 -->
+                  <div>
+                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Restock Cycle</label>
+                      <select id="editInvCycle" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f0f9ff; outline: none; font-weight: bold; color: #0ea5e9; box-sizing: border-box;">
+                          <option value="Weekly">Weekly</option>
+                          <option value="Monthly">Monthly</option>
+                          <option value="Daily">Daily</option>
+                          <option value="As Needed">As Needed</option>
                       </select>
                   </div>
                   <div>
