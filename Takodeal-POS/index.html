@@ -2156,74 +2156,36 @@
         buildCategories(); // Re-render tabs to show active state
     };
     
-    window.renderTopCategories = async function() {
-        const catContainer = document.querySelector('.category-header');
-        if (!catContainer) return;
+    window.renderTopCategories = function() {
+    let dropdown = document.getElementById('menuCategoryDropdown');
+    if (!dropdown) return;
     
-        let layoutOrder = [];
-        let layoutDocName = "pos_layout";
-        if (window.posPlatform === 'Grab') layoutDocName = "pos_layout_grab";
-        if (window.posPlatform === 'Foodpanda') layoutDocName = "pos_layout_foodpanda";
+    let html = '<option value="All">🍔 All Items (Main Menu)</option>';
+    
+    // Use the saved categories from the cloud layout
+    if (window.masterPOSData && window.masterPOSData.categories) {
+        window.masterPOSData.categories.forEach(cat => {
+            html += `<option value="${cat}">📁 ${cat}</option>`;
+        });
+    }
+    
+    dropdown.innerHTML = html;
+};
 
-        try {
-            const layoutSnap = await window.getDoc(window.doc(window.db, "settings", layoutDocName));
-            if (layoutSnap.exists() && layoutSnap.data().categories) {
-                layoutOrder = layoutSnap.data().categories || [];
-            }
-            const itemLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_item_layout"));
-            if (itemLayoutSnap.exists()) {
-                window.globalItemLayout = itemLayoutSnap.data().items || [];
-            } else {
-                window.globalItemLayout = [];
-            }
-        } catch(e) { console.error("Error fetching POS layout:", e); }
+// The logic that fires when you select a category from the dropdown!
+window.filterMenu = function(category) {
+    window.currentCategory = category;
     
-        let rawCategories = window.masterPOSData.categories || [];
-        let safeCategories = [...new Set(rawCategories)].filter(c => !hiddenCategories.includes(c));
-        
-        layoutOrder.forEach(lo => {
-            if (!safeCategories.includes(lo) && !hiddenCategories.includes(lo)) {
-                safeCategories.push(lo);
-            }
-        });
-
-        let catsToRender = safeCategories;
-    
-        if (window.currentDepartment === "CONSUMABLES") {
-            catsToRender = safeCategories.filter(c => premixCategories.includes(c));
-        } else if (window.currentDepartment === "MAIN MENU") {
-            catsToRender = safeCategories.filter(c => !premixCategories.includes(c));
+    const items = document.querySelectorAll('.menu-item-card');
+    items.forEach(item => {
+        let itemCategory = item.getAttribute('data-category');
+        if (category === 'All' || itemCategory === category) {
+            item.style.display = 'flex'; // Shows the card
+        } else {
+            item.style.display = 'none'; // Hides the card
         }
-    
-        // 🔥 ADD THIS NEW BLOCK HERE TO HIDE RESTRICTED TABS:
-        if (window.branchAllowedCategories && window.branchAllowedCategories.length > 0) {
-            catsToRender = catsToRender.filter(c => window.branchAllowedCategories.includes(c));
-        }
-    
-        catsToRender.sort((a, b) => {
-            let idxA = layoutOrder.indexOf(a);
-            let idxB = layoutOrder.indexOf(b);
-            if (idxA === -1) idxA = 999;
-            if (idxB === -1) idxB = 999;
-            return idxA - idxB;
-        });
-    
-        // 🔥 THE WIPER BLADE FIX: Build all HTML first, then stamp it down ONCE!
-        let html = `<button class="cat-btn active" onclick="window.filterMenu('All', this)">All in ${window.currentDepartment}</button>`;
-        
-        catsToRender.forEach(cat => {
-            let safeCat = cat.replace(/'/g, "\\'");
-            html += `<button class="cat-btn" onclick="window.filterMenu('${safeCat}', this)">${cat.toUpperCase()}</button>`;
-        });
-    
-        // Instantly overwrites anything on the screen to prevent duplicates
-        catContainer.innerHTML = html; 
-        
-        // 🔥 ULTRA MODE: BUILD THE DOM ONCE & CACHE IT! 🔥
-        window.buildUltraGridDOM();
-        
-        window.filterMenu('All', catContainer.firstElementChild);
-    };
+    });
+};
 
 // ==========================================
 // 📱 MULTI-PLATFORM POS ENGINE (GRAB / FOODPANDA)
