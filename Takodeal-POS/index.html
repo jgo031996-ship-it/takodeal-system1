@@ -2174,7 +2174,9 @@
         window.posPlatform = platform;
         window.cart = window.platformCarts[platform] || [];
         
-        let header = document.querySelector('.ticket-header');
+        // 🔥 THE FIX: Tell Javascript exactly where to find the HTML to change the colors!
+        let header = document.getElementById('posCartHeader');
+        let titleText = document.getElementById('posCartTitle');
         let platformDropdown = document.getElementById('posPlatformSelect');
         let otSelect = document.getElementById('mainOrderType');
         let btnPlace = document.getElementById('btnMainPlaceOrder');
@@ -2182,32 +2184,35 @@
         
         if (platform === 'Grab') {
             window.selectedPaymentMethod = 'Grab'; 
-            if(header) { header.style.background = '#00b14f'; header.style.color = 'white'; }
-            if(platformDropdown) { platformDropdown.style.background = '#00b14f'; platformDropdown.style.color = 'white'; }
-            if(btnPlace) { btnPlace.style.background = '#00b14f'; }
-            if(btnPark) { btnPark.style.background = '#00b14f'; }
+            if(header) { header.style.background = '#dcfce7'; header.style.borderColor = '#22c55e'; }
+            if(titleText) { titleText.style.color = '#15803d'; titleText.innerText = '🟢 Grab Register'; }
+            if(platformDropdown) { platformDropdown.style.background = '#22c55e'; platformDropdown.style.color = 'white'; }
+            if(btnPlace) { btnPlace.style.background = '#16a34a'; }
+            if(btnPark) { btnPark.style.background = '#22c55e'; }
             if (otSelect) {
                 let opt = Array.from(otSelect.options).find(o => o.value.toLowerCase().includes('grab'));
                 if (opt) otSelect.value = opt.value;
             }
         } else if (platform === 'Foodpanda') {
             window.selectedPaymentMethod = 'Foodpanda'; 
-            if(header) { header.style.background = '#d70f64'; header.style.color = 'white'; }
-            if(platformDropdown) { platformDropdown.style.background = '#d70f64'; platformDropdown.style.color = 'white'; }
-            if(btnPlace) { btnPlace.style.background = '#d70f64'; }
-            if(btnPark) { btnPark.style.background = '#d70f64'; }
+            if(header) { header.style.background = '#fce7f3'; header.style.borderColor = '#ec4899'; }
+            if(titleText) { titleText.style.color = '#be185d'; titleText.innerText = '🐼 Panda Register'; }
+            if(platformDropdown) { platformDropdown.style.background = '#ec4899'; platformDropdown.style.color = 'white'; }
+            if(btnPlace) { btnPlace.style.background = '#db2777'; }
+            if(btnPark) { btnPark.style.background = '#ec4899'; }
             if (otSelect) {
                 let opt = Array.from(otSelect.options).find(o => o.value.toLowerCase().includes('foodpanda') || o.value.toLowerCase().includes('panda'));
                 if (opt) otSelect.value = opt.value;
             }
         } else {
             window.selectedPaymentMethod = 'Cash'; 
-            if(header) { header.style.background = '#fff7ed'; header.style.color = '#333'; }
+            if(header) { header.style.background = '#fff7ed'; header.style.borderColor = '#fdba74'; }
+            if(titleText) { titleText.style.color = '#c2410c'; titleText.innerText = '🛒 POS Register'; }
             if(platformDropdown) { platformDropdown.style.background = '#f39c12'; platformDropdown.style.color = 'white'; }
             if(btnPlace) { btnPlace.style.background = '#0ea5e9'; }
             if(btnPark) { btnPark.style.background = '#f59e0b'; }
             
-            // 🔥 THE FIX: Set this to blank instead of 'Dine-In' to force a new selection
+            // 🔥 AUTO-RESET FIX: Forces the order type back to blank for standard POS!
             if (otSelect) otSelect.value = '';
             
             let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase() === 'cash');
@@ -2217,6 +2222,7 @@
         let total = window.cart.reduce((sum, item) => sum + (item.lineTotalFinal || 0), 0);
         window.currentGrandTotal = total; 
         
+        // Force the menu cards to redraw their prices instantly!
         window.renderMenuItems();
         window.renderCart();
     };
@@ -2264,10 +2270,11 @@
                 badgeHtml = `<div style="position: absolute; top: -8px; right: -8px; background: #f59e0b; color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10; animation: pulse 2s infinite;">LOW STOCK</div>`;
             }
             
-            let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
-            let safeName = item.name.replace(/'/g, "\\'");
-            let catSafe = (item.category || '').replace(/'/g, "\\'");
-
+            // 🔥 CRITICAL PRICE SYNC FIX 🔥
+            let safePrice = parseFloat(item.price || item.basePrice) || 0;
+            if (window.posPlatform === 'Grab' && item.grabPrice) safePrice = parseFloat(item.grabPrice) || safePrice;
+            if (window.posPlatform === 'Foodpanda' && item.foodpandaPrice) safePrice = parseFloat(item.foodpandaPrice) || safePrice;
+    
             let displayName = item.name;
             if (item.category && displayName.toLowerCase().startsWith(item.category.toLowerCase())) {
                 displayName = displayName.substring(item.category.length).trim();
@@ -2283,16 +2290,21 @@
             let statusColor = isSoldOut ? '#dc2626' : '#16a34a';
             let statusBg = isSoldOut ? '#fef2f2' : '#dcfce7';
             let statusBorder = isSoldOut ? '#fca5a5' : '#bbf7d0';
-
+    
+            // 🔥 THE NEW CLEAN SPLIT-CARD UI (With Live Dynamic Prices!)
             html += `
                 <div class="item-card ultra-card" data-category="${catSafe}" data-name="${item.name.toLowerCase()}" onclick="if(systemReady && ${!isSoldOut}) openAddOrderModal('${safeName}', ${safePrice})" style="height: 155px; background: white; border: 1px solid #cbd5e1; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); cursor: ${isSoldOut ? 'not-allowed' : 'pointer'}; padding: 0; ${isSoldOut ? 'opacity: 0.6;' : ''}">
+                    
                     <div style="height: 55%; width: 100%; ${bgStyle} background-size: cover; background-position: center; position: relative;">
                         ${badgeHtml}
                     </div>
+                    
                     <div style="height: 45%; padding: 8px 10px; display: flex; flex-direction: column; justify-content: space-between; background: white; z-index: 2; border-top: 1px solid #f1f5f9;">
                         <div style="font-weight: 900; color: #1e293b; font-size: 13px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; white-space: normal;">${displayName}</div>
-                        <div style="margin-top: 4px;">
-                            <span style="background: ${statusBg}; color: ${statusColor}; border: 1px solid ${statusBorder}; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 900; display: inline-block; width: 100%; box-sizing: border-box; text-align: center;">${statusText}</span>
+                        
+                        <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 4px;">
+                            <span style="font-size: 13px; font-weight: 900; color: #0ea5e9;">₱${safePrice.toFixed(2)}</span>
+                            <span style="background: ${statusBg}; color: ${statusColor}; border: 1px solid ${statusBorder}; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 900;">${statusText}</span>
                         </div>
                     </div>
                 </div>
