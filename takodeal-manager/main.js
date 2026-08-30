@@ -6346,7 +6346,6 @@ window.saveAdvancedInventoryItem = async function () {
   let category = document.getElementById('newInvCat').value;
   let name = document.getElementById('newInvName').value.trim();
   let purchUom = document.getElementById('newInvPurchUom').value.trim();
-  let restockCycle = document.getElementById('newInvCycle').value;
   let baseUom = document.getElementById('newInvBaseUom').value.trim();
 
   let conv = parseFloat(document.getElementById('newInvConv').value);
@@ -7187,7 +7186,6 @@ window.saveInventoryEdit = async function() {
     let category = document.getElementById('editInvCat').value;
     let name = document.getElementById('editInvName').value.trim();
     let purchUom = document.getElementById('editInvPurchUom').value.trim();
-    let restockCycle = document.getElementById('editInvCycle').value;
     let baseUom = document.getElementById('editInvBaseUom').value.trim();
     let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
     let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
@@ -16823,7 +16821,7 @@ window.loadBranchManager = async function() {
 // 💉 THE DOM INJECTOR (FRANCHISE LOCK UPGRADE)
 window.injectDynamicBranchDropdowns = function() {
     const standardSelects = ['empBranchAssign', 'manAttBranch', 'newAccBranch', 'newBudgetBranch', 'newInvBranch', 'editInvBranch', 'batchBranch', 'dispFrom', 'dispTo'];
-    const filterSelects = ['dashBranchFilter', 'invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect', 'sanctionBranchFilter', 'expenseBranchFilter', 'flowBranchFilter']; 
+    const filterSelects = ['dashBranchFilter', 'invBranchFilter', 'zReadingBranchFilter', 'transferBranchFilter', 'branchAlertFilter', 'histBranchFilter', 'burnRateBranch', 'auditModalBranch', 'forecasterBranchSelect', 'aiBranchSelect', 'sanctionBranchFilter', 'expenseBranchFilter', 'flowBranchFilter', 'cycleBranchSelect']; 
     
     let stdHtml = '';
     let filterHtml = '<option value="All">🌐 All Branches</option>';
@@ -26021,4 +26019,100 @@ window.forceMarkDeductionPaid = async function(docId, staffName, staffDocId) {
          if (staffDocId) window.openEmployeeProfile(staffDocId);
          if (typeof window.loadLedger === 'function') window.loadLedger();
      } catch(e) { console.error(e); }
+};
+// ========================================================
+// 📅 INVENTORY CHECKING CYCLE MANAGER
+// ========================================================
+
+window.loadInventoryCycles = async function() {
+    let branch = document.getElementById('cycleBranchSelect').value;
+    let tbody = document.getElementById('cycleItemsList');
+    
+    if (!branch) {
+        tbody.innerHTML = '<tr><td colspan="3" style="padding: 40px; text-align: center; color: #94a3b8; font-weight: bold; font-size: 15px;">Select a branch above to load items...</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = '<tr><td colspan="3" style="padding: 40px; text-align: center; color: #0ea5e9; font-weight: bold; font-size: 15px;">⏳ Loading inventory...</td></tr>';
+
+    try {
+        const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch));
+        const snap = await window.getDocs(q);
+        
+        let items = [];
+        snap.forEach(doc => items.push({ id: doc.id, ...doc.data() }));
+        items.sort((a,b) => (a.category || '').localeCompare(b.category || '') || (a.name || '').localeCompare(b.name || ''));
+
+        let html = '';
+        let currentCategory = '';
+
+        items.forEach(item => {
+            if (item.allowRequest === false) return; // Skip hidden items
+
+            let cat = item.category || 'Uncategorized';
+            if (cat !== currentCategory) {
+                html += `<tr><td colspan="3" style="background: #f1f5f9; padding: 10px 15px; font-weight: 900; color: #475569; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">📁 ${cat}</td></tr>`;
+                currentCategory = cat;
+            }
+
+            let cycle = item.restockCycle || 'As Needed';
+            let selectColor = cycle === 'Weekly' ? '#10b981' : (cycle === 'Monthly' ? '#8b5cf6' : (cycle === 'Daily' ? '#f59e0b' : '#0ea5e9'));
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 12px 15px; font-weight: bold; color: #334155; font-size: 14px;">${item.name}</td>
+                    <td style="padding: 12px 15px; text-align: center;"><span class="badge badge-closed" style="font-size: 10px;">${cat}</span></td>
+                    <td style="padding: 12px 15px; text-align: right;">
+                        <select class="cycle-select-input" data-id="${item.id}" onchange="this.style.color = this.value === 'Weekly' ? '#10b981' : (this.value === 'Monthly' ? '#8b5cf6' : (this.value === 'Daily' ? '#f59e0b' : '#0ea5e9'));" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: ${selectColor}; background: #f8fafc; cursor: pointer; font-size: 13px; min-width: 140px;">
+                            <option value="Weekly" ${cycle === 'Weekly' ? 'selected' : ''}>Weekly</option>
+                            <option value="Monthly" ${cycle === 'Monthly' ? 'selected' : ''}>Monthly</option>
+                            <option value="Daily" ${cycle === 'Daily' ? 'selected' : ''}>Daily</option>
+                            <option value="As Needed" ${cycle === 'As Needed' ? 'selected' : ''}>As Needed</option>
+                        </select>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = html || '<tr><td colspan="3" style="padding: 40px; text-align: center; color: #94a3b8; font-weight: bold; font-size: 15px;">No items found.</td></tr>';
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="3" style="padding: 40px; text-align: center; color: #ef4444; font-weight: bold; font-size: 15px;">❌ Error loading data.</td></tr>';
+    }
+};
+
+window.saveInventoryCycles = async function() {
+    let branch = document.getElementById('cycleBranchSelect').value;
+    if (!branch) return Swal.fire('Error', 'Please select a branch first.', 'error');
+
+    let selects = document.querySelectorAll('.cycle-select-input');
+    if (selects.length === 0) return;
+
+    Swal.fire({title: 'Syncing to Database...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        const batch = window.writeBatch(window.db);
+        let updateCount = 0;
+
+        selects.forEach(sel => {
+            let id = sel.getAttribute('data-id');
+            let cycle = sel.value;
+            batch.update(window.doc(window.db, "inventory", id), { restockCycle: cycle });
+            updateCount++;
+        });
+
+        if (updateCount > 0) {
+            await batch.commit();
+        }
+
+        Swal.fire({
+            title: '✅ Configurations Saved!',
+            text: `Updated restock cycles for ${updateCount} items in ${branch}. The Cashier App filters will update instantly.`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+    } catch(e) {
+        console.error("Save Cycles Error:", e);
+        Swal.fire('Error', 'Failed to save cycle configurations. Check connection.', 'error');
+    }
 };
