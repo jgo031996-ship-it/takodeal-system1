@@ -1753,220 +1753,176 @@
       </div>
     </div>
 
+    <!-- ⚙️ POS CONFIG HUB (UNIFIED DROPDOWN INTERFACE) -->
     <div id="view-posconfig" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-      <div style="max-width: 1400px; margin: 0 auto;">
-        
-        <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-bottom: 30px; overflow: hidden;">
-          <div style="background: #f0fdf4; padding: 25px 30px; border-bottom: 1px solid #bbf7d0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-            <div>
-              <h2 style="margin: 0; color: #166534; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">⚙️</span> Master POS Configuration</h2>
-              <span style="font-size: 13px; color: #15803d; margin-top: 6px; display: block; font-weight: 500;">Individually update payment methods, order types, and POS layouts with zero risk of data loss.</span>
+        <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); width: 100%; max-width: 1400px; margin: 0 auto; border: 1px solid #e2e8f0; overflow: hidden; display: flex; flex-direction: column; min-height: 85vh;">
+            
+            <!-- MASTER HEADER & DROPDOWN -->
+            <div style="background: #f8fafc; padding: 25px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; position: sticky; top: 0; z-index: 20;">
+                <div>
+                    <h2 style="margin: 0; color: #0f172a; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">⚙️</span> POS Config Hub</h2>
+                    <span style="font-size: 13px; color: #64748b; font-weight: 500; margin-top: 4px; display: block;">Manage master settings, layouts, and branch restrictions.</span>
+                </div>
+                <div>
+                    <select id="posConfigSectionSelect" onchange="window.switchPosConfigSection(this.value)" style="padding: 14px 20px; border-radius: 10px; border: 2px solid #bae6fd; outline: none; font-weight: 900; color: #0284c7; font-size: 15px; background: #f0f9ff; cursor: pointer; min-width: 320px; box-shadow: 0 4px 6px rgba(2, 132, 199, 0.1);">
+                        <option value="master">⚙️ Master POS Configuration</option>
+                        <option value="menuArrangement">🍔 POS Menu Tab Arrangement</option>
+                        <option value="sidebarArrangement">📱 Sidebar Tab Arrangement</option>
+                        <option value="menuFilter">🏢 Branch Menu Filter (Mall Mode)</option>
+                        <option value="prepFilter">🔪 Branch Kitchen Prep Filter</option>
+                        <option value="inventoryCycles">📅 Inventory Checking Cycles</option>
+                    </select>
+                </div>
             </div>
-          </div>
 
-          <!-- Armored Grid Layout -->
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; padding: 30px; background: white;">
-              
-              <!-- 1. Payment Methods -->
-              <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                  <label style="font-size: 12px; font-weight: 800; color: #475569; display: block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">💳 Payment Methods</label>
-                  <div style="display: flex; gap: 8px;">
-                      <input type="text" id="configPayMethods" placeholder="Cash, GCash, Bank, Maya" style="border: 1px solid #cbd5e1; width: 100%; padding: 12px 15px; border-radius: 8px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #1e293b;">
-                      <button onclick="window.saveSinglePosConfig('paymentMethods', 'configPayMethods', this)" style="background: #0f766e; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; white-space: nowrap; box-shadow: 0 4px 6px rgba(15,118,110,0.2); transition: 0.2s;">💾 Save</button>
-                  </div>
-              </div>
+            <div style="padding: 30px; background: #f8fafc; flex: 1; overflow-y: auto;">
 
-              <!-- 2. Order Types -->
-              <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                  <label style="font-size: 12px; font-weight: 800; color: #475569; display: block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">🛍️ Order Types</label>
-                  <div style="display: flex; gap: 8px;">
-                      <input type="text" id="configOrderTypes" placeholder="Dine-In, Take-Out, Delivery" style="border: 1px solid #cbd5e1; width: 100%; padding: 12px 15px; border-radius: 8px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #1e293b;">
-                      <button onclick="window.saveSinglePosConfig('orderTypes', 'configOrderTypes', this)" style="background: #0f766e; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; white-space: nowrap; box-shadow: 0 4px 6px rgba(15,118,110,0.2); transition: 0.2s;">💾 Save</button>
-                  </div>
-              </div>
+                <!-- 1. MASTER POS CONFIGURATION -->
+                <div id="section-master" class="pos-config-section" style="display: block;">
+                    <div style="background: white; padding: 25px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                            <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+                                <label style="font-size: 11px; font-weight: 900; color: #475569; text-transform: uppercase;">💳 Payment Methods</label>
+                                <div style="display: flex; gap: 8px; margin-top: 5px;">
+                                    <input type="text" id="configPayMethods" class="input-box" placeholder="Cash, GCash, Grab..." style="flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold;">
+                                    <button onclick="window.saveSinglePosConfig('paymentMethods', 'configPayMethods', this)" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save</button>
+                                </div>
+                            </div>
+                            <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+                                <label style="font-size: 11px; font-weight: 900; color: #475569; text-transform: uppercase;">🛍️ Order Types</label>
+                                <div style="display: flex; gap: 8px; margin-top: 5px;">
+                                    <input type="text" id="configOrderTypes" class="input-box" placeholder="Dine-In, Take-Out..." style="flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold;">
+                                    <button onclick="window.saveSinglePosConfig('orderTypes', 'configOrderTypes', this)" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save</button>
+                                </div>
+                            </div>
+                            <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+                                <label style="font-size: 11px; font-weight: 900; color: #475569; text-transform: uppercase;">🔪 Kitchen Prep Categories</label>
+                                <div style="display: flex; gap: 8px; margin-top: 5px;">
+                                    <input type="text" id="configKitchenPrep" class="input-box" placeholder="Prepared Batch..." style="flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold;">
+                                    <button onclick="window.saveSinglePosConfig('kitchenPrepCats', 'configKitchenPrep', this)" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save</button>
+                                </div>
+                            </div>
+                            <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+                                <label style="font-size: 11px; font-weight: 900; color: #475569; text-transform: uppercase;">🧹 Consumables Categories</label>
+                                <div style="display: flex; gap: 8px; margin-top: 5px;">
+                                    <input type="text" id="configConsumables" class="input-box" placeholder="Consumables..." style="flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold;">
+                                    <button onclick="window.saveSinglePosConfig('consumableCats', 'configConsumables', this)" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save</button>
+                                </div>
+                            </div>
+                            <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+                                <label style="font-size: 11px; font-weight: 900; color: #475569; text-transform: uppercase;">🐙 Mix & Match Flavors</label>
+                                <div style="display: flex; gap: 8px; margin-top: 5px;">
+                                    <input type="text" id="configMixMatch" class="input-box" placeholder="Pork, Shrimp, Octopus" style="flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold;">
+                                    <button onclick="window.saveSinglePosConfig('mixMatchFlavors', 'configMixMatch', this)" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save</button>
+                                </div>
+                            </div>
+                            <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;">
+                                <label style="font-size: 11px; font-weight: 900; color: #475569; text-transform: uppercase;">🗑️ Waste Reasons</label>
+                                <div style="display: flex; gap: 8px; margin-top: 5px;">
+                                    <input type="text" id="configWasteReasons" class="input-box" placeholder="Dropped, Spoiled, Burnt" style="flex: 1; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold;">
+                                    <button onclick="window.saveSinglePosConfig('wasteReasons', 'configWasteReasons', this)" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save</button>
+                                </div>
+                            </div>
+                            <div style="background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d;">
+                                <label style="font-size: 11px; font-weight: 900; color: #b45309; text-transform: uppercase;">📦 Shift Handover Audit Items</label>
+                                <div style="display: flex; gap: 8px; margin-top: 5px;">
+                                    <input type="text" id="configShiftAudit" class="input-box" placeholder="Egg L, Paper Bowl..." style="flex: 1; padding: 10px; border: 1px solid #fcd34d; border-radius: 6px; font-weight: bold;">
+                                    <button onclick="window.saveSinglePosConfig('shiftAuditItems', 'configShiftAudit', this)" style="background: #d97706; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save</button>
+                                </div>
+                            </div>
+                            <div style="background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d;">
+                                <label style="font-size: 11px; font-weight: 900; color: #b45309; text-transform: uppercase;">📝 Monthly/General Audit Items</label>
+                                <div style="display: flex; gap: 8px; margin-top: 5px;">
+                                    <input type="text" id="configAuditList" class="input-box" placeholder="320cc Paper Bowl, Burger Box" style="flex: 1; padding: 10px; border: 1px solid #fcd34d; border-radius: 6px; font-weight: bold;">
+                                    <button onclick="window.saveSinglePosConfig('auditItems', 'configAuditList', this)" style="background: #d97706; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-              <!-- 3. POS Top Menu Tabs -->
-              <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                  <label style="font-size: 12px; font-weight: 800; color: #475569; display: block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">🍔 POS Top Menu Tabs</label>
-                  <div style="display: flex; gap: 8px;">
-                      <input type="text" id="configPosTabs" placeholder="Takoyaki, Milk Tea, Coffee, Add-ons" style="border: 1px solid #cbd5e1; width: 100%; padding: 12px 15px; border-radius: 8px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #1e293b;">
-                      <button onclick="window.saveSinglePosConfig('posTabs', 'configPosTabs', this)" style="background: #0f766e; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; white-space: nowrap; box-shadow: 0 4px 6px rgba(15,118,110,0.2); transition: 0.2s;">💾 Save</button>
-                  </div>
-              </div>
+                <!-- 2. POS MENU TAB ARRANGEMENT -->
+                <div id="section-menuArrangement" class="pos-config-section" style="display: none;">
+                    <div style="background: white; padding: 25px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;">
+                            <span style="color: #64748b; font-weight: bold; font-size: 13px;">Rearrange the tab order for all Cashier Apps globally.</span>
+                            <button onclick="window.loadPosLayout()" style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">🔄 Refresh List</button>
+                        </div>
+                        <div id="posCategoryArrangementList" style="display: flex; flex-direction: column; gap: 8px;">
+                            <div style="color: #64748b; text-align: center; padding: 40px; font-weight: bold; font-size: 15px;">Loading categories...</div>
+                        </div>
+                        <button onclick="window.savePosLayout()" style="width: 100%; margin-top: 20px; background: #0ea5e9; color: white; border: none; padding: 15px; border-radius: 8px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3);">💾 Save Menu Arrangement</button>
+                    </div>
+                </div>
 
-              <!-- 4. Kitchen Prep Categories -->
-              <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                  <label style="font-size: 12px; font-weight: 800; color: #475569; display: block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">🔪 Kitchen Prep Categories</label>
-                  <div style="display: flex; gap: 8px;">
-                      <input type="text" id="configKitchenPrep" placeholder="Prepared Batch, Sauces" style="border: 1px solid #cbd5e1; width: 100%; padding: 12px 15px; border-radius: 8px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #1e293b;">
-                      <button onclick="window.saveSinglePosConfig('kitchenPrepCats', 'configKitchenPrep', this)" style="background: #0f766e; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; white-space: nowrap; box-shadow: 0 4px 6px rgba(15,118,110,0.2); transition: 0.2s;">💾 Save</button>
-                  </div>
-              </div>
+                <!-- 3. SIDEBAR TAB ARRANGEMENT -->
+                <div id="section-sidebarArrangement" class="pos-config-section" style="display: none;">
+                    <div style="background: white; padding: 25px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 20px; align-items: center;">
+                            <span style="color: #64748b; font-weight: bold; font-size: 13px;">Rearrange the sidebar buttons for all Cashier Apps globally.</span>
+                            <button onclick="window.loadSidebarLayout()" style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">🔄 Refresh List</button>
+                        </div>
+                        <div id="sidebarArrangementList" style="display: flex; flex-direction: column; gap: 8px;">
+                            <div style="color: #64748b; text-align: center; padding: 40px; font-weight: bold; font-size: 15px;">Loading sidebar tabs...</div>
+                        </div>
+                        <button onclick="window.saveSidebarLayout()" style="width: 100%; margin-top: 20px; background: #8b5cf6; color: white; border: none; padding: 15px; border-radius: 8px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);">💾 Save Sidebar Arrangement</button>
+                    </div>
+                </div>
 
-              <!-- 5. End-of-Day Audit Items -->
-              <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                  <label style="font-size: 12px; font-weight: 800; color: #475569; display: block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">📋 Shift Handover Audit Items</label>
-                  <div style="display: flex; gap: 8px;">
-                      <input type="text" id="configShiftAudit" placeholder="Paper Bowl, Plastic Cup" style="border: 1px solid #cbd5e1; width: 100%; padding: 12px 15px; border-radius: 8px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #1e293b;">
-                      <button onclick="window.saveSinglePosConfig('shiftAuditItems', 'configShiftAudit', this)" style="background: #0f766e; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; white-space: nowrap; box-shadow: 0 4px 6px rgba(15,118,110,0.2); transition: 0.2s;">💾 Save</button>
-                  </div>
-              </div>
+                <!-- 4. BRANCH MENU FILTER (MALL MODE) -->
+                <div id="section-menuFilter" class="pos-config-section" style="display: none;">
+                    <div style="background: white; padding: 25px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+                        <span style="color: #64748b; font-weight: bold; font-size: 13px; display: block; margin-bottom: 20px;">Restrict which categories appear on specific branch POS tablets.</span>
+                        <select id="restrictBranchSelect" style="width: 100%; max-width: 300px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-weight: bold; outline: none; margin-bottom: 20px; background: #f8fafc;" onchange="window.loadBranchMenuRestrictions()">
+                            <option value="">-- Select Branch --</option>
+                        </select>
+                        <div id="restrictCategoriesList" style="margin-bottom: 20px; padding: 20px; background: #f1f5f9; border-radius: 8px; border: 1px dashed #cbd5e1; font-style: italic; color: #64748b;">Select a branch above to load its allowed categories...</div>
+                        <button onclick="window.saveBranchMenuRestrictions()" style="background: #e11d48; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-weight: 900; font-size: 15px; cursor: pointer; box-shadow: 0 4px 6px rgba(225, 29, 72, 0.3);">💾 Save Allowed Categories</button>
+                    </div>
+                </div>
 
-              <!-- 6. Consumables Categories -->
-              <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                  <label style="font-size: 12px; font-weight: 800; color: #475569; display: block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">🧹 Consumables Categories</label>
-                  <div style="display: flex; gap: 8px;">
-                      <input type="text" id="configConsumables" placeholder="Consumables, Cleaning Supplies" style="border: 1px solid #cbd5e1; width: 100%; padding: 12px 15px; border-radius: 8px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #1e293b;">
-                      <button onclick="window.saveSinglePosConfig('consumableCats', 'configConsumables', this)" style="background: #0f766e; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; white-space: nowrap; box-shadow: 0 4px 6px rgba(15,118,110,0.2); transition: 0.2s;">💾 Save</button>
-                  </div>
-              </div>
+                <!-- 5. BRANCH KITCHEN PREP FILTER -->
+                <div id="section-prepFilter" class="pos-config-section" style="display: none;">
+                    <div style="background: white; padding: 25px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+                        <span style="color: #64748b; font-weight: bold; font-size: 13px; display: block; margin-bottom: 20px;">Restrict which prep items appear on specific branch POS tablets.</span>
+                        <select id="restrictPrepBranchSelect" style="width: 100%; max-width: 300px; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-weight: bold; outline: none; margin-bottom: 20px; background: #f8fafc;" onchange="window.loadBranchPrepRestrictions()">
+                            <option value="">-- Select Branch --</option>
+                        </select>
+                        <div id="restrictPrepItemsList" style="margin-bottom: 20px; padding: 20px; background: #f1f5f9; border-radius: 8px; border: 1px dashed #cbd5e1; font-style: italic; color: #64748b;">Select a branch above to load its allowed prep items...</div>
+                        <button onclick="window.saveBranchPrepRestrictions()" style="background: #d97706; color: white; border: none; padding: 15px 30px; border-radius: 8px; font-weight: 900; font-size: 15px; cursor: pointer; box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);">💾 Save Allowed Prep Items</button>
+                    </div>
+                </div>
 
-              <!-- 7. Mix & Match Flavors -->
-              <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                  <label style="font-size: 12px; font-weight: 800; color: #475569; display: block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">🐙 Mix & Match Flavors</label>
-                  <div style="display: flex; gap: 8px;">
-                      <input type="text" id="configMixMatch" placeholder="Pork, Shrimp, Octopus" style="border: 1px solid #cbd5e1; width: 100%; padding: 12px 15px; border-radius: 8px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #1e293b;">
-                      <button onclick="window.saveSinglePosConfig('mixMatchFlavors', 'configMixMatch', this)" style="background: #0f766e; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; white-space: nowrap; box-shadow: 0 4px 6px rgba(15,118,110,0.2); transition: 0.2s;">💾 Save</button>
-                  </div>
-              </div>
+                <!-- 6. INVENTORY CYCLES -->
+                <div id="section-inventoryCycles" class="pos-config-section" style="display: none;">
+                    <div style="background: white; padding: 25px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
+                        <select id="cycleBranchSelect" style="padding: 12px 15px; border-radius: 8px; font-weight: bold; width: 280px; border: 1px solid #bae6fd; outline: none; cursor: pointer; font-size: 14px; color: #0284c7; background: #f0f9ff; margin-bottom: 20px;" onchange="window.loadInventoryCycles()">
+                            <option value="">-- Select Branch --</option>
+                        </select>
+                        
+                        <div class="table-responsive" style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; background: white; max-height: 500px; overflow-y: auto;">
+                            <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+                                <thead style="background: #e0f2fe; border-bottom: 2px solid #bae6fd; position: sticky; top: 0; z-index: 5;">
+                                    <tr>
+                                        <th style="padding: 12px 15px; color: #0369a1; text-transform: uppercase; font-weight: 900;">Item Name</th>
+                                        <th style="padding: 12px 15px; color: #0369a1; text-transform: uppercase; font-weight: 900; text-align: center;">Category</th>
+                                        <th style="padding: 12px 15px; color: #0ea5e9; text-transform: uppercase; font-weight: 900; text-align: center;">Remaining Qty</th>
+                                        <th style="padding: 12px 15px; color: #0369a1; text-transform: uppercase; font-weight: 900; text-align: right;">Restock Cycle Assignment</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cycleItemsList">
+                                    <tr><td colspan="4" style="padding: 40px; text-align: center; color: #94a3b8; font-weight: bold; font-size: 15px;">Select a branch above to load items...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <button onclick="window.saveInventoryCycles()" style="width: 100%; background: #0ea5e9; color: white; border: none; padding: 16px 24px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 16px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); margin-top: 20px; transition: 0.2s;">💾 Save Cycle Configurations</button>
+                    </div>
+                </div>
 
-              <!-- 8. Waste Reasons -->
-              <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                  <label style="font-size: 12px; font-weight: 800; color: #475569; display: block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">🗑️ Waste Reasons</label>
-                  <div style="display: flex; gap: 8px;">
-                      <input type="text" id="configWasteReasons" placeholder="Dropped, Spoiled, Burnt" style="border: 1px solid #cbd5e1; width: 100%; padding: 12px 15px; border-radius: 8px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #1e293b;">
-                      <button onclick="window.saveSinglePosConfig('wasteReasons', 'configWasteReasons', this)" style="background: #0f766e; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; white-space: nowrap; box-shadow: 0 4px 6px rgba(15,118,110,0.2); transition: 0.2s;">💾 Save</button>
-                  </div>
-              </div>
-              
-              <!-- 9. End-of-Day Audit Items -->
-              <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                  <label style="font-size: 12px; font-weight: 800; color: #475569; display: block; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">📝 Monthly/General Audit Items</label>
-                  <div style="display: flex; gap: 8px;">
-                      <input type="text" id="configAuditList" placeholder="320cc Paper Bowl, Burger Box" style="border: 1px solid #cbd5e1; width: 100%; padding: 12px 15px; border-radius: 8px; outline: none; box-sizing: border-box; font-size: 14px; font-weight: bold; color: #1e293b;">
-                      <button onclick="window.saveSinglePosConfig('auditItems', 'configAuditList', this)" style="background: #0f766e; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; white-space: nowrap; box-shadow: 0 4px 6px rgba(15,118,110,0.2); transition: 0.2s;">💾 Save</button>
-                  </div>
-              </div>
-
-          </div>
+            </div>
         </div>
-
-        <!-- 📐 POS MENU TAB ARRANGER -->
-        <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-bottom: 30px; overflow: hidden;">
-          <div style="background: #fdf4ff; padding: 25px 30px; border-bottom: 1px solid #f5d0fe; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-            <div>
-              <h2 style="margin: 0; color: #86198f; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">📐</span> POS Menu Tab Arrangement</h2>
-              <span style="font-size: 13px; color: #a21caf; margin-top: 6px; display: block; font-weight: 500;">Rearrange the tab order for all Cashier Apps globally.</span>
-            </div>
-            <button onclick="window.loadPosLayout()" style="background: white; border: 1px solid #f5d0fe; color: #86198f; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: 0.2s;">🔄 Refresh List</button>
-          </div>
-          <div style="padding: 30px; background: white;">
-            <div id="posCategoryArrangementList" style="display: flex; flex-direction: column; gap: 12px;">
-              <div style="color: #64748b; text-align: center; padding: 40px; font-weight: bold; font-size: 15px;">Loading categories...</div>
-            </div>
-            <button onclick="window.savePosLayout()" style="margin-top: 25px; width: 100%; background: #8b5cf6; color: white; border: none; padding: 16px 20px; border-radius: 10px; font-size: 16px; font-weight: 900; cursor: pointer; box-shadow: 0 6px 12px rgba(139, 92, 246, 0.25); transition: 0.2s;">💾 Save & Sync Tab Order to Cashier Apps</button>
-          </div>
-        </div>
-
-        <!-- 📱 CASHIER SIDEBAR ARRANGER -->
-        <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; margin-bottom: 30px; overflow: hidden;">
-          <div style="background: #fffbeb; padding: 25px 30px; border-bottom: 1px solid #fde68a; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-            <div>
-              <h2 style="margin: 0; color: #b45309; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">📱</span> Sidebar Tab Arrangement</h2>
-              <span style="font-size: 13px; color: #d97706; margin-top: 6px; display: block; font-weight: 500;">Rearrange the sidebar buttons for all Cashier Apps globally.</span>
-            </div>
-            <button onclick="window.loadSidebarLayout()" style="background: white; border: 1px solid #fde68a; color: #b45309; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: 0.2s;">🔄 Refresh List</button>
-          </div>
-          <div style="padding: 30px; background: white;">
-            <div id="sidebarArrangementList" style="display: flex; flex-direction: column; gap: 12px;">
-              <div style="color: #64748b; text-align: center; padding: 40px; font-weight: bold; font-size: 15px;">Loading sidebar tabs...</div>
-            </div>
-            <button onclick="window.saveSidebarLayout()" style="margin-top: 25px; width: 100%; background: #f59e0b; color: white; border: none; padding: 16px 20px; border-radius: 10px; font-size: 16px; font-weight: 900; cursor: pointer; box-shadow: 0 6px 12px rgba(245, 158, 11, 0.25); transition: 0.2s;">💾 Save & Sync Sidebar Order</button>
-          </div>
-        </div>
-
-       <!-- 🍔 MALL BRANCH MENU RESTRICTIONS -->
-       <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 40px;">
-         <div style="background: #fff1f2; padding: 25px 30px; border-bottom: 1px solid #fecaca; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-           <div>
-             <h2 style="margin: 0; color: #be123c; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">🍔</span> Branch Menu Filter (Mall Mode)</h2>
-             <span style="font-size: 13px; color: #e11d48; margin-top: 6px; display: block; font-weight: 500;">Restrict which categories appear on specific branch POS tablets.</span>
-           </div>
-         </div>
-         <div style="padding: 30px; background: #fff1f2;">
-           <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-             <select id="restrictBranchSelect" style="padding: 12px 15px; border-radius: 8px; font-weight: bold; width: 280px; border: 1px solid #fda4af; outline: none; cursor: pointer; font-size: 14px; color: #9f1239; background: white;" onchange="window.loadBranchMenuRestrictions()">
-               <option value="">-- Select Branch --</option>
-             </select>
-           </div>
-            
-           <div id="restrictCategoriesList" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 25px;">
-             <div style="color: #fda4af; font-size: 14px; font-style: italic; font-weight: bold; padding: 10px;">Select a branch above to load its allowed categories...</div>
-           </div>
-            
-           <button onclick="window.saveBranchMenuRestrictions()" style="background: #e11d48; color: white; border: none; padding: 16px 24px; border-radius: 10px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 6px 12px rgba(225, 29, 72, 0.25); transition: 0.2s;">💾 Save Allowed Categories</button>
-         </div>
-       </div>
-
-       <!-- 🔪 BRANCH KITCHEN PREP RESTRICTIONS -->
-       <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 40px;">
-         <div style="background: #fffbeb; padding: 25px 30px; border-bottom: 1px solid #fde68a; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-           <div>
-             <h2 style="margin: 0; color: #b45309; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">🔪</span> Branch Kitchen Prep Filter</h2>
-             <span style="font-size: 13px; color: #d97706; margin-top: 6px; display: block; font-weight: 500;">Restrict which prep items appear on specific branch POS tablets.</span>
-           </div>
-         </div>
-         <div style="padding: 30px; background: #fffcf0;">
-           <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-             <select id="restrictPrepBranchSelect" style="padding: 12px 15px; border-radius: 8px; font-weight: bold; width: 280px; border: 1px solid #fcd34d; outline: none; cursor: pointer; font-size: 14px; color: #b45309; background: white;" onchange="window.loadBranchPrepRestrictions()">
-               <option value="">-- Select Branch --</option>
-             </select>
-           </div>
-            
-           <div id="restrictPrepItemsList" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 25px;">
-             <div style="color: #fcd34d; font-size: 14px; font-style: italic; font-weight: bold; padding: 10px;">Select a branch above to load its allowed prep items...</div>
-           </div>
-            
-           <button onclick="window.saveBranchPrepRestrictions()" style="background: #d97706; color: white; border: none; padding: 16px 24px; border-radius: 10px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 6px 12px rgba(217, 119, 6, 0.25); transition: 0.2s;">💾 Save Allowed Prep Items</button>
-         </div>
-       </div>
-       <!-- 📅 INVENTORY CHECKING CYCLES MANAGER -->
-       <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 40px;">
-         <div style="background: #f0f9ff; padding: 25px 30px; border-bottom: 1px solid #bae6fd; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-           <div>
-             <h2 style="margin: 0; color: #0284c7; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">📅</span> Inventory Checking Cycles</h2>
-             <span style="font-size: 13px; color: #0369a1; margin-top: 6px; display: block; font-weight: 500;">Bulk assign items to Weekly, Monthly, or Daily restock cycles for the Cashier App checklists.</span>
-           </div>
-         </div>
-         <div style="padding: 30px; background: #f8fafc;">
-           <div style="display: flex; gap: 10px; margin-bottom: 20px;">
-             <select id="cycleBranchSelect" style="padding: 12px 15px; border-radius: 8px; font-weight: bold; width: 280px; border: 1px solid #bae6fd; outline: none; cursor: pointer; font-size: 14px; color: #0284c7; background: white;" onchange="window.loadInventoryCycles()">
-               <option value="">-- Select Branch --</option>
-             </select>
-           </div>
-            
-           <div class="table-responsive" style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; background: white; max-height: 500px; overflow-y: auto;">
-               <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
-                   <thead style="background: #e0f2fe; border-bottom: 2px solid #bae6fd; position: sticky; top: 0; z-index: 5;">
-                       <tr>
-                           <th style="padding: 12px 15px; color: #0369a1; text-transform: uppercase; font-weight: 900;">Item Name</th>
-                           <th style="padding: 12px 15px; color: #0369a1; text-transform: uppercase; font-weight: 900; text-align: center;">Category</th>
-                           <th style="padding: 12px 15px; color: #0ea5e9; text-transform: uppercase; font-weight: 900; text-align: center;">Remaining Qty</th>
-                           <th style="padding: 12px 15px; color: #0369a1; text-transform: uppercase; font-weight: 900; text-align: right;">Restock Cycle Assignment</th>
-                       </tr>
-                   </thead>
-                   <tbody id="cycleItemsList">
-                       <tr><td colspan="4" style="padding: 40px; text-align: center; color: #94a3b8; font-weight: bold; font-size: 15px;">Select a branch above to load items...</td></tr>
-                   </tbody>
-               </table>
-           </div>
-            
-           <button onclick="window.saveInventoryCycles()" style="width: 100%; background: #0ea5e9; color: white; border: none; padding: 16px 24px; border-radius: 10px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 6px 12px rgba(14, 165, 233, 0.3); transition: 0.2s; margin-top: 20px;">💾 Save Cycle Configurations to Cloud</button>
-         </div>
-       </div>
-
-      </div> <!-- CLOSES MAX-WIDTH: 1400px -->
-    </div> <!-- CLOSES VIEW-POSCONFIG -->
+    </div>
 
     <!-- 🛠️ ASSETS & EQUIPMENT MANAGER -->
     <div id="view-equipment" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
