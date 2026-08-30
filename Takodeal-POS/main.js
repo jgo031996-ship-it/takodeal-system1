@@ -5632,17 +5632,14 @@ window.runAutonomousRestockAI = async function(forceRun = false) {
 // Periodic Background Evaluation (Every 15 minutes) - Will silently abort if it's not Friday!
 setInterval(window.runAutonomousRestockAI, 15 * 60 * 1000);
 
-
 window.submitAllManualCounts = async function() {
     let btn = document.getElementById('btnSubmitAllCounts');
     let itemsToProcess = [];
 
-    // 1. Scan memory/inputs for items that actually have data
     window.currentStockChecklist.forEach(item => {
         let memPurch = window.stockCountMemory[`${item.id}_purch`];
         let memBase = window.stockCountMemory[`${item.id}_base`];
         
-        // If neither box was filled, skip this item entirely!
         if ((memPurch === undefined || memPurch === '') && (memBase === undefined || memBase === '')) {
             return; 
         }
@@ -5669,11 +5666,17 @@ window.submitAllManualCounts = async function() {
     btn.innerHTML = "⏳ Syncing..."; btn.disabled = true;
 
     try {
-        const batch = window.writeBatch(window.db);
-        let itemsForAutoRequest = [];
-        let cashier = window.sessionUser.cashierName || 'Staff';
+        // 🔥 BULLETPROOF FIREBASE BINDINGS (Bypasses missing batch imports!)
+        const fDB = window.db || db;
+        const fDoc = window.doc || doc;
+        const fCol = window.collection || collection;
+        const fUpdate = window.updateDoc || updateDoc;
+        const fAdd = window.addDoc || addDoc;
+        const fTime = window.serverTimestamp || serverTimestamp;
 
-        // 2. Loop through all counted items and prepare the database payload
+        let itemsForAutoRequest = [];
+        let cashier = (window.sessionUser && window.sessionUser.cashierName) ? window.sessionUser.cashierName : 'Staff';
+
         for (let data of itemsToProcess) {
             let item = data.item;
             let currentSystemStock = parseFloat(item.currentStock) || 0;
@@ -5683,18 +5686,17 @@ window.submitAllManualCounts = async function() {
             let bUom = item.baseUom || item.uom || 'units';
             let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
 
-            // A. Update live stock count
-            const invRef = window.doc(window.db, "inventory", item.id);
-            batch.update(invRef, { currentStock: data.physicalTotalBase });
+            // A. Update live stock count directly
+            const invRef = fDoc(fDB, "inventory", item.id);
+            await fUpdate(invRef, { currentStock: data.physicalTotalBase });
 
-            // B. Write to Stock History Logs
+            // B. Write to Stock History Logs directly
             let noteText = `Manual Count: ${data.physicalTotalBase} ${bUom}`;
             if (convRate > 1 && pUom !== bUom) {
                 noteText = `Manual Count: ${data.pVal} ${pUom} + ${data.bVal} ${bUom}`;
             }
 
-            const logRef = window.doc(window.collection(window.db, "stock_logs"));
-            batch.set(logRef, {
+            await fAdd(fCol(fDB, "stock_logs"), {
                 branch: window.sessionUser.branch,
                 item: item.name,
                 uom: bUom,
@@ -5704,7 +5706,7 @@ window.submitAllManualCounts = async function() {
                 type: "Staff Physical Count",
                 note: noteText,
                 user: cashier,
-                timestamp: window.serverTimestamp()
+                timestamp: fTime()
             });
 
             // C. Silent AI Request Generator
@@ -5729,37 +5731,34 @@ window.submitAllManualCounts = async function() {
 
         // D. Create a single combined Purchase Order for all missing items!
         if (itemsForAutoRequest.length > 0) {
-            const poRef = window.doc(window.collection(window.db, "purchase_orders"));
-            batch.set(poRef, {
+            await fAdd(fCol(fDB, "purchase_orders"), {
                 branch: window.sessionUser.branch,
                 items: itemsForAutoRequest,
                 status: "Pending",
                 type: "Silent Auto-Request",
                 requestedBy: "System (via Staff Count)",
-                timestamp: window.serverTimestamp()
+                timestamp: fTime()
             });
         }
-
-        // 3. BLAST IT TO FIREBASE SIMULTANEOUSLY!
-        await batch.commit();
 
         // 4. Clean up and Reset
         window.stockCountMemory = {};
         localStorage.removeItem('takodeal_stock_count_memory');
-        document.getElementById('manualCountSearch').value = '';
+        let searchInput = document.getElementById('manualCountSearch');
+        if (searchInput) searchInput.value = '';
         
         Swal.fire({
-            title: '✅ Batch Complete!',
+            title: '✅ Sync Complete!',
             text: `Successfully saved counts for ${itemsToProcess.length} items. Automated requests were sent to HQ.`,
             icon: 'success',
             customClass: { popup: 'rounded-2xl' }
         });
 
-        window.loadStockRequestUI(); // Redraw table clean
+        window.loadStockRequestUI(); 
 
     } catch (e) {
-        console.error("Batch Submission Error:", e);
-        Swal.fire('Error', 'Failed to save all counts to cloud.', 'error');
+        console.error("Submission Error:", e);
+        Swal.fire('Error', 'Failed to save counts to cloud.', 'error');
     } finally {
         if (btn) { btn.innerHTML = origText; btn.disabled = false; }
     }
@@ -10719,129 +10718,5 @@ window.loadStockRequestUI = async function() {
     } catch (e) {
         console.error("Manual Count Error:", e);
         tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #dc2626; font-weight: bold;">❌ Database Error. Please refresh.</td></tr>';
-    }
-};
-
-window.submitAllManualCounts = async function() {
-    let btn = document.getElementById('btnSubmitAllCounts');
-    let itemsToProcess = [];
-
-    window.currentStockChecklist.forEach(item => {
-        let memPurch = window.stockCountMemory[`${item.id}_purch`];
-        let memBase = window.stockCountMemory[`${item.id}_base`];
-        
-        if ((memPurch === undefined || memPurch === '') && (memBase === undefined || memBase === '')) {
-            return; 
-        }
-
-        let pVal = parseFloat(memPurch) || 0;
-        let bVal = parseFloat(memBase) || 0;
-        let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-
-        let physicalTotalBase = (pVal * convRate) + bVal;
-
-        itemsToProcess.push({
-            item: item,
-            pVal: pVal,
-            bVal: bVal,
-            physicalTotalBase: physicalTotalBase
-        });
-    });
-
-    if (itemsToProcess.length === 0) {
-        return Swal.fire('Blank Form', 'You have not entered any counts. Please enter your quantities before submitting.', 'warning');
-    }
-
-    let origText = btn.innerHTML;
-    btn.innerHTML = "⏳ Syncing..."; btn.disabled = true;
-
-    try {
-        const batch = window.writeBatch(window.db);
-        let itemsForAutoRequest = [];
-        let cashier = window.sessionUser.cashierName || 'Staff';
-
-        for (let data of itemsToProcess) {
-            let item = data.item;
-            let currentSystemStock = parseFloat(item.currentStock) || 0;
-            let parLevelBase = parseFloat(item.maintainingStock) || 0;
-            
-            let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
-            let bUom = item.baseUom || item.uom || 'units';
-            let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-
-            const invRef = window.doc(window.db, "inventory", item.id);
-            batch.update(invRef, { currentStock: data.physicalTotalBase });
-
-            let noteText = `Manual Count: ${data.physicalTotalBase} ${bUom}`;
-            if (convRate > 1 && pUom !== bUom) {
-                noteText = `Manual Count: ${data.pVal} ${pUom} + ${data.bVal} ${bUom}`;
-            }
-
-            const logRef = window.doc(window.collection(window.db, "stock_logs"));
-            batch.set(logRef, {
-                branch: window.sessionUser.branch,
-                item: item.name,
-                uom: bUom,
-                oldQty: currentSystemStock,
-                newQty: data.physicalTotalBase,
-                variance: data.physicalTotalBase - currentSystemStock,
-                type: "Staff Physical Count",
-                note: noteText,
-                user: cashier,
-                timestamp: window.serverTimestamp()
-            });
-
-            if (parLevelBase > 0 && data.physicalTotalBase < parLevelBase) {
-                let deficitBase = parLevelBase - data.physicalTotalBase;
-                let requestPurchQty = Math.ceil(deficitBase / convRate);
-
-                itemsForAutoRequest.push({
-                    itemName: item.name,
-                    name: item.name,
-                    qty: requestPurchQty * convRate,
-                    rawQty: requestPurchQty,
-                    uom: bUom,
-                    purchaseUom: pUom,
-                    displayUom: pUom,
-                    requestType: "Maintaining Stock (Auto-Fill)",
-                    physicalStock: data.physicalTotalBase,
-                    systemStock: currentSystemStock
-                });
-            }
-        }
-
-        if (itemsForAutoRequest.length > 0) {
-            const poRef = window.doc(window.collection(window.db, "purchase_orders"));
-            batch.set(poRef, {
-                branch: window.sessionUser.branch,
-                items: itemsForAutoRequest,
-                status: "Pending",
-                type: "Silent Auto-Request",
-                requestedBy: "System (via Staff Count)",
-                timestamp: window.serverTimestamp()
-            });
-        }
-
-        await batch.commit();
-
-        window.stockCountMemory = {};
-        localStorage.removeItem('takodeal_stock_count_memory');
-        let searchInput = document.getElementById('manualCountSearch');
-        if (searchInput) searchInput.value = '';
-        
-        Swal.fire({
-            title: '✅ Batch Complete!',
-            text: `Successfully saved counts for ${itemsToProcess.length} items. Automated requests were sent to HQ.`,
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl' }
-        });
-
-        window.loadStockRequestUI(); 
-
-    } catch (e) {
-        console.error("Batch Submission Error:", e);
-        Swal.fire('Error', 'Failed to save all counts to cloud.', 'error');
-    } finally {
-        if (btn) { btn.innerHTML = origText; btn.disabled = false; }
     }
 };
