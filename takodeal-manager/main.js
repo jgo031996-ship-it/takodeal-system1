@@ -9346,7 +9346,7 @@ window.saveToCloud = async function() {
 
 window.loadFromCloud = async function() {
     try {
-        const staffSnap = await getDocs(collection(db, "cashiers"));
+        const staffSnap = await window.getDocs(window.collection(window.db, "cashiers"));
         let fetchedEmployees = [];
         
         staffSnap.forEach(docSnap => {
@@ -9364,7 +9364,7 @@ window.loadFromCloud = async function() {
         window.employees = fetchedEmployees; 
         employees = fetchedEmployees; 
 
-        const snap = await getDoc(doc(db, "settings", "global_schedule"));
+        const snap = await window.getDoc(window.doc(window.db, "settings", "global_schedule"));
         const today = new Date();
         let safeYear = today.getFullYear();
         let safeMonth = today.getMonth() + 1;
@@ -9382,20 +9382,75 @@ window.loadFromCloud = async function() {
             currentMonth = safeMonth;
         }
 
+        // 🔥 THE HR SANCTIONS AUTO-SYNC ENGINE 🔥
+        try {
+            const nteQ = window.query(window.collection(window.db, "hr_sanctions"));
+            const nteSnap = await window.getDocs(nteQ);
+            let nteModified = false;
+
+            nteSnap.forEach(doc => {
+                let d = doc.data();
+                if (d.severity && d.severity.includes("Suspension") && d.timestamp) {
+                    let match = d.severity.match(/(\d+)\s+(Day|Week)/i);
+                    if (match) {
+                        let num = parseInt(match[1]);
+                        if (match[2].toLowerCase() === 'week') num *= 7;
+                        
+                        let startDate = d.timestamp.toDate(); 
+                        
+                        for(let i = 0; i < num; i++) {
+                            let targetDate = new Date(startDate);
+                            targetDate.setDate(targetDate.getDate() + i);
+                            let dStr = targetDate.toISOString().split('T')[0];
+                            
+                            if (!unavailability[dStr]) unavailability[dStr] = {};
+                            
+                            // Auto-add suspension if not already logged
+                            let staffNickname = window.findEmployeeProfile(d.staffName)?.scheduleNickname || d.staffName;
+                            if (unavailability[dStr][staffNickname] !== "Suspended (NTE)") {
+                                unavailability[dStr][staffNickname] = "Suspended (NTE)";
+                                nteModified = true;
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (nteModified && currentSchedule[1]) {
+                for (let day in currentSchedule) {
+                    const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    if (unavailability[dateStr]) {
+                        for (let branch in currentSchedule[day]) {
+                            let bData = currentSchedule[day][branch];
+                            for (let emp in unavailability[dateStr]) {
+                                let status = unavailability[dateStr][emp];
+                                let eObj = window.employees.find(e => e.name === emp);
+                                if (eObj && eObj.branch === branch) {
+                                    for (let sId in bData.scheduled) { 
+                                        if (bData.scheduled[sId] === emp) bData.scheduled[sId] = "UNFILLED"; 
+                                    }
+                                    bData.rest = bData.rest.filter(n => n !== emp);
+                                    if (!bData.unavailable.some(u => u.name === emp)) {
+                                        bData.unavailable.push({ name: emp, status: status });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                window.saveToCloud(); 
+            }
+        } catch(e) { console.error("NTE Sync Error:", e); }
+
         // 🔥 THE INDESTRUCTIBLE BRANCH AUTO-SYNC ENGINE 🔥
         if (window.globalActiveBranches && window.globalActiveBranches.length > 0) {
             let validBranches = window.globalActiveBranches.filter(b => b !== "Main Office");
             let needsCloudSave = false;
 
-            // 1. Purge deleted branches from Config
             for (let b in branchConfig) {
-                if (!validBranches.includes(b)) {
-                    delete branchConfig[b];
-                    needsCloudSave = true;
-                }
+                if (!validBranches.includes(b)) { delete branchConfig[b]; needsCloudSave = true; }
             }
             
-            // 2. Add newly created branches to Config automatically
             validBranches.forEach(b => {
                 if (!branchConfig[b]) {
                     branchConfig[b] = JSON.parse(JSON.stringify(defaultSchedConfig["Cabantian"] || []));
@@ -9403,7 +9458,6 @@ window.loadFromCloud = async function() {
                 }
             });
 
-            // 3. Purge deleted branches from the active calendar
             if (currentSchedule) {
                 for (let day in currentSchedule) {
                     for (let b in currentSchedule[day]) {
@@ -9414,18 +9468,13 @@ window.loadFromCloud = async function() {
                     }
                 }
             }
-
-            // If we found ghost data, silently wipe it from the cloud so it never comes back!
-            if (needsCloudSave && typeof window.saveToCloud === 'function') {
-                window.saveToCloud();
-            }
+            if (needsCloudSave && typeof window.saveToCloud === 'function') window.saveToCloud();
         }
 
         const mm = String(currentMonth).padStart(2, '0');
         const monthInput = document.getElementById("monthSelector");
         if (monthInput) monthInput.value = `${currentYear}-${mm}`;
 
-        // Ensure the active tab defaults to a branch that actually exists
         if(!window.currentActiveTab || window.currentActiveTab === "Main Office" || (window.globalActiveBranches && !window.globalActiveBranches.includes(window.currentActiveTab))) {
             let validBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ['Cabantian'];
             window.currentActiveTab = validBranches.length > 0 ? validBranches[0] : 'Cabantian';
@@ -9859,24 +9908,45 @@ window.markUnavailable = function() {
     window.saveToCloud();
 };
 
-window.removeUnavailable = function(date, emp) {
-    if (!confirm(`Remove ${emp} leave?`)) return;
-    delete unavailability[date][emp];
-    if (Object.keys(unavailability[date]).length === 0) delete unavailability[date];
+window.removeUnavailable = async function(date, emp) {
+    let confirm = await Swal.fire({
+        title: `Remove ${emp}?`,
+        html: `Remove <b>${emp}</b> from the Off/Leave/Suspended list for <b>${date}</b>?<br><br><span style="font-size: 12px; color: #64748b;">This will place them back on Standby for this day.</span>`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#10b981',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Yes, remove them',
+        customClass: { popup: 'rounded-2xl' }
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    if (unavailability[date] && unavailability[date][emp]) {
+        delete unavailability[date][emp];
+        if (Object.keys(unavailability[date]).length === 0) delete unavailability[date];
+    }
+    
     window.updateUnavailabilityList();
+
     if (currentSchedule[1]) {
         const [y, m, d] = date.split('-').map(Number);
         if (y === currentYear && m === currentMonth) {
             for (const branch in currentSchedule[d]) {
                 let bData = currentSchedule[d][branch];
                 bData.unavailable = bData.unavailable.filter(u => u.name !== emp);
-                const eObj = employees.find(e => e.name === emp);
-                if (eObj && eObj.branch === branch && !bData.rest.includes(emp)) bData.rest.push(emp);
+                
+                const eObj = window.employees.find(e => e.name === emp);
+                if (eObj && eObj.branch === branch && !bData.rest.includes(emp)) {
+                    let isSched = Object.values(bData.scheduled).includes(emp);
+                    if(!isSched) bData.rest.push(emp);
+                }
             }
             window.renderTables();
         }
     }
     window.saveToCloud();
+    Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Removed!', showConfirmButton: false, timer: 1500});
 };
 
 window.generateSchedule = async function() {
@@ -10207,15 +10277,17 @@ window.renderTables = function() {
         const cBox = document.createElement("div");
         cBox.className = `tab-content ${isAct ? 'active' : ''}`; cBox.id = `content-${branch}`;
         const activeShifts = branchConfig[branch].filter(s => s.active);
+        
+        // 🔥 ADDED THE SUSPENDED / AWOL COLUMN HEADER 🔥
         let tableHTML = `<table class="sched-table"><thead><tr><th class="date-col">Date</th>`;
         activeShifts.forEach(s => tableHTML += `<th>${s.name}</th>`);
-        tableHTML += `<th>Standby</th><th>Off / Leave</th></tr></thead><tbody>`;
+        tableHTML += `<th>Standby</th><th>Off / Leave</th><th>Suspended / AWOL</th></tr></thead><tbody>`;
 
         for (let day in currentSchedule) {
+            let fullDateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const dStr = new Date(currentYear, currentMonth - 1, day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
             tableHTML += `<tr><td class="date-col">${dStr}</td>`;
             
-            // 🔥 THE CRASH FIX: Safely fallback if a branch was newly added and doesn't have schedule data for this day yet!
             let dayData = currentSchedule[day][branch] || { scheduled: {}, rest: [], unavailable: [] };
 
             activeShifts.forEach(s => {
@@ -10228,9 +10300,18 @@ window.renderTables = function() {
             let restArr = dayData.rest || [];
             tableHTML += `<td class="rest-day">${restArr.join(", ") || "-"}</td>`;
             
+            // 🔥 THE MAGIC COLUMN SPLITTER & CLICKABLE CHIPS 🔥
             let unArr = dayData.unavailable || [];
-            const un = unArr.map(u => `${u.name} (${u.status})`).join("<br>");
-            tableHTML += `<td>${un || "-"}</td></tr>`;
+            
+            // Split them into two groups based on the word "Suspend" or "AWOL"
+            let offStaff = unArr.filter(u => !u.status.toLowerCase().includes('suspend') && !u.status.toLowerCase().includes('awol'));
+            let suspStaff = unArr.filter(u => u.status.toLowerCase().includes('suspend') || u.status.toLowerCase().includes('awol'));
+
+            let offHtml = offStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin-bottom:4px; display:inline-block; color:#dc2626; background:#fef2f2; border:1px solid #fca5a5;" onclick="window.removeUnavailable('${fullDateStr}', '${u.name}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
+            
+            let suspHtml = suspStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin-bottom:4px; display:inline-block; color:#b91c1c; background:#fee2e2; border:1px solid #f87171;" onclick="window.removeUnavailable('${fullDateStr}', '${u.name}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
+
+            tableHTML += `<td>${offHtml || "-"}</td><td>${suspHtml || "-"}</td></tr>`;
         }
         cBox.innerHTML = tableHTML + `</tbody></table>`;
         contentWrap.appendChild(cBox);
