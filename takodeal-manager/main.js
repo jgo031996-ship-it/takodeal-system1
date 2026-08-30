@@ -26139,3 +26139,143 @@ window.saveInventoryCycles = async function() {
         Swal.fire('Error', 'Failed to save cycle configurations. Check connection.', 'error');
     }
 };
+
+// ========================================================
+// ⚙️ UNIFIED POS CONFIG HUB ENGINE
+// ========================================================
+
+window.switchPosConfigSection = function(sectionId) {
+    // Hide all sections
+    document.querySelectorAll('.pos-config-section').forEach(el => {
+        el.style.display = 'none';
+    });
+    // Show the selected one
+    let target = document.getElementById('section-' + sectionId);
+    if (target) {
+        target.style.display = 'block';
+        
+        // Auto-refresh the lists if they click on the tab to ensure data is fresh!
+        if (sectionId === 'menuArrangement' && typeof window.loadPosLayout === 'function') window.loadPosLayout();
+        if (sectionId === 'sidebarArrangement' && typeof window.loadSidebarLayout === 'function') window.loadSidebarLayout();
+    }
+};
+
+// 🔥 UPGRADED SIDEBAR ARRANGEMENT UI & THE "UNDEFINED" BUG FIX 🔥
+window.sidebarTabNames = {
+    'nav-pos': { icon: '🖥️', name: 'Point of Sale' },
+    'nav-sales': { icon: '🧾', name: 'Shift Sales' },
+    'nav-remit': { icon: '💸', name: 'Remit Cash to HQ' },
+    'nav-staffreq': { icon: '📝', name: 'Staff Requests' },
+    'nav-sop': { icon: '📋', name: 'Daily SOPs' },
+    'nav-prep': { icon: '🔪', name: 'Kitchen Prep' },
+    'nav-consumables': { icon: '🧹', name: 'Consumables' },
+    'nav-deliveries': { icon: '🚚', name: 'Incoming Stock' },
+    'nav-mobilehub': { icon: '📱', name: 'Mobile Hub' },
+    'nav-stockreq': { icon: '📦', name: 'Live Stock & AI' },
+    'nav-waste': { icon: '🗑️', name: 'Log Waste' },
+    'nav-timeclock': { icon: '📸', name: 'Time Clock' },
+    'nav-schedule': { icon: '📅', name: 'Branch Schedule' },
+    'nav-grab': { icon: '🟢', name: 'Log Grab Earnings' },
+    'nav-bulletin': { icon: '📢', name: 'Bulletin Board' },
+    'nav-printer': { icon: '🖨️', name: 'Printer Setup' }
+};
+
+window.loadSidebarLayout = async function() {
+    const container = document.getElementById('sidebarArrangementList');
+    if (!container) return;
+    container.innerHTML = '<div style="padding: 40px; text-align: center; color: #64748b; font-weight: bold;">Loading sidebar layout...</div>';
+
+    try {
+        const snap = await window.getDoc(window.doc(window.db, "settings", "sidebar_layout"));
+        let masterList = Object.keys(window.sidebarTabNames); 
+        
+        let savedTabs = [];
+        if (snap.exists() && snap.data().tabs) {
+            savedTabs = snap.data().tabs;
+        }
+
+        // Auto-inject missing/new tabs to the bottom of the list
+        masterList.forEach(id => {
+            if (!savedTabs.some(t => t.id === id)) {
+                savedTabs.push({ id: id, isHidden: false });
+            }
+        });
+
+        // Filter out old dead tabs that no longer exist
+        window.currentSidebarLayout = savedTabs.filter(t => masterList.includes(t.id));
+
+        let html = '';
+        window.currentSidebarLayout.forEach((tab, idx) => {
+            let tabInfo = window.sidebarTabNames[tab.id];
+            let vColor = tab.isHidden ? '#dc2626' : '#16a34a';
+            let vBg = tab.isHidden ? '#fef2f2' : '#dcfce7';
+            let vBorder = tab.isHidden ? '#fca5a5' : '#bbf7d0';
+            let vText = tab.isHidden ? '👁️ Hidden' : '👁️ Visible';
+
+            html += `
+                <div style="display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #cbd5e1; padding: 12px 15px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); opacity: ${tab.isHidden ? '0.6' : '1'}; transition: 0.2s;">
+                    <div style="display: flex; gap: 8px;">
+                        <button onclick="window.moveSidebarItem(${idx}, -1)" style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 6px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: ${idx === 0 ? 'not-allowed' : 'pointer'};" ${idx === 0 ? 'disabled' : ''}>▲ UP</button>
+                        <button onclick="window.moveSidebarItem(${idx}, 1)" style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 6px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: ${idx === window.currentSidebarLayout.length - 1 ? 'not-allowed' : 'pointer'};" ${idx === window.currentSidebarLayout.length - 1 ? 'disabled' : ''}>▼ DOWN</button>
+                    </div>
+                    
+                    <div style="font-weight: 900; color: #1e293b; font-size: 15px; flex: 1; margin-left: 15px; display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 18px;">${tabInfo.icon}</span> ${tabInfo.name}
+                    </div>
+                    
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <button onclick="window.toggleSidebarVisibility(${idx})" style="background: ${vBg}; color: ${vColor}; border: 1px solid ${vBorder}; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: pointer;">${vText}</button>
+                        <div style="background: #f8fafc; border: 1px solid #e2e8f0; color: #94a3b8; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 4px;">Pos: ${idx + 1}</div>
+                    </div>
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    } catch(e) {
+        console.error(e);
+        container.innerHTML = '<div style="color: #ef4444; font-weight: bold; text-align: center; padding: 40px;">Error loading layout.</div>';
+    }
+};
+
+window.moveSidebarItem = function(index, dir) {
+    let newIndex = index + dir;
+    if (newIndex < 0 || newIndex >= window.currentSidebarLayout.length) return;
+    let temp = window.currentSidebarLayout[index];
+    window.currentSidebarLayout[index] = window.currentSidebarLayout[newIndex];
+    window.currentSidebarLayout[newIndex] = temp;
+    
+    let html = '';
+    window.currentSidebarLayout.forEach((tab, idx) => {
+        let tabInfo = window.sidebarTabNames[tab.id];
+        let vColor = tab.isHidden ? '#dc2626' : '#16a34a';
+        let vBg = tab.isHidden ? '#fef2f2' : '#dcfce7';
+        let vBorder = tab.isHidden ? '#fca5a5' : '#bbf7d0';
+        let vText = tab.isHidden ? '👁️ Hidden' : '👁️ Visible';
+
+        html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; background: white; border: 1px solid #cbd5e1; padding: 12px 15px; border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); opacity: ${tab.isHidden ? '0.6' : '1'}; transition: 0.2s;">
+                <div style="display: flex; gap: 8px;">
+                    <button onclick="window.moveSidebarItem(${idx}, -1)" style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 6px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: ${idx === 0 ? 'not-allowed' : 'pointer'};" ${idx === 0 ? 'disabled' : ''}>▲ UP</button>
+                    <button onclick="window.moveSidebarItem(${idx}, 1)" style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 6px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: ${idx === window.currentSidebarLayout.length - 1 ? 'not-allowed' : 'pointer'};" ${idx === window.currentSidebarLayout.length - 1 ? 'disabled' : ''}>▼ DOWN</button>
+                </div>
+                
+                <div style="font-weight: 900; color: #1e293b; font-size: 15px; flex: 1; margin-left: 15px; display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 18px;">${tabInfo.icon}</span> ${tabInfo.name}
+                </div>
+                
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <button onclick="window.toggleSidebarVisibility(${idx})" style="background: ${vBg}; color: ${vColor}; border: 1px solid ${vBorder}; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: pointer;">${vText}</button>
+                    <div style="background: #f8fafc; border: 1px solid #e2e8f0; color: #94a3b8; font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 4px;">Pos: ${idx + 1}</div>
+                </div>
+            </div>
+        `;
+    });
+    document.getElementById('sidebarArrangementList').innerHTML = html;
+};
+
+window.toggleSidebarVisibility = function(index) {
+    window.currentSidebarLayout[index].isHidden = !window.currentSidebarLayout[index].isHidden;
+    
+    // Quick redraw by reusing the exact same logic
+    window.moveSidebarItem(0, 0); 
+};
