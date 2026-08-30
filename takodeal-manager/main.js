@@ -26020,20 +26020,20 @@ window.forceMarkDeductionPaid = async function(docId, staffName, staffDocId) {
          if (typeof window.loadLedger === 'function') window.loadLedger();
      } catch(e) { console.error(e); }
 };
+
 // ========================================================
 // 📅 INVENTORY CHECKING CYCLE MANAGER
 // ========================================================
-
 window.loadInventoryCycles = async function() {
     let branch = document.getElementById('cycleBranchSelect').value;
     let tbody = document.getElementById('cycleItemsList');
     
     if (!branch) {
-        tbody.innerHTML = '<tr><td colspan="3" style="padding: 40px; text-align: center; color: #94a3b8; font-weight: bold; font-size: 15px;">Select a branch above to load items...</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" style="padding: 40px; text-align: center; color: #94a3b8; font-weight: bold; font-size: 15px;">Select a branch above to load items...</td></tr>';
         return;
     }
 
-    tbody.innerHTML = '<tr><td colspan="3" style="padding: 40px; text-align: center; color: #0ea5e9; font-weight: bold; font-size: 15px;">⏳ Loading inventory...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="padding: 40px; text-align: center; color: #0ea5e9; font-weight: bold; font-size: 15px;">⏳ Loading inventory...</td></tr>';
 
     try {
         const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch));
@@ -26051,17 +26051,40 @@ window.loadInventoryCycles = async function() {
 
             let cat = item.category || 'Uncategorized';
             if (cat !== currentCategory) {
-                html += `<tr><td colspan="3" style="background: #f1f5f9; padding: 10px 15px; font-weight: 900; color: #475569; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">📁 ${cat}</td></tr>`;
+                // Notice the colspan is now 4!
+                html += `<tr><td colspan="4" style="background: #f1f5f9; padding: 10px 15px; font-weight: 900; color: #475569; text-transform: uppercase; font-size: 12px; letter-spacing: 1px;">📁 ${cat}</td></tr>`;
                 currentCategory = cat;
             }
 
             let cycle = item.restockCycle || 'As Needed';
             let selectColor = cycle === 'Weekly' ? '#10b981' : (cycle === 'Monthly' ? '#8b5cf6' : (cycle === 'Daily' ? '#f59e0b' : '#0ea5e9'));
 
+            // 🔥 CALCULATE REMAINING STOCK UI 🔥
+            let stock = parseFloat(item.currentStock) || 0;
+            let bUom = item.uom || item.baseUom || 'units';
+            let pUom = item.purchaseUom || item.purchUom || bUom;
+            let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+            
+            let stockDisplay = '';
+            if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                let wPurch = Math.floor(stock / conv);
+                let rBase = stock - (wPurch * conv);
+                if (stock < 0) { wPurch = Math.ceil(stock / conv); rBase = stock - (wPurch * conv); }
+                
+                let str = '';
+                if (wPurch !== 0) str += `<strong style="font-size:14px; color:#0f172a;">${wPurch}</strong> <span style="font-size:10px; color:#64748b; text-transform:uppercase;">${pUom}</span> `;
+                if (rBase !== 0 || wPurch === 0) str += `<strong style="font-size:14px; color:#0f172a;">${rBase.toFixed(1)}</strong> <span style="font-size:10px; color:#64748b; text-transform:uppercase;">${bUom}</span>`;
+                
+                stockDisplay = `<div style="background: #f0f9ff; border: 1px solid #bae6fd; padding: 4px 8px; border-radius: 6px; display: inline-block;">${str}</div>`;
+            } else {
+                stockDisplay = `<div style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 4px 8px; border-radius: 6px; display: inline-block;"><strong style="font-size:14px; color:#0f172a;">${stock.toFixed(1)}</strong> <span style="font-size:10px; color:#64748b; text-transform:uppercase;">${bUom}</span></div>`;
+            }
+
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                     <td style="padding: 12px 15px; font-weight: bold; color: #334155; font-size: 14px;">${item.name}</td>
                     <td style="padding: 12px 15px; text-align: center;"><span class="badge badge-closed" style="font-size: 10px;">${cat}</span></td>
+                    <td style="padding: 12px 15px; text-align: center;">${stockDisplay}</td>
                     <td style="padding: 12px 15px; text-align: right;">
                         <select class="cycle-select-input" data-id="${item.id}" onchange="this.style.color = this.value === 'Weekly' ? '#10b981' : (this.value === 'Monthly' ? '#8b5cf6' : (this.value === 'Daily' ? '#f59e0b' : '#0ea5e9'));" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: ${selectColor}; background: #f8fafc; cursor: pointer; font-size: 13px; min-width: 140px;">
                             <option value="Weekly" ${cycle === 'Weekly' ? 'selected' : ''}>Weekly</option>
@@ -26074,10 +26097,10 @@ window.loadInventoryCycles = async function() {
             `;
         });
         
-        tbody.innerHTML = html || '<tr><td colspan="3" style="padding: 40px; text-align: center; color: #94a3b8; font-weight: bold; font-size: 15px;">No items found.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="4" style="padding: 40px; text-align: center; color: #94a3b8; font-weight: bold; font-size: 15px;">No items found.</td></tr>';
     } catch(e) {
         console.error(e);
-        tbody.innerHTML = '<tr><td colspan="3" style="padding: 40px; text-align: center; color: #ef4444; font-weight: bold; font-size: 15px;">❌ Error loading data.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" style="padding: 40px; text-align: center; color: #ef4444; font-weight: bold; font-size: 15px;">❌ Error loading data.</td></tr>';
     }
 };
 
