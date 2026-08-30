@@ -9532,7 +9532,58 @@ window.updateHolidayList = function() {
     });
 };
 
-// --- CORE UI FUNCTIONS ---
+// --- CORE UI FUNCTIONS & DYNAMIC SHIFT GENERATOR ---
+
+// 🔥 NEW: Captures what you typed so it doesn't get erased when you click "Add Shift"
+window.captureTempShiftConfig = function() {
+    let branchesToRender = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : Object.keys(branchConfig);
+    branchesToRender.forEach(branch => {
+        if (!branchConfig[branch]) return;
+        branchConfig[branch].forEach((shift, index) => {
+            let chk = document.getElementById(`chk_${branch}_${index}`);
+            let inp = document.getElementById(`inp_${branch}_${index}`);
+            let start = document.getElementById(`start_${branch}_${index}`);
+            let end = document.getElementById(`end_${branch}_${index}`);
+            
+            if (chk) shift.active = chk.checked;
+            if (inp) shift.name = inp.value.trim();
+            if (start) shift.startTime = start.value;
+            if (end) shift.endTime = end.value;
+            
+            const dChks = document.querySelectorAll(`.day-chk-${branch}-${index}`);
+            if (dChks.length > 0) {
+                shift.days = Array.from(dChks).filter(c => c.checked).map(c => parseInt(c.value));
+            }
+        });
+    });
+};
+
+// 🔥 NEW: Instantly adds a new shift slot!
+window.addNewShiftToBranch = function(branch) {
+    window.captureTempShiftConfig(); // Save what they typed so far
+    if (!branchConfig[branch]) branchConfig[branch] = [];
+    
+    let newShiftId = 'shift_' + Date.now().toString().slice(-6);
+    branchConfig[branch].push({
+        id: newShiftId,
+        name: 'New Shift',
+        active: true,
+        startTime: '08:00',
+        endTime: '17:00',
+        days: [0, 1, 2, 3, 4, 5, 6]
+    });
+    
+    window.renderConfigUI(); // Redraw UI
+};
+
+// 🔥 NEW: Deletes a shift slot!
+window.removeShiftFromBranch = function(branch, index) {
+    if (!confirm("Are you sure you want to delete this shift?")) return;
+    window.captureTempShiftConfig();
+    branchConfig[branch].splice(index, 1);
+    window.renderConfigUI();
+};
+
 window.renderConfigUI = function() {
     const container = document.getElementById("shiftConfigGrid");
     if(!container) return;
@@ -9540,16 +9591,23 @@ window.renderConfigUI = function() {
     const dayNames = ['Su', 'M', 'T', 'W', 'Th', 'F', 'Sa'];
     
     let html = '';
-    for (const branch in branchConfig) {
-        if (!window.isBranchAllowed(branch)) continue; // 🔥 SECURITY LOCK
-        html += `<div class="shift-config-box" style="margin-bottom: 15px; border-top: 3px solid #0f766e; background: #f8fafc; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
-                    <h4 style="margin:0 0 15px 0; color:#0f766e; text-transform:uppercase; font-size: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📍 ${branch} Shifts</h4>`;
+    
+    // 🔥 THE ORDERING FIX: Use globalActiveBranches so they NEVER jump around!
+    let branchesToRender = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : Object.keys(branchConfig);
+
+    branchesToRender.forEach(branch => {
+        if (!branchConfig[branch]) return;
+        if (!window.isBranchAllowed(branch)) return; // 🔥 SECURITY LOCK
+        
+        html += `<div class="shift-config-box" style="margin-bottom: 15px; border-top: 3px solid #0f766e; background: #f8fafc; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+                    <h4 style="margin:0 0 15px 0; color:#0f766e; text-transform:uppercase; font-size: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📍 ${branch} Shifts</h4>
+                    <div style="flex: 1;">`;
         
         branchConfig[branch].forEach((shift, index) => {
-            // Backward compatibility: Extract time from name if they haven't saved it yet
             let defaultStart = shift.startTime || ""; 
             let defaultEnd = shift.endTime || "";
             
+            // Legacy Time Extractor (If they haven't saved modern times yet)
             if (!defaultStart && shift.name) {
                 let match = shift.name.match(/\((.*?)-/);
                 if (match && match[1]) {
@@ -9564,18 +9622,19 @@ window.renderConfigUI = function() {
             }
 
             html += `
-                <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
-                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); position: relative;">
+                    <button onclick="window.removeShiftFromBranch('${branch}', ${index})" style="position: absolute; top: 12px; right: 12px; background: transparent; border: none; color: #dc2626; cursor: pointer; font-size: 14px;" title="Delete Shift">✖</button>
+                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px; padding-right: 20px;">
                         <input type="checkbox" ${shift.active ? 'checked' : ''} id="chk_${branch}_${index}" style="width: 18px; height: 18px; cursor: pointer; accent-color: #0f766e;">
                         <input type="text" value="${shift.name.replace(/"/g, '&quot;')}" id="inp_${branch}_${index}" placeholder="Shift Name (e.g. Opener)" style="flex: 1; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; color: #334155; outline: none; font-size: 13px;">
                     </div>
                     <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 12px; background: #f1f5f9; padding: 10px; border-radius: 6px; border: 1px dashed #cbd5e1;">
                         <div style="flex: 1;">
-                            <label style="font-size: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 4px;">🟢 Expected Time In</label>
+                            <label style="font-size: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 4px;">🟢 Time In</label>
                             <input type="time" id="start_${branch}_${index}" value="${defaultStart}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; font-weight: bold; outline: none; color: #16a34a; box-sizing: border-box; background: white;">
                         </div>
                         <div style="flex: 1;">
-                            <label style="font-size: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 4px;">🔴 Expected Time Out</label>
+                            <label style="font-size: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 4px;">🔴 Time Out</label>
                             <input type="time" id="end_${branch}_${index}" value="${defaultEnd}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; font-weight: bold; outline: none; color: #dc2626; box-sizing: border-box; background: white;">
                         </div>
                     </div>
@@ -9583,7 +9642,6 @@ window.renderConfigUI = function() {
             `;
             
             dayNames.forEach((name, i) => {
-                // 🔥 THE CRASH FIX: If 'days' is missing, default to all days instead of crashing!
                 let safeDays = Array.isArray(shift.days) ? shift.days : [0, 1, 2, 3, 4, 5, 6];
                 html += `<label style="font-size: 12px; font-weight: bold; color: #475569; display: flex; align-items: center; gap: 4px; cursor: pointer;">
                             <input type="checkbox" value="${i}" class="day-chk-${branch}-${index}" ${safeDays.includes(i) ? 'checked' : ''} style="accent-color: #0f766e; width: 14px; height: 14px;">${name}
@@ -9592,22 +9650,18 @@ window.renderConfigUI = function() {
             
             html += `</div></div>`;
         });
-        html += `</div>`;
-    }
+
+        // 🔥 THE ADD SHIFT BUTTON 🔥
+        html += `</div>
+                 <button onclick="window.addNewShiftToBranch('${branch}')" style="width: 100%; margin-top: auto; padding: 12px; background: #e0f2fe; color: #0284c7; border: 2px dashed #bae6fd; border-radius: 8px; font-weight: 900; cursor: pointer; transition: 0.2s; font-size: 13px;">➕ Add New Shift</button>
+              </div>`;
+    });
+    
     container.innerHTML = html;
 };
 
 window.saveShiftConfigChanges = function() {
-    for (const branch in branchConfig) {
-        branchConfig[branch].forEach((shift, index) => {
-            shift.active = document.getElementById(`chk_${branch}_${index}`).checked;
-            shift.name = document.getElementById(`inp_${branch}_${index}`).value.trim();
-            shift.startTime = document.getElementById(`start_${branch}_${index}`).value; 
-            shift.endTime = document.getElementById(`end_${branch}_${index}`).value;
-            const dChks = document.querySelectorAll(`.day-chk-${branch}-${index}`);
-            shift.days = Array.from(dChks).filter(c => c.checked).map(c => parseInt(c.value));
-        });
-    }
+    window.captureTempShiftConfig();
     
     if (currentSchedule[1]) {
         for (let day in currentSchedule) {
@@ -9623,7 +9677,6 @@ window.saveShiftConfigChanges = function() {
                         let old = bData.scheduled ? bData.scheduled[s.id] : null;
                         if (old && old !== "N/A" && old !== "UNFILLED" && !bData.rest.includes(old)) bData.rest.push(old);
                     } else { 
-                        // 🔥 TASK 2 FIX: PRESERVE EXISTING ASSIGNMENTS (No Reshuffle!)
                         let oldStaff = bData.scheduled ? bData.scheduled[s.id] : null;
                         newSch[s.id] = (oldStaff && oldStaff !== "N/A") ? oldStaff : "UNFILLED"; 
                     }
@@ -9639,7 +9692,6 @@ window.saveShiftConfigChanges = function() {
     if(msg) { msg.style.display = "inline"; setTimeout(() => msg.style.display = "none", 2000); }
 };
 
-// 🔥 TASK 2 FIX: Explicit Save Manual Schedule Button Engine
 window.saveManualSchedule = async function() {
     Swal.fire({title: 'Saving Schedule...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     try {
@@ -9694,20 +9746,16 @@ window.removeEmployee = function(name) {
     window.updateStaffDisplay(); window.updateAvailDropdown(); window.updateUnavailabilityList(); window.renderTables(); window.saveToCloud();
 };
 
-// 🔥 SMART PROFILE MATCHER: Connects Schedule Nicknames to HR Legal Names!
 window.findEmployeeProfile = function(searchName) {
     if (!window.employees || !searchName) return null;
     let s = String(searchName).toLowerCase().trim();
     
-    // 1. Check for Exact Full Name Match
     let exactMatch = window.employees.find(e => String(e.name || e.cashierName || "").toLowerCase().trim() === s);
     if (exactMatch) return exactMatch;
     
-    // 2. Check for Exact Nickname Match
     let nickMatch = window.employees.find(e => String(e.scheduleNickname || e.scheduleName || "").toLowerCase().trim() === s);
     if (nickMatch) return nickMatch;
 
-    // 3. Check for Partial First Name Match (e.g., "Ivan" matches "Ivan Jay Agad")
     let partialMatch = window.employees.find(e => {
         let fName = String(e.name || e.cashierName || "").toLowerCase().trim();
         return fName.startsWith(s) && s.length >= 3; 
@@ -9764,7 +9812,6 @@ window.updateStaffDisplay = function() {
         wrapper.innerHTML = `<div style="color:#94a3b8; font-style:italic; font-size: 13px; padding: 10px;">No active staff found for ${targetBranch}.</div>`;
     } else {
         branchStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-            // 🔥 NICKNAME ENGINE: Look up their profile to find the Nickname
             let realProfile = window.findEmployeeProfile(e.name) || e;
             let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || e.name;
 
@@ -9777,7 +9824,6 @@ window.updateStaffDisplay = function() {
 
         if (reliefStaffNames.size > 0) {
             Array.from(reliefStaffNames).sort().forEach(name => {
-                // 🔥 NICKNAME ENGINE: Look up their profile to find the Nickname
                 let realProfile = window.findEmployeeProfile(name);
                 let originBranch = realProfile ? realProfile.branch : 'Unknown';
                 let displayName = realProfile ? (realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || name) : name;
@@ -9805,7 +9851,6 @@ window.updateAvailDropdown = function() {
     let optGroupMain = document.createElement('optgroup');
     optGroupMain.label = `📍 ${targetBranch} Staff`;
     branchStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-        // 🔥 NICKNAME ENGINE: Change the UI label, but keep the Value the same for the database
         let realProfile = window.findEmployeeProfile(e.name) || e;
         let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || e.name;
         
@@ -9819,7 +9864,6 @@ window.updateAvailDropdown = function() {
     let optGroupOther = document.createElement('optgroup');
     optGroupOther.label = `🌍 Relief Staff (Other Branches)`;
     otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-        // 🔥 NICKNAME ENGINE: Change the UI label, but keep the Value the same for the database
         let realProfile = window.findEmployeeProfile(e.name) || e;
         let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || e.name;
 
@@ -9860,7 +9904,6 @@ window.updateUnavailabilityList = function() {
                 hasLeaves = true;
                 let reliefTag = (eObj && eObj.branch !== targetBranch) ? ` <span style="font-size:10px; color:#d97706;">(Relief)</span>` : '';
                 
-                // 🔥 NICKNAME ENGINE: Grab the Nickname for the Leaves Display
                 let displayName = eObj ? (eObj.scheduleNickname || eObj.scheduleName || eObj.cashierName || emp) : emp;
                 
                 const div = document.createElement('div'); 
@@ -9962,7 +10005,6 @@ window.generateSchedule = async function() {
         targetBranch = activeTabBtn.innerText.replace(' Schedule', '').trim();
     }
 
-    // 🚨 STRICT CONFIRMATION MODAL TO PREVENT ACCIDENTAL WIPES
     const confirm = await Swal.fire({
         title: `Reshuffle ${targetBranch}?`,
         html: `You are about to Auto-Generate the entire month's schedule for <b>${targetBranch}</b>.<br><br><span style="color:#dc2626; font-weight:bold;">Warning: This will overwrite any manual swaps, leaves, or changes you made for this branch this month!</span>`,
@@ -9978,7 +10020,6 @@ window.generateSchedule = async function() {
 
     Swal.fire({title: 'Generating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     
-    // If the calendar is totally empty, build the shell first so we don't crash
     if (Object.keys(currentSchedule).length === 0) {
         for (let day = 1; day <= daysInMonth; day++) {
             currentSchedule[day] = {};
@@ -9988,12 +10029,10 @@ window.generateSchedule = async function() {
         }
     }
     
-    // NOW, we ONLY loop through the target branch to reshuffle it!
     for (let day = 1; day <= daysInMonth; day++) {
         const dStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dOfWeek = new Date(currentYear, currentMonth - 1, day).getDay();
         
-        // Ensure the branch object exists for this day before trying to edit it
         if (!currentSchedule[day][targetBranch]) {
             currentSchedule[day][targetBranch] = { scheduled: {}, rest: [], unavailable: [] };
         }
@@ -10001,7 +10040,6 @@ window.generateSchedule = async function() {
         let pool = employees.filter(e => e.branch === targetBranch).map(e => e.name);
         let available = [];
         
-        // Reset the unavailability list for this branch for this day
         currentSchedule[day][targetBranch].unavailable = [];
         
         pool.forEach(name => {
@@ -10014,10 +10052,8 @@ window.generateSchedule = async function() {
         
         let shuffled = available.sort(() => 0.5 - Math.random());
         
-        // Wipe their old schedule for this day and rewrite it
         currentSchedule[day][targetBranch].scheduled = {};
         
-        // Safety check to ensure the branch config exists
         if (branchConfig[targetBranch]) {
             branchConfig[targetBranch].filter(s => s.active).forEach(shift => {
                 if (!shift.days.includes(dOfWeek)) {
@@ -10045,21 +10081,18 @@ window.generateSchedule = async function() {
 window.openSwapModal = function(day, branch, shiftId, currentStaff) {
     window.swapData = { day, branch, shiftId, currentStaff };
     
-    // 🔥 Safe profile check
     let profileFunc = window.findEmployeeProfile || function() { return null; };
     let currentProfile = profileFunc(currentStaff) || { scheduleNickname: currentStaff };
     let currentDisplayName = currentProfile.scheduleNickname || currentProfile.scheduleName || currentProfile.cashierName || currentStaff;
     
-    // Title check
     let titleEl = document.getElementById('swapCurrentStaff') || document.getElementById('swapStaffName') || document.getElementById('swapEmpName');
     if (titleEl) titleEl.innerText = currentDisplayName;
     
     const select = document.getElementById('swapSelect') || document.getElementById('swapCandidateSelect') || document.getElementById('swapTarget');
-    if (!select) return; // Failsafe
+    if (!select) return; 
     
     select.innerHTML = '<option value="">-- Choose Staff --</option>';
 
-    // 🚑 SAFELY GRAB THE SCHEDULE OBJECT
     let schedObj = window.currentSchedule || (typeof currentSchedule !== 'undefined' ? currentSchedule : null);
     
     if (!schedObj) {
@@ -10068,21 +10101,13 @@ window.openSwapModal = function(day, branch, shiftId, currentStaff) {
     }
 
     let dayData;
-    
-    // 🚑 SELF-HEALING FIREWALL: Check the structure before trying to read it!
     if (schedObj[day] && schedObj[day][branch]) {
-        // Structure A: currentSchedule[day][branch] (Expected behavior)
         dayData = schedObj[day][branch];
     } else if (schedObj[branch]) {
-        // Structure B: currentSchedule[branch] (Self-healing if 'day' isn't used as the top layer)
         console.warn(`⚠️ Warning: 'day' (${day}) not found, but found '${branch}'. Adjusting path automatically.`);
         dayData = schedObj[branch];
     } else {
-        // CRITICAL FAILURE: It's broken, so we log the variables to show you exactly why.
         console.error("🚨 DATA MISMATCH IN openSwapModal!");
-        console.error("-> Day Passed:", day);
-        console.error("-> Branch Passed:", branch);
-        console.error("-> Inside Schedule Object:", schedObj);
         return alert(`Error pulling data for Day: ${day}, Branch: ${branch}. Check F12 Console.`);
     }
 
@@ -10095,7 +10120,6 @@ window.openSwapModal = function(day, branch, shiftId, currentStaff) {
             let staff = dayData.scheduled[sId];
             if (staff !== "N/A" && staff !== "UNFILLED" && staff !== currentStaff) {
                 let shiftName = sId;
-                // Safe check for branch configurations
                 if (window.branchConfig && window.branchConfig[branch]) {
                     let foundShift = window.branchConfig[branch].find(s => s.id === sId);
                     if (foundShift) shiftName = foundShift.name;
@@ -10199,7 +10223,6 @@ window.executeSwap = async function() {
     if (typeof window.updateUnavailabilityList === 'function') window.updateUnavailabilityList();
     if (typeof window.saveToCloud === 'function') window.saveToCloud();
 
-    // 🔥 THE MAGIC FIX: Auto-Delete pending Late Letters & Refresh Data!
     try {
         let targetDate = new Date(currentYear, currentMonth - 1, day);
         let startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0);
@@ -10215,19 +10238,14 @@ window.executeSwap = async function() {
         reqSnap.forEach(docSnap => {
             let r = docSnap.data();
             let rTime = r.timestamp ? (r.timestamp.toDate ? r.timestamp.toDate() : new Date(r.timestamp)) : null;
-            
-            // If the late letter was sent on the exact day we just swapped...
             if (rTime && rTime >= startOfDay && rTime <= endOfDay) {
-                // ...and it belongs to the person who was late
                 if (r.staffName === curStaff || r.staffName === newStaff) {
                     deletePromises.push(window.deleteDoc(window.doc(window.db, "staff_requests", docSnap.id)));
                 }
             }
         });
-
         await Promise.all(deletePromises);
         
-        // Aggressively refresh the background tables so the red 'Late' badges vanish instantly!
         if (typeof window.loadAttendanceLogs === 'function') window.loadAttendanceLogs();
         if (typeof window.loadPayrollDashboard === 'function') window.loadPayrollDashboard();
         if (typeof window.loadInbox === 'function') window.loadInbox();
@@ -10243,16 +10261,13 @@ window.closeModal = function() {
     window.swapData = null; 
 };
 
-// 🔥 TAB MEMORY ENGINE
 window.switchTab = function(branch) {
-    // 🔥 THE FIX: Force BOTH memory tags to sync instantly!
     window.currentActiveTab = branch; 
     try { currentActiveTab = branch; } catch(e) {} 
     
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.id === `btn-${branch}`));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `content-${branch}`));
     
-    // Update the top boxes to match the clicked branch!
     window.updateStaffDisplay(); 
     window.updateAvailDropdown(); 
     window.updateUnavailabilityList();
@@ -10267,8 +10282,13 @@ window.renderTables = function() {
     const contentWrap = document.createElement("div");
     container.appendChild(tabBox); container.appendChild(contentWrap);
 
-    for (const branch in branchConfig) {
-        if (!window.isBranchAllowed(branch)) continue; // 🔥 SECURITY LOCK
+    // 🔥 THE ORDERING FIX: Use globalActiveBranches!
+    let branchesToRender = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : Object.keys(branchConfig);
+
+    branchesToRender.forEach(branch => {
+        if (!branchConfig[branch]) return;
+        if (!window.isBranchAllowed(branch)) return; // 🔥 SECURITY LOCK
+        
         const isAct = (branch === currentActiveTab); // Check memory!
         const btn = document.createElement("button");
         btn.className = `tab-btn ${isAct ? 'active' : ''}`; btn.innerText = `${branch} Schedule`; btn.id = `btn-${branch}`;
@@ -10303,7 +10323,6 @@ window.renderTables = function() {
             // 🔥 THE MAGIC COLUMN SPLITTER & CLICKABLE CHIPS 🔥
             let unArr = dayData.unavailable || [];
             
-            // Split them into two groups based on the word "Suspend" or "AWOL"
             let offStaff = unArr.filter(u => !u.status.toLowerCase().includes('suspend') && !u.status.toLowerCase().includes('awol'));
             let suspStaff = unArr.filter(u => u.status.toLowerCase().includes('suspend') || u.status.toLowerCase().includes('awol'));
 
@@ -10315,7 +10334,7 @@ window.renderTables = function() {
         }
         cBox.innerHTML = tableHTML + `</tbody></table>`;
         contentWrap.appendChild(cBox);
-    }
+    });
 };
 
 // ==========================================
