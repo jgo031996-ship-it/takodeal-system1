@@ -2247,7 +2247,8 @@
 
         let html = '';
         safeItems.forEach((item, index) => {
-            let safePrice = parseFloat(item.price) || 0;
+            // 🔥 THE CRASH FIX: Only declaring safePrice ONCE!
+            let safePrice = parseFloat(item.price || item.basePrice) || 0;
             if (window.posPlatform === 'Grab' && item.grabPrice) safePrice = parseFloat(item.grabPrice) || safePrice;
             if (window.posPlatform === 'Foodpanda' && item.foodpandaPrice) safePrice = parseFloat(item.foodpandaPrice) || safePrice;
             
@@ -2270,11 +2271,10 @@
                 badgeHtml = `<div style="position: absolute; top: -8px; right: -8px; background: #f59e0b; color: white; font-size: 10px; font-weight: 900; padding: 4px 8px; border-radius: 12px; border: 2px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 10; animation: pulse 2s infinite;">LOW STOCK</div>`;
             }
             
-            // 🔥 CRITICAL PRICE SYNC FIX 🔥
-            let safePrice = parseFloat(item.price || item.basePrice) || 0;
-            if (window.posPlatform === 'Grab' && item.grabPrice) safePrice = parseFloat(item.grabPrice) || safePrice;
-            if (window.posPlatform === 'Foodpanda' && item.foodpandaPrice) safePrice = parseFloat(item.foodpandaPrice) || safePrice;
-    
+            let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
+            let safeName = item.name.replace(/'/g, "\\'");
+            let catSafe = (item.category || '').replace(/'/g, "\\'");
+
             let displayName = item.name;
             if (item.category && displayName.toLowerCase().startsWith(item.category.toLowerCase())) {
                 displayName = displayName.substring(item.category.length).trim();
@@ -2290,8 +2290,7 @@
             let statusColor = isSoldOut ? '#dc2626' : '#16a34a';
             let statusBg = isSoldOut ? '#fef2f2' : '#dcfce7';
             let statusBorder = isSoldOut ? '#fca5a5' : '#bbf7d0';
-    
-            // 🔥 THE NEW CLEAN SPLIT-CARD UI (With Live Dynamic Prices!)
+
             html += `
                 <div class="item-card ultra-card" data-category="${catSafe}" data-name="${item.name.toLowerCase()}" onclick="if(systemReady && ${!isSoldOut}) openAddOrderModal('${safeName}', ${safePrice})" style="height: 155px; background: white; border: 1px solid #cbd5e1; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); cursor: ${isSoldOut ? 'not-allowed' : 'pointer'}; padding: 0; ${isSoldOut ? 'opacity: 0.6;' : ''}">
                     
