@@ -19490,66 +19490,86 @@ window.loadAnnouncementHistory = async function() {
     const tbody = document.getElementById('announcementHistoryBody');
     if (!tbody) return;
     
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 40px; color: #94a3b8; font-weight: bold;">⏳ Loading logs...</td></tr>';
+
     try {
         const q = query(collection(db, "announcements"), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
         
+        // Fetch all signatures at once for speed
+        const ackSnap = await getDocs(collection(db, "acknowledgments"));
+        let acksByAnn = {};
+        
+        ackSnap.forEach(doc => {
+            let d = doc.data();
+            if (!acksByAnn[d.announcementId]) acksByAnn[d.announcementId] = [];
+            acksByAnn[d.announcementId].push(d);
+        });
+
         let html = '';
         for (let docSnap of snap.docs) {
             let d = docSnap.data();
-            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Just now';
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : 'Just now';
             
-            // 🔥 THE FIX: Strictly define the boolean state so the button math never breaks
             let isActive = d.active === true;
+            let status = isActive 
+                ? '<div style="color:#16a34a; font-weight:900; background:#dcfce7; padding:6px; border-radius:6px; font-size:11px; text-align:center; border: 1px solid #bbf7d0; display: inline-block;">Active<br>(Forced)</div>' 
+                : '<div style="color:#64748b; font-weight:900; background:#f1f5f9; padding:6px; border-radius:6px; font-size:11px; text-align:center; border: 1px solid #cbd5e1; display: inline-block;">Archived</div>';
             
-            let status = isActive ? '<span style="color:#16a34a; font-weight:bold; background:#dcfce7; padding:4px 8px; border-radius:4px;">Active (Forced)</span>' : '<span style="color:#64748b; font-weight:bold; background:#f1f5f9; padding:4px 8px; border-radius:4px;">Archived</span>';
+            let signatures = acksByAnn[docSnap.id] || [];
+            let sigCount = signatures.length;
             
-            const sigQ = query(collection(db, "acknowledgments"), where("announcementId", "==", docSnap.id));
-            const sigSnap = await getDocs(sigQ);
-            let sigCount = sigSnap.size;
-            
-            let signedNames = [];
-            sigSnap.forEach(sDoc => {
-                let staffName = sDoc.data().staffName || 'Unknown';
-                signedNames.push(staffName);
-            });
-            
+            let signedNames = signatures.map(s => s.staffName);
             let namesDisplay = signedNames.length > 0 
-                ? `<div style="font-size: 11px; color: #64748b; margin-top: 8px; line-height: 1.4;"><b>Signed by:</b> <span style="color: #4338ca;">${signedNames.join(', ')}</span></div>`
-                : `<div style="font-size: 11px; color: #94a3b8; margin-top: 8px; font-style: italic;">No signatures yet</div>`;
+                ? `<div style="font-size: 11px; color: #4338ca; margin-top: 8px; line-height: 1.5; max-width: 450px; margin-left: auto; font-weight: 500;"><b>Signed by:</b> ${signedNames.join(', ')}</div>`
+                : `<div style="font-size: 11px; color: #dc2626; margin-top: 8px; font-weight: bold;">No signatures yet</div>`;
 
+            // 🧠 PREPARE DATA FOR THE CLICKABLE POPUP MODAL
+            let sigDataForModal = signatures.map(s => ({
+                name: s.staffName,
+                date: s.timestamp ? (s.timestamp.toDate ? s.timestamp.toDate().toLocaleString('en-US', {month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'}) : new Date(s.timestamp).toLocaleString()) : 'Unknown Date'
+            }));
+
+            let modalData = encodeURIComponent(JSON.stringify({
+                title: d.title || 'Announcement',
+                message: d.message || '',
+                images: d.images || [],
+                dateStr: dateStr,
+                signatures: sigDataForModal
+            }));
+
+            // 🔥 THE FIX: The TR has onclick to open details. The Button has event.stopPropagation() so it doesn't trigger the TR!
             html += `
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 12px; color: #475569; font-size: 13px;">${dateStr}</td>
-                    <td style="padding: 12px; font-weight:bold; color: #1e293b; font-size: 15px;">${d.title}</td>
-                    <td style="padding: 12px;">${status}</td>
-                    <td style="padding: 12px; text-align: right; vertical-align: top;">
+                <tr style="border-bottom: 1px solid #e2e8f0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'" onclick="window.viewBulletinDetails('${modalData}')">
+                    <td style="padding: 20px 15px; color: #475569; font-size: 13px; font-weight: bold; vertical-align: top;">${dateStr}</td>
+                    <td style="padding: 20px 15px; font-weight: 900; color: #1e293b; font-size: 15px; vertical-align: top;">${d.title}</td>
+                    <td style="padding: 20px 15px; vertical-align: top;">${status}</td>
+                    <td style="padding: 20px 15px; text-align: right; vertical-align: top;">
                         <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
-                            <span style="background: #e0e7ff; color: #4338ca; padding: 6px 12px; border-radius: 6px; font-weight: bold;">📝 ${sigCount} Signed</span>
-                            <button onclick="window.toggleAnnouncementStatus('${docSnap.id}', ${isActive})" style="background:white; color:#475569; border:1px solid #cbd5e1; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold; transition: 0.2s;">Toggle Status</button>
+                            <span style="background: #e0e7ff; color: #4338ca; padding: 6px 12px; border-radius: 6px; font-weight: bold; border: 1px solid #c7d2fe;">📝 ${sigCount} Signed</span>
+                            <button onclick="event.stopPropagation(); window.toggleAnnouncementStatus('${docSnap.id}', ${isActive})" style="background:white; color:#475569; border:1px solid #cbd5e1; padding:6px 12px; border-radius:6px; cursor:pointer; font-weight:bold; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.02);" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'">Toggle Status</button>
                         </div>
                         ${namesDisplay}
                     </td>
                 </tr>
             `;
         }
-        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding:20px;">No announcements published yet.</td></tr>';
-    } catch(e) { console.error(e); }
+        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding:40px; color: #94a3b8; font-weight: bold;">No announcements published yet.</td></tr>';
+    } catch(e) { 
+        console.error("Fetch Error:", e); 
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 40px; color: #dc2626; font-weight: bold;">❌ Database Error. Please refresh.</td></tr>';
+    }
 };
 
 window.toggleAnnouncementStatus = async function(id, currentState) {
     try {
-        // 🔥 THE FIX: Freeze the UI so the user can't spam click and crash the Firebase data stream!
         Swal.fire({title: 'Updating Status...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         
-        // Guarantee the exact opposite state mathematically
         let newState = (currentState === true) ? false : true;
         
         await updateDoc(doc(db, "announcements", id), { active: newState });
-        
         await window.loadAnnouncementHistory();
         
-        // Let the user know the state changed cleanly
         Swal.fire({
             toast: true, position: 'top-end', icon: 'success', 
             title: newState ? 'Announcement Activated!' : 'Announcement Archived!', 
@@ -19559,6 +19579,65 @@ window.toggleAnnouncementStatus = async function(id, currentState) {
         console.error("Toggle Error: ", e);
         Swal.fire('Error', 'Failed to update status. Check your internet connection.', 'error');
     }
+};
+
+// ========================================================
+// 🔍 THE CLICKABLE DETAILS POPUP ENGINE
+// ========================================================
+window.viewBulletinDetails = function(encodedData) {
+    let data = JSON.parse(decodeURIComponent(encodedData));
+    
+    let imgHtml = '';
+    if (data.images && data.images.length > 0) {
+        imgHtml = `
+            <div style="margin-top: 20px;">
+                <label style="font-size: 11px; font-weight: 900; color: #64748b; text-transform: uppercase;">Attached Images / Schedule</label>
+                <div style="display: flex; gap: 10px; overflow-x: auto; margin-top: 8px; padding-bottom: 5px;">
+        `;
+        data.images.forEach(img => {
+            imgHtml += `<img src="${img}" style="height: 160px; border-radius: 8px; border: 1px solid #cbd5e1; object-fit: cover; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" onclick="Swal.fire({imageUrl: '${img}', imageAlt: 'Attached Image', width: 'auto', showConfirmButton: false, showCloseButton: true, customClass: {popup: 'rounded-2xl shadow-2xl'}})">`;
+        });
+        imgHtml += `</div></div>`;
+    }
+
+    let sigHtml = `
+        <div style="margin-top: 20px; border-top: 2px dashed #e2e8f0; padding-top: 15px;">
+            <label style="font-size: 11px; font-weight: 900; color: #64748b; text-transform: uppercase; margin-bottom: 10px; display: block;">Staff Acknowledgments (${data.signatures.length})</label>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-height: 200px; overflow-y: auto; padding-right: 5px;">
+    `;
+    
+    if (data.signatures.length > 0) {
+        data.signatures.forEach(sig => {
+            sigHtml += `
+                <div style="background: #f8fafc; padding: 10px 12px; border-radius: 6px; border: 1px solid #cbd5e1; display: flex; flex-direction: column;">
+                    <span style="font-size: 13px; font-weight: 900; color: #1e293b;">✅ ${sig.name}</span>
+                    <span style="font-size: 11px; color: #0ea5e9; margin-top: 2px; font-weight: bold;">${sig.date}</span>
+                </div>
+            `;
+        });
+    } else {
+        sigHtml += `<div style="color: #ef4444; font-size: 13px; font-weight: bold; grid-column: 1/-1; background: #fef2f2; padding: 10px; border-radius: 6px; border: 1px dashed #fca5a5; text-align: center;">No staff have signed this yet.</div>`;
+    }
+    sigHtml += `</div></div>`;
+
+    Swal.fire({
+        title: `<div style="text-align:left; font-size: 22px; font-weight: 900; color: #0f172a; margin-bottom: 5px;">${data.title}</div>`,
+        html: `
+            <div style="text-align: left;">
+                <div style="font-size: 12px; color: #64748b; margin-bottom: 15px; font-weight: bold;">📅 Published: ${data.dateStr}</div>
+                
+                <label style="font-size: 11px; font-weight: 900; color: #64748b; text-transform: uppercase;">Message Details</label>
+                <div style="font-size: 14px; color: #334155; line-height: 1.6; white-space: pre-wrap; background: #f1f5f9; padding: 15px; border-radius: 8px; margin-top: 8px; border: 1px solid #e2e8f0;">${data.message || 'No message description provided.'}</div>
+                
+                ${imgHtml}
+                ${sigHtml}
+            </div>
+        `,
+        width: 750,
+        showCloseButton: true,
+        showConfirmButton: false,
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
 };
 
 // ==========================================
