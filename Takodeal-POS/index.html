@@ -2174,7 +2174,6 @@
         window.posPlatform = platform;
         window.cart = window.platformCarts[platform] || [];
         
-        // 🔥 THE FIX: Tell Javascript exactly where to find the HTML to change the colors!
         let header = document.getElementById('posCartHeader');
         let titleText = document.getElementById('posCartTitle');
         let platformDropdown = document.getElementById('posPlatformSelect');
@@ -2182,6 +2181,7 @@
         let btnPlace = document.getElementById('btnMainPlaceOrder');
         let btnPark = document.getElementById('btnMainParkOrder');
         
+        // 🔥 THE COLOR ENGINE 🔥
         if (platform === 'Grab') {
             window.selectedPaymentMethod = 'Grab'; 
             if(header) { header.style.background = '#dcfce7'; header.style.borderColor = '#22c55e'; }
@@ -2211,18 +2211,13 @@
             if(platformDropdown) { platformDropdown.style.background = '#f39c12'; platformDropdown.style.color = 'white'; }
             if(btnPlace) { btnPlace.style.background = '#0ea5e9'; }
             if(btnPark) { btnPark.style.background = '#f59e0b'; }
-            
-            // 🔥 AUTO-RESET FIX: Forces the order type back to blank for standard POS!
             if (otSelect) otSelect.value = '';
-            
-            let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase() === 'cash');
-            if(payBtn) payBtn.click();
         }
         
         let total = window.cart.reduce((sum, item) => sum + (item.lineTotalFinal || 0), 0);
         window.currentGrandTotal = total; 
         
-        // Force the menu cards to redraw their prices instantly!
+        // Force the menu cards to redraw their prices!
         window.renderMenuItems();
         window.renderCart();
     };
@@ -2247,10 +2242,10 @@
 
         let html = '';
         safeItems.forEach((item, index) => {
-            // 🔥 THE CRASH FIX: Only declaring safePrice ONCE!
+            // 🔥 THE LIVE PRICE SYNC ENGINE 🔥
             let safePrice = parseFloat(item.price || item.basePrice) || 0;
-            if (window.posPlatform === 'Grab' && item.grabPrice) safePrice = parseFloat(item.grabPrice) || safePrice;
-            if (window.posPlatform === 'Foodpanda' && item.foodpandaPrice) safePrice = parseFloat(item.foodpandaPrice) || safePrice;
+            if (window.posPlatform === 'Grab' && item.grabPrice) safePrice = parseFloat(item.grabPrice);
+            if (window.posPlatform === 'Foodpanda' && item.foodpandaPrice) safePrice = parseFloat(item.foodpandaPrice);
             
             let possibleOrders = Infinity;
             if (window.masterPOSData.bom && window.masterPOSData.stockLevels) {
