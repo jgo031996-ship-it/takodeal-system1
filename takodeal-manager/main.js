@@ -9532,9 +9532,7 @@ window.updateHolidayList = function() {
     });
 };
 
-// --- CORE UI FUNCTIONS & DYNAMIC SHIFT GENERATOR ---
-
-// 🔥 NEW: Captures what you typed so it doesn't get erased when you click "Add Shift"
+// 🔥 NEW: Captures what you typed so it doesn't get erased when you move/add shifts
 window.captureTempShiftConfig = function() {
     let branchesToRender = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : Object.keys(branchConfig);
     branchesToRender.forEach(branch => {
@@ -9584,6 +9582,22 @@ window.removeShiftFromBranch = function(branch, index) {
     window.renderConfigUI();
 };
 
+// 🔥 NEW: Moves a shift UP or DOWN!
+window.moveShiftOrder = function(branch, index, direction) {
+    window.captureTempShiftConfig(); // Save everything typed before moving!
+    
+    let newIndex = index + direction;
+    // Prevent moving out of bounds
+    if (newIndex < 0 || newIndex >= branchConfig[branch].length) return;
+    
+    // Swap the shifts in memory
+    let temp = branchConfig[branch][index];
+    branchConfig[branch][index] = branchConfig[branch][newIndex];
+    branchConfig[branch][newIndex] = temp;
+    
+    window.renderConfigUI(); // Redraw UI with new order
+};
+
 window.renderConfigUI = function() {
     const container = document.getElementById("shiftConfigGrid");
     if(!container) return;
@@ -9592,12 +9606,12 @@ window.renderConfigUI = function() {
     
     let html = '';
     
-    // 🔥 THE ORDERING FIX: Use globalActiveBranches so they NEVER jump around!
+    // THE ORDERING FIX: Use globalActiveBranches so they NEVER jump around!
     let branchesToRender = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : Object.keys(branchConfig);
 
     branchesToRender.forEach(branch => {
         if (!branchConfig[branch]) return;
-        if (!window.isBranchAllowed(branch)) return; // 🔥 SECURITY LOCK
+        if (!window.isBranchAllowed(branch)) return; // SECURITY LOCK
         
         html += `<div class="shift-config-box" style="margin-bottom: 15px; border-top: 3px solid #0f766e; background: #f8fafc; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
                     <h4 style="margin:0 0 15px 0; color:#0f766e; text-transform:uppercase; font-size: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📍 ${branch} Shifts</h4>
@@ -9621,13 +9635,23 @@ window.renderConfigUI = function() {
                 }
             }
 
+            // 🔥 INJECTED THE UP/DOWN ARROW BUTTONS HERE!
             html += `
                 <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); position: relative;">
-                    <button onclick="window.removeShiftFromBranch('${branch}', ${index})" style="position: absolute; top: 12px; right: 12px; background: transparent; border: none; color: #dc2626; cursor: pointer; font-size: 14px;" title="Delete Shift">✖</button>
-                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px; padding-right: 20px;">
+                    
+                    <div style="position: absolute; top: 10px; right: 10px; display: flex; gap: 4px;">
+                        <button onclick="window.moveShiftOrder('${branch}', ${index}, -1)" style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; border-radius: 4px; cursor: ${index === 0 ? 'not-allowed' : 'pointer'}; font-size: 10px; font-weight: bold; padding: 4px 8px; transition: 0.2s;" ${index === 0 ? 'disabled' : ''} title="Move Up">▲</button>
+                        
+                        <button onclick="window.moveShiftOrder('${branch}', ${index}, 1)" style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; border-radius: 4px; cursor: ${index === branchConfig[branch].length - 1 ? 'not-allowed' : 'pointer'}; font-size: 10px; font-weight: bold; padding: 4px 8px; transition: 0.2s;" ${index === branchConfig[branch].length - 1 ? 'disabled' : ''} title="Move Down">▼</button>
+                        
+                        <button onclick="window.removeShiftFromBranch('${branch}', ${index})" style="background: #fef2f2; border: 1px solid #fca5a5; color: #dc2626; border-radius: 4px; cursor: pointer; font-size: 10px; font-weight: bold; padding: 4px 8px; margin-left: 4px; transition: 0.2s;" title="Delete Shift">✖</button>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px; padding-right: 95px;">
                         <input type="checkbox" ${shift.active ? 'checked' : ''} id="chk_${branch}_${index}" style="width: 18px; height: 18px; cursor: pointer; accent-color: #0f766e;">
                         <input type="text" value="${shift.name.replace(/"/g, '&quot;')}" id="inp_${branch}_${index}" placeholder="Shift Name (e.g. Opener)" style="flex: 1; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; color: #334155; outline: none; font-size: 13px;">
                     </div>
+                    
                     <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 12px; background: #f1f5f9; padding: 10px; border-radius: 6px; border: 1px dashed #cbd5e1;">
                         <div style="flex: 1;">
                             <label style="font-size: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 4px;">🟢 Time In</label>
@@ -9651,7 +9675,6 @@ window.renderConfigUI = function() {
             html += `</div></div>`;
         });
 
-        // 🔥 THE ADD SHIFT BUTTON 🔥
         html += `</div>
                  <button onclick="window.addNewShiftToBranch('${branch}')" style="width: 100%; margin-top: auto; padding: 12px; background: #e0f2fe; color: #0284c7; border: 2px dashed #bae6fd; border-radius: 8px; font-weight: 900; cursor: pointer; transition: 0.2s; font-size: 13px;">➕ Add New Shift</button>
               </div>`;
