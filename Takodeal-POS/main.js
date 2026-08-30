@@ -493,9 +493,7 @@ window.renderOrderAndPaymentUI = function() {
     }
 };
 
-// ========================================================
-// 🛒 CORE ORDERING & CART ENGINE
-// ========================================================
+// --- UPGRADED CART & VARIANT LOGIC ---
 window.openAddOrderModal = async function(name, basePrice, existingItem = null) {
     // 🔥 CLEAR GHOST MEMORY
     window.currentBaseFlavorsInfo = [];
@@ -577,10 +575,6 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
     let variantModal = document.getElementById('variantModal');
     if (variantModal) variantModal.style.display = 'flex';
 
-    // 🛡️ ARMOR CHECK: Safely hide old dropdown
-    let oldDropdown = document.getElementById('addonSelectDropdown');
-    if (oldDropdown) oldDropdown.style.display = 'none';
-
     // 🛡️ ARMOR CHECK: Safely display variant boxes
     let variantContainer = document.getElementById('variantOptions');
     if (variantContainer) {
@@ -635,97 +629,100 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 }
             });
 
-            // 🛡️ ARMOR CHECK: Safely inject image container
-            let nameParent = nameEl ? nameEl.parentElement.parentElement : null;
-            if (nameParent) {
-                let imgContainer = document.getElementById('modalDynamicImage');
-                if (!imgContainer) {
-                    imgContainer = document.createElement('div');
-                    imgContainer.id = 'modalDynamicImage';
-                    nameParent.insertAdjacentElement('beforebegin', imgContainer);
-                }
+            // 🛡️ ARMOR CHECK: Inject image container
+            let imgContainer = document.getElementById('modalDynamicImage');
+            if (imgContainer) {
                 if (itemData.image) {
-                    imgContainer.innerHTML = `<div style="text-align: center; margin-bottom: 15px; display: flex; justify-content: center; background: #f8fafc; border-radius: 12px;"><img src="${itemData.image}" style="width: 100%; max-height: 160px; object-fit: contain; border-radius: 12px;"></div>`;
+                    imgContainer.innerHTML = `<div style="text-align: center; margin-bottom: 15px; display: flex; justify-content: center; background: #f8fafc; border-radius: 12px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);"><img src="${itemData.image}" style="width: 100%; max-height: 180px; object-fit: cover;"></div>`;
                 } else {
                     imgContainer.innerHTML = '';
                 }
             }
 
-            let addonContainer = oldDropdown ? oldDropdown.parentElement : null;
-            if (addonContainer) {
-                let newUiHtml = '';
+            let baseFlavorHtml = '';
+            let extraAddonHtml = '';
 
-                if (itemData.addons && itemData.addons.length > 0) {
-                    let groupedAddons = {};
-                    itemData.addons.forEach(a => {
-                        if (!groupedAddons[a.name]) groupedAddons[a.name] = { ...a, price: parseFloat(a.price) || 0 };
-                        else groupedAddons[a.name].price += (parseFloat(a.price) || 0);
+            if (itemData.addons && itemData.addons.length > 0) {
+                let groupedAddons = {};
+                itemData.addons.forEach(a => {
+                    if (!groupedAddons[a.name]) groupedAddons[a.name] = { ...a, price: parseFloat(a.price) || 0 };
+                    else groupedAddons[a.name].price += (parseFloat(a.price) || 0);
+                });
+
+                let addonsList = Object.values(groupedAddons);
+                
+                if (window.masterPOSData && window.masterPOSData.addonLayoutNames) {
+                    addonsList.sort((a,b) => {
+                        let idxA = window.masterPOSData.addonLayoutNames.indexOf(a.name.toLowerCase());
+                        let idxB = window.masterPOSData.addonLayoutNames.indexOf(b.name.toLowerCase());
+                        if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                        if (idxA !== -1) return -1;
+                        if (idxB !== -1) return 1;
+                        return a.name.localeCompare(b.name);
+                    });
+                }
+                
+                let baseFlavors = addonsList.filter(a => a.price === 0);
+                let extras = addonsList.filter(a => a.price > 0);
+
+                if (baseFlavors.length > 0) {
+                    window.currentBaseFlavorsInfo = baseFlavors;
+                    
+                    baseFlavors.forEach((bf, bfIdx) => {
+                        if (existingItem && existingItem.addons && existingItem.addons[bf.name]) {
+                            window.baseFlavorState[bf.name] = existingItem.addons[bf.name].qty;
+                        } else {
+                            window.baseFlavorState[bf.name] = 0; 
+                        }
                     });
 
-                    let addonsList = Object.values(groupedAddons);
-                    
-                    if (window.masterPOSData && window.masterPOSData.addonLayoutNames) {
-                        addonsList.sort((a,b) => {
-                            let idxA = window.masterPOSData.addonLayoutNames.indexOf(a.name.toLowerCase());
-                            let idxB = window.masterPOSData.addonLayoutNames.indexOf(b.name.toLowerCase());
-                            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-                            if (idxA !== -1) return -1;
-                            if (idxB !== -1) return 1;
-                            return a.name.localeCompare(b.name);
-                        });
-                    }
-                    
-                    let baseFlavors = addonsList.filter(a => a.price === 0);
-                    let extras = addonsList.filter(a => a.price > 0);
+                    baseFlavorHtml += `
+                        <div class="section-title" style="margin-bottom: 8px; width: 100%; text-align: left; display: flex; justify-content: space-between;">
+                            <span>SELECT ADD-ONS<br><span style="color:#0ea5e9;">BASE FLAVOR (Required)</span></span>
+                            <span id="baseFlavorCounter" style="color: #dc2626;">0 / 1 Pcs</span>
+                        </div>
+                        <div id="baseFlavorList" style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 8px; width: 100%; box-sizing: border-box;"></div>
+                    `;
+                }
 
-                    if (baseFlavors.length > 0) {
-                        window.currentBaseFlavorsInfo = baseFlavors;
-                        
-                        baseFlavors.forEach((bf, bfIdx) => {
-                            if (existingItem && existingItem.addons && existingItem.addons[bf.name]) {
-                                window.baseFlavorState[bf.name] = existingItem.addons[bf.name].qty;
-                            } else {
-                                window.baseFlavorState[bf.name] = 0; 
-                            }
-                        });
-
-                        newUiHtml += `
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 5px; width: 100%;">
-                                <label style="font-size: 11px; font-weight: bold; color: #64748b; text-transform: uppercase;">BASE FLAVOR (Required)</label>
-                                <span id="baseFlavorCounter" style="font-size: 11px; font-weight: bold; color: #b45309;">0 Pcs</span>
-                            </div>
-                            <div id="baseFlavorList" style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px; margin-bottom: 15px; display: flex; flex-direction: column; gap: 8px; width: 100%; box-sizing: border-box;"></div>
+                if (extras.length > 0) {
+                    extraAddonHtml += `<div class="section-title" style="margin-bottom: 8px; width: 100%; text-align: left;">EXTRA ADD-ONS (Optional)</div><div style="display: flex; flex-direction: column; gap: 8px; width: 100%;">`;
+                    extras.forEach(a => {
+                        let isChecked = (existingItem && existingItem.addons && existingItem.addons[a.name]) ? 'checked' : '';
+                        extraAddonHtml += `
+                            <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #f8fafc; padding: 12px 15px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-weight: bold; color: #334155; box-sizing: border-box; transition: 0.2s;" onmouseover="this.style.background='#f1f5f9';" onmouseout="this.style.background='#f8fafc';">
+                                <span style="display:flex; align-items:center;"><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient || ''}|${a.deductQty || 0}" ${isChecked} style="transform: scale(1.3); margin-right: 12px; accent-color: #0ea5e9; cursor: pointer;" onchange="if(typeof window.updateModalTotals==='function') window.updateModalTotals(); else updateModalTotals();"> ${a.name}</span>
+                                <span style="color: #0f766e;">+₱${a.price.toFixed(2)}</span>
+                            </label>
                         `;
-                    }
-
-                    if (extras.length > 0) {
-                        newUiHtml += `<label style="font-size: 11px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px; width: 100%;">EXTRA ADD-ONS (Optional)</label><div style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; width: 100%;">`;
-                        extras.forEach(a => {
-                            let isChecked = (existingItem && existingItem.addons && existingItem.addons[a.name]) ? 'checked' : '';
-                            newUiHtml += `
-                                <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #f8fafc; padding: 8px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-weight: bold; color: #334155; box-sizing: border-box;">
-                                    <span><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient || ''}|${a.deductQty || 0}" ${isChecked} style="transform: scale(1.2); margin-right: 8px;" onchange="if(typeof window.updateModalTotals==='function') window.updateModalTotals(); else updateModalTotals();"> ${a.name}</span>
-                                    <span style="color: #0f766e;">+₱${a.price.toFixed(2)}</span>
-                                </label>
-                            `;
-                        });
-                        newUiHtml += `</div>`;
-                    }
+                    });
+                    extraAddonHtml += `</div>`;
                 }
-
-                if (newUiHtml === '') newUiHtml = '<div style="font-size:12px; color:#94a3b8; text-align:center; padding:10px; width:100%;">No add-ons available.</div>';
-                
-                let dynamicAddonDiv = document.getElementById('dynamicAddonUI');
-                if(!dynamicAddonDiv) {
-                    dynamicAddonDiv = document.createElement('div');
-                    dynamicAddonDiv.id = 'dynamicAddonUI';
-                    dynamicAddonDiv.style.width = '100%';
-                    addonContainer.appendChild(dynamicAddonDiv);
-                }
-                dynamicAddonDiv.innerHTML = newUiHtml;
-                
-                if (typeof window.renderBaseFlavorsList === 'function') window.renderBaseFlavorsList();
             }
+
+            let baseTarget = document.getElementById('baseFlavorTarget');
+            if (baseTarget) {
+                if (baseFlavorHtml) {
+                    baseTarget.innerHTML = baseFlavorHtml;
+                    baseTarget.style.display = 'block';
+                } else {
+                    baseTarget.innerHTML = '';
+                    baseTarget.style.display = 'none';
+                }
+            }
+
+            let extraTarget = document.getElementById('extraAddonTarget');
+            if (extraTarget) {
+                if (extraAddonHtml) {
+                    extraTarget.innerHTML = extraAddonHtml;
+                    extraTarget.style.display = 'block';
+                } else {
+                    extraTarget.innerHTML = '';
+                    extraTarget.style.display = 'none';
+                }
+            }
+            
+            if (typeof window.renderBaseFlavorsList === 'function') window.renderBaseFlavorsList();
 
             // 🐙 ITEM-SPECIFIC MIX & MATCH BUILDER
             let customArea = document.getElementById('takoyakiCustomizationArea');
@@ -779,12 +776,12 @@ window.renderBaseFlavorsList = function() {
     window.currentBaseFlavorsInfo.forEach(bf => {
         let count = window.baseFlavorState[bf.name] || 0;
         html += `
-            <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 6px 10px; border: 1px solid #fde68a; border-radius: 6px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 8px 12px; border: 1px solid #fde68a; border-radius: 6px;">
                 <span style="font-size: 13px; font-weight: bold; color: #b45309;">${bf.name} <span style="font-size: 10px; color: #d97706;">(Free)</span></span>
                 <div style="display: flex; align-items: center; gap: 10px;">
-                    <button class="btn-qty-small" style="width: 26px; height: 26px; border-color: #fcd34d; color: #d97706; font-size: 16px; line-height: 1;" onclick="window.adjustBaseFlavorQty('${bf.name}', -1)">-</button>
-                    <span style="font-weight: 900; font-size: 14px; color: #0f172a; width: 20px; text-align: center;">${count}</span>
-                    <button class="btn-qty-small" style="width: 26px; height: 26px; border-color: #fcd34d; color: #d97706; font-size: 16px; line-height: 1;" onclick="window.adjustBaseFlavorQty('${bf.name}', 1)">+</button>
+                    <button class="btn-qty-small" style="width: 28px; height: 28px; border-color: #fcd34d; color: #d97706; font-size: 18px; line-height: 1;" onclick="window.adjustBaseFlavorQty('${bf.name}', -1)">-</button>
+                    <span style="font-weight: 900; font-size: 15px; color: #0f172a; width: 20px; text-align: center;">${count}</span>
+                    <button class="btn-qty-small" style="width: 28px; height: 28px; border-color: #fcd34d; color: #d97706; font-size: 18px; line-height: 1;" onclick="window.adjustBaseFlavorQty('${bf.name}', 1)">+</button>
                 </div>
             </div>
         `;
@@ -851,6 +848,7 @@ window.updateModalTotals = function() {
     let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
     let addonsTotal = 0; 
 
+    // Calculate Checkboxes
     document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
         let parts = cb.value.split('|');
         addonsTotal += (parseFloat(parts[1]) || 0);
@@ -879,27 +877,17 @@ window.confirmAddOrUpdateToCart = function() {
         itemOrderType = 'Take-Out'; 
     }
 
-    // Strict Order Type Enforcer
-    if (!itemOrderType) {
-        Swal.fire({
-            title: 'Order Type Required', 
-            text: 'Please select Dine-In or Take-Out for this item before adding it to the cart.', 
-            icon: 'warning',
-            customClass: { popup: 'rounded-2xl' }
-        });
-        return;
-    }
+    // Notice we removed the Strict Order Type Enforcer alert! It's now completely optional.
 
     window.pendingItem.orderType = itemOrderType;
     let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1; 
     window.pendingItem.notes = document.getElementById('orderNotesInput').value;
     window.pendingItem.name = window.pendingItem.realName || window.pendingItem.name;
-    window.pendingItem.addons = {};
+    window.pendingItem.addons = {}; 
 
     if (window.currentBaseFlavorsInfo && window.currentBaseFlavorsInfo.length > 0) {
         let totalBase = Object.values(window.baseFlavorState).reduce((a, b) => a + b, 0);
         if (totalBase !== qty) {
-            // 🔥 FLASH THE BOX RED TO WARN THE CASHIER
             let bfContainer = document.getElementById('baseFlavorList');
             if (bfContainer) {
                 bfContainer.style.transition = "background-color 0.3s, border-color 0.3s";
@@ -941,7 +929,7 @@ window.confirmAddOrUpdateToCart = function() {
                         }
                     }
 
-                    window.pendingItem.addons[`${flavor} Filling`] = { name: `${flavor} Filling`, price: 0, qty: count, linkedIngredient: linkedIng, deductQty: deductQty };
+                    window.pendingItem.addons[`${flavor} Filling`] = { price: 0, qty: count, linkedIngredient: linkedIng, deductQty: deductQty };
                     window.pendingItem.notes += `${count} ${flavor}, `;
                 }
             }
@@ -949,9 +937,10 @@ window.confirmAddOrUpdateToCart = function() {
         }
     } 
 
+    // Save Checkbox Addons
     document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
         let p = cb.value.split('|');
-        window.pendingItem.addons[p[0]] = { name: p[0], price: parseFloat(p[1]), qty: 1, linkedIngredient: p[2], deductQty: parseFloat(p[3]) };
+        window.pendingItem.addons[p[0]] = { price: parseFloat(p[1]), qty: 1, linkedIngredient: p[2], deductQty: parseFloat(p[3]) };
     });
 
     let addonsTotal = 0; 
