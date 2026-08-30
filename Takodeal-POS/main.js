@@ -8526,8 +8526,8 @@ window.viewAnnouncement = function(encodedData) {
     Swal.fire({
         title: `<div style="text-align:left; font-size: 18px; color: #0f172a; margin-bottom: 5px;">${data.title}</div>`,
         
-        // Ensure max-height is set so the internal scrollbar is forced to appear!
-        html: `<div style="text-align: left; max-height: 50vh; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding-right: 10px; margin-bottom: 10px;">
+        // 🔥 THE FIX: Forced height and smooth touch scrolling! 
+        html: `<div style="text-align: left; height: 60vh; max-height: 600px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding-right: 10px; margin-bottom: 10px;">
                 <div style="font-size: 12px; color: #64748b; margin-bottom: 15px;">📅 Published: ${data.dateStr}</div>
                 <div style="font-size: 14px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${data.message || ''}</div>
                 ${imagesHtml}
@@ -8537,8 +8537,8 @@ window.viewAnnouncement = function(encodedData) {
         showCloseButton: true, 
         showConfirmButton: false,
         allowOutsideClick: data.hasSignature,
-        // 🔥 THE FIX: Tell SweetAlert itself not to stretch past the screen!
-        customClass: { popup: 'rounded-2xl shadow-2xl', htmlContainer: 'custom-swal-html' },
+        // 🔥 THE FIX: Removed htmlContainer: 'custom-swal-html' which was hiding the scrollbar!
+        customClass: { popup: 'rounded-2xl shadow-2xl' },
         didOpen: () => {
             if (!data.hasSignature) {
                 window.initSignaturePad();
