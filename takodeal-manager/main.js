@@ -6346,6 +6346,7 @@ window.saveAdvancedInventoryItem = async function () {
   let category = document.getElementById('newInvCat').value;
   let name = document.getElementById('newInvName').value.trim();
   let purchUom = document.getElementById('newInvPurchUom').value.trim();
+  let restockCycle = document.getElementById('newInvCycle').value;
   let baseUom = document.getElementById('newInvBaseUom').value.trim();
 
   let conv = parseFloat(document.getElementById('newInvConv').value);
@@ -6434,7 +6435,8 @@ window.saveAdvancedInventoryItem = async function () {
               reorderLevel: targetLowBase, 
               lowStockAlert: targetLowBase,
               maintainingStock: finalMaintainBase,
-              showToCashier: showCashier, 
+              restockCycle: restockCycle, // 🔥 Add this line!
+              showToCashier: showCashier,
               showInPrep: showPrep,
               allowRequest: allowReq,
             };
@@ -7012,6 +7014,7 @@ window.openEditInvModal = async function(id) {
 
             document.getElementById('editInvId').value = id;
             document.getElementById('editInvBranch').value = itemData.branch || 'Main Office';
+            document.getElementById('editInvCycle').value = itemData.restockCycle || 'As Needed';
             document.getElementById('editInvCat').value = itemData.category || '';
             document.getElementById('editInvName').value = itemData.name || '';
             
@@ -7184,6 +7187,7 @@ window.saveInventoryEdit = async function() {
     let category = document.getElementById('editInvCat').value;
     let name = document.getElementById('editInvName').value.trim();
     let purchUom = document.getElementById('editInvPurchUom').value.trim();
+    let restockCycle = document.getElementById('editInvCycle').value;
     let baseUom = document.getElementById('editInvBaseUom').value.trim();
     let purchCost = parseFloat(document.getElementById('editInvPurchCost').value) || 0;
     let conversion = parseFloat(document.getElementById('editInvConversion').value) || 1;
@@ -7255,6 +7259,7 @@ window.saveInventoryEdit = async function() {
             purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion), 
             lowStockAlert: targetLowBaseForCurrentItem, reorderLevel: targetLowBaseForCurrentItem, 
             maintainingStock: finalMaintainBase, // 🔥 NEW!
+            restockCycle: restockCycle, // 🔥 Add this line!
             currentStock: finalQty, showInPrep: showPrepVal, allowRequest: allowReqVal,
         };
 
