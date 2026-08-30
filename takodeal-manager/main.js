@@ -6434,7 +6434,6 @@ window.saveAdvancedInventoryItem = async function () {
               reorderLevel: targetLowBase, 
               lowStockAlert: targetLowBase,
               maintainingStock: finalMaintainBase,
-              restockCycle: restockCycle, // 🔥 Add this line!
               showToCashier: showCashier,
               showInPrep: showPrep,
               allowRequest: allowReq,
@@ -7013,7 +7012,6 @@ window.openEditInvModal = async function(id) {
 
             document.getElementById('editInvId').value = id;
             document.getElementById('editInvBranch').value = itemData.branch || 'Main Office';
-            document.getElementById('editInvCycle').value = itemData.restockCycle || 'As Needed';
             document.getElementById('editInvCat').value = itemData.category || '';
             document.getElementById('editInvName').value = itemData.name || '';
             
@@ -7257,7 +7255,6 @@ window.saveInventoryEdit = async function() {
             purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion), 
             lowStockAlert: targetLowBaseForCurrentItem, reorderLevel: targetLowBaseForCurrentItem, 
             maintainingStock: finalMaintainBase, // 🔥 NEW!
-            restockCycle: restockCycle, // 🔥 Add this line!
             currentStock: finalQty, showInPrep: showPrepVal, allowRequest: allowReqVal,
         };
 
