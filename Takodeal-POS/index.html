@@ -2205,7 +2205,10 @@
             if(platformDropdown) { platformDropdown.style.background = '#f39c12'; platformDropdown.style.color = 'white'; }
             if(btnPlace) { btnPlace.style.background = '#0ea5e9'; }
             if(btnPark) { btnPark.style.background = '#f59e0b'; }
-            if (otSelect) otSelect.value = 'Dine-In';
+            
+            // 🔥 THE FIX: Set this to blank instead of 'Dine-In' to force a new selection
+            if (otSelect) otSelect.value = '';
+            
             let payBtn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase() === 'cash');
             if(payBtn) payBtn.click();
         }
@@ -3008,12 +3011,19 @@ window.renderCart = function() {
 };
 
 window.clearCart = function() { 
-    if (!window.cart || window.cart.length === 0) return; 
-    if (confirm("Clear order?")) { 
-        window.cart = []; 
-        window.renderCart(); 
-    } 
-};
+        if (!window.cart || window.cart.length === 0) return; 
+        if (confirm("Clear order?")) { 
+            window.cart = []; 
+            
+            // 🔥 THE FIX: Auto-reset the Order Type and Customer Name on clear!
+            let otSelect = document.getElementById('mainOrderType');
+            if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
+            let custName = document.getElementById('finalCustomerName');
+            if (custName) custName.value = '';
+            
+            window.renderCart(); 
+        } 
+    };
 
 // 🔥 EMERGENCY BRIDGES: This connects the HTML buttons directly to the functions!
 function adjustModalMainQty(delta) { window.adjustModalMainQty(delta); }
@@ -3244,22 +3254,20 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
     async function submitFinalOrder() {
       // 🛡️ THE ULTIMATE DOUBLE-TAP SHIELD
-      // If the system is already processing, instantly kill any extra clicks!
       if (window.isSubmittingOrder) return;
       window.isSubmittingOrder = true;
 
       const btn = document.getElementById('btnSubmitFinal'); 
       btn.innerText = "⏳ Processing Payment..."; 
       btn.disabled = true;
-      btn.style.pointerEvents = "none"; // Physically blocks the touchscreen from clicking it
+      btn.style.pointerEvents = "none";
 
       // 🚨 ANTI-THEFT: MANDATORY REFERENCE NUMBER FOR DIGITAL PAYMENTS
       let custName = document.getElementById('finalCustomerName').value.trim();
-      if ((selectedPaymentMethod === 'Grab' || selectedPaymentMethod === 'Foodpanda' || selectedPaymentMethod === 'GCash') && custName === "") {
-          let reqStr = selectedPaymentMethod === 'GCash' ? 'GCash Ref Number' : `${selectedPaymentMethod} Order ID`;
-          alert(`🚨 SECURITY LOCK!\n\nYou selected ${selectedPaymentMethod}. You MUST enter the exact ${reqStr} in the Customer Name box to prevent phantom orders.`);
+      if ((window.selectedPaymentMethod === 'Grab' || window.selectedPaymentMethod === 'Foodpanda' || window.selectedPaymentMethod === 'GCash') && custName === "") {
+          let reqStr = window.selectedPaymentMethod === 'GCash' ? 'GCash Ref Number' : `${window.selectedPaymentMethod} Order ID`;
+          alert(`🚨 SECURITY LOCK!\n\nYou selected ${window.selectedPaymentMethod}. You MUST enter the exact ${reqStr} in the Customer Name box to prevent phantom orders.`);
           
-          // Only unlock the button if they made a mistake so they can fix it
           btn.innerText = "Complete checkout"; 
           btn.disabled = false;
           btn.style.pointerEvents = "auto";
@@ -3267,12 +3275,10 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
           return;
       }
 
-      // 🔥 THE FIX: Securely pull the Shift ID from the active memory
       let exactShiftId = (typeof currentShift !== 'undefined' && currentShift && currentShift.shiftId) 
                          ? currentShift.shiftId 
                          : "UNKNOWN";
 
-      // 🚨 GRAB DISCOUNT DATA
       let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
       let dVal = parseFloat(document.getElementById('checkoutDiscountValue') ? document.getElementById('checkoutDiscountValue').value : 0) || 0;
       let dReason = document.getElementById('checkoutDiscountReason') ? document.getElementById('checkoutDiscountReason').value.trim() : '';
@@ -3288,11 +3294,11 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
       }
 
       const payload = {
-        branch: sessionUser.branch,
-        cashier: sessionUser.cashierName,
+        branch: window.sessionUser.branch,
+        cashier: window.sessionUser.cashierName,
         shiftId: exactShiftId, 
         orderType: document.getElementById('mainOrderType').value,
-        paymentMethod: selectedPaymentMethod,
+        paymentMethod: window.selectedPaymentMethod,
         subTotalBeforeDiscount: window.currentGrandTotal,
         globalDiscountType: dType,
         globalDiscountValue: dVal,
@@ -3300,7 +3306,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         globalDiscountReason: dReason,
         netTotal: window.finalCheckoutAmount || window.currentGrandTotal,
         customerName: document.getElementById('finalCustomerName').value,
-        amountReceived: amountReceivedStr,
+        amountReceived: window.amountReceivedStr,
         cart: cart
       };
 
@@ -3308,8 +3314,6 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
       if (receiptId) {
         if (window.activeMobileOrderId) {
-            // 🔥 THE HANG FIX: Removed 'await' here! 
-            // The POS will no longer freeze if the Wi-Fi is slow. It syncs silently in the background!
             window.updateDoc(window.doc(window.db, "incoming_orders", window.activeMobileOrderId), {
                 status: "completed",
                 receiptId: receiptId,
@@ -3319,7 +3323,6 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             window.activeMobileOrderId = null; 
         }
 
-        // 🐙 THE 1 MILLION BALLS RESTORATION FIX 🐙
         let totalBallsSold = 0;
         cart.forEach(item => {
             let itemName = item.name || item.itemName;
@@ -3332,19 +3335,18 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
         if (totalBallsSold > 0) {
             let statsPayload = { totalTakoyakiBalls: window.increment(totalBallsSold) };
-            statsPayload[`balls_${sessionUser.branch}`] = window.increment(totalBallsSold);
-            // Non-blocking background sync
+            statsPayload[`balls_${window.sessionUser.branch}`] = window.increment(totalBallsSold);
             window.setDoc(window.doc(window.db, "settings", "global_stats"), statsPayload, { merge: true }).catch(e => console.log(e));
         }
 
-        lastTransactionData = { ...payload, receiptId: receiptId };
+        window.lastTransactionData = { ...payload, receiptId: receiptId };
         document.getElementById('rcptId').innerText = `: ${receiptId}`;
         let now = new Date(); 
         document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; 
         document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; 
         document.getElementById('rcptTotal').innerText = `: ₱${(window.finalCheckoutAmount || window.currentGrandTotal).toFixed(2)}`;
         
-        let amountRec = parseFloat(amountReceivedStr) || 0;
+        let amountRec = parseFloat(window.amountReceivedStr) || 0;
         let change = amountRec - (window.finalCheckoutAmount || window.currentGrandTotal);
         if (change < 0) change = 0;
         
@@ -3353,8 +3355,15 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         
         cart = []; 
         renderCart(); 
-        closeModal('checkoutModal'); 
+        if (typeof window.closeModal === 'function') window.closeModal('checkoutModal');
+        else if (typeof closeModal === 'function') closeModal('checkoutModal');
         
+        // 🔥 THE RESET FIX: Clear the Order Type and Customer Name for the NEXT order!
+        let otSelect = document.getElementById('mainOrderType');
+        if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
+        let custName = document.getElementById('finalCustomerName');
+        if (custName) custName.value = '';
+
         // Reset the button for the NEXT order
         btn.innerText = "Complete checkout"; 
         btn.disabled = false; 
@@ -3363,7 +3372,6 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
         document.getElementById('receiptModal').style.display = 'flex';
       } else { 
-        // Only trigger this if processCheckout genuinely failed, NOT on double taps
         alert("Network Error: Could not save to database."); 
         btn.innerText = "Complete checkout"; 
         btn.disabled = false; 
@@ -3603,40 +3611,42 @@ window.printReceipt = async function(type) {
 window.currentParkedOrdersList = []; 
 
 window.parkOrder = async function() {
-    if (typeof cart === 'undefined' || cart.length === 0) return;
-    let currentOrderType = document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : '';
-    if (!currentOrderType) return Swal.fire('Order Type Required', 'Please select an Order Type before parking.', 'warning');
-    
-    // 🔥 NEW: Auto-pull the name from the Customer Name box!
-    let defaultName = document.getElementById('finalCustomerName') ? document.getElementById('finalCustomerName').value : '';
-    
-    let customerName = prompt("Enter Customer Name or Table Number:", defaultName); 
-    if (!customerName) return;
-    
-    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-    let cashier = localStorage.getItem('cashierName') || 'Unknown';
-    let grandTotal = typeof window.currentGrandTotal !== 'undefined' ? window.currentGrandTotal : 0;
-
-    let payload = { branch: branch, cashier: cashier, name: customerName, items: cart, total: grandTotal, orderType: currentOrderType };
-    let parkedId = await window.parkOrderToDB(payload);
-    
-    if (parkedId) { 
-        let newOrder = { id: parkedId, ...payload };
-        window.currentParkedOrdersList.push(newOrder);
+        if (typeof cart === 'undefined' || cart.length === 0) return;
+        let currentOrderType = document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : '';
+        if (!currentOrderType) return Swal.fire('Order Type Required', 'Please select an Order Type before parking.', 'warning');
         
-        cart = []; 
-        if (typeof renderCart === 'function') renderCart(); 
+        // 🔥 NEW: Auto-pull the name from the Customer Name box!
+        let defaultName = document.getElementById('finalCustomerName') ? document.getElementById('finalCustomerName').value : '';
         
-        // Reset the customer name box for the next order
-        document.getElementById('finalCustomerName').value = '';
+        let customerName = prompt("Enter Customer Name or Table Number:", defaultName); 
+        if (!customerName) return;
+        
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        let cashier = localStorage.getItem('cashierName') || 'Unknown';
+        let grandTotal = typeof window.currentGrandTotal !== 'undefined' ? window.currentGrandTotal : 0;
 
-        window.updateParkedBadge(); 
-        window.printParkedReceipt(parkedId); 
-        alert("✅ Order Parked Securely!"); 
-    } else { 
-        alert("❌ Failed to park order. Check connection."); 
-    }
-};
+        let payload = { branch: branch, cashier: cashier, name: customerName, items: cart, total: grandTotal, orderType: currentOrderType };
+        let parkedId = await window.parkOrderToDB(payload);
+        
+        if (parkedId) { 
+            let newOrder = { id: parkedId, ...payload };
+            window.currentParkedOrdersList.push(newOrder);
+            
+            cart = []; 
+            if (typeof renderCart === 'function') renderCart(); 
+            
+            // 🔥 THE FIX: Reset the order type and customer name for the next order
+            document.getElementById('finalCustomerName').value = '';
+            let otSelect = document.getElementById('mainOrderType');
+            if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
+
+            window.updateParkedBadge(); 
+            window.printParkedReceipt(parkedId); 
+            alert("✅ Order Parked Securely!"); 
+        } else { 
+            alert("❌ Failed to park order. Check connection."); 
+        }
+    };
 
 window.updateParkedBadge = async function() {
     let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
