@@ -9925,30 +9925,125 @@ window.updateUnavailabilityList = function() {
     }
 };
 
-window.markUnavailable = function() {
-    const emp = document.getElementById('availEmp').value;
-    const date = document.getElementById('availDate').value;
-    const status = document.getElementById('availStatus').value;
-    if (!emp || !date) return alert("Select staff and date.");
-    if (!unavailability[date]) unavailability[date] = {};
-    unavailability[date][emp] = status;
-    window.updateUnavailabilityList();
-    if (currentSchedule[1]) {
-        const [y, m, d] = date.split('-').map(Number);
-        if (y === currentYear && m === currentMonth) {
-            for (const branch in currentSchedule[d]) {
-                let bData = currentSchedule[d][branch];
-                for (let sId in bData.scheduled) { if (bData.scheduled[sId] === emp) bData.scheduled[sId] = "UNFILLED"; }
-                bData.rest = bData.rest.filter(n => n !== emp);
-                if (!bData.unavailable.some(u => u.name === emp)) {
-                    const eObj = employees.find(e => e.name === emp);
-                    if (eObj && eObj.branch === branch) bData.unavailable.push({ name: emp, status });
-                }
-            }
-            window.renderTables();
+// ========================================================
+// 📅 SMART MULTI-DATE PICKER ENGINE
+// ========================================================
+
+window.openMultiDatePicker = async function() {
+    // 1. Get the current month and year from the global memory
+    let year = window.currentYear;
+    let month = window.currentMonth;
+
+    if (!year || !month) {
+        return Swal.fire('Missing Month', 'Please select a month in the Schedule Manager first.', 'warning');
+    }
+
+    let daysInMonth = new Date(year, month, 0).getDate();
+    let monthName = new Date(year, month - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+    // 2. Build the visual calendar grid!
+    let gridHtml = `
+        <div style="font-weight: 900; color: #0f172a; margin-bottom: 15px; font-size: 18px;">${monthName}</div>
+        <div style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; text-align: center;">
+    `;
+
+    // Add day headers (Sun, Mon, Tue...)
+    const dayNames = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+    dayNames.forEach(d => {
+        gridHtml += `<div style="font-size: 11px; font-weight: 900; color: #64748b; padding-bottom: 5px; border-bottom: 1px solid #cbd5e1;">${d}</div>`;
+    });
+
+    // Pad the beginning of the month with empty spaces
+    let startDay = new Date(year, month - 1, 1).getDay();
+    for (let i = 0; i < startDay; i++) {
+        gridHtml += `<div></div>`; 
+    }
+
+    // Generate the buttons for each day
+    for (let i = 1; i <= daysInMonth; i++) {
+        let fullDate = `${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+        gridHtml += `
+            <button type="button" class="multi-date-btn" data-date="${fullDate}" 
+            onclick="this.classList.toggle('selected'); if(this.classList.contains('selected')){ this.style.background='#0ea5e9'; this.style.color='white'; this.style.borderColor='#0284c7'; } else { this.style.background='white'; this.style.color='#334155'; this.style.borderColor='#cbd5e1'; }" 
+            style="padding: 10px 0; border: 1px solid #cbd5e1; background: white; border-radius: 6px; cursor: pointer; font-weight: 900; color: #334155; font-size: 13px; transition: 0.1s; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+                ${i}
+            </button>
+        `;
+    }
+    gridHtml += '</div>';
+
+    // 3. Pop up the SweetAlert!
+    let result = await Swal.fire({
+        html: gridHtml,
+        showCancelButton: true,
+        confirmButtonText: 'Confirm Dates',
+        confirmButtonColor: '#10b981',
+        cancelButtonColor: '#94a3b8',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            let selected = [];
+            // Scrape the grid to see which buttons were clicked (turned blue)
+            document.querySelectorAll('.multi-date-btn.selected').forEach(btn => {
+                selected.push(btn.getAttribute('data-date'));
+            });
+            return selected;
+        }
+    });
+
+    // 4. Print the selected dates into the text box
+    if (result.isConfirmed && result.value) {
+        if (result.value.length > 0) {
+            document.getElementById('availDate').value = result.value.join(', ');
+        } else {
+            document.getElementById('availDate').value = '';
         }
     }
+};
+
+window.markUnavailable = function() {
+    const emp = document.getElementById('availEmp').value;
+    const datesRaw = document.getElementById('availDate').value;
+    const status = document.getElementById('availStatus').value;
+    
+    if (!emp || !datesRaw) return alert("Select staff and at least one date.");
+    
+    // Split the comma-separated string back into an array
+    let datesArray = datesRaw.split(',').map(d => d.trim());
+    
+    // 🧠 THE LOOP: Apply the status to EVERY selected date instantly!
+    datesArray.forEach(date => {
+        if (!unavailability[date]) unavailability[date] = {};
+        unavailability[date][emp] = status;
+        
+        if (currentSchedule[1]) {
+            const [y, m, d] = date.split('-').map(Number);
+            if (y === currentYear && m === currentMonth) {
+                for (const branch in currentSchedule[d]) {
+                    let bData = currentSchedule[d][branch];
+                    for (let sId in bData.scheduled) { 
+                        if (bData.scheduled[sId] === emp) bData.scheduled[sId] = "UNFILLED"; 
+                    }
+                    bData.rest = bData.rest.filter(n => n !== emp);
+                    if (!bData.unavailable.some(u => u.name === emp)) {
+                        const eObj = employees.find(e => e.name === emp);
+                        if (eObj && eObj.branch === branch) bData.unavailable.push({ name: emp, status });
+                    }
+                }
+            }
+        }
+    });
+    
+    // Refresh the UI once the loop finishes
+    window.updateUnavailabilityList();
+    if (currentSchedule[1]) window.renderTables();
     window.saveToCloud();
+    
+    document.getElementById('availDate').value = ''; // Reset the box
+    Swal.fire({
+        toast: true, position: 'top-end', icon: 'success', 
+        title: `Applied to ${datesArray.length} days!`, 
+        showConfirmButton: false, timer: 2000
+    });
 };
 
 window.removeUnavailable = async function(date, emp) {
