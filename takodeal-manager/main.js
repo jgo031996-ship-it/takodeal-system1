@@ -9928,15 +9928,23 @@ window.updateUnavailabilityList = function() {
 // ========================================================
 // 📅 SMART MULTI-DATE PICKER ENGINE
 // ========================================================
-
 window.openMultiDatePicker = async function() {
-    // 1. Get the current month and year from the global memory
-    let year = window.currentYear;
-    let month = window.currentMonth;
+    // 1. Force the system to directly read the "Select Month" box at the top of the screen!
+    let monthInput = document.getElementById("monthSelector").value;
 
-    if (!year || !month) {
-        return Swal.fire('Missing Month', 'Please select a month in the Schedule Manager first.', 'warning');
+    if (!monthInput) {
+        return Swal.fire({
+            title: 'Missing Month', 
+            text: 'Please scroll to the top of the page and pick a month in the "Select Month" box first.', 
+            icon: 'warning',
+            customClass: { popup: 'rounded-2xl' }
+        });
     }
+
+    // Split "2026-09" into Year and Month
+    let parts = monthInput.split('-');
+    let year = parseInt(parts[0]);
+    let month = parseInt(parts[1]);
 
     let daysInMonth = new Date(year, month, 0).getDate();
     let monthName = new Date(year, month - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
@@ -9953,7 +9961,7 @@ window.openMultiDatePicker = async function() {
         gridHtml += `<div style="font-size: 11px; font-weight: 900; color: #64748b; padding-bottom: 5px; border-bottom: 1px solid #cbd5e1;">${d}</div>`;
     });
 
-    // Pad the beginning of the month with empty spaces
+    // Pad the beginning of the month with empty spaces so the days align perfectly!
     let startDay = new Date(year, month - 1, 1).getDay();
     for (let i = 0; i < startDay; i++) {
         gridHtml += `<div></div>`; 
