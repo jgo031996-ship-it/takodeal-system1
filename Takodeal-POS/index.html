@@ -1342,52 +1342,65 @@
 
   </div> 
   <div class="overlay" id="variantModal">
-    <div class="modal variant-modal">
-      <div class="modal-head"><span>Add Order</span><span class="close-modal"
-          onclick="closeModal('variantModal')">✖</span></div>
-      <div class="modal-body">
+    <div class="modal variant-modal" style="width: 550px; position: relative;">
+      <div class="modal-head"><span>Add Order</span><span class="close-modal" onclick="closeModal('variantModal')">✖</span></div>
+      <div class="modal-body" style="padding: 20px; flex: 1; overflow-y: auto;">
         
-        <div style="font-size: 15px; border-bottom: 1px solid #eee; padding-bottom: 15px; margin-bottom:15px;">
-          <div style="display:flex;"><span style="width:100px; color:#666;">Description:</span> <strong
-              id="modalItemName">Cheesy Takoyaki</strong></div>
-          <div style="display:flex;"><span style="width:100px; color:#666;">Base Price:</span> <strong
-              id="modalItemPrice" style="color:var(--primary);">₱ 0.00</strong></div>
+        <div id="modalDynamicImage"></div>
+
+        <div style="font-size: 14px; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom:15px;">
+          <div style="display:flex;"><span style="width:100px; color:#64748b; font-weight: bold;">Description:</span> <strong id="modalItemName" style="color: #1e293b;">Item Name</strong></div>
+          <div style="display:flex;"><span style="width:100px; color:#64748b; font-weight: bold;">Base Price:</span> <strong id="modalItemPrice" style="color:var(--primary);">₱ 0.00</strong></div>
         </div>
 
         <div style="display: none;">
-          <div class="section-title">Select Variant</div>
+          <div class="section-title" style="margin-bottom: 8px;">Select Variant</div>
           <div class="variant-grid" id="variantOptions"></div>
         </div>
 
-        <!-- 🔥 PERFECTLY BALANCED ROW FOR ORDER TYPE & QUANTITY 🔥 -->
-        <div style="display: flex; gap: 15px; margin-bottom: 15px; align-items: stretch;">
-            
-            <div style="flex: 1; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1; display: flex; flex-direction: column; justify-content: center;">
-                <div class="section-title" style="color: #0f766e; margin-bottom: 8px;">Item Order Type</div>
-                <select id="modalItemOrderType" class="input-box" style="width: 100%; padding: 8px; font-weight: bold; cursor: pointer; border-color: #0ea5e9; color: #0284c7; background: #e0f2fe; outline: none; margin: 0;">
-                    <option value="" disabled selected>-- Select Type --</option>
-                    <option value="Take-Out">🛍️ Take-Out</option>
-                    <option value="Dine-In">🍽️ Dine-In</option>
-                </select>
+        <!-- 🚀 NEW: BASE FLAVORS & QUANTITY SIDE-BY-SIDE -->
+        <div id="baseQtyRow" style="display: flex; gap: 15px; margin-bottom: 15px; align-items: flex-start;">
+            <div id="baseFlavorTarget" style="flex: 1.5; display: none;">
+                <!-- JS injects Base Flavors here -->
             </div>
-
-            <div style="flex: 1; display: flex; flex-direction: column; justify-content: center;">
-              <div class="section-title" style="margin-bottom: 8px;">Set Quantity</div>
+            
+            <div style="flex: 1; display: flex; flex-direction: column;">
+              <div class="section-title" style="margin-bottom: 8px; width: 100%; text-align: left;">SET QUANTITY</div>
               <div class="qty-controls" style="margin-top: 0; width: 100%; display: flex;">
                   <button class="btn-qty-small" style="width:45px; height:45px; font-size:20px;" onclick="adjustModalMainQty(-1)">-</button>
-                  <div id="modalMainQty" class="qty-display-box" style="flex: 1; height:45px;">1</div>
+                  <div id="modalMainQty" class="qty-display-box" style="flex: 1; height:45px; border-color: #0ea5e9; color: #0284c7;">1</div>
                   <button class="btn-qty-small" style="width:45px; height:45px; font-size:20px;" onclick="adjustModalMainQty(1)">+</button>
               </div>
             </div>
-
         </div>
 
+        <div id="extraAddonTarget" style="margin-bottom: 15px; display: none;">
+            <!-- JS injects Extra Addons here -->
+        </div>
+
+        <!-- 🛒 NEW: MANUAL ORDER TYPE (MOVED TO BOTTOM & ACCORDION) -->
+        <div style="margin-bottom: 15px;">
+          <button onclick="let p = document.getElementById('orderTypePanel'); let i = document.getElementById('orderTypeToggleIcon'); if(p.style.display==='none'){p.style.display='block';i.innerText='▲';}else{p.style.display='none';i.innerText='▼';}" style="width: 100%; background: #fef3c7; color: #d97706; border: 1px dashed #fcd34d; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+              <span>🛒 Order Type (Split Dine-In/Take-Out)</span>
+              <span id="orderTypeToggleIcon">▼</span>
+          </button>
+          <div id="orderTypePanel" style="display: none; background: #fffcf0; border: 1px solid #fde68a; border-top: none; padding: 15px; border-radius: 0 0 8px 8px;">
+              <div class="section-title" style="color: #0f766e; margin-bottom: 8px;">Item Order Type</div>
+              <select id="modalItemOrderType" class="input-box" style="width: 100%; padding: 8px; font-weight: bold; cursor: pointer; border-color: #0ea5e9; color: #0284c7; background: #e0f2fe; outline: none; margin: 0;">
+                  <option value="" selected>-- Follow Main Order Type --</option>
+                  <option value="Take-Out">🛍️ Take-Out</option>
+                  <option value="Dine-In">🍽️ Dine-In</option>
+              </select>
+              <div style="font-size: 11px; color: #d97706; margin-top: 5px;">Leave this blank to automatically follow the main order type selected in the cart.</div>
+          </div>
+        </div>
+
+        <!-- 🐙 MIX & MATCH -->
         <div id="takoyakiCustomizationArea" style="display: none; margin-bottom: 15px;">
-          <button id="btnToggleMixMatch" onclick="window.toggleMixMatchUI()" style="width: 100%; background: #fef3c7; color: #d97706; border: 1px dashed #fcd34d; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
+          <button id="btnToggleMixMatch" onclick="window.toggleMixMatchUI()" style="width: 100%; background: #fffbeb; color: #d97706; border: 1px dashed #fcd34d; padding: 12px; border-radius: 6px; font-weight: bold; cursor: pointer; display: flex; justify-content: space-between; align-items: center;">
               <span>🐙 Customize Fillings (Mix & Match)</span>
               <span id="mixMatchToggleIcon">▼</span>
           </button>
-          
           <div id="mixMatchPanel" style="display: none; background: #fffcf0; border: 1px solid #fde68a; border-top: none; padding: 15px; border-radius: 0 0 8px 8px;">
               <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
                   <span style="font-size: 12px; font-weight: bold; color: #b45309;">Select Flavors:</span>
@@ -1397,36 +1410,27 @@
           </div>
         </div>
 
+        <!-- 💸 DISCOUNT -->
         <div style="margin-bottom:15px;">
-          <div class="section-title">Apply Discount</div>
+          <div class="section-title" style="margin-bottom: 8px;">Apply Discount</div>
           <div class="discount-grid">
             <button class="var-btn active" id="btnDiscNone" onclick="setDiscountType('none')">None</button>
             <button class="var-btn" id="btnDiscPerc" onclick="setDiscountType('percentage')">%</button>
             <button class="var-btn" id="btnDiscFixed" onclick="setDiscountType('fixed')">Fixed (₱)</button>
           </div>
-          <input type="number" id="discountValueInput" class="input-box" placeholder="Enter discount amount..."
-            style="display:none; margin-top:10px;" oninput="updateModalTotals()">
+          <input type="number" id="discountValueInput" class="input-box" placeholder="Enter discount amount..." style="display:none; margin-top:10px;" oninput="updateModalTotals()">
         </div>
         
-        <div style="margin-top: 5px;">
-          <div class="section-title" style="margin-bottom: 8px;">Select Add-Ons</div>
-          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-            <select id="addonSelectDropdown" class="input-box" style="flex:2; margin:0; cursor:pointer;"
-              onchange="if(this.value){addAddonFromDropdown(); this.value='';}"></select>
-          </div>
-          <div id="activeAddonsContainer" style="display:flex; flex-direction:column; gap:8px; margin-top:10px;"></div>
-        </div>
-        
+        <!-- 📝 NOTES -->
         <div style="margin-top: 15px;">
-          <div class="section-title" style="margin-bottom: 8px;">✎ Notes</div><input type="text" id="orderNotesInput"
-            class="input-box" placeholder="e.g., Spicy, No Mayo">
+          <div class="section-title" style="margin-bottom: 8px;">✎ Notes</div>
+          <input type="text" id="orderNotesInput" class="input-box" placeholder="e.g., Spicy, No Mayo">
         </div>
       </div>
       
       <div class="modal-foot">
-        <button class="btn-clear" onclick="closeModal('variantModal')"
-          style="padding:15px; flex:1; order: 2;">Cancel</button>
-        <button class="btn-place" style="flex:2; order: 1;" onclick="confirmAddOrUpdateToCart()">
+        <button class="btn-clear" onclick="closeModal('variantModal')" style="padding:15px; flex:1; order: 2;">Cancel</button>
+        <button class="btn-place" style="flex:2; order: 1; font-size: 16px;" onclick="confirmAddOrUpdateToCart()">
           <span id="confirmAddToCartText" style="float:left">Add to Order</span>
           <span id="modalLiveTotal" style="float:right">₱ 0.00</span>
         </button>
