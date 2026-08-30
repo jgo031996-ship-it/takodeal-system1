@@ -10575,15 +10575,24 @@ window.saveCountMemory = function(itemId, type, val) {
 // Search Filter - instantly hides/shows rows so typed data is never lost!
 window.filterManualStockCount = function() {
     let searchInput = document.getElementById('manualCountSearch');
+    let cycleFilter = document.getElementById('manualCountCycleFilter');
     if (!searchInput) return;
     
     let input = searchInput.value.toLowerCase();
+    let cycle = cycleFilter ? cycleFilter.value : "All";
+    
     let rows = document.querySelectorAll('.manual-count-row');
     let categories = document.querySelectorAll('.manual-count-category');
 
+    // 1. Filter the item rows instantly
     rows.forEach(row => {
         let itemName = row.getAttribute('data-name') || '';
-        if (itemName.includes(input)) {
+        let itemCycle = row.getAttribute('data-cycle') || 'As Needed';
+        
+        let matchesSearch = itemName.includes(input);
+        let matchesCycle = (cycle === "All" || itemCycle === cycle);
+
+        if (matchesSearch && matchesCycle) {
             row.style.display = ''; 
             row.classList.add('visible-row');
         } else {
@@ -10592,6 +10601,7 @@ window.filterManualStockCount = function() {
         }
     });
 
+    // 2. Hide category headers if all their items are hidden
     categories.forEach(cat => {
         let nextEl = cat.nextElementSibling;
         let hasVisible = false;
@@ -10684,9 +10694,16 @@ window.loadStockRequestUI = async function() {
                     `;
                 }
 
+                let cycleSafe = item.restockCycle || 'As Needed';
+                let cycleColor = cycleSafe === 'Weekly' ? '#10b981' : (cycleSafe === 'Monthly' ? '#8b5cf6' : '#64748b');
+                let cycleBadge = cycleSafe !== 'As Needed' ? `<br><span style="background: ${cycleColor}15; color: ${cycleColor}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid ${cycleColor}50; margin-top: 4px; display: inline-block;">📅 ${cycleSafe}</span>` : '';
+
                 html += `
-                    <tr class="manual-count-row visible-row" data-name="${(item.name || '').toLowerCase()}" style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                        <td style="padding: 15px 25px; font-weight: bold; color: #1e293b; font-size: 14px; vertical-align: middle;">${item.name}</td>
+                    <tr class="manual-count-row visible-row" data-name="${(item.name || '').toLowerCase()}" data-cycle="${cycleSafe}" style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                        <td style="padding: 15px 25px; font-weight: bold; color: #1e293b; font-size: 14px; vertical-align: middle; line-height: 1.2;">
+                            ${item.name}
+                            ${cycleBadge}
+                        </td>
                         <td style="padding: 15px 25px; text-align: center; vertical-align: middle; background: #f8fafc; border-left: 1px dashed #e2e8f0; border-right: 1px dashed #e2e8f0;">${maintainingHtml}</td>
                         <td style="padding: 15px 25px; text-align: center; vertical-align: middle;">${inputHtml}</td>
                     </tr>
