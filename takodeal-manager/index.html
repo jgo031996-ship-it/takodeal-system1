@@ -1830,6 +1830,15 @@
                                     <button onclick="window.saveSinglePosConfig('shiftAuditItems', 'configShiftAudit', this)" style="background: #d97706; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save</button>
                                 </div>
                             </div>
+                            <div style="background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d;">
+                                <label style="font-size: 11px; font-weight: 900; color: #b45309; text-transform: uppercase;">📝 Monthly/General Audit Items</label>
+                                <div style="display: flex; gap: 8px; margin-top: 5px;">
+                                    <input type="text" id="configAuditList" class="input-box" placeholder="320cc Paper Bowl, Burger Box" style="flex: 1; padding: 10px; border: 1px solid #fcd34d; border-radius: 6px; font-weight: bold;">
+                                    <button onclick="window.saveSinglePosConfig('auditItems', 'configAuditList', this)" style="background: #d97706; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save</button>
+                                </div>
+                            </div>
+                            
+                            <!-- 🔥 NEW: CUSTOMER APP CATEGORY CONTROLS 🔥 -->
                             <div style="background: #f1f5f9; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;">
                                 <label style="font-size: 11px; font-weight: 900; color: #475569; text-transform: uppercase;">📱 Customer App Featured Categories</label>
                                 <div style="font-size: 10px; color: #64748b; margin-top: 2px; font-weight: bold;">Type categories to show on the Home Screen (comma separated).</div>
@@ -1838,6 +1847,7 @@
                                     <button onclick="window.saveSinglePosConfig('customerHomeCategories', 'configHomeCats', this)" style="background: #0f766e; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 Save</button>
                                 </div>
                             </div>
+                            
                         </div>
                     </div>
                 </div>
