@@ -25150,23 +25150,17 @@ window.loadShiftHandovers = async function() {
     tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #3b82f6; font-weight: bold;">⏳ Fetching shift handovers...</td></tr>';
 
     try {
-        // We fetch closed shifts that contain physical stock counts
-        const q = query(collection(db, "shifts"), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(50));
-        const snap = await getDocs(q);
+        const q = window.query(window.collection(window.db, "shifts"), window.where("status", "==", "Closed"), window.orderBy("endTime", "desc"), window.limit(50));
+        const snap = await window.getDocs(q);
 
         let html = '';
         snap.forEach(docSnap => {
             let data = docSnap.data();
-            
-            // 🔥 THE CRASH FIX: Safely verify that physicalStockCount is actually a valid Array! 
-            // (Older shifts saved this as an empty object {}, which caused the crash)
             if (!data.physicalStockCount || !Array.isArray(data.physicalStockCount) || data.physicalStockCount.length === 0) return; 
-            
-            if (!window.isBranchAllowed(data.branch)) return; // Franchise security lock
+            if (!window.isBranchAllowed(data.branch)) return;
 
             let dateStr = data.endTime ? data.endTime.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
             
-            // Calculate total financial loss and track any overages/discrepancies
             let totalLoss = 0;
             let hasOverage = false;
             let totalItemsWithVariance = 0;
@@ -25177,7 +25171,7 @@ window.loadShiftHandovers = async function() {
                 let variance = actual - expected;
                 
                 if (variance < 0) {
-                    totalLoss += Math.abs(variance) * (parseFloat(item.baseCost) || 0);
+                    totalLoss += Math.abs(variance) * (parseFloat(item.baseCost) || parseFloat(item.cost) || 0);
                     totalItemsWithVariance++;
                 } else if (variance > 0) {
                     hasOverage = true;
@@ -25192,19 +25186,23 @@ window.loadShiftHandovers = async function() {
                 lossColor = '#dc2626';
                 lossText = `Loss: ₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
             } else if (hasOverage) {
-                lossColor = '#d97706'; // Orange for warning
+                lossColor = '#d97706'; 
                 lossText = `Overage (+${totalItemsWithVariance} items)`;
             }
+            
+            // 🔥 Indicates if the Manager already applied the penalty!
+            let penaltyBadge = data.penaltyApplied ? '<br><span style="background: #fef2f2; color: #dc2626; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid #fca5a5;">🚨 Penalty Applied</span>' : '';
+            
             let safeData = encodeURIComponent(JSON.stringify(data.physicalStockCount));
 
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
                     <td style="padding: 12px; color: #64748b; font-weight: bold;">${dateStr}</td>
                     <td style="padding: 12px;"><span class="badge badge-open">${data.branch}</span></td>
-                    <td style="padding: 12px; font-weight: bold; color: #334155;">👤 ${data.cashier}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #334155;">👤 ${data.cashier} ${penaltyBadge}</td>
                     <td style="padding: 12px; text-align: right; font-weight: 900; color: ${lossColor}; font-size: 15px;">${lossText}</td>
                     <td style="padding: 12px; text-align: center;">
-                        <button onclick="window.viewHandoverDetails('${safeData}', '${data.cashier}')" style="background: white; border: 1px solid #3b82f6; color: #3b82f6; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">🔍 View Items</button>
+                        <button onclick="window.viewHandoverDetails('${safeData}', '${data.cashier.replace(/'/g, "\\'")}', ${totalLoss}, '${data.branch}', '${docSnap.id}', ${data.penaltyApplied || false})" style="background: white; border: 1px solid #3b82f6; color: #3b82f6; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">🔍 View Items</button>
                     </td>
                 </tr>
             `;
@@ -25217,7 +25215,7 @@ window.loadShiftHandovers = async function() {
     }
 };
 
-window.viewHandoverDetails = function(encodedData, cashierName) {
+window.viewHandoverDetails = function(encodedData, cashierName, totalLoss = 0, branch = 'Unknown', shiftId = null, penaltyApplied = false) {
     let items = JSON.parse(decodeURIComponent(encodedData));
     let html = `
         <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
@@ -25250,15 +25248,111 @@ window.viewHandoverDetails = function(encodedData, cashierName) {
     });
     html += `</tbody></table>`;
 
+    // 🔥 THE NEW PENALTY & ALERT UI 🔥
+    if (totalLoss > 0) {
+        if (penaltyApplied) {
+            html += `
+                <div style="margin-top: 15px; padding: 15px; background: #fef2f2; border: 1px solid #fca5a5; border-radius: 8px; text-align: center;">
+                    <div style="font-size: 12px; font-weight: bold; color: #b91c1c; text-transform: uppercase;">Total Shortage Loss</div>
+                    <div style="font-size: 24px; font-weight: 900; color: #dc2626;">₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    <div style="margin-top: 5px; font-size: 11px; font-weight: bold; color: #dc2626; background: white; padding: 4px; border-radius: 4px; border: 1px dashed #fca5a5; display: inline-block;">🚨 Penalty Already Applied</div>
+                </div>
+            `;
+        } else {
+            let safeNameArgs = cashierName.replace(/'/g, "\\'");
+            html += `
+                <div style="margin-top: 15px; padding: 15px; background: #fff1f2; border: 1px dashed #fca5a5; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <div style="font-size: 12px; font-weight: bold; color: #b91c1c; text-transform: uppercase;">Total Shortage Loss</div>
+                        <div style="font-size: 24px; font-weight: 900; color: #dc2626;">₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
+                    </div>
+                    <button onclick="window.issueHandoverPenalty('${safeNameArgs}', ${totalLoss}, '${branch}', '${shiftId}')" style="background: #dc2626; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3); transition: 0.2s;">🚨 Apply Penalty & Alert Staff</button>
+                </div>
+            `;
+        }
+    }
+
     Swal.fire({
-        // 🔥 THE FIX: Shrunk the title slightly and forced it to wrap!
         title: `<div style="font-size: 18px; font-weight: 900; line-height: 1.3;">🔍 Handover Details<br><span style="color: #64748b; font-size: 14px;">${cashierName}</span></div>`,
         html: html,
-        width: 800, // 🔥 THE FIX: Widened the popup from 600 to 800!
+        width: 800,
         confirmButtonText: 'Close',
         confirmButtonColor: '#3b82f6',
         customClass: { popup: 'rounded-2xl shadow-xl' }
     });
+};
+
+window.issueHandoverPenalty = async function(cashierNames, totalLoss, branch, shiftId) {
+    // Splits the names if multiple staff members closed the shift together
+    let staffArray = cashierNames.split('/').map(s => s.trim());
+    let splitAmount = totalLoss / staffArray.length;
+
+    let confirm = await Swal.fire({
+        title: '🚨 Issue Penalty?',
+        html: `This will automatically deduct <b style="color:#dc2626;">₱${splitAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</b> from the ledger of each staff member below:<br><br><b style="color:#0f172a;">${staffArray.join('<br>')}</b><br><br>It will also instantly blast an alert to the ${branch} POS tablet!`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Yes, Issue Penalty & Alert!'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    Swal.fire({title: 'Processing...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        let promises = [];
+        staffArray.forEach(staff => {
+            // 1. Add to Deductions Ledger
+            promises.push(window.addDoc(window.collection(window.db, "staff_deductions"), {
+                staffName: staff,
+                type: "Inventory Shortage Penalty",
+                amount: splitAmount,
+                dateAdded: window.serverTimestamp(),
+                status: "Unpaid",
+                remarks: `Shift Handover Audit Shortage. Shift ID: ${shiftId ? shiftId.slice(0,6).toUpperCase() : 'Unknown'}`
+            }));
+
+            // 2. Issue formal HR Sanction (NTE)
+            promises.push(window.addDoc(window.collection(window.db, "hr_sanctions"), {
+                staffName: staff,
+                branch: branch,
+                type: "Cash/Stock Shortage",
+                severity: "Written Warning & Deduction",
+                details: `Inventory count mismatch resulting in a financial loss of ₱${splitAmount.toLocaleString(undefined, {minimumFractionDigits:2})} per person.`,
+                status: "Pending Reply",
+                issuedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+                timestamp: window.serverTimestamp()
+            }));
+        });
+
+        // 3. Blast the Alert to the Cashier App!
+        promises.push(window.addDoc(window.collection(window.db, "announcements"), {
+            title: `🚨 INVENTORY SHORTAGE DETECTED`,
+            message: `A stock discrepancy was detected during the shift handover by ${cashierNames}.\n\nA penalty of ₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits:2})} has been recorded and divided among the staff on duty.\n\nPlease check your Staff App for the Notice to Explain (NTE).`,
+            branchTarget: branch,
+            active: true,
+            isSchedule: false, 
+            timestamp: window.serverTimestamp(),
+            author: "System Auto-Audit"
+        }));
+
+        // 4. Mark the shift so the button disappears and turns into a badge
+        if (shiftId) {
+            promises.push(window.updateDoc(window.doc(window.db, "shifts", shiftId), { penaltyApplied: true }));
+        }
+
+        await Promise.all(promises);
+
+        Swal.fire('✅ Penalty Issued!', 'The deduction has been applied and the branch tablet is alerting the staff right now.', 'success');
+        
+        if (typeof window.loadShiftHandovers === 'function') window.loadShiftHandovers();
+
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to issue penalty.', 'error');
+    }
 };
 
 // ========================================================
