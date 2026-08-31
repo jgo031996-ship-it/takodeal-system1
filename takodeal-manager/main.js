@@ -10201,7 +10201,7 @@ window.generateSchedule = async function() {
         for (let day = 1; day <= daysInMonth; day++) {
             currentSchedule[day] = {};
             for (const b in branchConfig) {
-                currentSchedule[day][b] = { scheduled: {}, rest: [], unavailable: [] };
+                currentSchedule[day][b] = { scheduled: {}, rest: [], unavailable: [], swaps: {} };
             }
         }
     }
@@ -10211,8 +10211,11 @@ window.generateSchedule = async function() {
         const dOfWeek = new Date(currentYear, currentMonth - 1, day).getDay();
         
         if (!currentSchedule[day][targetBranch]) {
-            currentSchedule[day][targetBranch] = { scheduled: {}, rest: [], unavailable: [] };
+            currentSchedule[day][targetBranch] = { scheduled: {}, rest: [], unavailable: [], swaps: {} };
         }
+
+        // 🔥 CLEAR OLD SWAP TRACKERS ON RESHUFFLE!
+        currentSchedule[day][targetBranch].swaps = {};
 
         let pool = employees.filter(e => e.branch === targetBranch).map(e => e.name);
         let available = [];
@@ -10361,40 +10364,51 @@ window.executeSwap = async function() {
     const target = selectEl ? selectEl.value : null;
 
     if (!target) return alert("Select someone.");
-    
+
     const { day, branch, shiftId } = window.swapData;
     const curStaff = currentSchedule[day][branch].scheduled[shiftId];
     let newStaff = null;
-    
+
+    // 🔥 THE NEW SWAP TRACKER MEMORY 🔥
+    if (!currentSchedule[day][branch].swaps) currentSchedule[day][branch].swaps = {};
+
     if (target.startsWith('shift_')) {
         const tSId = target.replace('shift_', '');
         newStaff = currentSchedule[day][branch].scheduled[tSId];
         currentSchedule[day][branch].scheduled[shiftId] = newStaff;
         currentSchedule[day][branch].scheduled[tSId] = curStaff;
-        
+
+        // Remember who was originally here
+        if (!currentSchedule[day][branch].swaps[shiftId]) currentSchedule[day][branch].swaps[shiftId] = curStaff;
+        if (!currentSchedule[day][branch].swaps[tSId]) currentSchedule[day][branch].swaps[tSId] = newStaff;
+
     } else if (target.startsWith('global_')) {
         newStaff = target.replace('global_', '');
         currentSchedule[day][branch].scheduled[shiftId] = newStaff;
-        
+
         if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !currentSchedule[day][branch].rest.includes(curStaff)) {
             currentSchedule[day][branch].rest.push(curStaff);
         }
-        
+
+        if (!currentSchedule[day][branch].swaps[shiftId]) currentSchedule[day][branch].swaps[shiftId] = curStaff;
+
     } else if (target.startsWith('rest_')) {
         const rIdx = parseInt(target.replace('rest_', ''));
         newStaff = currentSchedule[day][branch].rest[rIdx];
         currentSchedule[day][branch].scheduled[shiftId] = newStaff;
-        
+
         if (curStaff !== "UNFILLED" && curStaff !== "N/A") {
             currentSchedule[day][branch].rest[rIdx] = curStaff;
         } else {
             currentSchedule[day][branch].rest.splice(rIdx, 1);
         }
+
+        if (!currentSchedule[day][branch].swaps[shiftId]) currentSchedule[day][branch].swaps[shiftId] = curStaff;
     }
-    
-    window.closeModal(); 
-    window.renderTables(); 
-    
+
+    window.closeModal();
+    window.renderTables();
+
     if (typeof window.updateStaffDisplay === 'function') window.updateStaffDisplay();
     if (typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
     if (typeof window.updateUnavailabilityList === 'function') window.updateUnavailabilityList();
@@ -10405,7 +10419,7 @@ window.executeSwap = async function() {
         let startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0);
         let endOfDay = new Date(targetDate); endOfDay.setHours(23,59,59,999);
 
-        const reqQ = window.query(window.collection(window.db, "staff_requests"), 
+        const reqQ = window.query(window.collection(window.db, "staff_requests"),
             window.where("explanationCause", "==", "Tardiness / Late Arrival"),
             window.where("status", "==", "Pending")
         );
@@ -10422,13 +10436,13 @@ window.executeSwap = async function() {
             }
         });
         await Promise.all(deletePromises);
-        
+
         if (typeof window.loadAttendanceLogs === 'function') window.loadAttendanceLogs();
         if (typeof window.loadPayrollDashboard === 'function') window.loadPayrollDashboard();
         if (typeof window.loadInbox === 'function') window.loadInbox();
 
-    } catch(e) { 
-        console.error("Auto-Cleanup Error:", e); 
+    } catch(e) {
+        console.error("Auto-Cleanup Error:", e);
     }
 };
 
@@ -10454,7 +10468,7 @@ window.renderTables = function() {
     const container = document.getElementById("scheduleContainer"); if(!container) return;
     container.innerHTML = "";
     if (Object.keys(currentSchedule).length === 0) return;
-    
+
     const tabBox = document.createElement("div"); tabBox.className = "tab-container";
     const contentWrap = document.createElement("div");
     container.appendChild(tabBox); container.appendChild(contentWrap);
@@ -10465,7 +10479,7 @@ window.renderTables = function() {
     branchesToRender.forEach(branch => {
         if (!branchConfig[branch]) return;
         if (!window.isBranchAllowed(branch)) return; // 🔥 SECURITY LOCK
-        
+
         const isAct = (branch === currentActiveTab); // Check memory!
         const btn = document.createElement("button");
         btn.className = `tab-btn ${isAct ? 'active' : ''}`; btn.innerText = `${branch} Schedule`; btn.id = `btn-${branch}`;
@@ -10474,7 +10488,7 @@ window.renderTables = function() {
         const cBox = document.createElement("div");
         cBox.className = `tab-content ${isAct ? 'active' : ''}`; cBox.id = `content-${branch}`;
         const activeShifts = branchConfig[branch].filter(s => s.active);
-        
+
         // 🔥 ADDED THE SUSPENDED / AWOL COLUMN HEADER 🔥
         let tableHTML = `<table class="sched-table"><thead><tr><th class="date-col">Date</th>`;
         activeShifts.forEach(s => tableHTML += `<th>${s.name}</th>`);
@@ -10484,30 +10498,41 @@ window.renderTables = function() {
             let fullDateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const dStr = new Date(currentYear, currentMonth - 1, day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
             tableHTML += `<tr><td class="date-col">${dStr}</td>`;
-            
-            let dayData = currentSchedule[day][branch] || { scheduled: {}, rest: [], unavailable: [] };
+
+            let dayData = currentSchedule[day][branch] || { scheduled: {}, rest: [], unavailable: [], swaps: {} };
 
             activeShifts.forEach(s => {
                 const val = dayData.scheduled[s.id];
-                if (val === "N/A" || !val) tableHTML += `<td style="background:#f1f5f9; color:#94a3b8;">-</td>`;
-                else if (val === "UNFILLED") tableHTML += `<td><span class="empty-shift" onclick="openSwapModal(${day}, '${branch}', '${s.id}')">Needs Staff</span></td>`;
-                else tableHTML += `<td><span class="clickable" onclick="openSwapModal(${day}, '${branch}', '${s.id}')">${val}</span></td>`;
+
+                // 🔥 THE NEW SWAP BADGE INJECTOR
+                let swapBadge = '';
+                if (dayData.swaps && dayData.swaps[s.id] && dayData.swaps[s.id] !== "UNFILLED" && dayData.swaps[s.id] !== "N/A") {
+                    let originalStaff = dayData.swaps[s.id];
+                    // If they swap back to the original person, don't show the badge!
+                    if (originalStaff !== val) {
+                        swapBadge = `<br><span style="font-size:9px; color:#d97706; background:#fffbeb; padding:2px 6px; border-radius:4px; border:1px solid #fcd34d; margin-top:4px; display:inline-block; font-weight:bold; line-height: 1.2; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">Swapped w/ ${originalStaff}</span>`;
+                    }
+                }
+
+                if (val === "N/A" || !val) tableHTML += `<td style="background:#f1f5f9; color:#94a3b8; text-align: center;">-</td>`;
+                else if (val === "UNFILLED") tableHTML += `<td style="text-align: center;"><span class="empty-shift" onclick="openSwapModal(${day}, '${branch}', '${s.id}')">Needs Staff</span>${swapBadge}</td>`;
+                else tableHTML += `<td style="text-align: center;"><span class="clickable" onclick="openSwapModal(${day}, '${branch}', '${s.id}')">${val}</span>${swapBadge}</td>`;
             });
-            
+
             let restArr = dayData.rest || [];
-            tableHTML += `<td class="rest-day">${restArr.join(", ") || "-"}</td>`;
-            
+            tableHTML += `<td class="rest-day" style="text-align: center;">${restArr.join(", ") || "-"}</td>`;
+
             // 🔥 THE MAGIC COLUMN SPLITTER & CLICKABLE CHIPS 🔥
             let unArr = dayData.unavailable || [];
-            
+
             let offStaff = unArr.filter(u => !u.status.toLowerCase().includes('suspend') && !u.status.toLowerCase().includes('awol'));
             let suspStaff = unArr.filter(u => u.status.toLowerCase().includes('suspend') || u.status.toLowerCase().includes('awol'));
 
             let offHtml = offStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin-bottom:4px; display:inline-block; color:#dc2626; background:#fef2f2; border:1px solid #fca5a5;" onclick="window.removeUnavailable('${fullDateStr}', '${u.name}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
-            
+
             let suspHtml = suspStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin-bottom:4px; display:inline-block; color:#b91c1c; background:#fee2e2; border:1px solid #f87171;" onclick="window.removeUnavailable('${fullDateStr}', '${u.name}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
 
-            tableHTML += `<td>${offHtml || "-"}</td><td>${suspHtml || "-"}</td></tr>`;
+            tableHTML += `<td style="text-align: center;">${offHtml || "-"}</td><td style="text-align: center;">${suspHtml || "-"}</td></tr>`;
         }
         cBox.innerHTML = tableHTML + `</tbody></table>`;
         contentWrap.appendChild(cBox);
