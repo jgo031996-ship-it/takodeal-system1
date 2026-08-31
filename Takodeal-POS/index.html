@@ -726,8 +726,8 @@
   </div>
 
   <div class="content-area">
-    <div class="top-bar" style="height: 75px; background: white; border-bottom: 1px solid #e2e8f0; box-shadow: 0 4px 15px -3px rgba(0,0,0,0.05); padding: 0 30px; display: flex; justify-content: space-between; align-items: center; z-index: 50;">
-        <div class="top-title" id="topBarTitle" style="font-size: 22px; font-weight: 900; color: #0f172a; letter-spacing: 0.5px; display: flex; align-items: center; gap: 10px;">
+    <div class="top-bar" style="height: 60px; background: transparent; border: none; box-shadow: none; padding: 10px 30px 0 30px; display: flex; justify-content: space-between; align-items: center; z-index: 50;">
+        <div class="top-title" id="topBarTitle" style="font-size: 22px; font-weight: 900; color: #0f172a; letter-spacing: 0.5px; display: flex; align-items: center; gap: 10px; text-shadow: 0 2px 4px rgba(255,255,255,0.8);">
             🖥️ Point of Sale
         </div>
         <div class="top-bar-right" style="display: flex; align-items: center; gap: 15px;">
@@ -825,33 +825,30 @@
                 </div>
             </div>
 
-            <!-- RIGHT: POS REGISTER CART -->
-            <div style="width: 340px; background: white; border-radius: 12px; border: 1px solid #cbd5e1; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); flex-shrink: 0;">
+            <!-- RIGHT: POS REGISTER CART (WIDENED & BEAUTIFIED) -->
+            <div style="width: 420px; background: white; border-radius: 12px; border: 1px solid #cbd5e1; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.08); flex-shrink: 0;">
                 
-                <!-- Cart Header (WITH IDS FOR COLOR SWITCHING) -->
-                <div id="posCartHeader" style="padding: 12px 15px; background: #fff7ed; border-bottom: 2px solid #fdba74; display: flex; justify-content: space-between; align-items: center; transition: all 0.3s ease;">
-                    <div id="posCartTitle" style="font-weight: 900; color: #c2410c; font-size: 16px; display: flex; align-items: center; gap: 8px;">🛒 POS Register</div>
-                    
-                    <div style="display: flex; gap: 8px;">
-                        <select id="posPlatformSelect" onchange="window.switchPosPlatform(this.value)" style="background: #f39c12; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; padding: 8px; outline: none; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.3s ease;">
-                            <option value="Standard">🏪 Store</option>
-                            <option value="Grab">🟢 Grab</option>
-                            <option value="Foodpanda">🐼 Panda</option>
-                        </select>
-                        <select id="mainOrderType" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #fb923c; font-weight: 900; font-size: 12px; background: white; color: #ea580c; outline: none; cursor: pointer; box-shadow: 0 2px 4px rgba(234, 88, 12, 0.1);">
-                            <option value="" disabled selected>-- Select Type --</option>
-                            <option value="Dine-In">Dine-In</option>
-                            <option value="Take-Out">Take-Out</option>
-                        </select>
-                    </div>
+                <!-- Cart Header (Expanded Buttons) -->
+                <div id="posCartHeader" style="padding: 12px 15px; background: #fff7ed; border-bottom: 2px solid #fdba74; display: flex; gap: 10px; align-items: center; transition: all 0.3s ease;">
+                    <select id="posPlatformSelect" onchange="window.switchPosPlatform(this.value)" style="flex: 1; background: #f39c12; color: white; border: none; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; padding: 10px; outline: none; box-shadow: 0 2px 4px rgba(0,0,0,0.1); transition: all 0.3s ease; text-align: center;">
+                        <option value="Standard">🏪 Store POS</option>
+                        <option value="Grab">🟢 Grab Delivery</option>
+                        <option value="Foodpanda">🐼 Foodpanda</option>
+                    </select>
+                    <select id="mainOrderType" style="flex: 1; padding: 10px; border-radius: 8px; border: 2px solid #fb923c; font-weight: 900; font-size: 14px; background: white; color: #ea580c; outline: none; cursor: pointer; box-shadow: 0 2px 4px rgba(234, 88, 12, 0.1); text-align: center;">
+                        <option value="" disabled selected>-- Select Type --</option>
+                        <option value="Dine-In">🍽️ Dine-In</option>
+                        <option value="Take-Out">🛍️ Take-Out</option>
+                    </select>
                 </div>
 
-                <!-- Cart Columns Header -->
-                <div style="display: flex; padding: 8px 15px; font-size: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
-                    <div style="flex: 2;">Description</div>
+                <!-- Cart Columns Header (Perfectly Aligned) -->
+                <div style="display: flex; padding: 10px 15px 10px 20px; font-size: 11px; font-weight: 900; color: #64748b; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; background: #f8fafc; align-items: center;">
+                    <div style="flex: 2.5;">Description</div>
                     <div style="flex: 1; text-align: right;">Price</div>
-                    <div style="flex: 1; text-align: center;">Qty</div>
+                    <div style="flex: 0.8; text-align: center;">Qty</div>
                     <div style="flex: 1; text-align: right;">Sub</div>
+                    <div style="width: 28px; margin-left: 10px;"></div>
                 </div>
 
                 <!-- Cart List -->
