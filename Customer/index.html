@@ -605,6 +605,15 @@
 
         window.loadLiveMenu = async function() {
             try {
+                // 🔥 NEW: Fetch Manager Config for Home Screen Categories!
+                window.homeFeaturedCategories = [];
+                try {
+                    const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
+                    if (configSnap.exists() && configSnap.data().customerHomeCategories) {
+                        window.homeFeaturedCategories = configSnap.data().customerHomeCategories.map(c => c.trim().toLowerCase());
+                    }
+                } catch(e) { console.log("Could not load home categories config."); }
+
                 const q = query(collection(db, "menu"), orderBy("category"));
                 const snap = await getDocs(q);
                 
@@ -713,6 +722,15 @@
             let isReversed = false;
 
             for (let cat in categoriesMap) {
+                // 🔥 THE NEW FILTER ENGINE: Only show categories allowed by the Manager!
+                if (window.homeFeaturedCategories && window.homeFeaturedCategories.length > 0) {
+                    if (!window.homeFeaturedCategories.includes(cat.toLowerCase())) continue; // Skip if not featured!
+                } else {
+                    // Smart Fallback (If Manager hasn't set it up yet, auto-hide the ugly ones!)
+                    let lowCat = cat.toLowerCase();
+                    if (lowCat.includes('packaging') || lowCat.includes('extra') || lowCat.includes('add-on') || lowCat === 'soft drinks') continue;
+                }
+
                 // Find an item with an image to represent the category
                 let repItem = categoriesMap[cat].find(i => i.image) || categoriesMap[cat][0];
                 let imgSrc = repItem && repItem.image ? repItem.image : 'logo.jpg'; 
@@ -727,8 +745,9 @@
                 let rowDirection = isReversed ? 'md:flex-row-reverse' : 'md:flex-row';
                 let textAlignment = isReversed ? 'md:text-right' : 'md:text-left';
                 
+                // 🔥 BONUS: Changed the click event so clicking a category actually auto-searches it on the Menu page!
                 html += `
-                    <div class="flex flex-col ${rowDirection} items-center gap-6 sm:gap-12 cursor-pointer group hover:bg-zinc-900/50 p-6 rounded-3xl transition-all duration-300 border border-transparent hover:border-zinc-800" onclick="window.switchScreen('orderingScreen')">
+                    <div class="flex flex-col ${rowDirection} items-center gap-6 sm:gap-12 cursor-pointer group hover:bg-zinc-900/50 p-6 rounded-3xl transition-all duration-300 border border-transparent hover:border-zinc-800" onclick="window.goToCategory('${cat.replace(/'/g, "\\'")}')">
                         
                         <!-- Circular Image -->
                         <div class="w-48 h-48 sm:w-64 sm:h-64 flex-shrink-0 rounded-full border-4 border-zinc-800 overflow-hidden relative shadow-[0_0_20px_rgba(0,0,0,0.5)] group-hover:border-brandred transition-colors duration-300">
