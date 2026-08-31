@@ -403,24 +403,102 @@
     <!-- 🛒 THE PREMIUM CHECKOUT CART MODAL -->
     <div id="checkoutModal" class="hidden fixed inset-0 bg-black/80 z-[70] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 animate-fade-in">
         <div class="bg-cardbg w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[85vh] border border-zinc-800 shadow-2xl">
-            
             <div class="p-5 border-b border-zinc-800 flex justify-between items-center bg-darkbg">
                 <h2 class="text-xl font-black text-white">🛒 Your Cart</h2>
                 <button onclick="window.closeCheckoutModal()" class="text-zinc-500 hover:text-white text-3xl font-bold leading-none transition-colors">&times;</button>
             </div>
-            
             <div id="checkoutModalItems" class="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-4">
                 <!-- Cart items injected here -->
             </div>
-
             <div class="p-5 bg-darkbg border-t border-zinc-800">
+                <div id="deliveryFeeRow" class="flex justify-between mb-2 items-center hidden">
+                    <span class="text-zinc-400 font-bold text-xs uppercase tracking-widest">Delivery Fee</span>
+                    <span class="text-sm font-bold text-white">₱50.00</span>
+                </div>
                 <div class="flex justify-between mb-5 items-center">
                     <span class="text-zinc-400 font-bold text-sm uppercase tracking-widest">Grand Total</span>
                     <span id="checkoutModalTotal" class="text-2xl font-black text-brandred">₱0.00</span>
                 </div>
-                <!-- Proceed to Details Button -->
-                <button onclick="window.submitOrder()" id="submitBtn" class="w-full bg-brandgold text-white font-black py-4 rounded-xl shadow-[0_0_15px_rgba(217,119,6,0.3)] hover:bg-yellow-600 active:scale-95 transition-all text-lg flex justify-center items-center gap-2">
+                <button onclick="window.initiateCheckout()" id="submitBtn" class="w-full bg-brandgold text-white font-black py-4 rounded-xl shadow-[0_0_15px_rgba(217,119,6,0.3)] hover:bg-yellow-600 active:scale-95 transition-all text-lg flex justify-center items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                     <span>Proceed to Details 🚀</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 📍 THE NEW NATIVE ORDER DETAILS MODAL -->
+    <div id="checkoutDetailsModal" class="hidden fixed inset-0 bg-black/90 z-[80] flex items-end sm:items-center justify-center backdrop-blur-sm px-0 sm:px-4 animate-fade-in">
+        <div class="bg-cardbg w-full max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col max-h-[90vh] border border-zinc-800 shadow-2xl">
+            <div class="p-4 border-b border-zinc-800 flex justify-between items-center bg-darkbg">
+                <h2 class="text-lg font-black text-white flex items-center gap-2"><span>📍</span> Order Details</h2>
+                <button onclick="document.getElementById('checkoutDetailsModal').classList.add('hidden')" class="text-zinc-500 hover:text-white text-3xl font-bold leading-none">&times;</button>
+            </div>
+            
+            <div class="p-5 flex-1 overflow-y-auto custom-scrollbar space-y-4 text-sm">
+                <div>
+                    <label class="block mb-2 font-bold text-zinc-400 text-[11px] uppercase tracking-widest">Order Type</label>
+                    <select id="native-type" onchange="window.updateNativeUI()" class="w-full p-3 rounded-xl border border-zinc-700 bg-darkbg text-white outline-none focus:border-brandred font-bold">
+                        <option value="Takeout">Pick-up / Takeout</option>
+                        <option value="Delivery" id="opt-delivery">Standard Delivery (+₱50)</option>
+                        <option value="Advance Takeout">Advance Order (Pick-up)</option>
+                        <option value="Advance Delivery" id="opt-adv-delivery">Advance Order Delivery (+₱50)</option>
+                    </select>
+                </div>
+
+                <div id="native-time-div" class="hidden">
+                    <label class="block mb-2 font-bold text-brandgold text-[11px] uppercase tracking-widest">⏰ Advance Time</label>
+                    <input type="time" id="native-time" class="w-full p-3 rounded-xl border border-brandgold/50 bg-darkbg text-brandgold outline-none font-bold">
+                </div>
+
+                <div>
+                    <label class="block mb-2 font-bold text-zinc-400 text-[11px] uppercase tracking-widest">Contact Number 📞</label>
+                    <input type="tel" id="native-phone" placeholder="09XX XXX XXXX" class="w-full p-3 rounded-xl border border-zinc-700 bg-darkbg text-white outline-none focus:border-brandred font-bold">
+                </div>
+
+                <div id="native-delivery-div" class="hidden space-y-4 border-t border-zinc-800 pt-4 mt-2">
+                    <div>
+                        <label class="block mb-2 font-bold text-zinc-400 text-[11px] uppercase tracking-widest">Pin Your Location</label>
+                        <div id="native-map" class="h-32 w-full rounded-xl border border-zinc-700 z-10 relative"></div>
+                        <p id="native-map-status" class="text-[10px] text-brandgold mt-2 font-bold">Locating...</p>
+                        <input type="hidden" id="native-lat"><input type="hidden" id="native-lng">
+                    </div>
+                    <div>
+                        <label class="block mb-2 font-bold text-zinc-400 text-[11px] uppercase tracking-widest">Complete Address & Landmarks</label>
+                        <textarea id="native-address" placeholder="e.g. Green gate beside bakery..." class="w-full p-3 rounded-xl border border-zinc-700 bg-darkbg text-white outline-none focus:border-brandred resize-none h-20 font-medium"></textarea>
+                    </div>
+                </div>
+
+                <div class="border-t border-zinc-800 pt-4 mt-2">
+                    <label class="block mb-2 font-bold text-zinc-400 text-[11px] uppercase tracking-widest">Payment Method</label>
+                    <select id="native-payment" onchange="window.updateNativeUI()" class="w-full p-3 rounded-xl border border-zinc-700 bg-darkbg text-white outline-none focus:border-brandred font-bold">
+                        <option value="Cash">Cash</option>
+                        <option value="Online">Online (GCash / Paymaya / Bank)</option>
+                    </select>
+                </div>
+
+                <div id="native-cash-div">
+                    <p id="native-pickup-note" class="text-green-500 font-bold text-[11px] text-center mb-2">✔️ Payment Cash Upon Pick-up</p>
+                    <div id="native-cod-div" class="hidden">
+                        <label class="block mb-2 font-bold text-zinc-400 text-[11px] uppercase tracking-widest">Amount for Change (₱)</label>
+                        <input type="number" id="native-cod-change" placeholder="e.g. 1000" class="w-full p-3 rounded-xl border border-zinc-700 bg-darkbg text-white outline-none focus:border-brandred font-bold">
+                    </div>
+                </div>
+
+                <div id="native-online-div" class="hidden text-center bg-darkbg p-4 rounded-xl border border-zinc-800">
+                    <img src="QR.jpg" class="w-40 mx-auto mb-2 rounded-lg border border-zinc-700">
+                    <p class="text-[11px] text-zinc-400 mb-3 font-bold">Scan to pay via Instapay</p>
+                    <input type="text" id="native-ref" placeholder="Reference Number (Optional)" class="w-full p-3 rounded-xl border border-zinc-700 bg-black text-white outline-none focus:border-brandred font-bold text-center">
+                </div>
+
+                <div class="p-4 bg-zinc-900 border border-zinc-800 rounded-xl text-xs text-zinc-400 text-center leading-relaxed">
+                    We will not process this order until you confirm via <a href="https://www.facebook.com/Takodeal" target="_blank" class="text-blue-500 font-bold">Facebook</a>.<br>
+                    <span class="block mt-1">Branch Contact: <span id="native-branch-contact" class="text-white font-bold"></span></span>
+                </div>
+            </div>
+
+            <div class="p-4 bg-darkbg border-t border-zinc-800">
+                <button onclick="window.finalizeOrder()" id="finalSubmitBtn" class="w-full bg-brandred text-white font-black py-4 rounded-xl shadow-[0_0_15px_rgba(220,38,38,0.3)] hover:bg-red-700 active:scale-95 transition-all text-lg flex justify-center items-center gap-2">
+                    Confirm & Send Order
                 </button>
             </div>
         </div>
@@ -504,7 +582,7 @@
 
         window.rawMenuCache = []; 
         window.masterMenu = [];
-        window.cart = [];
+        window.cart = JSON.parse(localStorage.getItem('takodeal_customer_cart')) || [];
         window.activeModalItem = null;
         const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
         window.phantomVariants = {}; 
@@ -1004,6 +1082,7 @@
         };
 
         window.updateCartUI = function() {
+            localStorage.setItem('takodeal_customer_cart', JSON.stringify(window.cart));
             let grandTotal = 0; let totalItems = 0;
             window.cart.forEach(item => { grandTotal += item.lineTotalFinal; totalItems += item.quantity; });
             
@@ -1112,57 +1191,266 @@
         window.swalMap = null;
         window.swalMarker = null;
 
-        window.initSwalMap = function() {
-            if (window.swalMap) return; 
-            let mapEl = document.getElementById('swal-map');
+        // 🚀 THE NATIVE CHECKOUT & DELIVERY FEE ENGINE
+        window.nativeMap = null;
+        window.nativeMarker = null;
+
+        window.initNativeMap = function() {
+            if (window.nativeMap) {
+                window.nativeMap.invalidateSize(); // Fixes map rendering glitch in hidden divs
+                return;
+            }
+            let mapEl = document.getElementById('native-map');
             if (!mapEl) return;
 
             navigator.geolocation.getCurrentPosition(
                 (pos) => {
                     let lat = pos.coords.latitude;
                     let lng = pos.coords.longitude;
-                    document.getElementById('swal-lat').value = lat;
-                    document.getElementById('swal-lng').value = lng;
-                    document.getElementById('swal-map-status').innerText = '✅ Location Pinned! Drag marker to adjust.';
-                    document.getElementById('swal-map-status').style.color = '#10b981';
+                    document.getElementById('native-lat').value = lat;
+                    document.getElementById('native-lng').value = lng;
+                    document.getElementById('native-map-status').innerText = '✅ Location Pinned! Drag marker to adjust.';
+                    document.getElementById('native-map-status').style.color = '#10b981';
 
-                    window.swalMap = L.map('swal-map').setView([lat, lng], 17);
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(window.swalMap);
-                    window.swalMarker = L.marker([lat, lng], {draggable: true}).addTo(window.swalMap);
+                    window.nativeMap = L.map('native-map').setView([lat, lng], 17);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(window.nativeMap);
+                    window.nativeMarker = L.marker([lat, lng], {draggable: true}).addTo(window.nativeMap);
 
-                    window.swalMarker.on('dragend', function(e) {
+                    window.nativeMarker.on('dragend', function(e) {
                         let pos = e.target.getLatLng();
-                        document.getElementById('swal-lat').value = pos.lat;
-                        document.getElementById('swal-lng').value = pos.lng;
+                        document.getElementById('native-lat').value = pos.lat;
+                        document.getElementById('native-lng').value = pos.lng;
                     });
-                    setTimeout(()=> window.swalMap.invalidateSize(), 300);
+                    setTimeout(()=> window.nativeMap.invalidateSize(), 300);
                 },
                 (err) => {
-                    document.getElementById('swal-map-status').innerText = '⚠️ Please enable GPS or type address below.';
-                    document.getElementById('swal-map-status').style.color = '#ef4444';
+                    document.getElementById('native-map-status').innerText = '⚠️ Please enable GPS or type address below.';
+                    document.getElementById('native-map-status').style.color = '#ef4444';
                 }
             );
         };
 
-        window.updateSwalUI = function() {
-            let type = document.getElementById('swal-type').value;
-            let pay = document.getElementById('swal-payment').value;
-            let branch = document.getElementById('selectedBranch').value;
-
-            document.getElementById('swal-time-div').style.display = type.includes('Advance') ? 'block' : 'none';
+        window.updateNativeUI = function() {
+            let type = document.getElementById('native-type').value;
+            let pay = document.getElementById('native-payment').value;
+            let branch = document.getElementById('selectedBranch').value || 'Cabantian';
 
             let isDelivery = type.includes('Delivery');
-            document.getElementById('swal-delivery-div').style.display = isDelivery ? 'block' : 'none';
-            if (isDelivery) { setTimeout(window.initSwalMap, 300); }
+            
+            // Toggle UI Elements
+            document.getElementById('native-time-div').style.display = type.includes('Advance') ? 'block' : 'none';
+            document.getElementById('native-delivery-div').style.display = isDelivery ? 'block' : 'none';
+            document.getElementById('native-online-div').style.display = pay === 'Online' ? 'block' : 'none';
+            document.getElementById('native-cash-div').style.display = pay === 'Cash' ? 'block' : 'none';
+            document.getElementById('native-pickup-note').style.display = (!isDelivery && pay === 'Cash') ? 'block' : 'none';
+            document.getElementById('native-cod-div').style.display = (isDelivery && pay === 'Cash') ? 'block' : 'none';
 
-            document.getElementById('swal-online-div').style.display = pay === 'Online' ? 'block' : 'none';
-            document.getElementById('swal-cash-div').style.display = pay === 'Cash' ? 'block' : 'none';
+            // Dynamically Update the UI Cart Total with Delivery Fee!
+            let deliveryFeeRow = document.getElementById('deliveryFeeRow');
+            let totalDisplay = document.getElementById('checkoutModalTotal');
+            let grandTotal = window.cart.reduce((sum, item) => sum + item.lineTotalFinal, 0);
 
-            document.getElementById('swal-pickup-note').style.display = (!isDelivery && pay === 'Cash') ? 'block' : 'none';
-            document.getElementById('swal-cod-div').style.display = (isDelivery && pay === 'Cash') ? 'block' : 'none';
+            if (isDelivery) {
+                deliveryFeeRow.classList.remove('hidden');
+                totalDisplay.innerText = '₱' + (grandTotal + 50).toFixed(2);
+                setTimeout(window.initNativeMap, 300); // Wake up map
+            } else {
+                deliveryFeeRow.classList.add('hidden');
+                totalDisplay.innerText = '₱' + grandTotal.toFixed(2);
+            }
 
             let contact = branch === 'Cabantian' ? '0945 133 5251' : (branch === 'Maa' ? '0956 617 6979' : 'Message our page');
-            document.getElementById('swal-branch-contact').innerText = contact;
+            document.getElementById('native-branch-contact').innerText = contact;
+        };
+
+        window.initiateCheckout = async function() {
+            if (window.cart.length === 0) return Swal.fire({ title: 'Cart Empty', icon: 'warning', background: '#141414', color: '#fff' });
+
+            // 🔥 STAGE 1: JOLLIBEE-STYLE DRINK UPSELL ENGINE 🔥
+            let hasFood = window.cart.some(i => !i.category?.toLowerCase().includes('drink') && !i.category?.toLowerCase().includes('tea') && !i.category?.toLowerCase().includes('coffee') && !i.category?.toLowerCase().includes('beverage'));
+            let hasDrink = window.cart.some(i => i.category?.toLowerCase().includes('drink') || i.category?.toLowerCase().includes('tea') || i.category?.toLowerCase().includes('coffee') || i.category?.toLowerCase().includes('beverage'));
+
+            if (hasFood && !hasDrink) {
+                let drinks = window.masterMenu.filter(i => i.category?.toLowerCase().includes('drink') || i.category?.toLowerCase().includes('tea') || i.category?.toLowerCase().includes('coffee') || i.category?.toLowerCase().includes('beverage'));
+                
+                if (drinks.length > 0) {
+                    let shuffled = drinks.sort(() => 0.5 - Math.random()).slice(0, 3);
+                    let drinkCards = shuffled.map(d => {
+                        let safeData = encodeURIComponent(JSON.stringify(d));
+                        let imgHtml = d.image ? `<img src="${d.image}" style="width:100%; height:80px; object-fit:cover; border-radius:8px; margin-bottom:8px;">` : `<div style="width:100%; height:80px; background:#27272a; border-radius:8px; margin-bottom:8px; display:flex; align-items:center; justify-content:center; font-size:24px;">🥤</div>`;
+                        return `<div style="background:#18181b; border:1px solid #27272a; padding:10px; border-radius:12px; min-width:130px; flex:1; display:flex; flex-direction:column; justify-content:space-between; cursor:pointer; transition:0.2s; hover:border-brandgold;" onclick="window.openItemModal('${safeData}'); Swal.close();">
+                            ${imgHtml}
+                            <div style="font-size:12px; font-weight:bold; color:white; line-height:1.2; margin-bottom:5px;">${d.name}</div>
+                            <div style="color:#d97706; font-weight:900; font-size:14px;">₱${parseFloat(d.price||d.basePrice||0).toFixed(2)}</div>
+                            <button style="background:#dc2626; color:white; font-size:11px; font-weight:bold; padding:6px; border-radius:6px; margin-top:8px; width:100%;">+ Add</button>
+                        </div>`;
+                    }).join('');
+
+                    const upsellRes = await Swal.fire({
+                        title: 'Wait! Thirsty? 🥤',
+                        html: `<div style="font-size:14px; color:#a1a1aa; margin-bottom:15px;">Complete your meal with our refreshing signature drinks!</div><div style="display:flex; gap:10px; overflow-x:auto; padding-bottom:10px;">${drinkCards}</div>`,
+                        showCancelButton: true,
+                        confirmButtonText: 'Skip & Proceed ➔',
+                        cancelButtonText: 'Back to Cart',
+                        confirmButtonColor: '#3f3f46',
+                        cancelButtonColor: '#18181b',
+                        customClass: { popup: 'bg-cardbg text-white border border-zinc-800 rounded-2xl shadow-2xl' }
+                    });
+
+                    if (!upsellRes.isConfirmed) return; 
+                }
+            }
+
+            // 🛡️ STAGE 2: IDENTITY VERIFICATION
+            if (!window.currentUser) {
+                const loginPrompt = await Swal.fire({
+                    title: '🛡️ Identity Verification',
+                    html: '<span class="text-zinc-400 text-sm">To protect against prank orders, please verify your identity securely via Google.</span>',
+                    icon: 'info', showCancelButton: true, confirmButtonText: 'Verify with Google', cancelButtonText: 'Cancel',
+                    confirmButtonColor: '#dc2626', cancelButtonColor: '#3f3f46', background: '#0a0a0a', color: '#ffffff',
+                    customClass: { popup: 'border border-zinc-800 rounded-2xl' }
+                });
+
+                if (loginPrompt.isConfirmed) {
+                    try {
+                        const result = await signInWithPopup(auth, provider);
+                        window.currentUser = result.user;
+                    } catch (e) {
+                        return Swal.fire({ title: 'Login Failed', text: 'Could not verify identity.', icon: 'error', background: '#141414', color: '#fff' });
+                    }
+                } else return;
+            }
+
+            // Open the new Native Modal
+            window.updateNativeUI();
+            document.getElementById('checkoutDetailsModal').classList.remove('hidden');
+        };
+
+        window.finalizeOrder = async function() {
+            let type = document.getElementById('native-type').value;
+            let phone = document.getElementById('native-phone').value.trim();
+            let address = document.getElementById('native-address').value.trim();
+            let time = document.getElementById('native-time').value;
+            let pay = document.getElementById('native-payment').value;
+            let refNo = document.getElementById('native-ref').value.trim();
+            let codChange = document.getElementById('native-cod-change').value.trim();
+            let lat = document.getElementById('native-lat').value;
+            let lng = document.getElementById('native-lng').value;
+
+            // Strict Validation
+            if (!phone) return Swal.fire({title: 'Required', text:'Contact number is required', icon: 'warning', background: '#141414', color: '#fff'});
+            if (type.includes('Delivery') && !address) return Swal.fire({title: 'Required', text:'Delivery address is required', icon: 'warning', background: '#141414', color: '#fff'});
+            if (type.includes('Advance') && !time) return Swal.fire({title: 'Required', text:'Please select an Advance Time', icon: 'warning', background: '#141414', color: '#fff'});
+
+            let btn = document.getElementById('finalSubmitBtn');
+            let origHtml = btn.innerHTML;
+            btn.innerHTML = '<span>⏳ Processing...</span>'; btn.disabled = true;
+
+            let branch = document.getElementById('selectedBranch').value || 'Cabantian';
+            let grandTotal = window.cart.reduce((sum, item) => sum + item.lineTotalFinal, 0);
+            
+            // Add Delivery Fee to Final Total!
+            if (type.includes('Delivery')) {
+                grandTotal += 50;
+            }
+
+            try {
+                let orderCode = 'TKDL-' + Math.floor(10000 + Math.random() * 90000);
+                let mapLink = (lat && lng) ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}` : null;
+
+                let orderPayload = {
+                    orderCode: orderCode,
+                    customerName: window.currentUser.displayName || 'Verified User',
+                    customerEmail: window.currentUser.email,
+                    branch: branch,
+                    orderType: type,
+                    preferredTime: time,
+                    contactNumber: phone,
+                    deliveryAddress: address,
+                    mapLink: mapLink,
+                    items: window.cart,
+                    totalAmount: grandTotal,
+                    paymentMode: pay,
+                    paymentReference: refNo,
+                    changeFor: codChange,
+                    status: 'mobile_queue', 
+                    timestamp: serverTimestamp()
+                };
+
+                await addDoc(collection(db, "incoming_orders"), orderPayload);
+                
+                // Hide Modals
+                document.getElementById('checkoutDetailsModal').classList.add('hidden');
+                window.closeCheckoutModal();
+                
+                // 📸 RECEIPT GENERATION
+                document.getElementById('receiptBranch').innerText = branch.toUpperCase();
+                document.getElementById('receiptCode').innerText = orderCode;
+                document.getElementById('receiptTotal').innerText = `₱${grandTotal.toFixed(2)}`;
+                
+                let rItemsHtml = '';
+                window.cart.forEach(i => {
+                    rItemsHtml += `<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span>${i.quantity}x ${i.name}</span><span>${i.lineTotalFinal.toFixed(2)}</span></div>`;
+                });
+                if (type.includes('Delivery')) {
+                    rItemsHtml += `<div style="display:flex; justify-content:space-between; margin-bottom:3px; margin-top:5px; border-top:1px dashed #ccc; padding-top:5px;"><span>Delivery Fee</span><span>50.00</span></div>`;
+                }
+                document.getElementById('receiptItems').innerHTML = rItemsHtml;
+                
+                let pDetails = `Payment: ${pay}<br>Type: ${type}`;
+                if(time) pDetails += `<br>Time: ${time}`;
+                document.getElementById('receiptPaymentDetails').innerHTML = pDetails;
+
+                // Take Screenshot
+                const canvas = await html2canvas(document.getElementById('hiddenReceiptTemplate'), { scale: 2 });
+                const imgData = canvas.toDataURL('image/png');
+
+                // 🔥 THE FIX: CLEAR CART FROM SCREEN AND MEMORY!
+                window.cart = []; 
+                localStorage.removeItem('takodeal_customer_cart');
+                window.updateCartUI();
+
+                let rawMessage = `Hi TAKODEÁL! 🐙\nI just placed an order via the App.\n\nCode: ${orderCode}\nName: ${window.currentUser.displayName}\nTotal: ₱${grandTotal.toFixed(2)}\n\nPlease confirm my order!`;
+                let fbLink = `https://m.me/Takodeal?text=${encodeURIComponent(rawMessage)}`;
+
+                await Swal.fire({
+                    title: 'Order Placed! 🎉',
+                    html: `
+                        <div style="font-size: 14px; color: #a1a1aa; line-height: 1.6; margin-bottom:15px;">
+                            Code: <b style="color:white; font-size:18px;">${orderCode}</b><br><br>
+                            <span style="color: #dc2626; font-weight: bold;">⚠️ ACTION REQUIRED:</span><br>
+                            We will not process this order until you send us this code on Facebook Messenger.
+                        </div>
+                        <img src="${imgData}" style="width: 100%; border-radius: 8px; border: 1px solid #3f3f46; margin-bottom: 15px;">
+                    `,
+                    showDenyButton: true,
+                    confirmButtonText: 'Chat on Facebook 💬',
+                    denyButtonText: 'Download Receipt 📥',
+                    confirmButtonColor: '#0ea5e9',
+                    denyButtonColor: '#16a34a',
+                    allowOutsideClick: false,
+                    background: '#0a0a0a', color: '#ffffff',
+                    customClass: { popup: 'border border-zinc-800 rounded-2xl shadow-2xl' }
+                }).then((result) => {
+                    if (result.isDenied) {
+                        let link = document.createElement('a');
+                        link.download = `${orderCode}_Receipt.png`;
+                        link.href = imgData;
+                        link.click();
+                        Swal.fire({title:'Downloaded!', text:'Now please click Chat on Facebook.', icon:'info', confirmButtonText: 'Go to Facebook', background: '#0a0a0a', color: '#ffffff'}).then(()=> {
+                            window.open(fbLink, '_blank'); window.startOrderTracker(window.currentUser.email);
+                        });
+                    } else if (result.isConfirmed) {
+                        window.open(fbLink, '_blank'); window.startOrderTracker(window.currentUser.email);
+                    }
+                });
+
+            } catch (e) {
+                console.error(e);
+                Swal.fire({ title: 'Error', text: 'Failed to submit order.', icon: 'error', background: '#141414', color: '#fff' });
+            } finally {
+                btn.innerHTML = origHtml; btn.disabled = false;
+            }
         };
 
         window.submitOrder = async function() {
@@ -1734,9 +2022,23 @@
                 if (!isEnabled) {
                     if(heroDeliveryText) { heroDeliveryText.innerText = "Unavailable"; heroDeliveryText.classList.add('text-red-500'); }
                     if(directDeliveryStatus) { directDeliveryStatus.innerText = "Temporarily Paused (High Volume)"; directDeliveryStatus.classList.add('text-red-500'); }
+                    
+                    // 🔥 STRICT KILL SWITCH: Block checkout completely!
+                    let cBtn = document.getElementById('submitBtn');
+                    if (cBtn) {
+                        cBtn.innerHTML = 'Store Currently Paused 🔴';
+                        cBtn.disabled = true;
+                    }
                 } else {
                     if(heroDeliveryText) { heroDeliveryText.innerText = "40 Minutes"; heroDeliveryText.classList.remove('text-red-500'); }
                     if(directDeliveryStatus) { directDeliveryStatus.innerText = "Standard 40-Min Delivery"; directDeliveryStatus.classList.remove('text-red-500'); }
+                    
+                    // Enable checkout
+                    let cBtn = document.getElementById('submitBtn');
+                    if (cBtn) {
+                        cBtn.innerHTML = 'Proceed to Details 🚀';
+                        cBtn.disabled = false;
+                    }
                 }
             });
         };
