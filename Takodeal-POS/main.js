@@ -666,8 +666,8 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     window.currentBaseFlavorsInfo = baseFlavors;
                     
                     baseFlavorHtml += `
-                        <div class="section-title" style="margin-bottom: 8px; width: 100%; text-align: left; color: #0ea5e9;">BASE FLAVOR (Required)</div>
-                        <select id="baseFlavorSelect" class="input-box" style="width: 100%; padding: 12px; font-weight: 900; border: 2px solid #bae6fd; background: #f0f9ff; color: #0369a1; cursor: pointer; outline: none; margin: 0; font-size: 14px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+                        <div class="section-title" style="margin-bottom: 8px; width: 100%; text-align: left; color: #d97706;">BASE FLAVOR (Required)</div>
+                        <select id="baseFlavorSelect" class="input-box" style="width: 100%; padding: 12px; font-weight: 900; border: 2px solid #fcd34d; background: #fffbeb; color: #d97706; cursor: pointer; outline: none; margin: 0; font-size: 14px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
                             <option value="" disabled ${!existingItem ? 'selected' : ''}>-- Select Flavor --</option>
                     `;
                     
@@ -865,8 +865,8 @@ window.confirmAddOrUpdateToCart = function() {
             baseSelect.style.backgroundColor = "#fef2f2";
             baseSelect.style.borderColor = "#dc2626";
             setTimeout(() => {
-                baseSelect.style.backgroundColor = "#f0f9ff";
-                baseSelect.style.borderColor = "#bae6fd";
+                baseSelect.style.backgroundColor = "#fffbeb";
+                baseSelect.style.borderColor = "#fcd34d";
             }, 1000);
             
             Swal.fire({
