@@ -15321,7 +15321,6 @@ window.loadPosConfigHub = async function() {
     if (btn) btn.innerText = "⏳ Loading Data...";
 
     try {
-        // 🔥 FIX: Removed the "window." prefix so it connects to your database properly!
         const docRef = doc(db, "settings", "global_pos_config");
         const docSnap = await getDoc(docRef);
 
@@ -15339,6 +15338,9 @@ window.loadPosConfigHub = async function() {
             if(document.getElementById('configConsumables')) document.getElementById('configConsumables').value = (data.consumableCats || ["Consumables", "Cleaning Supplies", "Packaging"]).join(', ');
             if(document.getElementById('configShiftAudit')) document.getElementById('configShiftAudit').value = (data.shiftAuditItems || ["Paper Bowl", "Plastic Cup"]).join(', ');
             
+            // 🔥 NEW: Load the Customer App categories!
+            if(document.getElementById('configHomeCats')) document.getElementById('configHomeCats').value = (data.customerHomeCategories || ["Takoyaki", "Milk Tea", "Iced Coffee"]).join(', ');
+            
         } else {
             // Load Defaults if nothing exists yet
             if(document.getElementById('configPayMethods')) document.getElementById('configPayMethods').value = "Cash, GCash, Bank, Grab";
@@ -15350,6 +15352,9 @@ window.loadPosConfigHub = async function() {
             if(document.getElementById('configWasteReasons')) document.getElementById('configWasteReasons').value = "Dropped / Spilled, Burnt / Overcooked, Spoiled / Expired, Customer Replacement, Pest Damage, Other";
             if(document.getElementById('configConsumables')) document.getElementById('configConsumables').value = "Consumables, Cleaning Supplies, Packaging";
             if(document.getElementById('configShiftAudit')) document.getElementById('configShiftAudit').value = "Paper Bowl, Plastic Cup";
+            
+            // 🔥 NEW: Default Customer App categories!
+            if(document.getElementById('configHomeCats')) document.getElementById('configHomeCats').value = "Takoyaki, Milk Tea, Iced Coffee";
         }
     } catch (error) {
         console.error("Error loading config:", error);
