@@ -1858,13 +1858,45 @@ window.loadPrepBatchLogs = async function() {
     });
     tabContainer.innerHTML = bHtml;
 
+    // 🔥 INJECT DATE FILTER DYNAMICALLY 🔥
+    let headerDiv = tabContainer.parentElement;
+    if (headerDiv && !document.getElementById('prepDateFilterContainer')) {
+        let filterHtml = `
+            <div id="prepDateFilterContainer" style="display: flex; gap: 10px; align-items: center; margin-left: auto; margin-right: 15px;">
+                <input type="date" id="prepDateFilter" onchange="window.loadPrepBatchLogs()" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #8b5cf6; font-size: 13px; background: white;" title="Filter by Date">
+                <button onclick="document.getElementById('prepDateFilter').value=''; window.loadPrepBatchLogs();" style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-weight: bold; color: #475569; font-size: 13px; cursor: pointer; transition: 0.2s;">Clear</button>
+            </div>
+        `;
+        let refreshBtn = headerDiv.querySelector('.btn-refresh');
+        if (refreshBtn) {
+            refreshBtn.insertAdjacentHTML('beforebegin', filterHtml);
+        }
+    }
+
     tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #8b5cf6; font-weight: bold;">Loading prep history...</td></tr>';
     
-    let today = new Date();
-    today.setHours(0,0,0,0);
+    let dateFilterEl = document.getElementById('prepDateFilter');
+    let selectedDate = dateFilterEl ? dateFilterEl.value : "";
 
     try {
-        const q = window.query(window.collection(window.db, "stock_logs"), window.where("type", "in", ["Manager Prep Batch", "End-of-Shift Kitchen Prep"]), window.orderBy("timestamp", "desc"), window.limit(50));
+        let q;
+        if (selectedDate) {
+            let startOfDay = new Date(selectedDate + 'T00:00:00');
+            let endOfDay = new Date(selectedDate + 'T23:59:59');
+            q = window.query(window.collection(window.db, "stock_logs"), 
+                window.where("type", "in", ["Manager Prep Batch", "End-of-Shift Kitchen Prep"]), 
+                window.where("timestamp", ">=", startOfDay), 
+                window.where("timestamp", "<=", endOfDay), 
+                window.orderBy("timestamp", "desc")
+            );
+        } else {
+            q = window.query(window.collection(window.db, "stock_logs"), 
+                window.where("type", "in", ["Manager Prep Batch", "End-of-Shift Kitchen Prep"]), 
+                window.orderBy("timestamp", "desc"), 
+                window.limit(100) // Increased limit so you can see more shifts!
+            );
+        }
+
         const snap = await window.getDocs(q);
         
         let logs = [];
@@ -1877,17 +1909,36 @@ window.loadPrepBatchLogs = async function() {
         logs.sort((a,b) => b.timestamp - a.timestamp); // Newest first
 
         let html = '';
+        let currentShiftGroup = '';
+
         logs.forEach(log => {
-            let timeStr = log.timestamp ? log.timestamp.toDate().toLocaleTimeString('en-PH', {month: 'short', day:'numeric', hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+            let timeObj = log.timestamp ? log.timestamp.toDate() : new Date();
+            let timeStr = timeObj.toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'});
+            let dateStr = timeObj.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
             let pUom = log.purchUom || 'Batch';
             let pQty = log.purchQty ? log.purchQty : '-';
             let purchDisplay = log.purchQty ? `(${pQty} ${pUom}s)` : '';
+            let staffName = log.user || log.cashier || 'System';
+
+            // 🔥 GROUP BY DATE AND CASHIER (THE SHIFT DIVIDER) 🔥
+            let shiftKey = `${dateStr}_${staffName}`;
+
+            if (shiftKey !== currentShiftGroup) {
+                html += `
+                    <tr>
+                        <td colspan="6" style="background: #f3e8ff; padding: 12px 15px; font-weight: 900; color: #6d28d9; text-transform: uppercase; font-size: 13px; letter-spacing: 1px; border-bottom: 2px solid #d8b4fe; border-top: 2px solid #d8b4fe;">
+                            📅 ${dateStr} &nbsp;&nbsp;|&nbsp;&nbsp; 🧑‍🍳 Shift: ${staffName}
+                        </td>
+                    </tr>
+                `;
+                currentShiftGroup = shiftKey;
+            }
 
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                    <td style="padding: 12px 15px; color: #64748b; font-size: 12px;">${timeStr}</td>
+                    <td style="padding: 12px 15px; color: #64748b; font-size: 12px; padding-left: 25px;">${timeStr}</td>
                     <td style="padding: 12px 15px;"><span class="badge badge-open">${log.branch}</span></td>
-                    <td style="padding: 12px 15px; font-weight: bold; color: #334155;">👤 ${log.user || log.cashier || 'System'}</td>
+                    <td style="padding: 12px 15px; font-weight: bold; color: #334155;">👤 ${staffName}</td>
                     <td style="padding: 12px 15px; font-weight: bold; color: #8b5cf6;">${log.item}</td>
                     <td style="padding: 12px 15px;">
                         <strong style="color: #10b981; font-size: 15px;">+${log.variance} ${log.uom}</strong><br>
@@ -1900,7 +1951,7 @@ window.loadPrepBatchLogs = async function() {
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="6" style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold;">No prep batches logged.</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="6" style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold;">No prep batches logged for this filter.</td></tr>';
     } catch(e) {
         console.error(e);
         tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: #dc2626; padding: 40px; font-weight: bold;">Error loading history.</td></tr>';
