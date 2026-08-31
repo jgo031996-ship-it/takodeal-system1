@@ -25224,7 +25224,7 @@ window.viewHandoverDetails = function(encodedData, cashierName) {
             <thead style="background: #f1f5f9;">
                 <tr>
                     <th style="padding: 10px;">Item</th>
-                    <th style="padding: 10px;">System Expected</th>
+                    <th style="padding: 10px;">Sys Expected</th>
                     <th style="padding: 10px; color: #0284c7;">Actual Count</th>
                     <th style="padding: 10px;">Variance</th>
                 </tr>
@@ -25242,8 +25242,8 @@ window.viewHandoverDetails = function(encodedData, cashierName) {
         html += `
             <tr style="border-bottom: 1px dashed #e2e8f0;">
                 <td style="padding: 10px; font-weight: bold; color: #334155;">${item.name}</td>
-                <td style="padding: 10px; color: #64748b;">${expected} ${item.uom}</td>
-                <td style="padding: 10px; font-weight: bold; color: #0284c7;">${actual} ${item.uom}</td>
+                <td style="padding: 10px; color: #64748b;">${expected} <span style="font-size:10px;">${item.uom}</span></td>
+                <td style="padding: 10px; font-weight: bold; color: #0284c7;">${actual} <span style="font-size:10px;">${item.uom}</span></td>
                 <td style="padding: 10px; font-weight: bold; color: ${varColor};">${varText}</td>
             </tr>
         `;
@@ -25251,9 +25251,10 @@ window.viewHandoverDetails = function(encodedData, cashierName) {
     html += `</tbody></table>`;
 
     Swal.fire({
-        title: `🔍 Handover Details: ${cashierName}`,
+        // 🔥 THE FIX: Shrunk the title slightly and forced it to wrap!
+        title: `<div style="font-size: 18px; font-weight: 900; line-height: 1.3;">🔍 Handover Details<br><span style="color: #64748b; font-size: 14px;">${cashierName}</span></div>`,
         html: html,
-        width: 600,
+        width: 800, // 🔥 THE FIX: Widened the popup from 600 to 800!
         confirmButtonText: 'Close',
         confirmButtonColor: '#3b82f6',
         customClass: { popup: 'rounded-2xl shadow-xl' }
