@@ -2802,7 +2802,7 @@ window.updateDispatchUomLabel = async function() {
                 let v = parseFloat(log.variance) || 0;
                 let t = (log.type || "").toLowerCase();
                 // Mathematically calculate every deduction
-                if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty"))) {
+                if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty") || t.includes("audit") || t.includes("count"))) {
                     totalBurn += Math.abs(v);
                 }
             });
@@ -3964,7 +3964,7 @@ window.updateDispatchUomLabel = async function() {
                 let log = doc.data();
                 let v = parseFloat(log.variance) || 0;
                 let t = (log.type || "").toLowerCase();
-                if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty"))) {
+                if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty") || t.includes("audit") || t.includes("count"))) {
                     totalBurn += Math.abs(v);
                 }
             });
@@ -12676,7 +12676,7 @@ window.loadSmartSupplyChain = async function() {
                 let t = (log.type || "").toLowerCase();
                 let itemName = (log.item || "").trim().toLowerCase(); 
                 
-                if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty"))) {
+                if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty") || t.includes("audit") || t.includes("count"))) {
                     if (!burnData[itemName]) burnData[itemName] = 0;
                     burnData[itemName] += Math.abs(v);
                 }
@@ -16447,7 +16447,7 @@ window.loadForecasterEngine = async function() {
             let t = (log.type || "").toLowerCase();
             let itemName = (log.item || "").trim().toLowerCase(); 
             
-            if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty"))) {
+            if (v < 0 && (t.includes("sales") || t.includes("deduction") || t.includes("waste") || t.includes("spoilage") || t.includes("store use") || t.includes("prep") || t.includes("adjustment") || t.includes("voided") || t.includes("penalty") || t.includes("audit") || t.includes("count"))) {
                 if (!burnData[itemName]) burnData[itemName] = 0;
                 burnData[itemName] += Math.abs(v);
             }
@@ -17591,7 +17591,7 @@ window.openItemLedger = async function(branch, itemName) {
             // 🧠 CALCULATE BURN RATE (Only negative variances from operational use)
             let logTimeMs = d.timestamp ? (d.timestamp.toMillis ? d.timestamp.toMillis() : new Date(d.timestamp).getTime()) : 0;
             if (logTimeMs >= fourteenDaysMs) {
-                if (variance < 0 && (type.includes("sales") || type.includes("deduction") || type.includes("waste") || type.includes("spoilage") || type.includes("store use") || type.includes("prep") || type.includes("adjustment") || type.includes("voided") || type.includes("penalty"))) {
+                if (variance < 0 && (type.includes("sales") || type.includes("deduction") || type.includes("waste") || type.includes("spoilage") || type.includes("store use") || type.includes("prep") || type.includes("adjustment") || type.includes("voided") || type.includes("penalty") || type.includes("audit") || type.includes("count"))) {
                     totalBurn14Days += Math.abs(variance);
                 }
             }
