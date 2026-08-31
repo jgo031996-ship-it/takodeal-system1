@@ -7518,6 +7518,7 @@ window.submitConsumablesCart = async function() {
             timestamp: new Date()
         });
 
+        window.consumablesCart = [];
         window.renderConsumablesCart();
         window.loadConsumablesView(); // Refreshes grid stock instantly
         if (typeof window.loadConsumablesHistory === 'function') window.loadConsumablesHistory();
