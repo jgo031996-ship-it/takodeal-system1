@@ -5177,33 +5177,37 @@ window.loadWasteHistory = async function() {
         let startOfDay = new Date();
         startOfDay.setHours(0,0,0,0);
 
-        const q = query(collection(db, "stock_logs"), 
-            where("branch", "==", branch), 
-            where("type", "==", "Waste / Spoilage"), 
-            where("timestamp", ">=", startOfDay),
-            orderBy("timestamp", "desc")
+        const q = window.query(window.collection(window.db, "stock_logs"), 
+            window.where("branch", "==", branch), 
+            window.where("type", "==", "Waste / Spoilage"), 
+            window.where("timestamp", ">=", startOfDay),
+            window.orderBy("timestamp", "desc")
         );
-        const snap = await getDocs(q);
+        const snap = await window.getDocs(q);
 
         let html = '';
         snap.forEach(docSnap => {
             let d = docSnap.data();
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }) : 'Just now';
             
+            // 🔥 Inject the Staff Member Name!
+            let cashierName = d.user || d.cashier || 'System';
+            
             html += `
-                <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px; color: #64748b; font-size: 13px;">${dateStr}</td>
-                    <td style="padding: 15px; font-weight: bold; color: #334155; font-size: 14px;">${d.item}</td>
-                    <td style="padding: 15px; font-weight: 900; color: #ef4444; font-size: 16px;">-${Math.abs(d.variance)} <span style="font-size: 11px; font-weight: normal; color: #94a3b8;">${d.uom}</span></td>
-                    <td style="padding: 15px; color: #475569; font-style: italic;">${d.note}</td>
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 15px; color: #64748b; font-size: 13px; font-weight: bold; vertical-align: top;">${dateStr}</td>
+                    <td style="padding: 15px; font-weight: 900; color: #0f172a; font-size: 13px; vertical-align: top;">👤 ${cashierName}</td>
+                    <td style="padding: 15px; font-weight: bold; color: #334155; font-size: 14px; vertical-align: top;">${d.item}</td>
+                    <td style="padding: 15px; font-weight: 900; color: #ef4444; font-size: 16px; vertical-align: top;">-${Math.abs(d.variance)} <span style="font-size: 11px; font-weight: normal; color: #94a3b8;">${d.uom}</span></td>
+                    <td style="padding: 15px; color: #475569; font-style: italic; max-width: 250px; white-space: normal; vertical-align: top;">"${d.note}"</td>
                 </tr>
             `;
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 30px; color: #64748b;">No waste logged today! 🎉</td></tr>';
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No waste logged today! 🎉</td></tr>';
     } catch (e) {
         console.error("Waste History Error:", e);
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Error fetching logs.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red; padding: 20px; font-weight: bold;">❌ Error fetching logs.</td></tr>';
     }
 };
 
@@ -7514,9 +7518,76 @@ window.submitConsumablesCart = async function() {
             timestamp: new Date()
         });
 
-        window.consumablesCart = [];
         window.renderConsumablesCart();
         window.loadConsumablesView(); // Refreshes grid stock instantly
+        if (typeof window.loadConsumablesHistory === 'function') window.loadConsumablesHistory();
+        
+        Swal.fire({ title: '✅ Success', text: 'Items successfully logged and deducted from inventory.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to log consumables.', 'error');
+    } finally {
+        btn.innerHTML = "📥 Log & Deduct"; btn.disabled = false;
+    }
+};
+
+// 🔥 NEW: CONSUMABLES TAB SWITCHER & HISTORY ENGINE
+window.switchConsumablesTab = function(tab) {
+    document.getElementById('consumablesTabNew').style.display = tab === 'New' ? 'block' : 'none';
+    document.getElementById('consumablesTabHistory').style.display = tab === 'History' ? 'block' : 'none';
+    
+    let btnNew = document.getElementById('btnTabConsNew');
+    let btnHist = document.getElementById('btnTabConsHist');
+    
+    if (tab === 'New') {
+        btnNew.style.background = '#0ea5e9'; btnNew.style.color = 'white'; btnNew.style.border = 'none';
+        btnHist.style.background = 'white'; btnHist.style.color = '#475569'; btnHist.style.border = '1px solid #cbd5e1';
+        document.getElementById('consumablesCartPanel').style.display = 'flex';
+    } else {
+        btnHist.style.background = '#0ea5e9'; btnHist.style.color = 'white'; btnHist.style.border = 'none';
+        btnNew.style.background = 'white'; btnNew.style.color = '#475569'; btnNew.style.border = '1px solid #cbd5e1';
+        document.getElementById('consumablesCartPanel').style.display = 'none';
+        window.loadConsumablesHistory();
+    }
+};
+
+window.loadConsumablesHistory = async function() {
+    const tbody = document.getElementById('consumablesHistoryBody');
+    if (!tbody) return;
+    
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">⏳ Fetching today\'s store use logs...</td></tr>';
+    
+    let branch = localStorage.getItem('takodeal_device_branch');
+    let today = new Date();
+    today.setHours(0,0,0,0);
+
+    try {
+        const q = window.query(window.collection(window.db, "store_use_logs"), window.where("branch", "==", branch), window.where("timestamp", ">=", today), window.orderBy("timestamp", "desc"));
+        const snap = await window.getDocs(q);
+        
+        let html = '';
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let timeStr = d.timestamp ? d.timestamp.toDate().toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+            
+            let itemsList = d.items ? d.items.map(i => `<div style="margin-bottom: 4px;"><span style="color:#0ea5e9; font-weight:900; font-size:14px;">${i.qty}x</span> <span style="font-weight: bold; color: #334155;">${i.name}</span> <span style="font-size: 11px; color: #64748b; font-weight: bold;">(${i.uom})</span></div>`).join('') : '<span style="color:#94a3b8; font-style:italic;">Unknown Items</span>';
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 15px 20px; color: #64748b; font-size: 13px; font-weight: bold; vertical-align: top;">${timeStr}</td>
+                    <td style="padding: 15px 20px; font-weight: 900; color: #0f172a; font-size: 14px; vertical-align: top;">👤 ${d.loggedBy || 'System'}</td>
+                    <td style="padding: 15px 20px; color: #1e293b; font-size: 13px; vertical-align: top;">${itemsList}</td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = html || '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #94a3b8; font-style: italic; font-weight: bold;">No store supplies logged today.</td></tr>';
+    } catch(e) {
+        console.error("Consumables History Error:", e);
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color: #dc2626; padding: 40px; font-weight: bold;">❌ Failed to load logs.</td></tr>';
+    }
+};
         
         Swal.fire({ title: '✅ Success', text: 'Items successfully logged and deducted from inventory.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
 
