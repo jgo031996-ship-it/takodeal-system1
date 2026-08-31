@@ -9035,7 +9035,10 @@ window.confirmPrepCart = async function() {
                 await addDoc(collection(db, "stock_logs"), {
                     branch: item.branch, item: item.name, variance: baseQtyToAdd, uom: item.baseUom,
                     purchUom: item.purchUom, purchQty: item.purchQty, 
-                    type: "End-of-Shift Kitchen Prep", note: `Prepared ${item.purchQty} ${item.purchUom}(s) by ${safeCashierName}`, timestamp: new Date()
+                    type: "End-of-Shift Kitchen Prep", 
+                    note: `Prepared ${item.purchQty} ${item.purchUom}(s) by ${safeCashierName}`, 
+                    user: safeCashierName, // 🔥 THE FIX: explicitly saves the staff name!
+                    timestamp: new Date()
                 });
                 
                 totalItemsLogged++;
