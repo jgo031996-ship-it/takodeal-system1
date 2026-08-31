@@ -4804,7 +4804,7 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
 };
 
 // ==========================================
-// 🚚 DELIVERY HISTORY MODAL ENGINE
+// 🚚 DELIVERY HISTORY MODAL ENGINE (COLLAPSIBLE UI)
 // ==========================================
 window.openDeliveryHistoryModal = async function() {
     Swal.fire({title: 'Fetching Deliveries...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
@@ -4853,28 +4853,40 @@ window.openDeliveryHistoryModal = async function() {
         } else {
             for (let key in grouped) {
                 let group = grouped[key];
+                let safeKey = key.replace(/[^a-zA-Z0-9]/g, '_'); // Makes sure the ID doesn't break
+                let totalItems = group.items.length; // Counts total items delivered
+
+                // 🔥 The New Collapsible Accordion Header!
                 html += `
-                <div style="background: white; border: 1px solid #cbd5e1; border-radius: 16px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.03);">
-                    <div style="background: #f8fafc; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                        <div>
+                <div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; margin-bottom: 15px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <div onclick="let b = document.getElementById('del_body_${safeKey}'); let i = document.getElementById('del_icon_${safeKey}'); if(b.style.display==='none'){b.style.display='block'; i.innerText='▲';}else{b.style.display='none'; i.innerText='▼';}" style="background: #f8fafc; padding: 15px 20px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#f1f5f9';" onmouseout="this.style.background='#f8fafc';">
+                        <div style="flex: 1;">
                             <h4 style="margin: 0; color: #0f172a; font-size: 15px; font-weight: 900; display: flex; align-items: center; gap: 6px;"><span>🚚</span> Dispatched: ${group.date}</h4>
-                            <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: bold;">Driver: ${group.driver}</div>
+                            <div style="font-size: 12px; color: #64748b; margin-top: 4px; font-weight: bold; display: flex; gap: 10px; align-items: center;">
+                                <span>👨‍✈️ Driver: <span style="color:#334155;">${group.driver}</span></span>
+                                <span style="color: #cbd5e1;">|</span>
+                                <span style="color: #0ea5e9;">📦 ${totalItems} Items Delivered</span>
+                            </div>
                         </div>
-                        <div style="text-align: right;">
-                            <div style="font-size: 11px; color: #0ea5e9; font-weight: 900; background: #e0f2fe; padding: 4px 8px; border-radius: 6px; border: 1px solid #bae6fd; display: inline-block;">Received By: ${group.receivedBy}</div>
+                        <div style="text-align: right; margin-right: 15px;">
+                            <div style="font-size: 11px; color: #16a34a; font-weight: 900; background: #dcfce7; padding: 4px 8px; border-radius: 6px; border: 1px solid #bbf7d0; display: inline-block;">✅ Rcvd: ${group.receivedBy}</div>
                             <div style="font-size: 11px; color: #64748b; margin-top: 6px; font-weight: bold;">${group.receivedAt}</div>
                         </div>
+                        <div id="del_icon_${safeKey}" style="font-size: 14px; font-weight: bold; color: #94a3b8; width: 20px; text-align: right;">▼</div>
                     </div>
-                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                        <thead style="background: white; border-bottom: 2px solid #e2e8f0;">
-                            <tr>
-                                <th style="padding: 10px 15px; text-align: left; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Item</th>
-                                <th style="padding: 10px 15px; text-align: center; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Expected</th>
-                                <th style="padding: 10px 15px; text-align: center; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Received</th>
-                                <th style="padding: 10px 15px; text-align: left; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                    
+                    <!-- 🔥 The Hidden Dropdown Table -->
+                    <div id="del_body_${safeKey}" style="display: none; background: white;">
+                        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                            <thead style="background: #f1f5f9; border-bottom: 2px solid #e2e8f0;">
+                                <tr>
+                                    <th style="padding: 10px 15px; text-align: left; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Item</th>
+                                    <th style="padding: 10px 15px; text-align: center; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Expected</th>
+                                    <th style="padding: 10px 15px; text-align: center; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Received</th>
+                                    <th style="padding: 10px 15px; text-align: left; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
                 `;
 
                 group.items.forEach(item => {
@@ -4891,16 +4903,16 @@ window.openDeliveryHistoryModal = async function() {
                     let remarksHtml = item.receivingRemarks ? `<div style="font-size: 11px; color: #dc2626; margin-top: 6px; font-weight: bold; background: #fef2f2; padding: 6px 8px; border-radius: 6px; border: 1px dashed #fca5a5;">"${item.receivingRemarks}"</div>` : '';
 
                     html += `
-                            <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                                <td style="padding: 15px; font-weight: 900; color: #1e293b;">${item.item}</td>
-                                <td style="padding: 15px; text-align: center; color: #64748b; font-weight: bold; font-size: 14px;">${expectedQty} <span style="font-size: 10px;">${friendlyUom}</span></td>
-                                <td style="padding: 15px; text-align: center; color: #0284c7; font-weight: 900; font-size: 15px;">${rcvQty} <span style="font-size: 10px;">${friendlyUom}</span></td>
-                                <td style="padding: 15px;">${statusBadge}${remarksHtml}</td>
-                            </tr>
+                                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                                    <td style="padding: 15px; font-weight: 900; color: #1e293b;">${item.item}</td>
+                                    <td style="padding: 15px; text-align: center; color: #64748b; font-weight: bold; font-size: 14px;">${expectedQty} <span style="font-size: 10px;">${friendlyUom}</span></td>
+                                    <td style="padding: 15px; text-align: center; color: #0284c7; font-weight: 900; font-size: 15px;">${rcvQty} <span style="font-size: 10px;">${friendlyUom}</span></td>
+                                    <td style="padding: 15px;">${statusBadge}${remarksHtml}</td>
+                                </tr>
                     `;
                 });
 
-                html += `</tbody></table></div>`;
+                html += `</tbody></table></div></div>`;
             }
         }
         html += `</div>`;
