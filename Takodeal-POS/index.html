@@ -1097,14 +1097,15 @@
                 <table class="data-table" style="width: 100%; text-align: left; border-collapse: collapse;">
                     <thead style="background: #f8fafc; border-bottom: 2px solid #e2e8f0; position: sticky; top: 0; z-index: 5;">
                         <tr>
-                            <th style="padding: 12px 15px; color: #475569; font-size: 12px; text-transform: uppercase;">Time</th>
-                            <th style="padding: 12px 15px; color: #475569; font-size: 12px; text-transform: uppercase;">Item</th>
-                            <th style="padding: 12px 15px; color: #475569; font-size: 12px; text-transform: uppercase;">Qty Lost</th>
-                            <th style="padding: 12px 15px; color: #475569; font-size: 12px; text-transform: uppercase;">Reason</th>
+                            <th style="padding: 12px 15px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Time</th>
+                            <th style="padding: 12px 15px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Staff</th>
+                            <th style="padding: 12px 15px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Item</th>
+                            <th style="padding: 12px 15px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Qty Lost</th>
+                            <th style="padding: 12px 15px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Reason</th>
                         </tr>
                     </thead>
                     <tbody id="wasteHistoryBody">
-                        <tr><td colspan="4" class="text-center" style="padding: 20px;">Loading history...</td></tr>
+                        <tr><td colspan="5" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">Loading history...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -1204,17 +1205,46 @@
     <!-- 🧹 DEDICATED CONSUMABLES & STORE USE VIEW -->
     <div class="view-container" id="view-consumables">
       <div class="pos-layout">
-        <div class="menu-panel">
-          <div class="category-header" id="consumablesCategoryHeader"></div>
-          <div class="item-grid-container">
+        <div class="menu-panel" style="display: flex; flex-direction: column; background: white; border-radius: 12px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+          
+          <!-- 🔥 NEW: TAB SWITCHER HEADER -->
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; background: #f8fafc; padding-right: 20px;">
+              <div class="category-header" id="consumablesCategoryHeader" style="border-bottom: none; flex: 1; padding: 15px 20px;"></div>
+              <div style="display: flex; gap: 10px; flex-shrink: 0;">
+                  <button id="btnTabConsNew" onclick="window.switchConsumablesTab('New')" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;">➕ New Log</button>
+                  <button id="btnTabConsHist" onclick="window.switchConsumablesTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;">📜 History</button>
+              </div>
+          </div>
+          
+          <!-- Tab 1: Store Items Grid -->
+          <div class="item-grid-container" id="consumablesTabNew" style="display: block; flex: 1; padding: 20px;">
             <div class="item-grid" id="consumablesItemGrid">
-              <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #666;">Loading Store Supplies...</div>
+              <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #64748b; font-weight: bold;">Loading Store Supplies...</div>
             </div>
           </div>
+
+          <!-- 🔥 NEW: HISTORY TAB CONTENT -->
+          <div id="consumablesTabHistory" style="display: none; flex: 1; overflow-y: auto; background: white; padding: 20px;">
+              <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                  <thead style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1; position: sticky; top: 0; z-index: 5;">
+                      <tr>
+                          <th style="padding: 15px 20px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Time</th>
+                          <th style="padding: 15px 20px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Staff / Cashier</th>
+                          <th style="padding: 15px 20px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900;">Items Taken</th>
+                      </tr>
+                  </thead>
+                  <tbody id="consumablesHistoryBody">
+                      <tr><td colspan="3" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">Loading history...</td></tr>
+                  </tbody>
+              </table>
+          </div>
+
         </div>
-        <div class="ticket-panel">
+        
+        <!-- Store Use Cart -->
+        <div class="ticket-panel" id="consumablesCartPanel">
           <div class="ticket-header">
-            <h2>📦 Store Use Cart</h2>
+            <h2 style="margin: 0; font-size: 18px; color: #1e293b; display: flex; align-items: center; gap: 8px;">📦 Store Use Cart</h2>
           </div>
           <div class="table-header">
             <span class="col-desc">Item Taken</span>
@@ -1222,11 +1252,11 @@
             <span class="col-sub">Action</span>
           </div>
           <ul class="order-list" id="consumablesCartList">
-            <li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Cart is empty.</li>
+            <li style="padding: 30px; text-align: center; color: #94a3b8; font-style: italic; font-weight: bold;">Cart is empty.</li>
           </ul>
           <div class="ticket-footer">
-            <button class="btn-place" id="btnSubmitConsumables" onclick="window.submitConsumablesCart()" style="width: 100%; padding: 18px; font-size: 16px; background: #0ea5e9; box-shadow: 0 4px 6px rgba(14,165,233,0.3);">
-                📥 Log & Deduct Inventory
+            <button class="btn-place" id="btnSubmitConsumables" onclick="window.submitConsumablesCart()" style="width: 100%; padding: 16px; font-size: 16px; font-weight: 900; background: #0ea5e9; border: none; border-radius: 8px; color: white; cursor: pointer; box-shadow: 0 4px 6px rgba(14,165,233,0.3); transition: 0.2s;">
+                📥 Log & Deduct
             </button>
           </div>
         </div>
