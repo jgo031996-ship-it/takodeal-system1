@@ -965,7 +965,7 @@ window.renderCart = function() {
     list.innerHTML = '';
     
     if (!window.cart || window.cart.length === 0) { 
-        list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; 
+        list.innerHTML = '<li style="padding: 40px; text-align: center; color: #94a3b8; font-style: italic; font-weight: bold;">Menu is empty.</li>'; 
         document.getElementById('displaySubTotal').innerText = '₱0.00'; 
         document.getElementById('displayGrandTotal').innerText = '₱0.00'; 
         window.currentGrandTotal = 0; 
@@ -973,43 +973,56 @@ window.renderCart = function() {
         window.cart.forEach((item, index) => {
             grandTotal += item.lineTotalFinal;
             
-            // Safe string concatenation (No backticks to break!)
-            let notesText = item.notes ? '<div style="color:#222; font-style:italic; font-size:12px; margin-top:4px; font-weight:600;">' + item.notes + '</div>' : '';
+            // 📝 Notes styling
+            let notesText = item.notes ? `<div style="color:#d97706; font-style:italic; font-size:11px; margin-top:4px; font-weight:bold;">✎ ${item.notes}</div>` : '';
 
+            // 🧀 Sleek Add-ons with cool arrows
             let addonsText = '';
             if (item.addons) {
                 for (let key in item.addons) {
                     let addon = item.addons[key];
                     if (addon.qty > 0) {
-                        let priceText = (addon.price && addon.price > 0) ? '(₱' + (addon.price * addon.qty).toFixed(2) + ')' : '';
+                        let priceText = (addon.price && addon.price > 0) ? `<span style="color:#94a3b8; font-weight:normal;">(+₱${(addon.price * addon.qty).toFixed(2)})</span>` : `<span style="color:#94a3b8; font-weight:normal;">(Free)</span>`;
                         let addonName = addon.name || key;
-                        addonsText += '<div style="color:#d97706; font-size:11px; margin-top:2px; font-weight:600;">+ ' + addon.qty + 'x ' + addonName + ' <span style="color:#64748b;">' + priceText + '</span></div>';
+                        addonsText += `<div style="color:#475569; font-size:11px; margin-top:3px; font-weight:bold; display:flex; align-items:center; gap:4px;">
+                            <span style="color:#cbd5e1;">↳</span> ${addon.qty}x ${addonName} ${priceText}
+                        </div>`;
                     }
                 }
             }
 
-            // 🔥 THE FIX: Beautiful Color-Coded Badges for Item Order Types!
+            // 🏷️ Order Type Badge (Moved below the title so it doesn't squish!)
             let badgeBg = '#f1f5f9'; let badgeCol = '#64748b'; let badgeBrd = '#cbd5e1';
             if (item.orderType === 'Dine-In') { badgeBg = '#f0fdf4'; badgeCol = '#16a34a'; badgeBrd = '#bbf7d0'; }
             else if (item.orderType === 'Take-Out') { badgeBg = '#fffbeb'; badgeCol = '#d97706'; badgeBrd = '#fde68a'; }
             else if (item.orderType) { badgeBg = '#e0f2fe'; badgeCol = '#0284c7'; badgeBrd = '#bae6fd'; }
             
-            let typeBadge = item.orderType ? `<span style="background: ${badgeBg}; color: ${badgeCol}; border: 1px solid ${badgeBrd}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 6px; vertical-align: middle;">${item.orderType}</span>` : '';
+            let typeBadge = item.orderType ? `<div style="margin-top: 4px;"><span style="background: ${badgeBg}; color: ${badgeCol}; border: 1px solid ${badgeBrd}; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 900; display: inline-block; text-transform: uppercase;">${item.orderType}</span></div>` : '';
 
-            // Protect against apostrophes in item names breaking the click event
             let safeItemName = item.name.replace(/'/g, "\\'");
 
-            // Safe HTML builder
-            list.innerHTML += '<li class="cart-item" onclick="window.openAddOrderModal(\'' + safeItemName + '\', ' + item.basePrice + ', window.cart[' + index + '])">' +
-                '<div class="cart-item-desc">' +
-                    '<span class="cart-item-name">' + item.name + ' ' + typeBadge + '</span>' +
-                    '<div class="cart-item-subtext">' + addonsText + notesText + '</div>' +
-                '</div>' +
-                '<div class="cart-item-price">₱' + item.variantPrice.toFixed(2) + '</div>' +
-                '<div class="cart-item-qty">x ' + item.qty + '</div>' +
-                '<div class="cart-item-sub">₱' + item.lineTotalFinal.toFixed(2) + '</div>' +
-                '<button class="btn-remove" onclick="window.cart.splice(' + index + ', 1); window.renderCart(); event.stopPropagation();">✖</button>' +
-            '</li>';
+            // 🔥 The Sexy, Perfectly Aligned Grid!
+            // Note: 'width: 0;' inside the description flexbox forces long text to wrap instead of pushing columns!
+            list.innerHTML += `
+                <li style="display: flex; padding: 12px 15px 12px 20px; border-bottom: 1px solid #f1f5f9; align-items: flex-start; background: white; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='white';" onclick="window.openAddOrderModal('${safeItemName}', ${item.basePrice}, window.cart[${index}])">
+                    
+                    <div style="flex: 2.5; display: flex; flex-direction: column; padding-right: 10px; width: 0;">
+                        <span style="font-weight: 900; color: #1e293b; font-size: 13px; line-height: 1.3; white-space: normal; word-wrap: break-word;">${item.name}</span>
+                        ${typeBadge}
+                        <div style="margin-top: 2px;">${addonsText}${notesText}</div>
+                    </div>
+                    
+                    <div style="flex: 1; text-align: right; color: #94a3b8; font-weight: bold; font-size: 13px;">₱${item.variantPrice.toFixed(2)}</div>
+                    
+                    <div style="flex: 0.8; display: flex; justify-content: center; font-weight: 900; font-size: 14px; color: #f59e0b;">x${item.qty}</div>
+                    
+                    <div style="flex: 1; text-align: right; font-weight: 900; color: #0f172a; font-size: 14px;">₱${item.lineTotalFinal.toFixed(2)}</div>
+                    
+                    <div style="margin-left: 10px; width: 28px; display: flex; justify-content: flex-end;">
+                        <button onclick="window.cart.splice(${index}, 1); window.renderCart(); event.stopPropagation();" style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: bold; cursor: pointer; transition: 0.2s; padding: 0; flex-shrink: 0;" onmouseover="this.style.background='#fee2e2';" onmouseout="this.style.background='#fef2f2';">✖</button>
+                    </div>
+                </li>
+            `;
         });
         
         window.currentGrandTotal = grandTotal; 
