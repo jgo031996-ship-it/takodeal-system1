@@ -7552,13 +7552,25 @@ window.loadConsumablesHistory = async function() {
     today.setHours(0,0,0,0);
 
     try {
-        const q = window.query(window.collection(window.db, "store_use_logs"), window.where("branch", "==", branch), window.where("timestamp", ">=", today), window.orderBy("timestamp", "desc"));
+        // 🔥 THE INDEX BYPASS: We removed the 'orderBy' so Firebase doesn't crash!
+        const q = window.query(window.collection(window.db, "store_use_logs"), window.where("branch", "==", branch), window.where("timestamp", ">=", today));
         const snap = await window.getDocs(q);
         
-        let html = '';
+        let logs = [];
         snap.forEach(docSnap => {
-            let d = docSnap.data();
-            let timeStr = d.timestamp ? d.timestamp.toDate().toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+            logs.push(docSnap.data());
+        });
+
+        // 🔥 We sort the list instantly using Javascript instead of Firebase!
+        logs.sort((a, b) => {
+            let tA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate().getTime() : new Date(a.timestamp).getTime()) : 0;
+            let tB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate().getTime() : new Date(b.timestamp).getTime()) : 0;
+            return tB - tA; // Newest first
+        });
+
+        let html = '';
+        logs.forEach(d => {
+            let timeStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate() : new Date(d.timestamp)).toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
             
             let itemsList = d.items ? d.items.map(i => `<div style="margin-bottom: 4px;"><span style="color:#0ea5e9; font-weight:900; font-size:14px;">${i.qty}x</span> <span style="font-weight: bold; color: #334155;">${i.name}</span> <span style="font-size: 11px; color: #64748b; font-weight: bold;">(${i.uom})</span></div>`).join('') : '<span style="color:#94a3b8; font-style:italic;">Unknown Items</span>';
 
