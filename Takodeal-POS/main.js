@@ -661,7 +661,6 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 let baseFlavors = addonsList.filter(a => a.price === 0);
                 let extras = addonsList.filter(a => a.price > 0);
 
-                // 🔥 NEW: SLEEK DROPDOWN GENERATOR FOR BASE FLAVORS!
                 if (baseFlavors.length > 0) {
                     window.currentBaseFlavorsInfo = baseFlavors;
                     
@@ -715,7 +714,6 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 }
             }
 
-            // 🐙 ITEM-SPECIFIC MIX & MATCH BUILDER
             let customArea = document.getElementById('takoyakiCustomizationArea');
             let hasMixMatch = itemData.mixMatchFlavors && itemData.mixMatchFlavors.length > 0;
             
@@ -797,7 +795,7 @@ window.adjustModalMainQty = function(delta) {
     if (cur + delta > 0) {
         window.pendingItem.qty = cur + delta;
         document.getElementById('modalMainQty').innerText = window.pendingItem.qty;
-        window.updateModalTotals(); // Updates the total price instantly
+        window.updateModalTotals(); 
     }
 };
 
@@ -819,7 +817,6 @@ window.updateModalTotals = function() {
     let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
     let addonsTotal = 0; 
 
-    // Calculate Checkboxes
     document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
         let parts = cb.value.split('|');
         addonsTotal += (parseFloat(parts[1]) || 0);
@@ -843,7 +840,6 @@ window.confirmAddOrUpdateToCart = function() {
     let itemOrderTypeEl = document.getElementById('modalItemOrderType');
     let itemOrderType = itemOrderTypeEl ? itemOrderTypeEl.value : '';
     
-    // 🔥 PLATFORM AUTO-TAKEOUT ENGINE
     if (window.posPlatform === 'Grab' || window.posPlatform === 'Foodpanda') {
         itemOrderType = 'Take-Out'; 
     }
@@ -854,13 +850,10 @@ window.confirmAddOrUpdateToCart = function() {
     window.pendingItem.name = window.pendingItem.realName || window.pendingItem.name;
     window.pendingItem.addons = {}; 
 
-    // 🔥 THE NEW DROPDOWN READER FOR BASE FLAVORS
     if (window.currentBaseFlavorsInfo && window.currentBaseFlavorsInfo.length > 0) {
         let baseSelect = document.getElementById('baseFlavorSelect');
         
-        // 🚨 STRICT VALIDATION: If they didn't pick a flavor, stop them!
         if (baseSelect && !baseSelect.value) {
-            // Flash the dropdown red to alert the cashier
             baseSelect.style.transition = "background-color 0.3s, border-color 0.3s";
             baseSelect.style.backgroundColor = "#fef2f2";
             baseSelect.style.borderColor = "#dc2626";
@@ -875,20 +868,15 @@ window.confirmAddOrUpdateToCart = function() {
                 icon: 'warning',
                 customClass: { popup: 'rounded-2xl' }
             });
-            return; // Stops the item from being added to the cart!
+            return;
         }
 
         if (baseSelect && baseSelect.value) {
             let flavor = baseSelect.value;
             let bfInfo = window.currentBaseFlavorsInfo.find(b => b.name === flavor);
             
-            // Assign the total order quantity to the selected flavor
             window.pendingItem.addons[flavor] = { 
-                name: flavor, 
-                price: 0, 
-                qty: qty, 
-                linkedIngredient: bfInfo ? (bfInfo.linkedIngredient || '') : '', 
-                deductQty: bfInfo ? (bfInfo.deductQty || 0) : 0 
+                name: flavor, price: 0, qty: qty, linkedIngredient: bfInfo ? (bfInfo.linkedIngredient || '') : '', deductQty: bfInfo ? (bfInfo.deductQty || 0) : 0 
             };
         }
     }
@@ -919,20 +907,16 @@ window.confirmAddOrUpdateToCart = function() {
         }
     } 
 
-    // Save Checkbox Addons
     document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
         let p = cb.value.split('|');
-        // Checkboxes apply to the total quantity!
         window.pendingItem.addons[p[0]] = { name: p[0], price: parseFloat(p[1]), qty: qty, linkedIngredient: p[2], deductQty: parseFloat(p[3]) };
     });
 
     let addonsTotal = 0; 
     for (let key in window.pendingItem.addons) {
-        // Base flavors are free, extra add-ons cost money
         addonsTotal += (window.pendingItem.addons[key].price * window.pendingItem.addons[key].qty);
     }
     
-    // We already accounted for quantity in addonsTotal, so we just add base price
     let lineTotalBeforeDisc = (window.pendingItem.variantPrice * qty) + addonsTotal;
     
     let rowDiscount = 0;
@@ -1035,6 +1019,10 @@ window.clearCart = function() {
     if (!window.cart || window.cart.length === 0) return; 
     if (confirm("Clear order?")) { 
         window.cart = []; 
+        let otSelect = document.getElementById('mainOrderType');
+        if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
+        let custName = document.getElementById('finalCustomerName');
+        if (custName) custName.value = '';
         window.renderCart(); 
     } 
 };
