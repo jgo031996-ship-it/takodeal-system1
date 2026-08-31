@@ -1032,6 +1032,18 @@
         };
 
         window.addModalItemToCart = function() {
+            // 🛡️ THE IRON-CLAD KILL SWITCH SHIELD
+            if (!window.isStoreAcceptingOrders) {
+                Swal.fire({
+                    title: 'Store Paused 🔴',
+                    text: 'This branch is currently overwhelmed with orders and is temporarily paused. Please try again later or select another branch.',
+                    icon: 'error',
+                    background: '#141414', color: '#ffffff',
+                    customClass: { popup: 'border border-zinc-800 rounded-2xl' }
+                });
+                window.closeItemModal();
+                return;
+            }
             let basePrice = parseFloat(window.activeModalItem.price || window.activeModalItem.basePrice || 0);
             let qty = window.activeModalItem.selectedQty;
             let notes = document.getElementById('modalNotes').value.trim();
@@ -2063,6 +2075,8 @@
             window.statusListenerUnsubscribe = onSnapshot(doc(db, "settings", "status_" + selectedBranch), (docSnap) => {
                 let heroDeliveryText = document.getElementById('heroDeliveryText');
                 let directDeliveryStatus = document.getElementById('directDeliveryStatus');
+                let checkoutBtn = document.getElementById('submitBtn');
+                let globalCartBtn = document.getElementById('globalCartBtn');
 
                 let isEnabled = true;
                 if (docSnap.exists()) {
@@ -2072,25 +2086,54 @@
                 window.isStoreAcceptingOrders = isEnabled;
 
                 if (!isEnabled) {
+                    // 🔴 STORE IS PAUSED - LOCK EVERYTHING DOWN
                     if(heroDeliveryText) { heroDeliveryText.innerText = "Unavailable"; heroDeliveryText.classList.add('text-red-500'); }
                     if(directDeliveryStatus) { directDeliveryStatus.innerText = "Temporarily Paused (High Volume)"; directDeliveryStatus.classList.add('text-red-500'); }
                     
-                    // 🔥 STRICT KILL SWITCH: Block checkout completely!
-                    let cBtn = document.getElementById('submitBtn');
-                    if (cBtn) {
-                        cBtn.innerHTML = 'Store Currently Paused 🔴';
-                        cBtn.disabled = true;
+                    // 1. Lock the Checkout Button
+                    if (checkoutBtn) {
+                        checkoutBtn.innerHTML = 'Store Currently Paused 🔴';
+                        checkoutBtn.disabled = true;
+                        checkoutBtn.classList.add('opacity-50', 'cursor-not-allowed');
                     }
+
+                    // 2. Hide the Floating Cart Button
+                    if (globalCartBtn) {
+                        globalCartBtn.style.display = 'none';
+                    }
+
+                    // 3. Inject a Massive Warning Banner on the Menu
+                    let menuWarning = document.getElementById('menuWarningBanner');
+                    if (!menuWarning) {
+                        let container = document.getElementById('liveMenuContainer');
+                        if (container) {
+                            menuWarning = document.createElement('div');
+                            menuWarning.id = 'menuWarningBanner';
+                            menuWarning.className = 'bg-red-950/80 border-2 border-red-500 text-white p-4 rounded-xl mb-6 font-black text-center shadow-[0_0_15px_rgba(220,38,38,0.5)]';
+                            menuWarning.innerHTML = '🚨 THIS BRANCH IS CURRENTLY PAUSED DUE TO HIGH VOLUME.<br><span class="text-sm text-red-200 font-medium">Please check back later or select a different branch to order.</span>';
+                            container.parentNode.insertBefore(menuWarning, container);
+                        }
+                    } else {
+                        menuWarning.style.display = 'block';
+                    }
+
                 } else {
+                    // 🟢 STORE IS ONLINE - UNLOCK EVERYTHING
                     if(heroDeliveryText) { heroDeliveryText.innerText = "40 Minutes"; heroDeliveryText.classList.remove('text-red-500'); }
                     if(directDeliveryStatus) { directDeliveryStatus.innerText = "Standard 40-Min Delivery"; directDeliveryStatus.classList.remove('text-red-500'); }
                     
-                    // Enable checkout
-                    let cBtn = document.getElementById('submitBtn');
-                    if (cBtn) {
-                        cBtn.innerHTML = 'Proceed to Details 🚀';
-                        cBtn.disabled = false;
+                    if (checkoutBtn) {
+                        checkoutBtn.innerHTML = 'Proceed to Details 🚀';
+                        checkoutBtn.disabled = false;
+                        checkoutBtn.classList.remove('opacity-50', 'cursor-not-allowed');
                     }
+
+                    if (globalCartBtn) {
+                        globalCartBtn.style.display = 'flex';
+                    }
+
+                    let menuWarning = document.getElementById('menuWarningBanner');
+                    if (menuWarning) menuWarning.style.display = 'none';
                 }
             });
         };
