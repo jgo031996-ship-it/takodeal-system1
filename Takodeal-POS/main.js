@@ -9888,28 +9888,6 @@ window.checkPredictiveStockLevels = async function() {
             }
         });
 
-        // 3. Spawns the Red Pulsating Sidebar Badge!
-        let badge = document.getElementById('stockReqSidebarBadge');
-        if (!badge) {
-            let navStockReq = document.getElementById('nav-stockreq');
-            if (navStockReq) {
-                let textDiv = navStockReq.querySelector('.nav-item-text');
-                if (textDiv) {
-                    textDiv.innerHTML = `Stock Report <span id="stockReqSidebarBadge" style="display:none; background:#ef4444; color:white; border-radius:50%; padding:2px 6px; font-size:10px; font-weight:bold; margin-left:5px; animation: pulse 1s infinite; box-shadow: 0 0 5px rgba(239,68,68,0.5);">0</span>`;
-                    badge = document.getElementById('stockReqSidebarBadge');
-                }
-            }
-        }
-
-        if (badge) {
-            if (criticalCount > 0) {
-                badge.innerText = criticalCount;
-                badge.style.display = 'inline-block';
-            } else {
-                badge.style.display = 'none';
-            }
-        }
-        
         // If they are staring at the Stock Report screen, auto-refresh it to show the alarms!
         let viewEl = document.getElementById('view-stockreq');
         if (viewEl && viewEl.classList.contains('active')) {
