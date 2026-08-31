@@ -3737,16 +3737,32 @@ window.showParkedOrders = async function() {
 };
 
 window.resumeOrder = async function(docId) {
-      if (typeof cart !== 'undefined' && cart.length > 0) { if (!confirm("You have active items in the cart. Overwrite them?")) return; }
-      let order = window.currentParkedOrdersList.find(o => o.id === docId); 
-      if (!order) return;
-      
-      cart = order.items; 
-      if (typeof renderCart === 'function') renderCart(); 
-      if (typeof closeModal === 'function') closeModal('parkedModal'); 
-      await window.deleteParkedOrder(docId); 
-      window.updateParkedBadge();
-};
+        if (typeof cart !== 'undefined' && cart.length > 0) { 
+            if (!confirm("You have active items in your current cart. Overwrite them with this parked order?")) return; 
+        }
+        let order = window.currentParkedOrdersList.find(o => o.id === docId); 
+        if (!order) return;
+        
+        cart = order.items; 
+        
+        // 🔥 THE MEMORY FIX: Restore Order Type and Customer Name globally!
+        let otSelect = document.getElementById('mainOrderType');
+        if (otSelect && order.orderType) {
+            // Strip out the word "(PARKED)" if it was saved that way previously
+            otSelect.value = order.orderType.replace(" (PARKED)", "").trim();
+        }
+        
+        let custName = document.getElementById('finalCustomerName');
+        if (custName) {
+            custName.value = order.name || order.customerName || '';
+        }
+
+        if (typeof renderCart === 'function') renderCart(); 
+        if (typeof closeModal === 'function') closeModal('parkedModal'); 
+        
+        await window.deleteParkedOrder(docId); 
+        window.updateParkedBadge();
+    };
 
 window.deleteParkedOrderManually = async function(docId) {
       let order = window.currentParkedOrdersList.find(o => o.id === docId);
@@ -4064,17 +4080,24 @@ window.acceptMobileOrder = async function(docId) {
         if (!confirm("You have items in your current cart. Overwrite them with this mobile order?")) return;
     }
 
+    // 🔥 THE MEMORY FIX: Force all imported items to adopt the correct order type
+    let incomingOrderType = order.orderType || 'Take-Out'; // Mobiles default to Take-Out
+
     cart = order.items.map(i => ({
         name: i.name, basePrice: i.price, variantName: 'Standard', variantPrice: i.price,
         qty: i.quantity, lineTotalFinal: i.price * i.quantity, discountType: 'none', discountVal: 0,
-        addons: i.addons || {}, notes: i.notes || '📱 Mobile App Order'
+        addons: i.addons || {}, notes: i.notes || '📱 Mobile App Order',
+        orderType: incomingOrderType // Locks it into the items
     }));
 
-    document.getElementById('finalCustomerName').value = order.customerName || order.name || "";
+    // Restore Customer Name globally
+    let custNameEl = document.getElementById('finalCustomerName');
+    if (custNameEl) custNameEl.value = order.customerName || order.name || "";
     
+    // Restore Order Type globally
     let orderTypeDrop = document.getElementById('mainOrderType');
-    if (orderTypeDrop && order.orderType) {
-        orderTypeDrop.value = order.orderType;
+    if (orderTypeDrop) {
+        orderTypeDrop.value = incomingOrderType;
         let event = new Event('change');
         orderTypeDrop.dispatchEvent(event);
     }
