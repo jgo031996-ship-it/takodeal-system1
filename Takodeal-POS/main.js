@@ -7577,16 +7577,6 @@ window.loadConsumablesHistory = async function() {
         tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="color: #dc2626; padding: 40px; font-weight: bold;">❌ Failed to load logs.</td></tr>';
     }
 };
-        
-        Swal.fire({ title: '✅ Success', text: 'Items successfully logged and deducted from inventory.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
-
-    } catch (e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to log consumables.', 'error');
-    } finally {
-        btn.innerHTML = "📦 Log & Deduct Inventory"; btn.disabled = false;
-    }
-};
 
 // ========================================================
 // 🛑 THE MASTER SHIFT CLOSING ENGINE (CRASH-PROOF & BLIND COUNT SECURED)
