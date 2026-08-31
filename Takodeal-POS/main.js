@@ -668,15 +668,11 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     baseFlavorHtml += `
                         <div class="section-title" style="margin-bottom: 8px; width: 100%; text-align: left; color: #0ea5e9;">BASE FLAVOR (Required)</div>
                         <select id="baseFlavorSelect" class="input-box" style="width: 100%; padding: 12px; font-weight: 900; border: 2px solid #bae6fd; background: #f0f9ff; color: #0369a1; cursor: pointer; outline: none; margin: 0; font-size: 14px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+                            <option value="" disabled ${!existingItem ? 'selected' : ''}>-- Select Flavor --</option>
                     `;
                     
                     baseFlavors.forEach((bf, bfIdx) => {
-                        let isChecked = '';
-                        if (existingItem) {
-                            if (existingItem.addons && existingItem.addons[bf.name]) isChecked = 'selected';
-                        } else {
-                            if (bfIdx === 0) isChecked = 'selected';
-                        }
+                        let isChecked = (existingItem && existingItem.addons && existingItem.addons[bf.name]) ? 'selected' : '';
                         baseFlavorHtml += `<option value="${bf.name}" ${isChecked}>${bf.name} (Free)</option>`;
                     });
                     baseFlavorHtml += `</select>`;
@@ -861,6 +857,27 @@ window.confirmAddOrUpdateToCart = function() {
     // 🔥 THE NEW DROPDOWN READER FOR BASE FLAVORS
     if (window.currentBaseFlavorsInfo && window.currentBaseFlavorsInfo.length > 0) {
         let baseSelect = document.getElementById('baseFlavorSelect');
+        
+        // 🚨 STRICT VALIDATION: If they didn't pick a flavor, stop them!
+        if (baseSelect && !baseSelect.value) {
+            // Flash the dropdown red to alert the cashier
+            baseSelect.style.transition = "background-color 0.3s, border-color 0.3s";
+            baseSelect.style.backgroundColor = "#fef2f2";
+            baseSelect.style.borderColor = "#dc2626";
+            setTimeout(() => {
+                baseSelect.style.backgroundColor = "#f0f9ff";
+                baseSelect.style.borderColor = "#bae6fd";
+            }, 1000);
+            
+            Swal.fire({
+                title: 'Flavor Required', 
+                text: 'Please ask the customer for their sauce and select a Base Flavor!', 
+                icon: 'warning',
+                customClass: { popup: 'rounded-2xl' }
+            });
+            return; // Stops the item from being added to the cart!
+        }
+
         if (baseSelect && baseSelect.value) {
             let flavor = baseSelect.value;
             let bfInfo = window.currentBaseFlavorsInfo.find(b => b.name === flavor);
