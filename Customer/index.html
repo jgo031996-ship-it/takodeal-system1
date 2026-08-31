@@ -76,8 +76,11 @@
             </div>
             <div class="text-5xl animate-bounce drop-shadow-lg" id="trackerIcon">🛵</div>
         </div>
-        <div id="trackerDetails" class="hidden mt-4 pt-4 border-t border-red-800/50">
-            <p class="text-xs font-medium text-red-100 italic">Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!</p>
+        <div id="trackerDetails" class="hidden mt-4 pt-4 border-t border-red-800/50 flex flex-col gap-3">
+            <p id="trackerInstructionText" class="text-xs font-medium text-red-100 italic">Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!</p>
+            <button id="btnOrderReceived" onclick="window.confirmOrderReceived()" class="hidden w-full bg-white text-brandred font-black py-3 rounded-xl shadow-lg hover:bg-red-50 transition active:scale-95 text-sm uppercase tracking-widest">
+                ✅ I have received my order
+            </button>
         </div>
     </div>
 
@@ -1721,6 +1724,7 @@
                 orders.sort((a,b) => (b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0) - (a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0));
                 
                 let order = orders[0]; 
+                window.activeTrackedOrderId = order.id; // Store globally for the button
                 
                 if (order.status === 'completed' || order.status === 'rejected') {
                     tracker.classList.add('translate-y-full');
@@ -1737,13 +1741,22 @@
                 
                 let statusText = "Pending Confirmation";
                 let timeStr = "Awaiting Kitchen...";
+                let btnRec = document.getElementById('btnOrderReceived');
+                let instText = document.getElementById('trackerInstructionText');
                 
                 if (order.status === 'preparing') {
                     statusText = "🍳 Kitchen is preparing your food!";
                     timeStr = order.prepTime ? `Est. Prep Time: ${order.prepTime} Mins` : "Cooking now!";
+                    if(btnRec) btnRec.classList.add('hidden');
+                    if(instText) instText.innerText = "Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!";
                 } else if (order.status === 'out_for_delivery' || order.status === 'ready') {
                     statusText = "🛵 Order is Ready / On the way!";
                     timeStr = "Enjoy your meal!";
+                    if(btnRec) btnRec.classList.remove('hidden');
+                    if(instText) instText.innerText = "Please tap the button below once you have received your order so you can claim your Loyalty Stamp!";
+                } else {
+                    if(btnRec) btnRec.classList.add('hidden');
+                    if(instText) instText.innerText = "Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!";
                 }
 
                 document.getElementById('trackerStatus').innerText = statusText;
@@ -1767,7 +1780,16 @@
                 customClass: { popup: 'border border-zinc-800 rounded-2xl' },
                 preConfirm: () => {
                     let text = document.getElementById('reviewText').value;
-                    if(text) addDoc(collection(db, "reviews"), { orderCode: orderCode, text: text, timestamp: serverTimestamp(), customer: window.currentUser.displayName });
+                    if(text) {
+                        addDoc(collection(db, "reviews"), { 
+                            orderCode: orderCode, 
+                            text: text, 
+                            timestamp: serverTimestamp(), 
+                            customer: window.currentUser.displayName,
+                            email: window.currentUser.email,
+                            status: "Pending" // 🔥 Awaiting Manager Approval for Loyalty Point!
+                        });
+                    }
                     updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
                 }
             }).then((res) => {
@@ -1775,6 +1797,27 @@
                     updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
                 }
             });
+        };
+
+        window.activeTrackedOrderId = null;
+
+        window.confirmOrderReceived = async function() {
+            if (!window.activeTrackedOrderId) return;
+            let btn = document.getElementById('btnOrderReceived');
+            let origText = btn.innerText;
+            btn.innerText = "⏳ Updating..."; btn.disabled = true;
+
+            try {
+                await updateDoc(doc(db, "incoming_orders", window.activeTrackedOrderId), {
+                    status: 'completed',
+                    completedAt: serverTimestamp()
+                });
+                // The onSnapshot listener will detect 'completed' and trigger the review popup automatically!
+            } catch(e) {
+                console.error(e);
+                Swal.fire('Error', 'Failed to update order.', 'error');
+                btn.innerText = origText; btn.disabled = false;
+            }
         };
 
         window.loadReviewsPage = async function() {
@@ -1908,10 +1951,19 @@
                 // Limit to their 20 most recent orders
                 orders = orders.slice(0, 20);
                 
-                // Loyalty Math
-                let totalOrders = orders.length;
-                let points = totalOrders % 10;
-                document.getElementById('loyaltyPointsTxt').innerText = points;
+                // 🔥 NEW LOYALTY MATH: 1 Approved Review = 1 Stamp
+                let points = 0;
+                try {
+                    // Index-free search to prevent Firebase crashes!
+                    const revQ = query(collection(db, "reviews"), where("email", "==", window.currentUser.email));
+                    const revSnap = await getDocs(revQ);
+                    let approvedReviewsCount = 0;
+                    revSnap.forEach(d => {
+                        if (d.data().status === "Approved") approvedReviewsCount++;
+                    });
+                    points = approvedReviewsCount % 10;
+                    document.getElementById('loyaltyPointsTxt').innerText = points;
+                } catch(e) { console.error("Loyalty error:", e); }
                 
                 let stampsHtml = '';
                 for (let i = 1; i <= 10; i++) {
