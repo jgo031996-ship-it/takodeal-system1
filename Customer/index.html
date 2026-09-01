@@ -2084,38 +2084,88 @@
             grid.innerHTML = '<div class="text-zinc-500 py-10 font-medium text-center w-full">⏳ Loading reviews...</div>';
             
             try {
+                // Fetch the 30 most recent reviews
                 const q = query(collection(db, "reviews"), orderBy("timestamp", "desc"), limit(30));
                 const snap = await getDocs(q);
-                let html = '';
                 
-                snap.forEach(d => {
-                    let rev = d.data();
+                let reviewsData = [];
+                snap.forEach(d => reviewsData.push(d.data()));
+
+                // 🔥 HIGH-PERFORMANCE ENGINE: Fetch all order details at the exact same time
+                let htmlPromises = reviewsData.map(async (rev) => {
                     let dateStr = rev.timestamp ? (typeof rev.timestamp.toDate === 'function' ? rev.timestamp.toDate().toLocaleDateString() : new Date(rev.timestamp).toLocaleDateString()) : 'Recent';
                     
-                    // 🔥 PRIVACY MASKING: Jostuart Omangay -> J******* O******
+                    // 🔠 PRIVACY MASKING UPGRADE: Jostuart Omangay -> J. O.
                     let rawName = rev.customer || 'Customer';
-                    let maskedName = rawName.split(' ').map(word => word.charAt(0) + '*'.repeat(word.length > 1 ? word.length - 1 : 0)).join(' ');
+                    let nameParts = rawName.trim().split(' ').filter(n => n.length > 0);
+                    let maskedName = nameParts.map(word => word.charAt(0).toUpperCase() + '.').join(' ');
+                    let initial = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() : 'C';
 
-                    // Large Avatar Initial
-                    let initial = rawName.charAt(0).toUpperCase();
+                    // 📦 FETCH ORIGINAL ORDER DETAILS FOR THIS SPECIFIC REVIEW
+                    let orderDetailsHtml = '';
+                    if (rev.orderCode) {
+                        try {
+                            const orderQ = query(collection(db, "incoming_orders"), where("orderCode", "==", rev.orderCode), limit(1));
+                            const orderSnap = await getDocs(orderQ);
+                            
+                            if (!orderSnap.empty) {
+                                let orderData = orderSnap.docs[0].data();
+                                let orderType = orderData.orderType || 'Order';
+                                let items = orderData.items || [];
+                                
+                                if (items.length > 0) {
+                                    // List the top 2 items ordered
+                                    let itemsList = items.slice(0, 2).map(i => `<div class="text-[11px] text-zinc-400 leading-tight font-medium">• ${i.quantity}x ${i.name}</div>`).join('');
+                                    if (items.length > 2) itemsList += `<div class="text-[10px] text-zinc-600 italic mt-1 font-bold">+${items.length - 2} more items</div>`;
+                                    
+                                    // Search the Live Menu to find the beautiful image for the first item!
+                                    let repItem = window.rawMenuCache ? window.rawMenuCache.find(m => m.name === items[0].name || (items[0].name && items[0].name.includes(m.name))) : null;
+                                    let imgHtml = repItem && repItem.image 
+                                        ? `<img src="${repItem.image}" class="w-14 h-14 rounded-xl object-cover border border-zinc-700 shadow-md">` 
+                                        : `<div class="w-14 h-14 bg-zinc-800 rounded-xl flex items-center justify-center text-2xl border border-zinc-700 shadow-md">🍲</div>`;
 
-                    html += `
-                        <div class="bg-cardbg border border-zinc-800 p-6 rounded-2xl break-inside-avoid shadow-lg hover:border-zinc-600 transition-colors flex gap-5 items-start">
-                            <div class="w-16 h-16 flex-shrink-0 bg-zinc-800 rounded-2xl flex items-center justify-center text-2xl font-black text-white border border-zinc-600 shadow-md">
-                                ${initial}
-                            </div>
-                            <div class="flex-1">
-                                <div class="flex justify-between items-start mb-2">
-                                    <span class="font-black text-white text-lg">${maskedName}</span>
-                                    <span class="text-[10px] font-bold text-zinc-500 bg-darkbg px-2 py-1 rounded-md border border-zinc-800">${dateStr}</span>
+                                    // Attach the footer perfectly to the bottom of the review card
+                                    orderDetailsHtml = `
+                                        <div class="mt-4 pt-4 border-t border-zinc-800/60 flex gap-3 items-center bg-darkbg/50 -mx-6 -mb-6 px-6 py-4 rounded-b-2xl">
+                                            ${imgHtml}
+                                            <div class="flex-1">
+                                                <div class="text-[9px] font-black text-brandgold uppercase tracking-widest mb-1.5 bg-brandgold/10 inline-block px-2 py-0.5 rounded border border-brandgold/20 shadow-sm">${orderType}</div>
+                                                <div class="flex flex-col gap-1">
+                                                    ${itemsList}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `;
+                                }
+                            }
+                        } catch(err) { console.log("Order fetch error", err); }
+                    }
+
+                    // Return the fully assembled Review Card
+                    return `
+                        <div class="bg-cardbg border border-zinc-800 p-6 rounded-2xl break-inside-avoid shadow-lg hover:border-zinc-600 transition-colors flex flex-col gap-2">
+                            <div class="flex gap-4 items-start mb-2">
+                                <div class="w-12 h-12 flex-shrink-0 bg-zinc-800 rounded-2xl flex items-center justify-center text-xl font-black text-white border border-zinc-600 shadow-md">
+                                    ${initial}
                                 </div>
-                                <div class="text-brandgold mb-2 text-sm tracking-widest">⭐⭐⭐⭐⭐</div>
-                                <div class="text-sm text-zinc-300 leading-relaxed italic">"${rev.text}"</div>
+                                <div class="flex-1">
+                                    <div class="flex justify-between items-start mb-1">
+                                        <span class="font-black text-white text-base tracking-wide">${maskedName}</span>
+                                        <span class="text-[10px] font-bold text-zinc-500 bg-darkbg px-2 py-1 rounded-md border border-zinc-800 shadow-inner">${dateStr}</span>
+                                    </div>
+                                    <div class="text-brandgold text-xs tracking-widest">⭐⭐⭐⭐⭐</div>
+                                </div>
                             </div>
+                            <div class="text-sm text-zinc-300 leading-relaxed italic font-medium">"${rev.text}"</div>
+                            ${orderDetailsHtml}
                         </div>
                     `;
                 });
                 
+                // Wait for all the image queries to finish, then paste them into the grid!
+                let htmlArray = await Promise.all(htmlPromises);
+                let html = htmlArray.join('');
+
                 if(!html) html = '<div class="text-zinc-500 text-sm col-span-full text-center py-10">No reviews yet. Place an order to be the first!</div>';
                 grid.innerHTML = html;
                 
