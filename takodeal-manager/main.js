@@ -26575,7 +26575,7 @@ window.loadSupplierDirectory = async function() {
     tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">Loading vendor data...</td></tr>';
 
     try {
-        const snap = await getDocs(collection(db, "suppliers"));
+        const snap = await window.getDocs(window.collection(window.db, "suppliers"));
         window.globalSupplierList = [];
         let html = '';
 
@@ -26591,24 +26591,31 @@ window.loadSupplierDirectory = async function() {
         window.globalSupplierList.forEach(s => {
             let encodedData = encodeURIComponent(JSON.stringify(s));
             
+            // 🔥 THE GPS MAP UPGRADE
             let mapBtn = '';
-            if (s.address) {
+            if (s.lat && s.lng) {
+                mapBtn = `<a href="https://www.google.com/maps/search/?api=1&query=${s.lat},${s.lng}" target="_blank" style="font-size: 11px; background: #f0fdf4; color: #16a34a; padding: 4px 8px; border-radius: 4px; text-decoration: none; font-weight: bold; border: 1px solid #bbf7d0; display: inline-block; margin-top: 4px;">🗺️ Pinpoint Map</a>`;
+            } else if (s.address) {
                 let encodedAddr = encodeURIComponent(s.address);
-                mapBtn = `<a href="https://www.google.com/maps/search/?api=1&query=${encodedAddr}" target="_blank" style="font-size: 11px; background: #e0f2fe; color: #0284c7; padding: 4px 8px; border-radius: 4px; text-decoration: none; font-weight: bold; border: 1px solid #bae6fd; display: inline-block; margin-top: 4px;">🗺️ Open in Maps</a>`;
+                mapBtn = `<a href="https://www.google.com/maps/search/?api=1&query=${encodedAddr}" target="_blank" style="font-size: 11px; background: #e0f2fe; color: #0284c7; padding: 4px 8px; border-radius: 4px; text-decoration: none; font-weight: bold; border: 1px solid #bae6fd; display: inline-block; margin-top: 4px;">🗺️ Search Address</a>`;
             }
 
+            // 🔥 ITEMS SUPPLIED TAGS
+            let itemsHtml = s.suppliedItems ? `<div style="margin-top: 6px; font-size: 11px; color: #0ea5e9; font-weight: bold; background: #f0f9ff; padding: 4px 8px; border-radius: 4px; border: 1px dashed #bae6fd; display: inline-block;">📦 Items: ${s.suppliedItems}</div>` : '';
+
             html += `
-                <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px 20px; font-weight: 900; color: #0f172a; font-size: 15px;">${s.name}</td>
-                    <td style="padding: 15px 20px;">
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 15px 20px; font-weight: 900; color: #0f172a; font-size: 15px; vertical-align: top;">${s.name} <br>${itemsHtml}</td>
+                    <td style="padding: 15px 20px; vertical-align: top;">
                         <strong style="color: #334155; font-size: 13px;">👤 ${s.contactPerson || 'N/A'}</strong><br>
                         <span style="color: #64748b; font-size: 12px; font-weight: bold;">📞 ${s.phone || 'N/A'}</span>
                     </td>
-                    <td style="padding: 15px 20px; max-width: 250px; white-space: normal;">
+                    <td style="padding: 15px 20px; max-width: 250px; white-space: normal; vertical-align: top;">
                         <span style="font-size: 13px; color: #475569;">${s.address || 'No address provided'}</span><br>
+                        <span style="font-size: 10px; color: #94a3b8; font-family: monospace; font-weight: bold;">GPS: ${s.lat || '-'}, ${s.lng || '-'}</span><br>
                         ${mapBtn}
                     </td>
-                    <td style="padding: 15px 20px; text-align: right;">
+                    <td style="padding: 15px 20px; text-align: right; vertical-align: top;">
                         <button onclick="window.addSupplierModal('${encodedData}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-right: 5px;">✏️ Edit</button>
                         <button onclick="window.deleteSupplier('${s.id}', '${s.name.replace(/'/g, "\\'")}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer;">🗑️</button>
                     </td>
@@ -26633,28 +26640,43 @@ window.loadSupplierDirectory = async function() {
 };
 
 window.addSupplierModal = async function(encodedData = null) {
-    let d = encodedData ? JSON.parse(decodeURIComponent(encodedData)) : { name: '', contactPerson: '', phone: '', address: '' };
+    let d = encodedData ? JSON.parse(decodeURIComponent(encodedData)) : { name: '', contactPerson: '', phone: '', address: '', lat: '', lng: '', suppliedItems: '' };
     
     const { value: formValues, isConfirmed } = await Swal.fire({
         title: d.id ? '✏️ Edit Supplier' : '➕ Add New Supplier',
         html: `
             <div style="text-align: left; margin-top: 10px;">
                 <label style="font-size: 12px; font-weight: bold; color: #475569;">Company / Supplier Name *</label>
-                <input type="text" id="swalSuppName" value="${d.name}" class="input-box" style="width: 100%; padding: 10px; margin-bottom: 15px; font-weight: bold;">
+                <input type="text" id="swalSuppName" value="${d.name}" class="input-box" style="width: 100%; padding: 10px; margin-bottom: 15px; font-weight: bold; box-sizing: border-box;">
                 
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                     <div>
                         <label style="font-size: 12px; font-weight: bold; color: #475569;">Contact Person</label>
-                        <input type="text" id="swalSuppContact" value="${d.contactPerson}" class="input-box" style="width: 100%; padding: 10px;">
+                        <input type="text" id="swalSuppContact" value="${d.contactPerson || ''}" class="input-box" style="width: 100%; padding: 10px; box-sizing: border-box;">
                     </div>
                     <div>
                         <label style="font-size: 12px; font-weight: bold; color: #475569;">Phone Number</label>
-                        <input type="text" id="swalSuppPhone" value="${d.phone}" class="input-box" style="width: 100%; padding: 10px;">
+                        <input type="text" id="swalSuppPhone" value="${d.phone || ''}" class="input-box" style="width: 100%; padding: 10px; box-sizing: border-box;">
                     </div>
                 </div>
 
-                <label style="font-size: 12px; font-weight: bold; color: #475569;">Exact Address (For AI Routing)</label>
-                <textarea id="swalSuppAddress" placeholder="e.g. 123 Agdao St, Davao City" style="width: 100%; height: 60px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-family: inherit; resize: none; box-sizing: border-box;">${d.address}</textarea>
+                <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Supplied Items (Comma Separated)</label>
+                <textarea id="swalSuppItems" placeholder="e.g. Evap Milk, Cheese, Pork..." style="width: 100%; height: 50px; padding: 10px; border-radius: 6px; border: 2px solid #bae6fd; background: #f0f9ff; outline: none; font-family: inherit; resize: none; box-sizing: border-box; margin-bottom: 15px; font-weight: bold; color: #0284c7;">${d.suppliedItems || ''}</textarea>
+
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Location Name / General Address</label>
+                <input type="text" id="swalSuppAddress" value="${d.address || ''}" placeholder="e.g. Agdao Public Market" class="input-box" style="width: 100%; padding: 10px; margin-bottom: 15px; box-sizing: border-box;">
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; background: #f0fdf4; padding: 12px; border: 1px dashed #16a34a; border-radius: 6px; margin-bottom: 10px;">
+                    <div style="grid-column: 1 / -1; font-size: 11px; font-weight: bold; color: #166534; text-transform: uppercase;">Exact Map Coordinates (For AI Routing)</div>
+                    <div>
+                        <label style="font-size: 11px; font-weight: bold; color: #16a34a;">📍 Latitude</label>
+                        <input type="number" id="swalSuppLat" value="${d.lat || ''}" placeholder="e.g. 7.1304" style="width: 100%; padding: 8px; border: 1px solid #bbf7d0; border-radius: 4px; outline: none; font-weight: bold; color: #15803d; box-sizing: border-box;">
+                    </div>
+                    <div>
+                        <label style="font-size: 11px; font-weight: bold; color: #16a34a;">📍 Longitude</label>
+                        <input type="number" id="swalSuppLng" value="${d.lng || ''}" placeholder="e.g. 125.617" style="width: 100%; padding: 8px; border: 1px solid #bbf7d0; border-radius: 4px; outline: none; font-weight: bold; color: #15803d; box-sizing: border-box;">
+                    </div>
+                </div>
             </div>
         `,
         focusConfirm: false,
@@ -26669,7 +26691,10 @@ window.addSupplierModal = async function(encodedData = null) {
                 name: name,
                 contactPerson: document.getElementById('swalSuppContact').value.trim(),
                 phone: document.getElementById('swalSuppPhone').value.trim(),
-                address: document.getElementById('swalSuppAddress').value.trim()
+                suppliedItems: document.getElementById('swalSuppItems').value.trim(),
+                address: document.getElementById('swalSuppAddress').value.trim(),
+                lat: parseFloat(document.getElementById('swalSuppLat').value) || null,
+                lng: parseFloat(document.getElementById('swalSuppLng').value) || null
             }
         }
     });
@@ -26678,9 +26703,9 @@ window.addSupplierModal = async function(encodedData = null) {
         Swal.fire({title: 'Saving...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         try {
             if (d.id) {
-                await updateDoc(doc(db, "suppliers", d.id), formValues);
+                await window.updateDoc(window.doc(window.db, "suppliers", d.id), formValues);
             } else {
-                await addDoc(collection(db, "suppliers"), formValues);
+                await window.addDoc(window.collection(window.db, "suppliers"), formValues);
             }
             Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Supplier saved!', showConfirmButton: false, timer: 2000});
             window.loadSupplierDirectory();
@@ -26693,31 +26718,41 @@ window.addSupplierModal = async function(encodedData = null) {
 window.deleteSupplier = async function(id, name) {
     if (!confirm(`Are you sure you want to permanently delete ${name} from your directory?`)) return;
     try {
-        await deleteDoc(doc(db, "suppliers", id));
+        await window.deleteDoc(window.doc(window.db, "suppliers", id));
         window.loadSupplierDirectory();
     } catch(e) { console.error(e); alert('Failed to delete.'); }
 };
 
-// 🗺️ 2. AI SMART ROUTE PLANNER
+// 🗺️ 2. AI SMART ROUTE PLANNER (GPS UPGRADE)
 window.openSmartRoutePlanner = async function() {
     if (window.globalSupplierList.length === 0) {
-        return Swal.fire('Directory Empty', 'Add suppliers with exact addresses first.', 'warning');
+        return Swal.fire('Directory Empty', 'Add suppliers with exact addresses or GPS coordinates first.', 'warning');
     }
 
     let checklistHtml = '';
     window.globalSupplierList.forEach(s => {
-        if (s.address) {
+        // 🔥 PRIORITY: Use exact GPS Lat/Lng if available, otherwise fallback to text address
+        let routingData = (s.lat && s.lng) ? `${s.lat},${s.lng}` : s.address; 
+        
+        if (routingData) {
+            let itemsSpan = s.suppliedItems ? `<br><span style="font-size: 10px; color: #0ea5e9; font-weight: bold;">📦 Supplies: ${s.suppliedItems}</span>` : '';
+            let mapIcon = (s.lat && s.lng) ? `📍 ` : `🗺️ `; // Visual indicator if it's exact GPS
+
             checklistHtml += `
-                <label style="display: flex; align-items: center; gap: 10px; padding: 12px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                    <input type="checkbox" class="route-cb" value="${s.address.replace(/"/g, '&quot;')}" style="width: 18px; height: 18px; accent-color: #8b5cf6;">
-                    <span style="font-weight: bold; color: #334155; font-size: 14px;">${s.name} <br><span style="font-size: 11px; color: #64748b; font-weight: normal;">${s.address}</span></span>
+                <label style="display: flex; align-items: flex-start; gap: 10px; padding: 12px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <input type="checkbox" class="route-cb" value="${routingData.replace(/"/g, '&quot;')}" style="width: 18px; height: 18px; accent-color: #8b5cf6; margin-top: 2px;">
+                    <span style="font-weight: bold; color: #334155; font-size: 14px; line-height: 1.3;">
+                        ${s.name} <br>
+                        <span style="font-size: 11px; color: #64748b; font-weight: normal;">${mapIcon}${s.address || 'GPS Pinned'}</span>
+                        ${itemsSpan}
+                    </span>
                 </label>
             `;
         }
     });
 
     if (checklistHtml === '') {
-        return Swal.fire('Missing Addresses', 'You have suppliers, but none of them have an address saved. Edit their profiles to add addresses.', 'info');
+        return Swal.fire('Missing Location Data', 'You have suppliers, but none of them have a GPS coordinate or address saved. Edit their profiles to add locations.', 'info');
     }
 
     const { isConfirmed } = await Swal.fire({
@@ -26727,10 +26762,10 @@ window.openSmartRoutePlanner = async function() {
                 <p style="font-size: 13px; color: #475569; margin-bottom: 15px;">Select the suppliers you need to buy from today. The system will build a sequenced Google Maps link starting from HQ.</p>
                 
                 <label style="font-size: 12px; font-weight: bold; color: #0f172a; margin-bottom: 8px; display: block;">Starting Point (HQ)</label>
-                <input type="text" id="routeStart" value="Takodeal Main Office, Davao City" class="input-box" style="width: 100%; padding: 10px; margin-bottom: 15px; font-weight: bold;">
+                <input type="text" id="routeStart" value="Takodeal Main Office, Davao City" class="input-box" style="width: 100%; padding: 10px; margin-bottom: 15px; font-weight: bold; box-sizing: border-box;">
                 
                 <div style="font-size: 12px; font-weight: bold; color: #8b5cf6; margin-bottom: 8px; text-transform: uppercase;">Select Destinations:</div>
-                <div style="max-height: 250px; overflow-y: auto; padding-right: 5px;">
+                <div style="max-height: 280px; overflow-y: auto; padding-right: 5px;">
                     ${checklistHtml}
                 </div>
             </div>
@@ -26738,7 +26773,7 @@ window.openSmartRoutePlanner = async function() {
         showCancelButton: true,
         confirmButtonText: '🚀 Generate Map Route',
         confirmButtonColor: '#8b5cf6',
-        customClass: { popup: 'rounded-2xl shadow-2xl' }
+        customClass: { popup: 'rounded-2xl shadow-xl' }
     });
 
     if (isConfirmed) {
