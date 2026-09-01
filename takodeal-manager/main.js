@@ -22394,13 +22394,14 @@ document.addEventListener("DOMContentLoaded", () => {
             /* Make the table wrapper actually scrollable */
             .mobile-table-wrapper {
                 width: 100% !important;
-                max-width: 100vw !important;
+                max-width: 100% !important; /* 🔥 THE FIX: Changed from 100vw so it respects modal padding! */
                 overflow-x: auto !important;
                 -webkit-overflow-scrolling: touch !important;
                 border-radius: 8px;
                 border: 1px solid #e2e8f0;
                 margin-bottom: 15px;
                 background: white;
+                box-sizing: border-box !important;
             }
 
             /* 📱 TRIGGER MOBILE MODE ON PHONES & SMALL TABLETS */
@@ -22454,6 +22455,22 @@ document.addEventListener("DOMContentLoaded", () => {
                 /* Reduce padding on the main view container to maximize screen space */
                 .view-container {
                     padding: 10px !important;
+                }
+
+                /* 🔥 THE NEW MODAL ALIGNMENT FIX: Stop native modals from overflowing the screen! */
+                div[id$="Modal"] > div {
+                    width: 95% !important;
+                    max-width: 95% !important;
+                    margin: 0 auto !important;
+                }
+                
+                /* 🔥 THE MODAL BODY SCROLL FIX: Force the inside of the modal to fit perfectly */
+                div[id$="Modal"] > div > div:nth-child(2) {
+                    padding: 15px !important;
+                    overflow-x: hidden !important; /* Stops the box from stretching */
+                    overflow-y: auto !important;
+                    width: 100% !important;
+                    box-sizing: border-box !important;
                 }
             }
         `;
