@@ -1935,9 +1935,16 @@ window.calculateDenominations = function() {
 };
 
 // ========================================================
-// 💵 CASH DENOMINATION CALCULATOR (WITH MEMORY)
+// 💵 CASH DENOMINATION & BLIND COUNT MEMORY ENGINE
 // ========================================================
 window.cashDrawerMemory = {}; // Global memory to store typed bills
+window.blindCountMemory = JSON.parse(localStorage.getItem('takodeal_blind_count_memory')) || {};
+
+window.saveBlindCountMemory = function(itemName, type, val) {
+    if (!window.blindCountMemory) window.blindCountMemory = {};
+    window.blindCountMemory[`${itemName}_${type}`] = val;
+    localStorage.setItem('takodeal_blind_count_memory', JSON.stringify(window.blindCountMemory));
+};
 
 window.openEndShiftClearance = async function() {
     if (typeof closeModal === 'function') closeModal('shiftModal');
@@ -2036,7 +2043,6 @@ window.openEndShiftClearance = async function() {
                 window.currentBlindCountItems = []; 
                 
                 for (let itemName of auditItemsList) {
-                    // 🔥 THE FIX: Re-added the missing database query here!
                     const invQ = query(collection(db, "inventory"), where("branch", "==", sessionUser.branch), where("name", "==", itemName));
                     const invSnap = await getDocs(invQ);
                     
@@ -2055,18 +2061,23 @@ window.openEndShiftClearance = async function() {
                             convRate: conv
                         });
                         
+                        // 🔥 NEW: LOAD MEMORY VALUES INSTANTLY
+                        let safeName = itemName.replace(/'/g, "\\'");
+                        let memPurch = window.blindCountMemory[`${itemName}_purch`] !== undefined ? window.blindCountMemory[`${itemName}_purch`] : '';
+                        let memBase = window.blindCountMemory[`${itemName}_base`] !== undefined ? window.blindCountMemory[`${itemName}_base`] : '';
+
                         let inputHtml = '';
                         if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
                             inputHtml = `
-                                <input type="number" class="blind-count-purch" data-name="${itemName}" placeholder="Packs" style="width: 55px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none; font-size: 13px;">
+                                <input type="number" class="blind-count-purch" data-name="${itemName}" placeholder="Packs" value="${memPurch}" oninput="window.saveBlindCountMemory('${safeName}', 'purch', this.value)" style="width: 55px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none; font-size: 13px;">
                                 <span style="font-size: 10px; color: #64748b; font-weight: bold;">${pUom}</span>
                                 <span style="font-size: 12px; color: #94a3b8; font-weight: bold; margin: 0 2px;">+</span>
-                                <input type="number" class="blind-count-base" data-name="${itemName}" placeholder="Loose" style="width: 55px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none; font-size: 13px;">
+                                <input type="number" class="blind-count-base" data-name="${itemName}" placeholder="Loose" value="${memBase}" oninput="window.saveBlindCountMemory('${safeName}', 'base', this.value)" style="width: 55px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none; font-size: 13px;">
                                 <span style="font-size: 10px; color: #64748b; font-weight: bold;">${bUom}</span>
                             `;
                         } else {
                             inputHtml = `
-                                <input type="number" class="blind-count-base" data-name="${itemName}" placeholder="Qty" style="width: 70px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none; font-size: 13px;">
+                                <input type="number" class="blind-count-base" data-name="${itemName}" placeholder="Qty" value="${memBase}" oninput="window.saveBlindCountMemory('${safeName}', 'base', this.value)" style="width: 70px; padding: 6px; text-align: center; border: 2px solid #7dd3fc; border-radius: 4px; font-weight: bold; color: #0284c7; outline: none; font-size: 13px;">
                                 <span style="font-size: 10px; color: #64748b; font-weight: bold;">${bUom}</span>
                             `;
                         }
@@ -8012,6 +8023,8 @@ window.MASTER_CloseShift = async function () {
 
         // 9. Memory Wipe & Force UI Lockout
         window.cashDrawerMemory = {};
+        window.blindCountMemory = {};
+        localStorage.removeItem('takodeal_blind_count_memory');
         localStorage.removeItem('currentShiftId');
         localStorage.removeItem('takodeal_sop_progress');
         if (typeof activeShiftDetails !== 'undefined') activeShiftDetails = null;
