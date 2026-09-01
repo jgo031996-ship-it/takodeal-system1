@@ -3403,32 +3403,23 @@ window.submitAttendance = async function(type) {
             let clockModal = document.getElementById('timeClockModal');
             if (clockModal) clockModal.style.display = 'none';
             
-            let nteModal = document.getElementById('sanctionModal') || document.getElementById('nteModal');
-            
-            if (nteModal) {
-                nteModal.style.display = 'flex';
-                if (document.getElementById('sancDocId')) document.getElementById('sancDocId').value = nteId;
-                if (document.getElementById('sancTitle')) document.getElementById('sancTitle').innerText = nteData.type;
-                if (document.getElementById('sancDetails')) document.getElementById('sancDetails').innerText = nteData.details;
-                if (typeof window.clearSignature === 'function') window.clearSignature();
-            } else {
-                Swal.fire({
-                    title: '🚨 TIME CLOCK LOCKED',
-                    html: `You have an unresolved <b>Notice to Explain (NTE)</b> regarding:<br><br>
-                           <span style="color:#dc2626; font-weight:bold; font-size:16px;">"${nteData.type}"</span><br><br>
-                           <span style="color:#475569; font-size:14px;">You <b>cannot Time In</b> until you acknowledge and reply to this notice.</span><br><br>
-                           <i>Please log out the current POS user and log in with your PIN to read and sign your notice.</i>`,
-                    icon: 'error',
-                    confirmButtonText: 'Understood',
-                    confirmButtonColor: '#dc2626',
-                    allowOutsideClick: false,
-                    customClass: { popup: 'rounded-2xl shadow-2xl border border-red-100' }
-                });
-            }
+            // 🔥 THE FIX: Redirects them to use their personal phone!
+            Swal.fire({
+                title: '🚨 TIME CLOCK LOCKED',
+                html: `You have an unresolved <b>Notice to Explain (NTE)</b> regarding:<br><br>
+                       <span style="color:#dc2626; font-weight:bold; font-size:16px;">"${nteData.type}"</span><br><br>
+                       <span style="color:#475569; font-size:14px;">You <b>cannot Time In</b> until you acknowledge and reply to this notice.</span><br><br>
+                       <i>Please open the <b>TAKODEAL STAFF APP</b> on your personal phone to read, explain, and sign your notice. Once submitted, your Time Clock will unlock automatically.</i>`,
+                icon: 'error',
+                confirmButtonText: 'Understood, I will check my phone',
+                confirmButtonColor: '#dc2626',
+                allowOutsideClick: false,
+                customClass: { popup: 'rounded-2xl shadow-2xl border border-red-100' }
+            });
             
             document.getElementById('clockStaffPin').value = ''; 
             unlockUI(); 
-            return; 
+            return;
         }
     } catch(e) {
         console.error("NTE Check Failed:", e);
@@ -6723,27 +6714,33 @@ window.clearSignature = function() {
     }
 };
 
+// ========================================================
+// 🛑 HR SANCTION LOCK SCREEN ENGINE (STAFF APP REDIRECT)
+// ========================================================
 window.checkActiveSanctions = async function(staffName) {
     if (!staffName) return;
     
     try {
-        const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
-        const snap = await getDocs(q);
+        const q = window.query(window.collection(window.db, "hr_sanctions"), window.where("staffName", "==", staffName), window.where("status", "==", "Pending Reply"));
+        const snap = await window.getDocs(q);
         
         if (!snap.empty) {
             let sanction = snap.docs[0].data();
-            let sanctionId = snap.docs[0].id;
-
-            document.getElementById('activeSanctionId').value = sanctionId;
-            document.getElementById('sanctionLockType').innerText = sanction.type || "Violation";
-            document.getElementById('sanctionLockSeverity').innerText = sanction.severity || "Warning";
-            document.getElementById('sanctionLockDetails').innerText = sanction.details || "No details provided.";
-            document.getElementById('sanctionStaffReply').value = ""; 
-
-            document.getElementById('hrSanctionModal').style.display = 'flex';
             
-            // 🔥 WAKE UP THE SIGNATURE PAD!
-            setTimeout(() => { window.initSignaturePad(); }, 300);
+            Swal.fire({
+                title: '🚨 POS ACCESS LOCKED',
+                html: `You have an unresolved <b>Notice to Explain (NTE)</b> regarding:<br><br>
+                       <span style="color:#dc2626; font-weight:bold; font-size:16px;">"${sanction.type}"</span><br><br>
+                       <span style="color:#475569; font-size:14px;">You <b>cannot access the Cash Register</b> until you acknowledge and reply to this notice.</span><br><br>
+                       <i>Please open the <b>TAKODEAL STAFF APP</b> on your personal phone to read, explain, and sign your notice. Once submitted, your POS access will be restored automatically.</i>`,
+                icon: 'error',
+                confirmButtonText: 'Log Out',
+                confirmButtonColor: '#dc2626',
+                allowOutsideClick: false,
+                customClass: { popup: 'rounded-2xl shadow-2xl border border-red-100' }
+            }).then(() => {
+                window.logoutCashier(); // Boot them back to the PIN screen!
+            });
         }
     } catch (e) { console.error("Error checking sanctions:", e); }
 };
