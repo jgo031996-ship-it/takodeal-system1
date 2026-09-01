@@ -6154,8 +6154,11 @@
                   <option value="ADD_NEW" style="font-weight: 900; color: #0ea5e9;">➕ Add Custom Severity Rule...</option>
               </select>
   
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">Incident Details (Be Specific):</label>
-              <textarea id="sanctionDetails" placeholder="Describe what happened, when it happened, and why it is a violation..." style="width: 100%; height: 80px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; resize: none; font-family: inherit; box-sizing: border-box;"></textarea>
+              <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5px;">
+                  <label style="font-size: 12px; font-weight: bold; color: #475569;">Incident Details (Be Specific):</label>
+                  <button type="button" onclick="window.generateAiNteLetter()" style="background: #8b5cf6; color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3); transition: 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">✨ Smart Auto-Draft</button>
+              </div>
+              <textarea id="sanctionDetails" placeholder="Type a short summary of the violation here, then click '✨ Smart Auto-Draft' to automatically convert it into a formal legal letter..." style="width: 100%; height: 80px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; resize: vertical; font-family: inherit; box-sizing: border-box;"></textarea>
 
               <label style="font-size: 12px; font-weight: bold; color: #475569;">Upload Evidence / Proof 📸 (Optional):</label>
               <input type="file" id="sanctionEvidencePhoto" accept="image/*" class="input-box" style="width: 100%; padding: 7px; margin-bottom: 10px; border: 1px dashed #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 12px;">
