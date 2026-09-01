@@ -18444,7 +18444,7 @@ window.autoCalculateSeverity = async function() {
 
 window.submitNewSanction = async function() {
     let selectEl = document.getElementById('sanctionStaffSelect');
-    if (!selectEl.value) return alert("Please select a staff member.");
+    if (!selectEl.value) return Swal.fire('Missing Data', 'Please select a staff member.', 'warning');
     
     let staffName = selectEl.value;
     let branch = selectEl.options[selectEl.selectedIndex].getAttribute('data-branch');
@@ -18452,7 +18452,7 @@ window.submitNewSanction = async function() {
     let severity = document.getElementById('sanctionSeverity').value;
     let details = document.getElementById('sanctionDetails').value.trim();
 
-    if (!details) return alert("Please provide details of the incident.");
+    if (!details) return Swal.fire('Missing Details', 'Please provide details of the incident.', 'warning');
 
     let btn = document.getElementById('btnSaveSanction');
     btn.innerText = "⏳ Uploading & Issuing..."; btn.disabled = true;
@@ -18483,7 +18483,15 @@ window.submitNewSanction = async function() {
             timestamp: serverTimestamp()
         });
 
-        alert(`✅ Success! A Notice to Explain (NTE) has been issued to ${staffName}. Their Time Clock and POS are now locked until they reply.`);
+        // 🔥 UPGRADED SWEETALERT SUCCESS MESSAGE 🔥
+        Swal.fire({
+            title: '✅ Success!',
+            html: `A Notice to Explain (NTE) has been issued to <b>${staffName}</b>.<br><br>Their Time Clock and POS are now locked until they reply.`,
+            icon: 'success',
+            confirmButtonColor: '#16a34a',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+
         document.getElementById('issueSanctionModal').style.display = 'none';
         
         // Reset the file input
@@ -18493,7 +18501,7 @@ window.submitNewSanction = async function() {
 
     } catch (e) {
         console.error("Error issuing sanction:", e);
-        alert("Failed to issue notice.");
+        Swal.fire('Error', 'Failed to issue notice. Check your internet connection.', 'error');
     } finally {
         btn.innerText = "🚀 Issue Digital Notice"; btn.disabled = false;
     }
@@ -19397,23 +19405,39 @@ window.sellMainOfficeStock = async function(docId, itemName, currentStock, uom, 
 // ==========================================
 // ➕ UNIVERSAL CUSTOM DROPDOWN ENGINE
 // ==========================================
-window.handleCustomDropdown = function(selectElement) {
+window.handleCustomDropdown = async function(selectElement) {
     if (selectElement.value === "ADD_NEW") {
-        let newOptionText = prompt("Enter your new custom option:");
+        
+        // 🔥 UPGRADED SWEETALERT PROMPT 🔥
+        const { value: newOptionText } = await Swal.fire({
+            title: 'Add Custom Option',
+            input: 'text',
+            inputLabel: 'Enter your new custom option:',
+            inputPlaceholder: 'Type here...',
+            showCancelButton: true,
+            confirmButtonColor: '#0ea5e9',
+            cancelButtonColor: '#94a3b8',
+            customClass: { popup: 'rounded-2xl shadow-xl' },
+            inputValidator: (value) => {
+                if (!value) {
+                    return 'You need to write something!';
+                }
+            }
+        });
         
         if (newOptionText && newOptionText.trim() !== "") {
-            newOptionText = newOptionText.trim();
+            let cleanText = newOptionText.trim();
             
             // Create the new option
             let newOption = document.createElement("option");
-            newOption.value = newOptionText;
-            newOption.innerText = newOptionText;
+            newOption.value = cleanText;
+            newOption.innerText = cleanText;
             
             // Insert it right before the "➕ Add Custom..." button
             selectElement.insertBefore(newOption, selectElement.lastElementChild);
             
             // Auto-select the newly created option!
-            selectElement.value = newOptionText;
+            selectElement.value = cleanText;
         } else {
             // If they cancel, revert back to the top option
             selectElement.selectedIndex = 0;
