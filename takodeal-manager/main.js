@@ -13562,13 +13562,25 @@ window.saveNewPayable = async function() {
         
         if (fileInput) fileInput.value = '';
         
-        // Reset the UI and memory arrays completely
+        // 🔥 THE FIX: Safely clear out the inputs using the variables we already mapped!
         window.payableCart = [];
         window.renderPayableCart();
-        document.getElementById('paySupplierName').value = '';
-        document.getElementById('payInvoiceNum').value = '';
-        document.getElementById('payAmount').value = '';
         
+        if (suppBox) suppBox.value = '';
+        if (invBox) invBox.value = '';
+        if (amtBox) amtBox.value = '';
+        
+        let itemSearch = document.getElementById('payItemSearch');
+        let itemQty = document.getElementById('payItemQty');
+        let itemCost = document.getElementById('payItemCost');
+        let itemSub = document.getElementById('payItemSubtotal');
+        
+        if (itemSearch) itemSearch.value = '';
+        if (itemQty) itemQty.value = '';
+        if (itemCost) itemCost.value = '';
+        if (itemSub) itemSub.value = '';
+        
+        // Instant Table Refresh
         window.loadPayablesDashboard();
         if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
         
