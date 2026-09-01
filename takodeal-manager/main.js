@@ -24238,6 +24238,8 @@ window.loadFranchiseLeads = async function() {
             let d = docSnap.data();
             let dateStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : new Date(d.timestamp).toLocaleDateString()) : 'Unknown Date';
             let isContacted = d.status === 'Contacted';
+            
+            // This is the variable we are defining
             let statusBtn = isContacted 
                 ? `<button disabled style="background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: not-allowed;">✅ Contacted</button>`
                 : `<button onclick="window.markLeadContacted('${docSnap.id}')" style="background: #0ea5e9; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">Mark Contacted</button>`;
@@ -24248,7 +24250,7 @@ window.loadFranchiseLeads = async function() {
                     <td style="padding: 15px 20px; font-weight: 900; color: #0f172a; font-size: 15px;">${d.name}</td>
                     <td style="padding: 15px 20px; font-size: 13px; color: #334155;">📞 ${d.phone}<br>📧 ${d.email}</td>
                     <td style="padding: 15px 20px; font-weight: bold; color: #d97706;">📍 ${d.location}</td>
-                    <td style="padding: 15px 20px; text-align: right;">${statusBadge}</td>
+                    <td style="padding: 15px 20px; text-align: right;">${statusBtn}</td> <!-- 🔥 FIXED: Now properly uses statusBtn! -->
                 </tr>
             `;
         });
