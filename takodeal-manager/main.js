@@ -20769,6 +20769,16 @@ window.generateFranchiseProposal = async function() {
         document.getElementById('propRenYear').innerText = termYears;
         document.getElementById('propRenFee').innerText = renewalPct;
 
+        // 🔥 SMART SYNC: Save the baseline averages to the cloud so the Customer App Teaser Calculator can use real data!
+        if (branch === "All") {
+            try {
+                await window.setDoc(window.doc(window.db, "settings", "franchise_teaser"), {
+                    avgMonthlyGross: monthlyGross,
+                    avgMonthlyNet: monthlyNet,
+                    updatedAt: window.serverTimestamp()
+                }, { merge: true });
+            } catch(e) { console.error("Teaser Sync Error", e); }
+        }
         // Show the Pitch Deck!
         document.getElementById('proposalContainer').style.display = 'block';
 
@@ -24199,31 +24209,62 @@ window.switchFranTab = function(tabName) {
     document.getElementById('franSecPerformance').style.display = 'none';
     document.getElementById('franSecLedger').style.display = 'none';
     document.getElementById('franSecChat').style.display = 'none';
+    document.getElementById('franSecLeads').style.display = 'none';
 
-    document.getElementById('tabFranPerf').style.borderBottomColor = 'transparent';
-    document.getElementById('tabFranPerf').style.color = '#64748b';
-    document.getElementById('tabFranLedger').style.borderBottomColor = 'transparent';
-    document.getElementById('tabFranLedger').style.color = '#64748b';
-    document.getElementById('tabFranChat').style.borderBottomColor = 'transparent';
-    document.getElementById('tabFranChat').style.color = '#64748b';
+    ['Perf', 'Ledger', 'Chat', 'Leads'].forEach(t => {
+        let btn = document.getElementById('tabFran' + t);
+        if (btn) { btn.style.borderBottomColor = 'transparent'; btn.style.color = '#64748b'; }
+    });
 
     let activeColor = '#0ea5e9';
-    if (tabName === 'Performance') {
-        document.getElementById('franSecPerformance').style.display = 'block';
-        document.getElementById('tabFranPerf').style.borderBottomColor = activeColor;
-        document.getElementById('tabFranPerf').style.color = activeColor;
-        window.loadFranPerformance();
-    } else if (tabName === 'Ledger') {
-        document.getElementById('franSecLedger').style.display = 'block';
-        document.getElementById('tabFranLedger').style.borderBottomColor = activeColor;
-        document.getElementById('tabFranLedger').style.color = activeColor;
-        window.loadFranLedger();
-    } else if (tabName === 'Chat') {
-        document.getElementById('franSecChat').style.display = 'block';
-        document.getElementById('tabFranChat').style.borderBottomColor = activeColor;
-        document.getElementById('tabFranChat').style.color = activeColor;
-        window.loadFranChat();
+    let activeBtn = document.getElementById('tabFran' + (tabName === 'Performance' ? 'Perf' : tabName));
+    if (activeBtn) { activeBtn.style.borderBottomColor = activeColor; activeBtn.style.color = activeColor; }
+
+    if (tabName === 'Performance') { document.getElementById('franSecPerformance').style.display = 'block'; window.loadFranPerformance(); } 
+    else if (tabName === 'Ledger') { document.getElementById('franSecLedger').style.display = 'block'; window.loadFranLedger(); } 
+    else if (tabName === 'Chat') { document.getElementById('franSecChat').style.display = 'block'; window.loadFranChat(); }
+    else if (tabName === 'Leads') { document.getElementById('franSecLeads').style.display = 'block'; window.loadFranchiseLeads(); }
+};
+
+window.loadFranchiseLeads = async function() {
+    let tbody = document.getElementById('franLeadsBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 40px; color: #0ea5e9; font-weight: bold;">Loading applications...</td></tr>';
+    try {
+        const q = window.query(window.collection(window.db, "franchise_leads"), window.orderBy("timestamp", "desc"));
+        const snap = await window.getDocs(q);
+        let html = '';
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : new Date(d.timestamp).toLocaleDateString()) : 'Unknown Date';
+            let isContacted = d.status === 'Contacted';
+            let statusBtn = isContacted 
+                ? `<button disabled style="background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: not-allowed;">✅ Contacted</button>`
+                : `<button onclick="window.markLeadContacted('${docSnap.id}')" style="background: #0ea5e9; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">Mark Contacted</button>`;
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; background: ${isContacted ? '#f8fafc' : 'white'};">
+                    <td style="padding: 15px 20px; font-size: 13px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 15px 20px; font-weight: 900; color: #0f172a; font-size: 15px;">${d.name}</td>
+                    <td style="padding: 15px 20px; font-size: 13px; color: #334155;">📞 ${d.phone}<br>📧 ${d.email}</td>
+                    <td style="padding: 15px 20px; font-weight: bold; color: #d97706;">📍 ${d.location}</td>
+                    <td style="padding: 15px 20px; text-align: right;">${statusBadge}</td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html || '<tr><td colspan="5" style="text-align: center; padding: 40px; color: #94a3b8; font-style: italic;">No leads found yet.</td></tr>';
+    } catch(e) {
+        console.error(e); tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Error loading leads.</td></tr>';
     }
+};
+
+window.markLeadContacted = async function(docId) {
+    try {
+        Swal.fire({title: 'Updating...', didOpen: () => Swal.showLoading()});
+        await window.updateDoc(window.doc(window.db, "franchise_leads", docId), { status: "Contacted" });
+        Swal.close();
+        window.loadFranchiseLeads();
+    } catch(e) { console.error(e); }
 };
 
 // ==========================================
