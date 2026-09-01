@@ -13241,52 +13241,62 @@ window.openAddPayableModal = async function() {
     let modal = document.getElementById('addPayableModal');
     if(modal) modal.style.display = 'flex';
     
-    // Safely clear inputs regardless of whether they use the old or new HTML IDs!
-    let suppName = document.getElementById('paySupplierName') || document.getElementById('suppName');
+    // Safely clear main inputs
+    let suppName = document.getElementById('paySupplierName');
     if(suppName) suppName.value = '';
     
-    let invNum = document.getElementById('payInvoiceNum') || document.getElementById('suppInvoice');
+    let invNum = document.getElementById('suppInvoice');
     if(invNum) invNum.value = '';
     
-    let amountBox = document.getElementById('payAmount') || document.getElementById('suppAmount');
+    let amountBox = document.getElementById('suppAmount');
     if(amountBox) amountBox.value = '';
     
-    window.payableItemsCart = [];
-    window.renderPayableItems();
+    // 🔥 THE FIX: Use the new modern cart engine variables!
+    window.payableCart = [];
+    if(typeof window.renderPayableCart === 'function') window.renderPayableCart();
 
-    let itemInput = document.getElementById('payItemSelect');
-    if (itemInput) {
-        // Transform select into a datalist search
-        if (itemInput.tagName === 'SELECT') {
-            let newInput = document.createElement('input');
-            newInput.id = 'payItemSelect';
-            newInput.setAttribute('list', 'payableDatalist');
-            newInput.placeholder = "Type to search Main Office item...";
-            newInput.style.cssText = "flex: 1; min-width: 0; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px; outline: none; box-sizing: border-box;";
-            itemInput.parentNode.replaceChild(newInput, itemInput);
-            itemInput = newInput;
-        }
-        itemInput.value = '';
-    }
+    // Clear the new item search inputs
+    let itemInput = document.getElementById('payItemSearch');
+    if (itemInput) itemInput.value = '';
+    
+    let qtyInput = document.getElementById('payItemQty');
+    if (qtyInput) qtyInput.value = '';
+    
+    let costInput = document.getElementById('payItemCost');
+    if (costInput) costInput.value = '';
+
+    let subInput = document.getElementById('payItemSubtotal');
+    if (subInput) subInput.value = '';
+
+    let label = document.getElementById('payItemQtyLabel');
+    if(label) label.innerHTML = "NO. OF PACKS";
+
+    let prevCostLabel = document.getElementById('payItemPrevCost');
+    if(prevCostLabel) prevCostLabel.innerHTML = "Prev Cost: ₱0.00";
 
     try {
-        const q = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
-        const snap = await getDocs(q);
+        // Fetch live inventory for the datalist
+        const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", "Main Office"));
+        const snap = await window.getDocs(q);
         
-        window.payableInventoryOptions = [];
-        let datalistHtml = '<datalist id="payableDatalist">';
+        // Store it in global memory so the UI can auto-calculate totals!
+        window.globalInventoryList = []; 
+        let datalistHtml = '<datalist id="payItemOptions">';
         
         snap.forEach(docSnap => {
             let data = docSnap.data();
-            window.payableInventoryOptions.push({ id: docSnap.id, ...data });
+            data.id = docSnap.id;
+            window.globalInventoryList.push(data);
             datalistHtml += `<option value="${data.name}">${data.name} (${data.purchaseUom || data.uom})</option>`;
         });
         datalistHtml += '</datalist>';
 
-        let existingList = document.getElementById('payableDatalist');
+        let existingList = document.getElementById('payItemOptions');
         if (existingList) existingList.remove();
         document.body.insertAdjacentHTML('beforeend', datalistHtml);
-    } catch (e) { console.error(e); }
+    } catch (e) { 
+        console.error("Modal Opener Error:", e); 
+    }
 };
 
 // ========================================================
