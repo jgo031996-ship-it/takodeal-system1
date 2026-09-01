@@ -21075,41 +21075,23 @@ window.switchLogisticsTimeFilter = function(filter) {
 };
 
 // ========================================================
-// 🚨 AUTO-SANCTION ENGINE: GHOST PUNCH DETECTOR
+// 🚨 AUTO-ALERT ENGINE: GHOST PUNCH DETECTOR
 // ========================================================
 window.triggerAutoSanctionForMissedTimeOut = async function(staffName, timeInDate, branch) {
     let dateStr = timeInDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
-    let details = `Failed to Time Out for the shift starting on ${dateStr}. Please explain why you left the system clocked in without timing out.`;
     
     try {
-        // Check if we already issued a sanction for this exact ghost punch so we don't spam them!
-        const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("details", "==", details));
-        const snap = await getDocs(q);
-        
-        if (snap.empty) {
-            // Issue the Sanction!
-            await addDoc(collection(db, "hr_sanctions"), {
-                staffName: staffName,
-                branch: branch || 'Unknown',
-                type: 'Failure to Time Out', 
-                severity: '1st Offense - Warning', // Basic default
-                details: details,
-                status: 'Pending Reply',
-                issuedBy: 'System Auto-Audit',
-                timestamp: serverTimestamp()
-            });
-            
-            // Send an alert to your Manager Security Feed!
-            await addDoc(collection(db, "manager_alerts"), {
-                type: "MISSED_TIMEOUT",
-                branch: branch || 'Unknown',
-                message: `🚨 SANCTION AUTO-ISSUED: ${staffName} forgot to Time Out on ${dateStr}. POS App is locked until they submit a Notice to Explain.`,
-                timestamp: serverTimestamp(),
-                isRead: false
-            });
-            console.log(`Auto-issued missed timeout sanction for ${staffName}`);
-        }
-    } catch(e) { console.error("Auto Sanction Error:", e); }
+        // 🔥 THE FIX: We downgraded this from an automatic NTE Sanction to just a Manager Alert. 
+        // It will no longer automatically lock the staff out of their POS/Timeclock!
+        await window.addDoc(window.collection(window.db, "manager_alerts"), {
+            type: "MISSED_TIMEOUT",
+            branch: branch || 'Unknown',
+            message: `⚠️ GHOST PUNCH DETECTED: ${staffName} did not have a matching Time Out for their shift on ${dateStr}. Please review their attendance logs.`,
+            timestamp: window.serverTimestamp(),
+            isRead: false
+        });
+        console.log(`Logged missed timeout alert for ${staffName}`);
+    } catch(e) { console.error("Auto Alert Error:", e); }
 };
 
 // ========================================================
