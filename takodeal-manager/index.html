@@ -3496,9 +3496,10 @@
             </div>
             
             <!-- 🔥 NEW: PAYABLES TABS -->
-            <div style="display: flex; border-bottom: 2px solid #e2e8f0; background: white; padding: 0 25px;">
-                <div id="tabPayActive" onclick="window.switchPayablesTab('Active')" style="padding: 18px 20px; font-weight: 900; font-size: 13px; color: #0f766e; border-bottom: 3px solid #0f766e; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; transition: 0.2s;">Active Payables</div>
-                <div id="tabPayHistory" onclick="window.switchPayablesTab('History')" style="padding: 18px 20px; font-weight: 900; font-size: 13px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; transition: 0.2s;">Paid History</div>
+            <div style="display: flex; border-bottom: 2px solid #e2e8f0; background: white; padding: 0 25px; overflow-x: auto;">
+                <div id="tabPayActive" onclick="window.switchPayablesTab('Active')" style="padding: 18px 20px; font-weight: 900; font-size: 13px; color: #0f766e; border-bottom: 3px solid #0f766e; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; transition: 0.2s; white-space: nowrap;">Active Payables</div>
+                <div id="tabPayHistory" onclick="window.switchPayablesTab('History')" style="padding: 18px 20px; font-weight: 900; font-size: 13px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; transition: 0.2s; white-space: nowrap;">Paid History</div>
+                <div id="tabPayDirectory" onclick="window.switchPayablesTab('Directory')" style="padding: 18px 20px; font-weight: 900; font-size: 13px; color: #64748b; border-bottom: 3px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; transition: 0.2s; white-space: nowrap; display: flex; align-items: center; gap: 8px;">📖 Supplier Directory & Routes</div>
             </div>
 
             <div id="payablesActiveSection">
@@ -3541,6 +3542,32 @@
                   </table>
                 </div>
             </div>
+
+            <!-- 🔥 NEW: SUPPLIER DIRECTORY SECTION -->
+            <div id="payablesDirectorySection" style="display: none; padding: 25px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+                    <div style="font-size: 14px; color: #475569;">Manage your vendors, save exact map coordinates, and generate optimal driving routes for procurement days.</div>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="window.addSupplierModal()" style="background: #f59e0b; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 900; font-size: 13px; cursor: pointer; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3);">➕ Add Supplier</button>
+                        <button onclick="window.openSmartRoutePlanner()" style="background: #8b5cf6; color: white; border: none; padding: 10px 18px; border-radius: 8px; font-weight: 900; font-size: 13px; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3);">🗺️ AI Route Planner</button>
+                    </div>
+                </div>
+                <div class="table-responsive" style="border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
+                    <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                        <thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
+                            <tr>
+                                <th style="padding: 15px 20px; font-size: 11px; color: #475569; text-transform: uppercase; font-weight: 800;">Supplier Name</th>
+                                <th style="padding: 15px 20px; font-size: 11px; color: #475569; text-transform: uppercase; font-weight: 800;">Contact Person & Info</th>
+                                <th style="padding: 15px 20px; font-size: 11px; color: #475569; text-transform: uppercase; font-weight: 800;">Exact Address / Map Link</th>
+                                <th style="padding: 15px 20px; font-size: 11px; color: #475569; text-transform: uppercase; font-weight: 800; text-align: right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="supplierDirectoryBody">
+                            <tr><td colspan="4" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">Loading supplier directory...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
           </div>
       </div>
     </div>
@@ -3555,7 +3582,8 @@
         
         <div style="padding: 20px;">
           <label style="font-size: 12px; font-weight: bold; color: #64748b;">Supplier Name</label>
-          <input type="text" id="paySupplierName" placeholder="e.g. Monterey, Coca-Cola" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box;">
+          <input type="text" id="paySupplierName" list="supplierDirectoryList" placeholder="Type or select supplier..." style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-weight: bold;">
+          <datalist id="supplierDirectoryList"></datalist>
           
           <!-- 🔥 UPGRADED DELIVERY CART UI 🔥 -->
             <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
@@ -3567,20 +3595,20 @@
 
                 <div style="display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap;">
                     <!-- 1. Qty Box -->
-                    <div style="flex: 1; min-width: 90px;">
+                    <div style="flex: 1; min-width: 80px;">
                         <label id="payItemQtyLabel" style="font-size: 11px; font-weight: 800; color: #475569; text-transform: uppercase;">No. of Packs</label>
-                        <input type="number" id="payItemQty" class="input-box" placeholder="0" style="width: 100%; box-sizing: border-box; font-weight: 900; color: #0284c7; background: #f0f9ff; border: 2px solid #bae6fd;" oninput="window.calcPayItemSubtotal()">
+                        <input type="number" id="payItemQty" class="input-box" placeholder="0" style="width: 100%; box-sizing: border-box; font-weight: 900; color: #0284c7; background: #f0f9ff; border: 2px solid #bae6fd;" oninput="window.calcPayMath('qty')">
                     </div>
                     <!-- 2. Unit Cost Box -->
-                    <div style="flex: 1; min-width: 110px;">
+                    <div style="flex: 1; min-width: 90px;">
                         <label style="font-size: 11px; font-weight: 800; color: #16a34a; text-transform: uppercase;">Unit Cost (₱)</label>
-                        <input type="number" id="payItemCost" class="input-box" placeholder="0.00" style="width: 100%; box-sizing: border-box; font-weight: bold; color: #15803d; background: white; border: 1px solid #bbf7d0;" oninput="window.calcPayItemSubtotal()">
+                        <input type="number" id="payItemCost" class="input-box" placeholder="0.00" style="width: 100%; box-sizing: border-box; font-weight: bold; color: #15803d; background: white; border: 1px solid #bbf7d0;" oninput="window.calcPayMath('cost')">
                         <div id="payItemPrevCost" style="font-size: 10px; font-weight: bold; color: #64748b; margin-top: 4px;">Prev Cost: ₱0.00</div>
                     </div>
-                    <!-- 3. Total Price Box -->
-                    <div style="flex: 1; min-width: 110px;">
+                    <!-- 3. Total Price Box (NOW EDITABLE) -->
+                    <div style="flex: 1; min-width: 90px;">
                         <label style="font-size: 11px; font-weight: 800; color: #d97706; text-transform: uppercase;">Total Price (₱)</label>
-                        <input type="number" id="payItemSubtotal" class="input-box" placeholder="0.00" style="width: 100%; box-sizing: border-box; font-weight: 900; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; outline: none;" readonly>
+                        <input type="number" id="payItemSubtotal" class="input-box" placeholder="0.00" style="width: 100%; box-sizing: border-box; font-weight: 900; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; outline: none;" oninput="window.calcPayMath('total')">
                     </div>
                     <!-- Add Button -->
                     <div style="display: flex; align-items: flex-end; padding-top: 15px;">
