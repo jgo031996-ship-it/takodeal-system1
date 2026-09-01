@@ -587,7 +587,7 @@
         window.masterMenu = [];
         window.cart = JSON.parse(localStorage.getItem('takodeal_customer_cart')) || [];
         window.activeModalItem = null;
-        const hiddenCategories = ["consumables", "prep batch", "raw materials", "packaging"];
+        const hiddenCategories = ["consumables", "prep", "raw material", "packaging", "extra", "add-on", "addon"];
         window.phantomVariants = {}; 
         window.isStoreAcceptingOrders = true;
 
@@ -663,7 +663,8 @@
                     
                     if (allowedCats.length > 0 && !allowedCats.includes(catName)) return;
                     if (item.unavailableAt && item.unavailableAt.includes(branchName)) return;
-                    if (hiddenCategories.includes(catName.toLowerCase()) || item.isAvailable === false) return;
+                    let isHidden = hiddenCategories.some(word => catName.toLowerCase().includes(word));
+                    if (isHidden || item.isAvailable === false) return;
 
                     let name = item.name;
                     let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio|Squad|Platter|Family)$/i);
@@ -724,7 +725,8 @@
             for (let cat in categoriesMap) {
                 // 🔥 THE NEW FILTER ENGINE: Only show categories allowed by the Manager!
                 if (window.homeFeaturedCategories && window.homeFeaturedCategories.length > 0) {
-                    if (!window.homeFeaturedCategories.includes(cat.toLowerCase())) continue; // Skip if not featured!
+                    let isFeatured = window.homeFeaturedCategories.some(fc => cat.toLowerCase().includes(fc) || fc.includes(cat.toLowerCase()));
+                    if (!isFeatured) continue; // Skip if not featured!
                 } else {
                     // Smart Fallback (If Manager hasn't set it up yet, auto-hide the ugly ones!)
                     let lowCat = cat.toLowerCase();
