@@ -26854,7 +26854,8 @@ window.loadManagerCustomerReviews = async function() {
     container.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: #0ea5e9; font-weight: bold;">⏳ Loading customer reviews...</div>';
 
     try {
-        const q = window.query(window.collection(window.db, "customer_reviews"), window.orderBy("timestamp", "desc"));
+        // 🔥 FIXED: Pointing to "reviews" to match the Customer App!
+        const q = window.query(window.collection(window.db, "reviews"), window.orderBy("timestamp", "desc"));
         const snap = await window.getDocs(q);
         let html = '';
 
@@ -26867,15 +26868,17 @@ window.loadManagerCustomerReviews = async function() {
                 ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 900; border: 1px solid #bbf7d0;">⭐ Published to Website</span>`
                 : `<span style="background: #f1f5f9; color: #64748b; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 900; border: 1px solid #cbd5e1;">🔒 Hidden (Pending Approval)</span>`;
 
-            let reviewMsg = d.reviewText || d.message || d.feedback || 'No written feedback provided. (Rating only)';
+            // 🔥 FIXED: Pulling the exact text variables used by the Customer App
+            let reviewMsg = d.text || d.reviewText || 'No written feedback provided. (Rating only)';
+            let customerName = d.customer || d.customerName || 'Anonymous Customer';
 
             html += `
                 <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
                     <div>
                         <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 12px;">
                             <div>
-                                <strong style="font-size: 16px; color: #0f172a;">👤 ${d.customerName || 'Anonymous Customer'}</strong><br>
-                                <span style="font-size: 11px; color: #64748b; font-weight: bold;">Order: ${d.orderId || 'N/A'} • ${dateStr}</span>
+                                <strong style="font-size: 16px; color: #0f172a;">👤 ${customerName}</strong><br>
+                                <span style="font-size: 11px; color: #64748b; font-weight: bold;">Order: ${d.orderCode || d.orderId || 'N/A'} • ${dateStr}</span>
                             </div>
                             <div style="text-align: right;">
                                 ${statusBadge}
@@ -26886,7 +26889,7 @@ window.loadManagerCustomerReviews = async function() {
                         </div>
                     </div>
                     <div style="border-top: 1px solid #f1f5f9; padding-top: 12px; text-align: right;">
-                        <button onclick="window.toggleManagerReviewStatus('${docSnap.id}', ${isPublished})" style="background: ${isPublished ? '#fef2f2' : '#f0f9ff'}; border: 1px solid ${isPublished ? '#fca5a5' : '#bae6fd'}; color: ${isPublished ? '#dc2626' : '#0284c7'}; padding: 8px 15px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s;">
+                        <button onclick="window.toggleManagerReviewStatus('${docSnap.id}', ${isPublished})" style="background: ${isPublished ? '#fef2f2' : '#f0f9ff'}; border: 1px solid ${isPublished ? '#fca5a5' : '#bae6fd'}; color: ${isPublished ? '#dc2626' : '#0284c7'}; padding: 8px 15px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
                             ${isPublished ? 'Hide from Website' : 'Approve & Publish'}
                         </button>
                     </div>
@@ -26896,17 +26899,28 @@ window.loadManagerCustomerReviews = async function() {
 
         container.innerHTML = html || '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: #94a3b8; font-weight: bold;">No reviews submitted yet.</div>';
     } catch (e) {
-        console.error(e);
-        container.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: #dc2626; font-weight: bold;">Error loading reviews.</div>';
+        console.error("Reviews Error:", e);
+        container.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: #dc2626; font-weight: bold;">Error loading reviews. Check Firebase Rules!</div>';
     }
 };
 
 window.toggleManagerReviewStatus = async function(docId, currentState) {
     try {
-        Swal.fire({title: 'Updating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-        await window.updateDoc(window.doc(window.db, "customer_reviews", docId), { isPublished: !currentState });
-        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: !currentState ? 'Review Published!' : 'Review Hidden!', showConfirmButton: false, timer: 1500});
-        window.loadManagerCustomerReviews();
+        Swal.fire({title: 'Updating Website...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        // 🔥 FIXED: Pointing to "reviews" and updating the loyalty status!
+        await window.updateDoc(window.doc(window.db, "reviews", docId), { 
+            isPublished: !currentState,
+            status: !currentState ? "Approved" : "Hidden" // This tells the Customer App to grant a loyalty stamp!
+        });
+        
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: !currentState ? 'Review Published!' : 'Review Hidden!', 
+            showConfirmButton: false, timer: 1500
+        });
+        
+        window.loadManagerCustomerReviews(); 
     } catch(e) {
         Swal.fire('Error', 'Failed to update review.', 'error');
     }
@@ -26919,13 +26933,14 @@ window.loadLoyalCustomersCRM = async function() {
     tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">Analyzing customer frequency...</td></tr>';
 
     try {
-        const q = window.query(window.collection(window.db, "customer_reviews"));
+        // 🔥 FIXED: Pointing to "reviews"
+        const q = window.query(window.collection(window.db, "reviews"));
         const snap = await window.getDocs(q);
         
         let customerStats = {};
         snap.forEach(doc => {
             let d = doc.data();
-            let cName = (d.customerName || 'Anonymous').trim();
+            let cName = (d.customer || d.customerName || 'Anonymous').trim();
             if (!customerStats[cName]) customerStats[cName] = { count: 0, reviews: [] };
             customerStats[cName].count++;
             customerStats[cName].reviews.push(d);
@@ -26936,7 +26951,7 @@ window.loadLoyalCustomersCRM = async function() {
 
         sortedCustomers.forEach(name => {
             let stats = customerStats[name];
-            let isVip = stats.count >= 2; // 2 or more reviews/orders = Loyal VIP!
+            let isVip = stats.count >= 2; 
             
             let statusBadge = isVip 
                 ? `<span style="background: #fef3c7; color: #d97706; padding: 4px 10px; border-radius: 6px; font-weight: 900; font-size: 11px; border: 1px solid #fcd34d;">👑 VIP / Loyal Customer</span>`
@@ -26957,7 +26972,7 @@ window.loadLoyalCustomersCRM = async function() {
         tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No customer records found.</td></tr>';
     } catch(e) {
         console.error(e);
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red; padding: 40px;">Error loading CRM.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red; padding: 40px;">Error loading CRM. Check Firebase Rules!</td></tr>';
     }
 };
 
