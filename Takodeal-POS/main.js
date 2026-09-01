@@ -138,6 +138,75 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 });
 
+// ========================================================
+// 🚀 SMART DEVICE REGISTRATION (GOOGLE AUTH BYPASS)
+// ========================================================
+window.smartDeviceRegistration = async function() {
+    try {
+        // 1. Trigger Google Login
+        const result = await signInWithPopup(auth, provider);
+        const user = result.user;
+        
+        Swal.fire({title: 'Authenticating...', text: 'Checking franchise clearance...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        // 2. Check if this email exists in the HQ database
+        const q = window.query(window.collection(window.db, "hq_managers"), window.where("email", "==", user.email));
+        const snap = await window.getDocs(q);
+        
+        if (snap.empty) {
+            await auth.signOut();
+            return Swal.fire('Access Denied', 'This Google account is not registered as a Franchise Owner or HQ Manager. Please use the Manual Setup below.', 'error');
+        }
+        
+        let managerData = snap.docs[0].data();
+        
+        // 3. Extract the assigned branch
+        let assignedBranchStr = managerData.assignedBranch || 'Main Office';
+        let branches = assignedBranchStr.split(',').map(b => b.trim());
+        let targetBranch = branches[0]; // Auto-assign to the first branch they own!
+        
+        if (targetBranch === 'All') {
+            await auth.signOut();
+            return Swal.fire('HQ Account Detected', 'Master Key accounts cannot auto-register a single tablet. Please use the Manual Setup below to select a specific branch.', 'info');
+        }
+
+        // 4. Generate device credentials
+        let deviceName = `${managerData.fullName || 'Franchise'} Tablet`;
+        let deviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+        
+        // 5. Bypass "Pending" - INSTANT ACTIVE STATUS!
+        await window.addDoc(window.collection(window.db, "pos_devices"), {
+            deviceId: deviceId,
+            deviceName: deviceName,
+            branch: targetBranch,
+            status: 'Active', // 🔥 AUTO-APPROVED!
+            registeredAt: window.serverTimestamp(),
+            lastSeen: window.serverTimestamp(),
+            autoRegisteredBy: user.email
+        });
+        
+        localStorage.setItem('takodeal_device_branch', targetBranch);
+        localStorage.setItem('takodeal_device_id', deviceId);
+        localStorage.setItem('takodeal_device_name', deviceName);
+        
+        Swal.fire({
+            title: '✅ Device Activated!',
+            text: `Welcome, ${managerData.fullName || user.displayName}! This tablet is now securely locked to ${targetBranch} and fully activated.`,
+            icon: 'success',
+            timer: 3000,
+            showConfirmButton: false
+        }).then(() => {
+            location.reload();
+        });
+        
+    } catch (error) {
+        console.error("Smart Registration Error:", error);
+        if (error.code !== 'auth/popup-closed-by-user' && error.code !== 'auth/cancelled-popup-request') {
+            Swal.fire('Registration Failed', error.message, 'error');
+        }
+    }
+};
+
 window.lockDeviceToBranch = async function () {
   let selectedBranch = document.getElementById('setupBranchSelect').value;
   let deviceName = prompt("Give this device a name (e.g., 'Counter Tablet 1' or 'Dianne Phone'):", "New Device");
@@ -10014,25 +10083,34 @@ window.submitScheduleAck = async function(announcementId) {
 };
 
 // ==========================================
-// 🌍 INSTANT BRANCH SETUP ENGINE (CRASH-PROOF)
+// 🌍 DYNAMIC BRANCH SETUP ENGINE (CLOUD SYNCED)
 // ==========================================
 document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => {
+    setTimeout(async () => {
         let branchDropdown = document.getElementById('setupBranchSelect');
         let savedBranch = localStorage.getItem("takodeal_device_branch");
         
-        // Instantly populate the dropdown if they are on the setup screen!
         if (branchDropdown && !savedBranch) {
-            let activeBranches = ["Main Office", "Cabantian", "Citygate", "Maa", "PAMPANGA", "INDANGAN"];
-            
-            let html = '<option value="" disabled selected>-- Select Branch --</option>';
-            activeBranches.sort().forEach(b => {
-                html += `<option value="${b}">${b}</option>`;
-            });
-            
-            branchDropdown.innerHTML = html;
+            try {
+                // Fetch the live list of branches directly from Firebase!
+                const snap = await window.getDocs(window.collection(window.db, "branches"));
+                let activeBranches = [];
+                snap.forEach(doc => {
+                    if (doc.data().name) activeBranches.push(doc.data().name);
+                });
+                
+                let html = '<option value="" disabled selected>-- Select Branch --</option>';
+                activeBranches.sort().forEach(b => {
+                    html += `<option value="${b}">${b}</option>`;
+                });
+                
+                branchDropdown.innerHTML = html;
+            } catch (e) {
+                console.error("Failed to load live branches:", e);
+                branchDropdown.innerHTML = '<option value="" disabled selected>Error loading branches. Check WiFi.</option>';
+            }
         }
-    }, 200);
+    }, 500);
 });
 
 // ========================================================
