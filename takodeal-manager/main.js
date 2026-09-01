@@ -26545,3 +26545,245 @@ window.toggleSidebarVisibility = function(index) {
     // Quick redraw by reusing the exact same logic
     window.moveSidebarItem(0, 0); 
 };
+
+// ========================================================
+// 📖 SUPPLIER DIRECTORY & AI ROUTE ENGINE
+// ========================================================
+window.globalSupplierList = [];
+
+// 1. Upgrade the Tab Switcher
+window.switchPayablesTab = function(tab) {
+    let tActive = document.getElementById('tabPayActive');
+    let tHist = document.getElementById('tabPayHistory');
+    let tDir = document.getElementById('tabPayDirectory');
+
+    if (tActive) { tActive.style.color = tab === 'Active' ? '#0f766e' : '#64748b'; tActive.style.borderBottomColor = tab === 'Active' ? '#0f766e' : 'transparent'; }
+    if (tHist) { tHist.style.color = tab === 'History' ? '#0f766e' : '#64748b'; tHist.style.borderBottomColor = tab === 'History' ? '#0f766e' : 'transparent'; }
+    if (tDir) { tDir.style.color = tab === 'Directory' ? '#0f766e' : '#64748b'; tDir.style.borderBottomColor = tab === 'Directory' ? '#0f766e' : 'transparent'; }
+    
+    document.getElementById('payablesActiveSection').style.display = tab === 'Active' ? 'block' : 'none';
+    document.getElementById('payablesHistorySection').style.display = tab === 'History' ? 'block' : 'none';
+    document.getElementById('payablesDirectorySection').style.display = tab === 'Directory' ? 'block' : 'none';
+    
+    if (tab === 'History') window.loadPayablesHistory();
+    if (tab === 'Directory') window.loadSupplierDirectory();
+};
+
+window.loadSupplierDirectory = async function() {
+    const tbody = document.getElementById('supplierDirectoryBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">Loading vendor data...</td></tr>';
+
+    try {
+        const snap = await getDocs(collection(db, "suppliers"));
+        window.globalSupplierList = [];
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            data.id = docSnap.id;
+            window.globalSupplierList.push(data);
+        });
+
+        // Sort alphabetically
+        window.globalSupplierList.sort((a,b) => a.name.localeCompare(b.name));
+
+        window.globalSupplierList.forEach(s => {
+            let encodedData = encodeURIComponent(JSON.stringify(s));
+            
+            let mapBtn = '';
+            if (s.address) {
+                let encodedAddr = encodeURIComponent(s.address);
+                mapBtn = `<a href="https://www.google.com/maps/search/?api=1&query=${encodedAddr}" target="_blank" style="font-size: 11px; background: #e0f2fe; color: #0284c7; padding: 4px 8px; border-radius: 4px; text-decoration: none; font-weight: bold; border: 1px solid #bae6fd; display: inline-block; margin-top: 4px;">🗺️ Open in Maps</a>`;
+            }
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 15px 20px; font-weight: 900; color: #0f172a; font-size: 15px;">${s.name}</td>
+                    <td style="padding: 15px 20px;">
+                        <strong style="color: #334155; font-size: 13px;">👤 ${s.contactPerson || 'N/A'}</strong><br>
+                        <span style="color: #64748b; font-size: 12px; font-weight: bold;">📞 ${s.phone || 'N/A'}</span>
+                    </td>
+                    <td style="padding: 15px 20px; max-width: 250px; white-space: normal;">
+                        <span style="font-size: 13px; color: #475569;">${s.address || 'No address provided'}</span><br>
+                        ${mapBtn}
+                    </td>
+                    <td style="padding: 15px 20px; text-align: right;">
+                        <button onclick="window.addSupplierModal('${encodedData}')" style="background: white; border: 1px solid #cbd5e1; color: #334155; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05); margin-right: 5px;">✏️ Edit</button>
+                        <button onclick="window.deleteSupplier('${s.id}', '${s.name.replace(/'/g, "\\'")}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer;">🗑️</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No suppliers found.</td></tr>';
+
+        // Auto-fill the datalist for the "Log Delivery" dropdown!
+        let datalist = document.getElementById('supplierDirectoryList');
+        if (datalist) {
+            let opts = '';
+            window.globalSupplierList.forEach(s => opts += `<option value="${s.name}">`);
+            datalist.innerHTML = opts;
+        }
+
+    } catch (e) {
+        console.error("Supplier Error:", e);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Error loading directory.</td></tr>';
+    }
+};
+
+window.addSupplierModal = async function(encodedData = null) {
+    let d = encodedData ? JSON.parse(decodeURIComponent(encodedData)) : { name: '', contactPerson: '', phone: '', address: '' };
+    
+    const { value: formValues, isConfirmed } = await Swal.fire({
+        title: d.id ? '✏️ Edit Supplier' : '➕ Add New Supplier',
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Company / Supplier Name *</label>
+                <input type="text" id="swalSuppName" value="${d.name}" class="input-box" style="width: 100%; padding: 10px; margin-bottom: 15px; font-weight: bold;">
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #475569;">Contact Person</label>
+                        <input type="text" id="swalSuppContact" value="${d.contactPerson}" class="input-box" style="width: 100%; padding: 10px;">
+                    </div>
+                    <div>
+                        <label style="font-size: 12px; font-weight: bold; color: #475569;">Phone Number</label>
+                        <input type="text" id="swalSuppPhone" value="${d.phone}" class="input-box" style="width: 100%; padding: 10px;">
+                    </div>
+                </div>
+
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Exact Address (For AI Routing)</label>
+                <textarea id="swalSuppAddress" placeholder="e.g. 123 Agdao St, Davao City" style="width: 100%; height: 60px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-family: inherit; resize: none; box-sizing: border-box;">${d.address}</textarea>
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: '💾 Save Vendor',
+        confirmButtonColor: '#0ea5e9',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            let name = document.getElementById('swalSuppName').value.trim();
+            if (!name) { Swal.showValidationMessage('Supplier name is required.'); return false; }
+            return {
+                name: name,
+                contactPerson: document.getElementById('swalSuppContact').value.trim(),
+                phone: document.getElementById('swalSuppPhone').value.trim(),
+                address: document.getElementById('swalSuppAddress').value.trim()
+            }
+        }
+    });
+
+    if (isConfirmed && formValues) {
+        Swal.fire({title: 'Saving...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        try {
+            if (d.id) {
+                await updateDoc(doc(db, "suppliers", d.id), formValues);
+            } else {
+                await addDoc(collection(db, "suppliers"), formValues);
+            }
+            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Supplier saved!', showConfirmButton: false, timer: 2000});
+            window.loadSupplierDirectory();
+        } catch(e) {
+            console.error(e); Swal.fire('Error', 'Failed to save supplier.', 'error');
+        }
+    }
+};
+
+window.deleteSupplier = async function(id, name) {
+    if (!confirm(`Are you sure you want to permanently delete ${name} from your directory?`)) return;
+    try {
+        await deleteDoc(doc(db, "suppliers", id));
+        window.loadSupplierDirectory();
+    } catch(e) { console.error(e); alert('Failed to delete.'); }
+};
+
+// 🗺️ 2. AI SMART ROUTE PLANNER
+window.openSmartRoutePlanner = async function() {
+    if (window.globalSupplierList.length === 0) {
+        return Swal.fire('Directory Empty', 'Add suppliers with exact addresses first.', 'warning');
+    }
+
+    let checklistHtml = '';
+    window.globalSupplierList.forEach(s => {
+        if (s.address) {
+            checklistHtml += `
+                <label style="display: flex; align-items: center; gap: 10px; padding: 12px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 8px; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <input type="checkbox" class="route-cb" value="${s.address.replace(/"/g, '&quot;')}" style="width: 18px; height: 18px; accent-color: #8b5cf6;">
+                    <span style="font-weight: bold; color: #334155; font-size: 14px;">${s.name} <br><span style="font-size: 11px; color: #64748b; font-weight: normal;">${s.address}</span></span>
+                </label>
+            `;
+        }
+    });
+
+    if (checklistHtml === '') {
+        return Swal.fire('Missing Addresses', 'You have suppliers, but none of them have an address saved. Edit their profiles to add addresses.', 'info');
+    }
+
+    const { isConfirmed } = await Swal.fire({
+        title: '🗺️ AI Smart Route Builder',
+        html: `
+            <div style="text-align: left;">
+                <p style="font-size: 13px; color: #475569; margin-bottom: 15px;">Select the suppliers you need to buy from today. The system will build a sequenced Google Maps link starting from HQ.</p>
+                
+                <label style="font-size: 12px; font-weight: bold; color: #0f172a; margin-bottom: 8px; display: block;">Starting Point (HQ)</label>
+                <input type="text" id="routeStart" value="Takodeal Main Office, Davao City" class="input-box" style="width: 100%; padding: 10px; margin-bottom: 15px; font-weight: bold;">
+                
+                <div style="font-size: 12px; font-weight: bold; color: #8b5cf6; margin-bottom: 8px; text-transform: uppercase;">Select Destinations:</div>
+                <div style="max-height: 250px; overflow-y: auto; padding-right: 5px;">
+                    ${checklistHtml}
+                </div>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: '🚀 Generate Map Route',
+        confirmButtonColor: '#8b5cf6',
+        customClass: { popup: 'rounded-2xl shadow-2xl' }
+    });
+
+    if (isConfirmed) {
+        let startAddr = document.getElementById('routeStart').value.trim();
+        let selectedCheckboxes = document.querySelectorAll('.route-cb:checked');
+        
+        if (selectedCheckboxes.length === 0) return Swal.fire('No Stops', 'You must select at least one supplier.', 'warning');
+
+        // Build the Google Maps Multi-Stop URL
+        let baseUrl = "https://www.google.com/maps/dir/";
+        let routeParts = [encodeURIComponent(startAddr)];
+        
+        selectedCheckboxes.forEach(cb => {
+            routeParts.push(encodeURIComponent(cb.value));
+        });
+
+        // Add the parameters to force Google Maps to optimize the route order!
+        let finalUrl = baseUrl + routeParts.join('/') + "/";
+        
+        // Open the map in a new tab!
+        window.open(finalUrl, '_blank');
+    }
+};
+
+// 🧮 3. BI-DIRECTIONAL MATH FOR THE LOG DELIVERY MODAL
+window.calcPayMath = function(changedField) {
+    let qtyInput = document.getElementById('payItemQty');
+    let costInput = document.getElementById('payItemCost');
+    let totalInput = document.getElementById('payItemSubtotal');
+
+    let qty = parseFloat(qtyInput.value) || 0;
+    let cost = parseFloat(costInput.value) || 0;
+    let total = parseFloat(totalInput.value) || 0;
+
+    if (changedField === 'total') {
+        // If they typed the Total, reverse-calculate the Unit Cost
+        if (qty > 0 && total > 0) {
+            let newCost = total / qty;
+            costInput.value = newCost.toFixed(2);
+        }
+    } else {
+        // If they typed Qty or Unit Cost, calculate the Total normally
+        if (qty > 0 && cost > 0) {
+            let newTotal = qty * cost;
+            totalInput.value = newTotal.toFixed(2);
+        }
+    }
+};
