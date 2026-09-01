@@ -26821,3 +26821,188 @@ window.calcPayMath = function(changedField) {
         }
     }
 };
+
+// ========================================================
+// 🌐 CUSTOMER APP & STOREFRONT HUB ENGINE (MANAGER)
+// ========================================================
+window.loadCustomerAppHub = async function() {
+    window.switchCustomerAppTab('Reviews');
+};
+
+window.switchCustomerAppTab = function(tabName) {
+    ['Reviews', 'Loyalty', 'Sync'].forEach(t => {
+        let sec = document.getElementById('custSec' + t);
+        let btn = document.getElementById('tabCust' + t);
+        if (sec) sec.style.display = t === tabName ? 'block' : 'none';
+        if (btn) {
+            btn.style.background = t === tabName ? '#f0f9ff' : 'transparent';
+            btn.style.color = t === tabName ? '#0284c7' : '#64748b';
+            btn.style.borderBottom = t === tabName ? '3px solid #0284c7' : '3px solid transparent';
+        }
+    });
+
+    if (tabName === 'Reviews') window.loadManagerCustomerReviews();
+    else if (tabName === 'Loyalty') window.loadLoyalCustomersCRM();
+    else if (tabName === 'Sync') window.loadStorefrontCategorySyncUI();
+};
+
+// 1. Load Reviews & Moderation
+window.loadManagerCustomerReviews = async function() {
+    let container = document.getElementById('managerCustomerReviewsList');
+    if (!container) return;
+    container.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: #0ea5e9; font-weight: bold;">⏳ Loading customer reviews...</div>';
+
+    try {
+        const q = window.query(window.collection(window.db, "customer_reviews"), window.orderBy("timestamp", "desc"));
+        const snap = await window.getDocs(q);
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : new Date(d.timestamp).toLocaleDateString()) : 'Unknown Date';
+            
+            let isPublished = d.isPublished || false;
+            let statusBadge = isPublished 
+                ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 900; border: 1px solid #bbf7d0;">⭐ Published to Website</span>`
+                : `<span style="background: #f1f5f9; color: #64748b; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 900; border: 1px solid #cbd5e1;">🔒 Hidden (Pending Approval)</span>`;
+
+            let reviewMsg = d.reviewText || d.message || d.feedback || 'No written feedback provided. (Rating only)';
+
+            html += `
+                <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between;">
+                    <div>
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; border-bottom: 1px dashed #cbd5e1; padding-bottom: 12px;">
+                            <div>
+                                <strong style="font-size: 16px; color: #0f172a;">👤 ${d.customerName || 'Anonymous Customer'}</strong><br>
+                                <span style="font-size: 11px; color: #64748b; font-weight: bold;">Order: ${d.orderId || 'N/A'} • ${dateStr}</span>
+                            </div>
+                            <div style="text-align: right;">
+                                ${statusBadge}
+                            </div>
+                        </div>
+                        <div style="font-size: 14px; color: #334155; font-style: italic; line-height: 1.5; margin-bottom: 15px;">
+                            "${reviewMsg}"
+                        </div>
+                    </div>
+                    <div style="border-top: 1px solid #f1f5f9; padding-top: 12px; text-align: right;">
+                        <button onclick="window.toggleManagerReviewStatus('${docSnap.id}', ${isPublished})" style="background: ${isPublished ? '#fef2f2' : '#f0f9ff'}; border: 1px solid ${isPublished ? '#fca5a5' : '#bae6fd'}; color: ${isPublished ? '#dc2626' : '#0284c7'}; padding: 8px 15px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.2s;">
+                            ${isPublished ? 'Hide from Website' : 'Approve & Publish'}
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html || '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: #94a3b8; font-weight: bold;">No reviews submitted yet.</div>';
+    } catch (e) {
+        console.error(e);
+        container.innerHTML = '<div style="grid-column: 1/-1; text-align:center; padding: 40px; color: #dc2626; font-weight: bold;">Error loading reviews.</div>';
+    }
+};
+
+window.toggleManagerReviewStatus = async function(docId, currentState) {
+    try {
+        Swal.fire({title: 'Updating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        await window.updateDoc(window.doc(window.db, "customer_reviews", docId), { isPublished: !currentState });
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: !currentState ? 'Review Published!' : 'Review Hidden!', showConfirmButton: false, timer: 1500});
+        window.loadManagerCustomerReviews();
+    } catch(e) {
+        Swal.fire('Error', 'Failed to update review.', 'error');
+    }
+};
+
+// 2. Load Loyal Customer CRM (VIP Identification)
+window.loadLoyalCustomersCRM = async function() {
+    let tbody = document.getElementById('loyalCustomersTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">Analyzing customer frequency...</td></tr>';
+
+    try {
+        const q = window.query(window.collection(window.db, "customer_reviews"));
+        const snap = await window.getDocs(q);
+        
+        let customerStats = {};
+        snap.forEach(doc => {
+            let d = doc.data();
+            let cName = (d.customerName || 'Anonymous').trim();
+            if (!customerStats[cName]) customerStats[cName] = { count: 0, reviews: [] };
+            customerStats[cName].count++;
+            customerStats[cName].reviews.push(d);
+        });
+
+        let html = '';
+        let sortedCustomers = Object.keys(customerStats).sort((a,b) => customerStats[b].count - customerStats[a].count);
+
+        sortedCustomers.forEach(name => {
+            let stats = customerStats[name];
+            let isVip = stats.count >= 2; // 2 or more reviews/orders = Loyal VIP!
+            
+            let statusBadge = isVip 
+                ? `<span style="background: #fef3c7; color: #d97706; padding: 4px 10px; border-radius: 6px; font-weight: 900; font-size: 11px; border: 1px solid #fcd34d;">👑 VIP / Loyal Customer</span>`
+                : `<span style="background: #f1f5f9; color: #64748b; padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; border: 1px solid #cbd5e1;">Standard Customer</span>`;
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 15px 25px; font-weight: 900; color: #0f172a;">${name}</td>
+                    <td style="padding: 15px 25px; font-weight: bold; color: #0284c7;">${stats.count} Feedback Submitted</td>
+                    <td style="padding: 15px 25px;">${statusBadge}</td>
+                    <td style="padding: 15px 25px; text-align: right;">
+                        <button onclick="Swal.fire('Customer Note', 'Give ${name} a free takoyaki voucher on their next order as a thank you gift!', 'info')" style="background: #10b981; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 2px 4px rgba(16,185,129,0.3);">🎁 Give Promo Gift</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No customer records found.</td></tr>';
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red; padding: 40px;">Error loading CRM.</td></tr>';
+    }
+};
+
+// 3. Storefront Categories & POS Sync
+window.loadStorefrontCategorySyncUI = async function() {
+    let container = document.getElementById('storefrontCategorySyncList');
+    if (!container) return;
+    container.innerHTML = '<div style="color: #0ea5e9; font-weight: bold; text-align: center; padding: 20px;">Loading categories & POS sync status...</div>';
+
+    try {
+        // Get all menu categories from POS Config or Menu
+        const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
+        let allCats = configSnap.exists() && configSnap.data().posTabs ? configSnap.data().posTabs : [];
+
+        const syncSnap = await window.getDoc(window.doc(window.db, "settings", "customer_app_categories"));
+        let publishedCats = syncSnap.exists() ? syncSnap.data().categories || [] : allCats;
+
+        let html = '';
+        allCats.forEach(cat => {
+            let isChecked = publishedCats.includes(cat) ? 'checked' : '';
+            html += `
+                <label style="display: flex; align-items: center; justify-content: space-between; background: white; padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; cursor: pointer;">
+                    <span style="font-weight: 900; color: #1e293b; font-size: 14px;">📁 ${cat}</span>
+                    <input type="checkbox" value="${cat}" class="storefront-cat-cb" ${isChecked} style="width: 18px; height: 18px; accent-color: #0ea5e9; cursor: pointer;">
+                </label>
+            `;
+        });
+
+        container.innerHTML = html || '<div style="color: #94a3b8; font-style: italic;">No categories found. Check your POS Config Hub.</div>';
+    } catch(e) {
+        console.error(e);
+        container.innerHTML = '<div style="color: #ef4444;">Failed to load storefront categories.</div>';
+    }
+};
+
+window.saveStorefrontCategorySync = async function() {
+    let checkboxes = document.querySelectorAll('.storefront-cat-cb:checked');
+    let categories = [];
+    checkboxes.forEach(cb => categories.push(cb.value));
+
+    try {
+        Swal.fire({title: 'Syncing to Customer App...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        await window.setDoc(window.doc(window.db, "settings", "customer_app_categories"), { categories: categories }, { merge: true });
+        Swal.fire({title: '✅ Synced!', text: 'Customer App menu categories updated successfully.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to sync categories.', 'error');
+    }
+};
