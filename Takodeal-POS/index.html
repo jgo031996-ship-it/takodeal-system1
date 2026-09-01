@@ -387,19 +387,29 @@
 
   <div id="deviceSetupOverlay"
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 99999; justify-content: center; align-items: center; flex-direction: column; color: white;">
-    <h1 style="color: #f59e0b; margin-bottom: 10px;">⚙️ Device Setup</h1>
-    <p style="margin-bottom: 30px; color: #94a3b8;">Which branch is this tablet physically located at?</p>
+    
+    <h1 style="color: #f59e0b; margin-bottom: 10px; font-size: 32px;">⚙️ Device Setup</h1>
+    <p style="margin-bottom: 30px; color: #94a3b8; font-size: 15px;">Authorize this tablet to connect to the TAKODEÁL network.</p>
+
+    <!-- 🔥 NEW: SMART GOOGLE REGISTRATION ENGINE -->
+    <button onclick="window.smartDeviceRegistration()" style="background: white; color: #334155; border: 2px solid #cbd5e1; padding: 14px 20px; border-radius: 12px; font-size: 16px; font-weight: 900; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; width: 320px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); margin-bottom: 30px; transition: 0.2s;" onmouseover="this.style.transform='translateY(-2px)';" onmouseout="this.style.transform='translateY(0)';">
+      <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width: 24px; height: 24px;">
+      Sign in to Auto-Register
+    </button>
+
+    <div style="width: 320px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 30px; position: relative;">
+        <span style="position: absolute; top: -10px; left: 50%; transform: translateX(-50%); background: #0f172a; padding: 0 10px; color: #64748b; font-size: 12px; font-weight: bold;">OR MANUAL SETUP</span>
+    </div>
 
     <select id="setupBranchSelect"
-      style="padding: 15px; border-radius: 8px; font-size: 18px; font-weight: bold; width: 300px; margin-bottom: 20px;">
-      <option value="Main Office">Main Office</option> <option value="Cabantian">Cabantian</option>
-    <option value="Citygate">Citygate</option>
-    <option value="Maa">Maa</option>
+      style="padding: 15px; border-radius: 8px; font-size: 16px; font-weight: bold; width: 320px; margin-bottom: 15px; outline: none; cursor: pointer;">
+      <option value="" disabled selected>Loading live branches...</option>
     </select>
 
     <button onclick="lockDeviceToBranch()"
-      style="padding: 15px 30px; background: #10b981; color: white; border: none; border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; width: 300px;">🔒
-      Lock Device</button>
+      style="padding: 15px 30px; background: #334155; color: white; border: 1px solid #475569; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; width: 320px; transition: 0.2s;">
+      Request Manual Access
+    </button>
   </div>
 
   <div id="hrSanctionModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);">
