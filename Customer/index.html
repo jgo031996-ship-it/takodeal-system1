@@ -182,6 +182,31 @@
     </nav>
 
     <!-- ========================================== -->
+    <!-- 📍 STAGE 0: THE STOREFRONT LOCATOR SCREEN -->
+    <!-- ========================================== -->
+    <div id="branchLocatorScreen" class="app-screen fixed inset-0 z-[100] bg-darkbg overflow-y-auto block animate-fade-in">
+        <div class="max-w-7xl mx-auto w-full px-6 py-12 flex flex-col min-h-screen">
+            
+            <div class="text-center mb-10 mt-6">
+                <div class="inline-block bg-zinc-900 border border-zinc-800 rounded-full p-2 mb-6 shadow-2xl">
+                    <img src="customer-logo.jpg" alt="Logo" class="w-16 h-16 rounded-full border-2 border-brandred">
+                </div>
+                <h1 class="text-4xl md:text-5xl font-black text-white mb-3 tracking-tight">Where to today?</h1>
+                <p class="text-zinc-400 text-sm md:text-base max-w-lg mx-auto">Select your nearest TAKODEÁL branch to see live availability, delivery options, and local promos.</p>
+            </div>
+
+            <!-- Branch Cards Inject Here -->
+            <div id="branchCardsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 flex-1 content-start pb-20">
+                <div class="col-span-full text-center py-10 text-brandgold font-bold animate-pulse">Scanning locations...</div>
+            </div>
+
+            <div class="text-center text-zinc-600 text-xs font-bold uppercase tracking-widest mt-auto pb-6">
+                © 2026 TAKODEÁL | Davao City
+            </div>
+        </div>
+    </div>
+
+    <!-- ========================================== -->
     <!-- 🌟 STAGE 1: THE PREMIUM LANDING PAGE -->
     <!-- ========================================== -->
     <div id="greetingScreen" class="app-screen w-full flex flex-col relative z-30 transition-all duration-500 block">
@@ -532,28 +557,21 @@
         window.switchScreen = function(screenId) {
             document.querySelectorAll('.app-screen').forEach(screen => {
                 screen.classList.add('hidden');
-                // Remove all layout classes to prevent conflicts
                 screen.classList.remove('block', 'flex', 'flex-col'); 
             });
             
+            // 🔥 THE FIX: Always hide the branch locator when moving past it
+            let locator = document.getElementById('branchLocatorScreen');
+            if (locator && screenId !== 'branchLocatorScreen') locator.classList.add('hidden');
+            
             let target = document.getElementById(screenId);
-            target.classList.remove('hidden');
-            
-            // Adjust display type based on the screen
-            if (screenId === 'orderingScreen') {
-                // Only the menu screen needs flex to push the search bar up
-                target.classList.add('flex', 'flex-col'); 
-            } else {
-                // Profile, Home, and Reviews use standard block stacking!
-                target.classList.add('block'); 
+            if (target) {
+                target.classList.remove('hidden');
+                if (screenId === 'orderingScreen') target.classList.add('flex', 'flex-col'); 
+                else target.classList.add('block'); 
             }
-            
             window.scrollTo({ top: 0, behavior: 'smooth' });
-
-            // If switching to Reviews, auto-load them
-            if (screenId === 'reviewsScreen') {
-                window.loadReviewsPage();
-            }
+            if (screenId === 'reviewsScreen') window.loadReviewsPage();
         };
 
         // 🔥 VISIT COUNTER ENGINE 🔥
@@ -605,7 +623,6 @@
 
         window.loadLiveMenu = async function() {
             try {
-                // 🔥 NEW: Fetch Manager Config for Home Screen Categories!
                 window.homeFeaturedCategories = [];
                 try {
                     const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
@@ -624,16 +641,81 @@
                     window.rawMenuCache.push(item);
                 });
 
-                let homeSel = document.getElementById('homeBranchSelect');
-                let defaultBranch = homeSel ? homeSel.value : 'Cabantian';
-                window.syncBranchSelection(defaultBranch);
-                window.initVisitCounter();
+                // 🔥 LOAD THE BRANCH LOCATOR CARDS INSTEAD OF JUMPING TO HOME 🔥
+                await window.loadBranchLocator();
 
             } catch (error) {
                 console.error(error);
                 let container = document.getElementById('liveMenuContainer');
                 if (container) container.innerHTML = '<div class="text-center py-8 text-red-500">Failed to load menu.</div>';
             }
+        };
+
+        window.loadBranchLocator = async function() {
+            let grid = document.getElementById('branchCardsGrid');
+            if (!grid) return;
+
+            try {
+                const bQ = query(collection(db, "branches"));
+                const bSnap = await getDocs(bQ);
+                
+                let html = '';
+                let branches = [];
+                bSnap.forEach(d => {
+                    if (d.data().name !== "Main Office") branches.push(d.data());
+                });
+
+                // Sort alphabetically
+                branches.sort((a,b) => a.name.localeCompare(b.name));
+
+                branches.forEach(b => {
+                    let safeName = b.name.replace(/'/g, "\\'");
+                    let img = b.storefrontImage || 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=1000&auto=format&fit=crop'; 
+                    let hours = b.operatingHours || '10:00 AM - 9:00 PM';
+                    let phone = b.publicContact || b.contact || 'No phone listed';
+                    let addr = b.publicAddress || b.address || 'Davao City';
+
+                    // Read status from the pause engine
+                    let isPaused = false; // By default assume open, the listener will update this later
+
+                    html += `
+                        <div onclick="window.selectBranchAndEnter('${safeName}')" class="group bg-cardbg border border-zinc-800 rounded-2xl overflow-hidden cursor-pointer shadow-lg hover:shadow-[0_0_20px_rgba(220,38,38,0.2)] hover:border-brandred transition-all duration-300 relative flex flex-col">
+                            <div class="h-48 w-full relative overflow-hidden">
+                                <div class="absolute inset-0 bg-gradient-to-t from-cardbg to-transparent z-10"></div>
+                                <img src="${img}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
+                                <div class="absolute top-4 right-4 z-20 bg-green-500/20 border border-green-500 text-green-400 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest backdrop-blur-md">
+                                    Open Now
+                                </div>
+                            </div>
+                            <div class="p-6 relative z-20 flex-1 flex flex-col">
+                                <h3 class="text-2xl font-black text-white mb-2 group-hover:text-brandgold transition-colors">${b.name}</h3>
+                                <div class="space-y-2 mt-auto">
+                                    <div class="flex items-start gap-2 text-zinc-400 text-sm">
+                                        <span class="text-brandred">📍</span> <span class="leading-tight">${addr}</span>
+                                    </div>
+                                    <div class="flex items-center gap-2 text-zinc-400 text-sm">
+                                        <span class="text-brandgold">⏰</span> <span>${hours}</span>
+                                    </div>
+                                    <div class="flex items-center gap-2 text-zinc-400 text-sm">
+                                        <span class="text-blue-400">📞</span> <span>${phone}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+
+                grid.innerHTML = html;
+            } catch(e) {
+                console.error(e);
+                grid.innerHTML = '<div class="col-span-full text-red-500 text-center">Failed to load branches.</div>';
+            }
+        };
+
+        window.selectBranchAndEnter = function(branchName) {
+            window.syncBranchSelection(branchName);
+            window.switchScreen('greetingScreen'); // Or 'orderingScreen' if you want them to skip the hero image!
+            window.initVisitCounter();
         };
         
         window.routeToGrab = function() {
