@@ -26830,7 +26830,7 @@ window.loadCustomerAppHub = async function() {
 };
 
 window.switchCustomerAppTab = function(tabName) {
-    ['Reviews', 'Loyalty', 'Sync'].forEach(t => {
+    ['Reviews', 'Loyalty', 'Sync', 'Profiles'].forEach(t => {
         let sec = document.getElementById('custSec' + t);
         let btn = document.getElementById('tabCust' + t);
         if (sec) sec.style.display = t === tabName ? 'block' : 'none';
@@ -26844,6 +26844,7 @@ window.switchCustomerAppTab = function(tabName) {
     if (tabName === 'Reviews') window.loadManagerCustomerReviews();
     else if (tabName === 'Loyalty') window.loadLoyalCustomersCRM();
     else if (tabName === 'Sync') window.loadStorefrontCategorySyncUI();
+    else if (tabName === 'Profiles') window.loadStorefrontProfiles();
 };
 
 // 1. Load Reviews & Moderation
@@ -27004,5 +27005,114 @@ window.saveStorefrontCategorySync = async function() {
     } catch(e) {
         console.error(e);
         Swal.fire('Error', 'Failed to sync categories.', 'error');
+    }
+};
+
+// ========================================================
+// 🏪 STOREFRONT PROFILES ENGINE (MANAGER)
+// ========================================================
+window.loadStorefrontProfiles = async function() {
+    let tbody = document.getElementById('storefrontProfilesTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">⏳ Loading branch profiles...</td></tr>';
+
+    try {
+        const snap = await window.getDocs(window.collection(window.db, "branches"));
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            if (d.name === "Main Office") return; // Skip HQ
+
+            let imgHtml = d.storefrontImage 
+                ? `<img src="${d.storefrontImage}" style="width: 100px; height: 60px; object-fit: cover; border-radius: 8px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">`
+                : `<div style="width: 100px; height: 60px; background: #f1f5f9; border-radius: 8px; border: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #94a3b8; font-weight: bold;">No Image</div>`;
+
+            let hoursStr = d.operatingHours || 'Not set';
+            let contactStr = d.publicContact || d.contact || 'Not set';
+            let addressStr = d.publicAddress || d.address || 'Not set';
+
+            let safeData = encodeURIComponent(JSON.stringify({id: docSnap.id, ...d}));
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 15px 25px; font-weight: 900; color: #0f172a; font-size: 16px; vertical-align: middle;">📍 ${d.name}</td>
+                    <td style="padding: 15px 25px; vertical-align: middle;">${imgHtml}</td>
+                    <td style="padding: 15px 25px; vertical-align: middle;">
+                        <div style="font-size: 12px; color: #475569; margin-bottom: 2px;">⏰ <b>Hours:</b> ${hoursStr}</div>
+                        <div style="font-size: 12px; color: #475569; margin-bottom: 2px;">📞 <b>Phone:</b> ${contactStr}</div>
+                        <div style="font-size: 12px; color: #475569;">🗺️ <b>Address:</b> ${addressStr}</div>
+                    </td>
+                    <td style="padding: 15px 25px; text-align: right; vertical-align: middle;">
+                        <button onclick="window.editStorefrontProfile('${safeData}')" style="background: #0ea5e9; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(14,165,233,0.2);">✏️ Edit Profile</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 40px; color: #94a3b8;">No branches found.</td></tr>';
+    } catch(e) {
+        console.error(e); tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color: red;">Failed to load profiles.</td></tr>';
+    }
+};
+
+window.editStorefrontProfile = async function(encodedData) {
+    let d = JSON.parse(decodeURIComponent(encodedData));
+    
+    const { value: formValues } = await Swal.fire({
+        title: `🏪 Edit ${d.name} Profile`,
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Operating Hours (For Customers)</label>
+                <input type="text" id="sfHours" value="${d.operatingHours || '10:00 AM - 9:00 PM'}" class="input-box" style="width: 100%; padding: 10px; margin-bottom: 15px; box-sizing: border-box; font-weight: bold;">
+                
+                <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Public Contact Number</label>
+                <input type="text" id="sfContact" value="${d.publicContact || d.contact || ''}" class="input-box" style="width: 100%; padding: 10px; margin-bottom: 15px; box-sizing: border-box; font-weight: bold;">
+
+                <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Public Address</label>
+                <textarea id="sfAddress" class="input-box" style="width: 100%; height: 60px; padding: 10px; margin-bottom: 15px; box-sizing: border-box; font-family: inherit; resize: none;">${d.publicAddress || d.address || ''}</textarea>
+
+                <label style="font-size: 12px; font-weight: bold; color: #0ea5e9; display: block; margin-bottom: 5px;">Upload Storefront Image (App Landing Page) 📸</label>
+                <input type="file" id="sfImage" accept="image/*" class="input-box" style="width: 100%; padding: 8px; box-sizing: border-box; background: #f0f9ff; border: 1px dashed #bae6fd; color: #0284c7;">
+            </div>
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonText: '💾 Save Profile',
+        confirmButtonColor: '#0ea5e9',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            return {
+                hours: document.getElementById('sfHours').value.trim(),
+                contact: document.getElementById('sfContact').value.trim(),
+                address: document.getElementById('sfAddress').value.trim(),
+                file: document.getElementById('sfImage').files[0]
+            }
+        }
+    });
+
+    if (formValues) {
+        Swal.fire({title: 'Saving Profile...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        try {
+            let payload = {
+                operatingHours: formValues.hours,
+                publicContact: formValues.contact,
+                publicAddress: formValues.address
+            };
+
+            if (formValues.file) {
+                const fileExt = formValues.file.name.split('.').pop();
+                const fileName = `storefronts/${d.id}_${Date.now()}.${fileExt}`;
+                const storageReference = window.ref(window.storage, fileName);
+                const snapshot = await window.uploadBytes(storageReference, formValues.file);
+                payload.storefrontImage = await window.getDownloadURL(snapshot.ref);
+            }
+
+            await window.updateDoc(window.doc(window.db, "branches", d.id), payload);
+            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Profile Updated!', showConfirmButton: false, timer: 2000});
+            window.loadStorefrontProfiles();
+        } catch(e) {
+            console.error(e); Swal.fire('Error', 'Failed to save profile.', 'error');
+        }
     }
 };
