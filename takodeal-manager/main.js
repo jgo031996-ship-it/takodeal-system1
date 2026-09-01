@@ -26976,47 +26976,92 @@ window.loadLoyalCustomersCRM = async function() {
     }
 };
 
-// 3. Storefront Categories & POS Sync
+// 3. Storefront Categories & POS Sync (Per-Branch)
 window.loadStorefrontCategorySyncUI = async function() {
     let container = document.getElementById('storefrontCategorySyncList');
-    if (!container) return;
-    container.innerHTML = '<div style="color: #0ea5e9; font-weight: bold; text-align: center; padding: 20px;">Loading categories & POS sync status...</div>';
+    let branchSelect = document.getElementById('storefrontSyncBranch');
+    if (!container || !branchSelect) return;
+
+    // Auto-populate branch dropdown
+    if (branchSelect.options.length <= 1 && window.globalActiveBranches) {
+        let opts = '<option value="">-- Select Branch --</option>';
+        window.globalActiveBranches.forEach(b => {
+            if (b !== "Main Office") opts += `<option value="${b}">📍 ${b}</option>`;
+        });
+        branchSelect.innerHTML = opts;
+    }
+
+    let branch = branchSelect.value;
+    if (!branch) {
+        container.innerHTML = '<div style="color: #94a3b8; font-weight: bold; text-align: center; padding: 30px; font-style: italic;">Select a branch above to load its menu settings...</div>';
+        return;
+    }
+
+    container.innerHTML = `<div style="color: #0ea5e9; font-weight: bold; text-align: center; padding: 30px;">⏳ Loading categories for ${branch}...</div>`;
 
     try {
-        // Get all menu categories from POS Config or Menu
+        // Get all menu categories from Master POS Config
         const configSnap = await window.getDoc(window.doc(window.db, "settings", "global_pos_config"));
         let allCats = configSnap.exists() && configSnap.data().posTabs ? configSnap.data().posTabs : [];
 
-        const syncSnap = await window.getDoc(window.doc(window.db, "settings", "customer_app_categories"));
-        let publishedCats = syncSnap.exists() ? syncSnap.data().categories || [] : allCats;
+        // Fetch the specific Branch's allowedCategories
+        const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", branch));
+        const bSnap = await window.getDocs(bQ);
+        
+        let allowedCats = [];
+        if (!bSnap.empty && bSnap.docs[0].data().allowedCategories) {
+            allowedCats = bSnap.docs[0].data().allowedCategories;
+        }
+
+        // If allowedCats is empty, it usually means EVERYTHING is allowed by default
+        let isAllAllowed = allowedCats.length === 0;
 
         let html = '';
         allCats.forEach(cat => {
-            let isChecked = publishedCats.includes(cat) ? 'checked' : '';
+            let isChecked = (isAllAllowed || allowedCats.includes(cat)) ? 'checked' : '';
             html += `
-                <label style="display: flex; align-items: center; justify-content: space-between; background: white; padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; cursor: pointer;">
-                    <span style="font-weight: 900; color: #1e293b; font-size: 14px;">📁 ${cat}</span>
-                    <input type="checkbox" value="${cat}" class="storefront-cat-cb" ${isChecked} style="width: 18px; height: 18px; accent-color: #0ea5e9; cursor: pointer;">
+                <label style="display: flex; align-items: center; justify-content: space-between; background: white; padding: 14px 20px; border-radius: 8px; border: 1px solid #cbd5e1; cursor: pointer; transition: 0.2s; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" onmouseover="this.style.background='#f0f9ff'; this.style.borderColor='#bae6fd';" onmouseout="this.style.background='white'; this.style.borderColor='#cbd5e1';">
+                    <span style="font-weight: 900; color: #1e293b; font-size: 15px;">📁 ${cat}</span>
+                    <input type="checkbox" value="${cat}" class="storefront-cat-cb" ${isChecked} style="width: 20px; height: 20px; accent-color: #0ea5e9; cursor: pointer;">
                 </label>
             `;
         });
 
-        container.innerHTML = html || '<div style="color: #94a3b8; font-style: italic;">No categories found. Check your POS Config Hub.</div>';
+        container.innerHTML = html || '<div style="color: #94a3b8; font-style: italic; text-align: center;">No categories found. Add them in POS Config Hub first.</div>';
     } catch(e) {
         console.error(e);
-        container.innerHTML = '<div style="color: #ef4444;">Failed to load storefront categories.</div>';
+        container.innerHTML = '<div style="color: #ef4444; text-align: center; font-weight: bold;">Failed to load branch categories.</div>';
     }
 };
 
 window.saveStorefrontCategorySync = async function() {
-    let checkboxes = document.querySelectorAll('.storefront-cat-cb:checked');
-    let categories = [];
-    checkboxes.forEach(cb => categories.push(cb.value));
+    let branch = document.getElementById('storefrontSyncBranch').value;
+    if (!branch) return Swal.fire('Error', 'Please select a branch first.', 'error');
+
+    let checkboxes = document.querySelectorAll('.storefront-cat-cb');
+    let allowed = [];
+    checkboxes.forEach(cb => { if(cb.checked) allowed.push(cb.value); });
+
+    // If they checked ALL of them, we save an empty array so it defaults to showing EVERYTHING
+    if (allowed.length === checkboxes.length) allowed = [];
 
     try {
-        Swal.fire({title: 'Syncing to Customer App...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-        await window.setDoc(window.doc(window.db, "settings", "customer_app_categories"), { categories: categories }, { merge: true });
-        Swal.fire({title: '✅ Synced!', text: 'Customer App menu categories updated successfully.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+        Swal.fire({title: 'Syncing...', text: 'Updating Customer App & Cashier POS...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", branch));
+        const bSnap = await window.getDocs(bQ);
+        
+        if (!bSnap.empty) {
+            await window.updateDoc(bSnap.docs[0].ref, { allowedCategories: allowed });
+            Swal.fire({
+                title: '✅ Synced!', 
+                text: `Menu categories for ${branch} updated successfully.`, 
+                icon: 'success', 
+                customClass: { popup: 'rounded-2xl' }
+            });
+        } else {
+            Swal.fire('Error', 'Branch data not found.', 'error');
+        }
     } catch(e) {
         console.error(e);
         Swal.fire('Error', 'Failed to sync categories.', 'error');
