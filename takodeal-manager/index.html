@@ -395,6 +395,10 @@
       <a href="#" class="nav-item" id="nav-sop" onclick="switchView('sop'); window.loadSopManager();"><span class="nav-icon">📋</span> <span class="nav-text">SOP Manager</span></a>
       <a href="#" class="nav-item" id="nav-menu" onclick="switchView('menu')"><span class="nav-icon">🍔</span> <span class="nav-text">Menu Editor</span></a>
       <a href="#" class="nav-item" id="nav-posconfig" onclick="switchView('posconfig'); loadPosConfigHub();"><span class="nav-icon">⚙️</span> <span class="nav-text">POS Config Hub</span></a>
+      <a href="#" class="nav-item" id="nav-customerapp" onclick="switchView('customerapp'); window.loadCustomerAppHub();">
+          <span class="nav-icon">🌐</span> 
+          <span class="nav-text">Customer App Hub</span>
+      </a>
       <a href="#" class="nav-item" id="nav-equipment" onclick="switchView('equipment'); window.loadEquipmentDashboard();"><span class="nav-icon">🛠️</span> <span class="nav-text">Assets & Equipment</span></a>
       <div class="nav-item-wrapper">
           <a href="#" class="nav-item" id="nav-inventory" onclick="window.toggleInvDropdown(event)">
@@ -1950,6 +1954,82 @@
 
             </div>
         </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- 🌐 CUSTOMER APP & STOREFRONT HUB (MANAGER) -->
+    <!-- ========================================== -->
+    <div id="view-customerapp" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+      <div style="max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 25px;">
+          
+          <!-- Header Banner -->
+          <div style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 30px; border-radius: 16px; color: white; box-shadow: 0 10px 25px rgba(2,132,199,0.2);">
+              <h2 style="margin: 0; font-size: 26px; font-weight: 900; display: flex; align-items: center; gap: 12px;">
+                  <span style="font-size: 32px;">🌐</span> Customer App & Storefront Hub
+              </h2>
+              <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.9;">Moderate customer reviews, track loyal VIPs, and sync available categories with the POS.</p>
+          </div>
+
+          <!-- SUB-TABS NAVIGATION -->
+          <div style="display: flex; background: white; border-bottom: 2px solid #e2e8f0; border-radius: 12px 12px 0 0; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+              <button id="tabCustReviews" onclick="window.switchCustomerAppTab('Reviews')" style="flex: 1; padding: 16px; border: none; border-bottom: 3px solid #0284c7; background: #f0f9ff; font-weight: 900; color: #0284c7; cursor: pointer; font-size: 14px; text-transform: uppercase;">⭐ Customer Reviews & Moderation</button>
+              <button id="tabCustLoyalty" onclick="window.switchCustomerAppTab('Loyalty')" style="flex: 1; padding: 16px; border: none; border-bottom: 3px solid transparent; background: transparent; font-weight: 900; color: #64748b; cursor: pointer; font-size: 14px; text-transform: uppercase; border-left: 1px solid #e2e8f0;">👑 Loyal Customer CRM (VIPs)</button>
+              <button id="tabCustSync" onclick="window.switchCustomerAppTab('Sync')" style="flex: 1; padding: 16px; border: none; border-bottom: 3px solid transparent; background: transparent; font-weight: 900; color: #64748b; cursor: pointer; font-size: 14px; text-transform: uppercase; border-left: 1px solid #e2e8f0;">🍔 Storefront Categories & POS Sync</button>
+          </div>
+
+          <!-- SECTION 1: REVIEWS & MODERATION -->
+          <div id="custSecReviews" style="display: block;">
+              <div style="background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                      <h3 style="margin: 0; color: #0f172a; font-size: 18px; font-weight: 900;">Incoming Feedback & Website Publisher</h3>
+                      <button onclick="window.loadCustomerAppHub()" class="btn-refresh" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 10px 18px; border-radius: 8px; font-weight: bold; cursor: pointer;">🔄 Refresh Reviews</button>
+                  </div>
+                  <div id="managerCustomerReviewsList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px;">
+                      <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #94a3b8; font-weight: bold;">Loading reviews...</div>
+                  </div>
+              </div>
+          </div>
+
+          <!-- SECTION 2: LOYAL CUSTOMER CRM (VIPs) -->
+          <div id="custSecLoyalty" style="display: none;">
+              <div style="background: white; border-radius: 12px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                  <div style="background: #f8fafc; padding: 20px 25px; border-bottom: 1px solid #e2e8f0;">
+                      <h3 style="margin: 0; color: #0f172a; font-size: 18px; font-weight: 900;">👑 Loyal Customers & Promos</h3>
+                      <span style="font-size: 12px; color: #64748b;">Identifies repeat customers based on review frequency and order activity so you can reward them.</span>
+                  </div>
+                  <div class="table-responsive">
+                      <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
+                          <thead style="background: white; border-bottom: 2px solid #cbd5e1;">
+                              <tr>
+                                  <th style="padding: 15px 25px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 800;">Customer Name</th>
+                                  <th style="padding: 15px 25px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 800;">Total Reviews / Feedback</th>
+                                  <th style="padding: 15px 25px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 800;">Customer Status</th>
+                                  <th style="padding: 15px 25px; color: #475569; text-align: right; font-size: 11px; text-transform: uppercase; font-weight: 800;">Action</th>
+                              </tr>
+                          </thead>
+                          <tbody id="loyalCustomersTableBody">
+                              <tr><td colspan="4" class="text-center" style="padding: 40px; color: #94a3b8;">Analyzing customer frequency...</td></tr>
+                          </tbody>
+                      </table>
+                  </div>
+              </div>
+          </div>
+
+          <!-- SECTION 3: STOREFRONT CATEGORY & POS SYNC -->
+          <div id="custSecSync" style="display: none;">
+              <div style="background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);">
+                  <h3 style="margin-top: 0; color: #0f172a; font-size: 18px; font-weight: 900; margin-bottom: 5px;">🍔 Customer App Categories & POS Sync</h3>
+                  <p style="color: #64748b; font-size: 13px; margin-bottom: 20px;">Control which categories appear on the online customer ordering portal. Items marked unavailable or out-of-stock in the Cashier POS automatically sync here.</p>
+                  
+                  <div id="storefrontCategorySyncList" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                      <div style="color: #94a3b8; font-weight: bold; text-align: center; padding: 30px;">Loading categories...</div>
+                  </div>
+                  
+                  <button onclick="window.saveStorefrontCategorySync()" style="background: #0ea5e9; color: white; border: none; padding: 14px 28px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(14,165,233,0.3);">💾 Save Category Visibility</button>
+              </div>
+          </div>
+
+      </div>
     </div>
 
     <!-- 🛠️ ASSETS & EQUIPMENT MANAGER -->
