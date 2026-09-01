@@ -18182,6 +18182,49 @@ window.loadSanctionsDashboard = async function() {
 };
 
 // ========================================================
+// ✨ SMART AI LETTER GENERATOR
+// ========================================================
+window.generateAiNteLetter = function() {
+    let staffSelect = document.getElementById('sanctionStaffSelect');
+    let staffName = staffSelect.value;
+    let branch = staffSelect.options[staffSelect.selectedIndex]?.getAttribute('data-branch') || 'Unknown';
+    let incidentType = document.getElementById('sanctionType').value;
+    let severity = document.getElementById('sanctionSeverity').value;
+    let detailsArea = document.getElementById('sanctionDetails');
+    let roughDetails = detailsArea.value.trim();
+
+    if (!staffName) return Swal.fire('Missing Staff', 'Please select a staff member first.', 'warning');
+    if (!roughDetails) return Swal.fire('Missing Details', 'Please type a short description of what happened in the box first, then click Auto-Draft.', 'warning');
+
+    let managerName = window.sessionUser ? window.sessionUser.cashierName : "Management";
+    let todayObj = new Date();
+    let dateStr = todayObj.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    let timeStr = todayObj.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+
+    let formalLetter = `Subject: Violation of ${incidentType === 'ADD_NEW' ? 'Store Policies' : incidentType}\n\n`;
+    formalLetter += `Dear ${staffName},\n\n`;
+    formalLetter += `This letter serves as a formal notice regarding a non-compliance issue with our store operating standards observed on ${dateStr}, at approximately ${timeStr}.\n\n`;
+    formalLetter += `INCIDENT SUMMARY:\n${roughDetails}\n\n`;
+    formalLetter += `SEVERITY LEVEL & RESOLUTION:\nThis incident has been recorded as a: ${severity}. We have discussed the critical importance of maintaining strict compliance with store protocols and guidelines. You are expected to correct this behavior immediately.\n\n`;
+    formalLetter += `Please be reminded that strict adherence to our policies is essential to ensuring quality operations and food safety for our customers. Future non-compliance may result in further disciplinary action in accordance with store policy.\n\n`;
+    formalLetter += `Sincerely,\n\n${managerName}\nManagement, TAKODEÁL ${branch}\n\n`;
+    formalLetter += `-------------------------------------------------\n\n`;
+    formalLetter += `EMPLOYEE ACKNOWLEDGMENT\n\n`;
+    formalLetter += `I, ${staffName}, acknowledge receipt of this formal sanction letter. I understand the importance of the store rules and I commit to adhering strictly to all standards moving forward.\n`;
+
+    detailsArea.value = formalLetter;
+    detailsArea.style.height = '350px'; // Expands the box so you can read the whole letter!
+
+    Swal.fire({
+        toast: true, position: 'top-end', icon: 'success', 
+        title: '✨ Legal Letter Generated!', 
+        text: 'You can edit the text below before issuing it.',
+        showConfirmButton: false, timer: 3000,
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+};
+
+// ========================================================
 // 🖨️ THE FORMAL NTE DOCUMENT GENERATOR (LEGAL FORMAT)
 // ========================================================
 window.printFormalNTE = function(encodedData) {
@@ -18190,6 +18233,10 @@ window.printFormalNTE = function(encodedData) {
     let issueDate = d.timestamp ? new Date(d.timestamp.seconds * 1000).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown Date';
     let repliedDate = d.repliedAt ? new Date(d.repliedAt.seconds * 1000).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A';
     
+    // Safely parse line-breaks into HTML so the generated letter formats beautifully!
+    let safeDetails = d.details ? d.details.replace(/\n/g, '<br>') : 'No details provided.';
+    let safeReply = d.staffReply ? d.staffReply.replace(/\n/g, '<br>') : 'No reply provided.';
+
     // Open a new hidden window optimized specifically for A4 printing
     let printWindow = window.open('', '', 'width=800,height=900');
     
@@ -18230,13 +18277,13 @@ window.printFormalNTE = function(encodedData) {
 
             <p style="margin-top: 30px; font-weight: bold;">I. INCIDENT REPORT (MANAGEMENT)</p>
             <div class="box">
-                ${d.details}
+                ${safeDetails}
             </div>
 
             <p style="margin-top: 20px; font-weight: bold;">II. EMPLOYEE WRITTEN EXPLANATION</p>
             <div style="font-size: 12px; margin-bottom: 5px;">Submitted digitally via POS System on: ${repliedDate}</div>
             <div class="box">
-                ${d.staffReply}
+                ${safeReply}
             </div>
 
             <div class="signature-section">
