@@ -8419,109 +8419,116 @@ window.submitBulletinAcknowledgment = async function() {
 };
 
 // ========================================================
-// 🚨 PERSISTENT 48-HOUR UNVERIFIED PAYMENT ALARM
+// 🚨 ZERO-WASTE REAL-TIME UNVERIFIED PAYMENT LISTENER
 // ========================================================
+window.unverifiedTxUnsubscribe = null;
+
 window.startUnverifiedListener = function() {
-    setInterval(async () => {
-        try {
-            let branch = localStorage.getItem('takodeal_device_branch');
-            if (!branch) return;
+    // Clean up any old listeners to prevent duplicates
+    if (window.unverifiedTxUnsubscribe) {
+        window.unverifiedTxUnsubscribe();
+        window.unverifiedTxUnsubscribe = null;
+    }
 
-            let currentShiftId = localStorage.getItem('currentShiftId');
-            let salesTab = document.getElementById('nav-sales'); 
-            let existingBanner = document.getElementById('globalUnverifiedBanner');
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) return;
 
-            // Look back 48 hours to catch yesterday's unverified payments!
-            let lookBack = new Date();
-            lookBack.setHours(lookBack.getHours() - 48);
+    // Look back 48 hours
+    let lookBack = new Date();
+    lookBack.setHours(lookBack.getHours() - 48);
 
-            const txQ = window.query(
-                window.collection(window.db, "transactions"), 
-                window.where("branch", "==", branch),
-                window.where("timestamp", ">=", lookBack)
-            );
-            const txSnap = await window.getDocs(txQ);
-            
-            let unverifiedCount = 0;
-            let currentShiftUnverified = 0;
-            let gcashTotal = 0;
-            let grabTotal = 0;
+    const txQ = window.query(
+        window.collection(window.db, "transactions"), 
+        window.where("branch", "==", branch),
+        window.where("timestamp", ">=", lookBack)
+    );
 
-            txSnap.forEach(doc => {
-                let tx = doc.data();
-                if (tx.status !== 'Voided') {
-                    let method = (tx.paymentMethod || '').toLowerCase();
-                    let amount = parseFloat(tx.netTotal) || 0;
+    // 🔥 onSnapshot listens in real-time. Zero repeated read costs!
+    window.unverifiedTxUnsubscribe = window.onSnapshot(txQ, (snapshot) => {
+        let currentShiftId = localStorage.getItem('currentShiftId');
+        let salesTab = document.getElementById('nav-sales'); 
+        let existingBanner = document.getElementById('globalUnverifiedBanner');
 
-                    // Only sum GCash/Grab math for the CURRENT shift
-                    if (tx.shiftId === currentShiftId) {
-                        if (method === 'gcash') gcashTotal += amount;
-                        if (method === 'grab') grabTotal += amount;
+        let unverifiedCount = 0;
+        let currentShiftUnverified = 0;
+        let gcashTotal = 0;
+        let grabTotal = 0;
+
+        snapshot.forEach(doc => {
+            let tx = doc.data();
+            if (tx.status !== 'Voided') {
+                let method = (tx.paymentMethod || '').toLowerCase();
+                let amount = parseFloat(tx.netTotal) || 0;
+
+                // Sum GCash and Grab for the active shift
+                if (tx.shiftId === currentShiftId) {
+                    if (method === 'gcash') gcashTotal += amount;
+                    if (method === 'grab') grabTotal += amount;
+                }
+
+                // Count unverified digital orders
+                if (method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
+                    unverifiedCount++;
+                    if (tx.shiftId === currentShiftId) currentShiftUnverified++;
+                }
+            }
+        });
+
+        // Update sidebar shift totals
+        if (currentShiftId) {
+            document.querySelectorAll('*').forEach(el => {
+                if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) { 
+                    if (el.innerText.includes('Grab: ₱')) {
+                        el.innerText = `Grab: ₱${grabTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
                     }
-
-                    // Check verification for ANY transaction in the last 48 hours
-                    if (method !== 'cash' && method !== '' && tx.paymentVerified !== true) {
-                        unverifiedCount++;
-                        if (tx.shiftId === currentShiftId) currentShiftUnverified++;
+                    if (el.innerText.includes('GCash: ₱') || el.innerText.includes('Gcash: ₱')) {
+                        el.innerText = `GCash: ₱${gcashTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
                     }
                 }
             });
+        }
 
-            // Update the sidebar math with current shift totals
-            if (currentShiftId) {
-                document.querySelectorAll('*').forEach(el => {
-                    if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) { 
-                        if (el.innerText.includes('Grab: ₱')) {
-                            el.innerText = `Grab: ₱${grabTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-                        }
-                        if (el.innerText.includes('GCash: ₱') || el.innerText.includes('Gcash: ₱')) {
-                            el.innerText = `GCash: ₱${gcashTotal.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-                        }
-                    }
-                });
+        // Update sales tab badge
+        if (currentShiftUnverified > 0 && currentShiftId) {
+            if (salesTab) {
+                salesTab.innerHTML = `<span style="font-size: 20px; animation: pulse 1s infinite;">🚨</span><div class="nav-item-text" style="color: #dc2626; font-weight: 900; animation: pulse 1s infinite;">Shift Sales (${currentShiftUnverified})</div>`;
+                salesTab.style.background = '#fef2f2';
+                salesTab.style.borderLeftColor = '#dc2626';
             }
-
-            // Handle the Red Sidebar Tab (Only blinks if the CURRENT shift has unverified items)
-            if (currentShiftUnverified > 0 && currentShiftId) {
-                if (salesTab) {
-                    salesTab.innerHTML = `<span style="font-size: 20px; animation: pulse 1s infinite;">🚨</span><div class="nav-item-text" style="color: #dc2626; font-weight: 900; animation: pulse 1s infinite;">Shift Sales (${currentShiftUnverified})</div>`;
-                    salesTab.style.background = '#fef2f2';
-                    salesTab.style.borderLeftColor = '#dc2626';
-                }
-            } else {
-                if (salesTab) {
-                    salesTab.innerHTML = `<span>🧾</span><div class="nav-item-text">Shift Sales</div>`;
-                    salesTab.style.background = '';
-                    salesTab.style.borderLeftColor = '';
-                }
+        } else {
+            if (salesTab) {
+                salesTab.innerHTML = `<span>🧾</span><div class="nav-item-text">Shift Sales</div>`;
+                salesTab.style.background = '';
+                salesTab.style.borderLeftColor = '';
             }
+        }
 
-            // Handle the Global Floating Banner (Shows if ANY payment in 48 hours is unverified!)
-            if (unverifiedCount > 0 && !window.hideUnverifiedBanner) {
-                if (!existingBanner) {
-                    existingBanner = document.createElement('div');
-                    existingBanner.id = 'globalUnverifiedBanner';
-                    existingBanner.style.cssText = "position: fixed; top: 15px; left: 50%; transform: translateX(-50%); background: #fff1f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 10px 20px; border-radius: 50px; font-weight: bold; display: flex; gap: 15px; align-items: center; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4); z-index: 999999;";
-                    document.body.appendChild(existingBanner);
-                }
-                
-                existingBanner.innerHTML = `
-                    <span style="font-size:24px; animation: pulse 1s infinite; cursor: pointer;" onclick="if(typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App.', 'warning')">🚨</span>
-                    <div style="text-align: center; cursor: pointer;" onclick="if(typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App.', 'warning')">
-                        <div style="font-size:14px; font-weight:900;">ACTION REQUIRED: ${unverifiedCount} Unverified Payment(s)!</div>
-                    </div>
-                    <span onclick="document.getElementById('globalUnverifiedBanner').style.display='none'; window.hideUnverifiedBanner=true;" style="font-size: 24px; cursor: pointer; color: #9f1239; padding-left: 10px; font-weight: bold; transition: 0.2s;" title="Dismiss">&times;</span>
-                `;
-                existingBanner.style.display = 'flex';
-            } else {
-                if (existingBanner) existingBanner.style.display = 'none';
+        // Update warning banner
+        if (unverifiedCount > 0 && !window.hideUnverifiedBanner) {
+            if (!existingBanner) {
+                existingBanner = document.createElement('div');
+                existingBanner.id = 'globalUnverifiedBanner';
+                existingBanner.style.cssText = "position: fixed; top: 15px; left: 50%; transform: translateX(-50%); background: #fff1f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 10px 20px; border-radius: 50px; font-weight: bold; display: flex; gap: 15px; align-items: center; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4); z-index: 999999;";
+                document.body.appendChild(existingBanner);
             }
-
-        } catch(e) { }
-    }, 5000);
+            
+            existingBanner.innerHTML = `
+                <span style="font-size:24px; animation: pulse 1s infinite; cursor: pointer;" onclick="if(typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App.', 'warning')">🚨</span>
+                <div style="text-align: center; cursor: pointer;" onclick="if(typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App.', 'warning')">
+                    <div style="font-size:14px; font-weight:900;">ACTION REQUIRED: ${unverifiedCount} Unverified Payment(s)!</div>
+                </div>
+                <span onclick="document.getElementById('globalUnverifiedBanner').style.display='none'; window.hideUnverifiedBanner=true;" style="font-size: 24px; cursor: pointer; color: #9f1239; padding-left: 10px; font-weight: bold; transition: 0.2s;" title="Dismiss">&times;</span>
+            `;
+            existingBanner.style.display = 'flex';
+        } else {
+            if (existingBanner) existingBanner.style.display = 'none';
+        }
+    }, (error) => {
+        console.warn("Unverified listener paused:", error);
+    });
 };
 
-// Start the scanner!
+// Start the listener 3 seconds after boot
 setTimeout(window.startUnverifiedListener, 3000);
 
 // ==========================================
@@ -8888,7 +8895,6 @@ window.fetchLoginRanking = async function() {
 
 // Start the Leaderboard Engine
 setTimeout(window.fetchLoginRanking, 2000); // Run once on boot
-setInterval(window.fetchLoginRanking, 30000); // Auto-update every 30 seconds
 
 // ==========================================
 // 🔪 KITCHEN PREP ENGINE & CART SYSTEM (UNIFIED)
