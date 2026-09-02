@@ -995,23 +995,30 @@
 
             let html = '';
             let isReversed = false;
-            
+
             for (let cat in categoriesMap) {
-                // 🔥 THE FIX: Let the Manager App control visibility! 
-                // We only hide the ugly backend utility folders here.
+                // 🔥 THE FIX: We completely removed the strict "Featured" list blocker.
+                // Now it automatically shows ANY category allowed by the Branch Menu Sync.
+                // We only hide the ugly backend utility folders here!
                 let lowCat = cat.toLowerCase();
-                if (lowCat.includes('packaging') || lowCat.includes('add-on') || lowCat.includes('consumable')) {
-                    continue; 
+                
+                if (
+                    lowCat.includes('packaging') || 
+                    lowCat.includes('add-on') || 
+                    lowCat.includes('consumable') || 
+                    lowCat.includes('raw') || 
+                    lowCat.includes('batch') ||
+                    lowCat === 'soft drinks'
+                ) {
+                    continue; // Skips the ugly categories
                 }
-            
+
                 // Find an item with an image to represent the category
                 let repItem = categoriesMap[cat].find(i => i.image) || categoriesMap[cat][0];
-                let imgSrc = repItem && repItem.image ? repItem.image : 'logo.jpg';
-            
+                let imgSrc = repItem && repItem.image ? repItem.image : 'logo.jpg'; 
+                
                 // Fancy description based on category name
                 let desc = `Explore our delicious ${cat} selection! Freshly made and prepared just for you.`;
-                
-                // Tip: Since you already have 'lowCat', you can just reuse it here instead of calling toLowerCase() again!
                 if(lowCat.includes('takoyaki')) desc = "Authentic, mouth-watering Takoyaki loaded with premium fillings, topped with our signature sauces and bonito flakes!";
                 if(lowCat.includes('tea')) desc = "Sweet, refreshing, and perfectly brewed Milk Teas with your favorite chewy boba pearls!";
                 if(lowCat.includes('coffee')) desc = "Start your day right with our bold, rich, and freshly crafted iced coffee selections.";
@@ -1020,7 +1027,6 @@
                 let rowDirection = isReversed ? 'md:flex-row-reverse' : 'md:flex-row';
                 let textAlignment = isReversed ? 'md:text-right' : 'md:text-left';
                 
-                // 🔥 BONUS: Changed the click event so clicking a category actually auto-searches it on the Menu page!
                 html += `
                     <div class="flex flex-col ${rowDirection} items-center gap-6 sm:gap-12 cursor-pointer group hover:bg-zinc-900/50 p-6 rounded-3xl transition-all duration-300 border border-transparent hover:border-zinc-800" onclick="window.goToCategory('${cat.replace(/'/g, "\\'")}')">
                         
