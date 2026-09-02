@@ -1674,44 +1674,41 @@
                 const canvas = await html2canvas(document.getElementById('hiddenReceiptTemplate'), { scale: 2 });
                 const imgData = canvas.toDataURL('image/png');
 
-                // 🔥 THE FIX: CLEAR CART FROM SCREEN AND MEMORY!
+                // Clear the cart
                 window.cart = []; 
                 localStorage.removeItem('takodeal_customer_cart');
                 window.updateCartUI();
 
-                let rawMessage = `Hi TAKODEÁL! 🐙\nI just placed an order via the App.\n\nCode: ${orderCode}\nName: ${window.currentUser.displayName}\nTotal: ₱${grandTotal.toFixed(2)}\n\nPlease confirm my order!`;
+                // 🔥 UPGRADED MESSENGER TEXT (Now includes Branch & Payment!)
+                let rawMessage = `Hi TAKODEÁL! 🐙\nI just placed an order via the App.\n\n📍 Branch: ${branch.toUpperCase()}\n🧾 Code: ${orderCode}\n👤 Name: ${window.currentUser.displayName}\n💰 Total: ₱${grandTotal.toFixed(2)}\n\nI will attach my downloaded receipt below!`;
                 let fbLink = `https://m.me/Takodeal?text=${encodeURIComponent(rawMessage)}`;
 
+                // 🔥 ONE-CLICK SEAMLESS FLOW
                 await Swal.fire({
                     title: 'Order Placed! 🎉',
                     html: `
                         <div style="font-size: 14px; color: #a1a1aa; line-height: 1.6; margin-bottom:15px;">
                             Code: <b style="color:white; font-size:18px;">${orderCode}</b><br><br>
-                            <span style="color: #dc2626; font-weight: bold;">⚠️ ACTION REQUIRED:</span><br>
-                            We will not process this order until you send us this code on Facebook Messenger.
+                            <span style="color: #dc2626; font-weight: bold;">⚠️ LAST STEP:</span><br>
+                            Click the button below. It will <b>automatically download your receipt</b> and jump to Facebook Messenger.<br><br>Just press send and <b>attach your receipt image</b>!
                         </div>
                         <img src="${imgData}" style="width: 100%; border-radius: 8px; border: 1px solid #3f3f46; margin-bottom: 15px;">
                     `,
-                    showDenyButton: true,
-                    confirmButtonText: 'Chat on Facebook 💬',
-                    denyButtonText: 'Download Receipt 📥',
+                    confirmButtonText: '📥 Download & Open Messenger 💬',
                     confirmButtonColor: '#0ea5e9',
-                    denyButtonColor: '#16a34a',
                     allowOutsideClick: false,
                     background: '#0a0a0a', color: '#ffffff',
                     customClass: { popup: 'border border-zinc-800 rounded-2xl shadow-2xl' }
-                }).then((result) => {
-                    if (result.isDenied) {
-                        let link = document.createElement('a');
-                        link.download = `${orderCode}_Receipt.png`;
-                        link.href = imgData;
-                        link.click();
-                        Swal.fire({title:'Downloaded!', text:'Now please click Chat on Facebook.', icon:'info', confirmButtonText: 'Go to Facebook', background: '#0a0a0a', color: '#ffffff'}).then(()=> {
-                            window.open(fbLink, '_blank'); window.startOrderTracker(window.currentUser.email);
-                        });
-                    } else if (result.isConfirmed) {
-                        window.open(fbLink, '_blank'); window.startOrderTracker(window.currentUser.email);
-                    }
+                }).then(() => {
+                    // 1. Force the image to download immediately
+                    let link = document.createElement('a');
+                    link.download = `TAKODEAL_${orderCode}_Receipt.png`;
+                    link.href = imgData;
+                    link.click();
+                    
+                    // 2. Instantly redirect them to Messenger with the pre-filled text!
+                    window.open(fbLink, '_blank'); 
+                    window.startOrderTracker(window.currentUser.email);
                 });
 
             } catch (e) {
