@@ -702,7 +702,7 @@
         window.masterMenu = [];
         window.cart = JSON.parse(localStorage.getItem('takodeal_customer_cart')) || [];
         window.activeModalItem = null;
-        const hiddenCategories = ["consumables", "prep", "raw material", "packaging", "add-on", "addon"];
+        const hiddenCategories = [];
         window.phantomVariants = {}; 
         window.isStoreAcceptingOrders = true;
 
@@ -927,19 +927,18 @@
                 window.rawMenuCache.forEach(item => {
                     let catName = (item.category || "Other").trim();
                     
-                    // 🔥 BULLETPROOF CATEGORY SYNC: Ignores spaces and uppercase/lowercase differences!
+                    // 🔥 1. THE SINGLE SOURCE OF TRUTH: Obey the Manager App Checkboxes!
                     if (allowedCats.length > 0) {
                         let catClean = catName.toLowerCase().replace(/\s+/g, '');
                         let isAllowed = allowedCats.some(allowed => allowed.toLowerCase().replace(/\s+/g, '') === catClean);
                         if (!isAllowed) return; // Block it if it wasn't checked in the Manager App!
                     }
                     
-                    // 🔥 THE UPGRADE: Don't hide the item, just flag it as Sold Out!
+                    // 2. Hide items manually disabled
+                    if (item.isAvailable === false) return;
                     item.isSoldOut = item.unavailableAt && item.unavailableAt.includes(branchName);
 
-                    let isHidden = hiddenCategories.some(word => catName.toLowerCase().includes(word));
-                    if (isHidden || item.isAvailable === false) return;
-
+                    // 3. Variant Grouping Engine
                     let name = item.name;
                     let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio|Squad|Platter|Family)$/i);
 
@@ -976,7 +975,7 @@
             let searchInput = document.getElementById('searchInput');
             if (searchInput) {
                 searchInput.value = catName;
-                window.filterMenu(); // Auto-filters the menu!
+                window.filterMenu(); 
             }
             window.scrollTo({ top: 0, behavior: 'smooth' });
         };
@@ -997,28 +996,13 @@
             let isReversed = false;
 
             for (let cat in categoriesMap) {
-                // 🔥 THE FIX: We completely removed the strict "Featured" list blocker.
-                // Now it automatically shows ANY category allowed by the Branch Menu Sync.
-                // We only hide the ugly backend utility folders here!
-                let lowCat = cat.toLowerCase();
-                
-                if (
-                    lowCat.includes('packaging') || 
-                    lowCat.includes('add-on') || 
-                    lowCat.includes('consumable') || 
-                    lowCat.includes('raw') || 
-                    lowCat.includes('batch') ||
-                    lowCat === 'soft drinks'
-                ) {
-                    continue; // Skips the ugly categories
-                }
-
                 // Find an item with an image to represent the category
                 let repItem = categoriesMap[cat].find(i => i.image) || categoriesMap[cat][0];
                 let imgSrc = repItem && repItem.image ? repItem.image : 'logo.jpg'; 
                 
                 // Fancy description based on category name
                 let desc = `Explore our delicious ${cat} selection! Freshly made and prepared just for you.`;
+                let lowCat = cat.toLowerCase();
                 if(lowCat.includes('takoyaki')) desc = "Authentic, mouth-watering Takoyaki loaded with premium fillings, topped with our signature sauces and bonito flakes!";
                 if(lowCat.includes('tea')) desc = "Sweet, refreshing, and perfectly brewed Milk Teas with your favorite chewy boba pearls!";
                 if(lowCat.includes('coffee')) desc = "Start your day right with our bold, rich, and freshly crafted iced coffee selections.";
@@ -1030,13 +1014,11 @@
                 html += `
                     <div class="flex flex-col ${rowDirection} items-center gap-6 sm:gap-12 cursor-pointer group hover:bg-zinc-900/50 p-6 rounded-3xl transition-all duration-300 border border-transparent hover:border-zinc-800" onclick="window.goToCategory('${cat.replace(/'/g, "\\'")}')">
                         
-                        <!-- Circular Image -->
                         <div class="w-48 h-48 sm:w-64 sm:h-64 flex-shrink-0 rounded-full border-4 border-zinc-800 overflow-hidden relative shadow-[0_0_20px_rgba(0,0,0,0.5)] group-hover:border-brandred transition-colors duration-300">
                             <img src="${imgSrc}" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
                             <div class="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors"></div>
                         </div>
 
-                        <!-- Category Text -->
                         <div class="flex-1 text-center ${textAlignment}">
                             <h3 class="text-3xl sm:text-4xl font-black text-white mb-3 group-hover:text-brandgold transition-colors">${cat}</h3>
                             <p class="text-zinc-400 leading-relaxed text-sm sm:text-base">${desc}</p>
@@ -1046,7 +1028,7 @@
                         </div>
                     </div>
                 `;
-                isReversed = !isReversed; // Alternate the layout for the next category
+                isReversed = !isReversed; 
             }
 
             container.innerHTML = html || '<div class="text-zinc-500 text-center">No categories found.</div>';
