@@ -13275,6 +13275,20 @@ window.openAddPayableModal = async function() {
     if(prevCostLabel) prevCostLabel.innerHTML = "Prev Cost: ₱0.00";
 
     try {
+        // 🔥 NEW: Fetch Suppliers for the Auto-Complete Dropdown!
+        const suppQ = window.query(window.collection(window.db, "suppliers"), window.orderBy("name", "asc"));
+        const suppSnap = await window.getDocs(suppQ);
+        let suppHtml = '';
+        suppSnap.forEach(docSnap => {
+            let sName = docSnap.data().name;
+            if (sName) {
+                // The replace removes weird quotes that might break the HTML
+                suppHtml += `<option value="${sName.replace(/"/g, '&quot;')}">`;
+            }
+        });
+        let suppDatalist = document.getElementById('supplierDirectoryList');
+        if (suppDatalist) suppDatalist.innerHTML = suppHtml;
+
         // Fetch live inventory for the datalist
         const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", "Main Office"));
         const snap = await window.getDocs(q);
