@@ -2009,19 +2009,31 @@
                 let btnRec = document.getElementById('btnOrderReceived');
                 let instText = document.getElementById('trackerInstructionText');
                 
+                // 🔥 GRAB THE ICON ELEMENT SO WE CAN CHANGE IT DYNAMICALLY
+                let trackerIcon = document.getElementById('trackerIcon'); 
+                
                 if (order.status === 'preparing') {
                     statusText = "🍳 Kitchen is preparing your food!";
                     timeStr = order.prepTime ? `Est. Prep Time: ${order.prepTime} Mins` : "Cooking now!";
                     if(btnRec) btnRec.classList.add('hidden');
                     if(instText) instText.innerText = "Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!";
+                    if(trackerIcon) trackerIcon.innerText = "🍳"; // 🔥 Cooking icon!
+                    
                 } else if (order.status === 'out_for_delivery' || order.status === 'ready') {
-                    statusText = "🛵 Order is Ready / On the way!";
+                    // Check if they actually ordered delivery
+                    let isDelivery = order.orderType && order.orderType.includes('Delivery');
+                    
+                    statusText = isDelivery ? "🛵 Order is on the way!" : "🛍️ Order is Ready for Pick-up!";
                     timeStr = "Enjoy your meal!";
+                    
                     if(btnRec) btnRec.classList.remove('hidden');
                     if(instText) instText.innerText = "Please tap the button below once you have received your order so you can claim your Loyalty Stamp!";
+                    if(trackerIcon) trackerIcon.innerText = isDelivery ? "🛵" : "🛍️"; // 🔥 Scooter OR Pick-up Bag!
+                    
                 } else {
                     if(btnRec) btnRec.classList.add('hidden');
                     if(instText) instText.innerText = "Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!";
+                    if(trackerIcon) trackerIcon.innerText = "🐙"; // 🔥 Default pending icon
                 }
 
                 document.getElementById('trackerStatus').innerText = statusText;
