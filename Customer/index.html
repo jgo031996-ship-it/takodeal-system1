@@ -1685,7 +1685,7 @@
                 let rawMessage = `Hi TAKODEÁL! 🐙\nI just placed an order via the App.\n\n📍 Branch: ${branch.toUpperCase()}\n🧾 Code: ${orderCode}\n👤 Name: ${window.currentUser.displayName}\n💰 Total: ₱${grandTotal.toFixed(2)}\n\nI will attach my downloaded receipt below!`;
                 let fbLink = `https://m.me/Takodeal?text=${encodeURIComponent(rawMessage)}`;
 
-                // 🔥 ONE-CLICK SEAMLESS FLOW
+                // 🔥 THE POPUP BLOCKER BYPASS FLOW
                 await Swal.fire({
                     title: 'Order Placed! 🎉',
                     html: `
@@ -1702,13 +1702,22 @@
                     allowOutsideClick: false,
                     background: '#0a0a0a', color: '#ffffff',
                     customClass: { popup: 'border border-zinc-800 rounded-2xl shadow-2xl' }
-                }).then(() => {
-                    let link = document.createElement('a');
-                    link.download = `TAKODEAL_${orderCode}_Receipt.png`;
-                    link.href = imgData;
-                    link.click();
-                    window.open(fbLink, '_blank'); 
-                    window.startOrderTracker(window.currentUser.email);
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // 1. Open Messenger immediately (Browsers trust this direct action)
+                        window.open(fbLink, '_blank'); 
+                        
+                        // 2. Start tracking the order in the background
+                        window.startOrderTracker(window.currentUser.email);
+
+                        // 3. Trigger the download slightly after to bypass popup blockers!
+                        setTimeout(() => {
+                            let link = document.createElement('a');
+                            link.download = `TAKODEAL_${orderCode}_Receipt.png`;
+                            link.href = imgData;
+                            link.click();
+                        }, 800);
+                    }
                 });
 
             } catch (e) {
@@ -1935,7 +1944,7 @@
                 let rawMessage = `Hi TAKODEÁL! 🐙\nI just placed an order via the App.\n\n📍 Branch: ${branch.toUpperCase()}\n🧾 Code: ${orderCode}\n👤 Name: ${window.currentUser.displayName}\n💰 Total: ₱${grandTotal.toFixed(2)}\n\nI will attach my downloaded receipt below!`;
                 let fbLink = `https://m.me/Takodeal?text=${encodeURIComponent(rawMessage)}`;
 
-                // 🔥 ONE-CLICK SEAMLESS FLOW
+                // 🔥 THE POPUP BLOCKER BYPASS FLOW
                 await Swal.fire({
                     title: 'Order Placed! 🎉',
                     html: `
@@ -1952,13 +1961,22 @@
                     allowOutsideClick: false,
                     background: '#0a0a0a', color: '#ffffff',
                     customClass: { popup: 'border border-zinc-800 rounded-2xl shadow-2xl' }
-                }).then(() => {
-                    let link = document.createElement('a');
-                    link.download = `TAKODEAL_${orderCode}_Receipt.png`;
-                    link.href = imgData;
-                    link.click();
-                    window.open(fbLink, '_blank'); 
-                    window.startOrderTracker(window.currentUser.email);
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // 1. Open Messenger immediately (Browsers trust this direct action)
+                        window.open(fbLink, '_blank'); 
+                        
+                        // 2. Start tracking the order in the background
+                        window.startOrderTracker(window.currentUser.email);
+
+                        // 3. Trigger the download slightly after to bypass popup blockers!
+                        setTimeout(() => {
+                            let link = document.createElement('a');
+                            link.download = `TAKODEAL_${orderCode}_Receipt.png`;
+                            link.href = imgData;
+                            link.click();
+                        }, 800);
+                    }
                 });
 
             } catch (e) {
