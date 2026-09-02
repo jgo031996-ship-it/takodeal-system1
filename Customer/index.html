@@ -1343,6 +1343,8 @@
             });
 
             window.updateCartUI();
+            // 🔥 THE FIX: Force the Cart Modal to visually redraw the new items instantly!
+            if (typeof window.renderCheckoutModal === 'function') window.renderCheckoutModal();
             window.closeItemModal();
 
             const toast = document.getElementById('cartToast');
