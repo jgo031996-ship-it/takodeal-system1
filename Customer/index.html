@@ -702,7 +702,7 @@
         window.masterMenu = [];
         window.cart = JSON.parse(localStorage.getItem('takodeal_customer_cart')) || [];
         window.activeModalItem = null;
-        const hiddenCategories = ["consumables", "prep", "raw material", "packaging", "extra", "add-on", "addon"];
+        const hiddenCategories = ["consumables", "prep", "raw material", "packaging", "add-on", "addon"];
         window.phantomVariants = {}; 
         window.isStoreAcceptingOrders = true;
 
@@ -997,22 +997,11 @@
             let isReversed = false;
             
             for (let cat in categoriesMap) {
-                // 🔥 THE FIX: Removed the strict "Featured" list!
-                // Now it automatically shows ANY category allowed by the Branch Menu Sync.
-                // It only hides the ugly backend utility folders.
+                // 🔥 THE FIX: Let the Manager App control visibility! 
+                // We only hide the ugly backend utility folders here.
                 let lowCat = cat.toLowerCase();
-            
-                // Combined both exclusion lists into one clean check
-                if (
-                    lowCat.includes('packaging') || 
-                    lowCat.includes('extra') || 
-                    lowCat.includes('add-on') || 
-                    lowCat.includes('consumable') || 
-                    lowCat.includes('raw') || 
-                    lowCat.includes('batch') ||
-                    lowCat === 'soft drinks'
-                ) {
-                    continue; // Skips to the next category
+                if (lowCat.includes('packaging') || lowCat.includes('add-on') || lowCat.includes('consumable')) {
+                    continue; 
                 }
             
                 // Find an item with an image to represent the category
