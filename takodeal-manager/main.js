@@ -27233,3 +27233,127 @@ window.editStorefrontProfile = async function(encodedData) {
         }
     }
 };
+
+// ========================================================
+// 📦 COLD ARCHIVE & PURGE ENGINE (STORAGE SAVER)
+// ========================================================
+window.openArchiveSalesModal = async function() {
+    const { value: monthVal } = await Swal.fire({
+        title: '📦 Archive & Purge Sales',
+        html: `
+            <div style="text-align: left; font-size: 14px; color: #475569; margin-bottom: 15px; line-height: 1.5;">
+                Select a past month to download all its transactions into a CSV Excel file. After downloading, you can choose to permanently delete them from the cloud to save database costs.
+            </div>
+            <input type="month" id="swalArchiveMonth" class="swal2-input" style="width: 100%; max-width: 100%; box-sizing: border-box; font-weight: bold; color: #0ea5e9;">
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Scan Month',
+        confirmButtonColor: '#0ea5e9',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            const val = document.getElementById('swalArchiveMonth').value;
+            if (!val) Swal.showValidationMessage("Please select a month to archive.");
+            return val;
+        }
+    });
+
+    if (!monthVal) return;
+
+    Swal.fire({title: 'Scanning Database...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        let [year, month] = monthVal.split('-');
+        let startOfMonth = new Date(year, month - 1, 1);
+        let endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+
+        const q = window.query(
+            window.collection(window.db, "transactions"), 
+            window.where("timestamp", ">=", startOfMonth), 
+            window.where("timestamp", "<=", endOfMonth)
+        );
+        
+        const snap = await window.getDocs(q);
+
+        if (snap.empty) {
+            return Swal.fire('No Data', `No transactions found for ${monthVal}.`, 'info');
+        }
+
+        let csv = "\uFEFFOR#,Branch,Cashier,Customer,Items Sold,Gross Total,Discount,Net Total,Payment Method,Status,Date,Time\n";
+        let txIds = [];
+
+        snap.forEach(docSnap => {
+            let tx = docSnap.data();
+            txIds.push(docSnap.id);
+
+            let d = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : new Date();
+            let dateStr = d.toLocaleDateString('en-PH');
+            let timeStr = d.toLocaleTimeString('en-PH');
+
+            let itemsArr = [];
+            if (tx.cart && Array.isArray(tx.cart)) {
+                tx.cart.forEach(item => {
+                    let itemName = item.name || item.itemName;
+                    let itemLine = `${item.qty}x ${itemName}`;
+                    if (item.addons) {
+                        for (let key in item.addons) {
+                            if (item.addons[key].qty > 0) itemLine += ` (+${item.addons[key].qty} ${key})`;
+                        }
+                    }
+                    itemsArr.push(itemLine);
+                });
+            }
+            let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""');
+
+            let gross = (tx.subTotalBeforeDiscount || tx.netTotal || 0).toFixed(2);
+            let disc = (tx.globalDiscountAmount || 0).toFixed(2);
+            let net = (tx.netTotal || 0).toFixed(2);
+            let customer = (tx.customerName || 'Guest').replace(/"/g, '""');
+            let cashier = (tx.cashier || 'Unknown').replace(/"/g, '""');
+            let method = (tx.paymentMethod || 'Cash').replace(/"/g, '""');
+            let status = (tx.status || 'Paid').replace(/"/g, '""');
+
+            csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","${gross}","${disc}","${net}","${method}","${status}","${dateStr}","${timeStr}"\n`;
+        });
+
+        // 1. Download the file directly to their device
+        let csvFile = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        let downloadLink = document.createElement("a");
+        downloadLink.download = `Takodeal_Archive_${monthVal}.csv`;
+        downloadLink.href = window.URL.createObjectURL(csvFile);
+        downloadLink.style.display = "none";
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+
+        // 2. Ask permission to nuke the old data!
+        const purgeConfirm = await Swal.fire({
+            title: '✅ Download Complete!',
+            html: `Successfully downloaded <b>${txIds.length}</b> transactions.<br><br>Do you want to permanently delete these records from the cloud to save database costs?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: 'Yes, Purge Data 🗑️',
+            cancelButtonText: 'Keep Data in Cloud',
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#64748b',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+
+        if (purgeConfirm.isConfirmed) {
+            Swal.fire({title: 'Purging...', text: 'Permanently deleting records...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+            
+            // Delete them all!
+            let promises = [];
+            txIds.forEach(id => {
+                promises.push(window.deleteDoc(window.doc(window.db, "transactions", id)));
+            });
+            await Promise.all(promises);
+
+            Swal.fire('Purged!', `${txIds.length} old transactions permanently removed from the database.`, 'success');
+            if (typeof window.loadSalesHistoryTab === 'function') window.loadSalesHistoryTab();
+        }
+
+    } catch (e) {
+        console.error("Archive Error:", e);
+        Swal.fire('Error', 'Failed to archive data. Check connection.', 'error');
+    }
+};
