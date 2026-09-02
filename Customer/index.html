@@ -1994,8 +1994,11 @@
         };
 
         // 🌟 LIVE ORDER TRACKER & REVIEW SYSTEM 🌟
+        window.activeTrackedOrderId = null;
+        window.customerPrepInterval = null;
+        window.lastKnownOrderStatus = null;
+
         window.startOrderTracker = function(email) {
-            // 🔥 THE FIX: Removed the Firebase 'orderBy' command to prevent the Index Crash!
             const q = query(collection(db, "incoming_orders"), where("customerEmail", "==", email));
             
             onSnapshot(q, (snap) => {
@@ -2009,10 +2012,11 @@
                 orders.sort((a,b) => (b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0) - (a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0));
                 
                 let order = orders[0]; 
-                window.activeTrackedOrderId = order.id; // Store globally for the button
+                window.activeTrackedOrderId = order.id;
                 
                 if (order.status === 'completed' || order.status === 'rejected') {
                     tracker.classList.add('translate-y-full');
+                    if (window.customerPrepInterval) clearInterval(window.customerPrepInterval);
                     if (order.status === 'completed' && !order.reviewPrompted) {
                         window.promptReview(order.orderCode, order.id);
                     }
@@ -2028,19 +2032,56 @@
                 let timeStr = "Awaiting Kitchen...";
                 let btnRec = document.getElementById('btnOrderReceived');
                 let instText = document.getElementById('trackerInstructionText');
-                
-                // 🔥 GRAB THE ICON ELEMENT SO WE CAN CHANGE IT DYNAMICALLY
                 let trackerIcon = document.getElementById('trackerIcon'); 
                 
+                // 🔥 THE AUDIO TRIGGER: Beep 3 times if it just switched to Ready!
+                let isNowReady = order.status === 'out_for_delivery' || order.status === 'ready';
+                if (isNowReady && window.lastKnownOrderStatus === 'preparing') {
+                    if (typeof window.playReadyAlert === 'function') window.playReadyAlert();
+                }
+                window.lastKnownOrderStatus = order.status;
+
+                // Clear old timer if status changes
+                if (window.customerPrepInterval) {
+                    clearInterval(window.customerPrepInterval);
+                    window.customerPrepInterval = null;
+                }
+
                 if (order.status === 'preparing') {
                     statusText = "🍳 Kitchen is preparing your food!";
-                    timeStr = order.prepTime ? `Est. Prep Time: ${order.prepTime} Mins` : "Cooking now!";
+                    
+                    // 🔥 THE LIVE COUNTDOWN ENGINE
+                    if (order.acceptedAt && order.prepTime) {
+                        let acceptedTime = order.acceptedAt.toDate ? order.acceptedAt.toDate().getTime() : new Date(order.acceptedAt).getTime();
+                        let targetTime = acceptedTime + (order.prepTime * 60000); // Convert prep minutes to milliseconds
+                        
+                        const updateTimerUI = () => {
+                            let now = Date.now();
+                            let diff = targetTime - now;
+                            let timeEl = document.getElementById('trackerTime');
+                            if (!timeEl) return;
+
+                            if (diff > 0) {
+                                let mins = Math.floor(diff / 60000);
+                                let secs = Math.floor((diff % 60000) / 1000);
+                                timeEl.innerHTML = `⏱️ Ready in: <span class="text-brandgold">${mins}m ${secs}s</span>`;
+                            } else {
+                                timeEl.innerHTML = `<span class="text-brandgold animate-pulse">🔥 Almost done! Head to the store to pick it up hot!</span>`;
+                            }
+                        };
+                        
+                        updateTimerUI(); // Run once immediately
+                        window.customerPrepInterval = setInterval(updateTimerUI, 1000); // Tick every second
+                        timeStr = ""; // Text handled by the interval now
+                    } else {
+                        timeStr = "Cooking now!";
+                    }
+
                     if(btnRec) btnRec.classList.add('hidden');
                     if(instText) instText.innerText = "Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!";
-                    if(trackerIcon) trackerIcon.innerText = "🍳"; // 🔥 Cooking icon!
+                    if(trackerIcon) trackerIcon.innerText = "🍳";
                     
-                } else if (order.status === 'out_for_delivery' || order.status === 'ready') {
-                    // Check if they actually ordered delivery
+                } else if (isNowReady) {
                     let isDelivery = order.orderType && order.orderType.includes('Delivery');
                     
                     statusText = isDelivery ? "🛵 Order is on the way!" : "🛍️ Order is Ready for Pick-up!";
@@ -2048,16 +2089,16 @@
                     
                     if(btnRec) btnRec.classList.remove('hidden');
                     if(instText) instText.innerText = "Please tap the button below once you have received your order so you can claim your Loyalty Stamp!";
-                    if(trackerIcon) trackerIcon.innerText = isDelivery ? "🛵" : "🛍️"; // 🔥 Scooter OR Pick-up Bag!
+                    if(trackerIcon) trackerIcon.innerText = isDelivery ? "🛵" : "🛍️";
                     
                 } else {
                     if(btnRec) btnRec.classList.add('hidden');
                     if(instText) instText.innerText = "Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!";
-                    if(trackerIcon) trackerIcon.innerText = "🐙"; // 🔥 Default pending icon
+                    if(trackerIcon) trackerIcon.innerText = "🐙";
                 }
 
                 document.getElementById('trackerStatus').innerText = statusText;
-                document.getElementById('trackerTime').innerText = timeStr;
+                if (timeStr !== "") document.getElementById('trackerTime').innerText = timeStr;
             });
         };
 
@@ -2577,6 +2618,34 @@
             } finally {
                 btn.innerHTML = origHtml; btn.disabled = false;
             }
+        };
+
+        // ==========================================
+        // 🔔 AUDIO NOTIFICATION ENGINE
+        // ==========================================
+        window.playReadyAlert = function() {
+            let count = 0;
+            let interval = setInterval(() => {
+                if (count >= 3) {
+                    clearInterval(interval);
+                    return;
+                }
+                try {
+                    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    if (ctx.state === 'suspended') ctx.resume();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.type = 'sine';
+                    osc.frequency.setValueAtTime(1046.50, ctx.currentTime); // High pitched 'ding'
+                    gain.gain.setValueAtTime(1, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.5);
+                    osc.start(ctx.currentTime);
+                    osc.stop(ctx.currentTime + 0.5);
+                } catch(e) { console.log("Audio blocked by browser."); }
+                count++;
+            }, 600); // Plays every 600 milliseconds (3 times total)
         };
 
     </script>
