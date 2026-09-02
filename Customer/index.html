@@ -947,27 +947,37 @@
 
             let html = '';
             let isReversed = false;
-
+            
             for (let cat in categoriesMap) {
-                // 🔥 THE NEW FILTER ENGINE: Only show categories allowed by the Manager!
-                if (window.homeFeaturedCategories && window.homeFeaturedCategories.length > 0) {
-                    let isFeatured = window.homeFeaturedCategories.some(fc => cat.toLowerCase().includes(fc) || fc.includes(cat.toLowerCase()));
-                    if (!isFeatured) continue; // Skip if not featured!
-                } else {
-                    // Smart Fallback (If Manager hasn't set it up yet, auto-hide the ugly ones!)
-                    let lowCat = cat.toLowerCase();
-                    if (lowCat.includes('packaging') || lowCat.includes('extra') || lowCat.includes('add-on') || lowCat === 'soft drinks') continue;
+                // 🔥 THE FIX: Removed the strict "Featured" list!
+                // Now it automatically shows ANY category allowed by the Branch Menu Sync.
+                // It only hides the ugly backend utility folders.
+                let lowCat = cat.toLowerCase();
+            
+                // Combined both exclusion lists into one clean check
+                if (
+                    lowCat.includes('packaging') || 
+                    lowCat.includes('extra') || 
+                    lowCat.includes('add-on') || 
+                    lowCat.includes('consumable') || 
+                    lowCat.includes('raw') || 
+                    lowCat.includes('batch') ||
+                    lowCat === 'soft drinks'
+                ) {
+                    continue; // Skips to the next category
                 }
-
+            
                 // Find an item with an image to represent the category
                 let repItem = categoriesMap[cat].find(i => i.image) || categoriesMap[cat][0];
-                let imgSrc = repItem && repItem.image ? repItem.image : 'logo.jpg'; 
-                
+                let imgSrc = repItem && repItem.image ? repItem.image : 'logo.jpg';
+            
                 // Fancy description based on category name
                 let desc = `Explore our delicious ${cat} selection! Freshly made and prepared just for you.`;
-                if(cat.toLowerCase().includes('takoyaki')) desc = "Authentic, mouth-watering Takoyaki loaded with premium fillings, topped with our signature sauces and bonito flakes!";
-                if(cat.toLowerCase().includes('tea')) desc = "Sweet, refreshing, and perfectly brewed Milk Teas with your favorite chewy boba pearls!";
-                if(cat.toLowerCase().includes('coffee')) desc = "Start your day right with our bold, rich, and freshly crafted iced coffee selections.";
+                
+                // Tip: Since you already have 'lowCat', you can just reuse it here instead of calling toLowerCase() again!
+                if(lowCat.includes('takoyaki')) desc = "Authentic, mouth-watering Takoyaki loaded with premium fillings, topped with our signature sauces and bonito flakes!";
+                if(lowCat.includes('tea')) desc = "Sweet, refreshing, and perfectly brewed Milk Teas with your favorite chewy boba pearls!";
+                if(lowCat.includes('coffee')) desc = "Start your day right with our bold, rich, and freshly crafted iced coffee selections.";
 
                 // Switch layout sides based on the isReversed boolean
                 let rowDirection = isReversed ? 'md:flex-row-reverse' : 'md:flex-row';
