@@ -1698,18 +1698,15 @@
                     `,
                     confirmButtonText: '📥 Download & Open Messenger 💬',
                     confirmButtonColor: '#0ea5e9',
-                    showDenyButton: false, // Turn off the extra button to force the seamless flow
+                    showDenyButton: false,
                     allowOutsideClick: false,
                     background: '#0a0a0a', color: '#ffffff',
                     customClass: { popup: 'border border-zinc-800 rounded-2xl shadow-2xl' }
                 }).then(() => {
-                    // 1. Force the image to download immediately
                     let link = document.createElement('a');
                     link.download = `TAKODEAL_${orderCode}_Receipt.png`;
                     link.href = imgData;
                     link.click();
-                    
-                    // 2. Instantly redirect them to Messenger with the pre-filled text!
                     window.open(fbLink, '_blank'); 
                     window.startOrderTracker(window.currentUser.email);
                 });
@@ -1919,6 +1916,9 @@
                 window.cart.forEach(i => {
                     rItemsHtml += `<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span>${i.quantity}x ${i.name}</span><span>${i.lineTotalFinal.toFixed(2)}</span></div>`;
                 });
+                if (formValues.type.includes('Delivery')) {
+                    rItemsHtml += `<div style="display:flex; justify-content:space-between; margin-bottom:3px; margin-top:5px; border-top:1px dashed #ccc; padding-top:5px;"><span>Delivery Fee</span><span>50.00</span></div>`;
+                }
                 document.getElementById('receiptItems').innerHTML = rItemsHtml;
                 
                 let pDetails = `Payment: ${formValues.pay}<br>Type: ${formValues.type}`;
@@ -1931,27 +1931,6 @@
 
                 window.cart = []; window.updateCartUI();
 
-                let rawMessage = `Hi TAKODEÁL! 🐙\nI just placed an order via the App.\n\nCode: ${orderCode}\nName: ${window.currentUser.displayName}\nTotal: ₱${grandTotal.toFixed(2)}\n\nPlease confirm my order!`;
-                let fbLink = `https://m.me/Takodeal?text=${encodeURIComponent(rawMessage)}`;
-
-                await Swal.fire({
-                    title: 'Order Placed! 🎉',
-                    html: `
-                        <div style="font-size: 14px; color: #a1a1aa; line-height: 1.6; margin-bottom:15px;">
-                            Code: <b style="color:white; font-size:18px;">${orderCode}</b><br><br>
-                            <span style="color: #dc2626; font-weight: bold;">⚠️ ACTION REQUIRED:</span><br>
-                            We will not process this order until you send us this code on Facebook Messenger.
-                        </div>
-                        <img src="${imgData}" style="width: 100%; border-radius: 8px; border: 1px solid #3f3f46; margin-bottom: 15px;">
-                    `,
-                    showDenyButton: true,
-                    confirmButtonText: 'Chat on Facebook 💬',
-                    denyButtonText: 'Download Receipt 📥',
-                    confirmButtonColor: '#0ea5e9',
-                    denyButtonColor: '#16a34a',
-                    allowOutsideClick: false,
-                    background: '#0a0a0a', color: '#ffffff',
-                    customClass: { popup: 'border border-zinc-800 rounded-2xl shadow-2xl' }
                 // 🔥 UPGRADED MESSENGER TEXT (Now includes Branch & Payment!)
                 let rawMessage = `Hi TAKODEÁL! 🐙\nI just placed an order via the App.\n\n📍 Branch: ${branch.toUpperCase()}\n🧾 Code: ${orderCode}\n👤 Name: ${window.currentUser.displayName}\n💰 Total: ₱${grandTotal.toFixed(2)}\n\nI will attach my downloaded receipt below!`;
                 let fbLink = `https://m.me/Takodeal?text=${encodeURIComponent(rawMessage)}`;
@@ -1969,18 +1948,15 @@
                     `,
                     confirmButtonText: '📥 Download & Open Messenger 💬',
                     confirmButtonColor: '#0ea5e9',
-                    showDenyButton: false, // Turn off the extra button to force the seamless flow
+                    showDenyButton: false,
                     allowOutsideClick: false,
                     background: '#0a0a0a', color: '#ffffff',
                     customClass: { popup: 'border border-zinc-800 rounded-2xl shadow-2xl' }
                 }).then(() => {
-                    // 1. Force the image to download immediately
                     let link = document.createElement('a');
                     link.download = `TAKODEAL_${orderCode}_Receipt.png`;
                     link.href = imgData;
                     link.click();
-                    
-                    // 2. Instantly redirect them to Messenger with the pre-filled text!
                     window.open(fbLink, '_blank'); 
                     window.startOrderTracker(window.currentUser.email);
                 });
