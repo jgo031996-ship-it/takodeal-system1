@@ -15239,7 +15239,7 @@ window.exportTransactionsCSV = async function() {
         const q = query(collection(db, "transactions"), where("branch", "==", shiftBranch), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay), orderBy("timestamp", "desc"));
         const snap = await getDocs(q);
 
-        let csv = "Receipt ID,Date,Time,Branch,Cashier,Customer,Items Ordered,Payment Method,Status,Net Total\n";
+        let csv = "Receipt ID,Date,Time,Branch,Cashier,Customer,Items Ordered,Payment Method,Status,Order Source,Net Total\n";
 
         snap.forEach(docSnap => {
             let tx = docSnap.data();
@@ -15251,8 +15251,10 @@ window.exportTransactionsCSV = async function() {
             if (tx.cart) { tx.cart.forEach(item => { itemsArr.push(`${item.qty}x ${item.name || item.itemName}`); }); }
             let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""'); 
             
-            // Note: We leave out the Peso sign in the raw data so Excel can sum the column mathematically!
-            csv += `"${tx.receiptId}","${dateStr}","${timeStr}","${tx.branch}","${tx.cashier}","${tx.customerName || 'Guest'}","${itemsJoined}","${tx.paymentMethod}","${tx.status || 'Paid'}","${tx.netTotal}"\n`;
+            // 🔥 THE NEW PARKED TRACKER EXPORT
+            let orderSource = tx.wasParked ? "Parked Order" : "Direct Sale";
+            
+            csv += `"${tx.receiptId}","${dateStr}","${timeStr}","${tx.branch}","${tx.cashier}","${tx.customerName || 'Guest'}","${itemsJoined}","${tx.paymentMethod}","${tx.status || 'Paid'}","${orderSource}","${tx.netTotal}"\n`;
         });
 
         // 🔥 THE MAGIC UTF-8 BOM: "\uFEFF" forces Excel to read symbols correctly!
@@ -20354,8 +20356,8 @@ window.exportDashboardSalesCSV = async function() {
             return;
         }
 
-        // 3. 🌟 THE UPGRADE: Added "Items Sold" to the header!
-        let csv = "OR#,Branch,Cashier,Customer,Items Sold,Gross Total,Discount,Net Total,Payment Method,Status,Date,Time\n";
+        // 3. 🌟 THE UPGRADE: Added "Order Source" to the header!
+        let csv = "OR#,Branch,Cashier,Customer,Items Sold,Gross Total,Discount,Net Total,Payment Method,Status,Order Source,Date,Time\n";
 
         snap.forEach(docSnap => {
             let tx = docSnap.data();
@@ -20369,19 +20371,15 @@ window.exportDashboardSalesCSV = async function() {
                 tx.cart.forEach(item => {
                     let itemName = item.name || item.itemName;
                     let itemLine = `${item.qty}x ${itemName}`;
-                    
-                    // Include any add-ons they purchased
                     if (item.addons) {
                         for (let key in item.addons) {
-                            if (item.addons[key].qty > 0) {
-                                itemLine += ` (+${item.addons[key].qty} ${key})`;
-                            }
+                            if (item.addons[key].qty > 0) itemLine += ` (+${item.addons[key].qty} ${key})`;
                         }
                     }
                     itemsArr.push(itemLine);
                 });
             }
-            let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""'); // Format safely for CSV
+            let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""'); 
 
             let gross = (tx.subTotalBeforeDiscount || tx.netTotal || 0).toFixed(2);
             let disc = (tx.globalDiscountAmount || 0).toFixed(2);
@@ -20391,9 +20389,11 @@ window.exportDashboardSalesCSV = async function() {
             let cashier = (tx.cashier || 'Unknown').replace(/"/g, '""');
             let method = (tx.paymentMethod || 'Cash').replace(/"/g, '""');
             let status = (tx.status || 'Paid').replace(/"/g, '""');
+            
+            // 🔥 THE NEW PARKED TRACKER EXPORT
+            let orderSource = tx.wasParked ? "Parked Order" : "Direct Sale";
 
-            // Wrap every value in double quotes so Excel handles commas and formatting smoothly
-            csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","${gross}","${disc}","${net}","${method}","${status}","${dateStr}","${timeStr}"\n`;
+            csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","${gross}","${disc}","${net}","${method}","${status}","${orderSource}","${dateStr}","${timeStr}"\n`;
         });
 
         // 4. Force UTF-8 encoding for Excel (This guarantees the Peso sign ₱ shows up perfectly!)
@@ -20468,7 +20468,7 @@ window.downloadExcel = async function(tbodyId, fileName) {
                 return;
             }
 
-            let csv = "OR#,Branch,Cashier,Customer,Items Sold,Gross Amount,Discount,Net Amount,Payment Method,Status,Date,Time\n";
+            let csv = "OR#,Branch,Cashier,Customer,Items Sold,Gross Amount,Discount,Net Amount,Payment Method,Status,Order Source,Date,Time\n";
 
             snap.forEach(docSnap => {
                 let tx = docSnap.data();
@@ -20503,8 +20503,11 @@ window.downloadExcel = async function(tbodyId, fileName) {
                 }
                 method = method.replace(/"/g, '""');
                 let status = (tx.status || 'Paid').replace(/"/g, '""');
+                
+                // 🔥 THE NEW PARKED TRACKER EXPORT
+                let orderSource = tx.wasParked ? "Parked Order" : "Direct Sale";
 
-                csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","₱${gross}","₱${disc}","₱${net}","${method}","${status}","${dateStr}","${timeStr}"\n`;
+                csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","₱${gross}","₱${disc}","₱${net}","${method}","${status}","${orderSource}","${dateStr}","${timeStr}"\n`;
             });
 
             let csvFile = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
