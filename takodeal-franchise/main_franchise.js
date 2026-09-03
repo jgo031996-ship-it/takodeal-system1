@@ -716,12 +716,21 @@ window.loadB2BSupply = async function() {
             let dateStr = order.timestamp ? order.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : 'Just now';
             let status = order.status || 'Pending';
             
-            // Generate Visual Status Badges
+            // 🔥 UPGRADED: Dynamic Color-Coded Badges
+            let s = status.toLowerCase();
             let statusBadge = '';
-            if (status === 'Pending') statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">⏳ PENDING</span>`;
-            else if (status === 'Dispatched') statusBadge = `<span style="background:#dbeafe; color:#2563eb; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">🚚 DISPATCHED</span>`;
-            else if (status === 'Completed' || status === 'Received') statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">✅ RECEIVED</span>`;
-            else statusBadge = `<span style="background:#f1f5f9; color:#475569; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">${status.toUpperCase()}</span>`;
+            
+            if (s === 'pending') {
+                statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">⏳ PENDING</span>`;
+            } else if (s === 'dispatched' || s === 'in transit') {
+                statusBadge = `<span style="background:#dbeafe; color:#2563eb; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">🚚 IN TRANSIT</span>`;
+            } else if (s === 'completed' || s === 'received' || s === 'arrived') {
+                statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">✅ ARRIVED</span>`;
+            } else if (s === 'rejected' || s === 'cancelled') {
+                statusBadge = `<span style="background:#fee2e2; color:#dc2626; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">❌ REJECTED</span>`;
+            } else {
+                statusBadge = `<span style="background:#f1f5f9; color:#475569; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">${status.toUpperCase()}</span>`;
+            }
 
             // Build Item List
             let itemsHtml = '';
