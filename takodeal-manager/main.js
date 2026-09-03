@@ -3305,9 +3305,9 @@ window.renderLogisticsUI = function() {
     let pendingRequests = reqData.filter(r => r.status === 'Pending' || r.status === 'Drafting');
     let delayedRequests = reqData.filter(r => r.status === 'Delayed');
 
-    let branches = new Set(["Cabantian", "Citygate", "Maa"]);
-    reqData.forEach(r => { if(r.branch) branches.add(r.branch); });
-    delData.forEach(d => { if(d.toBranch) branches.add(d.toBranch); });
+    // 🔥 THE FIX: Dynamically sync tabs with the Branch Expansion Manager!
+    let activeBranchesList = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
+    let branches = new Set(activeBranchesList);
     
     let branchTabsHtml = `<button onclick="window.switchLogisticsBranch('All')" style="flex: 1; min-width: 100px; padding: 12px; font-weight: bold; font-size: 13px; border: none; border-bottom: 3px solid ${window.logisticsState.activeBranch === 'All' ? '#10b981' : 'transparent'}; background: ${window.logisticsState.activeBranch === 'All' ? 'white' : 'transparent'}; color: ${window.logisticsState.activeBranch === 'All' ? '#0f172a' : '#64748b'}; cursor: pointer; transition: 0.2s;">🌍 All Branches</button>`;
     
