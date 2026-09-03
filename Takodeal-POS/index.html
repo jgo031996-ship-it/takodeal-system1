@@ -1309,83 +1309,74 @@
     </div>
     
     <!-- 📱 NEW INTEGRATED MOBILE HUB & MENU TOGGLE -->
-    <div class="view-container" id="view-mobilehub" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-      <div style="display: flex; gap: 20px; width: 100%; max-width: 1400px; margin: 0 auto; align-items: flex-start;">
+    <div class="view-container" id="view-mobilehub" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto; box-sizing: border-box;">
+      <div style="display: flex; gap: 20px; width: 100%; max-width: 1400px; margin: 0 auto; align-items: stretch; min-height: calc(100vh - 100px);">
           
-          <!-- LEFT COLUMN: Store Controls & Mobile Orders -->
-          <div style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
+          <!-- LEFT COLUMN: App Controls & Live Orders -->
+          <div style="flex: 1.5; display: flex; flex-direction: column; gap: 20px;">
               
-              <!-- App Controls -->
-              <div style="background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
-                  <div style="background: #f8fafc; padding: 20px 25px; border-bottom: 1px solid #e2e8f0;">
-                      <h3 style="margin: 0; color: #1e293b; font-size: 18px; font-weight: 900; display: flex; align-items: center; gap: 8px;">⚙️ Store App Controls</h3>
+              <!-- App Controls (Horizontal Row) -->
+              <div style="background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; flex-shrink: 0;">
+                  <div style="background: #f8fafc; padding: 15px 25px; border-bottom: 1px solid #e2e8f0;">
+                      <h3 style="margin: 0; color: #1e293b; font-size: 16px; font-weight: 900; display: flex; align-items: center; gap: 8px;">⚙️ Store App Controls</h3>
                   </div>
-                  <div style="padding: 25px; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 15px;">
-                      <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus()" style="background: #16a34a; color: white; border: none; border-radius: 10px; padding: 14px; cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.3); transition: 0.2s;">🟢 Accepting</button>
-                      <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery()" style="background: #ef4444; color: white; border: none; border-radius: 10px; padding: 14px; cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); transition: 0.2s;">🚚 Delivery: <span id="deliveryStatusText">OFF</span></button>
-                      <button id="btnToggleBusy" onclick="window.toggleBusyMode()" style="background: #10b981; color: white; border: none; border-radius: 10px; padding: 14px; cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3); transition: 0.2s;">🟢 Normal Prep (15m)</button>
+                  <div style="padding: 20px 25px; display: flex; flex-wrap: wrap; gap: 15px;">
+                      <button id="btnMobileKillSwitch" onclick="window.toggleMobileOrderingStatus()" style="flex: 1; background: #16a34a; color: white; border: none; border-radius: 10px; padding: 14px; cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.3); transition: 0.2s;">🟢 Accepting</button>
+                      <button id="btnToggleDelivery" onclick="window.toggleGlobalDelivery()" style="flex: 1; background: #ef4444; color: white; border: none; border-radius: 10px; padding: 14px; cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); transition: 0.2s;">🚚 Delivery: <span id="deliveryStatusText">OFF</span></button>
+                      <button id="btnToggleBusy" onclick="window.toggleBusyMode()" style="flex: 1; background: #10b981; color: white; border: none; border-radius: 10px; padding: 14px; cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3); transition: 0.2s;">🟢 Normal Prep (15m)</button>
                   </div>
               </div>
 
-              <!-- Live Mobile Orders -->
-              <div style="background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; min-height: 500px; display: flex; flex-direction: column;">
-                  <div style="background: #f8fafc; padding: 20px 25px; border-bottom: 1px solid #e2e8f0;">
-                      <h3 style="margin: 0; color: #0ea5e9; font-size: 18px; font-weight: 900; display: flex; align-items: center; gap: 8px;"><span style="font-size: 22px;">📱</span> Live Mobile Orders</h3>
+              <!-- Live Mobile Orders & History Card (Takes remaining height) -->
+              <div style="background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; display: flex; flex-direction: column; flex: 1;">
+                  <!-- Tab Header -->
+                  <div style="background: #f0f9ff; padding: 20px 25px; border-bottom: 2px solid #bae6fd; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                      <div>
+                          <h3 style="margin: 0; color: #0284c7; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 8px;">
+                              <span style="font-size: 24px;">📱</span> <span id="mobileHubTitle">Live Mobile Orders</span>
+                          </h3>
+                          <span style="font-size: 12px; color: #0369a1; font-weight: bold; margin-top: 4px; display: block;">Manage incoming app orders.</span>
+                      </div>
+                      <div style="display: flex; gap: 5px; background: white; padding: 4px; border-radius: 10px; border: 1px solid #bae6fd; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.1);">
+                          <button id="btnMobLive" onclick="window.switchMobileTab('Live')" style="background: #0ea5e9; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(14, 165, 233, 0.2); transition: 0.2s;">🔴 Live</button>
+                          <button id="btnMobHist" onclick="window.switchMobileTab('History')" style="background: transparent; color: #475569; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 13px; transition: 0.2s;">📜 History</button>
+                      </div>
                   </div>
-                  <div id="mobileHubListContainer" style="padding: 25px; display: flex; flex-direction: column; gap: 15px; flex: 1; overflow-y: auto;">
+
+                  <!-- Container 1: Live Orders -->
+                  <div id="mobileHubListContainer" style="padding: 20px; display: flex; flex-direction: column; gap: 15px; flex: 1; overflow-y: auto; background: #f8fafc;">
                       <div style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold; font-size: 15px;">Loading orders...</div>
+                  </div>
+
+                  <!-- Container 2: History (Hidden by Default) -->
+                  <div id="mobileHubHistoryContainer" style="padding: 20px; display: none; flex-direction: column; gap: 15px; flex: 1; overflow-y: auto; background: #f8fafc;">
+                      <div style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold; font-size: 15px;">Loading history...</div>
                   </div>
               </div>
           </div>
 
           <!-- RIGHT COLUMN: Menu Toggle -->
-          <div style="flex: 1; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; min-height: 700px; display: flex; flex-direction: column;">
-              <div style="background: #fffbeb; padding: 20px 25px; border-bottom: 1px solid #fde68a; display: flex; justify-content: space-between; align-items: center;">
-                  <div>
-                      <h2 style="margin: 0; color: #b45309; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 8px;"><span style="font-size: 24px;">🍔</span> Menu Toggle</h2>
-                      <span style="color: #d97706; font-size: 12px; font-weight: bold; margin-top: 4px; display: block;">Mark items Sold Out instantly.</span>
-                  </div>
+          <div style="flex: 1; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; display: flex; flex-direction: column;">
+              <div style="background: #fffbeb; padding: 20px 25px; border-bottom: 2px solid #fde68a;">
+                  <h2 style="margin: 0; color: #b45309; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 8px;"><span style="font-size: 24px;">🍔</span> Menu Toggle</h2>
+                  <span style="color: #d97706; font-size: 12px; font-weight: bold; margin-top: 4px; display: block;">Mark items Sold Out instantly.</span>
               </div>
 
-              <div style="padding: 25px; display: flex; flex-direction: column; flex: 1;">
-                  <div id="menuToggleHeader" style="display: flex; gap: 15px; margin-bottom: 20px;">
-                      <div style="position: relative; flex: 2;">
+              <div style="padding: 20px; display: flex; flex-direction: column; flex: 1; overflow: hidden;">
+                  <div id="menuToggleHeader" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; flex-shrink: 0;">
+                      <div style="position: relative; width: 100%;">
                           <span style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 16px;">🔍</span>
-                          <input type="text" id="menuToggleSearch" onkeyup="filterMenuToggle()" placeholder="Search items..." style="width: 100%; padding: 14px 15px 14px 42px; border-radius: 10px; border: 1px solid #cbd5e1; outline: none; font-size: 14px; font-weight: bold; color: #334155; box-sizing: border-box; background: #f8fafc;">
+                          <input type="text" id="menuToggleSearch" onkeyup="window.filterMenuToggle()" placeholder="Search items..." style="width: 100%; padding: 14px 15px 14px 42px; border-radius: 10px; border: 1px solid #cbd5e1; outline: none; font-size: 14px; font-weight: bold; color: #334155; box-sizing: border-box; background: #f8fafc; transition: border-color 0.2s;">
                       </div>
-                      <select id="categoryFilter" onchange="filterMenuToggle()" style="flex: 1; padding: 14px 15px; border-radius: 10px; border: 1px solid #cbd5e1; font-weight: bold; color: #0f172a; font-size: 14px; outline: none; cursor: pointer; background: white;">
+                      <select id="categoryFilter" onchange="window.filterMenuToggle()" style="width: 100%; padding: 14px 15px; border-radius: 10px; border: 1px solid #cbd5e1; font-weight: bold; color: #0f172a; font-size: 14px; outline: none; cursor: pointer; background: white; transition: border-color 0.2s;">
                           <option value="All">All Categories</option>
                       </select>
                   </div>
                   
-                  <div id="menuManagerList" style="display: flex; flex-direction: column; gap: 12px; flex: 1; overflow-y: auto; padding-right: 5px;">
+                  <!-- The Scrollable List -->
+                  <div id="menuManagerList" style="display: flex; flex-direction: column; gap: 10px; flex: 1; overflow-y: auto; padding-right: 5px; padding-bottom: 20px;">
                       <div style="text-align: center; padding: 50px; color: #94a3b8; font-weight: bold; font-size: 15px;">Loading menu...</div>
                   </div>
-              </div>
-          </div>
-       
-          <!-- Live Mobile Orders & History Card -->
-          <div style="background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; min-height: 500px; display: flex; flex-direction: column;">
-                  
-              <!-- Tab Header -->
-              <div style="background: #f8fafc; padding: 20px 25px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                  <h3 style="margin: 0; color: #0ea5e9; font-size: 18px; font-weight: 900; display: flex; align-items: center; gap: 8px;">
-                      <span style="font-size: 22px;">📱</span> <span id="mobileHubTitle">Live Mobile Orders</span>
-                  </h3>
-                  <div style="display: flex; gap: 10px;">
-                      <button id="btnMobLive" onclick="window.switchMobileTab('Live')" style="background: #0ea5e9; color: white; border: none; padding: 8px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 2px 4px rgba(14, 165, 233, 0.2); transition: 0.2s;">🔴 Live</button>
-                      <button id="btnMobHist" onclick="window.switchMobileTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 8px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;">📜 History</button>
-                  </div>
-              </div>
-
-              <!-- Container 1: Live Orders -->
-              <div id="mobileHubListContainer" style="padding: 25px; display: flex; flex-direction: column; gap: 15px; flex: 1; overflow-y: auto;">
-                  <div style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold; font-size: 15px;">Loading orders...</div>
-              </div>
-
-              <!-- Container 2: History (Hidden by Default) -->
-              <div id="mobileHubHistoryContainer" style="padding: 25px; display: none; flex-direction: column; gap: 15px; flex: 1; overflow-y: auto; background: #f8fafc;">
-                  <div style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold; font-size: 15px;">Loading history...</div>
               </div>
           </div>
 
