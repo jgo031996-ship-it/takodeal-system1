@@ -4047,37 +4047,38 @@ window.startMobileOrdersListener = function(branch) {
 window.audioCtx = null;
 window.orderAlarmInterval = null;
 
-// Creates a classic dual-tone digital phone ring
+// Creates a unique, fast 3-note ascending chime ("Ta-Da-Ding!")
 window.playNotificationPing = function() {
     try {
         if (!window.audioCtx) window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (window.audioCtx.state === 'suspended') window.audioCtx.resume();
 
-        const playTone = (freq1, freq2, startTime, duration) => {
-            const osc1 = window.audioCtx.createOscillator();
-            const osc2 = window.audioCtx.createOscillator();
+        const playChime = (freq, type, startTime, duration) => {
+            const osc = window.audioCtx.createOscillator();
             const gain = window.audioCtx.createGain();
             
-            osc1.type = 'sine'; osc2.type = 'sine';
-            osc1.frequency.value = freq1; osc2.frequency.value = freq2;
+            osc.type = type;
+            osc.frequency.value = freq;
             
-            osc1.connect(gain); osc2.connect(gain);
+            osc.connect(gain);
             gain.connect(window.audioCtx.destination);
             
-            // Smooth attack and decay so it sounds like a real bell, not a computer glitch
+            // Sharp, percussive attack with a smooth, fading echo
             gain.gain.setValueAtTime(0, startTime);
-            gain.gain.linearRampToValueAtTime(0.6, startTime + 0.05);
-            gain.gain.setValueAtTime(0.6, startTime + duration - 0.05);
-            gain.gain.linearRampToValueAtTime(0, startTime + duration);
+            gain.gain.linearRampToValueAtTime(0.7, startTime + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
             
-            osc1.start(startTime); osc2.start(startTime);
-            osc1.stop(startTime + duration); osc2.stop(startTime + duration);
+            osc.start(startTime);
+            osc.stop(startTime + duration);
         };
 
         const now = window.audioCtx.currentTime;
-        // Ring pattern: Brrrring (0.4s) ... Pause ... Brrrring (0.4s)
-        playTone(440, 480, now, 0.4);
-        playTone(440, 480, now + 0.6, 0.4);
+        
+        // The 3-Note Sequence: A5 -> C#6 -> E6
+        // Uses 'triangle' waves for a piercing bell sound, and 'sine' for a smooth finish
+        playChime(880.00, 'triangle', now, 0.3);         // Ta
+        playChime(1108.73, 'triangle', now + 0.15, 0.3); // Da
+        playChime(1318.51, 'sine', now + 0.30, 0.6);     // Ding! (Rings out slightly longer)
         
     } catch (e) { console.error("Audio ping error:", e); }
 };
