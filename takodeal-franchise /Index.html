@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>TAKODEÁL Franchisee Portal</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <link rel="stylesheet" href="style.css">
+  
+  <style>
+    :root {
+      var(--primary): #0ea5e9; 
+      var(--sidebar-bg): #0f172a; 
+      var(--bg-color): #f8fafc; 
+      var(--card-bg): #ffffff;
+      var(--text-main): #1e293b; 
+      var(--border): #e2e8f0;
+    }
+
+    html, body {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        width: 100%; height: 100%;
+        overflow: hidden !important; overscroll-behavior-y: none;
+        font-family: 'Segoe UI', Tahoma, sans-serif;
+        background-color: var(--bg-color);
+    }
+    
+    body.swal2-shown:not(.swal2-no-backdrop):not(.swal2-toast-shown) {
+        height: 100% !important; overflow-y: hidden !important;
+    }
+
+    .swal2-container { z-index: 30000 !important; }
+    
+    /* Action Dropdown */
+    .action-menu-btn { background: #ffffff; color: #475569; border: 1px solid #cbd5e1; padding: 8px 14px; border-radius: 20px; font-weight: 800; cursor: pointer; font-size: 12px; transition: all 0.2s ease; box-shadow: 0 1px 3px rgba(0,0,0,0.04); display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+    .action-menu-btn:hover { background: #f8fafc; color: #0f766e; border-color: #94a3b8; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.1); transform: translateY(-1px); }
+    
+    /* Submenus */
+    .nav-submenu { display: none; flex-direction: column; background: #0b1121; border-left: 2px solid #334155; margin-left: 25px; margin-right: 15px; border-radius: 0 0 8px 8px; padding-top: 5px; padding-bottom: 5px; }
+    .nav-submenu.open { display: flex; animation: slideDownUltra 0.25s ease-out forwards; }
+    .nav-subitem { padding: 12px 15px 12px 20px; color: #94a3b8; font-size: 13px; font-weight: 600; text-decoration: none; border-left: 3px solid transparent; transition: all 0.2s ease; display: flex; align-items: center; gap: 8px; }
+    .nav-subitem:hover { color: #f8fafc; background: #1e293b; border-left-color: #64748b; }
+    .nav-subitem.active { color: #38bdf8; background: #1e293b; border-left-color: #38bdf8; font-weight: bold; }
+    @keyframes slideDownUltra { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+   
+    /* Sidebar */
+    .sidebar { background: #0f172a; display: flex; flex-direction: column; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); height: 100dvh !important; border-right: 1px solid #1e293b; width: 250px; flex-shrink: 0; z-index: 20;}
+    .sidebar.collapsed { width: 75px !important; }
+    .sidebar-header { padding: 15px; font-size: 20px; font-weight: bold; border-bottom: 1px solid rgba(255, 255, 255, 0.05); display: flex; justify-content: space-between; align-items: center; height: 80px; box-sizing: border-box; }
+    .nav-menu { flex: 1; overflow-y: auto !important; overflow-x: hidden !important; -webkit-overflow-scrolling: touch; padding-bottom: 30px !important; }
+    .nav-menu::-webkit-scrollbar { width: 5px; }
+    .nav-menu::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+    .nav-item { display: flex; align-items: center; padding: 12px 20px; color: #94a3b8; text-decoration: none; font-size: 13.5px; font-weight: 600; transition: all 0.2s ease; border-left: 3px solid transparent; white-space: nowrap; cursor: pointer;}
+    .nav-item:hover { background: #1e293b; color: #f8fafc; border-left-color: #475569; }
+    .nav-item.active { background: #1e293b; color: #38bdf8; border-left-color: #38bdf8; }
+    .nav-icon { font-size: 18px; min-width: 32px; text-align: left; transition: all 0.2s ease; display: inline-block; }
+    .nav-badge { background: #ef4444; color: white; font-size: 10px; font-weight: 900; padding: 3px 8px; border-radius: 12px; margin-left: auto; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.3); }
+    
+    .sidebar.collapsed .nav-item { justify-content: center; padding: 15px 0; }
+    .sidebar.collapsed .nav-item .nav-icon { margin: 0; font-size: 22px; }
+    .sidebar.collapsed .nav-text, .sidebar.collapsed .nav-badge, .sidebar.collapsed .logo-text, .sidebar.collapsed #inboxBadge { display: none !important; }
+
+    /* Layout */
+    .content-area { flex: 1; display: flex; flex-direction: column; position: relative; width: 100%; overflow: hidden; }
+    .top-bar { height: 70px; background: transparent; display: flex; justify-content: space-between; align-items: center; padding: 10px 30px; z-index: 10; flex-shrink: 0;}
+    .view-container { display: none; width: 100%; height: calc(100vh - 70px); height: calc(100dvh - 70px); flex: 1; overflow-y: auto; background: var(--bg-color); padding-bottom: 50px;}
+    .view-container.active { display: block; animation: fadeIn 0.3s ease-in-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* Tables & Inputs */
+    .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 8px; }
+    .data-table { width: 100%; border-collapse: collapse; text-align: left; }
+    .data-table th { padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; border-bottom: 2px solid #cbd5e1; background: #f8fafc; white-space: nowrap; }
+    .data-table td { padding: 15px 25px; border-bottom: 1px solid #f1f5f9; color: #334155; white-space: nowrap;}
+    .btn-refresh { padding: 10px 18px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s; border: none;}
+    .input-box { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px; box-sizing: border-box; outline: none; background: white; }
+
+    /* Mobile */
+    .mobile-menu-btn { display: none; background: none; border: none; font-size: 24px; color: #334155; cursor: pointer; padding: 0;}
+    @media (max-width: 1024px) {
+        .sidebar { width: 75px !important; }
+        .sidebar .logo-text, .sidebar .nav-text, .sidebar .nav-badge, .sidebar .user-profile .details { display: none !important; }
+        .sidebar .nav-item { justify-content: center; padding: 15px 0; margin: 4px 8px;}
+        .sidebar .nav-item .nav-icon { margin: 0; font-size: 22px; }
+    }
+    @media (max-width: 768px) {
+        body { flex-direction: column; }
+        .mobile-menu-btn { display: block; }
+        .sidebar { position: fixed; left: -300px; z-index: 99999; height: 100dvh; width: 260px !important; box-shadow: 4px 0 20px rgba(0,0,0,0.5); }
+        .sidebar.show-mobile { left: 0; }
+        .sidebar .nav-text, .sidebar .logo-text, .sidebar .nav-badge { display: block !important; }
+        .sidebar .nav-item { justify-content: flex-start; padding: 12px 20px; }
+        .sidebar .nav-item .nav-icon { margin-right: 15px; font-size: 18px; }
+        .top-bar { flex-direction: column; align-items: stretch; height: auto; padding: 15px; gap: 10px;}
+        #globalDateControls { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+        #globalDateControls input { width: 100%; }
+    }
+  </style>
+</head>
+
+<body>
+  <!-- SIDEBAR -->
+  <nav class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
+          <div style="width: 35px; height: 35px; background: #0ea5e9; border-radius: 8px; display: flex; justify-content: center; align-items: center; font-size: 20px; color: white;">🐙</div>
+          <div class="logo-text" style="display: flex; flex-direction: column;">
+              <span style="font-weight: 900; font-size: 14px; letter-spacing: 1px; color: white;">TAKODEÁL</span>
+              <span style="font-size: 10px; color: #0ea5e9; font-weight: bold;">FRANCHISE PORTAL</span>
+          </div>
+      </div>
+      <span class="hamburger-icon" onclick="document.getElementById('sidebar').classList.toggle('collapsed')" style="cursor: pointer; font-size: 20px; color: #94a3b8;">☰</span>
+    </div>
+
+    <div class="nav-menu">
+      <div class="nav-category">Operations</div>
+      <a class="nav-item active" id="nav-dashboard" onclick="switchView('dashboard')"><span class="nav-icon">📊</span> <span class="nav-text">Store Dashboard</span></a>
+      <a class="nav-item" id="nav-accounts" onclick="switchView('accounts')"><span class="nav-icon">💼</span> <span class="nav-text">Cash & Budget</span></a>
+      <a class="nav-item" id="nav-hq-billing" onclick="switchView('hq-billing')"><span class="nav-icon">💳</span> <span class="nav-text">HQ Billing & Royalties</span></a>
+      
+      <div class="nav-category">Team & Staff</div>
+      <div class="nav-item-wrapper">
+          <a class="nav-item" id="nav-hr" onclick="document.getElementById('hrSubmenu').classList.toggle('open')">
+              <span class="nav-icon">🧑‍💼</span> 
+              <span class="nav-text" style="display: flex; justify-content: space-between; width: 100%;">Human Resources <span>▼</span></span>
+          </a>
+          <div class="nav-submenu" id="hrSubmenu">
+              <a class="nav-subitem" onclick="switchView('payroll')">💸 Payroll & Time Feed</a>
+              <a class="nav-subitem" onclick="switchView('schedule')">📅 Schedule Manager</a>
+              <a class="nav-subitem" onclick="switchView('inbox')">📥 Request Inbox <span id="inboxBadge" style="display:none; background:#ef4444; color:white; border-radius:10px; padding:2px 6px; font-size:10px; font-weight:bold;">0</span></a>
+              <a class="nav-subitem" onclick="switchView('sanctions')">⚖️ Disciplinary Actions</a>
+          </div>
+      </div>
+
+      <div class="nav-category">Inventory & Logistics</div>
+      <div class="nav-item-wrapper">
+          <a class="nav-item" id="nav-inventory" onclick="document.getElementById('invSubmenu').classList.toggle('open')">
+              <span class="nav-icon">📦</span> 
+              <span class="nav-text" style="display: flex; justify-content: space-between; width: 100%;">Live Inventory <span>▼</span></span>
+          </a>
+          <div class="nav-submenu" id="invSubmenu">
+              <a class="nav-subitem" onclick="switchView('inv-overview')">Overview</a>
+              <a class="nav-subitem" onclick="switchView('inv-audits')">Audits & Accuracy</a>
+              <a class="nav-subitem" onclick="switchView('inv-waste')">Waste & Spoilage</a>
+              <a class="nav-subitem" onclick="switchView('inv-prep')">Prep Batch Logs</a>
+              <a class="nav-subitem" onclick="switchView('inv-logs')">Stock History</a>
+              <a class="nav-subitem" onclick="switchView('inv-alerts')">Low Stock Alerts</a>
+          </div>
+      </div>
+      <a class="nav-item" id="nav-b2b" onclick="switchView('b2b')"><span class="nav-icon">🚚</span> <span class="nav-text">B2B Supply Orders</span> <span id="poBadge" class="nav-badge" style="display:none;">0</span></a>
+
+      <div class="nav-category">Reports</div>
+      <a class="nav-item" id="nav-history" onclick="switchView('history')"><span class="nav-icon">🧾</span> <span class="nav-text">Sales History</span></a>
+      <a class="nav-item" id="nav-zreadings" onclick="switchView('zreadings')"><span class="nav-icon">📈</span> <span class="nav-text">Z-Reading Reports</span></a>
+      <a class="nav-item" id="nav-expenses" onclick="switchView('expenses')"><span class="nav-icon">💸</span> <span class="nav-text">Expense Logs</span></a>
+      <a class="nav-item" id="nav-bulletin" onclick="switchView('bulletin')"><span class="nav-icon">📢</span> <span class="nav-text">HQ Announcements</span></a>
+    </div>
+
+    <div style="padding: 20px; background: rgba(0,0,0,0.2); border-top: 1px solid rgba(255,255,255,0.05); text-align: center;">
+      <button onclick="window.logoutManager()" style="background: #dc2626; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%;">🚪 Sign Out</button>
+    </div>
+  </nav>
+
+  <!-- LOGIN OVERLAY -->
+  <div id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('logo.jpg') center/cover no-repeat; z-index: 99999; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; backdrop-filter: blur(8px);">
+    
+    <!-- Stage 1: Google Auth -->
+    <div id="loginStage1" style="background: rgba(255, 255, 255, 0.95); padding: 40px 30px; border-radius: 24px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); width: 100%; max-width: 380px;">
+      <div style="font-size: 60px; margin-bottom: 10px;">🏪</div>
+      <h2 style="margin: 0 0 5px 0; color: #0f172a; font-size: 24px; font-weight: 900;">TAKODEÁL</h2>
+      <p style="color: #64748b; font-size: 12px; font-weight: 900; margin-top: 0; margin-bottom: 30px; text-transform: uppercase;">Franchise Owner Portal</p>
+
+      <button onclick="loginWithGoogle()" style="background: white; color: #334155; border: 2px solid #e2e8f0; padding: 14px 20px; border-radius: 12px; font-size: 15px; font-weight: 900; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px;">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width: 22px; height: 22px;">
+        Sign in with Google
+      </button>
+    </div>
+
+    <!-- Stage 2: PIN Auth -->
+    <div id="loginStage2" style="display: none; background: rgba(255, 255, 255, 0.95); padding: 35px 25px; border-radius: 24px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); width: 100%; max-width: 400px;">
+      <h3 id="authWelcomeName" style="margin: 0 0 15px 0; color: #0f172a; font-size: 18px; font-weight: 900;">Welcome, Owner</h3>
+      <input type="password" id="managerPinInput" placeholder="Enter PIN" style="width: 100%; padding: 15px; font-size: 24px; text-align: center; letter-spacing: 10px; border: 2px solid #cbd5e1; border-radius: 12px; outline: none; margin-bottom: 15px; box-sizing: border-box;">
+      <div id="pinErrorMsg" style="color: #dc2626; font-size: 12px; font-weight: bold; margin-bottom: 10px; display: none;">❌ Invalid PIN</div>
+      <button onclick="window.checkManagerPin()" style="width: 100%; padding: 16px; background: #0ea5e9; color: white; border: none; border-radius: 12px; font-weight: 900; font-size: 16px; cursor: pointer;">Unlock Portal</button>
+      <button onclick="window.cancelLoginAndSignOut()" style="width: 100%; padding: 12px; margin-top: 10px; background: transparent; color: #64748b; border: none; font-size: 13px; font-weight: bold; cursor: pointer;">Cancel</button>
+    </div>
+  </div>
+
+  <div class="content-area">
+    
+    <!-- TOP BAR -->
+    <div class="top-bar">
+      <div style="display: flex; align-items: center; gap: 15px;">
+        <button class="mobile-menu-btn" onclick="document.getElementById('sidebar').classList.toggle('show-mobile')">☰</button>
+        <h1 id="pageTitle" style="font-size: 20px; font-weight: 900; color: #0f172a; margin: 0;">Store Dashboard</h1>
+      </div>
+      <div id="globalDateControls" style="display: flex; align-items: center; gap: 10px;">
+        <span style="font-size: 12px; font-weight: bold; color: #64748b;">From:</span>
+        <input type="date" id="globalStartDate" style="padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-size: 13px; font-weight: bold; color: #334155;">
+        <span style="font-size: 12px; font-weight: bold; color: #64748b;">To:</span>
+        <input type="date" id="globalEndDate" style="padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-size: 13px; font-weight: bold; color: #334155;">
+        <button class="btn-refresh" style="background: #0ea5e9; color: white; padding: 8px 15px;" onclick="window.refreshActiveData()">🔄 Sync Data</button>
+      </div>
+    </div>
+
+    <!-- VIEW: DASHBOARD -->
+    <div id="view-dashboard" class="view-container active">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+            <!-- KPI Cards -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 25px;">
+                <div style="background: white; padding: 25px; border-radius: 12px; border-top: 4px solid #10b981; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                    <div style="font-size: 12px; color: #64748b; font-weight: 800; text-transform: uppercase;">Net Sales (Selected Range)</div>
+                    <div id="dashNetSales" style="font-size: 32px; font-weight: 900; color: #10b981; margin-top: 5px;">₱0.00</div>
+                </div>
+                <div style="background: white; padding: 25px; border-radius: 12px; border-top: 4px solid #f59e0b; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                    <div style="font-size: 12px; color: #64748b; font-weight: 800; text-transform: uppercase;">Total Expenses Logged</div>
+                    <div id="dashExpenses" style="font-size: 32px; font-weight: 900; color: #d97706; margin-top: 5px;">₱0.00</div>
+                </div>
+                <div style="background: white; padding: 25px; border-radius: 12px; border-top: 4px solid #0ea5e9; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                    <div style="font-size: 12px; color: #64748b; font-weight: 800; text-transform: uppercase;">Transaction Count</div>
+                    <div id="dashTxCount" style="font-size: 32px; font-weight: 900; color: #0ea5e9; margin-top: 5px;">0</div>
+                </div>
+            </div>
+
+            <!-- Charts -->
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 20px; margin-bottom: 25px;">
+                <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+                    <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #1e293b;">📈 Revenue Trend</h3>
+                    <div style="height: 300px; position: relative;"><canvas id="chartTrend"></canvas></div>
+                </div>
+                <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+                    <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #1e293b;">🐙 Top Categories</h3>
+                    <div style="height: 300px; position: relative;"><canvas id="chartPie"></canvas></div>
+                </div>
+            </div>
+
+            <!-- Live Staff -->
+            <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+                <h3 style="margin: 0 0 15px 0; font-size: 16px; color: #1e293b;">👥 Live Staff on Duty</h3>
+                <div id="dashLiveStaff" style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="color: #64748b; font-style: italic;">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW: ACCOUNTS & BUDGET -->
+    <div id="view-accounts" class="view-container">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; color: #1e293b;">💰 Store Cash Accounts</h3>
+                    <button class="btn-refresh" style="background: #0ea5e9; color: white;" onclick="window.openAddAccountModal()">➕ Add</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead><tr><th>Account Name</th><th style="text-align: right;">Balance</th></tr></thead>
+                        <tbody id="accTableBody"><tr><td colspan="2" style="text-align:center;">Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; color: #1e293b;">💸 Monthly Budgets</h3>
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn-refresh" style="background: #f59e0b; color: white;" onclick="window.openAddBudgetModal()">➕ Budget</button>
+                        <button class="btn-refresh" style="background: #ef4444; color: white;" onclick="window.openLogExpenseModal()">🧾 Log Expense</button>
+                    </div>
+                </div>
+                <div id="budgetListBody" style="display: flex; flex-direction: column; gap: 10px;">
+                    <div style="text-align:center; color:#64748b;">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW: HQ BILLING & ROYALTIES -->
+    <div id="view-hq-billing" class="view-container">
+        <div style="max-width: 1000px; margin: 0 auto; padding: 20px;">
+            <div style="background: #fff1f2; border: 2px dashed #fca5a5; border-radius: 12px; padding: 30px; text-align: center; margin-bottom: 20px;">
+                <h3 style="margin: 0 0 10px 0; color: #b91c1c; text-transform: uppercase;">Outstanding Balance (Owed to HQ)</h3>
+                <div id="hqTotalBalance" style="font-size: 48px; font-weight: 900; color: #dc2626;">₱0.00</div>
+                <p style="font-size: 13px; color: #ef4444; margin: 10px 0 0 0;">Includes unpaid B2B Supply Orders and Royalties.</p>
+            </div>
+
+            <div style="background: white; border-radius: 12px; border: 1px solid #e2e8f0; padding: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; color: #1e293b;">📜 Statement of Account Ledger</h3>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead><tr><th>Date</th><th>Description</th><th style="text-align:right;">Charge</th><th style="text-align:right;">Payment</th><th style="text-align:right;">Running Bal</th></tr></thead>
+                        <tbody id="hqLedgerBody"><tr><td colspan="5" style="text-align:center;">Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW: HR - PAYROLL -->
+    <div id="view-payroll" class="view-container">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px;">
+                <h3 style="margin: 0 0 15px 0; color: #1e293b;">💸 Payroll Generator</h3>
+                <button class="btn-refresh" style="background: #16a34a; color: white;" onclick="window.generateAutoPayslips()">⚙️ Calculate Payroll for Selected Dates</button>
+                <div class="table-responsive" style="margin-top: 20px;">
+                    <table class="data-table">
+                        <thead><tr><th>Staff Name</th><th>Hours</th><th>Deductions</th><th>Action</th></tr></thead>
+                        <tbody id="payrollBody"><tr><td colspan="4" style="text-align:center;">Click Calculate to generate...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW: B2B SUPPLY ORDERS -->
+    <div id="view-b2b" class="view-container">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            
+            <!-- Request Stock from HQ -->
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <h3 style="margin: 0 0 15px 0; color: #0ea5e9;">📦 Request Stock from HQ</h3>
+                
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Item</label>
+                <input type="text" id="b2bSearch" list="b2bDatalist" class="input-box" style="margin-bottom: 10px;" onchange="window.updateB2bUom()">
+                <datalist id="b2bDatalist"></datalist>
+
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <div style="flex: 1;">
+                        <label style="font-size: 12px; font-weight: bold; color: #475569;">Qty</label>
+                        <input type="number" id="b2bQty" class="input-box" placeholder="0">
+                    </div>
+                    <div style="flex: 1;">
+                        <label style="font-size: 12px; font-weight: bold; color: #475569;">Unit</label>
+                        <select id="b2bUom" class="input-box"><option value="base">Units</option></select>
+                    </div>
+                </div>
+                <button class="btn-refresh" style="width: 100%; background: #0ea5e9; color: white;" onclick="window.addB2bToCart()">+ Add to Request List</button>
+
+                <div style="margin-top: 20px; border-top: 1px dashed #cbd5e1; padding-top: 15px;">
+                    <h4 style="margin: 0 0 10px 0; font-size: 14px;">Pending Request Cart</h4>
+                    <div id="b2bCartList" style="margin-bottom: 15px; font-size: 13px;">Cart is empty.</div>
+                    <button class="btn-refresh" style="width: 100%; background: #16a34a; color: white;" onclick="window.submitB2bRequest()">📤 Send Order to HQ</button>
+                </div>
+            </div>
+
+            <!-- Incoming Deliveries -->
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+                <h3 style="margin: 0 0 15px 0; color: #d97706;">🚚 Incoming Deliveries from HQ</h3>
+                <div id="b2bDeliveriesContainer" style="flex: 1; overflow-y: auto;">
+                    <div style="text-align:center; color: #94a3b8; padding: 20px;">Loading deliveries...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+  </div> <!-- End Content Area -->
+
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <!-- Link to the Franchisee Specific JS File that we will create next -->
+  <script type="module" src="main_franchise.js?v=1.0"></script>
+
+</body>
+</html>
