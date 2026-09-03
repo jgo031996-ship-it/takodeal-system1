@@ -4023,73 +4023,90 @@ window.startMobileOrdersListener = function(branch) {
             window.renderMobileHubOrders();
         }
 
-        if (newOrdersFound || (!window.hasLoadedMobileOrdersOnce && incomingCount > 0)) {
+        // 🔥 THE NEW ALARM TRIGGER & KILL SWITCH 🔥
+        if (incomingCount === 0) {
+            // If the staff accepted/rejected the last order, instantly kill the alarm
+            window.stopMobileOrderAlarm();
+        } else if (newOrdersFound || (!window.hasLoadedMobileOrdersOnce && incomingCount > 0)) {
+            // If there are new orders in the queue, start the continuous ring
             if (typeof window.startMobileOrderAlarm === 'function') {
                 window.startMobileOrderAlarm();
             }
         }
 
-        window.hasLoadedMobileOrdersOnce = true; 
+        window.hasLoadedMobileOrdersOnce = true;
         
     }, (error) => {
         console.error("Firebase Mobile Orders Error:", error);
     });
 };
 
-// Generates a simple, loud browser "ding" without needing an audio file
-// --- THE LOUD NOTIFICATION PING FIX ---
-// --- THE LOUD 10-SECOND REPEATING ALARM ENGINE ---
+// ========================================================
+// 🔊 UPGRADED CONTINUOUS MOBILE ALARM ENGINE
+// ========================================================
 window.audioCtx = null;
 window.orderAlarmInterval = null;
-window.orderAlarmTimeout = null;
 
+// Creates a classic dual-tone digital phone ring
 window.playNotificationPing = function() {
     try {
         if (!window.audioCtx) window.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         if (window.audioCtx.state === 'suspended') window.audioCtx.resume();
 
-        const osc1 = window.audioCtx.createOscillator();
-        const gain1 = window.audioCtx.createGain();
-        osc1.connect(gain1); gain1.connect(window.audioCtx.destination);
-        osc1.type = 'sine';
-        osc1.frequency.setValueAtTime(987.77, window.audioCtx.currentTime); 
-        gain1.gain.setValueAtTime(1, window.audioCtx.currentTime);
-        gain1.gain.exponentialRampToValueAtTime(0.01, window.audioCtx.currentTime + 0.4);
-        osc1.start(window.audioCtx.currentTime); osc1.stop(window.audioCtx.currentTime + 0.4);
+        const playTone = (freq1, freq2, startTime, duration) => {
+            const osc1 = window.audioCtx.createOscillator();
+            const osc2 = window.audioCtx.createOscillator();
+            const gain = window.audioCtx.createGain();
+            
+            osc1.type = 'sine'; osc2.type = 'sine';
+            osc1.frequency.value = freq1; osc2.frequency.value = freq2;
+            
+            osc1.connect(gain); osc2.connect(gain);
+            gain.connect(window.audioCtx.destination);
+            
+            // Smooth attack and decay so it sounds like a real bell, not a computer glitch
+            gain.gain.setValueAtTime(0, startTime);
+            gain.gain.linearRampToValueAtTime(0.6, startTime + 0.05);
+            gain.gain.setValueAtTime(0.6, startTime + duration - 0.05);
+            gain.gain.linearRampToValueAtTime(0, startTime + duration);
+            
+            osc1.start(startTime); osc2.start(startTime);
+            osc1.stop(startTime + duration); osc2.stop(startTime + duration);
+        };
 
-        setTimeout(() => {
-            try {
-                const osc2 = window.audioCtx.createOscillator();
-                const gain2 = window.audioCtx.createGain();
-                osc2.connect(gain2); gain2.connect(window.audioCtx.destination);
-                osc2.type = 'sine';
-                osc2.frequency.setValueAtTime(1318.51, window.audioCtx.currentTime); 
-                gain2.gain.setValueAtTime(1, window.audioCtx.currentTime);
-                gain2.gain.exponentialRampToValueAtTime(0.01, window.audioCtx.currentTime + 0.6);
-                osc2.start(window.audioCtx.currentTime); osc2.stop(window.audioCtx.currentTime + 0.6);
-            } catch(e){}
-        }, 150);
+        const now = window.audioCtx.currentTime;
+        // Ring pattern: Brrrring (0.4s) ... Pause ... Brrrring (0.4s)
+        playTone(440, 480, now, 0.4);
+        playTone(440, 480, now + 0.6, 0.4);
+        
     } catch (e) { console.error("Audio ping error:", e); }
 };
 
 window.startMobileOrderAlarm = function() {
-    window.stopMobileOrderAlarm(); // Clear any existing alarm
-    window.playNotificationPing(); // Play the first ring immediately
+    window.stopMobileOrderAlarm(); // Clear any existing ghost alarms
     
-    // Repeat the ring every 2 seconds FOREVER until they check the order!
+    // Safety Check: Only ring if there are actually orders waiting to be accepted
+    let pendingOrders = window.mobileOrdersList.filter(o => o.status === "mobile_queue").length;
+    if (pendingOrders === 0) return; 
+    
+    window.playNotificationPing(); // Fire the first ring instantly
+    
+    // Repeat the ring every 3 seconds FOREVER until handled
     window.orderAlarmInterval = setInterval(() => {
-        // Auto-stop if the cashier opens the menu!
-        if (document.getElementById('mobileOrdersModal').style.display === 'flex') {
+        let stillPending = window.mobileOrdersList.filter(o => o.status === "mobile_queue").length;
+        if (stillPending === 0) {
             window.stopMobileOrderAlarm();
             return;
         }
         window.playNotificationPing();
-    }, 2000);
+    }, 3000); 
 };
 
 window.stopMobileOrderAlarm = function() {
-    if (window.orderAlarmInterval) clearInterval(window.orderAlarmInterval);
-    if (window.orderAlarmTimeout) clearTimeout(window.orderAlarmTimeout);
+    if (window.orderAlarmInterval) {
+        clearInterval(window.orderAlarmInterval);
+        window.orderAlarmInterval = null;
+    }
 };
 
 window.showMobileOrders = function() {
