@@ -14358,6 +14358,7 @@ window.loadSalesHistoryTab = async function() {
 
         let txHtml = '';
         let tNet = 0; let tCogs = 0; let tGrab = 0; let tGrabCount = 0; let tFoodpanda = 0; let tFoodpandaCount = 0;
+        let tParkedPaid = 0; let tParkedDeleted = 0; // 🔥 NEW TRACKERS
         let dailyAggregates = {}; let monthlyAggregates = {}; 
         let distOrderType = {}; let distPayment = {}; let distTotalSales = 0;
 
@@ -14402,6 +14403,12 @@ window.loadSalesHistoryTab = async function() {
             }
 
             let isVoid = tx.status === "Voided";
+            
+            // 🔥 TALLY THE PARKED OUTCOMES 🔥
+            if (tx.wasParked) {
+                if (isVoid) tParkedDeleted++;
+                else tParkedPaid++;
+            }
             let txNet = (tx.netTotal || 0);
             
             let sId = tx.shiftId;
@@ -14575,6 +14582,12 @@ window.loadSalesHistoryTab = async function() {
         document.getElementById('histSumMargin').innerText = `₱${(tNet - tCogs).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
+        // 🔥 INJECT PARKED STATS INTO THE UI
+        let parkedPaidEl = document.getElementById('histParkedPaid');
+        if (parkedPaidEl) parkedPaidEl.innerText = tParkedPaid;
+        
+        let parkedDelEl = document.getElementById('histParkedDeleted');
+        if (parkedDelEl) parkedDelEl.innerText = tParkedDeleted;
         let grabCountEl = document.getElementById('histCountGrab');
         if (grabCountEl) grabCountEl.innerText = `${tGrabCount} Order${tGrabCount !== 1 ? 's' : ''}`;
         // 🔥 FOODPANDA UI UPDATE
