@@ -4125,6 +4125,9 @@ window.loadMobileHistory = async function() {
 
             let customerName = (o.customerName || o.name || 'Mobile Customer').split('(')[0].trim(); 
             let orderTime = o.timestamp ? new Date(o.timestamp.toMillis ? o.timestamp.toMillis() : o.timestamp).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+            
+            // 🔥 GRAB THE ORDER CODE
+            let orderCode = o.orderCode || o.id;
 
             // Distinct Badges based on how it ended
             let statusBadge = '';
@@ -4132,10 +4135,11 @@ window.loadMobileHistory = async function() {
             else if (o.status === "ready") statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #bbf7d0;">🛵 DISPATCHED / READY</span>`;
             else if (o.status === "rejected") statusBadge = `<span style="background:#fef2f2; color:#dc2626; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #fca5a5;">❌ REJECTED</span>`;
 
-            html += `<div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                        <div style="display:flex; justify-content:space-between; margin-bottom:10px; align-items: flex-start;">
+            html += `<div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 15px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:10px; align-items: flex-start; border-bottom: 1px dashed #e2e8f0; padding-bottom: 10px;">
                             <div>
-                                <strong style="font-size:15px; color: #0f172a;">👤 ${customerName}</strong><br>
+                                <strong style="font-size:16px; color: #0f172a;">${orderCode}</strong><br>
+                                <span style="font-size:13px; color:#475569; font-weight:bold;">👤 ${customerName}</span><br>
                                 <span style="font-size:11px; color:#64748b; font-weight:bold;">Ordered at ${orderTime}</span>
                             </div>
                             <div style="text-align: right;">
@@ -4143,7 +4147,7 @@ window.loadMobileHistory = async function() {
                                 ${statusBadge}
                             </div>
                         </div>
-                        <div style="margin-top:10px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">${itemsHtml}</div>
+                        <div style="margin-top:10px;">${itemsHtml}</div>
                      </div>`;
         });
 
