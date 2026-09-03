@@ -4052,13 +4052,21 @@ window.switchMobileTab = function(tab) {
     let title = document.getElementById('mobileHubTitle');
 
     if (tab === 'Live') {
-        btnLive.style.background = '#0ea5e9'; btnLive.style.color = 'white'; btnLive.style.border = 'none'; btnLive.style.boxShadow = '0 2px 4px rgba(14, 165, 233, 0.2)';
-        btnHist.style.background = 'white'; btnHist.style.color = '#475569'; btnHist.style.border = '1px solid #cbd5e1'; btnHist.style.boxShadow = 'none';
+        btnLive.style.background = '#0ea5e9'; btnLive.style.color = 'white'; 
+        btnLive.style.boxShadow = '0 2px 4px rgba(14, 165, 233, 0.2)';
+        
+        btnHist.style.background = 'transparent'; btnHist.style.color = '#475569'; 
+        btnHist.style.boxShadow = 'none';
+        
         conLive.style.display = 'flex'; conHist.style.display = 'none';
         title.innerText = 'Live Mobile Orders';
     } else {
-        btnHist.style.background = '#0ea5e9'; btnHist.style.color = 'white'; btnHist.style.border = 'none'; btnHist.style.boxShadow = '0 2px 4px rgba(14, 165, 233, 0.2)';
-        btnLive.style.background = 'white'; btnLive.style.color = '#475569'; btnLive.style.border = '1px solid #cbd5e1'; btnLive.style.boxShadow = 'none';
+        btnHist.style.background = '#0ea5e9'; btnHist.style.color = 'white'; 
+        btnHist.style.boxShadow = '0 2px 4px rgba(14, 165, 233, 0.2)';
+        
+        btnLive.style.background = 'transparent'; btnLive.style.color = '#475569'; 
+        btnLive.style.boxShadow = 'none';
+        
         conLive.style.display = 'none'; conHist.style.display = 'flex';
         title.innerText = 'Today\'s Mobile History';
         window.loadMobileHistory();
