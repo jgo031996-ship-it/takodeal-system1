@@ -730,7 +730,7 @@
                     }
                 } catch(e) { console.log("Could not load home categories config."); }
 
-                const q = query(collection(db, "menu"), orderBy("category"));
+                const q = query(collection(db, "menu"));
                 const snap = await getDocs(q);
                 
                 window.rawMenuCache = [];
@@ -937,7 +937,7 @@
                     */
                     
                     // 2. Hide items manually disabled
-                    if (item.isAvailable === false) return;
+                    // if (item.isAvailable === false) return;
                     item.isSoldOut = item.unavailableAt && item.unavailableAt.includes(branchName);
 
                     // 3. Variant Grouping Engine
