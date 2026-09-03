@@ -3430,13 +3430,15 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
       if (receiptId) {
         if (window.activeMobileOrderId) {
+            // 🔥 CHANGED: We no longer change the status to "completed" here!
+            // We just attach the receipt ID to prove it was encoded in the POS.
             window.updateDoc(window.doc(window.db, "incoming_orders", window.activeMobileOrderId), {
-                status: "completed",
+                paymentStatus: "paid", 
                 receiptId: receiptId,
-                completedAt: window.serverTimestamp()
+                encodedAt: window.serverTimestamp()
             }).catch(e => console.log("Mobile update queued for background sync.", e));
             
-            window.activeMobileOrderId = null;
+            window.activeMobileOrderId = null; 
             window.activeMobileOrderCode = null;
             window.isActiveOrderMobile = false;
         }
@@ -4087,6 +4089,10 @@ window.renderMobileHubOrders = function() {
         
         let locText = o.deliveryAddress ? `<div style="font-size:11px; color:#475569; margin-top:8px; padding:8px; background:#f8fafc; border-radius:6px; border:1px solid #cbd5e1;">📍 ${o.deliveryAddress}</div>` : '';
 
+        // 🔥 NEW: SHOW IF IT HAS ALREADY BEEN ENCODED IN THE POS
+        let isPaid = o.paymentStatus === "paid" || o.receiptId;
+        let posBadge = isPaid ? `<div style="margin-top: 8px; font-size: 11px; color: #16a34a; font-weight: 900; background: #dcfce7; padding: 4px 8px; border-radius: 6px; border: 1px solid #bbf7d0; display: inline-block;">✅ ENCODED IN POS</div>` : '';
+
         // 🔥 DYNAMIC CONTROLS BASED ON STATUS 🔥
         let actionButtons = '';
         let statusBadge = '';
@@ -4127,13 +4133,16 @@ window.renderMobileHubOrders = function() {
     container.innerHTML = html;
 };
 
-// 🔥 NEW: Notify Customer Order is Ready!
+// 🔥 NEW: Notify Customer Order is Ready and Move to History!
 window.markMobileOrderReady = async function(docId) {
     if (!confirm("Notify the customer that this order is Ready / On the way?")) return;
     
     try {
+        // Changing the status to "ready" will automatically pull it off the Live Queue
+        // and trigger the green "Completed" badge in your History tab!
         await window.updateDoc(window.doc(window.db, "incoming_orders", docId), {
-            status: "ready"
+            status: "ready",
+            completedAt: window.serverTimestamp()
         });
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Customer Notified!', showConfirmButton: false, timer: 2000});
     } catch(e) {
@@ -4325,6 +4334,7 @@ window.showMobileOrders = function() {
                     </div>
                     
                     ${locText}
+                    ${posBadge}
                     
                     <div style="margin-top: 12px; display: flex; flex-direction: column; gap: 8px;">
                         ${mapBtn}
