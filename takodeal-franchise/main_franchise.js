@@ -99,15 +99,35 @@ window.checkManagerPin = function() {
         
         window.sessionUser = {
             email: window.tempAuthUser.email,
-            branch: allowedArr[0], // Locks queries to this branch
+            branch: allowedArr[0], // Defaults to their first branch in the list
             allowedBranches: allowedArr,
             cashierName: window.tempAuthData.fullName || 'Franchise Owner',
             isFranchisee: true
         };
 
-        // Brand the UI
-        let logoTxt = document.querySelector('.logo-text span:nth-child(2)');
-        if (logoTxt) logoTxt.innerText = window.sessionUser.branch.toUpperCase();
+        // 🔥 UI UPGRADE: Check for Multi-Branch Ownership
+        let selectDrop = document.getElementById('franchiseBranchSelect');
+        let singleText = document.getElementById('singleBranchText');
+        
+        if (allowedArr.length > 1) {
+            // They own multiple branches! Build the dropdown.
+            selectDrop.style.display = 'block';
+            singleText.style.display = 'none';
+            
+            selectDrop.innerHTML = ''; // Clear old options
+            allowedArr.forEach(b => {
+                let opt = document.createElement('option');
+                opt.value = b;
+                opt.innerText = b.toUpperCase();
+                selectDrop.appendChild(opt);
+            });
+            selectDrop.value = window.sessionUser.branch; // Set active dropdown value
+        } else {
+            // Single branch owner
+            selectDrop.style.display = 'none';
+            singleText.style.display = 'block';
+            singleText.innerText = window.sessionUser.branch.toUpperCase();
+        }
         
         document.getElementById('loginOverlay').style.display = 'none';
         window.switchView('dashboard');
@@ -117,6 +137,30 @@ window.checkManagerPin = function() {
         pinInput.value = '';
         pinInput.style.borderColor = '#ef4444';
         pinInput.focus();
+    }
+};
+
+// 🔥 NEW FUNCTION: Securely switch branches on the fly
+window.changeFranchiseBranch = function() {
+    let selectDrop = document.getElementById('franchiseBranchSelect');
+    if (selectDrop) {
+        let newBranch = selectDrop.value;
+        
+        // ULTIMATE SECURITY: Ensure they actually own the branch they selected!
+        if (!window.sessionUser.allowedBranches.includes(newBranch)) {
+            Swal.fire('Error', 'Unauthorized branch selection.', 'error');
+            return;
+        }
+        
+        window.sessionUser.branch = newBranch;
+        
+        // Trigger the magic: Instantly pull the new branch's data
+        window.refreshActiveData();
+        
+        Swal.fire({ 
+            toast: true, position: 'top-end', icon: 'success', 
+            title: 'Switched to ' + newBranch, showConfirmButton: false, timer: 1500 
+        });
     }
 };
 
