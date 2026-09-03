@@ -4041,6 +4041,110 @@ window.startMobileOrdersListener = function(branch) {
     });
 };
 
+// ==========================================
+// 📜 MOBILE ORDERS HISTORY ENGINE
+// ==========================================
+window.switchMobileTab = function(tab) {
+    let btnLive = document.getElementById('btnMobLive');
+    let btnHist = document.getElementById('btnMobHist');
+    let conLive = document.getElementById('mobileHubListContainer');
+    let conHist = document.getElementById('mobileHubHistoryContainer');
+    let title = document.getElementById('mobileHubTitle');
+
+    if (tab === 'Live') {
+        btnLive.style.background = '#0ea5e9'; btnLive.style.color = 'white'; btnLive.style.border = 'none'; btnLive.style.boxShadow = '0 2px 4px rgba(14, 165, 233, 0.2)';
+        btnHist.style.background = 'white'; btnHist.style.color = '#475569'; btnHist.style.border = '1px solid #cbd5e1'; btnHist.style.boxShadow = 'none';
+        conLive.style.display = 'flex'; conHist.style.display = 'none';
+        title.innerText = 'Live Mobile Orders';
+    } else {
+        btnHist.style.background = '#0ea5e9'; btnHist.style.color = 'white'; btnHist.style.border = 'none'; btnHist.style.boxShadow = '0 2px 4px rgba(14, 165, 233, 0.2)';
+        btnLive.style.background = 'white'; btnLive.style.color = '#475569'; btnLive.style.border = '1px solid #cbd5e1'; btnLive.style.boxShadow = 'none';
+        conLive.style.display = 'none'; conHist.style.display = 'flex';
+        title.innerText = 'Today\'s Mobile History';
+        window.loadMobileHistory();
+    }
+};
+
+window.loadMobileHistory = async function() {
+    let container = document.getElementById('mobileHubHistoryContainer');
+    let branch = localStorage.getItem('takodeal_device_branch');
+    if (!branch) return;
+
+    container.innerHTML = '<div style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold; font-size: 15px;">⏳ Fetching today\'s history...</div>';
+
+    try {
+        let startOfDay = new Date();
+        startOfDay.setHours(0,0,0,0);
+
+        const q = window.query(
+            window.collection(window.db, "incoming_orders"),
+            window.where("branch", "==", branch),
+            window.where("timestamp", ">=", startOfDay)
+        );
+        const snap = await window.getDocs(q);
+
+        let historyList = [];
+        snap.forEach(doc => {
+            let data = doc.data();
+            // Show orders that are NO LONGER in the live queue
+            if (data.status === "completed" || data.status === "rejected" || data.status === "ready") {
+                historyList.push({ id: doc.id, ...data });
+            }
+        });
+
+        // Sort: Newest at the top
+        historyList.sort((a, b) => {
+            let tA = a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0;
+            let tB = b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0;
+            return tB - tA; 
+        });
+
+        if (historyList.length === 0) {
+            container.innerHTML = '<div style="text-align:center; padding: 40px; color: #64748b; font-style: italic;">No completed or rejected mobile orders today.</div>';
+            return;
+        }
+
+        let html = '';
+        historyList.forEach(o => {
+            let itemsHtml = o.items.map(i => {
+                return `<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px; border-bottom:1px dashed #e2e8f0; padding-bottom:3px; color:#334155;">
+                          <div><strong>${i.quantity}x ${i.name}</strong></div>
+                          <div style="font-weight:bold;">₱${(i.price * i.quantity).toFixed(2)}</div>
+                        </div>`;
+            }).join('');
+
+            let customerName = (o.customerName || o.name || 'Mobile Customer').split('(')[0].trim(); 
+            let orderTime = o.timestamp ? new Date(o.timestamp.toMillis ? o.timestamp.toMillis() : o.timestamp).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+
+            // Distinct Badges based on how it ended
+            let statusBadge = '';
+            if (o.status === "completed") statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #bbf7d0;">✅ PAID & COMPLETED</span>`;
+            else if (o.status === "ready") statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #bbf7d0;">🛵 DISPATCHED / READY</span>`;
+            else if (o.status === "rejected") statusBadge = `<span style="background:#fef2f2; color:#dc2626; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #fca5a5;">❌ REJECTED</span>`;
+
+            html += `<div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:10px; align-items: flex-start;">
+                            <div>
+                                <strong style="font-size:15px; color: #0f172a;">👤 ${customerName}</strong><br>
+                                <span style="font-size:11px; color:#64748b; font-weight:bold;">Ordered at ${orderTime}</span>
+                            </div>
+                            <div style="text-align: right;">
+                                <strong style="color:var(--primary); font-size:16px; display:block; margin-bottom: 4px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
+                                ${statusBadge}
+                            </div>
+                        </div>
+                        <div style="margin-top:10px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">${itemsHtml}</div>
+                     </div>`;
+        });
+
+        container.innerHTML = html;
+
+    } catch (e) {
+        console.error("Error loading mobile history:", e);
+        container.innerHTML = '<div style="text-align:center; padding: 40px; color: #dc2626; font-weight: bold;">❌ Failed to load history.</div>';
+    }
+};
+
 // ========================================================
 // 🔊 UPGRADED CONTINUOUS MOBILE ALARM ENGINE
 // ========================================================
