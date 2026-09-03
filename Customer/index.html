@@ -926,6 +926,9 @@
 
                 window.rawMenuCache.forEach(item => {
                     let catName = (item.category || "Other").trim();
+                    // 🚫 THE INVISIBLE WALL: Permanently hide internal POS categories
+                    let hiddenCategories = ["consumables", "prep batch", "raw ingredients", "kitchen prep"];
+                    if (hiddenCategories.includes(catName.toLowerCase())) return;
                     
                     // 🔥 1. THE SINGLE SOURCE OF TRUTH: Obey the Manager App Checkboxes!
                     /*
