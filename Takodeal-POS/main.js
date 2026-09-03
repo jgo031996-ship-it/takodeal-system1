@@ -1219,7 +1219,9 @@ window.processCheckout = async function (payload) {
         let localCounter = parseInt(localStorage.getItem('takodeal_offline_rcpt_count')) || 1;
         localStorage.setItem('takodeal_offline_rcpt_count', localCounter + 1);
         let randomHash = Math.random().toString(36).substring(2, 5).toUpperCase();
-        const receiptId = `${dateStr}-${localCounter.toString().padStart(4, '0')}-${randomHash}`;
+        
+        // 🔥 OVERRIDE OR# WITH MOBILE APP RECEIPT CODE IF IT EXISTS!
+        const receiptId = payload.mobileOrderCode || `${dateStr}-${localCounter.toString().padStart(4, '0')}-${randomHash}`;
 
         // Stamp the payload with the exact local time and receipt ID
         payload.receiptId = receiptId;
@@ -4472,6 +4474,10 @@ window.acceptMobileOrder = async function(docId) {
     });
 
     window.activeMobileOrderId = docId;
+    window.activeMobileOrderCode = order.orderCode || docId; // Pulls TKDL-12345
+    window.isActiveOrderMobile = true;
+
+    let incomingOrderType = order.orderType || 'Take-Out';
 
     if (typeof renderCart === 'function') renderCart();
     closeModal('mobileOrdersModal');
