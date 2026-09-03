@@ -574,21 +574,6 @@ window.loadSalesHistory = async function() {
 };
 
 // ========================================================
-// 📦 9. B2B SUPPLY INITIALIZER
-// ========================================================
-window.loadB2BSupply = async function() {
-    // This primes the B2B screen when the tab is clicked
-    window.b2bCart = [];
-    if(typeof window.renderB2bCart === 'function') {
-        window.renderB2bCart();
-    }
-    let searchBox = document.getElementById('b2bSearch');
-    let qtyBox = document.getElementById('b2bQty');
-    if (searchBox) searchBox.value = '';
-    if (qtyBox) qtyBox.value = '';
-};
-
-// ========================================================
 // 📦 10. LIVE INVENTORY ENGINE (FRANCHISEE LOCKED)
 // ========================================================
 window.loadLiveInventory = async function() {
@@ -645,5 +630,78 @@ window.loadLiveInventory = async function() {
     } catch (e) {
         console.error("Inventory Error:", e);
         tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:red; padding: 20px;">Failed to load inventory data.</td></tr>';
+    }
+};
+
+// ========================================================
+// 📦 9. B2B SUPPLY INITIALIZER & DELIVERY TRACKER
+// ========================================================
+window.loadB2BSupply = async function() {
+    // 1. Reset the Request Cart
+    window.b2bCart = [];
+    if(typeof window.renderB2bCart === 'function') window.renderB2bCart();
+    
+    let searchBox = document.getElementById('b2bSearch');
+    let qtyBox = document.getElementById('b2bQty');
+    if (searchBox) searchBox.value = '';
+    if (qtyBox) qtyBox.value = '';
+
+    // 2. Fetch Incoming Deliveries (Walled Garden Lock)
+    const container = document.getElementById('b2bDeliveriesContainer');
+    if (!container) return;
+    
+    container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b;">⏳ Checking for deliveries...</div>';
+
+    try {
+        const q = query(collection(db, "purchase_orders"), 
+            where("branch", "==", window.sessionUser.branch),
+            orderBy("timestamp", "desc"),
+            limit(20)
+        );
+        
+        const snap = await getDocs(q);
+        if (snap.empty) {
+            container.innerHTML = '<div style="text-align:center; padding:40px 20px; color:#64748b;"><div style="font-size: 30px; margin-bottom:10px;">📭</div>No recent requests or incoming deliveries.</div>';
+            return;
+        }
+
+        let html = '';
+        snap.forEach(docSnap => {
+            let order = docSnap.data();
+            let docId = docSnap.id;
+            let dateStr = order.timestamp ? order.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : 'Just now';
+            let status = order.status || 'Pending';
+            
+            // Generate Visual Status Badges
+            let statusBadge = '';
+            if (status === 'Pending') statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">⏳ PENDING</span>`;
+            else if (status === 'Dispatched') statusBadge = `<span style="background:#dbeafe; color:#2563eb; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">🚚 DISPATCHED</span>`;
+            else if (status === 'Completed' || status === 'Received') statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">✅ RECEIVED</span>`;
+            else statusBadge = `<span style="background:#f1f5f9; color:#475569; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">${status.toUpperCase()}</span>`;
+
+            // Build Item List
+            let itemsHtml = '';
+            if (order.items && Array.isArray(order.items)) {
+                order.items.forEach(item => {
+                    itemsHtml += `<div style="font-size:13px; color:#475569; margin-top:6px; padding-left: 10px; border-left: 2px solid #cbd5e1;"><strong>${item.displayQty || item.rawQty || item.qty} ${item.displayUom || item.uom || 'units'}</strong> - ${item.name || item.itemName}</div>`;
+                });
+            }
+
+            // Compile the Delivery Card
+            html += `
+                <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; margin-bottom: 15px; background: #f8fafc; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #cbd5e1; padding-bottom: 10px; margin-bottom: 10px;">
+                        <div style="font-size: 11px; font-weight: 900; color: #94a3b8; letter-spacing: 1px;">ORDER ID: ${docId.substring(0,8).toUpperCase()}</div>
+                        ${statusBadge}
+                    </div>
+                    <div style="font-size: 13px; font-weight: bold; color: #1e293b; margin-bottom: 10px;">📅 Requested: ${dateStr}</div>
+                    ${itemsHtml}
+                </div>
+            `;
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        console.error("Delivery Load Error:", e);
+        container.innerHTML = '<div style="text-align:center; padding:20px; color:#dc2626; font-weight:bold;">Error loading deliveries. Check console.</div>';
     }
 };
