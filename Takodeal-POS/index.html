@@ -2665,8 +2665,12 @@ window.loadSalesDashboard = async function () {
           }
       }
 
+      // 🔥 MOBILE APP BADGE ENGINE
+      let isMobile = tx.isMobileOrder || (tx.receiptId && tx.receiptId.startsWith("TKDL-"));
+      let mobileBadge = isMobile ? `<br><span style="background:#0ea5e9; color:white; padding:2px 6px; border-radius:4px; font-size:10px; font-weight:bold; display:inline-block; margin-top:4px;">📱 APP ORDER</span>` : '';
+
       tBody += `<tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s; ${tx.status === 'Voided' ? 'opacity: 0.5;' : ''}" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-        <td style="padding: 15px 25px; font-weight: 900; color: #334155; font-family: monospace; font-size: 13px; white-space: nowrap;">${tx.receiptId || 'N/A'} ${kdsBadge}</td>
+        <td style="padding: 15px 25px; font-weight: 900; color: #334155; font-family: monospace; font-size: 13px; white-space: nowrap;">${tx.receiptId || 'N/A'} ${kdsBadge} ${mobileBadge}</td>
         <td style="padding: 15px 25px; font-weight: bold; color: #475569; white-space: nowrap;">${tx.customerName || '-'}</td>
         <td style="padding: 15px 25px; color: #0ea5e9; font-weight: bold; white-space: nowrap;">${tx.paymentMethod || 'Unknown'} ${verifyLabel}</td>
         <td style="padding: 15px 25px; white-space: nowrap;">${statusBadge}</td>
@@ -3119,7 +3123,12 @@ window.clearCart = function() {
     if (!window.cart || window.cart.length === 0) return; 
     if (confirm("Clear order?")) { 
         window.cart = []; 
-        window.isResumedParkedOrder = false; // 🔥 RESET TRACKER
+        window.isResumedParkedOrder = false; 
+        
+        // 🔥 WIPE MOBILE FLAGS
+        window.activeMobileOrderId = null;
+        window.activeMobileOrderCode = null;
+        window.isActiveOrderMobile = false;
         
         let otSelect = document.getElementById('mainOrderType');
         if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
@@ -3412,7 +3421,9 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         customerName: document.getElementById('finalCustomerName').value,
         amountReceived: window.amountReceivedStr,
         cart: cart,
-        wasParked: window.isResumedParkedOrder || false // 🔥 INJECTS THE HISTORY TRACKER!
+        wasParked: window.isResumedParkedOrder || false,
+        isMobileOrder: window.isActiveOrderMobile || false,      // 🔥 INJECT
+        mobileOrderCode: window.activeMobileOrderCode || null// 🔥 INJECTS THE HISTORY TRACKER!
       };
 
       let receiptId = await window.processCheckout(payload);
@@ -3425,7 +3436,9 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                 completedAt: window.serverTimestamp()
             }).catch(e => console.log("Mobile update queued for background sync.", e));
             
-            window.activeMobileOrderId = null; 
+            window.activeMobileOrderId = null;
+            window.activeMobileOrderCode = null;
+            window.isActiveOrderMobile = false;
         }
 
         let totalBallsSold = 0;
@@ -3746,6 +3759,9 @@ window.parkOrder = async function() {
             let otSelect = document.getElementById('mainOrderType');
             if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
 
+            window.activeMobileOrderId = null;
+            window.activeMobileOrderCode = null;
+            window.isActiveOrderMobile = false;
             window.updateParkedBadge(); 
             window.printParkedReceipt(parkedId); 
             alert("✅ Order Parked Securely!"); 
@@ -3802,7 +3818,12 @@ window.resumeOrder = async function(docId) {
     
     cart = order.items; 
     window.isResumedParkedOrder = true; // 🔥 THE NEW TRACKER FLAG
-    
+
+    // 🔥 RESTORE MOBILE FLAGS IF APPLICABLE
+    window.isActiveOrderMobile = order.isMobileOrder || false;
+    window.activeMobileOrderCode = order.mobileOrderCode || null;
+    window.activeMobileOrderId = order.mobileOrderId || null;
+ 
     let otSelect = document.getElementById('mainOrderType');
     if (otSelect && order.orderType) otSelect.value = order.orderType.replace(" (PARKED)", "").trim();
     let custName = document.getElementById('finalCustomerName');
