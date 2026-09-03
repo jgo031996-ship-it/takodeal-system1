@@ -161,6 +161,7 @@ window.switchView = function(viewId) {
     if (viewId === 'b2b') window.loadB2BSupply();
     if (viewId === 'payroll') window.loadPayrollGenerator();
     if (viewId === 'history') window.loadSalesHistory();
+    if (viewId === 'inv-overview') window.loadLiveInventory();
 };
 
 window.refreshActiveData = function() {
