@@ -10259,12 +10259,12 @@ window.generateSchedule = async function() {
 };
 
 window.openSwapModal = async function(day, branch, shiftId) {
-    let schedObj = window.currentSchedule;
+    let schedObj = currentSchedule; // 🔥 THE FIX: No window prefix
     if (!schedObj || !schedObj[day] || !schedObj[day][branch]) return alert("Schedule data error.");
     
     let dayData = schedObj[day][branch];
     let curStaff = dayData.scheduled[shiftId];
-    window.swapData = { day, branch, shiftId, curStaff };
+    swapData = { day, branch, shiftId, curStaff }; // 🔥 THE FIX: Maps to module variable
 
     let profileFunc = window.findEmployeeProfile || function() { return null; };
     let currentProfile = profileFunc(curStaff) || { scheduleNickname: curStaff };
@@ -10278,8 +10278,8 @@ window.openSwapModal = async function(day, branch, shiftId) {
         let staff = dayData.scheduled[sId];
         if (staff !== "N/A" && staff !== "UNFILLED" && staff !== curStaff) {
             let shiftName = sId;
-            if (window.branchConfig && window.branchConfig[branch]) {
-                let foundShift = window.branchConfig[branch].find(s => s.id === sId);
+            if (branchConfig && branchConfig[branch]) {
+                let foundShift = branchConfig[branch].find(s => s.id === sId);
                 if (foundShift) shiftName = foundShift.name;
             }
             let realProfile = profileFunc(staff) || { scheduleNickname: staff };
@@ -10303,7 +10303,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
     }
 
     // 3. 🌍 RELIEF STAFF
-    let empList = window.employees || [];
+    let empList = employees || [];
     let otherStaff = empList.filter(e => e.branch !== branch);
     if (otherStaff.length > 0) {
         optionsHtml += '<optgroup label="🌍 Pull Relief Staff (Other Branches)">';
@@ -10364,9 +10364,9 @@ window.openSwapModal = async function(day, branch, shiftId) {
 };
 
 window.clearSwapBadge = function() {
-    const { day, branch, shiftId } = window.swapData;
-    if (window.currentSchedule[day] && window.currentSchedule[day][branch] && window.currentSchedule[day][branch].swaps) {
-        delete window.currentSchedule[day][branch].swaps[shiftId];
+    const { day, branch, shiftId } = swapData; // 🔥 THE FIX: Removed window prefix
+    if (currentSchedule[day] && currentSchedule[day][branch] && currentSchedule[day][branch].swaps) {
+        delete currentSchedule[day][branch].swaps[shiftId];
         window.saveToCloud();
         window.renderTables();
         Swal.close();
@@ -10375,7 +10375,7 @@ window.clearSwapBadge = function() {
 };
 
 window.executeSwap = async function(target, markAsSwap) {
-    const { day, branch, shiftId, curStaff } = window.swapData;
+    const { day, branch, shiftId, curStaff } = swapData; // 🔥 THE FIX: Removed window prefix
     let newStaff = null;
 
     if (!currentSchedule[day][branch].swaps) currentSchedule[day][branch].swaps = {};
@@ -10423,7 +10423,7 @@ window.executeSwap = async function(target, markAsSwap) {
 window.closeModal = function() { 
     let modal = document.getElementById('swapModal') || document.getElementById('swapShiftModal');
     if (modal) modal.style.display = 'none'; 
-    window.swapData = null; 
+    swapData = null; // 🔥 THE FIX: Removed window prefix
 };
 
 window.switchTab = function(branch) {
@@ -10499,9 +10499,9 @@ window.renderTables = function() {
             let offHtml = offStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin-bottom:4px; display:inline-block; color:#dc2626; background:#fef2f2; border:1px solid #fca5a5;" onclick="window.removeUnavailable('${fullDateStr}', '${u.name}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
             let suspHtml = suspStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin-bottom:4px; display:inline-block; color:#b91c1c; background:#fee2e2; border:1px solid #f87171;" onclick="window.removeUnavailable('${fullDateStr}', '${u.name}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
 
-            // 🔥 NEW: RELIEF / PULL OUT DETECTOR 🔥
+            // 🔥 THE FIX: Removed window prefix so it safely reads local module variables!
             let pulledOutHtml = "";
-            let myStaffProfiles = window.employees.filter(e => e.branch === branch).map(e => e.scheduleNickname || e.name);
+            let myStaffProfiles = employees.filter(e => e.branch === branch).map(e => e.scheduleNickname || e.name);
             
             for (let otherBranch in currentSchedule[day]) {
                 if (otherBranch !== branch) {
