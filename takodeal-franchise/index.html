@@ -346,6 +346,33 @@
         </div>
     </div>
 
+    <!-- VIEW: LIVE INVENTORY OVERVIEW -->
+    <div id="view-inv-overview" class="view-container">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; color: #1e293b;">📦 Live Stock Levels</h3>
+                    <button class="btn-refresh" style="background: #10b981; color: white;" onclick="window.loadLiveInventory()">🔄 Sync Stock</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Item Name</th>
+                                <th>Category</th>
+                                <th>Current Stock</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inventoryTableBody">
+                            <tr><td colspan="4" style="text-align:center; padding: 40px; color:#64748b;">Loading inventory...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- VIEW: B2B SUPPLY ORDERS -->
     <div id="view-b2b" class="view-container">
         <div style="max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
@@ -388,6 +415,8 @@
     </div>
 
   </div> <!-- End Content Area -->
+
+  
 
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <!-- Link to the Franchisee Specific JS File that we will create next -->
