@@ -928,11 +928,13 @@
                     let catName = (item.category || "Other").trim();
                     
                     // 🔥 1. THE SINGLE SOURCE OF TRUTH: Obey the Manager App Checkboxes!
+                    /*
                     if (allowedCats.length > 0) {
                         let catClean = catName.toLowerCase().replace(/\s+/g, '');
                         let isAllowed = allowedCats.some(allowed => allowed.toLowerCase().replace(/\s+/g, '') === catClean);
                         if (!isAllowed) return; // Block it if it wasn't checked in the Manager App!
                     }
+                    */
                     
                     // 2. Hide items manually disabled
                     if (item.isAvailable === false) return;
