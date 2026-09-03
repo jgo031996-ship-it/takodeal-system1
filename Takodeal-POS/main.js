@@ -9166,15 +9166,21 @@ window.confirmPrepCart = async function() {
 window.initSignaturePad = function() {
     // 1. Smartly detect WHICH modal is currently visible on the screen!
     let activeCanvasId = null;
-    if (document.getElementById('signatureCanvas') && document.getElementById('signatureCanvas').offsetWidth > 0) {
-        activeCanvasId = 'signatureCanvas'; // Sanctions / NTE Modal
-    } else if (document.getElementById('sigCanvas') && document.getElementById('sigCanvas').offsetWidth > 0) {
-        activeCanvasId = 'sigCanvas'; // Bulletin Board Modal (New)
-    } else if (document.getElementById('bulletinCanvas') && document.getElementById('bulletinCanvas').offsetWidth > 0) {
-        activeCanvasId = 'bulletinCanvas'; // Bulletin Board Modal (Old Backup)
+    
+    // SweetAlert completely destroys elements when closed, so if 'sigCanvas' exists in the DOM, it is 100% active!
+    if (document.getElementById('sigCanvas')) {
+        activeCanvasId = 'sigCanvas';
+    } else if (document.getElementById('bulletinCanvas') && document.getElementById('bulletinCanvas').offsetParent !== null) {
+        activeCanvasId = 'bulletinCanvas';
+    } else if (document.getElementById('signatureCanvas') && document.getElementById('signatureCanvas').offsetParent !== null) {
+        // offsetParent !== null is the most reliable JS way to check if an element is currently visible on screen
+        activeCanvasId = 'signatureCanvas';
     }
 
-    if (!activeCanvasId) return;
+    if (!activeCanvasId) {
+        console.error("Signature pad failed: No visible canvas detected.");
+        return;
+    }
 
     let oldCanvas = document.getElementById(activeCanvasId);
     
@@ -9183,6 +9189,7 @@ window.initSignaturePad = function() {
     oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
     
     // 3. 🔥 THE MAGIC FIX: Force the internal drawing resolution to match the physical screen size!
+    // We use a fallback of 300x150 because SweetAlert animations might temporarily report width as 0!
     newCanvas.width = newCanvas.offsetWidth || 300;
     newCanvas.height = newCanvas.offsetHeight || 150;
     
@@ -9230,7 +9237,10 @@ window.initSignaturePad = function() {
         const pos = getPos(e);
         ctx.beginPath();
         ctx.moveTo(pos.x, pos.y);
-        e.preventDefault(); // CRITICAL: Stops the tablet screen from pulling/scrolling while drawing!
+        
+        // CRITICAL: Stops the tablet screen from pulling/scrolling while drawing!
+        // But only prevent default for touch events so mouse clicks on PCs don't break!
+        if (e.cancelable && e.type.includes('touch')) e.preventDefault(); 
     };
 
     const draw = (e) => {
@@ -9238,7 +9248,8 @@ window.initSignaturePad = function() {
         const pos = getPos(e);
         ctx.lineTo(pos.x, pos.y);
         ctx.stroke();
-        e.preventDefault();
+        
+        if (e.cancelable && e.type.includes('touch')) e.preventDefault();
     };
 
     const stopPosition = () => {
