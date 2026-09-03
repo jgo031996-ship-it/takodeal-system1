@@ -519,3 +519,130 @@ window.loadPayrollGenerator = async function() {
         tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding:30px; color:#64748b;">No shifts logged in this period.</td></tr>';
     } catch(e) { console.error(e); }
 };
+
+// ========================================================
+// 📈 8. SALES HISTORY ENGINE (FRANCHISEE LOCKED)
+// ========================================================
+window.loadSalesHistory = async function() {
+    const tbody = document.getElementById('salesHistoryBody');
+    if (!tbody) return; // Safety check if HTML isn't built yet
+    
+    let startVal = document.getElementById('globalStartDate').value;
+    let endVal = document.getElementById('globalEndDate').value;
+    let startOfDay = new Date(startVal + 'T00:00:00');
+    let endOfDay = new Date(endVal + 'T23:59:59');
+
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px;">⏳ Loading history...</td></tr>';
+
+    try {
+        // STRICT WALLED GARDEN QUERY
+        const q = query(collection(db, "transactions"), 
+            where("branch", "==", window.sessionUser.branch),
+            where("timestamp", ">=", startOfDay),
+            where("timestamp", "<=", endOfDay)
+        );
+        
+        const snap = await getDocs(q);
+        
+        // Sort by newest first in Javascript to avoid Firebase Index requirements
+        let docs = [];
+        snap.forEach(d => docs.push({id: d.id, ...d.data()}));
+        docs.sort((a, b) => b.timestamp - a.timestamp);
+
+        let html = '';
+        docs.forEach(tx => {
+            let timeStr = tx.timestamp ? tx.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+            let statusStyle = tx.status === 'Voided' ? 'color:#dc2626; text-decoration:line-through; background:#fef2f2;' : 'color:#334155;';
+            
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; ${statusStyle}">
+                    <td>${tx.receiptNumber || tx.id.substring(0,8)}</td>
+                    <td>${timeStr}</td>
+                    <td>${tx.cashier || 'Unknown'}</td>
+                    <td>${tx.paymentMethod || 'Cash'}</td>
+                    <td style="font-weight:bold; text-align:right;">₱${parseFloat(tx.netTotal || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = html || '<tr><td colspan="5" style="text-align:center; padding: 30px; color:#64748b;">No transactions found for this date range.</td></tr>';
+    } catch (e) {
+        console.error("History Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:red; padding: 20px;">Failed to load sales history.</td></tr>';
+    }
+};
+
+// ========================================================
+// 📦 9. B2B SUPPLY INITIALIZER
+// ========================================================
+window.loadB2BSupply = async function() {
+    // This primes the B2B screen when the tab is clicked
+    window.b2bCart = [];
+    if(typeof window.renderB2bCart === 'function') {
+        window.renderB2bCart();
+    }
+    let searchBox = document.getElementById('b2bSearch');
+    let qtyBox = document.getElementById('b2bQty');
+    if (searchBox) searchBox.value = '';
+    if (qtyBox) qtyBox.value = '';
+};
+
+// ========================================================
+// 📦 10. LIVE INVENTORY ENGINE (FRANCHISEE LOCKED)
+// ========================================================
+window.loadLiveInventory = async function() {
+    const tbody = document.getElementById('inventoryTableBody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px;">⏳ Checking stock levels...</td></tr>';
+
+    try {
+        // WALLED GARDEN: Only fetch items belonging to this specific franchise!
+        const q = query(collection(db, "inventory"), 
+            where("branch", "==", window.sessionUser.branch)
+        );
+        
+        const snap = await getDocs(q);
+        
+        let html = '';
+        
+        if (snap.empty) {
+            // AUTOMATIC ZERO: If HQ hasn't delivered anything yet, show this empty state.
+            html = `
+                <tr>
+                    <td colspan="4" style="text-align:center; padding: 40px; color:#64748b;">
+                        <div style="font-size: 40px; margin-bottom: 10px;">📦</div>
+                        <h3 style="margin: 0; color: #1e293b;">Awaiting HQ Delivery</h3>
+                        <p style="margin-top: 5px;">Your stock is currently zero. Please place a B2B order with HQ.</p>
+                    </td>
+                </tr>
+            `;
+        } else {
+            // Render their actual stock if deliveries have arrived
+            snap.forEach(doc => {
+                let item = doc.data();
+                let currentQty = parseFloat(item.quantity || 0);
+                let threshold = parseFloat(item.lowStockThreshold || 10);
+                
+                // Turn text red if they are running low
+                let isLow = currentQty <= threshold;
+                let stockStyle = isLow ? 'color:#dc2626; font-weight:bold;' : 'color:#10b981; font-weight:bold;';
+                let statusBadge = isLow ? '<span class="nav-badge" style="margin:0;">LOW STOCK</span>' : '<span style="background:#10b981; color:white; padding:3px 8px; border-radius:12px; font-size:10px; font-weight:bold;">GOOD</span>';
+
+                html += `
+                    <tr>
+                        <td style="font-weight: 600; color: #1e293b;">${item.itemName || 'Unknown Item'}</td>
+                        <td>${item.category || 'Uncategorized'}</td>
+                        <td><span style="${stockStyle}">${currentQty} ${item.unit || 'pcs'}</span></td>
+                        <td>${statusBadge}</td>
+                    </tr>
+                `;
+            });
+        }
+        
+        tbody.innerHTML = html;
+    } catch (e) {
+        console.error("Inventory Error:", e);
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:red; padding: 20px;">Failed to load inventory data.</td></tr>';
+    }
+};
