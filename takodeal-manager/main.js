@@ -10258,118 +10258,126 @@ window.generateSchedule = async function() {
     });
 };
 
-window.openSwapModal = function(day, branch, shiftId, currentStaff) {
-    window.swapData = { day, branch, shiftId, currentStaff };
+window.openSwapModal = async function(day, branch, shiftId) {
+    let schedObj = window.currentSchedule;
+    if (!schedObj || !schedObj[day] || !schedObj[day][branch]) return alert("Schedule data error.");
     
+    let dayData = schedObj[day][branch];
+    let curStaff = dayData.scheduled[shiftId];
+    window.swapData = { day, branch, shiftId, curStaff };
+
     let profileFunc = window.findEmployeeProfile || function() { return null; };
-    let currentProfile = profileFunc(currentStaff) || { scheduleNickname: currentStaff };
-    let currentDisplayName = currentProfile.scheduleNickname || currentProfile.scheduleName || currentProfile.cashierName || currentStaff;
-    
-    let titleEl = document.getElementById('swapCurrentStaff') || document.getElementById('swapStaffName') || document.getElementById('swapEmpName');
-    if (titleEl) titleEl.innerText = currentDisplayName;
-    
-    const select = document.getElementById('swapSelect') || document.getElementById('swapCandidateSelect') || document.getElementById('swapTarget');
-    if (!select) return; 
-    
-    select.innerHTML = '<option value="">-- Choose Staff --</option>';
+    let currentProfile = profileFunc(curStaff) || { scheduleNickname: curStaff };
+    let currentDisplayName = currentProfile.scheduleNickname || currentProfile.scheduleName || currentProfile.cashierName || curStaff;
 
-    let schedObj = window.currentSchedule || (typeof currentSchedule !== 'undefined' ? currentSchedule : null);
-    
-    if (!schedObj) {
-        console.error("🚨 CRASH PREVENTED: currentSchedule data is missing globally.");
-        return alert("Error: Schedule data not loaded yet.");
-    }
-
-    let dayData;
-    if (schedObj[day] && schedObj[day][branch]) {
-        dayData = schedObj[day][branch];
-    } else if (schedObj[branch]) {
-        console.warn(`⚠️ Warning: 'day' (${day}) not found, but found '${branch}'. Adjusting path automatically.`);
-        dayData = schedObj[branch];
-    } else {
-        console.error("🚨 DATA MISMATCH IN openSwapModal!");
-        return alert(`Error pulling data for Day: ${day}, Branch: ${branch}. Check F12 Console.`);
-    }
+    let optionsHtml = '<option value="">-- Choose Staff --</option>';
 
     // 1. 🔄 SCHEDULED STAFF
-    let optGroupSched = document.createElement('optgroup');
-    optGroupSched.label = "🔄 Swap with Scheduled Staff";
-    
-    if (dayData.scheduled) {
-        for (let sId in dayData.scheduled) {
-            let staff = dayData.scheduled[sId];
-            if (staff !== "N/A" && staff !== "UNFILLED" && staff !== currentStaff) {
-                let shiftName = sId;
-                if (window.branchConfig && window.branchConfig[branch]) {
-                    let foundShift = window.branchConfig[branch].find(s => s.id === sId);
-                    if (foundShift) shiftName = foundShift.name;
-                }
-                
-                let realProfile = profileFunc(staff) || { scheduleNickname: staff };
-                let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || staff;
-
-                let opt = document.createElement('option');
-                opt.value = `shift_${sId}`;  
-                opt.innerText = `${displayName} (from ${shiftName})`;
-                optGroupSched.appendChild(opt);
+    optionsHtml += '<optgroup label="🔄 Swap with Scheduled Staff">';
+    for (let sId in dayData.scheduled) {
+        let staff = dayData.scheduled[sId];
+        if (staff !== "N/A" && staff !== "UNFILLED" && staff !== curStaff) {
+            let shiftName = sId;
+            if (window.branchConfig && window.branchConfig[branch]) {
+                let foundShift = window.branchConfig[branch].find(s => s.id === sId);
+                if (foundShift) shiftName = foundShift.name;
             }
+            let realProfile = profileFunc(staff) || { scheduleNickname: staff };
+            let displayName = realProfile.scheduleNickname || realProfile.cashierName || staff;
+            optionsHtml += `<option value="shift_${sId}">${displayName} (from ${shiftName})</option>`;
         }
-        if (optGroupSched.children.length > 0) select.appendChild(optGroupSched);
     }
+    optionsHtml += '</optgroup>';
 
     // 2. ☕ STANDBY/REST STAFF
-    let optGroupRest = document.createElement('optgroup');
-    optGroupRest.label = "☕ Assign from Standby";
-    
     if (dayData.rest && dayData.rest.length > 0) {
+        optionsHtml += '<optgroup label="☕ Assign from Standby">';
         dayData.rest.forEach((rStaff, index) => {
-            if (rStaff !== currentStaff) {
+            if (rStaff !== curStaff) {
                 let realProfile = profileFunc(rStaff) || { scheduleNickname: rStaff };
-                let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || rStaff;
-                
-                let opt = document.createElement('option');
-                opt.value = `rest_${index}`; 
-                opt.innerText = `${displayName} (Standby)`;
-                optGroupRest.appendChild(opt);
+                let displayName = realProfile.scheduleNickname || realProfile.cashierName || rStaff;
+                optionsHtml += `<option value="rest_${index}">${displayName} (Standby)</option>`;
             }
         });
-        if (optGroupRest.children.length > 0) select.appendChild(optGroupRest);
+        optionsHtml += '</optgroup>';
     }
 
-    // 3. 🌍 RELIEF STAFF (Other Branches)
-    let optGroupOther = document.createElement('optgroup');
-    optGroupOther.label = "🌍 Pull Relief Staff (Other Branches)";
-    
-    let empList = window.employees || (typeof employees !== 'undefined' ? employees : []);
+    // 3. 🌍 RELIEF STAFF
+    let empList = window.employees || [];
     let otherStaff = empList.filter(e => e.branch !== branch);
-    
-    otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-        let realProfile = profileFunc(e.name) || e;
-        let displayName = realProfile.scheduleNickname || realProfile.scheduleName || realProfile.cashierName || e.name;
+    if (otherStaff.length > 0) {
+        optionsHtml += '<optgroup label="🌍 Pull Relief Staff (Other Branches)">';
+        otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
+            let realProfile = profileFunc(e.name) || e;
+            let displayName = realProfile.scheduleNickname || realProfile.cashierName || e.name;
+            optionsHtml += `<option value="global_${e.name}">${displayName} (from ${e.branch})</option>`;
+        });
+        optionsHtml += '</optgroup>';
+    }
 
-        let opt = document.createElement('option');
-        opt.value = `global_${e.name}`; 
-        opt.innerText = `${displayName} (from ${e.branch})`;
-        optGroupOther.appendChild(opt);
+    // 🔥 THE ERASER: Check if there's an existing swap badge to clear
+    let hasSwapBadge = dayData.swaps && dayData.swaps[shiftId];
+    let clearBadgeBtn = hasSwapBadge 
+        ? `<button type="button" onclick="window.clearSwapBadge()" style="width: 100%; margin-top: 15px; padding: 12px; background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s; box-shadow: 0 2px 4px rgba(220, 38, 38, 0.1);">🧹 Clear "Swapped" Badge</button>` 
+        : '';
+
+    const { value: formValues, isConfirmed } = await Swal.fire({
+        title: '🔄 Reassign / Swap Shift',
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <div style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px;">
+                    <span style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: bold;">Currently Assigned:</span><br>
+                    <strong style="color: #0f172a; font-size: 16px;">${currentDisplayName}</strong>
+                </div>
+                
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Select Staff to Assign:</label>
+                <select id="swalSwapTarget" style="width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #cbd5e1; margin-top: 5px; margin-bottom: 15px; outline: none; font-weight: bold; color: #1e293b; background: white; cursor: pointer;">
+                    ${optionsHtml}
+                </select>
+
+                <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; color: #d97706; cursor: pointer; background: #fffbeb; padding: 12px; border-radius: 8px; border: 1px dashed #fcd34d;">
+                    <input type="checkbox" id="swalMarkAsSwap" style="width: 18px; height: 18px; accent-color: #d97706; cursor: pointer;">
+                    Add "Swapped w/ ${currentDisplayName}" badge
+                </label>
+
+                ${clearBadgeBtn}
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Confirm Assignment',
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#94a3b8',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            let target = document.getElementById('swalSwapTarget').value;
+            if (!target) { Swal.showValidationMessage('Please select a staff member to assign.'); return false; }
+            return {
+                target: target,
+                markSwap: document.getElementById('swalMarkAsSwap').checked
+            };
+        }
     });
-    
-    if (optGroupOther.children.length > 0) select.appendChild(optGroupOther);
 
-    let modal = document.getElementById('swapModal') || document.getElementById('swapShiftModal');
-    if (modal) modal.style.display = 'flex';
+    if (isConfirmed && formValues) {
+        window.executeSwap(formValues.target, formValues.markSwap);
+    }
 };
 
-window.executeSwap = async function() {
-    const selectEl = document.getElementById('swapSelect') || document.getElementById('swapCandidateSelect') || document.getElementById('swapTarget');
-    const target = selectEl ? selectEl.value : null;
-
-    if (!target) return alert("Select someone.");
-
+window.clearSwapBadge = function() {
     const { day, branch, shiftId } = window.swapData;
-    const curStaff = currentSchedule[day][branch].scheduled[shiftId];
+    if (window.currentSchedule[day] && window.currentSchedule[day][branch] && window.currentSchedule[day][branch].swaps) {
+        delete window.currentSchedule[day][branch].swaps[shiftId];
+        window.saveToCloud();
+        window.renderTables();
+        Swal.close();
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Badge Cleared!', showConfirmButton: false, timer: 2000});
+    }
+};
+
+window.executeSwap = async function(target, markAsSwap) {
+    const { day, branch, shiftId, curStaff } = window.swapData;
     let newStaff = null;
 
-    // 🔥 THE NEW SWAP TRACKER MEMORY 🔥
     if (!currentSchedule[day][branch].swaps) currentSchedule[day][branch].swaps = {};
 
     if (target.startsWith('shift_')) {
@@ -10378,10 +10386,10 @@ window.executeSwap = async function() {
         currentSchedule[day][branch].scheduled[shiftId] = newStaff;
         currentSchedule[day][branch].scheduled[tSId] = curStaff;
 
-        // Remember who was originally here
-        if (!currentSchedule[day][branch].swaps[shiftId]) currentSchedule[day][branch].swaps[shiftId] = curStaff;
-        if (!currentSchedule[day][branch].swaps[tSId]) currentSchedule[day][branch].swaps[tSId] = newStaff;
-
+        if (markAsSwap) {
+            currentSchedule[day][branch].swaps[shiftId] = curStaff;
+            currentSchedule[day][branch].swaps[tSId] = newStaff;
+        }
     } else if (target.startsWith('global_')) {
         newStaff = target.replace('global_', '');
         currentSchedule[day][branch].scheduled[shiftId] = newStaff;
@@ -10389,8 +10397,7 @@ window.executeSwap = async function() {
         if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !currentSchedule[day][branch].rest.includes(curStaff)) {
             currentSchedule[day][branch].rest.push(curStaff);
         }
-
-        if (!currentSchedule[day][branch].swaps[shiftId]) currentSchedule[day][branch].swaps[shiftId] = curStaff;
+        if (markAsSwap) currentSchedule[day][branch].swaps[shiftId] = curStaff;
 
     } else if (target.startsWith('rest_')) {
         const rIdx = parseInt(target.replace('rest_', ''));
@@ -10402,48 +10409,15 @@ window.executeSwap = async function() {
         } else {
             currentSchedule[day][branch].rest.splice(rIdx, 1);
         }
-
-        if (!currentSchedule[day][branch].swaps[shiftId]) currentSchedule[day][branch].swaps[shiftId] = curStaff;
+        if (markAsSwap) currentSchedule[day][branch].swaps[shiftId] = curStaff;
     }
 
-    window.closeModal();
     window.renderTables();
-
     if (typeof window.updateStaffDisplay === 'function') window.updateStaffDisplay();
     if (typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
-    if (typeof window.updateUnavailabilityList === 'function') window.updateUnavailabilityList();
     if (typeof window.saveToCloud === 'function') window.saveToCloud();
 
-    try {
-        let targetDate = new Date(currentYear, currentMonth - 1, day);
-        let startOfDay = new Date(targetDate); startOfDay.setHours(0,0,0,0);
-        let endOfDay = new Date(targetDate); endOfDay.setHours(23,59,59,999);
-
-        const reqQ = window.query(window.collection(window.db, "staff_requests"),
-            window.where("explanationCause", "==", "Tardiness / Late Arrival"),
-            window.where("status", "==", "Pending")
-        );
-        const reqSnap = await window.getDocs(reqQ);
-
-        let deletePromises = [];
-        reqSnap.forEach(docSnap => {
-            let r = docSnap.data();
-            let rTime = r.timestamp ? (r.timestamp.toDate ? r.timestamp.toDate() : new Date(r.timestamp)) : null;
-            if (rTime && rTime >= startOfDay && rTime <= endOfDay) {
-                if (r.staffName === curStaff || r.staffName === newStaff) {
-                    deletePromises.push(window.deleteDoc(window.doc(window.db, "staff_requests", docSnap.id)));
-                }
-            }
-        });
-        await Promise.all(deletePromises);
-
-        if (typeof window.loadAttendanceLogs === 'function') window.loadAttendanceLogs();
-        if (typeof window.loadPayrollDashboard === 'function') window.loadPayrollDashboard();
-        if (typeof window.loadInbox === 'function') window.loadInbox();
-
-    } catch(e) {
-        console.error("Auto-Cleanup Error:", e);
-    }
+    Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Shift Reassigned!', showConfirmButton: false, timer: 2000});
 };
 
 window.closeModal = function() { 
@@ -10473,14 +10447,13 @@ window.renderTables = function() {
     const contentWrap = document.createElement("div");
     container.appendChild(tabBox); container.appendChild(contentWrap);
 
-    // 🔥 THE ORDERING FIX: Use globalActiveBranches!
     let branchesToRender = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : Object.keys(branchConfig);
 
     branchesToRender.forEach(branch => {
         if (!branchConfig[branch]) return;
         if (!window.isBranchAllowed(branch)) return; // 🔥 SECURITY LOCK
 
-        const isAct = (branch === currentActiveTab); // Check memory!
+        const isAct = (branch === currentActiveTab); 
         const btn = document.createElement("button");
         btn.className = `tab-btn ${isAct ? 'active' : ''}`; btn.innerText = `${branch} Schedule`; btn.id = `btn-${branch}`;
         btn.onclick = () => window.switchTab(branch); tabBox.appendChild(btn);
@@ -10489,10 +10462,9 @@ window.renderTables = function() {
         cBox.className = `tab-content ${isAct ? 'active' : ''}`; cBox.id = `content-${branch}`;
         const activeShifts = branchConfig[branch].filter(s => s.active);
 
-        // 🔥 ADDED THE SUSPENDED / AWOL COLUMN HEADER 🔥
         let tableHTML = `<table class="sched-table"><thead><tr><th class="date-col">Date</th>`;
         activeShifts.forEach(s => tableHTML += `<th>${s.name}</th>`);
-        tableHTML += `<th>Standby</th><th>Off / Leave</th><th>Suspended / AWOL</th></tr></thead><tbody>`;
+        tableHTML += `<th>Standby</th><th>Off / Leave / Pulled Out</th><th>Suspended / AWOL</th></tr></thead><tbody>`;
 
         for (let day in currentSchedule) {
             let fullDateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -10504,35 +10476,48 @@ window.renderTables = function() {
             activeShifts.forEach(s => {
                 const val = dayData.scheduled[s.id];
 
-                // 🔥 THE NEW SWAP BADGE INJECTOR
                 let swapBadge = '';
                 if (dayData.swaps && dayData.swaps[s.id] && dayData.swaps[s.id] !== "UNFILLED" && dayData.swaps[s.id] !== "N/A") {
                     let originalStaff = dayData.swaps[s.id];
-                    // If they swap back to the original person, don't show the badge!
                     if (originalStaff !== val) {
                         swapBadge = `<br><span style="font-size:9px; color:#d97706; background:#fffbeb; padding:2px 6px; border-radius:4px; border:1px solid #fcd34d; margin-top:4px; display:inline-block; font-weight:bold; line-height: 1.2; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">Swapped w/ ${originalStaff}</span>`;
                     }
                 }
 
                 if (val === "N/A" || !val) tableHTML += `<td style="background:#f1f5f9; color:#94a3b8; text-align: center;">-</td>`;
-                else if (val === "UNFILLED") tableHTML += `<td style="text-align: center;"><span class="empty-shift" onclick="openSwapModal(${day}, '${branch}', '${s.id}')">Needs Staff</span>${swapBadge}</td>`;
-                else tableHTML += `<td style="text-align: center;"><span class="clickable" onclick="openSwapModal(${day}, '${branch}', '${s.id}')">${val}</span>${swapBadge}</td>`;
+                else if (val === "UNFILLED") tableHTML += `<td style="text-align: center;"><span class="empty-shift" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">Needs Staff</span>${swapBadge}</td>`;
+                else tableHTML += `<td style="text-align: center;"><span class="clickable" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">${val}</span>${swapBadge}</td>`;
             });
 
             let restArr = dayData.rest || [];
             tableHTML += `<td class="rest-day" style="text-align: center;">${restArr.join(", ") || "-"}</td>`;
 
-            // 🔥 THE MAGIC COLUMN SPLITTER & CLICKABLE CHIPS 🔥
             let unArr = dayData.unavailable || [];
-
             let offStaff = unArr.filter(u => !u.status.toLowerCase().includes('suspend') && !u.status.toLowerCase().includes('awol'));
             let suspStaff = unArr.filter(u => u.status.toLowerCase().includes('suspend') || u.status.toLowerCase().includes('awol'));
 
             let offHtml = offStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin-bottom:4px; display:inline-block; color:#dc2626; background:#fef2f2; border:1px solid #fca5a5;" onclick="window.removeUnavailable('${fullDateStr}', '${u.name}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
-
             let suspHtml = suspStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin-bottom:4px; display:inline-block; color:#b91c1c; background:#fee2e2; border:1px solid #f87171;" onclick="window.removeUnavailable('${fullDateStr}', '${u.name}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
 
-            tableHTML += `<td style="text-align: center;">${offHtml || "-"}</td><td style="text-align: center;">${suspHtml || "-"}</td></tr>`;
+            // 🔥 NEW: RELIEF / PULL OUT DETECTOR 🔥
+            let pulledOutHtml = "";
+            let myStaffProfiles = window.employees.filter(e => e.branch === branch).map(e => e.scheduleNickname || e.name);
+            
+            for (let otherBranch in currentSchedule[day]) {
+                if (otherBranch !== branch) {
+                    let otherDayData = currentSchedule[day][otherBranch];
+                    if (otherDayData && otherDayData.scheduled) {
+                        for (let otherSId in otherDayData.scheduled) {
+                            let assignedStaff = otherDayData.scheduled[otherSId];
+                            if (myStaffProfiles.includes(assignedStaff)) {
+                                pulledOutHtml += `<span class="empty-shift" style="cursor:default; font-size:11px; padding:4px 8px; margin-bottom:4px; display:inline-block; color:#d97706; background:#fffbeb; border:1px solid #fcd34d;" title="Pulled out to work at ${otherBranch}">${assignedStaff} (Relief @ ${otherBranch})</span> `;
+                            }
+                        }
+                    }
+                }
+            }
+
+            tableHTML += `<td style="text-align: center;">${offHtml} ${pulledOutHtml}</td><td style="text-align: center;">${suspHtml || "-"}</td></tr>`;
         }
         cBox.innerHTML = tableHTML + `</tbody></table>`;
         contentWrap.appendChild(cBox);
