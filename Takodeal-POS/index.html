@@ -3806,10 +3806,19 @@ window.resumeOrder = async function(docId) {
     window.updateParkedBadge();
 };
 
+window.isDeletingParkedOrder = false; // 🔥 1. Add the global safety lock
+
 window.deleteParkedOrderManually = async function(docId) {
+      // 🔥 2. The Shield: Block rapid double-clicks instantly!
+      if (window.isDeletingParkedOrder) return; 
+
       let order = window.currentParkedOrdersList.find(o => o.id === docId);
+      if (!order) return; // Extra safety check if it's already gone
+
       if(!confirm("⚠️ Are you sure you want to permanently delete this parked order?\n\nIt will be recorded as a Voided Receipt in Shift Sales, and all its ingredients will be auto-replenished into the inventory.")) return;
       
+      window.isDeletingParkedOrder = true; // 🔥 3. Lock the door
+
       try {
           let exactShiftId = (typeof currentShift !== 'undefined' && currentShift && currentShift.shiftId) ? currentShift.shiftId : "UNKNOWN";
           let voidReceiptId = "PRK-VOID-" + Math.floor(Math.random()*10000);
@@ -3826,7 +3835,6 @@ window.deleteParkedOrderManually = async function(docId) {
               paymentMethod: "Unpaid / Deleted",
               customerName: order.name || order.customerName || "Guest",
               cart: order.items || order.cart || [],
-              wasParked: true, // 🔥 INJECTS THE HISTORY TRACKER!
               timestamp: serverTimestamp()
           });
 
@@ -3920,6 +3928,8 @@ window.deleteParkedOrderManually = async function(docId) {
           Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Voided & Replenished!', showConfirmButton: false, timer: 2500});
       } catch(e) {
           console.error(e); alert("Failed to delete and void.");
+      } finally {
+          window.isDeletingParkedOrder = false; // 🔥 4. Unlock the door when finished!
       }
 };
 
