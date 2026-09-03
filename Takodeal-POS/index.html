@@ -3109,7 +3109,6 @@ window.clearCart = function() {
         if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
         let custName = document.getElementById('finalCustomerName');
         if (custName) custName.value = '';
-        
         window.renderCart(); 
     } 
 };
@@ -3788,20 +3787,13 @@ window.resumeOrder = async function(docId) {
     cart = order.items; 
     window.isResumedParkedOrder = true; // 🔥 THE NEW TRACKER FLAG
     
-    // Restore Order Type and Customer Name globally
     let otSelect = document.getElementById('mainOrderType');
-    if (otSelect && order.orderType) {
-        otSelect.value = order.orderType.replace(" (PARKED)", "").trim();
-    }
-    
+    if (otSelect && order.orderType) otSelect.value = order.orderType.replace(" (PARKED)", "").trim();
     let custName = document.getElementById('finalCustomerName');
-    if (custName) {
-        custName.value = order.name || order.customerName || '';
-    }
+    if (custName) custName.value = order.name || order.customerName || '';
 
     if (typeof renderCart === 'function') renderCart(); 
     if (typeof closeModal === 'function') closeModal('parkedModal'); 
-    
     await window.deleteParkedOrder(docId); 
     window.updateParkedBadge();
 };
