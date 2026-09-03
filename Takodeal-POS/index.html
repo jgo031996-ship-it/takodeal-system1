@@ -3100,19 +3100,19 @@ window.renderCart = function() {
 };
 
 window.clearCart = function() { 
-        if (!window.cart || window.cart.length === 0) return; 
-        if (confirm("Clear order?")) { 
-            window.cart = []; 
-            
-            // 🔥 THE FIX: Auto-reset the Order Type and Customer Name on clear!
-            let otSelect = document.getElementById('mainOrderType');
-            if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
-            let custName = document.getElementById('finalCustomerName');
-            if (custName) custName.value = '';
-            
-            window.renderCart(); 
-        } 
-    };
+    if (!window.cart || window.cart.length === 0) return; 
+    if (confirm("Clear order?")) { 
+        window.cart = []; 
+        window.isResumedParkedOrder = false; // 🔥 RESET TRACKER
+        
+        let otSelect = document.getElementById('mainOrderType');
+        if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
+        let custName = document.getElementById('finalCustomerName');
+        if (custName) custName.value = '';
+        
+        window.renderCart(); 
+    } 
+};
 
 // 🔥 EMERGENCY BRIDGES: This connects the HTML buttons directly to the functions!
 function adjustModalMainQty(delta) { window.adjustModalMainQty(delta); }
@@ -3396,7 +3396,8 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         netTotal: window.finalCheckoutAmount || window.currentGrandTotal,
         customerName: document.getElementById('finalCustomerName').value,
         amountReceived: window.amountReceivedStr,
-        cart: cart
+        cart: cart,
+        wasParked: window.isResumedParkedOrder || false // 🔥 INJECTS THE HISTORY TRACKER!
       };
 
       let receiptId = await window.processCheckout(payload);
@@ -3458,6 +3459,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         btn.disabled = false; 
         btn.style.pointerEvents = "auto";
         window.isSubmittingOrder = false;
+        window.isResumedParkedOrder = false; // 🔥 RESET TRACKER
 
         document.getElementById('receiptModal').style.display = 'flex';
       } else { 
@@ -3777,32 +3779,32 @@ window.showParkedOrders = async function() {
 };
 
 window.resumeOrder = async function(docId) {
-        if (typeof cart !== 'undefined' && cart.length > 0) { 
-            if (!confirm("You have active items in your current cart. Overwrite them with this parked order?")) return; 
-        }
-        let order = window.currentParkedOrdersList.find(o => o.id === docId); 
-        if (!order) return;
-        
-        cart = order.items; 
-        
-        // 🔥 THE MEMORY FIX: Restore Order Type and Customer Name globally!
-        let otSelect = document.getElementById('mainOrderType');
-        if (otSelect && order.orderType) {
-            // Strip out the word "(PARKED)" if it was saved that way previously
-            otSelect.value = order.orderType.replace(" (PARKED)", "").trim();
-        }
-        
-        let custName = document.getElementById('finalCustomerName');
-        if (custName) {
-            custName.value = order.name || order.customerName || '';
-        }
+    if (typeof cart !== 'undefined' && cart.length > 0) { 
+        if (!confirm("You have active items in your current cart. Overwrite them with this parked order?")) return; 
+    }
+    let order = window.currentParkedOrdersList.find(o => o.id === docId); 
+    if (!order) return;
+    
+    cart = order.items; 
+    window.isResumedParkedOrder = true; // 🔥 THE NEW TRACKER FLAG
+    
+    // Restore Order Type and Customer Name globally
+    let otSelect = document.getElementById('mainOrderType');
+    if (otSelect && order.orderType) {
+        otSelect.value = order.orderType.replace(" (PARKED)", "").trim();
+    }
+    
+    let custName = document.getElementById('finalCustomerName');
+    if (custName) {
+        custName.value = order.name || order.customerName || '';
+    }
 
-        if (typeof renderCart === 'function') renderCart(); 
-        if (typeof closeModal === 'function') closeModal('parkedModal'); 
-        
-        await window.deleteParkedOrder(docId); 
-        window.updateParkedBadge();
-    };
+    if (typeof renderCart === 'function') renderCart(); 
+    if (typeof closeModal === 'function') closeModal('parkedModal'); 
+    
+    await window.deleteParkedOrder(docId); 
+    window.updateParkedBadge();
+};
 
 window.deleteParkedOrderManually = async function(docId) {
       let order = window.currentParkedOrdersList.find(o => o.id === docId);
@@ -3824,6 +3826,7 @@ window.deleteParkedOrderManually = async function(docId) {
               paymentMethod: "Unpaid / Deleted",
               customerName: order.name || order.customerName || "Guest",
               cart: order.items || order.cart || [],
+              wasParked: true, // 🔥 INJECTS THE HISTORY TRACKER!
               timestamp: serverTimestamp()
           });
 
