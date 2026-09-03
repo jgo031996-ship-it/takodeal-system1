@@ -8287,35 +8287,47 @@ window.openBulletinModal = function() {
 
 window.renderBulletinSlide = function() {
     let announcement = window.activeAnnouncements[window.currentBulletinIndex];
-    let totalSlides = announcement.images.length;
-    let currentImage = announcement.images[window.currentSlideIndex];
-
-    document.getElementById('bulletinImage').src = currentImage;
-    document.getElementById('bulletinProgress').innerText = `Slide ${window.currentSlideIndex + 1} of ${totalSlides}`;
     
-    // Set the Download Button link directly to the current image
+    // 🔥 THE CRASH FIX: Safely fallback to an empty array if images are missing
+    let safeImages = announcement.images || [];
+    let totalSlides = safeImages.length;
+    
+    let imgEl = document.getElementById('bulletinImage');
+    let progressEl = document.getElementById('bulletinProgress');
     let dlBtn = document.getElementById('btnBulletinDownload');
-    dlBtn.onclick = () => window.open(currentImage, '_blank');
-
+    
     let btnNext = document.getElementById('btnBulletinNext');
     let btnAck = document.getElementById('btnBulletinAcknowledge');
     let sigArea = document.getElementById('bulletinSignatureArea');
 
-    if (window.currentSlideIndex >= totalSlides - 1) {
-        // LAST SLIDE! Hide "Next", show "Acknowledge" and Signature Pad!
-        btnNext.style.display = 'none';
-        btnAck.style.display = 'block';
-        sigArea.style.display = 'block';
+    if (totalSlides > 0) {
+        let currentImage = safeImages[window.currentSlideIndex];
+        if (imgEl) { imgEl.src = currentImage; imgEl.style.display = 'block'; }
+        if (progressEl) { progressEl.innerText = `Slide ${window.currentSlideIndex + 1} of ${totalSlides}`; progressEl.style.display = 'block'; }
+        if (dlBtn) { dlBtn.onclick = () => window.open(currentImage, '_blank'); dlBtn.style.display = 'block'; }
     } else {
-        btnNext.style.display = 'block';
-        btnAck.style.display = 'none';
-        sigArea.style.display = 'none';
+        // If it's a text-only alert (like Inventory Shortage), hide the image UI!
+        if (imgEl) imgEl.style.display = 'none';
+        if (progressEl) progressEl.style.display = 'none';
+        if (dlBtn) dlBtn.style.display = 'none';
+    }
+
+    // If we are on the last slide, OR there are zero slides, show the signature box!
+    if (totalSlides === 0 || window.currentSlideIndex >= totalSlides - 1) {
+        if (btnNext) btnNext.style.display = 'none';
+        if (btnAck) btnAck.style.display = 'block';
+        if (sigArea) sigArea.style.display = 'block';
+    } else {
+        if (btnNext) btnNext.style.display = 'block';
+        if (btnAck) btnAck.style.display = 'none';
+        if (sigArea) sigArea.style.display = 'none';
     }
 };
 
 window.nextBulletinSlide = function() {
     let announcement = window.activeAnnouncements[window.currentBulletinIndex];
-    if (window.currentSlideIndex < announcement.images.length - 1) {
+    let safeImages = announcement.images || [];
+    if (window.currentSlideIndex < safeImages.length - 1) {
         window.currentSlideIndex++;
         window.renderBulletinSlide();
     }
