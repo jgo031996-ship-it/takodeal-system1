@@ -3128,14 +3128,14 @@ window.handleIncomingSwap = async function(swapId, action) {
             dayData.rest.push(rActual); // Put requester in rest
         } else {
             dayData.scheduled[sData.targetShiftId] = rActual;
-            // Log the trade!
-            dayData.swaps[sData.targetShiftId] = { originalStaff: tActual, newStaff: rActual };
+            // Log the trade! (Saved strictly as a text string to fix [object Object] bug)
+            dayData.swaps[sData.targetShiftId] = tActual; 
         }
 
         // B. Give Requester's shift to Target
         dayData.scheduled[sData.requesterShiftId] = tActual;
-        // Log the trade!
-        dayData.swaps[sData.requesterShiftId] = { originalStaff: rActual, newStaff: tActual };
+        // Log the trade! (Saved strictly as a text string to fix [object Object] bug)
+        dayData.swaps[sData.requesterShiftId] = rActual;
 
         // 3. Save the new calendar back to Cloud
         await updateDoc(doc(db, "settings", "global_schedule"), {
