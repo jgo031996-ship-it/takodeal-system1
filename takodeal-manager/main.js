@@ -11179,83 +11179,121 @@ window.loadPayrollGenerator = async function() {
     let endDateRaw = document.getElementById('payrollEnd').value;
     if (!startDateRaw || !endDateRaw) { alert("Please set both cutoff dates."); return; }
 
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center">⏳ Crunching payroll numbers & ledgers...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center">⏳ Crunching payroll numbers & resolving typos...</td></tr>';
 
     let sParts = startDateRaw.split('-');
     let eParts = endDateRaw.split('-');
     let trueStartDate = new Date(sParts[0], sParts[1] - 1, sParts[2], 0, 0, 0, 0);
     let trueEndDate = new Date(eParts[0], eParts[1] - 1, eParts[2], 23, 59, 59, 999);
     
-    // 🔥 FIX 1: Look back 24 hours to catch overnight shifts starting before the cutoff!
+    // Look back 24 hours to catch overnight shifts starting before the cutoff!
     let fetchStartDate = new Date(trueStartDate); 
     fetchStartDate.setDate(fetchStartDate.getDate() - 1);
     let fetchEndDate = new Date(trueEndDate); 
     fetchEndDate.setHours(fetchEndDate.getHours() + 12);
 
+    // 🔥 THE TYPO-CORRECTOR ENGINE (Levenshtein Distance)
+    const getEditDistance = (a, b) => {
+        if (a.length === 0) return b.length;
+        if (b.length === 0) return a.length;
+        let matrix = [];
+        for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+        for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+        for (let i = 1; i <= b.length; i++) {
+            for (let j = 1; j <= a.length; j++) {
+                if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                    matrix[i][j] = matrix[i - 1][j - 1];
+                } else {
+                    matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+                }
+            }
+        }
+        return matrix[b.length][a.length];
+    };
+
     try {
-        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+        const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_schedule"));
         let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
 
-        const prQ = query(collection(db, "payroll_records"), where("startDate", "==", startDateRaw), where("endDate", "==", endDateRaw));
-        const prSnap = await getDocs(prQ);
+        const prQ = window.query(window.collection(window.db, "payroll_records"), window.where("startDate", "==", startDateRaw), window.where("endDate", "==", endDateRaw));
+        const prSnap = await window.getDocs(prQ);
         let paidRecords = {};
         prSnap.forEach(docSnap => { paidRecords[docSnap.data().staffName] = docSnap.data().frozenData; });
 
-        const staffSnap = await getDocs(collection(db, "cashiers"));
-        const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
+        const staffSnap = await window.getDocs(window.collection(window.db, "cashiers"));
+        const ledgerSnap = await window.getDocs(window.collection(window.db, "staff_ledger"));
         let staffDict = {}; 
-        let nameMap = {}; 
+        let activeStaffNames = []; // Used for mapping typos
         
         staffSnap.forEach(d => { 
             let data = d.data();
             let masterName = data.cashierName;
             staffDict[masterName] = data; 
             
-            nameMap[masterName.toLowerCase()] = masterName;
-            let stripped = masterName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim().toLowerCase();
-            nameMap[stripped] = masterName;
+            // Only active staff can absorb typo logs!
+            if (data.status !== 'Resigned' && data.pin !== 'REVOKED') {
+                activeStaffNames.push(masterName);
+            }
         });
         
         let ledgerDict = {}; 
         ledgerSnap.forEach(d => { ledgerDict[d.data().staffName] = { id: d.id, ...d.data() }; });
 
-        // 🔥 USE THE NEW FETCH START DATE HERE
-        const attQ = query(collection(db, "attendance_logs"), where("timestamp", ">=", fetchStartDate), where("timestamp", "<=", fetchEndDate), orderBy("timestamp", "asc"));
-        const attSnap = await getDocs(attQ);
+        // 🔥 SMART NAME RESOLVER (Merges "Quinnie" into "Quennie")
+        const resolveStaffName = (rawName) => {
+            if (!rawName) return null;
+            let original = rawName.trim();
 
-        const deductQ = query(collection(db, "staff_deductions"), where("status", "==", "Unpaid"));
-        const deductSnap = await getDocs(deductQ);
-        const bonusQ = query(collection(db, "staff_bonuses"), where("dateAdded", ">=", trueStartDate), where("dateAdded", "<=", fetchEndDate));
-        const bonusSnap = await getDocs(bonusQ);
+            // 1. Exact Match Check
+            let activeExact = activeStaffNames.find(n => n.toLowerCase() === original.toLowerCase());
+            if (activeExact) return activeExact;
+
+            // 2. Fuzzy Match Check (Allows up to 2 typos in the First Name)
+            let parts = original.toLowerCase().replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').split(' ').filter(Boolean);
+            if (parts.length >= 2) {
+                let lastName = parts[parts.length - 1];
+                let firstName = parts[0];
+
+                for (let activeName of activeStaffNames) {
+                    let aParts = activeName.toLowerCase().replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').split(' ').filter(Boolean);
+                    let aLastName = aParts[aParts.length - 1];
+                    let aFirstName = aParts[0];
+
+                    if (lastName === aLastName) {
+                        let dist = getEditDistance(firstName, aFirstName);
+                        if (dist <= 2) return activeName; // Auto-Merge!
+                    }
+                }
+            }
+            return staffDict[original] ? staffDict[original].cashierName : original;
+        };
+
+        const attQ = window.query(window.collection(window.db, "attendance_logs"), window.where("timestamp", ">=", fetchStartDate), window.where("timestamp", "<=", fetchEndDate), window.orderBy("timestamp", "asc"));
+        const attSnap = await window.getDocs(attQ);
+
+        const deductQ = window.query(window.collection(window.db, "staff_deductions"), window.where("status", "==", "Unpaid"));
+        const deductSnap = await window.getDocs(deductQ);
+        const bonusQ = window.query(window.collection(window.db, "staff_bonuses"), window.where("dateAdded", ">=", trueStartDate), window.where("dateAdded", "<=", fetchEndDate));
+        const bonusSnap = await window.getDocs(bonusQ);
 
         let staffData = {}; 
         let activeShifts = {}; 
 
+        const parseTimeStr = (timeStr) => {
+            let t = timeStr.toLowerCase().replace(/\s/g, '');
+            let isPM = t.includes('pm'); let isNN = t.includes('nn');
+            let parts = t.replace(/(am|pm|nn)/, '').split(':');
+            let hour = parseInt(parts[0]) || 0; let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
+            if ((isPM || isNN) && hour < 12) hour += 12;
+            if (t.includes('am') && hour === 12) hour = 0;
+            return hour + (minute / 60);
+        };
+
         attSnap.forEach(docSnap => {
             let log = docSnap.data();
-            let rawName = log.staffName;
-            if (!rawName) return;
-
-            let lowerName = rawName.toLowerCase();
-            let strippedName = lowerName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim();
-            let name = nameMap[lowerName] || nameMap[strippedName];
-            
-            // 🔥 FIX 2: SMART FUZZY MATCHER (Connects typos to master profiles!)
-            if (!name) {
-                let parts = strippedName.split(' ');
-                if (parts.length >= 2) {
-                    let lastName = parts.pop();
-                    let firstTwo = parts[0].substring(0, 2);
-                    for (let k in nameMap) {
-                        if (k.includes(lastName) && k.startsWith(firstTwo)) {
-                            name = nameMap[k];
-                            break;
-                        }
-                    }
-                }
-            }
-            if (!name) name = rawName; // Fallback
+            let name = resolveStaffName(log.staffName); // 🔥 Apply Fuzzy Matcher immediately
+            if (!name) return;
             
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
@@ -11269,7 +11307,6 @@ window.loadPayrollGenerator = async function() {
                 if (log.timestamp.toDate() <= trueEndDate) {
                     if (activeShifts[name]) {
                         let missedIn = activeShifts[name].time;
-                        // 🔥 FIX 3: Ensure the missed punch actually belongs in this cutoff
                         if (missedIn >= trueStartDate) {
                             staffData[name].logs.push({ date: missedIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: missedIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: "MISSED", hrs: "0.00", remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>` });
                         }
@@ -11341,7 +11378,7 @@ window.loadPayrollGenerator = async function() {
                 let timeIn = activeShifts[name].time;
                 let timeOut = log.timestamp.toDate();
                 
-                // 🔥 FIX 4: Ignore shifts that completed entirely before the cutoff started
+                // Ignore shifts that completed before the cutoff started
                 if (timeOut < trueStartDate) {
                     delete activeShifts[name];
                     return; 
@@ -11352,7 +11389,6 @@ window.loadPayrollGenerator = async function() {
                 let lExempt = activeShifts[name].lateExempted;
                 let lHrsDeduct = activeShifts[name].lateHoursToDeduct || 0;
                 let wasScheduled = activeShifts[name].wasScheduled; 
-                
                 let totalManualPenaltyForShift = (activeShifts[name].manualPenalty || 0) + manualPenalty;
                 
                 let hoursWorked = (timeOut - timeIn) / (1000 * 60 * 60);
@@ -11397,7 +11433,6 @@ window.loadPayrollGenerator = async function() {
                 }
 
                 let outHour = timeOut.getHours();
-                
                 let isNightEligibleLegacy = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
                 let customNightRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) : (isNightEligibleLegacy ? 50 : 0)) : 50;
                 let thisShiftNightBonus = 0;
@@ -11455,29 +11490,13 @@ window.loadPayrollGenerator = async function() {
         }
 
         deductSnap.forEach(docSnap => {
-            let deduct = docSnap.data(); let name = deduct.staffName;
+            let deduct = docSnap.data(); 
+            let name = resolveStaffName(deduct.staffName); // 🔥 Apply Fuzzy Matcher
+            if (!name) return;
+
             let dDate = deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();
             if (dDate > trueEndDate) return;
             
-            // Fuzzy match deductions just in case!
-            let lowerName = name.toLowerCase();
-            let strippedName = lowerName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim();
-            let matchedName = nameMap[lowerName] || nameMap[strippedName];
-            if (!matchedName) {
-                let parts = strippedName.split(' ');
-                if (parts.length >= 2) {
-                    let lastName = parts.pop();
-                    let firstTwo = parts[0].substring(0, 2);
-                    for (let k in nameMap) {
-                        if (k.includes(lastName) && k.startsWith(firstTwo)) {
-                            matchedName = nameMap[k];
-                            break;
-                        }
-                    }
-                }
-            }
-            if (matchedName) name = matchedName;
-
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
                 staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
@@ -11488,25 +11507,9 @@ window.loadPayrollGenerator = async function() {
         });
 
         bonusSnap.forEach(docSnap => {
-            let b = docSnap.data(); let name = b.staffName;
-            
-            let lowerName = name.toLowerCase();
-            let strippedName = lowerName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim();
-            let matchedName = nameMap[lowerName] || nameMap[strippedName];
-            if (!matchedName) {
-                let parts = strippedName.split(' ');
-                if (parts.length >= 2) {
-                    let lastName = parts.pop();
-                    let firstTwo = parts[0].substring(0, 2);
-                    for (let k in nameMap) {
-                        if (k.includes(lastName) && k.startsWith(firstTwo)) {
-                            matchedName = nameMap[k];
-                            break;
-                        }
-                    }
-                }
-            }
-            if (matchedName) name = matchedName;
+            let b = docSnap.data(); 
+            let name = resolveStaffName(b.staffName); // 🔥 Apply Fuzzy Matcher
+            if (!name) return;
 
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
