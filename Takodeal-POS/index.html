@@ -515,6 +515,12 @@
           }
 
           sessionUser = identity;
+
+          // 🔥 NEW: FORCE FULL SCREEN & WAKE LOCK ON LOGIN 🔥
+          if (typeof window.requestWakeLock === 'function') window.requestWakeLock();
+          if (!document.fullscreenElement) {
+              document.documentElement.requestFullscreen().catch(err => console.log(err));
+          }
           
           let lockedDeviceBranch = localStorage.getItem('takodeal_device_branch');
           if (lockedDeviceBranch) { sessionUser.branch = lockedDeviceBranch; }
