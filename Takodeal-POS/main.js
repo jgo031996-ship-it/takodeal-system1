@@ -10878,3 +10878,30 @@ window.loadStockRequestUI = async function() {
         tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #dc2626; font-weight: bold;">❌ Database Error. Please refresh.</td></tr>';
     }
 };
+
+// ========================================================
+// 🛡️ ANTI-SLEEP & WAKE LOCK ENGINE (PRINTER FIX)
+// ========================================================
+window.posWakeLock = null;
+
+window.requestWakeLock = async function() {
+    try {
+        if ('wakeLock' in navigator) {
+            window.posWakeLock = await navigator.wakeLock.request('screen');
+            console.log('⚡ Screen Wake Lock ACTIVE. Tablet sleep prevented. Printers secured.');
+            
+            window.posWakeLock.addEventListener('release', () => {
+                console.log('⚠️ Screen Wake Lock was released');
+            });
+        }
+    } catch (err) {
+        console.error(`Wake Lock error: ${err.name}, ${err.message}`);
+    }
+};
+
+// Re-engage the lock automatically if the staff minimizes the app and comes back
+document.addEventListener('visibilitychange', async () => {
+    if (window.posWakeLock !== null && document.visibilityState === 'visible') {
+        window.requestWakeLock();
+    }
+});
