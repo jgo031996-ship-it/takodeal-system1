@@ -1698,7 +1698,17 @@
             }
 
             try {
-                let orderCode = 'TKDL-' + Math.floor(10000 + Math.random() * 90000);
+                // 🔥 NEW DATE-BASED ORDER CODE GENERATOR
+                let today = new Date();
+                let mm = String(today.getMonth() + 1).padStart(2, '0');
+                let dd = String(today.getDate()).padStart(2, '0');
+                let yy = String(today.getFullYear()).slice(-2);
+                let dateStr = mm + dd + yy;
+                
+                // Generates a 4-digit random number to prevent duplicate order IDs
+                let randomSuffix = Math.floor(1000 + Math.random() * 9000); 
+                
+                let orderCode = 'TKDL-' + dateStr + '-' + randomSuffix;
                 let mapLink = (lat && lng) ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}` : null;
 
                 let orderPayload = {
@@ -1958,7 +1968,17 @@
             let grandTotal = window.cart.reduce((sum, item) => sum + item.lineTotalFinal, 0);
 
             try {
-                let orderCode = 'TKDL-' + Math.floor(10000 + Math.random() * 90000);
+                // 🔥 NEW DATE-BASED ORDER CODE GENERATOR
+                let today = new Date();
+                let mm = String(today.getMonth() + 1).padStart(2, '0');
+                let dd = String(today.getDate()).padStart(2, '0');
+                let yy = String(today.getFullYear()).slice(-2);
+                let dateStr = mm + dd + yy;
+                
+                // Generates a 4-digit random number to prevent duplicate order IDs
+                let randomSuffix = Math.floor(1000 + Math.random() * 9000); 
+                
+                let orderCode = 'TKDL-' + dateStr + '-' + randomSuffix;
                 
                 let mapLink = null;
                 if (formValues.lat && formValues.lng) {
