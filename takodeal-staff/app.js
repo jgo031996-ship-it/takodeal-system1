@@ -2948,12 +2948,17 @@ window.submitSwapRequest = async function() {
     let candidateVal = document.getElementById('swapCandidateSelect').value;
     if(!candidateVal) return Swal.fire('Required', 'Please select someone to swap with.', 'warning');
 
+    let btn = document.getElementById('btnSendSwap');
+    
+    // 🛡️ Lock button immediately to prevent double submissions
+    if (btn) {
+        btn.innerText = "⏳ Sending...";
+        btn.disabled = true;
+    }
+
     let [targetName, targetShiftId, targetShiftName] = candidateVal.split('|');
     let requesterName = localStorage.getItem('takodeal_staff_name');
     let d = window.pendingSwapData;
-
-    let btn = document.getElementById('btnSendSwap');
-    btn.innerText = "⏳ Sending..."; btn.disabled = true;
 
     try {
         await addDoc(collection(db, "shift_swaps"), {
@@ -2979,9 +2984,13 @@ window.submitSwapRequest = async function() {
         
         document.getElementById('swapRequestModal').style.display = 'none';
     } catch(e) {
-        console.error(e); Swal.fire('Error', 'Failed to send request.', 'error');
-    } finally {
-        btn.innerText = "Send Request"; btn.disabled = false;
+        console.error(e); 
+        Swal.fire('Error', 'Failed to send request.', 'error');
+    } finally { 
+        if (btn) {
+            btn.innerText = "Send Request"; 
+            btn.disabled = false; 
+        }
     }
 };
 
