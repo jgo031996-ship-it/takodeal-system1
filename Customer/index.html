@@ -827,8 +827,8 @@
 
                     // If it is closed, intercept the click and show a popup instead of letting them in!
                     let onClickAction = isOpen 
-                        ? `window.selectBranchAndEnter('${safeName}')` 
-                        : `Swal.fire({title: 'Store Closed 🌙', text: 'This branch is currently closed. Please check their operating hours: ${hours}', icon: 'info', background: '#141414', color: '#fff', customClass: { popup: 'border border-zinc-800 rounded-2xl' }})`;
+                    ? `window.selectBranchAndEnter('${safeName}')` 
+                    : `Swal.fire({title: 'Store Closed', text: 'This branch is currently closed. Please check their operating hours: ${hours}', imageUrl: 'sorry-close.jpg', imageWidth: 140, background: '#141414', color: '#fff', customClass: { popup: 'border border-zinc-800 rounded-2xl' }})`;
 
                     html += `
                         <div onclick="${onClickAction}" class="${cardStyle}">
