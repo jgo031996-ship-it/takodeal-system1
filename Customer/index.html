@@ -970,7 +970,28 @@
                     }
                 });
 
-                renderDarkMenuGrid(categoriesMap);
+                // 🔥 THE MENU SORTING ENGINE: Sync with Manager App order!
+                let orderedCategoriesMap = {};
+                if (allowedCats && allowedCats.length > 0) {
+                    // 1. Pull categories in the exact sequence saved from the Manager App
+                    allowedCats.forEach(managerCat => {
+                        let exactKey = Object.keys(categoriesMap).find(k => k.toLowerCase().replace(/\s+/g, '') === managerCat.toLowerCase().replace(/\s+/g, ''));
+                        if (exactKey) {
+                            orderedCategoriesMap[exactKey] = categoriesMap[exactKey];
+                        }
+                    });
+                    // 2. Catch any newly added leftovers just in case
+                    Object.keys(categoriesMap).forEach(key => {
+                        if (!orderedCategoriesMap[key]) orderedCategoriesMap[key] = categoriesMap[key];
+                    });
+                } else {
+                    // Fallback: Alphabetical sort
+                    Object.keys(categoriesMap).sort().forEach(key => {
+                        orderedCategoriesMap[key] = categoriesMap[key];
+                    });
+                }
+        
+                renderDarkMenuGrid(orderedCategoriesMap);
                 renderLandingPageGrids(); 
             } catch(e) { console.error("Render Branch Error:", e); }
         };
