@@ -273,19 +273,49 @@
         .modal { width: 95% !important; max-width: 95% !important; margin: 0 auto !important; }
         .modal-body { padding: 15px !important; max-height: 75vh !important; }
 
-        /* 🔥 BULLETPROOF MOBILE MODAL FIXES */
-        .overlay { padding: 10px !important; box-sizing: border-box !important; }
-        .overlay > div { 
-            width: 100% !important; 
-            max-width: 100% !important; 
-            max-height: 85vh !important; 
-            margin: 0 auto !important; 
-            box-sizing: border-box !important;
-        }
-        .overlay h2, .overlay .modal-head span {
-            white-space: normal !important;
-            word-break: break-word !important;
-        }
+        /* 🔥 BULLETPROOF MOBILE MODAL FIXES (UPGRADED) */
+            /* Targets EVERY floating window regardless of class name */
+            div[style*="position: fixed"][style*="z-index: 1000"],
+            .overlay { 
+                padding: 10px !important; 
+                box-sizing: border-box !important; 
+                align-items: center !important; /* Forces vertical centering */
+                justify-content: center !important; /* Forces horizontal centering */
+            }
+            
+            div[style*="position: fixed"][style*="z-index: 1000"] > div,
+            .overlay > div { 
+                width: 100% !important; 
+                max-width: 100% !important; 
+                max-height: 85vh !important; 
+                margin: 0 auto !important; 
+                box-sizing: border-box !important;
+                min-width: 0 !important; /* Stops Flexbox from expanding past the screen! */
+            }
+
+            /* Automatically stacks side-by-side columns (like Grab/Foodpanda) vertically on phones */
+            div[style*="position: fixed"][style*="z-index: 1000"] > div div[style*="display: grid"],
+            .overlay > div div[style*="display: grid"] {
+                grid-template-columns: 1fr !important;
+                gap: 15px !important;
+            }
+            
+            /* Stops inner tables from stretching the modal, forcing them to scroll internally */
+            div[style*="position: fixed"][style*="z-index: 1000"] > div > div:nth-child(2),
+            .overlay > div > div:nth-child(2) {
+                overflow-x: hidden !important;
+                overflow-y: auto !important;
+                width: 100% !important;
+                box-sizing: border-box !important;
+            }
+
+            /* Stops long titles from pushing the "X" close button off-screen */
+            .overlay h2, .overlay .modal-head span, 
+            div[style*="position: fixed"][style*="z-index: 1000"] h2,
+            div[style*="position: fixed"][style*="z-index: 1000"] h3 {
+                white-space: normal !important;
+                word-break: break-word !important;
+            }
     }
 
     /* 🔥 THE SMOOTH TABLE SCROLLING CLASS (Applied via JS) */
