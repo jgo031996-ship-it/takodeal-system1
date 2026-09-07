@@ -3839,9 +3839,13 @@
             <option value="">Loading Accounts...</option>
           </select>
           <label style="font-size: 12px; font-weight: bold; color: #64748b; margin-top: 15px; display: block;">Bank / Transfer Fee (₱) - Optional</label>
-          <input type="number" id="settlePayFee" placeholder="0.00" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px dashed #cbd5e1; border-radius: 6px; box-sizing: border-box; font-weight: bold; color: #dc2626; outline: none;">
+          <input type="number" id="settlePayFee" placeholder="0.00" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px dashed #cbd5e1; border-radius: 6px; box-sizing: border-box; font-weight: bold; color: #dc2626; outline: none;">
 
-          <button onclick="window.confirmPayableSettlement()" id="btnConfirmSettle" style="width: 100%; background: #16a34a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">✅ Confirm Payment</button>
+          <!-- 🔥 NEW: PROOF OF PAYMENT UPLOADER -->
+          <label style="font-size: 12px; font-weight: bold; color: #16a34a; display: block; margin-bottom: 5px;">Upload Proof of Payment 📸 (Optional)</label>
+          <input type="file" id="settlePayPhoto" accept="image/jpeg, image/png, image/webp" style="width: 100%; padding: 8px; margin-bottom: 25px; border: 1px dashed #bbf7d0; background: #f0fdf4; border-radius: 6px; outline: none; cursor: pointer; font-size: 12px; color: #15803d; box-sizing: border-box;">
+
+          <button onclick="window.confirmPayableSettlement()" id="btnConfirmSettle" style="width: 100%; background: #16a34a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.3);">✅ Confirm Payment</button>
         </div>
       </div>
     </div>
