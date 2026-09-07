@@ -13309,26 +13309,38 @@ window.loadPayablesHistory = async function() {
     const tbody = document.getElementById('payablesHistoryBody');
     tbody.innerHTML = '<tr><td colspan="6" class="text-center">Loading history...</td></tr>';
     try {
-        const q = query(collection(db, "payables"), where("status", "==", "Paid"), orderBy("datePaid", "desc"), limit(50));
-        const snap = await getDocs(q);
+        const q = window.query(window.collection(window.db, "payables"), window.where("status", "==", "Paid"), window.orderBy("datePaid", "desc"), window.limit(50));
+        const snap = await window.getDocs(q);
         let html = '';
+        
         snap.forEach(doc => {
             let d = doc.data();
             let datePaid = d.datePaid ? d.datePaid.toDate().toLocaleDateString() : 'Unknown';
-            let photoBtn = d.photoUrl ? `<button onclick="window.viewSelfie('${d.photoUrl}', 'Invoice: ${d.invoiceNum || 'N/A'}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer;">📸 View</button>` : '-';
             
-            html += `<tr style="border-bottom: 1px solid #f1f5f9;">
-                <td><strong style="color: #334155;">${d.supplier}</strong></td>
-                <td style="font-family: monospace; color: #64748b;">${d.invoiceNum || 'N/A'}</td>
-                <td style="font-size: 13px;">${datePaid}</td>
-                <td style="font-weight: bold; color: #16a34a;">₱${(parseFloat(d.amount)||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                <td style="font-size: 12px; color: #475569;">${d.paidFromAccount || 'Unknown'}</td>
-                <td>${photoBtn}</td>
+            // 🔥 NEW: Dynamically build the buttons based on what images exist!
+            let photoBtns = '';
+            if (d.photoUrl) {
+                photoBtns += `<button onclick="window.viewSelfie('${d.photoUrl}', 'Delivery Invoice: ${d.invoiceNum || 'N/A'}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; margin-right: 5px; margin-bottom: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📸 OR</button>`;
+            }
+            if (d.paymentProofUrl) {
+                photoBtns += `<button onclick="window.viewSelfie('${d.paymentProofUrl}', 'Proof of Payment: ${d.supplier}')" style="background:#dcfce7; color:#16a34a; border:1px solid #bbf7d0; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; margin-bottom: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">💸 Proof</button>`;
+            }
+            if (!photoBtns) photoBtns = '-';
+            
+            html += `<tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                <td style="padding: 12px 10px;"><strong style="color: #334155;">${d.supplier}</strong></td>
+                <td style="padding: 12px 10px; font-family: monospace; color: #64748b;">${d.invoiceNum || 'N/A'}</td>
+                <td style="padding: 12px 10px; font-size: 13px; color: #475569;">${datePaid}</td>
+                <td style="padding: 12px 10px; font-weight: bold; color: #16a34a;">₱${(parseFloat(d.amount)||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                <td style="padding: 12px 10px; font-size: 12px; color: #475569; font-weight: bold;">${d.paidFromAccount || 'Unknown'}</td>
+                <td style="padding: 12px 10px; display: flex; flex-wrap: wrap;">${photoBtns}</td>
             </tr>`;
         });
+        
         tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="color: #64748b; padding: 30px;">No paid history found.</td></tr>';
     } catch(e) {
-        console.error(e); tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading history.</td></tr>';
+        console.error(e); 
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red; padding: 30px;">Error loading history.</td></tr>';
     }
 };
 
@@ -13778,11 +13790,11 @@ window.confirmPayableSettlement = async function() {
     let supplier = document.getElementById('settlePaySupplier').value;
     let amount = parseFloat(document.getElementById('settlePayAmountRaw').value);
     let accountId = document.getElementById('settleCashAccount').value;
-    let fee = parseFloat(document.getElementById('settlePayFee').value) || 0; // 🔥 Grab the fee
+    let fee = parseFloat(document.getElementById('settlePayFee').value) || 0; 
 
     if (!accountId) { alert("Please select a Cash Account to deduct funds from."); return; }
 
-    let totalDeduction = amount + fee; // 🔥 Total money leaving the bank
+    let totalDeduction = amount + fee; 
     let accData = window.livePayableAccounts[accountId];
 
     if (accData.balance < totalDeduction) {
@@ -13793,36 +13805,57 @@ window.confirmPayableSettlement = async function() {
     btn.innerText = "⏳ Processing Payment..."; btn.disabled = true;
 
     try {
+        // 🔥 NEW: Handle Proof of Payment Upload securely to Firebase Storage!
+        let paymentProofUrl = "";
+        let fileInput = document.getElementById('settlePayPhoto');
+        
+        if (fileInput && fileInput.files.length > 0) {
+            btn.innerText = "⏳ Uploading Proof...";
+            const file = fileInput.files[0];
+            const fileExt = file.name.split('.').pop();
+            const fileName = `payables_proof/${payId}_${Date.now()}.${fileExt}`;
+            const storageRef = window.ref(window.storage, fileName);
+            const snapshot = await window.uploadBytes(storageRef, file);
+            paymentProofUrl = await window.getDownloadURL(snapshot.ref);
+            btn.innerText = "⏳ Finalizing Ledger...";
+        }
+
         // 1. Deduct Invoice + Fee from Cash Account
-        await updateDoc(doc(db, "cash_accounts", accountId), {
+        await window.updateDoc(window.doc(window.db, "cash_accounts", accountId), {
             balance: accData.balance - totalDeduction
         });
 
-        // 2. Mark Payable as Paid
-        await updateDoc(doc(db, "payables", payId), {
+        // 2. Mark Payable as Paid and attach the Proof URL!
+        let updatePayload = {
             status: "Paid",
-            datePaid: serverTimestamp(),
+            datePaid: window.serverTimestamp(),
             paidFromAccount: accData.name,
             transactionFee: fee
-        });
+        };
+        if (paymentProofUrl) updatePayload.paymentProofUrl = paymentProofUrl;
+
+        await window.updateDoc(window.doc(window.db, "payables", payId), updatePayload);
 
         // 3. Log the Invoice Payment
-        await addDoc(collection(db, "expenses"), {
+        await window.addDoc(window.collection(window.db, "expenses"), {
             branch: "Main Office", amount: amount, category: "Supplier Payment",
-            account: accData.name, note: `Settled Invoice for ${supplier}`, timestamp: serverTimestamp()
+            account: accData.name, note: `Settled Invoice for ${supplier}`, timestamp: window.serverTimestamp()
         });
 
-        // 4. 🔥 Log the Bank Fee Separately if it exists!
+        // 4. Log the Bank Fee Separately if it exists!
         if (fee > 0) {
-            await addDoc(collection(db, "expenses"), {
+            await window.addDoc(window.collection(window.db, "expenses"), {
                 branch: "Main Office", amount: fee, category: "Bank Charges",
-                account: accData.name, note: `Transfer Fee for ${supplier} payment`, timestamp: serverTimestamp()
+                account: accData.name, note: `Transfer Fee for ${supplier} payment`, timestamp: window.serverTimestamp()
             });
         }
 
         alert(`✅ Payment complete! ₱${totalDeduction.toLocaleString()} was deducted from ${accData.name}.`);
         document.getElementById('settlePayableModal').style.display = 'none';
-        document.getElementById('settlePayFee').value = ''; // Reset fee
+        
+        // Clear Inputs
+        document.getElementById('settlePayFee').value = ''; 
+        if (fileInput) fileInput.value = '';
         
         window.loadPayablesDashboard();
         if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
