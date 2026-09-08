@@ -27461,14 +27461,14 @@ window.editStorefrontProfile = async function(encodedData) {
 };
 
 // ========================================================
-// ☁️ UNIVERSAL CLOUD AUTO-ARCHIVER ENGINE (CSV + JSON)
+// ☁️ UNIVERSAL CLOUD AUTO-ARCHIVER ENGINE (EXCEL + JSON)
 // ========================================================
 window.openArchiveSalesModal = async function() {
     const { value: formValues } = await Swal.fire({
         title: '🌪️ Universal Cloud Archiver',
         html: `
             <div style="text-align: left; font-size: 13px; color: #475569; margin-bottom: 15px; line-height: 1.5;">
-                This will sweep the database for <b>Transactions, Shifts, Attendance, Stock Logs, and Expenses</b>. It will first download a Master CSV to your computer, then move the data to Cold Storage to stop Firebase fees.
+                This will sweep the database for <b>Transactions, Shifts, Attendance, Stock Logs, and Expenses</b>. It will first download a Multi-Tab Excel file to your computer, then move the data to Cold Storage to stop Firebase fees.
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                 <div>
@@ -27518,76 +27518,65 @@ window.openArchiveSalesModal = async function() {
         const extractMs = (ts) => ts ? (ts.toMillis ? ts.toMillis() : new Date(ts).getTime()) : Date.now();
         const formatDate = (ms) => new Date(ms).toLocaleDateString('en-PH');
         const formatTime = (ms) => new Date(ms).toLocaleTimeString('en-PH');
-        const cleanTxt = (txt) => (txt || '').toString().replace(/"/g, '""');
 
         let archiveData = { transactions: [], shifts: [], attendance_logs: [], stock_logs: [], expenses: [] };
         let deleteIds = { transactions: [], shifts: [], attendance_logs: [], stock_logs: [], expenses: [] };
-        
-        let csv = "\uFEFF"; // Universal UTF-8 Marker for Excel
 
-        // 1. PROCESS TRANSACTIONS
-        csv += "=== TRANSACTIONS & SALES ===\n";
-        csv += "Receipt ID,Date,Time,Branch,Cashier,Customer,Items Ordered,Net Total,Payment Method,Status\n";
+        // 1. PROCESS TRANSACTIONS (JSON + Excel Map)
+        let exTx = [];
         snapTx.forEach(docSnap => {
             let d = docSnap.data(); d.id = docSnap.id; deleteIds.transactions.push(d.id);
             d.timestampMs = extractMs(d.timestamp); archiveData.transactions.push(d);
-            
             let itemsJoined = d.cart ? d.cart.map(i => `${i.qty}x ${i.name || i.itemName}`).join(" | ") : "";
-            csv += `"${d.receiptId}","${formatDate(d.timestampMs)}","${formatTime(d.timestampMs)}","${d.branch}","${d.cashier}","${cleanTxt(d.customerName)}","${cleanTxt(itemsJoined)}","${d.netTotal}","${d.paymentMethod}","${d.status}"\n`;
+            exTx.push({ "OR#": d.receiptId, "Date": formatDate(d.timestampMs), "Time": formatTime(d.timestampMs), "Branch": d.branch, "Cashier": d.cashier, "Customer": d.customerName || 'Guest', "Items": itemsJoined, "Net Total": parseFloat(d.netTotal) || 0, "Payment": d.paymentMethod, "Status": d.status });
         });
 
         // 2. PROCESS SHIFTS
-        csv += "\n=== SHIFTS & Z-READINGS ===\n";
-        csv += "Shift ID,Date,Branch,Cashier,Time In,Time Out,Gross Sales,Net Sales,COGS,Expected Cash,Declared Cash\n";
+        let exShifts = [];
         snapShifts.forEach(docSnap => {
             let d = docSnap.data(); d.id = docSnap.id; deleteIds.shifts.push(d.id);
             d.startTimeMs = extractMs(d.startTime); d.endTimeMs = extractMs(d.endTime); archiveData.shifts.push(d);
-            
-            csv += `"${d.id}","${formatDate(d.startTimeMs)}","${d.branch}","${d.cashier}","${formatTime(d.startTimeMs)}","${formatTime(d.endTimeMs)}","${d.grossSales || 0}","${d.netSales || 0}","${d.cogs || 0}","${d.expectedCash || 0}","${d.declaredCash || 0}"\n`;
+            exShifts.push({ "Shift ID": d.id, "Date": formatDate(d.startTimeMs), "Branch": d.branch, "Cashier": d.cashier, "Time In": formatTime(d.startTimeMs), "Time Out": formatTime(d.endTimeMs), "Gross": parseFloat(d.grossSales) || 0, "Net Sales": parseFloat(d.netSales) || 0, "COGS": parseFloat(d.cogs) || 0, "Exp Cash": parseFloat(d.expectedCash) || 0, "Dec Cash": parseFloat(d.declaredCash) || 0 });
         });
 
         // 3. PROCESS ATTENDANCE
-        csv += "\n=== ATTENDANCE LOGS ===\n";
-        csv += "Date,Time,Branch,Staff Name,Action Type,Late Penalty,Remarks\n";
+        let exAtt = [];
         snapAtt.forEach(docSnap => {
             let d = docSnap.data(); d.id = docSnap.id; deleteIds.attendance_logs.push(d.id);
             d.timestampMs = extractMs(d.timestamp); archiveData.attendance_logs.push(d);
-            
-            csv += `"${formatDate(d.timestampMs)}","${formatTime(d.timestampMs)}","${d.branch}","${d.staffName}","${d.type}","${d.penaltyAmount || 0}","${cleanTxt(d.remarks)}"\n`;
+            exAtt.push({ "Date": formatDate(d.timestampMs), "Time": formatTime(d.timestampMs), "Branch": d.branch, "Staff": d.staffName, "Action": d.type, "Penalty": parseFloat(d.penaltyAmount) || 0, "Remarks": d.remarks });
         });
 
         // 4. PROCESS STOCK LOGS
-        csv += "\n=== STOCK HISTORY & VARIANCES ===\n";
-        csv += "Date,Time,Branch,Item,UOM,Old Qty,New Qty,Variance,Action Type,User,Notes\n";
+        let exStock = [];
         snapStock.forEach(docSnap => {
             let d = docSnap.data(); d.id = docSnap.id; deleteIds.stock_logs.push(d.id);
             d.timestampMs = extractMs(d.timestamp); archiveData.stock_logs.push(d);
-            
-            csv += `"${formatDate(d.timestampMs)}","${formatTime(d.timestampMs)}","${d.branch}","${d.item}","${d.uom}","${d.oldQty}","${d.newQty}","${d.variance}","${d.type}","${d.user}","${cleanTxt(d.note)}"\n`;
+            exStock.push({ "Date": formatDate(d.timestampMs), "Time": formatTime(d.timestampMs), "Branch": d.branch, "Item": d.item, "UOM": d.uom, "Old Qty": parseFloat(d.oldQty) || 0, "New Qty": parseFloat(d.newQty) || 0, "Variance": parseFloat(d.variance) || 0, "Action": d.type, "User": d.user, "Notes": d.note });
         });
 
         // 5. PROCESS EXPENSES
-        csv += "\n=== EXPENSES & BUDGETS ===\n";
-        csv += "Date,Time,Branch,Category,Account Deducted,Amount,Notes\n";
+        let exExp = [];
         snapExp.forEach(docSnap => {
             let d = docSnap.data(); d.id = docSnap.id; deleteIds.expenses.push(d.id);
             d.timestampMs = extractMs(d.timestamp); archiveData.expenses.push(d);
-            
-            csv += `"${formatDate(d.timestampMs)}","${formatTime(d.timestampMs)}","${d.branch}","${d.category}","${d.account}","${d.amount}","${cleanTxt(d.note)}"\n`;
+            exExp.push({ "Date": formatDate(d.timestampMs), "Time": formatTime(d.timestampMs), "Branch": d.branch, "Category": d.category, "Account": d.account, "Amount": parseFloat(d.amount) || 0, "Notes": d.note || d.description });
         });
 
-        // ⏬ DOWNLOAD THE CSV FIRST!
-        let csvFile = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-        let downloadLink = document.createElement("a");
-        downloadLink.download = `Takodeal_Master_Archive_${formValues.start}_to_${formValues.end}.csv`;
-        downloadLink.href = window.URL.createObjectURL(csvFile);
-        downloadLink.style.display = "none";
-        document.body.appendChild(downloadLink); downloadLink.click(); document.body.removeChild(downloadLink);
+        // ⏬ DOWNLOAD THE EXCEL FILE (.XLSX) WITH TABS!
+        let wb = window.XLSX.utils.book_new();
+        if (exTx.length > 0) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exTx), "Transactions");
+        if (exShifts.length > 0) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exShifts), "Shifts");
+        if (exAtt.length > 0) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exAtt), "Attendance");
+        if (exStock.length > 0) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exStock), "Stock Logs");
+        if (exExp.length > 0) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exExp), "Expenses");
+
+        window.XLSX.writeFile(wb, `Takodeal_Master_Archive_${formValues.start}_to_${formValues.end}.xlsx`);
 
         // 🛑 ASK FOR PURGE PERMISSION
         const purgeConfirm = await Swal.fire({
-            title: '✅ CSV Downloaded!',
-            html: `You have successfully downloaded <b>${totalDocs}</b> total operational records.<br><br>Do you want to zip this data to Cold Storage and delete the expensive database rows?`,
+            title: '✅ Excel Downloaded!',
+            html: `You have successfully downloaded <b>${totalDocs}</b> total operational records into a multi-tab spreadsheet.<br><br>Do you want to zip this data to Cold Storage and delete the expensive database rows?`,
             icon: 'warning',
             showCancelButton: true,
             confirmButtonText: 'Yes, Purge Database 🗄️',
@@ -27598,7 +27587,7 @@ window.openArchiveSalesModal = async function() {
 
         if (!purgeConfirm.isConfirmed) return;
 
-        Swal.fire({title: 'Compressing...', text: 'Uploading to Cold Storage...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        Swal.fire({title: 'Compressing...', text: 'Uploading JSON to Cold Storage...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
         // 🗄️ UPLOAD JSON TO BUCKET
         let jsonString = JSON.stringify(archiveData);
@@ -27616,7 +27605,7 @@ window.openArchiveSalesModal = async function() {
             startDate: formValues.start,
             endDate: formValues.end,
             url: url,
-            txCount: totalDocs, // Now represents ALL wiped docs
+            txCount: totalDocs,
             createdAt: window.serverTimestamp()
         });
 
