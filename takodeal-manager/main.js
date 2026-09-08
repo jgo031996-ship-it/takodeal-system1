@@ -14463,20 +14463,23 @@ window.loadSalesHistoryTab = async function() {
     if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px;">⏳ Loading data...</td></tr>';
     if(tbodyShifts) tbodyShifts.innerHTML = '<tr><td colspan="9" class="text-center" style="padding: 30px;">⏳ Calculating shift aggregates...</td></tr>';
     
-    try {
-        // 🔥 LIGHTNING FAST PARALLEL QUERY ENGINE 🔥
-        // We launch all 7 heavy database queries at the exact same time!
-        const qInv = collection(db, "inventory");
-        const qBom = collection(db, "bom");
-        const qMenu = collection(db, "menu");
-        const qShifts = query(collection(db, "shifts"), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"));
-        const qTx = query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-        const qRej = query(collection(db, "incoming_orders"), where("status", "in", ["rejected", "rejected_by_customer"]), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-        const qParked = query(collection(db, "parked_orders"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+    // 🔥 NEW: Check if we are reading Live Data or Cold Storage
+    let dataSourceSelect = document.getElementById('histArchiveSelect');
+    let dataSource = dataSourceSelect ? dataSourceSelect.value : "LIVE";
 
-        const [invSnap, bomSnap, menuSnap, shiftSnap, snap, rejectedSnap, parkedSnap] = await Promise.all([
-            getDocs(qInv), getDocs(qBom), getDocs(qMenu), 
-            getDocs(qShifts), getDocs(qTx), getDocs(qRej), getDocs(qParked)
+    try {
+        const qInv = window.query ? window.collection(window.db, "inventory") : collection(db, "inventory");
+        const qBom = window.query ? window.collection(window.db, "bom") : collection(db, "bom");
+        const qMenu = window.query ? window.collection(window.db, "menu") : collection(db, "menu");
+        const qShifts = window.query ? window.query(window.collection(window.db, "shifts"), window.where("startTime", ">=", startOfDay), window.orderBy("startTime", "desc")) : query(collection(db, "shifts"), where("startTime", ">=", startOfDay), orderBy("startTime", "desc"));
+        const qRej = window.query ? window.query(window.collection(window.db, "incoming_orders"), window.where("status", "in", ["rejected", "rejected_by_customer"]), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay)) : query(collection(db, "incoming_orders"), where("status", "in", ["rejected", "rejected_by_customer"]), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+        const qParked = window.query ? window.query(window.collection(window.db, "parked_orders"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay)) : query(collection(db, "parked_orders"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+
+        let getDocsFn = window.getDocs || getDocs;
+        
+        const [invSnap, bomSnap, menuSnap, shiftSnap, rejectedSnap, parkedSnap] = await Promise.all([
+            getDocsFn(qInv), getDocsFn(qBom), getDocsFn(qMenu), 
+            getDocsFn(qShifts), getDocsFn(qRej), getDocsFn(qParked)
         ]);
 
         // 1. PROCESS COSTS & MENU CATEGORIES
@@ -14494,7 +14497,7 @@ window.loadSalesHistoryTab = async function() {
         menuSnap.forEach(d => { menuCats[d.data().name] = d.data().category || "Uncategorized"; });
 
         // 2. PROCESS ACTUAL SHIFTS
-        window.globalShiftReports = {}; // Reset Memory
+        window.globalShiftReports = {}; 
         shiftSnap.forEach(doc => {
             let s = doc.data();
             if (branchFilter !== "All" && s.branch !== branchFilter) return;
@@ -14515,23 +14518,50 @@ window.loadSalesHistoryTab = async function() {
             };
         });
 
-        // 3. COMBINE TRANSACTIONS AND PARKED ORDERS
+        // 3. 🔥 THE MAGIC ROUTER: COMBINE TRANSACTIONS based on Data Source
         let allTxArray = [];
-        snap.forEach(doc => allTxArray.push({id: doc.id, ...doc.data()}));
-        rejectedSnap.forEach(doc => allTxArray.push({id: doc.id, isMobileRejected: true, ...doc.data()}));
-        parkedSnap.forEach(doc => {
-            let p = doc.data();
-            allTxArray.push({
-                id: doc.id, receiptId: "PARKED-" + doc.id.substring(0,4).toUpperCase(), customerName: p.name || p.customerName || "Guest",
-                netTotal: p.total || p.netTotal || 0, status: "Parked", paymentMethod: "Unpaid", cart: p.items || p.cart || [],
-                timestamp: p.timestamp, cashier: p.cashier || 'Unknown', orderType: p.orderType || 'Dine-In', branch: p.branch
+
+        if (dataSource === "LIVE") {
+            const qTx = window.query ? window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay)) : query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+            const liveTxSnap = await getDocsFn(qTx);
+            liveTxSnap.forEach(doc => allTxArray.push({id: doc.id, ...doc.data()}));
+            
+            rejectedSnap.forEach(doc => allTxArray.push({id: doc.id, isMobileRejected: true, ...doc.data()}));
+            parkedSnap.forEach(doc => {
+                let p = doc.data();
+                allTxArray.push({
+                    id: doc.id, receiptId: "PARKED-" + doc.id.substring(0,4).toUpperCase(), customerName: p.name || p.customerName || "Guest",
+                    netTotal: p.total || p.netTotal || 0, status: "Parked", paymentMethod: "Unpaid", cart: p.items || p.cart || [],
+                    timestamp: p.timestamp, cashier: p.cashier || 'Unknown', orderType: p.orderType || 'Dine-In', branch: p.branch
+                });
             });
+        } else {
+            // Unzip the file from Firebase Storage memory!
+            const response = await fetch(dataSource);
+            const jsonData = await response.json();
+            
+            jsonData.forEach(item => {
+                // Javascript Filter
+                if (branchFilter !== "All" && item.branch !== branchFilter) return;
+                
+                // Reconstruct the complex Firebase Timestamp object
+                if (item.timestampMs) {
+                    let dObj = new Date(item.timestampMs);
+                    item.timestamp = { toDate: () => dObj, toMillis: () => item.timestampMs };
+                }
+                allTxArray.push({ id: item.id || "ARCHIVED", ...item });
+            });
+        }
+
+        allTxArray.sort((a,b) => {
+            let tA = a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0;
+            let tB = b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0;
+            return tB - tA;
         });
-        allTxArray.sort((a,b) => b.timestamp - a.timestamp);
 
         let txHtml = '';
         let tNet = 0; let tCogs = 0; let tGrab = 0; let tGrabCount = 0; let tFoodpanda = 0; let tFoodpandaCount = 0;
-        let tParkedPaid = 0; let tParkedDeleted = 0; // 🔥 NEW TRACKERS
+        let tParkedPaid = 0; let tParkedDeleted = 0; 
         let dailyAggregates = {}; let monthlyAggregates = {}; 
         let distOrderType = {}; let distPayment = {}; let distTotalSales = 0;
 
@@ -14539,7 +14569,7 @@ window.loadSalesHistoryTab = async function() {
         allTxArray.forEach(tx => {
             if (branchFilter !== "All" && tx.branch !== branchFilter) return;
 
-            let dDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
+            let dDate = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : new Date();
             let businessDate = new Date(dDate.getTime());
             if (businessDate.getHours() < 5) businessDate.setDate(businessDate.getDate() - 1);
             
@@ -14577,7 +14607,7 @@ window.loadSalesHistoryTab = async function() {
 
             let isVoid = tx.status === "Voided";
             
-            // 🔥 TALLY THE PARKED OUTCOMES 🔥
+            // 🔥 TALLY THE PARKED OUTCOMES
             if (tx.wasParked) {
                 if (isVoid) tParkedDeleted++;
                 else tParkedPaid++;
@@ -14755,7 +14785,6 @@ window.loadSalesHistoryTab = async function() {
         document.getElementById('histSumMargin').innerText = `₱${(tNet - tCogs).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         document.getElementById('histSumGrab').innerText = `₱${tGrab.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
-        // 🔥 INJECT PARKED STATS INTO THE UI
         let parkedPaidEl = document.getElementById('histParkedPaid');
         if (parkedPaidEl) parkedPaidEl.innerText = tParkedPaid;
         
@@ -14763,7 +14792,7 @@ window.loadSalesHistoryTab = async function() {
         if (parkedDelEl) parkedDelEl.innerText = tParkedDeleted;
         let grabCountEl = document.getElementById('histCountGrab');
         if (grabCountEl) grabCountEl.innerText = `${tGrabCount} Order${tGrabCount !== 1 ? 's' : ''}`;
-        // 🔥 FOODPANDA UI UPDATE
+        
         let fpSumEl = document.getElementById('histSumFoodpanda');
         if (fpSumEl) fpSumEl.innerText = `₱${tFoodpanda.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
         let fpCountEl = document.getElementById('histCountFoodpanda');
@@ -14807,7 +14836,6 @@ window.loadSalesHistoryTab = async function() {
         if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
     }
 };
-
 // ========================================================
 // 📊 VIEW SHIFT DETAILS MODAL ENGINE
 // ========================================================
@@ -27409,41 +27437,34 @@ window.editStorefrontProfile = async function(encodedData) {
 };
 
 // ========================================================
-// 💾 CSV ARCHIVE & PURGE ENGINE (CUSTOM DATE RANGE UPGRADE)
+// ☁️ CLOUD COLD STORAGE AUTO-ARCHIVER ENGINE
 // ========================================================
 window.openArchiveSalesModal = async function() {
     const { value: formValues } = await Swal.fire({
-        title: '📦 Archive & Purge Sales',
+        title: '☁️ Cloud Auto-Archiver',
         html: `
-            <div style="text-align: left; font-size: 14px; color: #475569; margin-bottom: 15px; line-height: 1.5;">
-                Select a custom date range to download all its transactions into a CSV Excel file. After downloading, you can choose to permanently delete them from the cloud to save database costs.
+            <div style="text-align: left; font-size: 13px; color: #475569; margin-bottom: 15px; line-height: 1.5;">
+                This will scan the live database for transactions between the selected dates, compress them into a tiny hidden file, and store them securely in the cloud to stop Firebase billing fees.
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                 <div>
                     <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Start Date</label>
-                    <input type="date" id="swalArchiveStart" class="swal2-input" style="width: 100%; margin: 0; box-sizing: border-box; font-weight: bold; color: #0ea5e9; font-size: 14px; padding: 10px;">
+                    <input type="date" id="swalArchiveStart" class="swal2-input" style="width: 100%; margin: 0; box-sizing: border-box; font-weight: bold; color: #8b5cf6; font-size: 14px; padding: 10px;">
                 </div>
                 <div>
                     <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">End Date</label>
-                    <input type="date" id="swalArchiveEnd" class="swal2-input" style="width: 100%; margin: 0; box-sizing: border-box; font-weight: bold; color: #0ea5e9; font-size: 14px; padding: 10px;">
+                    <input type="date" id="swalArchiveEnd" class="swal2-input" style="width: 100%; margin: 0; box-sizing: border-box; font-weight: bold; color: #8b5cf6; font-size: 14px; padding: 10px;">
                 </div>
             </div>
         `,
         showCancelButton: true,
         confirmButtonText: 'Scan Data',
-        confirmButtonColor: '#0ea5e9',
+        confirmButtonColor: '#8b5cf6',
         customClass: { popup: 'rounded-2xl shadow-xl' },
         preConfirm: () => {
             const start = document.getElementById('swalArchiveStart').value;
             const end = document.getElementById('swalArchiveEnd').value;
-            if (!start || !end) {
-                Swal.showValidationMessage("Please select both a Start Date and an End Date.");
-                return false;
-            }
-            if (new Date(start) > new Date(end)) {
-                Swal.showValidationMessage("Start Date cannot be after End Date.");
-                return false;
-            }
+            if (!start || !end) { Swal.showValidationMessage("Please select both dates."); return false; }
             return { start, end };
         }
     });
@@ -27453,106 +27474,107 @@ window.openArchiveSalesModal = async function() {
     Swal.fire({title: 'Scanning Database...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
     try {
-        // Set precise timeframes for Firebase querying
-        let startOfDay = new Date(formValues.start);
-        startOfDay.setHours(0, 0, 0, 0);
-        let endOfDay = new Date(formValues.end);
-        endOfDay.setHours(23, 59, 59, 999);
+        let startOfDay = new Date(formValues.start); startOfDay.setHours(0, 0, 0, 0);
+        let endOfDay = new Date(formValues.end); endOfDay.setHours(23, 59, 59, 999);
 
-        const q = window.query(
-            window.collection(window.db, "transactions"), 
-            window.where("timestamp", ">=", startOfDay), 
-            window.where("timestamp", "<=", endOfDay)
-        );
-        
+        const q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
         const snap = await window.getDocs(q);
 
-        if (snap.empty) {
-            return Swal.fire('No Data', `No transactions found between ${formValues.start} and ${formValues.end}.`, 'info');
-        }
+        if (snap.empty) return Swal.fire('No Data', 'No transactions found for this date range.', 'info');
 
-        // 🔥 Standardized Headers to guarantee compatibility with the Archive App
-        let csv = "\uFEFFOR#,Branch,Cashier,Customer,Items Sold,Gross Total,Discount,Net Total,Payment Method,Status,Date,Time\n";
+        let transactions = [];
         let txIds = [];
 
         snap.forEach(docSnap => {
-            let tx = docSnap.data();
+            let data = docSnap.data();
+            data.id = docSnap.id;
+            // Capture exact milliseconds so the charts don't break when unzipped!
+            data.timestampMs = data.timestamp ? (data.timestamp.toMillis ? data.timestamp.toMillis() : new Date(data.timestamp).getTime()) : Date.now();
+            transactions.push(data);
             txIds.push(docSnap.id);
-
-            let d = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : new Date();
-            let dateStr = d.toLocaleDateString('en-PH');
-            let timeStr = d.toLocaleTimeString('en-PH');
-
-            let itemsArr = [];
-            if (tx.cart && Array.isArray(tx.cart)) {
-                tx.cart.forEach(item => {
-                    let itemName = item.name || item.itemName;
-                    let itemLine = `${item.qty}x ${itemName}`;
-                    if (item.addons) {
-                        for (let key in item.addons) {
-                            if (item.addons[key].qty > 0) itemLine += ` (+${item.addons[key].qty} ${key})`;
-                        }
-                    }
-                    itemsArr.push(itemLine);
-                });
-            }
-            let itemsJoined = itemsArr.join(" | ").replace(/"/g, '""');
-
-            let gross = (tx.subTotalBeforeDiscount || tx.netTotal || 0).toFixed(2);
-            let disc = (tx.globalDiscountAmount || 0).toFixed(2);
-            let net = (tx.netTotal || 0).toFixed(2);
-            let customer = (tx.customerName || 'Guest').replace(/"/g, '""');
-            let cashier = (tx.cashier || 'Unknown').replace(/"/g, '""');
-            let method = (tx.paymentMethod || 'Cash').replace(/"/g, '""');
-            let status = (tx.status || 'Paid').replace(/"/g, '""');
-
-            csv += `"${tx.receiptId || 'N/A'}","${tx.branch}","${cashier}","${customer}","${itemsJoined}","${gross}","${disc}","${net}","${method}","${status}","${dateStr}","${timeStr}"\n`;
         });
 
-        // 1. Download the file directly to their device
-        let csvFile = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-        let downloadLink = document.createElement("a");
-        
-        // Dynamically name the file based on the date range!
-        downloadLink.download = `Takodeal_Archive_${formValues.start}_to_${formValues.end}.csv`;
-        downloadLink.href = window.URL.createObjectURL(csvFile);
-        downloadLink.style.display = "none";
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-
-        // 2. Ask permission to nuke the old data!
         const purgeConfirm = await Swal.fire({
-            title: '✅ Download Complete!',
-            html: `Successfully downloaded <b>${txIds.length}</b> transactions.<br><br>Do you want to permanently delete these records from the cloud to save database costs?`,
+            title: 'Ready to Archive!',
+            html: `Found <b>${txIds.length}</b> live transactions.<br><br>This will compress them into a single Cold Storage file and permanently delete the expensive database rows. Proceed?`,
             icon: 'warning',
             showCancelButton: true,
-            confirmButtonText: 'Yes, Purge Data 🗑️',
-            cancelButtonText: 'Keep Data in Cloud',
-            confirmButtonColor: '#dc2626',
-            cancelButtonColor: '#64748b',
+            confirmButtonText: 'Yes, Compress & Purge 🗄️',
+            cancelButtonText: 'Cancel',
+            confirmButtonColor: '#8b5cf6',
             customClass: { popup: 'rounded-2xl shadow-xl' }
         });
 
-        if (purgeConfirm.isConfirmed) {
-            Swal.fire({title: 'Purging...', text: 'Permanently deleting records...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-            
-            // Delete them all!
-            let promises = [];
-            txIds.forEach(id => {
-                promises.push(window.deleteDoc(window.doc(window.db, "transactions", id)));
-            });
-            await Promise.all(promises);
+        if (!purgeConfirm.isConfirmed) return;
 
-            Swal.fire('Purged!', `${txIds.length} old transactions permanently removed from the database.`, 'success');
-            if (typeof window.loadSalesHistoryTab === 'function') window.loadSalesHistoryTab();
+        Swal.fire({title: 'Compressing...', text: 'Uploading to Cold Storage...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+        // 1. Convert to JSON & Upload to Storage Bucket
+        let jsonString = JSON.stringify(transactions);
+        let blob = new Blob([jsonString], { type: "application/json" });
+        let fileName = `archives/Takodeal_Archive_${formValues.start}_to_${formValues.end}_${Date.now()}.json`;
+        let storageRef = window.ref(window.storage, fileName);
+
+        let uploadSnap = await window.uploadBytes(storageRef, blob);
+        let url = await window.getDownloadURL(uploadSnap.ref);
+
+        Swal.fire({title: 'Purging...', text: 'Cleaning Live Database...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+        // 2. Save the URL to a tiny index file
+        await window.addDoc(window.collection(window.db, "archived_months"), {
+            label: `${formValues.start} to ${formValues.end} (${txIds.length} tx)`,
+            startDate: formValues.start,
+            endDate: formValues.end,
+            url: url,
+            txCount: txIds.length,
+            createdAt: window.serverTimestamp()
+        });
+
+        // 3. Purge the Database (Chunks of 500 to prevent crashing)
+        let deletePromises = [];
+        txIds.forEach(id => deletePromises.push(window.deleteDoc(window.doc(window.db, "transactions", id))));
+        
+        for (let i = 0; i < deletePromises.length; i += 500) {
+            const chunk = deletePromises.slice(i, i + 500);
+            await Promise.all(chunk);
         }
+
+        Swal.fire('Archived!', `${txIds.length} transactions successfully moved to Cold Storage. Your Firebase bill is safe.`, 'success');
+        
+        window.loadArchiveDropdown();
+        window.loadSalesHistoryTab();
 
     } catch (e) {
         console.error("Archive Error:", e);
         Swal.fire('Error', 'Failed to archive data. Check connection.', 'error');
     }
 };
+
+// --- POPULATES THE ARCHIVE DROPDOWN ---
+window.loadArchiveDropdown = async function() {
+    let select = document.getElementById('histArchiveSelect');
+    if (!select) return;
+    try {
+        const q = window.query(window.collection(window.db, "archived_months"), window.orderBy("createdAt", "desc"));
+        const snap = await window.getDocs(q);
+        
+        let html = '<option value="LIVE">🟢 Live Database</option>';
+        snap.forEach(doc => {
+            let data = doc.data();
+            html += `<option value="${data.url}">🗄️ ${data.label}</option>`;
+        });
+        select.innerHTML = html;
+    } catch (e) { console.error("Dropdown Error:", e); }
+};
+
+// Wake it up automatically
+document.addEventListener("DOMContentLoaded", () => {
+    setTimeout(() => { if (typeof window.loadArchiveDropdown === 'function') window.loadArchiveDropdown(); }, 2000);
+});
+
+// ========================================================
+// 🛡️ THE INTERCEPTOR: ROUTES THE HISTORY TAB TO COLD STORAGE
+// ========================================================
 
 // ========================================================
 // 📱 EXECUTIVE MOBILE SUMMARY EXPORTER (LIGHTWEIGHT)
