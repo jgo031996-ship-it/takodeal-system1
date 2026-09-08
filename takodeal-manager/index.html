@@ -1086,7 +1086,6 @@
                     <option value="Cabantian">Cabantian</option>
                     <option value="Citygate">Citygate</option>
                     <option value="Maa">Maa</option>
-                    <option value="PAMPANGA">PAMPANGA</option>
                 </select>
             </div>
             <div style="display: flex; flex-direction: column;">
@@ -1098,8 +1097,12 @@
                 <input type="date" id="histEndDate" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #334155; outline: none; font-size: 13px;">
             </div>
             <div style="display: flex; flex-direction: row; justify-content: flex-end; align-items: flex-end; height: 100%; gap: 10px;">
-                <button onclick="window.loadSalesHistoryTab()" style="background: #0f766e; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 900; font-size: 13px; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3); transition: 0.2s;">🔄 Update Report</button>
-                <button onclick="window.openArchiveSalesModal()" style="background: #ef4444; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 900; font-size: 13px; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); transition: 0.2s;">📦 Archive & Purge</button>
+                <button onclick="window.loadSalesHistoryTab()" style="background: #0f766e; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: 900; font-size: 12px; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3); transition: 0.2s;">🔄 Update Report</button>
+                
+                <!-- 🔥 NEW: MOBILE SUMMARY EXPORT BUTTON 🔥 -->
+                <button onclick="window.exportMobileSummaryCSV()" style="background: #0ea5e9; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: 900; font-size: 12px; cursor: pointer; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;">📱 Daily Summary</button>
+
+                <button onclick="window.openArchiveSalesModal()" style="background: #ef4444; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: 900; font-size: 12px; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); transition: 0.2s;">📦 Archive Raw</button>
             </div>
           </div>
         </div>
