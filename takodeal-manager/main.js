@@ -19196,6 +19196,9 @@ window.loadEquipmentDashboard = async function() {
             actionHtml += `<button onclick="window.editEquipmentModal('${safeDataStr}')" style="background: #eff6ff; color: #0ea5e9; border: 1px solid #bae6fd; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✏️ Edit</button>`;
 
             if (d.status === "Active") {
+                // 🔥 NEW: TRANSFER EQUIPMENT BUTTON
+                actionHtml += `<button onclick="window.openTransferEquipmentModal('${docSnap.id}', '${d.name.replace(/'/g, "\\'")}', '${d.branch}')" style="background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🚚 Transfer</button>`;
+                
                 actionHtml += `<button onclick="window.markEquipmentBroken('${docSnap.id}', '${d.name.replace(/'/g, "\\'")}', '${d.branch}')" style="background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: bold; cursor: pointer;">⚠️ Report Breakdown</button>`;
             } else {
                 actionHtml += `<span style="font-size: 11px; color: #94a3b8; font-style: italic; text-align: center; padding: 4px 0;">Archived</span>`;
@@ -27846,5 +27849,69 @@ window.exportMobileSummaryCSV = async function() {
     } catch (e) {
         console.error("Summary Export Error:", e);
         Swal.fire('Error', 'Failed to generate mobile summary.', 'error');
+    }
+};
+
+// ========================================================
+// 🚚 EQUIPMENT ASSET TRANSFER ENGINE
+// ========================================================
+window.openTransferEquipmentModal = async function(docId, eqName, currentBranch) {
+    // 1. Dynamically load active branches (excluding the one it's currently in!)
+    let branchOptions = '';
+    window.globalActiveBranches.forEach(b => {
+        if (b !== currentBranch) {
+            branchOptions += `<option value="${b}">${b}</option>`;
+        }
+    });
+
+    if (!branchOptions) {
+        return Swal.fire('No Destinations', 'There are no other active branches to transfer this equipment to.', 'info');
+    }
+
+    const { value: selectedBranch, isConfirmed } = await Swal.fire({
+        title: '🚚 Transfer Equipment',
+        html: `
+            <div style="text-align: left; margin-top: 10px;">
+                <div style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px dashed #cbd5e1; margin-bottom: 15px;">
+                    <span style="font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: bold;">Asset to Transfer:</span><br>
+                    <strong style="color: #0f172a; font-size: 15px;">${eqName}</strong><br>
+                    <span style="font-size: 11px; color: #dc2626; font-weight: bold;">Currently at: ${currentBranch}</span>
+                </div>
+                
+                <label style="font-size: 12px; font-weight: bold; color: #16a34a; display: block; margin-bottom: 5px;">Select Destination Branch:</label>
+                <select id="transferEqBranch" style="width: 100%; padding: 12px; border-radius: 6px; border: 2px solid #bbf7d0; background: #f0fdf4; color: #15803d; outline: none; font-weight: bold; cursor: pointer; font-size: 14px;">
+                    ${branchOptions}
+                </select>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Confirm Transfer',
+        confirmButtonColor: '#16a34a',
+        cancelButtonColor: '#94a3b8',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            return document.getElementById('transferEqBranch').value;
+        }
+    });
+
+    if (isConfirmed && selectedBranch) {
+        Swal.fire({ title: 'Transferring...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        try {
+            await window.updateDoc(window.doc(window.db, "equipment_assets", docId), {
+                branch: selectedBranch,
+                lastUpdated: window.serverTimestamp()
+            });
+            
+            Swal.fire({ 
+                toast: true, position: 'top-end', icon: 'success', 
+                title: 'Equipment Transferred!', showConfirmButton: false, timer: 2000 
+            });
+            
+            // Instantly refresh the table!
+            window.loadEquipmentDashboard();
+        } catch (e) {
+            console.error("Transfer Error:", e);
+            Swal.fire('Error', 'Failed to transfer equipment. Check your internet connection.', 'error');
+        }
     }
 };
