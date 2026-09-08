@@ -14538,9 +14538,33 @@ window.loadSalesHistoryTab = async function() {
         } else {
             // Unzip the file from Firebase Storage memory!
             const response = await fetch(dataSource);
-            const jsonData = await response.json();
+            const rawJsonData = await response.json();
             
-            jsonData.forEach(item => {
+            // Backwards compatible router: checks if the file is an old transactions-only array or the new Universal format
+            let archiveTx = Array.isArray(rawJsonData) ? rawJsonData : (rawJsonData.transactions || []);
+            let archiveShifts = Array.isArray(rawJsonData) ? [] : (rawJsonData.shifts || []);
+
+            // Handle Archived Shifts so the Shifts Tab still works!
+            archiveShifts.forEach(s => {
+                if (branchFilter !== "All" && s.branch !== branchFilter) return;
+                
+                let sTime = s.startTimeMs ? new Date(s.startTimeMs) : new Date();
+                let eTime = s.endTimeMs ? new Date(s.endTimeMs) : sTime;
+                
+                let sTimeStr = sTime.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+                let eTimeStr = s.active ? "Present" : eTime.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' });
+                
+                let businessShiftDate = new Date(sTime.getTime());
+                if (businessShiftDate.getHours() < 5) businessShiftDate.setDate(businessShiftDate.getDate() - 1);
+                let dateStr = businessShiftDate.toLocaleDateString('en-PH', { year: 'numeric', month: '2-digit', day: '2-digit' });
+
+                window.globalShiftReports[s.id || Math.random().toString()] = {
+                    id: s.id, branch: s.branch, cashier: s.cashier, dateStr: dateStr, timeLabel: `${sTimeStr} - ${eTimeStr}`, timestamp: sTime,
+                    sales: 0, cogs: 0, voids: 0, txCount: 0, categorySales: {}, itemSales: {}, transactions: [] 
+                };
+            });
+            
+            archiveTx.forEach(item => {
                 // Javascript Filter
                 if (branchFilter !== "All" && item.branch !== branchFilter) return;
                 
@@ -27437,14 +27461,14 @@ window.editStorefrontProfile = async function(encodedData) {
 };
 
 // ========================================================
-// ☁️ CLOUD COLD STORAGE AUTO-ARCHIVER ENGINE
+// ☁️ UNIVERSAL CLOUD AUTO-ARCHIVER ENGINE (CSV + JSON)
 // ========================================================
 window.openArchiveSalesModal = async function() {
     const { value: formValues } = await Swal.fire({
-        title: '☁️ Cloud Auto-Archiver',
+        title: '🌪️ Universal Cloud Archiver',
         html: `
             <div style="text-align: left; font-size: 13px; color: #475569; margin-bottom: 15px; line-height: 1.5;">
-                This will scan the live database for transactions between the selected dates, compress them into a tiny hidden file, and store them securely in the cloud to stop Firebase billing fees.
+                This will sweep the database for <b>Transactions, Shifts, Attendance, Stock Logs, and Expenses</b>. It will first download a Master CSV to your computer, then move the data to Cold Storage to stop Firebase fees.
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                 <div>
@@ -27471,36 +27495,103 @@ window.openArchiveSalesModal = async function() {
 
     if (!formValues) return;
 
-    Swal.fire({title: 'Scanning Database...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    Swal.fire({title: 'Scanning All Collections...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
     try {
         let startOfDay = new Date(formValues.start); startOfDay.setHours(0, 0, 0, 0);
         let endOfDay = new Date(formValues.end); endOfDay.setHours(23, 59, 59, 999);
 
-        const q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
-        const snap = await window.getDocs(q);
+        // Fetch from all 5 expensive collections simultaneously
+        const qTx = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
+        const qShifts = window.query(window.collection(window.db, "shifts"), window.where("startTime", ">=", startOfDay), window.where("startTime", "<=", endOfDay));
+        const qAtt = window.query(window.collection(window.db, "attendance_logs"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
+        const qStock = window.query(window.collection(window.db, "stock_logs"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
+        const qExp = window.query(window.collection(window.db, "expenses"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
 
-        if (snap.empty) return Swal.fire('No Data', 'No transactions found for this date range.', 'info');
+        const [snapTx, snapShifts, snapAtt, snapStock, snapExp] = await Promise.all([
+            window.getDocs(qTx), window.getDocs(qShifts), window.getDocs(qAtt), window.getDocs(qStock), window.getDocs(qExp)
+        ]);
 
-        let transactions = [];
-        let txIds = [];
+        let totalDocs = snapTx.size + snapShifts.size + snapAtt.size + snapStock.size + snapExp.size;
+        if (totalDocs === 0) return Swal.fire('No Data', 'No operational logs found for this date range.', 'info');
 
-        snap.forEach(docSnap => {
-            let data = docSnap.data();
-            data.id = docSnap.id;
-            // Capture exact milliseconds so the charts don't break when unzipped!
-            data.timestampMs = data.timestamp ? (data.timestamp.toMillis ? data.timestamp.toMillis() : new Date(data.timestamp).getTime()) : Date.now();
-            transactions.push(data);
-            txIds.push(docSnap.id);
+        const extractMs = (ts) => ts ? (ts.toMillis ? ts.toMillis() : new Date(ts).getTime()) : Date.now();
+        const formatDate = (ms) => new Date(ms).toLocaleDateString('en-PH');
+        const formatTime = (ms) => new Date(ms).toLocaleTimeString('en-PH');
+        const cleanTxt = (txt) => (txt || '').toString().replace(/"/g, '""');
+
+        let archiveData = { transactions: [], shifts: [], attendance_logs: [], stock_logs: [], expenses: [] };
+        let deleteIds = { transactions: [], shifts: [], attendance_logs: [], stock_logs: [], expenses: [] };
+        
+        let csv = "\uFEFF"; // Universal UTF-8 Marker for Excel
+
+        // 1. PROCESS TRANSACTIONS
+        csv += "=== TRANSACTIONS & SALES ===\n";
+        csv += "Receipt ID,Date,Time,Branch,Cashier,Customer,Items Ordered,Net Total,Payment Method,Status\n";
+        snapTx.forEach(docSnap => {
+            let d = docSnap.data(); d.id = docSnap.id; deleteIds.transactions.push(d.id);
+            d.timestampMs = extractMs(d.timestamp); archiveData.transactions.push(d);
+            
+            let itemsJoined = d.cart ? d.cart.map(i => `${i.qty}x ${i.name || i.itemName}`).join(" | ") : "";
+            csv += `"${d.receiptId}","${formatDate(d.timestampMs)}","${formatTime(d.timestampMs)}","${d.branch}","${d.cashier}","${cleanTxt(d.customerName)}","${cleanTxt(itemsJoined)}","${d.netTotal}","${d.paymentMethod}","${d.status}"\n`;
         });
 
+        // 2. PROCESS SHIFTS
+        csv += "\n=== SHIFTS & Z-READINGS ===\n";
+        csv += "Shift ID,Date,Branch,Cashier,Time In,Time Out,Gross Sales,Net Sales,COGS,Expected Cash,Declared Cash\n";
+        snapShifts.forEach(docSnap => {
+            let d = docSnap.data(); d.id = docSnap.id; deleteIds.shifts.push(d.id);
+            d.startTimeMs = extractMs(d.startTime); d.endTimeMs = extractMs(d.endTime); archiveData.shifts.push(d);
+            
+            csv += `"${d.id}","${formatDate(d.startTimeMs)}","${d.branch}","${d.cashier}","${formatTime(d.startTimeMs)}","${formatTime(d.endTimeMs)}","${d.grossSales || 0}","${d.netSales || 0}","${d.cogs || 0}","${d.expectedCash || 0}","${d.declaredCash || 0}"\n`;
+        });
+
+        // 3. PROCESS ATTENDANCE
+        csv += "\n=== ATTENDANCE LOGS ===\n";
+        csv += "Date,Time,Branch,Staff Name,Action Type,Late Penalty,Remarks\n";
+        snapAtt.forEach(docSnap => {
+            let d = docSnap.data(); d.id = docSnap.id; deleteIds.attendance_logs.push(d.id);
+            d.timestampMs = extractMs(d.timestamp); archiveData.attendance_logs.push(d);
+            
+            csv += `"${formatDate(d.timestampMs)}","${formatTime(d.timestampMs)}","${d.branch}","${d.staffName}","${d.type}","${d.penaltyAmount || 0}","${cleanTxt(d.remarks)}"\n`;
+        });
+
+        // 4. PROCESS STOCK LOGS
+        csv += "\n=== STOCK HISTORY & VARIANCES ===\n";
+        csv += "Date,Time,Branch,Item,UOM,Old Qty,New Qty,Variance,Action Type,User,Notes\n";
+        snapStock.forEach(docSnap => {
+            let d = docSnap.data(); d.id = docSnap.id; deleteIds.stock_logs.push(d.id);
+            d.timestampMs = extractMs(d.timestamp); archiveData.stock_logs.push(d);
+            
+            csv += `"${formatDate(d.timestampMs)}","${formatTime(d.timestampMs)}","${d.branch}","${d.item}","${d.uom}","${d.oldQty}","${d.newQty}","${d.variance}","${d.type}","${d.user}","${cleanTxt(d.note)}"\n`;
+        });
+
+        // 5. PROCESS EXPENSES
+        csv += "\n=== EXPENSES & BUDGETS ===\n";
+        csv += "Date,Time,Branch,Category,Account Deducted,Amount,Notes\n";
+        snapExp.forEach(docSnap => {
+            let d = docSnap.data(); d.id = docSnap.id; deleteIds.expenses.push(d.id);
+            d.timestampMs = extractMs(d.timestamp); archiveData.expenses.push(d);
+            
+            csv += `"${formatDate(d.timestampMs)}","${formatTime(d.timestampMs)}","${d.branch}","${d.category}","${d.account}","${d.amount}","${cleanTxt(d.note)}"\n`;
+        });
+
+        // ⏬ DOWNLOAD THE CSV FIRST!
+        let csvFile = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        let downloadLink = document.createElement("a");
+        downloadLink.download = `Takodeal_Master_Archive_${formValues.start}_to_${formValues.end}.csv`;
+        downloadLink.href = window.URL.createObjectURL(csvFile);
+        downloadLink.style.display = "none";
+        document.body.appendChild(downloadLink); downloadLink.click(); document.body.removeChild(downloadLink);
+
+        // 🛑 ASK FOR PURGE PERMISSION
         const purgeConfirm = await Swal.fire({
-            title: 'Ready to Archive!',
-            html: `Found <b>${txIds.length}</b> live transactions.<br><br>This will compress them into a single Cold Storage file and permanently delete the expensive database rows. Proceed?`,
+            title: '✅ CSV Downloaded!',
+            html: `You have successfully downloaded <b>${totalDocs}</b> total operational records.<br><br>Do you want to zip this data to Cold Storage and delete the expensive database rows?`,
             icon: 'warning',
             showCancelButton: true,
-            confirmButtonText: 'Yes, Compress & Purge 🗄️',
-            cancelButtonText: 'Cancel',
+            confirmButtonText: 'Yes, Purge Database 🗄️',
+            cancelButtonText: 'Keep Data Live',
             confirmButtonColor: '#8b5cf6',
             customClass: { popup: 'rounded-2xl shadow-xl' }
         });
@@ -27509,8 +27600,8 @@ window.openArchiveSalesModal = async function() {
 
         Swal.fire({title: 'Compressing...', text: 'Uploading to Cold Storage...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
-        // 1. Convert to JSON & Upload to Storage Bucket
-        let jsonString = JSON.stringify(transactions);
+        // 🗄️ UPLOAD JSON TO BUCKET
+        let jsonString = JSON.stringify(archiveData);
         let blob = new Blob([jsonString], { type: "application/json" });
         let fileName = `archives/Takodeal_Archive_${formValues.start}_to_${formValues.end}_${Date.now()}.json`;
         let storageRef = window.ref(window.storage, fileName);
@@ -27520,26 +27611,29 @@ window.openArchiveSalesModal = async function() {
 
         Swal.fire({title: 'Purging...', text: 'Cleaning Live Database...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
-        // 2. Save the URL to a tiny index file
         await window.addDoc(window.collection(window.db, "archived_months"), {
-            label: `${formValues.start} to ${formValues.end} (${txIds.length} tx)`,
+            label: `${formValues.start} to ${formValues.end} (${totalDocs} logs)`,
             startDate: formValues.start,
             endDate: formValues.end,
             url: url,
-            txCount: txIds.length,
+            txCount: totalDocs, // Now represents ALL wiped docs
             createdAt: window.serverTimestamp()
         });
 
-        // 3. Purge the Database (Chunks of 500 to prevent crashing)
+        // 🧹 DELETE EVERYTHING SAFELY IN CHUNKS
         let deletePromises = [];
-        txIds.forEach(id => deletePromises.push(window.deleteDoc(window.doc(window.db, "transactions", id))));
+        deleteIds.transactions.forEach(id => deletePromises.push(window.deleteDoc(window.doc(window.db, "transactions", id))));
+        deleteIds.shifts.forEach(id => deletePromises.push(window.deleteDoc(window.doc(window.db, "shifts", id))));
+        deleteIds.attendance_logs.forEach(id => deletePromises.push(window.deleteDoc(window.doc(window.db, "attendance_logs", id))));
+        deleteIds.stock_logs.forEach(id => deletePromises.push(window.deleteDoc(window.doc(window.db, "stock_logs", id))));
+        deleteIds.expenses.forEach(id => deletePromises.push(window.deleteDoc(window.doc(window.db, "expenses", id))));
         
         for (let i = 0; i < deletePromises.length; i += 500) {
             const chunk = deletePromises.slice(i, i + 500);
             await Promise.all(chunk);
         }
 
-        Swal.fire('Archived!', `${txIds.length} transactions successfully moved to Cold Storage. Your Firebase bill is safe.`, 'success');
+        Swal.fire('Archived!', `${totalDocs} logs successfully moved to Cold Storage. Your Firebase bill is safe.`, 'success');
         
         window.loadArchiveDropdown();
         window.loadSalesHistoryTab();
