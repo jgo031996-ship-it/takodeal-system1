@@ -1079,6 +1079,16 @@
             <span style="font-size: 13px; color: #64748b; margin-top: 6px; display: block; font-weight: 500;">Review all past transactions and aggregated sales reports.</span>
           </div>
           <div style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+            
+            <!-- 🔥 NEW: DATABASE SOURCE SELECTOR -->
+            <div style="display: flex; flex-direction: column;">
+                <span style="font-size: 11px; font-weight: 800; color: #8b5cf6; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px;">Data Source</span>
+                <select id="histArchiveSelect" style="padding: 10px 15px; border-radius: 8px; border: 2px solid #ddd6fe; font-weight: 900; color: #6d28d9; background: #f5f3ff; outline: none; cursor: pointer; min-width: 140px; font-size: 13px;" onchange="if(this.value==='LIVE'){ document.getElementById('histDateFilters').style.display='flex'; } else { document.getElementById('histDateFilters').style.display='none'; } window.loadSalesHistoryTab();">
+                    <option value="LIVE">🟢 Live Database</option>
+                    <!-- JS WILL INJECT ARCHIVES HERE -->
+                </select>
+            </div>
+            
             <div style="display: flex; flex-direction: column;">
                 <span style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px;">Branch</span>
                 <select id="histBranchFilter" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #0ea5e9; background: #f0f9ff; outline: none; cursor: pointer; min-width: 140px; font-size: 13px;">
@@ -1088,21 +1098,23 @@
                     <option value="Maa">Maa</option>
                 </select>
             </div>
-            <div style="display: flex; flex-direction: column;">
-                <span style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px;">Start Date</span>
-                <input type="date" id="histStartDate" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #334155; outline: none; font-size: 13px;">
+            
+            <!-- Grouped dates so they can be hidden when viewing an archive -->
+            <div id="histDateFilters" style="display: flex; gap: 15px;">
+                <div style="display: flex; flex-direction: column;">
+                    <span style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px;">Start Date</span>
+                    <input type="date" id="histStartDate" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #334155; outline: none; font-size: 13px;">
+                </div>
+                <div style="display: flex; flex-direction: column;">
+                    <span style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px;">End Date</span>
+                    <input type="date" id="histEndDate" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #334155; outline: none; font-size: 13px;">
+                </div>
             </div>
-            <div style="display: flex; flex-direction: column;">
-                <span style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px;">End Date</span>
-                <input type="date" id="histEndDate" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #334155; outline: none; font-size: 13px;">
-            </div>
+            
             <div style="display: flex; flex-direction: row; justify-content: flex-end; align-items: flex-end; height: 100%; gap: 10px;">
                 <button onclick="window.loadSalesHistoryTab()" style="background: #0f766e; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: 900; font-size: 12px; cursor: pointer; box-shadow: 0 4px 6px rgba(15, 118, 110, 0.3); transition: 0.2s;">🔄 Update Report</button>
-                
-                <!-- 🔥 NEW: MOBILE SUMMARY EXPORT BUTTON 🔥 -->
                 <button onclick="window.exportMobileSummaryCSV()" style="background: #0ea5e9; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: 900; font-size: 12px; cursor: pointer; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;">📱 Daily Summary</button>
-
-                <button onclick="window.openArchiveSalesModal()" style="background: #ef4444; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: 900; font-size: 12px; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); transition: 0.2s;">📦 Archive Raw</button>
+                <button onclick="window.openArchiveSalesModal()" style="background: #8b5cf6; color: white; border: none; padding: 12px 15px; border-radius: 8px; font-weight: 900; font-size: 12px; cursor: pointer; box-shadow: 0 4px 6px rgba(139, 92, 246, 0.3); transition: 0.2s;">☁️ Cloud Archive</button>
             </div>
           </div>
         </div>
