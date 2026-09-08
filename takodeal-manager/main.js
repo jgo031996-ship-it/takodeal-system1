@@ -27553,3 +27553,182 @@ window.openArchiveSalesModal = async function() {
         Swal.fire('Error', 'Failed to archive data. Check connection.', 'error');
     }
 };
+
+// ========================================================
+// 📱 EXECUTIVE MOBILE SUMMARY EXPORTER (LIGHTWEIGHT)
+// ========================================================
+window.exportMobileSummaryCSV = async function() {
+    const { value: formValues } = await Swal.fire({
+        title: '📱 Export Mobile Summary',
+        html: `
+            <div style="text-align: left; font-size: 13px; color: #475569; margin-bottom: 15px; line-height: 1.5;">
+                This will generate a highly compressed, lightweight spreadsheet containing only <b>1 row per day</b>. It is optimized to open instantly on mobile phones.
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Start Date</label>
+                    <input type="date" id="swalMobileStart" class="swal2-input" style="width: 100%; margin: 0; box-sizing: border-box; font-weight: bold; color: #0ea5e9; font-size: 14px; padding: 10px;">
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">End Date</label>
+                    <input type="date" id="swalMobileEnd" class="swal2-input" style="width: 100%; margin: 0; box-sizing: border-box; font-weight: bold; color: #0ea5e9; font-size: 14px; padding: 10px;">
+                </div>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Generate Tiny CSV',
+        confirmButtonColor: '#10b981',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            const start = document.getElementById('swalMobileStart').value;
+            const end = document.getElementById('swalMobileEnd').value;
+            if (!start || !end) {
+                Swal.showValidationMessage("Please select both dates.");
+                return false;
+            }
+            return { start, end };
+        }
+    });
+
+    if (!formValues) return;
+
+    Swal.fire({title: 'Crunching Big Data...', text: 'Compressing thousands of rows...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        let startOfDay = new Date(formValues.start + 'T00:00:00');
+        let endOfDay = new Date(formValues.end + 'T23:59:59');
+
+        let dailyStats = {};
+
+        // Helper to group data by the "Business Day" (shifts ending after midnight)
+        const getBizDate = (dateObj) => {
+            let d = new Date(dateObj.getTime());
+            if (d.getHours() < 5) d.setDate(d.getDate() - 1); 
+            let y = d.getFullYear();
+            let m = String(d.getMonth() + 1).padStart(2, '0');
+            let dd = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${dd}`;
+        };
+
+        // 1. Pre-load Live Inventory & Recipes for exact COGS and Waste values
+        const invSnap = await window.getDocs(window.collection(window.db, "inventory"));
+        let invCosts = {};
+        invSnap.forEach(d => invCosts[d.data().name] = parseFloat(d.data().baseCost) || 0);
+
+        const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
+        let recipes = {};
+        bomSnap.forEach(d => {
+            let data = d.data();
+            if (!recipes[data.menuItem]) recipes[data.menuItem] = [];
+            recipes[data.menuItem].push({ ingredient: data.ingredientName, qty: parseFloat(data.qty) || 0 });
+        });
+
+        // 2. Fetch and Aggregate Transactions
+        const txQ = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
+        const txSnap = await window.getDocs(txQ);
+
+        txSnap.forEach(doc => {
+            let tx = doc.data();
+            if (tx.status === "Voided") return;
+            
+            let txDate = tx.timestamp ? tx.timestamp.toDate() : new Date();
+            let bizDate = getBizDate(txDate);
+
+            if(!dailyStats[bizDate]) dailyStats[bizDate] = { gross: 0, net: 0, cogs: 0, expenses: 0, waste: 0 };
+
+            let net = parseFloat(tx.netTotal) || 0;
+            let gross = parseFloat(tx.subTotalBeforeDiscount);
+            if (isNaN(gross) || gross < net) gross = net;
+
+            // Calculate Exact COGS
+            let txCogs = 0;
+            if (tx.cart && Array.isArray(tx.cart)) {
+                tx.cart.forEach(item => {
+                    let qty = item.qty || 1;
+                    let recipe = recipes[item.name || item.itemName] || [];
+                    recipe.forEach(ing => { txCogs += (invCosts[ing.ingredient] || 0) * ing.qty * qty; });
+                    
+                    if (item.addons) {
+                        for (let key in item.addons) {
+                            let addon = item.addons[key];
+                            if (addon.qty > 0 && addon.linkedIngredient) {
+                                txCogs += (invCosts[addon.linkedIngredient] || 0) * addon.deductQty * addon.qty * qty;
+                            }
+                        }
+                    }
+                });
+            }
+
+            dailyStats[bizDate].net += net;
+            dailyStats[bizDate].gross += gross;
+            dailyStats[bizDate].cogs += txCogs;
+        });
+
+        // 3. Fetch and Aggregate Expenses
+        const expQ = window.query(window.collection(window.db, "expenses"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
+        const expSnap = await window.getDocs(expQ);
+        expSnap.forEach(doc => {
+            let exp = doc.data();
+            let expDate = exp.timestamp ? exp.timestamp.toDate() : new Date();
+            let bizDate = getBizDate(expDate);
+            if(!dailyStats[bizDate]) dailyStats[bizDate] = { gross: 0, net: 0, cogs: 0, expenses: 0, waste: 0 };
+            
+            dailyStats[bizDate].expenses += (parseFloat(exp.amount) || 0);
+        });
+
+        // 4. Fetch and Aggregate Waste Cost
+        const logsQ = window.query(window.collection(window.db, "stock_logs"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
+        const logsSnap = await window.getDocs(logsQ);
+        logsSnap.forEach(doc => {
+            let log = doc.data();
+            let type = (log.type || "").toLowerCase();
+            
+            // Only aggregate actual physical waste or spoilage
+            if (type.includes("waste") || type.includes("spoilage")) {
+                let logDate = log.timestamp ? log.timestamp.toDate() : new Date();
+                let bizDate = getBizDate(logDate);
+                if(!dailyStats[bizDate]) dailyStats[bizDate] = { gross: 0, net: 0, cogs: 0, expenses: 0, waste: 0 };
+                
+                let qtyLost = Math.abs(parseFloat(log.variance) || 0);
+                let costPerUnit = invCosts[log.item] || 0;
+                dailyStats[bizDate].waste += (qtyLost * costPerUnit);
+            }
+        });
+
+        // 5. Generate the Tiny CSV
+        let csv = "\uFEFFDate,Gross Sales,Net Sales,COGS,Expenses,Waste Cost,True Net Profit\n";
+        let sortedDates = Object.keys(dailyStats).sort();
+
+        sortedDates.forEach(date => {
+            let s = dailyStats[date];
+            // Net Profit = Net Sales - COGS - Expenses - Waste
+            let trueProfit = s.net - s.cogs - s.expenses - s.waste;
+            csv += `"${date}","₱${s.gross.toFixed(2)}","₱${s.net.toFixed(2)}","₱${s.cogs.toFixed(2)}","₱${s.expenses.toFixed(2)}","₱${s.waste.toFixed(2)}","₱${trueProfit.toFixed(2)}"\n`;
+        });
+
+        if (sortedDates.length === 0) {
+            return Swal.fire('No Data', 'No financial data found for this period.', 'info');
+        }
+
+        // 6. Download File
+        let csvFile = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        let downloadLink = document.createElement("a");
+        downloadLink.download = `Takodeal_Mobile_Summary_${formValues.start}_to_${formValues.end}.csv`;
+        downloadLink.href = window.URL.createObjectURL(csvFile);
+        downloadLink.style.display = "none";
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+
+        Swal.fire({
+            title: '✅ File Ready!', 
+            text: 'Your lightweight summary has been downloaded. You can open this file instantly on your phone!', 
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+    } catch (e) {
+        console.error("Summary Export Error:", e);
+        Swal.fire('Error', 'Failed to generate mobile summary.', 'error');
+    }
+};
