@@ -1453,6 +1453,17 @@ window.calcRestockSubtotal = function() {
     if (subInput) subInput.value = subtotal > 0 ? subtotal.toFixed(2) : "";
 };
 
+window.calcRestockFromSubtotal = function() {
+    let qty = parseFloat(document.getElementById('restockQtyInput').value) || 0;
+    let subtotal = parseFloat(document.getElementById('restockSubtotal').value) || 0;
+    
+    let costInput = document.getElementById('restockUnitCost');
+    if (qty > 0 && subtotal > 0) {
+        let unitCost = subtotal / qty;
+        if (costInput) costInput.value = unitCost.toFixed(2);
+    }
+};
+
 window.addRestockToCart = function () {
   let itemName = document.getElementById('restockItemSelect').value.trim();
   let purchQty = parseFloat(document.getElementById('restockQtyInput').value);
