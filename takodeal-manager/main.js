@@ -27409,49 +27409,69 @@ window.editStorefrontProfile = async function(encodedData) {
 };
 
 // ========================================================
-// 📦 COLD ARCHIVE & PURGE ENGINE (STORAGE SAVER)
+// 💾 CSV ARCHIVE & PURGE ENGINE (CUSTOM DATE RANGE UPGRADE)
 // ========================================================
 window.openArchiveSalesModal = async function() {
-    const { value: monthVal } = await Swal.fire({
+    const { value: formValues } = await Swal.fire({
         title: '📦 Archive & Purge Sales',
         html: `
             <div style="text-align: left; font-size: 14px; color: #475569; margin-bottom: 15px; line-height: 1.5;">
-                Select a past month to download all its transactions into a CSV Excel file. After downloading, you can choose to permanently delete them from the cloud to save database costs.
+                Select a custom date range to download all its transactions into a CSV Excel file. After downloading, you can choose to permanently delete them from the cloud to save database costs.
             </div>
-            <input type="month" id="swalArchiveMonth" class="swal2-input" style="width: 100%; max-width: 100%; box-sizing: border-box; font-weight: bold; color: #0ea5e9;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Start Date</label>
+                    <input type="date" id="swalArchiveStart" class="swal2-input" style="width: 100%; margin: 0; box-sizing: border-box; font-weight: bold; color: #0ea5e9; font-size: 14px; padding: 10px;">
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">End Date</label>
+                    <input type="date" id="swalArchiveEnd" class="swal2-input" style="width: 100%; margin: 0; box-sizing: border-box; font-weight: bold; color: #0ea5e9; font-size: 14px; padding: 10px;">
+                </div>
+            </div>
         `,
         showCancelButton: true,
-        confirmButtonText: 'Scan Month',
+        confirmButtonText: 'Scan Data',
         confirmButtonColor: '#0ea5e9',
         customClass: { popup: 'rounded-2xl shadow-xl' },
         preConfirm: () => {
-            const val = document.getElementById('swalArchiveMonth').value;
-            if (!val) Swal.showValidationMessage("Please select a month to archive.");
-            return val;
+            const start = document.getElementById('swalArchiveStart').value;
+            const end = document.getElementById('swalArchiveEnd').value;
+            if (!start || !end) {
+                Swal.showValidationMessage("Please select both a Start Date and an End Date.");
+                return false;
+            }
+            if (new Date(start) > new Date(end)) {
+                Swal.showValidationMessage("Start Date cannot be after End Date.");
+                return false;
+            }
+            return { start, end };
         }
     });
 
-    if (!monthVal) return;
+    if (!formValues) return;
 
     Swal.fire({title: 'Scanning Database...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
     try {
-        let [year, month] = monthVal.split('-');
-        let startOfMonth = new Date(year, month - 1, 1);
-        let endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+        // Set precise timeframes for Firebase querying
+        let startOfDay = new Date(formValues.start);
+        startOfDay.setHours(0, 0, 0, 0);
+        let endOfDay = new Date(formValues.end);
+        endOfDay.setHours(23, 59, 59, 999);
 
         const q = window.query(
             window.collection(window.db, "transactions"), 
-            window.where("timestamp", ">=", startOfMonth), 
-            window.where("timestamp", "<=", endOfMonth)
+            window.where("timestamp", ">=", startOfDay), 
+            window.where("timestamp", "<=", endOfDay)
         );
         
         const snap = await window.getDocs(q);
 
         if (snap.empty) {
-            return Swal.fire('No Data', `No transactions found for ${monthVal}.`, 'info');
+            return Swal.fire('No Data', `No transactions found between ${formValues.start} and ${formValues.end}.`, 'info');
         }
 
+        // 🔥 Standardized Headers to guarantee compatibility with the Archive App
         let csv = "\uFEFFOR#,Branch,Cashier,Customer,Items Sold,Gross Total,Discount,Net Total,Payment Method,Status,Date,Time\n";
         let txIds = [];
 
@@ -27492,7 +27512,9 @@ window.openArchiveSalesModal = async function() {
         // 1. Download the file directly to their device
         let csvFile = new Blob([csv], { type: "text/csv;charset=utf-8;" });
         let downloadLink = document.createElement("a");
-        downloadLink.download = `Takodeal_Archive_${monthVal}.csv`;
+        
+        // Dynamically name the file based on the date range!
+        downloadLink.download = `Takodeal_Archive_${formValues.start}_to_${formValues.end}.csv`;
         downloadLink.href = window.URL.createObjectURL(csvFile);
         downloadLink.style.display = "none";
         document.body.appendChild(downloadLink);
