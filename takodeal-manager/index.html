@@ -4413,6 +4413,42 @@
           </div>
       </div>
   </div>
+
+  <!-- 🛵 FLEET & RIDER MANAGEMENT VIEW -->
+  <div id="view-riders" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
+    <div style="max-width: 1400px; margin: 0 auto;">
+        
+      <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 30px;">
+        <div style="background: #f8fafc; padding: 25px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+          <div>
+            <h2 style="margin: 0; color: #1e293b; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 26px;">🛵</span> Rider Fleet Management
+            </h2>
+            <span style="font-size: 13px; color: #64748b; margin-top: 6px; display: block; font-weight: 500;">Review applications, verify documents, and manage active delivery riders.</span>
+          </div>
+          <button onclick="window.loadRiderManagement()" style="background: #0ea5e9; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;">🔄 Refresh Fleet</button>
+        </div>
+          
+        <div class="table-responsive">
+          <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+            <thead style="background: white; border-bottom: 2px solid #cbd5e1;">
+              <tr>
+                <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Rider Profile</th>
+                <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Vehicle Info</th>
+                <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Documents</th>
+                <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Status</th>
+                <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="riderFleetBody">
+              <tr><td colspan="5" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold; font-size: 15px;">Loading fleet data...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
   </main>
 
   <div id="transferModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
