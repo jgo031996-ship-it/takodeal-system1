@@ -75,24 +75,76 @@ window.registerRider = async function() {
     } catch (e) { console.error(e); Swal.fire('Error', 'Registration failed.', 'error'); }
 };
 
-window.requestTopUp = function() {
-    Swal.fire({
+window.requestTopUp = async function() {
+    const { value: formValues } = await Swal.fire({
         title: 'Wallet Top-Up',
-        text: 'Send your GCash payment to HQ, then enter the Reference Number here to credit your rider wallet.',
-        input: 'text',
-        inputPlaceholder: 'GCash Ref No.',
+        html: `
+            <div style="font-size: 14px; color: #475569; margin-bottom: 20px; line-height: 1.4;">
+                Send your GCash payment to HQ, then enter the Reference Number and upload the screenshot below.
+            </div>
+            <div style="text-align: left;">
+                <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">GCash Ref No. (Required)</label>
+                <input type="text" id="topupRef" class="swal2-input" placeholder="e.g. 123456789" style="width: 100%; box-sizing: border-box; margin: 5px 0 15px 0;">
+                
+                <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Upload Screenshot (Required)</label>
+                <input type="file" id="topupProof" class="swal2-file" accept="image/*" style="width: 100%; box-sizing: border-box; margin: 5px 0 0 0; display: block; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white;">
+            </div>
+        `,
         showCancelButton: true,
         confirmButtonText: 'Submit Proof',
-        confirmButtonColor: '#3b82f6'
-    }).then(async (result) => {
-        if (result.isConfirmed && result.value) {
-            await addDoc(collection(db, "rider_topups"), {
-                riderId: window.currentRider.id, riderName: window.currentRider.name,
-                reference: result.value, status: "pending", timestamp: serverTimestamp()
-            });
-            Swal.fire('Sent!', 'HQ will verify and credit your wallet shortly.', 'success');
+        confirmButtonColor: '#0ea5e9',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            // Grab the values right before the user submits
+            let refInput = document.getElementById('topupRef').value.trim();
+            let fileInput = document.getElementById('topupProof').files[0];
+            
+            if (!refInput) {
+                Swal.showValidationMessage('Please enter the GCash Reference Number.');
+                return false;
+            }
+            if (!fileInput) {
+                Swal.showValidationMessage('Please upload the GCash screenshot.');
+                return false;
+            }
+            
+            return { reference: refInput, file: fileInput };
         }
     });
+
+    // If the user successfully filled out the form and clicked Submit
+    if (formValues) {
+        Swal.fire({title: 'Uploading Proof...', text: 'Please wait...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        try {
+            // 1. Upload the image to Firebase Storage securely
+            let file = formValues.file;
+            let fileExt = file.name.split('.').pop();
+            const storageRef = ref(storage, `riders/topups/${window.currentRider.phone}_${Date.now()}.${fileExt}`);
+            const snapshot = await uploadBytes(storageRef, file);
+            const photoUrl = await getDownloadURL(snapshot.ref);
+
+            // 2. Save the request to the database with the photo URL
+            await addDoc(collection(db, "rider_topups"), {
+                riderId: window.currentRider.id,
+                riderName: window.currentRider.name,
+                reference: formValues.reference,
+                proofUrl: photoUrl,
+                status: "pending",
+                timestamp: serverTimestamp()
+            });
+
+            Swal.fire({
+                title: 'Sent!', 
+                text: 'HQ will verify the screenshot and credit your wallet shortly.', 
+                icon: 'success', 
+                customClass: { popup: 'rounded-2xl' }
+            });
+        } catch (error) {
+            console.error("Top-Up Error:", error);
+            Swal.fire('Error', 'Failed to submit top-up request. Please check your connection.', 'error');
+        }
+    }
 };
 
 window.loginRider = async function() {
