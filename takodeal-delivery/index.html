@@ -49,15 +49,19 @@
             </div>
         </div>
 
-        <div class="auth-card" id="registerView" style="display: none;">
+        <div class="auth-card" id="registerView" style="display: none; max-height: 85vh; overflow-y: auto;">
             <h2 style="margin-top:0; color:var(--success);">Join the Fleet</h2>
             <input type="text" id="regName" class="input-box" placeholder="Full Name">
             <input type="text" id="regPhone" class="input-box" placeholder="Phone Number">
-            <input type="text" id="regVehicle" class="input-box" placeholder="Vehicle Model & Plate No.">
+            <input type="text" id="regVehicle" class="input-box" placeholder="Motorcycle Make & Model">
+            <input type="text" id="regPlate" class="input-box" placeholder="Plate Number">
             <input type="password" id="regPin" class="input-box" placeholder="Create a 4-Digit PIN">
             
             <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">Upload Driver's License</div>
             <input type="file" id="regLicense" class="input-box" style="padding: 10px;" accept="image/*">
+
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">Upload Motorcycle OR/CR</div>
+            <input type="file" id="regORCR" class="input-box" style="padding: 10px;" accept="image/*">
             
             <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">Upload Selfie (For Customer App)</div>
             <input type="file" id="regSelfie" class="input-box" style="padding: 10px;" accept="image/*">
@@ -76,13 +80,16 @@
                 <div style="font-weight: 900; font-size: 18px;" id="profileName">Loading...</div>
                 <div style="font-size: 12px; color: #facc15;">⭐ <span id="profileRating">5.0</span> | Wallet: ₱<span id="profileWallet">0.00</span></div>
             </div>
-            <button id="statusToggle" onclick="window.toggleRiderStatus()" style="background: var(--success); color: white; border: none; padding: 10px 20px; border-radius: 20px; font-weight: bold; cursor: pointer;">ONLINE</button>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="window.requestTopUp()" style="background: #3b82f6; color: white; border: none; padding: 10px; border-radius: 8px; font-weight: bold; cursor: pointer;">➕ Top-Up</button>
+                <button id="statusToggle" onclick="window.toggleRiderStatus()" style="background: var(--success); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer;">ONLINE</button>
+            </div>
         </div>
         
         <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; text-align: center;">
-            <div style="font-size: 50px; margin-bottom: 15px;">📡</div>
-            <h3 style="margin: 0; color: var(--text-muted);">Radar Active</h3>
-            <p style="color: #475569; font-size: 14px;">Waiting for the kitchen to dispatch orders near your location...</p>
+            <div style="font-size: 50px; margin-bottom: 15px; animation: pulse 2s infinite;">📡</div>
+            <h3 style="margin: 0; color: var(--text-main);">Radar Active</h3>
+            <p style="color: #94a3b8; font-size: 14px;">Waiting for HQ to dispatch orders near your location...</p>
         </div>
     </div>
 
