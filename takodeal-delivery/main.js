@@ -30,48 +30,59 @@ window.registerRider = async function() {
     let name = document.getElementById('regName').value.trim();
     let phone = document.getElementById('regPhone').value.trim();
     let vehicle = document.getElementById('regVehicle').value.trim();
+    let plate = document.getElementById('regPlate').value.trim();
     let pin = document.getElementById('regPin').value.trim();
     let licenseFile = document.getElementById('regLicense').files[0];
+    let orcrFile = document.getElementById('regORCR').files[0];
     let selfieFile = document.getElementById('regSelfie').files[0];
 
-    if (!name || !phone || !vehicle || !pin || !licenseFile || !selfieFile) {
-        return Swal.fire('Incomplete', 'Please fill all fields and upload both photos.', 'warning');
+    if (!name || !phone || !vehicle || !plate || !pin || !licenseFile || !orcrFile || !selfieFile) {
+        return Swal.fire('Incomplete', 'Please fill all fields and upload all required documents.', 'warning');
     }
 
     Swal.fire({title: 'Uploading Documents...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
     try {
-        // Upload License
-        const licRef = ref(storage, `riders/licenses/${phone}_${Date.now()}`);
-        const licSnap = await uploadBytes(licRef, licenseFile);
+        const licSnap = await uploadBytes(ref(storage, `riders/licenses/${phone}_${Date.now()}`), licenseFile);
         const licUrl = await getDownloadURL(licSnap.ref);
 
-        // Upload Selfie (Used to show the customer)
-        const selfRef = ref(storage, `riders/selfies/${phone}_${Date.now()}`);
-        const selfSnap = await uploadBytes(selfRef, selfieFile);
+        const orcrSnap = await uploadBytes(ref(storage, `riders/orcr/${phone}_${Date.now()}`), orcrFile);
+        const orcrUrl = await getDownloadURL(orcrSnap.ref);
+
+        const selfSnap = await uploadBytes(ref(storage, `riders/selfies/${phone}_${Date.now()}`), selfieFile);
         const selfUrl = await getDownloadURL(selfSnap.ref);
 
-        // Save to Database
         await addDoc(collection(db, "riders"), {
-            name: name,
-            phone: phone,
-            vehicle: vehicle,
-            pin: pin,
-            licenseUrl: licUrl,
-            selfieUrl: selfUrl,
-            status: "pending_approval", // HQ must approve them first!
-            walletBalance: 0,
-            rating: 5.0,
-            totalDeliveries: 0,
-            joinedAt: serverTimestamp()
+            name: name, phone: phone, vehicle: vehicle, plateNumber: plate.toUpperCase(), pin: pin,
+            licenseUrl: licUrl, orcrUrl: orcrUrl, selfieUrl: selfUrl,
+            status: "pending_approval", walletBalance: 0, rating: 5.0, totalDeliveries: 0, joinedAt: serverTimestamp()
         });
 
-        Swal.fire('Application Sent!', 'Your profile is under review by HQ. You will be able to log in once approved.', 'success').then(() => {
+        Swal.fire('Application Sent!', 'HQ is reviewing your documents. You will be able to log in once approved.', 'success').then(() => {
             document.getElementById('registerView').style.display = 'none';
             document.getElementById('loginView').style.display = 'block';
         });
-
     } catch (e) { console.error(e); Swal.fire('Error', 'Registration failed.', 'error'); }
+};
+
+window.requestTopUp = function() {
+    Swal.fire({
+        title: 'Wallet Top-Up',
+        text: 'Send your GCash payment to HQ, then enter the Reference Number here to credit your rider wallet.',
+        input: 'text',
+        inputPlaceholder: 'GCash Ref No.',
+        showCancelButton: true,
+        confirmButtonText: 'Submit Proof',
+        confirmButtonColor: '#3b82f6'
+    }).then(async (result) => {
+        if (result.isConfirmed && result.value) {
+            await addDoc(collection(db, "rider_topups"), {
+                riderId: window.currentRider.id, riderName: window.currentRider.name,
+                reference: result.value, status: "pending", timestamp: serverTimestamp()
+            });
+            Swal.fire('Sent!', 'HQ will verify and credit your wallet shortly.', 'success');
+        }
+    });
 };
 
 window.loginRider = async function() {
@@ -263,3 +274,134 @@ window.completeDelivery = async function(orderId) {
 
 // Start the engine
 startDispatchListener();
+
+// ==========================================
+// 🚨 THE 15-SECOND PING ENGINE
+// ==========================================
+window.listenForPings = function() {
+    if (!window.currentRider) return;
+
+    // Listen specifically for orders targeting THIS rider
+    const q = query(collection(db, "incoming_orders"), 
+        where("pingedRider", "==", window.currentRider.id), 
+        where("status", "==", "looking_for_rider")
+    );
+
+    onSnapshot(q, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === "added" || change.type === "modified") {
+                let order = change.doc.data();
+                window.triggerIncomingPing(change.doc.id, order);
+            }
+            if (change.type === "removed") {
+                // If HQ cancels or reassigns it before the timer runs out
+                window.closePingModal();
+            }
+        });
+    });
+};
+
+window.triggerIncomingPing = function(orderId, orderData) {
+    if (window.activePingId === orderId) return; // Prevent duplicate triggers
+    
+    window.activePingId = orderId;
+    window.currentPingData = orderData;
+    
+    let modal = document.getElementById('incomingOrderPing');
+    document.getElementById('pingDistance').innerText = `₱${(orderData.deliveryFee || 50).toFixed(2)} Fee`;
+    document.getElementById('pingStore').innerText = orderData.branch;
+    document.getElementById('pingAddress').innerText = orderData.deliveryAddress;
+    
+    modal.style.display = 'block';
+    
+    // Play a loud ringing sound!
+    let audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    audio.loop = true; audio.play().catch(e => console.log(e));
+    window.pingAudio = audio;
+
+    // Start 15 Second Countdown
+    let timeLeft = 15;
+    let timerEl = document.getElementById('pingTimer');
+    timerEl.innerText = `${timeLeft}s`;
+
+    window.pingCountdown = setInterval(() => {
+        timeLeft--;
+        timerEl.innerText = `${timeLeft}s`;
+        if (timeLeft <= 0) {
+            window.rejectPing(); // Auto-reject if they ignore it
+        }
+    }, 1000);
+};
+
+window.closePingModal = function() {
+    document.getElementById('incomingOrderPing').style.display = 'none';
+    if (window.pingCountdown) clearInterval(window.pingCountdown);
+    if (window.pingAudio) window.pingAudio.pause();
+    window.activePingId = null;
+    window.currentPingData = null;
+};
+
+// ==========================================
+// 📥 ACCEPT OR REJECT
+// ==========================================
+window.acceptPing = async function() {
+    let orderId = window.activePingId;
+    let order = window.currentPingData;
+    if (!orderId || !order) return;
+
+    // 🛡️ ANTI-THEFT WALLET CHECK
+    // If the customer is paying in Cash, the rider MUST have enough in their wallet to cover the food cost!
+    let requiresWalletDeduction = (order.paymentMethod || 'Cash').toLowerCase() === 'cash';
+    let foodTotal = order.totalAmount || 0;
+
+    if (requiresWalletDeduction && (window.currentRider.walletBalance < foodTotal)) {
+        Swal.fire('Insufficient Funds', `Customer is paying cash. You need at least ₱${foodTotal.toFixed(2)} in your digital wallet to accept this. Please Top-Up!`, 'error');
+        window.rejectPing(); // Auto-pass to the next rider
+        return;
+    }
+
+    clearInterval(window.pingCountdown);
+    document.getElementById('btnAcceptPing').innerText = "Processing...";
+
+    try {
+        let updates = {
+            status: "out_for_delivery",
+            riderId: window.currentRider.id,
+            riderName: window.currentRider.name,
+            riderPhone: window.currentRider.phone,
+            riderPlate: window.currentRider.plateNumber,
+            riderSelfie: window.currentRider.selfieUrl || "",
+            acceptedAt: serverTimestamp()
+        };
+
+        await updateDoc(doc(db, "incoming_orders", orderId), updates);
+
+        // Deduct Wallet
+        if (requiresWalletDeduction) {
+            let newBalance = window.currentRider.walletBalance - foodTotal;
+            await updateDoc(doc(db, "riders", window.currentRider.id), { walletBalance: newBalance });
+            window.currentRider.walletBalance = newBalance;
+            document.getElementById('profileWallet').innerText = newBalance.toFixed(2);
+        }
+
+        window.closePingModal();
+        Swal.fire({toast: true, position: 'top', icon: 'success', title: 'Order Secured!', showConfirmButton: false, timer: 1500});
+        
+    } catch(e) { console.error(e); }
+};
+
+window.rejectPing = async function() {
+    let orderId = window.activePingId;
+    window.closePingModal();
+
+    if (orderId) {
+        try {
+            // Push this rider into the declinedBy array and clear the pingedRider so the POS knows to find the next guy!
+            const orderRef = doc(db, "incoming_orders", orderId);
+            await updateDoc(orderRef, {
+                pingedRider: null,
+                declinedBy: window.firebase ? window.firebase.firestore.FieldValue.arrayUnion(window.currentRider.id) : [], // If using modular SDK, ensure arrayUnion is imported
+            });
+        } catch(e) { console.error(e); }
+    }
+};
