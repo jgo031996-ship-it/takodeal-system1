@@ -28025,3 +28025,194 @@ window.updateRiderStatus = async function(docId, newStatus, name) {
         Swal.fire('Error', 'Failed to update rider status.', 'error');
     }
 };
+
+// ========================================================
+// 💸 RIDER WALLET TOP-UP ENGINE
+// ========================================================
+window.loadRiderTopUps = async function() {
+    const tbody = document.getElementById('riderTopUpBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #16a34a; font-weight: bold;">⏳ Scanning top-up requests...</td></tr>';
+
+    try {
+        const q = window.query(window.collection(window.db, "rider_topups"), window.where("status", "==", "pending"), window.orderBy("timestamp", "desc"));
+        const snap = await window.getDocs(q);
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : new Date(d.timestamp).toLocaleString()) : 'Unknown Date';
+            
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; background: #f0fdf4;">
+                    <td style="padding: 15px 25px; font-size: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 15px 25px; font-weight: 900; color: #0f172a; font-size: 15px;">👤 ${d.riderName}</td>
+                    <td style="padding: 15px 25px; font-family: monospace; font-weight: bold; color: #0284c7; font-size: 14px;">${d.reference}</td>
+                    <td style="padding: 15px 25px;">
+                        <button onclick="window.viewSelfie('${d.proofUrl}', 'GCash Proof: ${d.reference}')" style="background: #e0f2fe; border: 1px solid #bae6fd; color: #0284c7; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px;">📸 View Screenshot</button>
+                    </td>
+                    <td style="padding: 15px 25px; text-align: right;">
+                        <div style="display: flex; gap: 5px; justify-content: flex-end;">
+                            <button onclick="window.approveTopUp('${docSnap.id}', '${d.riderId}', '${d.riderName}')" style="background: #10b981; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);">✅ Credit Wallet</button>
+                            <button onclick="window.rejectTopUp('${docSnap.id}', '${d.riderName}')" style="background: #ef4444; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);">❌ Reject</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No pending top-up requests.</td></tr>';
+    } catch (e) {
+        console.error("Top-Up Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #dc2626; font-weight: bold;">❌ Error loading top-ups.</td></tr>';
+    }
+};
+
+window.approveTopUp = async function(docId, riderId, riderName) {
+    const { value: amountStr } = await Swal.fire({
+        title: '💸 Credit Rider Wallet',
+        html: `Enter the exact amount received from <b>${riderName}</b>. This will be instantly added to their active wallet balance.`,
+        input: 'number',
+        inputPlaceholder: '0.00',
+        showCancelButton: true,
+        confirmButtonText: 'Credit Wallet',
+        confirmButtonColor: '#10b981',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        inputValidator: (value) => {
+            if (!value || parseFloat(value) <= 0) return 'Please enter a valid amount!';
+        }
+    });
+
+    if (amountStr) {
+        let amount = parseFloat(amountStr);
+        Swal.fire({title: 'Crediting Wallet...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+        try {
+            // 1. Fetch the rider's current balance
+            const riderRef = window.doc(window.db, "riders", riderId);
+            const riderSnap = await window.getDoc(riderRef);
+            
+            if (riderSnap.exists()) {
+                let currentBal = parseFloat(riderSnap.data().walletBalance) || 0;
+                let newBal = currentBal + amount;
+
+                // 2. Update the Rider's Wallet
+                await window.updateDoc(riderRef, { walletBalance: newBal });
+
+                // 3. Mark the Top-Up request as Approved and log the amount
+                await window.updateDoc(window.doc(window.db, "rider_topups", docId), {
+                    status: "approved",
+                    amountAdded: amount,
+                    processedAt: window.serverTimestamp(),
+                    processedBy: window.sessionUser ? window.sessionUser.cashierName : 'Manager'
+                });
+
+                Swal.fire('✅ Success!', `₱${amount.toFixed(2)} added to ${riderName}'s wallet. New Balance: ₱${newBal.toFixed(2)}`, 'success');
+                
+                // Refresh both tables
+                window.loadRiderTopUps();
+                window.loadRiderManagement();
+            }
+        } catch(e) {
+            console.error(e);
+            Swal.fire('Error', 'Failed to process top-up.', 'error');
+        }
+    }
+};
+
+window.rejectTopUp = async function(docId, riderName) {
+    if (!confirm(`Are you sure you want to reject the top-up request from ${riderName}?`)) return;
+
+    try {
+        await window.updateDoc(window.doc(window.db, "rider_topups", docId), {
+            status: "rejected",
+            processedAt: window.serverTimestamp()
+        });
+        window.loadRiderTopUps();
+    } catch(e) { console.error(e); }
+};
+
+// Hook it into the tab switcher so it loads automatically!
+const origSwitchViewForRiders = window.switchView;
+window.switchView = function(viewId) {
+    origSwitchViewForRiders(viewId);
+    if (viewId === 'riders') {
+        window.loadRiderTopUps();
+    }
+};
+
+// 🔥 UPDATE EXISTING RIDER TABLE TO SHOW WALLET BALANCE
+const origLoadRiderManagement = window.loadRiderManagement;
+window.loadRiderManagement = async function() {
+    await origLoadRiderManagement();
+    
+    // Quick injection to show Wallet Balance on the main screen
+    let tbody = document.getElementById('riderFleetBody');
+    if (!tbody) return;
+    
+    const q = window.query(window.collection(window.db, "riders"), window.orderBy("joinedAt", "desc"));
+    const snap = await window.getDocs(q);
+    let html = '';
+
+    snap.forEach(docSnap => {
+        let d = docSnap.data();
+        let dateStr = d.joinedAt ? (d.joinedAt.toDate ? d.joinedAt.toDate().toLocaleDateString('en-PH') : new Date(d.joinedAt).toLocaleDateString()) : 'Unknown Date';
+        
+        let statusBadge = ''; let actionBtns = '';
+
+        if (d.status === 'pending_approval') {
+            statusBadge = `<span style="background: #fffbeb; color: #d97706; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #fcd34d;">⏳ Pending Review</span>`;
+            actionBtns = `
+                <div style="display: flex; gap: 5px; justify-content: flex-end;">
+                    <button onclick="window.updateRiderStatus('${docSnap.id}', 'active', '${d.name}')" style="background: #10b981; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);">✅ Approve</button>
+                    <button onclick="window.updateRiderStatus('${docSnap.id}', 'rejected', '${d.name}')" style="background: #ef4444; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);">❌ Reject</button>
+                </div>
+            `;
+        } else if (d.status === 'active') {
+            let bal = parseFloat(d.walletBalance) || 0;
+            statusBadge = `
+                <span style="background: #dcfce7; color: #16a34a; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #bbf7d0;">🟢 Active Fleet</span>
+                <div style="margin-top: 8px; font-weight: 900; color: #0284c7; font-size: 14px;">Wallet: ₱${bal.toFixed(2)}</div>
+            `;
+            actionBtns = `<button onclick="window.updateRiderStatus('${docSnap.id}', 'banned', '${d.name}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; width: 100%;">🚫 Suspend</button>`;
+        } else {
+            statusBadge = `<span style="background: #f1f5f9; color: #64748b; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #cbd5e1;">${d.status.toUpperCase()}</span>`;
+            actionBtns = `<button onclick="window.updateRiderStatus('${docSnap.id}', 'active', '${d.name}')" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; width: 100%;">🔄 Restore Access</button>`;
+        }
+
+        let docsHtml = `
+            <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                <button onclick="window.viewSelfie('${d.licenseUrl}', 'Driver License: ${d.name.replace(/'/g, "\\'")}')" style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; color: #334155;">🪪 License</button>
+                <button onclick="window.viewSelfie('${d.orcrUrl}', 'OR/CR: ${d.name.replace(/'/g, "\\'")}')" style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; color: #334155;">📄 OR/CR</button>
+            </div>
+        `;
+
+        let selfieHtml = d.selfieUrl 
+            ? `<img src="${d.selfieUrl}" style="width: 50px; height: 50px; border-radius: 8px; object-fit: cover; border: 2px solid #cbd5e1;">`
+            : `<div style="width: 50px; height: 50px; border-radius: 8px; background: #e2e8f0; display: flex; align-items: center; justify-content: center; font-size: 24px;">👤</div>`;
+
+        html += `
+            <tr style="border-bottom: 1px solid #f1f5f9; background: white;">
+                <td style="padding: 15px 25px;">
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        ${selfieHtml}
+                        <div>
+                            <div style="font-weight: 900; color: #1e293b; font-size: 15px;">${d.name}</div>
+                            <div style="font-size: 12px; color: #64748b; font-weight: bold; margin-top: 2px;">📞 ${d.phone}</div>
+                            <div style="font-size: 10px; color: #94a3b8; margin-top: 2px;">Applied: ${dateStr}</div>
+                        </div>
+                    </div>
+                </td>
+                <td style="padding: 15px 25px;">
+                    <div style="font-weight: bold; color: #0f766e; font-size: 14px;">${d.vehicle}</div>
+                    <div style="font-size: 13px; color: #b45309; font-weight: 900; background: #fffbeb; border: 1px dashed #fcd34d; padding: 4px 8px; border-radius: 6px; display: inline-block; margin-top: 6px;">PLATE: ${d.plateNumber}</div>
+                </td>
+                <td style="padding: 15px 25px;">${docsHtml}</td>
+                <td style="padding: 15px 25px;">${statusBadge}</td>
+                <td style="padding: 15px 25px; text-align: right;">${actionBtns}</td>
+            </tr>
+        `;
+    });
+
+    tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No riders found in the database.</td></tr>';
+};
