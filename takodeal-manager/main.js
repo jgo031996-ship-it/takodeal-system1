@@ -1204,6 +1204,7 @@ window.switchView = function (viewId) {
   if (viewId === 'products') title = "Menu Costing & BOM";
   if (viewId === 'purchases') title = "Purchases & Alerts";
   if (viewId === 'dispatch') title = "Logistics & Dispatch";
+  if (viewId === 'riders') title = "Fleet & Rider Management";
   if (viewId === 'zreadings') title = "Z-Reading Reports";
   if (viewId === 'history') title = "Sales History";
   if (viewId === 'expenses') title = "Expense & Restock Feed";
@@ -1231,6 +1232,7 @@ window.switchView = function (viewId) {
   if (viewId === 'products') window.loadMenuCosting();
   if (viewId === 'purchases') window.loadPurchasesAndAlerts();
   if (viewId === 'dispatch') window.loadDispatchDashboard();
+  if (viewId === 'riders') window.loadRiderManagement();
   if (viewId === 'zreadings') window.loadZReadingReports();
   if (viewId === 'expenses') window.loadExpenseLogs();
   if (viewId === 'equipment') window.loadEquipmentDashboard();
@@ -27913,5 +27915,113 @@ window.openTransferEquipmentModal = async function(docId, eqName, currentBranch)
             console.error("Transfer Error:", e);
             Swal.fire('Error', 'Failed to transfer equipment. Check your internet connection.', 'error');
         }
+    }
+};
+
+// ========================================================
+// 🛵 RIDER FLEET MANAGEMENT ENGINE
+// ========================================================
+window.loadRiderManagement = async function() {
+    const tbody = document.getElementById('riderFleetBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">⏳ Scanning rider database...</td></tr>';
+
+    try {
+        const q = window.query(window.collection(window.db, "riders"), window.orderBy("joinedAt", "desc"));
+        const snap = await window.getDocs(q);
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.joinedAt ? (d.joinedAt.toDate ? d.joinedAt.toDate().toLocaleDateString('en-PH') : new Date(d.joinedAt).toLocaleDateString()) : 'Unknown Date';
+            
+            let statusBadge = '';
+            let actionBtns = '';
+
+            // Status Router
+            if (d.status === 'pending_approval') {
+                statusBadge = `<span style="background: #fffbeb; color: #d97706; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #fcd34d;">⏳ Pending Review</span>`;
+                actionBtns = `
+                    <div style="display: flex; gap: 5px; justify-content: flex-end;">
+                        <button onclick="window.updateRiderStatus('${docSnap.id}', 'active', '${d.name}')" style="background: #10b981; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2); transition: 0.2s;">✅ Approve</button>
+                        <button onclick="window.updateRiderStatus('${docSnap.id}', 'rejected', '${d.name}')" style="background: #ef4444; color: white; border: none; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2); transition: 0.2s;">❌ Reject</button>
+                    </div>
+                `;
+            } else if (d.status === 'active') {
+                statusBadge = `<span style="background: #dcfce7; color: #16a34a; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #bbf7d0;">🟢 Active Fleet</span>`;
+                actionBtns = `<button onclick="window.updateRiderStatus('${docSnap.id}', 'banned', '${d.name}')" style="background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; width: 100%;">🚫 Suspend</button>`;
+            } else {
+                statusBadge = `<span style="background: #f1f5f9; color: #64748b; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; border: 1px solid #cbd5e1;">${d.status.toUpperCase()}</span>`;
+                actionBtns = `<button onclick="window.updateRiderStatus('${docSnap.id}', 'active', '${d.name}')" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; width: 100%;">🔄 Restore Access</button>`;
+            }
+
+            // We hook into your existing viewSelfie function so you don't need new popups!
+            let docsHtml = `
+                <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                    <button onclick="window.viewSelfie('${d.licenseUrl}', 'Driver License: ${d.name.replace(/'/g, "\\'")}')" style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; color: #334155; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">🪪 License</button>
+                    <button onclick="window.viewSelfie('${d.orcrUrl}', 'OR/CR: ${d.name.replace(/'/g, "\\'")}')" style="background: #f8fafc; border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; color: #334155; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">📄 OR/CR</button>
+                </div>
+            `;
+
+            let selfieHtml = d.selfieUrl 
+                ? `<img src="${d.selfieUrl}" style="width: 50px; height: 50px; border-radius: 8px; object-fit: cover; border: 2px solid #cbd5e1;">`
+                : `<div style="width: 50px; height: 50px; border-radius: 8px; background: #e2e8f0; display: flex; align-items: center; justify-content: center; font-size: 24px;">👤</div>`;
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 15px 25px;">
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            ${selfieHtml}
+                            <div>
+                                <div style="font-weight: 900; color: #1e293b; font-size: 15px;">${d.name}</div>
+                                <div style="font-size: 12px; color: #64748b; font-weight: bold; margin-top: 2px;">📞 ${d.phone}</div>
+                                <div style="font-size: 10px; color: #94a3b8; margin-top: 2px;">Applied: ${dateStr}</div>
+                            </div>
+                        </div>
+                    </td>
+                    <td style="padding: 15px 25px;">
+                        <div style="font-weight: bold; color: #0f766e; font-size: 14px;">${d.vehicle}</div>
+                        <div style="font-size: 13px; color: #b45309; font-weight: 900; background: #fffbeb; border: 1px dashed #fcd34d; padding: 4px 8px; border-radius: 6px; display: inline-block; margin-top: 6px;">PLATE: ${d.plateNumber}</div>
+                    </td>
+                    <td style="padding: 15px 25px;">${docsHtml}</td>
+                    <td style="padding: 15px 25px;">${statusBadge}</td>
+                    <td style="padding: 15px 25px; text-align: right;">${actionBtns}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No riders found in the database.</td></tr>';
+    } catch (e) {
+        console.error("Rider Fleet Error:", e);
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #dc2626; font-weight: bold;">❌ Error loading rider data. Check console.</td></tr>';
+    }
+};
+
+window.updateRiderStatus = async function(docId, newStatus, name) {
+    let actionText = newStatus === 'active' ? 'Approve' : (newStatus === 'banned' ? 'Suspend' : 'Reject');
+    let color = newStatus === 'active' ? '#10b981' : '#dc2626';
+
+    const confirm = await Swal.fire({
+        title: `${actionText} Rider?`,
+        html: `Are you sure you want to <b>${actionText.toLowerCase()}</b> the application for ${name}?`,
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: `Yes, ${actionText}`,
+        confirmButtonColor: color,
+        cancelButtonColor: '#94a3b8',
+        customClass: { popup: 'rounded-2xl' }
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    Swal.fire({title: 'Updating Database...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    
+    try {
+        await window.updateDoc(window.doc(window.db, "riders", docId), { status: newStatus });
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: `Rider ${newStatus}!`, showConfirmButton: false, timer: 1500});
+        window.loadRiderManagement();
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to update rider status.', 'error');
     }
 };
