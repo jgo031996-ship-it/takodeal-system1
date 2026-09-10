@@ -43,7 +43,7 @@ console.log("🚀 Takodeál Staff Portal Booted (v3.0 - Fleet Engine Active)");
 window.BRANCH_ZONES = {
     "Cabantian": { lat: 7.130415, lng: 125.617306 },
     "Citygate":  { lat: 7.111076, lng: 125.612883 },
-    "Maa":       { lat: 7.078632, lng: 125.583441 },
+    "Maa":       { lat: 7.0786417726231425, lng: 125.58344120162646 },
     "Main Office": { lat: 7.153756, lng: 125.595667 }
 };
 window.ALLOWED_RADIUS_METERS = 50;
