@@ -2,21 +2,158 @@
 // 🔥 FIREBASE ENGINE
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, query, where, onSnapshot, doc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, doc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
-  authDomain: "takodeal-pos.firebaseapp.com",
-  projectId: "takodeal-pos",
-  storageBucket: "takodeal-pos.firebasestorage.app",
-  messagingSenderId: "248826111383",
-  appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
+    apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
+    authDomain: "takodeal-pos.firebaseapp.com",
+    projectId: "takodeal-pos",
+    storageBucket: "takodeal-pos.firebasestorage.app",
+    messagingSenderId: "248826111383",
+    appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
 };
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const storage = getStorage(app);
 
-window.activeDeliveries = [];
+window.currentRider = null;
+window.gpsInterval = null;
+window.activePingId = null;
+window.pingCountdown = null;
+
+// ==========================================
+// 📝 REGISTRATION & LOGIN
+// ==========================================
+window.registerRider = async function() {
+    let name = document.getElementById('regName').value.trim();
+    let phone = document.getElementById('regPhone').value.trim();
+    let vehicle = document.getElementById('regVehicle').value.trim();
+    let pin = document.getElementById('regPin').value.trim();
+    let licenseFile = document.getElementById('regLicense').files[0];
+    let selfieFile = document.getElementById('regSelfie').files[0];
+
+    if (!name || !phone || !vehicle || !pin || !licenseFile || !selfieFile) {
+        return Swal.fire('Incomplete', 'Please fill all fields and upload both photos.', 'warning');
+    }
+
+    Swal.fire({title: 'Uploading Documents...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        // Upload License
+        const licRef = ref(storage, `riders/licenses/${phone}_${Date.now()}`);
+        const licSnap = await uploadBytes(licRef, licenseFile);
+        const licUrl = await getDownloadURL(licSnap.ref);
+
+        // Upload Selfie (Used to show the customer)
+        const selfRef = ref(storage, `riders/selfies/${phone}_${Date.now()}`);
+        const selfSnap = await uploadBytes(selfRef, selfieFile);
+        const selfUrl = await getDownloadURL(selfSnap.ref);
+
+        // Save to Database
+        await addDoc(collection(db, "riders"), {
+            name: name,
+            phone: phone,
+            vehicle: vehicle,
+            pin: pin,
+            licenseUrl: licUrl,
+            selfieUrl: selfUrl,
+            status: "pending_approval", // HQ must approve them first!
+            walletBalance: 0,
+            rating: 5.0,
+            totalDeliveries: 0,
+            joinedAt: serverTimestamp()
+        });
+
+        Swal.fire('Application Sent!', 'Your profile is under review by HQ. You will be able to log in once approved.', 'success').then(() => {
+            document.getElementById('registerView').style.display = 'none';
+            document.getElementById('loginView').style.display = 'block';
+        });
+
+    } catch (e) { console.error(e); Swal.fire('Error', 'Registration failed.', 'error'); }
+};
+
+window.loginRider = async function() {
+    let phone = document.getElementById('loginPhone').value.trim();
+    let pin = document.getElementById('loginPin').value.trim();
+
+    if (!phone || !pin) return Swal.fire('Error', 'Enter phone and PIN.', 'error');
+    Swal.fire({title: 'Authenticating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        const q = query(collection(db, "riders"), where("phone", "==", phone), where("pin", "==", pin));
+        const snap = await getDocs(q);
+
+        if (snap.empty) {
+            return Swal.fire('Access Denied', 'Incorrect phone number or PIN.', 'error');
+        }
+
+        let rider = { id: snap.docs[0].id, ...snap.docs[0].data() };
+
+        if (rider.status === "pending_approval") {
+            return Swal.fire('Account Pending', 'Your account is still being reviewed by HQ.', 'info');
+        }
+
+        if (rider.status === "banned") {
+            return Swal.fire('Account Suspended', 'Please contact management.', 'error');
+        }
+
+        // Login Success
+        window.currentRider = rider;
+        document.getElementById('authOverlay').style.display = 'none';
+        document.getElementById('mainApp').style.display = 'flex';
+        
+        document.getElementById('profileName').innerText = rider.name;
+        document.getElementById('profileWallet').innerText = (rider.walletBalance || 0).toFixed(2);
+        
+        Swal.close();
+        window.startLiveGPS(); // Start broadcasting location
+        window.listenForPings(); // Listen for incoming orders
+
+    } catch (e) { console.error(e); Swal.fire('Error', 'Login failed.', 'error'); }
+};
+
+// ==========================================
+// 📍 LIVE GPS BROADCASTING
+// ==========================================
+window.startLiveGPS = function() {
+    if (!navigator.geolocation) return alert("GPS not supported.");
+
+    // Update location every 15 seconds
+    window.gpsInterval = setInterval(() => {
+        if (document.getElementById('statusToggle').innerText !== "ONLINE") return;
+
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+            try {
+                await updateDoc(doc(db, "riders", window.currentRider.id), {
+                    lastLat: pos.coords.latitude,
+                    lastLng: pos.coords.longitude,
+                    lastActive: serverTimestamp()
+                });
+            } catch(e) { console.error("GPS Sync Error", e); }
+        }, (err) => console.log(err), { enableHighAccuracy: true });
+    }, 15000);
+};
+
+window.toggleRiderStatus = async function() {
+    let btn = document.getElementById('statusToggle');
+    let isOnline = btn.innerText === "ONLINE";
+    
+    if (isOnline) {
+        btn.innerText = "OFFLINE";
+        btn.style.background = "#ef4444";
+    } else {
+        btn.innerText = "ONLINE";
+        btn.style.background = "#10b981";
+    }
+
+    try {
+        await updateDoc(doc(db, "riders", window.currentRider.id), {
+            isAcceptingOrders: !isOnline
+        });
+    } catch(e) {}
+};
 
 // ========================================================
 // 📡 LIVE DISPATCH LISTENER
