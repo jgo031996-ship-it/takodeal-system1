@@ -3,6 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="icon" type="image/jpeg" href="logo.jpg">
+    <link rel="apple-touch-icon" href="logo.jpg">
+    <link rel="manifest" href="manifest.json">
     <title>TAKODEÁL Fleet</title>
     <style>
         :root {
@@ -113,5 +117,19 @@
 
     <script type="module" src="main.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('sw.js')
+            .then(registration => {
+              console.log('✅ Rider App securely installed.', registration.scope);
+            })
+            .catch(err => {
+              console.error('❌ Installation failed: ', err);
+            });
+        });
+      }
+    </script>
 </body>
 </html>
