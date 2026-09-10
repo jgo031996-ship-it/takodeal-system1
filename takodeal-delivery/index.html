@@ -16,9 +16,14 @@
         }
         
         body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg-dark); color: var(--text-main); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
-
+            
         /* 🔐 LOGIN & REGISTRATION OVERLAY */
-        #authOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-dark); z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; overflow-y: auto; }
+        #authOverlay { 
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+            background: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.95)), url('logo.jpg') center/cover no-repeat;
+            z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; 
+            padding: 20px; box-sizing: border-box; overflow-y: auto; backdrop-filter: blur(6px); 
+        }
         .auth-card { background: var(--card-bg); width: 100%; max-width: 400px; padding: 30px; border-radius: 16px; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.5); box-sizing: border-box; }
         .input-box { width: 100%; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: white; outline: none; font-size: 16px; box-sizing: border-box; }
         .btn-main { width: 100%; background: var(--primary); color: white; border: none; padding: 15px; border-radius: 8px; font-weight: 900; font-size: 16px; cursor: pointer; margin-bottom: 10px; }
@@ -43,7 +48,12 @@
     <!-- 🔐 AUTHENTICATION SCREEN -->
     <div id="authOverlay">
         <div class="auth-card" id="loginView">
-            <h2 style="margin-top:0; color:var(--primary);">Rider Login</h2>
+            <!-- Added Logo Image Here -->
+            <div style="text-align: center; margin-bottom: 15px;">
+                <img src="logo.jpg" alt="TAKODEÁL" style="width: 80px; height: 80px; border-radius: 20px; object-fit: cover; border: 3px solid var(--primary); box-shadow: 0 6px 15px rgba(14, 165, 233, 0.2);">
+            </div>
+            
+            <h2 style="margin-top:0; color:var(--primary); text-align: center;">Rider Login</h2>
             <input type="text" id="loginPhone" class="input-box" placeholder="Phone Number (e.g. 09123456789)">
             <input type="password" id="loginPin" class="input-box" placeholder="4-Digit PIN">
             <button class="btn-main" onclick="window.loginRider()">Sign In</button>
