@@ -375,10 +375,9 @@ window.saveProfileData = async function() {
     let gotymeNameVal = document.getElementById('profGotymeName').value.trim();
     let gotymeNumVal = document.getElementById('profGotymeNum').value.trim();
     let emergNumVal = document.getElementById('profEmergNum').value.trim();
-
+    let currentFullName = document.getElementById('profFullName').value.trim();
+    
     let payload = {
-        cashierName: document.getElementById('profFullName').value.trim(),
-        scheduleNickname: document.getElementById('profNickname').value.trim(),
         phone: document.getElementById('profPhone').value.trim(),
         address: document.getElementById('profAddress').value.trim(),
         emergencyName: document.getElementById('profEmergName').value.trim(),
@@ -449,8 +448,9 @@ window.saveProfileData = async function() {
         if (pagUrl) payload.pagibigIdUrl = pagUrl;
 
         await updateDoc(doc(db, "cashiers", staffId), payload);
-        localStorage.setItem('takodeal_staff_name', payload.cashierName);
-        document.getElementById('loggedInName').innerText = payload.cashierName;
+        // Use the variable we stored earlier to update their screen
+        localStorage.setItem('takodeal_staff_name', currentFullName);
+        document.getElementById('loggedInName').innerText = currentFullName;
 
         let successMsg = newPin ? 'Your profile, files, and PIN have been saved.' : 'Your HR profile and IDs have securely synced to HQ.';
         Swal.fire('✅ Saved', successMsg, 'success');
