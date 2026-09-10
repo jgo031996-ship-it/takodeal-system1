@@ -4240,61 +4240,65 @@ window.showMobileOrders = function() {
 
     let html = '';
     window.mobileOrdersList.forEach(o => {
+        // ... (Inside renderMobileHubOrders loop) ...
         let itemsHtml = o.items.map(i => {
-            return `<div style="display:flex; justify-content:space-between; font-size:13px; margin-bottom:5px; border-bottom:1px dashed #eee; padding-bottom:3px;">
+            return `<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px; border-bottom:1px dashed #e2e8f0; padding-bottom:3px; color:#334155;">
                       <div><strong>${i.quantity}x ${i.name}</strong></div>
                       <div style="font-weight:bold;">₱${(i.price * i.quantity).toFixed(2)}</div>
                     </div>`;
         }).join('');
 
-        let paymentColor = '#f59e0b';
-        let paymentLabel = 'Cash (Pay at Counter)';
-        if (o.paymentMode && o.paymentMode.toLowerCase() !== 'cash') {
-            paymentColor = '#3b82f6';
-            let refText = o.paymentReference || o.gcashRef || 'No Ref';
-            paymentLabel = `${o.paymentMode} (Verify Ref: ${refText})`;
+        let customerName = (o.customerName || o.name || 'Mobile Customer').split('(')[0].trim(); 
+        let contactInfo = o.contactNumber ? `📞 ${o.contactNumber}` : '';
+        
+        // 🔥 NEW: Extract the exact time the order arrived
+        let arrivalTime = o.timestamp ? new Date(o.timestamp.toMillis ? o.timestamp.toMillis() : o.timestamp).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+        
+        // Format the Due Time / ASAP
+        let orderTime = o.preferredTime ? `⏰ Due: ${o.preferredTime}` : 'ASAP';
+        
+        let searchAddr = encodeURIComponent(o.deliveryAddress || '');
+        
+        // ... (Keep your map buttons and locText logic here) ...
+
+        // 🔥 DYNAMIC CONTROLS BASED ON STATUS 🔥
+        let actionButtons = '';
+        let statusBadge = '';
+
+        if (isIncoming) {
+            statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #fcd34d;">⚠️ PENDING ACCEPT</span>`;
+            actionButtons = `
+                <div style="display:flex; gap:10px; margin-top: 15px;">
+                    <button onclick="window.rejectMobileOrder('${o.id}')" style="flex:1; padding:12px; background:white; color:#ef4444; border:1px solid #fca5a5; border-radius: 8px; font-weight: bold; font-size:12px; cursor:pointer;">✖ Reject</button>
+                    <button onclick="window.acceptMobileOrder('${o.id}')" style="flex:2; padding:12px; background:#10b981; color:white; border:none; border-radius: 8px; font-weight: bold; font-size:12px; box-shadow: 0 2px 4px rgba(16,185,129,0.3); cursor:pointer;">📥 Accept & Copy to POS</button>
+                </div>`;
+        } else {
+            statusBadge = `<span style="background:#e0f2fe; color:#0284c7; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #bae6fd;">🍳 PREPARING</span>`;
+            actionButtons = `
+                <div style="display:flex; gap:10px; margin-top: 15px;">
+                    <button onclick="window.markMobileOrderReady('${o.id}')" style="flex:1; padding:12px; background:#3b82f6; color:white; border:none; border-radius: 8px; font-weight: bold; font-size:13px; box-shadow: 0 4px 6px rgba(59,130,246,0.3); cursor:pointer;">🛵 Mark Ready / Dispatch</button>
+                </div>`;
         }
 
-        let customerName = o.customerName || o.name || 'Mobile Customer';
-        customerName = customerName.split('(')[0].trim(); 
-        
-        let contactInfo = o.contactNumber ? `📞 ${o.contactNumber}` : 'No Phone Provided';
-        let orderTime = o.preferredTime ? `⏰ Advance Time: ${o.preferredTime}` : 'ASAP';
-
-        // 🔥 THE MAP LINK FIX 🔥
-        let searchAddr = encodeURIComponent(o.deliveryAddress || '');
-        let mapBtn = o.mapLink ? `<a href="${o.mapLink}" target="_blank" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block; margin-right: 5px;">🗺️ Open Pinned Map</a>` : (o.deliveryAddress ? `<a href="https://www.google.com/maps/search/?api=1&query=${searchAddr}" target="_blank" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block; margin-right: 5px;">🗺️ Search Address</a>` : '');
-        let photoBtn = o.locationImage ? `<a href="${o.locationImage}" target="_blank" style="background:#e0e7ff; color:#4f46e5; border:1px solid #c7d2fe; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block;">📸 View Landmark</a>` : '';
-        let locText = o.deliveryAddress ? `<div style="font-size:12px; color:#475569; margin-top:8px; padding:8px; background:#f8fafc; border-radius:6px; border:1px solid #e2e8f0;">📍 <strong>Delivery Address:</strong><br>${o.deliveryAddress}</div>` : '';
-        
-        let changeStr = o.changeFor ? `<div style="font-size:11px; color:#b91c1c; font-weight:bold; margin-top:6px; background: white; padding: 4px; border-radius: 4px;">⚠️ Prepare Change For: ₱${o.changeFor}</div>` : '';
-
-        html += `<div style="background: white; border: 1px solid #ddd; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; border-bottom:1px solid #eee; padding-bottom:10px; align-items: flex-start;">
+        // Apply the new arrivalTime to the HTML card
+        html += `<div style="background: white; border: ${isIncoming ? '2px solid #fcd34d' : '1px solid #cbd5e1'}; border-radius: 12px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; align-items: flex-start;">
                         <div>
-                            <strong style="font-size:16px;">👤 ${customerName}</strong><br>
-                            <span style="font-size:12px; color:#64748b; font-weight:bold;">${contactInfo} | ${orderTime}</span>
+                            <strong style="font-size:15px; color: #0f172a;">${customerName}</strong><br>
+                            <span style="font-size:11px; color:#64748b; font-weight:bold;">${contactInfo} | 🕒 Placed: ${arrivalTime} | ${orderTime}</span>
                         </div>
-                        <strong style="color:var(--primary); font-size:16px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
-                    </div>
-                    
-                    <div style="font-size: 12px; font-weight: bold; color: white; background: ${paymentColor}; padding: 8px; border-radius: 4px; text-align: center;">
-                        ${paymentLabel}
-                        ${changeStr}
+                        <div style="text-align: right;">
+                            <strong style="color:var(--primary); font-size:16px; display:block; margin-bottom: 4px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
+                            ${statusBadge}
+                        </div>
                     </div>
                     
                     ${locText}
-                    <div style="margin-top: 8px;">
-                        ${mapBtn}
-                        ${photoBtn}
-                    </div>
+                    ${posBadge}
                     
-                    <div style="margin-bottom:15px; margin-top:15px;">${itemsHtml}</div>
-                    
-                    <div style="display:flex; gap:10px;">
-                        <button class="btn-clear" style="flex:1; padding:10px; font-size:13px; color:#ef4444; border-color:#ef4444;" onclick="window.rejectMobileOrder('${o.id}')">✖ Reject</button>
-                        <button class="btn-place" style="flex:2; padding:10px; font-size:13px;" onclick="window.acceptMobileOrder('${o.id}')">📥 Accept & Set Time</button>
-                    </div>
+                    <div style="margin-top: 8px; display: flex; gap: 8px;">${mapBtn}</div>
+                    <div style="margin-top:15px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">${itemsHtml}</div>
+                    ${actionButtons}
                  </div>`;
     });
     container.innerHTML = html;
