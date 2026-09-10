@@ -2188,7 +2188,9 @@
 
                     if(btnRec) btnRec.classList.add('hidden');
                     if(instText) instText.innerText = "Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!";
-                    if(trackerIcon) trackerIcon.innerText = "🍳";
+                    
+                    // ✨ CUSTOM PREPARING ICON
+                    if(trackerIcon) trackerIcon.innerHTML = `<img src="tako-prep.jpg" class="w-16 h-16 object-contain drop-shadow-md">`;
                     
                 } else if (isNowReady) {
                     let isDelivery = order.orderType && order.orderType.includes('Delivery');
@@ -2198,12 +2200,18 @@
                     
                     if(btnRec) btnRec.classList.remove('hidden');
                     if(instText) instText.innerText = "Please tap the button below once you have received your order so you can claim your Loyalty Stamp!";
-                    if(trackerIcon) trackerIcon.innerText = isDelivery ? "🛵" : "🛍️";
+                    
+                    // ✨ CUSTOM DELIVERY & PICK-UP ICONS
+                    let deliveryImg = `<img src="tako-delivery.jpg" class="w-16 h-16 object-contain drop-shadow-md">`;
+                    let pickupImg = `<img src="tako-bow.jpg" class="w-16 h-16 object-contain drop-shadow-md">`;
+                    if(trackerIcon) trackerIcon.innerHTML = isDelivery ? deliveryImg : pickupImg;
                     
                 } else {
                     if(btnRec) btnRec.classList.add('hidden');
                     if(instText) instText.innerText = "Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!";
-                    if(trackerIcon) trackerIcon.innerText = "🐙";
+                    
+                    // ✨ CUSTOM PENDING/WAITING ICON
+                    if(trackerIcon) trackerIcon.innerHTML = `<img src="tako-notepad.jpg" class="w-16 h-16 object-contain drop-shadow-md">`;
                 }
 
                 document.getElementById('trackerStatus').innerText = statusText;
