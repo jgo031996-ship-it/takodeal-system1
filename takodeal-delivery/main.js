@@ -38,7 +38,7 @@ window.pingCountdown = null;
 // ==========================================
 window.registerRider = async function() {
     let name = document.getElementById('regName').value.trim();
-    let phone = document.getElementById('regPhone').value.trim();
+    let phone = document.getElementById('regPhone').value.replace(/[^0-9]/g, '');
     let vehicle = document.getElementById('regVehicle').value.trim();
     let plate = document.getElementById('regPlate').value.trim();
     let pin = document.getElementById('regPin').value.trim();
@@ -148,7 +148,7 @@ window.requestTopUp = async function() {
 };
 
 window.loginRider = async function() {
-    let phone = document.getElementById('loginPhone').value.trim();
+    let phone = document.getElementById('loginPhone').value.replace(/[^0-9]/g, '');
     let pin = document.getElementById('loginPin').value.trim();
 
     if (!phone || !pin) return Swal.fire('Error', 'Enter phone and PIN.', 'error');
