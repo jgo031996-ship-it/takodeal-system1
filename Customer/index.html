@@ -2199,21 +2199,40 @@
                     
                 } else if (isNowReady) {
                     let isDelivery = order.orderType && order.orderType.includes('Delivery');
+                    let riderBox = document.getElementById('riderProfileBox');
                     
-                    statusText = isDelivery ? "🛵 Order is on the way!" : "🛍️ Order is Ready for Pick-up!";
-                    timeStr = "Enjoy your meal!";
+                    if (isDelivery) {
+                        // 🛵 DELIVERY LOGIC & RIDER NOTIFICATIONS
+                        if (order.status === 'out_for_delivery') {
+                            statusText = "🛵 Rider picked up your order!";
+                            timeStr = order.eta ? `ETA: ${order.eta}` : "On the way to your location!";
+                        } else if (order.status === 'rider_near') {
+                            statusText = "📍 Rider is nearby!";
+                            timeStr = "Please prepare your payment / meet them at the gate.";
+                        } else if (order.status === 'rider_arrived') {
+                            statusText = "✅ Rider has arrived!";
+                            timeStr = "Your Takoyaki is outside!";
+                        }
+
+                        // Display Rider Details if Firebase has them
+                        if (order.riderName) {
+                            riderBox.classList.remove('hidden');
+                            document.getElementById('displayRiderName').innerText = order.riderName;
+                            document.getElementById('displayRiderPlate').innerText = order.riderPlate || 'N/A';
+                        }
+                        
+                        if(trackerIcon) trackerIcon.innerHTML = `<img src="tako-delivery.png" class="w-16 h-16 object-contain drop-shadow-md">`;
+                        
+                    } else {
+                        // 🛍️ PICK-UP LOGIC
+                        statusText = "🛍️ Order is Ready for Pick-up!";
+                        timeStr = "Enjoy your meal!";
+                        if (riderBox) riderBox.classList.add('hidden');
+                        if(trackerIcon) trackerIcon.innerHTML = `<img src="tako-bow.png" class="w-16 h-16 object-contain drop-shadow-md">`;
+                    }
                     
                     if(btnRec) btnRec.classList.remove('hidden');
                     if(instText) instText.innerText = "Please tap the button below once you have received your order so you can claim your Loyalty Stamp!";
-                    
-                    // ✨ CUSTOM DELIVERY & PICK-UP ICONS
-                    let deliveryImg = `<img src="tako-delivery.jpg" class="w-16 h-16 object-contain drop-shadow-md">`;
-                    let pickupImg = `<img src="tako-bow.jpg" class="w-16 h-16 object-contain drop-shadow-md">`;
-                    if(trackerIcon) trackerIcon.innerHTML = isDelivery ? deliveryImg : pickupImg;
-                    
-                } else {
-                    if(btnRec) btnRec.classList.add('hidden');
-                    if(instText) instText.innerText = "Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!";
                     
                     // ✨ CUSTOM PENDING/WAITING ICON
                     if(trackerIcon) trackerIcon.innerHTML = `<img src="tako-notepad.jpg" class="w-16 h-16 object-contain drop-shadow-md">`;
