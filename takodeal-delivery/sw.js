@@ -3,7 +3,7 @@ const urlsToCache = [
   './',
   './index.html',
   './main.js',
-  './logo.jpg'
+  './Delivery.jpg'
 ];
 
 // Install the service worker and cache the files
