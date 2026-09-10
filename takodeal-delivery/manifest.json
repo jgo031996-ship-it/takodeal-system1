@@ -1,0 +1,22 @@
+{
+  "name": "TAKODEÁL Rider Fleet",
+  "short_name": "Rider App",
+  "description": "Delivery dispatch and tracking system for TAKODEÁL.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#0ea5e9",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
