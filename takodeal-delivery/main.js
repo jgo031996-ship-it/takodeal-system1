@@ -5,6 +5,9 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebas
 import { getFirestore, collection, addDoc, getDocs, query, where, doc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
+// 🔥 NEW: Import the Auth module for Silent Login
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+
 const firebaseConfig = {
     apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
     authDomain: "takodeal-pos.firebaseapp.com",
@@ -17,6 +20,13 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 const storage = getStorage(app);
+const auth = getAuth(app);
+
+// 🔥 SILENT AUTHENTICATION: This satisfies Firebase Security Rules 
+// so riders can upload their license and selfie without Google Sign-In!
+signInAnonymously(auth).catch((error) => {
+    console.error("Silent Auth Failed:", error.message);
+});
 
 window.currentRider = null;
 window.gpsInterval = null;
@@ -271,9 +281,6 @@ window.completeDelivery = async function(orderId) {
         Swal.fire('Delivered!', 'Great job. The order has been marked complete.', 'success');
     } catch(e) { console.error("Error completing:", e); }
 };
-
-// Start the engine
-startDispatchListener();
 
 // ==========================================
 // 🚨 THE 15-SECOND PING ENGINE
