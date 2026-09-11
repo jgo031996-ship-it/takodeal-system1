@@ -13330,7 +13330,7 @@ window.loadPayablesHistory = async function() {
             let d = doc.data();
             let datePaid = d.datePaid ? d.datePaid.toDate().toLocaleDateString() : 'Unknown';
             
-            // 🔥 NEW: Dynamically build the buttons based on what images exist!
+            // Dynamically build the buttons based on what images exist!
             let photoBtns = '';
             if (d.photoUrl) {
                 photoBtns += `<button onclick="window.viewSelfie('${d.photoUrl}', 'Delivery Invoice: ${d.invoiceNum || 'N/A'}')" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; margin-right: 5px; margin-bottom: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📸 OR</button>`;
@@ -13339,14 +13339,28 @@ window.loadPayablesHistory = async function() {
                 photoBtns += `<button onclick="window.viewSelfie('${d.paymentProofUrl}', 'Proof of Payment: ${d.supplier}')" style="background:#dcfce7; color:#16a34a; border:1px solid #bbf7d0; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold; cursor:pointer; margin-bottom: 5px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">💸 Proof</button>`;
             }
             if (!photoBtns) photoBtns = '-';
+
+            // 🔥 NEW: Extract linked items to show exactly what was paid for!
+            let itemsHtml = '';
+            if (d.linkedItems && d.linkedItems.length > 0) {
+                itemsHtml = `<div style="margin-top: 6px; padding: 6px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 4px; font-size: 11px; color: #475569;">`;
+                d.linkedItems.forEach(i => { 
+                    itemsHtml += `📦 <strong>${i.purchQty} ${i.purchUom}</strong> ${i.name}<br>`; 
+                });
+                itemsHtml += `</div>`;
+            }
             
+            // Added vertical-align: top so the rows stay neat when the item list gets long
             html += `<tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                <td style="padding: 12px 10px;"><strong style="color: #334155;">${d.supplier}</strong></td>
-                <td style="padding: 12px 10px; font-family: monospace; color: #64748b;">${d.invoiceNum || 'N/A'}</td>
-                <td style="padding: 12px 10px; font-size: 13px; color: #475569;">${datePaid}</td>
-                <td style="padding: 12px 10px; font-weight: bold; color: #16a34a;">₱${(parseFloat(d.amount)||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                <td style="padding: 12px 10px; font-size: 12px; color: #475569; font-weight: bold;">${d.paidFromAccount || 'Unknown'}</td>
-                <td style="padding: 12px 10px; display: flex; flex-wrap: wrap;">${photoBtns}</td>
+                <td style="padding: 12px 10px; vertical-align: top;">
+                    <strong style="color: #334155;">${d.supplier}</strong>
+                    ${itemsHtml}
+                </td>
+                <td style="padding: 12px 10px; font-family: monospace; color: #64748b; vertical-align: top;">${d.invoiceNum || 'N/A'}</td>
+                <td style="padding: 12px 10px; font-size: 13px; color: #475569; vertical-align: top;">${datePaid}</td>
+                <td style="padding: 12px 10px; font-weight: bold; color: #16a34a; vertical-align: top;">₱${(parseFloat(d.amount)||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                <td style="padding: 12px 10px; font-size: 12px; color: #475569; font-weight: bold; vertical-align: top;">${d.paidFromAccount || 'Unknown'}</td>
+                <td style="padding: 12px 10px; display: flex; flex-wrap: wrap; vertical-align: top;">${photoBtns}</td>
             </tr>`;
         });
         
