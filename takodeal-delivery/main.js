@@ -65,7 +65,8 @@ window.registerRider = async function() {
         await addDoc(collection(db, "riders"), {
             name: name, phone: phone, vehicle: vehicle, plateNumber: plate.toUpperCase(), pin: pin,
             licenseUrl: licUrl, orcrUrl: orcrUrl, selfieUrl: selfUrl,
-            status: "pending_approval", walletBalance: 0, rating: 5.0, totalDeliveries: 0, joinedAt: serverTimestamp()
+            status: "pending_approval", walletBalance: 0, rating: 5.0, totalDeliveries: 0, joinedAt: serverTimestamp(), fleetType: "Main Office",
+            franchiseAccess: true
         });
 
         Swal.fire('Application Sent!', 'HQ is reviewing your documents. You will be able to log in once approved.', 'success').then(() => {
@@ -223,7 +224,8 @@ window.toggleRiderStatus = async function() {
 
     try {
         await updateDoc(doc(db, "riders", window.currentRider.id), {
-            isAcceptingOrders: !isOnline
+            isAcceptingOrders: !isOnline,
+            fleetType: window.currentRider.fleetType || "Main Office" // broadcasts their global status
         });
     } catch(e) {}
 };
