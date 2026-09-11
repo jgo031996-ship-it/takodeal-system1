@@ -506,7 +506,7 @@ window.loadHQBilling = async function() {
 };
 
 // ========================================================
-// 📦 6. B2B SUPPLY ORDERS (REQUEST STOCK)
+// 📦 6. B2B SUPPLY ORDERS (SECURE BLIND ORDERING)
 // ========================================================
 window.b2bCart = [];
 window.hqInventoryCache = [];
@@ -515,8 +515,13 @@ window.updateB2bUom = async function() {
     let itemName = document.getElementById('b2bSearch').value.trim();
     if (!itemName) return;
 
+    // Fetch HQ Inventory, but ONLY items they are allowed to see!
     if (window.hqInventoryCache.length === 0) {
-        const q = query(collection(db, "inventory"), where("branch", "==", "Main Office"));
+        const q = query(
+            collection(db, "inventory"), 
+            where("branch", "==", "Main Office"),
+            where("allowRequest", "==", true) // 👈 THE SECURITY LOCK!
+        );
         const snap = await getDocs(q);
         snap.forEach(d => window.hqInventoryCache.push(d.data()));
         
