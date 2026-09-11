@@ -1234,6 +1234,24 @@ window.processCheckout = async function (payload) {
         // Auto-close split container
         if (splitContainer) splitContainer.style.display = 'none';
 
+        // 🔥 NEW: INJECT DELIVERY ORDERS INTO THE MOBILE HUB DISPATCHER
+        if (payload.orderType === "Delivery") {
+            try {
+                window.addDoc(window.collection(window.db, "incoming_orders"), {
+                    branch: payload.branch,
+                    customerName: payload.customerName || "Delivery Customer",
+                    contactNumber: payload.contactNumber || "",
+                    deliveryAddress: payload.deliveryAddress || "",
+                    totalAmount: payload.netTotal,
+                    items: payload.cart,
+                    status: "preparing", // 🍳 Puts it in the Mobile Hub so the Cashier can mark it 'Ready' later!
+                    orderCode: receiptId,
+                    paymentMethod: payload.paymentMethod || "Cash",
+                    timestamp: window.serverTimestamp()
+                });
+            } catch(e) { console.error("Failed to push to dispatch hub:", e); }
+        }
+
         // 2. WAKE UP THE BACKGROUND SYNC ROBOT
         window.syncOfflineQueue();
 
