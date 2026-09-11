@@ -2031,11 +2031,14 @@
       <div style="max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 25px;">
           
           <!-- Header Banner -->
-          <div style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 30px; border-radius: 16px; color: white; box-shadow: 0 10px 25px rgba(2,132,199,0.2);">
-              <h2 style="margin: 0; font-size: 26px; font-weight: 900; display: flex; align-items: center; gap: 12px;">
-                  <span style="font-size: 32px;">🌐</span> Customer App & Storefront Hub
-              </h2>
-              <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.9;">Moderate customer reviews, track loyal VIPs, and sync available categories with the POS.</p>
+          <div style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); padding: 30px; border-radius: 16px; color: white; box-shadow: 0 10px 25px rgba(2,132,199,0.2); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+              <div>
+                  <h2 style="margin: 0; font-size: 26px; font-weight: 900; display: flex; align-items: center; gap: 12px;">
+                      <span style="font-size: 32px;">🌐</span> Customer App & Storefront Hub
+                  </h2>
+                  <p style="margin: 8px 0 0 0; font-size: 14px; opacity: 0.9;">Moderate customer reviews, track loyal VIPs, and sync available categories with the POS.</p>
+              </div>
+              <button id="btnMaintenanceToggle" onclick="window.toggleMaintenanceMode()" style="background: #ef4444; color: white; border: 2px solid #fca5a5; padding: 12px 24px; border-radius: 8px; font-weight: 900; font-size: 14px; cursor: pointer; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); transition: 0.2s; white-space: nowrap;">🛑 Activate Maintenance Mode</button>
           </div>
 
           <!-- SUB-TABS NAVIGATION -->
