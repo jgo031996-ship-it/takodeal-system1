@@ -4235,72 +4235,70 @@ window.forceCompleteMobileOrder = async function(docId) {
 };
 
 window.acceptMobileOrder = async function(docId) {
-    let order = window.mobileOrdersList.find(o => o.id === docId);
-    if (!order) return;
+            let order = window.mobileOrdersList.find(o => o.id === docId);
+            if (!order) return;
 
-    const { value: prepTime } = await Swal.fire({
-        title: '⏱️ Set Preparation Time',
-        text: 'How long will this order take? The customer will see this on their live tracker.',
-        input: 'select',
-        inputOptions: { '10': '10 Minutes', '15': '15 Minutes', '20': '20 Minutes', '30': '30 Minutes', '45': '45 Minutes', '60': '1 Hour' },
-        inputPlaceholder: 'Select prep time',
-        showCancelButton: true,
-        confirmButtonColor: '#10b981',
-        customClass: { popup: 'rounded-2xl' }
-    });
+            const { value: prepTime } = await Swal.fire({
+                title: '⏱️ Set Preparation Time',
+                text: 'How long will this order take? The customer will see this on their live tracker.',
+                input: 'select',
+                inputOptions: { '10': '10 Minutes', '15': '15 Minutes', '20': '20 Minutes', '30': '30 Minutes', '45': '45 Minutes', '60': '1 Hour' },
+                inputPlaceholder: 'Select prep time',
+                showCancelButton: true,
+                confirmButtonColor: '#10b981',
+                customClass: { popup: 'rounded-2xl' }
+            });
 
-    if (!prepTime) return;
+            if (!prepTime) return;
 
-    if (typeof cart !== 'undefined' && cart.length > 0) {
-        if (!confirm("You have items in your current cart. Overwrite them with this mobile order?")) return;
-    }
+            if (typeof cart !== 'undefined' && cart.length > 0) {
+                if (!confirm("You have items in your current cart. Overwrite them with this mobile order?")) return;
+            }
 
-    // 🔥 THE MEMORY FIX: Force all imported items to adopt the correct order type
-    let incomingOrderType = order.orderType || 'Take-Out'; // Mobiles default to Take-Out
+            // 🔥 DECLARING THIS ONLY ONCE TO PREVENT THE CRASH!
+            let incomingOrderType = order.orderType || 'Take-Out';
 
-    cart = order.items.map(i => ({
-        name: i.name, basePrice: i.price, variantName: 'Standard', variantPrice: i.price,
-        qty: i.quantity, lineTotalFinal: i.price * i.quantity, discountType: 'none', discountVal: 0,
-        addons: i.addons || {}, notes: i.notes || '📱 Mobile App Order',
-        orderType: incomingOrderType // Locks it into the items
-    }));
+            cart = order.items.map(i => ({
+                name: i.name, 
+                basePrice: i.price, 
+                variantName: 'Standard', 
+                variantPrice: i.price,
+                qty: i.quantity || i.qty || 1, 
+                lineTotalFinal: i.price * (i.quantity || i.qty || 1), 
+                discountType: 'none', 
+                discountVal: 0,
+                addons: i.addons || {}, 
+                notes: i.notes || '📱 Mobile App Order',
+                orderType: incomingOrderType // Locks it into the items
+            }));
 
-    // 🔥 UPGRADE: Restore Customer Name & Attach Phone Number for Deliveries
-    let incomingOrderType = order.orderType || 'Take-Out'; 
-    let custNameEl = document.getElementById('finalCustomerName');
-    
-    if (custNameEl) {
-        let rawName = order.customerName || order.name || "Mobile Customer";
-        let cleanName = rawName.split('(')[0].trim();
-        
-        // If it's a Delivery, automatically attach the contact number!
-        if (incomingOrderType.toLowerCase() === 'delivery' && order.contactNumber) {
-            custNameEl.value = cleanName + " - " + order.contactNumber;
-        } else {
-            custNameEl.value = cleanName;
-        }
-    }
-    
-    // Restore Order Type globally
-    let orderTypeDrop = document.getElementById('mainOrderType');
-    if (orderTypeDrop) {
-        orderTypeDrop.value = incomingOrderType;
-        let event = new Event('change');
-        orderTypeDrop.dispatchEvent(event);
-    }
+            // Restore Customer Name globally
+            let custNameEl = document.getElementById('finalCustomerName');
+            if (custNameEl) custNameEl.value = order.customerName || order.name || "";
+            
+            // Restore Order Type globally
+            let orderTypeDrop = document.getElementById('mainOrderType');
+            if (orderTypeDrop) {
+                orderTypeDrop.value = incomingOrderType;
+                let event = new Event('change');
+                orderTypeDrop.dispatchEvent(event);
+            }
 
-    await window.updateDoc(window.doc(window.db, "incoming_orders", docId), {
-        status: "preparing",
-        prepTime: parseInt(prepTime),
-        acceptedAt: window.serverTimestamp()
-    });
+            await window.updateDoc(window.doc(window.db, "incoming_orders", docId), {
+                status: "preparing",
+                prepTime: parseInt(prepTime),
+                acceptedAt: window.serverTimestamp()
+            });
 
-    window.activeMobileOrderId = docId;
-    if (typeof renderCart === 'function') renderCart();
-    
-    // Jump straight to the POS screen so they can finish ringing it up!
-    window.switchView('pos');
-};
+            window.activeMobileOrderId = docId;
+            window.activeMobileOrderCode = order.orderCode || docId;
+            window.isActiveOrderMobile = true;
+
+            if (typeof renderCart === 'function') renderCart();
+            
+            // Jump straight to the POS screen so they can finish ringing it up!
+            window.switchView('pos');
+        };
 
 window.rejectMobileOrder = async function(docId) {
     if (!confirm("Are you sure you want to reject this order? The customer will be notified.")) return;
