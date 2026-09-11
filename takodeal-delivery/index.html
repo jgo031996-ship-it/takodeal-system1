@@ -120,9 +120,17 @@
             </button>
         </div>
 
-        <!-- ACTIVE STATE: DISPATCH BOARD -->
-        <div id="dispatchBoard" style="display: none; flex: 1; overflow-y: auto; padding: 15px; flex-direction: column; gap: 15px;">
-            <!-- Orders will inject here! -->
+        <!-- ACTIVE STATE: DISPATCH BOARD WITH TABS -->
+        <div id="dispatchBoardContainer" style="display: none; flex: 1; flex-direction: column; overflow: hidden;">
+            
+            <div style="display: flex; background: var(--card-bg); padding: 15px; border-bottom: 1px solid #334155; gap: 10px;">
+                <button id="tabPending" onclick="window.switchRiderTab('Pending')" style="flex: 1; padding: 12px; border-radius: 8px; font-weight: 900; background: var(--primary); color: white; border: none; cursor: pointer; font-size: 14px; transition: 0.2s;">📍 Open Orders</button>
+                <button id="tabOngoing" onclick="window.switchRiderTab('Ongoing')" style="flex: 1; padding: 12px; border-radius: 8px; font-weight: 900; background: #334155; color: #94a3b8; border: none; cursor: pointer; font-size: 14px; transition: 0.2s;">🛵 My Deliveries</button>
+            </div>
+            
+            <div id="dispatchBoard" style="display: none; flex: 1; overflow-y: auto; padding: 15px; flex-direction: column; gap: 15px;">
+                <!-- Orders will inject here! -->
+            </div>
         </div>
     </div>
 
