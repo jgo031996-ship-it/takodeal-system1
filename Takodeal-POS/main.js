@@ -4135,9 +4135,12 @@ window.loadMobileHistory = async function() {
         let html = '';
         historyList.forEach(o => {
             let itemsHtml = o.items.map(i => {
+                // 🔥 THE FIX: Accept 'qty' (POS) OR 'quantity' (Customer App)
+                let q = i.quantity || i.qty || 1;
+                let p = i.price || i.basePrice || 0;
                 return `<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px; border-bottom:1px dashed #e2e8f0; padding-bottom:3px; color:#334155;">
-                          <div><strong>${i.quantity}x ${i.name}</strong></div>
-                          <div style="font-weight:bold;">₱${(i.price * i.quantity).toFixed(2)}</div>
+                          <div><strong>${q}x ${i.name}</strong></div>
+                          <div style="font-weight:bold;">₱${(p * q).toFixed(2)}</div>
                         </div>`;
             }).join('');
 
@@ -4260,9 +4263,12 @@ window.showMobileOrders = function() {
     window.mobileOrdersList.forEach(o => {
         // ... (Inside renderMobileHubOrders loop) ...
         let itemsHtml = o.items.map(i => {
+            // 🔥 THE FIX: Accept 'qty' (POS) OR 'quantity' (Customer App)
+            let q = i.quantity || i.qty || 1;
+            let p = i.price || i.basePrice || 0;
             return `<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px; border-bottom:1px dashed #e2e8f0; padding-bottom:3px; color:#334155;">
-                      <div><strong>${i.quantity}x ${i.name}</strong></div>
-                      <div style="font-weight:bold;">₱${(i.price * i.quantity).toFixed(2)}</div>
+                      <div><strong>${q}x ${i.name}</strong></div>
+                      <div style="font-weight:bold;">₱${(p * q).toFixed(2)}</div>
                     </div>`;
         }).join('');
 
