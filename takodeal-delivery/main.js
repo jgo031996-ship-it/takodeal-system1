@@ -2,7 +2,7 @@
 // 🔥 FIREBASE ENGINE
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, doc, updateDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, query, where, doc, updateDoc, onSnapshot, serverTimestamp, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 // 🔥 NEW: Import the Auth module for Silent Login
@@ -175,6 +175,7 @@ window.loginRider = async function() {
 
         // Login Success
         window.currentRider = rider;
+        localStorage.setItem('takodeal_rider_id', rider.id); // 🔥 REMEMBERS THE RIDER
         document.getElementById('authOverlay').style.display = 'none';
         document.getElementById('mainApp').style.display = 'flex';
         
@@ -478,3 +479,44 @@ window.rejectPing = async function() {
         } catch(e) { console.error(e); }
     }
 };
+
+// ==========================================
+// 🔒 PERMANENT SESSION & SIGN OUT
+// ==========================================
+window.checkLoginStatus = async function() {
+    let savedId = localStorage.getItem('takodeal_rider_id');
+    if (savedId) {
+        try {
+            const docSnap = await getDoc(doc(db, "riders", savedId));
+            if (docSnap.exists()) {
+                let rider = { id: docSnap.id, ...docSnap.data() };
+                
+                if (rider.status === "banned") {
+                    localStorage.removeItem('takodeal_rider_id');
+                    return;
+                }
+
+                window.currentRider = rider;
+                document.getElementById('authOverlay').style.display = 'none';
+                document.getElementById('mainApp').style.display = 'flex';
+                
+                document.getElementById('profileName').innerText = rider.name;
+                document.getElementById('profileWallet').innerText = (rider.walletBalance || 0).toFixed(2);
+                
+                window.startLiveGPS(); 
+                window.listenForPings(); 
+                startDispatchListener(); // 🔥 Forces the board to load immediately!
+            }
+        } catch(e) { console.error("Auto-login failed:", e); }
+    }
+};
+
+window.logoutRider = function() {
+    if (confirm("Are you sure you want to sign out? You will stop receiving orders.")) {
+        localStorage.removeItem('takodeal_rider_id');
+        window.location.reload(); // Wipes memory and returns to login screen
+    }
+};
+
+// Run this the moment the app opens!
+window.checkLoginStatus();
