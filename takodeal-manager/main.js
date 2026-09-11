@@ -28230,3 +28230,81 @@ window.loadRiderManagement = async function() {
 
     tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No riders found in the database.</td></tr>';
 };
+
+// ========================================================
+// 🛑 CUSTOMER APP MAINTENANCE OVERRIDE ENGINE
+// ========================================================
+window.toggleMaintenanceMode = async function() {
+    try {
+        Swal.fire({title: 'Checking system status...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        const docRef = window.doc(window.db, "settings", "global_storefront");
+        const docSnap = await window.getDoc(docRef);
+        
+        let isCurrentlyDown = false;
+        if (docSnap.exists() && docSnap.data().maintenanceMode === true) {
+            isCurrentlyDown = true;
+        }
+
+        let newStatus = !isCurrentlyDown;
+        let titleText = newStatus ? '🛑 Take Website Offline?' : '🟢 Bring Website Online?';
+        let htmlText = newStatus 
+            ? 'This will immediately lock all customers out of the Customer App and display a Maintenance screen. They will not be able to place orders. Proceed?' 
+            : 'This will instantly reopen the Customer App to the public. Proceed?';
+        let confirmColor = newStatus ? '#ef4444' : '#10b981';
+        let confirmText = newStatus ? 'Yes, Take Offline' : 'Yes, Bring Online';
+
+        const confirm = await Swal.fire({
+            title: titleText, text: htmlText, icon: 'warning',
+            showCancelButton: true, confirmButtonColor: confirmColor, confirmButtonText: confirmText,
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+
+        if (confirm.isConfirmed) {
+            Swal.fire({title: 'Updating Network...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+            
+            // Set the flag in Firebase
+            await window.setDoc(docRef, { maintenanceMode: newStatus }, { merge: true });
+            
+            // Update the UI Button visually
+            let btn = document.getElementById('btnMaintenanceToggle');
+            if (btn) {
+                if (newStatus) {
+                    btn.innerHTML = '🟢 Disable Maintenance Mode';
+                    btn.style.background = '#10b981';
+                    btn.style.borderColor = '#6ee7b7';
+                    btn.style.boxShadow = '0 4px 6px rgba(16, 185, 129, 0.3)';
+                } else {
+                    btn.innerHTML = '🛑 Activate Maintenance Mode';
+                    btn.style.background = '#ef4444';
+                    btn.style.borderColor = '#fca5a5';
+                    btn.style.boxShadow = '0 4px 6px rgba(239, 68, 68, 0.3)';
+                }
+            }
+
+            Swal.fire({
+                toast: true, position: 'top-end', icon: 'success', 
+                title: newStatus ? 'Website is now OFFLINE' : 'Website is now LIVE', 
+                showConfirmButton: false, timer: 3000
+            });
+        }
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to toggle maintenance mode.', 'error');
+    }
+};
+
+// Check the status on boot so the button color is correct!
+document.addEventListener("DOMContentLoaded", async () => {
+    setTimeout(async () => {
+        try {
+            const docSnap = await window.getDoc(window.doc(window.db, "settings", "global_storefront"));
+            let btn = document.getElementById('btnMaintenanceToggle');
+            if (docSnap.exists() && docSnap.data().maintenanceMode === true && btn) {
+                btn.innerHTML = '🟢 Disable Maintenance Mode';
+                btn.style.background = '#10b981';
+                btn.style.borderColor = '#6ee7b7';
+            }
+        } catch (e) {}
+    }, 2500);
+});
