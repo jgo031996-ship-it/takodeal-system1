@@ -233,82 +233,163 @@ window.logoutManager = function() {
 };
 
 // ========================================================
-// 📊 4. DASHBOARD ENGINE (STRICTLY THEIR BRANCH)
+// 📊 MERGED DASHBOARD ENGINE 
 // ========================================================
+window.dashboardTrendChart = null;
+window.dashboardPieChart = null;
+
 window.loadDashboard = async function() {
     let startVal = document.getElementById('globalStartDate').value;
     let endVal = document.getElementById('globalEndDate').value;
     let startOfDay = new Date(startVal + 'T00:00:00');
     let endOfDay = new Date(endVal + 'T23:59:59');
 
+    // 1. Reset UI State
+    document.getElementById('dashTotalBalls').innerText = 'Loading...';
+    document.getElementById('dashGrossSales').innerText = '₱0.00';
+    document.getElementById('dashNetSales').innerText = '₱0.00';
+    document.getElementById('dashExpenses').innerText = '₱0.00';
+
     try {
-        // 1. Fetch Sales
-        const txQ = query(collection(db, "transactions"), 
-            where("branch", "==", window.sessionUser.branch), 
-            where("timestamp", ">=", startOfDay), 
-            where("timestamp", "<=", endOfDay)
-        );
-        const txSnap = await getDocs(txQ);
-        
-        let netSales = 0; let txCount = 0; let catSales = {};
+        let gross = 0, net = 0, totalBalls = 0;
+        let productMix = {};
         let dailyTrend = {};
 
+        // 2. Fetch Transactions
+        const txQuery = query(collection(db, "transactions"), 
+            where("branch", "==", window.sessionUser.branch),
+            where("timestamp", ">=", startOfDay),
+            where("timestamp", "<=", endOfDay)
+        );
+        const txSnap = await getDocs(txQuery);
+        
         txSnap.forEach(doc => {
             let tx = doc.data();
-            if (tx.status !== "Voided") {
-                netSales += (parseFloat(tx.netTotal) || 0);
-                txCount++;
+            if(tx.status !== 'Voided') {
+                gross += parseFloat(tx.subtotal || tx.netTotal || 0);
+                net += parseFloat(tx.netTotal || 0);
                 
+                // Group sales by day for the Trend Chart
                 let dateStr = tx.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
                 if (!dailyTrend[dateStr]) dailyTrend[dateStr] = 0;
-                dailyTrend[dateStr] += (parseFloat(tx.netTotal) || 0);
+                dailyTrend[dateStr] += parseFloat(tx.netTotal || 0);
 
-                if (tx.cart) {
-                    tx.cart.forEach(item => {
-                        let cat = item.category || "Uncategorized";
-                        let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * (item.qty || 1));
-                        if (!catSales[cat]) catSales[cat] = 0;
-                        catSales[cat] += lineTotal;
-                    });
-                }
+                // Parse items to count balls and build the donut chart
+                let itemsList = tx.items || tx.cart || [];
+                itemsList.forEach(item => {
+                    let qty = parseFloat(item.qty || 1);
+                    let name = item.name || item.itemName || 'Unknown';
+                    
+                    // Smart Ball Counter
+                    let ballsInItem = 0;
+                    if (name.toLowerCase().includes('4pcs')) ballsInItem = 4 * qty;
+                    else if (name.toLowerCase().includes('8pcs')) ballsInItem = 8 * qty;
+                    else if (name.toLowerCase().includes('12pcs')) ballsInItem = 12 * qty;
+                    else if (name.toLowerCase().includes('takoyaki')) ballsInItem = 4 * qty; 
+                    totalBalls += ballsInItem;
+
+                    // Add to Sales Mix
+                    if(!productMix[name]) productMix[name] = 0;
+                    productMix[name] += qty;
+                });
             }
         });
 
-        document.getElementById('dashNetSales').innerText = formatMoney(netSales);
-        document.getElementById('dashTxCount').innerText = txCount;
-
-        // 2. Fetch Expenses
-        const expQ = query(collection(db, "expenses"), 
-            where("branch", "==", window.sessionUser.branch), 
-            where("timestamp", ">=", startOfDay), 
+        // 3. Fetch Expenses
+        let expTotal = 0;
+        const expQuery = query(collection(db, "expenses"), 
+            where("branch", "==", window.sessionUser.branch),
+            where("timestamp", ">=", startOfDay),
             where("timestamp", "<=", endOfDay)
         );
-        const expSnap = await getDocs(expQ);
-        let totalExp = 0;
-        expSnap.forEach(doc => totalExp += (parseFloat(doc.data().amount) || 0));
-        document.getElementById('dashExpenses').innerText = formatMoney(totalExp);
+        const expSnap = await getDocs(expQuery);
+        expSnap.forEach(doc => { expTotal += parseFloat(doc.data().amount || 0); });
 
-        // 3. Render Charts
-        window.renderFranchiseCharts(dailyTrend, catSales);
+        // 4. Update KPI Numbers
+        document.getElementById('dashTotalBalls').innerText = totalBalls.toLocaleString() + ' Balls Sold!';
+        document.getElementById('dashGrossSales').innerText = window.formatMoney(gross);
+        document.getElementById('dashNetSales').innerText = window.formatMoney(net);
+        document.getElementById('dashExpenses').innerText = window.formatMoney(expTotal);
 
-        // 4. Fetch Live Staff (Active Shifts)
-        const shiftQ = query(collection(db, "shifts"), where("branch", "==", window.sessionUser.branch), where("active", "==", true));
-        const shiftSnap = await getDocs(shiftQ);
-        let staffHtml = '';
-        shiftSnap.forEach(doc => {
-            let s = doc.data();
-            let timeStr = s.startTime.toDate().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'});
-            staffHtml += `
-                <div style="display:flex; justify-content:space-between; padding:10px; border-bottom:1px dashed #e2e8f0;">
-                    <span style="font-weight:bold; color:#1e293b;">👤 ${s.cashier}</span>
-                    <span style="color:#16a34a; font-size:12px; font-weight:bold; background:#dcfce7; padding:4px 8px; border-radius:6px;">In @ ${timeStr}</span>
-                </div>
-            `;
+        // 5. Build Live Staff Pills (Using your Shifts collection)
+        const staffContainer = document.getElementById('dashLiveStaff');
+        staffContainer.innerHTML = '';
+        const staffQuery = query(collection(db, "shifts"), 
+            where("branch", "==", window.sessionUser.branch),
+            where("active", "==", true)
+        );
+        const staffSnap = await getDocs(staffQuery);
+        
+        if(staffSnap.empty) {
+            staffContainer.innerHTML = '<div style="color: #94a3b8; font-style: italic; font-size: 13px;">No staff currently clocked in.</div>';
+        } else {
+            staffSnap.forEach(doc => {
+                let s = doc.data();
+                let timeStr = s.startTime ? s.startTime.toDate().toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}) : '';
+                staffContainer.innerHTML += `
+                    <div style="display: flex; align-items: center; gap: 8px; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 8px 15px; border-radius: 20px;">
+                        <div style="width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981;"></div>
+                        <span style="font-size: 13px; font-weight: 800; color: #166534;">${s.cashier || 'Active Staff'} (In @ ${timeStr})</span>
+                    </div>
+                `;
+            });
+        }
+
+        // 6. Draw Charts
+        window.drawDashboardCharts(productMix, dailyTrend);
+
+    } catch(e) {
+        console.error("Dashboard Engine Error:", e);
+    }
+};
+
+window.drawDashboardCharts = function(productMix, dailyTrend) {
+    // ---- Sales Mix Donut Chart ----
+    const pieCtx = document.getElementById('chartPie');
+    if (pieCtx) {
+        if (window.dashboardPieChart) window.dashboardPieChart.destroy();
+        
+        let labels = Object.keys(productMix);
+        let data = Object.values(productMix);
+        let colors = ['#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444', '#f43f5e'];
+        
+        window.dashboardPieChart = new Chart(pieCtx, {
+            type: 'doughnut',
+            data: {
+                labels: labels.length ? labels : ['No Data'],
+                datasets: [{
+                    data: data.length ? data : [1],
+                    backgroundColor: data.length ? colors : ['#f1f5f9'],
+                    borderWidth: 0, hoverOffset: 4
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { position: 'right', labels: { boxWidth: 12, font: {size: 11, weight: 'bold'} } } } }
         });
-        document.getElementById('dashLiveStaff').innerHTML = staffHtml || '<div style="color:#64748b; font-style:italic;">No staff currently clocked in.</div>';
+    }
 
-    } catch (e) {
-        console.error("Dashboard Error:", e);
+    // ---- Gross Revenue Trend Chart ----
+    const trendCtx = document.getElementById('chartTrend');
+    if (trendCtx) {
+        if (window.dashboardTrendChart) window.dashboardTrendChart.destroy();
+        
+        let gradient = trendCtx.getContext('2d').createLinearGradient(0, 0, 0, 300);
+        gradient.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
+        gradient.addColorStop(1, 'rgba(59, 130, 246, 0.0)');
+
+        let labels = Object.keys(dailyTrend);
+        let data = Object.values(dailyTrend);
+        if (labels.length === 0) { labels = ['No Data']; data = [0]; } // Fallback
+
+        window.dashboardTrendChart = new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Gross Sales', data: data, borderColor: '#3b82f6', backgroundColor: gradient, borderWidth: 3, tension: 0.4, fill: true, pointBackgroundColor: '#ffffff', pointBorderColor: '#3b82f6', pointBorderWidth: 2, pointRadius: 4
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { borderDash: [5, 5], color: '#f1f5f9' }, ticks: {font:{size:10}} }, x: { grid: { display: false }, ticks: {font:{size:10}} } } }
+        });
     }
 };
 
@@ -759,111 +840,6 @@ window.loadB2BSupply = async function() {
     }
 };
 
-// ========================================================
-// 📊 11. DASHBOARD ENGINE (Premium Walled Garden)
-// ========================================================
-window.dashboardTrendChart = null;
-window.dashboardPieChart = null;
-
-window.loadDashboard = async function() {
-    let startVal = document.getElementById('globalStartDate').value;
-    let endVal = document.getElementById('globalEndDate').value;
-    let startOfDay = new Date(startVal + 'T00:00:00');
-    let endOfDay = new Date(endVal + 'T23:59:59');
-
-    // 1. Reset UI State
-    document.getElementById('dashTotalBalls').innerText = 'Loading...';
-    document.getElementById('dashGrossSales').innerText = '₱0.00';
-    document.getElementById('dashNetSales').innerText = '₱0.00';
-    document.getElementById('dashExpenses').innerText = '₱0.00';
-
-    try {
-        let gross = 0, net = 0, totalBalls = 0;
-        let productMix = {};
-
-        // 2. Fetch Transactions for KPI Cards & Pie Chart
-        const txQuery = query(collection(db, "transactions"), 
-            where("branch", "==", window.sessionUser.branch),
-            where("timestamp", ">=", startOfDay),
-            where("timestamp", "<=", endOfDay)
-        );
-        const txSnap = await getDocs(txQuery);
-        
-        txSnap.forEach(doc => {
-            let tx = doc.data();
-            if(tx.status !== 'Voided') {
-                gross += parseFloat(tx.subtotal || tx.netTotal || 0);
-                net += parseFloat(tx.netTotal || 0);
-                
-                // Parse items to count balls and build the donut chart
-                if (tx.items && Array.isArray(tx.items)) {
-                    tx.items.forEach(item => {
-                        let qty = parseFloat(item.qty || 1);
-                        let name = item.name || item.itemName || 'Unknown';
-                        
-                        // Smart Ball Counter (Assumes standard takoyaki portions)
-                        let ballsInItem = 0;
-                        if (name.toLowerCase().includes('4pcs')) ballsInItem = 4 * qty;
-                        else if (name.toLowerCase().includes('8pcs')) ballsInItem = 8 * qty;
-                        else if (name.toLowerCase().includes('12pcs')) ballsInItem = 12 * qty;
-                        else if (name.toLowerCase().includes('takoyaki')) ballsInItem = 4 * qty; // Default fallback
-                        totalBalls += ballsInItem;
-
-                        // Add to Sales Mix
-                        if(!productMix[name]) productMix[name] = 0;
-                        productMix[name] += qty;
-                    });
-                }
-            }
-        });
-
-        // 3. Fetch Expenses
-        let expTotal = 0;
-        const expQuery = query(collection(db, "expenses"), 
-            where("branch", "==", window.sessionUser.branch),
-            where("timestamp", ">=", startOfDay),
-            where("timestamp", "<=", endOfDay)
-        );
-        const expSnap = await getDocs(expQuery);
-        expSnap.forEach(doc => { expTotal += parseFloat(doc.data().amount || 0); });
-
-        // 4. Update KPI Numbers visually
-        document.getElementById('dashTotalBalls').innerText = totalBalls.toLocaleString() + ' Balls Sold!';
-        document.getElementById('dashGrossSales').innerText = '₱' + gross.toLocaleString(undefined, {minimumFractionDigits:2});
-        document.getElementById('dashNetSales').innerText = '₱' + net.toLocaleString(undefined, {minimumFractionDigits:2});
-        document.getElementById('dashExpenses').innerText = '₱' + expTotal.toLocaleString(undefined, {minimumFractionDigits:2});
-
-        // 5. Build Live Staff Pills
-        const staffContainer = document.getElementById('dashLiveStaff');
-        staffContainer.innerHTML = '';
-        const staffQuery = query(collection(db, "attendance"), 
-            where("branch", "==", window.sessionUser.branch),
-            where("timeOut", "==", null) // Assuming null means they haven't clocked out yet
-        );
-        const staffSnap = await getDocs(staffQuery);
-        
-        if(staffSnap.empty) {
-            staffContainer.innerHTML = '<div style="color: #94a3b8; font-style: italic; font-size: 13px;">No staff currently clocked in.</div>';
-        } else {
-            staffSnap.forEach(doc => {
-                let staff = doc.data();
-                staffContainer.innerHTML += `
-                    <div style="display: flex; align-items: center; gap: 8px; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 8px 15px; border-radius: 20px;">
-                        <div style="width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981;"></div>
-                        <span style="font-size: 13px; font-weight: 800; color: #166534;">${staff.name || staff.staffName || 'Active Staff'}</span>
-                    </div>
-                `;
-            });
-        }
-
-        // 6. Draw the Beautiful Charts
-        drawDashboardCharts(productMix);
-
-    } catch(e) {
-        console.error("Dashboard Engine Error:", e);
-    }
-};
-
 function drawDashboardCharts(productMix) {
     // ---- Sales Mix Donut Chart ----
     const pieCtx = document.getElementById('chartPie');
@@ -931,3 +907,18 @@ function drawDashboardCharts(productMix) {
         });
     }
 }
+
+// ========================================================
+// 💰 STUBS: ACCOUNTS & BUDGET (Prevents button errors)
+// ========================================================
+window.openAddAccountModal = function() {
+    Swal.fire({ title: 'Add Cash Account', text: 'This feature will be built in Phase 2!', icon: 'info' });
+};
+
+window.openAddBudgetModal = function() {
+    Swal.fire({ title: 'Set Monthly Budget', text: 'This feature will be built in Phase 2!', icon: 'info' });
+};
+
+window.openLogExpenseModal = function() {
+    Swal.fire({ title: 'Log Expense', text: 'This feature will be built in Phase 2!', icon: 'info' });
+};
