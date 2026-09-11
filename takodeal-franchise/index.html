@@ -419,6 +419,50 @@
         </div>
     </div>
 
+    <!-- VIEW: INVENTORY AUDITS -->
+    <div id="view-inv-audits" class="view-container">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; color: #1e293b;">⚖️ Stock Audits & Accuracy</h3>
+                    <button class="btn-refresh" style="background: #f59e0b; color: white;" onclick="window.openAuditModal()">📝 Perform Audit</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Date</th><th>Item</th><th>System Qty</th><th>Actual Qty</th><th>Variance</th><th>Audited By</th></tr>
+                        </thead>
+                        <tbody id="auditTableBody">
+                            <tr><td colspan="6" style="text-align:center; padding: 30px; color:#64748b;">Loading audits...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW: WASTE & SPOILAGE -->
+    <div id="view-inv-waste" class="view-container">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; color: #1e293b;">🗑️ Waste & Spoilage Logs</h3>
+                    <button class="btn-refresh" style="background: #ef4444; color: white;" onclick="window.openWasteModal()">🗑️ Log Spoilage</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Date</th><th>Item</th><th>Qty Wasted</th><th>Reason</th><th>Logged By</th></tr>
+                        </thead>
+                        <tbody id="wasteTableBody">
+                            <tr><td colspan="5" style="text-align:center; padding: 30px; color:#64748b;">Loading waste logs...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- VIEW: B2B SUPPLY ORDERS -->
     <div id="view-b2b" class="view-container">
         <div style="max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
