@@ -245,6 +245,13 @@ window.loadDashboard = async function() {
     let startOfDay = new Date(startVal + 'T00:00:00');
     let endOfDay = new Date(endVal + 'T23:59:59');
 
+    // Setup rolling 7-day window for the chart
+    let sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    sevenDaysAgo.setHours(0,0,0,0);
+    let todayEnd = new Date();
+    todayEnd.setHours(23,59,59,999);
+
     // 1. Reset UI State
     document.getElementById('dashTotalBalls').innerText = 'Loading...';
     document.getElementById('dashGrossSales').innerText = '₱0.00';
@@ -254,9 +261,16 @@ window.loadDashboard = async function() {
     try {
         let gross = 0, net = 0, totalBalls = 0;
         let productMix = {};
-        let dailyTrend = {};
+        
+        // Initialize the 7-day array with 0s to ensure the chart always has 7 points
+        let rollingTrend = {};
+        for(let i=6; i>=0; i--) {
+            let d = new Date();
+            d.setDate(d.getDate() - i);
+            rollingTrend[d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'})] = 0;
+        }
 
-        // 2. Fetch Transactions
+        // 2. Fetch Transactions for KPI Cards (Filtered by Date Picker)
         const txQuery = query(collection(db, "transactions"), 
             where("branch", "==", window.sessionUser.branch),
             where("timestamp", ">=", startOfDay),
@@ -270,18 +284,11 @@ window.loadDashboard = async function() {
                 gross += parseFloat(tx.subtotal || tx.netTotal || 0);
                 net += parseFloat(tx.netTotal || 0);
                 
-                // Group sales by day for the Trend Chart
-                let dateStr = tx.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-                if (!dailyTrend[dateStr]) dailyTrend[dateStr] = 0;
-                dailyTrend[dateStr] += parseFloat(tx.netTotal || 0);
-
-                // Parse items to count balls and build the donut chart
                 let itemsList = tx.items || tx.cart || [];
                 itemsList.forEach(item => {
                     let qty = parseFloat(item.qty || 1);
                     let name = item.name || item.itemName || 'Unknown';
                     
-                    // Smart Ball Counter
                     let ballsInItem = 0;
                     if (name.toLowerCase().includes('4pcs')) ballsInItem = 4 * qty;
                     else if (name.toLowerCase().includes('8pcs')) ballsInItem = 8 * qty;
@@ -289,14 +296,31 @@ window.loadDashboard = async function() {
                     else if (name.toLowerCase().includes('takoyaki')) ballsInItem = 4 * qty; 
                     totalBalls += ballsInItem;
 
-                    // Add to Sales Mix
                     if(!productMix[name]) productMix[name] = 0;
                     productMix[name] += qty;
                 });
             }
         });
 
-        // 3. Fetch Expenses
+        // 3. Fetch Transactions for the 7-Day Chart (Always last 7 days)
+        const trendQuery = query(collection(db, "transactions"), 
+            where("branch", "==", window.sessionUser.branch),
+            where("timestamp", ">=", sevenDaysAgo),
+            where("timestamp", "<=", todayEnd)
+        );
+        const trendSnap = await getDocs(trendQuery);
+        
+        trendSnap.forEach(doc => {
+            let tx = doc.data();
+            if(tx.status !== 'Voided') {
+                let dateStr = tx.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+                if(rollingTrend[dateStr] !== undefined) {
+                    rollingTrend[dateStr] += parseFloat(tx.netTotal || 0);
+                }
+            }
+        });
+
+        // 4. Fetch Expenses (Filtered by Date Picker)
         let expTotal = 0;
         const expQuery = query(collection(db, "expenses"), 
             where("branch", "==", window.sessionUser.branch),
@@ -306,13 +330,13 @@ window.loadDashboard = async function() {
         const expSnap = await getDocs(expQuery);
         expSnap.forEach(doc => { expTotal += parseFloat(doc.data().amount || 0); });
 
-        // 4. Update KPI Numbers
+        // 5. Update KPI Numbers
         document.getElementById('dashTotalBalls').innerText = totalBalls.toLocaleString() + ' Balls Sold!';
         document.getElementById('dashGrossSales').innerText = window.formatMoney(gross);
         document.getElementById('dashNetSales').innerText = window.formatMoney(net);
         document.getElementById('dashExpenses').innerText = window.formatMoney(expTotal);
 
-        // 5. Build Live Staff Pills (Using your Shifts collection)
+        // 6. Build Live Staff Pills
         const staffContainer = document.getElementById('dashLiveStaff');
         staffContainer.innerHTML = '';
         const staffQuery = query(collection(db, "shifts"), 
@@ -336,8 +360,8 @@ window.loadDashboard = async function() {
             });
         }
 
-        // 6. Draw Charts
-        window.drawDashboardCharts(productMix, dailyTrend);
+        // 7. Draw Charts using the new rollingTrend
+        window.drawDashboardCharts(productMix, rollingTrend);
 
     } catch(e) {
         console.error("Dashboard Engine Error:", e);
