@@ -207,6 +207,8 @@ window.switchView = function(viewId) {
     if (viewId === 'payroll') window.loadPayrollGenerator();
     if (viewId === 'history') window.loadSalesHistory();
     if (viewId === 'inv-overview') window.loadLiveInventory();
+    if (viewId === 'inv-audits') window.loadInventoryAudits(); // 👈 ADD THIS
+    if (viewId === 'inv-waste') window.loadInventoryWaste();   // 👈 ADD THIS
 };
 
 window.refreshActiveData = function() {
@@ -1155,6 +1157,187 @@ window.openLogExpenseModal = async function() {
 
             Swal.fire('Success', 'Expense logged successfully!', 'success');
             window.loadAccountsView();
+        } catch (e) { Swal.fire('Error', e.message, 'error'); }
+    }
+};
+
+// ========================================================
+// ⚖️ INVENTORY AUDITS & WASTE ENGINE
+// ========================================================
+
+window.loadInventoryAudits = async function() {
+    const tbody = document.getElementById('auditTableBody');
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 30px;">Loading audits...</td></tr>';
+    
+    try {
+        const q = query(collection(db, "inventory_logs"), 
+            where("branch", "==", window.sessionUser.branch), 
+            where("type", "==", "Audit"), 
+            orderBy("timestamp", "desc"), limit(50));
+            
+        const snap = await getDocs(q);
+        let html = '';
+        
+        snap.forEach(docSnap => {
+            let log = docSnap.data();
+            let dateStr = log.timestamp ? log.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : 'Just now';
+            let varStyle = log.variance < 0 ? 'color: #dc2626; font-weight: bold;' : (log.variance > 0 ? 'color: #10b981; font-weight: bold;' : 'color: #64748b;');
+            
+            html += `
+                <tr>
+                    <td>${dateStr}</td>
+                    <td><strong>${log.itemName}</strong></td>
+                    <td>${log.systemQty} ${log.unit || ''}</td>
+                    <td>${log.actualQty} ${log.unit || ''}</td>
+                    <td style="${varStyle}">${log.variance > 0 ? '+' : ''}${log.variance}</td>
+                    <td>${log.loggedBy}</td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = html || '<tr><td colspan="6" style="text-align:center; padding: 30px; color: #64748b;">No recent audits found.</td></tr>';
+    } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: red;">Error loading audits.</td></tr>'; }
+};
+
+window.loadInventoryWaste = async function() {
+    const tbody = document.getElementById('wasteTableBody');
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 30px;">Loading waste logs...</td></tr>';
+    
+    try {
+        const q = query(collection(db, "inventory_logs"), 
+            where("branch", "==", window.sessionUser.branch), 
+            where("type", "==", "Waste"), 
+            orderBy("timestamp", "desc"), limit(50));
+            
+        const snap = await getDocs(q);
+        let html = '';
+        
+        snap.forEach(docSnap => {
+            let log = docSnap.data();
+            let dateStr = log.timestamp ? log.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : 'Just now';
+            
+            html += `
+                <tr>
+                    <td>${dateStr}</td>
+                    <td><strong>${log.itemName}</strong></td>
+                    <td style="color: #dc2626; font-weight: bold;">-${log.qtyWasted} ${log.unit || ''}</td>
+                    <td><span style="background: #fef2f2; color: #b91c1c; padding: 4px 8px; border-radius: 6px; font-size: 12px;">${log.reason}</span></td>
+                    <td>${log.loggedBy}</td>
+                </tr>
+            `;
+        });
+        
+        tbody.innerHTML = html || '<tr><td colspan="5" style="text-align:center; padding: 30px; color: #64748b;">No waste logged recently.</td></tr>';
+    } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: red;">Error loading waste logs.</td></tr>'; }
+};
+
+// --- MODALS FOR AUDITS & WASTE ---
+
+window.getBranchInventoryOptions = async function() {
+    const q = query(collection(db, "inventory"), where("branch", "==", window.sessionUser.branch));
+    const snap = await getDocs(q);
+    let options = '';
+    snap.forEach(docSnap => {
+        let item = docSnap.data();
+        options += `<option value="${docSnap.id}" data-name="${item.itemName}" data-qty="${item.quantity}" data-unit="${item.unit || 'pcs'}">${item.itemName} (Current: ${item.quantity} ${item.unit || 'pcs'})</option>`;
+    });
+    return options;
+};
+
+window.openAuditModal = async function() {
+    Swal.fire({title: 'Loading Items...', didOpen: () => Swal.showLoading()});
+    let options = await window.getBranchInventoryOptions();
+    if (!options) return Swal.fire('No Inventory', 'No active inventory items found for this branch.', 'info');
+
+    const { value: formValues } = await Swal.fire({
+        title: 'Perform Stock Audit',
+        html: `
+            <select id="swal-audit-item" class="swal2-select" style="width: 85%; font-size: 14px; margin-bottom: 15px;">${options}</select>
+            <input id="swal-audit-qty" type="number" step="0.1" class="swal2-input" placeholder="Enter Actual Counted Qty" style="width: 85%;">
+        `,
+        showCancelButton: true,
+        confirmButtonColor: '#f59e0b',
+        confirmButtonText: 'Save Audit',
+        preConfirm: () => {
+            let select = document.getElementById('swal-audit-item');
+            let docId = select.value;
+            let itemName = select.options[select.selectedIndex].getAttribute('data-name');
+            let systemQty = parseFloat(select.options[select.selectedIndex].getAttribute('data-qty'));
+            let unit = select.options[select.selectedIndex].getAttribute('data-unit');
+            let actualQty = parseFloat(document.getElementById('swal-audit-qty').value);
+
+            if (isNaN(actualQty) || actualQty < 0) { Swal.showValidationMessage('Enter a valid physical count.'); return false; }
+            return { docId, itemName, systemQty, actualQty, unit, variance: actualQty - systemQty };
+        }
+    });
+
+    if (formValues) {
+        Swal.fire({title: 'Updating...', didOpen: () => Swal.showLoading()});
+        try {
+            await updateDoc(doc(db, "inventory", formValues.docId), { quantity: formValues.actualQty });
+            await addDoc(collection(db, "inventory_logs"), {
+                branch: window.sessionUser.branch,
+                type: "Audit",
+                itemName: formValues.itemName,
+                systemQty: formValues.systemQty,
+                actualQty: formValues.actualQty,
+                variance: formValues.variance,
+                unit: formValues.unit,
+                loggedBy: window.sessionUser.cashierName,
+                timestamp: serverTimestamp()
+            });
+            Swal.fire('Audit Complete', `Stock adjusted. Variance: ${formValues.variance > 0 ? '+' : ''}${formValues.variance}`, 'success');
+            window.loadInventoryAudits();
+        } catch (e) { Swal.fire('Error', e.message, 'error'); }
+    }
+};
+
+window.openWasteModal = async function() {
+    Swal.fire({title: 'Loading Items...', didOpen: () => Swal.showLoading()});
+    let options = await window.getBranchInventoryOptions();
+    if (!options) return Swal.fire('No Inventory', 'No active inventory items found for this branch.', 'info');
+
+    const { value: formValues } = await Swal.fire({
+        title: 'Log Waste or Spoilage',
+        html: `
+            <select id="swal-waste-item" class="swal2-select" style="width: 85%; font-size: 14px; margin-bottom: 10px;">${options}</select>
+            <input id="swal-waste-qty" type="number" step="0.1" class="swal2-input" placeholder="Qty Wasted" style="width: 85%; margin-bottom: 10px;">
+            <input id="swal-waste-reason" class="swal2-input" placeholder="Reason (e.g., Dropped, Expired)" style="width: 85%;">
+        `,
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'Log Spoilage',
+        preConfirm: () => {
+            let select = document.getElementById('swal-waste-item');
+            let docId = select.value;
+            let itemName = select.options[select.selectedIndex].getAttribute('data-name');
+            let systemQty = parseFloat(select.options[select.selectedIndex].getAttribute('data-qty'));
+            let unit = select.options[select.selectedIndex].getAttribute('data-unit');
+            let qtyWasted = parseFloat(document.getElementById('swal-waste-qty').value);
+            let reason = document.getElementById('swal-waste-reason').value.trim();
+
+            if (isNaN(qtyWasted) || qtyWasted <= 0 || !reason) { Swal.showValidationMessage('Enter a valid quantity and reason.'); return false; }
+            if (qtyWasted > systemQty) { Swal.showValidationMessage(`Cannot waste more than current stock (${systemQty}).`); return false; }
+            return { docId, itemName, systemQty, qtyWasted, reason, unit };
+        }
+    });
+
+    if (formValues) {
+        Swal.fire({title: 'Updating...', didOpen: () => Swal.showLoading()});
+        try {
+            await updateDoc(doc(db, "inventory", formValues.docId), { quantity: formValues.systemQty - formValues.qtyWasted });
+            await addDoc(collection(db, "inventory_logs"), {
+                branch: window.sessionUser.branch,
+                type: "Waste",
+                itemName: formValues.itemName,
+                qtyWasted: formValues.qtyWasted,
+                reason: formValues.reason,
+                unit: formValues.unit,
+                loggedBy: window.sessionUser.cashierName,
+                timestamp: serverTimestamp()
+            });
+            Swal.fire('Logged', 'Spoilage recorded and stock deducted.', 'success');
+            window.loadInventoryWaste();
         } catch (e) { Swal.fire('Error', e.message, 'error'); }
     }
 };
