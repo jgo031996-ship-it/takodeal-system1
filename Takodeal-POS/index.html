@@ -1720,6 +1720,12 @@
         <div style="display: flex; gap: 10px; margin-top: 15px;">
             <input type="text" id="finalCustomerName" class="input-box" placeholder="Customer Name (Optional)">
         </div>
+        
+        <!-- 🔥 NEW: HIDDEN DELIVERY FIELDS -->
+        <div id="deliveryFields" style="display: none; flex-direction: column; gap: 10px; margin-top: 10px;">
+            <input type="text" id="finalContactNumber" class="input-box" placeholder="Contact Number (e.g. 0912...)">
+            <input type="text" id="finalDeliveryAddress" class="input-box" placeholder="Complete Delivery Address">
+        </div>
       </div>
       <!-- 🔥 THE RESTORED CHECKOUT BUTTON 🔥 -->
       <div class="modal-foot" style="flex-shrink: 0; padding: 15px; background: white; border-top: 1px solid #eee;">
@@ -3261,6 +3267,12 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             return;
         }
 
+        // 🔥 NEW: SHOW/HIDE DELIVERY FIELDS
+        let delFields = document.getElementById('deliveryFields');
+        if (delFields) {
+            delFields.style.display = (mainType === 'Delivery') ? 'flex' : 'none';
+        }
+
         document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); 
         document.getElementById('finalCustomerName').value = ''; 
         window.amountReceivedStr = "0"; 
@@ -3407,6 +3419,18 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
           return;
       }
 
+      // 🔥 NEW: VALIDATE DELIVERY INFORMATION
+      let mainOrderType = document.getElementById('mainOrderType').value;
+      let deliveryAddress = document.getElementById('finalDeliveryAddress') ? document.getElementById('finalDeliveryAddress').value.trim() : '';
+      let contactNumber = document.getElementById('finalContactNumber') ? document.getElementById('finalContactNumber').value.trim() : '';
+
+      if (mainOrderType === 'Delivery' && (!deliveryAddress || !contactNumber)) {
+           alert("Delivery orders require both a Contact Number and a Delivery Address!");
+           btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto";
+           window.isSubmittingOrder = false;
+           return;
+      }
+
       const payload = {
         branch: window.sessionUser.branch,
         cashier: window.sessionUser.cashierName,
@@ -3424,7 +3448,11 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         cart: cart,
         wasParked: window.isResumedParkedOrder || false,
         isMobileOrder: window.isActiveOrderMobile || false,      // 🔥 INJECT
-        mobileOrderCode: window.activeMobileOrderCode || null// 🔥 INJECTS THE HISTORY TRACKER!
+        mobileOrderCode: window.activeMobileOrderCode || null,
+        
+        // 🔥 NEW: INJECT DELIVERY DATA
+        deliveryAddress: deliveryAddress,
+        contactNumber: contactNumber
       };
 
       let receiptId = await window.processCheckout(payload);
