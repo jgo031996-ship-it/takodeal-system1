@@ -61,6 +61,16 @@
 
 <body class="pb-24">
 
+    <!-- 🛑 MAINTENANCE MODE OVERLAY -->
+    <div id="maintenanceOverlay" class="hidden fixed inset-0 bg-darkbg z-[99999] flex flex-col items-center justify-center p-6 text-center animate-fade-in backdrop-blur-md">
+        <div class="text-7xl mb-6 animate-pulse drop-shadow-2xl">🛠️</div>
+        <h1 class="text-3xl md:text-5xl font-black text-white mb-4 tracking-tight">We'll be right back!</h1>
+        <p class="text-zinc-400 text-sm md:text-base max-w-md mx-auto leading-relaxed">TAKODEÁL is currently undergoing scheduled maintenance and system upgrades to serve you better. Please check back shortly!</p>
+        <div class="mt-10 px-6 py-3 border border-zinc-800 rounded-full text-xs font-bold text-zinc-500 uppercase tracking-widest bg-zinc-900/50">
+            System Offline
+        </div>
+    </div>
+
     <!-- Toast Notification -->
     <div id="cartToast" class="toast-notification">
         <span class="text-xl">🐙</span> <span>Added to your cart!</span>
@@ -2726,8 +2736,21 @@
             window.switchScreen('orderingScreen');
         };
 
+        // 🛑 REAL-TIME MAINTENANCE MODE LISTENER
+        window.listenToMaintenanceMode = function() {
+            onSnapshot(doc(db, "settings", "global_storefront"), (docSnap) => {
+                let overlay = document.getElementById('maintenanceOverlay');
+                if (docSnap.exists() && docSnap.data().maintenanceMode === true) {
+                    overlay.classList.remove('hidden');
+                } else {
+                    overlay.classList.add('hidden');
+                }
+            });
+        };
+
         document.addEventListener("DOMContentLoaded", async () => {
             window.loadLiveMenu(); 
+            window.listenToMaintenanceMode(); // 🔥 Starts watching the Kill Switch instantly!
         });
 
         // ==========================================
