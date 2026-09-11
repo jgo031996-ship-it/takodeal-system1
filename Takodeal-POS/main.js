@@ -4101,13 +4101,20 @@ window.loadMobileHistory = async function() {
     container.innerHTML = '<div style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold; font-size: 15px;">⏳ Fetching today\'s history...</div>';
 
     try {
-        let startOfDay = new Date();
-        startOfDay.setHours(0,0,0,0);
+        // 🔥 THE MIDNIGHT GHOST FIX: Tie history to the active shift!
+        let fetchStartTime = new Date();
+        if (typeof window.currentShift !== 'undefined' && window.currentShift && window.currentShift.startTime) {
+            // Use the exact time the cashier opened the drawer
+            fetchStartTime = window.currentShift.startTime.toDate ? window.currentShift.startTime.toDate() : new Date(window.currentShift.startTime);
+        } else {
+            // Fallback just in case no shift is open (looks back 16 hours)
+            fetchStartTime.setHours(fetchStartTime.getHours() - 16); 
+        }
 
         const q = window.query(
             window.collection(window.db, "incoming_orders"),
             window.where("branch", "==", branch),
-            window.where("timestamp", ">=", startOfDay)
+            window.where("timestamp", ">=", fetchStartTime)
         );
         const snap = await window.getDocs(q);
 
