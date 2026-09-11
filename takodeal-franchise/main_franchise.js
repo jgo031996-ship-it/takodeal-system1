@@ -201,6 +201,7 @@ window.switchView = function(viewId) {
 
     // Trigger the engines
     if (viewId === 'dashboard') window.loadDashboard();
+    if (viewId === 'accounts') window.loadAccountsView();
     if (viewId === 'hq-billing') window.loadHQBilling();
     if (viewId === 'b2b') window.loadB2BSupply();
     if (viewId === 'payroll') window.loadPayrollGenerator();
@@ -909,16 +910,227 @@ function drawDashboardCharts(productMix) {
 }
 
 // ========================================================
-// 💰 STUBS: ACCOUNTS & BUDGET (Prevents button errors)
+// 💰 ACCOUNTS & BUDGET ENGINE
 // ========================================================
-window.openAddAccountModal = function() {
-    Swal.fire({ title: 'Add Cash Account', text: 'This feature will be built in Phase 2!', icon: 'info' });
+window.loadAccountsView = async function() {
+    const accBody = document.getElementById('accTableBody');
+    const budBody = document.getElementById('budgetListBody');
+    
+    accBody.innerHTML = '<tr><td colspan="2" style="text-align:center; padding:20px;">Loading accounts...</td></tr>';
+    budBody.innerHTML = '<div style="text-align:center; color:#64748b; padding:20px;">Loading budgets...</div>';
+
+    try {
+        // 1. Fetch Cash Accounts
+        const accQ = query(collection(db, "franchise_accounts"), where("branch", "==", window.sessionUser.branch));
+        const accSnap = await getDocs(accQ);
+        let accHtml = '';
+        window.activeAccounts = []; // Stored for the expense dropdown
+
+        if (accSnap.empty) {
+            accHtml = '<tr><td colspan="2" style="text-align:center; color:#64748b; padding:20px;">No cash accounts set up yet.</td></tr>';
+        } else {
+            accSnap.forEach(docSnap => {
+                let acc = docSnap.data();
+                window.activeAccounts.push({ id: docSnap.id, name: acc.accountName, balance: acc.balance });
+                accHtml += `
+                    <tr>
+                        <td><strong>${acc.accountName}</strong></td>
+                        <td style="text-align: right; font-weight: bold; color: ${acc.balance >= 0 ? '#10b981' : '#ef4444'};">
+                            ${window.formatMoney(acc.balance)}
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+        accBody.innerHTML = accHtml;
+
+        // 2. Fetch Expenses to Calculate Budget Usage
+        let currentMonth = new Date().toISOString().slice(0, 7); // Gets YYYY-MM
+        let startOfMonth = new Date(currentMonth + '-01T00:00:00');
+        
+        const expQ = query(collection(db, "expenses"), 
+            where("branch", "==", window.sessionUser.branch),
+            where("timestamp", ">=", startOfMonth)
+        );
+        const expSnap = await getDocs(expQ);
+        
+        let spentByCategory = {};
+        expSnap.forEach(docSnap => {
+            let exp = docSnap.data();
+            let cat = exp.category || 'Uncategorized';
+            if (!spentByCategory[cat]) spentByCategory[cat] = 0;
+            spentByCategory[cat] += parseFloat(exp.amount || 0);
+        });
+
+        // 3. Fetch Budgets & Render Progress Bars
+        const budQ = query(collection(db, "franchise_budgets"), where("branch", "==", window.sessionUser.branch));
+        const budSnap = await getDocs(budQ);
+        let budHtml = '';
+        window.activeBudgetCategories = []; // Stored for the expense dropdown
+
+        if (budSnap.empty) {
+            budHtml = '<div style="text-align:center; color:#64748b; padding: 20px;">No budgets set up yet.</div>';
+        } else {
+            budSnap.forEach(docSnap => {
+                let b = docSnap.data();
+                window.activeBudgetCategories.push(b.category);
+                
+                let limit = parseFloat(b.limit || 0);
+                let spent = spentByCategory[b.category] || 0;
+                let percentage = limit > 0 ? Math.min((spent / limit) * 100, 100) : 0;
+                
+                // Color changes to red if they hit 90% of their budget
+                let barColor = percentage > 90 ? '#ef4444' : (percentage > 75 ? '#f59e0b' : '#10b981');
+
+                budHtml += `
+                    <div style="border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; background: #f8fafc;">
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                            <strong style="color: #1e293b;">${b.category}</strong>
+                            <span style="font-size: 13px; font-weight: bold; color: #64748b;">${window.formatMoney(spent)} / ${window.formatMoney(limit)}</span>
+                        </div>
+                        <div style="width: 100%; background: #e2e8f0; border-radius: 4px; height: 8px; overflow: hidden;">
+                            <div style="width: ${percentage}%; background: ${barColor}; height: 100%; transition: width 0.3s;"></div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+        budBody.innerHTML = budHtml;
+
+    } catch (e) {
+        console.error("Accounts Load Error:", e);
+    }
 };
 
-window.openAddBudgetModal = function() {
-    Swal.fire({ title: 'Set Monthly Budget', text: 'This feature will be built in Phase 2!', icon: 'info' });
+// --- MODALS FOR ACCOUNTS & BUDGETS ---
+
+window.openAddAccountModal = async function() {
+    const { value: formValues } = await Swal.fire({
+        title: 'Add Cash Account',
+        html: `
+            <input id="swal-acc-name" class="swal2-input" placeholder="Account Name (e.g., Petty Cash, BDO)">
+            <input id="swal-acc-bal" type="number" step="0.01" class="swal2-input" placeholder="Initial Balance (₱)">
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonColor: '#0ea5e9',
+        confirmButtonText: 'Save Account',
+        preConfirm: () => {
+            let name = document.getElementById('swal-acc-name').value.trim();
+            let bal = parseFloat(document.getElementById('swal-acc-bal').value);
+            if (!name || isNaN(bal)) { Swal.showValidationMessage('Please enter a valid name and balance'); return false; }
+            return { name, bal };
+        }
+    });
+
+    if (formValues) {
+        Swal.fire({title: 'Saving...', didOpen: () => Swal.showLoading()});
+        try {
+            await addDoc(collection(db, "franchise_accounts"), {
+                branch: window.sessionUser.branch,
+                accountName: formValues.name,
+                balance: formValues.bal,
+                timestamp: serverTimestamp()
+            });
+            Swal.fire('Saved!', 'Account has been created.', 'success');
+            window.loadAccountsView();
+        } catch (e) { Swal.fire('Error', e.message, 'error'); }
+    }
 };
 
-window.openLogExpenseModal = function() {
-    Swal.fire({ title: 'Log Expense', text: 'This feature will be built in Phase 2!', icon: 'info' });
+window.openAddBudgetModal = async function() {
+    const { value: formValues } = await Swal.fire({
+        title: 'Set Monthly Budget',
+        html: `
+            <input id="swal-bud-cat" class="swal2-input" placeholder="Category (e.g., Marketing, Utilities)">
+            <input id="swal-bud-limit" type="number" step="0.01" class="swal2-input" placeholder="Monthly Limit (₱)">
+        `,
+        focusConfirm: false,
+        showCancelButton: true,
+        confirmButtonColor: '#f59e0b',
+        confirmButtonText: 'Set Budget',
+        preConfirm: () => {
+            let cat = document.getElementById('swal-bud-cat').value.trim();
+            let limit = parseFloat(document.getElementById('swal-bud-limit').value);
+            if (!cat || isNaN(limit)) { Swal.showValidationMessage('Please enter a valid category and limit'); return false; }
+            return { cat, limit };
+        }
+    });
+
+    if (formValues) {
+        Swal.fire({title: 'Saving...', didOpen: () => Swal.showLoading()});
+        try {
+            await addDoc(collection(db, "franchise_budgets"), {
+                branch: window.sessionUser.branch,
+                category: formValues.cat,
+                limit: formValues.limit,
+                timestamp: serverTimestamp()
+            });
+            Swal.fire('Saved!', 'Budget category added.', 'success');
+            window.loadAccountsView();
+        } catch (e) { Swal.fire('Error', e.message, 'error'); }
+    }
+};
+
+window.openLogExpenseModal = async function() {
+    if (!window.activeAccounts || window.activeAccounts.length === 0) {
+        return Swal.fire('Action Required', 'Please add a Cash Account first before logging an expense.', 'warning');
+    }
+
+    let accOptions = window.activeAccounts.map(a => `<option value="${a.id}" data-bal="${a.balance}">${a.name} (Bal: ₱${a.balance})</option>`).join('');
+    let catOptions = (window.activeBudgetCategories && window.activeBudgetCategories.length > 0) 
+        ? window.activeBudgetCategories.map(c => `<option value="${c}">${c}</option>`).join('')
+        : `<option value="Uncategorized">Uncategorized</option>`;
+
+    const { value: formValues } = await Swal.fire({
+        title: 'Log Expense',
+        html: `
+            <select id="swal-exp-acc" class="swal2-select" style="width: 80%; font-size: 14px; margin-bottom: 10px;">${accOptions}</select>
+            <select id="swal-exp-cat" class="swal2-select" style="width: 80%; font-size: 14px; margin-bottom: 10px;">${catOptions}</select>
+            <input id="swal-exp-amt" type="number" step="0.01" class="swal2-input" placeholder="Amount (₱)" style="width: 80%;">
+            <input id="swal-exp-desc" class="swal2-input" placeholder="Brief Description" style="width: 80%;">
+        `,
+        showCancelButton: true,
+        confirmButtonColor: '#ef4444',
+        confirmButtonText: 'Log Expense',
+        preConfirm: () => {
+            let accSelect = document.getElementById('swal-exp-acc');
+            let accountId = accSelect.value;
+            let accountName = accSelect.options[accSelect.selectedIndex].text.split(' (')[0];
+            let currentBal = parseFloat(accSelect.options[accSelect.selectedIndex].getAttribute('data-bal'));
+            let category = document.getElementById('swal-exp-cat').value;
+            let amount = parseFloat(document.getElementById('swal-exp-amt').value);
+            let description = document.getElementById('swal-exp-desc').value.trim();
+
+            if (isNaN(amount) || amount <= 0 || !description) {
+                Swal.showValidationMessage('Please enter a valid amount and description.');
+                return false;
+            }
+            return { accountId, accountName, currentBal, category, amount, description };
+        }
+    });
+
+    if (formValues) {
+        Swal.fire({title: 'Processing...', didOpen: () => Swal.showLoading()});
+        try {
+            // 1. Log the expense in the database
+            await addDoc(collection(db, "expenses"), {
+                branch: window.sessionUser.branch,
+                accountName: formValues.accountName,
+                category: formValues.category,
+                amount: formValues.amount,
+                description: formValues.description,
+                timestamp: serverTimestamp()
+            });
+
+            // 2. Safely deduct the money from the chosen cash account
+            let newBal = formValues.currentBal - formValues.amount;
+            await updateDoc(doc(db, "franchise_accounts", formValues.accountId), {
+                balance: newBal
+            });
+
+            Swal.fire('Success', 'Expense logged successfully!', 'success');
+            window.loadAccountsView();
+        } catch (e) { Swal.fire('Error', e.message, 'error'); }
+    }
 };
