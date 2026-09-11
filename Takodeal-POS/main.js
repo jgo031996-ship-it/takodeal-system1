@@ -4149,8 +4149,8 @@ window.loadMobileHistory = async function() {
 
             // Distinct Badges based on how it ended
             let statusBadge = '';
-            if (o.status === "completed") statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #bbf7d0;">✅ PAID & COMPLETED</span>`;
-            else if (o.status === "ready") statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #bbf7d0;">🛵 DISPATCHED / READY</span>`;
+            if (o.status === "completed") statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #bbf7d0;">✅ COMPLETED</span>`;
+            else if (o.status === "out_for_delivery") statusBadge = `<span style="background:#e0f2fe; color:#0284c7; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #bae6fd;">🛵 OUT FOR DELIVERY</span>`;
             else if (o.status === "rejected") statusBadge = `<span style="background:#fef2f2; color:#dc2626; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #fca5a5;">❌ REJECTED</span>`;
 
             html += `<div style="background: white; border: 1px solid #cbd5e1; border-radius: 12px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); margin-bottom: 15px;">
