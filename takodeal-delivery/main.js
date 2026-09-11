@@ -273,7 +273,21 @@ function renderDispatchBoard() {
         let orderCode = order.orderCode || order.id;
         let customerName = (order.customerName || 'Guest').split('(')[0].trim();
         let address = order.deliveryAddress || "Address not provided";
-        let mapQuery = encodeURIComponent(address);
+        
+        // 🔥 NEW: Check if the Customer App provided an exact GPS Pin
+        let mapLinkHtml = '';
+        if (order.mapLink) {
+            // Green button for exact coordinates
+            mapLinkHtml = `<a href="${order.mapLink}" target="_blank" style="text-decoration: none;">
+                <button class="btn-map" style="background: #10b981; width: 100%; border: none; padding: 12px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 10px; cursor: pointer;">📍 Open Exact Pinned Location</button>
+            </a>`;
+        } else {
+            // Blue button fallback for manual Cashier text-entry
+            let mapQuery = encodeURIComponent(address);
+            mapLinkHtml = `<a href="https://www.google.com/maps/search/?api=1&query=${mapQuery}" target="_blank" style="text-decoration: none;">
+                <button class="btn-map" style="background: #3b82f6; width: 100%; border: none; padding: 12px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 10px; cursor: pointer;">🗺️ Search Address in Maps</button>
+            </a>`;
+        }
         
         // Action Button Logic
         let actionBtn = '';
@@ -296,11 +310,9 @@ function renderDispatchBoard() {
                     <div style="margin-top: 10px; color: #e2e8f0;">📍 ${address}</div>
                 </div>
 
-                <a href="https://www.google.com/maps/search/?api=1&query=${mapQuery}" target="_blank" style="text-decoration: none;">
-                    <button class="btn-map">🗺️ Open in Google Maps</button>
-                </a>
+                ${mapLinkHtml}
                 
-                ${actionBtn}
+                <div style="margin-top: 10px;">${actionBtn}</div>
             </div>
         `;
     });
