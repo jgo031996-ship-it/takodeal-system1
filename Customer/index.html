@@ -1793,9 +1793,6 @@
             // Add Dynamic Delivery Fee to Final Total!
             if (type.includes('Delivery')) {
                 grandTotal += window.currentDeliveryFee;
-                
-                // Optional: Store the fee in Firebase so the rider knows exactly how much to keep!
-                orderPayload.deliveryFee = window.currentDeliveryFee; 
             }
 
             try {
@@ -1830,6 +1827,11 @@
                     status: 'mobile_queue', 
                     timestamp: serverTimestamp()
                 };
+
+                // 🔥 THE FIX: Inject the delivery fee safely AFTER the payload is built!
+                if (type.includes('Delivery')) {
+                    orderPayload.deliveryFee = window.currentDeliveryFee; 
+                }
 
                 await addDoc(collection(db, "incoming_orders"), orderPayload);
                 
