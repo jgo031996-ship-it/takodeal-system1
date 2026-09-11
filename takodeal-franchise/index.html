@@ -294,6 +294,34 @@
         </div>
     </div>
 
+    <!-- VIEW: SALES HISTORY -->
+    <div id="view-history" class="view-container">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 style="margin: 0; color: #1e293b;">🧾 Sales History</h3>
+                    <button class="btn-refresh" style="background: #0ea5e9; color: white;" onclick="window.loadSalesHistory()">🔄 Refresh List</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Receipt / ID</th>
+                                <th>Date & Time</th>
+                                <th>Cashier</th>
+                                <th>Payment Method</th>
+                                <th style="text-align:right;">Net Total</th>
+                            </tr>
+                        </thead>
+                        <tbody id="salesHistoryBody">
+                            <tr><td colspan="5" style="text-align:center; padding: 30px; color:#64748b;">Loading history...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- VIEW: ACCOUNTS & BUDGET -->
     <div id="view-accounts" class="view-container">
         <div style="max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
