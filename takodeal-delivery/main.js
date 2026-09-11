@@ -262,24 +262,39 @@ function startDispatchListener() {
 // 🛵 RENDER DISPATCH BOARD
 // ========================================================
 function renderDispatchBoard() {
+    const container = document.getElementById('dispatchBoardContainer');
     const board = document.getElementById('dispatchBoard');
     const radar = document.getElementById('radarScreen');
     
-    if (!board || !radar) return;
+    if (!board || !radar || !container) return;
 
-    // If no orders, show the radar!
+    // 🔥 FILTER THE BOARD BASED ON THE ACTIVE TAB
+    let displayOrders = window.activeDeliveries;
+    
+    if (window.currentRiderTab === 'Pending') {
+        // Show only orders waiting to be claimed
+        displayOrders = window.activeDeliveries.filter(o => o.status === "ready");
+    } else {
+        // Show only orders claimed by THIS specific rider
+        displayOrders = window.activeDeliveries.filter(o => o.status === "out_for_delivery" && o.riderId === window.currentRider.id);
+    }
+
     if (window.activeDeliveries.length === 0) {
-        board.style.display = 'none';
+        container.style.display = 'none';
         radar.style.display = 'flex';
         return;
     }
 
-    // Hide radar, show the board!
     radar.style.display = 'none';
-    board.style.display = 'flex';
+    container.style.display = 'flex';
+
+    if (displayOrders.length === 0) {
+        board.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 40px; font-weight: bold;">No ${window.currentRiderTab.toLowerCase()} deliveries.</div>`;
+        return;
+    }
 
     let html = '';
-    window.activeDeliveries.forEach(order => {
+    displayOrders.forEach(order => {
         let orderCode = order.orderCode || order.id;
         let customerName = (order.customerName || 'Guest').split('(')[0].trim();
         let address = order.deliveryAddress || "Address not provided";
@@ -298,9 +313,9 @@ function renderDispatchBoard() {
         
         let actionBtn = '';
         if (order.status === "ready") {
-            actionBtn = `<button class="btn-action" style="background: #f59e0b; width: 100%; border: none; padding: 15px; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; cursor: pointer;" onclick="window.claimDelivery('${order.id}')">Claim Delivery</button>`;
+            actionBtn = `<button class="btn-action" style="background: #f59e0b; width: 100%; border: none; padding: 15px; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; cursor: pointer;" onclick="window.claimDelivery('${order.id}')">Claim Delivery & Deduct ₱${(order.totalAmount || 0).toFixed(2)}</button>`;
         } else if (order.status === "out_for_delivery") {
-            actionBtn = `<button class="btn-action" style="background: #10b981; width: 100%; border: none; padding: 15px; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; cursor: pointer;" onclick="window.completeDelivery('${order.id}')">✅ Mark Delivered</button>`;
+            actionBtn = `<button class="btn-action" style="background: #10b981; width: 100%; border: none; padding: 15px; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; cursor: pointer;" onclick="window.completeDelivery('${order.id}')">✅ Mark Delivered & Capture Proof</button>`;
         }
 
         html += `
@@ -323,19 +338,62 @@ function renderDispatchBoard() {
     board.innerHTML = html;
 }
 
-// ========================================================
-// 🛠️ RIDER ACTIONS
-// ========================================================
 window.claimDelivery = async function(orderId) {
-    // In the future, we will stamp this with the Rider's actual name
+    let order = window.activeDeliveries.find(o => o.id === orderId);
+    if (!order) return;
+
+    // 🔥 WALLET DEDUCTION ENGINE
+    let orderTotal = order.totalAmount || 0;
+    let currentBalance = window.currentRider.walletBalance || 0;
+
+    // Security Check: Do they have enough to cover the food?
+    if (currentBalance < orderTotal) {
+        return Swal.fire('Insufficient Funds', `You need at least ₱${orderTotal.toFixed(2)} in your wallet to cover the cost of this food. Please Top-Up!`, 'error');
+    }
+
+    let newBalance = currentBalance - orderTotal;
+
     try {
+        // 1. Update the Order
         await updateDoc(doc(db, "incoming_orders", orderId), {
             status: "out_for_delivery",
             riderClaimedAt: serverTimestamp(),
-            riderName: "TAKODEÁL Rider" 
+            riderId: window.currentRider.id,
+            riderName: window.currentRider.name 
         });
-        Swal.fire({toast: true, position: 'top', icon: 'success', title: 'Delivery Claimed!', showConfirmButton: false, timer: 1500});
+
+        // 2. Deduct from the Rider's Wallet in Firebase
+        await updateDoc(doc(db, "riders", window.currentRider.id), {
+            walletBalance: newBalance
+        });
+
+        // 3. Update the local UI immediately
+        window.currentRider.walletBalance = newBalance;
+        document.getElementById('profileWallet').innerText = newBalance.toFixed(2);
+
+        Swal.fire({toast: true, position: 'top', icon: 'success', title: `Delivery Claimed! ₱${orderTotal.toFixed(2)} deducted.`, showConfirmButton: false, timer: 2000});
+        
+        // Auto-switch to their "Ongoing" tab!
+        window.switchRiderTab('Ongoing');
+
     } catch(e) { console.error("Error claiming:", e); }
+};
+
+window.currentRiderTab = 'Pending'; 
+
+window.switchRiderTab = function(tab) {
+    window.currentRiderTab = tab;
+    let tabP = document.getElementById('tabPending');
+    let tabO = document.getElementById('tabOngoing');
+    
+    if (tab === 'Pending') {
+        tabP.style.background = 'var(--primary)'; tabP.style.color = 'white';
+        tabO.style.background = '#334155'; tabO.style.color = '#94a3b8';
+    } else {
+        tabO.style.background = 'var(--primary)'; tabO.style.color = 'white';
+        tabP.style.background = '#334155'; tabP.style.color = '#94a3b8';
+    }
+    renderDispatchBoard(); 
 };
 
 window.completeDelivery = async function(orderId) {
