@@ -1579,9 +1579,47 @@
         window.nativeMap = null;
         window.nativeMarker = null;
 
+        window.currentDeliveryFee = 0; // Global memory for the fee
+        
+        // 🔥 GPS LOCATIONS FOR DAVAO BRANCHES
+        const BRANCH_COORDS = {
+            "Cabantian": { lat: 7.130415364656105, lng: 125.61730650596441 },
+            "Citygate":  { lat: 7.111076870173231, lng: 125.61288375028629 },
+            "Maa":       { lat: 7.078632967828137, lng: 125.58344165239423 }
+        };
+
+        // Mathematical formula to calculate distance between two GPS pins
+        window.calculateDistanceKM = function(lat1, lon1, lat2, lon2) {
+            const R = 6371; // Radius of the earth in km
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+            return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))); 
+        };
+
+        window.calculateDynamicDeliveryFee = function(userLat, userLng) {
+            let branch = document.getElementById('selectedBranch').value || 'Cabantian';
+            let branchGeo = BRANCH_COORDS[branch];
+            
+            if (!branchGeo) return; // Failsafe
+
+            let distanceKM = window.calculateDistanceKM(branchGeo.lat, branchGeo.lng, userLat, userLng);
+            
+            // 🔥 THE COMPETITIVE PRICING ALGORITHM 🔥
+            // Base ₱39 for the first 3km. +₱10 per succeeding kilometer.
+            let fee = 39; 
+            if (distanceKM > 3) {
+                fee += Math.ceil(distanceKM - 3) * 10;
+            }
+            
+            window.currentDeliveryFee = fee;
+            document.getElementById('native-map-status').innerHTML = `✅ Location Pinned! Distance: <b>${distanceKM.toFixed(1)} km</b> | Delivery Fee: <b style="color:white;">₱${fee.toFixed(2)}</b>`;
+            window.updateNativeUI(); // Instantly update the cart total!
+        };
+
         window.initNativeMap = function() {
             if (window.nativeMap) {
-                window.nativeMap.invalidateSize(); // Fixes map rendering glitch in hidden divs
+                window.nativeMap.invalidateSize(); 
                 return;
             }
             let mapEl = document.getElementById('native-map');
@@ -1593,18 +1631,22 @@
                     let lng = pos.coords.longitude;
                     document.getElementById('native-lat').value = lat;
                     document.getElementById('native-lng').value = lng;
-                    document.getElementById('native-map-status').innerText = '✅ Location Pinned! Drag marker to adjust.';
-                    document.getElementById('native-map-status').style.color = '#10b981';
 
                     window.nativeMap = L.map('native-map').setView([lat, lng], 17);
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(window.nativeMap);
                     window.nativeMarker = L.marker([lat, lng], {draggable: true}).addTo(window.nativeMap);
 
+                    // Calculate fee immediately upon locating
+                    window.calculateDynamicDeliveryFee(lat, lng);
+
+                    // Recalculate fee dynamically if the customer drags the pin to a new house!
                     window.nativeMarker.on('dragend', function(e) {
-                        let pos = e.target.getLatLng();
-                        document.getElementById('native-lat').value = pos.lat;
-                        document.getElementById('native-lng').value = pos.lng;
+                        let newPos = e.target.getLatLng();
+                        document.getElementById('native-lat').value = newPos.lat;
+                        document.getElementById('native-lng').value = newPos.lng;
+                        window.calculateDynamicDeliveryFee(newPos.lat, newPos.lng);
                     });
+                    
                     setTimeout(()=> window.nativeMap.invalidateSize(), 300);
                 },
                 (err) => {
@@ -1621,7 +1663,6 @@
 
             let isDelivery = type.includes('Delivery');
             
-            // Toggle UI Elements
             document.getElementById('native-time-div').style.display = type.includes('Advance') ? 'block' : 'none';
             document.getElementById('native-delivery-div').style.display = isDelivery ? 'block' : 'none';
             document.getElementById('native-online-div').style.display = pay === 'Online' ? 'block' : 'none';
@@ -1629,15 +1670,21 @@
             document.getElementById('native-pickup-note').style.display = (!isDelivery && pay === 'Cash') ? 'block' : 'none';
             document.getElementById('native-cod-div').style.display = (isDelivery && pay === 'Cash') ? 'block' : 'none';
 
-            // Dynamically Update the UI Cart Total with Delivery Fee!
             let deliveryFeeRow = document.getElementById('deliveryFeeRow');
             let totalDisplay = document.getElementById('checkoutModalTotal');
             let grandTotal = window.cart.reduce((sum, item) => sum + item.lineTotalFinal, 0);
 
             if (isDelivery) {
                 deliveryFeeRow.classList.remove('hidden');
-                totalDisplay.innerText = '₱' + (grandTotal + 50).toFixed(2);
-                setTimeout(window.initNativeMap, 300); // Wake up map
+                
+                // Inject the dynamically calculated fee into the UI label
+                deliveryFeeRow.innerHTML = `
+                    <span class="text-zinc-400 font-bold text-xs uppercase tracking-widest">Delivery Fee</span>
+                    <span class="text-sm font-bold text-white">₱${window.currentDeliveryFee.toFixed(2)}</span>
+                `;
+                
+                totalDisplay.innerText = '₱' + (grandTotal + window.currentDeliveryFee).toFixed(2);
+                setTimeout(window.initNativeMap, 300); 
             } else {
                 deliveryFeeRow.classList.add('hidden');
                 totalDisplay.innerText = '₱' + grandTotal.toFixed(2);
@@ -1733,9 +1780,12 @@
             let branch = document.getElementById('selectedBranch').value || 'Cabantian';
             let grandTotal = window.cart.reduce((sum, item) => sum + item.lineTotalFinal, 0);
             
-            // Add Delivery Fee to Final Total!
+            // Add Dynamic Delivery Fee to Final Total!
             if (type.includes('Delivery')) {
-                grandTotal += 50;
+                grandTotal += window.currentDeliveryFee;
+                
+                // Optional: Store the fee in Firebase so the rider knows exactly how much to keep!
+                orderPayload.deliveryFee = window.currentDeliveryFee; 
             }
 
             try {
