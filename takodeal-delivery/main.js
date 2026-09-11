@@ -263,11 +263,20 @@ function startDispatchListener() {
 // ========================================================
 function renderDispatchBoard() {
     const board = document.getElementById('dispatchBoard');
+    const radar = document.getElementById('radarScreen');
     
+    if (!board || !radar) return;
+
+    // If no orders, show the radar!
     if (window.activeDeliveries.length === 0) {
-        board.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 40px; font-weight: bold;">No pending deliveries.</div>`;
+        board.style.display = 'none';
+        radar.style.display = 'flex';
         return;
     }
+
+    // Hide radar, show the board!
+    radar.style.display = 'none';
+    board.style.display = 'flex';
 
     let html = '';
     window.activeDeliveries.forEach(order => {
@@ -275,47 +284,38 @@ function renderDispatchBoard() {
         let customerName = (order.customerName || 'Guest').split('(')[0].trim();
         let address = order.deliveryAddress || "Address not provided";
         
-        // 🔥 NEW: Check if the Customer App provided an exact GPS Pin
         let mapLinkHtml = '';
         if (order.mapLink) {
-            // Green button for exact coordinates
             mapLinkHtml = `<a href="${order.mapLink}" target="_blank" style="text-decoration: none;">
                 <button class="btn-map" style="background: #10b981; width: 100%; border: none; padding: 12px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 10px; cursor: pointer;">📍 Open Exact Pinned Location</button>
             </a>`;
         } else {
-            // Blue button fallback for manual Cashier text-entry
             let mapQuery = encodeURIComponent(address);
             mapLinkHtml = `<a href="https://www.google.com/maps/search/?api=1&query=${mapQuery}" target="_blank" style="text-decoration: none;">
                 <button class="btn-map" style="background: #3b82f6; width: 100%; border: none; padding: 12px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 10px; cursor: pointer;">🗺️ Search Address in Maps</button>
             </a>`;
         }
         
-        // Action Button Logic
         let actionBtn = '';
         if (order.status === "ready") {
-            actionBtn = `<button class="btn-action" style="background: #f59e0b;" onclick="window.claimDelivery('${order.id}')">Claim Delivery</button>`;
+            actionBtn = `<button class="btn-action" style="background: #f59e0b; width: 100%; border: none; padding: 15px; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; cursor: pointer;" onclick="window.claimDelivery('${order.id}')">Claim Delivery</button>`;
         } else if (order.status === "out_for_delivery") {
-            actionBtn = `<button class="btn-action" style="background: #10b981;" onclick="window.completeDelivery('${order.id}')">✅ Mark Delivered</button>`;
+            actionBtn = `<button class="btn-action" style="background: #10b981; width: 100%; border: none; padding: 15px; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; cursor: pointer;" onclick="window.completeDelivery('${order.id}')">✅ Mark Delivered</button>`;
         }
 
         html += `
-            <div class="order-card">
-                <div class="order-header">
-                    <span class="order-id">${orderCode}</span>
-                    <span class="order-total">₱${(order.totalAmount || 0).toFixed(2)}</span>
+            <div class="order-card" style="background: #1e293b; border-radius: 12px; padding: 15px; border: 1px solid #334155;">
+                <div class="order-header" style="display: flex; justify-content: space-between; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px;">
+                    <span class="order-id" style="font-weight: 900; color: white; font-size: 16px;">${orderCode}</span>
+                    <span class="order-total" style="color: #facc15; font-weight: bold; font-size: 16px;">₱${(order.totalAmount || 0).toFixed(2)}</span>
                 </div>
-                
-                <div class="customer-info">
-                    <span class="customer-name">👤 ${customerName}</span>
-                    <div style="margin-top: 5px;">
-                        📞 <a href="tel:${order.contactNumber}" style="color: #0ea5e9; font-weight: bold; text-decoration: none;">${order.contactNumber || 'No number'}</a>
-                    </div>
-                    <div style="margin-top: 10px; color: #e2e8f0;">📍 ${address}</div>
+                <div class="customer-info" style="margin-bottom: 15px;">
+                    <span class="customer-name" style="color: white; font-weight: bold; font-size: 15px;">👤 ${customerName}</span>
+                    <div style="color: #94a3b8; margin-top: 5px; font-size: 14px;"><a href="tel:${order.contactNumber}" style="color: #3b82f6; text-decoration: none;">📞 ${order.contactNumber || 'No number'}</a></div>
+                    <div style="margin-top: 10px; color: #e2e8f0; font-size: 13px; background: #0f172a; padding: 10px; border-radius: 6px;">📍 ${address}</div>
                 </div>
-
                 ${mapLinkHtml}
-                
-                <div style="margin-top: 10px;">${actionBtn}</div>
+                <div style="margin-top: 5px;">${actionBtn}</div>
             </div>
         `;
     });
