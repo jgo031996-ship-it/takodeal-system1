@@ -515,12 +515,12 @@ window.updateB2bUom = async function() {
     let itemName = document.getElementById('b2bSearch').value.trim();
     if (!itemName) return;
 
-    // Fetch HQ Inventory, but ONLY items they are allowed to see!
+    // 🔥 THE SECRET RECIPE LOCK: Only fetch items HQ allows branches to see!
     if (window.hqInventoryCache.length === 0) {
         const q = query(
             collection(db, "inventory"), 
             where("branch", "==", "Main Office"),
-            where("allowRequest", "==", true) // 👈 THE SECURITY LOCK!
+            where("allowRequest", "==", true) // 👈 This filters out raw ingredients!
         );
         const snap = await getDocs(q);
         snap.forEach(d => window.hqInventoryCache.push(d.data()));
@@ -803,68 +803,75 @@ window.loadB2BSupply = async function() {
     if (searchBox) searchBox.value = '';
     if (qtyBox) qtyBox.value = '';
 
-    // 2. Fetch Incoming Deliveries (Walled Garden Lock)
+    // 2. Fetch Incoming Deliveries from HQ DISPATCH LOGS!
     const container = document.getElementById('b2bDeliveriesContainer');
     if (!container) return;
     
-    container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b;">⏳ Checking for deliveries...</div>';
+    container.innerHTML = '<div style="text-align:center; padding:20px; color:#64748b;">⏳ Checking for deliveries from HQ...</div>';
 
     try {
-        const q = query(collection(db, "purchase_orders"), 
-            where("branch", "==", window.sessionUser.branch),
-            orderBy("timestamp", "desc"),
-            limit(20)
+        // 🔥 Listening to the Truck, not the Drafts!
+        const q = query(collection(db, "dispatch_logs"), 
+            where("toBranch", "==", window.sessionUser.branch),
+            where("status", "in", ["In Transit", "Arrived"]),
+            orderBy("timestamp", "desc")
         );
         
         const snap = await getDocs(q);
         if (snap.empty) {
-            container.innerHTML = '<div style="text-align:center; padding:40px 20px; color:#64748b;"><div style="font-size: 30px; margin-bottom:10px;">📭</div>No recent requests or incoming deliveries.</div>';
+            container.innerHTML = '<div style="text-align:center; padding:40px 20px; color:#64748b;"><div style="font-size: 30px; margin-bottom:10px;">📭</div>No incoming deliveries.</div>';
             return;
         }
 
-        let html = '';
+        let dispatchGroups = {};
         snap.forEach(docSnap => {
-            let order = docSnap.data();
+            let d = docSnap.data();
             let docId = docSnap.id;
-            let dateStr = order.timestamp ? order.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : 'Just now';
-            let status = order.status || 'Pending';
+            let groupKey = d.dispatchId || `${d.date}_${d.driver}`;
             
-            // 🔥 UPGRADED: Dynamic Color-Coded Badges
-            let s = status.toLowerCase();
+            if (!dispatchGroups[groupKey]) {
+                dispatchGroups[groupKey] = {
+                    dispatchId: groupKey, date: d.date, time: d.time, driver: d.driver, status: d.status, items: []
+                };
+            }
+            dispatchGroups[groupKey].items.push({ id: docId, ...d });
+        });
+
+        let html = '';
+        for (let key in dispatchGroups) {
+            let group = dispatchGroups[key];
+            let s = group.status.toLowerCase();
             let statusBadge = '';
+            let actionBtn = '';
             
-            if (s === 'pending') {
-                statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">⏳ PENDING</span>`;
-            } else if (s === 'dispatched' || s === 'in transit') {
+            if (s === 'in transit') {
                 statusBadge = `<span style="background:#dbeafe; color:#2563eb; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">🚚 IN TRANSIT</span>`;
-            } else if (s === 'completed' || s === 'received' || s === 'arrived') {
-                statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">✅ ARRIVED</span>`;
-            } else if (s === 'rejected' || s === 'cancelled') {
-                statusBadge = `<span style="background:#fee2e2; color:#dc2626; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">❌ REJECTED</span>`;
-            } else {
-                statusBadge = `<span style="background:#f1f5f9; color:#475569; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">${status.toUpperCase()}</span>`;
+                actionBtn = `<div style="font-size: 11px; color: #64748b; font-style: italic; margin-top: 10px; text-align: center;">Waiting for Driver to arrive...</div>`;
+            } else if (s === 'arrived') {
+                statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:4px 10px; border-radius:12px; font-size:10px; font-weight:900; letter-spacing: 0.5px;">📍 ARRIVED AT BRANCH</span>`;
+                let safeItems = encodeURIComponent(JSON.stringify(group.items));
+                actionBtn = `<button onclick="window.receiveHQDelivery('${key}', '${safeItems}')" style="width: 100%; margin-top: 15px; background: #16a34a; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(22, 163, 74, 0.3); font-size: 14px; transition: 0.2s;">✅ Verify & Receive Stock</button>`;
             }
 
-            // Build Item List
             let itemsHtml = '';
-            if (order.items && Array.isArray(order.items)) {
-                order.items.forEach(item => {
-                    itemsHtml += `<div style="font-size:13px; color:#475569; margin-top:6px; padding-left: 10px; border-left: 2px solid #cbd5e1;"><strong>${item.displayQty || item.rawQty || item.qty} ${item.displayUom || item.uom || 'units'}</strong> - ${item.name || item.itemName}</div>`;
-                });
-            }
+            group.items.forEach(item => {
+                let qty = item.displayQty || item.qty;
+                let uom = item.displayUom || item.uom || 'units';
+                itemsHtml += `<div style="font-size:13px; color:#475569; margin-top:6px; padding-left: 10px; border-left: 2px solid #cbd5e1;"><strong>${qty} ${uom}</strong> - ${item.item}</div>`;
+            });
 
-            // Compile the Delivery Card
             html += `
-                <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; margin-bottom: 15px; background: #f8fafc; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <div style="border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; margin-bottom: 15px; background: #f8fafc; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
                     <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #cbd5e1; padding-bottom: 10px; margin-bottom: 10px;">
-                        <div style="font-size: 11px; font-weight: 900; color: #94a3b8; letter-spacing: 1px;">ORDER ID: ${docId.substring(0,8).toUpperCase()}</div>
+                        <div style="font-size: 11px; font-weight: 900; color: #94a3b8; letter-spacing: 1px; text-transform: uppercase;">DRIVER: ${group.driver}</div>
                         ${statusBadge}
                     </div>
-                    <div style="font-size: 13px; font-weight: bold; color: #1e293b; margin-bottom: 10px;">📅 Requested: ${dateStr}</div>
+                    <div style="font-size: 13px; font-weight: bold; color: #1e293b; margin-bottom: 10px;">📅 Dispatched: ${group.date} @ ${group.time}</div>
                     ${itemsHtml}
+                    ${actionBtn}
                 </div>
             `;
-        });
+        }
         container.innerHTML = html;
     } catch (e) {
         console.error("Delivery Load Error:", e);
@@ -1344,5 +1351,92 @@ window.openWasteModal = async function() {
             Swal.fire('Logged', 'Spoilage recorded and stock deducted.', 'success');
             window.loadInventoryWaste();
         } catch (e) { Swal.fire('Error', e.message, 'error'); }
+    }
+};
+
+window.receiveHQDelivery = async function(groupKey, encodedItems) {
+    let items = JSON.parse(decodeURIComponent(encodedItems));
+    
+    let confirm = await Swal.fire({
+        title: 'Confirm Receipt?',
+        text: 'This will add all these items directly to your live inventory.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#16a34a',
+        confirmButtonText: 'Yes, I received them!'
+    });
+
+    if (!confirm.isConfirmed) return;
+
+    Swal.fire({title: 'Updating Inventory...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+    try {
+        for (let item of items) {
+            // 1. Tell HQ the truck was unloaded successfully
+            await updateDoc(doc(db, "dispatch_logs", item.id), {
+                status: "Received",
+                receivedAt: serverTimestamp(),
+                receivedBy: window.sessionUser.cashierName
+            });
+
+            // 2. Add the items into the Franchisee's Walled Garden
+            let baseQtyToAdd = parseFloat(item.qty) || 0;
+            let itemName = item.item || item.itemName;
+            
+            const invQ = query(collection(db, "inventory"), where("branch", "==", window.sessionUser.branch), where("name", "==", itemName));
+            const invSnap = await getDocs(invQ);
+            
+            let oldStock = 0;
+            let newStock = baseQtyToAdd;
+
+            if (!invSnap.empty) {
+                let docRef = invSnap.docs[0].ref;
+                oldStock = parseFloat(invSnap.docs[0].data().currentStock || invSnap.docs[0].data().quantity || 0);
+                
+                // Wipe any ghost debt before adding new stock
+                let baseStockMath = oldStock < 0 ? 0 : oldStock;
+                newStock = baseStockMath + baseQtyToAdd;
+                
+                await updateDoc(docRef, { currentStock: newStock, quantity: newStock });
+            } else {
+                // If it's their very first time receiving this item, create a new shelf for it!
+                await addDoc(collection(db, "inventory"), {
+                    branch: window.sessionUser.branch,
+                    name: itemName,
+                    itemName: itemName,
+                    currentStock: newStock,
+                    quantity: newStock,
+                    category: item.category || "Ingredients",
+                    uom: item.baseUom || item.uom || 'units'
+                });
+            }
+
+            // 3. Write a permanent log so the Franchisee can trace their history
+            await addDoc(collection(db, "stock_logs"), {
+                branch: window.sessionUser.branch,
+                item: itemName,
+                type: "HQ Delivery Received",
+                oldQty: oldStock,
+                newQty: newStock,
+                variance: baseQtyToAdd,
+                uom: item.baseUom || item.uom || 'units',
+                user: window.sessionUser.cashierName,
+                timestamp: serverTimestamp()
+            });
+        }
+
+        Swal.fire({
+            title: '✅ Success!', 
+            text: 'Inventory has been successfully restocked.', 
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+        
+        window.loadB2BSupply();
+        if (typeof window.loadLiveInventory === 'function') window.loadLiveInventory();
+        
+    } catch (e) {
+        console.error(e);
+        Swal.fire('Error', 'Failed to receive delivery.', 'error');
     }
 };
