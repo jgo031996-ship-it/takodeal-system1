@@ -107,24 +107,22 @@
             </div>
         </div>
         
-        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; text-align: center;">
-    
-            <!-- 🎨 REDESIGNED RADAR ICON WITH YOUR IMAGE -->
+        <!-- IDLE STATE: RADAR SCREEN -->
+        <div id="radarScreen" style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; text-align: center;">
             <div style="position: relative; display: inline-block; margin-bottom: 25px;">
-                <!-- The pulsing radar ring -->
                 <div style="position: absolute; top: -10px; left: -10px; right: -10px; bottom: -10px; border-radius: 50%; border: 3px solid var(--primary); opacity: 0.5; animation: radarPing 2s infinite;"></div>
-                
-                <!-- Your custom logo -->
                 <img src="Delivery.jpg" alt="Fleet Radar" style="width: 110px; height: 110px; border-radius: 50%; object-fit: cover; border: 4px solid var(--card-bg); box-shadow: 0 0 25px rgba(14, 165, 233, 0.4); z-index: 2; position: relative;">
             </div>
-        
             <h3 style="margin: 0; color: var(--text-main); font-size: 24px;">Radar Active</h3>
             <p style="color: #94a3b8; font-size: 15px; margin-top: 8px; margin-bottom: 30px; max-width: 250px;">Waiting for HQ to dispatch orders near your location...</p>
-        
-            <!-- 🔄 REFRESH BUTTON (Forces a hardware reload to clear hung connections) -->
-            <button onclick="window.location.reload()" style="background: transparent; color: var(--primary); border: 1px solid var(--primary); padding: 12px 25px; border-radius: 25px; font-weight: bold; font-size: 15px; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s;" onmouseover="this.style.background='rgba(14, 165, 233, 0.1)'" onmouseout="this.style.background='transparent'">
+            <button onclick="window.location.reload()" style="background: transparent; color: var(--primary); border: 1px solid var(--primary); padding: 12px 25px; border-radius: 25px; font-weight: bold; font-size: 15px; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s;">
                 <span style="font-size: 18px;">🔄</span> Refresh App
             </button>
+        </div>
+
+        <!-- ACTIVE STATE: DISPATCH BOARD -->
+        <div id="dispatchBoard" style="display: none; flex: 1; overflow-y: auto; padding: 15px; flex-direction: column; gap: 15px;">
+            <!-- Orders will inject here! -->
         </div>
     </div>
 
