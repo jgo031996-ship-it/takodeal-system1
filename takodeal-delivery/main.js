@@ -307,7 +307,9 @@ function renderDispatchBoard() {
                 
                 <div class="customer-info">
                     <span class="customer-name">👤 ${customerName}</span>
-                    <div style="color: #94a3b8; margin-top: 5px;">📞 ${order.contactNumber || 'No number'}</div>
+                    <div style="margin-top: 5px;">
+                        📞 <a href="tel:${order.contactNumber}" style="color: #0ea5e9; font-weight: bold; text-decoration: none;">${order.contactNumber || 'No number'}</a>
+                    </div>
                     <div style="margin-top: 10px; color: #e2e8f0;">📍 ${address}</div>
                 </div>
 
@@ -337,16 +339,44 @@ window.claimDelivery = async function(orderId) {
 };
 
 window.completeDelivery = async function(orderId) {
-    // This perfectly triggers your POS History tab to update!
-    if(!confirm("Are you sure this order has been successfully delivered and paid?")) return;
+    // 📸 Trigger SweetAlert to ask for the photo
+    const { value: file } = await Swal.fire({
+        title: 'Proof of Delivery',
+        text: 'Please snap a photo of the delivered item or the drop-off location.',
+        input: 'file',
+        inputAttributes: {
+            'accept': 'image/*',
+            'capture': 'environment' // 🔥 This forces mobile devices to open the rear camera!
+        },
+        showCancelButton: true,
+        confirmButtonText: 'Upload & Complete',
+        confirmButtonColor: '#10b981',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
 
-    try {
-        await updateDoc(doc(db, "incoming_orders", orderId), {
-            status: "completed",
-            deliveredAt: serverTimestamp()
-        });
-        Swal.fire('Delivered!', 'Great job. The order has been marked complete.', 'success');
-    } catch(e) { console.error("Error completing:", e); }
+    if (file) {
+        Swal.fire({title: 'Uploading Proof...', text: 'Please wait...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        
+        try {
+            // 1. Upload the image to Firebase Storage
+            let fileExt = file.name.split('.').pop();
+            const storageRef = ref(storage, `deliveries/proofs/${orderId}_${Date.now()}.${fileExt}`);
+            const snapshot = await uploadBytes(storageRef, file);
+            const photoUrl = await getDownloadURL(snapshot.ref);
+
+            // 2. Update the order with the photo link and complete status
+            await updateDoc(doc(db, "incoming_orders", orderId), {
+                status: "completed",
+                deliveredAt: serverTimestamp(),
+                proofOfDeliveryUrl: photoUrl
+            });
+            
+            Swal.fire('Delivered!', 'Great job. The order has been marked complete and your proof is saved.', 'success');
+        } catch(e) { 
+            console.error("Error completing:", e); 
+            Swal.fire('Error', 'Failed to upload proof. Check your connection.', 'error');
+        }
+    }
 };
 
 // ==========================================
