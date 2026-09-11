@@ -3274,7 +3274,6 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         }
 
         document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); 
-        document.getElementById('finalCustomerName').value = ''; 
         window.amountReceivedStr = "0"; 
 
         // 🔥 STRICT PLATFORM LOCKOUT ENGINE
@@ -3761,45 +3760,63 @@ window.printReceipt = async function(type) {
 window.currentParkedOrdersList = []; 
 
 window.parkOrder = async function() {
-        if (typeof cart === 'undefined' || cart.length === 0) return;
-        let currentOrderType = document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : '';
-        if (!currentOrderType) return Swal.fire('Order Type Required', 'Please select an Order Type before parking.', 'warning');
-        
-        // 🔥 NEW: Auto-pull the name from the Customer Name box!
-        let defaultName = document.getElementById('finalCustomerName') ? document.getElementById('finalCustomerName').value : '';
-        
-        let customerName = prompt("Enter Customer Name or Table Number:", defaultName); 
-        if (!customerName) return;
-        
-        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        let cashier = localStorage.getItem('cashierName') || 'Unknown';
-        let grandTotal = typeof window.currentGrandTotal !== 'undefined' ? window.currentGrandTotal : 0;
+    if (typeof cart === 'undefined' || cart.length === 0) return;
+    let currentOrderType = document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : '';
+    if (!currentOrderType) return Swal.fire('Order Type Required', 'Please select an Order Type before parking.', 'warning');
+    
+    // 🔥 AUTO-PULL NAME: Grab whatever is inside the Customer Name box!
+    let defaultName = document.getElementById('finalCustomerName') ? document.getElementById('finalCustomerName').value.trim() : '';
+    let customerName = defaultName;
 
-        let payload = { branch: branch, cashier: cashier, name: customerName, items: cart, total: grandTotal, orderType: currentOrderType };
-        let parkedId = await window.parkOrderToDB(payload);
-        
-        if (parkedId) { 
-            let newOrder = { id: parkedId, ...payload };
-            window.currentParkedOrdersList.push(newOrder);
-            
-            cart = []; 
-            if (typeof renderCart === 'function') renderCart(); 
-            
-            // 🔥 THE FIX: Reset the order type and customer name for the next order
-            document.getElementById('finalCustomerName').value = '';
-            let otSelect = document.getElementById('mainOrderType');
-            if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
+    // 🔥 SMART PROMPT: If it is NOT a mobile order, prompt the cashier to confirm or add a Table Number
+    if (!window.isActiveOrderMobile) {
+        customerName = prompt("Enter Customer Name or Table Number:", defaultName); 
+        if (!customerName) return; // User clicked Cancel
+    } else if (customerName === "") {
+        customerName = "Mobile Order"; // Fallback just in case
+    }
+    
+    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+    let cashier = localStorage.getItem('cashierName') || 'Unknown';
+    let grandTotal = typeof window.currentGrandTotal !== 'undefined' ? window.currentGrandTotal : 0;
 
-            window.activeMobileOrderId = null;
-            window.activeMobileOrderCode = null;
-            window.isActiveOrderMobile = false;
-            window.updateParkedBadge(); 
-            window.printParkedReceipt(parkedId); 
-            alert("✅ Order Parked Securely!"); 
-        } else { 
-            alert("❌ Failed to park order. Check connection."); 
-        }
+    let payload = { 
+        branch: branch, 
+        cashier: cashier, 
+        name: customerName, 
+        items: cart, 
+        total: grandTotal, 
+        orderType: currentOrderType,
+        isMobileOrder: window.isActiveOrderMobile || false,
+        mobileOrderCode: window.activeMobileOrderCode || null,
+        mobileOrderId: window.activeMobileOrderId || null
     };
+
+    let parkedId = await window.parkOrderToDB(payload);
+    
+    if (parkedId) { 
+        let newOrder = { id: parkedId, ...payload };
+        window.currentParkedOrdersList.push(newOrder);
+        
+        cart = []; 
+        if (typeof renderCart === 'function') renderCart(); 
+        
+        // Reset the order type, customer name, and mobile flags for the next order
+        document.getElementById('finalCustomerName').value = '';
+        let otSelect = document.getElementById('mainOrderType');
+        if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
+
+        window.activeMobileOrderId = null;
+        window.activeMobileOrderCode = null;
+        window.isActiveOrderMobile = false;
+
+        window.updateParkedBadge(); 
+        window.printParkedReceipt(parkedId); 
+        alert("✅ Order Parked Securely!"); 
+    } else { 
+        alert("❌ Failed to park order. Check connection."); 
+    }
+};
 
 window.updateParkedBadge = async function() {
     let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
@@ -4028,11 +4045,11 @@ window.hasLoadedMobileOrdersOnce = false;
 window.startMobileOrdersListener = function(branch) {
     if (window.mobileOrdersUnsubscribe) window.mobileOrdersUnsubscribe(); 
 
-    // 🔥 NEW: Listen for BOTH Incoming AND Preparing orders
+    // 🔥 UPGRADED: Listen for Incoming, Preparing, AND Ready orders
     const q = window.query(
         window.collection(window.db, "incoming_orders"),
         window.where("branch", "==", branch),
-        window.where("status", "in", ["mobile_queue", "preparing"]) 
+        window.where("status", "in", ["mobile_queue", "preparing", "ready"]) // Added "ready"
     );
 
     window.mobileOrdersUnsubscribe = window.onSnapshot(q, (snapshot) => {
@@ -4098,31 +4115,42 @@ window.renderMobileHubOrders = function() {
 
     let html = '';
     window.mobileOrdersList.forEach(o => {
-        let isIncoming = o.status === "mobile_queue";
-        
         let itemsHtml = o.items.map(i => {
+            // 🔥 THE NAN FIX: Safely grabs the quantity and price no matter what the customer app calls it!
+            let itemQty = i.qty || i.quantity || 1;
+            let itemPrice = i.price || i.variantPrice || i.basePrice || 0;
+            
             return `<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px; border-bottom:1px dashed #e2e8f0; padding-bottom:3px; color:#334155;">
-                      <div><strong>${i.quantity}x ${i.name}</strong></div>
-                      <div style="font-weight:bold;">₱${(i.price * i.quantity).toFixed(2)}</div>
+                      <div><strong>${itemQty}x ${i.name || i.itemName}</strong></div>
+                      <div style="font-weight:bold;">₱${(itemPrice * itemQty).toFixed(2)}</div>
                     </div>`;
         }).join('');
 
         let customerName = (o.customerName || o.name || 'Mobile Customer').split('(')[0].trim(); 
         let contactInfo = o.contactNumber ? `📞 ${o.contactNumber}` : '';
-        let orderTime = o.preferredTime ? `⏰ ${o.preferredTime}` : 'ASAP';
+        let arrivalTime = o.timestamp ? new Date(o.timestamp.toMillis ? o.timestamp.toMillis() : o.timestamp).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+        let orderTime = o.preferredTime ? `⏰ Due: ${o.preferredTime}` : 'ASAP';
         let searchAddr = encodeURIComponent(o.deliveryAddress || '');
         
         let mapBtn = '';
-        if (o.mapLink) mapBtn = `<a href="${o.mapLink}" target="_blank" style="background:#0ea5e9; color:white; padding:8px; border-radius:6px; font-size:11px; font-weight:bold; text-decoration:none; display:inline-block; text-align:center; flex:1;">🗺️ Pinned Map</a>`;
-        else if (o.deliveryAddress) mapBtn = `<a href="https://www.google.com/maps/search/?api=1&query=${searchAddr}" target="_blank" style="background:#0284c7; color:white; padding:8px; border-radius:6px; font-size:11px; font-weight:bold; text-decoration:none; display:inline-block; text-align:center; flex:1;">🗺️ Search Maps</a>`;
+        if (o.mapLink) {
+            mapBtn = `<a href="${o.mapLink}" target="_blank" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block; margin-right: 5px;">🗺️ Open Pinned Map</a>`;
+        } else if (o.deliveryAddress) {
+            mapBtn = `<a href="https://www.google.com/maps/search/?api=1&query=${searchAddr}" target="_blank" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block; margin-right: 5px;">🗺️ Search Address</a>`;
+        }
         
-        let locText = o.deliveryAddress ? `<div style="font-size:11px; color:#475569; margin-top:8px; padding:8px; background:#f8fafc; border-radius:6px; border:1px solid #cbd5e1;">📍 ${o.deliveryAddress}</div>` : '';
-
-        // 🔥 NEW: SHOW IF IT HAS ALREADY BEEN ENCODED IN THE POS
+        let photoBtn = o.locationImage ? `<a href="${o.locationImage}" target="_blank" style="background:#e0e7ff; color:#4f46e5; border:1px solid #c7d2fe; padding:6px 12px; border-radius:6px; font-size:12px; font-weight:bold; text-decoration:none; display:inline-block;">📸 View Landmark</a>` : '';
+        let locText = o.deliveryAddress ? `<div style="font-size:12px; color:#475569; margin-top:8px; padding:8px; background:#f8fafc; border-radius:6px; border:1px solid #e2e8f0;">📍 <strong>Delivery Address:</strong><br>${o.deliveryAddress}</div>` : '';
+        
         let isPaid = o.paymentStatus === "paid" || o.receiptId;
         let posBadge = isPaid ? `<div style="margin-top: 8px; font-size: 11px; color: #16a34a; font-weight: 900; background: #dcfce7; padding: 4px 8px; border-radius: 6px; border: 1px solid #bbf7d0; display: inline-block;">✅ ENCODED IN POS</div>` : '';
 
-        // 🔥 DYNAMIC CONTROLS BASED ON STATUS 🔥
+        // 🔥 DYNAMIC WORKFLOW ENGINE 🔥
+        let isIncoming = o.status === "mobile_queue";
+        let isPreparing = o.status === "preparing";
+        let isReady = o.status === "ready";
+        let isDelivery = (o.orderType || '').toLowerCase() === 'delivery';
+
         let actionButtons = '';
         let statusBadge = '';
 
@@ -4133,28 +4161,44 @@ window.renderMobileHubOrders = function() {
                     <button onclick="window.rejectMobileOrder('${o.id}')" style="flex:1; padding:12px; background:white; color:#ef4444; border:1px solid #fca5a5; border-radius: 8px; font-weight: bold; font-size:12px; cursor:pointer;">✖ Reject</button>
                     <button onclick="window.acceptMobileOrder('${o.id}')" style="flex:2; padding:12px; background:#10b981; color:white; border:none; border-radius: 8px; font-weight: bold; font-size:12px; box-shadow: 0 2px 4px rgba(16,185,129,0.3); cursor:pointer;">📥 Accept & Copy to POS</button>
                 </div>`;
-        } else {
+        } else if (isPreparing) {
             statusBadge = `<span style="background:#e0f2fe; color:#0284c7; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #bae6fd;">🍳 PREPARING</span>`;
             actionButtons = `
                 <div style="display:flex; gap:10px; margin-top: 15px;">
                     <button onclick="window.markMobileOrderReady('${o.id}')" style="flex:1; padding:12px; background:#3b82f6; color:white; border:none; border-radius: 8px; font-weight: bold; font-size:13px; box-shadow: 0 4px 6px rgba(59,130,246,0.3); cursor:pointer;">🛵 Mark Ready / Dispatch</button>
                 </div>`;
+        } else if (isReady) {
+            // 🔥 THE NEW "WAITING FOR RIDER" STATE 🔥
+            if (isDelivery) {
+                statusBadge = `<span style="background:#fef3c7; color:#b45309; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #fcd34d;">⏳ WAITING FOR RIDER</span>`;
+                actionButtons = `
+                    <div style="display:flex; gap:10px; margin-top: 15px;">
+                        <button disabled style="flex:1; padding:12px; background:#f1f5f9; color:#94a3b8; border:1px solid #cbd5e1; border-radius: 8px; font-weight: bold; font-size:13px; cursor:not-allowed;">Rider will pick this up soon...</button>
+                        <button onclick="window.forceCompleteMobileOrder('${o.id}')" style="background:white; color:#10b981; border:1px solid #bbf7d0; border-radius: 8px; font-weight: bold; font-size:13px; cursor:pointer; padding: 0 15px;" title="Force Complete (Bypass Rider)">✅</button>
+                    </div>`;
+            } else {
+                statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #bbf7d0;">🛍️ READY FOR PICKUP</span>`;
+                actionButtons = `
+                    <div style="display:flex; gap:10px; margin-top: 15px;">
+                        <button onclick="window.forceCompleteMobileOrder('${o.id}')" style="flex:1; padding:12px; background:#10b981; color:white; border:none; border-radius: 8px; font-weight: bold; font-size:13px; box-shadow: 0 4px 6px rgba(16,185,129,0.3); cursor:pointer;">✅ Mark Claimed / Complete</button>
+                    </div>`;
+            }
         }
 
         html += `<div style="background: white; border: ${isIncoming ? '2px solid #fcd34d' : '1px solid #cbd5e1'}; border-radius: 12px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <div style="display:flex; justify-content:space-between; margin-bottom:10px; align-items: flex-start;">
                         <div>
                             <strong style="font-size:15px; color: #0f172a;">${customerName}</strong><br>
-                            <span style="font-size:11px; color:#64748b; font-weight:bold;">${contactInfo} | ${orderTime}</span>
+                            <span style="font-size:11px; color:#64748b; font-weight:bold;">${contactInfo} | 🕒 Placed: ${arrivalTime} | ${orderTime}</span>
                         </div>
                         <div style="text-align: right;">
                             <strong style="color:var(--primary); font-size:16px; display:block; margin-bottom: 4px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
                             ${statusBadge}
                         </div>
                     </div>
-                    
                     ${locText}
-                    <div style="margin-top: 8px; display: flex; gap: 8px;">${mapBtn}</div>
+                    ${posBadge}
+                    <div style="margin-top: 8px; display: flex; gap: 8px;">${mapBtn} ${photoBtn}</div>
                     <div style="margin-top:15px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">${itemsHtml}</div>
                     ${actionButtons}
                  </div>`;
@@ -4177,6 +4221,17 @@ window.markMobileOrderReady = async function(docId) {
     } catch(e) {
         console.error("Error marking ready:", e);
     }
+};
+
+window.forceCompleteMobileOrder = async function(docId) {
+    if (!confirm("Mark this order as completely finished and remove it from the Live screen?")) return;
+    try {
+        await window.updateDoc(window.doc(window.db, "incoming_orders", docId), {
+            status: "completed",
+            completedAt: window.serverTimestamp()
+        });
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Order Completed!', showConfirmButton: false, timer: 1500});
+    } catch(e) { console.error(e); }
 };
 
 window.acceptMobileOrder = async function(docId) {
@@ -4210,9 +4265,21 @@ window.acceptMobileOrder = async function(docId) {
         orderType: incomingOrderType // Locks it into the items
     }));
 
-    // Restore Customer Name globally
+    // 🔥 UPGRADE: Restore Customer Name & Attach Phone Number for Deliveries
+    let incomingOrderType = order.orderType || 'Take-Out'; 
     let custNameEl = document.getElementById('finalCustomerName');
-    if (custNameEl) custNameEl.value = order.customerName || order.name || "";
+    
+    if (custNameEl) {
+        let rawName = order.customerName || order.name || "Mobile Customer";
+        let cleanName = rawName.split('(')[0].trim();
+        
+        // If it's a Delivery, automatically attach the contact number!
+        if (incomingOrderType.toLowerCase() === 'delivery' && order.contactNumber) {
+            custNameEl.value = cleanName + " - " + order.contactNumber;
+        } else {
+            custNameEl.value = cleanName;
+        }
+    }
     
     // Restore Order Type globally
     let orderTypeDrop = document.getElementById('mainOrderType');
