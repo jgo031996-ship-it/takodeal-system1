@@ -557,7 +557,15 @@
           if (typeof window.autoConnectPrinters === 'function') window.autoConnectPrinters();
       }
   </script>
-  <div class="login-overlay" id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('logo.jpg') center/cover no-repeat; z-index: 10000; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; backdrop-filter: blur(8px);">
+  <!-- 🔥 PORTRAIT MODE FIX: Allows scrolling and stacks the elements cleanly! -->
+  <style>
+      @media (max-width: 850px) {
+          #loginOverlay { justify-content: flex-start !important; padding-top: 40px !important; overflow-y: auto !important; }
+          #loginRankingWidget { position: relative !important; top: 0 !important; left: 0 !important; width: 100% !important; max-width: 400px !important; margin-bottom: 20px !important; }
+      }
+  </style>
+
+  <div class="login-overlay" id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('logo.jpg') center/cover no-repeat; z-index: 10000; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; backdrop-filter: blur(8px); overflow-y: auto;">
     
     <!-- 🏆 LIVE LEADERBOARD WIDGET -->
     <div id="loginRankingWidget" style="position: absolute; top: 20px; left: 20px; background: rgba(255, 255, 255, 0.1); padding: 15px 20px; border-radius: 16px; color: white; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(12px); z-index: 10; display: none; min-width: 260px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
