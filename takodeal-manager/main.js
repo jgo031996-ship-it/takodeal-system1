@@ -2096,9 +2096,13 @@ window.loadDispatchLogs = async function() {
                 titleTxt = po.type === 'Internal Request' ? `📢 Stock Issue Report from ${po.branch}` : `📝 Purchase Order from ${po.branch}`;
             }
 
+            // 🔥 DYNAMIC DISPATCH BUTTON LOGIC
             let actionBtn = isFranchisee 
                 ? `<span style="color:#ca8a04; font-weight:bold; font-size:11px;">⏳ Waiting for HQ</span>`
-                : `<button onclick="window.reviewPurchaseOrder('${docSnap.id}')" style="background:#0ea5e9; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Review Request</button>`;
+                : `<div style="display: flex; justify-content: flex-end; gap: 8px;">
+                       <button onclick="window.reviewPurchaseOrder('${docSnap.id}')" style="background:#0ea5e9; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Review</button>
+                       <button onclick="window.dispatchB2BOrder('${docSnap.id}')" style="background:#10b981; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(16,185,129,0.3);">🚚 Dispatch</button>
+                   </div>`;
             
             poHtml += `<tr style="background:#fffbeb; border-bottom:2px solid #fde68a;">
                 <td style="padding:15px;">
