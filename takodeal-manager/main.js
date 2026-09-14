@@ -28312,3 +28312,127 @@ document.addEventListener("DOMContentLoaded", async () => {
         } catch (e) {}
     }, 2500);
 });
+
+// =======================================================
+// 📊 LIVE AUTOMATED METRICS ENGINE (CLOUD LISTENER)
+// =======================================================
+window.automatedMetricsUnsubscribe = null;
+
+window.startAutomatedMetricsListener = function() {
+    // Stop any old listeners so we don't get duplicate data when changing dates
+    if (window.automatedMetricsUnsubscribe) window.automatedMetricsUnsubscribe();
+
+    // Get the exact date currently selected on the dashboard filter
+    let dateInput = document.getElementById('dashStartDate');
+    
+    // Format the local date to match exactly how the Cloud Function saves it (YYYY-MM-DD)
+    let targetDateObj = dateInput && dateInput.value ? new Date(dateInput.value) : new Date();
+    let yyyy = targetDateObj.getFullYear();
+    let mm = String(targetDateObj.getMonth() + 1).padStart(2, '0');
+    let dd = String(targetDateObj.getDate()).padStart(2, '0');
+    let targetDateStr = `${yyyy}-${mm}-${dd}`;
+
+    // Target the daily_metrics collection
+    const q = window.query(window.collection(window.db, "daily_metrics"), window.where("dateStr", "==", targetDateStr));
+
+    // Boot up the live real-time listener!
+    window.automatedMetricsUnsubscribe = window.onSnapshot(q, (snap) => {
+        let metricsByBranch = {};
+        snap.forEach(doc => {
+            let data = doc.data();
+            metricsByBranch[data.branch] = data;
+        });
+        window.renderAutomatedMetrics(metricsByBranch);
+    });
+};
+
+window.renderAutomatedMetrics = function(metrics) {
+    let companyGrid = document.getElementById('companyMetricsGrid');
+    let franchiseGrid = document.getElementById('franchiseMetricsGrid');
+    if (!companyGrid || !franchiseGrid) return;
+
+    let companyHtml = '';
+    let franchiseHtml = '';
+    let companyBranches = [];
+    let franchiseBranches = [];
+
+    // 1. Sort branches dynamically using your Global Branch Manager data!
+    if (window.globalBranchData) {
+        Object.values(window.globalBranchData).forEach(b => {
+            if (b.name === "Main Office") return; // Skip HQ
+            if (b.isCore) companyBranches.push(b.name);
+            else franchiseBranches.push(b.name);
+        });
+    } else {
+        // Failsafe fallback
+        companyBranches = ["Cabantian", "Citygate", "Maa"];
+    }
+
+    // 🛡️ FRANCHISEE WALLED GARDEN SECURITY
+    if (window.sessionUser && window.sessionUser.isFranchisee) {
+        let myBranches = window.sessionUser.allowedBranches || [];
+        companyBranches = companyBranches.filter(b => myBranches.includes(b));
+        franchiseBranches = franchiseBranches.filter(b => myBranches.includes(b));
+        
+        // Hide the Company section completely if they don't own any core branches
+        let compContainer = companyGrid.previousElementSibling; // The <h3> tag
+        if (companyBranches.length === 0 && compContainer) {
+            compContainer.style.display = 'none';
+            companyGrid.style.display = 'none';
+        }
+    }
+
+    // 2. Build the UI Card dynamically
+    const buildCard = (branchName, isCompany) => {
+        let data = metrics[branchName];
+        let gross = data ? (parseFloat(data.totalGross) || 0) : 0;
+        let cash = data ? (parseFloat(data.totalCash) || 0) : 0;
+        let digital = data ? (parseFloat(data.totalDigital) || 0) : 0;
+        
+        // Visual cues: Blue for Company, Purple for Franchise
+        let edgeColor = isCompany ? '#0ea5e9' : '#8b5cf6'; 
+        let icon = isCompany ? '🏢' : '🤝';
+        let liveBadge = data ? '<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:bold; box-shadow: 0 0 5px rgba(22,163,74,0.3);">🟢 LIVE</span>' : '<span style="background:#f1f5f9; color:#64748b; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:bold;">⚪ Waiting...</span>';
+
+        return `
+            <div class="auto-metric-card" style="border-left-color: ${edgeColor};">
+                <div class="auto-metric-title">
+                    <span style="display:flex; align-items:center; gap:8px;">${icon} ${branchName}</span>
+                    ${liveBadge}
+                </div>
+                <div class="auto-metric-gross">₱${gross.toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
+                <div class="auto-metric-details">
+                    <span>Cash: <span style="color:#334155;">₱${cash.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></span>
+                    <span>Digital: <span style="color:#0284c7;">₱${digital.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></span>
+                </div>
+            </div>
+        `;
+    };
+
+    // 3. Inject the HTML into the correct grids
+    companyBranches.sort().forEach(b => { companyHtml += buildCard(b, true); });
+    franchiseBranches.sort().forEach(b => { franchiseHtml += buildCard(b, false); });
+
+    companyGrid.innerHTML = companyHtml || '<div style="color: #94a3b8; font-size: 13px; font-style: italic; padding: 10px;">No company-owned branches found.</div>';
+    franchiseGrid.innerHTML = franchiseHtml || '<div style="color: #94a3b8; font-size: 13px; font-style: italic; padding: 10px;">No franchised branches found.</div>';
+};
+
+// 4. Hook it seamlessly into the Global Dashboard Loader
+if (typeof window.origLoadGlobalDashboardForMetrics === 'undefined') {
+    window.origLoadGlobalDashboardForMetrics = window.loadGlobalDashboard;
+    window.loadGlobalDashboard = async function() {
+        // Run all your heavy legacy dashboard code first
+        await window.origLoadGlobalDashboardForMetrics();
+        // Fire up the new super-fast automated listener right after!
+        if (typeof window.startAutomatedMetricsListener === 'function') {
+            window.startAutomatedMetricsListener();
+        }
+    };
+}
+
+// Auto-start it if they are already sitting on the dashboard
+setTimeout(() => {
+    if (document.getElementById('view-dashboard') && document.getElementById('view-dashboard').classList.contains('active')) {
+        window.startAutomatedMetricsListener();
+    }
+}, 2000);
