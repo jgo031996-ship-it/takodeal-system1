@@ -37,6 +37,7 @@ window.doc = doc;
 window.setDoc = setDoc;
 window.serverTimestamp = serverTimestamp;
 window.orderBy = orderBy;
+window.onSnapshot = onSnapshot;
 
 console.log("🚀 Takodeál Staff Portal Booted (v3.0 - Fleet Engine Active)");
 
