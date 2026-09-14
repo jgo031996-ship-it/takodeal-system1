@@ -1209,32 +1209,118 @@ window.startLiveClock = function() {
     }, 1000);
 };
 
+// ==========================================
+// ⏱️ TIME CLOCK, CAMERA & FAST GPS ENGINE
+// ==========================================
+window.cameraStream = null;
+
+window.startLiveClock = function() {
+    setInterval(() => {
+        const now = new Date();
+        const timeEl = document.getElementById('liveTime');
+        const dateEl = document.getElementById('liveDate');
+        if (timeEl) timeEl.innerHTML = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        if (dateEl) dateEl.innerHTML = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    }, 1000);
+};
+
 window.startCameraAndGPS = async function() {
     let videoEl = document.getElementById('clockVideo');
     let statusEl = document.getElementById('cameraStatus');
+    
+    // 🚀 BUDGET PHONE OPTIMIZATION: Request standard 480p instead of full HD to prevent memory crashes
     try {
-        window.cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+        window.cameraStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                facingMode: "user",
+                width: { ideal: 640 },
+                height: { ideal: 480 }
+            } 
+        });
         videoEl.srcObject = window.cameraStream;
-        statusEl.innerText = "🟢 Camera Active (AI Standby)"; statusEl.style.background = "rgba(22, 163, 74, 0.8)";
+        statusEl.innerText = "🟢 Camera Ready"; 
+        statusEl.style.background = "rgba(22, 163, 74, 0.8)";
     } catch (e) {
-        statusEl.innerText = "❌ Camera Access Denied"; statusEl.style.background = "rgba(220, 38, 38, 0.8)";
+        statusEl.innerText = "❌ Camera Access Denied"; 
+        statusEl.style.background = "rgba(220, 38, 38, 0.8)";
+    }
+
+    // Trigger instant location fetch
+    window.refreshGPS();
+};
+
+// 🔄 ONE-CLICK GPS REFRESH (Works on all budget devices)
+window.refreshGPS = function() {
+    let gpsEl = document.getElementById('gpsStatus');
+    if (!navigator.geolocation) {
+        if (gpsEl) {
+            gpsEl.innerText = "❌ GPS not supported on this device.";
+            gpsEl.style.color = "#dc2626";
+            gpsEl.style.background = "#fef2f2";
+        }
+        return;
+    }
+
+    if (gpsEl) {
+        gpsEl.innerHTML = `⏳ Verifying GPS... <span style="font-size:11px; opacity:0.8;">(Tap to retry)</span>`;
+        gpsEl.style.color = "#0284c7";
+        gpsEl.style.background = "#e0f2fe";
+    }
+
+    // Tier 1: Try High-Accuracy (6s limit)
+    navigator.geolocation.getCurrentPosition(
+        (pos) => window.handleGpsSuccess(pos),
+        (err) => {
+            console.warn("Satellite GPS delayed. Switching to fast cellular/network fallback...", err);
+            // Tier 2: Instant Fallback to Network Triangulation (Low battery & low memory friendly)
+            navigator.geolocation.getCurrentPosition(
+                (fallbackPos) => window.handleGpsSuccess(fallbackPos),
+                (fallbackErr) => window.handleGpsError(fallbackErr),
+                { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+            );
+        },
+        { enableHighAccuracy: true, timeout: 6000, maximumAge: 10000 }
+    );
+};
+
+window.handleGpsSuccess = function(position) {
+    window.currentLat = position.coords.latitude;
+    window.currentLng = position.coords.longitude;
+
+    let closest = "Unknown";
+    let minDist = 999999;
+    for (let b in window.BRANCH_ZONES) {
+        let z = window.BRANCH_ZONES[b];
+        let d = window.getDistanceInMeters(window.currentLat, window.currentLng, z.lat, z.lng);
+        if (d < minDist) { 
+            minDist = d; 
+            closest = b; 
+        }
     }
 
     let gpsEl = document.getElementById('gpsStatus');
-    if (!navigator.geolocation) {
-        gpsEl.innerText = "❌ GPS not supported on this device."; gpsEl.style.color = "#dc2626"; gpsEl.style.background = "#fef2f2";
-        return;
+    if (!gpsEl) return;
+
+    let dist = Math.round(minDist);
+    let allowedRadius = window.ALLOWED_RADIUS_METERS || 300;
+
+    if (dist <= allowedRadius) {
+        gpsEl.innerHTML = `🟢 <b>${closest} Verified</b> (${dist}m) • <span style="text-decoration: underline;">Refresh 🔄</span>`;
+        gpsEl.style.color = "#16a34a";
+        gpsEl.style.background = "#dcfce7";
+    } else {
+        gpsEl.innerHTML = `⚠️ <b>${dist}m away from ${closest}</b> (Max: ${allowedRadius}m) • <span style="text-decoration: underline;">Refresh 🔄</span>`;
+        gpsEl.style.color = "#b45309";
+        gpsEl.style.background = "#fef3c7";
     }
-    navigator.geolocation.getCurrentPosition(
-        (position) => {
-            window.currentLat = position.coords.latitude; window.currentLng = position.coords.longitude;
-            gpsEl.innerText = "🟢 Location Verified"; gpsEl.style.color = "#16a34a"; gpsEl.style.background = "#dcfce7";
-        },
-        (error) => {
-            gpsEl.innerText = "❌ Please enable GPS location."; gpsEl.style.color = "#dc2626"; gpsEl.style.background = "#fef2f2";
-        }, 
-        { enableHighAccuracy: true }
-    );
+};
+
+window.handleGpsError = function(error) {
+    let gpsEl = document.getElementById('gpsStatus');
+    if (!gpsEl) return;
+    gpsEl.innerHTML = `❌ GPS Signal Weak • <b>Tap to Retry 🔄</b>`;
+    gpsEl.style.color = "#dc2626";
+    gpsEl.style.background = "#fef2f2";
 };
 
 window.stopCamera = function() {
