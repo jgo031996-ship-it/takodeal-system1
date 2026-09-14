@@ -8620,10 +8620,6 @@ window.startUnverifiedListener = function() {
     let branch = localStorage.getItem('takodeal_device_branch');
     if (!branch) return;
 
-    // Look back 48 hours
-    let lookBack = new Date();
-    lookBack.setHours(lookBack.getHours() - 48);
-
     const txQ = window.query(
         window.collection(window.db, "transactions"), 
         window.where("branch", "==", branch),
