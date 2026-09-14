@@ -9006,11 +9006,23 @@ window.fetchLoginRanking = async function() {
     widget.style.display = 'block';
 
     try {
+        // 🔥 THE FIX 1: Instantly abort if the tablet is offline
+        if (!window.isAppOnline) {
+            listEl.innerHTML = '<div style="font-size: 13px; color: #fca5a5; font-weight: bold; text-align: center; padding: 10px 0;">Offline - Leaderboard Paused</div>';
+            quoteEl.innerHTML = "Ready for offline sales!";
+            return;
+        }
+
         let startOfDay = new Date();
         startOfDay.setHours(0,0,0,0);
 
         const q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay));
-        const snap = await window.getDocs(q);
+        
+        // 🔥 THE FIX 2: 5-Second Timeout to prevent infinite loading hangs!
+        const fetchPromise = window.getDocs(q);
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000));
+        
+        const snap = await Promise.race([fetchPromise, timeoutPromise]);
 
         // Ensure this branch is always on the board, even if sales are 0
         let salesByBranch = {};
@@ -9076,7 +9088,10 @@ window.fetchLoginRanking = async function() {
         }
 
     } catch (e) {
-        console.error("Ranking error:", e);
+        // 🔥 THE FIX 3: Fail gracefully if the timeout hits!
+        console.warn("Leaderboard paused due to slow network:", e);
+        listEl.innerHTML = '<div style="font-size: 13px; color: #fca5a5; font-weight: bold; text-align: center; padding: 10px 0;">Leaderboard syncing...</div>';
+        quoteEl.innerHTML = "Keep pushing!";
     }
 };
 
@@ -9853,7 +9868,7 @@ window.autoConnectPrinters = async function() {
             } catch (e) {
                 console.warn(`Failed to auto-connect ${target} printer. Retrying shortly...`, e);
                 // If it fails because printer is powered off, try again in 10 seconds!
-                setTimeout(() => window.autoConnectPrinters(), 10000);
+                setTimeout(() => window.autoConnectPrinters(), 3000);
             }
         }
     }
