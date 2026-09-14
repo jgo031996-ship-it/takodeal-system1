@@ -379,6 +379,62 @@
         box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
         transform: scale(1.02);
     }
+
+    /* ======================================================= */
+    /* 📊 AUTOMATED METRICS GRID & CARDS                       */
+    /* ======================================================= */
+    .automated-metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 15px;
+    }
+
+    .auto-metric-card {
+        background: linear-gradient(145deg, #ffffff, #f8fafc);
+        border: 1px solid #e2e8f0;
+        border-left: 5px solid #0ea5e9; /* Default edge color */
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+
+    .auto-metric-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1);
+    }
+
+    .auto-metric-title {
+        font-size: 16px;
+        font-weight: 900;
+        color: #1e293b;
+        margin-bottom: 5px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .auto-metric-gross {
+        font-size: 28px;
+        font-weight: 900;
+        color: #16a34a; 
+        margin: 10px 0;
+        line-height: 1;
+    }
+
+    .auto-metric-details {
+        font-size: 12px;
+        color: #64748b;
+        display: flex;
+        justify-content: space-between;
+        font-weight: 600;
+        border-top: 1px dashed #cbd5e1;
+        padding-top: 10px;
+        margin-top: 5px;
+    }
 </style>
 </head>
 
@@ -625,6 +681,29 @@
           </div>
       </div>
 
+      <!-- ========================================== -->
+      <!-- 📊 AUTOMATED DAILY METRICS CARDS           -->
+      <!-- ========================================== -->
+      <div id="automatedMetricsContainer" style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; padding: 25px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); margin-bottom: 25px;">
+          <h2 style="margin: 0 0 20px 0; font-size: 20px; color: #1e293b; font-weight: 900; display: flex; align-items: center; gap: 8px; border-bottom: 2px solid #f1f5f9; padding-bottom: 12px;">
+              <span style="font-size: 24px;">📊</span> Live Daily Metrics (Automated)
+          </h2>
+
+          <!-- 🏢 COMPANY OWNED ZONE -->
+          <h3 style="color: #64748b; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin: 0 0 12px 0;">🏢 Company Owned</h3>
+          <div id="companyMetricsGrid" class="automated-metrics-grid">
+              <!-- JS will inject Company cards here -->
+              <div style="color: #94a3b8; font-weight: bold; font-style: italic; font-size: 13px;">Connecting to Cloud Aggregator...</div>
+          </div>
+
+          <!-- 🤝 FRANCHISE OWNED ZONE -->
+          <h3 style="color: #64748b; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; margin: 25px 0 12px 0;">🤝 Franchise Owned</h3>
+          <div id="franchiseMetricsGrid" class="automated-metrics-grid">
+              <!-- JS will inject Franchise cards here -->
+              <div style="color: #94a3b8; font-weight: bold; font-style: italic; font-size: 13px;">Scanning for active franchises...</div>
+          </div>
+      </div>
+     
       <!-- 🔥 LIVE BRANCH PERFORMANCE TABLE 🔥 -->
       <div style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); margin-bottom: 25px; overflow: hidden;">
         <div style="background: #f8fafc; padding: 20px 25px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 10px;">
