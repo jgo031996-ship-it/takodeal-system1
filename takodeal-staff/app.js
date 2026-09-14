@@ -1700,9 +1700,23 @@ window.startInboxListener = function() {
     let staffName = localStorage.getItem('takodeal_staff_name');
     if (!staffName) return;
 
-    onSnapshot(query(collection(db, "staff_requests"), where("staffName", "==", staffName)), (snapshot) => {
+    // 🔥 OPTIMIZED QUERY: Only fetch requests that have NOT been acknowledged yet!
+    const inboxQ = window.query(
+        window.collection(window.db, "staff_requests"), 
+        window.where("staffName", "==", staffName),
+        window.where("staffAcknowledged", "==", false)
+    );
+
+    window.onSnapshot(inboxQ, (snapshot) => {
         let unreadCount = 0;
-        snapshot.forEach(doc => { let d = doc.data(); if ((d.status === 'Approved' || d.status === 'Rejected') && !d.staffAcknowledged) unreadCount++; });
+        snapshot.forEach(doc => { 
+            let d = doc.data(); 
+            // We still check the status because "Pending" requests are also unacknowledged, 
+            // but we only want to badge them when the Manager has Approved/Rejected them!
+            if (d.status === 'Approved' || d.status === 'Rejected') {
+                unreadCount++; 
+            }
+        });
         let badge = document.getElementById('navReqBadge');
         if (badge) {
             if (unreadCount > 0) {
