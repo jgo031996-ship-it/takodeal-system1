@@ -304,23 +304,39 @@ window.loadDashboard = async function() {
             }
         });
 
-        // 3. Fetch Transactions for the 7-Day Chart (Always last 7 days)
-        const trendQuery = query(collection(db, "transactions"), 
+        // 3. Fetch CLOSED SHIFTS for the 7-Day Chart (Drops reads from 2,000+ down to ~7!)
+        const trendQuery = query(collection(db, "shifts"), 
             where("branch", "==", window.sessionUser.branch),
-            where("timestamp", ">=", sevenDaysAgo),
-            where("timestamp", "<=", todayEnd)
+            where("startTime", ">=", sevenDaysAgo),
+            where("startTime", "<=", todayEnd)
         );
         const trendSnap = await getDocs(trendQuery);
         
-        trendSnap.forEach(doc => {
-            let tx = doc.data();
-            if(tx.status !== 'Voided') {
-                let dateStr = tx.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-                if(rollingTrend[dateStr] !== undefined) {
-                    rollingTrend[dateStr] += parseFloat(tx.netTotal || 0);
+        trendSnap.forEach(docSnap => {
+            let shift = docSnap.data();
+            
+            // Only aggregate closed shifts so we don't double-count live ongoing sales!
+            if (shift.startTime && shift.status === "Closed") {
+                let d = shift.startTime.toDate ? shift.startTime.toDate() : new Date(shift.startTime);
+                let dateStr = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+                
+                let shiftTotal = (parseFloat(shift.totalCashSales) || 0) + (parseFloat(shift.totalDigitalSales) || 0);
+                
+                if (rollingTrend[dateStr] !== undefined) {
+                    let todayStr = new Date().toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+                    // Skip today's closed shifts here, because we will inject the exact LIVE data next!
+                    if (dateStr !== todayStr) {
+                        rollingTrend[dateStr] += shiftTotal;
+                    }
                 }
             }
         });
+
+        // Inject today's LIVE gross sales (calculated in Step 2) directly into today's bar!
+        let todayKey = new Date().toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
+        if (rollingTrend[todayKey] !== undefined) {
+            rollingTrend[todayKey] = gross; 
+        }
 
         // 4. Fetch Expenses (Filtered by Date Picker)
         let expTotal = 0;
