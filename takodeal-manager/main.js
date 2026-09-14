@@ -598,27 +598,7 @@ window.loadGlobalDashboard = async function() {
     if (!startDateInput.value) startDateInput.valueAsDate = new Date();
     if (!endDateInput.value) endDateInput.valueAsDate = new Date();
 
-    // 🔥 THE 8:30 AM TO 4:00 AM "BUSINESS DAY" FIX 🔥
-    const startOfDay = new Date(startDateInput.value);
-    startOfDay.setHours(8, 30, 0, 0); 
-
-    const endOfDay = new Date(endDateInput.value);
-    endOfDay.setDate(endOfDay.getDate() + 1); 
-    endOfDay.setHours(3, 59, 59, 999); 
-
-    // 🔥 DYNAMIC TITLE FIX 🔥
-    const localToday = new Date(new Date().getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-    const isToday = (startDateInput.value === endDateInput.value) && (startDateInput.value === localToday);
-    let titleSuffix = isToday ? "(Today's Total)" : "(Selected Range)";
-    
-    let grossEl = document.getElementById('globalGross');
-    let netEl = document.getElementById('globalNet');
-    let expEl = document.getElementById('globalExpenses');
-    
-    if (grossEl && grossEl.previousElementSibling) grossEl.previousElementSibling.innerText = `Total Gross Sales ${titleSuffix}`;
-    if (netEl && netEl.previousElementSibling) netEl.previousElementSibling.innerText = `Total Net Sales ${titleSuffix}`;
-    if (expEl && expEl.previousElementSibling) expEl.previousElementSibling.innerText = `Total Cash Out ${titleSuffix}`;
-
+    // Title and Branch Filter Logic
     let dashFilter = document.getElementById('dashBranchFilter');
     if (!dashFilter) {
         let dateControls = document.getElementById('globalDateControls');
@@ -642,130 +622,72 @@ window.loadGlobalDashboard = async function() {
     else if (isFranchisee) { branches = window.sessionUser.allowedBranches; }
 
     try {
-        let globalGross = 0; let globalNet = 0; let globalExp = 0;
-
-        // 🛑 ALWAYS query the full day history for the Top KPI Cards so it survives shift changes!
-        const txRangeQ = selectedBranch === "All" 
-            ? window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay))
-            : window.query(window.collection(window.db, "transactions"), window.where("branch", "==", selectedBranch), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
-            
-        const expRangeQ = window.collection(window.db, "expenses");
-
-        const [txRangeSnap, expRangeSnap] = await Promise.all([window.getDocs(txRangeQ), window.getDocs(expRangeQ)]);
-
-        txRangeSnap.forEach(tDoc => {
-            let tx = tDoc.data();
-            if (tx.status !== "Voided") {
-                let txNet = parseFloat(tx.netTotal) || 0;
-                globalNet += txNet;
-                let txGross = parseFloat(tx.subTotalBeforeDiscount);
-                if (isNaN(txGross) || txGross < txNet) txGross = txNet;
-                globalGross += txGross;
-            }
-        });
-
-        expRangeSnap.forEach(eDoc => {
-            let exp = eDoc.data();
-            let expDate = exp.timestamp ? (exp.timestamp.toDate ? exp.timestamp.toDate() : new Date(exp.timestamp)) : new Date(0);
-            if (expDate >= startOfDay && expDate <= endOfDay) {
-                if (selectedBranch === "All" || exp.branch === selectedBranch) {
-                    globalExp += (parseFloat(exp.amount) || 0);
-                }
-            }
-        });
-
         let tableHtml = '';
         
-        // Ensure the live shift table below also follows the 8:30 AM reset logic!
+        // 8:30 AM reset logic
         let liveStartOfDay = new Date(); 
         if (liveStartOfDay.getHours() < 8 || (liveStartOfDay.getHours() === 8 && liveStartOfDay.getMinutes() < 30)) {
             liveStartOfDay.setDate(liveStartOfDay.getDate() - 1);
         }
         liveStartOfDay.setHours(8, 30, 0, 0);
 
+        // 🔥 THE MAXIMUM OPTIMIZATION ENGINE 🔥
+        // We only ask Firebase for the Shift Document. 1 Read per branch!
         const branchPromises = branches.map(async (branch) => {
-            const shiftQ = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", branch), window.where("startTime", ">=", liveStartOfDay), window.orderBy("startTime", "desc"), window.limit(1));
+            const shiftQ = window.query(
+                window.collection(window.db, "shifts"), 
+                window.where("branch", "==", branch), 
+                window.where("startTime", ">=", liveStartOfDay), 
+                window.orderBy("startTime", "desc"), 
+                window.limit(1)
+            );
             const shiftSnap = await window.getDocs(shiftQ);
 
             let shiftData = !shiftSnap.empty ? shiftSnap.docs[0].data() : null;
-            let shiftDocId = !shiftSnap.empty ? shiftSnap.docs[0].id : null;
             let isActive = shiftData && shiftData.active === true;
             let isClosed = shiftData && shiftData.status === "Closed";
 
-            let displayCashier = '-'; let branchNet = 0; let branchCashIn = 0; let branchExp = 0; let parkedCount = 0;
-            let latestTxTime = 0; let activeCashierNow = null;
+            if (!shiftData) return null;
 
-            if (shiftData) {
-                let shiftStart = shiftData.startTime.toDate();
-                let shiftEnd = isActive ? new Date() : shiftData.endTime.toDate();
-
-                const txQLive = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branch), window.where("timestamp", ">=", shiftStart), window.where("timestamp", "<=", shiftEnd));
-                const expQLive = window.query(window.collection(window.db, "expenses"), window.where("shiftId", "==", shiftDocId));
-                const parkedQ = window.query(window.collection(window.db, "parked_orders"), window.where("branch", "==", branch));
-
-                const [txSnapLive, expSnapLive, parkedSnap] = await Promise.all([window.getDocs(txQLive), window.getDocs(expQLive), window.getDocs(parkedQ)]);
-
-                txSnapLive.forEach(tDoc => {
-                    let tx = tDoc.data();
-                    if (tx.status !== "Voided") {
-                        let txNet = parseFloat(tx.netTotal) || 0;
-                        branchNet += txNet;
-                        if (tx.paymentMethod === 'Cash') branchCashIn += (tx.netTotal || 0);
-                    }
-                    let txTimeMs = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate().getTime() : new Date(tx.timestamp).getTime()) : 0;
-                    if (txTimeMs > latestTxTime && tx.cashier) { latestTxTime = txTimeMs; activeCashierNow = tx.cashier; }
-                });
-
-                if (activeCashierNow) displayCashier = activeCashierNow;
-                else if (shiftData.cashier) displayCashier = shiftData.cashier.split('/').pop().trim();
-
-                expSnapLive.forEach(eDoc => { branchExp += (parseFloat(eDoc.data().amount) || 0); });
-                parkedCount = parkedSnap.size;
-            }
-
-            let expectedCash = 0;
-            if (isActive) expectedCash = (shiftData.startingCash || 0) + branchCashIn - branchExp;
-            else if (isClosed) expectedCash = shiftData.expectedCash || 0;
+            let displayCashier = shiftData.cashier ? shiftData.cashier.split('/').pop().trim() : '-';
+            
+            // If closed, read the saved totals directly. If active, we don't calculate to save Firebase Reads!
+            let branchNet = isClosed ? (shiftData.netSales || 0) : 0;
+            let branchExp = isClosed ? (shiftData.expenses || shiftData.cashOut || 0) : 0;
+            let expectedCash = isClosed ? (shiftData.expectedCash || 0) : 0;
 
             let varianceHtml = '<span style="color: var(--text-muted);">-</span>';
             if (isClosed) varianceHtml = `<span style="color: #10b981; font-weight: bold; font-style: italic;">Saved to Z-Reading ✓</span>`;
-            else if (isActive) varianceHtml = `<span style="color: #64748b; font-style: italic;">Shift in progress...</span>`;
+            else if (isActive) varianceHtml = `<span style="color: #64748b; font-style: italic; font-weight: bold; animation: pulse 2s infinite;">Live / In Progress...</span>`;
 
-            if (branchNet === 0 && branchExp === 0 && !shiftData) return null;
+            let shiftBadge = isActive 
+                ? `<span class="badge badge-active"><span class="status-dot green"></span> Active</span>` 
+                : '<span class="badge badge-closed"><span class="status-dot gray"></span> Closed</span>';
 
-            let parkedAlert = parkedCount > 0 ? `<span style="background: #ef4444; color: white; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: bold; margin-left: 8px; animation: pulse 1s infinite;">⚠️ ${parkedCount} Parked</span>` : '';
-            let shiftBadge = isActive ? `<span class="badge badge-active"><span class="status-dot green"></span> Active</span> ${parkedAlert}` : (isClosed ? '<span class="badge badge-closed"><span class="status-dot gray"></span> Closed</span>' : '<span class="badge badge-closed">No Shift</span>');
+            let netSalesUI = isActive ? `<span style="color:#94a3b8; font-style:italic; font-size: 11px;">Calculated on close</span>` : window.formatMoney(branchNet);
+            let expUI = isActive ? `<span style="color:#94a3b8; font-style:italic; font-size: 11px;">Calculated on close</span>` : window.formatMoney(branchExp);
+            let expectedUI = isActive ? `<span style="color:#94a3b8; font-style:italic; font-size: 11px;">-</span>` : window.formatMoney(expectedCash);
 
             return `
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                <td style="padding: 15px 25px;"><strong style="cursor:pointer; color:#0f766e; font-size: 14px; text-decoration:none;" onclick="openBranchDetails('${branch}')">${branch} </strong></td>
-                <td style="padding: 15px 25px;">${shiftBadge}</td>
-                <td style="padding: 15px 25px; font-weight: bold; color: #334155;">${displayCashier}</td>
-                <td style="padding: 15px 25px; color: #64748b; font-weight: 600;">${(isActive || isClosed) ? formatMoney(shiftData.startingCash || 0) : '-'}</td>
-                <td style="padding: 15px 25px; font-weight: 900; color: #0f766e;">${formatMoney(branchNet)}</td>
-                <td style="padding: 15px 25px; color: #dc2626; font-weight: bold;">${formatMoney(branchExp)}</td>
-                <td style="padding: 15px 25px; font-weight: 900; color: #0f172a;">${(isActive || isClosed) ? formatMoney(expectedCash) : '-'}</td>
-                <td style="padding: 15px 25px;">${varianceHtml}</td>
+                    <td style="padding: 15px 25px;"><strong style="cursor:pointer; color:#0f766e; font-size: 14px; text-decoration:none;" onclick="openBranchDetails('${branch}')">${branch} </strong></td>
+                    <td style="padding: 15px 25px;">${shiftBadge}</td>
+                    <td style="padding: 15px 25px; font-weight: bold; color: #334155;">${displayCashier}</td>
+                    <td style="padding: 15px 25px; color: #64748b; font-weight: 600;">${window.formatMoney(shiftData.startingCash || 0)}</td>
+                    <td style="padding: 15px 25px; font-weight: 900; color: #0f766e;">${netSalesUI}</td>
+                    <td style="padding: 15px 25px; color: #dc2626; font-weight: bold;">${expUI}</td>
+                    <td style="padding: 15px 25px; font-weight: 900; color: #0f172a;">${expectedUI}</td>
+                    <td style="padding: 15px 25px;">${varianceHtml}</td>
                 </tr>
             `;
         });
 
         const results = await Promise.all(branchPromises);
         results.forEach(res => { if (res) { tableHtml += res; } });
-        document.getElementById('branchTableBody').innerHTML = tableHtml;
+        document.getElementById('branchTableBody').innerHTML = tableHtml || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #94a3b8; font-style: italic;">No shifts recorded today.</td></tr>';
 
-        // Display Final Totals for the Top Cards!
-        if (grossEl) grossEl.innerText = formatMoney(globalGross);
-        if (netEl) netEl.innerText = formatMoney(globalNet);
-        if (expEl) expEl.innerText = formatMoney(globalExp);
-
-        // Fetch Takoyaki Milestone
+        // Fetch Takoyaki Milestone (1 Read)
         try {
-            let dashFilter = document.getElementById('dashBranchFilter');
-            let selectedBranch = dashFilter ? dashFilter.value : "All";
-            let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-            if (isFranchisee) selectedBranch = window.sessionUser.branch;
-
             const statsSnap = await window.getDoc(window.doc(window.db, "settings", "global_stats"));
             let totalBalls = 0;
             if (statsSnap.exists()) {
@@ -776,14 +698,11 @@ window.loadGlobalDashboard = async function() {
             let titleDiv = milestoneDiv ? milestoneDiv.previousElementSibling : null; 
             if (titleDiv) titleDiv.innerText = selectedBranch !== "All" ? `ROAD TO 1 MILLION TAKOYAKI BALLS - ${selectedBranch.toUpperCase()} 🐙` : `ROAD TO 1 MILLION TAKOYAKI BALLS 🐙`;
             if (milestoneDiv) milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
-        } catch(e) { 
-            console.error("Milestone Error:", e); 
-        }
+        } catch(e) { console.error("Milestone Error:", e); }
 
     } catch(e) { console.error("Global Dash Error:", e); }
 
     if (typeof window.calculatePlatformFinancials === 'function') window.calculatePlatformFinancials();
-    if (typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, selectedBranch);
     if (typeof window.renderDashboardCharts === 'function') window.renderDashboardCharts();
 };
 
