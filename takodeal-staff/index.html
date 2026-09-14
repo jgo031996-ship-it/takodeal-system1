@@ -283,7 +283,9 @@
                     </div>
                     <h1 id="liveTime">00:00 AM</h1>
                     <p id="liveDate">Loading Date...</p>
-                    <div class="location-status" id="gpsStatus">📍 Verifying GPS Location...</div>
+                    <div class="location-status" id="gpsStatus" onclick="window.refreshGPS()" style="cursor: pointer; user-select: none; transition: all 0.2s ease; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin: 10px 0; text-align: center; border: 1px dashed #cbd5e1;">
+                        📍 Verifying GPS Location... (Tap to Refresh 🔄)
+                    </div>
                     <div class="clock-actions">
                         <button class="btn-timein" id="btnTimeIn" onclick="window.punchTime('TIME IN')">TIME IN</button>
                         <button class="btn-timeout" id="btnTimeOut" onclick="window.punchTime('TIME OUT')">TIME OUT</button>
