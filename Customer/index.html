@@ -2213,8 +2213,8 @@
                     tracker.classList.add('translate-y-full');
                     if (window.customerPrepInterval) clearInterval(window.customerPrepInterval);
                     if (order.status === 'completed' && !order.reviewPrompted) {
-                        window.promptReview(order.orderCode, order.id);
-                    }
+                    window.promptReview(order.orderCode, order.id, order.items, order.orderType);
+                }
                     return;
                 }
                 
@@ -2324,7 +2324,7 @@
             });
         };
 
-        window.promptReview = function(orderCode, docId) {
+        window.promptReview = function(orderCode, docId, items, orderType) {
             Swal.fire({
                 title: 'How was your food? 🐙',
                 html: `
@@ -2341,23 +2341,29 @@
                 preConfirm: () => {
                     let text = document.getElementById('reviewText').value;
                     if(text) {
+                        // 🔥 EXTRACT TOP 2 ITEMS TO SAVE DIRECTLY WITH REVIEW
+                        let summaryItems = [];
+                        if (items && items.length > 0) {
+                            summaryItems = items.slice(0, 2).map(i => ({
+                                name: i.name || i.itemName,
+                                qty: i.quantity || i.qty || 1
+                            }));
+                        }
+
                         addDoc(collection(db, "reviews"), { 
                             orderCode: orderCode, 
+                            orderType: orderType || 'Order',
+                            summaryItems: summaryItems,
+                            totalItemsCount: items ? items.length : 0,
                             text: text, 
                             timestamp: serverTimestamp(), 
                             customer: window.currentUser.displayName,
                             email: window.currentUser.email,
-                            status: "Pending" // 🔥 Awaiting Manager Approval for Loyalty Point!
+                            status: "Pending" 
                         });
                     }
                     updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
                 }
-            }).then((res) => {
-                if(res.dismiss === Swal.DismissReason.cancel) {
-                    updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
-                }
-            });
-        };
 
         window.activeTrackedOrderId = null;
 
@@ -2392,8 +2398,8 @@
                 let reviewsData = [];
                 snap.forEach(d => reviewsData.push(d.data()));
 
-                // 🔥 HIGH-PERFORMANCE ENGINE: Fetch all order details at the exact same time
-                let htmlPromises = reviewsData.map(async (rev) => {
+                // 🔥 ZERO N+1 READS: Uses denormalized summary data embedded directly in the review!
+                let htmlArray = reviewsData.map((rev) => {
                     let dateStr = rev.timestamp ? (typeof rev.timestamp.toDate === 'function' ? rev.timestamp.toDate().toLocaleDateString() : new Date(rev.timestamp).toLocaleDateString()) : 'Recent';
                     
                     // 🔠 PRIVACY MASKING UPGRADE: Jostuart Omangay -> J. O.
@@ -2402,47 +2408,34 @@
                     let maskedName = nameParts.map(word => word.charAt(0).toUpperCase() + '.').join(' ');
                     let initial = nameParts[0] ? nameParts[0].charAt(0).toUpperCase() : 'C';
 
-                    // 📦 FETCH ORIGINAL ORDER DETAILS FOR THIS SPECIFIC REVIEW
+                    // 📦 USE DENORMALIZED DATA INSTEAD OF FETCHING AGAIN!
                     let orderDetailsHtml = '';
-                    if (rev.orderCode) {
-                        try {
-                            const orderQ = query(collection(db, "incoming_orders"), where("orderCode", "==", rev.orderCode), limit(1));
-                            const orderSnap = await getDocs(orderQ);
-                            
-                            if (!orderSnap.empty) {
-                                let orderData = orderSnap.docs[0].data();
-                                let orderType = orderData.orderType || 'Order';
-                                let items = orderData.items || [];
-                                
-                                if (items.length > 0) {
-                                    // List the top 2 items ordered
-                                    let itemsList = items.slice(0, 2).map(i => `<div class="text-[11px] text-zinc-400 leading-tight font-medium">• ${i.quantity}x ${i.name}</div>`).join('');
-                                    if (items.length > 2) itemsList += `<div class="text-[10px] text-zinc-600 italic mt-1 font-bold">+${items.length - 2} more items</div>`;
-                                    
-                                    // Search the Live Menu to find the beautiful image for the first item!
-                                    let repItem = window.rawMenuCache ? window.rawMenuCache.find(m => m.name === items[0].name || (items[0].name && items[0].name.includes(m.name))) : null;
-                                    let imgHtml = repItem && repItem.image 
-                                        ? `<img src="${repItem.image}" class="w-14 h-14 rounded-xl object-cover border border-zinc-700 shadow-md">` 
-                                        : `<div class="w-14 h-14 bg-zinc-800 rounded-xl flex items-center justify-center text-2xl border border-zinc-700 shadow-md">🍲</div>`;
+                    let items = rev.summaryItems || [];
+                    
+                    if (items.length > 0) {
+                        let itemsList = items.map(i => `<div class="text-[11px] text-zinc-400 leading-tight font-medium">• ${i.qty}x ${i.name}</div>`).join('');
+                        let totalItems = rev.totalItemsCount || items.length;
+                        if (totalItems > 2) itemsList += `<div class="text-[10px] text-zinc-600 italic mt-1 font-bold">+${totalItems - 2} more items</div>`;
+                        
+                        // Search the Live Menu to find the beautiful image for the first item!
+                        let repItem = window.rawMenuCache ? window.rawMenuCache.find(m => m.name === items[0].name || (items[0].name && items[0].name.includes(m.name))) : null;
+                        let imgHtml = repItem && repItem.image 
+                            ? `<img src="${repItem.image}" class="w-14 h-14 rounded-xl object-cover border border-zinc-700 shadow-md">` 
+                            : `<div class="w-14 h-14 bg-zinc-800 rounded-xl flex items-center justify-center text-2xl border border-zinc-700 shadow-md">🍲</div>`;
 
-                                    // Attach the footer perfectly to the bottom of the review card
-                                    orderDetailsHtml = `
-                                        <div class="mt-4 pt-4 border-t border-zinc-800/60 flex gap-3 items-center bg-darkbg/50 -mx-6 -mb-6 px-6 py-4 rounded-b-2xl">
-                                            ${imgHtml}
-                                            <div class="flex-1">
-                                                <div class="text-[9px] font-black text-brandgold uppercase tracking-widest mb-1.5 bg-brandgold/10 inline-block px-2 py-0.5 rounded border border-brandgold/20 shadow-sm">${orderType}</div>
-                                                <div class="flex flex-col gap-1">
-                                                    ${itemsList}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    `;
-                                }
-                            }
-                        } catch(err) { console.log("Order fetch error", err); }
+                        orderDetailsHtml = `
+                            <div class="mt-4 pt-4 border-t border-zinc-800/60 flex gap-3 items-center bg-darkbg/50 -mx-6 -mb-6 px-6 py-4 rounded-b-2xl">
+                                ${imgHtml}
+                                <div class="flex-1">
+                                    <div class="text-[9px] font-black text-brandgold uppercase tracking-widest mb-1.5 bg-brandgold/10 inline-block px-2 py-0.5 rounded border border-brandgold/20 shadow-sm">${rev.orderType || 'Order'}</div>
+                                    <div class="flex flex-col gap-1">
+                                        ${itemsList}
+                                    </div>
+                                </div>
+                            </div>
+                        `;
                     }
 
-                    // Return the fully assembled Review Card
                     return `
                         <div class="bg-cardbg border border-zinc-800 p-6 rounded-2xl break-inside-avoid shadow-lg hover:border-zinc-600 transition-colors flex flex-col gap-2">
                             <div class="flex gap-4 items-start mb-2">
@@ -2463,8 +2456,6 @@
                     `;
                 });
                 
-                // Wait for all the image queries to finish, then paste them into the grid!
-                let htmlArray = await Promise.all(htmlPromises);
                 let html = htmlArray.join('');
 
                 if(!html) html = '<div class="text-zinc-500 text-sm col-span-full text-center py-10">No reviews yet. Place an order to be the first!</div>';
