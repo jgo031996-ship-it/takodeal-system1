@@ -7851,7 +7851,7 @@ window.MASTER_CloseShift = async function () {
 
     if (confirmBtn) {
         confirmBtn.innerHTML = "⏳ Processing Shift...";
-        confirmBtn.disabled = true;
+        //confirmBtn.disabled = true;
     }
 
     try {
