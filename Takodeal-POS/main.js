@@ -8627,7 +8627,8 @@ window.startUnverifiedListener = function() {
     const txQ = window.query(
         window.collection(window.db, "transactions"), 
         window.where("branch", "==", branch),
-        window.where("timestamp", ">=", lookBack)
+        window.where("paymentVerified", "==", false),
+        window.where("paymentMethod", "in", ["GCash", "Grab", "Foodpanda", "Bank"])
     );
 
     // 🔥 onSnapshot listens in real-time. Zero repeated read costs!
