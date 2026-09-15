@@ -28686,3 +28686,34 @@ window.addStaffToBranchPool = async function(targetBranch) {
         }
     }
 };
+
+// =======================================================
+// 🧟 ZOMBIE LISTENER KILLER (NETWORK IDLE ENGINE)
+// =======================================================
+document.addEventListener("visibilitychange", async () => {
+    if (document.hidden) {
+        // Tab is hidden, minimized, or phone screen is off -> Kill the network to save database reads!
+        console.log("🛑 App hidden. Pausing Firebase network to save reads...");
+        try { 
+            await window.disableNetwork(window.db); 
+        } catch(e) {
+            console.warn("Failed to disable network:", e);
+        }
+    } else {
+        // User came back -> Wake up the network!
+        console.log("🟢 App visible. Reconnecting to Firebase...");
+        try { 
+            await window.enableNetwork(window.db); 
+            
+            // If they are on the Dashboard, safely force a refresh of the metrics to catch any missed sales
+            let dashView = document.getElementById('view-dashboard');
+            if (dashView && dashView.classList.contains('active')) {
+                if (typeof window.startAutomatedMetricsListener === 'function') {
+                    window.startAutomatedMetricsListener();
+                }
+            }
+        } catch(e) {
+            console.warn("Failed to enable network:", e);
+        }
+    }
+});
