@@ -9826,15 +9826,17 @@ window.updateStaffDisplay = function() {
 
     let poolTitle = wrapper.previousElementSibling;
     if (poolTitle) {
-        poolTitle.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center;">
+        poolTitle.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap: wrap; gap: 10px; width: 100%;">
             <span><span style="color:#0ea5e9; font-size: 16px; font-weight: bold;">1. Active Staff Pool</span> <span style="font-size:12px; color:#64748b; font-weight:normal;">(Auto-Synced from HR for <b>${targetBranch}</b>)</span></span>
+            <button onclick="window.addStaffToBranchPool('${targetBranch}')" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;" onmouseover="this.style.background='#bae6fd'" onmouseout="this.style.background='#e0f2fe'">➕ Pull Staff to Pool</button>
         </div>`;
     }
 
     wrapper.innerHTML = "";
     
     let reliefStaffNames = new Set();
-    if (currentSchedule && Object.keys(currentSchedule).length > 0) {
+    if (typeof currentSchedule !== 'undefined' && Object.keys(currentSchedule).length > 0) {
         for (let day in currentSchedule) {
             if (currentSchedule[day][targetBranch]) {
                 let dayData = currentSchedule[day][targetBranch];
@@ -9864,7 +9866,6 @@ window.updateStaffDisplay = function() {
             const chip = document.createElement('div'); 
             chip.className = 'staff-chip';
             chip.style.cssText = 'background:#f0fdf4; border:1px solid #bbf7d0; padding:8px 15px; border-radius:20px; display:inline-flex; align-items:center; margin:4px; font-weight:bold; color:#16a34a; font-size:13px; cursor:default; box-shadow: 0 1px 2px rgba(0,0,0,0.05);';
-            // 🔥 NEW: Added the X button to instantly unassign staff from this branch!
             chip.innerHTML = `👤 ${displayName} <span onclick="window.removeStaffFromBranchPool('${e.name}')" style="margin-left: 8px; color: #ef4444; cursor: pointer; font-size: 14px; opacity: 0.6; display: flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; transition: 0.2s;" onmouseover="this.style.background='#fecaca'; this.style.opacity='1'" onmouseout="this.style.background='transparent'; this.style.opacity='0.6'" title="Remove from Branch">✖</span>`;
             wrapper.appendChild(chip);
         });
@@ -9878,7 +9879,6 @@ window.updateStaffDisplay = function() {
                 const chip = document.createElement('div'); 
                 chip.className = 'staff-chip';
                 chip.style.cssText = 'background:#fffbeb; border:1px solid #fcd34d; padding:8px 15px; border-radius:20px; display:inline-flex; align-items:center; margin:4px; font-weight:bold; color:#d97706; font-size:13px; cursor:default; box-shadow: 0 1px 2px rgba(0,0,0,0.05);';
-                // Relief staff naturally disappear when unscheduled, so no X button needed
                 chip.innerHTML = `🌍 ${displayName} <span style="font-size:10px; color:#b45309; margin-left: 4px;">(Relief from ${originBranch})</span>`;
                 wrapper.appendChild(chip);
             });
@@ -10232,13 +10232,21 @@ window.generateSchedule = async function() {
     });
 };
 
+// ==========================================
+// 🔄 UPGRADED REASSIGN SHIFT MODAL
+// ==========================================
 window.openSwapModal = async function(day, branch, shiftId) {
-    let schedObj = currentSchedule; 
+    let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
     if (!schedObj || !schedObj[day] || !schedObj[day][branch]) return alert("Schedule data error.");
     
     let dayData = schedObj[day][branch];
     let curStaff = dayData.scheduled[shiftId];
-    swapData = { day, branch, shiftId, curStaff }; 
+    
+    if (typeof swapData !== 'undefined') {
+        swapData = { day, branch, shiftId, curStaff }; 
+    } else {
+        window.swapData = { day, branch, shiftId, curStaff }; 
+    }
 
     let profileFunc = window.findEmployeeProfile || function() { return null; };
     let currentProfile = profileFunc(curStaff) || { scheduleNickname: curStaff };
@@ -10252,8 +10260,9 @@ window.openSwapModal = async function(day, branch, shiftId) {
         let staff = dayData.scheduled[sId];
         if (staff !== "N/A" && staff !== "UNFILLED" && staff !== curStaff) {
             let shiftName = sId;
-            if (branchConfig && branchConfig[branch]) {
-                let foundShift = branchConfig[branch].find(s => s.id === sId);
+            let targetBranchConfig = typeof branchConfig !== 'undefined' ? branchConfig[branch] : window.branchConfig[branch];
+            if (targetBranchConfig) {
+                let foundShift = targetBranchConfig.find(s => s.id === sId);
                 if (foundShift) shiftName = foundShift.name;
             }
             let realProfile = profileFunc(staff) || { scheduleNickname: staff };
@@ -10277,7 +10286,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
     }
 
     // 3. 🌍 RELIEF STAFF
-    let empList = employees || [];
+    let empList = window.employees || (typeof employees !== 'undefined' ? employees : []);
     let otherStaff = empList.filter(e => e.branch !== branch);
     if (otherStaff.length > 0) {
         optionsHtml += '<optgroup label="🌍 Pull Relief Staff (Other Branches)">';
@@ -10347,66 +10356,72 @@ window.openSwapModal = async function(day, branch, shiftId) {
 };
 
 window.executeSwap = async function(target, markAsSwap) {
-    const { day, branch, shiftId, curStaff } = swapData; 
+    let targetSwapData = typeof swapData !== 'undefined' ? swapData : window.swapData;
+    const { day, branch, shiftId, curStaff } = targetSwapData; 
+    let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
     let newStaff = null;
 
-    if (!currentSchedule[day][branch].swaps) currentSchedule[day][branch].swaps = {};
+    if (!schedObj[day][branch].swaps) schedObj[day][branch].swaps = {};
 
     if (target.startsWith('shift_')) {
         const tSId = target.replace('shift_', '');
-        newStaff = currentSchedule[day][branch].scheduled[tSId];
-        currentSchedule[day][branch].scheduled[shiftId] = newStaff;
-        currentSchedule[day][branch].scheduled[tSId] = curStaff;
+        newStaff = schedObj[day][branch].scheduled[tSId];
+        schedObj[day][branch].scheduled[shiftId] = newStaff;
+        schedObj[day][branch].scheduled[tSId] = curStaff;
 
         if (markAsSwap) {
-            currentSchedule[day][branch].swaps[shiftId] = curStaff;
-            currentSchedule[day][branch].swaps[tSId] = newStaff;
+            schedObj[day][branch].swaps[shiftId] = curStaff;
+            schedObj[day][branch].swaps[tSId] = newStaff;
         }
     } else if (target.startsWith('global_')) {
         newStaff = target.replace('global_', '');
-        currentSchedule[day][branch].scheduled[shiftId] = newStaff;
+        schedObj[day][branch].scheduled[shiftId] = newStaff;
 
-        if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !currentSchedule[day][branch].rest.includes(curStaff)) {
-            currentSchedule[day][branch].rest.push(curStaff);
+        if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !schedObj[day][branch].rest.includes(curStaff)) {
+            schedObj[day][branch].rest.push(curStaff);
         }
-        if (markAsSwap) currentSchedule[day][branch].swaps[shiftId] = curStaff;
+        if (markAsSwap) schedObj[day][branch].swaps[shiftId] = curStaff;
 
     } else if (target.startsWith('rest_')) {
         const rIdx = parseInt(target.replace('rest_', ''));
-        newStaff = currentSchedule[day][branch].rest[rIdx];
-        currentSchedule[day][branch].scheduled[shiftId] = newStaff;
+        newStaff = schedObj[day][branch].rest[rIdx];
+        schedObj[day][branch].scheduled[shiftId] = newStaff;
 
         if (curStaff !== "UNFILLED" && curStaff !== "N/A") {
-            currentSchedule[day][branch].rest[rIdx] = curStaff;
+            schedObj[day][branch].rest[rIdx] = curStaff;
         } else {
-            currentSchedule[day][branch].rest.splice(rIdx, 1);
+            schedObj[day][branch].rest.splice(rIdx, 1);
         }
-        if (markAsSwap) currentSchedule[day][branch].swaps[shiftId] = curStaff;
+        if (markAsSwap) schedObj[day][branch].swaps[shiftId] = curStaff;
         
     } else if (target.startsWith('unavail_')) {
-        // 🔥 NEW: Handle assigning someone who is on Leave/Day Off
+        // 🔥 OVERRIDE LEAVE: Handle pulling someone off their leave
         const uIdx = parseInt(target.replace('unavail_', ''));
-        let unavailObj = currentSchedule[day][branch].unavailable[uIdx];
+        let unavailObj = schedObj[day][branch].unavailable[uIdx];
         newStaff = unavailObj.name;
-        currentSchedule[day][branch].scheduled[shiftId] = newStaff;
+        schedObj[day][branch].scheduled[shiftId] = newStaff;
 
-        if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !currentSchedule[day][branch].rest.includes(curStaff)) {
-            currentSchedule[day][branch].rest.push(curStaff);
+        if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !schedObj[day][branch].rest.includes(curStaff)) {
+            schedObj[day][branch].rest.push(curStaff);
         }
-        if (markAsSwap) currentSchedule[day][branch].swaps[shiftId] = curStaff;
+        if (markAsSwap) schedObj[day][branch].swaps[shiftId] = curStaff;
 
         // Remove from the unavailable array for this day so they render correctly on the schedule
-        currentSchedule[day][branch].unavailable.splice(uIdx, 1);
+        schedObj[day][branch].unavailable.splice(uIdx, 1);
 
         // Clear the leave from the master unavailability tracker
-        let dStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        if (unavailability[dStr] && unavailability[dStr][newStaff]) {
-            delete unavailability[dStr][newStaff];
-            if (Object.keys(unavailability[dStr]).length === 0) delete unavailability[dStr];
+        let safeYear = typeof currentYear !== 'undefined' ? currentYear : window.currentYear;
+        let safeMonth = typeof currentMonth !== 'undefined' ? currentMonth : window.currentMonth;
+        let targetUnavailObj = typeof unavailability !== 'undefined' ? unavailability : window.unavailability;
+
+        let dStr = `${safeYear}-${String(safeMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        if (targetUnavailObj[dStr] && targetUnavailObj[dStr][newStaff]) {
+            delete targetUnavailObj[dStr][newStaff];
+            if (Object.keys(targetUnavailObj[dStr]).length === 0) delete targetUnavailObj[dStr];
         }
     }
 
-    window.renderTables();
+    if (typeof window.renderTables === 'function') window.renderTables();
     if (typeof window.updateStaffDisplay === 'function') window.updateStaffDisplay();
     if (typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
     if (typeof window.updateUnavailabilityList === 'function') window.updateUnavailabilityList();
@@ -28427,12 +28442,12 @@ setTimeout(() => {
 }, 2000);
 
 // ==========================================
-// 🔥 REMOVE STAFF FROM SCHEDULING POOL
+// 🔥 EDITABLE STAFF POOL ENGINE
 // ==========================================
 window.removeStaffFromBranchPool = async function(staffName) {
     let confirmMsg = await Swal.fire({
         title: 'Remove Staff?',
-        html: `Are you sure you want to remove <b>${staffName}</b> from this branch's schedule pool?<br><br><span style="color:#64748b; font-size:12px;">This will change their HR assignment to "Unassigned" and they will no longer appear here.</span>`,
+        html: `Are you sure you want to remove <b>${staffName}</b> from this branch's schedule pool?<br><br><span style="color:#64748b; font-size:12px;">They will be moved to "Unassigned" and will only appear in the Relief Staff dropdown.</span>`,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#dc2626',
@@ -28443,26 +28458,87 @@ window.removeStaffFromBranchPool = async function(staffName) {
         Swal.fire({title: 'Removing...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         try {
             // 1. Update in Firestore Database instantly
-            const q = window.query(window.collection(window.db, "cashiers"), window.where("cashierName", "==", staffName));
-            const snap = await window.getDocs(q);
-            if (!snap.empty) {
-                await window.updateDoc(snap.docs[0].ref, { branch: 'Unassigned' });
+            const staffSnap = await window.getDocs(window.collection(window.db, "cashiers"));
+            let docIdToUpdate = null;
+            staffSnap.forEach(d => {
+                let data = d.data();
+                let n = data.scheduleNickname || data.cashierName;
+                if (n === staffName) docIdToUpdate = d.id;
+            });
+            
+            if (docIdToUpdate) {
+                await window.updateDoc(window.doc(window.db, "cashiers", docIdToUpdate), { branch: 'Unassigned' });
             }
             
-            // 2. Call the standard logic to instantly clean up local schedule data
-            if (typeof window.removeEmployee === 'function') {
-                let oldConfirm = window.confirm;
-                window.confirm = () => true; // Bypass redundant secondary confirm dialog
-                window.removeEmployee(staffName);
-                window.confirm = oldConfirm;
-            } else {
-                window.loadFromCloud();
-            }
+            // 2. Safely update local memory without deleting them completely!
+            let emp = window.employees.find(e => e.name === staffName);
+            if (emp) emp.branch = 'Unassigned';
             
-            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Removed successfully!', showConfirmButton: false, timer: 2000});
+            window.updateStaffDisplay();
+            if(typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
+            
+            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Moved to Unassigned!', showConfirmButton: false, timer: 2000});
         } catch(e) {
             console.error(e);
             Swal.fire('Error', 'Failed to remove staff.', 'error');
+        }
+    }
+};
+
+window.addStaffToBranchPool = async function(targetBranch) {
+    let otherStaff = window.employees.filter(e => e.branch !== targetBranch);
+    if (otherStaff.length === 0) return Swal.fire('No Staff Found', 'There are no other staff members in the system to pull.', 'info');
+    
+    let optionsHtml = '<option value="">-- Select Staff to Pull --</option>';
+    otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
+        let profileFunc = window.findEmployeeProfile || function() { return null; };
+        let realProfile = profileFunc(e.name) || e;
+        let displayName = realProfile.scheduleNickname || realProfile.cashierName || e.name;
+        optionsHtml += `<option value="${e.name}">${displayName} (Current: ${e.branch})</option>`;
+    });
+
+    const { value: selectedStaff, isConfirmed } = await Swal.fire({
+        title: '➕ Pull Staff to Branch',
+        html: `Select a staff member to permanently move them to the <b>${targetBranch}</b> Active Staff Pool.<br><br>
+               <select id="swalPullStaff" style="width: 100%; padding: 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: bold; outline: none; font-size: 14px;">
+                   ${optionsHtml}
+               </select>`,
+        showCancelButton: true,
+        confirmButtonText: `Pull to ${targetBranch}`,
+        confirmButtonColor: '#0ea5e9',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            let val = document.getElementById('swalPullStaff').value;
+            if (!val) { Swal.showValidationMessage("Please select a staff member."); return false; }
+            return val;
+        }
+    });
+
+    if (isConfirmed && selectedStaff) {
+        Swal.fire({title: 'Transferring...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+        try {
+            const staffSnap = await window.getDocs(window.collection(window.db, "cashiers"));
+            let docIdToUpdate = null;
+            staffSnap.forEach(d => {
+                let data = d.data();
+                let n = data.scheduleNickname || data.cashierName;
+                if (n === selectedStaff) docIdToUpdate = d.id;
+            });
+            
+            if (docIdToUpdate) {
+                await window.updateDoc(window.doc(window.db, "cashiers", docIdToUpdate), { branch: targetBranch });
+            }
+            
+            let emp = window.employees.find(e => e.name === selectedStaff);
+            if (emp) emp.branch = targetBranch;
+            
+            window.updateStaffDisplay();
+            if(typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
+            
+            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Staff Pulled Successfully!', showConfirmButton: false, timer: 2000});
+        } catch(e) {
+            console.error(e);
+            Swal.fire('Error', 'Failed to pull staff.', 'error');
         }
     }
 };
