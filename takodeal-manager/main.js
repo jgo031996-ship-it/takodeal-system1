@@ -4720,23 +4720,26 @@ window.loadInventoryData = async function() {
     let tbody = document.getElementById('inventoryTableBody');
     if (!tbody) { window.isFetchingInventory = false; return; }
     
-    tbody.innerHTML = '<tr><td colspan="9" class="text-center" style="padding: 25px; color: #0ea5e9; font-weight: bold;">⚡ Fast-scanning inventory...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="text-center" style="padding: 25px; color: #0ea5e9; font-weight: bold;">⚡ Fast-scanning inventory from RAM...</td></tr>';
     
     try {
-        let q = branchFilter === "All" ? query(collection(db, "inventory")) : query(collection(db, "inventory"), where("branch", "==", branchFilter));
-        const snap = await getDocs(q);
+        // 🔥 THE ZERO-COST CACHE ENGINE 🔥
+        const cachedInv = await window.fetchCachedCollection("inventory");
         
         let html = '';
         let totalItems = 0;
         let totalValue = 0;
 
-        let docsArray = snap.docs.map(d => ({id: d.id, ...d.data()}));
+        // 🧠 Javascript filters the RAM data instantly instead of asking Firebase!
+        let docsArray = cachedInv.filter(d => branchFilter === "All" || d.branch === branchFilter);
+        
         docsArray.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
         docsArray.forEach(d => {
             let itemName = (d.name || "").toLowerCase();
             let itemCat = d.category || "Uncategorized";
             
+            // Apply category and search text filters in memory
             if (catFilter !== "All" && itemCat !== catFilter) return; 
             if (search && !itemName.includes(search)) return; 
             
