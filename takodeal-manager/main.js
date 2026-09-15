@@ -10298,16 +10298,28 @@ window.openSwapModal = async function(day, branch, shiftId) {
         optionsHtml += '</optgroup>';
     }
 
-    // 🔥 4. NEW: UNAVAILABLE / OFF STAFF (Override)
-    if (dayData.unavailable && dayData.unavailable.length > 0) {
+    // 🔥 4. NEW: UNAVAILABLE / OFF STAFF (Reads Directly from Global Memory)
+    let safeYear = typeof currentYear !== 'undefined' ? currentYear : window.currentYear;
+    let safeMonth = typeof currentMonth !== 'undefined' ? currentMonth : window.currentMonth;
+    let fullDateStr = `${safeYear}-${String(safeMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    
+    let targetUnavailObj = typeof unavailability !== 'undefined' ? unavailability : window.unavailability;
+    let todaysLeaves = targetUnavailObj[fullDateStr];
+
+    if (todaysLeaves && Object.keys(todaysLeaves).length > 0) {
         optionsHtml += '<optgroup label="🛏️ Override: Assign from Leave/Off">';
-        dayData.unavailable.forEach((uObj, index) => {
-            if (uObj.name !== curStaff) {
-                let realProfile = profileFunc(uObj.name) || { scheduleNickname: uObj.name };
-                let displayName = realProfile.scheduleNickname || realProfile.cashierName || uObj.name;
-                optionsHtml += `<option value="unavail_${index}">${displayName} (Currently: ${uObj.status})</option>`;
+        for (let offStaff in todaysLeaves) {
+            if (offStaff !== curStaff) {
+                let realProfile = profileFunc(offStaff) || { scheduleNickname: offStaff };
+                
+                // Final Ghost check - don't show them if they are resigned!
+                if (realProfile.status === 'Resigned' || realProfile.pin === 'REVOKED') continue;
+                
+                let displayName = realProfile.scheduleNickname || realProfile.cashierName || offStaff;
+                let offStatus = todaysLeaves[offStaff];
+                optionsHtml += `<option value="unavail_${offStaff}">${displayName} (Currently: ${offStatus})</option>`;
             }
-        });
+        }
         optionsHtml += '</optgroup>';
     }
 
@@ -10396,9 +10408,8 @@ window.executeSwap = async function(target, markAsSwap) {
         
     } else if (target.startsWith('unavail_')) {
         // 🔥 OVERRIDE LEAVE: Handle pulling someone off their leave
-        const uIdx = parseInt(target.replace('unavail_', ''));
-        let unavailObj = schedObj[day][branch].unavailable[uIdx];
-        newStaff = unavailObj.name;
+        const staffToPull = target.replace('unavail_', '');
+        newStaff = staffToPull;
         schedObj[day][branch].scheduled[shiftId] = newStaff;
 
         if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !schedObj[day][branch].rest.includes(curStaff)) {
@@ -10406,19 +10417,19 @@ window.executeSwap = async function(target, markAsSwap) {
         }
         if (markAsSwap) schedObj[day][branch].swaps[shiftId] = curStaff;
 
-        // Remove from the unavailable array for this day so they render correctly on the schedule
-        schedObj[day][branch].unavailable.splice(uIdx, 1);
-
         // Clear the leave from the master unavailability tracker
         let safeYear = typeof currentYear !== 'undefined' ? currentYear : window.currentYear;
         let safeMonth = typeof currentMonth !== 'undefined' ? currentMonth : window.currentMonth;
         let targetUnavailObj = typeof unavailability !== 'undefined' ? unavailability : window.unavailability;
-
         let dStr = `${safeYear}-${String(safeMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        
         if (targetUnavailObj[dStr] && targetUnavailObj[dStr][newStaff]) {
             delete targetUnavailObj[dStr][newStaff];
             if (Object.keys(targetUnavailObj[dStr]).length === 0) delete targetUnavailObj[dStr];
         }
+        
+        // Also clean it from the dayData.unavailable array so it renders properly
+        schedObj[day][branch].unavailable = schedObj[day][branch].unavailable.filter(u => u.name !== newStaff);
     }
 
     if (typeof window.renderTables === 'function') window.renderTables();
@@ -10460,7 +10471,7 @@ window.switchTab = function(branch) {
 };
 
 // ==========================================
-// 📅 MASTER SCHEDULE GRID RENDERER
+// 📅 MASTER SCHEDULE GRID RENDERER (WITH GHOST SCRUBBER)
 // ==========================================
 window.renderTables = function() {
     const container = document.getElementById("scheduleContainer"); if(!container) return;
@@ -10474,9 +10485,6 @@ window.renderTables = function() {
     container.appendChild(tabBox); container.appendChild(contentWrap);
 
     let branchesToRender = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : Object.keys(branchConfig);
-
-    // Build active staff map for fast lookup
-    let empList = window.employees || (typeof employees !== 'undefined' ? employees : []);
     
     branchesToRender.forEach(branch => {
         let bConfig = typeof branchConfig !== 'undefined' ? branchConfig : window.branchConfig;
@@ -10494,9 +10502,9 @@ window.renderTables = function() {
         const activeShifts = bConfig[branch].filter(s => s.active);
 
         // 🔥 THE NEW COMPACT TABLE STYLES 🔥
-        let tableHTML = `<div class="table-responsive" style="border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; margin-top: 15px;"><table class="sched-table" style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: center; background: white;"><thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;"><tr><th class="date-col" style="padding: 12px 10px; color: #475569; font-weight: 900; text-transform: uppercase; font-size: 11px; text-align: left;">Date</th>`;
-        activeShifts.forEach(s => tableHTML += `<th style="padding: 12px 10px; color: #475569; font-weight: 900; text-transform: uppercase; font-size: 11px; border-left: 1px solid #e2e8f0;">${s.name}</th>`);
-        tableHTML += `<th style="padding: 12px 10px; color: #d97706; font-weight: 900; text-transform: uppercase; font-size: 11px; border-left: 1px solid #e2e8f0; background: #fffbeb;">Standby</th><th style="padding: 12px 10px; color: #dc2626; font-weight: 900; text-transform: uppercase; font-size: 11px; border-left: 1px solid #e2e8f0; background: #fef2f2;">Off / Leave</th><th style="padding: 12px 10px; color: #b91c1c; font-weight: 900; text-transform: uppercase; font-size: 11px; border-left: 1px solid #e2e8f0; background: #fff1f2;">Suspended</th></tr></thead><tbody>`;
+        let tableHTML = `<div class="table-responsive" style="border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; margin-top: 15px;"><table class="sched-table"><thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;"><tr><th class="date-col">Date</th>`;
+        activeShifts.forEach(s => tableHTML += `<th>${s.name}</th>`);
+        tableHTML += `<th style="color: #d97706; background: #fffbeb;">Standby</th><th style="color: #dc2626; background: #fef2f2;">Off / Leave</th><th style="color: #b91c1c; background: #fff1f2;">Suspended</th></tr></thead><tbody>`;
 
         let safeYear = typeof currentYear !== 'undefined' ? currentYear : window.currentYear;
         let safeMonth = typeof currentMonth !== 'undefined' ? currentMonth : window.currentMonth;
@@ -10504,24 +10512,28 @@ window.renderTables = function() {
         for (let day in schedObj) {
             let fullDateStr = `${safeYear}-${String(safeMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const dStr = new Date(safeYear, safeMonth - 1, day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            tableHTML += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'"><td class="date-col" style="padding: 10px; font-weight: 900; color: #0f172a; text-align: left;">${dStr}</td>`;
+            tableHTML += `<tr><td class="date-col">${dStr}</td>`;
 
             let dayData = schedObj[day][branch] || { scheduled: {}, rest: [], unavailable: [], swaps: {} };
 
             // 🧹 GHOST SCRUBBER ENGINE 🧹
-            // 1. Scrub Scheduled Shifts
+            // Auto-deletes staff who resigned or had their PIN revoked so they don't break the calendar!
             for (let sId in dayData.scheduled) {
                 let staff = dayData.scheduled[sId];
                 if (staff !== "N/A" && staff !== "UNFILLED") {
-                    if (!window.findEmployeeProfile(staff)) {
-                        dayData.scheduled[sId] = "UNFILLED"; // Staff was revoked/deleted!
+                    if (!window.findEmployeeProfile(staff)) dayData.scheduled[sId] = "UNFILLED";
+                }
+            }
+            if (dayData.rest) dayData.rest = dayData.rest.filter(n => window.findEmployeeProfile(n) !== null);
+            if (dayData.unavailable) dayData.unavailable = dayData.unavailable.filter(u => window.findEmployeeProfile(u.name) !== null);
+            if (dayData.swaps) {
+                for (let sId in dayData.swaps) {
+                    let originalStaff = dayData.swaps[sId];
+                    if (originalStaff !== "N/A" && originalStaff !== "UNFILLED" && !window.findEmployeeProfile(originalStaff)) {
+                        delete dayData.swaps[sId];
                     }
                 }
             }
-            // 2. Scrub Standby List
-            dayData.rest = (dayData.rest || []).filter(n => window.findEmployeeProfile(n) !== null);
-            // 3. Scrub Leave/Off List
-            dayData.unavailable = (dayData.unavailable || []).filter(u => window.findEmployeeProfile(u.name) !== null);
 
             activeShifts.forEach(s => {
                 const val = dayData.scheduled[s.id];
@@ -10538,16 +10550,16 @@ window.renderTables = function() {
                     tableHTML += `<td style="background:#f8fafc; color:#94a3b8; text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;">-</td>`;
                 }
                 else if (val === "UNFILLED") {
-                    tableHTML += `<td style="text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;"><span class="empty-shift" style="color: #ef4444; font-weight: 900; cursor: pointer; padding: 6px 10px; display: inline-block; background: #fef2f2; border-radius: 6px; border: 1px dashed #fca5a5; transition: 0.2s; white-space: nowrap; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">Needs Staff</span>${swapBadge}</td>`;
+                    tableHTML += `<td style="text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;"><span class="empty-shift" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">Needs Staff</span>${swapBadge}</td>`;
                 }
                 else {
-                    tableHTML += `<td style="text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;"><span class="clickable" style="cursor: pointer; color: #0ea5e9; font-weight: 900; padding: 6px 10px; display: inline-block; background: #f0f9ff; border-radius: 6px; border: 1px solid #bae6fd; transition: 0.2s; white-space: nowrap; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">${val}</span>${swapBadge}</td>`;
+                    tableHTML += `<td style="text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;"><span class="clickable" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">${val}</span>${swapBadge}</td>`;
                 }
             });
 
             // 🖱️ EDITABLE STANDBY BADGES
             let restArr = dayData.rest || [];
-            let restHtml = restArr.map(rName => `<span class="standby-badge" style="cursor: pointer; color: #d97706; font-weight: 900; padding: 4px 8px; display: inline-block; background: white; border-radius: 4px; border: 1px solid #fcd34d; transition: 0.2s; white-space: nowrap; font-size: 11px; margin: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" onclick="window.manageStandbyStaff(${day}, '${branch}', '${rName.replace(/'/g, "\\'")}')" title="Click to Reassign">${rName}</span>`).join(" ");
+            let restHtml = restArr.map(rName => `<span class="standby-badge" onclick="window.manageStandbyStaff(${day}, '${branch}', '${rName.replace(/'/g, "\\'")}')" title="Click to Reassign">${rName}</span>`).join(" ");
             
             tableHTML += `<td class="rest-day" style="text-align: center; border-left: 1px solid #e2e8f0; background: #fffcf0; padding: 6px;">${restHtml || "-"}</td>`;
 
@@ -10555,10 +10567,11 @@ window.renderTables = function() {
             let offStaff = unArr.filter(u => !u.status.toLowerCase().includes('suspend') && !u.status.toLowerCase().includes('awol'));
             let suspStaff = unArr.filter(u => u.status.toLowerCase().includes('suspend') || u.status.toLowerCase().includes('awol'));
 
-            let offHtml = offStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin: 2px; display:inline-block; color:#dc2626; background:white; border:1px solid #fca5a5; border-radius: 4px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" onclick="window.removeUnavailable('${fullDateStr}', '${u.name.replace(/'/g, "\\'")}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
-            let suspHtml = suspStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin: 2px; display:inline-block; color:#b91c1c; background:white; border:1px solid #f87171; border-radius: 4px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" onclick="window.removeUnavailable('${fullDateStr}', '${u.name.replace(/'/g, "\\'")}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
+            let offHtml = offStaff.map(u => `<span class="off-badge" onclick="window.removeUnavailable('${fullDateStr}', '${u.name.replace(/'/g, "\\'")}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
+            let suspHtml = suspStaff.map(u => `<span class="susp-badge" onclick="window.removeUnavailable('${fullDateStr}', '${u.name.replace(/'/g, "\\'")}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
 
             let pulledOutHtml = "";
+            let empList = window.employees || (typeof employees !== 'undefined' ? employees : []);
             let myStaffProfiles = empList.filter(e => e.branch === branch).map(e => e.scheduleNickname || e.name);
             
             for (let otherBranch in schedObj[day]) {
@@ -10568,7 +10581,7 @@ window.renderTables = function() {
                         for (let otherSId in otherDayData.scheduled) {
                             let assignedStaff = otherDayData.scheduled[otherSId];
                             if (myStaffProfiles.includes(assignedStaff)) {
-                                pulledOutHtml += `<span class="empty-shift" style="cursor:default; font-size:11px; padding:4px 8px; margin: 2px; display:inline-block; color:#d97706; background:white; border:1px solid #fcd34d; border-radius: 4px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" title="Pulled out to work at ${otherBranch}">${assignedStaff} (Relief @ ${otherBranch})</span> `;
+                                pulledOutHtml += `<span class="relief-badge" title="Pulled out to work at ${otherBranch}">${assignedStaff} (Relief @ ${otherBranch})</span> `;
                             }
                         }
                     }
