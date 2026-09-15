@@ -10459,10 +10459,15 @@ window.switchTab = function(branch) {
     window.updateUnavailabilityList();
 };
 
+// ==========================================
+// 📅 MASTER SCHEDULE GRID RENDERER
+// ==========================================
 window.renderTables = function() {
     const container = document.getElementById("scheduleContainer"); if(!container) return;
     container.innerHTML = "";
-    if (Object.keys(currentSchedule).length === 0) return;
+    
+    let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
+    if (!schedObj || Object.keys(schedObj).length === 0) return;
 
     const tabBox = document.createElement("div"); tabBox.className = "tab-container";
     const contentWrap = document.createElement("div");
@@ -10470,29 +10475,53 @@ window.renderTables = function() {
 
     let branchesToRender = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : Object.keys(branchConfig);
 
+    // Build active staff map for fast lookup
+    let empList = window.employees || (typeof employees !== 'undefined' ? employees : []);
+    
     branchesToRender.forEach(branch => {
-        if (!branchConfig[branch]) return;
-        if (!window.isBranchAllowed(branch)) return; // 🔥 SECURITY LOCK
+        let bConfig = typeof branchConfig !== 'undefined' ? branchConfig : window.branchConfig;
+        if (!bConfig[branch]) return;
+        if (!window.isBranchAllowed(branch)) return; // SECURITY LOCK
 
-        const isAct = (branch === currentActiveTab); 
+        let targetActiveTab = typeof currentActiveTab !== 'undefined' ? currentActiveTab : window.currentActiveTab;
+        const isAct = (branch === targetActiveTab); 
         const btn = document.createElement("button");
         btn.className = `tab-btn ${isAct ? 'active' : ''}`; btn.innerText = `${branch} Schedule`; btn.id = `btn-${branch}`;
         btn.onclick = () => window.switchTab(branch); tabBox.appendChild(btn);
 
         const cBox = document.createElement("div");
         cBox.className = `tab-content ${isAct ? 'active' : ''}`; cBox.id = `content-${branch}`;
-        const activeShifts = branchConfig[branch].filter(s => s.active);
+        const activeShifts = bConfig[branch].filter(s => s.active);
 
-        let tableHTML = `<table class="sched-table"><thead><tr><th class="date-col">Date</th>`;
-        activeShifts.forEach(s => tableHTML += `<th>${s.name}</th>`);
-        tableHTML += `<th>Standby</th><th>Off / Leave / Pulled Out</th><th>Suspended / AWOL</th></tr></thead><tbody>`;
+        // 🔥 THE NEW COMPACT TABLE STYLES 🔥
+        let tableHTML = `<div class="table-responsive" style="border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; margin-top: 15px;"><table class="sched-table" style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: center; background: white;"><thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;"><tr><th class="date-col" style="padding: 12px 10px; color: #475569; font-weight: 900; text-transform: uppercase; font-size: 11px; text-align: left;">Date</th>`;
+        activeShifts.forEach(s => tableHTML += `<th style="padding: 12px 10px; color: #475569; font-weight: 900; text-transform: uppercase; font-size: 11px; border-left: 1px solid #e2e8f0;">${s.name}</th>`);
+        tableHTML += `<th style="padding: 12px 10px; color: #d97706; font-weight: 900; text-transform: uppercase; font-size: 11px; border-left: 1px solid #e2e8f0; background: #fffbeb;">Standby</th><th style="padding: 12px 10px; color: #dc2626; font-weight: 900; text-transform: uppercase; font-size: 11px; border-left: 1px solid #e2e8f0; background: #fef2f2;">Off / Leave</th><th style="padding: 12px 10px; color: #b91c1c; font-weight: 900; text-transform: uppercase; font-size: 11px; border-left: 1px solid #e2e8f0; background: #fff1f2;">Suspended</th></tr></thead><tbody>`;
 
-        for (let day in currentSchedule) {
-            let fullDateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            const dStr = new Date(currentYear, currentMonth - 1, day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            tableHTML += `<tr><td class="date-col">${dStr}</td>`;
+        let safeYear = typeof currentYear !== 'undefined' ? currentYear : window.currentYear;
+        let safeMonth = typeof currentMonth !== 'undefined' ? currentMonth : window.currentMonth;
 
-            let dayData = currentSchedule[day][branch] || { scheduled: {}, rest: [], unavailable: [], swaps: {} };
+        for (let day in schedObj) {
+            let fullDateStr = `${safeYear}-${String(safeMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const dStr = new Date(safeYear, safeMonth - 1, day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            tableHTML += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'"><td class="date-col" style="padding: 10px; font-weight: 900; color: #0f172a; text-align: left;">${dStr}</td>`;
+
+            let dayData = schedObj[day][branch] || { scheduled: {}, rest: [], unavailable: [], swaps: {} };
+
+            // 🧹 GHOST SCRUBBER ENGINE 🧹
+            // 1. Scrub Scheduled Shifts
+            for (let sId in dayData.scheduled) {
+                let staff = dayData.scheduled[sId];
+                if (staff !== "N/A" && staff !== "UNFILLED") {
+                    if (!window.findEmployeeProfile(staff)) {
+                        dayData.scheduled[sId] = "UNFILLED"; // Staff was revoked/deleted!
+                    }
+                }
+            }
+            // 2. Scrub Standby List
+            dayData.rest = (dayData.rest || []).filter(n => window.findEmployeeProfile(n) !== null);
+            // 3. Scrub Leave/Off List
+            dayData.unavailable = (dayData.unavailable || []).filter(u => window.findEmployeeProfile(u.name) !== null);
 
             activeShifts.forEach(s => {
                 const val = dayData.scheduled[s.id];
@@ -10505,44 +10534,159 @@ window.renderTables = function() {
                     }
                 }
 
-                if (val === "N/A" || !val) tableHTML += `<td style="background:#f1f5f9; color:#94a3b8; text-align: center;">-</td>`;
-                else if (val === "UNFILLED") tableHTML += `<td style="text-align: center;"><span class="empty-shift" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">Needs Staff</span>${swapBadge}</td>`;
-                else tableHTML += `<td style="text-align: center;"><span class="clickable" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">${val}</span>${swapBadge}</td>`;
+                if (val === "N/A" || !val) {
+                    tableHTML += `<td style="background:#f8fafc; color:#94a3b8; text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;">-</td>`;
+                }
+                else if (val === "UNFILLED") {
+                    tableHTML += `<td style="text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;"><span class="empty-shift" style="color: #ef4444; font-weight: 900; cursor: pointer; padding: 6px 10px; display: inline-block; background: #fef2f2; border-radius: 6px; border: 1px dashed #fca5a5; transition: 0.2s; white-space: nowrap; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">Needs Staff</span>${swapBadge}</td>`;
+                }
+                else {
+                    tableHTML += `<td style="text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;"><span class="clickable" style="cursor: pointer; color: #0ea5e9; font-weight: 900; padding: 6px 10px; display: inline-block; background: #f0f9ff; border-radius: 6px; border: 1px solid #bae6fd; transition: 0.2s; white-space: nowrap; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">${val}</span>${swapBadge}</td>`;
+                }
             });
 
+            // 🖱️ EDITABLE STANDBY BADGES
             let restArr = dayData.rest || [];
-            tableHTML += `<td class="rest-day" style="text-align: center;">${restArr.join(", ") || "-"}</td>`;
+            let restHtml = restArr.map(rName => `<span class="standby-badge" style="cursor: pointer; color: #d97706; font-weight: 900; padding: 4px 8px; display: inline-block; background: white; border-radius: 4px; border: 1px solid #fcd34d; transition: 0.2s; white-space: nowrap; font-size: 11px; margin: 2px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" onclick="window.manageStandbyStaff(${day}, '${branch}', '${rName.replace(/'/g, "\\'")}')" title="Click to Reassign">${rName}</span>`).join(" ");
+            
+            tableHTML += `<td class="rest-day" style="text-align: center; border-left: 1px solid #e2e8f0; background: #fffcf0; padding: 6px;">${restHtml || "-"}</td>`;
 
             let unArr = dayData.unavailable || [];
             let offStaff = unArr.filter(u => !u.status.toLowerCase().includes('suspend') && !u.status.toLowerCase().includes('awol'));
             let suspStaff = unArr.filter(u => u.status.toLowerCase().includes('suspend') || u.status.toLowerCase().includes('awol'));
 
-            let offHtml = offStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin-bottom:4px; display:inline-block; color:#dc2626; background:#fef2f2; border:1px solid #fca5a5;" onclick="window.removeUnavailable('${fullDateStr}', '${u.name}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
-            let suspHtml = suspStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin-bottom:4px; display:inline-block; color:#b91c1c; background:#fee2e2; border:1px solid #f87171;" onclick="window.removeUnavailable('${fullDateStr}', '${u.name}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
+            let offHtml = offStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin: 2px; display:inline-block; color:#dc2626; background:white; border:1px solid #fca5a5; border-radius: 4px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" onclick="window.removeUnavailable('${fullDateStr}', '${u.name.replace(/'/g, "\\'")}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
+            let suspHtml = suspStaff.map(u => `<span class="empty-shift" style="cursor:pointer; font-size:11px; padding:4px 8px; margin: 2px; display:inline-block; color:#b91c1c; background:white; border:1px solid #f87171; border-radius: 4px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" onclick="window.removeUnavailable('${fullDateStr}', '${u.name.replace(/'/g, "\\'")}')" title="Click to remove">${u.name} (${u.status}) ✖</span>`).join(" ");
 
-            // 🔥 THE FIX: Removed window prefix so it safely reads local module variables!
             let pulledOutHtml = "";
-            let myStaffProfiles = employees.filter(e => e.branch === branch).map(e => e.scheduleNickname || e.name);
+            let myStaffProfiles = empList.filter(e => e.branch === branch).map(e => e.scheduleNickname || e.name);
             
-            for (let otherBranch in currentSchedule[day]) {
+            for (let otherBranch in schedObj[day]) {
                 if (otherBranch !== branch) {
-                    let otherDayData = currentSchedule[day][otherBranch];
+                    let otherDayData = schedObj[day][otherBranch];
                     if (otherDayData && otherDayData.scheduled) {
                         for (let otherSId in otherDayData.scheduled) {
                             let assignedStaff = otherDayData.scheduled[otherSId];
                             if (myStaffProfiles.includes(assignedStaff)) {
-                                pulledOutHtml += `<span class="empty-shift" style="cursor:default; font-size:11px; padding:4px 8px; margin-bottom:4px; display:inline-block; color:#d97706; background:#fffbeb; border:1px solid #fcd34d;" title="Pulled out to work at ${otherBranch}">${assignedStaff} (Relief @ ${otherBranch})</span> `;
+                                pulledOutHtml += `<span class="empty-shift" style="cursor:default; font-size:11px; padding:4px 8px; margin: 2px; display:inline-block; color:#d97706; background:white; border:1px solid #fcd34d; border-radius: 4px; white-space: nowrap; box-shadow: 0 1px 2px rgba(0,0,0,0.02);" title="Pulled out to work at ${otherBranch}">${assignedStaff} (Relief @ ${otherBranch})</span> `;
                             }
                         }
                     }
                 }
             }
 
-            tableHTML += `<td style="text-align: center;">${offHtml} ${pulledOutHtml}</td><td style="text-align: center;">${suspHtml || "-"}</td></tr>`;
+            tableHTML += `<td style="text-align: center; border-left: 1px solid #e2e8f0; background: #fef2f2; padding: 6px;">${offHtml} ${pulledOutHtml}</td><td style="text-align: center; border-left: 1px solid #e2e8f0; background: #fff1f2; padding: 6px;">${suspHtml || "-"}</td></tr>`;
         }
-        cBox.innerHTML = tableHTML + `</tbody></table>`;
+        cBox.innerHTML = tableHTML + `</tbody></table></div>`;
         contentWrap.appendChild(cBox);
     });
+};
+
+// ==========================================
+// 🖱️ MANAGE STANDBY STAFF ENGINE
+// ==========================================
+window.manageStandbyStaff = async function(day, branch, staffName) {
+    let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
+    let dayData = schedObj[day][branch];
+    
+    let shiftOptions = '<option value="">-- Select Shift to Assign --</option>';
+    let targetBranchConfig = typeof branchConfig !== 'undefined' ? branchConfig[branch] : window.branchConfig[branch];
+    
+    for (let sId in dayData.scheduled) {
+        if (dayData.scheduled[sId] !== "N/A") {
+            let sName = sId;
+            if (targetBranchConfig) {
+                let f = targetBranchConfig.find(s => s.id === sId);
+                if (f) sName = f.name;
+            }
+            let currentAssignee = dayData.scheduled[sId];
+            let assignText = currentAssignee === "UNFILLED" ? "(Unfilled)" : `(Currently: ${currentAssignee})`;
+            shiftOptions += `<option value="${sId}">${sName} ${assignText}</option>`;
+        }
+    }
+
+    const { value: formValues } = await Swal.fire({
+        title: '⚙️ Manage Standby Staff',
+        html: `
+            <div style="text-align: left;">
+                <div style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px;">
+                    <span style="font-size: 12px; color: #64748b; font-weight: bold;">Selected Staff:</span><br>
+                    <strong style="color: #0f172a; font-size: 16px;">👤 ${staffName}</strong>
+                </div>
+                
+                <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">1. Assign to a Shift:</label>
+                <select id="standbyShiftSelect" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #bae6fd; margin-top: 5px; margin-bottom: 15px; outline: none; font-weight: bold; background: #f0f9ff; color: #0284c7; cursor: pointer;">
+                    ${shiftOptions}
+                </select>
+                
+                <div style="text-align: center; font-weight: bold; color: #94a3b8; margin-bottom: 15px;">--- OR ---</div>
+
+                <label style="font-size: 12px; font-weight: bold; color: #dc2626;">2. Move to Leaves & Offs:</label>
+                <select id="standbyLeaveSelect" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #fca5a5; margin-top: 5px; outline: none; font-weight: bold; background: #fef2f2; color: #b91c1c; cursor: pointer;">
+                    <option value="">-- Do Not Move --</option>
+                    <option value="Day Off">Move to Day Off</option>
+                    <option value="Leave">Move to Leave</option>
+                    <option value="Absent">Mark Absent</option>
+                </select>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: '💾 Apply Changes',
+        confirmButtonColor: '#10b981',
+        cancelButtonColor: '#94a3b8',
+        customClass: { popup: 'rounded-2xl shadow-xl' },
+        preConfirm: () => {
+            let sShift = document.getElementById('standbyShiftSelect').value;
+            let sLeave = document.getElementById('standbyLeaveSelect').value;
+            if (sShift && sLeave) {
+                Swal.showValidationMessage("Please choose ONLY ONE action (Assign OR Move to Leave).");
+                return false;
+            }
+            if (!sShift && !sLeave) {
+                Swal.showValidationMessage("Please select an action.");
+                return false;
+            }
+            return { shiftId: sShift, leaveStatus: sLeave };
+        }
+    });
+
+    if (formValues) {
+        // Action 1: Assign to Shift
+        if (formValues.shiftId) {
+            let oldStaff = dayData.scheduled[formValues.shiftId];
+            dayData.scheduled[formValues.shiftId] = staffName;
+            
+            // Remove staffName from rest
+            dayData.rest = dayData.rest.filter(n => n !== staffName);
+            
+            // If the shift was previously occupied by someone else, put them on standby!
+            if (oldStaff && oldStaff !== "UNFILLED" && oldStaff !== "N/A") {
+                dayData.rest.push(oldStaff);
+            }
+            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Assigned to Shift!', showConfirmButton: false, timer: 1500});
+        }
+        // Action 2: Move to Leave/Off
+        else if (formValues.leaveStatus) {
+            dayData.rest = dayData.rest.filter(n => n !== staffName);
+            dayData.unavailable.push({ name: staffName, status: formValues.leaveStatus });
+            
+            // Log it in the master unavailability tracker!
+            let safeYear = typeof currentYear !== 'undefined' ? currentYear : window.currentYear;
+            let safeMonth = typeof currentMonth !== 'undefined' ? currentMonth : window.currentMonth;
+            let targetUnavailObj = typeof unavailability !== 'undefined' ? unavailability : window.unavailability;
+            let dStr = `${safeYear}-${String(safeMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            
+            if (!targetUnavailObj[dStr]) targetUnavailObj[dStr] = {};
+            targetUnavailObj[dStr][staffName] = formValues.leaveStatus;
+            
+            if (typeof window.updateUnavailabilityList === 'function') window.updateUnavailabilityList();
+
+            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Moved to Leaves/Offs!', showConfirmButton: false, timer: 1500});
+        }
+        
+        window.renderTables();
+        if (typeof window.saveToCloud === 'function') window.saveToCloud();
+    }
 };
 
 // ==========================================
