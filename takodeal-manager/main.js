@@ -35,6 +35,40 @@ export const db = initializeFirestore(app, {
 
 window.storage = storage;
 window.db = db;
+// =======================================================
+// 🧠 TAKODEAL GLOBAL CACHE ENGINE (COST SAVER)
+// =======================================================
+window.TK_CACHE = {
+    menu: null, bom: null, inventory: null,
+    lastMenu: 0, lastBom: 0, lastInventory: 0,
+    ttl: 60 * 1000 // 60-second memory. Stops rapid-tab-switching reads!
+};
+
+window.fetchCachedCollection = async function(colName) {
+    let now = Date.now();
+    let timeKey = 'last' + colName.charAt(0).toUpperCase() + colName.slice(1); 
+    
+    // If we have data AND it's less than 60 seconds old, use RAM!
+    if (window.TK_CACHE[colName] && (now - window.TK_CACHE[timeKey] < window.TK_CACHE.ttl)) {
+        console.log(`📦 Loaded ${colName.toUpperCase()} from RAM (0 Firebase Reads)`);
+        return window.TK_CACHE[colName];
+    }
+
+    // Otherwise, pay the Firebase read cost
+    console.log(`☁️ Fetching ${colName.toUpperCase()} from Firebase...`);
+    const snap = await window.getDocs(window.collection(window.db, colName));
+    let data = [];
+    snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+    
+    window.TK_CACHE[colName] = data;
+    window.TK_CACHE[timeKey] = now;
+    return data;
+};
+
+// Call this if you add/edit an item so it forces a fresh read next time
+window.invalidateCache = function(colName) {
+    window.TK_CACHE[colName] = null; 
+};
 
 // 🔥 THE MISSING FIREBASE BRIDGE 🔥
 window.query = query;
@@ -4003,7 +4037,6 @@ window.loadMenuEditor = async function() {
   let catFilterEl = document.getElementById('menuEditorCatFilter');
   let selectedCat = catFilterEl ? catFilterEl.value : 'All';
 
-  // 🔥 INJECT THE SAVE LAYOUT BUTTON DYNAMICALLY
   let headerDiv = catFilterEl ? catFilterEl.closest('div') : null;
   if (headerDiv && !document.getElementById('btnSaveMenuOrder')) {
       let btnHtml = `<button id="btnSaveMenuOrder" class="btn-refresh" style="background: #8b5cf6; color: white; border: none; margin-left: 10px; box-shadow: 0 2px 4px rgba(139,92,246,0.3);" onclick="window.saveMenuItemLayout()">💾 Save Display Order</button>`;
@@ -4011,21 +4044,20 @@ window.loadMenuEditor = async function() {
   }
 
   try {
-    const snap = await getDocs(collection(db, "menu"));
+    // 🔥 Use the Zero-Cost Cache!
+    const cachedMenu = await window.fetchCachedCollection("menu");
     
-    // Fetch Custom Layout
     let layoutOrder = [];
     try {
-        const layoutSnap = await getDoc(doc(db, "settings", "pos_item_layout"));
+        const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_item_layout"));
         if (layoutSnap.exists()) layoutOrder = layoutSnap.data().items || [];
     } catch(e) {}
 
     let items = [];
     let uniqueCategories = new Set();
 
-    snap.forEach(doc => {
-      let d = doc.data();
-      items.push({ id: doc.id, ...d });
+    cachedMenu.forEach(d => {
+      items.push(d); // Already contains id from the cache engine
       if (d.category) uniqueCategories.add(d.category.trim());
     });
 
@@ -4043,7 +4075,6 @@ window.loadMenuEditor = async function() {
         catFilterEl.innerHTML = optionsHtml;
     }
 
-    // 🔥 SORT BY CUSTOM LAYOUT FIRST, THEN ALPHABETICAL
     items.sort((a, b) => {
         let idxA = layoutOrder.indexOf(a.id);
         let idxB = layoutOrder.indexOf(b.id);
