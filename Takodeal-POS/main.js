@@ -3688,9 +3688,17 @@ window.submitAttendance = async function(type) {
     let photoBase64 = "";
     
     if (video && canvas && video.videoWidth > 0) {
-        canvas.width = video.videoWidth; canvas.height = video.videoHeight;
-        canvas.getContext('2d').drawImage(video, 0, 0);
-        photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
+        // 🔥 THE COMPRESSOR: Shrink the massive camera feed down to 400px!
+        let targetWidth = 400;
+        let scale = targetWidth / video.videoWidth;
+        let targetHeight = video.videoHeight * scale;
+
+        canvas.width = targetWidth; 
+        canvas.height = targetHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0, targetWidth, targetHeight);
+        
+        // Compress the tiny image into a 50% quality JPEG string
+        photoBase64 = canvas.toDataURL('image/jpeg', 0.5); 
     }
 
     if (!navigator.geolocation) { 
