@@ -2,11 +2,17 @@
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+// 👇 CHANGE 1: Added 'startAfter' to the very end of this import list 👇
+import { initializeFirestore, persistentLocalCache, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch, startAfter } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 // 🔥 TASK 4 FIX: Expose Network Toggles globally so the Anti-Freeze engine can use them!
 window.enableNetwork = enableNetwork;
 window.disableNetwork = disableNetwork;
+
+// 👇 CHANGE 2: Mapped startAfter to the window object so the Lazy Loader can use it 👇
+window.startAfter = startAfter;
+
 import { getAuth, signInWithPopup, setPersistence, browserLocalPersistence, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
