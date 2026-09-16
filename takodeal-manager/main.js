@@ -4414,43 +4414,41 @@ window.uploadMenuImage = async function(event, docId) {
     const rawFile = event.target.files[0];
     if (!rawFile) return;
 
+    // Grab the label to show loading text
     const label = event.target.parentElement;
     const originalHTML = label.innerHTML;
     label.innerText = "⏳ Compressing...";
     label.style.opacity = "0.7";
 
-    // 🔥 THE MAGIC COMPRESSOR: Crushes it down to 600px width at 70% quality!
-    const file = await window.compressImage(rawFile, 600, 600, 0.7);
-
-    // Give visual feedback on the button
-    const label = event.target.parentElement;
-    const originalHTML = label.innerHTML;
-    label.innerText = "⏳ Uploading...";
-    label.style.opacity = "0.7";
-
     try {
-        // 1. Create a clean, unique file name
-        const fileExt = file.name.split('.').pop();
-        const fileName = `menu_images/${docId}_${Date.now()}.${fileExt}`;
-        const storageReference = ref(window.storage, fileName);
+        // 🔥 THE MAGIC COMPRESSOR: Crushes it down to 600px width at 70% quality!
+        const file = await window.compressImage(rawFile, 600, 600, 0.7);
+
+        label.innerText = "⏳ Uploading...";
+        
+        // 1. Create a clean, unique file name (Forced to .jpg to save space)
+        const fileName = `menu_images/${docId}_${Date.now()}.jpg`;
+        const storageReference = window.ref(window.storage, fileName);
 
         // 2. Upload physical file to Firebase Storage
-        const snapshot = await uploadBytes(storageReference, file);
+        const snapshot = await window.uploadBytes(storageReference, file);
         
         // 3. Get the live, public URL of the uploaded image
-        const downloadURL = await getDownloadURL(snapshot.ref);
+        const downloadURL = await window.getDownloadURL(snapshot.ref);
 
         // 4. Update the Firestore Database so the Customer App sees it
-        await updateDoc(doc(db, "menu", docId), {
+        await window.updateDoc(window.doc(window.db, "menu", docId), {
             image: downloadURL
         });
 
-        alert("✅ Image uploaded and linked successfully!");
+        alert("✅ Image compressed and uploaded successfully!");
         window.loadMenuEditor(); // Refresh table to show the new thumbnail
         
     } catch (e) {
         console.error("Upload error:", e);
         alert("❌ Failed to upload image. Ensure Firebase Storage is fully activated.");
+    } finally {
+        // Restore the button to its normal state no matter what happens
         label.innerHTML = originalHTML;
         label.style.opacity = "1";
     }
