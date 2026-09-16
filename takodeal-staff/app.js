@@ -178,17 +178,38 @@ window.getClosestBranch = function() {
 };
 
 window.checkNormalLogin = function() {
-    // 🔥 SECURITY UPGRADE: Wipe memory on refresh so they MUST enter PIN every time!
-    localStorage.removeItem('takodeal_staff_name');
-    localStorage.removeItem('takodeal_staff_id');
-    localStorage.removeItem('takodeal_staff_pic');
+    let savedName = localStorage.getItem('takodeal_staff_name');
+    let savedId = localStorage.getItem('takodeal_staff_id');
     
-    document.getElementById('loginOverlay').style.display = 'flex';
-    document.getElementById('appContainer').style.display = 'none';
-    
-    // Clear the PIN box just in case
-    let pinBox = document.getElementById('loginPin');
-    if (pinBox) pinBox.value = '';
+    // 🚀 AUTO-LOGIN ENGINE
+    if (savedName && savedId) {
+        document.getElementById('loggedInName').innerText = savedName;
+        let pic = localStorage.getItem('takodeal_staff_pic');
+        if (pic && pic.length > 5) {
+            document.getElementById('topAvatar').innerText = '';
+            document.getElementById('topAvatar').style.backgroundImage = `url('${pic}')`;
+        }
+        
+        document.getElementById('loginOverlay').style.display = 'none';
+        document.getElementById('appContainer').style.display = 'flex';
+        
+        if(!window.clockStarted) { window.startLiveClock(); window.clockStarted = true; }
+        window.loadAnnouncements();
+        window.startInboxListener();
+        window.checkContractLifecycle(savedId);
+        window.listenToIncomingSwaps();
+        
+        // 🚨 THE GATEKEEPER: Instantly block access if they have a pending NTE!
+        window.checkActiveSanctions(savedName);
+        
+    } else {
+        // Fallback to normal PIN login if no saved session exists
+        document.getElementById('loginOverlay').style.display = 'flex';
+        document.getElementById('appContainer').style.display = 'none';
+        
+        let pinBox = document.getElementById('loginPin');
+        if (pinBox) pinBox.value = '';
+    }
 };
 
 window.loginStaff = async function() {
@@ -238,6 +259,9 @@ window.loginStaff = async function() {
                 document.getElementById('appContainer').style.display = 'flex';
                 document.getElementById('loginPin').value = ''; 
                 document.getElementById('loginOverlay').style.opacity = '1';
+                
+                // 🚨 THE GATEKEEPER: Catch them immediately upon manual login!
+                window.checkActiveSanctions(staffData.cashierName);
             }, 300);
             
             if(!window.clockStarted) { window.startLiveClock(); window.clockStarted = true; }
