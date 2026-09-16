@@ -1924,18 +1924,24 @@ window.loadPrepBatchLogs = async function() {
     }
 };
 
+// =======================================================
+// 📜 LAZY LOADING ENGINE (STOCK LOGS)
+// =======================================================
 window.activeStockLogBranch = 'All';
+window.lastStockLogDoc = null; // 🧠 Memory: Remembers the last document we saw
+window.cachedStockLogsHTML = ''; // 🧠 Memory: Stores the rows we've already loaded
+
 window.switchStockLogBranch = function(branch) {
     window.activeStockLogBranch = branch;
-    window.loadStockLogs();
+    window.loadStockLogs(false); // The 'false' tells it to start fresh from page 1!
 };
 
-window.loadStockLogs = async function() {
+window.loadStockLogs = async function(isLoadMore = false) {
   const tbody = document.getElementById('stockLogsBody');
   const tabContainer = document.getElementById('stockLogBranchTabs');
   if (!tbody || !tabContainer) return;
 
-  // Inject Branch Tabs!
+  // 1. INJECT BRANCH TABS UI
   let branches = window.globalActiveBranches ? window.globalActiveBranches : ["Main Office", "Cabantian", "Citygate", "Maa"];
   let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
   if (isFranchisee) branches = [window.sessionUser.branch];
@@ -1954,19 +1960,57 @@ window.loadStockLogs = async function() {
   });
   tabContainer.innerHTML = bHtml;
 
-  tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">Loading history...</td></tr>';
+  // 2. RESET OR LOAD MORE LOGIC
+  if (!isLoadMore) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">⚡ Loading recent history...</td></tr>';
+      window.lastStockLogDoc = null;
+      window.cachedStockLogsHTML = '';
+  } else {
+      let btn = document.getElementById('btnLoadMoreStock');
+      if (btn) { btn.innerText = "⏳ Fetching next batch..."; btn.disabled = true; }
+  }
 
   try {
-    const qLogs = window.query(window.collection(window.db, "stock_logs"), window.orderBy("timestamp", "desc"), window.limit(100));
+    let qLogs;
+    
+    // 3. THE FIREBASE CURSOR QUERIES
+    // Notice how we strictly limit to 15 reads to protect your database costs!
+    if (window.activeStockLogBranch === "All") {
+        qLogs = window.query(window.collection(window.db, "stock_logs"), window.orderBy("timestamp", "desc"), window.limit(15));
+        // If clicking Load More, pick up exactly where we left off using startAfter!
+        if (isLoadMore && window.lastStockLogDoc) {
+            qLogs = window.query(window.collection(window.db, "stock_logs"), window.orderBy("timestamp", "desc"), window.startAfter(window.lastStockLogDoc), window.limit(15));
+        }
+    } else {
+        qLogs = window.query(window.collection(window.db, "stock_logs"), window.where("branch", "==", window.activeStockLogBranch), window.orderBy("timestamp", "desc"), window.limit(15));
+        if (isLoadMore && window.lastStockLogDoc) {
+            qLogs = window.query(window.collection(window.db, "stock_logs"), window.where("branch", "==", window.activeStockLogBranch), window.orderBy("timestamp", "desc"), window.startAfter(window.lastStockLogDoc), window.limit(15));
+        }
+    }
+
     const snap = await window.getDocs(qLogs);
+    
+    // 4. END OF LIST DETECTION
+    if (snap.empty) {
+        if (isLoadMore) {
+            let btn = document.getElementById('btnLoadMoreStock');
+            if (btn) { btn.innerText = "✅ End of History"; btn.disabled = true; }
+            return;
+        } else {
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No stock history found.</td></tr>';
+            return;
+        }
+    }
+
+    // Save the very last document we saw so the NEXT click knows where to start
+    window.lastStockLogDoc = snap.docs[snap.docs.length - 1];
+
     let html = '';
 
     snap.forEach(doc => {
       let data = doc.data();
-      if (window.activeStockLogBranch !== "All" && data.branch !== window.activeStockLogBranch) return;
 
       let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
-
       let user = data.user || data.cashier || "System";
       let uom = data.uom || "";
       let oldQty = data.oldQty !== undefined ? data.oldQty : "-";
@@ -1995,10 +2039,26 @@ window.loadStockLogs = async function() {
       `;
     });
 
-    tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No stock history found.</td></tr>';
+    // Add the new rows to the existing rows in memory
+    window.cachedStockLogsHTML += html;
+
+    // 5. INJECT THE LOAD MORE BUTTON
+    let loadMoreRow = `
+        <tr id="loadMoreRow_Stock">
+            <td colspan="7" style="text-align: center; padding: 20px; background: #f8fafc; border-top: 2px dashed #cbd5e1;">
+                <button id="btnLoadMoreStock" onclick="window.loadStockLogs(true)" style="background: white; border: 1px solid #0ea5e9; color: #0ea5e9; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.1); transition: 0.2s;">
+                    ⬇️ Load Older Logs
+                </button>
+            </td>
+        </tr>
+    `;
+
+    // Print everything to the screen
+    tbody.innerHTML = window.cachedStockLogsHTML + loadMoreRow;
+
   } catch (e) { 
     console.error("Stock Logs Error:", e); 
-    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 40px; font-weight: bold;">Error loading logs. Check console.</td></tr>'; 
+    if (!isLoadMore) tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 40px; font-weight: bold;">Error loading logs. Check console.</td></tr>'; 
   }
 };
 
