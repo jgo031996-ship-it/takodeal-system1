@@ -3565,8 +3565,8 @@ window.isCheckingSanction = false;
 
 // This watchdog wakes up every 5 seconds and scans the cloud
 setInterval(() => {
-    // Grab the name depending on what your Staff App uses to store the login
-    let staffName = localStorage.getItem('staffName') || localStorage.getItem('cashierName');
+    // 🔥 THE FIX: Now using the correct key "takodeal_staff_name"!
+    let staffName = localStorage.getItem('takodeal_staff_name');
     let sanctionModal = document.getElementById('staffAppSanctionModal');
     
     // If they are logged in, and the modal isn't already showing
@@ -3622,8 +3622,12 @@ window.loadMySanctionsHistory = async function() {
             let dateStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date(d.timestamp).toLocaleDateString()) : 'Unknown Date';
             
             let statusBadge = '';
+            let actionBtn = ''; // 🔥 Create an empty variable for the button
+            
             if (d.status === 'Pending Reply') {
                 statusBadge = `<span style="background: #fef2f2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid #fca5a5;">⚠️ Action Required</span>`;
+                // 🔥 Inject the manual trigger button!
+                actionBtn = `<button onclick="window.checkActiveSanctions('${staffName}')" style="width: 100%; margin-top: 15px; background: #dc2626; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 900; font-size: 14px; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3);">✍️ Click Here to Acknowledge & Sign</button>`;
             } else if (d.status === 'Resolved') {
                 statusBadge = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid #bbf7d0;">✅ Resolved</span>`;
             } else {
@@ -3657,6 +3661,7 @@ window.loadMySanctionsHistory = async function() {
                         ${d.details}
                     </div>
                     
+                    ${actionBtn} <!-- 🔥 The button will appear here if action is required! -->
                     ${replyHtml}
                 </div>
             `;
