@@ -4351,14 +4351,16 @@ window.editMenuItem = async function (docId, currentName, currentCat, currentPri
 
 // --- 🖼️ IMAGE UPLOAD ENGINE ---
 window.uploadMenuImage = async function(event, docId) {
-    const file = event.target.files[0];
-    if (!file) return;
+    const rawFile = event.target.files[0];
+    if (!rawFile) return;
 
-    // Strict Size Limit (2MB max) to ensure Customer App loads fast
-    if (file.size > 2 * 1024 * 1024) {
-        alert("⚠️ Image is too large! Please choose a picture under 2MB.");
-        return;
-    }
+    const label = event.target.parentElement;
+    const originalHTML = label.innerHTML;
+    label.innerText = "⏳ Compressing...";
+    label.style.opacity = "0.7";
+
+    // 🔥 THE MAGIC COMPRESSOR: Crushes it down to 600px width at 70% quality!
+    const file = await window.compressImage(rawFile, 600, 600, 0.7);
 
     // Give visual feedback on the button
     const label = event.target.parentElement;
@@ -28730,3 +28732,57 @@ document.addEventListener("visibilitychange", async () => {
         }
     }
 });
+
+// =======================================================
+// 🗜️ UNIVERSAL IMAGE COMPRESSOR (STORAGE SAVER)
+// =======================================================
+window.compressImage = function(file, maxWidth = 800, maxHeight = 800, quality = 0.7) {
+    return new Promise((resolve, reject) => {
+        if (!file || !file.type.startsWith('image/')) {
+            resolve(file); // If it's not an image (like a PDF), just skip compression
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = event => {
+            const img = new Image();
+            img.src = event.target.result;
+            img.onload = () => {
+                // 1. Calculate new dimensions while keeping the perfect aspect ratio
+                let width = img.width;
+                let height = img.height;
+
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height = Math.round((height *= maxWidth / width));
+                        width = maxWidth;
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width = Math.round((width *= maxHeight / height));
+                        height = maxHeight;
+                    }
+                }
+
+                // 2. Draw the shrunken image onto an invisible canvas
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // 3. Crush the quality and export as a lightweight JPEG
+                canvas.toBlob((blob) => {
+                    const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, ".jpg"), {
+                        type: 'image/jpeg',
+                        lastModified: Date.now()
+                    });
+                    resolve(compressedFile);
+                }, 'image/jpeg', quality);
+            };
+            img.onerror = error => reject(error);
+        };
+        reader.onerror = error => reject(error);
+    });
+};
