@@ -665,7 +665,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot, where, getDoc, updateDoc, increment, setDoc, limit } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+        import { getFirestore, collection, getDocs, addDoc, serverTimestamp, query, orderBy, doc, onSnapshot, where, getDoc, updateDoc, increment, setDoc, limit, enableNetwork, disableNetwork } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
         const firebaseConfig = {
@@ -683,6 +683,32 @@
         const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
         window.currentUser = null;
+        window.enableNetwork = enableNetwork;
+        window.disableNetwork = disableNetwork;
+        
+        // =======================================================
+        // 🧠 TAKODEAL GLOBAL CACHE ENGINE (COST SAVER)
+        // =======================================================
+        window.TK_CACHE = {
+            menu: null,
+            lastMenu: 0,
+            ttl: 30 * 60 * 1000 // 30 Minute Memory! Menus rarely change, this saves massive reads!
+        };
+
+        window.fetchCachedMenu = async function() {
+            let now = Date.now();
+            if (window.TK_CACHE.menu && (now - window.TK_CACHE.lastMenu < window.TK_CACHE.ttl)) {
+                console.log(`📦 Loaded MENU from RAM (0 Firebase Reads)`);
+                return window.TK_CACHE.menu;
+            }
+            console.log(`☁️ Fetching MENU from Firebase...`);
+            const snap = await getDocs(query(collection(db, "menu")));
+            let data = [];
+            snap.forEach(docSnap => data.push({id: docSnap.id, ...docSnap.data()}));
+            window.TK_CACHE.menu = data;
+            window.TK_CACHE.lastMenu = now;
+            return data;
+        };
 
         // 🔥 THE APP NAVIGATION ENGINE (SQUISH-PROOF FIX)
         window.switchScreen = function(screenId) {
@@ -764,15 +790,8 @@
                     }
                 } catch(e) { console.log("Could not load home categories config."); }
 
-                const q = query(collection(db, "menu"));
-                const snap = await getDocs(q);
-                
-                window.rawMenuCache = [];
-                snap.forEach(docSnap => {
-                    let item = docSnap.data();
-                    item.id = docSnap.id;
-                    window.rawMenuCache.push(item);
-                });
+                // 🔥 ZERO-COST CACHE ENGINE: Bypasses Firebase if memory exists!
+                window.rawMenuCache = await window.fetchCachedMenu();
 
                 // 🔥 LOAD THE BRANCH LOCATOR CARDS INSTEAD OF JUMPING TO HOME 🔥
                 await window.loadBranchLocator();
@@ -2905,6 +2924,21 @@
                 Swal.fire({title: 'Error', text: 'Could not fetch location from server.', icon: 'error', background: '#141414', color: '#fff'});
             }
         };
+
+        // =======================================================
+        // 🧟 ZOMBIE LISTENER KILLER (BATTERY & READ SAVER)
+        // =======================================================
+        document.addEventListener("visibilitychange", async () => {
+            if (document.hidden) {
+                // Customer switched tabs or locked phone -> Pause Firebase!
+                console.log("🛑 Customer App hidden. Pausing network to save database reads...");
+                try { if (window.disableNetwork && db) await window.disableNetwork(db); } catch(e) {}
+            } else {
+                // Customer came back -> Reconnect instantly!
+                console.log("🟢 Customer App visible. Waking up Firebase...");
+                try { if (window.enableNetwork && db) await window.enableNetwork(db); } catch(e) {}
+            }
+        });
 
     </script>
 </body>
