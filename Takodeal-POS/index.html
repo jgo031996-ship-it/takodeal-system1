@@ -3308,20 +3308,41 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         updateNumpadDisplay(); 
     }
 
+    window.handleDiscountTypeChange = function() {
+        let dType = document.getElementById('checkoutDiscountType').value;
+        let valInput = document.getElementById('checkoutDiscountValue');
+        let reasonInput = document.getElementById('checkoutDiscountReason');
+        let pinContainer = document.getElementById('checkoutStaffPinContainer');
+
+        if (dType === 'staff_meal') {
+            // Automatically pulls from settings, defaults to 20% if not yet set in Manager App
+            let staffPct = window.masterPOSData.settings.staffMealDiscountPct || 20; 
+            valInput.value = staffPct;
+            valInput.disabled = true; // Lock it so they can't change the %
+            valInput.style.background = '#f1f5f9';
+            reasonInput.value = "Staff Meal Salary Deduction";
+            if (pinContainer) pinContainer.style.display = 'block';
+        } else {
+            valInput.disabled = false;
+            valInput.style.background = 'white';
+            if (reasonInput.value === "Staff Meal Salary Deduction") reasonInput.value = "";
+            if (pinContainer) pinContainer.style.display = 'none';
+        }
+        window.updateNumpadDisplay();
+    };
+
     window.updateNumpadDisplay = function() { 
         let originalTotal = window.currentGrandTotal || 0;
         
-        // 1. Calculate Checkout Discount
         let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
         let dVal = parseFloat(document.getElementById('checkoutDiscountValue') ? document.getElementById('checkoutDiscountValue').value : 0) || 0;
         
         let discountAmount = 0;
-        if (dType === 'percentage' && dVal > 0) discountAmount = originalTotal * (dVal / 100);
+        if ((dType === 'percentage' || dType === 'staff_meal') && dVal > 0) discountAmount = originalTotal * (dVal / 100);
         else if (dType === 'fixed' && dVal > 0) discountAmount = dVal;
         
-        if (discountAmount > originalTotal) discountAmount = originalTotal; // Cap at total
+        if (discountAmount > originalTotal) discountAmount = originalTotal; 
 
-        // 2. Apply New Final Total & Show Preview
         window.finalCheckoutAmount = originalTotal - discountAmount;
         window.finalCheckoutDiscount = discountAmount;
         
@@ -3338,37 +3359,33 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             }
         }
 
-        // 3. Calculate Change based on the NEW total!
-        let received = parseFloat(amountReceivedStr) || 0; 
-        document.getElementById('checkoutReceived').innerText = '₱' + amountReceivedStr; 
+        // 🔥 STAFF MEAL CASH OVERRIDE
+        let received = parseFloat(window.amountReceivedStr) || 0; 
+        if (dType === 'staff_meal') {
+            received = window.finalCheckoutAmount; 
+            document.getElementById('checkoutReceived').innerText = '₱' + received.toFixed(2) + ' (Deduction)';
+        } else {
+            document.getElementById('checkoutReceived').innerText = '₱' + window.amountReceivedStr;
+        }
         
         let change = received - window.finalCheckoutAmount; 
         let changeDisplay = document.getElementById('checkoutChange');
         if (changeDisplay) changeDisplay.innerText = '₱' + (change > 0 ? change.toFixed(2) : '0.00'); 
 
-        // 🔥 THE NEW SECURITY LOCK
         let btn = document.getElementById('btnSubmitFinal');
         if (btn) {
             if (received >= window.finalCheckoutAmount) {
-                btn.disabled = false;
-                btn.style.background = "var(--primary)"; // Yellow/Gold color
-                btn.style.cursor = "pointer";
-                btn.style.opacity = "1";
-                btn.innerText = "Complete checkout";
+                btn.disabled = false; btn.style.background = "var(--primary)"; btn.style.cursor = "pointer"; btn.style.opacity = "1"; btn.innerText = "Complete checkout";
             } else {
-                btn.disabled = true;
-                btn.style.background = "#cbd5e1"; // Grayed out
-                btn.style.cursor = "not-allowed";
-                btn.style.opacity = "0.7";
-                btn.innerText = "Enter Amount Received...";
+                btn.disabled = true; btn.style.background = "#cbd5e1"; btn.style.cursor = "not-allowed"; btn.style.opacity = "0.7"; btn.innerText = "Enter Amount Received...";
             }
         }
-    }
+    };
 
     function setPaymentMethod(btn, method) { 
         document.querySelectorAll('.pay-btn').forEach(b => b.classList.remove('active')); 
         btn.classList.add('active'); 
-        selectedPaymentMethod = method; 
+        window.selectedPaymentMethod = method; 
 
         // 🔥 SMART FEATURE: If they select a digital payment, auto-fill the exact amount!
         if (method !== "Cash") {
@@ -3376,66 +3393,66 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         }
     }
 
-      window.isSubmittingOrder = false; // 🛡️ GLOBAL LOCK VARIABLE
+    window.isSubmittingOrder = false; // 🛡️ GLOBAL LOCK VARIABLE
 
     async function submitFinalOrder() {
-      // 🛡️ THE ULTIMATE DOUBLE-TAP SHIELD
       if (window.isSubmittingOrder) return;
       window.isSubmittingOrder = true;
 
       const btn = document.getElementById('btnSubmitFinal'); 
-      btn.innerText = "⏳ Processing Payment..."; 
+      btn.innerText = "⏳ Processing..."; 
       btn.disabled = true;
       btn.style.pointerEvents = "none";
 
-      // 🚨 ANTI-THEFT: MANDATORY REFERENCE NUMBER FOR DIGITAL PAYMENTS
+      let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
+      let staffIdentity = null;
+
+      // 🚨 STAFF MEAL SECURITY INTERCEPTOR 🚨
+      if (dType === 'staff_meal') {
+          let pinInput = document.getElementById('checkoutStaffPin').value;
+          if (!pinInput) {
+              alert("🚨 Please enter your Security PIN to authorize this salary deduction.");
+              btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
+          }
+          
+          btn.innerText = "⏳ Verifying PIN...";
+          staffIdentity = await window.verifyPin(pinInput);
+          
+          if (!staffIdentity || staffIdentity === "BLOCKED") {
+              alert("❌ Invalid PIN. Deduction unauthorized.");
+              btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
+          }
+          
+          window.selectedPaymentMethod = "Salary Deduction";
+          document.getElementById('finalCustomerName').value = staffIdentity.cashierName + " (Staff)";
+      }
+
       let custName = document.getElementById('finalCustomerName').value.trim();
       if ((window.selectedPaymentMethod === 'Grab' || window.selectedPaymentMethod === 'Foodpanda' || window.selectedPaymentMethod === 'GCash') && custName === "") {
           let reqStr = window.selectedPaymentMethod === 'GCash' ? 'GCash Ref Number' : `${window.selectedPaymentMethod} Order ID`;
           alert(`🚨 SECURITY LOCK!\n\nYou selected ${window.selectedPaymentMethod}. You MUST enter the exact ${reqStr} in the Customer Name box to prevent phantom orders.`);
-          
-          btn.innerText = "Complete checkout"; 
-          btn.disabled = false;
-          btn.style.pointerEvents = "auto";
-          window.isSubmittingOrder = false;
-          return;
+          btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
       }
 
-      let exactShiftId = (typeof currentShift !== 'undefined' && currentShift && currentShift.shiftId) 
-                         ? currentShift.shiftId 
-                         : "UNKNOWN";
-
-      let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
+      let exactShiftId = (typeof window.currentShift !== 'undefined' && window.currentShift && window.currentShift.shiftId) ? window.currentShift.shiftId : "UNKNOWN";
       let dVal = parseFloat(document.getElementById('checkoutDiscountValue') ? document.getElementById('checkoutDiscountValue').value : 0) || 0;
       let dReason = document.getElementById('checkoutDiscountReason') ? document.getElementById('checkoutDiscountReason').value.trim() : '';
       let dAmount = window.finalCheckoutDiscount || 0;
 
       if (dAmount > 0 && dReason === "") {
           alert("⚠️ A Discount Reason or ID Number is REQUIRED when applying a total order discount!");
-          btn.innerText = "Complete checkout"; 
-          btn.disabled = false;
-          btn.style.pointerEvents = "auto";
-          window.isSubmittingOrder = false;
-          return;
+          btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
       }
 
-      // 🔥 NEW: VALIDATE DELIVERY INFORMATION
       let mainOrderType = document.getElementById('mainOrderType').value;
       let deliveryAddress = document.getElementById('finalDeliveryAddress') ? document.getElementById('finalDeliveryAddress').value.trim() : '';
       let contactNumber = document.getElementById('finalContactNumber') ? document.getElementById('finalContactNumber').value.trim() : '';
-
-      if (mainOrderType === 'Delivery' && (!deliveryAddress || !contactNumber)) {
-           alert("Delivery orders require both a Contact Number and a Delivery Address!");
-           btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto";
-           window.isSubmittingOrder = false;
-           return;
-      }
 
       const payload = {
         branch: window.sessionUser.branch,
         cashier: window.sessionUser.cashierName,
         shiftId: exactShiftId, 
-        orderType: document.getElementById('mainOrderType').value,
+        orderType: mainOrderType,
         paymentMethod: window.selectedPaymentMethod,
         subTotalBeforeDiscount: window.currentGrandTotal,
         globalDiscountType: dType,
@@ -3443,14 +3460,12 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         globalDiscountAmount: dAmount,
         globalDiscountReason: dReason,
         netTotal: window.finalCheckoutAmount || window.currentGrandTotal,
-        customerName: document.getElementById('finalCustomerName').value,
-        amountReceived: window.amountReceivedStr,
-        cart: cart,
+        customerName: custName,
+        amountReceived: dType === 'staff_meal' ? (window.finalCheckoutAmount || window.currentGrandTotal) : window.amountReceivedStr,
+        cart: window.cart,
         wasParked: window.isResumedParkedOrder || false,
-        isMobileOrder: window.isActiveOrderMobile || false,      // 🔥 INJECT
+        isMobileOrder: window.isActiveOrderMobile || false,
         mobileOrderCode: window.activeMobileOrderCode || null,
-        
-        // 🔥 NEW: INJECT DELIVERY DATA
         deliveryAddress: deliveryAddress,
         contactNumber: contactNumber
       };
@@ -3458,28 +3473,47 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
       let receiptId = await window.processCheckout(payload);
 
       if (receiptId) {
+        
+        // 📥 FIRE TO MANAGER INBOX IF IT'S A STAFF MEAL
+        if (dType === 'staff_meal' && staffIdentity) {
+            try {
+                let shortDesc = window.cart.map(i => `${i.qty}x ${i.name}`).join(', ');
+                await window.addDoc(window.collection(window.db, "staff_requests"), {
+                    type: "Staff Meal (POS Auto)",
+                    branch: window.sessionUser.branch,
+                    staffName: staffIdentity.cashierName,
+                    amount: payload.netTotal,
+                    item: shortDesc,
+                    receiptId: receiptId,
+                    status: "Pending",
+                    timestamp: window.serverTimestamp()
+                });
+                
+                await window.addDoc(window.collection(window.db, "manager_alerts"), {
+                    type: "STAFF_MEAL_DEDUCTION",
+                    branch: window.sessionUser.branch,
+                    cashier: staffIdentity.cashierName,
+                    message: `🍔 STAFF MEAL: ${staffIdentity.cashierName} ordered ${shortDesc}. ₱${payload.netTotal.toFixed(2)} is pending for payroll deduction.`,
+                    timestamp: window.serverTimestamp(),
+                    isRead: false
+                });
+                let pinBox = document.getElementById('checkoutStaffPin');
+                if (pinBox) pinBox.value = '';
+            } catch(e) { console.error("Failed to log staff meal to inbox:", e); }
+        }
+
         if (window.activeMobileOrderId) {
-            // 🔥 CHANGED: We no longer change the status to "completed" here!
-            // We just attach the receipt ID to prove it was encoded in the POS.
             window.updateDoc(window.doc(window.db, "incoming_orders", window.activeMobileOrderId), {
-                paymentStatus: "paid", 
-                receiptId: receiptId,
-                encodedAt: window.serverTimestamp()
-            }).catch(e => console.log("Mobile update queued for background sync.", e));
+                paymentStatus: "paid", receiptId: receiptId, encodedAt: window.serverTimestamp()
+            }).catch(e => console.log(e));
             
-            window.activeMobileOrderId = null; 
-            window.activeMobileOrderCode = null;
-            window.isActiveOrderMobile = false;
+            window.activeMobileOrderId = null; window.activeMobileOrderCode = null; window.isActiveOrderMobile = false;
         }
 
         let totalBallsSold = 0;
-        cart.forEach(item => {
-            let itemName = item.name || item.itemName;
-            let match = itemName.match(/(\d+)\s*Pcs/i);
-            if (match) {
-                let ballsInBox = parseInt(match[1]);
-                totalBallsSold += (ballsInBox * (item.qty || 1));
-            }
+        window.cart.forEach(item => {
+            let match = (item.name || item.itemName).match(/(\d+)\s*Pcs/i);
+            if (match) totalBallsSold += (parseInt(match[1]) * (item.qty || 1));
         });
 
         if (totalBallsSold > 0) {
@@ -3490,43 +3524,32 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
         window.lastTransactionData = { ...payload, receiptId: receiptId };
         document.getElementById('rcptId').innerText = `: ${receiptId}`;
-        let now = new Date(); 
-        document.getElementById('rcptDate').innerText = `: ${now.toLocaleDateString()}`; 
-        document.getElementById('rcptTime').innerText = `: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; 
-        document.getElementById('rcptTotal').innerText = `: ₱${(window.finalCheckoutAmount || window.currentGrandTotal).toFixed(2)}`;
+        document.getElementById('rcptDate').innerText = `: ${new Date().toLocaleDateString()}`; 
+        document.getElementById('rcptTime').innerText = `: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; 
+        document.getElementById('rcptTotal').innerText = `: ₱${payload.netTotal.toFixed(2)}`;
         
-        let amountRec = parseFloat(window.amountReceivedStr) || 0;
-        let change = amountRec - (window.finalCheckoutAmount || window.currentGrandTotal);
-        if (change < 0) change = 0;
-        
+        let amountRec = parseFloat(payload.amountReceived) || 0;
         document.getElementById('rcptPaid').innerText = `: ₱${amountRec.toFixed(2)}`;
-        document.getElementById('rcptChange').innerText = `: ₱${change.toFixed(2)}`;
+        document.getElementById('rcptChange').innerText = `: ₱${(amountRec - payload.netTotal > 0 ? amountRec - payload.netTotal : 0).toFixed(2)}`;
         
-        cart = []; 
-        renderCart(); 
+        window.cart = []; window.renderCart(); 
+        
         if (typeof window.closeModal === 'function') window.closeModal('checkoutModal');
         else if (typeof closeModal === 'function') closeModal('checkoutModal');
         
-        // 🔥 THE RESET FIX: Clear the Order Type and Customer Name for the NEXT order!
         let otSelect = document.getElementById('mainOrderType');
         if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
         let custName = document.getElementById('finalCustomerName');
         if (custName) custName.value = '';
 
-        // Reset the button for the NEXT order
-        btn.innerText = "Complete checkout"; 
-        btn.disabled = false; 
-        btn.style.pointerEvents = "auto";
+        btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto";
         window.isSubmittingOrder = false;
-        window.isResumedParkedOrder = false; // 🔥 RESET TRACKER
+        window.isResumedParkedOrder = false; 
 
         document.getElementById('receiptModal').style.display = 'flex';
       } else { 
         alert("Network Error: Could not save to database."); 
-        btn.innerText = "Complete checkout"; 
-        btn.disabled = false; 
-        btn.style.pointerEvents = "auto";
-        window.isSubmittingOrder = false;
+        btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false;
       }
     }
 
