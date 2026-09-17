@@ -3315,14 +3315,14 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         let pinContainer = document.getElementById('checkoutStaffPinContainer');
 
         if (dType === 'staff_meal') {
-            // Automatically pulls from settings, defaults to 20% if not yet set in Manager App
-            let staffPct = window.masterPOSData.settings.staffMealDiscountPct || 20; 
-            valInput.value = staffPct;
-            valInput.disabled = true; // Lock it so they can't change the %
+            valInput.value = ""; // Clear it so it looks clean
+            valInput.placeholder = "Auto-Calculated";
+            valInput.disabled = true; 
             valInput.style.background = '#f1f5f9';
             reasonInput.value = "Staff Meal Salary Deduction";
             if (pinContainer) pinContainer.style.display = 'block';
         } else {
+            valInput.placeholder = "0";
             valInput.disabled = false;
             valInput.style.background = 'white';
             if (reasonInput.value === "Staff Meal Salary Deduction") reasonInput.value = "";
@@ -3338,8 +3338,27 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         let dVal = parseFloat(document.getElementById('checkoutDiscountValue') ? document.getElementById('checkoutDiscountValue').value : 0) || 0;
         
         let discountAmount = 0;
-        if ((dType === 'percentage' || dType === 'staff_meal') && dVal > 0) discountAmount = originalTotal * (dVal / 100);
-        else if (dType === 'fixed' && dVal > 0) discountAmount = dVal;
+        
+        // 🔥 THE NEW SPLIT DISCOUNT ENGINE 🔥
+        if (dType === 'staff_meal') {
+            let staffTakoPct = window.masterPOSData.settings.staffMealTakoPct !== undefined ? window.masterPOSData.settings.staffMealTakoPct : 20;
+            let staffOtherPct = window.masterPOSData.settings.staffMealOtherPct !== undefined ? window.masterPOSData.settings.staffMealOtherPct : 10;
+            
+            window.cart.forEach(item => {
+                // Search the Master Menu memory to find this item's category
+                let menuItem = window.masterPOSData.items.find(i => i.name === item.name || i.realName === item.name);
+                let cat = menuItem ? (menuItem.category || "").toLowerCase() : "";
+                
+                // Apply 20% to Takoyaki, 10% to everything else!
+                let pctToApply = cat.includes("takoyaki") ? staffTakoPct : staffOtherPct;
+                
+                discountAmount += (item.lineTotalFinal * (pctToApply / 100));
+            });
+        } else if (dType === 'percentage' && dVal > 0) {
+            discountAmount = originalTotal * (dVal / 100);
+        } else if (dType === 'fixed' && dVal > 0) {
+            discountAmount = dVal;
+        }
         
         if (discountAmount > originalTotal) discountAmount = originalTotal; 
 
