@@ -4,7 +4,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 
 // 👇 CHANGE 1: Added 'startAfter' to the very end of this import list 👇
-import { initializeFirestore, persistentLocalCache, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch, startAfter } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch, startAfter } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
 // 🔥 TASK 4 FIX: Expose Network Toggles globally so the Anti-Freeze engine can use them!
 window.enableNetwork = enableNetwork;
@@ -33,10 +33,9 @@ const auth = getAuth(app);
 const provider = new GoogleAuthProvider();
 const storage = getStorage(app);
 
-// 🔥 ULTRA MAX SPEED FIX: Removed the Multi-Tab Manager to prevent Desktop Chrome deadlocks!
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache(),
-  experimentalAutoDetectLongPolling: true // 🔥 STOPS THE 400 BAD REQUEST CONSOLE ERRORS!
+// 🔥 UPGRADED CACHE: Allows the Manager App to run perfectly across multiple tabs!
+const db = initializeFirestore(app, {
+  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
 });
 
 window.storage = storage;
@@ -28800,37 +28799,6 @@ window.addStaffToBranchPool = async function(targetBranch) {
         }
     }
 };
-
-// =======================================================
-// 🧟 ZOMBIE LISTENER KILLER (NETWORK IDLE ENGINE)
-// =======================================================
-document.addEventListener("visibilitychange", async () => {
-    if (document.hidden) {
-        // Tab is hidden, minimized, or phone screen is off -> Kill the network to save database reads!
-        console.log("🛑 App hidden. Pausing Firebase network to save reads...");
-        try { 
-            await window.disableNetwork(window.db); 
-        } catch(e) {
-            console.warn("Failed to disable network:", e);
-        }
-    } else {
-        // User came back -> Wake up the network!
-        console.log("🟢 App visible. Reconnecting to Firebase...");
-        try { 
-            await window.enableNetwork(window.db); 
-            
-            // If they are on the Dashboard, safely force a refresh of the metrics to catch any missed sales
-            let dashView = document.getElementById('view-dashboard');
-            if (dashView && dashView.classList.contains('active')) {
-                if (typeof window.startAutomatedMetricsListener === 'function') {
-                    window.startAutomatedMetricsListener();
-                }
-            }
-        } catch(e) {
-            console.warn("Failed to enable network:", e);
-        }
-    }
-});
 
 // =======================================================
 // 🗜️ UNIVERSAL IMAGE COMPRESSOR (STORAGE SAVER)
