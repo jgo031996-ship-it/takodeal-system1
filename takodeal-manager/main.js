@@ -28890,3 +28890,24 @@ window.compressImage = function(file, maxWidth = 800, maxHeight = 800, quality =
         reader.onerror = error => reject(error);
     });
 };
+
+window.runDataArchiver = async function() {
+    let cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - 2); // Deletes logs older than 2 months
+    
+    console.log("🧹 Archiving transactions older than: ", cutoff);
+    const q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", "<", cutoff));
+    const snap = await window.getDocs(q);
+    
+    let batch = window.writeBatch(window.db);
+    let count = 0;
+    
+    snap.forEach(doc => {
+        batch.delete(doc.ref);
+        count++;
+        if (count === 400) { batch.commit(); batch = window.writeBatch(window.db); count = 0; } // Firebase limits batches to 500
+    });
+    
+    await batch.commit();
+    console.log(`✅ Archiver Complete! Purged old logs to keep the system lightning fast.`);
+};
