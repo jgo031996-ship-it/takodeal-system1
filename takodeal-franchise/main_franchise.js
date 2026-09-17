@@ -2,7 +2,7 @@
 // 🔥 1. FIREBASE ENGINE & IMPORTS 
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, enableNetwork, disableNetwork } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -26,6 +26,33 @@ window.query = query; window.where = where; window.collection = collection;
 window.getDocs = getDocs; window.getDoc = getDoc; window.addDoc = addDoc;
 window.updateDoc = updateDoc; window.deleteDoc = deleteDoc; window.doc = doc;
 window.serverTimestamp = serverTimestamp; window.orderBy = orderBy; window.limit = limit;
+window.enableNetwork = enableNetwork; 
+window.disableNetwork = disableNetwork;
+
+// =======================================================
+// 🧠 GLOBAL RAM CACHE ENGINE
+// =======================================================
+window.TK_CACHE = {
+    inventory: null,
+    lastInventory: 0,
+    ttl: 5 * 60 * 1000 // 5 Minute Memory (Perfect for Franchisees)
+};
+
+window.fetchCachedInventory = async function(branch) {
+    let now = Date.now();
+    if (window.TK_CACHE.inventory && (now - window.TK_CACHE.lastInventory < window.TK_CACHE.ttl)) {
+        console.log(`📦 Loaded INVENTORY from RAM (0 Firebase Reads)`);
+        return window.TK_CACHE.inventory;
+    }
+    console.log(`☁️ Fetching INVENTORY from Firebase...`);
+    const snap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch)));
+    let data = [];
+    snap.forEach(doc => data.push({id: doc.id, ...doc.data()}));
+    
+    window.TK_CACHE.inventory = data;
+    window.TK_CACHE.lastInventory = now;
+    return data;
+};
 
 console.log("🚀 TAKODEÁL Franchisee Walled Garden ACTIVE!");
 
@@ -756,16 +783,11 @@ window.loadLiveInventory = async function() {
     tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px;">⏳ Checking stock levels...</td></tr>';
 
     try {
-        // WALLED GARDEN: Only fetch items belonging to this specific franchise!
-        const q = query(collection(db, "inventory"), 
-            where("branch", "==", window.sessionUser.branch)
-        );
-        
-        const snap = await getDocs(q);
-        
+        // 🔥 ZERO-COST CACHE ENGINE 🔥
+        let items = await window.fetchCachedInventory(window.sessionUser.branch);
         let html = '';
         
-        if (snap.empty) {
+        if (items.length === 0) {
             // AUTOMATIC ZERO: If HQ hasn't delivered anything yet, show this empty state.
             html = `
                 <tr>
@@ -778,10 +800,9 @@ window.loadLiveInventory = async function() {
             `;
         } else {
             // Render their actual stock if deliveries have arrived
-            snap.forEach(doc => {
-                let item = doc.data();
-                let currentQty = parseFloat(item.quantity || 0);
-                let threshold = parseFloat(item.lowStockThreshold || 10);
+            items.forEach(item => {
+                let currentQty = parseFloat(item.quantity || item.currentStock || 0);
+                let threshold = parseFloat(item.lowStockThreshold || item.reorderLevel || 10);
                 
                 // Turn text red if they are running low
                 let isLow = currentQty <= threshold;
@@ -790,9 +811,9 @@ window.loadLiveInventory = async function() {
 
                 html += `
                     <tr>
-                        <td style="font-weight: 600; color: #1e293b;">${item.itemName || 'Unknown Item'}</td>
+                        <td style="font-weight: 600; color: #1e293b;">${item.itemName || item.name || 'Unknown Item'}</td>
                         <td>${item.category || 'Uncategorized'}</td>
-                        <td><span style="${stockStyle}">${currentQty} ${item.unit || 'pcs'}</span></td>
+                        <td><span style="${stockStyle}">${currentQty.toFixed(1)} ${item.unit || item.uom || 'pcs'}</span></td>
                         <td>${statusBadge}</td>
                     </tr>
                 `;
@@ -1262,12 +1283,13 @@ window.loadInventoryWaste = async function() {
 // --- MODALS FOR AUDITS & WASTE ---
 
 window.getBranchInventoryOptions = async function() {
-    const q = query(collection(db, "inventory"), where("branch", "==", window.sessionUser.branch));
-    const snap = await getDocs(q);
+    // 🔥 ZERO-COST CACHE ENGINE 🔥
+    let items = await window.fetchCachedInventory(window.sessionUser.branch);
     let options = '';
-    snap.forEach(docSnap => {
-        let item = docSnap.data();
-        options += `<option value="${docSnap.id}" data-name="${item.itemName}" data-qty="${item.quantity}" data-unit="${item.unit || 'pcs'}">${item.itemName} (Current: ${item.quantity} ${item.unit || 'pcs'})</option>`;
+    items.forEach(item => {
+        let qty = item.quantity || item.currentStock || 0;
+        let unit = item.unit || item.uom || 'pcs';
+        options += `<option value="${item.id}" data-name="${item.itemName || item.name}" data-qty="${qty}" data-unit="${unit}">${item.itemName || item.name} (Current: ${parseFloat(qty).toFixed(1)} ${unit})</option>`;
     });
     return options;
 };
@@ -1456,3 +1478,16 @@ window.receiveHQDelivery = async function(groupKey, encodedItems) {
         Swal.fire('Error', 'Failed to receive delivery.', 'error');
     }
 };
+
+// =======================================================
+// 🧟 ZOMBIE LISTENER KILLER (BATTERY & READ SAVER)
+// =======================================================
+document.addEventListener("visibilitychange", async () => {
+    if (document.hidden) {
+        console.log("🛑 Franchisee App hidden. Pausing network to save data and database reads...");
+        try { if (window.disableNetwork && window.db) await window.disableNetwork(window.db); } catch(e) {}
+    } else {
+        console.log("🟢 Franchisee App visible. Waking up Firebase...");
+        try { if (window.enableNetwork && window.db) await window.enableNetwork(window.db); } catch(e) {}
+    }
+});
