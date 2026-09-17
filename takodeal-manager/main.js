@@ -15939,6 +15939,8 @@ window.loadPosConfigHub = async function() {
             // 🔥 NEW: Load the Split Staff Meal Discount %
             if(document.getElementById('cfgStaffMealTakoPct')) document.getElementById('cfgStaffMealTakoPct').value = data.staffMealTakoPct !== undefined ? data.staffMealTakoPct : 20;
             if(document.getElementById('cfgStaffMealOtherPct')) document.getElementById('cfgStaffMealOtherPct').value = data.staffMealOtherPct !== undefined ? data.staffMealOtherPct : 10;
+            if(document.getElementById('cfgManagerMealTakoPct')) document.getElementById('cfgManagerMealTakoPct').value = data.managerMealTakoPct !== undefined ? data.managerMealTakoPct : 100;
+            if(document.getElementById('cfgManagerMealOtherPct')) document.getElementById('cfgManagerMealOtherPct').value = data.managerMealOtherPct !== undefined ? data.managerMealOtherPct : 100;
             
         } else {
             // Load Defaults if nothing exists yet
@@ -16022,39 +16024,26 @@ window.saveSinglePosConfig = function(dbFieldKey, inputId, btnElement) {
 window.saveStaffMealDiscount = function(btnElement) {
     let takoInput = document.getElementById('cfgStaffMealTakoPct');
     let otherInput = document.getElementById('cfgStaffMealOtherPct');
-    if (!takoInput || !otherInput) return;
+    let mgrTakoInput = document.getElementById('cfgManagerMealTakoPct');
+    let mgrOtherInput = document.getElementById('cfgManagerMealOtherPct');
+    if (!takoInput || !otherInput || !mgrTakoInput || !mgrOtherInput) return;
 
-    let takoVal = parseFloat(takoInput.value);
-    let otherVal = parseFloat(otherInput.value);
-    
-    if (isNaN(takoVal) || takoVal < 0 || takoVal > 100 || isNaN(otherVal) || otherVal < 0 || otherVal > 100) {
-        return Swal.fire('Invalid Input', 'Please enter valid percentages between 0 and 100.', 'warning');
-    }
+    let takoVal = parseFloat(takoInput.value) || 0;
+    let otherVal = parseFloat(otherInput.value) || 0;
+    let mgrTakoVal = parseFloat(mgrTakoInput.value) || 0;
+    let mgrOtherVal = parseFloat(mgrOtherInput.value) || 0;
 
     let origText = btnElement.innerText;
     btnElement.innerText = "⏳...";
     btnElement.disabled = true;
 
     window.setDoc(window.doc(window.db, "settings", "global_pos_config"), { 
-        staffMealTakoPct: takoVal,
-        staffMealOtherPct: otherVal
+        staffMealTakoPct: takoVal, staffMealOtherPct: otherVal,
+        managerMealTakoPct: mgrTakoVal, managerMealOtherPct: mgrOtherVal
     }, { merge: true })
-        .then(() => {
-            Swal.fire({
-                toast: true, position: 'top-end', icon: 'success',
-                title: '✅ Discounts Saved!',
-                showConfirmButton: false, timer: 2500,
-                customClass: { popup: 'rounded-xl shadow-lg border border-gray-100' }
-            });
-        })
-        .catch((error) => {
-            console.error("Error saving discount:", error);
-            Swal.fire('Error', 'Failed to save configuration to cloud.', 'error');
-        })
-        .finally(() => {
-            btnElement.innerText = origText;
-            btnElement.disabled = false;
-        });
+        .then(() => { Swal.fire({toast: true, position: 'top-end', icon: 'success', title: '✅ Saved!', showConfirmButton: false, timer: 2000}); })
+        .catch((error) => { console.error(error); Swal.fire('Error', 'Failed to save.', 'error'); })
+        .finally(() => { btnElement.innerText = origText; btnElement.disabled = false; });
 };
 
 window.editManagerPermissions = async function(docId, email, existingPerms) {
