@@ -38,7 +38,49 @@ window.setDoc = setDoc;
 window.serverTimestamp = serverTimestamp;
 window.orderBy = orderBy;
 window.onSnapshot = onSnapshot;
+window.enableNetwork = enableNetwork;
+window.disableNetwork = disableNetwork;
+// =======================================================
+// 🧠 TAKODEAL GLOBAL CACHE ENGINE (COST SAVER)
+// =======================================================
+window.TK_CACHE = {
+    announcements: null,
+    lastAnnouncements: 0,
+    schedule: null,
+    lastSchedule: 0,
+    ttl: 15 * 60 * 1000 // 15 Minute Memory! Unbelievably efficient!
+};
 
+window.fetchCachedAnnouncements = async function() {
+    let now = Date.now();
+    if (window.TK_CACHE.announcements && (now - window.TK_CACHE.lastAnnouncements < window.TK_CACHE.ttl)) {
+        console.log(`📦 Loaded ANNOUNCEMENTS from RAM (0 Firebase Reads)`);
+        return window.TK_CACHE.announcements;
+    }
+    console.log(`☁️ Fetching ANNOUNCEMENTS from Firebase...`);
+    const q = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
+    const snap = await window.getDocs(q);
+    let data = [];
+    snap.forEach(doc => data.push({id: doc.id, ...doc.data()}));
+    
+    window.TK_CACHE.announcements = data;
+    window.TK_CACHE.lastAnnouncements = now;
+    return data;
+};
+
+window.fetchCachedSchedule = async function() {
+    let now = Date.now();
+    if (window.TK_CACHE.schedule && (now - window.TK_CACHE.lastSchedule < window.TK_CACHE.ttl)) {
+        console.log(`📦 Loaded SCHEDULE from RAM (0 Firebase Reads)`);
+        return window.TK_CACHE.schedule;
+    }
+    console.log(`☁️ Fetching SCHEDULE from Firebase...`);
+    const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_schedule"));
+    
+    window.TK_CACHE.schedule = schedSnap;
+    window.TK_CACHE.lastSchedule = now;
+    return schedSnap;
+};
 console.log("🚀 Takodeál Staff Portal Booted (v3.0 - Fleet Engine Active)");
 
 window.BRANCH_ZONES = {
@@ -953,8 +995,8 @@ window.loadAnnouncements = async function() {
     if (!cashierName) return;
 
     try {
-        const q = query(collection(db, "announcements"), where("active", "==", true));
-        const snap = await getDocs(q);
+        // 🔥 ZERO-COST CACHE: Replaces the 'getDocs' query!
+        const announcementsArray = await window.fetchCachedAnnouncements();
 
         const ackQ = query(collection(db, "acknowledgments"), where("staffName", "==", cashierName));
         const ackSnap = await getDocs(ackQ);
@@ -2859,7 +2901,8 @@ window.loadStaffSchedule = async function() {
             return false;
         };
 
-        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+        // 🔥 ZERO-COST CACHE: Replaces the 'getDoc' query!
+        const schedSnap = await window.fetchCachedSchedule();
         if (!schedSnap.exists() || !schedSnap.data().currentSchedule) {
             container.innerHTML = '<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">HQ has not published a schedule yet.</div>';
             return;
@@ -4133,3 +4176,22 @@ window.generateVirtualID = async function() {
         Swal.fire('Error', 'Failed to fetch profile data from HQ.', 'error');
     }
 };
+
+// =======================================================
+// 🧟 ZOMBIE LISTENER KILLER (BATTERY & READ SAVER)
+// =======================================================
+document.addEventListener("visibilitychange", async () => {
+    if (document.hidden) {
+        // Screen locked or app minimized -> Pause Firebase!
+        console.log("🛑 Staff App hidden. Pausing network to save data plan and database reads...");
+        try { 
+            if (window.disableNetwork && window.db) await window.disableNetwork(window.db); 
+        } catch(e) { console.warn("Failed to pause network:", e); }
+    } else {
+        // App opened again -> Reconnect instantly!
+        console.log("🟢 Staff App visible. Waking up Firebase...");
+        try { 
+            if (window.enableNetwork && window.db) await window.enableNetwork(window.db); 
+        } catch(e) { console.warn("Failed to wake network:", e); }
+    }
+});
