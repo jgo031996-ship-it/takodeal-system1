@@ -15916,13 +15916,13 @@ window.loadPosConfigHub = async function() {
     if (btn) btn.innerText = "⏳ Loading Data...";
 
     try {
-        const docRef = doc(db, "settings", "global_pos_config");
-        const docSnap = await getDoc(docRef);
+        const docRef = window.doc(window.db, "settings", "global_pos_config");
+        const docSnap = await window.getDoc(docRef);
 
         if (docSnap.exists()) {
             let data = docSnap.data();
             
-            // Safely load all data into our new, clean HTML inputs
+            // Safely load all data into our HTML inputs
             if(document.getElementById('configPayMethods')) document.getElementById('configPayMethods').value = (data.paymentMethods || []).join(', ');
             if(document.getElementById('configOrderTypes')) document.getElementById('configOrderTypes').value = (data.orderTypes || []).join(', ');
             if(document.getElementById('configPosTabs')) document.getElementById('configPosTabs').value = (data.posTabs || []).join(', ');
@@ -15933,8 +15933,11 @@ window.loadPosConfigHub = async function() {
             if(document.getElementById('configConsumables')) document.getElementById('configConsumables').value = (data.consumableCats || ["Consumables", "Cleaning Supplies", "Packaging"]).join(', ');
             if(document.getElementById('configShiftAudit')) document.getElementById('configShiftAudit').value = (data.shiftAuditItems || ["Paper Bowl", "Plastic Cup"]).join(', ');
             
-            // 🔥 NEW: Load the Customer App categories!
+            // Customer App categories
             if(document.getElementById('configHomeCats')) document.getElementById('configHomeCats').value = (data.customerHomeCategories || ["Takoyaki", "Milk Tea", "Iced Coffee"]).join(', ');
+            
+            // 🔥 NEW: Load the Staff Meal Discount %
+            if(document.getElementById('cfgStaffMealPct')) document.getElementById('cfgStaffMealPct').value = data.staffMealDiscountPct !== undefined ? data.staffMealDiscountPct : 20;
             
         } else {
             // Load Defaults if nothing exists yet
@@ -15947,9 +15950,10 @@ window.loadPosConfigHub = async function() {
             if(document.getElementById('configWasteReasons')) document.getElementById('configWasteReasons').value = "Dropped / Spilled, Burnt / Overcooked, Spoiled / Expired, Customer Replacement, Pest Damage, Other";
             if(document.getElementById('configConsumables')) document.getElementById('configConsumables').value = "Consumables, Cleaning Supplies, Packaging";
             if(document.getElementById('configShiftAudit')) document.getElementById('configShiftAudit').value = "Paper Bowl, Plastic Cup";
-            
-            // 🔥 NEW: Default Customer App categories!
             if(document.getElementById('configHomeCats')) document.getElementById('configHomeCats').value = "Takoyaki, Milk Tea, Iced Coffee";
+            
+            // 🔥 NEW: Default to 20%
+            if(document.getElementById('cfgStaffMealPct')) document.getElementById('cfgStaffMealPct').value = 20;
         }
     } catch (error) {
         console.error("Error loading config:", error);
@@ -16009,6 +16013,42 @@ window.saveSinglePosConfig = function(dbFieldKey, inputId, btnElement) {
         btnElement.innerText = origText;
         btnElement.disabled = false;
     }
+};
+
+// ========================================================
+// ⚙️ STAFF MEAL DISCOUNT SAVER
+// ========================================================
+window.saveStaffMealDiscount = function(btnElement) {
+    let inputEl = document.getElementById('cfgStaffMealPct');
+    if (!inputEl) return;
+
+    let val = parseFloat(inputEl.value);
+    if (isNaN(val) || val < 0 || val > 100) {
+        return Swal.fire('Invalid Input', 'Please enter a valid percentage between 0 and 100.', 'warning');
+    }
+
+    let origText = btnElement.innerText;
+    btnElement.innerText = "⏳...";
+    btnElement.disabled = true;
+
+    // Save as a NUMBER, not an array!
+    window.setDoc(window.doc(window.db, "settings", "global_pos_config"), { staffMealDiscountPct: val }, { merge: true })
+        .then(() => {
+            Swal.fire({
+                toast: true, position: 'top-end', icon: 'success',
+                title: '✅ Discount Saved!',
+                showConfirmButton: false, timer: 2500,
+                customClass: { popup: 'rounded-xl shadow-lg border border-gray-100' }
+            });
+        })
+        .catch((error) => {
+            console.error("Error saving discount:", error);
+            Swal.fire('Error', 'Failed to save configuration to cloud.', 'error');
+        })
+        .finally(() => {
+            btnElement.innerText = origText;
+            btnElement.disabled = false;
+        });
 };
 
 window.editManagerPermissions = async function(docId, email, existingPerms) {
