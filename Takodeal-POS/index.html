@@ -481,7 +481,6 @@
       };
 
       async function submitLoginPin() {
-          // 🔥 THE CRASH PREVENTER: Stops the red console error!
           if (typeof window.verifyPin !== 'function') {
               alert("⏳ Please wait a moment. The POS engine is still starting up...");
               return;
@@ -495,80 +494,66 @@
           let btn = document.getElementById('btnSubmitPin'); 
           btn.innerText = "Verifying..."; btn.disabled = true;
           
-          let identity = await window.verifyPin(password);
-          
-          // If the device wall stopped them, just reset the button silently
-          if (identity === "BLOCKED") {
+          try {
+              // 🔥 THE HANG FIX: 8-Second Race Timer! If the internet dies, it safely stops instead of hanging forever!
+              const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Network Timeout")), 8000));
+              let identity = await Promise.race([window.verifyPin(password), timeoutPromise]);
+              
+              if (identity === "BLOCKED") {
+                  passInput.value = ""; btn.innerText = "Secure Login"; btn.disabled = false; return; 
+              }
+              if (!identity) { 
+                  alert("Invalid Password."); passInput.value = ""; btn.innerText = "Secure Login"; btn.disabled = false; return; 
+              }
+
+              sessionUser = identity;
+
+              if (typeof window.requestWakeLock === 'function') window.requestWakeLock();
+              if (!document.fullscreenElement) {
+                  document.documentElement.requestFullscreen().catch(err => console.log(err));
+              }
+              
+              let lockedDeviceBranch = localStorage.getItem('takodeal_device_branch');
+              if (lockedDeviceBranch) { sessionUser.branch = lockedDeviceBranch; }
+              localStorage.setItem('cashierName', identity.cashierName);
+              
+              let branchEl = document.getElementById('displayBranchText') || document.getElementById('displayBranch');
+              if (branchEl) branchEl.innerText = sessionUser.branch;
+              
+              let cashierEl = document.getElementById('displayCashierText') || document.getElementById('displayCashier');
+              if (cashierEl) cashierEl.innerText = identity.cashierName;
+              
+              document.getElementById('loginOverlay').style.display = 'none';
+              let ownerBtn = document.getElementById('ownerAccessBtnContainer');
+              if (ownerBtn) ownerBtn.style.display = 'none';
+
+              if (typeof window.checkLoginShortage === 'function') window.checkLoginShortage(identity.cashierName);
+              if (typeof window.updateActiveShiftCashier === 'function') window.updateActiveShiftCashier(identity.cashierName);
+              
+              btn.innerText = "Loading POS..."; // Show progress so they know it's not frozen!
+
+              // 🔥 TIMEOUT SHIELDS: Ensure POS data downloads don't freeze the screen either!
+              if (typeof loadPOSData === 'function') await Promise.race([loadPOSData(), new Promise(r => setTimeout(r, 6000))]);
+              if (typeof checkCurrentShift === 'function') await Promise.race([checkCurrentShift(), new Promise(r => setTimeout(r, 3000))]);
+              if (typeof updateParkedBadge === 'function') updateParkedBadge(); // Let this run in background
+              if (typeof window.startMobileOrdersListener === 'function') window.startMobileOrdersListener(sessionUser.branch);
+              if (typeof window.autoConnectPrinters === 'function') window.autoConnectPrinters();
+
+          } catch (err) {
+              console.warn("Login Hang Prevented:", err);
+              alert("⚠️ Network is slow or unstable. Please check your WiFi connection and try logging in again.");
               passInput.value = ""; 
               btn.innerText = "Secure Login"; 
-              btn.disabled = false; 
-              return; 
+              btn.disabled = false;
           }
-
-          // If it genuinely couldn't find the PIN
-          if (!identity) { 
-              alert("Invalid Password."); 
-              passInput.value = ""; 
-              btn.innerText = "Secure Login"; 
-              btn.disabled = false; 
-              return; 
-          }
-
-          sessionUser = identity;
-
-          // 🔥 NEW: FORCE FULL SCREEN & WAKE LOCK ON LOGIN 🔥
-          if (typeof window.requestWakeLock === 'function') window.requestWakeLock();
-          if (!document.fullscreenElement) {
-              document.documentElement.requestFullscreen().catch(err => console.log(err));
-          }
-          
-          let lockedDeviceBranch = localStorage.getItem('takodeal_device_branch');
-          if (lockedDeviceBranch) { sessionUser.branch = lockedDeviceBranch; }
-
-          localStorage.setItem('cashierName', identity.cashierName);
-          
-          // 🔥 THE CRASH PREVENTER: Checks for both the old and new HTML IDs!
-          let branchEl = document.getElementById('displayBranchText') || document.getElementById('displayBranch');
-          if (branchEl) branchEl.innerText = sessionUser.branch;
-          
-          let cashierEl = document.getElementById('displayCashierText') || document.getElementById('displayCashier');
-          if (cashierEl) cashierEl.innerText = identity.cashierName;
-          
-          document.getElementById('loginOverlay').style.display = 'none';
-          let ownerBtn = document.getElementById('ownerAccessBtnContainer');
-          if (ownerBtn) ownerBtn.style.display = 'none';
-
-          // Check for Shortages on Login!
-          if (typeof window.checkLoginShortage === 'function') {
-              window.checkLoginShortage(identity.cashierName);
-          }
-          
-          // 🔥 THE FIX: Dynamically update the Active Shift to include this Cashier!
-          if (typeof window.updateActiveShiftCashier === 'function') {
-              window.updateActiveShiftCashier(identity.cashierName);
-          }
-          
-          if (typeof loadPOSData === 'function') await loadPOSData();
-          if (typeof checkCurrentShift === 'function') await checkCurrentShift();
-          if (typeof updateParkedBadge === 'function') await updateParkedBadge();
-          if (typeof window.startMobileOrdersListener === 'function') window.startMobileOrdersListener(sessionUser.branch);
-
-          // Auto-reconnect printers the second they login!
-          if (typeof window.autoConnectPrinters === 'function') window.autoConnectPrinters();
       }
   </script>
-  <!-- 🔥 PORTRAIT MODE FIX: Allows scrolling and stacks the elements cleanly! -->
-  <style>
-      @media (max-width: 850px) {
-          #loginOverlay { justify-content: flex-start !important; padding-top: 40px !important; overflow-y: auto !important; }
-          #loginRankingWidget { position: relative !important; top: 0 !important; left: 0 !important; width: 100% !important; max-width: 400px !important; margin-bottom: 20px !important; }
-      }
-  </style>
 
-  <div class="login-overlay" id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('logo.jpg') center/cover no-repeat; z-index: 10000; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; backdrop-filter: blur(8px); overflow-y: auto;">
+  <!-- 🔥 PORTRAIT LAYOUT FIX: Changed to flex-start, added overflow, and removed absolute positioning! -->
+  <div class="login-overlay" id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('logo.jpg') center/cover no-repeat; z-index: 10000; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; padding: 40px 20px; box-sizing: border-box; backdrop-filter: blur(8px); overflow-y: auto;">
     
     <!-- 🏆 LIVE LEADERBOARD WIDGET -->
-    <div id="loginRankingWidget" style="position: absolute; top: 20px; left: 20px; background: rgba(255, 255, 255, 0.1); padding: 15px 20px; border-radius: 16px; color: white; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(12px); z-index: 10; display: none; min-width: 260px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+    <div id="loginRankingWidget" style="background: rgba(255, 255, 255, 0.1); padding: 15px 20px; border-radius: 16px; color: white; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(12px); z-index: 10; display: none; width: 100%; max-width: 400px; margin-bottom: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
         <div style="font-size: 11px; font-weight: 900; color: #fcd34d; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
             <span style="font-size: 16px; animation: pulse 2s infinite;">🔥</span> Live Daily Ranking
         </div>
