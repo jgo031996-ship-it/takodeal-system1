@@ -1653,9 +1653,14 @@ window.openReqForm = function(type) {
         formHtml = `<div class="form-group"><label>Amount (₱)</label><input type="number" id="reqAmount" placeholder="0.00"></div>
             <div class="form-group"><label>Reason / Purpose</label><textarea id="reqReason" rows="2"></textarea></div>`;
     } else if (type === 'Staff Meal') {
-        formHtml = `<div class="form-group"><label>Menu Item Consumed</label><input type="text" id="reqItem" placeholder="e.g. 4 Pcs Pork"></div>
-            <div class="form-group"><label>Equivalent Cost (₱)</label><input type="number" id="reqAmount" placeholder="0.00"></div>
-            <div class="form-group"><label>Attach POS Receipt Photo *</label><input type="file" id="reqMealProof" accept="image/*" style="border: 1px dashed #0f766e; background: #f0fdf4; padding: 10px;"></div>`;
+        // 🔥 THE NEW DUAL-VERIFICATION UI 🔥
+        formHtml = `<div style="margin-bottom: 15px;">
+                <p style="font-size: 12px; color: #64748b; margin-bottom: 10px;">To authorize your payroll deduction, please enter the exact POS Receipt OR# generated when you punched your meal.</p>
+            </div>
+            <div class="form-group">
+                <label>POS Receipt OR#</label>
+                <input type="text" id="reqMealReceiptCode" placeholder="e.g. 20260917-0001-XYZ" style="text-align: center; letter-spacing: 1px; font-weight: bold; font-family: monospace; font-size: 15px; border: 2px dashed #f59e0b; background: #fffbeb; color: #d97706; text-transform: uppercase;">
+            </div>`;
     }
     
     document.getElementById('reqModalBody').innerHTML = formHtml;
@@ -1663,7 +1668,7 @@ window.openReqForm = function(type) {
 };
 
 window.submitStaffRequest = async function() {
-    let payload = { type: window.currentReqType, staffName: localStorage.getItem('takodeal_staff_name'), status: "Pending", staffAcknowledged: false, timestamp: serverTimestamp() };
+    let payload = { type: window.currentReqType, staffName: localStorage.getItem('takodeal_staff_name'), status: "Pending", staffAcknowledged: false, timestamp: window.serverTimestamp() };
     let fileToUpload = null;
 
     if (payload.type === 'Leave') {
@@ -1676,10 +1681,17 @@ window.submitStaffRequest = async function() {
         payload.reason = document.getElementById('reqReason') ? document.getElementById('reqReason').value.trim() : '';
         if (!payload.amount || !payload.reason) return Swal.fire('Incomplete', 'Fill all required fields.', 'warning');
     } else if (payload.type === 'Staff Meal') {
-        payload.item = document.getElementById('reqItem') ? document.getElementById('reqItem').value.trim() : ''; 
-        payload.amount = parseFloat(document.getElementById('reqAmount').value); 
-        fileToUpload = document.getElementById('reqMealProof') ? document.getElementById('reqMealProof').files[0] : null;
-        if (!payload.item || !payload.amount || !fileToUpload) return Swal.fire('Incomplete', 'You must attach the receipt photo.', 'warning');
+        
+        // 🔥 THE NEW RECEIPT VERIFIER 🔥
+        let receiptCode = document.getElementById('reqMealReceiptCode') ? document.getElementById('reqMealReceiptCode').value.trim().toUpperCase() : '';
+        
+        if (!receiptCode) {
+            return Swal.fire('Required', '❌ Please enter the exact Receipt OR# from the POS.', 'warning');
+        }
+        
+        payload.item = "Meal Verification OR#: " + receiptCode; 
+        payload.receiptId = receiptCode; // Links this securely to the Cashier App transaction!
+        payload.amount = 0; // The Manager App will pull the real amount automatically!
     }
 
     // 🛡️ THE BULLETPROOF FIX: Deep clean undefined values before sending to Firebase!
@@ -1699,9 +1711,12 @@ window.submitStaffRequest = async function() {
             const snapshot = await uploadBytes(ref(storage, fileName), fileToUpload);
             cleanPayload.proofImageUrl = await getDownloadURL(snapshot.ref);
         }
-        await addDoc(collection(db, "staff_requests"), cleanPayload);
+        
+        await window.addDoc(window.collection(window.db, "staff_requests"), cleanPayload);
+        
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Submitted to HQ!', showConfirmButton: false, timer: 2000});
         document.getElementById('requestModal').style.display = 'none';
+        
     } catch(e) { 
         console.error(e); 
         Swal.fire('Error', 'Failed to send request.', 'error'); 
