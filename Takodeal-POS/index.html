@@ -3316,17 +3316,17 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         let standardPaymentArea = document.getElementById('standardPaymentArea');
         let nameBox = document.getElementById('finalCustomerName');
 
-        if (dType === 'staff_meal') {
+        if (dType === 'staff_meal' || dType === 'manager_meal') {
             valInput.value = ""; 
             valInput.placeholder = "Auto-Calculated";
             valInput.disabled = true; 
             valInput.style.background = '#f1f5f9';
-            reasonInput.value = "Staff Meal Salary Deduction";
+            reasonInput.value = dType === 'manager_meal' ? "Manager / Owner Meal" : "Staff Meal Salary Deduction";
             
             // 🛑 LOCKDOWN UI
             if (pinContainer) pinContainer.style.display = 'block';
-            if (standardPaymentArea) standardPaymentArea.style.display = 'none'; // Hides Numpad & Payment Methods
-            window.selectedPaymentMethod = "Salary Deduction"; // Force Payment Method to Deductions
+            if (standardPaymentArea) standardPaymentArea.style.display = 'none'; 
+            window.selectedPaymentMethod = "Salary Deduction"; 
             
             let pinBox = document.getElementById('checkoutStaffPin');
             if (pinBox) { pinBox.value = ''; pinBox.focus(); }
@@ -3342,7 +3342,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             valInput.placeholder = "0";
             valInput.disabled = false;
             valInput.style.background = 'white';
-            if (reasonInput.value === "Staff Meal Salary Deduction") reasonInput.value = "";
+            if (reasonInput.value === "Staff Meal Salary Deduction" || reasonInput.value === "Manager / Owner Meal") reasonInput.value = "";
             
             // 🟢 RESTORE UI
             if (pinContainer) pinContainer.style.display = 'none';
@@ -3420,34 +3420,34 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
     window.updateNumpadDisplay = function() { 
         let originalTotal = window.currentGrandTotal || 0;
-        
         let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
         let dVal = parseFloat(document.getElementById('checkoutDiscountValue') ? document.getElementById('checkoutDiscountValue').value : 0) || 0;
         
         let discountAmount = 0;
         
         // 🔥 THE BULLETPROOF SPLIT DISCOUNT ENGINE 🔥
-        if (dType === 'staff_meal') {
-            let staffTakoPct = window.masterPOSData && window.masterPOSData.settings && window.masterPOSData.settings.staffMealTakoPct !== undefined ? window.masterPOSData.settings.staffMealTakoPct : 20;
-            let staffOtherPct = window.masterPOSData && window.masterPOSData.settings && window.masterPOSData.settings.staffMealOtherPct !== undefined ? window.masterPOSData.settings.staffMealOtherPct : 10;
+        if (dType === 'staff_meal' || dType === 'manager_meal') {
+            let pctTako = 0; let pctOther = 0;
+            
+            if (dType === 'manager_meal') {
+                pctTako = window.masterPOSData && window.masterPOSData.settings && window.masterPOSData.settings.managerMealTakoPct !== undefined ? window.masterPOSData.settings.managerMealTakoPct : 100;
+                pctOther = window.masterPOSData && window.masterPOSData.settings && window.masterPOSData.settings.managerMealOtherPct !== undefined ? window.masterPOSData.settings.managerMealOtherPct : 100;
+            } else {
+                pctTako = window.masterPOSData && window.masterPOSData.settings && window.masterPOSData.settings.staffMealTakoPct !== undefined ? window.masterPOSData.settings.staffMealTakoPct : 20;
+                pctOther = window.masterPOSData && window.masterPOSData.settings && window.masterPOSData.settings.staffMealOtherPct !== undefined ? window.masterPOSData.settings.staffMealOtherPct : 10;
+            }
             
             window.cart.forEach(item => {
                 let itemName = (item.name || item.itemName || "").toLowerCase();
                 let cat = (item.category || "").toLowerCase();
                 
-                // Fallback: If cart item lacks category, check the master menu
                 if (!cat && window.masterPOSData && window.masterPOSData.items) {
-                    let menuItem = window.masterPOSData.items.find(i => 
-                        (i.name || "").toLowerCase() === itemName || 
-                        (i.realName || "").toLowerCase() === itemName
-                    );
+                    let menuItem = window.masterPOSData.items.find(i => (i.name || "").toLowerCase() === itemName || (i.realName || "").toLowerCase() === itemName);
                     if (menuItem) cat = (menuItem.category || "").toLowerCase();
                 }
                 
-                // Smart Detection: If the word "takoyaki" is in the category OR the item name itself!
                 let isTakoyaki = cat.includes("takoyaki") || itemName.includes("takoyaki");
-                
-                let pctToApply = isTakoyaki ? staffTakoPct : staffOtherPct;
+                let pctToApply = isTakoyaki ? pctTako : pctOther;
                 
                 discountAmount += (item.lineTotalFinal * (pctToApply / 100));
             });
@@ -3475,9 +3475,9 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             }
         }
 
-        // 🔥 STAFF MEAL CASH OVERRIDE
+        // 🔥 STAFF/MANAGER MEAL CASH OVERRIDE
         let received = parseFloat(window.amountReceivedStr) || 0; 
-        if (dType === 'staff_meal') {
+        if (dType === 'staff_meal' || dType === 'manager_meal') {
             received = window.finalCheckoutAmount; 
             document.getElementById('checkoutReceived').innerText = '₱' + received.toFixed(2) + ' (Deduction)';
         } else {
@@ -3523,11 +3523,11 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
       let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
       let staffIdentity = null;
 
-      // 🚨 STAFF MEAL SECURITY INTERCEPTOR 🚨
-      if (dType === 'staff_meal') {
+      // 🚨 STAFF & MANAGER MEAL SECURITY INTERCEPTOR 🚨
+      if (dType === 'staff_meal' || dType === 'manager_meal') {
           let pinInput = document.getElementById('checkoutStaffPin').value;
           if (!pinInput) {
-              alert("🚨 Please enter your Security PIN to authorize this salary deduction.");
+              alert("🚨 Please enter your Security PIN to authorize this transaction.");
               btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
           }
           
@@ -3535,12 +3535,22 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
           staffIdentity = await window.verifyPin(pinInput);
           
           if (!staffIdentity || staffIdentity === "BLOCKED") {
-              alert("❌ Invalid PIN. Deduction unauthorized.");
+              alert("❌ Invalid PIN. Transaction unauthorized.");
               btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
+          }
+
+          // 🛡️ ROLE SECURITY LOCK: Prevent Staff from using Manager Discounts!
+          if (dType === 'manager_meal') {
+              let userRole = (staffIdentity.role || "").toLowerCase();
+              if (!userRole.includes('owner') && !userRole.includes('manager') && !userRole.includes('franchisee')) {
+                  alert("❌ UNAUTHORIZED: Your PIN does not have Manager or Owner privileges. Please select 'Staff Meal' instead.");
+                  btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
+              }
           }
           
           window.selectedPaymentMethod = "Salary Deduction";
-          document.getElementById('finalCustomerName').value = staffIdentity.cashierName + " (Staff)";
+          let nameSuffix = dType === 'manager_meal' ? " (Manager)" : " (Staff)";
+          document.getElementById('finalCustomerName').value = staffIdentity.cashierName + nameSuffix;
       }
 
       let custName = document.getElementById('finalCustomerName').value.trim();
