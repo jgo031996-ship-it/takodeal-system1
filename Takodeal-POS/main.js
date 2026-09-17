@@ -457,7 +457,10 @@ window.loadPOSData = async function() {
                 let configData = configSnap.data();
                 window.masterPOSData.settings = {
                     orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery", "Grab"],
-                    payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"]
+                    payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"],
+                    // 🔥 FETCH THE SPLIT PERCENTAGES!
+                    staffMealTakoPct: configData.staffMealTakoPct !== undefined ? configData.staffMealTakoPct : 20,
+                    staffMealOtherPct: configData.staffMealOtherPct !== undefined ? configData.staffMealOtherPct : 10
                 };
                 localStorage.setItem('takodeal_cached_settings', JSON.stringify(window.masterPOSData.settings));
             }
