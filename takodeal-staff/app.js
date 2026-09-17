@@ -1,7 +1,7 @@
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 // 🔥 UPGRADE: Imported the Offline Cache Engines!
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot, enableNetwork, disableNetwork } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
   
 const firebaseConfig = {
