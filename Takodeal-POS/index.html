@@ -3426,18 +3426,28 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         
         let discountAmount = 0;
         
-        // 🔥 THE NEW SPLIT DISCOUNT ENGINE 🔥
+        // 🔥 THE BULLETPROOF SPLIT DISCOUNT ENGINE 🔥
         if (dType === 'staff_meal') {
-            let staffTakoPct = window.masterPOSData.settings.staffMealTakoPct !== undefined ? window.masterPOSData.settings.staffMealTakoPct : 20;
-            let staffOtherPct = window.masterPOSData.settings.staffMealOtherPct !== undefined ? window.masterPOSData.settings.staffMealOtherPct : 10;
+            let staffTakoPct = window.masterPOSData && window.masterPOSData.settings && window.masterPOSData.settings.staffMealTakoPct !== undefined ? window.masterPOSData.settings.staffMealTakoPct : 20;
+            let staffOtherPct = window.masterPOSData && window.masterPOSData.settings && window.masterPOSData.settings.staffMealOtherPct !== undefined ? window.masterPOSData.settings.staffMealOtherPct : 10;
             
             window.cart.forEach(item => {
-                // Search the Master Menu memory to find this item's category
-                let menuItem = window.masterPOSData.items.find(i => i.name === item.name || i.realName === item.name);
-                let cat = menuItem ? (menuItem.category || "").toLowerCase() : "";
+                let itemName = (item.name || item.itemName || "").toLowerCase();
+                let cat = (item.category || "").toLowerCase();
                 
-                // Apply 20% to Takoyaki, 10% to everything else!
-                let pctToApply = cat.includes("takoyaki") ? staffTakoPct : staffOtherPct;
+                // Fallback: If cart item lacks category, check the master menu
+                if (!cat && window.masterPOSData && window.masterPOSData.items) {
+                    let menuItem = window.masterPOSData.items.find(i => 
+                        (i.name || "").toLowerCase() === itemName || 
+                        (i.realName || "").toLowerCase() === itemName
+                    );
+                    if (menuItem) cat = (menuItem.category || "").toLowerCase();
+                }
+                
+                // Smart Detection: If the word "takoyaki" is in the category OR the item name itself!
+                let isTakoyaki = cat.includes("takoyaki") || itemName.includes("takoyaki");
+                
+                let pctToApply = isTakoyaki ? staffTakoPct : staffOtherPct;
                 
                 discountAmount += (item.lineTotalFinal * (pctToApply / 100));
             });
