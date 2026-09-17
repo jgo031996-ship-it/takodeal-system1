@@ -1672,10 +1672,11 @@
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
                 <div>
                     <label style="font-size: 11px; font-weight: bold; color: #64748b;">Discount Type</label>
-                    <select id="checkoutDiscountType" class="input-box" style="width: 100%; box-sizing: border-box; padding: 10px;" onchange="window.updateNumpadDisplay()">
+                    <select id="checkoutDiscountType" class="input-box" style="width: 100%; box-sizing: border-box; padding: 10px;" onchange="window.handleDiscountTypeChange()">
                         <option value="none">No Discount</option>
                         <option value="percentage">Percentage (%)</option>
                         <option value="fixed">Fixed Amount (₱)</option>
+                        <option value="staff_meal">🍔 Staff Meal Deduction</option>
                     </select>
                 </div>
                 <div>
@@ -1687,6 +1688,13 @@
             <div>
                 <label style="font-size: 11px; font-weight: bold; color: #64748b;">Discount Reason / ID Number</label>
                 <input type="text" id="checkoutDiscountReason" class="input-box" placeholder="e.g., Senior Citizen ID, Promo Code" style="width: 100%; box-sizing: border-box; padding: 10px;">
+            </div>
+
+            <!-- 🔥 THE SECURE STAFF PIN BOX -->
+            <div id="checkoutStaffPinContainer" style="display: none; margin-top: 15px; border-top: 1px dashed #cbd5e1; padding-top: 15px;">
+                <label style="font-size: 11px; font-weight: 900; color: #dc2626; text-transform: uppercase;">Security Authorization *</label>
+                <input type="password" id="checkoutStaffPin" class="input-box" placeholder="Enter Staff PIN" style="width: 100%; box-sizing: border-box; padding: 12px; border: 2px solid #fca5a5; background: #fef2f2; color: #b91c1c; text-align: center; letter-spacing: 5px; font-weight: 900; font-size: 16px;">
+                <div style="font-size: 10px; color: #ef4444; font-weight: bold; text-align: center; margin-top: 5px;">A PIN is required to authorize this salary deduction.</div>
             </div>
 
             <div style="margin-top: 10px; font-size: 14px; font-weight: bold; color: #dc2626; text-align: right; display: none;" id="checkoutDiscountPreviewRow">
