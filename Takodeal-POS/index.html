@@ -1690,10 +1690,10 @@
                 <input type="text" id="checkoutDiscountReason" class="input-box" placeholder="e.g., Senior Citizen ID, Promo Code" style="width: 100%; box-sizing: border-box; padding: 10px;">
             </div>
 
-            <!-- 🔥 THE SECURE STAFF PIN BOX -->
+            <!-- 🔥 THE SECURE STAFF PIN BOX (WITH LIVE AUTO-FILL) -->
             <div id="checkoutStaffPinContainer" style="display: none; margin-top: 15px; border-top: 1px dashed #cbd5e1; padding-top: 15px;">
                 <label style="font-size: 11px; font-weight: 900; color: #dc2626; text-transform: uppercase;">Security Authorization *</label>
-                <input type="password" id="checkoutStaffPin" class="input-box" placeholder="Enter Staff PIN" style="width: 100%; box-sizing: border-box; padding: 12px; border: 2px solid #fca5a5; background: #fef2f2; color: #b91c1c; text-align: center; letter-spacing: 5px; font-weight: 900; font-size: 16px;">
+                <input type="password" id="checkoutStaffPin" inputmode="numeric" oninput="window.verifyStaffMealPin()" class="input-box" placeholder="Enter Staff PIN" style="width: 100%; box-sizing: border-box; padding: 12px; border: 2px solid #fca5a5; background: #fef2f2; color: #b91c1c; text-align: center; letter-spacing: 5px; font-weight: 900; font-size: 16px;">
                 <div style="font-size: 10px; color: #ef4444; font-weight: bold; text-align: center; margin-top: 5px;">A PIN is required to authorize this salary deduction.</div>
             </div>
 
@@ -3313,22 +3313,109 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         let valInput = document.getElementById('checkoutDiscountValue');
         let reasonInput = document.getElementById('checkoutDiscountReason');
         let pinContainer = document.getElementById('checkoutStaffPinContainer');
+        let standardPaymentArea = document.getElementById('standardPaymentArea');
+        let nameBox = document.getElementById('finalCustomerName');
 
         if (dType === 'staff_meal') {
-            valInput.value = ""; // Clear it so it looks clean
+            valInput.value = ""; 
             valInput.placeholder = "Auto-Calculated";
             valInput.disabled = true; 
             valInput.style.background = '#f1f5f9';
             reasonInput.value = "Staff Meal Salary Deduction";
+            
+            // 🛑 LOCKDOWN UI
             if (pinContainer) pinContainer.style.display = 'block';
+            if (standardPaymentArea) standardPaymentArea.style.display = 'none'; // Hides Numpad & Payment Methods
+            window.selectedPaymentMethod = "Salary Deduction"; // Force Payment Method to Deductions
+            
+            let pinBox = document.getElementById('checkoutStaffPin');
+            if (pinBox) { pinBox.value = ''; pinBox.focus(); }
+            
+            // 🛑 LOCK CUSTOMER NAME BOX
+            if (nameBox) {
+                nameBox.value = ""; 
+                nameBox.readOnly = true;
+                nameBox.placeholder = "Awaiting PIN Verification...";
+                nameBox.style.backgroundColor = "#f8fafc";
+            }
         } else {
             valInput.placeholder = "0";
             valInput.disabled = false;
             valInput.style.background = 'white';
             if (reasonInput.value === "Staff Meal Salary Deduction") reasonInput.value = "";
+            
+            // 🟢 RESTORE UI
             if (pinContainer) pinContainer.style.display = 'none';
+            if (standardPaymentArea) {
+                if (window.posPlatform === 'Grab' || window.posPlatform === 'Foodpanda') {
+                    standardPaymentArea.style.display = 'none';
+                } else {
+                    standardPaymentArea.style.display = 'block';
+                }
+            }
+            window.selectedPaymentMethod = "Cash"; 
+            
+            // 🟢 UNLOCK CUSTOMER NAME BOX
+            if (nameBox) {
+                nameBox.value = "";
+                nameBox.readOnly = false;
+                nameBox.placeholder = "Customer Name (Optional)";
+                nameBox.style.backgroundColor = "white";
+                nameBox.style.borderColor = "#cbd5e1";
+                nameBox.style.color = "#334155";
+            }
         }
         window.updateNumpadDisplay();
+    };
+
+    // 🔥 THE LIVE PIN AUTO-FILL ENGINE 🔥
+    window.verifyStaffMealPin = async function() {
+        let pinInput = document.getElementById('checkoutStaffPin').value;
+        let nameBox = document.getElementById('finalCustomerName');
+        
+        if (!nameBox) return;
+
+        // Only trigger the database search if they typed at least 4 digits
+        if (pinInput.length >= 4) {
+            let staffData = null;
+            
+            // Silent background lookup
+            const qStr = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pinInput));
+            const snapStr = await window.getDocs(qStr);
+
+            if (!snapStr.empty) {
+                staffData = snapStr.docs[0].data();
+            } else {
+                let pinNum = parseInt(pinInput);
+                if (!isNaN(pinNum)) {
+                    const qNum = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pinNum));
+                    const snapNum = await window.getDocs(qNum);
+                    if (!snapNum.empty) staffData = snapNum.docs[0].data();
+                }
+            }
+
+            if (staffData) {
+                // Identity Confirmed! Flash the box green and auto-fill!
+                nameBox.value = staffData.cashierName + " (Staff)";
+                nameBox.style.backgroundColor = "#dcfce7"; // Success Green
+                nameBox.style.borderColor = "#16a34a";
+                nameBox.style.color = "#15803d";
+                nameBox.style.fontWeight = "900";
+            } else {
+                // Invalid PIN! Flash the box red!
+                nameBox.value = "❌ Invalid PIN";
+                nameBox.style.backgroundColor = "#fef2f2"; // Danger Red
+                nameBox.style.borderColor = "#dc2626";
+                nameBox.style.color = "#b91c1c";
+            }
+        } else {
+            // Typing in progress... clear the box
+            nameBox.value = "";
+            nameBox.placeholder = "Awaiting PIN Verification...";
+            nameBox.style.backgroundColor = "#f8fafc";
+            nameBox.style.borderColor = "#cbd5e1";
+            nameBox.style.color = "#334155";
+        }
     };
 
     window.updateNumpadDisplay = function() { 
