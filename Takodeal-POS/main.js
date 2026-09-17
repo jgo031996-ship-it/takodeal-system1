@@ -460,7 +460,10 @@ window.loadPOSData = async function() {
                     payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"],
                     // 🔥 FETCH THE SPLIT PERCENTAGES!
                     staffMealTakoPct: configData.staffMealTakoPct !== undefined ? configData.staffMealTakoPct : 20,
-                    staffMealOtherPct: configData.staffMealOtherPct !== undefined ? configData.staffMealOtherPct : 10
+                    staffMealOtherPct: configData.staffMealOtherPct !== undefined ? configData.staffMealOtherPct : 10,
+                    // 🔥 THE NEW MANAGER VARIABLES
+                    managerMealTakoPct: configData.managerMealTakoPct !== undefined ? configData.managerMealTakoPct : 100,
+                    managerMealOtherPct: configData.managerMealOtherPct !== undefined ? configData.managerMealOtherPct : 100
                 };
                 localStorage.setItem('takodeal_cached_settings', JSON.stringify(window.masterPOSData.settings));
             }
