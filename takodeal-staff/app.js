@@ -4195,3 +4195,61 @@ document.addEventListener("visibilitychange", async () => {
         } catch(e) { console.warn("Failed to wake network:", e); }
     }
 });
+
+// ==========================================
+// 🔄 FORCE UPDATE & CACHE CLEARING ENGINE
+// ==========================================
+window.forceUpdateApp = async function() {
+    Swal.fire({
+        title: 'Force App Update?',
+        text: 'This will clear old system caches and fetch the latest version from HQ. You will not lose your device registration.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#0f766e',
+        confirmButtonText: 'Yes, Update Now'
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            Swal.fire({title: 'Updating System...', text: 'Please wait...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+            
+            try {
+                // 1. Destroy old Service Workers (The main culprit for stuck web apps)
+                if ('serviceWorker' in navigator) {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (let registration of registrations) {
+                        await registration.unregister();
+                    }
+                }
+
+                // 2. Clear standard browser caches
+                if ('caches' in window) {
+                    const cacheNames = await caches.keys();
+                    for (let name of cacheNames) {
+                        await caches.delete(name);
+                    }
+                }
+
+                // 3. 🛡️ THE SHIELD: Save the critical IDs before wiping local memory!
+                let safeDeviceId = localStorage.getItem('takodeal_device_id');
+                let safeStaffName = localStorage.getItem('takodeal_staff_name');
+                let safeStaffId = localStorage.getItem('takodeal_staff_id');
+                let safeStaffPic = localStorage.getItem('takodeal_staff_pic');
+                
+                // Wipe the corrupted/old local storage
+                localStorage.clear();
+                
+                // Restore the protected variables back into the phone
+                if (safeDeviceId) localStorage.setItem('takodeal_device_id', safeDeviceId);
+                if (safeStaffName) localStorage.setItem('takodeal_staff_name', safeStaffName);
+                if (safeStaffId) localStorage.setItem('takodeal_staff_id', safeStaffId);
+                if (safeStaffPic) localStorage.setItem('takodeal_staff_pic', safeStaffPic);
+
+                // 4. Force a hard reload from the live server by attaching a unique timestamp
+                window.location.href = window.location.href.split('?')[0] + '?update=' + new Date().getTime();
+                
+            } catch(e) {
+                console.error("Update failed:", e);
+                window.location.reload(true); // Fallback standard reload
+            }
+        }
+    });
+};
