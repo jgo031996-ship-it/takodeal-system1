@@ -66,6 +66,32 @@ window.updateDoc = updateDoc;
 window.getDoc = getDoc;
 window.setDoc = setDoc;
 
+// =======================================================
+// 🧠 TAKODEAL GLOBAL CACHE ENGINE (COST SAVER)
+// =======================================================
+window.TK_CACHE = {
+    inventory: null,
+    lastInventory: 0,
+    ttl: 60 * 1000 // 60-second memory. Stops rapid-tab-switching reads!
+};
+
+window.fetchCachedInventory = async function(branch) {
+    let now = Date.now();
+    if (window.TK_CACHE.inventory && (now - window.TK_CACHE.lastInventory < window.TK_CACHE.ttl)) {
+        console.log(`📦 Loaded INVENTORY from RAM (0 Firebase Reads)`);
+        return window.TK_CACHE.inventory;
+    }
+
+    console.log(`☁️ Fetching INVENTORY from Firebase...`);
+    const snap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch)));
+    let data = [];
+    snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
+    
+    window.TK_CACHE.inventory = data;
+    window.TK_CACHE.lastInventory = now;
+    return data;
+};
+
 // 🔥 THE MISSING FIREBASE BRIDGE 🔥
 window.addDoc = addDoc;
 window.serverTimestamp = serverTimestamp;
@@ -1495,9 +1521,8 @@ window.processPettyCashExpense = async function (payload) {
 // --- INVENTORY & STOCK COUNT ENGINE ---
 window.getInventoryForCount = async function (branch) {
   try {
-    const q = query(collection(db, "inventory"), where("branch", "==", branch));
-    const snap = await getDocs(q);
-    return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // 🔥 ZERO-COST CACHE
+    return await window.fetchCachedInventory(branch);
   } catch (e) {
     console.error("Inventory Fetch Error:", e);
     return [];
@@ -5187,15 +5212,8 @@ window.loadWasteItems = async function() {
 
     window.wasteInventoryCache = [];
     try {
-        const q = query(collection(db, "inventory"), where("branch", "==", branch));
-        const snap = await getDocs(q);
-        
-        let items = [];
-        snap.forEach(doc => {
-            let data = doc.data();
-            data.id = doc.id;
-            items.push(data);
-        });
+        // 🔥 ZERO-COST CACHE
+        let items = await window.fetchCachedInventory(branch);
         
         // Sort alphabetically so the search works smoothly
         items.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
@@ -7564,15 +7582,15 @@ window.loadConsumablesView = async function() {
         }
 
         let branch = localStorage.getItem('takodeal_device_branch');
-        const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch));
-        const snap = await window.getDocs(q);
+        
+        // 🔥 ZERO-COST CACHE (Replaced getDocs query)
+        let cachedItems = await window.fetchCachedInventory(branch);
 
         let items = [];
-        snap.forEach(doc => {
-            let d = doc.data();
+        cachedItems.forEach(d => {
             let cat = (d.category || "").trim().toLowerCase();
             if (window.consumableCategories.includes(cat)) {
-                items.push({ id: doc.id, ...d });
+                items.push(d);
             }
         });
 
