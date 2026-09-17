@@ -995,8 +995,9 @@ window.loadAnnouncements = async function() {
     if (!cashierName) return;
 
     try {
-        // 🔥 ZERO-COST CACHE: Replaces the 'getDocs' query!
-        const announcementsArray = await window.fetchCachedAnnouncements();
+        // 🔥 Restored the standard query. The Firebase Fleet Engine handles offline caching automatically!
+        const q = query(collection(db, "announcements"), where("active", "==", true));
+        const snap = await getDocs(q);
 
         const ackQ = query(collection(db, "acknowledgments"), where("staffName", "==", cashierName));
         const ackSnap = await getDocs(ackQ);
@@ -1004,6 +1005,7 @@ window.loadAnnouncements = async function() {
         let signatures = {};
         ackSnap.forEach(doc => { let d = doc.data(); signatures[d.announcementId] = d; });
 
+        // 🔥 Fixed the crash: Variable declared only ONCE, and 'snap' is now defined!
         let announcementsArray = [];
         snap.forEach(docSnap => announcementsArray.push({id: docSnap.id, ...docSnap.data()}));
         announcementsArray.sort((a,b) => b.timestamp - a.timestamp); 
@@ -1025,9 +1027,9 @@ window.loadAnnouncements = async function() {
             let safeData = {
                 id: ann.id,
                 title: ann.title || 'Announcement',
-                subHeadline: ann.subHeadline || '', // 🔥 Fetch new field
+                subHeadline: ann.subHeadline || '',
                 message: ann.message || '',
-                footerMessage: ann.footerMessage || '', // 🔥 Fetch new field
+                footerMessage: ann.footerMessage || '', 
                 images: ann.images || [],
                 dateStr: dateStr,
                 hasSignature: !!sigData,
