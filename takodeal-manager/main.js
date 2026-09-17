@@ -15936,8 +15936,9 @@ window.loadPosConfigHub = async function() {
             // Customer App categories
             if(document.getElementById('configHomeCats')) document.getElementById('configHomeCats').value = (data.customerHomeCategories || ["Takoyaki", "Milk Tea", "Iced Coffee"]).join(', ');
             
-            // 🔥 NEW: Load the Staff Meal Discount %
-            if(document.getElementById('cfgStaffMealPct')) document.getElementById('cfgStaffMealPct').value = data.staffMealDiscountPct !== undefined ? data.staffMealDiscountPct : 20;
+            // 🔥 NEW: Load the Split Staff Meal Discount %
+            if(document.getElementById('cfgStaffMealTakoPct')) document.getElementById('cfgStaffMealTakoPct').value = data.staffMealTakoPct !== undefined ? data.staffMealTakoPct : 20;
+            if(document.getElementById('cfgStaffMealOtherPct')) document.getElementById('cfgStaffMealOtherPct').value = data.staffMealOtherPct !== undefined ? data.staffMealOtherPct : 10;
             
         } else {
             // Load Defaults if nothing exists yet
@@ -16016,27 +16017,32 @@ window.saveSinglePosConfig = function(dbFieldKey, inputId, btnElement) {
 };
 
 // ========================================================
-// ⚙️ STAFF MEAL DISCOUNT SAVER
+// ⚙️ STAFF MEAL DISCOUNT SAVER (SPLIT PERCENTAGES)
 // ========================================================
 window.saveStaffMealDiscount = function(btnElement) {
-    let inputEl = document.getElementById('cfgStaffMealPct');
-    if (!inputEl) return;
+    let takoInput = document.getElementById('cfgStaffMealTakoPct');
+    let otherInput = document.getElementById('cfgStaffMealOtherPct');
+    if (!takoInput || !otherInput) return;
 
-    let val = parseFloat(inputEl.value);
-    if (isNaN(val) || val < 0 || val > 100) {
-        return Swal.fire('Invalid Input', 'Please enter a valid percentage between 0 and 100.', 'warning');
+    let takoVal = parseFloat(takoInput.value);
+    let otherVal = parseFloat(otherInput.value);
+    
+    if (isNaN(takoVal) || takoVal < 0 || takoVal > 100 || isNaN(otherVal) || otherVal < 0 || otherVal > 100) {
+        return Swal.fire('Invalid Input', 'Please enter valid percentages between 0 and 100.', 'warning');
     }
 
     let origText = btnElement.innerText;
     btnElement.innerText = "⏳...";
     btnElement.disabled = true;
 
-    // Save as a NUMBER, not an array!
-    window.setDoc(window.doc(window.db, "settings", "global_pos_config"), { staffMealDiscountPct: val }, { merge: true })
+    window.setDoc(window.doc(window.db, "settings", "global_pos_config"), { 
+        staffMealTakoPct: takoVal,
+        staffMealOtherPct: otherVal
+    }, { merge: true })
         .then(() => {
             Swal.fire({
                 toast: true, position: 'top-end', icon: 'success',
-                title: '✅ Discount Saved!',
+                title: '✅ Discounts Saved!',
                 showConfirmButton: false, timer: 2500,
                 customClass: { popup: 'rounded-xl shadow-lg border border-gray-100' }
             });
