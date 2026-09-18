@@ -1,6 +1,26 @@
 // --- ACCESS CONTROL ENGINE (FRANCHISE PROFILES) ---
 const MASTER_EMAIL = "jgo031996@gmail.com";
 
+// --- RESTORED HELPERS ---
+window.formatMoney = (amount) => '₱' + parseFloat(amount || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const formatMoney = window.formatMoney;
+
+window.promptMobileInstall = function() {
+    const isIos = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+    if (isIos) {
+        Swal.fire({
+            title: '📱 Install on iPhone',
+            html: '<div style="text-align: left; font-size: 15px; color: #334155;">To run TAKODEÁL in Full-Screen Ultra Mode without browser bars:<br><br><b>1.</b> Tap the Safari <b>Share</b> icon at the bottom of your screen (the square with an arrow pointing up).<br><br><b>2.</b> Scroll down and tap <b>Add to Home Screen</b> ➕.</div>',
+            icon: 'info',
+            confirmButtonText: 'Got it!',
+            confirmButtonColor: '#0ea5e9',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
+    } else {
+        Swal.fire('📱 Android / PC Install', 'Tap the 3-dot menu (⋮) in the top right of your Chrome browser and select "Install App" or "Add to Home screen".', 'info');
+    }
+};
+
 window.loadAdminDashboard = async function() {
   const tbody = document.getElementById('adminTableBody');
   if (!tbody) return;
