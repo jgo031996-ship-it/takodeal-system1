@@ -20362,14 +20362,61 @@ window.copyAIPrompt = function() {
     Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Copied! Paste into Google Gemini.', showConfirmButton: false, timer: 2000});
 };
 
-// --- PUBLISH TO TABLETS ---
+// 🔥 1. UI TOGGLER: dynamically loads staff or branches when selected
+window.toggleAnnounceTargetFields = async function() {
+    let type = document.getElementById('announceTargetType').value;
+    let branchSelect = document.getElementById('announceTargetBranch');
+    let staffSelect = document.getElementById('announceTargetStaff');
+    
+    if (type === 'All') {
+        branchSelect.style.display = 'none';
+        staffSelect.style.display = 'none';
+    } else if (type === 'Branch') {
+        branchSelect.style.display = 'block';
+        staffSelect.style.display = 'none';
+        // Auto-populate branches
+        if (branchSelect.options.length <= 1 && window.globalActiveBranches) {
+            let html = '<option value="">-- Select Branch --</option>';
+            window.globalActiveBranches.forEach(b => html += `<option value="${b}">${b}</option>`);
+            branchSelect.innerHTML = html;
+        }
+    } else if (type === 'Individual') {
+        branchSelect.style.display = 'none';
+        staffSelect.style.display = 'block';
+        // Auto-populate active staff
+        if (staffSelect.options.length <= 1) {
+            staffSelect.innerHTML = '<option value="">Loading staff...</option>';
+            try {
+                const snap = await window.getDocs(window.collection(window.db, "cashiers"));
+                let html = '<option value="">-- Select Staff Member --</option>';
+                let staffList = [];
+                snap.forEach(doc => {
+                    let d = doc.data();
+                    if (d.status !== 'Resigned' && d.pin !== 'REVOKED') {
+                        staffList.push(d.cashierName);
+                    }
+                });
+                staffList.sort().forEach(name => html += `<option value="${name}">${name}</option>`);
+                staffSelect.innerHTML = html;
+            } catch(e) { console.error(e); }
+        }
+    }
+};
+
+// 🔥 2. PUBLISHER: Saves the routing target to Firebase
 window.publishAnnouncement = async function() {
     let title = document.getElementById('announceTitle').value.trim();
-    // 🔥 Grab the new fields (with safety fallbacks if you haven't added the HTML yet)
     let subHeadline = document.getElementById('announceSubHeadline') ? document.getElementById('announceSubHeadline').value.trim() : '';
     let message = document.getElementById('announceMessage').value.trim();
     let footerMessage = document.getElementById('announceFooter') ? document.getElementById('announceFooter').value.trim() : '';
     
+    let targetType = document.getElementById('announceTargetType') ? document.getElementById('announceTargetType').value : 'All';
+    let targetBranch = document.getElementById('announceTargetBranch') ? document.getElementById('announceTargetBranch').value : '';
+    let targetStaff = document.getElementById('announceTargetStaff') ? document.getElementById('announceTargetStaff').value : '';
+    
+    if (targetType === 'Branch' && !targetBranch) return Swal.fire('Missing Target', 'Please select a specific branch.', 'warning');
+    if (targetType === 'Individual' && !targetStaff) return Swal.fire('Missing Target', 'Please select a specific staff member.', 'warning');
+
     let fileInput = document.getElementById('announceImages');
 
     if (!title) return Swal.fire('Error', 'Title is required', 'error');
@@ -20384,26 +20431,28 @@ window.publishAnnouncement = async function() {
         for (let file of fileInput.files) {
             const fileExt = file.name.split('.').pop();
             const fileName = `announcements/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-            const storageRef = ref(db.app.options.storageBucket ? getStorage(db.app) : window.storage, fileName);
-            const snapshot = await uploadBytes(storageRef, file);
-            const url = await getDownloadURL(snapshot.ref);
+            const storageRef = window.ref(window.storage, fileName);
+            const snapshot = await window.uploadBytes(storageRef, file);
+            const url = await window.getDownloadURL(snapshot.ref);
             imageUrls.push(url);
         }
 
-        await addDoc(collection(db, "announcements"), {
+        await window.addDoc(window.collection(window.db, "announcements"), {
             title: title,
-            subHeadline: subHeadline, // 🔥 Save to Cloud
+            subHeadline: subHeadline,
             message: message, 
-            footerMessage: footerMessage, // 🔥 Save to Cloud
+            footerMessage: footerMessage,
             images: imageUrls,
             active: true,
-            timestamp: serverTimestamp(),
+            targetType: targetType,          // Routes to 'All', 'Branch', or 'Individual'
+            targetBranch: targetType === 'Branch' ? targetBranch : null,
+            targetStaff: targetType === 'Individual' ? targetStaff : null,
+            timestamp: window.serverTimestamp(),
             publisher: window.sessionUser ? window.sessionUser.cashierName : 'Owner'
         });
 
-        Swal.fire({title: '🚀 Deployed!', text: 'Announcement blasted to all branches!', icon: 'success', customClass: { popup: 'rounded-2xl' }});
+        Swal.fire({title: '🚀 Deployed!', text: 'Announcement routed and blasted successfully!', icon: 'success', customClass: { popup: 'rounded-2xl' }});
         
-        // Clear the boxes
         document.getElementById('announceTitle').value = '';
         if (document.getElementById('announceSubHeadline')) document.getElementById('announceSubHeadline').value = '';
         document.getElementById('announceMessage').value = '';
@@ -20420,6 +20469,7 @@ window.publishAnnouncement = async function() {
     }
 };
 
+// 🔥 3. HISTORY TABLE: Shows visual badges for who the notice was sent to
 window.loadAnnouncementHistory = async function() {
     const tbody = document.getElementById('announcementHistoryBody');
     if (!tbody) return;
@@ -20427,11 +20477,10 @@ window.loadAnnouncementHistory = async function() {
     tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 40px; color: #94a3b8; font-weight: bold;">⏳ Loading logs...</td></tr>';
 
     try {
-        const q = query(collection(db, "announcements"), orderBy("timestamp", "desc"));
-        const snap = await getDocs(q);
+        const q = window.query(window.collection(window.db, "announcements"), window.orderBy("timestamp", "desc"));
+        const snap = await window.getDocs(q);
         
-        // Fetch all signatures at once for speed
-        const ackSnap = await getDocs(collection(db, "acknowledgments"));
+        const ackSnap = await window.getDocs(window.collection(window.db, "acknowledgments"));
         let acksByAnn = {};
         
         ackSnap.forEach(doc => {
@@ -20443,22 +20492,25 @@ window.loadAnnouncementHistory = async function() {
         let html = '';
         for (let docSnap of snap.docs) {
             let d = docSnap.data();
-            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : 'Just now';
+            let dateStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'}) : new Date(d.timestamp).toLocaleDateString()) : 'Just now';
             
             let isActive = d.active === true;
             let status = isActive 
                 ? '<div style="color:#16a34a; font-weight:900; background:#dcfce7; padding:6px; border-radius:6px; font-size:11px; text-align:center; border: 1px solid #bbf7d0; display: inline-block;">Active<br>(Forced)</div>' 
                 : '<div style="color:#64748b; font-weight:900; background:#f1f5f9; padding:6px; border-radius:6px; font-size:11px; text-align:center; border: 1px solid #cbd5e1; display: inline-block;">Archived</div>';
             
+            // Generate visual badges based on the routing metadata
+            let targetDisplay = `<span style="background: #e0e7ff; color: #4338ca; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-top: 4px; display: inline-block;">🌐 All Staff</span>`;
+            if (d.targetType === 'Branch') targetDisplay = `<span style="background: #e0f2fe; color: #0284c7; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-top: 4px; display: inline-block;">🏢 Branch: ${d.targetBranch}</span>`;
+            if (d.targetType === 'Individual') targetDisplay = `<span style="background: #f5f3ff; color: #7c3aed; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-top: 4px; display: inline-block;">👤 Staff: ${d.targetStaff}</span>`;
+
             let signatures = acksByAnn[docSnap.id] || [];
             let sigCount = signatures.length;
-            
             let signedNames = signatures.map(s => s.staffName);
             let namesDisplay = signedNames.length > 0 
                 ? `<div style="font-size: 11px; color: #4338ca; margin-top: 8px; line-height: 1.5; max-width: 450px; margin-left: auto; font-weight: 500;"><b>Signed by:</b> ${signedNames.join(', ')}</div>`
                 : `<div style="font-size: 11px; color: #dc2626; margin-top: 8px; font-weight: bold;">No signatures yet</div>`;
 
-            // 🧠 PREPARE DATA FOR THE CLICKABLE POPUP MODAL
             let sigDataForModal = signatures.map(s => ({
                 name: s.staffName,
                 date: s.timestamp ? (s.timestamp.toDate ? s.timestamp.toDate().toLocaleString('en-US', {month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'}) : new Date(s.timestamp).toLocaleString()) : 'Unknown Date'
@@ -20472,11 +20524,13 @@ window.loadAnnouncementHistory = async function() {
                 signatures: sigDataForModal
             }));
 
-            // 🔥 THE FIX: The TR has onclick to open details. The Button has event.stopPropagation() so it doesn't trigger the TR!
             html += `
                 <tr style="border-bottom: 1px solid #e2e8f0; cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'" onclick="window.viewBulletinDetails('${modalData}')">
                     <td style="padding: 20px 15px; color: #475569; font-size: 13px; font-weight: bold; vertical-align: top;">${dateStr}</td>
-                    <td style="padding: 20px 15px; font-weight: 900; color: #1e293b; font-size: 15px; vertical-align: top;">${d.title}</td>
+                    <td style="padding: 20px 15px; font-weight: 900; color: #1e293b; font-size: 15px; vertical-align: top;">
+                        ${d.title}<br>
+                        ${targetDisplay}
+                    </td>
                     <td style="padding: 20px 15px; vertical-align: top;">${status}</td>
                     <td style="padding: 20px 15px; text-align: right; vertical-align: top;">
                         <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
