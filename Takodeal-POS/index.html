@@ -3281,14 +3281,28 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         if(document.getElementById('checkoutDiscountReason')) document.getElementById('checkoutDiscountReason').value = '';
     };
     function openCheckoutModal() { window.openCheckoutModal(); }
-    function appendNumpad(num) { if (amountReceivedStr === "0" && num !== ".") amountReceivedStr = num; else if (num === "." && amountReceivedStr.includes(".")) return; else amountReceivedStr += num; updateNumpadDisplay(); }
-    function clearNumpadOne() { amountReceivedStr = amountReceivedStr.length > 1 ? amountReceivedStr.slice(0, -1) : "0"; updateNumpadDisplay(); }
-    function clearNumpadAll() { amountReceivedStr = "0"; updateNumpadDisplay(); }
-    function setExactAmount() { 
-        let total = window.currentGrandTotal || 0; // 🔥 CRASH FIX: Safe fallback to 0!
-        amountReceivedStr = total.toString(); 
-        updateNumpadDisplay(); 
-    }
+    window.appendNumpad = function(num) { 
+        if (window.amountReceivedStr === "0" && num !== ".") window.amountReceivedStr = num; 
+        else if (num === "." && window.amountReceivedStr.includes(".")) return; 
+        else window.amountReceivedStr += num; 
+        window.updateNumpadDisplay(); 
+    };
+
+    window.clearNumpadOne = function() { 
+        window.amountReceivedStr = window.amountReceivedStr.length > 1 ? window.amountReceivedStr.slice(0, -1) : "0"; 
+        window.updateNumpadDisplay(); 
+    };
+
+    window.clearNumpadAll = function() { 
+        window.amountReceivedStr = "0"; 
+        window.updateNumpadDisplay(); 
+    };
+
+    window.setExactAmount = function() { 
+        let total = window.currentGrandTotal || 0; 
+        window.amountReceivedStr = total.toString(); 
+        window.updateNumpadDisplay(); 
+    };
 
 // ========================================================
     // 🛒 MASTER CHECKOUT & STAFF MEAL ENGINE
