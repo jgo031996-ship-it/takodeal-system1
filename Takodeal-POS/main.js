@@ -261,6 +261,16 @@ window.lockDeviceToBranch = async function () {
   }
 };
 
+// 🔥 THE LOCAL OFFLINE CACHE FOR PINS
+setTimeout(async () => {
+    try {
+        const snap = await getDocs(collection(db, "cashiers"));
+        let cashiers = [];
+        snap.forEach(d => cashiers.push(d.data()));
+        if(cashiers.length > 0) localStorage.setItem('takodeal_cashier_cache', JSON.stringify(cashiers));
+    } catch(e) {}
+}, 5000);
+
 // --- THE SMART FIREBASE PIN SEARCHER ---
 window.verifyPin = async function (pin) {
   try {
@@ -274,11 +284,11 @@ window.verifyPin = async function (pin) {
             let devStatus = devSnap.docs[0].data().status;
             if (devStatus === 'Pending') {
                 alert("⏳ DEVICE PENDING APPROVAL\n\nThe Manager has not approved this device yet. Please ask them to approve it in the Device Fleet tab.");
-                return "BLOCKED"; // Stops double-alerting
+                return "BLOCKED"; 
             }
             if (devStatus === 'Blocked') {
                 alert("🚫 DEVICE BLOCKED\n\nThis device has been blocked by the Manager.");
-                return "BLOCKED"; // Stops double-alerting
+                return "BLOCKED"; 
             }
         } else {
             alert("❌ UNREGISTERED DEVICE\n\nThis device was removed from the HQ. Please clear your browser data and re-register.");
@@ -286,42 +296,38 @@ window.verifyPin = async function (pin) {
         }
     }
 
-    // 2. PROCEED WITH SMART PIN CHECK (String vs Number Fix!)
-    let staffData = null;
+    // 🔥 2. THE INSTANT LOGIN FIX: Check local cache first!
+    let cachedCashiers = JSON.parse(localStorage.getItem('takodeal_cashier_cache')) || [];
+    let staffData = cachedCashiers.find(c => String(c.pin) === String(pin));
     
-    // First, try searching for the exact String they typed
+    // If we found them in memory, let them in instantly! No waiting for Firebase!
+    if (staffData && cachedCashiers.length > 0) {
+        if (typeof window.checkActiveSanctions === 'function') window.checkActiveSanctions(staffData.cashierName);
+        setTimeout(() => { window.checkForAnnouncements(staffData.cashierName); }, 1500);
+        return staffData;
+    }
+
+    // Fallback: If cache is empty, check Cloud
     const qStr = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pin));
     const snapStr = await window.getDocs(qStr);
 
     if (!snapStr.empty) {
         staffData = snapStr.docs[0].data();
     } else {
-        // FALLBACK: If string fails, convert it to a Number and search again!
         let pinNum = parseInt(pin);
         if (!isNaN(pinNum)) {
             const qNum = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pinNum));
             const snapNum = await window.getDocs(qNum);
-            if (!snapNum.empty) {
-                staffData = snapNum.docs[0].data();
-            }
+            if (!snapNum.empty) staffData = snapNum.docs[0].data();
         }
     }
 
     if (!staffData) return null; // PIN is genuinely wrong
 
-    // 🛑 INJECT THE SANCTION CHECKER HERE BEFORE ALLOWING LOGIN!
-    // We don't 'await' it here so it doesn't slow down the login, but it will pop up instantly on the dashboard!
-    if (typeof window.checkActiveSanctions === 'function') {
-        window.checkActiveSanctions(staffData.cashierName);
-    }
-
-    // 📢 NEW: THE COMPLIANCE INTERCEPTOR! Check if they have unread announcements!
-    if (staffData) {
-        // We trigger the modal asynchronously so the UI still loads smoothly behind it!
-        setTimeout(() => { window.checkForAnnouncements(staffData.cashierName); }, 1500);
-    }
-    // 🔥 SECURITY WALL REMOVED! Floating staff are now authorized to log in anywhere.
-    return staffData; // Allows the login!
+    if (typeof window.checkActiveSanctions === 'function') window.checkActiveSanctions(staffData.cashierName);
+    if (staffData) setTimeout(() => { window.checkForAnnouncements(staffData.cashierName); }, 1500);
+    
+    return staffData; 
 
   } catch (error) {
     console.error("Database error:", error);
