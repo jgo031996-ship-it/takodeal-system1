@@ -10849,70 +10849,83 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
             const fileExt = file.name.split('.').pop();
             const fileName = `proofs/${docId}_${Date.now()}.${fileExt}`;
             
-            const storageReference = ref(window.storage, fileName);
-            const snapshot = await uploadBytes(storageReference, file);
-            proofUrl = await getDownloadURL(snapshot.ref);
+            const storageReference = window.ref(window.storage, fileName);
+            const snapshot = await window.uploadBytes(storageReference, file);
+            proofUrl = await window.getDownloadURL(snapshot.ref);
         }
 
         btn.innerText = "⏳ Saving to Database...";
 
-        await updateDoc(doc(db, "staff_requests", docId), {
+        // 🔥 1. FETCH ORIGINAL REQUEST DATE FIRST
+        const reqRef = window.doc(window.db, "staff_requests", docId);
+        const reqSnap = await window.getDoc(reqRef);
+        
+        let originalDate = new Date();
+        let reqData = {};
+        
+        if (reqSnap.exists()) {
+            reqData = reqSnap.data();
+            if (reqData.timestamp) {
+                originalDate = reqData.timestamp.toDate ? reqData.timestamp.toDate() : new Date(reqData.timestamp);
+            }
+        }
+
+        // 2. Update the request status (We still record processedAt as 'now' for the manager's audit log)
+        await window.updateDoc(reqRef, {
             status: action,
             managerReply: replyMsg,
             proofImageUrl: proofUrl,
-            processedAt: new Date(),
+            processedAt: window.serverTimestamp(), 
             processedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
             penaltyCharged: penaltyAmt
         });
 
-        // 🗑️ INVENTORY DEDUCTION (WASTE APPROVALS)
+        // 3. 🗑️ INVENTORY DEDUCTION (WASTE APPROVALS)
         if (action === "Approved" && type === "Waste Report") {
-            const reqSnap = await getDoc(doc(db, "staff_requests", docId));
-            if (reqSnap.exists() && reqSnap.data().items) {
-                let reqData = reqSnap.data();
-                
-                // Process each wasted item
+            if (reqData.items) {
                 for (let item of reqData.items) {
                     if (!item.id) continue;
-                    const invRef = doc(db, "inventory", item.id);
-                    const invSnap = await getDoc(invRef);
+                    const invRef = window.doc(window.db, "inventory", item.id);
+                    const invSnap = await window.getDoc(invRef);
                     
                     if (invSnap.exists()) {
                         let currentStock = parseFloat(invSnap.data().currentStock) || 0;
                         let newStock = currentStock - item.qty;
                         
-                        await updateDoc(invRef, { currentStock: newStock });
+                        await window.updateDoc(invRef, { currentStock: newStock });
                         
-                        await addDoc(collection(db, "stock_logs"), {
+                        await window.addDoc(window.collection(window.db, "stock_logs"), {
                             branch: reqData.branch, item: item.name, uom: item.uom,
                             oldQty: currentStock, newQty: newStock, variance: -item.qty,
-                            type: "Waste / Spoilage (HQ Approved)", note: `Reason: ${item.reason} | Appv. by: ${window.sessionUser ? window.sessionUser.cashierName : 'HQ'}`,
-                            user: reqData.staffName, timestamp: serverTimestamp(),
-                            photoUrl: item.photoUrl // 🔥 PASS THE PHOTO TO THE FINAL LOG!
+                            type: "Waste / Spoilage (HQ Approved)", 
+                            note: `Reason: ${item.reason} | Appv. by: ${window.sessionUser ? window.sessionUser.cashierName : 'HQ'}`,
+                            user: reqData.staffName, 
+                            timestamp: originalDate, // 🔥 THE FIX: Logs on the exact day it spoiled!
+                            photoUrl: item.photoUrl 
                         });
                     }
                 }
             }
         }
       
-        // STANDARD DEDUCTIONS (Advances & Meals)
+        // 4. STANDARD DEDUCTIONS (Advances & Meals)
         if (action === "Approved" && (type === "Cash Advance" || type === "Staff Meal")) {
-            await addDoc(collection(db, "staff_deductions"), {
+            await window.addDoc(window.collection(window.db, "staff_deductions"), {
                 staffName: staffName,
                 type: type,
                 amount: amount,
-                dateAdded: new Date(),
+                dateAdded: originalDate, // 🔥 THE FIX: Deducts on the exact day they took the cash/meal!
                 status: "Unpaid" 
             });
         }
 
-        // 🔥 THE NEW PENALTY/SHORTAGE LEDGER ROUTER 🔥
+        // 5. PENALTY / SHORTAGE LEDGER ROUTER 
         if (penaltyAmt > 0) {
-            await addDoc(collection(db, "staff_deductions"), {
+            await window.addDoc(window.collection(window.db, "staff_deductions"), {
                 staffName: staffName,
                 type: "Cash/Stock Shortage Penalty",
                 amount: penaltyAmt,
-                dateAdded: new Date(),
+                dateAdded: originalDate, // 🔥 THE FIX: Logs the penalty on the exact day the shortage happened!
                 status: "Unpaid",
                 remarks: `Linked to Reason Letter (${action}): ${replyMsg}`
             });
