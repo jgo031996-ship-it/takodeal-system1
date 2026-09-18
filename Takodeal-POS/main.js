@@ -291,7 +291,14 @@ window.verifyPin = async function (pin) {
                 return "BLOCKED"; 
             }
         } else {
-            alert("❌ UNREGISTERED DEVICE\n\nThis device was removed from the HQ. Please clear your browser data and re-register.");
+            // 🔥 THE AUTO-RESET FIX: Wipes ONLY the broken device registration, not your whole browser!
+            alert("❌ UNREGISTERED DEVICE\n\nThis device was removed from the HQ. The system will now reset so you can securely re-register.");
+            
+            localStorage.removeItem('takodeal_device_id');
+            localStorage.removeItem('takodeal_device_branch');
+            localStorage.removeItem('takodeal_device_name');
+            
+            window.location.reload(true);
             return "BLOCKED";
         }
     }
