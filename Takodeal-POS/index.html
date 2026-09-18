@@ -3303,6 +3303,22 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         window.updateNumpadDisplay(); 
     };
 
+    // 🔥 THE RESTORED PAYMENT SELECTOR ENGINE 🔥
+    window.setPaymentMethod = function(btn, method) { 
+        document.querySelectorAll('.pay-btn').forEach(b => b.classList.remove('active')); 
+        btn.classList.add('active'); 
+        window.selectedPaymentMethod = method; 
+
+        // If they select a digital payment, auto-fill the exact amount!
+        if (method !== "Cash") {
+            window.setExactAmount();
+        }
+    };
+
+// ========================================================
+    // 🛒 MASTER CHECKOUT & STAFF MEAL ENGINE
+    // ========================================================
+
 // ========================================================
     // 🛒 MASTER CHECKOUT & STAFF MEAL ENGINE
     // ========================================================
@@ -3498,7 +3514,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         }
     };
 
-    async function submitFinalOrder() {
+    window.submitFinalOrder = async function() {
       if (window.isSubmittingOrder) return;
       window.isSubmittingOrder = true;
 
