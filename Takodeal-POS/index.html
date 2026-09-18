@@ -339,7 +339,7 @@
     
     @media screen and (max-width: 850px) {
         /* 🔥 Shrink the Leaderboard so it doesn't cover the screen on Portrait tablets */
-        #loginRankingWidget { transform: scale(0.75); transform-origin: top left; top: 10px !important; left: 10px !important; }
+        #loginRankingWidget { transform: scale(0.75); transform-origin: top left; }
     }
   </style>
 </head>
@@ -463,7 +463,6 @@
           btn.innerText = "Verifying..."; btn.disabled = true;
 
           // 🔥 ULTIMATE HANG FIX: Force unlock UI after 8 seconds if internet is dead!
-          // This ignores Firebase entirely and forcefully resets the button if it gets stuck.
           let forceUnlock = setTimeout(() => {
               if (btn.innerText === "Verifying...") {
                   alert("⚠️ Network is slow or unstable. Please check your WiFi connection and try logging in again.");
@@ -530,11 +529,11 @@
       }
   </script>
 
-  <!-- 🔥 PORTRAIT LAYOUT FIX: 'justify-content' is 'center' again to perfectly center the box! -->
-  <div class="login-overlay" id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('logo.jpg') center/cover no-repeat; z-index: 10000; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; backdrop-filter: blur(8px); overflow-y: auto;">
+  <!-- 🔥 PORTRAIT LAYOUT FIX: 'justify-content' is 'flex-start' so it flows naturally, and margin:auto perfectly centers the box! -->
+  <div class="login-overlay" id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('logo.jpg') center/cover no-repeat; z-index: 10000; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; padding: 20px; box-sizing: border-box; backdrop-filter: blur(8px); overflow-y: auto;">
     
-    <!-- 🏆 LIVE LEADERBOARD WIDGET (Forced Absolute Top-Left!) -->
-    <div id="loginRankingWidget" style="position: absolute; top: 15px; left: 15px; background: rgba(255, 255, 255, 0.1); padding: 15px 20px; border-radius: 16px; color: white; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(12px); z-index: 30; display: none; min-width: 260px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+    <!-- 🏆 LIVE LEADERBOARD WIDGET (Forced Fixed Position!) -->
+    <div id="loginRankingWidget" style="position: fixed; top: 15px; left: 15px; background: rgba(255, 255, 255, 0.1); padding: 15px 20px; border-radius: 16px; color: white; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(12px); z-index: 30; display: none; min-width: 260px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
         <div style="font-size: 11px; font-weight: 900; color: #fcd34d; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
             <span style="font-size: 16px; animation: pulse 2s infinite;">🔥</span> Live Daily Ranking
         </div>
@@ -546,7 +545,7 @@
         </div>
     </div>
 
-    <!-- 🔐 NEW LOGIN BOX (Forced margin:auto to stay perfectly centered on top) -->
+    <!-- 🔐 NEW LOGIN BOX (margin:auto perfectly centers it in the flexbox) -->
     <div style="background: rgba(255, 255, 255, 0.95); padding: 30px 25px; border-radius: 24px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); width: 100%; max-width: 380px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px); position: relative; z-index: 20; margin: auto;">
         
         <div style="position: relative; display: inline-block; margin-bottom: 15px;">
