@@ -21526,73 +21526,70 @@ window.bulkVerifyDigitalPayments = async function() {
     }
 };
 
-// ========================================================
-// ✨ MINI GEMINI PROMPT BUILDER (TAKODEÁL EDITION)
-// ========================================================
+// ==========================================
+// 📢 CORPORATE BULLETIN & AI ENGINE
+// ==========================================
+
+// --- THE MINI GEMINI AI PROMPT BUILDER ---
 window.generateAIPrompt = function() {
-    const roughIdea = document.getElementById('aiRoughIdea').value.trim();
-    const style = document.getElementById('aiStyle');
-    const styleText = style.options[style.selectedIndex].text;
-    const finalPromptEl = document.getElementById('aiFinalPrompt');
+    let ideaInput = document.getElementById('aiRoughIdea');
+    let styleInput = document.getElementById('aiStyle');
+    let resultBox = document.getElementById('aiFinalPrompt');
 
-    if (!roughIdea) {
-        Swal.fire({
-            title: 'Hold on!', 
-            text: 'Please type a rough idea for the announcement first.', 
-            icon: 'warning',
-            customClass: { popup: 'rounded-2xl' }
-        });
-        return;
+    let idea = ideaInput ? ideaInput.value.trim() : '';
+    let style = styleInput ? styleInput.value : 'Corporate Infographic';
+
+    if (!idea) return Swal.fire('Oops', 'Type a rough idea first!', 'warning');
+
+    // 🔥 THE BRAND IDENTITY INJECTOR
+    let finalPrompt = `YOUR TASK:
+You are an expert AI image generation prompt engineer and corporate copywriter. 
+I need to create an internal announcement poster for my food business staff based on this rough idea:
+
+ROUGH IDEA: "${idea}"
+FORMAT/STYLE: ${style}
+
+CRITICAL BRAND GUIDELINES (MUST BE STRICTLY ENFORCED IN THE IMAGE PROMPT):
+1. Color Palette: Warm cream/light yellow background, deep earthy brown for text and structural borders, with warm orange and golden yellow accents.
+2. Logo: The word "TAKODEÁL" must be written clearly as a playful, bold, dark brown logo at the top left or top center.
+3. Mascot: Include our cute kawaii Takoyaki mascot. It is a round brown batter ball with a stylized zig-zag of cream mayonnaise on its head, big cute eyes, a mouth, and little stick arms/legs. It should be holding an item relevant to the topic.
+4. Aesthetic: Clean, 2D vector flat-art corporate infographic, highly readable, structured with distinct color-coded blocks, banners, or steps. Aspect ratio 16:9.
+
+DELIVERABLES:
+1. Write a highly detailed 1-paragraph image generation prompt (for an AI like Gemini Advanced or Midjourney) that perfectly describes the layout, colors, mascot, and visual elements of this poster using the brand guidelines above. Ensure you instruct the AI to physically write the "TAKODEÁL" logo and the main headline in the image.
+2. Below that, write the exact copy: Headline, Sub-headline, and short bullet points to put on the poster. Make the text punchy, strict yet encouraging, and easy for fast-paced food service staff to digest quickly.`;
+
+    if (resultBox) {
+        resultBox.value = finalPrompt;
+        
+        // Auto-expand the textarea to fit the detailed prompt
+        resultBox.style.height = 'auto';
+        resultBox.style.height = (resultBox.scrollHeight) + 'px';
     }
-
-    // 🔥 This is the "Secret Sauce" - Injecting your exact brand DNA into the prompt!
-    const engineeredPrompt = `Act as an Expert Corporate Communications Director and Master Graphic Designer for TAKODEÁL, a premium fast-growing Takoyaki and beverage franchise based in Davao City.
-
-I need you to generate a highly detailed, professional image generation prompt and the exact copy/text for an internal staff poster.
-
-THE ROUGH IDEA / TOPIC:
-"${roughIdea}"
-
-VISUAL STYLE REQUIRED:
-${styleText}
-
-TAKODEÁL BRANDING GUIDELINES:
-- Colors: Deep slate/black, vibrant amber/orange, and crisp white.
-- Audience: Branch Cashiers, Cooks, and Prep Staff.
-- Tone: Professional, authoritative, highly readable, yet motivating and clear.
-
-YOUR TASK:
-1. Write a 1-paragraph image generation prompt (for an AI like Midjourney or DALL-E) that perfectly describes the layout, lighting, colors, and visual elements of this poster.
-2. Below that, write the exact headline, sub-headline, and bullet points I should type onto the poster. Make the text punchy, strict, and easy for fast-paced food service staff to digest quickly.`;
-
-    finalPromptEl.value = engineeredPrompt;
-    
-    // Quick visual flash to show it worked
-    finalPromptEl.style.borderColor = "#10b981";
-    finalPromptEl.style.backgroundColor = "#ecfdf5";
-    setTimeout(() => {
-        finalPromptEl.style.borderColor = "#8b5cf6";
-        finalPromptEl.style.backgroundColor = "#f5f3ff";
-    }, 500);
 };
 
 window.copyAIPrompt = function() {
-    const finalPromptEl = document.getElementById('aiFinalPrompt');
-    if (!finalPromptEl.value) {
-        Swal.fire('Empty', 'Generate a prompt first before copying!', 'info');
-        return;
+    let resultBox = document.getElementById('aiFinalPrompt');
+    if (!resultBox || !resultBox.value.trim()) {
+        return Swal.fire('Empty', 'Generate a prompt first before copying.', 'info');
     }
     
-    // Highlight and copy the text
-    finalPromptEl.select();
-    document.execCommand("copy");
-    
-    Swal.fire({
-        toast: true, position: 'top-end', icon: 'success', 
-        title: '📋 Prompt Copied!', 
-        text: 'Paste this into Google Gemini to get your exact design and wording.',
-        showConfirmButton: false, timer: 3000,
-        customClass: { popup: 'rounded-2xl shadow-xl border border-gray-100' }
+    // Upgraded to the modern clipboard API (more reliable than execCommand)
+    navigator.clipboard.writeText(resultBox.value).then(() => {
+        Swal.fire({
+            toast: true, 
+            position: 'top-end', 
+            icon: 'success', 
+            title: 'Copied! Paste into Google Gemini.', 
+            showConfirmButton: false, 
+            timer: 2500
+        });
+    }).catch(err => {
+        console.error('Failed to copy text: ', err);
+        // Fallback for older browsers
+        resultBox.select();
+        document.execCommand("copy");
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Copied!', showConfirmButton: false, timer: 2000});
     });
 };
 
