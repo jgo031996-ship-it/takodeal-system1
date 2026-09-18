@@ -1,4 +1,6 @@
 // --- ACCESS CONTROL ENGINE (FRANCHISE PROFILES) ---
+const MASTER_EMAIL = "jgo031996@gmail.com";
+
 window.loadAdminDashboard = async function() {
   const tbody = document.getElementById('adminTableBody');
   if (!tbody) return;
