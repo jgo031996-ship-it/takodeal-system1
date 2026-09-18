@@ -1677,6 +1677,7 @@
                         <option value="percentage">Percentage (%)</option>
                         <option value="fixed">Fixed Amount (₱)</option>
                         <option value="staff_meal">🍔 Staff Meal Deduction</option>
+                        <option value="manager_meal">👑 Manager / Owner Meal</option>
                     </select>
                 </div>
                 <div>
@@ -3308,6 +3309,9 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         updateNumpadDisplay(); 
     }
 
+// ========================================================
+    // 🛒 MASTER CHECKOUT & STAFF MEAL ENGINE
+    // ========================================================
     window.handleDiscountTypeChange = function() {
         let dType = document.getElementById('checkoutDiscountType').value;
         let valInput = document.getElementById('checkoutDiscountValue');
@@ -3396,7 +3400,9 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
             if (staffData) {
                 // Identity Confirmed! Flash the box green and auto-fill!
-                nameBox.value = staffData.cashierName + " (Staff)";
+                let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : '';
+                let nameSuffix = dType === 'manager_meal' ? " (Manager)" : " (Staff)";
+                nameBox.value = staffData.cashierName + nameSuffix;
                 nameBox.style.backgroundColor = "#dcfce7"; // Success Green
                 nameBox.style.borderColor = "#16a34a";
                 nameBox.style.color = "#15803d";
@@ -3498,25 +3504,12 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         }
     };
 
-    function setPaymentMethod(btn, method) { 
-        document.querySelectorAll('.pay-btn').forEach(b => b.classList.remove('active')); 
-        btn.classList.add('active'); 
-        window.selectedPaymentMethod = method; 
-
-        // 🔥 SMART FEATURE: If they select a digital payment, auto-fill the exact amount!
-        if (method !== "Cash") {
-            setExactAmount();
-        }
-    }
-
-    window.isSubmittingOrder = false; // 🛡️ GLOBAL LOCK VARIABLE
-
     async function submitFinalOrder() {
       if (window.isSubmittingOrder) return;
       window.isSubmittingOrder = true;
 
-      const btn = document.getElementById('btnSubmitFinal'); 
-      btn.innerText = "⏳ Processing..."; 
+      const btn = document.getElementById('btnSubmitFinal');
+      btn.innerText = "⏳ Processing...";
       btn.disabled = true;
       btn.style.pointerEvents = "none";
 
@@ -3530,10 +3523,10 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
               alert("🚨 Please enter your Security PIN to authorize this transaction.");
               btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
           }
-          
+
           btn.innerText = "⏳ Verifying PIN...";
           staffIdentity = await window.verifyPin(pinInput);
-          
+
           if (!staffIdentity || staffIdentity === "BLOCKED") {
               alert("❌ Invalid PIN. Transaction unauthorized.");
               btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
@@ -3547,7 +3540,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                   btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
               }
           }
-          
+
           window.selectedPaymentMethod = "Salary Deduction";
           let nameSuffix = dType === 'manager_meal' ? " (Manager)" : " (Staff)";
           document.getElementById('finalCustomerName').value = staffIdentity.cashierName + nameSuffix;
@@ -3577,7 +3570,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
       const payload = {
         branch: window.sessionUser.branch,
         cashier: window.sessionUser.cashierName,
-        shiftId: exactShiftId, 
+        shiftId: exactShiftId,
         orderType: mainOrderType,
         paymentMethod: window.selectedPaymentMethod,
         subTotalBeforeDiscount: window.currentGrandTotal,
@@ -3587,7 +3580,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         globalDiscountReason: dReason,
         netTotal: window.finalCheckoutAmount || window.currentGrandTotal,
         customerName: custName,
-        amountReceived: dType === 'staff_meal' ? (window.finalCheckoutAmount || window.currentGrandTotal) : window.amountReceivedStr,
+        amountReceived: dType === 'staff_meal' || dType === 'manager_meal' ? (window.finalCheckoutAmount || window.currentGrandTotal) : window.amountReceivedStr,
         cart: window.cart,
         wasParked: window.isResumedParkedOrder || false,
         isMobileOrder: window.isActiveOrderMobile || false,
@@ -3599,40 +3592,41 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
       let receiptId = await window.processCheckout(payload);
 
       if (receiptId) {
-        
-        // 📥 FIRE TO MANAGER INBOX IF IT'S A STAFF MEAL
-        if (dType === 'staff_meal' && staffIdentity) {
+        // 📥 FIRE TO MANAGER INBOX IF IT'S A STAFF OR MANAGER MEAL
+        if ((dType === 'staff_meal' || dType === 'manager_meal') && staffIdentity) {
             try {
+                let mealTypeLabel = dType === 'manager_meal' ? 'Manager Meal' : 'Staff Meal';
                 let shortDesc = window.cart.map(i => `${i.qty}x ${i.name}`).join(', ');
                 await window.addDoc(window.collection(window.db, "staff_requests"), {
-                    type: "Staff Meal (POS Auto)",
+                    type: `${mealTypeLabel} (POS Auto)`,
                     branch: window.sessionUser.branch,
                     staffName: staffIdentity.cashierName,
                     amount: payload.netTotal,
-                    item: shortDesc,
+                    item: shortDesc + " | OR#: " + receiptId,
                     receiptId: receiptId,
                     status: "Pending",
+                    staffAcknowledged: false,
                     timestamp: window.serverTimestamp()
                 });
-                
+
                 await window.addDoc(window.collection(window.db, "manager_alerts"), {
                     type: "STAFF_MEAL_DEDUCTION",
                     branch: window.sessionUser.branch,
                     cashier: staffIdentity.cashierName,
-                    message: `🍔 STAFF MEAL: ${staffIdentity.cashierName} ordered ${shortDesc}. ₱${payload.netTotal.toFixed(2)} is pending for payroll deduction.`,
+                    message: `🍔 ${mealTypeLabel.toUpperCase()}: ${staffIdentity.cashierName} ordered ${shortDesc}. ₱${payload.netTotal.toFixed(2)} is pending for payroll deduction.`,
                     timestamp: window.serverTimestamp(),
                     isRead: false
                 });
                 let pinBox = document.getElementById('checkoutStaffPin');
                 if (pinBox) pinBox.value = '';
-            } catch(e) { console.error("Failed to log staff meal to inbox:", e); }
+            } catch(e) { console.error("Failed to log meal to inbox:", e); }
         }
 
         if (window.activeMobileOrderId) {
             window.updateDoc(window.doc(window.db, "incoming_orders", window.activeMobileOrderId), {
                 paymentStatus: "paid", receiptId: receiptId, encodedAt: window.serverTimestamp()
             }).catch(e => console.log(e));
-            
+
             window.activeMobileOrderId = null; window.activeMobileOrderCode = null; window.isActiveOrderMobile = false;
         }
 
@@ -3650,19 +3644,19 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
         window.lastTransactionData = { ...payload, receiptId: receiptId };
         document.getElementById('rcptId').innerText = `: ${receiptId}`;
-        document.getElementById('rcptDate').innerText = `: ${new Date().toLocaleDateString()}`; 
-        document.getElementById('rcptTime').innerText = `: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`; 
+        document.getElementById('rcptDate').innerText = `: ${new Date().toLocaleDateString()}`;
+        document.getElementById('rcptTime').innerText = `: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
         document.getElementById('rcptTotal').innerText = `: ₱${payload.netTotal.toFixed(2)}`;
-        
+
         let amountRec = parseFloat(payload.amountReceived) || 0;
         document.getElementById('rcptPaid').innerText = `: ₱${amountRec.toFixed(2)}`;
         document.getElementById('rcptChange').innerText = `: ₱${(amountRec - payload.netTotal > 0 ? amountRec - payload.netTotal : 0).toFixed(2)}`;
-        
-        window.cart = []; window.renderCart(); 
-        
+
+        window.cart = []; window.renderCart();
+
         if (typeof window.closeModal === 'function') window.closeModal('checkoutModal');
         else if (typeof closeModal === 'function') closeModal('checkoutModal');
-        
+
         let otSelect = document.getElementById('mainOrderType');
         if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
         let custName = document.getElementById('finalCustomerName');
@@ -3670,11 +3664,11 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
         btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto";
         window.isSubmittingOrder = false;
-        window.isResumedParkedOrder = false; 
+        window.isResumedParkedOrder = false;
 
         document.getElementById('receiptModal').style.display = 'flex';
-      } else { 
-        alert("Network Error: Could not save to database."); 
+      } else {
+        alert("Network Error: Could not save to database.");
         btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false;
       }
     }
