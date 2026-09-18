@@ -1836,7 +1836,12 @@ window.loadInbox = async function() {
             let detailText = "";
             if (d.type === "Leave") detailText = `📅 ${d.startDate} to ${d.endDate} (${d.leaveType})<br><span style="color:#64748b; font-size:12px;">Reason: ${d.reason}</span>`;
             else if (d.type === "Cash Advance") detailText = `💸 ₱${(parseFloat(d.amount)||0).toFixed(2)}<br><span style="color:#64748b; font-size:12px;">Reason: ${d.reason}</span>`;
-            else if (d.type === "Staff Meal") detailText = `🍔 ${d.item} (₱${(parseFloat(d.amount)||0).toFixed(2)})`;
+            else if (d.type.includes("Staff Meal") || d.type.includes("Manager Meal")) {
+                let ackBtn = !d.staffAcknowledged 
+                    ? `<button onclick="window.acknowledgeMeal('${d.id}')" style="margin-top:8px; background:#10b981; color:white; padding:8px 12px; border-radius:6px; font-weight:bold; border:none; width:100%; box-shadow:0 2px 4px rgba(0,0,0,0.2); cursor:pointer;">👍 I Confirm this POS Meal</button>` 
+                    : `<div style="margin-top:8px; color:#16a34a; font-size:11px; font-weight:bold;">✅ You confirmed this meal.</div>`;
+                detailText = `🍔 ${d.item} <br><span style="color:#dc2626; font-weight:bold;">Deduction: ₱${(parseFloat(d.amount)||0).toFixed(2)}</span>${ackBtn}`;
+            }
             else if (d.type === "Reason Letter") detailText = `✉️ ${d.explanationCause || 'Letter'}<br><span style="color:#64748b; font-size:12px;">${d.explanationMessage || ''}</span>`;
             else if (d.type === "Waste Report") detailText = `🗑️ Waste Log (₱${(parseFloat(d.totalValueLost)||0).toFixed(2)})<br><span style="color:#64748b; font-size:12px;">${(d.items || []).length} items submitted</span>`;
             else detailText = d.reason || d.item || "";
@@ -4254,4 +4259,23 @@ window.forceUpdateApp = async function() {
             }
         }
     });
+};
+
+// =======================================================
+// 🍔 1-CLICK MEAL CONFIRMATION ENGINE
+// =======================================================
+window.acknowledgeMeal = async function(docId) {
+    try {
+        await window.updateDoc(window.doc(window.db, "staff_requests", docId), {
+            staffAcknowledged: true
+        });
+        Swal.fire({
+            toast: true, position: 'top-end', icon: 'success', 
+            title: 'Meal Confirmed!', showConfirmButton: false, timer: 2000
+        });
+        window.loadInbox(); // Refresh the list instantly
+    } catch(e) {
+        console.error(e); 
+        Swal.fire('Error', 'Could not confirm meal.', 'error');
+    }
 };
