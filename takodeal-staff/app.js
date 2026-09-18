@@ -987,25 +987,31 @@ window.switchView = function(viewId, btnElement) {
 // ==========================================
 // 📢 BULLETIN BOARD & SIGNATURE ENGINE
 // ==========================================
-window.hasAutoShownBulletin = false; // Prevents the popup from spamming every time they change tabs
+window.hasAutoShownBulletin = false; 
 
 window.loadAnnouncements = async function() {
     let container = document.getElementById('bulletinList');
     let cashierName = localStorage.getItem('takodeal_staff_name');
+    let staffId = localStorage.getItem('takodeal_staff_id');
     if (!cashierName) return;
 
     try {
-        // 🔥 Restored the standard query. The Firebase Fleet Engine handles offline caching automatically!
-        const q = query(collection(db, "announcements"), where("active", "==", true));
-        const snap = await getDocs(q);
+        // 🔥 GET STAFF BRANCH: Required to route branch-specific announcements
+        let staffBranch = "Unknown";
+        if (staffId) {
+            const staffDoc = await window.getDoc(window.doc(window.db, "cashiers", staffId));
+            if (staffDoc.exists()) staffBranch = staffDoc.data().branch || "Unknown";
+        }
 
-        const ackQ = query(collection(db, "acknowledgments"), where("staffName", "==", cashierName));
-        const ackSnap = await getDocs(ackQ);
+        const q = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
+        const snap = await window.getDocs(q);
+
+        const ackQ = window.query(window.collection(window.db, "acknowledgments"), window.where("staffName", "==", cashierName));
+        const ackSnap = await window.getDocs(ackQ);
 
         let signatures = {};
         ackSnap.forEach(doc => { let d = doc.data(); signatures[d.announcementId] = d; });
 
-        // 🔥 Fixed the crash: Variable declared only ONCE, and 'snap' is now defined!
         let announcementsArray = [];
         snap.forEach(docSnap => announcementsArray.push({id: docSnap.id, ...docSnap.data()}));
         announcementsArray.sort((a,b) => b.timestamp - a.timestamp); 
@@ -1014,6 +1020,14 @@ window.loadAnnouncements = async function() {
         let unreadAnnouncements = [];
 
         announcementsArray.forEach(ann => {
+            // 🔥 THE GATEKEEPER: Filters out announcements not meant for this staff member
+            let isTarget = false;
+            if (!ann.targetType || ann.targetType === 'All') isTarget = true;
+            else if (ann.targetType === 'Branch' && ann.targetBranch === staffBranch) isTarget = true;
+            else if (ann.targetType === 'Individual' && ann.targetStaff === cashierName) isTarget = true;
+
+            if (!isTarget) return; 
+
             let dateStr = ann.timestamp ? ann.timestamp.toDate().toLocaleDateString() : 'Recent';
             let sigData = signatures[ann.id];
             let shortMsg = ann.message ? ann.message.substring(0, 100) + (ann.message.length > 100 ? '...' : '') : '';
@@ -1021,6 +1035,11 @@ window.loadAnnouncements = async function() {
             let statusBadge = sigData
                 ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid #bbf7d0;">✅ Signed</span>`
                 : `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid #fecaca; animation: pulse 2s infinite;">❌ Requires Signature</span>`;
+
+            // 🔥 VISUAL BADGES for targeted notices
+            let targetBadge = '';
+            if (ann.targetType === 'Branch') targetBadge = `<span style="background: #e0f2fe; color: #0284c7; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #bae6fd; margin-top: 4px;">🏢 Branch Notice</span>`;
+            if (ann.targetType === 'Individual') targetBadge = `<span style="background: #f5f3ff; color: #7c3aed; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #ddd6fe; margin-top: 4px;">👤 Private Notice</span>`;
 
             let sigDateStr = sigData && sigData.timestamp ? sigData.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
 
@@ -1034,7 +1053,8 @@ window.loadAnnouncements = async function() {
                 dateStr: dateStr,
                 hasSignature: !!sigData,
                 signatureImg: sigData ? sigData.signature : '',
-                signatureDate: sigDateStr
+                signatureDate: sigDateStr,
+                targetType: ann.targetType || 'All'
             };
             
             let modalData = encodeURIComponent(JSON.stringify(safeData));
@@ -1045,7 +1065,10 @@ window.loadAnnouncements = async function() {
                 <div class="req-item-card" onclick="window.viewAnnouncement('${modalData}')" style="cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: transform 0.2s;">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
                         <h3 style="margin:0; color:#0f172a; font-size: 15px; flex: 1;">${ann.title}</h3>
-                        <div style="margin-left: 10px;">${statusBadge}</div>
+                        <div style="margin-left: 10px; display: flex; flex-direction: column; align-items: flex-end;">
+                            ${statusBadge}
+                            ${targetBadge}
+                        </div>
                     </div>
                     ${ann.subHeadline ? `<div style="font-size:12px; font-weight:bold; color:#0ea5e9; margin-bottom:6px;">${ann.subHeadline}</div>` : ''}
                     <div style="font-size:11px; color:#64748b; margin-bottom:10px;">📅 Published: ${dateStr}</div>
@@ -1070,7 +1093,6 @@ window.loadAnnouncements = async function() {
     }
 };
 
-// 🔥 THE NEW SPLASH SCREEN FUNCTION 🔥
 window.showExtraLargeImage = function(imgSrc) {
     let existing = document.getElementById('announceImageOverlay');
     if (existing) existing.remove();
@@ -1087,10 +1109,14 @@ window.showExtraLargeImage = function(imgSrc) {
     document.body.appendChild(overlay);
 };
 
+// If there is an existing wrapper intercepting this, save the original reference first!
+if (typeof window.originalViewAnnouncement === 'undefined' && typeof window.viewAnnouncement === 'function') {
+    window.originalViewAnnouncement = window.viewAnnouncement;
+}
+
 window.viewAnnouncement = function(encodedData) {
     let data = JSON.parse(decodeURIComponent(encodedData));
     
-    // Create wide, beautiful banner images inside the modal (with click-to-enlarge)
     let imagesHtml = '';
     if (data.images && data.images.length > 0) {
         imagesHtml = `<div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px; padding-bottom: 5px;">`;
@@ -1123,14 +1149,19 @@ window.viewAnnouncement = function(encodedData) {
             </div>`;
     }
 
-    // 🔥 Inject New Sub-Headline & Footer
     let subHeadlineHtml = data.subHeadline ? `<div style="font-size: 16px; font-weight: 900; color: #0ea5e9; margin-bottom: 15px; line-height: 1.3;">${data.subHeadline}</div>` : '';
     let footerHtml = data.footerMessage ? `<div style="font-size: 12px; color: #64748b; margin-top: 25px; padding-top: 15px; border-top: 2px dashed #e2e8f0; text-align: center; font-style: italic; font-weight: bold;">${data.footerMessage}</div>` : '';
+
+    // 🔥 MODAL TARGET BADGES
+    let targetBanner = '';
+    if (data.targetType === 'Branch') targetBanner = `<div style="background: #e0f2fe; color: #0284c7; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; margin-bottom: 12px; border: 1px solid #bae6fd; display: inline-block;">🏢 Specific Branch Notice</div>`;
+    if (data.targetType === 'Individual') targetBanner = `<div style="background: #f5f3ff; color: #7c3aed; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: bold; margin-bottom: 12px; border: 1px solid #ddd6fe; display: inline-block;">👤 Private Individual Notice</div>`;
 
     Swal.fire({
         title: `<div style="text-align:left; font-size: 22px; font-weight: 900; color: #0f172a; margin-bottom: 5px; line-height: 1.2; text-transform: uppercase;">${data.title}</div>`,
         html: `<div style="text-align: left; max-height: 75vh; overflow-y: auto; padding-right: 5px;">
                 <div style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">📅 Published: ${data.dateStr}</div>
+                ${targetBanner}
                 ${subHeadlineHtml}
                 <div style="font-size: 15px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${data.message || ''}</div>
                 ${imagesHtml}
@@ -1143,11 +1174,7 @@ window.viewAnnouncement = function(encodedData) {
         customClass: { popup: 'rounded-2xl shadow-2xl p-4' },
         didOpen: () => {
             if (!data.hasSignature) window.initSignaturePad();
-            
-            // 🔥 THE MAGIC SPLASH SCREEN TRIGGER: Auto-open the massive image!
-            if (data.images && data.images.length > 0) {
-                window.showExtraLargeImage(data.images[0]);
-            }
+            if (data.images && data.images.length > 0) window.showExtraLargeImage(data.images[0]);
         }
     });
 };
