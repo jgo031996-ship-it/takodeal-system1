@@ -563,7 +563,8 @@ window.renderOrderAndPaymentUI = function() {
 
     window.masterPOSData.settings.payMethods.forEach((m, idx) => { 
         let act = idx === 0 ? 'active' : ''; if (idx === 0) window.selectedPaymentMethod = m; 
-        pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
+        // Added 'window.' before setPaymentMethod
+        pmHtml += `<button class="pay-btn ${act}" onclick="window.setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
         optHtml += `<option value="${m}">${m}</option>`;
     });
     
