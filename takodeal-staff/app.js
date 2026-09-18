@@ -284,6 +284,25 @@ window.loginStaff = async function() {
         }
 
         if (staffData) {
+            let currentDeviceId = localStorage.getItem('takodeal_device_id');
+
+            // 🚨 1-DEVICE STRICT SECURITY LOCK
+            if (staffData.registeredDeviceId && staffData.registeredDeviceId !== currentDeviceId) {
+                Swal.fire({
+                    title: 'Unauthorized Device',
+                    text: 'Your account is securely locked to your primary registered phone. You cannot log in from this device.',
+                    icon: 'error',
+                    customClass: { popup: 'rounded-2xl' }
+                });
+                btn.innerText = "Secure Login"; btn.disabled = false;
+                return;
+            }
+
+            // Bind this device to the staff member on their very first login
+            if (!staffData.registeredDeviceId && currentDeviceId) {
+                await updateDoc(doc(db, "cashiers", docId), { registeredDeviceId: currentDeviceId });
+            }
+
             // Re-establish session memory
             localStorage.setItem('takodeal_staff_name', staffData.cashierName);
             localStorage.setItem('takodeal_staff_id', docId);
@@ -4305,4 +4324,62 @@ window.acknowledgeMeal = async function(docId) {
         console.error(e); 
         Swal.fire('Error', 'Could not confirm meal.', 'error');
     }
+};
+
+// ==========================================
+// 🔄 FORCE UPDATE & CACHE CLEARING ENGINE
+// ==========================================
+window.forceUpdateApp = async function() {
+    Swal.fire({
+        title: 'Force App Update?',
+        text: 'This will clear old system data and fetch the newest TAKODEÁL version from HQ. You will NOT lose your device registration.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#0f766e',
+        confirmButtonText: 'Yes, Update Now'
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            Swal.fire({title: 'Updating System...', text: 'Please wait...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+            
+            try {
+                // 1. Destroy old Service Workers holding onto outdated code
+                if ('serviceWorker' in navigator) {
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (let registration of registrations) {
+                        await registration.unregister();
+                    }
+                }
+
+                // 2. Wipe standard browser caches
+                if ('caches' in window) {
+                    const cacheNames = await caches.keys();
+                    for (let name of cacheNames) {
+                        await caches.delete(name);
+                    }
+                }
+
+                // 3. 🛡️ THE SHIELD: Save the critical IDs before wiping local memory!
+                let safeDeviceId = localStorage.getItem('takodeal_device_id');
+                let safeStaffName = localStorage.getItem('takodeal_staff_name');
+                let safeStaffId = localStorage.getItem('takodeal_staff_id');
+                let safeStaffPic = localStorage.getItem('takodeal_staff_pic');
+                
+                // Erase everything else
+                localStorage.clear();
+                
+                // Restore the protected variables back into the phone
+                if (safeDeviceId) localStorage.setItem('takodeal_device_id', safeDeviceId);
+                if (safeStaffName) localStorage.setItem('takodeal_staff_name', safeStaffName);
+                if (safeStaffId) localStorage.setItem('takodeal_staff_id', safeStaffId);
+                if (safeStaffPic) localStorage.setItem('takodeal_staff_pic', safeStaffPic);
+
+                // 4. Force a hard reload bypassing the cache
+                window.location.href = window.location.href.split('?')[0] + '?update=' + new Date().getTime();
+                
+            } catch(e) {
+                console.error("Update failed:", e);
+                window.location.reload(true); 
+            }
+        }
+    });
 };
