@@ -12718,20 +12718,20 @@ window.generateAutoPayslips = async function() {
                 let loanLabel = d.loans > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.loans.toFixed(2)} (Ledger)</span>` : '';
                 let lateLabel = d.lateDeduction > 0 ? `<br><span style="font-size:11px; color:#ef4444; font-weight:bold;">-₱${d.lateDeduction.toFixed(2)} (Late)</span>` : '';
         
+                let perfLabel = d.perfBonus > 0 ? `<br><span style="font-size:11px; color:#10b981; font-weight:bold;">+₱${d.perfBonus.toFixed(2)} Reward</span>` : '';
+        
                 let buttonHtml = isPaid
                     ? `<button onclick="window.openPayslipModal('${name.replace(/'/g, "\\'")}')" style="background:#475569; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">✅ View Paid Payslip</button>`
                     : `<button onclick="window.openPayslipModal('${name.replace(/'/g, "\\'")}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">🧾 Generate Payslip</button>`;
 
+                // Ensure all HTML is securely wrapped inside the backticks (`)
                 html += `
                     <tr style="border-bottom: 1px dashed #e2e8f0; ${isPaid ? "background: #f8fafc; opacity: 0.85;" : ""}">
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
-                        <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel} ${perfLabel}</td>
                         <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
-                        let perfLabel = d.perfBonus > 0 ? `<br><span style="font-size:11px; color:#10b981; font-weight:bold;">+₱${d.perfBonus.toFixed(2)} Reward</span>` : '';
-                        // Modify the html string to include perfLabel inside the Hours column:
-                        <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel}${straightLabel} ${holLabel}${perfLabel}</td>
                     </tr>
                 `;
             }
