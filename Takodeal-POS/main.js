@@ -8454,12 +8454,24 @@ window.hasSignedBulletin = false;
 
 window.checkForAnnouncements = async function(cashierName) {
     try {
+        let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+        
         // 1. Get ALL active announcements
         const q = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
         const snap = await window.getDocs(q);
         
         let unread = [];
         for (let docSnap of snap.docs) {
+            let d = docSnap.data();
+
+            // 🔥 THE PRIVACY FIREWALL: Stop alien announcements from showing!
+            let isTargeted = false;
+            if (!d.targetType || d.targetType === 'All') isTargeted = true;
+            else if (d.targetType === 'Branch' && d.targetBranch === branch) isTargeted = true;
+            else if (d.targetType === 'Individual' && d.targetStaff === cashierName) isTargeted = true;
+
+            if (!isTargeted) continue; // Skip if it's not meant for them!
+
             // 2. Did THIS specific cashier sign it?
             const ackQ = window.query(window.collection(window.db, "acknowledgments"), 
                 window.where("announcementId", "==", docSnap.id),
@@ -8468,7 +8480,7 @@ window.checkForAnnouncements = async function(cashierName) {
             const ackSnap = await window.getDocs(ackQ);
             
             if (ackSnap.empty) {
-                unread.push({ id: docSnap.id, ...docSnap.data() });
+                unread.push({ id: docSnap.id, ...d });
             }
         }
 
@@ -8772,6 +8784,8 @@ window.loadBulletinHistory = async function() {
     if (!container) return;
     
     let cashierName = localStorage.getItem('cashierName') || (window.sessionUser ? window.sessionUser.cashierName : null);
+    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+
     if (!cashierName) {
         container.innerHTML = '<div style="text-align:center; padding:40px; color:#dc2626; font-weight:bold;">❌ Please log in to view your announcements.</div>';
         return;
@@ -8796,7 +8810,20 @@ window.loadBulletinHistory = async function() {
         });
 
         let announcementsArray = [];
-        annSnap.forEach(doc => announcementsArray.push({id: doc.id, ...doc.data()}));
+        annSnap.forEach(doc => {
+            let d = doc.data();
+
+            // 🔥 THE PRIVACY FIREWALL: Hide irrelevant history records!
+            let isTargeted = false;
+            if (!d.targetType || d.targetType === 'All') isTargeted = true;
+            else if (d.targetType === 'Branch' && d.targetBranch === branch) isTargeted = true;
+            else if (d.targetType === 'Individual' && d.targetStaff === cashierName) isTargeted = true;
+
+            if (isTargeted) {
+                announcementsArray.push({id: doc.id, ...d});
+            }
+        });
+        
         announcementsArray.sort((a,b) => b.timestamp - a.timestamp); // Newest first
 
         let html = '';
@@ -8826,7 +8853,6 @@ window.loadBulletinHistory = async function() {
             
             let modalData = encodeURIComponent(JSON.stringify(safeData));
 
-            // Track unread announcements for the auto-popup!
             if (!sigData) unreadAnnouncements.push(modalData);
 
             html += `
@@ -8850,7 +8876,6 @@ window.loadBulletinHistory = async function() {
             container.innerHTML = html;
         }
 
-        // 🔥 THE AUTO-POPUP ENGINE
         if (unreadAnnouncements.length > 0 && !window.hasAutoShownBulletin) {
             window.hasAutoShownBulletin = true;
             setTimeout(() => {
