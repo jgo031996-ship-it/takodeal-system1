@@ -28588,3 +28588,88 @@ window.runDataArchiver = async function() {
     await batch.commit();
     console.log(`✅ Archiver Complete! Purged old logs to keep the system lightning fast.`);
 };
+
+// ==========================================
+// 🏆 TOP PERFORMER BONUS ENGINE
+// ==========================================
+window.openTopPerformerModal = async function() {
+    document.getElementById('topPerformerModal').style.display = 'flex';
+    let select = document.getElementById('perfBonusStaff');
+    select.innerHTML = '<option value="">Loading Staff...</option>';
+    
+    // Auto-fill today's date
+    let now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    document.getElementById('perfBonusDate').value = now.toISOString().split('T')[0];
+    
+    // Clear old inputs
+    document.getElementById('perfBonusAmount').value = '';
+    document.getElementById('perfBonusReason').value = '';
+
+    try {
+        const snap = await window.getDocs(window.collection(window.db, "cashiers"));
+        let html = '<option value="">-- Select Star Employee --</option>';
+        let staffList = [];
+        
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            // Do not show resigned or revoked staff
+            if (d.status !== 'Resigned' && d.pin !== 'REVOKED') {
+                staffList.push(d.cashierName);
+            }
+        });
+        
+        staffList.sort().forEach(name => html += `<option value="${name}">${name}</option>`);
+        select.innerHTML = html;
+    } catch (e) {
+        console.error("Reward modal error:", e);
+        select.innerHTML = '<option value="">Error loading staff</option>';
+    }
+};
+
+window.submitPerfBonus = async function() {
+    let staffName = document.getElementById('perfBonusStaff').value;
+    let dateRaw = document.getElementById('perfBonusDate').value;
+    let amount = parseFloat(document.getElementById('perfBonusAmount').value);
+    let remarks = document.getElementById('perfBonusReason').value.trim();
+
+    if (!staffName || !dateRaw || isNaN(amount) || amount <= 0 || !remarks) {
+        Swal.fire('Missing Data', 'Please select a staff member, enter a valid bonus amount, and provide a reason.', 'warning');
+        return;
+    }
+
+    let btn = document.getElementById('btnSavePerfBonus');
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    try {
+        let bonusDate = new Date(dateRaw + 'T12:00:00');
+
+        // We leverage the existing "staff_bonuses" collection so the Auto-Payslip engine 
+        // picks it up perfectly alongside standard Overtime!
+        await window.addDoc(window.collection(window.db, "staff_bonuses"), {
+            staffName: staffName,
+            amount: amount,
+            hours: 0, // Flat reward, not hourly overtime
+            dateAdded: bonusDate,
+            type: "Performance Bonus",
+            remarks: `🏆 Reward: ${remarks}`, 
+            loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
+            timestamp: window.serverTimestamp()
+        });
+
+        Swal.fire({
+            title: '✅ Bonus Awarded!',
+            html: `<b>₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</b> performance reward added for <b>${staffName}</b>.<br><br>This will automatically appear in their next payslip calculation.`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+        document.getElementById('topPerformerModal').style.display = 'none';
+
+    } catch (error) {
+        console.error("Bonus Log Error:", error);
+        Swal.fire('Error', 'Failed to save performance bonus.', 'error');
+    } finally {
+        btn.innerText = "💰 Inject Bonus to Payroll"; btn.disabled = false;
+    }
+};
