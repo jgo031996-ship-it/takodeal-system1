@@ -1800,6 +1800,10 @@
             <button class="btn-refresh" style="background: var(--primary); color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(229, 169, 61, 0.3);" onclick="addNewStaff()">
                 ➕ Add New Staff
             </button>
+            <!-- 🔥 NEW: TOP PERFORMER BUTTON -->
+            <button class="btn-refresh" style="background: #f59e0b; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); transition: 0.2s;" onclick="window.openTopPerformerModal()">
+                🏆 Reward Performance
+            </button>
           </div>
         </div>
 
@@ -4053,6 +4057,33 @@
             <input type="text" id="manOtRemarks" placeholder="e.g. Extended 2 hours for deep cleaning" style="width: 100%; padding: 10px; margin: 5px 0 25px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
 
             <button id="btnSaveManualOt" onclick="window.submitManualOvertime()" style="width: 100%; background: #ea580c; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(234, 88, 12, 0.3);">💾 Save Overtime Bonus</button>
+        </div>
+    </div>
+  </div>
+
+  <!-- 🏆 TOP PERFORMER BONUS MODAL -->
+  <div id="topPerformerModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+    <div style="background: white; width: 450px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+        <div style="background: #f59e0b; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+            <h2 style="margin: 0; font-size: 18px;">🏆 Reward Top Performer</h2>
+            <span onclick="document.getElementById('topPerformerModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">×</span>
+        </div>
+        <div style="padding: 25px; background: #f8fafc;">
+            <p style="font-size: 12px; color: #64748b; margin-top: 0; margin-bottom: 20px;">Grant an end-of-the-month performance bonus. This will automatically be added to their next payslip.</p>
+
+            <label style="font-size: 12px; font-weight: bold; color: #334155;">Staff Name</label>
+            <select id="perfBonusStaff" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; cursor: pointer;"></select>
+
+            <label style="font-size: 12px; font-weight: bold; color: #334155;">Date Awarded</label>
+            <input type="date" id="perfBonusDate" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #334155; cursor: pointer;">
+
+            <label style="font-size: 12px; font-weight: bold; color: #334155;">Bonus Amount (₱)</label>
+            <input type="number" id="perfBonusAmount" placeholder="e.g. 1000" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: 900; color: #0f172a; font-size: 18px;">
+
+            <label style="font-size: 12px; font-weight: bold; color: #334155;">Reason / Achievement</label>
+            <input type="text" id="perfBonusReason" placeholder="e.g. Top Sales for September, Perfect Attendance" style="width: 100%; padding: 10px; margin: 5px 0 25px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+
+            <button id="btnSavePerfBonus" onclick="window.submitPerfBonus()" style="width: 100%; background: #f59e0b; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3);">💰 Inject Bonus to Payroll</button>
         </div>
     </div>
   </div>
