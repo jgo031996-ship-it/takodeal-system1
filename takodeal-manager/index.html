@@ -4061,29 +4061,58 @@
     </div>
   </div>
 
-  <!-- 🏆 TOP PERFORMER BONUS MODAL -->
+  <!-- 🏆 TOP PERFORMER BONUS MODAL (WITH HISTORY) -->
   <div id="topPerformerModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
-    <div style="background: white; width: 450px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+    <div style="background: white; width: 550px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); display: flex; flex-direction: column; max-height: 90vh;">
+        
         <div style="background: #f59e0b; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
             <h2 style="margin: 0; font-size: 18px;">🏆 Reward Top Performer</h2>
             <span onclick="document.getElementById('topPerformerModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">×</span>
         </div>
-        <div style="padding: 25px; background: #f8fafc;">
+        
+        <div style="padding: 25px; background: #f8fafc; overflow-y: auto;">
+            <input type="hidden" id="perfBonusId">
             <p style="font-size: 12px; color: #64748b; margin-top: 0; margin-bottom: 20px;">Grant an end-of-the-month performance bonus. This will automatically be added to their next payslip.</p>
 
-            <label style="font-size: 12px; font-weight: bold; color: #334155;">Staff Name</label>
-            <select id="perfBonusStaff" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; cursor: pointer;"></select>
-
-            <label style="font-size: 12px; font-weight: bold; color: #334155;">Date Awarded</label>
-            <input type="date" id="perfBonusDate" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #334155; cursor: pointer;">
+            <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 15px;">
+                <div>
+                    <label style="font-size: 12px; font-weight: bold; color: #334155;">Staff Name</label>
+                    <select id="perfBonusStaff" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; cursor: pointer; background: white;"></select>
+                </div>
+                <div>
+                    <label style="font-size: 12px; font-weight: bold; color: #334155;">Date Awarded</label>
+                    <input type="date" id="perfBonusDate" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold; color: #334155; cursor: pointer; background: white;">
+                </div>
+            </div>
 
             <label style="font-size: 12px; font-weight: bold; color: #334155;">Bonus Amount (₱)</label>
-            <input type="number" id="perfBonusAmount" placeholder="e.g. 1000" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: 900; color: #0f172a; font-size: 18px;">
+            <input type="number" id="perfBonusAmount" placeholder="e.g. 1000" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #fcd34d; border-radius: 6px; outline: none; font-weight: 900; color: #b45309; background: #fffbeb; font-size: 18px;">
 
             <label style="font-size: 12px; font-weight: bold; color: #334155;">Reason / Achievement</label>
-            <input type="text" id="perfBonusReason" placeholder="e.g. Top Sales for September, Perfect Attendance" style="width: 100%; padding: 10px; margin: 5px 0 25px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
+            <input type="text" id="perfBonusReason" placeholder="e.g. Top Sales for September, Perfect Attendance" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; background: white;">
 
             <button id="btnSavePerfBonus" onclick="window.submitPerfBonus()" style="width: 100%; background: #f59e0b; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3);">💰 Inject Bonus to Payroll</button>
+
+            <!-- 📜 HISTORY LOG SECTION -->
+            <div style="margin-top: 25px; padding-top: 15px; border-top: 2px dashed #cbd5e1;">
+                <h3 style="margin-top: 0; color: #334155; font-size: 14px; text-transform: uppercase;">📜 Bonus Ledger</h3>
+                <div style="max-height: 200px; overflow-y: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: white;">
+                    <table style="width: 100%; border-collapse: collapse; font-size: 12px; text-align: left;">
+                        <thead style="background: #f1f5f9; border-bottom: 1px solid #cbd5e1; position: sticky; top: 0;">
+                            <tr>
+                                <th style="padding: 10px;">Date</th>
+                                <th style="padding: 10px;">Staff</th>
+                                <th style="padding: 10px;">Reward</th>
+                                <th style="padding: 10px;">Status</th>
+                                <th style="padding: 10px; text-align: right;">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="perfBonusHistoryBody">
+                            <tr><td colspan="5" class="text-center" style="padding: 15px;">Loading history...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
   </div>
@@ -6038,13 +6067,17 @@
                                   <span>Basic Pay (<span id="psDaysWorked">0</span> days)</span> <span id="psBasicPay" style="font-weight: bold;">0.00</span>
                               </div>
                               <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
-                                  <span>Overtime / Night Diff</span> <input type="number" id="psOvertime" class="ps-input" value="0.00" oninput="recalcPayslip()">
+                                  <span>Overtime / Night Diff</span> <input type="number" id="psOvertime" class="ps-input" value="0.00" oninput="window.recalcPayslip()">
                               </div>
                               <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
-                                  <span>Straight Duty Bonus</span> <input type="number" id="psStraightBonus" class="ps-input" value="0.00" oninput="recalcPayslip()">
+                                  <span>Straight Duty Bonus</span> <input type="number" id="psStraightBonus" class="ps-input" value="0.00" oninput="window.recalcPayslip()">
                               </div>
+                              <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
+                                  <span>Holiday Pay</span> <input type="number" id="psHoliday" class="ps-input" value="0.00" oninput="window.recalcPayslip()">
+                              </div>
+                              <!-- 🔥 NEW: PERFORMANCE BONUS ROW -->
                               <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid black;">
-                                  <span>Holiday Pay</span> <input type="number" id="psHoliday" class="ps-input" value="0.00" oninput="recalcPayslip()">
+                                  <span style="color: #16a34a; font-weight: bold;">Performance Bonus</span> <input type="number" id="psPerfBonus" class="ps-input" style="color: #16a34a;" value="0.00" oninput="window.recalcPayslip()">
                               </div>
                               <div style="display: flex; justify-content: space-between; padding: 12px 8px; font-weight: bold; font-size: 16px;">
                                   <span>GROSS INCOME</span> <span id="psGross">0.00</span>
