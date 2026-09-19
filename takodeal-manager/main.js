@@ -11414,34 +11414,43 @@ window.loadPayrollGenerator = async function() {
 
         bonusSnap.forEach(docSnap => {
             let b = docSnap.data(); 
-            let name = resolveStaffName(b.staffName); // 🔥 Apply Fuzzy Matcher
+            let name = resolveStaffName(b.staffName); 
             if (!name) return;
 
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
-                staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
+                staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, perfBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
+
             let amt = parseFloat(b.amount) || 0;
-            staffData[name].nightBonusTotal += amt; 
             let bDate = b.dateAdded ? b.dateAdded.toDate() : new Date();
             let dateStr = bDate.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
-            
             let existingLog = staffData[name].logs.find(l => l.date === dateStr && l.in !== "---");
-            
-            if (existingLog) {
-                if (existingLog.remark.includes('Complete')) {
-                    existingLog.remark = existingLog.remark.replace('Complete', 'Complete (w/ Overtime)');
+
+            if (b.type === "Performance Bonus") {
+                if (b.status === "Paid") return; // Safety check
+                
+                staffData[name].perfBonusTotal += amt; 
+                let remarkText = `<br><span style="color:#10b981; font-weight:bold;">+₱${amt.toFixed(2)} (🏆 Reward: ${b.remarks})</span>`;
+                
+                if (existingLog) {
+                    existingLog.remark += remarkText;
+                } else {
+                    staffData[name].logs.push({ date: dateStr, in: "---", out: "---", hrs: "0.00", remark: remarkText, lateMins: 0 });
                 }
-                existingLog.remark += `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`;
             } else {
-                staffData[name].logs.push({ 
-                    date: dateStr, 
-                    in: "---", 
-                    out: "---", 
-                    hrs: "0.00", 
-                    remark: `<span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`,
-                    lateMins: 0 
-                });
+                // Regular Manual Overtime
+                staffData[name].nightBonusTotal += amt; 
+                let remarkText = `<br><span style="color:#ea580c; font-weight:bold;">+₱${amt.toFixed(2)} (Manual OT: ${b.remarks || 'Bonus'})</span>`;
+                
+                if (existingLog) {
+                    if (existingLog.remark.includes('Complete')) {
+                        existingLog.remark = existingLog.remark.replace('Complete', 'Complete (w/ Overtime)');
+                    }
+                    existingLog.remark += remarkText;
+                } else {
+                    staffData[name].logs.push({ date: dateStr, in: "---", out: "---", hrs: "0.00", remark: remarkText, lateMins: 0 });
+                }
             }
         });
         
@@ -11475,14 +11484,15 @@ window.loadPayrollGenerator = async function() {
                     let profileCustomDeducts = profile.customDeductions || [];
                     let customDeductSum = 0; profileCustomDeducts.forEach(c => customDeductSum += c.amount);
                     
+                    // (Around line 1928) Update globalPayrollCache to include the perfBonus
                     window.globalPayrollCache[name] = {
                         name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
-                        straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
+                        straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0,
-                        logs: staffData[name].logs, profile: staffDict[name] || null, start: startDateRaw, end: endDateRaw,
+                        logs: staffData[name].logs, profile: staffDict[name] || null, start: startInput, end: endInput,
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
-                    d = window.globalPayrollCache[name]; 
+                    d = window.globalPayrollCache[name];
                 }
 
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
@@ -11576,6 +11586,7 @@ window.openPayslipModal = async function(staffName) {
     safeSet('psOvertime', data.nightBonus || 0);
     safeSet('psStraightBonus', data.straightBonus || 0); 
     safeSet('psHoliday', data.holidayPayTotal || 0);
+    safeSet('psPerfBonus', data.perfBonus || 0); // 🔥 Add this!
     
     safeSet('psLate', data.lateDeduction || 0); 
     safeSet('psSSS', data.sss || 0);
@@ -11654,6 +11665,7 @@ window.recalcPayslip = function() {
     let overtime = getVal('psOvertime');
     let straightBonus = getVal('psStraightBonus'); 
     let holiday = getVal('psHoliday');
+    let perfBonus = getVal('psPerfBonus'); // 🔥 Add this!
     
     let late = getVal('psLate');
     let sss = getVal('psSSS');
@@ -11668,7 +11680,7 @@ window.recalcPayslip = function() {
         customDeductionsSum += (parseFloat(inp.value) || 0);
     });
 
-    let gross = basic + overtime + straightBonus + holiday; 
+    let gross = basic + overtime + straightBonus + holiday + perfBonus;
     let deductions = late + sss + phil + pagibig + advance + loans + foods + customDeductionsSum;
     let net = gross - deductions;
 
@@ -11864,6 +11876,15 @@ window.finalizePayslip = async function() {
             frozenData: data, finalNetPay: finalNetPay, processedAt: serverTimestamp(),
             acknowledged: false // 🔥 THE FIX: Flags it as unread for the Staff App!
         });
+
+        // 🔥 MARK THE PERFORMANCE BONUSES AS PAID AUTOMATICALLY
+        if (data.perfBonus > 0) {
+            const bonusQ = window.query(window.collection(window.db, "staff_bonuses"), window.where("staffName", "==", data.name), window.where("status", "==", "Unpaid"), window.where("type", "==", "Performance Bonus"));
+            const bonusSnap = await window.getDocs(bonusQ);
+            bonusSnap.forEach(bDoc => {
+                window.updateDoc(window.doc(window.db, "staff_bonuses", bDoc.id), { status: "Paid", paidAt: window.serverTimestamp() });
+            });
+        }
 
         Swal.fire({
             title: '✅ Payroll Disbursed!',
@@ -12685,7 +12706,7 @@ window.generateAutoPayslips = async function() {
                 }
 
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
-                let estGross = d.basicPay + (d.nightBonusTotal || 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0);
+                let estGross = d.basicPay + (d.nightBonusTotal || 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0) + (d.perfBonus || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0) masterPayrollTotal += estNet;
                 
@@ -12708,6 +12729,9 @@ window.generateAutoPayslips = async function() {
                         <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel}</td>
                         <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
+                        let perfLabel = d.perfBonus > 0 ? `<br><span style="font-size:11px; color:#10b981; font-weight:bold;">+₱${d.perfBonus.toFixed(2)} Reward</span>` : '';
+                        // Modify the html string to include perfLabel inside the Hours column:
+                        <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel}${straightLabel} ${holLabel}${perfLabel}</td>
                     </tr>
                 `;
             }
@@ -28590,21 +28614,21 @@ window.runDataArchiver = async function() {
 };
 
 // ==========================================
-// 🏆 TOP PERFORMER BONUS ENGINE
+// 🏆 TOP PERFORMER BONUS ENGINE (WITH EDIT/DELETE HISTORY)
 // ==========================================
 window.openTopPerformerModal = async function() {
     document.getElementById('topPerformerModal').style.display = 'flex';
-    let select = document.getElementById('perfBonusStaff');
-    select.innerHTML = '<option value="">Loading Staff...</option>';
+    document.getElementById('perfBonusId').value = '';
+    document.getElementById('perfBonusAmount').value = '';
+    document.getElementById('perfBonusReason').value = '';
+    document.getElementById('btnSavePerfBonus').innerText = '💰 Inject Bonus to Payroll';
     
-    // Auto-fill today's date
     let now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     document.getElementById('perfBonusDate').value = now.toISOString().split('T')[0];
-    
-    // Clear old inputs
-    document.getElementById('perfBonusAmount').value = '';
-    document.getElementById('perfBonusReason').value = '';
+
+    let select = document.getElementById('perfBonusStaff');
+    select.innerHTML = '<option value="">Loading Staff...</option>';
 
     try {
         const snap = await window.getDocs(window.collection(window.db, "cashiers"));
@@ -28613,14 +28637,14 @@ window.openTopPerformerModal = async function() {
         
         snap.forEach(docSnap => {
             let d = docSnap.data();
-            // Do not show resigned or revoked staff
-            if (d.status !== 'Resigned' && d.pin !== 'REVOKED') {
-                staffList.push(d.cashierName);
-            }
+            if (d.status !== 'Resigned' && d.pin !== 'REVOKED') staffList.push(d.cashierName);
         });
         
         staffList.sort().forEach(name => html += `<option value="${name}">${name}</option>`);
         select.innerHTML = html;
+        
+        // Auto-load history
+        window.loadPerfBonusHistory();
     } catch (e) {
         console.error("Reward modal error:", e);
         select.innerHTML = '<option value="">Error loading staff</option>';
@@ -28628,14 +28652,14 @@ window.openTopPerformerModal = async function() {
 };
 
 window.submitPerfBonus = async function() {
+    let docId = document.getElementById('perfBonusId').value;
     let staffName = document.getElementById('perfBonusStaff').value;
     let dateRaw = document.getElementById('perfBonusDate').value;
     let amount = parseFloat(document.getElementById('perfBonusAmount').value);
     let remarks = document.getElementById('perfBonusReason').value.trim();
 
     if (!staffName || !dateRaw || isNaN(amount) || amount <= 0 || !remarks) {
-        Swal.fire('Missing Data', 'Please select a staff member, enter a valid bonus amount, and provide a reason.', 'warning');
-        return;
+        return Swal.fire('Missing Data', 'Please select a staff member, enter a valid bonus amount, and provide a reason.', 'warning');
     }
 
     let btn = document.getElementById('btnSavePerfBonus');
@@ -28643,33 +28667,104 @@ window.submitPerfBonus = async function() {
 
     try {
         let bonusDate = new Date(dateRaw + 'T12:00:00');
-
-        // We leverage the existing "staff_bonuses" collection so the Auto-Payslip engine 
-        // picks it up perfectly alongside standard Overtime!
-        await window.addDoc(window.collection(window.db, "staff_bonuses"), {
+        let payload = {
             staffName: staffName,
             amount: amount,
-            hours: 0, // Flat reward, not hourly overtime
+            hours: 0,
             dateAdded: bonusDate,
             type: "Performance Bonus",
-            remarks: `🏆 Reward: ${remarks}`, 
+            remarks: remarks, 
+            status: "Unpaid", // Marks it to be swept up by the Payslip generator
             loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
             timestamp: window.serverTimestamp()
-        });
+        };
 
-        Swal.fire({
-            title: '✅ Bonus Awarded!',
-            html: `<b>₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</b> performance reward added for <b>${staffName}</b>.<br><br>This will automatically appear in their next payslip calculation.`,
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl' }
-        });
-
-        document.getElementById('topPerformerModal').style.display = 'none';
+        if (docId) {
+            await window.updateDoc(window.doc(window.db, "staff_bonuses", docId), payload);
+            Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Bonus Updated!', showConfirmButton: false, timer: 1500});
+        } else {
+            await window.addDoc(window.collection(window.db, "staff_bonuses"), payload);
+            Swal.fire({
+                title: '✅ Bonus Awarded!',
+                html: `<b>₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</b> performance reward added for <b>${staffName}</b>.<br>This will appear securely in their next payslip.`,
+                icon: 'success',
+                customClass: { popup: 'rounded-2xl' }
+            });
+        }
+        
+        // Reset form and reload list
+        document.getElementById('perfBonusId').value = '';
+        document.getElementById('perfBonusAmount').value = '';
+        document.getElementById('perfBonusReason').value = '';
+        btn.innerText = '💰 Inject Bonus to Payroll';
+        
+        window.loadPerfBonusHistory();
 
     } catch (error) {
         console.error("Bonus Log Error:", error);
         Swal.fire('Error', 'Failed to save performance bonus.', 'error');
     } finally {
-        btn.innerText = "💰 Inject Bonus to Payroll"; btn.disabled = false;
+        btn.disabled = false;
     }
+};
+
+window.loadPerfBonusHistory = async function() {
+    let tbody = document.getElementById('perfBonusHistoryBody');
+    if (!tbody) return;
+
+    try {
+        const q = window.query(window.collection(window.db, "staff_bonuses"), window.where("type", "==", "Performance Bonus"), window.orderBy("timestamp", "desc"));
+        const snap = await window.getDocs(q);
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.dateAdded ? d.dateAdded.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : 'Unknown';
+            let isPaid = d.status === "Paid";
+            
+            let statusHtml = isPaid 
+                ? `<span style="background: #dcfce7; color: #16a34a; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid #bbf7d0;">Paid</span>`
+                : `<span style="background: #fffbeb; color: #d97706; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid #fcd34d;">Unpaid</span>`;
+
+            let actionHtml = isPaid ? `<span style="color: #94a3b8; font-size: 11px; font-weight: bold;">Locked</span>` : `
+                <div style="display: flex; gap: 4px; justify-content: flex-end;">
+                    <button onclick="window.editPerfBonus('${docSnap.id}', '${d.staffName}', '${d.dateAdded.toDate().toISOString().split('T')[0]}', ${d.amount}, '${d.remarks.replace(/'/g, "\\'")}')" style="background: white; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 6px; cursor: pointer; font-size: 11px;">✏️</button>
+                    <button onclick="window.deletePerfBonus('${docSnap.id}')" style="background: #fef2f2; border: 1px solid #fca5a5; color: #dc2626; border-radius: 4px; padding: 4px 6px; cursor: pointer; font-size: 11px;">🗑️</button>
+                </div>
+            `;
+
+            html += `
+                <tr style="border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 10px 8px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 10px 8px; font-weight: bold; color: #334155;">${d.staffName}</td>
+                    <td style="padding: 10px 8px;">
+                        <strong style="color: #10b981;">₱${(d.amount || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</strong><br>
+                        <span style="font-size: 10px; color: #94a3b8;">${d.remarks}</span>
+                    </td>
+                    <td style="padding: 10px 8px;">${statusHtml}</td>
+                    <td style="padding: 10px 8px; text-align: right;">${actionHtml}</td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html || '<tr><td colspan="5" class="text-center" style="padding: 20px; color: #94a3b8;">No rewards issued yet.</td></tr>';
+    } catch(e) {
+        console.error(e); tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red;">Error loading history.</td></tr>';
+    }
+};
+
+window.editPerfBonus = function(id, staff, dateStr, amount, reason) {
+    document.getElementById('perfBonusId').value = id;
+    document.getElementById('perfBonusStaff').value = staff;
+    document.getElementById('perfBonusDate').value = dateStr;
+    document.getElementById('perfBonusAmount').value = amount;
+    document.getElementById('perfBonusReason').value = reason;
+    document.getElementById('btnSavePerfBonus').innerText = '💾 Update Bonus';
+};
+
+window.deletePerfBonus = async function(id) {
+    if (!confirm("Remove this bonus completely?")) return;
+    try {
+        await window.deleteDoc(window.doc(window.db, "staff_bonuses", id));
+        window.loadPerfBonusHistory();
+    } catch (e) { alert("Failed to delete bonus."); }
 };
