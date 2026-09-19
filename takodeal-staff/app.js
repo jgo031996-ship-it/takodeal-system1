@@ -284,28 +284,10 @@ window.loginStaff = async function() {
         }
 
         if (staffData) {
-            let currentDeviceId = localStorage.getItem('takodeal_device_id');
-
-            // 🚨 1-DEVICE STRICT SECURITY LOCK
-            if (staffData.registeredDeviceId && staffData.registeredDeviceId !== currentDeviceId) {
-                Swal.fire({
-                    title: 'Unauthorized Device',
-                    text: 'Your account is securely locked to your primary registered phone. You cannot log in from this device.',
-                    icon: 'error',
-                    customClass: { popup: 'rounded-2xl' }
-                });
-                btn.innerText = "Secure Login"; btn.disabled = false;
-                return;
-            }
-
-            // Bind this device to the staff member on their very first login
-            if (!staffData.registeredDeviceId && currentDeviceId) {
-                await updateDoc(doc(db, "cashiers", docId), { registeredDeviceId: currentDeviceId });
-            }
-
             // Re-establish session memory
             localStorage.setItem('takodeal_staff_name', staffData.cashierName);
             localStorage.setItem('takodeal_staff_id', docId);
+            localStorage.setItem('takodeal_staff_pic', staffData.profilePicUrl || '');
             localStorage.setItem('takodeal_staff_pic', staffData.profilePicUrl || '');
             
             document.getElementById('loggedInName').innerText = staffData.cashierName;
