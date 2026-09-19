@@ -505,8 +505,6 @@ window.saveProfileData = async function() {
     let newPin = document.getElementById('profPin').value.trim();
     if (newPin) payload.pin = newPin;
 
-    if (!payload.cashierName) return Swal.fire('Required', 'Full Name cannot be empty.', 'warning');
-
     btn.innerText = "⏳ Saving Secure Files..."; btn.disabled = true;
 
     try {
