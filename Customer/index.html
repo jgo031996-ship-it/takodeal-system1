@@ -2222,7 +2222,6 @@
                 let orders = [];
                 snap.forEach(d => orders.push({ id: d.id, ...d.data() }));
                 
-                // Sort manually in JS to find the absolute newest order!
                 orders.sort((a,b) => (b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0) - (a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0));
                 
                 let order = orders[0]; 
@@ -2232,8 +2231,8 @@
                     tracker.classList.add('translate-y-full');
                     if (window.customerPrepInterval) clearInterval(window.customerPrepInterval);
                     if (order.status === 'completed' && !order.reviewPrompted) {
-                    window.promptReview(order.orderCode, order.id, order.items, order.orderType);
-                }
+                        window.promptReview(order.orderCode, order.id);
+                    }
                     return;
                 }
                 
@@ -2247,15 +2246,15 @@
                 let btnRec = document.getElementById('btnOrderReceived');
                 let instText = document.getElementById('trackerInstructionText');
                 let trackerIcon = document.getElementById('trackerIcon'); 
+                let riderBox = document.getElementById('riderProfileBox');
                 
-                // 🔥 THE AUDIO TRIGGER: Beep 3 times if it just switched to Ready!
-                let isNowReady = order.status === 'out_for_delivery' || order.status === 'ready';
+                let isNowReady = order.status === 'out_for_delivery' || order.status === 'ready' || order.status === 'rider_near' || order.status === 'rider_arrived';
+                
                 if (isNowReady && window.lastKnownOrderStatus === 'preparing') {
                     if (typeof window.playReadyAlert === 'function') window.playReadyAlert();
                 }
                 window.lastKnownOrderStatus = order.status;
 
-                // Clear old timer if status changes
                 if (window.customerPrepInterval) {
                     clearInterval(window.customerPrepInterval);
                     window.customerPrepInterval = null;
@@ -2263,18 +2262,15 @@
 
                 if (order.status === 'preparing') {
                     statusText = "🍳 Kitchen is preparing your food!";
-                    
-                    // 🔥 THE LIVE COUNTDOWN ENGINE
                     if (order.acceptedAt && order.prepTime) {
                         let acceptedTime = order.acceptedAt.toDate ? order.acceptedAt.toDate().getTime() : new Date(order.acceptedAt).getTime();
-                        let targetTime = acceptedTime + (order.prepTime * 60000); // Convert prep minutes to milliseconds
+                        let targetTime = acceptedTime + (order.prepTime * 60000);
                         
                         const updateTimerUI = () => {
                             let now = Date.now();
                             let diff = targetTime - now;
                             let timeEl = document.getElementById('trackerTime');
                             if (!timeEl) return;
-
                             if (diff > 0) {
                                 let mins = Math.floor(diff / 60000);
                                 let secs = Math.floor((diff % 60000) / 1000);
@@ -2283,26 +2279,22 @@
                                 timeEl.innerHTML = `<span class="text-brandgold animate-pulse">🔥 Almost done! Head to the store to pick it up hot!</span>`;
                             }
                         };
-                        
-                        updateTimerUI(); // Run once immediately
-                        window.customerPrepInterval = setInterval(updateTimerUI, 1000); // Tick every second
-                        timeStr = ""; // Text handled by the interval now
+                        updateTimerUI();
+                        window.customerPrepInterval = setInterval(updateTimerUI, 1000);
+                        timeStr = ""; 
                     } else {
                         timeStr = "Cooking now!";
                     }
 
                     if(btnRec) btnRec.classList.add('hidden');
+                    if(riderBox) riderBox.classList.add('hidden');
                     if(instText) instText.innerText = "Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!";
-                    
-                    // ✨ CUSTOM PREPARING ICON
-                    if(trackerIcon) trackerIcon.innerHTML = `<img src="tako-prep.jpg" class="w-16 h-16 object-contain drop-shadow-md">`;
+                    if(trackerIcon) trackerIcon.innerHTML = `<img src="tako-prep.png" class="w-16 h-16 object-contain drop-shadow-md">`;
                     
                 } else if (isNowReady) {
                     let isDelivery = order.orderType && order.orderType.includes('Delivery');
-                    let riderBox = document.getElementById('riderProfileBox');
                     
                     if (isDelivery) {
-                        // 🛵 DELIVERY LOGIC & RIDER NOTIFICATIONS
                         if (order.status === 'out_for_delivery') {
                             statusText = "🛵 Rider picked up your order!";
                             timeStr = order.eta ? `ETA: ${order.eta}` : "On the way to your location!";
@@ -2314,8 +2306,7 @@
                             timeStr = "Your Takoyaki is outside!";
                         }
 
-                        // Display Rider Details if Firebase has them
-                        if (order.riderName) {
+                        if (order.riderName && riderBox) {
                             riderBox.classList.remove('hidden');
                             document.getElementById('displayRiderName').innerText = order.riderName;
                             document.getElementById('displayRiderPlate').innerText = order.riderPlate || 'N/A';
@@ -2324,7 +2315,6 @@
                         if(trackerIcon) trackerIcon.innerHTML = `<img src="tako-delivery.png" class="w-16 h-16 object-contain drop-shadow-md">`;
                         
                     } else {
-                        // 🛍️ PICK-UP LOGIC
                         statusText = "🛍️ Order is Ready for Pick-up!";
                         timeStr = "Enjoy your meal!";
                         if (riderBox) riderBox.classList.add('hidden');
@@ -2334,8 +2324,11 @@
                     if(btnRec) btnRec.classList.remove('hidden');
                     if(instText) instText.innerText = "Please tap the button below once you have received your order so you can claim your Loyalty Stamp!";
                     
-                    // ✨ CUSTOM PENDING/WAITING ICON
-                    if(trackerIcon) trackerIcon.innerHTML = `<img src="tako-notepad.jpg" class="w-16 h-16 object-contain drop-shadow-md">`;
+                } else {
+                    if(btnRec) btnRec.classList.add('hidden');
+                    if(riderBox) riderBox.classList.add('hidden');
+                    if(instText) instText.innerText = "Your order has been securely transmitted. Keep this window open; it will update automatically when the kitchen accepts it!";
+                    if(trackerIcon) trackerIcon.innerHTML = `<img src="tako-notepad.png" class="w-16 h-16 object-contain drop-shadow-md">`;
                 }
 
                 document.getElementById('trackerStatus').innerText = statusText;
