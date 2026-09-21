@@ -2376,6 +2376,12 @@
                     }
                     updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
                 }
+            }).then((res) => {
+                if(res.dismiss === Swal.DismissReason.cancel) {
+                    updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
+                }
+            });
+        };
 
         window.activeTrackedOrderId = null;
 
