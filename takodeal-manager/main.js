@@ -21537,6 +21537,9 @@ window.fetchLiveStaffOnDuty = async function() {
                             }
                         }
 
+                        // 🔥 THE FIX: Universal Shift Matcher Call
+                        let { lateMinutes } = window.calculateLateMinutes(state.time, state.branch, staff, scheduleData, staffProfiles, parseTimeStr);
+
                         activeStaffByBranch[state.branch].push({
                             name: staff,
                             timeIn: state.time,
