@@ -10682,10 +10682,16 @@ window.loadInbox = async function() {
                 detailsStr = `<strong style="color: #1e293b;">${d.leaveType || 'Leave'}</strong><br><span style="font-size:11px; font-weight:bold; color:var(--primary);">${d.startDate || '?'} to ${d.endDate || '?'}</span><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.reason || 'No reason provided'}"</span>`;
             } else if (d.type === "Cash Advance") {
                 detailsStr = `<strong style="color:var(--danger); font-size:15px;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</strong><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.reason || 'No reason provided'}"</span>`;
-            } else if (d.type === "Staff Meal") {
-                detailsStr = `<strong style="color: #1e293b;">${d.item || 'Food Item'}</strong><br><span style="color:var(--danger); font-size:11px; font-weight:bold;">Deduct: ₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</span>`;
             } else if (d.type === "Reason Letter") {
                 detailsStr = `<strong style="color: #1e293b;">Cause: ${d.explanationCause || 'Variance'}</strong><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.explanationMessage || 'No explanation provided'}"</span>`;
+            } else if (d.type.includes("Meal")) {
+                // 🔥 THE FIX: Catches all manual and POS-Auto meals, then formats the items cleanly!
+                let itemsList = d.item ? d.item.replace(/ \| /g, '<br><span style="color:#64748b; font-size:11px; font-family:monospace;">') + '</span>' : 'Food Item';
+                detailsStr = `
+                    <div style="max-width: 250px; white-space: normal;">
+                        <strong style="color: #0f766e; font-size: 13px; line-height: 1.4; display: block; margin-bottom: 4px;">🍔 ${itemsList}</strong>
+                        <span style="color:var(--danger); font-size:12px; font-weight:900;">Deduct: ₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</span>
+                    </div>`;
             } else {
                 detailsStr = d.amount ? `₱${d.amount.toLocaleString(undefined, {minimumFractionDigits:2})}` : (d.item || d.reason || 'N/A');
             }
@@ -10909,12 +10915,13 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
         }
       
         // 4. STANDARD DEDUCTIONS (Advances & Meals)
-        if (action === "Approved" && (type === "Cash Advance" || type === "Staff Meal")) {
+        // 🔥 THE FIX: Uses .includes("Meal") so Manager Meals are successfully deducted from payroll!
+        if (action === "Approved" && (type === "Cash Advance" || type.includes("Meal"))) {
             await window.addDoc(window.collection(window.db, "staff_deductions"), {
                 staffName: staffName,
                 type: type,
                 amount: amount,
-                dateAdded: originalDate, // 🔥 THE FIX: Deducts on the exact day they took the cash/meal!
+                dateAdded: originalDate, // Logs on the exact day they took the cash/meal!
                 status: "Unpaid" 
             });
         }
@@ -26503,8 +26510,43 @@ window.saveEmployeeProfile = async function() {
             document.getElementById('empProfileId').value = docId; 
             Swal.fire({ toast: true, position: 'top', icon: 'success', title: `✅ Added to database!`, showConfirmButton: false, timer: 3000, customClass: { popup: 'rounded-xl' }});
         }
+        
         window.globalStaffData[docId] = payload;
         window.loadHRModule(); 
+
+        // 🔥 THE MEMORY BRIDGE: Instantly sync the profile changes to the Schedule Calendar!
+        if (window.employees) {
+            let schedName = payload.scheduleNickname || payload.cashierName;
+            
+            // Find them by their original full name OR their old schedule name
+            let oldName = oldData ? oldData.cashierName : null;
+            let oldNick = oldData ? (oldData.scheduleNickname || oldData.cashierName) : null;
+            
+            let existingEmp = window.employees.find(e => e.fullName === oldName || e.name === oldNick);
+            
+            if (existingEmp) {
+                // If they exist, update their branch and names instantly
+                existingEmp.branch = payload.branch;
+                existingEmp.name = schedName;
+                existingEmp.fullName = payload.cashierName;
+                existingEmp.scheduleNickname = payload.scheduleNickname;
+            } else {
+                // If it's a brand new employee, push them into the schedule pool
+                window.employees.push({
+                    name: schedName,
+                    fullName: payload.cashierName,
+                    scheduleNickname: payload.scheduleNickname,
+                    branch: payload.branch
+                });
+            }
+            
+            // Instantly re-render the Schedule UI to show them in the new branch!
+            if (typeof window.updateStaffDisplay === 'function') window.updateStaffDisplay();
+            if (typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
+            if (typeof window.updateUnavailabilityList === 'function') window.updateUnavailabilityList();
+            if (typeof window.renderTables === 'function') window.renderTables();
+        }
+
     } catch (e) {
         console.error(e); Swal.fire('Error', 'Failed to save data.', 'error');
     } finally {
