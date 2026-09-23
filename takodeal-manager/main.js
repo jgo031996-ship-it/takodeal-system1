@@ -11286,8 +11286,8 @@ window.loadPayrollGenerator = async function() {
 
                     let logDate = log.timestamp.toDate();
                     
-                    // 🔥 THE FIX: Universal Shift Matcher Call
-                    let { lateMinutes, expectedStartHour, wasScheduled } = window.calculateLateMinutes(logDate, log.branch, name, scheduleData, staffDict, parseTimeStr);
+                    // 🔥 THE FIX: Safe variable aliases (calcMins, expStart) prevent crashes with leftover code!
+                    let { lateMinutes: calcMins, expectedStartHour: expStart, wasScheduled: wasSched } = window.calculateLateMinutes(logDate, log.branch, name, scheduleData, staffDict, parseTimeStr);
 
                     // 🔥 THE FIX: Custom Individual Rates Math Injection!
                     let dailyRate = staffDict[name] ? (parseFloat(staffDict[name].hourlyRate) || 0) : 0;
@@ -11295,22 +11295,22 @@ window.loadPayrollGenerator = async function() {
                     let customNightRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) : (isNightEligibleLegacy ? 50 : 0)) : 50;
                     
                     let effectiveDailyRate = dailyRate;
-                    if (customNightRate > 0 && expectedStartHour !== null && expectedStartHour >= 14) {
+                    if (customNightRate > 0 && expStart !== null && expStart >= 14) {
                         effectiveDailyRate += customNightRate; 
                     }
                     
                     let ratePerHour = effectiveDailyRate / 8; 
-                    let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
-                    let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * ratePerHour) : 0;
+                    let lateHoursToDeduct = Math.ceil(calcMins / 60); 
+                    let lateAmount = (calcMins > 0 && !log.lateExempted) ? (lateHoursToDeduct * ratePerHour) : 0;
 
                     activeShifts[name] = { 
                         time: logDate, 
-                        lateMinutes: lateMinutes, 
+                        lateMinutes: calcMins, 
                         lateAmount: lateAmount, 
                         lateExempted: log.lateExempted || false,
                         lateHoursToDeduct: lateHoursToDeduct,
                         manualPenalty: manualPenalty,
-                        wasScheduled: wasScheduled 
+                        wasScheduled: wasSched 
                     };
                 }
             } else if (pType.includes("TIME OUT") && activeShifts[name]) {
