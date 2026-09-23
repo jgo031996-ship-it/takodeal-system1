@@ -83,6 +83,89 @@ window.fetchCachedSchedule = async function() {
 };
 console.log("🚀 Takodeál Staff Portal Booted (v3.0 - Fleet Engine Active)");
 
+// ==========================================
+// 🕒 UNIVERSAL SHIFT MATCHER (LATE DETECTOR)
+// ==========================================
+window.calculateLateMinutes = function(logDate, branch, staffName, scheduleData, staffDictOrProfiles, parseTimeStrFn) {
+    let lateMinutes = 0;
+    let expectedStartHour = null; 
+    let wasScheduled = false;
+
+    if (!scheduleData || !scheduleData.branchConfig || !scheduleData.branchConfig[branch]) {
+        return { lateMinutes, expectedStartHour, wasScheduled };
+    }
+
+    let lDay = logDate.getDate(); 
+    let lMonth = logDate.getMonth() + 1; 
+    let lYear = logDate.getFullYear();
+    let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
+    let dayOfWeek = logDate.getDay();
+
+    // 1. Try to find explicitly scheduled shift
+    if (scheduleData.currentSchedule && scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
+        let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][branch] : null;
+        if (branchSched && branchSched.scheduled) {
+            let nickname = staffName;
+            if (staffDictOrProfiles && staffDictOrProfiles[staffName]) {
+                nickname = staffDictOrProfiles[staffName].scheduleNickname || staffDictOrProfiles[staffName].nickname || staffName;
+            }
+            
+            let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname || branchSched.scheduled[k] === staffName);
+            if (assignedShiftId) {
+                wasScheduled = true;
+                let shiftConfig = scheduleData.branchConfig[branch].find(s => s.id === assignedShiftId);
+                if (shiftConfig) {
+                    if (shiftConfig.startTime) {
+                        let parts = shiftConfig.startTime.split(':');
+                        expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
+                    } else if (parseTimeStrFn) {
+                        let match = shiftConfig.name.match(/\((.*?)-/);
+                        if (match && match[1]) expectedStartHour = parseTimeStrFn(match[1]);
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. UNIVERSAL FALLBACK: Detect Relievers pulled from other branches
+    if (expectedStartHour === null) {
+        let minDiff = Infinity;
+        scheduleData.branchConfig[branch].forEach(shiftConfig => {
+            if (!shiftConfig.active) return;
+            if (shiftConfig.days && !shiftConfig.days.includes(dayOfWeek)) return;
+
+            let shiftStartHour = null;
+            if (shiftConfig.startTime) {
+                let parts = shiftConfig.startTime.split(':');
+                shiftStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
+            } else if (parseTimeStrFn) {
+                let match = shiftConfig.name.match(/\((.*?)-/);
+                if (match && match[1]) shiftStartHour = parseTimeStrFn(match[1]);
+            }
+
+            if (shiftStartHour !== null) {
+                let diffHours = actualHour - shiftStartHour;
+                if (diffHours > -1.5 && diffHours < 4) {
+                    if (Math.abs(diffHours) < Math.abs(minDiff)) {
+                        minDiff = diffHours;
+                        expectedStartHour = shiftStartHour;
+                    }
+                }
+            }
+        });
+    }
+
+    // 3. Calculate actual Late Minutes
+    if (expectedStartHour !== null) {
+        let diffHours = actualHour - expectedStartHour;
+        if (diffHours > 0) {
+            lateMinutes = Math.floor(diffHours * 60);
+        }
+    }
+
+    return { lateMinutes, expectedStartHour, wasScheduled };
+};
+
 window.BRANCH_ZONES = {
     "Cabantian": { lat: 7.130415, lng: 125.617306 },
     "Citygate":  { lat: 7.111076, lng: 125.612883 },
@@ -1559,114 +1642,86 @@ window.punchTime = async function(type) {
         if (type === "TIME IN") {
             try {
                 let nickname = staffName;
+                let staffProfiles = {}; 
                 const staffDocSnap = await getDoc(doc(db, "cashiers", localStorage.getItem('takodeal_staff_id')));
                 if (staffDocSnap.exists()) {
                     nickname = staffDocSnap.data().scheduleNickname || staffName;
+                    staffProfiles[staffName] = staffDocSnap.data();
                 }
 
                 const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
                 if (schedSnap.exists()) {
                     let scheduleData = schedSnap.data();
-                    let logDate = new Date();
-                    let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
                     
-                    if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth && scheduleData.currentSchedule) {
-                        let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][closestBranch] : null;
-                        
-                        if (branchSched && branchSched.scheduled) {
-                            let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname || branchSched.scheduled[k] === staffName);
-                            
-                            if (assignedShiftId && scheduleData.branchConfig[closestBranch]) {
-                                let shiftConfig = scheduleData.branchConfig[closestBranch].find(s => s.id === assignedShiftId);
-                                if (shiftConfig) {
-                                    let expectedStartHour = null;
-                                    if (shiftConfig.startTime) {
-                                        let parts = shiftConfig.startTime.split(':');
-                                        expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
-                                    } else {
-                                        const parseTimeStr = (timeStr) => {
-                                            let t = timeStr.toLowerCase().replace(/\s/g, '');
-                                            let isPM = t.includes('pm'); let isNN = t.includes('nn');
-                                            let parts = t.replace(/(am|pm|nn)/, '').split(':');
-                                            let hour = parseInt(parts[0]) || 0; let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
-                                            if ((isPM || isNN) && hour < 12) hour += 12;
-                                            if (t.includes('am') && hour === 12) hour = 0;
-                                            return hour + (minute / 60);
-                                        };
-                                        let match = shiftConfig.name.match(/\((.*?)-/);
-                                        if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
-                                    }
-                                    
-                                    if (expectedStartHour !== null) {
-                                        let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
-                                        let diffHours = actualHour - expectedStartHour;
-                                        
-                                        // Trigger interceptor if they are more than 3 minutes late!
-                                        if (diffHours > 0.05 && diffHours < 4) {
-                                            let lateMins = Math.floor(diffHours * 60);
-                                            
-                                            Swal.close(); // Close the loading screen to show the modal!
+                    const parseTimeStrFn = (timeStr) => {
+                        let t = timeStr.toLowerCase().replace(/\s/g, '');
+                        let isPM = t.includes('pm'); let isNN = t.includes('nn');
+                        let parts = t.replace(/(am|pm|nn)/, '').split(':');
+                        let hour = parseInt(parts[0]) || 0; let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
+                        if ((isPM || isNN) && hour < 12) hour += 12;
+                        if (t.includes('am') && hour === 12) hour = 0;
+                        return hour + (minute / 60);
+                    };
 
-                                            const { value: lateForm, isConfirmed } = await Swal.fire({
-                                                title: '⏰ You are Late!',
-                                                html: `
-                                                    <div style="font-size: 14px; color: #475569; margin-bottom: 15px; text-align: left;">
-                                                        You are <b>${lateMins} minutes late</b> for your shift.<br><br>
-                                                        You are strictly required to provide a valid reason and attach a screenshot of your message sent to the Owner, Manager, or HR.
-                                                    </div>
-                                                    <textarea id="lateReason" placeholder="Enter your valid reason here..." style="width: 100%; padding: 12px; border: 2px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; font-family: inherit; resize: none; outline: none; font-weight: bold; box-sizing: border-box;"></textarea>
-                                                    <label style="font-size: 12px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 5px; text-align: left;">Upload Screenshot Proof 📸 *</label>
-                                                    <input type="file" id="lateProof" accept="image/*" style="width: 100%; padding: 10px; border: 2px dashed #fca5a5; border-radius: 8px; box-sizing: border-box; background: #fef2f2; color: #b91c1c; font-weight: bold; outline: none;">
-                                                `,
-                                                showCancelButton: true,
-                                                confirmButtonText: 'Submit & Time In',
-                                                cancelButtonText: 'Cancel',
-                                                confirmButtonColor: '#ef4444',
-                                                cancelButtonColor: '#64748b',
-                                                allowOutsideClick: false,
-                                                customClass: { popup: 'rounded-2xl shadow-xl border border-red-100' },
-                                                preConfirm: () => {
-                                                    let reason = document.getElementById('lateReason').value.trim();
-                                                    let file = document.getElementById('lateProof').files[0];
-                                                    if (!reason || !file) {
-                                                        Swal.showValidationMessage("Both a reason and a screenshot proof are strictly required to time in.");
-                                                        return false;
-                                                    }
-                                                    return { reason, file };
-                                                }
-                                            });
+                    // 🔥 THE UPGRADE: Cross-Branch Universal Matcher Call
+                    let { lateMinutes } = window.calculateLateMinutes(new Date(), closestBranch, staffName, scheduleData, staffProfiles, parseTimeStrFn);
+                    
+                    // Trigger Interceptor Letter if they are more than 3 minutes late!
+                    if (lateMinutes > 3) {
+                        Swal.close(); 
 
-                                            // If they click cancel, abort the Time In silently
-                                            if (!isConfirmed) return; 
-
-                                            Swal.fire({title: 'Uploading Proof...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-                                            let proofUrl = "";
-                                            const fileExt = lateForm.file.name.split('.').pop();
-                                            const fileName = `staff_requests/late_${staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`;
-                                            const storageRef = ref(window.storage || getStorage(db.app), fileName);
-                                            const snapshot = await uploadBytes(storageRef, lateForm.file);
-                                            proofUrl = await getDownloadURL(snapshot.ref);
-
-                                            // Submits immediately to the Manager's Request Inbox!
-                                            await addDoc(collection(db, "staff_requests"), {
-                                                type: "Reason Letter",
-                                                staffName: staffName,
-                                                branch: closestBranch,
-                                                status: "Pending",
-                                                explanationCause: "Tardiness / Late Arrival",
-                                                explanationMessage: `Clocked in ${lateMins} minutes late. Reason: ${lateForm.reason}`,
-                                                proofImageUrl: proofUrl,
-                                                timestamp: serverTimestamp()
-                                            });
-                                            
-                                            // Show verifying again
-                                            Swal.fire({title: 'Verifying location...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-                                        }
-                                    }
+                        const { value: lateForm, isConfirmed } = await Swal.fire({
+                            title: '⏰ You are Late!',
+                            html: `
+                                <div style="font-size: 14px; color: #475569; margin-bottom: 15px; text-align: left;">
+                                    You are <b>${lateMinutes} minutes late</b> for your shift.<br><br>
+                                    You are strictly required to provide a valid reason and attach a screenshot of your message sent to the Owner, Manager, or HR.
+                                </div>
+                                <textarea id="lateReason" placeholder="Enter your valid reason here..." style="width: 100%; padding: 12px; border: 2px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; font-family: inherit; resize: none; outline: none; font-weight: bold; box-sizing: border-box;"></textarea>
+                                <label style="font-size: 12px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 5px; text-align: left;">Upload Screenshot Proof 📸 *</label>
+                                <input type="file" id="lateProof" accept="image/*" style="width: 100%; padding: 10px; border: 2px dashed #fca5a5; border-radius: 8px; box-sizing: border-box; background: #fef2f2; color: #b91c1c; font-weight: bold; outline: none;">
+                            `,
+                            showCancelButton: true,
+                            confirmButtonText: 'Submit & Time In',
+                            cancelButtonText: 'Cancel',
+                            confirmButtonColor: '#ef4444',
+                            cancelButtonColor: '#64748b',
+                            allowOutsideClick: false,
+                            customClass: { popup: 'rounded-2xl shadow-xl border border-red-100' },
+                            preConfirm: () => {
+                                let reason = document.getElementById('lateReason').value.trim();
+                                let file = document.getElementById('lateProof').files[0];
+                                if (!reason || !file) {
+                                    Swal.showValidationMessage("Both a reason and a screenshot proof are strictly required to time in.");
+                                    return false;
                                 }
+                                return { reason, file };
                             }
-                        }
+                        });
+
+                        if (!isConfirmed) return; 
+
+                        Swal.fire({title: 'Uploading Proof...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+
+                        let proofUrl = "";
+                        const fileExt = lateForm.file.name.split('.').pop();
+                        const fileName = `staff_requests/late_${staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`;
+                        const storageRef = ref(window.storage || getStorage(db.app), fileName);
+                        const snapshot = await uploadBytes(storageRef, lateForm.file);
+                        proofUrl = await getDownloadURL(snapshot.ref);
+
+                        await addDoc(collection(db, "staff_requests"), {
+                            type: "Reason Letter",
+                            staffName: staffName,
+                            branch: closestBranch,
+                            status: "Pending",
+                            explanationCause: "Tardiness / Late Arrival",
+                            explanationMessage: `Clocked in ${lateMinutes} minutes late. Reason: ${lateForm.reason}`,
+                            proofImageUrl: proofUrl,
+                            timestamp: serverTimestamp()
+                        });
+                        
+                        Swal.fire({title: 'Verifying location...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
                     }
                 }
             } catch(e) {
