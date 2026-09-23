@@ -12482,43 +12482,9 @@ window.generateAutoPayslips = async function() {
                     }
 
                     let logDate = log.timestamp.toDate();
-                    let lateMinutes = 0;
-                    let wasScheduled = false; 
-                    let expectedStartHour = null; 
                     
-                    if (scheduleData && scheduleData.currentSchedule) {
-                        let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
-                        if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
-                            let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][log.branch] : null;
-                            if (branchSched && branchSched.scheduled) {
-                                let nickname = staffDict[name] ? (staffDict[name].scheduleNickname || name) : name;
-                                let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname);
-                                
-                                if (assignedShiftId && scheduleData.branchConfig[log.branch]) {
-                                    wasScheduled = true; 
-                                    let shiftConfig = scheduleData.branchConfig[log.branch].find(s => s.id === assignedShiftId);
-                                    if (shiftConfig) {
-                                        if (shiftConfig.startTime) {
-                                            let parts = shiftConfig.startTime.split(':');
-                                            expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
-                                        } else {
-                                            let match = shiftConfig.name.match(/\((.*?)-/);
-                                            if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
-                                        }
-
-                                        if (expectedStartHour !== null) {
-                                            let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
-                                            let diffHours = actualHour - expectedStartHour;
-                                            if (diffHours > -1.5 && diffHours < 4) {
-                                                lateMinutes = Math.floor(diffHours * 60);
-                                                if (lateMinutes < 0) lateMinutes = 0;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // 🔥 UPGRADE: Use the Universal Shift Matcher Engine for Payroll!
+                    let { lateMinutes, expectedStartHour, wasScheduled } = window.calculateLateMinutes(logDate, log.branch, name, scheduleData, staffDict, parseTimeStr);
 
                     // 🔥 THE FIX: Custom Individual Rates Math Injection!
                     let dailyRate = staffDict[name] ? (parseFloat(staffDict[name].hourlyRate) || 0) : 0;
@@ -21501,43 +21467,7 @@ window.fetchLiveStaffOnDuty = async function() {
                         // Truly active! Calculate late minutes.
                         if (!activeStaffByBranch[state.branch]) activeStaffByBranch[state.branch] = [];
                         
-                        let lateMinutes = 0;
-                        if (scheduleData && scheduleData.currentSchedule) {
-                            let lDay = state.time.getDate(); let lMonth = state.time.getMonth() + 1; let lYear = state.time.getFullYear();
-
-                            if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
-                                let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][state.branch] : null;
-
-                                if (branchSched && branchSched.scheduled) {
-                                    let nickname = staffProfiles[staff] ? staffProfiles[staff].nickname : staff;
-                                    let assignedShiftId = Object.keys(branchSched.scheduled).find(key => branchSched.scheduled[key] === nickname);
-
-                                    if (assignedShiftId && scheduleData.branchConfig[state.branch]) {
-                                        let shiftConfig = scheduleData.branchConfig[state.branch].find(s => s.id === assignedShiftId);
-                                        if (shiftConfig) {
-                                            let expectedStartHour = null;
-                                            if (shiftConfig.startTime) {
-                                                let parts = shiftConfig.startTime.split(':');
-                                                expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
-                                            } else {
-                                                let match = shiftConfig.name.match(/\((.*?)-/);
-                                                if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
-                                            }
-
-                                            if (expectedStartHour !== null) {
-                                                let actualHour = state.time.getHours() + (state.time.getMinutes() / 60);
-                                                let diffHours = actualHour - expectedStartHour;
-                                                if (diffHours > 0.05 && diffHours < 4) {
-                                                    lateMinutes = Math.floor(diffHours * 60);
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // 🔥 THE FIX: Universal Shift Matcher Call
+                        // 🔥 THE FIX: Universal Shift Matcher Call (Replaces the old manual block)
                         let { lateMinutes } = window.calculateLateMinutes(state.time, state.branch, staff, scheduleData, staffProfiles, parseTimeStr);
 
                         activeStaffByBranch[state.branch].push({
