@@ -811,14 +811,10 @@
                 const bQ = query(collection(db, "branches"));
                 const bSnap = await getDocs(bQ);
                 
-                let html = '';
                 let branches = [];
                 bSnap.forEach(d => {
                     if (d.data().name !== "Main Office") branches.push(d.data());
                 });
-
-                // Sort alphabetically
-                branches.sort((a,b) => a.name.localeCompare(b.name));
 
                 // 🔥 SMART TIME PARSER ENGINE 🔥
                 const parseTime = (timeStr) => {
@@ -837,7 +833,10 @@
                 let now = new Date();
                 let currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-                // 🔥 THE FIX: Changed to a 'for...of' loop so we can 'await' the Cashier's Kill Switch!
+                // 📦 Create a staging area to hold data before drawing
+                let processedBranches = [];
+
+                // 🔥 STEP 1: Determine the status of EVERY branch first
                 for (let b of branches) {
                     let safeName = b.name.replace(/'/g, "\\'");
                     let img = b.storefrontImage || 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?q=80&w=1000&auto=format&fit=crop'; 
@@ -845,7 +844,7 @@
                     let phone = b.publicContact || b.contact || 'No phone listed';
                     let addr = b.publicAddress || b.address || 'Davao City';
 
-                    // 1. Check the Time
+                    // Check the Time
                     let isOpenTime = true; 
                     if (hours && hours.includes('-')) {
                         try {
@@ -863,7 +862,7 @@
                         } catch(e) { console.log("Time parse error"); }
                     }
 
-                    // 2. 🔥 Check the Cashier's Manual Kill Switch!
+                    // Check the Cashier's Manual Kill Switch
                     let isManuallyPaused = false;
                     try {
                         const statusSnap = await getDoc(doc(db, "settings", "status_" + b.name));
@@ -872,54 +871,79 @@
                         }
                     } catch(e) {}
 
-                    // 3. Combine both rules!
+                    // Combine both rules
                     let isFullyOpen = isOpenTime && !isManuallyPaused;
 
-                    // 🎨 UI Modifications based on Open/Paused/Closed status
-                    let cardStyle = isFullyOpen 
+                    // Push all the data into the staging area
+                    processedBranches.push({
+                        name: b.name,
+                        safeName: safeName,
+                        img: img,
+                        hours: hours,
+                        phone: phone,
+                        addr: addr,
+                        isOpenTime: isOpenTime,
+                        isManuallyPaused: isManuallyPaused,
+                        isFullyOpen: isFullyOpen
+                    });
+                }
+
+                // 🔥 STEP 2: THE AUTO-SORTING LOGIC
+                processedBranches.sort((a, b) => {
+                    // Rule 1: If 'a' is Open and 'b' is Closed, 'a' jumps to the top
+                    if (a.isFullyOpen && !b.isFullyOpen) return -1;
+                    // Rule 2: If 'b' is Open and 'a' is Closed, 'b' jumps to the top
+                    if (!a.isFullyOpen && b.isFullyOpen) return 1;
+                    // Rule 3: If they are both Open (or both Closed), sort alphabetically
+                    return a.name.localeCompare(b.name);
+                });
+
+                // 🔥 STEP 3: Draw the HTML using the perfectly sorted list
+                let html = '';
+                for (let b of processedBranches) {
+                    let cardStyle = b.isFullyOpen 
                         ? "group bg-cardbg border border-zinc-800 rounded-2xl overflow-hidden cursor-pointer shadow-lg hover:shadow-[0_0_20px_rgba(220,38,38,0.2)] hover:border-brandred transition-all duration-300 relative flex flex-col"
                         : "group bg-cardbg border border-zinc-800 rounded-2xl overflow-hidden cursor-not-allowed shadow-lg opacity-60 grayscale transition-all duration-300 relative flex flex-col";
                     
-                    let imgStyle = isFullyOpen 
+                    let imgStyle = b.isFullyOpen 
                         ? "w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         : "w-full h-full object-cover transition-transform duration-500";
                         
                     let badgeHtml = "";
-                    if (isManuallyPaused) {
+                    if (b.isManuallyPaused) {
                         badgeHtml = `<div class="absolute top-4 right-4 z-20 bg-red-500/20 border border-red-500 text-red-400 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest backdrop-blur-md shadow-[0_0_10px_rgba(239,68,68,0.3)]">Paused</div>`;
-                    } else if (!isOpenTime) {
+                    } else if (!b.isOpenTime) {
                         badgeHtml = `<div class="absolute top-4 right-4 z-20 bg-red-500/20 border border-red-500 text-red-400 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest backdrop-blur-md shadow-[0_0_10px_rgba(239,68,68,0.3)]">Closed</div>`;
                     } else {
                         badgeHtml = `<div class="absolute top-4 right-4 z-20 bg-green-500/20 border border-green-500 text-green-400 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest backdrop-blur-md shadow-[0_0_10px_rgba(34,197,94,0.3)]">Open Now</div>`;
                     }
 
-                    // If it is closed or paused, intercept the click and show a popup instead of letting them in!
-                    let popupMessage = isManuallyPaused 
+                    let popupMessage = b.isManuallyPaused 
                         ? 'This branch is currently experiencing high volume and has temporarily paused mobile orders. Please try again later.'
-                        : `This branch is currently closed. Please check their operating hours: ${hours}`;
+                        : `This branch is currently closed. Please check their operating hours: ${b.hours}`;
                         
-                    let onClickAction = isFullyOpen 
-                        ? `window.selectBranchAndEnter('${safeName}')` 
-                        : `Swal.fire({title: '${isManuallyPaused ? 'Temporarily Paused' : 'Store Closed'}', text: '${popupMessage.replace(/'/g, "\\'")}', imageUrl: 'tako-bow.png', imageWidth: 140, background: '#141414', color: '#fff', customClass: { popup: 'border border-zinc-800 rounded-2xl' }})`;
+                    let onClickAction = b.isFullyOpen 
+                        ? `window.selectBranchAndEnter('${b.safeName}')` 
+                        : `Swal.fire({title: '${b.isManuallyPaused ? 'Temporarily Paused' : 'Store Closed'}', text: '${popupMessage.replace(/'/g, "\\'")}', imageUrl: 'tako-bow.png', imageWidth: 140, background: '#141414', color: '#fff', customClass: { popup: 'border border-zinc-800 rounded-2xl' }})`;
 
                     html += `
                         <div onclick="${onClickAction}" class="${cardStyle}">
                             <div class="h-48 w-full relative overflow-hidden">
                                 <div class="absolute inset-0 bg-gradient-to-t from-cardbg to-transparent z-10"></div>
-                                <img src="${img}" class="${imgStyle}">
+                                <img src="${b.img}" class="${imgStyle}">
                                 ${badgeHtml}
                             </div>
                             <div class="p-6 relative z-20 flex-1 flex flex-col">
-                                <h3 class="text-2xl font-black text-white mb-2 ${isFullyOpen ? 'group-hover:text-brandgold transition-colors' : ''}">${b.name}</h3>
+                                <h3 class="text-2xl font-black text-white mb-2 ${b.isFullyOpen ? 'group-hover:text-brandgold transition-colors' : ''}">${b.name}</h3>
                                 <div class="space-y-2 mt-auto">
                                     <div class="flex items-start gap-2 text-zinc-400 text-sm">
-                                        <span class="text-brandred">📍</span> <span class="leading-tight">${addr}</span>
+                                        <span class="text-brandred">📍</span> <span class="leading-tight">${b.addr}</span>
                                     </div>
                                     <div class="flex items-center gap-2 text-zinc-400 text-sm">
-                                        <span class="text-brandgold">⏰</span> <span>${hours}</span>
+                                        <span class="text-brandgold">⏰</span> <span>${b.hours}</span>
                                     </div>
                                     <div class="flex items-center gap-2 text-zinc-400 text-sm">
-                                        <span class="text-blue-400">📞</span> <span>${phone}</span>
+                                        <span class="text-blue-400">📞</span> <span>${b.phone}</span>
                                     </div>
                                 </div>
                             </div>
