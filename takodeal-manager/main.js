@@ -27409,6 +27409,12 @@ window.loadStorefrontProfiles = async function() {
             let hoursStr = d.operatingHours || 'Not set';
             let contactStr = d.publicContact || d.contact || 'Not set';
             let addressStr = d.publicAddress || d.address || 'Not set';
+            
+            // 🔥 NEW: Visual Indicators for Delivery Partners
+            let partnerLinks = '';
+            if (d.grabLink) partnerLinks += '<span style="color:#16a34a; font-weight:bold; margin-right:8px; font-size: 11px; background: #dcfce7; padding: 2px 6px; border-radius: 4px; border: 1px solid #bbf7d0;">🟢 Grab</span>';
+            if (d.foodpandaLink) partnerLinks += '<span style="color:#d70f64; font-weight:bold; font-size: 11px; background: #fdf2f8; padding: 2px 6px; border-radius: 4px; border: 1px solid #fbcfe8;">🐼 FP</span>';
+            if (!partnerLinks) partnerLinks = '<span style="color:#94a3b8; font-style:italic; font-size: 11px;">No partner links set</span>';
 
             let safeData = encodeURIComponent(JSON.stringify({id: docSnap.id, ...d}));
 
@@ -27420,6 +27426,7 @@ window.loadStorefrontProfiles = async function() {
                         <div style="font-size: 12px; color: #475569; margin-bottom: 2px;">⏰ <b>Hours:</b> ${hoursStr}</div>
                         <div style="font-size: 12px; color: #475569; margin-bottom: 2px;">📞 <b>Phone:</b> ${contactStr}</div>
                         <div style="font-size: 12px; color: #475569;">🗺️ <b>Address:</b> ${addressStr}</div>
+                        <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #cbd5e1;">${partnerLinks}</div>
                     </td>
                     <td style="padding: 15px 25px; text-align: right; vertical-align: middle;">
                         <button onclick="window.editStorefrontProfile('${safeData}')" style="background: #0ea5e9; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(14,165,233,0.2);">✏️ Edit Profile</button>
@@ -27440,7 +27447,7 @@ window.editStorefrontProfile = async function(encodedData) {
     const { value: formValues } = await Swal.fire({
         title: `🏪 Edit ${d.name} Profile`,
         html: `
-            <div style="text-align: left; margin-top: 10px;">
+            <div style="text-align: left; margin-top: 10px; max-height: 60vh; overflow-y: auto; padding-right: 5px;">
                 <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Operating Hours (For Customers)</label>
                 <input type="text" id="sfHours" value="${d.operatingHours || '10:00 AM - 9:00 PM'}" class="input-box" style="width: 100%; padding: 10px; margin-bottom: 15px; box-sizing: border-box; font-weight: bold;">
                 
@@ -27449,9 +27456,17 @@ window.editStorefrontProfile = async function(encodedData) {
 
                 <label style="font-size: 12px; font-weight: bold; color: #475569; display: block; margin-bottom: 5px;">Public Address</label>
                 <textarea id="sfAddress" class="input-box" style="width: 100%; height: 60px; padding: 10px; margin-bottom: 15px; box-sizing: border-box; font-family: inherit; resize: none;">${d.publicAddress || d.address || ''}</textarea>
+                
+                <div style="border-top: 1px dashed #cbd5e1; padding-top: 15px; margin-bottom: 15px;">
+                    <label style="font-size: 12px; font-weight: bold; color: #16a34a; display: block; margin-bottom: 5px;">🟢 GrabFood URL</label>
+                    <input type="url" id="sfGrab" value="${d.grabLink || ''}" placeholder="https://food.grab.com/ph/en/restaurant/..." class="input-box" style="width: 100%; padding: 10px; margin-bottom: 10px; box-sizing: border-box; font-weight: bold; border: 1px solid #bbf7d0; background: #f0fdf4; color: #15803d; outline: none;">
 
-                <label style="font-size: 12px; font-weight: bold; color: #0ea5e9; display: block; margin-bottom: 5px;">Upload Storefront Image (App Landing Page) 📸</label>
-                <input type="file" id="sfImage" accept="image/*" class="input-box" style="width: 100%; padding: 8px; box-sizing: border-box; background: #f0f9ff; border: 1px dashed #bae6fd; color: #0284c7;">
+                    <label style="font-size: 12px; font-weight: bold; color: #d70f64; display: block; margin-bottom: 5px;">🐼 foodpanda URL</label>
+                    <input type="url" id="sfFp" value="${d.foodpandaLink || ''}" placeholder="https://www.foodpanda.ph/restaurant/..." class="input-box" style="width: 100%; padding: 10px; margin-bottom: 15px; box-sizing: border-box; font-weight: bold; border: 1px solid #fbcfe8; background: #fdf2f8; color: #be123c; outline: none;">
+                </div>
+
+                <label style="font-size: 12px; font-weight: bold; color: #0ea5e9; display: block; margin-bottom: 5px; border-top: 1px dashed #cbd5e1; padding-top: 15px;">Upload Storefront Image (App Landing Page) 📸</label>
+                <input type="file" id="sfImage" accept="image/*" class="input-box" style="width: 100%; padding: 8px; box-sizing: border-box; background: #f0f9ff; border: 1px dashed #bae6fd; color: #0284c7; outline: none; cursor: pointer;">
             </div>
         `,
         focusConfirm: false,
@@ -27464,6 +27479,8 @@ window.editStorefrontProfile = async function(encodedData) {
                 hours: document.getElementById('sfHours').value.trim(),
                 contact: document.getElementById('sfContact').value.trim(),
                 address: document.getElementById('sfAddress').value.trim(),
+                grab: document.getElementById('sfGrab').value.trim(),
+                fp: document.getElementById('sfFp').value.trim(),
                 file: document.getElementById('sfImage').files[0]
             }
         }
@@ -27475,7 +27492,9 @@ window.editStorefrontProfile = async function(encodedData) {
             let payload = {
                 operatingHours: formValues.hours,
                 publicContact: formValues.contact,
-                publicAddress: formValues.address
+                publicAddress: formValues.address,
+                grabLink: formValues.grab,
+                foodpandaLink: formValues.fp
             };
 
             if (formValues.file) {
