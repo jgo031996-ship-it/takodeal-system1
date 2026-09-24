@@ -6742,6 +6742,14 @@ window.submitOpenShift = async function() {
 
             if (typeof closeModal === 'function') closeModal('shiftModal');
             else if (typeof window.closeModal === 'function') window.closeModal('shiftModal');
+            
+            // 🔥 ADD THE THURSDAY ALARM TRIGGER HERE 🔥
+            if (new Date().getDay() === 4) { // 4 represents Thursday!
+                setTimeout(() => {
+                    window.triggerThursdayInventoryAlarm(shiftName, branch);
+                }, 1000);
+            }
+            
         } else {
             alert("Failed to open shift. Check connection!");
         }
@@ -6752,6 +6760,123 @@ window.submitOpenShift = async function() {
     } finally {
         if (btn) { btn.innerText = origText; btn.disabled = false; }
     }
+};
+
+// ========================================================
+// 📅 THURSDAY INVENTORY ALARM & SIGNATURE ENGINE
+// ========================================================
+window.isThursdayCanvasBlank = true;
+
+window.initThursdayCanvas = function() {
+    const canvas = document.getElementById('thursdayCanvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = '#b45309'; // Dark orange ink
+    window.isThursdayCanvasBlank = true;
+
+    let drawing = false;
+
+    const getPos = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return {
+            x: (clientX - rect.left) * (canvas.width / rect.width),
+            y: (clientY - rect.top) * (canvas.height / rect.height)
+        };
+    };
+
+    const startDraw = (e) => { 
+        drawing = true; 
+        window.isThursdayCanvasBlank = false;
+        const pos = getPos(e); 
+        ctx.beginPath(); 
+        ctx.moveTo(pos.x, pos.y); 
+        if(e.cancelable && e.type.includes('touch')) e.preventDefault(); 
+    };
+
+    const draw = (e) => { 
+        if (!drawing) return; 
+        const pos = getPos(e); 
+        ctx.lineTo(pos.x, pos.y); 
+        ctx.stroke(); 
+        if(e.cancelable && e.type.includes('touch')) e.preventDefault(); 
+    };
+
+    const stopDraw = () => { drawing = false; ctx.closePath(); };
+
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDraw);
+    canvas.addEventListener('mouseout', stopDraw);
+
+    canvas.addEventListener('touchstart', startDraw, {passive: false});
+    canvas.addEventListener('touchmove', draw, {passive: false});
+    canvas.addEventListener('touchend', stopDraw, {passive: false});
+};
+
+window.clearThursdayCanvas = function() {
+    const canvas = document.getElementById('thursdayCanvas');
+    if (canvas) {
+        const ctx = canvas.getContext('2d');
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        window.isThursdayCanvasBlank = true;
+    }
+};
+
+window.triggerThursdayInventoryAlarm = function(cashierName, branch) {
+    Swal.fire({
+        title: '📅 Weekly Inventory Day!',
+        html: `
+            <div style="text-align: left; font-size: 14px; color: #475569; margin-bottom: 15px; line-height: 1.5;">
+                Today is <b>Thursday</b>. Management requires you to complete a full physical count of all Weekly and Monthly items before ending your shift today.<br><br>
+                Please go to the <b>Stock Report</b> tab and submit your counts.
+            </div>
+            <div style="background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 15px;">
+                <h4 style="margin: 0 0 10px 0; color: #b45309; text-align: center; font-size: 14px;">Mandatory Acknowledgment</h4>
+                <div style="background: white; border: 2px dashed #d97706; border-radius: 6px; overflow: hidden; position: relative;">
+                    <canvas id="thursdayCanvas" width="400" height="150" style="width: 100%; height: 150px; touch-action: none; cursor: crosshair;"></canvas>
+                    <button onclick="window.clearThursdayCanvas()" style="position: absolute; top: 5px; right: 5px; background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; border-radius: 4px; padding: 4px 8px; font-size: 10px; font-weight: bold; cursor: pointer;">Clear</button>
+                </div>
+            </div>
+        `,
+        showCancelButton: false,
+        confirmButtonText: 'Submit & Acknowledge',
+        confirmButtonColor: '#0ea5e9',
+        allowOutsideClick: false,
+        customClass: { popup: 'rounded-2xl shadow-2xl' },
+        didOpen: () => { window.initThursdayCanvas(); },
+        preConfirm: () => {
+            if (window.isThursdayCanvasBlank) {
+                Swal.showValidationMessage('You must sign the acknowledgment box to proceed.');
+                return false;
+            }
+            return document.getElementById('thursdayCanvas').toDataURL('image/png');
+        }
+    }).then(async (result) => {
+        if (result.isConfirmed) {
+            Swal.fire({title: 'Saving...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+            try {
+                // Fire directly to the Manager App's Security Alerts feed!
+                await window.addDoc(window.collection(window.db, "manager_alerts"), {
+                    type: "INVENTORY_DAY_ACK",
+                    branch: branch,
+                    cashier: cashierName,
+                    message: `✅ INVENTORY ACKNOWLEDGED: ${cashierName} signed the Thursday Inventory Day notice.`,
+                    signatureBase64: result.value, // The Manager app will decode and display this!
+                    timestamp: window.serverTimestamp(),
+                    isRead: false
+                });
+                Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Acknowledged!', showConfirmButton: false, timer: 2000});
+            } catch(e) {
+                console.error("Error saving Thursday ack:", e);
+                Swal.fire('Error', 'Could not save acknowledgment to server, but you may proceed.', 'warning');
+            }
+        }
+    });
 };
 
 // ========================================================
@@ -10897,15 +11022,11 @@ window.loadStockRequestUI = async function() {
     window.currentStockChecklist = []; 
 
     try {
-        const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", window.sessionUser.branch));
-        const snap = await window.getDocs(q);
-
+        // Zero-Cost Cache retrieval
+        const items = await window.fetchCachedInventory(window.sessionUser.branch);
         let itemsByCategory = {};
         
-        snap.forEach(docSnap => {
-            let item = docSnap.data();
-            item.id = docSnap.id;
-            
+        items.forEach(item => {
             if (item.allowRequest !== false) {
                 window.currentStockChecklist.push(item);
                 let cat = (item.category || "Uncategorized").toUpperCase();
@@ -10917,9 +11038,10 @@ window.loadStockRequestUI = async function() {
         let html = '';
 
         Object.keys(itemsByCategory).sort().forEach(cat => {
+            // Category Header Row
             html += `
-                <tr class="manual-count-category" style="background: #e2e8f0; border-top: 3px solid #cbd5e1;">
-                    <td colspan="3" style="padding: 12px 25px; font-weight: 900; color: #0f172a; font-size: 15px; letter-spacing: 1px;">📁 ${cat}</td>
+                <tr class="manual-count-category" style="background: #f8fafc; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;">
+                    <td colspan="3" style="padding: 12px 25px; font-weight: 900; color: #1e293b; font-size: 13px; text-transform: uppercase;">📁 ${cat}</td>
                 </tr>
             `;
 
@@ -10933,7 +11055,8 @@ window.loadStockRequestUI = async function() {
                 let memPurch = window.stockCountMemory[`${item.id}_purch`] !== undefined ? window.stockCountMemory[`${item.id}_purch`] : '';
                 let memBase = window.stockCountMemory[`${item.id}_base`] !== undefined ? window.stockCountMemory[`${item.id}_base`] : '';
 
-                let maintainingHtml = `<span style="color:#94a3b8; font-size:11px; font-style:italic;">Not Set</span>`;
+                // Par Level Formatting
+                let maintainingHtml = `<span style="color:#cbd5e1; font-size:12px; font-style:italic;">Not Set</span>`;
                 if (parLevelBase > 0) {
                     let wPurch = 0; let rBase = parLevelBase;
                     if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
@@ -10941,46 +11064,47 @@ window.loadStockRequestUI = async function() {
                         rBase = parLevelBase - (wPurch * conv);
                     }
                     let str = '';
-                    if (wPurch > 0) str += `<strong style="font-size:15px; color:#334155;">${wPurch}</strong> <span style="font-size:10px; color:#64748b; text-transform:uppercase;">${pUom}</span> `;
-                    if (rBase > 0 || wPurch === 0) str += `<strong style="font-size:15px; color:#334155;">${rBase.toFixed(1)}</strong> <span style="font-size:10px; color:#64748b; text-transform:uppercase;">${bUom}</span>`;
+                    if (wPurch > 0) str += `<strong style="font-size:14px; color:#1e293b;">${wPurch}</strong> <span style="font-size:9px; color:#64748b; text-transform:uppercase;">${pUom}</span> `;
+                    if (rBase > 0 || wPurch === 0) str += `<strong style="font-size:14px; color:#1e293b;">${rBase.toFixed(1)}</strong> <span style="font-size:9px; color:#64748b; text-transform:uppercase;">${bUom}</span>`;
                     maintainingHtml = str;
                 }
 
+                // 🔥 THE SPREADSHEET PILL UI 🔥
                 let inputHtml = '';
                 if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
                     inputHtml = `
                         <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                            <div style="display: flex; align-items: center; border: 2px solid #bae6fd; border-radius: 6px; background: #f0f9ff; overflow: hidden; width: 110px;">
-                                <input type="number" id="countPurch_${item.id}" value="${memPurch}" oninput="window.saveCountMemory('${item.id}', 'purch', this.value)" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #0284c7; font-size: 15px; background: transparent;">
-                                <span style="font-size: 9px; font-weight: 800; color: #0ea5e9; padding-right: 8px; text-transform: uppercase;">${pUom}</span>
+                            <div style="display: flex; align-items: center; border: 1px solid #bae6fd; border-radius: 6px; overflow: hidden; background: white;">
+                                <input type="number" id="countPurch_${item.id}" value="${memPurch}" oninput="window.saveCountMemory('${item.id}', 'purch', this.value)" placeholder="0" style="width: 40px; padding: 8px; border: none; outline: none; text-align: center; font-weight: bold; color: #0284c7; font-size: 14px;">
+                                <span style="font-size: 9px; font-weight: 900; color: #0ea5e9; padding: 8px; background: #f0f9ff; text-transform: uppercase; border-left: 1px solid #bae6fd;">${pUom}</span>
                             </div>
-                            <span style="font-weight: 900; color: #cbd5e1;">+</span>
-                            <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; width: 110px;">
-                                <input type="number" id="countBase_${item.id}" value="${memBase}" oninput="window.saveCountMemory('${item.id}', 'base', this.value)" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
-                                <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
+                            <span style="font-weight: 900; color: #94a3b8; font-size: 12px;">+</span>
+                            <div style="display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; background: white;">
+                                <input type="number" id="countBase_${item.id}" value="${memBase}" oninput="window.saveCountMemory('${item.id}', 'base', this.value)" placeholder="0" style="width: 40px; padding: 8px; border: none; outline: none; text-align: center; font-weight: bold; color: #334155; font-size: 14px;">
+                                <span style="font-size: 9px; font-weight: 900; color: #64748b; padding: 8px; background: #f8fafc; text-transform: uppercase; border-left: 1px solid #cbd5e1;">${bUom}</span>
                             </div>
                         </div>
                     `;
                 } else {
                     inputHtml = `
-                        <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; max-width: 140px; margin: 0 auto;">
-                            <input type="number" id="countBase_${item.id}" value="${memBase}" oninput="window.saveCountMemory('${item.id}', 'base', this.value)" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
-                            <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
+                        <div style="display: flex; align-items: center; border: 1px solid #bae6fd; border-radius: 6px; overflow: hidden; background: white; max-width: 120px; margin: 0 auto;">
+                            <input type="number" id="countBase_${item.id}" value="${memBase}" oninput="window.saveCountMemory('${item.id}', 'base', this.value)" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: bold; color: #0284c7; font-size: 14px;">
+                            <span style="font-size: 9px; font-weight: 900; color: #0ea5e9; padding: 8px; background: #f0f9ff; text-transform: uppercase; border-left: 1px solid #bae6fd;">${bUom}</span>
                         </div>
                     `;
                 }
 
-                let cycleSafe = item.restockCycle || 'As Needed';
-                let cycleColor = cycleSafe === 'Weekly' ? '#10b981' : (cycleSafe === 'Monthly' ? '#8b5cf6' : '#64748b');
-                let cycleBadge = cycleSafe !== 'As Needed' ? `<br><span style="background: ${cycleColor}15; color: ${cycleColor}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid ${cycleColor}50; margin-top: 4px; display: inline-block;">📅 ${cycleSafe}</span>` : '';
+                let cycleSafe = item.restockCycle || 'Monthly';
+                let cycleColor = cycleSafe === 'Weekly' ? '#10b981' : (cycleSafe === 'Monthly' ? '#8b5cf6' : '#0ea5e9');
+                let cycleBadge = `<span style="background: #f8fafc; color: ${cycleColor}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid #e2e8f0; margin-top: 6px; display: inline-flex; align-items: center; gap: 4px;">📅 ${cycleSafe}</span>`;
 
                 html += `
-                    <tr class="manual-count-row visible-row" data-name="${(item.name || '').toLowerCase()}" data-cycle="${cycleSafe}" style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                        <td style="padding: 15px 25px; font-weight: bold; color: #1e293b; font-size: 14px; vertical-align: middle; line-height: 1.2;">
+                    <tr class="manual-count-row visible-row" data-name="${(item.name || '').toLowerCase()}" data-cycle="${cycleSafe}" style="border-bottom: 1px solid #f1f5f9; background: white; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                        <td style="padding: 15px 25px; font-weight: bold; color: #0f172a; font-size: 13px; vertical-align: middle;">
                             ${item.name}
-                            ${cycleBadge}
+                            <br>${cycleBadge}
                         </td>
-                        <td style="padding: 15px 25px; text-align: center; vertical-align: middle; background: #f8fafc; border-left: 1px dashed #e2e8f0; border-right: 1px dashed #e2e8f0;">${maintainingHtml}</td>
+                        <td style="padding: 15px 25px; text-align: center; vertical-align: middle; border-left: 1px dashed #f1f5f9; border-right: 1px dashed #f1f5f9;">${maintainingHtml}</td>
                         <td style="padding: 15px 25px; text-align: center; vertical-align: middle;">${inputHtml}</td>
                     </tr>
                 `;
