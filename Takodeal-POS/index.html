@@ -905,19 +905,19 @@
     </div>
 
     <!-- 📦 MANUAL STOCK COUNT & LOGISTICS TAB -->
-    <div class="view-container" id="view-stockreq" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-      <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); width: 100%; max-width: 1400px; margin: 0 auto; border: 1px solid #e2e8f0; overflow: hidden;">
+    <div class="view-container" id="view-stockreq" style="padding: 20px; background: #f1f5f9; width: 100%; overflow-y: auto;">
+      <div style="background: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); width: 100%; max-width: 1400px; margin: 0 auto; border: 1px solid #e2e8f0; overflow: hidden;">
 
         <!-- Master Header & Tab Switches -->
-        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding: 25px 30px; background: #f8fafc; flex-wrap: wrap; gap: 15px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding: 20px 30px; background: #ffffff; flex-wrap: wrap; gap: 15px;">
           <div>
-            <h2 style="margin: 0; color: #0f172a; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">📋</span> Stock Counts & History</h2>
-            <p style="color: #64748b; font-size: 13px; margin: 8px 0 0 0; font-weight: 500;">Enter physical counts to trigger silent AI restocks, or view history.</p>
+            <h2 style="margin: 0; color: #0f172a; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 24px;">📋</span> Stock Counts & History</h2>
+            <p style="color: #64748b; font-size: 12px; margin: 4px 0 0 0;">Enter physical counts to trigger silent AI restocks, or view history.</p>
           </div>
           <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-             <button onclick="window.openDeliveryHistoryModal()" style="background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.1);" onmouseover="this.style.background='#bae6fd';" onmouseout="this.style.background='#e0f2fe';">🚚 Delivery History</button>
-             <button id="btnTabReqHist" onclick="window.switchStockReqTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">📜 View Log History</button>
-             <button id="btnTabReqNew" onclick="window.switchStockReqTab('New')" style="background: #0ea5e9; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;">📋 Manual Count</button>
+             <button onclick="window.openDeliveryHistoryModal()" style="background: #f0f9ff; color: #0ea5e9; border: 1px solid #bae6fd; padding: 10px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;">🚚 Delivery History</button>
+             <button id="btnTabReqHist" onclick="window.switchStockReqTab('History')" style="background: #fffbeb; color: #d97706; border: 1px solid #fde68a; padding: 10px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;">📜 View Log History</button>
+             <button id="btnTabReqNew" onclick="window.switchStockReqTab('New')" style="background: #0ea5e9; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;">📋 Manual Count</button>
           </div>
         </div>
 
@@ -925,37 +925,35 @@
         <div id="stockReqTabNew" style="display: block;">
             
             <!-- Controls Bar (With Search!) -->
-            <div style="display: flex; justify-content: space-between; padding: 20px 30px; background: white; border-bottom: 2px solid #e2e8f0; align-items: center; flex-wrap: wrap; gap: 15px;">
-                <div style="display: flex; gap: 15px; align-items: center; flex: 1; min-width: 300px;">
-                    <button onclick="window.loadStockRequestUI()" style="background: #f8fafc; border: 1px solid #cbd5e1; color: #475569; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); transition: 0.2s; flex-shrink: 0;">🔄 Refresh List</button>
+            <div style="display: flex; justify-content: space-between; padding: 15px 30px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div style="display: flex; gap: 10px; align-items: center; flex: 1; min-width: 300px;">
+                    <button onclick="window.loadStockRequestUI()" style="background: white; border: 1px solid #cbd5e1; color: #0ea5e9; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; transition: 0.2s;"><span style="font-size:16px;">🔄</span> Refresh List</button>
                     
-                    <!-- 🔥 NEW RESTOCK CYCLE FILTER 🔥 -->
-                    <select id="manualCountCycleFilter" onchange="window.filterManualStockCount()" style="padding: 12px 15px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0ea5e9; font-size: 14px; box-sizing: border-box; background: #f0f9ff; cursor: pointer; flex-shrink: 0;">
+                    <select id="manualCountCycleFilter" onchange="window.filterManualStockCount()" style="padding: 10px 15px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #0ea5e9; font-size: 13px; box-sizing: border-box; background: white; cursor: pointer; flex-shrink: 0;">
                         <option value="All">📅 All Items</option>
                         <option value="Weekly">📅 Weekly Restock</option>
                         <option value="Monthly">📅 Monthly Restock</option>
                         <option value="Daily">📅 Daily Restock</option>
                     </select>
                     
-                    <div style="position: relative; flex: 1; max-width: 400px;">
-                        <span style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 16px;">🔍</span>
-                        <input type="text" id="manualCountSearch" placeholder="Search item..." onkeyup="window.filterManualStockCount()" style="width: 100%; padding: 12px 12px 12px 40px; border-radius: 8px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #334155; font-size: 14px; box-sizing: border-box; background: #f8fafc;">
+                    <div style="position: relative; flex: 1; max-width: 300px;">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-size: 14px;">🔍</span>
+                        <input type="text" id="manualCountSearch" placeholder="Search item..." onkeyup="window.filterManualStockCount()" style="width: 100%; padding: 10px 10px 10px 32px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; font-weight: bold; color: #334155; font-size: 13px; box-sizing: border-box; background: white;">
                     </div>
                 </div>
 
-                <button id="btnSubmitAllCounts" onclick="window.submitAllManualCounts()" style="background: #10b981; color: white; border: none; padding: 12px 30px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3); transition: 0.2s; display: flex; align-items: center; gap: 8px;">
-                    <span style="font-size: 18px;">💾</span> Submit All Counts
+                <button id="btnSubmitAllCounts" onclick="window.submitAllManualCounts()" style="background: #10b981; color: white; border: none; padding: 10px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2); transition: 0.2s; display: flex; align-items: center; gap: 6px;">
+                    <span style="font-size: 16px;">💾</span> Submit All Counts
                 </button>
             </div>
 
-            <!-- Removed Action column from Table Header -->
             <div class="table-responsive" style="max-height: 65vh; overflow-y: auto;">
               <table style="width: 100%; border-collapse: collapse; text-align: left; background: white;">
-                <thead style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1; position: sticky; top: 0; z-index: 10;">
+                <thead style="background: white; border-bottom: 2px solid #e2e8f0; position: sticky; top: 0; z-index: 10;">
                   <tr>
-                    <th style="padding: 15px 25px; font-size: 12px; color: #475569; text-transform: uppercase; font-weight: 900;">Item Name</th>
-                    <th style="padding: 15px 25px; font-size: 12px; color: #475569; text-transform: uppercase; font-weight: 900; text-align: center;">Maintaining Qty (Par)</th>
-                    <th style="padding: 15px 25px; font-size: 12px; color: #0ea5e9; text-transform: uppercase; font-weight: 900; text-align: center;">Actual Physical Count</th>
+                    <th style="padding: 15px 25px; font-size: 11px; color: #334155; text-transform: uppercase; font-weight: 900; letter-spacing: 0.5px;">Item Name</th>
+                    <th style="padding: 15px 25px; font-size: 11px; color: #334155; text-transform: uppercase; font-weight: 900; text-align: center; letter-spacing: 0.5px;">Maintaining Qty (Par)</th>
+                    <th style="padding: 15px 25px; font-size: 11px; color: #0ea5e9; text-transform: uppercase; font-weight: 900; text-align: center; letter-spacing: 0.5px;">Actual Physical Count</th>
                   </tr>
                 </thead>
                 <tbody id="manualStockCountBody">
