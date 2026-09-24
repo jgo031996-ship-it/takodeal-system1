@@ -20133,6 +20133,7 @@ window.publishAnnouncement = async function() {
             targetType: targetType,          // Routes to 'All', 'Branch', or 'Individual'
             targetBranch: targetType === 'Branch' ? targetBranch : null,
             targetStaff: targetType === 'Individual' ? targetStaff : null,
+            isPrivateMessage: targetType === 'Individual', // 🔥 NEW: Security flag to hide from public tablets!
             timestamp: window.serverTimestamp(),
             publisher: window.sessionUser ? window.sessionUser.cashierName : 'Owner'
         });
