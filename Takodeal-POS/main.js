@@ -10973,7 +10973,7 @@ window.saveCountMemory = function(itemId, type, val) {
     localStorage.setItem('takodeal_stock_count_memory', JSON.stringify(window.stockCountMemory));
 };
 
-// Search Filter - instantly hides/shows rows so typed data is never lost!
+// Search Filter - instantly hides/shows rows in the new Grid Layout!
 window.filterManualStockCount = function() {
     let searchInput = document.getElementById('manualCountSearch');
     let cycleFilter = document.getElementById('manualCountCycleFilter');
@@ -10983,7 +10983,6 @@ window.filterManualStockCount = function() {
     let cycle = cycleFilter ? cycleFilter.value : "All";
     
     let rows = document.querySelectorAll('.manual-count-row');
-    let categories = document.querySelectorAll('.manual-count-category');
 
     // 1. Filter the item rows instantly
     rows.forEach(row => {
@@ -10991,7 +10990,7 @@ window.filterManualStockCount = function() {
         let itemCycle = row.getAttribute('data-cycle') || 'As Needed';
         
         let matchesSearch = itemName.includes(input);
-        let matchesCycle = (cycle === "All" || itemCycle === cycle);
+        let matchesCycle = (cycle === "All" || cycle === "All Items" || itemCycle.includes(cycle));
 
         if (matchesSearch && matchesCycle) {
             row.style.display = ''; 
@@ -11002,123 +11001,154 @@ window.filterManualStockCount = function() {
         }
     });
 
-    // 2. Hide category headers if all their items are hidden
-    categories.forEach(cat => {
-        let nextEl = cat.nextElementSibling;
-        let hasVisible = false;
-        while(nextEl && nextEl.classList.contains('manual-count-row')) {
-            if (nextEl.style.display !== 'none') { hasVisible = true; break; }
-            nextEl = nextEl.nextElementSibling;
-        }
-        cat.style.display = hasVisible ? '' : 'none';
+    // 2. Hide category tables if all their items are hidden
+    document.querySelectorAll('.manual-count-category').forEach(cat => {
+        let hasVisible = cat.querySelectorAll('.visible-row').length > 0;
+        cat.style.display = hasVisible ? 'block' : 'none';
+    });
+
+    // 3. Hide massive Cycle sections (e.g., "WEEKLY ITEMS") if totally empty
+    document.querySelectorAll('.manual-count-cycle-section').forEach(sec => {
+        let hasVisibleCats = Array.from(sec.querySelectorAll('.manual-count-category')).some(c => c.style.display !== 'none');
+        sec.style.display = hasVisibleCats ? 'block' : 'none';
     });
 };
 
 window.loadStockRequestUI = async function() {
-    const tbody = document.getElementById('manualStockCountBody');
-    if (!tbody) return;
+    const container = document.getElementById('manualStockCountBody');
+    if (!container) return;
     
-    tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 15px;">⏳ Loading stock checklist...</td></tr>';
+    container.innerHTML = '<div style="text-align:center; padding: 40px; color: #0ea5e9; font-weight: bold; font-size: 15px;">⏳ Loading TAKODEÁL Inventory Sheet...</div>';
     window.currentStockChecklist = []; 
 
     try {
-        // Zero-Cost Cache retrieval
         const items = await window.fetchCachedInventory(window.sessionUser.branch);
-        let itemsByCategory = {};
+        let groupedData = {};
         
         items.forEach(item => {
             if (item.allowRequest !== false) {
                 window.currentStockChecklist.push(item);
+                
+                // Group 1: By Cycle (Weekly vs Monthly)
+                let cycle = item.restockCycle || 'Monthly'; 
+                if(cycle.includes("Weekly")) cycle = "Weekly";
+                else if(cycle.includes("Monthly")) cycle = "Monthly";
+                else if(cycle.includes("Daily")) cycle = "Daily";
+                else cycle = "As Needed";
+
+                // Group 2: By Category
                 let cat = (item.category || "Uncategorized").toUpperCase();
-                if (!itemsByCategory[cat]) itemsByCategory[cat] = [];
-                itemsByCategory[cat].push(item);
+
+                if (!groupedData[cycle]) groupedData[cycle] = {};
+                if (!groupedData[cycle][cat]) groupedData[cycle][cat] = [];
+
+                groupedData[cycle][cat].push(item);
             }
         });
 
         let html = '';
+        let cycleOrder = ["Weekly", "Monthly", "Daily", "As Needed"];
+        let cyclesPresent = Object.keys(groupedData).sort((a,b) => cycleOrder.indexOf(a) - cycleOrder.indexOf(b));
 
-        Object.keys(itemsByCategory).sort().forEach(cat => {
-            // Category Header Row
+        // Build the Sections (Matching the Physical Paper)
+        cyclesPresent.forEach(cycle => {
             html += `
-                <tr class="manual-count-category" style="background: #f8fafc; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0;">
-                    <td colspan="3" style="padding: 12px 25px; font-weight: 900; color: #1e293b; font-size: 13px; text-transform: uppercase;">📁 ${cat}</td>
-                </tr>
+                <div class="manual-count-cycle-section" data-cycle="${cycle}" style="margin-bottom: 40px;">
+                    <h2 style="text-align: center; margin: 0 0 20px 0; color: #0f172a; font-weight: 900; font-size: 24px; text-transform: uppercase; letter-spacing: 3px; border-bottom: 3px solid #94a3b8; padding-bottom: 10px; display: inline-block; width: 100%;">
+                        ${cycle} ITEMS
+                    </h2>
+                    <!-- 🔥 THE CSS GRID THAT CREATES THE 2-COLUMN PAPER LOOK -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(48%, 1fr)); gap: 20px; align-items: start;">
             `;
 
-            itemsByCategory[cat].sort((a,b) => a.name.localeCompare(b.name)).forEach(item => {
-                let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
-                let bUom = item.baseUom || item.uom || 'units';
-                let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-                let parLevelBase = parseFloat(item.maintainingStock) || 0;
-
-                // Load saved numbers from local memory
-                let memPurch = window.stockCountMemory[`${item.id}_purch`] !== undefined ? window.stockCountMemory[`${item.id}_purch`] : '';
-                let memBase = window.stockCountMemory[`${item.id}_base`] !== undefined ? window.stockCountMemory[`${item.id}_base`] : '';
-
-                // Par Level Formatting
-                let maintainingHtml = `<span style="color:#cbd5e1; font-size:12px; font-style:italic;">Not Set</span>`;
-                if (parLevelBase > 0) {
-                    let wPurch = 0; let rBase = parLevelBase;
-                    if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
-                        wPurch = Math.floor(parLevelBase / conv);
-                        rBase = parLevelBase - (wPurch * conv);
-                    }
-                    let str = '';
-                    if (wPurch > 0) str += `<strong style="font-size:14px; color:#1e293b;">${wPurch}</strong> <span style="font-size:9px; color:#64748b; text-transform:uppercase;">${pUom}</span> `;
-                    if (rBase > 0 || wPurch === 0) str += `<strong style="font-size:14px; color:#1e293b;">${rBase.toFixed(1)}</strong> <span style="font-size:9px; color:#64748b; text-transform:uppercase;">${bUom}</span>`;
-                    maintainingHtml = str;
-                }
-
-                // 🔥 THE SPREADSHEET PILL UI 🔥
-                let inputHtml = '';
-                if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
-                    inputHtml = `
-                        <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                            <div style="display: flex; align-items: center; border: 1px solid #bae6fd; border-radius: 6px; overflow: hidden; background: white;">
-                                <input type="number" id="countPurch_${item.id}" value="${memPurch}" oninput="window.saveCountMemory('${item.id}', 'purch', this.value)" placeholder="0" style="width: 40px; padding: 8px; border: none; outline: none; text-align: center; font-weight: bold; color: #0284c7; font-size: 14px;">
-                                <span style="font-size: 9px; font-weight: 900; color: #0ea5e9; padding: 8px; background: #f0f9ff; text-transform: uppercase; border-left: 1px solid #bae6fd;">${pUom}</span>
-                            </div>
-                            <span style="font-weight: 900; color: #94a3b8; font-size: 12px;">+</span>
-                            <div style="display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; background: white;">
-                                <input type="number" id="countBase_${item.id}" value="${memBase}" oninput="window.saveCountMemory('${item.id}', 'base', this.value)" placeholder="0" style="width: 40px; padding: 8px; border: none; outline: none; text-align: center; font-weight: bold; color: #334155; font-size: 14px;">
-                                <span style="font-size: 9px; font-weight: 900; color: #64748b; padding: 8px; background: #f8fafc; text-transform: uppercase; border-left: 1px solid #cbd5e1;">${bUom}</span>
-                            </div>
-                        </div>
-                    `;
-                } else {
-                    inputHtml = `
-                        <div style="display: flex; align-items: center; border: 1px solid #bae6fd; border-radius: 6px; overflow: hidden; background: white; max-width: 120px; margin: 0 auto;">
-                            <input type="number" id="countBase_${item.id}" value="${memBase}" oninput="window.saveCountMemory('${item.id}', 'base', this.value)" placeholder="0" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: bold; color: #0284c7; font-size: 14px;">
-                            <span style="font-size: 9px; font-weight: 900; color: #0ea5e9; padding: 8px; background: #f0f9ff; text-transform: uppercase; border-left: 1px solid #bae6fd;">${bUom}</span>
-                        </div>
-                    `;
-                }
-
-                let cycleSafe = item.restockCycle || 'Monthly';
-                let cycleColor = cycleSafe === 'Weekly' ? '#10b981' : (cycleSafe === 'Monthly' ? '#8b5cf6' : '#0ea5e9');
-                let cycleBadge = `<span style="background: #f8fafc; color: ${cycleColor}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid #e2e8f0; margin-top: 6px; display: inline-flex; align-items: center; gap: 4px;">📅 ${cycleSafe}</span>`;
-
+            Object.keys(groupedData[cycle]).sort().forEach(cat => {
                 html += `
-                    <tr class="manual-count-row visible-row" data-name="${(item.name || '').toLowerCase()}" data-cycle="${cycleSafe}" style="border-bottom: 1px solid #f1f5f9; background: white; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                        <td style="padding: 15px 25px; font-weight: bold; color: #0f172a; font-size: 13px; vertical-align: middle;">
-                            ${item.name}
-                            <br>${cycleBadge}
-                        </td>
-                        <td style="padding: 15px 25px; text-align: center; vertical-align: middle; border-left: 1px dashed #f1f5f9; border-right: 1px dashed #f1f5f9;">${maintainingHtml}</td>
-                        <td style="padding: 15px 25px; text-align: center; vertical-align: middle;">${inputHtml}</td>
-                    </tr>
+                    <div class="manual-count-category" data-cat="${cat}" style="background: white; border: 2px solid #cbd5e1; border-radius: 8px; overflow: hidden; box-shadow: 0 6px 12px rgba(0,0,0,0.08);">
+                        <div style="background: #e2e8f0; border-bottom: 2px solid #cbd5e1; padding: 12px; text-align: center; font-weight: 900; color: #0f172a; letter-spacing: 1px; font-size: 15px;">
+                            ${cat}
+                        </div>
+                        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                            <thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
+                                <tr>
+                                    <th style="padding: 10px; border-right: 1px solid #e2e8f0; text-align: left; width: 35%; color: #334155;">Item Name</th>
+                                    <th style="padding: 10px; border-right: 1px solid #e2e8f0; text-align: center; width: 45%; color: #334155;">Actual Count</th>
+                                    <th style="padding: 10px; text-align: center; width: 20%; color: #334155;">Maintaining QTY</th>
+                                </tr>
+                            </thead>
+                            <tbody>
                 `;
+
+                groupedData[cycle][cat].sort((a,b) => a.name.localeCompare(b.name)).forEach(item => {
+                    let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
+                    let bUom = item.baseUom || item.uom || 'units';
+                    let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+                    let parLevelBase = parseFloat(item.maintainingStock) || 0;
+
+                    let memPurch = window.stockCountMemory[`${item.id}_purch`] !== undefined ? window.stockCountMemory[`${item.id}_purch`] : '';
+                    let memBase = window.stockCountMemory[`${item.id}_base`] !== undefined ? window.stockCountMemory[`${item.id}_base`] : '';
+
+                    // Maintaining QTY Formatter
+                    let maintainingHtml = `<span style="color:#94a3b8; font-size:11px; font-style:italic;">Not Set</span>`;
+                    if (parLevelBase > 0) {
+                        let wPurch = 0; let rBase = parLevelBase;
+                        if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                            wPurch = Math.floor(parLevelBase / conv);
+                            rBase = parLevelBase - (wPurch * conv);
+                        }
+                        let str = '';
+                        if (wPurch > 0) str += `<strong style="font-size:14px; color:#334155;">${wPurch}</strong> <span style="font-size:9px; color:#64748b; text-transform:uppercase;">${pUom.substring(0,4)}</span> `;
+                        if (rBase > 0 || wPurch === 0) str += `<strong style="font-size:14px; color:#334155;">${rBase % 1 === 0 ? rBase : rBase.toFixed(1)}</strong> <span style="font-size:9px; color:#64748b; text-transform:uppercase;">${bUom.substring(0,4)}</span>`;
+                        maintainingHtml = str;
+                    }
+
+                    // Compact Inputs to fit the Grid
+                    let inputHtml = '';
+                    if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                        inputHtml = `
+                            <div style="display: flex; align-items: center; justify-content: center; gap: 4px;">
+                                <div style="display: flex; align-items: center; border: 1px solid #bae6fd; border-radius: 4px; overflow: hidden; width: 75px; background: #f0f9ff;">
+                                    <input type="number" id="countPurch_${item.id}" value="${memPurch}" oninput="window.saveCountMemory('${item.id}', 'purch', this.value)" style="width: 100%; padding: 6px; border: none; outline: none; text-align: center; font-weight: bold; color: #0284c7; font-size: 13px; background: transparent;">
+                                    <span style="font-size: 9px; font-weight: bold; color: #0ea5e9; padding-right: 4px; text-transform: uppercase;">${pUom.substring(0,4)}</span>
+                                </div>
+                                <span style="font-weight: 900; color: #94a3b8; font-size: 10px;">+</span>
+                                <div style="display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden; width: 75px; background: #f8fafc;">
+                                    <input type="number" id="countBase_${item.id}" value="${memBase}" oninput="window.saveCountMemory('${item.id}', 'base', this.value)" style="width: 100%; padding: 6px; border: none; outline: none; text-align: center; font-weight: bold; color: #334155; font-size: 13px; background: transparent;">
+                                    <span style="font-size: 9px; font-weight: bold; color: #64748b; padding-right: 4px; text-transform: uppercase;">${bUom.substring(0,4)}</span>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        inputHtml = `
+                            <div style="display: flex; align-items: center; border: 1px solid #bae6fd; border-radius: 4px; overflow: hidden; width: 90px; margin: 0 auto; background: #f0f9ff;">
+                                <input type="number" id="countBase_${item.id}" value="${memBase}" oninput="window.saveCountMemory('${item.id}', 'base', this.value)" style="width: 100%; padding: 6px; border: none; outline: none; text-align: center; font-weight: bold; color: #0284c7; font-size: 13px; background: transparent;">
+                                <span style="font-size: 9px; font-weight: bold; color: #0ea5e9; padding-right: 6px; text-transform: uppercase;">${bUom.substring(0,4)}</span>
+                            </div>
+                        `;
+                    }
+
+                    html += `
+                        <tr class="manual-count-row visible-row" data-name="${(item.name || '').toLowerCase()}" data-cycle="${cycle}" style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                            <td style="padding: 10px; border-right: 1px dashed #e2e8f0; text-align: left; font-weight: bold; color: #1e293b;">${item.name}</td>
+                            <td style="padding: 10px; border-right: 1px dashed #e2e8f0; text-align: center;">${inputHtml}</td>
+                            <td style="padding: 10px; text-align: center; color: #475569;">${maintainingHtml}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `</tbody></table></div>`;
             });
+
+            html += `</div></div>`; // Close grid and section
         });
 
-        tbody.innerHTML = html || '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No inventory items available to count.</td></tr>';
-
+        container.innerHTML = html || '<div class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">No inventory items available to count.</div>';
+        
         // Re-apply search filter if the user already typed something in the box!
         window.filterManualStockCount();
 
     } catch (e) {
         console.error("Manual Count Error:", e);
-        tbody.innerHTML = '<tr><td colspan="3" class="text-center" style="padding: 40px; color: #dc2626; font-weight: bold;">❌ Database Error. Please refresh.</td></tr>';
+        container.innerHTML = '<div class="text-center" style="padding: 40px; color: #dc2626; font-weight: bold;">❌ Database Error. Please refresh.</div>';
     }
 };
 
