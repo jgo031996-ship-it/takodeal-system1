@@ -142,7 +142,7 @@
             </div>
             <p class="text-zinc-400 text-sm mb-6">Choose your preferred delivery method below based on your selected branch.</p>
             <div class="space-y-4">
-                <button onclick="document.getElementById('deliveryPartnersModal').classList.add('hidden'); window.switchScreen('orderingScreen');" class="w-full bg-zinc-900 border border-brandred p-4 rounded-xl flex items-center justify-between hover:bg-zinc-800 transition group">
+                <button id="btnDirectDelivery" onclick="window.handleDirectDelivery()" class="w-full bg-zinc-900 border border-brandred p-4 rounded-xl flex items-center justify-between hover:bg-zinc-800 transition group">
                     <div class="flex items-center gap-3">
                         <img src="customer-logo.jpg" class="w-10 h-10 rounded-full border border-brandred">
                         <div class="text-left">
@@ -150,9 +150,9 @@
                             <div id="directDeliveryStatus" class="text-xs text-brandred font-bold">Standard 40-Min Delivery</div>
                         </div>
                     </div>
-                    <span class="text-brandred group-hover:translate-x-1 transition-transform">➔</span>
+                    <span id="directDeliveryArrow" class="text-brandred group-hover:translate-x-1 transition-transform">➔</span>
                 </button>
-                <button onclick="window.routeToGrab()" class="w-full bg-[#00b14f]/10 border border-[#00b14f] p-4 rounded-xl flex items-center justify-between hover:bg-[#00b14f]/20 transition group">
+                <button id="btnGrabDelivery" onclick="window.routeToGrab()" class="w-full bg-[#00b14f]/10 border border-[#00b14f] p-4 rounded-xl flex items-center justify-between hover:bg-[#00b14f]/20 transition group">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 bg-[#00b14f] rounded-full flex items-center justify-center text-white font-black text-xl">G</div>
                         <div class="text-left">
@@ -162,7 +162,7 @@
                     </div>
                     <span class="text-[#00b14f] group-hover:translate-x-1 transition-transform">➔</span>
                 </button>
-                <a href="https://www.foodpanda.ph/restaurant/jes9/takodeal-cabantian" target="_blank" class="w-full bg-[#d70f64]/10 border border-[#d70f64] p-4 rounded-xl flex items-center justify-between hover:bg-[#d70f64]/20 transition group">
+                <button id="btnFpDelivery" onclick="window.routeToFoodpanda()" class="w-full bg-[#d70f64]/10 border border-[#d70f64] p-4 rounded-xl flex items-center justify-between hover:bg-[#d70f64]/20 transition group">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 bg-[#d70f64] rounded-full flex items-center justify-center text-white font-black text-xl">fp</div>
                         <div class="text-left">
@@ -171,7 +171,7 @@
                         </div>
                     </div>
                     <span class="text-[#d70f64] group-hover:translate-x-1 transition-transform">➔</span>
-                </a>
+                </button>
             </div>
         </div>
     </div>
@@ -998,12 +998,39 @@
             window.initVisitCounter();
         };
         
+        window.currentGrabLink = "";
+        window.currentFpLink = "";
+        window.isGlobalDeliveryActive = true;
+
+        window.handleDirectDelivery = function() {
+            if (!window.isGlobalDeliveryActive) {
+                Swal.fire({
+                    title: 'Delivery Offline',
+                    text: 'Our direct delivery fleet is currently resting or at full capacity. Please use GrabFood or foodpanda to order!',
+                    imageUrl: 'tako-sorry.png',
+                    imageWidth: 140,
+                    background: '#141414', color: '#fff',
+                    customClass: { popup: 'border border-zinc-800 rounded-2xl' }
+                });
+                return;
+            }
+            document.getElementById('deliveryPartnersModal').classList.add('hidden'); 
+            window.switchScreen('orderingScreen');
+        };
+
         window.routeToGrab = function() {
-            let branch = document.getElementById('selectedBranch').value || document.getElementById('homeBranchSelect').value;
-            if (branch === 'Maa') {
-                window.open('https://r.grab.com/g/6-20260808_082607_a0d106d056c649f7abc73f31852b1c7e_MEXMPS-2-C72VAZAJTGN3A6', '_blank');
+            if (window.currentGrabLink && window.currentGrabLink.trim() !== "") {
+                window.open(window.currentGrabLink, '_blank');
             } else {
-                window.open('https://r.grab.com/g/6-20260808_082623_a0d106d056c649f7abc73f31852b1c7e_MEXMPS-2-C6LTLJEFVK6TLN', '_blank');
+                Swal.fire({title: 'Not Available', text: 'GrabFood is not yet set up for this branch.', icon: 'info', background: '#141414', color: '#fff', customClass: { popup: 'border border-zinc-800 rounded-2xl' }});
+            }
+        };
+
+        window.routeToFoodpanda = function() {
+            if (window.currentFpLink && window.currentFpLink.trim() !== "") {
+                window.open(window.currentFpLink, '_blank');
+            } else {
+                Swal.fire({title: 'Not Available', text: 'foodpanda is not yet set up for this branch.', icon: 'info', background: '#141414', color: '#fff', customClass: { popup: 'border border-zinc-800 rounded-2xl' }});
             }
         };
 
@@ -1012,8 +1039,13 @@
                 let allowedCats = [];
                 const bQ = query(collection(db, "branches"), where("name", "==", branchName));
                 const bSnap = await getDocs(bQ);
-                if (!bSnap.empty && bSnap.docs[0].data().allowedCategories) {
-                    allowedCats = bSnap.docs[0].data().allowedCategories;
+                if (!bSnap.empty) {
+                    let bData = bSnap.docs[0].data();
+                    if (bData.allowedCategories) allowedCats = bData.allowedCategories;
+                    
+                    // 🔥 NEW: Store platform links dynamically!
+                    window.currentGrabLink = bData.grabLink || "";
+                    window.currentFpLink = bData.foodpandaLink || "";
                 }
 
                 window.masterMenu = [];
@@ -2721,38 +2753,23 @@
             let selectedBranch = document.getElementById('selectedBranch') ? document.getElementById('selectedBranch').value : 'Cabantian';
             
             if (window.statusListenerUnsubscribe) { window.statusListenerUnsubscribe(); }
+            if (window.globalDeliveryUnsubscribe) { window.globalDeliveryUnsubscribe(); }
 
+            // 1. Listen to Branch Status (Kill Switch / Paused)
             window.statusListenerUnsubscribe = onSnapshot(doc(db, "settings", "status_" + selectedBranch), (docSnap) => {
                 let heroDeliveryText = document.getElementById('heroDeliveryText');
-                let directDeliveryStatus = document.getElementById('directDeliveryStatus');
                 let checkoutBtn = document.getElementById('submitBtn');
                 let globalCartBtn = document.getElementById('globalCartBtn');
 
                 let isEnabled = true;
-                if (docSnap.exists()) {
-                    isEnabled = docSnap.data().mobileOrdersActive !== false;
-                }
-
+                if (docSnap.exists()) isEnabled = docSnap.data().mobileOrdersActive !== false;
                 window.isStoreAcceptingOrders = isEnabled;
 
                 if (!isEnabled) {
-                    // 🔴 STORE IS PAUSED - LOCK EVERYTHING DOWN
                     if(heroDeliveryText) { heroDeliveryText.innerText = "Unavailable"; heroDeliveryText.classList.add('text-red-500'); }
-                    if(directDeliveryStatus) { directDeliveryStatus.innerText = "Temporarily Paused (High Volume)"; directDeliveryStatus.classList.add('text-red-500'); }
-                    
-                    // 1. Lock the Checkout Button
-                    if (checkoutBtn) {
-                        checkoutBtn.innerHTML = 'Store Currently Paused 🔴';
-                        checkoutBtn.disabled = true;
-                        checkoutBtn.classList.add('opacity-50', 'cursor-not-allowed');
-                    }
+                    if (checkoutBtn) { checkoutBtn.innerHTML = 'Store Currently Paused 🔴'; checkoutBtn.disabled = true; checkoutBtn.classList.add('opacity-50', 'cursor-not-allowed'); }
+                    if (globalCartBtn) globalCartBtn.style.display = 'none';
 
-                    // 2. Hide the Floating Cart Button
-                    if (globalCartBtn) {
-                        globalCartBtn.style.display = 'none';
-                    }
-
-                    // 3. Inject a Massive Warning Banner on the Menu
                     let menuWarning = document.getElementById('menuWarningBanner');
                     if (!menuWarning) {
                         let container = document.getElementById('liveMenuContainer');
@@ -2763,27 +2780,58 @@
                             menuWarning.innerHTML = '🚨 THIS BRANCH IS CURRENTLY PAUSED DUE TO HIGH VOLUME.<br><span class="text-sm text-red-200 font-medium">Please check back later or select a different branch to order.</span>';
                             container.parentNode.insertBefore(menuWarning, container);
                         }
-                    } else {
-                        menuWarning.style.display = 'block';
-                    }
-
+                    } else { menuWarning.style.display = 'block'; }
                 } else {
-                    // 🟢 STORE IS ONLINE - UNLOCK EVERYTHING
                     if(heroDeliveryText) { heroDeliveryText.innerText = "40 Minutes"; heroDeliveryText.classList.remove('text-red-500'); }
-                    if(directDeliveryStatus) { directDeliveryStatus.innerText = "Standard 40-Min Delivery"; directDeliveryStatus.classList.remove('text-red-500'); }
-                    
-                    if (checkoutBtn) {
-                        checkoutBtn.innerHTML = 'Proceed to Details 🚀';
-                        checkoutBtn.disabled = false;
-                        checkoutBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                    }
-
-                    if (globalCartBtn) {
-                        globalCartBtn.style.display = 'flex';
-                    }
-
+                    if (checkoutBtn) { checkoutBtn.innerHTML = 'Proceed to Details 🚀'; checkoutBtn.disabled = false; checkoutBtn.classList.remove('opacity-50', 'cursor-not-allowed'); }
+                    if (globalCartBtn) globalCartBtn.style.display = 'flex';
                     let menuWarning = document.getElementById('menuWarningBanner');
                     if (menuWarning) menuWarning.style.display = 'none';
+                }
+            });
+
+            // 2. Listen to Cashier App's "Delivery: OFF" Button!
+            window.globalDeliveryUnsubscribe = onSnapshot(doc(db, "settings", "global_delivery"), (docSnap) => {
+                let btnDirect = document.getElementById('btnDirectDelivery');
+                let directDeliveryStatus = document.getElementById('directDeliveryStatus');
+                let directArrow = document.getElementById('directDeliveryArrow');
+                let optDelivery = document.getElementById('opt-delivery'); 
+                let optAdvDelivery = document.getElementById('opt-adv-delivery');
+
+                if (docSnap.exists() && docSnap.data().enabled === false) {
+                    window.isGlobalDeliveryActive = false;
+                    
+                    // Gray out the direct delivery button on the storefront!
+                    if(btnDirect) {
+                        btnDirect.classList.add('opacity-50', 'grayscale');
+                        btnDirect.classList.remove('hover:bg-zinc-800');
+                    }
+                    if(directDeliveryStatus) {
+                        directDeliveryStatus.innerText = "Temporarily Offline";
+                        directDeliveryStatus.classList.replace('text-brandred', 'text-zinc-500');
+                    }
+                    if(directArrow) directArrow.classList.add('hidden');
+                    
+                    // Lock out Delivery options in the final Checkout screen!
+                    if (optDelivery) { optDelivery.disabled = true; optDelivery.innerText = "Standard Delivery (Unavailable)"; }
+                    if (optAdvDelivery) { optAdvDelivery.disabled = true; optAdvDelivery.innerText = "Advance Order Delivery (Unavailable)"; }
+                } else {
+                    window.isGlobalDeliveryActive = true;
+                    
+                    // Restore storefront button
+                    if(btnDirect) {
+                        btnDirect.classList.remove('opacity-50', 'grayscale');
+                        btnDirect.classList.add('hover:bg-zinc-800');
+                    }
+                    if(directDeliveryStatus) {
+                        directDeliveryStatus.innerText = "Standard 40-Min Delivery";
+                        directDeliveryStatus.classList.replace('text-zinc-500', 'text-brandred');
+                    }
+                    if(directArrow) directArrow.classList.remove('hidden');
+
+                    // Unlock Checkout Screen
+                    if (optDelivery) { optDelivery.disabled = false; optDelivery.innerText = "Standard Delivery (+₱50)"; }
+                    if (optAdvDelivery) { optAdvDelivery.disabled = false; optAdvDelivery.innerText = "Advance Order Delivery (+₱50)"; }
                 }
             });
         };
