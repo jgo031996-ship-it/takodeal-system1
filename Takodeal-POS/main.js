@@ -8813,12 +8813,13 @@ window.loadBulletinHistory = async function() {
         annSnap.forEach(doc => {
             let d = doc.data();
 
-            // 🔥 THE PRIVACY FIREWALL: Hide irrelevant history records!
+            // 🔥 STRICT PUBLIC FIREWALL: Completely block ALL individual/private messages from the store tablet!
+            if (d.targetType === 'Individual' || d.isPrivateMessage) return;
+    
             let isTargeted = false;
             if (!d.targetType || d.targetType === 'All') isTargeted = true;
             else if (d.targetType === 'Branch' && d.targetBranch === branch) isTargeted = true;
-            else if (d.targetType === 'Individual' && d.targetStaff === cashierName) isTargeted = true;
-
+    
             if (isTargeted) {
                 announcementsArray.push({id: doc.id, ...d});
             }
