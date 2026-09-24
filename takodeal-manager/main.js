@@ -4918,7 +4918,13 @@ window.executeBatchPrep = async function () {
         });
 
         // Success!
-        alert(`🥣 Kitchen Success!\n\nPrepared ${prepQty} ${pUom}(s) of ${targetItem}.\n(Added +${baseQtyToAdd.toLocaleString()} ${bUom} to stock!)\n\nAll raw ingredients were automatically deducted from ${branch}.`);
+        Swal.fire({
+            title: '🥣 Kitchen Success!',
+            html: `Prepared <b>${prepQty} ${pUom}(s)</b> of ${targetItem}.<br>(Added +${baseQtyToAdd.toLocaleString()} ${bUom} to stock!)<br><br><span style="font-size: 13px; color: #64748b;">All raw ingredients were automatically deducted from ${branch}.</span>`,
+            icon: 'success',
+            confirmButtonColor: '#8b5cf6',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
         document.getElementById('batchModal').style.display = 'none';
         
         // Refresh the view you are currently on
@@ -5410,7 +5416,13 @@ window.submitCashTransfer = async function() {
             user: currentUser, timestamp: serverTimestamp(), note: `Received from ${fromAcc.name}`
         });
 
-        alert(`✅ Successfully transferred ₱${amt.toLocaleString()} from ${fromAcc.name} to ${toAcc.name}.`);
+        Swal.fire({
+            title: '✅ Transfer Complete!',
+            text: `Successfully transferred ₱${amt.toLocaleString(undefined, {minimumFractionDigits: 2})} from ${fromAcc.name} to ${toAcc.name}.`,
+            icon: 'success',
+            confirmButtonColor: '#0ea5e9',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
         document.getElementById('transferModal').style.display = 'none';
         window.loadAccountsAndBudget();
     } catch (e) { 
@@ -5692,7 +5704,13 @@ window.submitLogExpense = async function() {
             timestamp: finalDate // 🔥 SAVES THE EXACT DATE YOU CHOSE
         });
 
-        alert(`🧾✅ Expense Logged! ₱${amt.toLocaleString()} deducted from ${selAcc.name}.`);
+        Swal.fire({
+            title: '🧾 Expense Logged!',
+            text: `₱${amt.toLocaleString(undefined, {minimumFractionDigits: 2})} was deducted from ${selAcc.name}.`,
+            icon: 'success',
+            confirmButtonColor: '#dc2626',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
         document.getElementById('logExpenseModal').style.display = 'none';
         window.loadAccountsAndBudget();
     } catch (e) {
@@ -13793,7 +13811,13 @@ window.confirmPayableSettlement = async function() {
             });
         }
 
-        alert(`✅ Payment complete! ₱${totalDeduction.toLocaleString()} was deducted from ${accData.name}.`);
+        Swal.fire({
+            title: '✅ Payment Complete!',
+            text: `₱${totalDeduction.toLocaleString(undefined, {minimumFractionDigits: 2})} was deducted from ${accData.name}.`,
+            icon: 'success',
+            confirmButtonColor: '#16a34a',
+            customClass: { popup: 'rounded-2xl shadow-xl' }
+        });
         document.getElementById('settlePayableModal').style.display = 'none';
         
         // Clear Inputs
