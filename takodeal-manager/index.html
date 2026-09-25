@@ -5512,11 +5512,11 @@
           <div style="padding: 25px; overflow-y: auto; max-height: 75vh;">
               <input type="hidden" id="editInvId">
 
-              <!-- Full Details Grid (Matches Add Item) -->
-              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+              <!-- 1. Top Grid (3 Columns) -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: #64748b;">Branch</label>
-                      <select id="editInvBranch" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #ffffff; outline: none; font-weight: 500;">
+                      <select id="editInvBranch" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #ffffff; outline: none; font-weight: 500; box-sizing: border-box;">
                           <option value="Main Office">Main Office</option>
                           <option value="Cabantian">Cabantian</option>
                           <option value="Citygate">Citygate</option>
@@ -5537,75 +5537,85 @@
                   </div>
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Restock Cycle</label>
-                      <select id="editInvCycle" style="width: 100%; padding: 10px; border: 2px solid #bae6fd; background: #f0f9ff; color: #0284c7; border-radius: 6px; outline: none; font-weight: bold;">
+                      <select id="editInvCycle" style="width: 100%; padding: 10px; border: 2px solid #bae6fd; background: #f0f9ff; color: #0284c7; border-radius: 6px; outline: none; font-weight: bold; box-sizing: border-box;">
                           <option value="Weekly">📅 Weekly</option>
                           <option value="Monthly">📅 Monthly</option>
                       </select>
                   </div>
+              </div>
 
-                  <div style="grid-column: span 2;">
-                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Item Name *</label>
-                      <input type="text" id="editInvName" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; color: #1e293b; outline: none;">
-                  </div>
+              <!-- 2. Full Width Row -->
+              <div style="margin-bottom: 15px;">
+                  <label style="font-size: 12px; font-weight: bold; color: #64748b;">Item Name *</label>
+                  <input type="text" id="editInvName" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; color: #1e293b; outline: none; box-sizing: border-box;">
+              </div>
 
+              <!-- 3. Metrics Grid (2 Columns) -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: #64748b;">Purchase UOM</label>
-                      <input type="text" id="editInvPurchUom" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;" placeholder="e.g. Sack, Gallon" oninput="window.calcEditVariance()">
+                      <input type="text" id="editInvPurchUom" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box;" placeholder="e.g. Sack, Gallon" oninput="window.calcEditVariance()">
                   </div>
                   <div>
                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Base UOM</label>
-                     <input type="text" id="editInvBaseUom" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;" placeholder="e.g. piece" oninput="window.calcEditCost()">
+                     <input type="text" id="editInvBaseUom" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box;" placeholder="e.g. piece" oninput="window.calcEditCost()">
                  </div>
 
                   <div>
-                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Conversion (Base UOMs in 1 Purch UOM)</label>
-                      <input type="number" id="editInvConversion" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;" oninput="window.calcEditCost()">
+                      <label style="font-size: 12px; font-weight: bold; color: #64748b;">Conversion (Base in 1 Purch)</label>
+                      <input type="number" id="editInvConversion" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box;" oninput="window.calcEditCost()">
                   </div>
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: #64748b;">Cost per Purchase UOM (₱)</label>
-                      <input type="number" id="editInvPurchCost" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;" oninput="window.calcEditCost()">
+                      <input type="number" id="editInvPurchCost" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; box-sizing: border-box;" oninput="window.calcEditCost()">
                   </div>
                   <div>
-                      <label style="font-size: 12px; font-weight: bold; color: #d97706;">Branch Low Stock Alert (Purch UOM)</label>
-                      <input type="number" id="editInvLowStock" style="width: 100%; padding: 10px; border: 1px solid #fcd34d; border-radius: 6px; outline: none; background: #fffbeb;" title="Syncs to all branch tablets">
+                      <label style="font-size: 12px; font-weight: bold; color: #d97706;">Branch Low Stock Alert (Purch)</label>
+                      <input type="number" id="editInvLowStock" style="width: 100%; padding: 10px; border: 1px solid #fcd34d; border-radius: 6px; outline: none; background: #fffbeb; box-sizing: border-box;" title="Syncs to all branch tablets">
                   </div>
                   <div>
-                      <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Main Office Low Stock Alert (Purch UOM)</label>
-                      <input type="number" id="editInvHqLowStock" style="width: 100%; padding: 10px; border: 1px solid #bae6fd; border-radius: 6px; outline: none; background: #f0f9ff;" title="Applies strictly to HQ">
+                      <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">HQ Low Stock Alert (Purch)</label>
+                      <input type="number" id="editInvHqLowStock" style="width: 100%; padding: 10px; border: 1px solid #bae6fd; border-radius: 6px; outline: none; background: #f0f9ff; box-sizing: border-box;" title="Applies strictly to HQ">
                   </div>
-                  <div style="grid-column: span 2; background: #f0fdf4; border: 1px dashed #16a34a; padding: 15px; border-radius: 8px; margin-top: 5px;">
-                      <div style="margin-bottom: 8px;">
-                          <label style="font-size: 13px; font-weight: bold; color: #15803d;">Maintaining Stock Qty Balance (Target Par Level)</label>
-                          <div style="font-size: 10px; color: #166534; margin-top: 2px;">The AI Forecaster will use this to automatically request restocks up to this exact amount.</div>
+              </div>
+
+              <!-- 4. Maintaining Stock (Full Width Row) -->
+              <div style="background: #f0fdf4; border: 1px dashed #16a34a; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                  <div style="margin-bottom: 8px;">
+                      <label style="font-size: 13px; font-weight: bold; color: #15803d;">Maintaining Stock Qty Balance (Target Par Level)</label>
+                      <div style="font-size: 10px; color: #166534; margin-top: 2px;">The AI Forecaster will use this to automatically request restocks up to this exact amount.</div>
+                  </div>
+                  <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                      <div style="display: flex; align-items: center; flex: 1; border: 2px solid #bbf7d0; border-radius: 8px; background: white; padding-right: 10px; overflow: hidden;">
+                          <input type="number" id="editInvMaintainPurch" style="width: 100%; padding: 10px; border: none; outline: none; font-size: 15px; font-weight: 900; color: #16a34a; background: transparent; text-align: center;" placeholder="0">
+                          <span id="editInvMaintainLabelPurch" style="font-size: 11px; font-weight: 800; color: #15803d; text-transform: uppercase;">Pack</span>
                       </div>
-                      <div style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-                          <div style="display: flex; align-items: center; flex: 1; border: 2px solid #bbf7d0; border-radius: 8px; background: white; padding-right: 10px; overflow: hidden;">
-                              <input type="number" id="editInvMaintainPurch" style="width: 100%; padding: 10px; border: none; outline: none; font-size: 15px; font-weight: 900; color: #16a34a; background: transparent; text-align: center;" placeholder="0">
-                              <span id="editInvMaintainLabelPurch" style="font-size: 11px; font-weight: 800; color: #15803d; text-transform: uppercase;">Pack</span>
-                          </div>
-                          <div style="font-weight: 900; color: #cbd5e1; font-size: 20px;">+</div>
-                          <div style="display: flex; align-items: center; flex: 1; border: 2px solid #cbd5e1; border-radius: 8px; background: #f8fafc; padding-right: 10px; overflow: hidden;">
-                              <input type="number" id="editInvMaintainBase" style="width: 100%; padding: 10px; border: none; outline: none; font-size: 15px; font-weight: 900; color: #334155; background: transparent; text-align: center;" placeholder="0">
-                              <span id="editInvMaintainLabelBase" style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase;">Gram</span>
-                          </div>
+                      <div style="font-weight: 900; color: #cbd5e1; font-size: 20px;">+</div>
+                      <div style="display: flex; align-items: center; flex: 1; border: 2px solid #cbd5e1; border-radius: 8px; background: #f8fafc; padding-right: 10px; overflow: hidden;">
+                          <input type="number" id="editInvMaintainBase" style="width: 100%; padding: 10px; border: none; outline: none; font-size: 15px; font-weight: 900; color: #334155; background: transparent; text-align: center;" placeholder="0">
+                          <span id="editInvMaintainLabelBase" style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase;">Piece</span>
                       </div>
                   </div>
-                  <div>
-                      <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Item Photo (For Kitchen Prep Station)</label>
-                      <input type="file" id="editInvPhoto" accept="image/jpeg, image/png, image/webp" class="input-box" style="width: 100%; box-sizing: border-box; background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; outline: none; cursor: pointer; font-size: 13px; color: #475569;">
-                  </div>
-                  <div>
-                      <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">System Qty (In Stock)</label>
-                      <input type="hidden" id="editInvOldQty">
-                      <div style="display: flex; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; height: 38px;">
-                          <div style="flex: 1; background: #f8fafc; padding: 6px 10px; border-right: 1px solid #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
-                              <span id="editInvOldQtyPurch" style="font-weight: 900; color: #0ea5e9; font-size: 15px;">0</span>
-                              <span id="editInvOldUomPurch" style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Packs</span>
-                          </div>
-                          <div style="flex: 1; background: #f1f5f9; padding: 6px 10px; display: flex; justify-content: space-between; align-items: center;">
-                              <span id="editInvOldQtyBase" style="font-weight: 900; color: #334155; font-size: 15px;">0</span>
-                              <span id="editInvOldUomBase" style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">grams</span>
-                          </div>
+              </div>
+
+              <!-- 5. Photo (Full Width Row) -->
+              <div style="margin-bottom: 15px;">
+                  <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">Item Photo (For Kitchen Prep Station)</label>
+                  <input type="file" id="editInvPhoto" accept="image/jpeg, image/png, image/webp" class="input-box" style="width: 100%; box-sizing: border-box; background: white; border: 1px solid #cbd5e1; border-radius: 6px; padding: 7px 10px; outline: none; cursor: pointer; font-size: 13px; color: #475569;">
+              </div>
+
+              <!-- 6. System Qty (Full Width Row) -->
+              <div style="margin-bottom: 15px;">
+                  <label style="font-size: 12px; font-weight: bold; color: #64748b; display: block; margin-bottom: 5px;">System Qty (In Stock)</label>
+                  <input type="hidden" id="editInvOldQty">
+                  <div style="display: flex; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; height: 38px;">
+                      <div style="flex: 1; background: #f8fafc; padding: 6px 10px; border-right: 1px solid #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
+                          <span id="editInvOldQtyPurch" style="font-weight: 900; color: #0ea5e9; font-size: 15px;">0</span>
+                          <span id="editInvOldUomPurch" style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">Packs</span>
+                      </div>
+                      <div style="flex: 1; background: #f1f5f9; padding: 6px 10px; display: flex; justify-content: space-between; align-items: center;">
+                          <span id="editInvOldQtyBase" style="font-weight: 900; color: #334155; font-size: 15px;">0</span>
+                          <span id="editInvOldUomBase" style="font-size: 10px; color: #64748b; font-weight: bold; text-transform: uppercase;">pieces</span>
                       </div>
                   </div>
               </div>
