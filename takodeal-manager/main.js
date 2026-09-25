@@ -6222,8 +6222,8 @@ window.saveAdvancedInventoryItem = async function () {
   let mBase = parseFloat(document.getElementById('newInvMaintainBase').value) || 0;
   let finalMaintainBase = (mPurch * conv) + mBase;
 
-  // 🔥 GRAB THE RESTOCK CYCLE SAFELY
-  let cycle = document.getElementById('newInvCycle') ? document.getElementById('newInvCycle').value : 'Monthly';
+  // 🔥 CRASH PROOF VAR NAME: Changed 'cycle' to 'assignedRestockCycle' to avoid Syntax Error!
+  let assignedRestockCycle = document.getElementById('newInvCycle') ? document.getElementById('newInvCycle').value : 'Monthly';
 
   if (!name || !purchUom || !baseUom || isNaN(conv) || isNaN(cost) || isNaN(initQty)) {
     Swal.fire("Error", "Please fill out all required fields with valid numbers.", "error"); return;
@@ -6241,7 +6241,6 @@ window.saveAdvancedInventoryItem = async function () {
         let allowReq = document.getElementById('newInvAllowRequest') ? document.getElementById('newInvAllowRequest').checked : true;
         let doBroadcast = document.getElementById('newInvBroadcastAll').checked;
 
-        // 1. CRASH PROTECTOR: Scan the whole system to ensure this item doesn't exist already!
         const duplicateQuery = window.query(window.collection(window.db, "inventory"), window.where("name", "==", name));
         const duplicateSnap = await window.getDocs(duplicateQuery);
         let existingBranches = [];
@@ -6253,7 +6252,6 @@ window.saveAdvancedInventoryItem = async function () {
             return;
         }
 
-        // 2. UPLOAD PHOTO SECURELY IF ATTACHED
         let photoUrl = undefined;
         let fileInput = document.getElementById('newInvPhoto');
         if (fileInput && fileInput.files.length > 0) {
@@ -6267,16 +6265,13 @@ window.saveAdvancedInventoryItem = async function () {
             btn.innerText = "⏳ Broadcasting to Network...";
         }
 
-        // 3. THE SMART BROADCASTER ENGINE
         let branchesToCreate = doBroadcast ? (window.globalActiveBranches || ["Main Office", "Cabantian", "Citygate", "Maa"]) : [selectedBranch];
         let creationPromises = [];
         let createdCount = 0;
 
         for (let branch of branchesToCreate) {
-            // Prevent double-creating if it miraculously already exists in another branch
             if (existingBranches.includes(branch)) continue;
             
-            // The selected branch gets the initial stock! The broadcasted branches get exactly 0.
             let branchInitialStock = (branch === selectedBranch) ? totalBaseStock : 0;
             let targetLowBase = (branch === "Main Office") ? hqLowBase : branchLowBase;
             
@@ -6299,7 +6294,7 @@ window.saveAdvancedInventoryItem = async function () {
               showToCashier: showCashier,
               showInPrep: showPrep,
               allowRequest: allowReq,
-              restockCycle: cycle // 🔥 ATTACH CYCLE TO PAYLOAD
+              restockCycle: assignedRestockCycle // 🔥 ATTACH CYCLE TO PAYLOAD
             };
 
             if (photoUrl !== undefined) payload.image = photoUrl;
@@ -6308,7 +6303,6 @@ window.saveAdvancedInventoryItem = async function () {
             createdCount++;
         }
 
-        // Send all instructions to Firebase simultaneously!
         await Promise.all(creationPromises);
     
         Swal.fire({
@@ -7064,8 +7058,8 @@ window.saveInventoryEdit = async function() {
     let baseInputRaw = document.getElementById('editInvNewQtyBase').value;
     let note = document.getElementById('editInvNote').value.trim();
 
-    // 🔥 GRAB THE RESTOCK CYCLE SAFELY
-    let cycle = document.getElementById('editInvCycle') ? document.getElementById('editInvCycle').value : 'Monthly';
+    // 🔥 CRASH PROOF VAR NAME: Changed 'cycle' to 'assignedRestockCycle' to avoid Syntax Error!
+    let assignedRestockCycle = document.getElementById('editInvCycle') ? document.getElementById('editInvCycle').value : 'Monthly';
 
     if (!name) { alert("Item name is required!"); return; }
 
@@ -7081,7 +7075,6 @@ window.saveInventoryEdit = async function() {
         if (!note) { alert("You must provide an Adjustment Note/Reason if you are changing the stock quantity."); return; }
     }
 
-    // 🧠 Read the Maintaining Stock Boxes!
     let mPurchRaw = document.getElementById('editInvMaintainPurch') ? document.getElementById('editInvMaintainPurch').value : "";
     let mBaseRaw = document.getElementById('editInvMaintainBase') ? document.getElementById('editInvMaintainBase').value : "";
     let finalMaintainBase = 0;
@@ -7123,7 +7116,7 @@ window.saveInventoryEdit = async function() {
             lowStockAlert: targetLowBaseForCurrentItem, reorderLevel: targetLowBaseForCurrentItem, 
             maintainingStock: finalMaintainBase,
             currentStock: finalQty, showInPrep: showPrepVal, allowRequest: allowReqVal,
-            restockCycle: cycle // 🔥 ATTACH CYCLE TO PAYLOAD
+            restockCycle: assignedRestockCycle // 🔥 ATTACH CYCLE TO PAYLOAD
         };
 
         if (photoUrl !== undefined) updatePayload.image = photoUrl;
@@ -7143,7 +7136,7 @@ window.saveInventoryEdit = async function() {
                 name: name, category: category, purchaseUom: purchUom, purchUom: purchUom, baseUom: baseUom, uom: baseUom, 
                 conversion: conversion, conversionRate: conversion, purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion),
                 lowStockAlert: targetLowBase, reorderLevel: targetLowBase, maintainingStock: finalMaintainBase, allowRequest: allowReqVal, showInPrep: showPrepVal,
-                restockCycle: cycle // 🔥 ATTACH CYCLE TO SYNC PAYLOAD
+                restockCycle: assignedRestockCycle // 🔥 ATTACH CYCLE TO SYNC PAYLOAD
             };
             if (photoUrl !== undefined) syncPayload.image = photoUrl;
             
@@ -7160,7 +7153,6 @@ window.saveInventoryEdit = async function() {
             addonSnap.forEach(a => { batch.update(window.doc(window.db, "global_addons", a.id), { linkedIngredient: name }); });
         }
 
-        // 4. Package Physical Adjustments Log with Dual-Count Record
         if (isAdjusting && finalQty !== oldQty) {
             let variance = finalQty - oldQty;
             let safeCashierName = window.sessionUser ? window.sessionUser.cashierName : 'Manager';
