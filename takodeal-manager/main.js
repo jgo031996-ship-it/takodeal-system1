@@ -6222,6 +6222,9 @@ window.saveAdvancedInventoryItem = async function () {
   let mBase = parseFloat(document.getElementById('newInvMaintainBase').value) || 0;
   let finalMaintainBase = (mPurch * conv) + mBase;
 
+  // 🔥 GRAB THE RESTOCK CYCLE SAFELY
+  let cycle = document.getElementById('newInvCycle') ? document.getElementById('newInvCycle').value : 'Monthly';
+
   if (!name || !purchUom || !baseUom || isNaN(conv) || isNaN(cost) || isNaN(initQty)) {
     Swal.fire("Error", "Please fill out all required fields with valid numbers.", "error"); return;
   }
@@ -6268,7 +6271,6 @@ window.saveAdvancedInventoryItem = async function () {
         let branchesToCreate = doBroadcast ? (window.globalActiveBranches || ["Main Office", "Cabantian", "Citygate", "Maa"]) : [selectedBranch];
         let creationPromises = [];
         let createdCount = 0;
-        let cycle = document.getElementById('newInvCycle').value;
 
         for (let branch of branchesToCreate) {
             // Prevent double-creating if it miraculously already exists in another branch
@@ -6282,7 +6284,6 @@ window.saveAdvancedInventoryItem = async function () {
               branch: branch,
               name: name,
               category: category,
-              restockCycle: cycle,
               purchaseUom: purchUom,
               uom: baseUom,
               baseUom: baseUom, 
@@ -6298,6 +6299,7 @@ window.saveAdvancedInventoryItem = async function () {
               showToCashier: showCashier,
               showInPrep: showPrep,
               allowRequest: allowReq,
+              restockCycle: cycle // 🔥 ATTACH CYCLE TO PAYLOAD
             };
 
             if (photoUrl !== undefined) payload.image = photoUrl;
@@ -6317,7 +6319,7 @@ window.saveAdvancedInventoryItem = async function () {
         });
         
         document.getElementById('addInvModal').style.display = 'none';
-        window.loadInventoryData(); // Redraws the table to show your newly created items
+        window.loadInventoryData(); 
         
   } catch (error) {
     console.error("Item Creation Error:", error); 
@@ -7056,11 +7058,14 @@ window.saveInventoryEdit = async function() {
     let hqLowBase = hqLowPurch * conversion;
     
     let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
-    let cycle = document.getElementById('editInvCycle').value;
+    
     // 🧠 Read both boxes!
     let purchInputRaw = document.getElementById('editInvNewQtyPurch').value;
     let baseInputRaw = document.getElementById('editInvNewQtyBase').value;
     let note = document.getElementById('editInvNote').value.trim();
+
+    // 🔥 GRAB THE RESTOCK CYCLE SAFELY
+    let cycle = document.getElementById('editInvCycle') ? document.getElementById('editInvCycle').value : 'Monthly';
 
     if (!name) { alert("Item name is required!"); return; }
 
@@ -7080,7 +7085,6 @@ window.saveInventoryEdit = async function() {
     let mPurchRaw = document.getElementById('editInvMaintainPurch') ? document.getElementById('editInvMaintainPurch').value : "";
     let mBaseRaw = document.getElementById('editInvMaintainBase') ? document.getElementById('editInvMaintainBase').value : "";
     let finalMaintainBase = 0;
-    let cycle = document.getElementById('editInvCycle').value;
     
     if (mPurchRaw !== "" || mBaseRaw !== "") {
         let mPVal = parseFloat(mPurchRaw) || 0;
@@ -7114,12 +7118,12 @@ window.saveInventoryEdit = async function() {
 
         let updatePayload = {
             branch: branch, category: category, name: name, purchaseUom: purchUom, purchUom: purchUom,
-            baseUom: baseUom, uom: baseUom, conversion: conversion, conversionRate: conversion,
-            restockCycle: cycle,
+            baseUom: baseUom, uom: baseUom, conversion: conversion, conversionRate: conversion, 
             purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion), 
             lowStockAlert: targetLowBaseForCurrentItem, reorderLevel: targetLowBaseForCurrentItem, 
-            maintainingStock: finalMaintainBase, // 🔥 NEW!
+            maintainingStock: finalMaintainBase,
             currentStock: finalQty, showInPrep: showPrepVal, allowRequest: allowReqVal,
+            restockCycle: cycle // 🔥 ATTACH CYCLE TO PAYLOAD
         };
 
         if (photoUrl !== undefined) updatePayload.image = photoUrl;
@@ -7138,7 +7142,8 @@ window.saveInventoryEdit = async function() {
             let syncPayload = {
                 name: name, category: category, purchaseUom: purchUom, purchUom: purchUom, baseUom: baseUom, uom: baseUom, 
                 conversion: conversion, conversionRate: conversion, purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion),
-                lowStockAlert: targetLowBase, reorderLevel: targetLowBase, maintainingStock: finalMaintainBase, allowRequest: allowReqVal, showInPrep: showPrepVal 
+                lowStockAlert: targetLowBase, reorderLevel: targetLowBase, maintainingStock: finalMaintainBase, allowRequest: allowReqVal, showInPrep: showPrepVal,
+                restockCycle: cycle // 🔥 ATTACH CYCLE TO SYNC PAYLOAD
             };
             if (photoUrl !== undefined) syncPayload.image = photoUrl;
             
@@ -7160,7 +7165,6 @@ window.saveInventoryEdit = async function() {
             let variance = finalQty - oldQty;
             let safeCashierName = window.sessionUser ? window.sessionUser.cashierName : 'Manager';
             
-            // Format what they counted into the note automatically!
             let pValStr = purchInputRaw !== "" ? parseFloat(purchInputRaw) || 0 : 0;
             let bValStr = baseInputRaw !== "" ? parseFloat(baseInputRaw) || 0 : 0;
             let countStr = `${pValStr} ${purchUom}s + ${bValStr} ${baseUom}s`;
