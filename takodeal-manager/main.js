@@ -2883,11 +2883,32 @@ window.submitMultiDispatch = async function () {
     let btn = document.getElementById('btnSubmitDispatch');
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
 
+    let isEmergency = document.getElementById('dispIsEmergency') && document.getElementById('dispIsEmergency').checked;
+    let emergencyReason = document.getElementById('dispEmergencyReason') ? document.getElementById('dispEmergencyReason').value.trim() : '';
+
+    if (isEmergency && !emergencyReason) {
+        return Swal.fire('Missing Reason', 'Please provide a reason why this is an emergency request.', 'warning');
+    }
+
     if (isFranchisee) {
         if (window.dispatchCart.length === 0) { alert("Cart is empty."); return; }
         btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
         try {
-            await addDoc(collection(db, "purchase_orders"), { branch: toBranch, items: window.dispatchCart, status: "Pending", requestedBy: window.sessionUser.cashierName, timestamp: serverTimestamp() });
+            // Apply emergency tags to items
+            let formattedCart = window.dispatchCart.map(i => {
+                if (isEmergency) i.requestType = "Emergency Override";
+                return i;
+            });
+
+            await addDoc(collection(db, "purchase_orders"), { 
+                branch: toBranch, 
+                items: formattedCart, 
+                status: "Pending", 
+                type: isEmergency ? "Emergency Request" : "Internal Request",
+                requestedBy: window.sessionUser.cashierName, 
+                managerMessage: isEmergency ? `🚨 EMERGENCY REASON: ${emergencyReason}` : null,
+                timestamp: serverTimestamp() 
+            });
             Swal.fire('📝 Purchase Order Sent!', `HQ has received your request.`, 'success');
             window.dispatchCart = []; window.renderDispatchCart();
         } catch (e) { Swal.fire('Error', 'Failed to send Purchase Order.', 'error'); } 
@@ -6247,6 +6268,7 @@ window.saveAdvancedInventoryItem = async function () {
         let branchesToCreate = doBroadcast ? (window.globalActiveBranches || ["Main Office", "Cabantian", "Citygate", "Maa"]) : [selectedBranch];
         let creationPromises = [];
         let createdCount = 0;
+        let cycle = document.getElementById('newInvCycle').value;
 
         for (let branch of branchesToCreate) {
             // Prevent double-creating if it miraculously already exists in another branch
@@ -6260,6 +6282,7 @@ window.saveAdvancedInventoryItem = async function () {
               branch: branch,
               name: name,
               category: category,
+              restockCycle: cycle,
               purchaseUom: purchUom,
               uom: baseUom,
               baseUom: baseUom, 
@@ -6851,6 +6874,7 @@ window.openEditInvModal = async function(id) {
             document.getElementById('editInvId').value = id;
             document.getElementById('editInvBranch').value = itemData.branch || 'Main Office';
             document.getElementById('editInvCat').value = itemData.category || '';
+            document.getElementById('editInvCycle').value = itemData.restockCycle || 'Monthly';
             document.getElementById('editInvName').value = itemData.name || '';
             
             document.getElementById('editInvPurchUom').value = itemData.purchaseUom || itemData.purchUom || '';
@@ -7032,7 +7056,7 @@ window.saveInventoryEdit = async function() {
     let hqLowBase = hqLowPurch * conversion;
     
     let oldQty = parseFloat(document.getElementById('editInvOldQty').value) || 0;
-    
+    let cycle = document.getElementById('editInvCycle').value;
     // 🧠 Read both boxes!
     let purchInputRaw = document.getElementById('editInvNewQtyPurch').value;
     let baseInputRaw = document.getElementById('editInvNewQtyBase').value;
@@ -7056,6 +7080,7 @@ window.saveInventoryEdit = async function() {
     let mPurchRaw = document.getElementById('editInvMaintainPurch') ? document.getElementById('editInvMaintainPurch').value : "";
     let mBaseRaw = document.getElementById('editInvMaintainBase') ? document.getElementById('editInvMaintainBase').value : "";
     let finalMaintainBase = 0;
+    let cycle = document.getElementById('editInvCycle').value;
     
     if (mPurchRaw !== "" || mBaseRaw !== "") {
         let mPVal = parseFloat(mPurchRaw) || 0;
@@ -7089,7 +7114,8 @@ window.saveInventoryEdit = async function() {
 
         let updatePayload = {
             branch: branch, category: category, name: name, purchaseUom: purchUom, purchUom: purchUom,
-            baseUom: baseUom, uom: baseUom, conversion: conversion, conversionRate: conversion, 
+            baseUom: baseUom, uom: baseUom, conversion: conversion, conversionRate: conversion,
+            restockCycle: cycle,
             purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion), 
             lowStockAlert: targetLowBaseForCurrentItem, reorderLevel: targetLowBaseForCurrentItem, 
             maintainingStock: finalMaintainBase, // 🔥 NEW!
@@ -16887,79 +16913,104 @@ window.filterAuditTable = function() {
 
 window.renderAuditModalItems = function() {
     let search = document.getElementById('auditModalSearch').value.toLowerCase();
-    let tbody = document.getElementById('auditModalBody');
+    let container = document.getElementById('auditModalBody');
     let html = '';
 
+    // Group items by Category
+    let groupedData = {};
     window.globalAuditItems.forEach((item, index) => {
         if (search && !item.name.toLowerCase().includes(search) && !item.category.toLowerCase().includes(search)) return;
 
-        let pUom = item.purchUom || item.uom || 'units';
-        let bUom = item.uom || 'units';
-        let conv = parseFloat(item.convRate) || 1;
-
-        // 🧠 SPLIT MATH: Calculate Expected Packs & Grams for the Placeholders!
-        let expWholePurch = 0;
-        let expRemainderBase = item.systemQty;
-
-        if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
-            expWholePurch = Math.floor(item.systemQty / conv);
-            expRemainderBase = item.systemQty - (expWholePurch * conv);
-            // Handle negative ghost stock safely
-            if (item.systemQty < 0) {
-                expWholePurch = Math.ceil(item.systemQty / conv);
-                expRemainderBase = item.systemQty - (expWholePurch * conv);
-            }
-        } else {
-            expWholePurch = item.systemQty;
-            expRemainderBase = 0;
-        }
-
-        // 🔥 THE FIX: Inject the saved values back into the boxes when it redraws!
-        let savedPurch = item.tempPurch !== undefined ? item.tempPurch : '';
-        let savedBase = item.tempBase !== undefined ? item.tempBase : '';
-
-        // 🎨 DUAL INPUT UI: Only shows two boxes if the item actually has a conversion!
-        let inputHtml = '';
-        if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
-            inputHtml = `
-                <div style="display: flex; gap: 6px; align-items: center; justify-content: flex-end;">
-                    <div style="display: flex; align-items: center; border: 2px solid #bae6fd; border-radius: 6px; background: #f0f9ff; overflow: hidden; width: 110px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
-                        <input type="number" id="auditInputPurch_${index}" value="${savedPurch}" oninput="window.saveAuditTempCount(${index}, 'purch', this.value)" placeholder="${expWholePurch}" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #0284c7; font-size: 15px; background: transparent;">
-                        <span style="font-size: 9px; font-weight: 800; color: #0ea5e9; padding-right: 8px; text-transform: uppercase;">${pUom}</span>
-                    </div>
-                    <span style="font-weight: 900; color: #cbd5e1;">+</span>
-                    <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; width: 110px; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
-                        <input type="number" id="auditInputBase_${index}" value="${savedBase}" oninput="window.saveAuditTempCount(${index}, 'base', this.value)" placeholder="${expRemainderBase.toLocaleString(undefined, {maximumFractionDigits: 1})}" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
-                        <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
-                    </div>
-                </div>
-            `;
-        } else {
-            // Standard single box for things without conversions (like Eggs)
-            inputHtml = `
-                <div style="display: flex; align-items: center; border: 2px solid #cbd5e1; border-radius: 6px; background: #f8fafc; overflow: hidden; max-width: 140px; margin-left: auto;">
-                    <input type="number" id="auditInputBase_${index}" value="${savedBase}" oninput="window.saveAuditTempCount(${index}, 'base', this.value)" placeholder="${item.systemQty.toFixed(1)}" style="width: 100%; padding: 8px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 15px; background: transparent;">
-                    <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 8px; text-transform: uppercase;">${bUom}</span>
-                    <input type="hidden" id="auditInputPurch_${index}" value="">
-                </div>
-            `;
-        }
-
-        html += `
-            <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-                <td style="padding: 12px; font-weight: bold; color: #1e293b; font-size: 14px;">${item.name}</td>
-                <td style="padding: 12px; text-align: center;"><span class="badge badge-closed">${item.category}</span></td>
-                <td style="padding: 12px; text-align: center; font-weight: bold; color: #64748b; font-size: 13px;">
-                    ${item.systemQty.toFixed(1)} <span style="font-size:10px; font-weight:normal;">${item.uom}</span>
-                </td>
-                <td style="padding: 12px; border-left: 2px dashed #e2e8f0; background: #fffcf0;">
-                    ${inputHtml}
-                </td>
-            </tr>
-        `;
+        let cat = (item.category || "Uncategorized").toUpperCase();
+        if (!groupedData[cat]) groupedData[cat] = [];
+        groupedData[cat].push({ item: item, index: index }); 
     });
 
-    tbody.innerHTML = html || '<tr><td colspan="4" class="text-center" style="padding: 40px; color:#94a3b8; font-weight: bold;">No items match your search.</td></tr>';
+    if (Object.keys(groupedData).length === 0) {
+        container.innerHTML = '<div style="text-align: center; padding: 40px; color:#94a3b8; font-weight: bold;">No items match your search.</div>';
+        return;
+    }
+
+    html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(48%, 1fr)); gap: 20px; align-items: start;">`;
+
+    Object.keys(groupedData).sort().forEach(cat => {
+        html += `
+            <div style="background: white; border: 2px solid #cbd5e1; border-radius: 8px; overflow: hidden; box-shadow: 0 6px 12px rgba(0,0,0,0.08);">
+                <div style="background: #e2e8f0; border-bottom: 2px solid #cbd5e1; padding: 12px; text-align: center; font-weight: 900; color: #0f172a; letter-spacing: 1px; font-size: 15px;">
+                    ${cat}
+                </div>
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
+                        <tr>
+                            <th style="padding: 10px; border-right: 1px solid #e2e8f0; text-align: left; width: 40%; color: #334155;">Item Name</th>
+                            <th style="padding: 10px; text-align: center; width: 60%; color: #334155;">Actual Count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
+        groupedData[cat].sort((a,b) => a.item.name.localeCompare(b.item.name)).forEach(dataObj => {
+            let item = dataObj.item;
+            let index = dataObj.index;
+            let pUom = item.purchUom || item.uom || 'units';
+            let bUom = item.uom || 'units';
+            let conv = parseFloat(item.convRate) || 1;
+
+            let expWholePurch = 0;
+            let expRemainderBase = item.systemQty;
+
+            if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                expWholePurch = Math.floor(item.systemQty / conv);
+                expRemainderBase = item.systemQty - (expWholePurch * conv);
+                if (item.systemQty < 0) {
+                    expWholePurch = Math.ceil(item.systemQty / conv);
+                    expRemainderBase = item.systemQty - (expWholePurch * conv);
+                }
+            } else {
+                expWholePurch = item.systemQty;
+                expRemainderBase = 0;
+            }
+
+            let savedPurch = item.tempPurch !== undefined ? item.tempPurch : '';
+            let savedBase = item.tempBase !== undefined ? item.tempBase : '';
+
+            let inputHtml = '';
+            if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
+                inputHtml = `
+                    <div style="display: flex; gap: 4px; align-items: center; justify-content: center;">
+                        <div style="display: flex; align-items: center; border: 1px solid #bae6fd; border-radius: 4px; background: #f0f9ff; overflow: hidden; width: 75px;">
+                            <input type="number" id="auditInputPurch_${index}" value="${savedPurch}" oninput="window.saveAuditTempCount(${index}, 'purch', this.value)" placeholder="${expWholePurch}" style="width: 100%; padding: 6px; border: none; outline: none; text-align: center; font-weight: 900; color: #0284c7; font-size: 13px; background: transparent;">
+                            <span style="font-size: 9px; font-weight: 800; color: #0ea5e9; padding-right: 4px; text-transform: uppercase;">${pUom.substring(0,4)}</span>
+                        </div>
+                        <span style="font-weight: 900; color: #cbd5e1; font-size: 10px;">+</span>
+                        <div style="display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; overflow: hidden; width: 75px;">
+                            <input type="number" id="auditInputBase_${index}" value="${savedBase}" oninput="window.saveAuditTempCount(${index}, 'base', this.value)" placeholder="${expRemainderBase.toLocaleString(undefined, {maximumFractionDigits: 1})}" style="width: 100%; padding: 6px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 13px; background: transparent;">
+                            <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 4px; text-transform: uppercase;">${bUom.substring(0,4)}</span>
+                        </div>
+                    </div>
+                `;
+            } else {
+                inputHtml = `
+                    <div style="display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; overflow: hidden; max-width: 100px; margin: 0 auto;">
+                        <input type="number" id="auditInputBase_${index}" value="${savedBase}" oninput="window.saveAuditTempCount(${index}, 'base', this.value)" placeholder="${item.systemQty.toFixed(1)}" style="width: 100%; padding: 6px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 13px; background: transparent;">
+                        <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 4px; text-transform: uppercase;">${bUom.substring(0,4)}</span>
+                        <input type="hidden" id="auditInputPurch_${index}">
+                    </div>
+                `;
+            }
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+                    <td style="padding: 10px; border-right: 1px dashed #e2e8f0; font-weight: bold; color: #1e293b; font-size: 13px;">${item.name}</td>
+                    <td style="padding: 10px; text-align: center;">${inputHtml}</td>
+                </tr>
+            `;
+        });
+        html += `</tbody></table></div>`;
+    });
+
+    html += `</div>`;
+    container.innerHTML = html;
 };
 
 window.submitGeneralAudit = async function() {
