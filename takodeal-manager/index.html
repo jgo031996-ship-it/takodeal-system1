@@ -3520,6 +3520,15 @@
                 </table>
               </div>
 
+              <div style="background: #fff1f2; border: 1px dashed #fca5a5; padding: 15px; border-radius: 8px; margin-bottom: 15px;">
+                  <label style="display: flex; align-items: center; gap: 8px; font-weight: bold; color: #dc2626; cursor: pointer; font-size: 13px;">
+                      <input type="checkbox" id="dispIsEmergency" style="width: 18px; height: 18px; accent-color: #dc2626;" onchange="document.getElementById('dispEmergencyReasonContainer').style.display = this.checked ? 'block' : 'none';">
+                      🚨 Flag as EMERGENCY Request
+                  </label>
+                  <div id="dispEmergencyReasonContainer" style="display: none; margin-top: 10px;">
+                      <input type="text" id="dispEmergencyReason" placeholder="Why is this not on the Weekly/Monthly cycle?" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #fca5a5; font-size: 12px; outline: none; font-weight: bold; color: #b91c1c; box-sizing: border-box;">
+                  </div>
+              </div>
               <button onclick="submitMultiDispatch()" id="btnSubmitDispatch" style="width: 100%; background: #d97706; color: white; border: none; padding: 18px; border-radius: 12px; font-size: 16px; font-weight: 900; cursor: pointer; box-shadow: 0 10px 20px -5px rgba(217, 119, 6, 0.3); transition: 0.2s;">🚀 Send Dispatch Delivery</button>
             </div>
           </div>
@@ -5120,7 +5129,7 @@
 
       <div style="padding: 30px; overflow-y: auto; max-height: 75vh;">
 
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px;">
           <div>
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Branch</label>
             <select id="newInvBranch" style="width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 6px; box-sizing: border-box;">
@@ -5130,7 +5139,6 @@
               <option value="Maa">Maa</option>
             </select>
           </div>
-
           <div>
             <label style="font-size: 12px; font-weight: bold; color: var(--text-muted);">Category</label>
             <select id="newInvCat" class="input-box" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; background: white; box-sizing: border-box; font-weight: bold; color: #1e293b;" onchange="window.handleCategoryDropdown(this)">
@@ -5141,6 +5149,13 @@
                 <option value="Consumables">Consumables</option>
                 <option value="Cleaning Supplies">Cleaning Supplies</option>
                 <option value="ADD_NEW" style="font-weight: 900; color: #0ea5e9;">➕ Add Custom Category...</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Restock Cycle</label>
+            <select id="newInvCycle" style="width: 100%; padding: 10px; border: 2px solid #bae6fd; background: #f0f9ff; color: #0284c7; border-radius: 6px; box-sizing: border-box; font-weight: bold; outline: none;">
+                <option value="Weekly">📅 Weekly</option>
+                <option value="Monthly">📅 Monthly</option>
             </select>
           </div>
         </div>
@@ -5498,7 +5513,7 @@
               <input type="hidden" id="editInvId">
 
               <!-- Full Details Grid (Matches Add Item) -->
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: #64748b;">Branch</label>
                       <select id="editInvBranch" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #ffffff; outline: none; font-weight: 500;">
@@ -5508,7 +5523,6 @@
                           <option value="Maa">Maa</option>
                       </select>
                   </div>
-
                   <div>
                       <label style="font-size: 12px; font-weight: bold; color: #64748b;">Category</label>
                       <select id="editInvCat" class="input-box" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; background: white; box-sizing: border-box; font-weight: bold; color: #1e293b;" onchange="window.handleCategoryDropdown(this)">
@@ -5519,6 +5533,13 @@
                           <option value="Consumables">Consumables</option>
                           <option value="Cleaning Supplies">Cleaning Supplies</option>
                           <option value="ADD_NEW" style="font-weight: 900; color: #0ea5e9;">➕ Add Custom Category...</option>
+                      </select>
+                  </div>
+                  <div>
+                      <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Restock Cycle</label>
+                      <select id="editInvCycle" style="width: 100%; padding: 10px; border: 2px solid #bae6fd; background: #f0f9ff; color: #0284c7; border-radius: 6px; outline: none; font-weight: bold;">
+                          <option value="Weekly">📅 Weekly</option>
+                          <option value="Monthly">📅 Monthly</option>
                       </select>
                   </div>
 
@@ -6449,9 +6470,11 @@
                           <th style="padding: 12px; text-align: center; color: #ea580c; border-left: 2px dashed #e2e8f0;">Actual Physical Count</th>
                       </tr>
                   </thead>
-                  <tbody id="auditModalBody">
-                      <tr><td colspan="4" class="text-center" style="padding: 40px; color: #94a3b8;">Select a branch above to begin the audit...</td></tr>
-                  </tbody>
+                  <!-- Inside generalAuditModal -->
+                  <div style="flex: 1; overflow-y: auto; background: #e2e8f0; padding: 25px;" id="auditModalBody">
+                      <div class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">Select a branch above to begin the audit...</div>
+                  </div>
+                  <!-- End of Audit Modal Body Replacement -->
               </table>
           </div>
 
