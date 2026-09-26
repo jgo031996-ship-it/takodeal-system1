@@ -7058,7 +7058,6 @@ window.saveInventoryEdit = async function() {
     let baseInputRaw = document.getElementById('editInvNewQtyBase').value;
     let note = document.getElementById('editInvNote').value.trim();
 
-    // 🔥 CRASH PROOF VAR NAME: Changed 'cycle' to 'assignedRestockCycle' to avoid Syntax Error!
     let assignedRestockCycle = document.getElementById('editInvCycle') ? document.getElementById('editInvCycle').value : 'Monthly';
 
     if (!name) { alert("Item name is required!"); return; }
@@ -7075,6 +7074,7 @@ window.saveInventoryEdit = async function() {
         if (!note) { alert("You must provide an Adjustment Note/Reason if you are changing the stock quantity."); return; }
     }
 
+    // 🧠 Read the Maintaining Stock Boxes!
     let mPurchRaw = document.getElementById('editInvMaintainPurch') ? document.getElementById('editInvMaintainPurch').value : "";
     let mBaseRaw = document.getElementById('editInvMaintainBase') ? document.getElementById('editInvMaintainBase').value : "";
     let finalMaintainBase = 0;
@@ -7114,9 +7114,9 @@ window.saveInventoryEdit = async function() {
             baseUom: baseUom, uom: baseUom, conversion: conversion, conversionRate: conversion, 
             purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion), 
             lowStockAlert: targetLowBaseForCurrentItem, reorderLevel: targetLowBaseForCurrentItem, 
-            maintainingStock: finalMaintainBase,
+            maintainingStock: finalMaintainBase, // 🔥 Saves the Par Level ONLY for the branch being edited!
             currentStock: finalQty, showInPrep: showPrepVal, allowRequest: allowReqVal,
-            restockCycle: assignedRestockCycle // 🔥 ATTACH CYCLE TO PAYLOAD
+            restockCycle: assignedRestockCycle
         };
 
         if (photoUrl !== undefined) updatePayload.image = photoUrl;
@@ -7135,8 +7135,9 @@ window.saveInventoryEdit = async function() {
             let syncPayload = {
                 name: name, category: category, purchaseUom: purchUom, purchUom: purchUom, baseUom: baseUom, uom: baseUom, 
                 conversion: conversion, conversionRate: conversion, purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion),
-                lowStockAlert: targetLowBase, reorderLevel: targetLowBase, maintainingStock: finalMaintainBase, allowRequest: allowReqVal, showInPrep: showPrepVal,
-                restockCycle: assignedRestockCycle // 🔥 ATTACH CYCLE TO SYNC PAYLOAD
+                lowStockAlert: targetLowBase, reorderLevel: targetLowBase, allowRequest: allowReqVal, showInPrep: showPrepVal,
+                restockCycle: assignedRestockCycle 
+                // 🔥 CRITICAL FIX: "maintainingStock" has been safely REMOVED from the Global Sync payload!
             };
             if (photoUrl !== undefined) syncPayload.image = photoUrl;
             
@@ -7171,7 +7172,7 @@ window.saveInventoryEdit = async function() {
 
         await batch.commit();
 
-        Swal.fire({ title: '✅ Success!', text: 'Item updated and synced globally!', icon: 'success', customClass: { popup: 'rounded-2xl' } });
+        Swal.fire({ title: '✅ Success!', text: 'Item updated! Other branches will not lose their Par Levels.', icon: 'success', customClass: { popup: 'rounded-2xl' } });
         document.getElementById('editInvModal').style.display = 'none';
 
         let scrollContainer = document.querySelector('.main-content');
