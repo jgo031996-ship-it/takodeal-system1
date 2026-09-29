@@ -459,18 +459,22 @@ window.loadGlobalDashboard = async function() {
         results.forEach(res => { if (res) { tableHtml += res; } });
         document.getElementById('branchTableBody').innerHTML = tableHtml || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #94a3b8; font-style: italic;">No shifts recorded today.</td></tr>';
 
-        // Fetch Takoyaki Milestone (1 Read)
+        // 🔥 THE FIX: Live Real-Time Milestone Listener
         try {
-            const statsSnap = await window.getDoc(window.doc(window.db, "settings", "global_stats"));
-            let totalBalls = 0;
-            if (statsSnap.exists()) {
-                let data = statsSnap.data();
-                totalBalls = selectedBranch !== "All" ? (data[`balls_${selectedBranch}`] || 0) : (data.totalTakoyakiBalls || 0);
-            }
-            let milestoneDiv = document.getElementById('milestoneCounter');
-            let titleDiv = milestoneDiv ? milestoneDiv.previousElementSibling : null; 
-            if (titleDiv) titleDiv.innerText = selectedBranch !== "All" ? `ROAD TO 1 MILLION TAKOYAKI BALLS - ${selectedBranch.toUpperCase()} 🐙` : `ROAD TO 1 MILLION TAKOYAKI BALLS 🐙`;
-            if (milestoneDiv) milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
+            if (window.milestoneUnsubscribe) window.milestoneUnsubscribe();
+            
+            // Uses onSnapshot so it updates live instantly when a Cashier makes a sale!
+            window.milestoneUnsubscribe = onSnapshot(doc(db, "settings", "global_stats"), (statsSnap) => {
+                let totalBalls = 0;
+                if (statsSnap.exists()) {
+                    let data = statsSnap.data();
+                    totalBalls = selectedBranch !== "All" ? (data[`balls_${selectedBranch}`] || 0) : (data.totalTakoyakiBalls || 0);
+                }
+                let milestoneDiv = document.getElementById('milestoneCounter');
+                let titleDiv = milestoneDiv ? milestoneDiv.previousElementSibling : null; 
+                if (titleDiv) titleDiv.innerText = selectedBranch !== "All" ? `ROAD TO 1 MILLION TAKOYAKI BALLS - ${selectedBranch.toUpperCase()} 🐙` : `ROAD TO 1 MILLION TAKOYAKI BALLS 🐙`;
+                if (milestoneDiv) milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
+            });
         } catch(e) { console.error("Milestone Error:", e); }
 
     } catch(e) { console.error("Global Dash Error:", e); }
@@ -28860,4 +28864,70 @@ window.deletePerfBonus = async function(id) {
         await window.deleteDoc(window.doc(window.db, "staff_bonuses", id));
         window.loadPerfBonusHistory();
     } catch (e) { alert("Failed to delete bonus."); }
+};
+
+// ========================================================
+// 🐙 TAKOYAKI MILESTONE AUTO-AUDITOR (RECOVERS LOST COUNT)
+// ========================================================
+window.resyncTakoyakiMilestone = async function() {
+    Swal.fire({
+        title: 'Auditing Sales History...',
+        html: 'Scanning every transaction in the database to mathematically recalculate the exact number of Takoyaki balls sold.<br><br><span style="color:#d97706; font-size:12px; font-weight:bold;">This recovers any uncounted items from offline glitches.</span>',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+    });
+
+    try {
+        const txSnap = await getDocs(collection(db, "transactions"));
+        let totalBalls = 0;
+        let branchBalls = {};
+
+        txSnap.forEach(docSnap => {
+            let tx = docSnap.data();
+            if (tx.status === "Voided") return;
+            
+            let branch = tx.branch || "Unknown";
+            if (!branchBalls[branch]) branchBalls[branch] = 0;
+
+            if (tx.cart && Array.isArray(tx.cart)) {
+                tx.cart.forEach(item => {
+                    let name = (item.name || item.itemName || "").toLowerCase();
+                    let cat = (item.category || "").toLowerCase();
+                    let qty = parseFloat(item.qty || item.quantity) || 1;
+                    
+                    // Identify if the item is a Takoyaki
+                    if (name.includes("takoyaki") || cat.includes("takoyaki") || name.includes("tako")) {
+                        let balls = 4; // Default standard
+                        if (name.includes("4pcs") || name.includes("4 pcs") || name.match(/\b4\s*pcs\b/)) balls = 4;
+                        else if (name.includes("8pcs") || name.includes("8 pcs") || name.match(/\b8\s*pcs\b/)) balls = 8;
+                        else if (name.includes("12pcs") || name.includes("12 pcs") || name.match(/\b12\s*pcs\b/)) balls = 12;
+                        else if (name.includes("16pcs") || name.includes("16 pcs") || name.match(/\b16\s*pcs\b/)) balls = 16;
+                        
+                        let totalLineBalls = balls * qty;
+                        totalBalls += totalLineBalls;
+                        branchBalls[branch] += totalLineBalls;
+                    }
+                });
+            }
+        });
+
+        // Save the corrected totals back to the cloud
+        let payload = { totalTakoyakiBalls: totalBalls };
+        for (let b in branchBalls) {
+            payload[`balls_${b}`] = branchBalls[b];
+        }
+
+        await setDoc(doc(db, "settings", "global_stats"), payload, { merge: true });
+
+        Swal.fire({
+            title: '✅ Milestone Synced!',
+            html: `Database audited successfully.<br>The true count is exactly <b>${totalBalls.toLocaleString()} balls</b>!`,
+            icon: 'success',
+            customClass: { popup: 'rounded-2xl' }
+        });
+
+    } catch(e) {
+        console.error("Audit Error:", e);
+        Swal.fire('Error', 'Failed to recalculate milestone. Check console.', 'error');
+    }
 };
