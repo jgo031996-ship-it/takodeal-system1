@@ -1404,14 +1404,19 @@
                     `;
                     extras.forEach(addon => {
                         let aPrice = addon.price;
+                        let safeId = addon.name.replace(/[^a-zA-Z0-9]/g, '_');
                         newUiHtml += `
-                            <label class="flex items-center justify-between p-3 border border-zinc-800 rounded-xl bg-darkbg cursor-pointer hover:border-zinc-600 transition-colors group">
-                                <div class="flex items-center gap-3">
-                                    <input type="checkbox" value="${addon.name}|${aPrice}|${addon.linkedIngredient}|${addon.deductQty}" class="w-4 h-4 accent-brandgold modal-addon-cb" onchange="window.updateModalPrice()">
+                            <div class="flex items-center justify-between p-3 border border-zinc-800 rounded-xl bg-darkbg transition-colors group">
+                                <div class="flex flex-col">
                                     <span class="text-sm font-bold text-zinc-300 group-hover:text-white">${addon.name}</span>
+                                    <span class="text-xs font-bold text-brandgold">+₱${aPrice.toFixed(2)} / ea</span>
                                 </div>
-                                <span class="text-xs font-bold text-white">+₱${aPrice.toFixed(2)}</span>
-                            </label>
+                                <div class="flex items-center gap-3">
+                                    <button onclick="window.adjustAddonQty('${safeId}', -1, ${aPrice})" class="w-8 h-8 rounded border border-zinc-700 text-zinc-400 hover:text-white font-bold bg-zinc-900 active:scale-95 transition-transform">-</button>
+                                    <span class="addon-qty-display w-4 text-center font-black text-white" id="addon_qty_${safeId}" data-name="${addon.name}" data-price="${aPrice}" data-linked="${addon.linkedIngredient || ''}" data-deduct="${addon.deductQty || 0}">0</span>
+                                    <button onclick="window.adjustAddonQty('${safeId}', 1, ${aPrice})" class="w-8 h-8 rounded border border-brandgold text-brandgold hover:bg-brandgold hover:text-white font-bold bg-brandgold/10 active:scale-95 transition-transform">+</button>
+                                </div>
+                            </div>
                         `;
                     });
                     newUiHtml += `</div></div>`;
@@ -1430,6 +1435,25 @@
 
             window.updateModalPrice();
             document.getElementById('itemModal').classList.remove('hidden');
+        };
+
+        window.adjustAddonQty = function(safeId, delta) {
+            let qtySpan = document.getElementById('addon_qty_' + safeId);
+            if (!qtySpan) return;
+            
+            let currentQty = parseInt(qtySpan.innerText) || 0;
+            let newQty = currentQty + delta;
+            
+            if (newQty < 0) newQty = 0;
+            if (newQty > 10) newQty = 10; // Safety cap: max 10 of a single add-on
+            
+            qtySpan.innerText = newQty;
+            
+            // Visual feedback: Turns gold when selected
+            if (newQty > 0) qtySpan.classList.replace('text-white', 'text-brandgold');
+            else qtySpan.classList.replace('text-brandgold', 'text-white');
+            
+            window.updateModalPrice();
         };
 
         window.selectMobileVariant = function(realName, vPrice, clickedBtn) {
@@ -1493,8 +1517,11 @@
             let qty = window.activeModalItem.selectedQty;
             let addonsTotal = 0;
 
-            document.querySelectorAll('#modalAddonsList .modal-addon-cb:checked').forEach(cb => {
-                addonsTotal += parseFloat(cb.value.split('|')[1]) || 0;
+            // Multiplies the Add-on Quantity by the Add-on Price
+            document.querySelectorAll('#modalAddonsList .addon-qty-display').forEach(span => {
+                let aQty = parseInt(span.innerText) || 0;
+                let aPrice = parseFloat(span.getAttribute('data-price')) || 0;
+                addonsTotal += (aQty * aPrice);
             });
 
             let finalPrice = (basePrice + addonsTotal) * qty;
@@ -1547,10 +1574,23 @@
                 activeAddons[parts[0]] = { name: parts[0], price: parseFloat(parts[1]), qty: 1, linkedIngredient: parts[2], deductQty: parseFloat(parts[3]) };
             });
 
-            document.querySelectorAll('#modalAddonsList .modal-addon-cb:checked').forEach(cb => {
-                let parts = cb.value.split('|');
-                activeAddons[parts[0]] = { name: parts[0], price: parseFloat(parts[1]), qty: 1, linkedIngredient: parts[2], deductQty: parseFloat(parts[3]) };
-                addonsTotal += parseFloat(parts[1]);
+            document.querySelectorAll('#modalAddonsList .addon-qty-display').forEach(span => {
+                let aQty = parseInt(span.innerText) || 0;
+                if (aQty > 0) {
+                    let aName = span.getAttribute('data-name');
+                    let aPrice = parseFloat(span.getAttribute('data-price')) || 0;
+                    let aLinked = span.getAttribute('data-linked');
+                    let aDeduct = parseFloat(span.getAttribute('data-deduct')) || 0;
+                    
+                    activeAddons[aName] = { 
+                        name: aName, 
+                        price: aPrice, 
+                        qty: aQty, // 🔥 The dynamic quantity!
+                        linkedIngredient: aLinked, 
+                        deductQty: aDeduct 
+                    };
+                    addonsTotal += (aPrice * aQty);
+                }
             });
 
             window.cart.push({
