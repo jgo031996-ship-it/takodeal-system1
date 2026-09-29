@@ -211,26 +211,27 @@ window.requestDeviceAccess = async function() {
     }
 
     try {
-        let deviceId = localStorage.getItem('takodeal_device_id');
-        if (!deviceId) {
-            deviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-            localStorage.setItem('takodeal_device_id', deviceId);
-        }
+         let deviceId = localStorage.getItem('takodeal_device_id');
+         if (!deviceId) {
+             deviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+             localStorage.setItem('takodeal_device_id', deviceId);
+         }
 
-        await setDoc(doc(db, "pos_devices", deviceId), {
-            deviceId: deviceId,
-            deviceName: name + " (Staff)",
-            branch: targetBranch,
-            status: "Pending", // Prevent "Blocked" from triggering aggressive manager alerts
-            registeredAt: serverTimestamp(),
-            lastActive: serverTimestamp()
-        });
+         await setDoc(doc(db, "pos_devices", deviceId), {
+             deviceId: deviceId,
+             deviceName: name + " (Staff)",
+             branch: targetBranch,
+             status: "Pending",
+             registeredAt: serverTimestamp(),
+             lastActive: serverTimestamp()
+         });
 
-        window.listenToDeviceStatus(deviceId);
+         window.listenToDeviceStatus(deviceId);
 
-    } catch(e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to connect to HQ.', 'error');
+      } catch(e) {
+        console.error("Device Reg Error:", e);
+        // 🔥 THE DIAGNOSTIC UPGRADE: Reveal the true error message on the screen!
+        Swal.fire('Connection Failed', 'System Details: ' + e.message, 'error');
         if(btn) { btn.innerText = "Request Access"; btn.disabled = false; }
     }
 };
