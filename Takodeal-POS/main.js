@@ -618,6 +618,10 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
     window.currentBaseFlavorsInfo = [];
     window.mixMatchState = {};
     window.maxMixMatch = 0;
+    
+    // 🔥 INITIALIZE NEW MULTI-ADDON MEMORY
+    window.extraAddonState = {};
+    window.currentExtraAddonsInfo = [];
 
     if (!window.masterPOSData) window.masterPOSData = {};
     if (!window.cart) window.cart = [];
@@ -792,18 +796,17 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     baseFlavorHtml += `</select>`;
                 }
 
+                // 🔥 THE NEW MULTI-ADDON UI RENDERER 🔥
                 if (extras.length > 0) {
-                    extraAddonHtml += `<div class="section-title" style="margin-bottom: 8px; width: 100%; text-align: left;">EXTRA ADD-ONS (Optional)</div><div style="display: flex; flex-direction: column; gap: 8px; width: 100%;">`;
+                    window.currentExtraAddonsInfo = extras;
                     extras.forEach(a => {
-                        let isChecked = (existingItem && existingItem.addons && existingItem.addons[a.name]) ? 'checked' : '';
-                        extraAddonHtml += `
-                            <label style="display: flex; justify-content: space-between; align-items: center; cursor: pointer; background: #f8fafc; padding: 12px 15px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; font-weight: bold; color: #334155; box-sizing: border-box; transition: 0.2s;" onmouseover="this.style.background='#f1f5f9';" onmouseout="this.style.background='#f8fafc';">
-                                <span style="display:flex; align-items:center;"><input type="checkbox" class="addon-checkbox" value="${a.name}|${a.price}|${a.linkedIngredient || ''}|${a.deductQty || 0}" ${isChecked} style="transform: scale(1.3); margin-right: 12px; accent-color: #0ea5e9; cursor: pointer;" onchange="if(typeof window.updateModalTotals==='function') window.updateModalTotals(); else updateModalTotals();"> ${a.name}</span>
-                                <span style="color: #0f766e;">+₱${a.price.toFixed(2)}</span>
-                            </label>
-                        `;
+                        window.extraAddonState[a.name] = (existingItem && existingItem.addons && existingItem.addons[a.name]) ? existingItem.addons[a.name].qty : 0;
                     });
-                    extraAddonHtml += `</div>`;
+                    
+                    extraAddonHtml += `
+                        <div class="section-title" style="margin-bottom: 8px; width: 100%; text-align: left;">EXTRA ADD-ONS (Optional)</div>
+                        <div id="extraAddonListContainer" style="display: flex; flex-direction: column; gap: 8px; width: 100%;"></div>
+                    `;
                 }
             }
 
@@ -857,52 +860,51 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
         console.error("Error loading item details:", error); 
     }
     
+    // 🔥 CALL THE NEW RENDERER HERE!
+    if (typeof window.renderExtraAddonsList === 'function') window.renderExtraAddonsList();
+
     if (typeof window.updateModalTotals === 'function') window.updateModalTotals(); 
     else if (typeof updateModalTotals === 'function') updateModalTotals();
 };
 
-window.renderBaseFlavorsList = function() {
-    let list = document.getElementById('baseFlavorList');
-    let counterDisplay = document.getElementById('baseFlavorCounter');
-    if (!list || !counterDisplay || !window.currentBaseFlavorsInfo) return;
-
-    let requiredTotal = window.pendingItem.qty;
-    let currentTotal = Object.values(window.baseFlavorState).reduce((a, b) => a + b, 0);
-    
-    counterDisplay.innerText = `${currentTotal} / ${requiredTotal} Pcs`;
-    counterDisplay.style.color = currentTotal === requiredTotal ? "#16a34a" : "#dc2626";
+// ==========================================
+// ➕ THE NEW MULTI-QTY ADD-ON ENGINE
+// ==========================================
+window.renderExtraAddonsList = function() {
+    let container = document.getElementById('extraAddonListContainer');
+    if (!container || !window.currentExtraAddonsInfo) return;
 
     let html = '';
-    window.currentBaseFlavorsInfo.forEach(bf => {
-        let count = window.baseFlavorState[bf.name] || 0;
+    window.currentExtraAddonsInfo.forEach(a => {
+        let count = window.extraAddonState[a.name] || 0;
+        let activeStyle = count > 0 ? 'border-color: #0ea5e9; background: #f0f9ff;' : 'border-color: #e2e8f0; background: #f8fafc;';
+        let safeName = a.name.replace(/'/g, "\\'");
+        
         html += `
-            <div style="display: flex; justify-content: space-between; align-items: center; background: white; padding: 8px 12px; border: 1px solid #fde68a; border-radius: 6px;">
-                <span style="font-size: 13px; font-weight: bold; color: #b45309;">${bf.name} <span style="font-size: 10px; color: #d97706;">(Free)</span></span>
-                <div style="display: flex; align-items: center; gap: 10px;">
-                    <button class="btn-qty-small" style="width: 28px; height: 28px; border-color: #fcd34d; color: #d97706; font-size: 18px; line-height: 1;" onclick="window.adjustBaseFlavorQty('${bf.name}', -1)">-</button>
-                    <span style="font-weight: 900; font-size: 15px; color: #0f172a; width: 20px; text-align: center;">${count}</span>
-                    <button class="btn-qty-small" style="width: 28px; height: 28px; border-color: #fcd34d; color: #d97706; font-size: 18px; line-height: 1;" onclick="window.adjustBaseFlavorQty('${bf.name}', 1)">+</button>
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 15px; border: 1px solid; ${activeStyle} border-radius: 6px; transition: 0.2s;">
+                <div style="display: flex; flex-direction: column;">
+                    <span style="font-size: 13px; font-weight: bold; color: #334155;">${a.name}</span>
+                    <span style="color: #0f766e; font-size: 11px; font-weight: bold;">+₱${a.price.toFixed(2)}</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button class="btn-qty-small" style="width: 32px; height: 32px; border-color: #cbd5e1; color: #334155; font-size: 20px; line-height: 1; display: flex; align-items: center; justify-content: center; background: white;" onclick="window.adjustExtraAddonQty('${safeName}', -1)">-</button>
+                    <span style="font-weight: 900; font-size: 16px; color: #0f172a; width: 24px; text-align: center;">${count}</span>
+                    <button class="btn-qty-small" style="width: 32px; height: 32px; border-color: #cbd5e1; color: #334155; font-size: 20px; line-height: 1; display: flex; align-items: center; justify-content: center; background: white;" onclick="window.adjustExtraAddonQty('${safeName}', 1)">+</button>
                 </div>
             </div>
         `;
     });
-    list.innerHTML = html;
+    container.innerHTML = html;
 };
 
-window.adjustBaseFlavorQty = function(flavor, delta) {
-    let requiredTotal = window.pendingItem.qty;
-    let currentTotal = Object.values(window.baseFlavorState).reduce((a, b) => a + b, 0);
-    let currentCount = window.baseFlavorState[flavor] || 0;
-
-    if (delta > 0 && currentTotal >= requiredTotal) {
-        document.getElementById('baseFlavorCounter').style.animation = "shake 0.5s";
-        setTimeout(() => document.getElementById('baseFlavorCounter').style.animation = "", 500);
-        return; 
-    }
+window.adjustExtraAddonQty = function(addonName, delta) {
+    let currentCount = window.extraAddonState[addonName] || 0;
     if (delta < 0 && currentCount <= 0) return; 
+    if (delta > 0 && currentCount >= 20) return; // Cap at 20 to prevent crazy typos
 
-    window.baseFlavorState[flavor] = currentCount + delta;
-    window.renderBaseFlavorsList();
+    window.extraAddonState[addonName] = currentCount + delta;
+    window.renderExtraAddonsList();
+    window.updateModalTotals();
 };
 
 window.adjustModalMainQty = function(delta) {
@@ -932,10 +934,15 @@ window.updateModalTotals = function() {
     let qty = parseInt(document.getElementById('modalMainQty').innerText) || 1;
     let addonsTotal = 0; 
 
-    document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
-        let parts = cb.value.split('|');
-        addonsTotal += (parseFloat(parts[1]) || 0);
-    });
+    // 🔥 THE FIX: Calculate Extra Addons perfectly based on their individual quantities!
+    if (window.currentExtraAddonsInfo && window.extraAddonState) {
+        window.currentExtraAddonsInfo.forEach(a => {
+            let count = window.extraAddonState[a.name] || 0;
+            if (count > 0) {
+                addonsTotal += (a.price * count);
+            }
+        });
+    }
 
     let lineTotal = (window.pendingItem.variantPrice + addonsTotal) * qty;
     let discInput = parseFloat(document.getElementById('discountValueInput').value) || 0; 
@@ -1022,10 +1029,21 @@ window.confirmAddOrUpdateToCart = function() {
         }
     } 
 
-    document.querySelectorAll('.addon-checkbox:checked').forEach(cb => {
-        let p = cb.value.split('|');
-        window.pendingItem.addons[p[0]] = { name: p[0], price: parseFloat(p[1]), qty: qty, linkedIngredient: p[2], deductQty: parseFloat(p[3]) };
-    });
+    // 🔥 THE FIX: Save Extra Addons dynamically with their specific multiplier quantities!
+    if (window.currentExtraAddonsInfo && window.extraAddonState) {
+        window.currentExtraAddonsInfo.forEach(a => {
+            let count = window.extraAddonState[a.name] || 0;
+            if (count > 0) {
+                window.pendingItem.addons[a.name] = { 
+                    name: a.name, 
+                    price: parseFloat(a.price), 
+                    qty: count, // This is the multiplier!
+                    linkedIngredient: a.linkedIngredient || '', 
+                    deductQty: parseFloat(a.deductQty) || 0 
+                };
+            }
+        });
+    }
 
     let addonsTotal = 0; 
     for (let key in window.pendingItem.addons) {
