@@ -681,11 +681,11 @@
 
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   
-  <!-- 1. Load Auth & Permissions Engine -->
-  <script type="module" src="auth.js?v=2.0"></script>
+  <!-- 1. Load Core Data Engine FIRST (This sets up Firebase) -->
+  <script type="module" src="main_franchise.js?v=2.2"></script>
   
-  <!-- 2. Load the Core Franchise Data Engine -->
-  <script type="module" src="main_franchise.js?v=2.0"></script>
+  <!-- 2. Load Auth Engine SECOND (This uses Firebase to log you in) -->
+  <script type="module" src="auth.js?v=2.2"></script>
 
   <script>
     if ('serviceWorker' in navigator) {
