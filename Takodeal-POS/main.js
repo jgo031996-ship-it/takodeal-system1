@@ -433,6 +433,11 @@ window.loadPOSData = async function() {
     let allowedCats = JSON.parse(localStorage.getItem('takodeal_cached_allowed_cats') || '[]');
     window.branchAllowedCategories = allowedCats;
 
+    // 🔥 THE CRASH PREVENTER: Rebuilds missing memory if HTML script fails!
+    if (!window.masterPOSData) {
+        window.masterPOSData = { items: [], variants: {}, categories: [], addons: [], settings: { orderTypes: [], payMethods: [] } };
+    }
+
     window.masterPOSData.settings = JSON.parse(localStorage.getItem('takodeal_cached_settings') || '{"orderTypes":["Dine-In", "Take-Out", "Delivery", "Grab"], "payMethods":["Cash", "GCash"]}');
     window.masterPOSData.categories = JSON.parse(localStorage.getItem('takodeal_cached_categories') || '[]');
     window.globalItemLayout = JSON.parse(localStorage.getItem('takodeal_cached_item_layout') || '[]');
