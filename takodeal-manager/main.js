@@ -15783,49 +15783,123 @@ window.saveStaffMealDiscount = function(btnElement) {
 };
 
 window.editManagerPermissions = async function(docId, email, existingPerms) {
-    const { value: currentPerms, isConfirmed } = await Swal.fire({
-        title: '🔐 Edit Permissions',
+    // 1. 🤖 AUTO-SCANNER: Extract all available tabs directly from the Sidebar HTML!
+    let allPerms = [];
+    
+    // Scan Main Sidebar Items
+    document.querySelectorAll('.sidebar .nav-item').forEach(el => {
+        let onclick = el.getAttribute('onclick');
+        let match = onclick ? onclick.match(/switchView\(['"]([^'"]+)['"]\)/) : null;
+        if (match && match[1]) {
+            // Clean up text by removing notification badges (numbers) and arrows
+            let text = el.innerText.replace(/[0-9▼▲]/g, '').trim();
+            // Grab the emoji icon
+            let iconEl = el.querySelector('.nav-icon');
+            let icon = iconEl ? iconEl.innerText.trim() + " " : "";
+            
+            allPerms.push({ id: match[1].toLowerCase(), name: icon + text });
+        }
+    });
+
+    // Scan Sub-Items (HR Hub & Inventory Tabs)
+    document.querySelectorAll('.sidebar .nav-subitem').forEach(el => {
+        let onclick = el.getAttribute('onclick');
+        let matchHr = onclick ? onclick.match(/navToHr\(['"]([^'"]+)['"]\)/) : null;
+        let matchInv = onclick ? onclick.match(/switchInvTab\(['"]([^'"]+)['"]\)/) : null;
+        
+        if (matchHr && matchHr[1]) {
+            let text = el.innerText.trim();
+            allPerms.push({ id: matchHr[1].toLowerCase(), name: `↳ HR: ${text}` });
+        }
+        if (matchInv && matchInv[1]) {
+            let text = el.innerText.trim();
+            allPerms.push({ id: matchInv[1].toLowerCase(), name: `↳ Inv: ${text}` });
+        }
+    });
+
+    // Filter out any accidental duplicates
+    let uniquePerms = Array.from(new Map(allPerms.map(item => [item.id, item])).values());
+
+    // 2. 🧠 MEMORY CHECK: See what they already have access to
+    let currentArr = existingPerms.split(',').map(s => s.trim().toLowerCase());
+    let isMaster = currentArr.includes('all');
+
+    // 3. 🎨 BUILD THE UI GRID
+    let checkboxesHtml = `
+        <div style="margin-bottom: 15px; padding-bottom: 12px; border-bottom: 1px dashed #cbd5e1; display: flex; justify-content: space-between; align-items: center;">
+            <label style="font-size: 14px; font-weight: 900; color: #1d4ed8; cursor: pointer; display: flex; align-items: center; gap: 8px; background: #eff6ff; padding: 10px 15px; border-radius: 8px; border: 1px solid #bfdbfe; width: 100%; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+                <input type="checkbox" id="perm-master-toggle" ${isMaster ? 'checked' : ''} 
+                    onchange="document.querySelectorAll('.perm-cb').forEach(cb => cb.checked = this.checked); document.getElementById('perm-grid').style.opacity = this.checked ? '0.4' : '1'; document.getElementById('perm-grid').style.pointerEvents = this.checked ? 'none' : 'auto';" 
+                    style="width: 18px; height: 18px; accent-color: #2563eb; cursor: pointer; flex-shrink: 0;">
+                👑 Grant Master Access (All Tabs & Features)
+            </label>
+        </div>
+        
+        <label style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 8px; display: block;">Specific Tab Access</label>
+        <div id="perm-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-height: 280px; overflow-y: auto; padding-right: 5px; opacity: ${isMaster ? '0.4' : '1'}; pointer-events: ${isMaster ? 'none' : 'auto'}; transition: 0.2s;">
+    `;
+
+    uniquePerms.forEach(p => {
+        let isChecked = isMaster || currentArr.includes(p.id) ? 'checked' : '';
+        checkboxesHtml += `
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: bold; color: #334155; cursor: pointer; background: #f8fafc; padding: 10px; border-radius: 6px; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.02); transition: 0.2s;" onmouseover="this.style.background='#f0f9ff'; this.style.borderColor='#bae6fd';" onmouseout="this.style.background='#f8fafc'; this.style.borderColor='#e2e8f0';">
+                <input type="checkbox" value="${p.id}" class="perm-cb" ${isChecked} style="width: 16px; height: 16px; accent-color: #0ea5e9; cursor: pointer; flex-shrink: 0;">
+                <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${p.name}</span>
+            </label>
+        `;
+    });
+
+    checkboxesHtml += `</div>`;
+
+    // 4. 🚀 LAUNCH THE INTERFACE
+    const { value: finalPerms, isConfirmed } = await Swal.fire({
+        title: '🔐 Access & Permissions',
         html: `
             <div style="text-align: left; margin-top: 10px;">
-                <p style="font-size: 13px; color: #475569; margin-bottom: 15px;">Editing access for <strong>${email}</strong>.</p>
-                <label style="font-size: 12px; font-weight: bold; color: #475569;">Authorized Tabs (Comma Separated):</label>
-                <textarea id="swal-perms" class="input-box" style="width: 100%; height: 80px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none; font-family: monospace; resize: none;">${existingPerms}</textarea>
-                <div style="font-size: 11px; color: #64748b; background: #f8fafc; padding: 8px; border-radius: 6px; border: 1px dashed #cbd5e1;">
-                    <strong>Available Options:</strong> accounts, transfers, payables, devices, payroll, inbox, ledger, schedule, products, purchases, dispatch, zreadings, history, expenses, branches, menu, receipt, inventory, alerts<br><br>
-                    Type <strong>all</strong> to grant full Master Access.
-                </div>
+                <p style="font-size: 13px; color: #475569; margin-bottom: 15px;">Select which modules <strong>${email}</strong> can access.</p>
+                ${checkboxesHtml}
             </div>
         `,
         focusConfirm: false,
         showCancelButton: true,
-        confirmButtonColor: '#2563eb', // Blue to match the button
-        confirmButtonText: 'Update Access',
+        confirmButtonColor: '#2563eb',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: '💾 Save Access',
+        width: '650px',
         customClass: { popup: 'rounded-2xl shadow-xl' },
         preConfirm: () => {
-            return document.getElementById('swal-perms').value.trim();
+            if (document.getElementById('perm-master-toggle').checked) {
+                return ['all'];
+            } else {
+                let selected = [];
+                document.querySelectorAll('.perm-cb:checked').forEach(cb => selected.push(cb.value));
+                if (selected.length === 0) {
+                    Swal.showValidationMessage('Please select at least one permission or grant Master Access.');
+                    return false;
+                }
+                return selected;
+            }
         }
     });
 
-    if (!isConfirmed || !currentPerms) return;
-    
-    // Clean up their typing (forces lowercase, removes spaces)
-    let permArray = currentPerms.split(',').map(t => t.trim().toLowerCase());
-    
-    try {
-        await updateDoc(doc(db, "hq_managers", docId), { permissions: permArray });
-        
-        Swal.fire({
-            title: '✅ Access Updated!',
-            text: `${email} must refresh their app to see the new tabs.`,
-            icon: 'success',
-            confirmButtonColor: '#16a34a',
-            customClass: { popup: 'rounded-2xl' }
-        });
-        
-        window.loadAdminDashboard();
-    } catch (e) {
-        console.error(e); 
-        Swal.fire('Error', 'Failed to update permissions.', 'error');
+    if (isConfirmed && finalPerms) {
+        try {
+            Swal.fire({title: 'Updating Access...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+            await window.updateDoc(window.doc(window.db, "hq_managers", docId), { permissions: finalPerms });
+            
+            Swal.fire({
+                title: '✅ Access Updated!',
+                text: 'The permissions have been saved. They must refresh their app to see the changes.',
+                icon: 'success',
+                confirmButtonColor: '#16a34a',
+                customClass: { popup: 'rounded-2xl' }
+            });
+            
+            window.loadAdminDashboard();
+        } catch (e) {
+            console.error(e); 
+            Swal.fire('Error', 'Failed to update permissions.', 'error');
+        }
     }
 };
 
