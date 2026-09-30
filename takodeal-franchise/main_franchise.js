@@ -100,11 +100,17 @@ window.switchView = function(viewId) {
 };
 
 window.refreshActiveData = function() {
+    // COST SAVER: Wipe RAM caches to force a fresh pull from Firebase
+    if (window.TK_CACHE) window.TK_CACHE.lastInventory = 0;
+    if (window.DASH_CACHE) window.DASH_CACHE.lastFetch = 0;
+    
     let activeView = document.querySelector('.view-container.active');
     if (activeView) {
         let id = activeView.id.replace('view-', '');
         window.switchView(id);
     }
+    
+    Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Data Synced', showConfirmButton: false, timer: 1000});
 };
 
 window.logoutManager = function() {
@@ -124,10 +130,11 @@ window.logoutManager = function() {
 };
 
 // ========================================================
-// 📊 MERGED DASHBOARD ENGINE 
+// 📊 MERGED DASHBOARD ENGINE (COST-OPTIMIZED CACHE)
 // ========================================================
 window.dashboardTrendChart = null;
 window.dashboardPieChart = null;
+window.DASH_CACHE = { data: null, lastFetch: 0, start: '', end: '', ttl: 5 * 60 * 1000 }; // 5 Minute Memory
 
 window.loadDashboard = async function() {
     let startVal = document.getElementById('globalStartDate').value;
@@ -135,38 +142,34 @@ window.loadDashboard = async function() {
     let startOfDay = new Date(startVal + 'T00:00:00');
     let endOfDay = new Date(endVal + 'T23:59:59');
 
-    // Setup rolling 7-day window for the chart
-    let sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-    sevenDaysAgo.setHours(0,0,0,0);
-    let todayEnd = new Date();
-    todayEnd.setHours(23,59,59,999);
+    // 🔥 COST SAVER: Check RAM Cache First
+    let now = Date.now();
+    if (window.DASH_CACHE.data && window.DASH_CACHE.start === startVal && window.DASH_CACHE.end === endVal && (now - window.DASH_CACHE.lastFetch < window.DASH_CACHE.ttl)) {
+        console.log("⚡ Loaded Dashboard from RAM (0 Firebase Reads)");
+        window.applyDashboardUI(window.DASH_CACHE.data);
+        return;
+    }
 
-    // 1. Reset UI State
     document.getElementById('dashTotalBalls').innerText = 'Loading...';
-    document.getElementById('dashGrossSales').innerText = '₱0.00';
-    document.getElementById('dashNetSales').innerText = '₱0.00';
-    document.getElementById('dashExpenses').innerText = '₱0.00';
+    document.getElementById('dashGrossSales').innerText = '...';
 
     try {
         let gross = 0, net = 0, totalBalls = 0;
         let productMix = {};
-        
-        // Initialize the 7-day array with 0s to ensure the chart always has 7 points
         let rollingTrend = {};
+        
         for(let i=6; i>=0; i--) {
-            let d = new Date();
-            d.setDate(d.getDate() - i);
+            let d = new Date(); d.setDate(d.getDate() - i);
             rollingTrend[d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'})] = 0;
         }
 
-        // 2. Fetch Transactions for KPI Cards (Filtered by Date Picker)
-        const txQuery = query(collection(db, "transactions"), 
-            where("branch", "==", window.sessionUser.branch),
-            where("timestamp", ">=", startOfDay),
-            where("timestamp", "<=", endOfDay)
+        // 1. Fetch Transactions
+        const txQuery = window.query(window.collection(window.db, "transactions"), 
+            window.where("branch", "==", window.sessionUser.branch),
+            window.where("timestamp", ">=", startOfDay),
+            window.where("timestamp", "<=", endOfDay)
         );
-        const txSnap = await getDocs(txQuery);
+        const txSnap = await window.getDocs(txQuery);
         
         txSnap.forEach(doc => {
             let tx = doc.data();
@@ -192,64 +195,56 @@ window.loadDashboard = async function() {
             }
         });
 
-        // 3. Fetch CLOSED SHIFTS for the 7-Day Chart (Drops reads from 2,000+ down to ~7!)
-        const trendQuery = query(collection(db, "shifts"), 
-            where("branch", "==", window.sessionUser.branch),
-            where("startTime", ">=", sevenDaysAgo),
-            where("startTime", "<=", todayEnd)
+        // 2. Fetch 7-Day Trend (Aggregated from Closed Shifts to save reads)
+        let sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+        sevenDaysAgo.setHours(0,0,0,0);
+        let todayEnd = new Date(); todayEnd.setHours(23,59,59,999);
+
+        const trendQuery = window.query(window.collection(window.db, "shifts"), 
+            window.where("branch", "==", window.sessionUser.branch),
+            window.where("startTime", ">=", sevenDaysAgo),
+            window.where("startTime", "<=", todayEnd)
         );
-        const trendSnap = await getDocs(trendQuery);
+        const trendSnap = await window.getDocs(trendQuery);
         
         trendSnap.forEach(docSnap => {
             let shift = docSnap.data();
-            
-            // Only aggregate closed shifts so we don't double-count live ongoing sales!
             if (shift.startTime && shift.status === "Closed") {
                 let d = shift.startTime.toDate ? shift.startTime.toDate() : new Date(shift.startTime);
                 let dateStr = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-                
-                let shiftTotal = (parseFloat(shift.totalCashSales) || 0) + (parseFloat(shift.totalDigitalSales) || 0);
-                
-                if (rollingTrend[dateStr] !== undefined) {
-                    let todayStr = new Date().toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-                    // Skip today's closed shifts here, because we will inject the exact LIVE data next!
-                    if (dateStr !== todayStr) {
-                        rollingTrend[dateStr] += shiftTotal;
-                    }
+                if (rollingTrend[dateStr] !== undefined && dateStr !== new Date().toLocaleDateString('en-US', {month: 'short', day: 'numeric'})) {
+                    rollingTrend[dateStr] += (parseFloat(shift.totalCashSales) || 0) + (parseFloat(shift.totalDigitalSales) || 0);
                 }
             }
         });
+        
+        // Inject today's live data
+        rollingTrend[new Date().toLocaleDateString('en-US', {month: 'short', day: 'numeric'})] = gross;
 
-        // Inject today's LIVE gross sales (calculated in Step 2) directly into today's bar!
-        let todayKey = new Date().toLocaleDateString('en-US', {month: 'short', day: 'numeric'});
-        if (rollingTrend[todayKey] !== undefined) {
-            rollingTrend[todayKey] = gross; 
-        }
-
-        // 4. Fetch Expenses (Filtered by Date Picker)
+        // 3. Fetch Expenses
         let expTotal = 0;
-        const expQuery = query(collection(db, "expenses"), 
-            where("branch", "==", window.sessionUser.branch),
-            where("timestamp", ">=", startOfDay),
-            where("timestamp", "<=", endOfDay)
+        const expQuery = window.query(window.collection(window.db, "expenses"), 
+            window.where("branch", "==", window.sessionUser.branch),
+            window.where("timestamp", ">=", startOfDay),
+            window.where("timestamp", "<=", endOfDay)
         );
-        const expSnap = await getDocs(expQuery);
+        const expSnap = await window.getDocs(expQuery);
         expSnap.forEach(doc => { expTotal += parseFloat(doc.data().amount || 0); });
 
-        // 5. Update KPI Numbers
-        document.getElementById('dashTotalBalls').innerText = totalBalls.toLocaleString() + ' Balls Sold!';
-        document.getElementById('dashGrossSales').innerText = window.formatMoney(gross);
-        document.getElementById('dashNetSales').innerText = window.formatMoney(net);
-        document.getElementById('dashExpenses').innerText = window.formatMoney(expTotal);
+        // 4. Save to RAM Cache
+        window.DASH_CACHE = {
+            data: { gross, net, totalBalls, expTotal, productMix, rollingTrend },
+            lastFetch: Date.now(), start: startVal, end: endVal, ttl: window.DASH_CACHE.ttl
+        };
 
-        // 6. Build Live Staff Pills
+        window.applyDashboardUI(window.DASH_CACHE.data);
+        
+        // 5. Fetch Live Staff (Not cached, since it needs to be live)
         const staffContainer = document.getElementById('dashLiveStaff');
         staffContainer.innerHTML = '';
-        const staffQuery = query(collection(db, "shifts"), 
-            where("branch", "==", window.sessionUser.branch),
-            where("active", "==", true)
-        );
-        const staffSnap = await getDocs(staffQuery);
+        const staffQuery = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", window.sessionUser.branch), window.where("active", "==", true));
+        const staffSnap = await window.getDocs(staffQuery);
         
         if(staffSnap.empty) {
             staffContainer.innerHTML = '<div style="color: #94a3b8; font-style: italic; font-size: 13px;">No staff currently clocked in.</div>';
@@ -261,17 +256,18 @@ window.loadDashboard = async function() {
                     <div style="display: flex; align-items: center; gap: 8px; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 8px 15px; border-radius: 20px;">
                         <div style="width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px #10b981;"></div>
                         <span style="font-size: 13px; font-weight: 800; color: #166534;">${s.cashier || 'Active Staff'} (In @ ${timeStr})</span>
-                    </div>
-                `;
+                    </div>`;
             });
         }
+    } catch(e) { console.error("Dashboard Error:", e); }
+};
 
-        // 7. Draw Charts using the new rollingTrend
-        window.drawDashboardCharts(productMix, rollingTrend);
-
-    } catch(e) {
-        console.error("Dashboard Engine Error:", e);
-    }
+window.applyDashboardUI = function(data) {
+    document.getElementById('dashTotalBalls').innerText = data.totalBalls.toLocaleString() + ' Balls Sold!';
+    document.getElementById('dashGrossSales').innerText = window.formatMoney(data.gross);
+    document.getElementById('dashNetSales').innerText = window.formatMoney(data.net);
+    document.getElementById('dashExpenses').innerText = window.formatMoney(data.expTotal);
+    window.drawDashboardCharts(data.productMix, data.rollingTrend);
 };
 
 window.drawDashboardCharts = function(productMix, dailyTrend) {
@@ -583,11 +579,11 @@ window.loadPayrollGenerator = async function() {
 };
 
 // ========================================================
-// 📈 8. SALES HISTORY ENGINE (FRANCHISEE LOCKED)
+// 📈 8. SALES HISTORY ENGINE (HARD-CAPPED TO SAVE READS)
 // ========================================================
 window.loadSalesHistory = async function() {
     const tbody = document.getElementById('salesHistoryBody');
-    if (!tbody) return; // Safety check if HTML isn't built yet
+    if (!tbody) return; 
     
     let startVal = document.getElementById('globalStartDate').value;
     let endVal = document.getElementById('globalEndDate').value;
@@ -597,16 +593,16 @@ window.loadSalesHistory = async function() {
     tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px;">⏳ Loading history...</td></tr>';
 
     try {
-        // STRICT WALLED GARDEN QUERY
-        const q = query(collection(db, "transactions"), 
-            where("branch", "==", window.sessionUser.branch),
-            where("timestamp", ">=", startOfDay),
-            where("timestamp", "<=", endOfDay)
+        // 🔥 COST SAVER: Hard limit of 150 documents to prevent accidental massive queries
+        const q = window.query(window.collection(window.db, "transactions"), 
+            window.where("branch", "==", window.sessionUser.branch),
+            window.where("timestamp", ">=", startOfDay),
+            window.where("timestamp", "<=", endOfDay),
+            window.limit(150) 
         );
         
-        const snap = await getDocs(q);
+        const snap = await window.getDocs(q);
         
-        // Sort by newest first in Javascript to avoid Firebase Index requirements
         let docs = [];
         snap.forEach(d => docs.push({id: d.id, ...d.data()}));
         docs.sort((a, b) => b.timestamp - a.timestamp);
@@ -627,11 +623,9 @@ window.loadSalesHistory = async function() {
             `;
         });
         
-        tbody.innerHTML = html || '<tr><td colspan="5" style="text-align:center; padding: 30px; color:#64748b;">No transactions found for this date range.</td></tr>';
-    } catch (e) {
-        console.error("History Error:", e);
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:red; padding: 20px;">Failed to load sales history.</td></tr>';
-    }
+        let warningRow = docs.length === 150 ? '<tr><td colspan="5" style="text-align:center; padding: 15px; background: #fffbeb; color: #d97706; font-weight: bold; font-size: 12px;">Showing latest 150 transactions for performance. Narrow your date range to see older records.</td></tr>' : '';
+        tbody.innerHTML = html + warningRow || '<tr><td colspan="5" style="text-align:center; padding: 30px; color:#64748b;">No transactions found for this date range.</td></tr>';
+    } catch (e) { console.error("History Error:", e); }
 };
 
 // ========================================================
@@ -2931,3 +2925,22 @@ window.loadPurchasesAndAlerts = async function () {
         tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 40px; font-weight: bold;">❌ Failed to scan inventory. Check your connection.</td></tr>';
     }
 };
+
+// =======================================================
+// 🧟 ZOMBIE LISTENER KILLER (OPTIMIZED DEBOUNCE)
+// =======================================================
+window.zombieTimeout = null;
+document.addEventListener("visibilitychange", async () => {
+    clearTimeout(window.zombieTimeout);
+    
+    if (document.hidden) {
+        // Wait 10 seconds before pausing to prevent rapid alt-tab spam
+        window.zombieTimeout = setTimeout(async () => {
+            console.log("🛑 App hidden for 10s. Pausing Firebase to save reads...");
+            try { if (window.disableNetwork && window.db) await window.disableNetwork(window.db); } catch(e) {}
+        }, 10000);
+    } else {
+        console.log("🟢 App visible. Waking up Firebase...");
+        try { if (window.enableNetwork && window.db) await window.enableNetwork(window.db); } catch(e) {}
+    }
+});
