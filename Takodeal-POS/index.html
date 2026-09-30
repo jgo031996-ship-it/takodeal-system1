@@ -3397,7 +3397,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                 let nameSuffix = dType === 'manager_meal' ? " (Manager)" : " (Staff)";
                 let expectedCustomerName = staffData.cashierName + nameSuffix;
 
-                // 🔥 INFALLIBLE 1-PER-DAY LIMITER (INDEX-FREE ENGINE) 🔥
+                // 🔥 INFALLIBLE 1-PER-DAY LIMITER (CHECKS STAFF REQUESTS INBOX) 🔥
                 if (dType === 'staff_meal') {
                     nameBox.value = "⏳ Verifying Meal Limit...";
                     nameBox.style.color = "#d97706";
@@ -3407,18 +3407,17 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                     startOfDay.setHours(0, 0, 0, 0);
 
                     try {
-                        // Grab today's transactions and filter locally to guarantee no Firebase index failures!
-                        const txQ = window.query(window.collection(window.db, "transactions"), 
-                            window.where("branch", "==", window.sessionUser.branch), 
+                        // Check if this specific staff member already logged a Staff Meal today in staff_requests
+                        const reqQ = window.query(window.collection(window.db, "staff_requests"), 
+                            window.where("staffName", "==", staffData.cashierName), 
                             window.where("timestamp", ">=", startOfDay)
                         );
-                        const txSnap = await window.getDocs(txQ);
+                        const reqSnap = await window.getDocs(reqQ);
                         
                         let alreadyClaimed = false;
-                        txSnap.forEach(doc => {
-                            let tx = doc.data();
-                            // If they already have a paid staff meal today, flag it!
-                            if (tx.status !== "Voided" && tx.customerName === expectedCustomerName && tx.globalDiscountType === 'staff_meal') {
+                        reqSnap.forEach(doc => {
+                            let rData = doc.data();
+                            if (rData.type && rData.type.toLowerCase().includes("staff meal")) {
                                 alreadyClaimed = true;
                             }
                         });
