@@ -28867,19 +28867,49 @@ window.deletePerfBonus = async function(id) {
 };
 
 // ========================================================
-// 🐙 TAKOYAKI MILESTONE AUTO-AUDITOR (RECOVERS LOST COUNT)
+// 🐙 TAKOYAKI MILESTONE AUTO-AUDITOR (ARCHIVE-PROOF)
 // ========================================================
 window.resyncTakoyakiMilestone = async function() {
+    // 1. Fetch current stats to remember the historical base
+    const statsRef = window.doc(window.db, "settings", "global_stats");
+    const statsSnap = await window.getDoc(statsRef);
+    let currentHistorical = 0;
+    if (statsSnap.exists() && statsSnap.data().historicalBalls) {
+        currentHistorical = statsSnap.data().historicalBalls;
+    }
+
+    // 2. Ask the Manager for the Historical Base (Defaults to the exact missing amount!)
+    const { value: historicalInput, isConfirmed } = await Swal.fire({
+        title: 'Auto-Audit Counter',
+        html: `
+            <div style="text-align: left; font-size: 13px; color: #475569;">
+                Because you archive/delete old transactions to save space, the system cannot count them anymore.<br><br>
+                Please enter the number of Takoyaki balls from your <b>Archived Data</b>. The system will add this to your live transactions to get the true total.<br><br>
+                <span style="color: #0ea5e9; font-weight: bold;">(Hint: To restore your previous 133k milestone, we entered the exact missing amount below).</span>
+            </div>
+        `,
+        input: 'number',
+        inputValue: currentHistorical || 75315, // Automatically restores the missing balls!
+        showCancelButton: true,
+        confirmButtonText: 'Start Audit',
+        confirmButtonColor: '#0ea5e9',
+        customClass: { popup: 'rounded-2xl shadow-xl' }
+    });
+
+    if (!isConfirmed) return;
+
+    let baseBalls = parseInt(historicalInput) || 0;
+
     Swal.fire({
-        title: 'Auditing Sales History...',
-        html: 'Scanning every transaction in the database to mathematically recalculate the exact number of Takoyaki balls sold.<br><br><span style="color:#d97706; font-size:12px; font-weight:bold;">This recovers any uncounted items from offline glitches.</span>',
+        title: 'Auditing Live Sales...',
+        html: 'Scanning active transactions and combining them with your historical base...',
         allowOutsideClick: false,
         didOpen: () => Swal.showLoading()
     });
 
     try {
-        const txSnap = await getDocs(collection(db, "transactions"));
-        let totalBalls = 0;
+        const txSnap = await window.getDocs(window.collection(window.db, "transactions"));
+        let liveBalls = 0;
         let branchBalls = {};
 
         txSnap.forEach(docSnap => {
@@ -28904,24 +28934,35 @@ window.resyncTakoyakiMilestone = async function() {
                         else if (name.includes("16pcs") || name.includes("16 pcs") || name.match(/\b16\s*pcs\b/)) balls = 16;
                         
                         let totalLineBalls = balls * qty;
-                        totalBalls += totalLineBalls;
+                        liveBalls += totalLineBalls;
                         branchBalls[branch] += totalLineBalls;
                     }
                 });
             }
         });
 
-        // Save the corrected totals back to the cloud
-        let payload = { totalTakoyakiBalls: totalBalls };
+        // 3. Mathematical combination!
+        let grandTotal = baseBalls + liveBalls;
+
+        let payload = { 
+            totalTakoyakiBalls: grandTotal,
+            historicalBalls: baseBalls // Saves the memory so you don't have to type it again next time
+        };
+        
         for (let b in branchBalls) {
-            payload[`balls_${b}`] = branchBalls[b];
+            payload[`balls_${b}`] = branchBalls[b]; 
         }
 
-        await setDoc(doc(db, "settings", "global_stats"), payload, { merge: true });
+        await window.setDoc(statsRef, payload, { merge: true });
 
         Swal.fire({
             title: '✅ Milestone Synced!',
-            html: `Database audited successfully.<br>The true count is exactly <b>${totalBalls.toLocaleString()} balls</b>!`,
+            html: `
+                Database audited successfully.<br><br>
+                Archived: <b style="color:#64748b;">${baseBalls.toLocaleString()}</b><br>
+                Live DB: <b style="color:#16a34a;">${liveBalls.toLocaleString()}</b><br><br>
+                Grand Total: <b style="color:#0ea5e9; font-size:18px;">${grandTotal.toLocaleString()} balls</b>!
+            `,
             icon: 'success',
             customClass: { popup: 'rounded-2xl' }
         });
