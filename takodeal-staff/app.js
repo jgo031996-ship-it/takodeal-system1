@@ -2792,19 +2792,33 @@ window.viewPastPayslip = function(encodedData) {
                 if (!val) return null;
                 if (val.seconds) return new Date(val.seconds * 1000);
                 if (val.toDate) return val.toDate();
-                return new Date(val);
+                let parsed = new Date(val);
+                return isNaN(parsed.getTime()) ? null : parsed;
             };
 
-            let logDate = parseDate(log.dateObj || log.in || log.timestamp) || new Date();
-            let dateStr = logDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-            
-            let inDate = parseDate(log.in);
-            let inTime = inDate ? inDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '---';
-            
+            // 1. DATE COLUMN: Check for pre-formatted strings first!
+            let dateStr = log.date || log.dateString; 
+            if (!dateStr) {
+                let logDate = parseDate(log.dateObj || log.timestamp) || new Date();
+                dateStr = logDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
+
+            // 2. TIME IN COLUMN: Support both text strings and raw dates!
+            let inTime = '---';
+            if (log.in) {
+                if (typeof log.in === 'string' && !log.in.includes('T') && !log.in.includes('-')) {
+                    inTime = log.in; // Use text directly
+                } else {
+                    let inDate = parseDate(log.in);
+                    inTime = inDate ? inDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '---';
+                }
+            }
+
+            // 3. TIME OUT COLUMN: Support both text strings and raw dates!
             let outTime = '---';
             if (log.out) {
-                if (typeof log.out === 'string') {
-                    outTime = log.out;
+                if (typeof log.out === 'string' && !log.out.includes('T') && !log.out.includes('-')) {
+                    outTime = log.out; // Use text directly
                 } else {
                     let outDate = parseDate(log.out);
                     outTime = outDate ? outDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '---';
