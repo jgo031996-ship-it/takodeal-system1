@@ -2648,3 +2648,285 @@ window.switchView = function(viewId) {
     if (viewId === 'schedule' && typeof window.loadScheduleFromCloud === 'function') window.loadScheduleFromCloud();
     if (viewId === 'sanctions' && typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard();
 };
+
+// ========================================================
+// 📦 INVENTORY SUB-ROUTING ENGINE (FRANCHISEE LOCKED)
+// ========================================================
+window.activeInvTab = 'Overview';
+
+window.switchInvTab = function(tabName) {
+    window.activeInvTab = tabName; 
+    
+    // 1. Ensure the main Inventory view is visible
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    let targetView = document.getElementById('view-inventory');
+    if (targetView) targetView.classList.add('active');
+    
+    // 2. Highlight the correct sidebar sub-item
+    document.querySelectorAll('.nav-subitem').forEach(el => el.classList.remove('active'));
+    let activeSub = document.getElementById('subnav-' + tabName);
+    if (activeSub) activeSub.classList.add('active');
+
+    // 3. Hide all internal inventory sections
+    let sections = {
+        'Overview': 'invTabLiveContent',
+        'Audits': 'invSectionAudits',
+        'Waste': 'invSectionWaste',
+        'Prep': 'invSectionPrepLogs',
+        'StockLogs': 'invTabLogsContent',
+        'Alerts': 'invSectionAlerts'
+    };
+
+    Object.values(sections).forEach(secId => {
+        let el = document.getElementById(secId);
+        if (el) el.style.display = 'none';
+    });
+
+    // 4. Show the selected section
+    if (sections[tabName]) {
+        let activeEl = document.getElementById(sections[tabName]);
+        if (activeEl) activeEl.style.display = 'block';
+    }
+
+    // 5. Trigger the correct data loader
+    window.refreshActiveInventoryTab();
+};
+
+window.refreshActiveInventoryTab = function() {
+    let tab = window.activeInvTab || 'Overview';
+    
+    if (tab === 'Overview' && typeof window.loadInventoryData === 'function') window.loadInventoryData();
+    else if (tab === 'Audits' && typeof window.loadInventoryAudits === 'function') window.loadInventoryAudits();
+    else if (tab === 'Waste' && typeof window.loadWasteTabLogs === 'function') window.loadWasteTabLogs();
+    else if (tab === 'Prep') window.loadPrepBatchLogs();
+    else if (tab === 'StockLogs') window.loadStockLogs();
+    else if (tab === 'Alerts') window.loadPurchasesAndAlerts(); 
+};
+
+// ========================================================
+// 🥣 1. PREP BATCH LOGS ENGINE (FRANCHISEE LOCKED)
+// ========================================================
+window.loadPrepBatchLogs = async function() {
+    const tbody = document.getElementById('prepBatchLogsBody');
+    if (!tbody) return;
+    
+    // Hide the multi-branch tab selector (Franchisees don't need it)
+    let tabContainer = document.getElementById('prepBranchTabs');
+    if (tabContainer) tabContainer.style.display = 'none';
+
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #8b5cf6; font-weight: bold;">Loading prep history...</td></tr>';
+    
+    try {
+        let branch = window.sessionUser.branch; // 🔒 Strict Franchise Lock
+        
+        const q = window.query(
+            window.collection(window.db, "stock_logs"), 
+            window.where("branch", "==", branch),
+            window.where("type", "in", ["Manager Prep Batch", "End-of-Shift Kitchen Prep"]), 
+            window.orderBy("timestamp", "desc"), 
+            window.limit(50)
+        );
+
+        const snap = await window.getDocs(q);
+        let html = '';
+
+        snap.forEach(doc => {
+            let log = doc.data();
+            let timeObj = log.timestamp ? log.timestamp.toDate() : new Date();
+            let timeStr = timeObj.toLocaleTimeString('en-PH', {hour: '2-digit', minute:'2-digit'});
+            let dateStr = timeObj.toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
+            let pUom = log.purchUom || 'Batch';
+            let pQty = log.purchQty ? log.purchQty : '-';
+            let purchDisplay = log.purchQty ? `(${pQty} ${pUom}s)` : '';
+            let staffName = log.user || log.cashier || 'System';
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px 15px; color: #64748b; font-size: 12px;">${dateStr} <br> ${timeStr}</td>
+                    <td style="padding: 12px 15px;"><span class="badge badge-open">${log.branch}</span></td>
+                    <td style="padding: 12px 15px; font-weight: bold; color: #334155;">👤 ${staffName}</td>
+                    <td style="padding: 12px 15px; font-weight: bold; color: #8b5cf6;">${log.item}</td>
+                    <td style="padding: 12px 15px;">
+                        <strong style="color: #10b981; font-size: 15px;">+${log.variance} ${log.uom}</strong><br>
+                        <span style="color: #0ea5e9; font-size: 11px; font-weight: bold;">${purchDisplay}</span>
+                    </td>
+                    <td style="padding: 12px 15px;">
+                        <span style="color: #16a34a; font-weight: bold; font-size: 11px; background: #dcfce7; padding: 4px 8px; border-radius: 4px; border: 1px solid #bbf7d0;">✅ Processed</span>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="6" style="text-align:center; padding: 40px; color: #94a3b8; font-weight: bold;">No prep batches logged for your branch yet.</td></tr>';
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: #dc2626; padding: 40px; font-weight: bold;">❌ Error loading history.</td></tr>';
+    }
+};
+
+// ========================================================
+// 📜 2. STOCK HISTORY LOGS ENGINE (FRANCHISEE LOCKED)
+// ========================================================
+window.lastStockLogDoc = null;
+window.cachedStockLogsHTML = '';
+
+window.loadStockLogs = async function(isLoadMore = false) {
+    const tbody = document.getElementById('stockLogsBody');
+    if (!tbody) return;
+    
+    // Hide multi-branch tabs
+    let tabContainer = document.getElementById('stockLogBranchTabs');
+    if (tabContainer) tabContainer.style.display = 'none';
+
+    if (!isLoadMore) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">⚡ Loading recent history...</td></tr>';
+        window.lastStockLogDoc = null;
+        window.cachedStockLogsHTML = '';
+    } else {
+        let btn = document.getElementById('btnLoadMoreStock');
+        if (btn) { btn.innerText = "⏳ Fetching next batch..."; btn.disabled = true; }
+    }
+
+    try {
+        let branch = window.sessionUser.branch; // 🔒 Strict Franchise Lock
+        
+        let qLogs = window.query(
+            window.collection(window.db, "stock_logs"), 
+            window.where("branch", "==", branch), 
+            window.orderBy("timestamp", "desc"), 
+            window.limit(20) // Cap to keep the app fast
+        );
+        
+        if (isLoadMore && window.lastStockLogDoc) {
+            qLogs = window.query(
+                window.collection(window.db, "stock_logs"), 
+                window.where("branch", "==", branch), 
+                window.orderBy("timestamp", "desc"), 
+                window.startAfter(window.lastStockLogDoc), 
+                window.limit(20)
+            );
+        }
+
+        const snap = await window.getDocs(qLogs);
+        
+        if (snap.empty) {
+            if (isLoadMore) {
+                let btn = document.getElementById('btnLoadMoreStock');
+                if (btn) { btn.innerText = "✅ End of History"; btn.disabled = true; }
+                return;
+            } else {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No stock history found.</td></tr>';
+                return;
+            }
+        }
+
+        window.lastStockLogDoc = snap.docs[snap.docs.length - 1];
+        let html = '';
+
+        snap.forEach(doc => {
+            let data = doc.data();
+            let dateStr = data.timestamp ? data.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Just now';
+            let user = data.user || data.cashier || "System";
+            let uom = data.uom || "";
+            let oldQty = data.oldQty !== undefined ? data.oldQty : "-";
+            let newQty = data.newQty !== undefined ? data.newQty : "-";
+            let logType = data.type || "System Update";
+
+            let varHtml = '';
+            if (data.variance > 0) {
+                varHtml = `<span style="color: #16a34a; font-weight: 900; font-size: 15px;">+${data.variance} ${uom} <br><span style="font-size:10px; color:#64748b; font-weight: bold;">(${logType})</span></span>`;
+            } else if (data.variance < 0) {
+                varHtml = `<span style="color: #dc2626; font-weight: 900; font-size: 15px;">${data.variance} ${uom} <br><span style="font-size:10px; color:#64748b; font-weight: bold;">(${logType})</span></span>`;
+            } else {
+                varHtml = `<span style="color: #94a3b8; font-weight: bold; font-size: 13px;">No Change <br><span style="font-size:10px; color:#64748b;">(${logType})</span></span>`;
+            }
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="font-size: 12px; color: #64748b; padding: 15px 20px;">${dateStr}</td>
+                    <td style="padding: 15px 20px;"><span class="badge badge-open">${data.branch || 'Unknown'}</span></td>
+                    <td style="font-weight: bold; color: #334155; padding: 15px 20px;">👤 ${user}</td>
+                    <td style="font-weight: 900; color: #0f172a; padding: 15px 20px;">${data.item || 'Unknown Item'}</td>
+                    <td style="color: #64748b; padding: 15px 20px; font-weight: bold;">${oldQty} <span style="font-size:11px; font-weight:normal;">${uom}</span></td>
+                    <td style="font-weight: 900; color: #0284c7; padding: 15px 20px;">${newQty} <span style="font-size:11px; font-weight:normal;">${uom}</span></td>
+                    <td style="padding: 15px 20px;">${varHtml}</td>
+                </tr>
+            `;
+        });
+
+        window.cachedStockLogsHTML += html;
+
+        let loadMoreRow = `
+            <tr id="loadMoreRow_Stock">
+                <td colspan="7" style="text-align: center; padding: 20px; background: #f8fafc; border-top: 2px dashed #cbd5e1;">
+                    <button id="btnLoadMoreStock" onclick="window.loadStockLogs(true)" style="background: white; border: 1px solid #0ea5e9; color: #0ea5e9; padding: 10px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 2px 4px rgba(14,165,233,0.1); transition: 0.2s;">
+                        ⬇️ Load Older Logs
+                    </button>
+                </td>
+            </tr>
+        `;
+
+        tbody.innerHTML = window.cachedStockLogsHTML + loadMoreRow;
+
+    } catch (e) { 
+        console.error("Stock Logs Error:", e); 
+        if (!isLoadMore) tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 40px; font-weight: bold;">❌ Error loading logs.</td></tr>'; 
+    }
+};
+
+// ========================================================
+// 🚨 3. LOW STOCK ALERTS ENGINE (FRANCHISEE LOCKED)
+// ========================================================
+window.loadPurchasesAndAlerts = async function () {
+    const tbody = document.getElementById('alertsPurchasesBody');
+    if (!tbody) return;
+    
+    // Hide the multi-branch dropdown
+    let branchFilterEl = document.getElementById('branchAlertFilter');
+    if (branchFilterEl) branchFilterEl.style.display = 'none';
+
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">⚡ Scanning branch inventory levels...</td></tr>';
+
+    try {
+        let branch = window.sessionUser.branch; // 🔒 Strict Franchise Lock
+        const q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch));
+        const snap = await window.getDocs(q);
+        
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let data = docSnap.data();
+            data.id = docSnap.id;
+
+            let stock = parseFloat(data.currentStock) || 0;
+            // Handle both legacy and modern reorder level variables securely
+            let reorder = parseFloat(data.reorderLevel) || parseFloat(data.lowStockAlert) || 0;
+
+            // Engine Trigger: Only list items if they are currently at or below the reorder point
+            if (stock <= reorder) {
+                let suggested = (reorder * 2) - stock; 
+                if (suggested <= 0) suggested = reorder;
+
+                html += `
+                    <tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='transparent'">
+                        <td style="padding: 15px 25px;"><strong>${data.branch}</strong></td>
+                        <td style="padding: 15px 25px;"><span class="badge badge-closed">${data.category || '-'}</span></td>
+                        <td style="font-weight: 900; color: #1e293b; padding: 15px 25px; font-size: 14px;">${data.name}</td>
+                        <td style="color: #dc2626; font-weight: 900; font-size: 16px; padding: 15px 25px;">${stock.toFixed(1)} <span style="font-size:12px; color:#64748b; font-weight:normal;">${data.uom}</span></td>
+                        <td style="font-weight: bold; color: #475569; padding: 15px 25px;">${reorder.toFixed(1)} <span style="font-size:12px; color:#64748b; font-weight:normal;">${data.uom}</span></td>
+                        <td style="color: #0ea5e9; font-weight: 900; padding: 15px 25px; font-size: 15px;">${suggested.toFixed(1)} <span style="font-size:12px; color:#64748b; font-weight:normal;">${data.uom}</span></td>
+                        <td style="padding: 15px 25px; text-align: center;">
+                            <button style="background: #fef3c7; color: #d97706; border: 1px solid #fcd34d; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 2px 4px rgba(217, 119, 6, 0.1);" onclick="window.switchView('dispatch')">📝 Request HQ</button>
+                        </td>
+                    </tr>
+                `;
+            }
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="7" class="text-center" style="color: #16a34a; font-weight: bold; padding: 40px; font-size: 15px;">✅ All inventory levels are optimal. No alerts.</td></tr>';
+
+    } catch (error) {
+        console.error("Error loading alerts:", error);
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 40px; font-weight: bold;">❌ Failed to scan inventory. Check your connection.</td></tr>';
+    }
+};
