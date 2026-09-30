@@ -523,6 +523,156 @@
         </div>
     </div>
 
+    <!-- VIEW: SCHEDULE MANAGER -->
+    <div id="view-schedule" class="view-container">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+            
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                <div>
+                    <h2 style="margin: 0; color: #1e293b; font-size: 20px; display: flex; align-items: center; gap: 10px;">📅 Branch Schedule Manager</h2>
+                    <p style="color: #64748b; font-size: 12px; margin: 5px 0 0 0;">Manage shifts, leaves, and schedule overrides for your branch.</p>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <input type="month" id="scheduleMonthSelector" onchange="window.loadScheduleFromCloud()" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #0ea5e9; outline: none; cursor: pointer; background: #f8fafc;">
+                    <button onclick="window.saveScheduleToCloud()" style="background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3); transition: 0.2s;">💾 Save Schedule</button>
+                </div>
+            </div>
+
+            <!-- The Schedule Grid will render here -->
+            <div id="franchiseScheduleContainer" style="background: white; border-radius: 12px; padding: 20px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05); overflow-x: auto;">
+                <div style="text-align: center; padding: 40px; color: #94a3b8; font-weight: bold;">Select a month above to load the schedule.</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW: REQUEST INBOX -->
+    <div id="view-inbox" class="view-container">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0; color: #1e293b; display: flex; align-items: center; gap: 8px;">📥 Staff Request Inbox</h3>
+                    <button class="btn-refresh" style="background: #0ea5e9; color: white;" onclick="window.loadInbox()">🔄 Refresh</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Date Submitted</th>
+                                <th>Staff Name</th>
+                                <th>Request Type</th>
+                                <th>Details / Amount</th>
+                                <th style="text-align: right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="inboxTableBody">
+                            <tr><td colspan="5" style="text-align:center; padding:30px; color:#94a3b8;">Loading requests...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <h3 style="margin: 0 0 15px 0; color: #1e293b;">✅ Resolved Requests History</h3>
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <tbody id="resolvedRequestsBody">
+                            <tr><td colspan="5" style="text-align:center; padding:30px; color:#94a3b8;">Loading history...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW: DISCIPLINARY SANCTIONS -->
+    <div id="view-sanctions" class="view-container">
+        <div style="max-width: 1200px; margin: 0 auto; padding: 20px;">
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: #fff1f2; padding: 20px; border-radius: 12px; border: 1px solid #fecaca;">
+                    <div>
+                        <h3 style="margin: 0; color: #be123c; font-size: 20px; display: flex; align-items: center; gap: 8px;">⚖️ Disciplinary & Sanction Tracker</h3>
+                        <p style="margin: 5px 0 0 0; color: #9f1239; font-size: 12px;">Issue digital Notice to Explain (NTE) forms to your staff.</p>
+                    </div>
+                    <button onclick="window.openIssueSanctionModal()" style="background: #dc2626; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3);">➕ Issue Notice (NTE)</button>
+                </div>
+                
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Date Issued</th>
+                                <th>Staff Member</th>
+                                <th>Incident Type</th>
+                                <th>Severity Level</th>
+                                <th>Status / Reply</th>
+                                <th style="text-align: right;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sanctionsTableBody">
+                            <tr><td colspan="6" style="text-align:center; padding:40px; color:#94a3b8;">Loading records...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: ISSUE SANCTION -->
+    <div id="issueSanctionModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+        <div style="background: white; width: 500px; max-width: 95%; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
+            <div style="background: #b91c1c; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin: 0; font-size: 18px;">📝 Issue Notice to Explain</h2>
+                <span onclick="document.getElementById('issueSanctionModal').style.display='none'" style="cursor: pointer; font-size: 24px;">&times;</span>
+            </div>
+            <div style="padding: 20px; flex: 1; overflow-y: auto;">
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Select Staff Member:</label>
+                <select id="sanctionStaffSelect" class="input-box" style="margin-bottom: 15px;"></select>
+    
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Incident Type:</label>
+                <select id="sanctionType" class="input-box" style="margin-bottom: 15px;">
+                    <option value="Cash Shortage / Mishandling">Cash Shortage / Mishandling</option>
+                    <option value="Tardiness / Unexcused Absence">Tardiness / Unexcused Absence</option>
+                    <option value="Insubordination / Attitude">Insubordination / Attitude</option>
+                    <option value="SOP Violation (Food Prep/Cleaning)">SOP Violation (Food Prep/Cleaning)</option>
+                    <option value="Customer Complaint">Customer Complaint</option>
+                    <option value="Other / Miscellaneous">Other / Miscellaneous</option>
+                </select>
+    
+                <label style="font-size: 12px; font-weight: bold; color: #475569;">Severity Level:</label>
+                <select id="sanctionSeverity" class="input-box" style="margin-bottom: 15px;">
+                    <option value="1st Offense - Verbal Warning">1st Offense - Verbal Warning</option>
+                    <option value="2nd Offense - Written Warning">2nd Offense - Written Warning</option>
+                    <option value="3rd Offense - 1 Day Suspension">3rd Offense - 1 Day Suspension</option>
+                    <option value="4th Offense - 3 Days Suspension">4th Offense - 3 Days Suspension</option>
+                    <option value="5th Offense - 7 Days Suspension">5th Offense - 7 Days Suspension</option>
+                    <option value="6th Offense - Termination Notice">6th Offense - Termination Notice</option>
+                </select>
+    
+                <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5px;">
+                    <label style="font-size: 12px; font-weight: bold; color: #475569;">Incident Details:</label>
+                    <button type="button" onclick="window.generateAiNteLetter()" style="background: #8b5cf6; color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: bold; cursor: pointer;">✨ Smart Auto-Draft</button>
+                </div>
+                <textarea id="sanctionDetails" placeholder="Type a summary of the violation..." style="width: 100%; height: 80px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; resize: vertical; box-sizing: border-box;"></textarea>
+
+                <button id="btnSaveSanction" onclick="window.submitNewSanction()" style="width: 100%; padding: 14px; border-radius: 6px; border: none; background: #b91c1c; color: white; font-weight: bold; cursor: pointer; font-size: 15px;">🚀 Issue Digital Notice</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: SWAP SHIFT -->
+    <div id="swapModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10000; align-items: center; justify-content: center;">
+        <div style="background: white; padding: 25px; border-radius: 12px; width: 350px;">
+            <h3 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 10px;">🔄 Reassign Shift</h3>
+            <p id="swapMessage" style="font-weight: bold; margin-bottom: 15px; color: #334155; font-size: 14px;"></p>
+            <label style="font-size: 12px; font-weight: bold; color: #64748b;">Select Staff to Assign:</label>
+            <select id="swapTarget" class="input-box" style="margin-bottom: 20px; cursor: pointer;"></select>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="document.getElementById('swapModal').style.display='none'" style="flex: 1; padding: 10px; background: #e2e8f0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Cancel</button>
+                <button onclick="window.executeSwap()" style="flex: 1; padding: 10px; background: #16a34a; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">Confirm Swap</button>
+            </div>
+        </div>
+    </div>
+
   </div> <!-- End Content Area -->
 
   
