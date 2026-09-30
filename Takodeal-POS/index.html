@@ -2200,11 +2200,15 @@
         let grid = document.getElementById('categoryModalGrid');
         if (!grid) return;
         
-        // The default "All Items" massive card
+        // 🔥 THE SQUISH FIX: Force the grid to shrink so 5-6 columns fit perfectly!
+        grid.style.gridTemplateColumns = "repeat(auto-fill, minmax(130px, 1fr))";
+        grid.style.gap = "12px";
+
+        // The default "All Items" compact card
         let html = `
-            <div onclick="window.filterMenu('All', '🍔')" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); border-radius: 16px; padding: 20px; cursor: pointer; box-shadow: 0 6px 12px rgba(14, 165, 233, 0.3); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; height: 160px; border: 2px solid #bae6fd; transition: transform 0.15s, box-shadow 0.15s;" onmouseover="this.style.transform='scale(1.03)';" onmouseout="this.style.transform='scale(1)';">
-                <span style="font-size: 50px; margin-bottom: 10px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.2));">🍔</span>
-                <span style="color: white; font-weight: 900; font-size: 18px; letter-spacing: 0.5px;">All Items</span>
+            <div onclick="window.filterMenu('All', '🍔')" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); border-radius: 12px; padding: 10px; cursor: pointer; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; height: 100px; border: 2px solid #bae6fd; transition: transform 0.15s, box-shadow 0.15s;" onmouseover="this.style.transform='scale(1.03)';" onmouseout="this.style.transform='scale(1)';">
+                <span style="font-size: 32px; margin-bottom: 5px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">🍔</span>
+                <span style="color: white; font-weight: 900; font-size: 13px; letter-spacing: 0.5px; line-height: 1.1;">All Items</span>
             </div>
         `;
 
@@ -2221,11 +2225,11 @@
                 else if(c.includes('fries') || c.includes('snack')) icon = "🍟";
                 else if(c.includes('add-on') || c.includes('extra')) icon = "🧀";
                 
-                // 🔥 SMART THUMBNAIL ENGINE: Finds the first product in this category that has an image!
+                // Smart Thumbnail Engine
                 let catItemWithImage = window.masterPOSData.items.find(i => i.category === cat && i.image);
                 
                 let bgStyle = catItemWithImage 
-                    ? `background-image: linear-gradient(to top, rgba(15, 23, 42, 0.9) 0%, rgba(15, 23, 42, 0.3) 50%, rgba(15, 23, 42, 0.1) 100%), url('${catItemWithImage.image}'); background-size: cover; background-position: center;` 
+                    ? `background-image: linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.4) 60%, rgba(15, 23, 42, 0.1) 100%), url('${catItemWithImage.image}'); background-size: cover; background-position: center;` 
                     : `background: #ffffff;`;
                 
                 let textCol = catItemWithImage ? 'white' : '#1e293b';
@@ -2234,10 +2238,11 @@
 
                 let safeCat = cat.replace(/'/g, "\\'");
                 
+                // The Shrunken Category Card
                 html += `
-                    <div onclick="window.filterMenu('${safeCat}', '${icon}')" style="${bgStyle} ${borderStyle} border-radius: 16px; padding: 20px; cursor: pointer; box-shadow: 0 6px 15px rgba(0,0,0,0.08); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; height: 160px; position: relative; overflow: hidden; transition: transform 0.15s, box-shadow 0.15s;" onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 8px 20px rgba(0,0,0,0.15)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 6px 15px rgba(0,0,0,0.08)';">
-                        <span style="font-size: 45px; margin-bottom: 5px; position: absolute; top: 20px; ${iconShadow}">${icon}</span>
-                        <span style="color: ${textCol}; font-weight: 900; font-size: 17px; text-shadow: ${catItemWithImage ? '0 2px 6px rgba(0,0,0,0.9)' : 'none'}; z-index: 2; line-height: 1.2;">${cat}</span>
+                    <div onclick="window.filterMenu('${safeCat}', '${icon}')" style="${bgStyle} ${borderStyle} border-radius: 12px; padding: 10px; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.08); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; height: 100px; position: relative; overflow: hidden; transition: transform 0.15s, box-shadow 0.15s;" onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 6px 12px rgba(0,0,0,0.15)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.08)';">
+                        <span style="font-size: 32px; margin-bottom: 5px; position: absolute; top: 10px; ${iconShadow}">${icon}</span>
+                        <span style="color: ${textCol}; font-weight: 900; font-size: 12px; text-shadow: ${catItemWithImage ? '0 2px 6px rgba(0,0,0,0.9)' : 'none'}; z-index: 2; line-height: 1.1;">${cat}</span>
                     </div>
                 `;
             });
