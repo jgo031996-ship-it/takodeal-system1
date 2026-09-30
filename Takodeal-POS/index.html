@@ -3366,7 +3366,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         window.updateNumpadDisplay();
     };
 
-    // 🔥 THE LIVE PIN AUTO-FILL ENGINE (WITH 1-PER-DAY LIMIT) 🔥
+    // 🔥 THE LIVE PIN AUTO-FILL ENGINE (WITH BULLETPROOF 1-PER-DAY LIMIT) 🔥
     window.verifyStaffMealPin = async function() {
         let pinInput = document.getElementById('checkoutStaffPin').value;
         let nameBox = document.getElementById('finalCustomerName');
@@ -3397,7 +3397,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                 let nameSuffix = dType === 'manager_meal' ? " (Manager)" : " (Staff)";
                 let expectedCustomerName = staffData.cashierName + nameSuffix;
 
-                // 🔥 1-PER-DAY LIMITER ENGINE 🔥
+                // 🔥 INFALLIBLE 1-PER-DAY LIMITER (CHECKS STAFF REQUESTS INBOX) 🔥
                 if (dType === 'staff_meal') {
                     nameBox.value = "⏳ Verifying Meal Limit...";
                     nameBox.style.color = "#d97706";
@@ -3407,19 +3407,23 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                     startOfDay.setHours(0, 0, 0, 0);
 
                     try {
-                        // Check if this specific staff member already bought a Staff Meal today!
-                        const txQ = window.query(window.collection(window.db, "transactions"), 
-                            window.where("customerName", "==", expectedCustomerName), 
+                        // Check if this specific staff member already logged a Staff Meal today in staff_requests
+                        const reqQ = window.query(window.collection(window.db, "staff_requests"), 
+                            window.where("staffName", "==", staffData.cashierName), 
                             window.where("timestamp", ">=", startOfDay)
                         );
-                        const txSnap = await window.getDocs(txQ);
+                        const reqSnap = await window.getDocs(reqQ);
                         
-                        let usedCount = 0;
-                        txSnap.forEach(doc => {
-                            if (doc.data().status !== "Voided") usedCount++;
+                        let alreadyClaimed = false;
+                        reqSnap.forEach(doc => {
+                            let rData = doc.data();
+                            // Look for any request type containing "Staff Meal"
+                            if (rData.type && rData.type.toLowerCase().includes("staff meal")) {
+                                alreadyClaimed = true;
+                            }
                         });
 
-                        if (usedCount >= 1) {
+                        if (alreadyClaimed) {
                             nameBox.value = "❌ Limit Reached (1/Day)";
                             nameBox.style.backgroundColor = "#fef2f2"; 
                             nameBox.style.borderColor = "#dc2626";
@@ -3631,7 +3635,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         let receiptId = await window.processCheckout(payload);
 
       if (receiptId) {
-        // 🔥 SECURITY ALARM: ALERTS MANAGER OF DISCOUNTS 🔥
+        // 🔥 GUARANTEED MANAGER ALERT FOR MEALS & DISCOUNTS 🔥
         let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
         if (dType !== 'none' && dType !== '') {
             try {
