@@ -2643,10 +2643,150 @@ window.switchView = function(viewId) {
         window.origFranchiseeSwitchView(viewId);
     }
     
-    // Automatically load data when the HR tabs are clicked!
+    // Automatically load data when specific tabs are clicked!
     if (viewId === 'inbox' && typeof window.loadInbox === 'function') window.loadInbox();
     if (viewId === 'schedule' && typeof window.loadScheduleFromCloud === 'function') window.loadScheduleFromCloud();
     if (viewId === 'sanctions' && typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard();
+    
+    // NEW ADDITIONS
+    if (viewId === 'zreadings' && typeof window.loadZReadings === 'function') window.loadZReadings();
+    if (viewId === 'expenses' && typeof window.loadExpenses === 'function') window.loadExpenses();
+};
+
+// ========================================================
+// 🧾 Z-READING REPORTS ENGINE (FRANCHISEE LOCKED)
+// ========================================================
+window.loadZReadings = async function() {
+    // Support multiple common table IDs depending on how you ported the HTML
+    const tbody = document.getElementById('zreadingsTableBody') || document.getElementById('zreadingsBody');
+    if (!tbody) return;
+    
+    // Hide the multi-branch dropdown (Franchisees don't need it)
+    let branchSelect = document.getElementById('zreadingBranchFilter');
+    if (branchSelect) branchSelect.style.display = 'none';
+
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">⚡ Loading branch end-of-day reports...</td></tr>';
+
+    try {
+        let branch = window.sessionUser.branch; // 🔒 Strict Franchise Lock
+        
+        const q = window.query(
+            window.collection(window.db, "z_readings"), 
+            window.where("branch", "==", branch), 
+            window.orderBy("timestamp", "desc"),
+            window.limit(30)
+        );
+        const snap = await window.getDocs(q);
+        let html = '';
+
+        snap.forEach(doc => {
+            let d = doc.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            let totalSales = parseFloat(d.grossSales || d.totalSales || 0);
+            let cashExpected = parseFloat(d.cashExpected || 0);
+            let cashActual = parseFloat(d.cashActual || d.actualCash || 0);
+            let variance = parseFloat(d.variance || 0);
+            
+            let varColor = variance < 0 ? '#dc2626' : (variance > 0 ? '#16a34a' : '#64748b');
+            let varText = variance < 0 ? `₱${variance.toFixed(2)}` : (variance > 0 ? `+₱${variance.toFixed(2)}` : `Matched`);
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 15px; font-size: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 15px; font-weight: bold; color: #334155;">👤 ${d.cashierName || d.cashier || 'System'}</td>
+                    <td style="padding: 15px; font-weight: 900; color: #0f172a;">₱${totalSales.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td style="padding: 15px; color: #475569;">₱${cashExpected.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td style="padding: 15px; font-weight: bold; color: #0284c7;">₱${cashActual.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                    <td style="padding: 15px; font-weight: 900; color: ${varColor};">${varText}</td>
+                    <td style="padding: 15px; text-align: right;">
+                        <button onclick="window.viewZReadingDetails('${doc.id}')" style="background: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.1);">📄 View Details</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="8" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No Z-Readings found for your branch yet.</td></tr>';
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="color: #dc2626; padding: 40px; font-weight: bold;">❌ Error loading Z-Readings.</td></tr>';
+    }
+};
+
+window.viewZReadingDetails = async function(docId) {
+    if (typeof Swal === 'undefined') return alert("Loading details...");
+    Swal.fire({title: 'Loading Data...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    
+    try {
+        const snap = await window.getDoc(window.doc(window.db, "z_readings", docId));
+        if(!snap.exists()) return Swal.fire('Error', 'Data not found.', 'error');
+        let d = snap.data();
+        let safeHtml = `
+            <div style="text-align: left; font-size: 14px; line-height: 1.8; background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1;">
+                <b>📅 Date:</b> ${d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH') : 'Unknown'}<br>
+                <b>👤 Cashier:</b> ${d.cashierName}<br>
+                <hr style="border: 0; border-top: 1px dashed #cbd5e1; margin: 10px 0;">
+                <b style="color: #0f172a;">Gross Sales:</b> ₱${parseFloat(d.grossSales||0).toFixed(2)}<br>
+                <b style="color: #0f172a;">Net Sales:</b> ₱${parseFloat(d.netSales||0).toFixed(2)}<br>
+                <b style="color: #ea580c;">Discounts:</b> ₱${parseFloat(d.totalDiscounts||0).toFixed(2)}<br>
+                <b style="color: #dc2626;">Expenses Paid:</b> ₱${parseFloat(d.totalExpenses||0).toFixed(2)}<br>
+                <hr style="border: 0; border-top: 1px dashed #cbd5e1; margin: 10px 0;">
+                <b style="color: #475569;">System Expected Cash:</b> ₱${parseFloat(d.cashExpected||0).toFixed(2)}<br>
+                <b style="color: #0284c7; font-size: 16px;">Actual Cash Count:</b> ₱${parseFloat(d.cashActual||0).toFixed(2)}<br>
+                <div style="margin-top: 10px; padding: 10px; background: ${d.variance < 0 ? '#fef2f2' : (d.variance > 0 ? '#f0fdf4' : '#f8fafc')}; border-radius: 8px; border: 1px solid ${d.variance < 0 ? '#fecaca' : (d.variance > 0 ? '#bbf7d0' : '#e2e8f0')}; text-align: center;">
+                    <b>Variance:</b> <span style="font-size: 18px; font-weight: 900; color:${d.variance < 0 ? '#dc2626' : (d.variance > 0 ? '#16a34a' : '#64748b')}">₱${parseFloat(d.variance||0).toFixed(2)}</span>
+                </div>
+            </div>
+        `;
+        Swal.fire({ title: 'Z-Reading Breakdown', html: safeHtml, icon: 'info', confirmButtonColor: '#0ea5e9' });
+    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load details.', 'error'); }
+};
+
+// ========================================================
+// 💸 EXPENSE LOGS ENGINE (FRANCHISEE LOCKED)
+// ========================================================
+window.loadExpenses = async function() {
+    const tbody = document.getElementById('expensesTableBody') || document.getElementById('expenseLogsBody') || document.getElementById('expensesBody');
+    if (!tbody) return;
+
+    // Hide branch selector if exists
+    let branchSelect = document.getElementById('expenseBranchFilter');
+    if (branchSelect) branchSelect.style.display = 'none';
+
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #f59e0b; font-weight: bold;">⚡ Loading branch expenses...</td></tr>';
+
+    try {
+        let branch = window.sessionUser.branch; // 🔒 Strict Franchise Lock
+        
+        const q = window.query(
+            window.collection(window.db, "expenses"), 
+            window.where("branch", "==", branch), 
+            window.orderBy("timestamp", "desc"),
+            window.limit(30)
+        );
+        const snap = await window.getDocs(q);
+        let html = '';
+
+        snap.forEach(doc => {
+            let d = doc.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
+            let amount = parseFloat(d.amount || 0);
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='transparent'">
+                    <td style="padding: 15px; font-size: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 15px; font-weight: bold; color: #334155;">👤 ${d.addedBy || d.cashier || 'System'}</td>
+                    <td style="padding: 15px;"><span style="background: #f1f5f9; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; color: #475569; border: 1px solid #e2e8f0;">${d.category || 'General'}</span></td>
+                    <td style="padding: 15px; color: #1e293b;">${d.description || d.particulars || 'No description provided'}</td>
+                    <td style="padding: 15px; font-weight: 900; color: #dc2626;">₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #64748b; font-weight: bold;">No expenses logged for your branch yet.</td></tr>';
+    } catch(e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: #dc2626; padding: 40px; font-weight: bold;">❌ Error loading expenses.</td></tr>';
+    }
 };
 
 // ========================================================
