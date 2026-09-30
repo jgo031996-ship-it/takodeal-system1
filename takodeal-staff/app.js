@@ -2754,7 +2754,10 @@ window.viewPastPayslip = function(encodedData) {
     let otPay = parseFloat(d.nightBonus || d.overtime || 0).toFixed(2);
     let straightPay = parseFloat(d.straightBonus || 0).toFixed(2);
     let holPay = parseFloat(d.holidayPayTotal || d.holiday || 0).toFixed(2);
-    let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay)).toFixed(2);
+    // 🔥 Added Performance Bonus
+    let perfBonus = parseFloat(d.performanceBonus || 0).toFixed(2); 
+    
+    let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay) + parseFloat(perfBonus)).toFixed(2);
 
     let lateDeduct = parseFloat(d.lateDeduction || 0).toFixed(2);
     let sss = parseFloat(d.sss || 0).toFixed(2);
@@ -2773,23 +2776,69 @@ window.viewPastPayslip = function(encodedData) {
     let sigHtml = '';
     if (d.staffSignature) {
         sigHtml = `
-            <div style="margin-top: 15px; border-top: 1px dashed #cbd5e1; padding-top: 15px; text-align: center;">
+            <div style="margin-top: 25px; padding-top: 15px; text-align: center;">
                 <span style="font-size: 11px; font-weight: bold; color: #16a34a; text-transform: uppercase;">Digitally Acknowledged & Signed</span>
                 <img src="${d.staffSignature}" style="height: 60px; display: block; margin: 5px auto 0 auto; background: white; border-radius: 6px;">
             </div>
         `;
     }
 
-    // 🔥 THE MOBILE FIX: Enforce an ironclad 750px width inside a scrollable div!
+    // 🔥 THE NEW ATTENDANCE SUMMARY GENERATOR
+    let attendanceHtml = "";
+    let logsArray = d.shiftPairs || d.logs || [];
+    if (logsArray.length > 0) {
+        logsArray.forEach(log => {
+            const parseDate = (val) => {
+                if (!val) return null;
+                if (val.seconds) return new Date(val.seconds * 1000);
+                if (val.toDate) return val.toDate();
+                return new Date(val);
+            };
+
+            let logDate = parseDate(log.dateObj || log.in || log.timestamp) || new Date();
+            let dateStr = logDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            
+            let inDate = parseDate(log.in);
+            let inTime = inDate ? inDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '---';
+            
+            let outTime = '---';
+            if (log.out) {
+                if (typeof log.out === 'string') {
+                    outTime = log.out;
+                } else {
+                    let outDate = parseDate(log.out);
+                    outTime = outDate ? outDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '---';
+                }
+            }
+
+            let inColor = (log.lateMins > 0) ? '#dc2626' : '#16a34a';
+            let outColor = (outTime.includes('MISSED') || outTime === '---' || (log.remark && log.remark.includes('Short'))) ? '#dc2626' : '#16a34a';
+
+            let hrs = parseFloat(log.hrs || 0).toFixed(2) + 'h';
+            if (hrs === '0.00h' || isNaN(parseFloat(hrs))) hrs = '---';
+
+            attendanceHtml += `
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                    <td style="padding: 10px 4px; color: #334155; text-align: center;">${dateStr}</td>
+                    <td style="padding: 10px 4px; color: ${inColor}; font-weight: bold; text-align: center;">${inTime}</td>
+                    <td style="padding: 10px 4px; color: ${outColor}; font-weight: bold; text-align: center;">${outTime}</td>
+                    <td style="padding: 10px 4px; color: #334155; font-weight: bold; text-align: center;">${hrs}</td>
+                    <td style="padding: 10px 4px; font-size: 10px; color: #64748b; text-align: right;">${log.remark || ''}</td>
+                </tr>
+            `;
+        });
+    } else {
+        attendanceHtml = `<tr><td colspan="5" style="padding: 15px; text-align: center; color: #94a3b8; font-size: 12px; font-style: italic;">No attendance records found for this cutoff.</td></tr>`;
+    }
+
+    // THE FULL PDF LAYOUT
     let html = `
         <div style="overflow-x: auto; width: 100%; background: #f1f5f9; padding: 15px; border-radius: 8px;">
-            
-            <div style="text-align: right; margin-bottom: 15px; position: sticky; top: 0; left: 0;">
+            <div style="text-align: right; margin-bottom: 15px; position: sticky; top: 0; left: 0; z-index: 50;">
                 <button id="btnDownloadStaffPayslip" onclick="window.downloadStaffPayslipImage('${encodedData}')" style="background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);">⬇️ Download HD Image</button>
             </div>
 
             <div id="printableStaffPayslip" style="width: 750px; background: white; padding: 25px; font-family: 'Segoe UI', Arial, sans-serif; color: black; text-align: left; box-sizing: border-box; margin: 0 auto; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
-                
                 <div style="border: 3px solid black; padding: 2px;">
                     <div style="border: 1px solid black; padding: 20px;">
                         
@@ -2817,7 +2866,6 @@ window.viewPastPayslip = function(encodedData) {
                         </div>
 
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid black;">
-                            
                             <div style="border-right: 1px solid black;">
                                 <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black; text-align: left;">INCOME</div>
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px dashed #cbd5e1;">
@@ -2829,14 +2877,16 @@ window.viewPastPayslip = function(encodedData) {
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
                                     <span>Straight Duty Bonus</span> <span>${straightPay}</span>
                                 </div>
-                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid black;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px dashed #cbd5e1;">
                                     <span>Holiday Pay</span> <span>${holPay}</span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid black; color: #16a34a; font-weight: bold;">
+                                    <span>Performance Bonus</span> <span>${perfBonus}</span>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; padding: 12px 8px; font-weight: bold; font-size: 16px;">
                                     <span>GROSS INCOME</span> <span>${grossIncome}</span>
                                 </div>
                             </div>
-
                             <div>
                                 <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black; text-align: left;">DEDUCTIONS</div>
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
@@ -2864,7 +2914,6 @@ window.viewPastPayslip = function(encodedData) {
                                     <span>TOTAL DEDUCTIONS</span> <span>${totalDeduct}</span>
                                 </div>
                             </div>
-
                         </div>
 
                         <div style="display: flex; justify-content: flex-start; align-items: center; margin-top: 20px;">
@@ -2876,9 +2925,29 @@ window.viewPastPayslip = function(encodedData) {
                             </div>
                         </div>
 
+                        <!-- 🔥 ATTENDANCE SUMMARY TABLE -->
+                        <div style="margin-top: 35px;">
+                            <div style="border-top: 2px dashed #0f172a; margin-bottom: 20px;"></div>
+                            <h4 style="text-align: center; color: #475569; font-size: 13px; letter-spacing: 1px; margin: 0 0 15px 0; text-transform: uppercase;">ATTENDANCE SUMMARY (CURRENT CUTOFF)</h4>
+                            <table style="width: 100%; border-collapse: collapse; font-size: 13px; font-family: 'Segoe UI', Arial, sans-serif;">
+                                <thead style="border-bottom: 2px solid #cbd5e1; background: #f8fafc;">
+                                    <tr>
+                                        <th style="padding: 10px 4px; color: #0f172a; text-align: center;">Date</th>
+                                        <th style="padding: 10px 4px; color: #0f172a; text-align: center;">Time In</th>
+                                        <th style="padding: 10px 4px; color: #0f172a; text-align: center;">Time Out</th>
+                                        <th style="padding: 10px 4px; color: #0f172a; text-align: center;">Hours</th>
+                                        <th style="padding: 10px 4px; color: #0f172a; text-align: right;">Remarks</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${attendanceHtml}
+                                </tbody>
+                            </table>
+                        </div>
+
                         ${sigHtml}
 
-                        <div style="text-align: center; margin-top: 15px; font-size: 10px; color: #64748b; font-style: italic;">
+                        <div style="text-align: center; margin-top: 25px; font-size: 10px; color: #64748b; font-style: italic;">
                             System Generated Digital Payslip • Takodeal POS
                         </div>
                     </div>
@@ -3958,27 +4027,6 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
             }
         }
     });
-};
-
-// We intercept the old Past Payslip viewer to inject the signature image!
-const origViewPastPayslip = window.viewPastPayslip;
-window.viewPastPayslip = function(encodedData) {
-    let d = JSON.parse(decodeURIComponent(encodedData));
-    origViewPastPayslip(encodedData);
-    
-    // Inject the signature at the bottom of the sweetalert modal if it exists!
-    setTimeout(() => {
-        let swalHtml = document.querySelector('.swal2-html-container');
-        if (swalHtml && d.staffSignature) {
-            let sigDiv = document.createElement('div');
-            sigDiv.style.cssText = "margin-top: 15px; border-top: 1px dashed #cbd5e1; padding-top: 15px; text-align: center;";
-            sigDiv.innerHTML = `
-                <span style="font-size: 11px; font-weight: bold; color: #16a34a; text-transform: uppercase;">Digitally Acknowledged & Signed</span>
-                <img src="${d.staffSignature}" style="height: 60px; display: block; margin: 5px auto 0 auto; background: white; border-radius: 6px;">
-            `;
-            swalHtml.appendChild(sigDiv);
-        }
-    }, 100);
 };
 
 // ========================================================
