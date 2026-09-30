@@ -505,6 +505,24 @@
         </div>
     </div>
 
+    <!-- VIEW: HQ ANNOUNCEMENTS (BULLETIN) -->
+    <div id="view-bulletin" class="view-container">
+        <div style="max-width: 1000px; margin: 0 auto; padding: 20px;">
+            <div style="background: white; padding: 20px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <div>
+                        <h3 style="margin: 0; color: #1e293b;">📢 HQ Announcements</h3>
+                        <p style="margin: 5px 0 0 0; font-size: 12px; color: #64748b;">Important memos and updates from the Main Office.</p>
+                    </div>
+                    <button class="btn-refresh" style="background: #0ea5e9; color: white;" onclick="window.loadAnnouncements()">🔄 Refresh</button>
+                </div>
+                <div id="bulletinList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px;">
+                    <div style="grid-column: 1 / -1; text-align:center; padding: 40px; color: #94a3b8;">Loading announcements...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
   </div> <!-- End Content Area -->
 
   
