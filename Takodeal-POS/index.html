@@ -3397,7 +3397,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                 let nameSuffix = dType === 'manager_meal' ? " (Manager)" : " (Staff)";
                 let expectedCustomerName = staffData.cashierName + nameSuffix;
 
-                // 🔥 INFALLIBLE 1-PER-DAY LIMITER (CHECKS STAFF REQUESTS INBOX) 🔥
+                // 🔥 INFALLIBLE 1-PER-DAY LIMITER (INDEX-FREE ENGINE) 🔥
                 if (dType === 'staff_meal') {
                     nameBox.value = "⏳ Verifying Meal Limit...";
                     nameBox.style.color = "#d97706";
@@ -3407,18 +3407,18 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                     startOfDay.setHours(0, 0, 0, 0);
 
                     try {
-                        // Check if this specific staff member already logged a Staff Meal today in staff_requests
-                        const reqQ = window.query(window.collection(window.db, "staff_requests"), 
-                            window.where("staffName", "==", staffData.cashierName), 
+                        // Grab today's transactions and filter locally to guarantee no Firebase index failures!
+                        const txQ = window.query(window.collection(window.db, "transactions"), 
+                            window.where("branch", "==", window.sessionUser.branch), 
                             window.where("timestamp", ">=", startOfDay)
                         );
-                        const reqSnap = await window.getDocs(reqQ);
+                        const txSnap = await window.getDocs(txQ);
                         
                         let alreadyClaimed = false;
-                        reqSnap.forEach(doc => {
-                            let rData = doc.data();
-                            // Look for any request type containing "Staff Meal"
-                            if (rData.type && rData.type.toLowerCase().includes("staff meal")) {
+                        txSnap.forEach(doc => {
+                            let tx = doc.data();
+                            // If they already have a paid staff meal today, flag it!
+                            if (tx.status !== "Voided" && tx.customerName === expectedCustomerName && tx.globalDiscountType === 'staff_meal') {
                                 alreadyClaimed = true;
                             }
                         });
@@ -3547,19 +3547,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         }
     };
 
-    window.submitFinalOrder = async function() {
-      if (window.isSubmittingOrder) return;
-      window.isSubmittingOrder = true;
-
-      const btn = document.getElementById('btnSubmitFinal');
-      btn.innerText = "⏳ Processing...";
-      btn.disabled = true;
-      btn.style.pointerEvents = "none";
-
-      let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
-      let staffIdentity = null;
-
-      // 🚨 STAFF & MANAGER MEAL SECURITY INTERCEPTOR 🚨
+    // 🚨 STAFF & MANAGER MEAL SECURITY INTERCEPTOR 🚨
       if (dType === 'staff_meal' || dType === 'manager_meal') {
           let pinInput = document.getElementById('checkoutStaffPin').value;
           if (!pinInput) {
@@ -3581,6 +3569,48 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
               if (!userRole.includes('owner') && !userRole.includes('manager') && !userRole.includes('franchisee')) {
                   alert("❌ UNAUTHORIZED: Your PIN does not have Manager or Owner privileges. Please select 'Staff Meal' instead.");
                   btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
+              }
+          }
+
+          // 🔥 INFALLIBLE 1-PER-DAY HARD LIMITER (BLOCKS CHECKOUT) 🔥
+          if (dType === 'staff_meal') {
+              btn.innerText = "⏳ Checking Meal Limits...";
+              let startOfDay = new Date();
+              startOfDay.setHours(0, 0, 0, 0);
+              
+              try {
+                  let expectedCustomerName = staffIdentity.cashierName + " (Staff)";
+                  
+                  // Grab today's transactions and filter locally to guarantee no Firebase index failures!
+                  const txQ = window.query(window.collection(window.db, "transactions"), 
+                      window.where("branch", "==", window.sessionUser.branch), 
+                      window.where("timestamp", ">=", startOfDay)
+                  );
+                  const txSnap = await window.getDocs(txQ);
+                  
+                  let alreadyClaimed = false;
+                  txSnap.forEach(doc => {
+                      let tx = doc.data();
+                      if (tx.status !== "Voided" && tx.customerName === expectedCustomerName && tx.globalDiscountType === 'staff_meal') {
+                          alreadyClaimed = true;
+                      }
+                  });
+
+                  if (alreadyClaimed) {
+                      Swal.fire({
+                          title: 'Limit Reached 🛑', 
+                          text: `${staffIdentity.cashierName} has already claimed their 1 Staff Meal today. Checkout Blocked.`, 
+                          icon: 'error',
+                          customClass: { popup: 'rounded-2xl' }
+                      });
+                      
+                      document.getElementById('checkoutStaffPin').value = ''; // Wipe PIN
+                      document.getElementById('finalCustomerName').value = ''; // Wipe Name
+                      btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; 
+                      return; // 🛑 KILLS THE CHECKOUT PROCESS INSTANTLY
+                  }
+              } catch(e) { 
+                  console.error("Hard Limit Check Error:", e); 
               }
           }
 
