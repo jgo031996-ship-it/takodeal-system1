@@ -3366,10 +3366,11 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         window.updateNumpadDisplay();
     };
 
-    // 🔥 THE LIVE PIN AUTO-FILL ENGINE 🔥
+    // 🔥 THE LIVE PIN AUTO-FILL ENGINE (WITH 1-PER-DAY LIMIT) 🔥
     window.verifyStaffMealPin = async function() {
         let pinInput = document.getElementById('checkoutStaffPin').value;
         let nameBox = document.getElementById('finalCustomerName');
+        let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : '';
         
         if (!nameBox) return;
 
@@ -3393,10 +3394,54 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             }
 
             if (staffData) {
-                // Identity Confirmed! Flash the box green and auto-fill!
-                let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : '';
                 let nameSuffix = dType === 'manager_meal' ? " (Manager)" : " (Staff)";
-                nameBox.value = staffData.cashierName + nameSuffix;
+                let expectedCustomerName = staffData.cashierName + nameSuffix;
+
+                // 🔥 1-PER-DAY LIMITER ENGINE 🔥
+                if (dType === 'staff_meal') {
+                    nameBox.value = "⏳ Verifying Meal Limit...";
+                    nameBox.style.color = "#d97706";
+                    nameBox.style.backgroundColor = "#fffbeb";
+                    
+                    let startOfDay = new Date();
+                    startOfDay.setHours(0, 0, 0, 0);
+
+                    try {
+                        // Check if this specific staff member already bought a Staff Meal today!
+                        const txQ = window.query(window.collection(window.db, "transactions"), 
+                            window.where("customerName", "==", expectedCustomerName), 
+                            window.where("timestamp", ">=", startOfDay)
+                        );
+                        const txSnap = await window.getDocs(txQ);
+                        
+                        let usedCount = 0;
+                        txSnap.forEach(doc => {
+                            if (doc.data().status !== "Voided") usedCount++;
+                        });
+
+                        if (usedCount >= 1) {
+                            nameBox.value = "❌ Limit Reached (1/Day)";
+                            nameBox.style.backgroundColor = "#fef2f2"; 
+                            nameBox.style.borderColor = "#dc2626";
+                            nameBox.style.color = "#b91c1c";
+                            
+                            Swal.fire({
+                                title: 'Limit Reached 🛑', 
+                                text: `${staffData.cashierName} has already claimed their 1 Staff Meal today.`, 
+                                icon: 'error',
+                                customClass: { popup: 'rounded-2xl' }
+                            });
+                            
+                            document.getElementById('checkoutStaffPin').value = ''; // Clear PIN
+                            return;
+                        }
+                    } catch (e) {
+                        console.error("Meal Limit Check Error:", e);
+                    }
+                }
+
+                // Identity Confirmed and Limit Passed!
+                nameBox.value = expectedCustomerName;
                 nameBox.style.backgroundColor = "#dcfce7"; // Success Green
                 nameBox.style.borderColor = "#16a34a";
                 nameBox.style.color = "#15803d";
@@ -3582,10 +3627,32 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         deliveryAddress: deliveryAddress,
         contactNumber: contactNumber
       };
-
-      let receiptId = await window.processCheckout(payload);
+      
+        let receiptId = await window.processCheckout(payload);
 
       if (receiptId) {
+        // 🔥 SECURITY ALARM: ALERTS MANAGER OF DISCOUNTS 🔥
+        let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
+        if (dType !== 'none' && dType !== '') {
+            try {
+                let alertMsg = `💸 DISCOUNT FLAG: A [${dType.toUpperCase()}] discount was applied to Order #${receiptId}. Please verify if this is valid.`;
+                
+                if (dType === 'staff_meal' || dType === 'manager_meal') {
+                    let custName = document.getElementById('finalCustomerName') ? document.getElementById('finalCustomerName').value : 'Staff';
+                    alertMsg = `🍔 MEAL CLAIMED: ${custName} claimed a meal allowance on Order #${receiptId}.`;
+                }
+
+                await window.addDoc(window.collection(window.db, "manager_alerts"), {
+                    type: "DISCOUNT_APPLIED",
+                    branch: window.sessionUser.branch,
+                    cashier: window.sessionUser.cashierName,
+                    message: alertMsg,
+                    timestamp: window.serverTimestamp(),
+                    isRead: false
+                });
+            } catch(e) { console.error("Failed to send discount alert", e); }
+        }
+
         // 📥 FIRE TO MANAGER INBOX IF IT'S A STAFF OR MANAGER MEAL
         if ((dType === 'staff_meal' || dType === 'manager_meal') && staffIdentity) {
             try {
