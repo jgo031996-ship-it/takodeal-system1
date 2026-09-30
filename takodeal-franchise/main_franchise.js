@@ -2630,11 +2630,21 @@ window.saveScheduleToCloud = async function() {
     }
 };
 
-const origFranchiseeSwitchView = window.switchView;
+// ========================================================
+// 🧭 HOOKING IT ALL INTO THE ROUTER (CRASH-PROOF)
+// ========================================================
+if (typeof window.origFranchiseeSwitchView === 'undefined') {
+    window.origFranchiseeSwitchView = window.switchView;
+}
+
 window.switchView = function(viewId) {
-    if (typeof origFranchiseeSwitchView === 'function') origFranchiseeSwitchView(viewId);
+    // Run original view switcher if it exists
+    if (typeof window.origFranchiseeSwitchView === 'function') {
+        window.origFranchiseeSwitchView(viewId);
+    }
     
-    if (viewId === 'inbox') window.loadInbox();
-    if (viewId === 'schedule') window.loadScheduleFromCloud();
-    if (viewId === 'sanctions') window.loadSanctionsDashboard();
+    // Automatically load data when the HR tabs are clicked!
+    if (viewId === 'inbox' && typeof window.loadInbox === 'function') window.loadInbox();
+    if (viewId === 'schedule' && typeof window.loadScheduleFromCloud === 'function') window.loadScheduleFromCloud();
+    if (viewId === 'sanctions' && typeof window.loadSanctionsDashboard === 'function') window.loadSanctionsDashboard();
 };
