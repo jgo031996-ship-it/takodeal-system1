@@ -2672,6 +2672,11 @@ window.loadSalesDashboard = async function () {
       let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
       let displayAmount = isCashTx ? `<span style="color:#94a3b8; font-family: monospace; letter-spacing: 2px;">₱***</span>` : `₱${(tx.netTotal || 0).toFixed(2)}`;
 
+      // 🔥 DISCOUNT BADGE INJECTOR
+      if (tx.globalDiscountAmount && tx.globalDiscountAmount > 0) {
+          displayAmount += `<br><span style="background: #fff1f2; color: #dc2626; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #fca5a5; display: inline-block; margin-top: 4px;">Discounted</span>`;
+      }
+
       let verifyLabel = '';
       if (!isCashTx && tx.status !== 'Voided') {
           if (tx.paymentVerified) {
