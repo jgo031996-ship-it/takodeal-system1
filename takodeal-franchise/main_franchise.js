@@ -22,6 +22,7 @@ const storage = getStorage(app);
 const db = initializeFirestore(app, { localCache: persistentLocalCache(), experimentalAutoDetectLongPolling: true });
 
 window.db = db; window.storage = storage;
+window.auth = auth; window.provider = provider; 
 window.query = query; window.where = where; window.collection = collection;
 window.getDocs = getDocs; window.getDoc = getDoc; window.addDoc = addDoc;
 window.updateDoc = updateDoc; window.deleteDoc = deleteDoc; window.doc = doc;
