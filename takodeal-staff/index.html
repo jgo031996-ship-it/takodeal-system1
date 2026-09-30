@@ -44,6 +44,9 @@
             </select>
 
             <button class="btn-primary" onclick="window.requestDeviceAccess()">Request Access</button>
+
+            <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM REGISTRATION -->
+            <button type="button" onclick="window.forceUpdateApp()" style="margin-top: 25px; background: transparent; color: #64748b; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 12px; transition: 0.2s;">🔄 App Glitched? Click here to Update</button>
         </div>
 
         <div class="login-card" id="pendingCard" style="display: none;">
@@ -66,6 +69,9 @@
             <input type="password" id="loginPin" placeholder="Enter PIN" autocomplete="off">
             <button class="btn-primary" onclick="window.loginStaff()">Secure Login</button>
             <div id="loginError" style="color: #dc2626; margin-top: 15px; font-size: 13px; font-weight: bold; display: none;">❌ Incorrect PIN. Please try again.</div>
+            
+            <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM LOGIN -->
+            <button type="button" onclick="window.forceUpdateApp()" style="margin-top: 25px; background: transparent; color: #64748b; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 12px; transition: 0.2s;">🔄 App Glitched? Click here to Update</button>
         </div>
     </div>
 
@@ -628,6 +634,6 @@
       </div>
   </div>
 
-    <script type="module" src="app.js?v=999.2"></script>
+    <script type="module" src="app.js?v=999.3"></script>
 </body>
 </html>
