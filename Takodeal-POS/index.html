@@ -3552,7 +3552,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
           let pinInput = document.getElementById('checkoutStaffPin').value;
           if (!pinInput) {
               alert("🚨 Please enter your Security PIN to authorize this transaction.");
-              btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
+              btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false;
           }
 
           btn.innerText = "⏳ Verifying PIN...";
