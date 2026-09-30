@@ -3546,12 +3546,24 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         }
     };
 
-    // 🚨 STAFF & MANAGER MEAL SECURITY INTERCEPTOR 🚨
+    window.submitFinalOrder = async function() {
+      if (window.isSubmittingOrder) return;
+      window.isSubmittingOrder = true;
+
+      const btn = document.getElementById('btnSubmitFinal');
+      btn.innerText = "⏳ Processing...";
+      btn.disabled = true;
+      btn.style.pointerEvents = "none";
+
+      let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
+      let staffIdentity = null;
+
+      // 🚨 STAFF & MANAGER MEAL SECURITY INTERCEPTOR 🚨
       if (dType === 'staff_meal' || dType === 'manager_meal') {
           let pinInput = document.getElementById('checkoutStaffPin').value;
           if (!pinInput) {
               alert("🚨 Please enter your Security PIN to authorize this transaction.");
-              btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false;
+              btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
           }
 
           btn.innerText = "⏳ Verifying PIN...";
@@ -3660,19 +3672,18 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         deliveryAddress: deliveryAddress,
         contactNumber: contactNumber
       };
-      
-        let receiptId = await window.processCheckout(payload);
+
+      let receiptId = await window.processCheckout(payload);
 
       if (receiptId) {
-        // 🔥 GUARANTEED MANAGER ALERT FOR MEALS & DISCOUNTS 🔥
-        let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
+        // 🔥 SECURITY ALARM: ALERTS MANAGER OF DISCOUNTS 🔥
         if (dType !== 'none' && dType !== '') {
             try {
                 let alertMsg = `💸 DISCOUNT FLAG: A [${dType.toUpperCase()}] discount was applied to Order #${receiptId}. Please verify if this is valid.`;
                 
                 if (dType === 'staff_meal' || dType === 'manager_meal') {
-                    let custName = document.getElementById('finalCustomerName') ? document.getElementById('finalCustomerName').value : 'Staff';
-                    alertMsg = `🍔 MEAL CLAIMED: ${custName} claimed a meal allowance on Order #${receiptId}.`;
+                    let cName = document.getElementById('finalCustomerName') ? document.getElementById('finalCustomerName').value : 'Staff';
+                    alertMsg = `🍔 MEAL CLAIMED: ${cName} claimed a meal allowance on Order #${receiptId}.`;
                 }
 
                 await window.addDoc(window.collection(window.db, "manager_alerts"), {
@@ -3703,14 +3714,6 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                     timestamp: window.serverTimestamp()
                 });
 
-                await window.addDoc(window.collection(window.db, "manager_alerts"), {
-                    type: "STAFF_MEAL_DEDUCTION",
-                    branch: window.sessionUser.branch,
-                    cashier: staffIdentity.cashierName,
-                    message: `🍔 ${mealTypeLabel.toUpperCase()}: ${staffIdentity.cashierName} ordered ${shortDesc}. ₱${payload.netTotal.toFixed(2)} is pending for payroll deduction.`,
-                    timestamp: window.serverTimestamp(),
-                    isRead: false
-                });
                 let pinBox = document.getElementById('checkoutStaffPin');
                 if (pinBox) pinBox.value = '';
             } catch(e) { console.error("Failed to log meal to inbox:", e); }
@@ -3765,7 +3768,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         alert("Network Error: Could not save to database.");
         btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false;
       }
-    }
+    };
 
 // ==========================================
 // 🖨️ ULTIMATE STANDALONE PRINTER ENGINE (WITH LOGOS)
