@@ -1491,3 +1491,180 @@ document.addEventListener("visibilitychange", async () => {
         try { if (window.enableNetwork && window.db) await window.enableNetwork(window.db); } catch(e) {}
     }
 });
+
+// ==========================================
+// 📢 HQ BULLETIN BOARD (FRANCHISEE LOCKED)
+// ==========================================
+window.hasAutoShownBulletin = false;
+
+// 🔥 Hook into your router so it actually loads when clicked!
+const originalSwitchView = window.switchView;
+window.switchView = function(viewId) {
+    if (typeof originalSwitchView === 'function') originalSwitchView(viewId);
+    if (viewId === 'bulletin') window.loadAnnouncements();
+};
+
+window.loadAnnouncements = async function() {
+    let container = document.getElementById('bulletinList');
+    if (!container) return;
+
+    try {
+        let franchiseBranch = window.sessionUser.branch;
+        let franchiseName = window.sessionUser.cashierName;
+
+        const q = window.query(window.collection(window.db, "announcements"), window.where("active", "==", true));
+        const snap = await window.getDocs(q);
+
+        const ackQ = window.query(window.collection(window.db, "acknowledgments"), window.where("staffName", "==", franchiseName));
+        const ackSnap = await window.getDocs(ackQ);
+
+        let signatures = {};
+        ackSnap.forEach(doc => { let d = doc.data(); signatures[d.announcementId] = d; });
+
+        let announcementsArray = [];
+        snap.forEach(docSnap => announcementsArray.push({id: docSnap.id, ...docSnap.data()}));
+        announcementsArray.sort((a,b) => b.timestamp - a.timestamp); 
+
+        let html = '';
+        let unreadAnnouncements = [];
+
+        announcementsArray.forEach(ann => {
+            // 🔥 THE GATEKEEPER: Route specifically to this Franchisee
+            let isTarget = false;
+            if (!ann.targetType || ann.targetType === 'All') isTarget = true;
+            else if (ann.targetType === 'Branch' && ann.targetBranch === franchiseBranch) isTarget = true;
+            
+            // Note: We skip 'Individual' here unless the Manager explicitly targeted the Franchise Owner's name.
+            else if (ann.targetType === 'Individual' && ann.targetStaff === franchiseName) isTarget = true;
+
+            if (!isTarget) return; 
+
+            let dateStr = ann.timestamp ? ann.timestamp.toDate().toLocaleDateString() : 'Recent';
+            let sigData = signatures[ann.id];
+            let shortMsg = ann.message ? ann.message.substring(0, 100) + (ann.message.length > 100 ? '...' : '') : '';
+
+            let statusBadge = sigData
+                ? `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid #bbf7d0;">✅ Acknowledged</span>`
+                : `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; border: 1px solid #fecaca; animation: pulse 2s infinite;">❌ Requires Signature</span>`;
+
+            let targetBadge = '';
+            if (ann.targetType === 'Branch') targetBadge = `<span style="background: #e0f2fe; color: #0284c7; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #bae6fd; margin-top: 4px; display: inline-block;">🏢 Branch Notice</span>`;
+
+            let sigDateStr = sigData && sigData.timestamp ? sigData.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
+
+            let safeData = encodeURIComponent(JSON.stringify({
+                id: ann.id, title: ann.title || 'Announcement', subHeadline: ann.subHeadline || '',
+                message: ann.message || '', footerMessage: ann.footerMessage || '', images: ann.images || [],
+                dateStr: dateStr, hasSignature: !!sigData, signatureImg: sigData ? sigData.signature : '',
+                signatureDate: sigDateStr
+            }));
+
+            if (!sigData) unreadAnnouncements.push(safeData);
+
+            html += `
+                <div onclick="window.viewAnnouncement('${safeData}')" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; cursor: pointer; transition: 0.2s; box-shadow: 0 2px 4px rgba(0,0,0,0.02);" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 6px rgba(0,0,0,0.05)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 2px 4px rgba(0,0,0,0.02)'">
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
+                        <h3 style="margin:0; color:#0f172a; font-size: 15px; flex: 1;">${ann.title}</h3>
+                        <div style="margin-left: 10px; text-align: right;">${statusBadge}<br>${targetBadge}</div>
+                    </div>
+                    ${ann.subHeadline ? `<div style="font-size:12px; font-weight:bold; color:#0ea5e9; margin-bottom:6px;">${ann.subHeadline}</div>` : ''}
+                    <div style="font-size:11px; color:#64748b; margin-bottom:10px;">📅 Published: ${dateStr}</div>
+                    <p style="font-size:13px; color:#334155; margin:0 0 10px 0; line-height: 1.4;">${shortMsg}</p>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html || '<div style="grid-column: 1 / -1; text-align:center; padding: 40px; color: #94a3b8;">No announcements from HQ.</div>';
+
+        if (unreadAnnouncements.length > 0 && !window.hasAutoShownBulletin) {
+            window.hasAutoShownBulletin = true;
+            setTimeout(() => { window.viewAnnouncement(unreadAnnouncements[0]); }, 1000); 
+        }
+    } catch (e) { 
+        console.error(e); 
+        container.innerHTML = '<div style="grid-column: 1 / -1; text-align:center; padding: 40px; color: #dc2626;">Error loading announcements.</div>';
+    }
+};
+
+window.viewAnnouncement = function(encodedData) {
+    let data = JSON.parse(decodeURIComponent(encodedData));
+    
+    let imagesHtml = '';
+    if (data.images && data.images.length > 0) {
+        imagesHtml = `<div style="display: flex; flex-direction: column; gap: 10px; margin-top: 20px;">`;
+        data.images.forEach(img => {
+            imagesHtml += `<img src="${img}" style="width: 100%; border-radius: 8px; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">`;
+        });
+        imagesHtml += `</div>`;
+    }
+
+    let sigHtml = data.hasSignature 
+        ? `<div style="margin-top: 20px; padding-top: 15px; border-top: 1px dashed #cbd5e1; text-align: center; background: #f8fafc; border-radius: 8px; padding: 15px; border: 1px solid #bbf7d0;">
+            <span style="font-size: 12px; color: #16a34a; font-weight: bold; display: block; margin-bottom: 10px;">✅ You acknowledged this on ${data.signatureDate}</span>
+            <img src="${data.signatureImg}" style="height: 60px; background: white; border: 1px solid #e2e8f0; border-radius: 6px; padding: 5px;">
+           </div>`
+        : `<div style="margin-top: 25px; padding: 20px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px;">
+            <h4 style="margin: 0 0 5px 0; color: #b45309; text-align: center; font-size: 15px;">Mandatory Acknowledgment</h4>
+            <p style="font-size: 11px; color: #92400e; text-align: center; margin-bottom: 15px;">Please sign your name below to confirm you have read this HQ memo.</p>
+            <div style="background: white; border: 2px dashed #d97706; border-radius: 8px; overflow: hidden; touch-action: none; position: relative;">
+                <canvas id="sigCanvas" width="300" height="150" style="width: 100%; height: 150px; cursor: crosshair; touch-action: none;"></canvas>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button onclick="const c = document.getElementById('sigCanvas'); c.getContext('2d').clearRect(0,0,c.width,c.height); window.isSignatureBlank = true;" style="flex: 1; background: white; color: #64748b; border: 1px solid #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">Clear</button>
+                <button onclick="window.submitBulletinSignature('${data.id}')" id="btnSubmitSig" style="flex: 2; background: #0f766e; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer;">Submit Signature</button>
+            </div>
+           </div>`;
+
+    Swal.fire({
+        title: `<div style="text-align:left; font-size: 20px; font-weight: 900; color: #0f172a; text-transform: uppercase;">${data.title}</div>`,
+        html: `<div style="text-align: left; max-height: 70vh; overflow-y: auto; padding-right: 5px;">
+                <div style="font-size: 12px; font-weight: bold; color: #64748b; margin-bottom: 15px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px;">📅 Published: ${data.dateStr}</div>
+                ${data.subHeadline ? `<div style="font-size: 15px; font-weight: 900; color: #0ea5e9; margin-bottom: 15px;">${data.subHeadline}</div>` : ''}
+                <div style="font-size: 14px; color: #334155; line-height: 1.6; white-space: pre-wrap;">${data.message}</div>
+                ${imagesHtml}
+                ${sigHtml}
+               </div>`,
+        showCloseButton: true, showConfirmButton: false, allowOutsideClick: data.hasSignature,
+        customClass: { popup: 'rounded-2xl p-4' },
+        didOpen: () => {
+            if (!data.hasSignature) {
+                const canvas = document.getElementById('sigCanvas');
+                const ctx = canvas.getContext('2d');
+                ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.strokeStyle = '#0f172a';
+                let drawing = false; window.isSignatureBlank = true;
+                const getPos = (e) => {
+                    const rect = canvas.getBoundingClientRect();
+                    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                    return { x: (clientX - rect.left) * (canvas.width / rect.width), y: (clientY - rect.top) * (canvas.height / rect.height) };
+                };
+                const startDraw = (e) => { drawing = true; window.isSignatureBlank = false; ctx.beginPath(); ctx.moveTo(getPos(e).x, getPos(e).y); e.preventDefault(); };
+                const draw = (e) => { if (!drawing) return; ctx.lineTo(getPos(e).x, getPos(e).y); ctx.stroke(); e.preventDefault(); };
+                const stopDraw = () => { drawing = false; ctx.closePath(); };
+                canvas.addEventListener('touchstart', startDraw, {passive: false}); canvas.addEventListener('touchmove', draw, {passive: false}); canvas.addEventListener('touchend', stopDraw);
+                canvas.addEventListener('mousedown', startDraw); canvas.addEventListener('mousemove', draw); canvas.addEventListener('mouseup', stopDraw); canvas.addEventListener('mouseout', stopDraw);
+            }
+        }
+    });
+};
+
+window.submitBulletinSignature = async function(announcementId) {
+    if (window.isSignatureBlank) return Swal.showValidationMessage("Please draw your signature.");
+    
+    let btn = document.getElementById('btnSubmitSig');
+    btn.innerText = "⏳ Saving..."; btn.disabled = true;
+
+    try {
+        const canvas = document.getElementById('sigCanvas');
+        await window.addDoc(window.collection(window.db, "acknowledgments"), {
+            announcementId: announcementId,
+            staffName: window.sessionUser.cashierName,
+            signature: canvas.toDataURL("image/png"),
+            timestamp: window.serverTimestamp()
+        });
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Acknowledged.', showConfirmButton: false, timer: 2000});
+        window.loadAnnouncements();
+    } catch (e) {
+        console.error(e); Swal.showValidationMessage("Failed to save signature."); btn.innerText = "Submit Signature"; btn.disabled = false;
+    }
+};
