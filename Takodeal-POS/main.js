@@ -1886,7 +1886,7 @@ window.getReceiptDetails = async function (receiptId) {
   } catch (e) { console.error(e); return null; }
 };
 
-// --- RECEIPT DETAILS ENGINE (ULTRA MODERN DESIGN) ---
+// --- RECEIPT DETAILS ENGINE (ULTRA MODERN DESIGN WITH DISCOUNTS) ---
 window.viewReceiptDetails = async function (receiptId) {
     let tx = await window.getReceiptDetails(receiptId);
     if (!tx) { alert("Receipt not found!"); return; }
@@ -1912,13 +1912,11 @@ window.viewReceiptDetails = async function (receiptId) {
             let safeItemName = cartItem.name || cartItem.itemName || "Item";
             let variantName = (cartItem.variantName && cartItem.variantName !== 'Standard') ? cartItem.variantName : '';
             
-            // Clean up redundant sizes (e.g. Takoyaki 6 Pcs 6 Pcs)
             if (variantName && (safeItemName.toLowerCase().includes(variantName.toLowerCase()) || (safeItemName.endsWith("(L)") && variantName === "L"))) {
                 variantName = ''; 
             }
             let varHtml = variantName ? `<br><span style="font-size:11px; color:#64748b; font-style:italic; margin-left:10px;">Size: ${variantName}</span>` : '';
 
-            // Clean, pill-shaped order type badge
             let itemTypeBadge = cartItem.orderType ? `<span style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-left: 6px; vertical-align: middle;">${cartItem.orderType}</span>` : '';
 
             itemsHtml += `
@@ -1934,11 +1932,29 @@ window.viewReceiptDetails = async function (receiptId) {
         });
     }
 
+    // 🔥 THE DISCOUNT INJECTOR 🔥
+    let discountHtml = '';
+    if (tx.globalDiscountAmount && tx.globalDiscountAmount > 0) {
+        let discAmountDisplay = isCashTx ? '***' : tx.globalDiscountAmount.toFixed(2);
+        let rawType = tx.globalDiscountType || 'Discount';
+        let discTypeStr = rawType === 'staff_meal' ? 'Staff Meal' : (rawType === 'manager_meal' ? 'Manager Meal' : rawType.toUpperCase());
+        let discReasonStr = tx.globalDiscountReason ? `<br><span style="font-size: 11px; color: #fca5a5; font-style: italic;">Note: ${tx.globalDiscountReason}</span>` : '';
+        
+        discountHtml = `
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding: 10px; background: #fff1f2; border-radius: 6px; margin-top: 5px;">
+                <div>
+                    <strong style="color: #dc2626; font-size: 13px;">⬇️ Discount (${discTypeStr})</strong>
+                    ${discReasonStr}
+                </div>
+                <strong style="color: #dc2626; font-size: 13px;">-₱${discAmountDisplay}</strong>
+            </div>
+        `;
+    }
+
     let timeStr = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
     let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
     let statusBadge = tx.status === 'Voided' ? `<span style="background:#fef2f2; color:#dc2626; border: 1px solid #fca5a5; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; border: 1px solid #bbf7d0; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Paid</span>`;
 
-    // Remove old modal if it exists so they don't stack!
     let oldModal = document.getElementById('dynamicReceiptModal');
     if (oldModal) oldModal.remove();
 
@@ -1968,8 +1984,9 @@ window.viewReceiptDetails = async function (receiptId) {
                 </div>
 
                 <div style="flex: 1; overflow-y: auto; margin-bottom: 15px; padding-right: 5px;">
-                    <div style="font-size: 11px; font-weight: 900; color: #94a3b8; border-bottom: 2px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 10px; text-transform: uppercase;">Order Items</div>
-                    ${itemsHtml || '<div style="color: #94a3b8; font-size: 12px; text-align: center; padding: 20px; font-style: italic;">No items recorded.</div>'}
+                    <div style="font-size: 11px; font-weight: bold; color: #94a3b8; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-bottom: 5px; text-transform: uppercase;">Order Items</div>
+                    ${itemsHtml || '<i style="color: #94a3b8; font-size: 12px;">No items recorded.</i>'}
+                    ${discountHtml}
                 </div>
 
                 <div style="border-top: 2px dashed #cbd5e1; padding-top: 20px; display: flex; justify-content: space-between; align-items: center;">
