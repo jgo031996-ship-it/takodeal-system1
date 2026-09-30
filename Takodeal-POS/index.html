@@ -795,12 +795,15 @@
             <!-- LEFT: MENU SECTION -->
             <div style="flex: 1; display: flex; flex-direction: column; background: white; border-radius: 12px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                 
-                <!-- Dropdown Header (Replaces Horizontal Tabs) -->
-                <div style="padding: 12px 15px; border-bottom: 2px solid #e2e8f0; background: #f8fafc; display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 22px;">🍔</span>
-                    <select id="menuCategoryDropdown" onchange="window.filterMenu(this.value)" style="flex: 1; padding: 12px 15px; border-radius: 8px; border: 2px solid #bae6fd; outline: none; font-weight: 900; color: #0369a1; font-size: 16px; background: #f0f9ff; cursor: pointer; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.1);">
-                        <option value="All">All Items (Main Menu)</option>
-                    </select>
+                <!-- Category Selector Button (Upgraded to trigger Modal) -->
+                <div style="padding: 15px; border-bottom: 2px solid #e2e8f0; background: #f8fafc; display: flex; align-items: center; gap: 10px;">
+                    <button id="btnCategorySelector" onclick="window.openCategoryModal()" style="flex: 1; padding: 18px 20px; border-radius: 12px; border: 2px solid #bae6fd; outline: none; font-weight: 900; color: #0369a1; font-size: 18px; background: #f0f9ff; cursor: pointer; box-shadow: 0 4px 6px rgba(2, 132, 199, 0.15); display: flex; justify-content: space-between; align-items: center; transition: 0.2s;" onmouseover="this.style.transform='translateY(-2px)';" onmouseout="this.style.transform='translateY(0)';">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span id="currentCategoryIcon" style="font-size: 28px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">🍔</span>
+                            <span id="currentCategoryText" style="letter-spacing: 0.5px;">All Items (Main Menu)</span>
+                        </div>
+                        <span style="font-size: 15px; color: #0ea5e9; background: white; padding: 8px 14px; border-radius: 8px; border: 1px dashed #bae6fd;">▼ Choose Category</span>
+                    </button>
                 </div>
                 
                 <!-- Maximized Menu Items Grid -->
@@ -2181,18 +2184,33 @@
     }
 
     // ==========================================
-    // 🍔 MENU AND CATEGORY ENGINE (MAXIMIZED)
+    // 🍔 MENU AND CATEGORY ENGINE (MODAL UPGRADE)
     // ==========================================
     const hiddenCategories = ["Prepared Batch", "Prep Batch", "Raw Materials", "Packaging", "Consumables", "Premix"];
 
+    window.openCategoryModal = function() {
+        document.getElementById('categoryModal').style.display = 'flex';
+    };
+
+    window.closeCategoryModal = function() {
+        document.getElementById('categoryModal').style.display = 'none';
+    };
+
     window.buildCategories = function() {
-        let dropdown = document.getElementById('menuCategoryDropdown');
-        if (!dropdown) return;
+        let grid = document.getElementById('categoryModalGrid');
+        if (!grid) return;
         
-        let html = '<option value="All">🍔 All Items (Main Menu)</option>';
+        // The default "All Items" massive card
+        let html = `
+            <div onclick="window.filterMenu('All', '🍔')" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); border-radius: 16px; padding: 20px; cursor: pointer; box-shadow: 0 6px 12px rgba(14, 165, 233, 0.3); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; height: 160px; border: 2px solid #bae6fd; transition: transform 0.15s, box-shadow 0.15s;" onmouseover="this.style.transform='scale(1.03)';" onmouseout="this.style.transform='scale(1)';">
+                <span style="font-size: 50px; margin-bottom: 10px; filter: drop-shadow(0 4px 6px rgba(0,0,0,0.2));">🍔</span>
+                <span style="color: white; font-weight: 900; font-size: 18px; letter-spacing: 0.5px;">All Items</span>
+            </div>
+        `;
+
         if (window.masterPOSData && window.masterPOSData.categories) {
             window.masterPOSData.categories.forEach(cat => {
-                // Smart Emoji Mapper for "Small Images" effect!
+                // Smart Emoji Mapper
                 let icon = "📁";
                 let c = cat.toLowerCase();
                 if(c.includes('takoyaki')) icon = "🐙";
@@ -2203,14 +2221,32 @@
                 else if(c.includes('fries') || c.includes('snack')) icon = "🍟";
                 else if(c.includes('add-on') || c.includes('extra')) icon = "🧀";
                 
-                html += `<option value="${cat}">${icon} ${cat}</option>`;
+                // 🔥 SMART THUMBNAIL ENGINE: Finds the first product in this category that has an image!
+                let catItemWithImage = window.masterPOSData.items.find(i => i.category === cat && i.image);
+                
+                let bgStyle = catItemWithImage 
+                    ? `background-image: linear-gradient(to top, rgba(15, 23, 42, 0.9) 0%, rgba(15, 23, 42, 0.3) 50%, rgba(15, 23, 42, 0.1) 100%), url('${catItemWithImage.image}'); background-size: cover; background-position: center;` 
+                    : `background: #ffffff;`;
+                
+                let textCol = catItemWithImage ? 'white' : '#1e293b';
+                let iconShadow = catItemWithImage ? 'filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));' : '';
+                let borderStyle = catItemWithImage ? 'border: 1px solid #cbd5e1;' : 'border: 2px solid #e2e8f0;';
+
+                let safeCat = cat.replace(/'/g, "\\'");
+                
+                html += `
+                    <div onclick="window.filterMenu('${safeCat}', '${icon}')" style="${bgStyle} ${borderStyle} border-radius: 16px; padding: 20px; cursor: pointer; box-shadow: 0 6px 15px rgba(0,0,0,0.08); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; height: 160px; position: relative; overflow: hidden; transition: transform 0.15s, box-shadow 0.15s;" onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 8px 20px rgba(0,0,0,0.15)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 6px 15px rgba(0,0,0,0.08)';">
+                        <span style="font-size: 45px; margin-bottom: 5px; position: absolute; top: 20px; ${iconShadow}">${icon}</span>
+                        <span style="color: ${textCol}; font-weight: 900; font-size: 17px; text-shadow: ${catItemWithImage ? '0 2px 6px rgba(0,0,0,0.9)' : 'none'}; z-index: 2; line-height: 1.2;">${cat}</span>
+                    </div>
+                `;
             });
         }
-        dropdown.innerHTML = html;
+        grid.innerHTML = html;
         window.renderMenuItems(); 
     };
 
-    window.filterMenu = function(category) {
+    window.filterMenu = function(category, icon = '🍔') {
         let cards = document.querySelectorAll('.ultra-card');
         cards.forEach(card => {
             let itemCat = card.getAttribute('data-category');
@@ -2220,6 +2256,15 @@
                 card.style.display = 'none';
             }
         });
+
+        // 🔥 UI UPDATE: Change the button header to show what they selected
+        let btnIcon = document.getElementById('currentCategoryIcon');
+        let btnText = document.getElementById('currentCategoryText');
+        if (btnIcon) btnIcon.innerText = icon;
+        if (btnText) btnText.innerText = category === 'All' ? 'All Items (Main Menu)' : category;
+
+        // Close the modal instantly
+        window.closeCategoryModal();
     };
 
     window.switchPosPlatform = function(platform) {
@@ -4843,5 +4888,21 @@ window.showMobileOrders = function() {
         🛡️ Owner Access
     </button>
 </div>
+
+  <!-- 🗂️ ULTRA TACTILE CATEGORY MODAL -->
+  <div class="overlay" id="categoryModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.85); z-index: 100000; justify-content: center; align-items: center; backdrop-filter: blur(8px);">
+      <div style="background: #f8fafc; width: 900px; max-width: 95%; height: 85vh; border-radius: 20px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid #cbd5e1;">
+          <div style="background: #0ea5e9; padding: 25px 30px; color: white; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #0284c7;">
+              <h2 style="margin: 0; font-size: 24px; font-weight: 900; letter-spacing: 1px; display: flex; align-items: center; gap: 12px;"><span style="font-size: 28px;">🗂️</span> Select Menu Category</h2>
+              <button onclick="window.closeCategoryModal()" style="background: rgba(255,255,255,0.2); border: none; font-size: 28px; width: 44px; height: 44px; border-radius: 12px; color: white; cursor: pointer; font-weight: bold; transition: 0.2s; display: flex; align-items: center; justify-content: center;">✖</button>
+          </div>
+          <div style="padding: 30px; overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch;">
+              <div id="categoryModalGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px;">
+                  <!-- Thumbnails generated by JS -->
+                  <div style="text-align: center; grid-column: 1/-1; padding: 40px; color: #94a3b8; font-weight: bold; font-size: 18px;">Loading Categories...</div>
+              </div>
+          </div>
+      </div>
+  </div>
 </body>
 </html>
