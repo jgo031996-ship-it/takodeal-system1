@@ -13,7 +13,7 @@ window.applyPermissions = function() {
     }
     if (window.sessionUser.isFranchisee) {
         document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'none');
-        const allowedTabs = ['dashboard', 'accounts', 'financial-flow', 'transfers', 'devices', 'payroll', 'inbox', 'dispatch', 'zreadings', 'history', 'expenses', 'branches', 'sop', 'equipment', 'inventory', 'alerts', 'bulletin', 'franchise-hub'];
+        const allowedTabs = ['dashboard', 'accounts', 'hq-billing', 'hr', 'inventory', 'b2b', 'history', 'zreadings', 'expenses', 'bulletin'];
         allowedTabs.forEach(tab => { let el = document.getElementById('nav-' + tab); if (el) el.style.display = 'flex'; });
         setTimeout(() => {
             document.querySelectorAll('#hubSafeCash').forEach(c => { if(c.parentElement) c.parentElement.style.display = 'none'; });
