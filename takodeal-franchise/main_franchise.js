@@ -1668,3 +1668,513 @@ window.submitBulletinSignature = async function(announcementId) {
         console.error(e); Swal.showValidationMessage("Failed to save signature."); btn.innerText = "Submit Signature"; btn.disabled = false;
     }
 };
+
+// ========================================================
+// 📥 THE REQUEST INBOX ENGINE (FRANCHISEE LOCKED)
+// ========================================================
+window.loadInbox = async function() {
+    const pendingBody = document.getElementById('inboxTableBody');
+    const resolvedBody = document.getElementById('resolvedRequestsBody');
+    if (!pendingBody) return;
+
+    pendingBody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px;">Loading requests...</td></tr>';
+
+    try {
+        // FRANCHISEE LOCK: Only pull requests for their specific branch!
+        const q = query(collection(db, "staff_requests"), where("branch", "==", window.sessionUser.branch), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
+
+        let pendingHtml = '';
+        let pendingCount = 0;
+        let resolvedByStaff = {}; 
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Unknown';
+            let safeName = d.staffName ? d.staffName.replace(/'/g, "\\'") : 'Unknown';
+
+            let detailsStr = "";
+            if (d.type === "Leave") {
+                detailsStr = `<strong style="color: #1e293b;">${d.leaveType || 'Leave'}</strong><br><span style="font-size:11px; font-weight:bold; color:#0ea5e9;">${d.startDate || '?'} to ${d.endDate || '?'}</span><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.reason || 'No reason'}"</span>`;
+            } else if (d.type === "Cash Advance") {
+                detailsStr = `<strong style="color:#dc2626; font-size:15px;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</strong><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.reason || 'No reason'}"</span>`;
+            } else if (d.type === "Reason Letter") {
+                detailsStr = `<strong style="color: #1e293b;">Cause: ${d.explanationCause || 'Variance'}</strong><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.explanationMessage || 'No explanation'}"</span>`;
+            } else if (d.type.includes("Meal")) {
+                let itemsList = d.item ? d.item.replace(/ \| /g, '<br><span style="color:#64748b; font-size:11px; font-family:monospace;">') + '</span>' : 'Food Item';
+                detailsStr = `🍔 ${itemsList}<br><span style="color:#dc2626; font-size:12px; font-weight:900;">Deduct: ₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</span>`;
+            } else {
+                detailsStr = d.amount ? `₱${d.amount.toLocaleString(undefined, {minimumFractionDigits:2})}` : (d.item || d.reason || 'N/A');
+            }
+
+            let attachedImage = d.photoBase64 || d.proofImageUrl || d.imageUrl || d.image;
+            if (attachedImage) {
+                detailsStr += `<br><button onclick="Swal.fire({imageUrl: '${attachedImage}', imageAlt: 'Proof', width: 'auto', customClass: {popup: 'rounded-2xl'}})" style="margin-top: 8px; background: #f0f9ff; border: 1px solid #bae6fd; color: #0284c7; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold;">📷 View Photo</button>`;
+            }
+
+            if (d.status === "Pending") {
+                pendingCount++;
+                pendingHtml += `
+                    <tr style="border-bottom: 1px solid #f1f5f9;">
+                        <td style="padding: 12px; color: #64748b;">${dateStr}</td>
+                        <td style="padding: 12px; font-weight: bold; color: #334155;">${safeName}</td>
+                        <td style="padding: 12px;"><span style="font-weight: bold; color: #0ea5e9; font-size: 14px;">${d.type}</span></td>
+                        <td style="padding: 12px; max-width: 250px; white-space: normal;">${detailsStr}</td>
+                        <td style="padding: 12px; text-align: right;">
+                            <button onclick="window.handleRequest('${docSnap.id}', 'Approved', '${d.type}', ${d.amount || 0}, '${safeName}')" style="background: #16a34a; color: white; padding: 6px 12px; border:none; border-radius:4px; margin-right:5px; cursor:pointer; font-weight:bold;">Approve</button>
+                            <button onclick="window.handleRequest('${docSnap.id}', 'Rejected', '${d.type}', ${d.amount || 0}, '${safeName}')" style="background: #ef4444; color: white; padding: 6px 12px; border:none; border-radius:4px; cursor:pointer; font-weight:bold;">Reject</button>
+                        </td>
+                    </tr>
+                `;
+            } else {
+                if (!resolvedByStaff[safeName]) resolvedByStaff[safeName] = [];
+                d.dateStr = dateStr; d.detailsStr = detailsStr;
+                resolvedByStaff[safeName].push(d);
+            }
+        });
+
+        let resolvedHtml = '';
+        for (let staff in resolvedByStaff) {
+            let reqs = resolvedByStaff[staff];
+            let safeStaffId = staff.replace(/[^a-zA-Z0-9]/g, ''); 
+            
+            resolvedHtml += `
+                <tr style="background: #f8fafc; cursor: pointer; border-bottom: 1px solid #e2e8f0;" onclick="document.querySelectorAll('.res-row-${safeStaffId}').forEach(r => r.style.display = r.style.display === 'none' ? 'table-row' : 'none')">
+                    <td colspan="4" style="font-weight: 900; color: #334155; font-size: 15px; padding: 15px;">
+                        <span style="display:inline-block; width:20px; color:#94a3b8;">▼</span> 👤 ${staff}
+                    </td>
+                    <td style="text-align: right; padding: 15px;">
+                        <span style="font-size: 11px; color: white; background: #0ea5e9; padding: 4px 10px; border-radius: 12px; font-weight: bold;">🔍 ${reqs.length} Records</span>
+                    </td>
+                </tr>
+            `;
+            
+            reqs.forEach(d => {
+                let statusColor = d.status === "Approved" ? "#16a34a" : "#dc2626";
+                let statusBg = d.status === "Approved" ? "#dcfce7" : "#fef2f2";
+                resolvedHtml += `
+                    <tr class="res-row-${safeStaffId}" style="display: none; background: white; border-bottom: 1px dashed #cbd5e1;">
+                        <td style="padding: 12px; padding-left: 35px; color: #64748b;">${d.dateStr}</td>
+                        <td style="padding: 12px; font-weight: bold; color: #0ea5e9;">${d.type}</td>
+                        <td colspan="2" style="padding: 12px; max-width: 250px; white-space: normal;">${d.detailsStr}</td>
+                        <td style="padding: 12px; text-align:right;"><span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${d.status}</span></td>
+                    </tr>
+                `;
+            });
+        }
+
+        pendingBody.innerHTML = pendingHtml || '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #16a34a; font-weight: bold;">No pending requests! 🎉</td></tr>';
+        if (resolvedBody) resolvedBody.innerHTML = resolvedHtml || '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #64748b;">No resolved history yet.</td></tr>';
+
+        let badge = document.getElementById('inboxBadge');
+        if (badge) {
+            badge.innerText = pendingCount;
+            badge.style.display = pendingCount > 0 ? 'inline-block' : 'none';
+        }
+    } catch(e) { console.error(e); pendingBody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:red;">Error loading inbox.</td></tr>'; }
+};
+
+window.handleRequest = async function(docId, action, type, amount, staffName) {
+    let reason = prompt(`Optional: Enter a message to ${staffName} regarding this decision:`);
+    if (reason === null) return; // Cancelled
+
+    Swal.fire({title: 'Processing...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    try {
+        await updateDoc(doc(db, "staff_requests", docId), {
+            status: action,
+            managerReply: reason || '',
+            processedAt: serverTimestamp(),
+            processedBy: window.sessionUser.cashierName
+        });
+
+        // If it's a Cash Advance or Meal, automatically deduct it from their payroll!
+        if (action === "Approved" && (type === "Cash Advance" || type.includes("Meal"))) {
+            await addDoc(collection(db, "staff_deductions"), {
+                staffName: staffName,
+                type: type,
+                amount: amount,
+                dateAdded: serverTimestamp(),
+                status: "Unpaid" 
+            });
+        }
+
+        Swal.fire('✅ Processed', `Request has been ${action}.`, 'success');
+        window.loadInbox();
+    } catch (e) { console.error(e); Swal.fire('Error', 'Failed to process.', 'error'); }
+};
+
+// ========================================================
+// ⚖️ DISCIPLINARY ACTIONS (SANCTIONS ENGINE)
+// ========================================================
+window.loadSanctionsDashboard = async function() {
+    const tbody = document.getElementById('sanctionsTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 20px;">Loading disciplinary records...</td></tr>';
+
+    try {
+        // FRANCHISEE LOCK: Only pull their staff's records
+        const q = query(collection(db, "hr_sanctions"), where("branch", "==", window.sessionUser.branch), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
+        let html = '';
+
+        snap.forEach(docSnap => {
+            let d = docSnap.data();
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown';
+            let statusBadge = ''; let actionBtn = '';
+
+            if (d.status === 'Pending Reply') {
+                statusBadge = `<span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Awaiting Staff Reply</span>`;
+                actionBtn = `<button onclick="window.deleteSanction('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; padding: 4px 8px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 11px;">🗑️ Cancel Notice</button>`;
+            } else if (d.status === 'Replied' || d.status === 'Resolved') {
+                statusBadge = `<span style="background: ${d.status === 'Resolved' ? '#dcfce7' : '#e0f2fe'}; color: ${d.status === 'Resolved' ? '#16a34a' : '#0284c7'}; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">${d.status === 'Resolved' ? '✅ Resolved' : '📩 Staff Replied'}</span>
+                               <div style="font-size: 11px; color: #334155; font-style: italic; border-left: 2px solid ${d.status === 'Resolved' ? '#16a34a' : '#0ea5e9'}; padding-left: 8px; margin-top: 4px; max-width: 250px;">"${d.staffReply}"</div>`;
+                
+                if (d.status === 'Replied') {
+                    actionBtn = `<button onclick="window.resolveSanction('${docSnap.id}', '${d.staffName}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 11px;">Accept & Resolve</button>`;
+                } else {
+                    let safeDocStr = encodeURIComponent(JSON.stringify({id: docSnap.id, ...d}));
+                    actionBtn = `<button onclick="window.printFormalNTE('${safeDocStr}')" style="background: #f8fafc; color: #0f172a; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 11px;">📄 Print Record</button>`;
+                }
+            }
+
+            let severityColor = d.severity.includes('Warning') ? '#ea580c' : '#dc2626';
+
+            html += `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 12px; color: #64748b; font-size: 12px;">${dateStr}</td>
+                    <td style="padding: 12px; font-weight: bold; color: #0f172a;">👤 ${d.staffName}</td>
+                    <td style="padding: 12px;"><strong style="color: #334155;">${d.type}</strong><br><span style="font-size: 11px; color: #64748b; font-style: italic;">"${d.details}"</span></td>
+                    <td style="padding: 12px;"><strong style="color: ${severityColor};">${d.severity}</strong></td>
+                    <td style="padding: 12px;">${statusBadge}</td>
+                    <td style="padding: 12px; text-align: right;">${actionBtn}</td>
+                </tr>
+            `;
+        });
+
+        tbody.innerHTML = html || '<tr><td colspan="6" class="text-center" style="padding: 40px; color: #64748b;">No disciplinary records found.</td></tr>';
+    } catch (e) { console.error(e); tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red;">Error loading data.</td></tr>'; }
+};
+
+window.openIssueSanctionModal = async function() {
+    document.getElementById('issueSanctionModal').style.display = 'flex';
+    document.getElementById('sanctionDetails').value = '';
+    
+    let select = document.getElementById('sanctionStaffSelect');
+    select.innerHTML = '<option value="">Loading staff...</option>';
+    
+    try {
+        const snap = await getDocs(query(collection(db, "cashiers"), where("branch", "==", window.sessionUser.branch)));
+        let html = '<option value="">-- Select Staff Member --</option>';
+        let staffList = [];
+        
+        snap.forEach(doc => {
+            if (doc.data().status !== 'Resigned') staffList.push(doc.data().cashierName);
+        });
+        
+        staffList.sort().forEach(s => html += `<option value="${s}">${s}</option>`);
+        select.innerHTML = html;
+    } catch (e) { console.error(e); select.innerHTML = '<option value="">Error loading staff.</option>'; }
+};
+
+window.generateAiNteLetter = function() {
+    let staffName = document.getElementById('sanctionStaffSelect').value;
+    let incidentType = document.getElementById('sanctionType').value;
+    let severity = document.getElementById('sanctionSeverity').value;
+    let detailsArea = document.getElementById('sanctionDetails');
+    let roughDetails = detailsArea.value.trim();
+
+    if (!staffName || !roughDetails) return Swal.fire('Wait', 'Select a staff member and type a short description first.', 'warning');
+
+    let dateStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    
+    let formalLetter = `Subject: Violation of Store Policies\n\nDear ${staffName},\n\nThis letter serves as a formal notice regarding a non-compliance issue observed on ${dateStr}.\n\nINCIDENT SUMMARY:\n${roughDetails}\n\nSEVERITY LEVEL & RESOLUTION:\nThis incident has been recorded as a: ${severity}. We have discussed the critical importance of maintaining strict compliance with store protocols. You are expected to correct this behavior immediately.\n\nPlease be reminded that strict adherence to our policies is essential to ensuring quality operations. Future non-compliance may result in further disciplinary action.\n\nSincerely,\n${window.sessionUser.cashierName}\nManagement, ${window.sessionUser.branch}`;
+
+    detailsArea.value = formalLetter;
+    detailsArea.style.height = '250px';
+    Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Letter drafted!', showConfirmButton: false, timer: 1500});
+};
+
+window.submitNewSanction = async function() {
+    let staffName = document.getElementById('sanctionStaffSelect').value;
+    let type = document.getElementById('sanctionType').value;
+    let severity = document.getElementById('sanctionSeverity').value;
+    let details = document.getElementById('sanctionDetails').value.trim();
+
+    if (!staffName || !details) return Swal.fire('Missing Data', 'Please fill out all fields.', 'warning');
+
+    let btn = document.getElementById('btnSaveSanction');
+    btn.innerText = "⏳ Issuing..."; btn.disabled = true;
+
+    try {
+        await addDoc(collection(db, "hr_sanctions"), {
+            staffName: staffName,
+            branch: window.sessionUser.branch,
+            type: type,
+            severity: severity,
+            details: details,
+            status: "Pending Reply", 
+            issuedBy: window.sessionUser.cashierName,
+            timestamp: serverTimestamp()
+        });
+
+        Swal.fire('✅ Success!', `Notice issued to ${staffName}. Their POS is locked until they reply.`, 'success');
+        document.getElementById('issueSanctionModal').style.display = 'none';
+        window.loadSanctionsDashboard();
+    } catch (e) {
+        console.error(e); Swal.fire('Error', 'Failed to issue notice.', 'error');
+    } finally { btn.innerText = "🚀 Issue Digital Notice"; btn.disabled = false; }
+};
+
+window.resolveSanction = async function(docId, staffName) {
+    if (!confirm(`Mark this issue as resolved for ${staffName}?`)) return;
+    try {
+        await updateDoc(doc(db, "hr_sanctions", docId), { status: "Resolved", resolvedAt: serverTimestamp() });
+        window.loadSanctionsDashboard();
+    } catch (e) { alert("Failed to resolve."); }
+};
+
+window.deleteSanction = async function(docId) {
+    if (!confirm(`Cancel and delete this notice?`)) return;
+    try {
+        await deleteDoc(doc(db, "hr_sanctions", docId));
+        window.loadSanctionsDashboard();
+    } catch (e) { alert("Failed to delete."); }
+};
+
+window.printFormalNTE = function(encodedData) {
+    let d = JSON.parse(decodeURIComponent(encodedData));
+    let issueDate = d.timestamp ? new Date(d.timestamp.seconds * 1000).toLocaleDateString('en-PH', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Unknown Date';
+    let safeDetails = d.details ? d.details.replace(/\n/g, '<br>') : 'No details provided.';
+    let safeReply = d.staffReply ? d.staffReply.replace(/\n/g, '<br>') : 'No reply provided.';
+
+    let printWindow = window.open('', '', 'width=800,height=900');
+    let html = `
+        <html><head><title>Official Record - ${d.staffName}</title>
+        <style>body { font-family: 'Times New Roman', serif; margin: 40px; color: #000; line-height: 1.6; } .box { border: 1px solid #000; padding: 15px; margin-bottom: 25px; min-height: 80px; } @media print { button { display: none; } }</style>
+        </head><body>
+            <h2 style="text-align: center;">OFFICIAL DISCIPLINARY RECORD</h2>
+            <p><b>Date:</b> ${issueDate}<br><b>To:</b> ${d.staffName}<br><b>Violation:</b> ${d.type}<br><b>Severity:</b> ${d.severity}</p>
+            <p><b>I. INCIDENT REPORT</b></p><div class="box">${safeDetails}</div>
+            <p><b>II. EMPLOYEE EXPLANATION</b></p><div class="box">${safeReply}</div>
+            <div style="margin-top: 40px;">
+                <img src="${d.signatureBase64 || ''}" style="height: 60px; display: block; margin-bottom: -10px;">
+                <div style="border-top: 1px solid #000; width: 200px; padding-top: 5px; font-weight: bold;">${d.staffName} (Employee Signature)</div>
+            </div>
+            <script>window.onload = function() { setTimeout(function(){ window.print(); }, 500); }</script>
+        </body></html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+};
+
+// ========================================================
+// 📅 SCHEDULE MANAGER ENGINE (FRANCHISEE LOCKED)
+// ========================================================
+window.currentSchedule = {};
+window.branchConfig = {};
+window.employees = [];
+
+window.loadScheduleFromCloud = async function() {
+    let monthInput = document.getElementById("scheduleMonthSelector").value;
+    if (!monthInput) {
+        let today = new Date();
+        monthInput = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+        document.getElementById("scheduleMonthSelector").value = monthInput;
+    }
+    
+    let [year, month] = monthInput.split('-').map(Number);
+    window.currentYear = year;
+    window.currentMonth = month;
+    let daysInMonth = new Date(year, month, 0).getDate();
+
+    try {
+        // 1. Fetch Staff for this branch
+        const staffSnap = await getDocs(query(collection(db, "cashiers"), where("branch", "==", window.sessionUser.branch)));
+        window.employees = [];
+        staffSnap.forEach(d => {
+            if (d.data().status !== 'Resigned') {
+                window.employees.push({ name: d.data().scheduleNickname || d.data().cashierName, fullName: d.data().cashierName, branch: d.data().branch });
+            }
+        });
+
+        // 2. Fetch the Global Schedule
+        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+        
+        if (schedSnap.exists()) {
+            let appData = schedSnap.data();
+            
+            // Extract only the config for THIS branch
+            window.branchConfig = appData.branchConfig && appData.branchConfig[window.sessionUser.branch] 
+                ? appData.branchConfig[window.sessionUser.branch] 
+                : [
+                    { id: 'm1', name: 'Morning', active: true, days: [0,1,2,3,4,5,6], startTime: '09:00', endTime: '18:00' },
+                    { id: 'n1', name: 'Night', active: true, days: [0,1,2,3,4,5,6], startTime: '18:00', endTime: '03:00' }
+                  ];
+
+            // If the global schedule matches the month we selected, load it!
+            if (appData.currentYear === year && appData.currentMonth === month && appData.currentSchedule) {
+                window.currentSchedule = appData.currentSchedule;
+            } else {
+                // If it's a new month, generate a blank template
+                window.currentSchedule = {};
+            }
+        }
+
+        // Fill in missing days
+        for (let day = 1; day <= daysInMonth; day++) {
+            if (!window.currentSchedule[day]) window.currentSchedule[day] = {};
+            if (!window.currentSchedule[day][window.sessionUser.branch]) {
+                window.currentSchedule[day][window.sessionUser.branch] = { scheduled: {}, rest: [], unavailable: [], swaps: {} };
+                
+                // Auto-fill UNFILLED slots
+                window.branchConfig.filter(s => s.active).forEach(shift => {
+                    window.currentSchedule[day][window.sessionUser.branch].scheduled[shift.id] = "UNFILLED";
+                });
+                // Put everyone on standby
+                window.currentSchedule[day][window.sessionUser.branch].rest = window.employees.map(e => e.name);
+            }
+        }
+
+        window.renderScheduleUI();
+
+    } catch(e) { console.error("Schedule Load Error:", e); }
+};
+
+window.renderScheduleUI = function() {
+    const container = document.getElementById("franchiseScheduleContainer");
+    if(!container) return;
+
+    let branch = window.sessionUser.branch;
+    let daysInMonth = new Date(window.currentYear, window.currentMonth, 0).getDate();
+    let activeShifts = window.branchConfig.filter(s => s.active);
+
+    let html = `<table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                  <thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
+                    <tr><th style="padding: 12px; font-size: 11px; color: #475569; text-transform: uppercase;">Date</th>`;
+    
+    activeShifts.forEach(s => html += `<th style="padding: 12px; font-size: 11px; color: #475569; text-transform: uppercase; text-align: center;">${s.name}</th>`);
+    html += `<th style="padding: 12px; font-size: 11px; color: #d97706; text-transform: uppercase; background: #fffbeb; text-align: center;">Standby / Off</th></tr></thead><tbody>`;
+
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dStr = new Date(window.currentYear, window.currentMonth - 1, day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        html += `<tr style="border-bottom: 1px solid #f1f5f9;"><td style="padding: 12px; font-weight: bold; color: #334155; white-space: nowrap;">${dStr}</td>`;
+
+        let dayData = window.currentSchedule[day][branch] || { scheduled: {}, rest: [] };
+
+        activeShifts.forEach(s => {
+            let val = dayData.scheduled[s.id] || "UNFILLED";
+            let cellHtml = val === "UNFILLED" || val === "N/A"
+                ? `<span onclick="window.openSwapModal(${day}, '${s.id}')" style="color: #ef4444; background: #fef2f2; border: 1px dashed #fca5a5; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: bold; cursor: pointer;">Needs Staff</span>`
+                : `<span onclick="window.openSwapModal(${day}, '${s.id}')" style="color: #0ea5e9; background: #e0f2fe; border: 1px solid #bae6fd; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; cursor: pointer;">${val}</span>`;
+            
+            html += `<td style="padding: 12px; text-align: center;">${cellHtml}</td>`;
+        });
+
+        let restHtml = (dayData.rest || []).map(r => `<span style="color: #d97706; font-size: 11px; font-weight: bold; background: #fffbeb; border: 1px solid #fcd34d; padding: 2px 6px; border-radius: 4px; margin: 2px; display: inline-block;">${r}</span>`).join('');
+        html += `<td style="padding: 12px; text-align: center;">${restHtml || '-'}</td></tr>`;
+    }
+
+    html += `</tbody></table>`;
+    container.innerHTML = html;
+};
+
+window.openSwapModal = function(day, shiftId) {
+    let branch = window.sessionUser.branch;
+    let dayData = window.currentSchedule[day][branch];
+    let curStaff = dayData.scheduled[shiftId];
+    window.swapData = { day, shiftId, curStaff }; 
+
+    let optionsHtml = '<option value="">-- Choose Staff --</option>';
+    
+    // Scheduled Staff
+    optionsHtml += '<optgroup label="🔄 Swap with Scheduled Staff">';
+    for (let sId in dayData.scheduled) {
+        if (sId !== shiftId && dayData.scheduled[sId] !== "UNFILLED" && dayData.scheduled[sId] !== "N/A") {
+            let shiftName = window.branchConfig.find(s => s.id === sId)?.name || sId;
+            optionsHtml += `<option value="shift_${sId}">${dayData.scheduled[sId]} (from ${shiftName})</option>`;
+        }
+    }
+    optionsHtml += '</optgroup>';
+
+    // Standby Staff
+    if (dayData.rest && dayData.rest.length > 0) {
+        optionsHtml += '<optgroup label="☕ Assign from Standby">';
+        dayData.rest.forEach((rStaff, index) => {
+            optionsHtml += `<option value="rest_${index}">${rStaff}</option>`;
+        });
+        optionsHtml += '</optgroup>';
+    }
+
+    let displayCurrent = curStaff === "UNFILLED" ? "No one assigned yet" : curStaff;
+
+    document.getElementById('swapMessage').innerText = `Currently Assigned: ${displayCurrent}`;
+    document.getElementById('swapTarget').innerHTML = optionsHtml;
+    document.getElementById('swapModal').style.display = 'flex';
+};
+
+window.executeSwap = function() {
+    let target = document.getElementById('swapTarget').value;
+    if (!target) return alert("Please select a staff member.");
+
+    const { day, shiftId, curStaff } = window.swapData; 
+    let branch = window.sessionUser.branch;
+    let dayData = window.currentSchedule[day][branch];
+
+    if (target.startsWith('shift_')) {
+        const tSId = target.replace('shift_', '');
+        let newStaff = dayData.scheduled[tSId];
+        dayData.scheduled[shiftId] = newStaff;
+        dayData.scheduled[tSId] = curStaff;
+    } else if (target.startsWith('rest_')) {
+        const rIdx = parseInt(target.replace('rest_', ''));
+        let newStaff = dayData.rest[rIdx];
+        dayData.scheduled[shiftId] = newStaff;
+        
+        if (curStaff !== "UNFILLED" && curStaff !== "N/A") {
+            dayData.rest[rIdx] = curStaff;
+        } else {
+            dayData.rest.splice(rIdx, 1);
+        }
+    }
+
+    document.getElementById('swapModal').style.display = 'none';
+    window.renderScheduleUI();
+    Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Shift Reassigned!', showConfirmButton: false, timer: 1500});
+};
+
+window.saveScheduleToCloud = async function() {
+    Swal.fire({title: 'Saving...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
+    try {
+        // Fetch the global document first so we don't overwrite other branches!
+        const schedRef = doc(db, "settings", "global_schedule");
+        const snap = await getDoc(schedRef);
+        let globalData = snap.exists() ? snap.data() : { branchConfig: {}, currentSchedule: {} };
+
+        // Inject only our branch's data
+        globalData.currentYear = window.currentYear;
+        globalData.currentMonth = window.currentMonth;
+        
+        for (let day in window.currentSchedule) {
+            if (!globalData.currentSchedule[day]) globalData.currentSchedule[day] = {};
+            globalData.currentSchedule[day][window.sessionUser.branch] = window.currentSchedule[day][window.sessionUser.branch];
+        }
+
+        await setDoc(schedRef, globalData, { merge: true });
+        Swal.fire('Saved!', 'Your branch schedule has been synced.', 'success');
+    } catch(e) {
+        console.error(e); Swal.fire('Error', 'Failed to save schedule.', 'error');
+    }
+};
+
+// ========================================================
+// 🧭 HOOKING IT ALL INTO THE ROUTER
+// ========================================================
+const origFranchiseeSwitchView = window.switchView;
+window.switchView = function(viewId) {
+    if (typeof origFranchiseeSwitchView === 'function') origFranchiseeSwitchView(viewId);
+    
+    // Automatically load data when the tab is clicked!
+    if (viewId === 'inbox') window.loadInbox();
+    if (viewId === 'schedule') window.loadScheduleFromCloud();
+    if (viewId === 'sanctions') window.loadSanctionsDashboard();
+};
