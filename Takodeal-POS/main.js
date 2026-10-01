@@ -67,29 +67,69 @@ window.getDoc = getDoc;
 window.setDoc = setDoc;
 
 // =======================================================
-// 🧠 TAKODEAL GLOBAL CACHE ENGINE (COST SAVER)
+// 🧠 TAKODEAL INVENTORY CACHE - BRANCH SAFE
 // =======================================================
 window.TK_CACHE = {
-    inventory: null,
-    lastInventory: 0,
-    ttl: 60 * 1000 // 60-second memory. Stops rapid-tab-switching reads!
+    inventoryByBranch: {},
+    lastInventoryByBranch: {},
+    ttl: 60 * 1000
 };
 
 window.fetchCachedInventory = async function(branch) {
-    let now = Date.now();
-    if (window.TK_CACHE.inventory && (now - window.TK_CACHE.lastInventory < window.TK_CACHE.ttl)) {
-        console.log(`📦 Loaded INVENTORY from RAM (0 Firebase Reads)`);
-        return window.TK_CACHE.inventory;
+    if (!branch) return [];
+
+    const now = Date.now();
+
+    const cachedInventory =
+        window.TK_CACHE.inventoryByBranch[branch];
+
+    const lastLoaded =
+        window.TK_CACHE.lastInventoryByBranch[branch] || 0;
+
+    // Use cache only for THIS branch
+    if (
+        cachedInventory &&
+        (now - lastLoaded < window.TK_CACHE.ttl)
+    ) {
+        console.log(`📦 Loaded ${branch} INVENTORY from cache`);
+        return cachedInventory;
     }
 
-    console.log(`☁️ Fetching INVENTORY from Firebase...`);
-    const snap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch)));
+    console.log(`☁️ Fetching ${branch} INVENTORY from Firebase...`);
+
+    const snap = await window.getDocs(
+        window.query(
+            window.collection(window.db, "inventory"),
+            window.where("branch", "==", branch)
+        )
+    );
+
     let data = [];
-    snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-    
-    window.TK_CACHE.inventory = data;
-    window.TK_CACHE.lastInventory = now;
+
+    snap.forEach(doc => {
+        data.push({
+            id: doc.id,
+            ...doc.data()
+        });
+    });
+
+    // Save inventory separately for each branch
+    window.TK_CACHE.inventoryByBranch[branch] = data;
+    window.TK_CACHE.lastInventoryByBranch[branch] = now;
+
     return data;
+};
+
+
+// Clears inventory cache when inventory changes
+window.clearInventoryCache = function(branch) {
+    if (branch) {
+        delete window.TK_CACHE.inventoryByBranch[branch];
+        delete window.TK_CACHE.lastInventoryByBranch[branch];
+    } else {
+        window.TK_CACHE.inventoryByBranch = {};
+        window.TK_CACHE.lastInventoryByBranch = {};
+    }
 };
 
 // 🔥 THE MISSING FIREBASE BRIDGE 🔥
@@ -340,44 +380,6 @@ window.verifyPin = async function (pin) {
     console.error("Database error:", error);
     return null;
   }
-};
-
-// --- 🔥 INSTANT-BOOT & LIVE REAL-TIME MENU ENGINE ---
-window.processRawItemsIntoMenu = function(rawItems) {
-    let groupedMenu = [];
-    if (!window.masterPOSData) window.masterPOSData = {};
-    window.masterPOSData.phantomVariants = {}; 
-
-    rawItems.forEach(item => {
-        let name = item.name;
-        let match = name.match(/^(.*?)\s+(\d+\s*Pcs|[SML]|Duo|Solo|Trio|Squad)$/i);
-        
-        if (match) {
-            let baseName = match[1].trim(); 
-            let sizeName = match[2].trim(); 
-            
-            let existingBase = groupedMenu.find(i => i.name === baseName && i.category === item.category);
-            if (!existingBase) {
-                let baseItem = { ...item, name: baseName, isGrouped: true };
-                groupedMenu.push(baseItem);
-                window.masterPOSData.phantomVariants[baseName] = [];
-            }
-            
-            // 🔥 PLATFORM PRICING FIX: Store Grab/FP prices inside the variant memory!
-            window.masterPOSData.phantomVariants[baseName].push({
-                realName: item.name,
-                sizeLabel: sizeName,
-                price: parseFloat(item.price || item.basePrice) || 0,
-                grabPrice: parseFloat(item.grabPrice) || parseFloat(item.price || item.basePrice) || 0,
-                foodpandaPrice: parseFloat(item.foodpandaPrice) || parseFloat(item.price || item.basePrice) || 0,
-                id: item.id
-            });
-            window.masterPOSData.phantomVariants[baseName].sort((a, b) => a.price - b.price);
-        } else {
-            groupedMenu.push(item);
-        }
-    });
-    return groupedMenu;
 };
 
 // --- 🔥 INSTANT-BOOT & LIVE REAL-TIME MENU ENGINE ---
