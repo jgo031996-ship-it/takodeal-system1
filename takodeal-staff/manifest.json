@@ -1,9 +1,9 @@
 {
   "name": "Takodeál Staff Portal",
-  "short_name": "Takodeál Staff",
-  "start_url": ".",
+  "short_name": "Takodeál Staff App",
+  "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#f8fafc",
+  "background_color": "#0f172a",
   "theme_color": "#0f766e",
   "icons": [
     {
