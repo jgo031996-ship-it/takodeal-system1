@@ -3072,18 +3072,6 @@ window.validateStockLevels = async function(cartPayload) {
 };
 
 // ==========================================
-// 🚪 SIGN OUT ENGINE (WITH CACHE BUSTING)
-// ==========================================
-window.logoutCashier = function() {
-    if (confirm("Are you sure you want to sign out of this account?")) {
-        localStorage.removeItem('cashierName'); 
-        window.sessionUser = null;
-        // 🔥 THE FIX: Forces the browser to completely dump the cache and reload fresh!
-        window.location.href = window.location.pathname + "?t=" + new Date().getTime(); 
-    }
-};
-
-// ==========================================
 // 💸 REMIT CASH TO HQ ENGINE
 // ==========================================
 window.openRemittanceModal = async function() {
@@ -7177,7 +7165,12 @@ window.logoutCashier = function() {
     localStorage.removeItem('cashierName');
     localStorage.removeItem('cashierBranch');
     localStorage.removeItem('cashierPermissions');
-    location.reload(); // Hard refresh to kick them out
+
+    window.sessionUser = null;
+
+    // Reload fresh
+    window.location.href =
+        window.location.pathname + "?t=" + Date.now();
 };
 
 // ========================================================
