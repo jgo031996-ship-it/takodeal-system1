@@ -4,11 +4,10 @@
 <head>
   <base target="_top">
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <link rel="icon" type="image/jpeg" href="logo.jpg">
   <link rel="apple-touch-icon" href="logo.jpg">
   <link rel="manifest" href="manifest.json">
-  <link rel="stylesheet" href="pos-ui-upgrade.css?v=1.0">
   <style>
     :root {
       /* The warm, golden-tan for buttons/accents */
@@ -343,12 +342,11 @@
         #loginRankingWidget { transform: scale(0.75); transform-origin: top left; }
     }
   </style>
-  <link rel="stylesheet" href="pos-ui-upgrade.css?v=1.0">
 </head>
 
 <body>
 
-  <div id="tkSystemBar" style="background-color: #1A1513; color: #ffffff; width: 100%; height: 28px; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; box-sizing: border-box; font-size: 12px; font-family: 'Segoe UI', Tahoma, sans-serif; z-index: 9999; position: absolute; top: 0; left: 0;">
+  <div style="background-color: #1A1513; color: #ffffff; width: 100%; height: 28px; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; box-sizing: border-box; font-size: 12px; font-family: 'Segoe UI', Tahoma, sans-serif; z-index: 9999; position: absolute; top: 0; left: 0;">
       <div id="liveClock" style="font-weight: 500; letter-spacing: 0.5px;">Loading time...</div>
       <div style="display: flex; align-items: center; gap: 8px; color: #a0a0a0;">
           <span>📶 Takodeal POS V1.0</span>
@@ -792,17 +790,20 @@
     <div class="view-container active" id="view-pos" style="padding: 10px; background: #e2e8f0; width: 100%; height: 100vh; box-sizing: border-box; overflow: hidden;">
         
         <!-- 🔥 THE FIX: Added 'width: 100%; flex: 1;' to this line so it spans the whole screen! -->
-        <div class="tk-pos-shell" style="display: flex; gap: 10px; height: 100%; max-height: calc(100vh - 90px); width: 100%; flex: 1;">
+        <div style="display: flex; gap: 10px; height: 100%; max-height: calc(100vh - 90px); width: 100%; flex: 1;">
             
             <!-- LEFT: MENU SECTION -->
-            <div class="tk-menu-pane" style="flex: 1; display: flex; flex-direction: column; background: white; border-radius: 12px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+            <div style="flex: 1; display: flex; flex-direction: column; background: white; border-radius: 12px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
                 
-                <!-- Dropdown Header (Replaces Horizontal Tabs) -->
-                <div class="tk-menu-toolbar" style="padding: 12px 15px; border-bottom: 2px solid #e2e8f0; background: #f8fafc; display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 22px;">🍔</span>
-                    <select id="menuCategoryDropdown" onchange="window.filterMenu(this.value)" style="flex: 1; padding: 12px 15px; border-radius: 8px; border: 2px solid #bae6fd; outline: none; font-weight: 900; color: #0369a1; font-size: 16px; background: #f0f9ff; cursor: pointer; box-shadow: 0 2px 4px rgba(2, 132, 199, 0.1);">
-                        <option value="All">All Items (Main Menu)</option>
-                    </select>
+                <!-- Category Selector Button (Upgraded to trigger Modal) -->
+                <div style="padding: 15px; border-bottom: 2px solid #e2e8f0; background: #f8fafc; display: flex; align-items: center; gap: 10px;">
+                    <button id="btnCategorySelector" onclick="window.openCategoryModal()" style="flex: 1; padding: 18px 20px; border-radius: 12px; border: 2px solid #bae6fd; outline: none; font-weight: 900; color: #0369a1; font-size: 18px; background: #f0f9ff; cursor: pointer; box-shadow: 0 4px 6px rgba(2, 132, 199, 0.15); display: flex; justify-content: space-between; align-items: center; transition: 0.2s;" onmouseover="this.style.transform='translateY(-2px)';" onmouseout="this.style.transform='translateY(0)';">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span id="currentCategoryIcon" style="font-size: 28px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">🍔</span>
+                            <span id="currentCategoryText" style="letter-spacing: 0.5px;">All Items (Main Menu)</span>
+                        </div>
+                        <span style="font-size: 15px; color: #0ea5e9; background: white; padding: 8px 14px; border-radius: 8px; border: 1px dashed #bae6fd;">▼ Choose Category</span>
+                    </button>
                 </div>
                 
                 <!-- Maximized Menu Items Grid -->
@@ -812,7 +813,7 @@
             </div>
 
             <!-- RIGHT: POS REGISTER CART (WIDENED & BEAUTIFIED) -->
-            <div class="tk-cart-pane" style="width: 420px; background: white; border-radius: 12px; border: 1px solid #cbd5e1; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.08); flex-shrink: 0;">
+            <div style="width: 420px; background: white; border-radius: 12px; border: 1px solid #cbd5e1; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.08); flex-shrink: 0;">
                 
                 <!-- Cart Header (Expanded Buttons) -->
                 <div id="posCartHeader" style="padding: 12px 15px; background: #fff7ed; border-bottom: 2px solid #fdba74; display: flex; gap: 10px; align-items: center; transition: all 0.3s ease;">
@@ -829,7 +830,7 @@
                 </div>
 
                 <!-- Cart Columns Header (Perfectly Aligned) -->
-                <div class="tk-cart-columns" style="display: flex; padding: 10px 15px 10px 20px; font-size: 11px; font-weight: 900; color: #64748b; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; background: #f8fafc; align-items: center;">
+                <div style="display: flex; padding: 10px 15px 10px 20px; font-size: 11px; font-weight: 900; color: #64748b; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; background: #f8fafc; align-items: center;">
                     <div style="flex: 2.5;">Description</div>
                     <div style="flex: 1; text-align: right;">Price</div>
                     <div style="flex: 0.8; text-align: center;">Qty</div>
@@ -843,7 +844,7 @@
                 </ul>
 
                 <!-- Cart Footer / Totals -->
-                <div class="tk-cart-footer" style="padding: 15px; background: #f8fafc; border-top: 2px dashed #cbd5e1;">
+                <div style="padding: 15px; background: #f8fafc; border-top: 2px dashed #cbd5e1;">
                     <div style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 13px; color: #64748b; font-weight: bold;">
                         <span>Total Amount:</span>
                         <span id="displaySubTotal">₱0.00</span>
@@ -2183,18 +2184,37 @@
     }
 
     // ==========================================
-    // 🍔 MENU AND CATEGORY ENGINE (MAXIMIZED)
+    // 🍔 MENU AND CATEGORY ENGINE (MODAL UPGRADE)
     // ==========================================
     const hiddenCategories = ["Prepared Batch", "Prep Batch", "Raw Materials", "Packaging", "Consumables", "Premix"];
 
+    window.openCategoryModal = function() {
+        document.getElementById('categoryModal').style.display = 'flex';
+    };
+
+    window.closeCategoryModal = function() {
+        document.getElementById('categoryModal').style.display = 'none';
+    };
+
     window.buildCategories = function() {
-        let dropdown = document.getElementById('menuCategoryDropdown');
-        if (!dropdown) return;
+        let grid = document.getElementById('categoryModalGrid');
+        if (!grid) return;
         
-        let html = '<option value="All">🍔 All Items (Main Menu)</option>';
+        // 🔥 THE SQUISH FIX: Force the grid to shrink so 5-6 columns fit perfectly!
+        grid.style.gridTemplateColumns = "repeat(auto-fill, minmax(130px, 1fr))";
+        grid.style.gap = "12px";
+
+        // The default "All Items" compact card
+        let html = `
+            <div onclick="window.filterMenu('All', '🍔')" style="background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); border-radius: 12px; padding: 10px; cursor: pointer; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; height: 100px; border: 2px solid #bae6fd; transition: transform 0.15s, box-shadow 0.15s;" onmouseover="this.style.transform='scale(1.03)';" onmouseout="this.style.transform='scale(1)';">
+                <span style="font-size: 32px; margin-bottom: 5px; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));">🍔</span>
+                <span style="color: white; font-weight: 900; font-size: 13px; letter-spacing: 0.5px; line-height: 1.1;">All Items</span>
+            </div>
+        `;
+
         if (window.masterPOSData && window.masterPOSData.categories) {
             window.masterPOSData.categories.forEach(cat => {
-                // Smart Emoji Mapper for "Small Images" effect!
+                // Smart Emoji Mapper
                 let icon = "📁";
                 let c = cat.toLowerCase();
                 if(c.includes('takoyaki')) icon = "🐙";
@@ -2205,14 +2225,33 @@
                 else if(c.includes('fries') || c.includes('snack')) icon = "🍟";
                 else if(c.includes('add-on') || c.includes('extra')) icon = "🧀";
                 
-                html += `<option value="${cat}">${icon} ${cat}</option>`;
+                // Smart Thumbnail Engine
+                let catItemWithImage = window.masterPOSData.items.find(i => i.category === cat && i.image);
+                
+                let bgStyle = catItemWithImage 
+                    ? `background-image: linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.4) 60%, rgba(15, 23, 42, 0.1) 100%), url('${catItemWithImage.image}'); background-size: cover; background-position: center;` 
+                    : `background: #ffffff;`;
+                
+                let textCol = catItemWithImage ? 'white' : '#1e293b';
+                let iconShadow = catItemWithImage ? 'filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));' : '';
+                let borderStyle = catItemWithImage ? 'border: 1px solid #cbd5e1;' : 'border: 2px solid #e2e8f0;';
+
+                let safeCat = cat.replace(/'/g, "\\'");
+                
+                // The Shrunken Category Card
+                html += `
+                    <div onclick="window.filterMenu('${safeCat}', '${icon}')" style="${bgStyle} ${borderStyle} border-radius: 12px; padding: 10px; cursor: pointer; box-shadow: 0 4px 8px rgba(0,0,0,0.08); display: flex; flex-direction: column; align-items: center; justify-content: flex-end; text-align: center; height: 100px; position: relative; overflow: hidden; transition: transform 0.15s, box-shadow 0.15s;" onmouseover="this.style.transform='scale(1.03)'; this.style.boxShadow='0 6px 12px rgba(0,0,0,0.15)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 8px rgba(0,0,0,0.08)';">
+                        <span style="font-size: 32px; margin-bottom: 5px; position: absolute; top: 10px; ${iconShadow}">${icon}</span>
+                        <span style="color: ${textCol}; font-weight: 900; font-size: 12px; text-shadow: ${catItemWithImage ? '0 2px 6px rgba(0,0,0,0.9)' : 'none'}; z-index: 2; line-height: 1.1;">${cat}</span>
+                    </div>
+                `;
             });
         }
-        dropdown.innerHTML = html;
+        grid.innerHTML = html;
         window.renderMenuItems(); 
     };
 
-    window.filterMenu = function(category) {
+    window.filterMenu = function(category, icon = '🍔') {
         let cards = document.querySelectorAll('.ultra-card');
         cards.forEach(card => {
             let itemCat = card.getAttribute('data-category');
@@ -2222,6 +2261,15 @@
                 card.style.display = 'none';
             }
         });
+
+        // 🔥 UI UPDATE: Change the button header to show what they selected
+        let btnIcon = document.getElementById('currentCategoryIcon');
+        let btnText = document.getElementById('currentCategoryText');
+        if (btnIcon) btnIcon.innerText = icon;
+        if (btnText) btnText.innerText = category === 'All' ? 'All Items (Main Menu)' : category;
+
+        // Close the modal instantly
+        window.closeCategoryModal();
     };
 
     window.switchPosPlatform = function(platform) {
@@ -2348,20 +2396,19 @@
             let statusBg = isSoldOut ? '#f1f5f9' : '#dcfce7';
             let statusBorder = isSoldOut ? '#cbd5e1' : '#bbf7d0';
 
-            // Clean product card: image, stock state, name, price, and touch-friendly add button.
-            let displayPrice = Number.isInteger(safePrice) ? safePrice.toFixed(0) : safePrice.toFixed(2);
-            let stockClass = isSoldOut ? 'is-unavailable' : 'is-available';
+            // 🔥 The Beautiful Price-Free Card (Goes Greyscale if Sold Out!)
             html += `
-                <div class="item-card ultra-card" data-category="${catSafe}" data-name="${item.name.toLowerCase()}" onclick="if(systemReady && ${!isSoldOut}) openAddOrderModal('${safeName}', ${safePrice})" style="cursor: ${isSoldOut ? 'not-allowed' : 'pointer'}; ${isSoldOut ? 'filter: grayscale(100%); opacity: 0.72;' : ''}">
-                    <div class="tk-product-image" style="${bgStyle}">
+                <div class="item-card ultra-card" data-category="${catSafe}" data-name="${item.name.toLowerCase()}" onclick="if(systemReady && ${!isSoldOut}) openAddOrderModal('${safeName}', ${safePrice})" style="height: 155px; background: white; border: 1px solid #cbd5e1; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05); cursor: ${isSoldOut ? 'not-allowed' : 'pointer'}; padding: 0; ${isSoldOut ? 'filter: grayscale(100%); opacity: 0.8;' : ''}">
+                    
+                    <div style="height: 55%; width: 100%; ${bgStyle} background-size: cover; background-position: center; position: relative;">
                         ${badgeHtml}
-                        <span class="tk-stock-pill ${stockClass}">${statusText}</span>
                     </div>
-                    <div class="tk-product-body">
-                        <div class="tk-product-name">${displayName}</div>
-                        <div class="tk-product-bottom">
-                            <span class="tk-product-price">₱${displayPrice}</span>
-                            <button type="button" class="tk-product-add" ${isSoldOut ? 'disabled' : ''} aria-label="Add ${displayName}" onclick="event.stopPropagation(); if(systemReady && ${!isSoldOut}) openAddOrderModal('${safeName}', ${safePrice})">+</button>
+                    
+                    <div style="height: 45%; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; align-items: center; background: white; z-index: 2; border-top: 1px solid #f1f5f9; text-align: center;">
+                        <div style="font-weight: 900; color: #1e293b; font-size: 13px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-overflow: ellipsis; white-space: normal; width: 100%;">${displayName}</div>
+                        
+                        <div style="width: 100%; margin-top: 4px;">
+                            <span style="background: ${statusBg}; color: ${statusColor}; border: 1px solid ${statusBorder}; padding: 4px; border-radius: 6px; font-size: 10px; font-weight: 900; display: block; width: 100%; box-sizing: border-box;">${statusText}</span>
                         </div>
                     </div>
                 </div>
@@ -2624,6 +2671,11 @@ window.loadSalesDashboard = async function () {
 
       let isCashTx = !tx.paymentMethod || tx.paymentMethod === 'Cash' || tx.paymentMethod.includes('Split');
       let displayAmount = isCashTx ? `<span style="color:#94a3b8; font-family: monospace; letter-spacing: 2px;">₱***</span>` : `₱${(tx.netTotal || 0).toFixed(2)}`;
+
+      // 🔥 DISCOUNT BADGE INJECTOR
+      if (tx.globalDiscountAmount && tx.globalDiscountAmount > 0) {
+          displayAmount += `<br><span style="background: #fff1f2; color: #dc2626; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; border: 1px solid #fca5a5; display: inline-block; margin-top: 4px;">Discounted</span>`;
+      }
 
       let verifyLabel = '';
       if (!isCashTx && tx.status !== 'Voided') {
@@ -3420,7 +3472,6 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                         let alreadyClaimed = false;
                         reqSnap.forEach(doc => {
                             let rData = doc.data();
-                            // Look for any request type containing "Staff Meal"
                             if (rData.type && rData.type.toLowerCase().includes("staff meal")) {
                                 alreadyClaimed = true;
                             }
@@ -3587,6 +3638,48 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
               }
           }
 
+          // 🔥 INFALLIBLE 1-PER-DAY HARD LIMITER (BLOCKS CHECKOUT) 🔥
+          if (dType === 'staff_meal') {
+              btn.innerText = "⏳ Checking Meal Limits...";
+              let startOfDay = new Date();
+              startOfDay.setHours(0, 0, 0, 0);
+              
+              try {
+                  let expectedCustomerName = staffIdentity.cashierName + " (Staff)";
+                  
+                  // Grab today's transactions and filter locally to guarantee no Firebase index failures!
+                  const txQ = window.query(window.collection(window.db, "transactions"), 
+                      window.where("branch", "==", window.sessionUser.branch), 
+                      window.where("timestamp", ">=", startOfDay)
+                  );
+                  const txSnap = await window.getDocs(txQ);
+                  
+                  let alreadyClaimed = false;
+                  txSnap.forEach(doc => {
+                      let tx = doc.data();
+                      if (tx.status !== "Voided" && tx.customerName === expectedCustomerName && tx.globalDiscountType === 'staff_meal') {
+                          alreadyClaimed = true;
+                      }
+                  });
+
+                  if (alreadyClaimed) {
+                      Swal.fire({
+                          title: 'Limit Reached 🛑', 
+                          text: `${staffIdentity.cashierName} has already claimed their 1 Staff Meal today. Checkout Blocked.`, 
+                          icon: 'error',
+                          customClass: { popup: 'rounded-2xl' }
+                      });
+                      
+                      document.getElementById('checkoutStaffPin').value = ''; // Wipe PIN
+                      document.getElementById('finalCustomerName').value = ''; // Wipe Name
+                      btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; 
+                      return; // 🛑 KILLS THE CHECKOUT PROCESS INSTANTLY
+                  }
+              } catch(e) { 
+                  console.error("Hard Limit Check Error:", e); 
+              }
+          }
+
           window.selectedPaymentMethod = "Salary Deduction";
           let nameSuffix = dType === 'manager_meal' ? " (Manager)" : " (Staff)";
           document.getElementById('finalCustomerName').value = staffIdentity.cashierName + nameSuffix;
@@ -3634,19 +3727,18 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         deliveryAddress: deliveryAddress,
         contactNumber: contactNumber
       };
-      
-        let receiptId = await window.processCheckout(payload);
+
+      let receiptId = await window.processCheckout(payload);
 
       if (receiptId) {
-        // 🔥 GUARANTEED MANAGER ALERT FOR MEALS & DISCOUNTS 🔥
-        let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
+        // 🔥 SECURITY ALARM: ALERTS MANAGER OF DISCOUNTS 🔥
         if (dType !== 'none' && dType !== '') {
             try {
                 let alertMsg = `💸 DISCOUNT FLAG: A [${dType.toUpperCase()}] discount was applied to Order #${receiptId}. Please verify if this is valid.`;
                 
                 if (dType === 'staff_meal' || dType === 'manager_meal') {
-                    let custName = document.getElementById('finalCustomerName') ? document.getElementById('finalCustomerName').value : 'Staff';
-                    alertMsg = `🍔 MEAL CLAIMED: ${custName} claimed a meal allowance on Order #${receiptId}.`;
+                    let cName = document.getElementById('finalCustomerName') ? document.getElementById('finalCustomerName').value : 'Staff';
+                    alertMsg = `🍔 MEAL CLAIMED: ${cName} claimed a meal allowance on Order #${receiptId}.`;
                 }
 
                 await window.addDoc(window.collection(window.db, "manager_alerts"), {
@@ -3677,14 +3769,6 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                     timestamp: window.serverTimestamp()
                 });
 
-                await window.addDoc(window.collection(window.db, "manager_alerts"), {
-                    type: "STAFF_MEAL_DEDUCTION",
-                    branch: window.sessionUser.branch,
-                    cashier: staffIdentity.cashierName,
-                    message: `🍔 ${mealTypeLabel.toUpperCase()}: ${staffIdentity.cashierName} ordered ${shortDesc}. ₱${payload.netTotal.toFixed(2)} is pending for payroll deduction.`,
-                    timestamp: window.serverTimestamp(),
-                    isRead: false
-                });
                 let pinBox = document.getElementById('checkoutStaffPin');
                 if (pinBox) pinBox.value = '';
             } catch(e) { console.error("Failed to log meal to inbox:", e); }
@@ -3739,7 +3823,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         alert("Network Error: Could not save to database.");
         btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false;
       }
-    }
+    };
 
 // ==========================================
 // 🖨️ ULTIMATE STANDALONE PRINTER ENGINE (WITH LOGOS)
@@ -4814,5 +4898,21 @@ window.showMobileOrders = function() {
         🛡️ Owner Access
     </button>
 </div>
+
+  <!-- 🗂️ ULTRA TACTILE CATEGORY MODAL -->
+  <div class="overlay" id="categoryModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.85); z-index: 100000; justify-content: center; align-items: center; backdrop-filter: blur(8px);">
+      <div style="background: #f8fafc; width: 900px; max-width: 95%; height: 85vh; border-radius: 20px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5); border: 1px solid #cbd5e1;">
+          <div style="background: #0ea5e9; padding: 25px 30px; color: white; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #0284c7;">
+              <h2 style="margin: 0; font-size: 24px; font-weight: 900; letter-spacing: 1px; display: flex; align-items: center; gap: 12px;"><span style="font-size: 28px;">🗂️</span> Select Menu Category</h2>
+              <button onclick="window.closeCategoryModal()" style="background: rgba(255,255,255,0.2); border: none; font-size: 28px; width: 44px; height: 44px; border-radius: 12px; color: white; cursor: pointer; font-weight: bold; transition: 0.2s; display: flex; align-items: center; justify-content: center;">✖</button>
+          </div>
+          <div style="padding: 30px; overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch;">
+              <div id="categoryModalGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px;">
+                  <!-- Thumbnails generated by JS -->
+                  <div style="text-align: center; grid-column: 1/-1; padding: 40px; color: #94a3b8; font-weight: bold; font-size: 18px;">Loading Categories...</div>
+              </div>
+          </div>
+      </div>
+  </div>
 </body>
 </html>
