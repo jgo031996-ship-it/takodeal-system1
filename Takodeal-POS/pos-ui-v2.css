@@ -1161,3 +1161,272 @@ body.tk-ui-v2.tk-photo-pos .tk-category-option {
     transition: none;
   }
 }
+
+/* Compact category toolbar */
+body.tk-ui-v2.tk-photo-pos #tkCategoryPills {
+  display: none !important;
+}
+body.tk-ui-v2.tk-photo-pos .tk-menu-toolbar {
+  flex-wrap: nowrap;
+  margin-bottom: 0 !important;
+}
+body.tk-ui-v2.tk-photo-pos #tkBrowseCategories {
+  order: 0;
+  flex: 0 0 auto;
+}
+body.tk-ui-v2.tk-photo-pos .tk-menu-heading {
+  order: 1;
+  flex: 1 1 0;
+}
+body.tk-ui-v2.tk-photo-pos #tkCartToggle {
+  order: 2;
+}
+
+/* Fit the popups above the keyboard */
+#checkoutModal,
+#variantModal {
+  top: var(--tk-visible-top, 0px) !important;
+  height: var(--tk-visible-height, 100dvh) !important;
+  padding: 8px !important;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+#checkoutModal.tk-compact-checkout .checkout-modal,
+#variantModal .variant-modal {
+  max-height: calc(var(--tk-visible-height, 100dvh) - 16px) !important;
+  min-height: 0;
+  margin: 0 !important;
+}
+#checkoutModal.tk-compact-checkout .modal-head,
+#checkoutModal.tk-compact-checkout .modal-foot,
+#variantModal .modal-head,
+#variantModal .modal-foot {
+  flex-shrink: 0;
+}
+#checkoutModal.tk-compact-checkout .modal-body,
+#variantModal .modal-body {
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+#checkoutModal.tk-compact-checkout .modal-body > *,
+#variantModal .modal-body > * {
+  flex-shrink: 0;
+}
+
+/* Smaller payment tiles while typing */
+#checkoutModal.tk-checkout-typing .pay-btn {
+  min-height: 42px !important;
+  padding: 8px 5px !important;
+}
+#checkoutModal.tk-checkout-typing .pay-btn::before {
+  display: none;
+}
+#checkoutModal.tk-checkout-typing .modal-head {
+  padding: 8px 16px !important;
+}
+#checkoutModal.tk-checkout-typing .modal-body {
+  gap: 8px !important;
+}
+#checkoutModal.tk-checkout-typing .modal-foot {
+  padding: 8px 16px !important;
+}
+#checkoutModal.tk-checkout-typing .tk-amount-entry {
+  margin-top: 8px;
+}
+
+/* Add Order: simple cream and espresso theme */
+#variantModal .variant-modal {
+  width: min(560px, calc(100vw - 16px)) !important;
+  border: 1px solid #e9e2d8 !important;
+  border-radius: 22px !important;
+  background: #fff !important;
+}
+#variantModal .modal-head {
+  padding: 14px 18px !important;
+  background: #fcfaf6 !important;
+  border-bottom: 1px solid #e9e2d8 !important;
+  color: #30261e;
+  font-size: 17px !important;
+}
+#variantModal .close-modal {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 12px;
+  background: #f1ece4;
+  color: #746352;
+  font-size: 18px;
+}
+#variantModal .modal-body {
+  padding: 16px 18px !important;
+  background: #fff !important;
+}
+
+/* Smaller product banner */
+#variantModal #modalDynamicImage > div {
+  margin-bottom: 14px !important;
+  border: 0 !important;
+  border-radius: 16px !important;
+  background: #f8f5ef !important;
+  box-shadow: none !important;
+}
+#variantModal #modalDynamicImage img {
+  height: 120px !important;
+  max-height: 120px !important;
+  object-fit: cover !important;
+  border-radius: 16px !important;
+}
+#variantModal .section-title {
+  color: #827568 !important;
+  font-size: 11px !important;
+  letter-spacing: .5px;
+}
+
+/* Compact size selection */
+#variantModal #variantOptions > div {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px !important;
+  margin-bottom: 12px !important;
+}
+#variantModal .size-btn {
+  min-width: 0 !important;
+  min-height: 66px;
+  padding: 10px 8px !important;
+  border: 1px solid #e9e2d8 !important;
+  border-radius: 13px !important;
+  background: #faf8f4 !important;
+  box-shadow: none !important;
+}
+#variantModal .size-btn.active {
+  border: 2px solid var(--tk-gold) !important;
+  background: var(--tk-gold-soft) !important;
+}
+#variantModal .sz-name {
+  color: #30261e !important;
+  font-size: 14px;
+}
+#variantModal .sz-price {
+  color: #92703a !important;
+  font-size: 12px;
+}
+
+/* Flavor, notes and quantity */
+#variantModal .input-box {
+  min-height: 46px !important;
+  border: 1px solid #e9e2d8 !important;
+  border-radius: 12px !important;
+  color: #30261e !important;
+  background: #faf8f4 !important;
+  font-size: 16px !important;
+}
+#variantModal .input-box:disabled {
+  background: #eeeae3 !important;
+  color: #827568 !important;
+}
+#variantModal .btn-qty-small {
+  width: 44px !important;
+  height: 44px !important;
+  flex-shrink: 0;
+  border: 1px solid #e9e2d8 !important;
+  border-radius: 11px !important;
+  background: #fff !important;
+  color: #4b3b2e !important;
+  font-size: 20px !important;
+}
+#variantModal #modalMainQty {
+  height: 44px !important;
+  border: 1px solid var(--tk-gold) !important;
+  border-radius: 11px;
+  background: var(--tk-gold-soft) !important;
+  color: #4b3b2e !important;
+  font-size: 24px !important;
+}
+
+/* Add-ons */
+#variantModal #extraAddonListContainer > div,
+#variantModal #mixMatchList > div {
+  padding: 10px !important;
+  border: 1px solid #e9e2d8 !important;
+  border-radius: 13px !important;
+  background: #faf8f4 !important;
+}
+#variantModal #extraAddonListContainer > div > div:first-child {
+  min-width: 0;
+  padding-right: 8px;
+}
+#variantModal #extraAddonListContainer > div > div:last-child {
+  flex-shrink: 0;
+  gap: 6px !important;
+}
+#variantModal #btnToggleMixMatch,
+#variantModal #orderTypeToggleIcon,
+#variantModal #mixMatchCounter {
+  color: #746352 !important;
+}
+#variantModal #btnToggleMixMatch,
+#variantModal #orderTypePanel,
+#variantModal #mixMatchPanel {
+  border-color: #e9e2d8 !important;
+  background: #faf8f4 !important;
+  border-radius: 12px !important;
+}
+#variantModal .modal-body > div > button {
+  min-height: 46px;
+  border: 1px solid #e9e2d8 !important;
+  border-radius: 12px !important;
+  color: #746352 !important;
+  background: #faf8f4 !important;
+}
+
+/* Discount buttons */
+#variantModal .var-btn {
+  min-height: 44px;
+  border: 1px solid #e9e2d8 !important;
+  border-radius: 11px !important;
+  background: #faf8f4 !important;
+  color: #746352 !important;
+}
+#variantModal .var-btn.active {
+  background: #30261e !important;
+  border-color: #30261e !important;
+  color: #fff !important;
+}
+
+/* Fixed action buttons */
+#variantModal .modal-foot {
+  padding: 12px 18px !important;
+  background: #fcfaf6 !important;
+  border-top: 1px solid #e9e2d8 !important;
+}
+#variantModal .modal-foot button {
+  min-height: 48px;
+  border-radius: 13px !important;
+  font-size: 14px !important;
+}
+#variantModal .btn-clear {
+  border-color: #e9e2d8 !important;
+  background: #fff !important;
+  color: #746352 !important;
+}
+
+@media (max-width: 768px) {
+  body.tk-ui-v2.tk-photo-pos .tk-menu-heading strong {
+    font-size: 15px;
+  }
+}
+@media (max-width: 480px) {
+  body.tk-ui-v2.tk-photo-pos .tk-menu-heading {
+    display: none;
+  }
+  body.tk-ui-v2.tk-photo-pos #tkCartToggle {
+    margin-left: auto;
+  }
+  #variantModal #variantOptions > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
