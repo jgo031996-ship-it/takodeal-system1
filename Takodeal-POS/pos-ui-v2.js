@@ -306,3 +306,37 @@
   if (document.readyState === 'complete') install();
   else window.addEventListener('load', install, { once: true });
 })();
+
+/* Restore platform colours through the existing switch function */
+(() => {
+  function updatePlatformTheme() {
+    const platform = window.posPlatform || 'Standard';
+
+    document.body.dataset.posTheme = platform;
+    document.body.classList.toggle(
+      'tk-delivery-theme',
+      platform === 'Grab' || platform === 'Foodpanda'
+    );
+  }
+
+  function installPlatformTheme() {
+    const originalSwitch = window.switchPosPlatform;
+    if (typeof originalSwitch !== 'function') return;
+
+    window.switchPosPlatform = function (...args) {
+      const result = originalSwitch.apply(this, args);
+      updatePlatformTheme();
+      return result;
+    };
+
+    updatePlatformTheme();
+  }
+
+  if (document.readyState === 'complete') {
+    installPlatformTheme();
+  } else {
+    window.addEventListener('load', installPlatformTheme, {
+      once: true
+    });
+  }
+})();
