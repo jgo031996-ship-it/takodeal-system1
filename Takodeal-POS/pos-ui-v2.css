@@ -1651,3 +1651,508 @@ body.tk-ui-v2 .tk-work-tab.active { display: block !important; overflow-y: auto 
   .manual-count-row > td:nth-child(2)::before { content: 'Actual count'; display: block; font-size: 10px; color: #958777; margin-bottom: 4px; }
   .manual-count-row > td:nth-child(3)::before { content: 'Maintaining'; display: block; font-size: 10px; color: #958777; margin-bottom: 4px; }
 }
+
+/* TAKODEAL: compact POS, sidebar and shift windows */
+body.tk-ui-v2.tk-frame .sidebar {
+  width: 210px !important;
+  background: #241b17 !important;
+}
+body.tk-ui-v2.tk-frame .sidebar * { box-sizing: border-box; }
+body.tk-ui-v2.tk-frame .sidebar.collapsed { width: 64px !important; }
+body.tk-ui-v2.tk-frame .sidebar-header {
+  height: 62px !important;
+  min-height: 62px !important;
+  flex-shrink: 0;
+  padding: 0 !important;
+}
+body.tk-ui-v2.tk-frame .sidebar .sidebar-header .sidebar-header {
+  height: 62px !important;
+  padding: 8px !important;
+}
+body.tk-ui-v2.tk-frame .brand-container { padding: 4px !important; }
+body.tk-ui-v2.tk-frame .brand-container img {
+  width: 34px !important;
+  height: 34px !important;
+}
+body.tk-ui-v2.tk-frame .nav-menu {
+  padding: 6px !important;
+  gap: 3px;
+  min-height: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+body.tk-ui-v2.tk-frame .nav-item {
+  min-height: 44px !important;
+  padding: 10px 12px !important;
+  margin: 2px 0 !important;
+  border-radius: 11px !important;
+  gap: 10px !important;
+  transform: none !important;
+  font-size: 12px;
+}
+body.tk-ui-v2.tk-frame .nav-item.active {
+  background: #f5a623 !important;
+  color: #30261e !important;
+  box-shadow: none !important;
+}
+body.tk-ui-v2.tk-frame .nav-item:hover { background: #49382b; }
+
+.tk-line-icon {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  min-width: 24px !important;
+  height: 24px;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.tk-line-icon svg {
+  width: 22px;
+  height: 22px;
+  pointer-events: none;
+}
+body.tk-ui-v2.tk-frame .nav-item .tk-line-icon {
+  transform: none !important;
+}
+
+.tk-sidebar-tools {
+  flex-shrink: 0;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid #493a2e;
+}
+.tk-side-settings { min-width: 0; }
+
+body.tk-ui-v2.tk-frame .tk-side-settings > button,
+body.tk-ui-v2.tk-frame #btnTopShift {
+  width: 100%;
+  min-height: 44px;
+  display: flex !important;
+  align-items: center;
+  gap: 10px !important;
+  padding: 10px !important;
+  border-radius: 11px !important;
+  font-size: 12px !important;
+  font-weight: 800;
+  box-shadow: none !important;
+  cursor: pointer;
+}
+body.tk-ui-v2.tk-frame .tk-side-settings > button {
+  background: #392c23 !important;
+  border: 1px solid #554234 !important;
+  color: #f2e8d8 !important;
+}
+body.tk-ui-v2.tk-frame #btnTopShift {
+  background: #493126 !important;
+  border: 1px solid #73513e !important;
+  color: #ffd9bc !important;
+}
+body.tk-ui-v2.tk-frame #btnTopShift[data-tk-active="true"] {
+  background: #243d2d !important;
+  border-color: #416d4a !important;
+  color: #b7e6be !important;
+}
+body.tk-ui-v2.tk-frame .sidebar.collapsed .tk-tool-label {
+  display: none;
+}
+body.tk-ui-v2.tk-frame .sidebar.collapsed .tk-sidebar-tools button {
+  justify-content: center;
+}
+body.tk-ui-v2.tk-frame .sidebar-footer {
+  display: block !important;
+  flex-shrink: 0;
+  padding: 8px !important;
+}
+body.tk-ui-v2.tk-frame .sidebar.collapsed .f-text,
+body.tk-ui-v2.tk-frame .sidebar.collapsed .logout-text {
+  display: none !important;
+}
+body.tk-ui-v2.tk-frame .sidebar.collapsed .footer-info {
+  justify-content: center;
+}
+body.tk-ui-v2.tk-frame .logout-btn {
+  min-height: 44px;
+  border-radius: 11px !important;
+}
+
+/* Settings popup opens beside the sidebar */
+body.tk-ui-v2.tk-frame #posSettingsDropdown {
+  position: fixed !important;
+  top: var(--tk-settings-y, 80px) !important;
+  left: var(--tk-settings-x, 76px) !important;
+  right: auto !important;
+  width: var(--tk-settings-width, 280px) !important;
+  min-width: 0 !important;
+  max-height: var(--tk-settings-height, 80dvh);
+  overflow-y: auto;
+  padding: 12px !important;
+  gap: 8px !important;
+  border: 1px solid #e9e2d8 !important;
+  border-radius: 18px !important;
+  background: #fff !important;
+  box-shadow: 0 12px 40px rgb(48 38 30 / 18%) !important;
+  z-index: 100050 !important;
+  box-sizing: border-box;
+}
+body.tk-ui-v2.tk-frame #posSettingsDropdown button {
+  min-height: 44px;
+  font-size: 13px !important;
+  border-radius: 11px !important;
+  box-shadow: none !important;
+}
+body.tk-ui-v2.tk-frame #posSettingsDropdown label {
+  border-radius: 11px !important;
+  background: #faf8f4 !important;
+  color: #746352 !important;
+}
+body.tk-ui-v2.tk-frame #posSettingsDropdown input {
+  accent-color: #f5a623 !important;
+}
+
+/* Reclaim the POS title-bar space */
+body.tk-ui-v2.tk-frame .top-bar {
+  height: 44px !important;
+  flex: 0 0 44px;
+  padding: 6px 12px !important;
+  box-sizing: border-box;
+}
+body.tk-ui-v2.tk-frame #topBarTitle { font-size: 17px !important; }
+body.tk-ui-v2.tk-frame.tk-pos-focused .top-bar {
+  display: none !important;
+}
+body.tk-ui-v2.tk-frame #globalShiftLockout { top: 44px !important; }
+body.tk-ui-v2.tk-frame.tk-pos-focused #globalShiftLockout {
+  top: 0 !important;
+}
+
+/* Compact menu and current order */
+body.tk-ui-v2.tk-photo-pos.tk-frame #view-pos {
+  padding: 4px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-pos-shell {
+  grid-template-columns: minmax(0, 1fr) clamp(270px, 28vw, 340px) !important;
+  gap: 8px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-menu-shell,
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-cart-shell {
+  border-radius: 16px !important;
+  box-shadow: none !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-menu-shell > div:first-child {
+  padding: 8px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-menu-toolbar {
+  gap: 8px !important;
+  margin-bottom: 0 !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-menu-heading strong {
+  font-size: 16px;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-menu-heading > span {
+  font-size: 11px;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame #tkBrowseCategories {
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: 11px;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame #menuGrid {
+  padding: 8px !important;
+  gap: 8px !important;
+  grid-template-columns: repeat(auto-fill, minmax(138px, 1fr)) !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame #menuGrid .tk-product-card {
+  min-height: 204px;
+  border-radius: 14px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-product-media {
+  height: 112px !important;
+  flex-basis: 112px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-product-info {
+  min-height: 84px;
+  padding: 8px !important;
+  gap: 4px 6px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-product-name {
+  font-size: 13px;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-product-price {
+  font-size: 15px;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame #posCartHeader {
+  padding: 8px !important;
+  gap: 6px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-order-heading {
+  margin-bottom: 0;
+  gap: 6px;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-order-heading strong {
+  font-size: 16px;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-order-heading > span {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame #posPlatformSelect,
+body.tk-ui-v2.tk-photo-pos.tk-frame #mainOrderType {
+  min-height: 44px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame #cartList {
+  padding: 8px !important;
+  gap: 8px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame #cartList .tk-cart-line {
+  padding: 10px !important;
+  border-radius: 13px;
+  gap: 6px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame #cartList .tk-cart-line > div:first-child > span {
+  font-size: 13px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame .tk-cart-shell > div:last-child {
+  padding: 10px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame #displayGrandTotal {
+  font-size: 24px !important;
+}
+body.tk-ui-v2.tk-photo-pos.tk-frame #btnMainPlaceOrder {
+  min-height: 48px;
+  font-size: 14px !important;
+}
+
+/* Shift management, Z-reading and branch expenses */
+#shiftModal,
+#endShiftModal,
+#expenseModal {
+  top: var(--tk-visible-top, 0px) !important;
+  height: var(--tk-visible-height, 100dvh) !important;
+  padding: 8px !important;
+  box-sizing: border-box;
+  background: rgb(36 27 23 / 55%) !important;
+  backdrop-filter: blur(4px);
+}
+#shiftModal *,
+#endShiftModal *,
+#expenseModal * {
+  box-sizing: border-box;
+}
+#shiftModal > .modal,
+#endShiftModal > .modal,
+#expenseModal > .modal {
+  max-width: 100% !important;
+  max-height: calc(var(--tk-visible-height, 100dvh) - 16px) !important;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e9e2d8 !important;
+  border-radius: 20px !important;
+  background: #fff !important;
+  overflow: hidden;
+}
+#shiftModal > .modal { width: min(480px, 100%) !important; }
+#endShiftModal > .modal { width: min(1100px, 100%) !important; }
+#expenseModal > .modal { width: min(620px, 100%) !important; }
+
+#shiftModal .modal-head,
+#endShiftModal .modal-head,
+#expenseModal > .modal > div:first-child {
+  flex-shrink: 0;
+  padding: 14px 18px !important;
+  background: #fcfaf6 !important;
+  color: #30261e !important;
+  border-bottom: 1px solid #e9e2d8 !important;
+  font-size: 17px !important;
+}
+#shiftModal .close-modal,
+#endShiftModal .close-modal,
+#expenseModal > .modal > div:first-child > span:last-child {
+  min-width: 44px;
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 11px;
+  color: #746352;
+  background: #f1ece4;
+}
+#shiftModal .modal-body,
+#endShiftModal .modal-body,
+#expenseModal > .modal > div:nth-child(2) {
+  min-height: 0;
+  padding: 16px !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  background: #fff !important;
+}
+#shiftModal button,
+#endShiftModal button,
+#expenseModal button {
+  min-height: 44px;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  font-size: 13px !important;
+  touch-action: manipulation;
+}
+#shiftModal input,
+#endShiftModal input,
+#expenseModal input,
+#expenseModal select {
+  min-height: 44px;
+  border: 1px solid #e9e2d8 !important;
+  border-radius: 11px !important;
+  font-size: 16px !important;
+  min-width: 0;
+}
+#shiftActiveDetails {
+  line-height: 1.5;
+  background: #faf8f4;
+  padding: 12px !important;
+  border-radius: 13px;
+  color: #746352 !important;
+}
+#shiftModal .shift-section {
+  padding: 12px;
+  border: 1px solid #e9e2d8 !important;
+  border-radius: 14px;
+  background: #faf8f4;
+}
+#shiftModal .shift-section-title {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #4b3b2e;
+}
+#shiftModal .shift-row { padding: 8px 0; }
+#btnOpenShiftSubmit,
+#btnCloseShiftSubmit {
+  background: #f5a623 !important;
+  color: #30261e !important;
+  border: 0 !important;
+}
+#shiftViewClose > div:last-child {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px !important;
+  margin-top: 14px !important;
+}
+#endShiftModal .modal-body {
+  display: grid !important;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px !important;
+  align-items: start;
+}
+#endShiftModal .modal-body > div {
+  min-width: 0 !important;
+  max-height: none !important;
+  padding: 14px !important;
+  border: 1px solid #e9e2d8 !important;
+  border-radius: 15px !important;
+  background: #faf8f4 !important;
+}
+#endShiftModal h3 {
+  margin: 0 0 12px !important;
+  font-size: 15px !important;
+  color: #4b3b2e !important;
+  border-bottom: 1px solid #e9e2d8 !important;
+  padding-bottom: 10px !important;
+}
+#endShiftModal p {
+  color: #86796b !important;
+  line-height: 1.5;
+}
+#endShiftModal table {
+  width: 100%;
+  border-collapse: collapse;
+}
+#endShiftModal th {
+  font-size: 11px;
+  color: #827568;
+}
+#endShiftModal td { font-size: 13px; }
+#dynamicBlindCountList > div {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+#dynamicBlindCountList input {
+  min-width: 64px;
+  width: 64px !important;
+  padding: 6px !important;
+  text-align: center;
+}
+#endShiftModal > .modal > div:last-child,
+#expenseModal > .modal > div:last-child {
+  flex-shrink: 0;
+  padding: 12px 16px !important;
+  background: #fcfaf6 !important;
+  border-top: 1px solid #e9e2d8 !important;
+  gap: 8px !important;
+}
+#expenseModal > .modal > div:nth-child(2) > div {
+  border-color: #e9e2d8 !important;
+  border-radius: 14px !important;
+}
+#expenseModal thead { background: #30261e !important; }
+#expenseModal button[onclick*="addExpenseToCart"] {
+  background: #f5a623 !important;
+  color: #30261e !important;
+}
+#expenseModal .tk-expense-fields {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px !important;
+}
+#expenseModal .tk-expense-fields > div { min-width: 0; }
+#expenseModal .tk-expense-fields > div:last-child {
+  grid-column: 1 / -1;
+}
+#expenseModal .tk-expense-fields button { width: 100%; }
+
+@media (max-width: 1180px) {
+  body.tk-ui-v2.tk-frame .sidebar { width: 64px !important; }
+  body.tk-ui-v2.tk-frame .tk-tool-label,
+  body.tk-ui-v2.tk-frame .f-text,
+  body.tk-ui-v2.tk-frame .logout-text {
+    display: none;
+  }
+  body.tk-ui-v2.tk-frame .footer-info { justify-content: center; }
+  body.tk-ui-v2.tk-frame .tk-sidebar-tools button {
+    justify-content: center;
+  }
+}
+@media (max-width: 900px) {
+  #endShiftModal .modal-body {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  #endShiftModal .modal-body > div:last-child {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 768px) {
+  body.tk-ui-v2.tk-frame .sidebar.tk-mobile-menu-open {
+    width: auto !important;
+  }
+  body.tk-ui-v2.tk-frame .sidebar.tk-mobile-menu-open .tk-tool-label,
+  body.tk-ui-v2.tk-frame .sidebar.tk-mobile-menu-open .f-text,
+  body.tk-ui-v2.tk-frame .sidebar.tk-mobile-menu-open .logout-text {
+    display: inline !important;
+  }
+  body.tk-ui-v2.tk-frame .sidebar.tk-mobile-menu-open .tk-sidebar-tools {
+    grid-template-columns: 1fr 1fr;
+  }
+  body.tk-ui-v2.tk-photo-pos.tk-frame #menuGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+@media (max-width: 620px) {
+  #endShiftModal .modal-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #endShiftModal .modal-body > div:last-child { grid-column: auto; }
+  #shiftViewClose > div:last-child button {
+    flex: 1 1 100% !important;
+  }
+}
