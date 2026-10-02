@@ -769,3 +769,14 @@ body.tk-ui-v2.tk-delivery-theme #displayGrandTotal {
 #checkoutModal.tk-compact-checkout .modal-body > div {
   margin-top: 0 !important;
 }
+
+/* Remove the search row */
+body.tk-ui-v2 #tkMenuSearch,
+body.tk-ui-v2 #tkMenuCount {
+  display: none !important;
+}
+
+body.tk-ui-v2 .tk-menu-toolbar {
+  margin-bottom: 0 !important;
+  justify-content: flex-end;
+}
