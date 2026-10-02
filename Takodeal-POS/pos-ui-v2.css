@@ -589,3 +589,183 @@ body.tk-ui-v2.tk-delivery-theme .tk-product-price,
 body.tk-ui-v2.tk-delivery-theme #displayGrandTotal {
   color: var(--primary) !important;
 }
+
+/* Compact checkout layout */
+#checkoutModal.tk-compact-checkout .checkout-modal {
+  width: min(500px, calc(100vw - 24px)) !important;
+  max-height: 90vh !important;
+  max-height: 90dvh !important;
+  height: auto !important;
+}
+#checkoutModal.tk-meal-mode .checkout-modal {
+  width: min(420px, calc(100vw - 24px)) !important;
+}
+#checkoutModal.tk-compact-checkout .modal-head {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px !important;
+  gap: 10px;
+}
+#checkoutModal.tk-compact-checkout .close-modal {
+  display: none;
+}
+#checkoutModal .tk-checkout-back {
+  border: 0;
+  background: transparent;
+  padding: 6px 0;
+  color: #334155;
+  cursor: pointer;
+  font-size: 14px;
+}
+#checkoutModal.tk-compact-checkout .checkout-yellow-box {
+  display: flex !important;
+  align-items: baseline;
+  gap: 6px;
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+#checkoutModal.tk-compact-checkout .checkout-yellow-box > div:first-child {
+  color: #334155 !important;
+  font-size: 13px !important;
+  margin: 0 !important;
+}
+#checkoutModal.tk-compact-checkout #checkoutTotalPayable {
+  font-size: 18px !important;
+  color: #0f172a !important;
+  white-space: nowrap;
+}
+#checkoutModal.tk-compact-checkout .modal-body {
+  display: flex !important;
+  flex-direction: column;
+  gap: 12px !important;
+  min-height: 0;
+  padding: 0 16px 14px !important;
+  overflow-y: auto;
+}
+#checkoutModal.tk-compact-checkout .numpad-grid {
+  display: none !important;
+}
+#checkoutModal.tk-compact-checkout .section-title {
+  margin: 0 0 10px !important;
+  color: #0f172a !important;
+  font-size: 14px !important;
+}
+#checkoutModal.tk-compact-checkout .payment-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+}
+#checkoutModal.tk-compact-checkout .pay-btn {
+  min-height: 76px !important;
+  padding: 10px 5px !important;
+  font-size: 12px !important;
+  white-space: normal;
+  color: #334155 !important;
+}
+#checkoutModal.tk-compact-checkout .pay-btn::before {
+  content: attr(data-pay-icon);
+  display: block;
+  margin-bottom: 5px;
+  font-size: 22px;
+  line-height: 26px;
+}
+#checkoutModal .pay-btn[data-pay-kind="gcash"]::before {
+  color: #087cff;
+}
+#checkoutModal .pay-btn[data-pay-kind="grab"]::before {
+  color: #16a34a;
+  font-size: 19px;
+  font-weight: 900;
+}
+#checkoutModal.tk-compact-checkout .pay-btn.active {
+  border-color: var(--tk-gold) !important;
+  background: var(--tk-gold-soft) !important;
+}
+#checkoutModal .tk-amount-entry {
+  margin-top: 14px;
+}
+#checkoutModal .tk-amount-entry label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #334155;
+}
+#checkoutModal .tk-amount-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, auto);
+  gap: 6px;
+}
+#checkoutModal .tk-amount-row input,
+#checkoutModal .tk-amount-row button {
+  min-width: 0;
+  min-height: 42px;
+  border: 1px solid var(--tk-line);
+  border-radius: 8px;
+  padding: 8px;
+}
+#checkoutModal .tk-amount-row input {
+  width: 100%;
+  background: white;
+  font-size: 16px;
+}
+#checkoutModal .tk-amount-row button {
+  background: #f3f4f6;
+  color: #334155;
+  font-size: 11px;
+  cursor: pointer;
+}
+#checkoutModal.tk-compact-checkout .checkout-grey-box {
+  display: flex !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+}
+#checkoutModal.tk-compact-checkout .checkout-grey-box > div:first-child {
+  display: none;
+}
+#checkoutModal.tk-compact-checkout .checkout-grey-box > div:last-child {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+#checkoutModal.tk-compact-checkout #checkoutChange {
+  font-size: 18px !important;
+  color: #16a34a !important;
+}
+#checkoutModal.tk-meal-mode .checkout-grey-box {
+  display: none !important;
+}
+#checkoutModal #tkCheckoutExtras summary {
+  padding: 10px 0;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+}
+#checkoutModal .tk-discount-box {
+  padding: 12px !important;
+  margin: 0 !important;
+}
+#checkoutModal .tk-discount-box h4 {
+  display: none;
+}
+#checkoutModal.tk-compact-checkout .modal-foot {
+  padding: 12px 16px !important;
+}
+#checkoutModal.tk-compact-checkout #btnSubmitFinal {
+  min-height: 44px !important;
+  height: auto !important;
+  padding: 11px !important;
+  font-size: 15px !important;
+}
+#checkoutModal.tk-compact-checkout #btnSubmitFinal:disabled {
+  background: #e5e7eb !important;
+  color: #6b7280 !important;
+  cursor: not-allowed;
+}
+#checkoutModal.tk-compact-checkout .modal-body > div {
+  margin-top: 0 !important;
+}
