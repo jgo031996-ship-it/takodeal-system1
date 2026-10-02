@@ -12628,3 +12628,14 @@ import { getDocsFromCache as tkCachedDocs, getDocFromCache as tkCachedDoc } from
     window.TKOffline03 = { version: 3, dayFor, mealIdentity, hasClaim };
   })();
 
+  const originalPrepare = offline.prepare;
+  offline.prepare = async (...args) => { const result = await originalPrepare(...args); await api.prepare(args[0] === true); return result; };
+
+  window.executeCacheWipe = async () => {
+    await api.ready;
+    if (navigator.onLine === false || (await store.list()).some(row => !['synced', 'rejected'].includes(row.state)))
+      return window.Swal.fire('Update held', 'Ask the owner to finish checking saved records before updating this tablet.', 'info');
+    const registration = await navigator.serviceWorker.ready; await registration.update();
+    await offline.prepare(true); window.location.reload();
+  };
+})();
