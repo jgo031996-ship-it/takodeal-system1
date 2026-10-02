@@ -861,7 +861,7 @@
 
                     // Check Cashier's Manual Kill Switch via the pre-fetched result
                     let isManuallyPaused = false;
-                    if (statusSnap && statusSnap.exists() && statusSnap.data().mobileOrdersActive === false) {
+                    if (!(await window.TKCustomerGate.inspect(b.name, statusSnap))) {
                         isManuallyPaused = true;
                     }
 
@@ -1946,7 +1946,7 @@
                     orderPayload.deliveryFee = window.currentDeliveryFee; 
                 }
 
-                await addDoc(collection(db, "incoming_orders"), orderPayload);
+                orderCode = await window.TKCustomerGate.saveOrder(orderPayload);
                 
                 // Hide Modals
                 document.getElementById('checkoutDetailsModal').classList.add('hidden');
@@ -1975,7 +1975,7 @@
                 const imgData = canvas.toDataURL('image/png');
 
                 // Clear the cart
-                window.cart = []; 
+                window.TKCustomerGate.completeOrder(orderCode); window.cart = []; 
                 localStorage.removeItem('takodeal_customer_cart');
                 window.updateCartUI();
 
@@ -2222,7 +2222,7 @@
                     timestamp: serverTimestamp()
                 };
 
-                await addDoc(collection(db, "incoming_orders"), orderPayload);
+                orderCode = await window.TKCustomerGate.saveOrder(orderPayload);
                 
                 window.closeCheckoutModal();
                 
@@ -2248,7 +2248,7 @@
                 const canvas = await html2canvas(document.getElementById('hiddenReceiptTemplate'), { scale: 2 });
                 const imgData = canvas.toDataURL('image/png');
 
-                window.cart = []; window.updateCartUI();
+                window.TKCustomerGate.completeOrder(orderCode); window.cart = []; window.updateCartUI();
 
                 // 🔥 UPGRADED MESSENGER TEXT (Now includes Branch & Payment!)
                 let rawMessage = `Hi TAKODEÁL! 🐙\nI just placed an order via the App.\n\n📍 Branch: ${branch.toUpperCase()}\n🧾 Code: ${orderCode}\n👤 Name: ${window.currentUser.displayName}\n💰 Total: ₱${grandTotal.toFixed(2)}\n\nI will attach my downloaded receipt below!`;
@@ -2778,7 +2778,8 @@
                 let globalCartBtn = document.getElementById('globalCartBtn');
 
                 let isEnabled = true;
-                if (docSnap.exists()) isEnabled = docSnap.data().mobileOrdersActive !== false;
+                window.TKCustomerGate.observe(selectedBranch, docSnap);
+                isEnabled = docSnap.exists() && window.TKCustomerGate.available(docSnap.data());
                 window.isStoreAcceptingOrders = isEnabled;
 
                 if (!isEnabled) {
@@ -3046,6 +3047,121 @@
             }
         });
 
-    </script>
+    
+// Append INSIDE the Customer index.html's existing module script.
+import { runTransaction as tkCustomerTransaction, getDocFromServer as tkCustomerGetServerDoc } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
+function takodealBranchAvailable(data, now = Date.now(), policy, lease) {
+  if (!data || data.mobileOrdersActive === false) return false;
+  if (!policy) return false; // still loading, or server confirmation failed
+  if (policy.requireCashierForCustomerOrders !== true) return true;
+  const seen = lease?.seenAt?.toMillis?.() || 0;
+  return seen > 0 && now - seen >= -30000 && now - seen < 180000;
+}
+(function() {
+  let observedBranch = '', observedStatus = null, shown, stops = [];
+  const policies = new Map(), leases = new Map();
+  function render() {
+    const selected = document.getElementById('selectedBranch')?.value;
+    if (!observedStatus || observedBranch !== selected) return;
+    const accepting = api.available(observedStatus, observedBranch);
+    window.isStoreAcceptingOrders = accepting;
+    if (shown === accepting) return;
+    shown = accepting;
+    const hero = document.getElementById('heroDeliveryText'), button = document.getElementById('submitBtn'),
+      cart = document.getElementById('globalCartBtn');
+    if (hero) { hero.innerText = accepting ? '40 Minutes' : 'Unavailable'; hero.classList.toggle('text-red-500', !accepting); }
+    if (button) {
+      button.disabled = !accepting;
+      button.innerHTML = accepting ? 'Proceed to Details 🚀' : 'Branch temporarily unavailable';
+      button.classList.toggle('opacity-50', !accepting); button.classList.toggle('cursor-not-allowed', !accepting);
+    }
+    if (cart) cart.style.display = accepting ? 'flex' : 'none';
+    let warning = document.getElementById('menuWarningBanner');
+    if (!accepting && !warning) {
+      warning = document.createElement('div'); warning.id = 'menuWarningBanner';
+      warning.className = 'bg-red-950/80 border-2 border-red-500 text-white p-4 rounded-xl mb-6 font-bold text-center';
+      const menu = document.getElementById('liveMenuContainer');
+      menu?.parentNode.insertBefore(warning, menu);
+    }
+    if (warning) {
+      warning.textContent = 'This branch is temporarily unavailable. Please select another branch or check back later.';
+      warning.style.display = accepting ? 'none' : 'block';
+    }
+  }
+  const api = window.TKCustomerGate = {
+    available: (data, branch = observedBranch, now = Date.now()) =>
+      takodealBranchAvailable(data, now, policies.get(branch), leases.get(branch)),
+    observe(branch, snapshot) {
+      if (observedBranch !== branch) {
+        stops.splice(0).forEach(stop => stop());
+        policies.delete(branch); leases.delete(branch);
+        stops.push(onSnapshot(doc(db, 'offline_policy', branch), { includeMetadataChanges: true }, entry => {
+          policies.set(branch, entry.metadata.fromCache ? null : (entry.exists() ? entry.data() : {}));
+          shown = undefined; render();
+        }, () => { policies.set(branch, null); shown = undefined; render(); }));
+        stops.push(onSnapshot(doc(db, 'cashier_leases', branch), { includeMetadataChanges: true }, entry => {
+          leases.set(branch, entry.metadata.fromCache ? null : (entry.exists() ? entry.data() : null));
+          shown = undefined; render();
+        }, () => { leases.set(branch, null); shown = undefined; render(); }));
+      }
+      observedBranch = branch;
+      observedStatus = snapshot.exists() ? snapshot.data() : null;
+      shown = undefined;
+      render();
+    },
+    async inspect(branch, snapshot) {
+      try {
+        const policy = await tkCustomerGetServerDoc(doc(db, 'offline_policy', branch));
+        const values = policy.exists() ? policy.data() : {};
+        let lease = null;
+        if (values.requireCashierForCustomerOrders === true) {
+          const entry = await tkCustomerGetServerDoc(doc(db, 'cashier_leases', branch));
+          lease = entry.exists() ? entry.data() : null;
+        }
+        return snapshot?.exists() && takodealBranchAvailable(snapshot.data(), Date.now(), values, lease);
+      } catch { return false; }
+    },
+    completeOrder(code) {
+      let attempt;
+      try { attempt = JSON.parse(sessionStorage.getItem('tk_customer_order_attempt') || 'null'); } catch {}
+      if (attempt?.orderCode === code) sessionStorage.removeItem('tk_customer_order_attempt');
+    },
+    async saveOrder(payload) {
+      if (navigator.onLine === false) throw new Error('Cannot confirm branch availability. Please try again shortly.');
+      const signature = JSON.stringify({ ...payload, timestamp: undefined, orderCode: undefined });
+      let attempt;
+      try { attempt = JSON.parse(sessionStorage.getItem('tk_customer_order_attempt') || 'null'); } catch {}
+      if (!attempt || attempt.signature !== signature) {
+        attempt = { id: 'customer-' + crypto.randomUUID(), signature, orderCode: payload.orderCode };
+        sessionStorage.setItem('tk_customer_order_attempt', JSON.stringify(attempt));
+      }
+      const orderRef = doc(db, 'incoming_orders', attempt.id);
+      // A transaction cannot leave a delayed customer order in an offline SDK
+      // write queue. Rules enforce the same timeout using the server clock.
+      const code = await tkCustomerTransaction(db, async tx => {
+        const previous = await tx.get(orderRef);
+        if (previous.exists()) {
+          if (previous.data().branch !== payload.branch || previous.data().customerEmail !== payload.customerEmail)
+            throw new Error('Order identity mismatch');
+          return previous.data().orderCode;
+        }
+        const status = await tx.get(doc(db, 'settings', 'status_' + payload.branch));
+        const policy = await tx.get(doc(db, 'offline_policy', payload.branch));
+        const values = policy.exists() ? policy.data() : {};
+        const lease = values.requireCashierForCustomerOrders === true ? await tx.get(doc(db, 'cashier_leases', payload.branch)) : null;
+        if (!status.exists() || !takodealBranchAvailable(status.data(), Date.now(), values, lease?.exists() ? lease.data() : null))
+          throw new Error('This branch is temporarily unavailable. Please select another branch.');
+        tx.set(orderRef, { ...payload, orderCode: attempt.orderCode });
+        return attempt.orderCode;
+      });
+      // Keep the successful attempt until the original code clears its cart.
+      // A lost acknowledgement retries the same ID and returns its receipt.
+      return code;
+    }
+  };
+  setInterval(render, 10000); // expiry without extra Firebase reads
+})();
+
+</script>
 </body>
 </html>
