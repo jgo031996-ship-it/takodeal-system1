@@ -1430,3 +1430,224 @@ body.tk-ui-v2.tk-photo-pos #tkCartToggle {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* TAKODEAL: shared theme for the other cashier tabs */
+.tk-work-tab, .tk-work-dialog, .tk-hub-picker, .tk-printer-popup {
+  --tk-work-accent: #f5a623;
+  --tk-work-soft: #fff6e8;
+  --tk-work-line: #e9e2d8;
+  --tk-work-ink: #30261e;
+}
+body.tk-ui-v2 .tk-work-tab { padding: 16px !important; background: #f6f2eb !important; min-height: 0; min-width: 0; flex: 1 1 0; height: auto !important; }
+body.tk-ui-v2 .tk-work-tab.active { display: block !important; overflow-y: auto !important; overflow-x: hidden !important; }
+.tk-work-tab, .tk-work-tab *, .tk-work-dialog *, .tk-hub-picker * { box-sizing: border-box; }
+.tk-work-tab > div { width: 100%; min-width: 0; }
+.tk-work-card { min-width: 0; border: 1px solid var(--tk-work-line) !important; border-radius: 20px !important; background: #fff !important; box-shadow: 0 7px 24px rgb(48 38 30 / 5%) !important; }
+.tk-work-header { padding: 16px 20px !important; background: #fcfaf6 !important; border-bottom: 1px solid var(--tk-work-line) !important; gap: 12px !important; flex-wrap: wrap !important; }
+.tk-work-header button { border: 1px solid #e9e2d8 !important; background: #fff !important; color: #746352 !important; }
+.tk-work-tab h2, .tk-work-tab h3 { color: var(--tk-work-ink) !important; letter-spacing: -.3px; }
+.tk-work-tab h2 { font-size: 20px !important; }
+.tk-work-header h3 { font-size: 17px !important; }
+.tk-work-tab p { color: #86796b !important; line-height: 1.5; }
+.tk-work-tab button, .tk-work-dialog button, .tk-printer-popup button { min-height: 44px; border-radius: 12px !important; box-shadow: none !important; font-size: 13px !important; touch-action: manipulation; }
+.tk-work-tab input:not([type="checkbox"]):not([type="radio"]), .tk-work-tab select, .tk-work-tab textarea, .tk-work-dialog input, .tk-work-dialog select { min-width: 0; min-height: 44px; border-radius: 11px !important; border-color: var(--tk-work-line) !important; font-size: 16px !important; box-sizing: border-box; box-shadow: none !important; }
+.tk-work-tab input:focus, .tk-work-tab select:focus, .tk-work-dialog input:focus, .tk-work-dialog select:focus { outline: 2px solid var(--tk-work-accent) !important; outline-offset: 2px; }
+.tk-work-switch { min-height: 44px; background: #fff !important; color: #746352 !important; border: 1px solid var(--tk-work-line) !important; padding: 10px 14px !important; border-radius: 12px !important; cursor: pointer; }
+.tk-work-switch.tk-work-selected { background: var(--tk-work-soft) !important; border-color: var(--tk-work-accent) !important; color: #5b3d15 !important; }
+.tk-work-tab table { width: 100% !important; min-width: 0 !important; border-collapse: collapse; white-space: normal !important; }
+.tk-work-tab th { padding: 12px 10px !important; background: #f8f5ef !important; color: #827568 !important; font-size: 11px !important; letter-spacing: .3px !important; }
+.tk-work-tab td { padding: 12px 10px !important; border-color: #f0ebe3 !important; white-space: normal !important; overflow-wrap: anywhere; font-size: 13px !important; }
+.tk-work-tab :is(button, input, select):disabled { opacity: .6; cursor: not-allowed; }
+
+/* Shift Sales */
+#view-sales .tk-work-card { min-height: 0 !important; overflow: visible !important; }
+#view-sales .tk-work-header { border-radius: 20px 20px 0 0; }
+#view-sales .tk-work-header > div > div { padding: 0 !important; background: transparent !important; color: #30261e !important; box-shadow: none !important; font-size: 18px !important; }
+#view-sales .btn-refresh { border: 1px solid #e9e2d8 !important; color: #746352 !important; background: #fff !important; }
+#view-sales .table-responsive { overflow: visible !important; }
+#view-sales table { table-layout: fixed; }
+#view-sales th:last-child { width: 106px; }
+#tbTransBody .tk-sale-row > td:nth-child(7) { color: #5b3d15 !important; font-size: 16px !important; font-weight: 900; }
+#tbTransBody .tk-sale-void { opacity: 1 !important; background: #faf8f4 !important; }
+#tbTransBody .tk-sales-summary > td { padding: 12px !important; background: #fcfaf6; }
+#tbTransBody .tk-sales-totals { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-start; }
+#tbTransBody .tk-sales-totals > * { padding: 8px 10px !important; background: #fff !important; border: 1px solid #e9e2d8; border-radius: 10px !important; font-size: 12px !important; }
+#tbTransBody .dot-menu { min-width: 92px; min-height: 44px; padding: 10px 12px !important; border: 1px solid #e5d6bd !important; background: #fff6e8 !important; color: #5b3d15 !important; font-size: 13px !important; }
+#tbTransBody .action-dropdown { position: fixed !important; top: var(--tk-action-top, 80px) !important; left: var(--tk-action-left, 8px) !important; right: auto !important; width: 210px !important; max-height: var(--tk-action-height, 70dvh); margin: 0 !important; overflow-y: auto !important; z-index: 100500 !important; border: 1px solid #e9e2d8 !important; border-radius: 15px !important; background: #fff !important; box-shadow: 0 14px 40px rgb(48 38 30 / 18%) !important; }
+#tbTransBody .action-item { min-height: 46px; padding: 14px !important; color: #4b3b2e; }
+#tbTransBody .action-item:hover, #tbTransBody .action-item:focus-visible { background: #faf5eb; }
+#tbTransBody .action-item.danger { color: #b42318 !important; }
+
+/* Mobile Hub */
+#view-mobilehub .tk-hub-layout { display: grid !important; grid-template-columns: minmax(0, 1.4fr) minmax(300px, 1fr) !important; gap: 16px !important; min-height: 0 !important; }
+#view-mobilehub .tk-hub-layout > div { min-width: 0; }
+#view-mobilehub .tk-work-card { overflow: hidden; }
+#view-mobilehub .tk-hub-menu-body { min-height: 0; padding: 16px !important; }
+#mobileHubListContainer, #mobileHubHistoryContainer { background: #faf8f4 !important; padding: 16px !important; min-height: 180px; max-height: 65dvh; }
+#mobileHubListContainer > div, #mobileHubHistoryContainer > div, #menuManagerList > div { border-color: #e9e2d8 !important; border-radius: 15px !important; box-shadow: none !important; }
+#menuManagerList { max-height: 65dvh; }
+#menuManagerList img { border-radius: 12px !important; border-color: #e9e2d8 !important; }
+#menuToggleHeader { display: grid !important; grid-template-columns: auto minmax(0, 1fr); align-items: center; }
+#categoryFilter { display: none !important; }
+#tkHubCategories { padding: 10px 12px; border: 1px solid #e9e2d8; background: #fff6e8; color: #5b3d15; font-weight: 800; }
+.tk-hub-current { grid-column: 1 / -1; color: #86796b; font-size: 12px; }
+.tk-hub-picker { z-index: 100100 !important; padding: 12px; }
+.tk-hub-picker > div { width: min(820px, 100%); max-height: 85dvh; display: flex; flex-direction: column; background: #fff; border: 1px solid #e9e2d8; border-radius: 22px; overflow: hidden; }
+.tk-hub-picker > div > div:first-child { padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; background: #30261e; color: #fff; }
+.tk-hub-picker h2 { margin: 0; font-size: 18px; }
+.tk-hub-picker > div > div:first-child > button { width: 44px; height: 44px; border: 0; border-radius: 12px; background: #493a2e; color: #fff; cursor: pointer; }
+.tk-hub-category-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 10px; padding: 16px; overflow-y: auto; min-height: 0; }
+.tk-hub-category { min-height: 132px; padding: 10px 8px; display: flex; flex-direction: column; align-items: center; gap: 6px; border: 2px solid transparent; border-radius: 15px; background: #f8f5ef; color: #4b3b2e; cursor: pointer; }
+.tk-hub-category strong { font-size: 12px; overflow-wrap: anywhere; }
+.tk-hub-category small { font-size: 10px; color: #827568; margin-top: auto; }
+.tk-hub-category.active { border-color: #f5a623; background: #fff6e8; }
+
+/* Stock Report */
+.tk-count-toolbar { padding: 14px 18px !important; background: #fcfaf6 !important; }
+.tk-count-tools { min-width: 0 !important; flex-wrap: wrap; }
+.tk-count-tools > div { min-width: 140px; }
+.tk-count-tools button, .tk-count-tools select { background: #fff !important; color: #746352 !important; border-color: #e9e2d8 !important; }
+#manualStockCountBody { padding: 16px !important; background: #faf8f4 !important; }
+.manual-count-cycle-section { margin-bottom: 24px !important; }
+.manual-count-cycle-section > h2 { text-align: left !important; font-size: 17px !important; letter-spacing: .3px !important; border-bottom: 1px solid #e9e2d8 !important; margin-bottom: 14px !important; }
+.manual-count-category { min-width: 0; border: 1px solid #e9e2d8 !important; border-radius: 16px !important; box-shadow: none !important; }
+.manual-count-category > div:first-child { text-align: left !important; padding: 12px 14px !important; font-size: 13px !important; background: #f8f5ef !important; border-bottom: 1px solid #e9e2d8 !important; color: #746352 !important; }
+.manual-count-category table { table-layout: fixed; }
+.manual-count-row > td:nth-child(2) > div { max-width: 100%; }
+.manual-count-row > td:nth-child(2) > div > div { min-width: 0; width: auto !important; flex: 1; border-color: #e9e2d8 !important; background: #faf8f4 !important; }
+.manual-count-row input { min-width: 0; color: #30261e !important; }
+#btnSubmitAllCounts, #kitchenPrepList button, .tk-prep-cart > div:last-child button, #btnSubmitConsumables, #remitFormSection > button { min-height: 46px; background: #f5a623 !important; color: #30261e !important; border: 0 !important; border-radius: 12px !important; box-shadow: none !important; }
+
+/* Kitchen Prep */
+#view-prep > .tk-work-card { padding: 16px !important; }
+#view-prep .tk-work-header { margin: -16px -16px 16px; }
+#prepTabNew { gap: 16px !important; }
+#kitchenPrepList { min-width: 0; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)) !important; gap: 12px !important; }
+#kitchenPrepList > div { padding: 16px !important; border: 1px solid #e9e2d8 !important; border-radius: 17px !important; box-shadow: none !important; }
+#kitchenPrepList h3 { font-size: 15px !important; }
+#kitchenPrepList img { border-radius: 14px !important; box-shadow: none !important; }
+#kitchenPrepList > div > span { background: #f8f5ef !important; color: #746352 !important; }
+.tk-prep-cart { width: 300px !important; max-width: 100%; border: 1px solid #e9e2d8 !important; border-radius: 18px !important; background: #faf8f4 !important; box-shadow: none !important; }
+.tk-prep-cart > div:first-child { background: #fcfaf6 !important; }
+#prepCartBody { min-height: 140px !important; max-height: 45dvh !important; }
+
+/* Consumables */
+#view-consumables .tk-supplies-layout { padding: 0 !important; height: auto !important; overflow: visible !important; display: grid !important; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px !important; }
+#view-consumables .tk-supplies-layout.tk-supplies-history { grid-template-columns: minmax(0, 1fr) !important; }
+#view-consumables .menu-panel { min-width: 0; min-height: 0 !important; overflow: hidden !important; }
+#consumablesCartPanel { min-width: 0 !important; width: auto !important; min-height: 0 !important; height: auto !important; }
+#consumablesCategoryHeader { display: flex; flex-wrap: wrap; gap: 6px; }
+#consumablesCategoryHeader .cat-btn { background: #faf8f4; border-color: #e9e2d8; color: #746352; }
+#consumablesCategoryHeader .cat-btn.active { background: #fff6e8 !important; color: #5b3d15 !important; border-color: #f5a623 !important; }
+#consumablesItemGrid { grid-template-columns: repeat(auto-fill, minmax(155px, 1fr)) !important; gap: 12px !important; }
+#consumablesItemGrid .cons-ultra-card { min-width: 0; border: 1px solid #e9e2d8 !important; border-radius: 16px !important; overflow: hidden; }
+#consumablesItemGrid .item-name-overlay { padding: 12px !important; background: #fff !important; color: #30261e !important; text-shadow: none !important; }
+#consumablesCartList { background: #faf8f4; }
+#consumablesCartList .btn-remove { min-width: 44px; min-height: 44px; }
+
+/* Waste and Branch Schedule */
+#view-waste > div { padding-bottom: 24px !important; }
+#view-waste .waste-form-grid { border: 1px solid #e9e2d8 !important; background: #faf8f4 !important; padding: 16px !important; border-radius: 16px !important; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+#view-waste .tk-work-header h2 { color: #a33a2b !important; }
+#wasteCartContainer { border-color: #e9e2d8 !important; border-radius: 15px !important; }
+#view-schedule > div { padding: 0 !important; height: auto !important; overflow: visible !important; }
+#cashierScheduleContainer > div:first-child { background: #fcfaf6 !important; border-color: #e9e2d8 !important; border-radius: 15px !important; flex-wrap: wrap; gap: 12px; }
+#cashierScheduleContainer > div:nth-child(2) { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px !important; }
+#cashierScheduleContainer > div:nth-child(2) > div { min-width: 0; border: 1px solid #e9e2d8 !important; border-radius: 15px !important; background: #fff !important; box-shadow: none !important; }
+#cashierScheduleContainer > div:nth-child(2) > div > div:first-child { background: #f8f5ef !important; color: #4b3b2e !important; border-color: #e9e2d8 !important; }
+#cashierScheduleContainer #todayScheduleCard { border-color: #f5a623 !important; background: #fff6e8 !important; }
+#cashierScheduleContainer #todayScheduleCard > div:first-child { background: #fff6e8 !important; }
+#cashierScheduleContainer > div:nth-child(2) > div > div:last-child > div { flex-wrap: wrap; gap: 8px; }
+
+/* Remittance and Time Clock */
+.tk-work-dialog { top: var(--tk-visible-top, 0px) !important; height: var(--tk-visible-height, 100dvh) !important; padding: 12px; box-sizing: border-box; background: rgb(36 27 23 / 55%) !important; backdrop-filter: blur(4px); }
+.tk-work-dialog > div { width: min(620px, 100%) !important; max-width: 100% !important; max-height: calc(var(--tk-visible-height, 100dvh) - 24px); display: flex; flex-direction: column; min-height: 0; overflow: hidden; border-radius: 22px !important; background: #fff !important; border: 1px solid #e9e2d8; }
+.tk-work-dialog > div > div:first-child { padding: 16px 20px !important; flex-shrink: 0; background: #fcfaf6 !important; color: #30261e !important; border-bottom: 1px solid #e9e2d8; }
+.tk-work-dialog > div > div:last-child { min-height: 0; overflow-y: auto; }
+.tk-work-dialog h2 { font-size: 19px !important; }
+#remittanceModal > div > div:nth-child(2) { background: #faf8f4 !important; flex-shrink: 0; }
+#remitCountdownAlert { background: #fff6e8 !important; border-color: #ecd8b5 !important; color: #746352 !important; border-radius: 12px !important; }
+#remitFormSection > div { min-width: 0; }
+#remitFormSection > div > div { min-width: 0; }
+#timeClockModal > div { width: min(440px, 100%) !important; }
+#timeClockModal .tk-clock-preview { height: min(28dvh, 220px) !important; border-radius: 16px !important; }
+#faceAiStatus { border-radius: 12px !important; }
+#timeClockModal button { min-height: 48px; }
+#timeClockModal > div > div:first-child > span { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
+
+/* Printer Hub */
+.tk-printer-popup { border-radius: 22px !important; background: #fff !important; border: 1px solid #e9e2d8; color: #30261e !important; }
+.tk-printer-popup .swal2-title { font-size: 21px !important; color: #30261e; }
+.tk-printer-popup .swal2-html-container { margin: 16px !important; }
+.tk-printer-popup .swal2-html-container > div:first-child { background: #fff6e8 !important; border-color: #ecd8b5 !important; border-radius: 15px !important; }
+.tk-printer-popup .tk-printer-pair { background: #faf8f4 !important; color: #746352 !important; border-color: #e9e2d8 !important; }
+.tk-printer-popup .tk-printer-pair.tk-printer-online { background: #edf8ef !important; color: #227039 !important; border-color: #bde0c5 !important; }
+.tk-printer-popup .tk-printer-test { background: #f5a623 !important; color: #30261e !important; }
+.tk-printer-popup .swal2-confirm { background: #30261e !important; color: #fff !important; }
+
+/* Tablet sales: labeled rows, Actions always visible */
+@media (max-width: 1180px) {
+  #view-sales table, #tbTransBody { display: block; }
+  #view-sales thead { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  #tbTransBody { padding: 12px; }
+  #tbTransBody .tk-sale-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) 106px;
+    gap: 8px 12px; padding: 12px; margin-bottom: 10px;
+    background: #fff !important; border: 1px solid #e9e2d8 !important; border-radius: 16px;
+    grid-template-areas:
+      "receipt receipt amount action"
+      "customer payment status status"
+      "date time . .";
+  }
+  #tbTransBody .tk-sale-row > td { display: block; padding: 0 !important; min-width: 0; text-align: left !important; }
+  #tbTransBody .tk-sale-row > td::before { content: attr(data-label); display: block; color: #958777; font-size: 10px; margin-bottom: 3px; font-weight: 600; }
+  #tbTransBody .tk-sale-row > td:nth-child(1) { grid-area: receipt; }
+  #tbTransBody .tk-sale-row > td:nth-child(2) { grid-area: customer; }
+  #tbTransBody .tk-sale-row > td:nth-child(3) { grid-area: payment; }
+  #tbTransBody .tk-sale-row > td:nth-child(4) { grid-area: status; }
+  #tbTransBody .tk-sale-row > td:nth-child(5) { grid-area: date; }
+  #tbTransBody .tk-sale-row > td:nth-child(6) { grid-area: time; }
+  #tbTransBody .tk-sale-row > td:nth-child(7) { grid-area: amount; }
+  #tbTransBody .tk-sale-row > td:nth-child(8) { grid-area: action; }
+  #tbTransBody .tk-sales-summary, #tbTransBody .tk-sales-message { display: block; margin-bottom: 12px; }
+  #tbTransBody .tk-sales-message > td, #tbTransBody .tk-sales-summary > td { display: block; }
+}
+@media (max-width: 1000px) {
+  #view-mobilehub .tk-hub-layout { grid-template-columns: minmax(0, 1fr) !important; }
+  .manual-count-cycle-section > div { grid-template-columns: minmax(0, 1fr) !important; }
+  #prepTabNew { flex-direction: column; }
+  #kitchenPrepList { width: 100%; }
+  .tk-prep-cart { width: 100% !important; position: static !important; }
+  #view-consumables .tk-supplies-layout { grid-template-columns: minmax(0, 1fr); }
+  #view-consumables .menu-panel { width: 100% !important; }
+}
+@media (max-width: 700px) {
+  body.tk-ui-v2 .tk-work-tab { padding: 10px !important; }
+  .tk-work-header { padding: 14px !important; }
+  #cashierScheduleContainer > div:nth-child(2) { grid-template-columns: minmax(0, 1fr); }
+  #tbTransBody .tk-sale-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-areas:
+      "receipt receipt"
+      "amount action"
+      "customer payment"
+      "status date"
+      "status time";
+  }
+  #tbTransBody .tk-sale-row > td:nth-child(8) { text-align: right !important; }
+  #consumablesItemGrid, #kitchenPrepList { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  #menuToggleHeader { grid-template-columns: minmax(0, 1fr); }
+  .tk-hub-category-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; padding: 12px; }
+  #remitFormSection > div { flex-wrap: wrap; }
+  #remitFormSection > div > div { flex-basis: 100% !important; }
+}
+@media (max-width: 600px) {
+  .manual-count-category table, .manual-count-category tbody { display: block; }
+  .manual-count-category thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .manual-count-row.visible-row { display: grid !important; grid-template-columns: minmax(0, 1fr) 90px; gap: 8px; padding: 12px; border-bottom: 1px solid #f0ebe3; }
+  .manual-count-row > td { display: block; padding: 0 !important; border: 0 !important; min-width: 0; }
+  .manual-count-row > td:first-child { grid-column: 1 / -1; }
+  .manual-count-row > td:nth-child(2)::before { content: 'Actual count'; display: block; font-size: 10px; color: #958777; margin-bottom: 4px; }
+  .manual-count-row > td:nth-child(3)::before { content: 'Maintaining'; display: block; font-size: 10px; color: #958777; margin-bottom: 4px; }
+}
