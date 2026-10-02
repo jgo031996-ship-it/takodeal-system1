@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch, startAfter } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch, startAfter, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -30,6 +30,7 @@ window.setDoc = setDoc; window.serverTimestamp = serverTimestamp;
 window.increment = increment; window.orderBy = orderBy; window.limit = limit;
 window.ref = ref; window.uploadBytes = uploadBytes; window.getDownloadURL = getDownloadURL;
 window.writeBatch = writeBatch; window.onSnapshot = onSnapshot; window.startAfter = startAfter;
+window.runTransaction = runTransaction;
 window.enableNetwork = enableNetwork; window.disableNetwork = disableNetwork;
 
 // TAKODEAL GLOBAL CACHE ENGINE
