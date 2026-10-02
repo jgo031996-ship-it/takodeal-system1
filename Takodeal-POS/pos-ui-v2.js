@@ -340,3 +340,178 @@
     });
   }
 })();
+
+/* Compact checkout and complete per-order reset */
+(() => {
+  const get = id => document.getElementById(id);
+
+  function install() {
+    const modal = get('checkoutModal');
+    if (!modal || modal.dataset.tkCheckoutReady === '1') return;
+
+    const open = window.openCheckoutModal;
+    const update = window.updateNumpadDisplay;
+    if (typeof open !== 'function' || typeof update !== 'function' ||
+        typeof window.handleDiscountTypeChange !== 'function') return;
+
+    const body = modal.querySelector('.modal-body');
+    const head = modal.querySelector('.modal-head');
+    const area = get('standardPaymentArea');
+    const total = modal.querySelector('.checkout-yellow-box');
+    const received = modal.querySelector('.checkout-grey-box');
+    const type = get('checkoutDiscountType');
+    if (!body || !head || !area || !total || !received || !type) return;
+
+    let discountBox = type;
+    while (discountBox.parentElement !== body) {
+      discountBox = discountBox.parentElement;
+      if (!discountBox) return;
+    }
+
+    modal.dataset.tkCheckoutReady = '1';
+    modal.classList.add('tk-compact-checkout');
+
+    const close = head.querySelector('.close-modal');
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'tk-checkout-back';
+    back.textContent = '‹ Back';
+    back.addEventListener('click', () => close.click());
+    head.firstElementChild.replaceWith(back);
+    total.firstElementChild.textContent = 'Total:';
+    head.appendChild(total);
+
+    const extras = document.createElement('details');
+    extras.id = 'tkCheckoutExtras';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Discount / Staff meal';
+    body.insertBefore(extras, discountBox);
+    discountBox.classList.add('tk-discount-box');
+    extras.append(summary, discountBox);
+
+    const amount = document.createElement('div');
+    amount.className = 'tk-amount-entry';
+    const label = document.createElement('label');
+    label.htmlFor = 'tkCheckoutAmount';
+    label.textContent = 'Amount received';
+    const row = document.createElement('div');
+    row.className = 'tk-amount-row';
+    const input = document.createElement('input');
+    input.id = 'tkCheckoutAmount';
+    input.type = 'number';
+    input.inputMode = 'decimal';
+    input.min = '0';
+    input.step = '0.01';
+    input.placeholder = '₱ 0.00';
+    input.addEventListener('input', () => {
+      const value = Number(input.value);
+      window.amountReceivedStr =
+        input.value !== '' && Number.isFinite(value) && value >= 0
+          ? input.value : '0';
+      window.updateNumpadDisplay();
+    });
+    row.appendChild(input);
+
+    [['₱500', 500], ['₱1,000', 1000], ['Exact', null]].forEach(([text, value]) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = text;
+      button.addEventListener('click', () => {
+        window.amountReceivedStr = String(value ??
+          window.finalCheckoutAmount ?? window.currentGrandTotal ?? 0);
+        input.value = window.amountReceivedStr;
+        window.updateNumpadDisplay();
+      });
+      row.appendChild(button);
+    });
+    amount.append(label, row);
+    area.appendChild(amount);
+    body.insertBefore(area, extras);
+    body.insertBefore(received, extras);
+
+    function sync() {
+      const meal = ['staff_meal', 'manager_meal'].includes(type.value);
+      modal.classList.toggle('tk-meal-mode', meal);
+      if (meal) {
+        extras.open = true;
+        const split = get('splitPaymentContainer');
+        if (split) split.style.display = 'none';
+      }
+      if (document.activeElement !== input) {
+        input.value = window.amountReceivedStr || '0';
+      }
+
+      const icons = {
+        cash: '💵', gcash: 'Ⓖ', grab: 'Grab',
+        foodpanda: '🐼', bank: '🏦', split: '▣'
+      };
+      area.querySelectorAll('.pay-btn').forEach(button => {
+        const method = button.dataset.tkMethod ||
+          (button.classList.contains('split-btn') ? 'Split' : button.textContent.trim());
+        button.dataset.tkMethod = method;
+        const key = method.toLowerCase().replace(/[^a-z0-9]/g, '');
+        button.dataset.payIcon = icons[key] || '💳';
+        button.dataset.payKind = key;
+        const labels = {
+          cash: 'Cash', gcash: 'GCash', grab: 'GrabPay',
+          foodpanda: 'Foodpanda', bank: 'Bank Transfer',
+          split: 'Split Payment'
+        };
+        if (labels[key]) button.textContent = labels[key];
+        button.classList.toggle('active',
+          method === window.selectedPaymentMethod);
+      });
+
+      const submit = get('btnSubmitFinal');
+      if (!window.isSubmittingOrder && submit.innerText === 'Complete checkout') {
+        submit.innerText = meal ? 'Complete Meal' : 'Complete Payment';
+      }
+    }
+
+    window.updateNumpadDisplay = function (...args) {
+      const result = update.apply(this, args);
+      sync();
+      return result;
+    };
+
+    window.openCheckoutModal = function (...args) {
+      if (window.isSubmittingOrder) return;
+      const result = open.apply(this, args);
+      if (modal.style.display !== 'flex') return result;
+
+      const name = get('finalCustomerName');
+      const savedName = name.readOnly ? '' : name.value;
+      type.value = 'none';
+      ['checkoutDiscountValue', 'checkoutDiscountReason',
+       'checkoutStaffPin', 'splitAmount1', 'splitAmount2'].forEach(id => {
+        if (get(id)) get(id).value = '';
+      });
+      const split = get('splitPaymentContainer');
+      if (split) split.style.display = 'none';
+
+      // Restore disabled fields, PIN visibility and customer-name editing.
+      window.handleDiscountTypeChange();
+      name.value = savedName;
+      name.style.fontWeight = '';
+      extras.open = false;
+
+      const platform = window.posPlatform || 'Standard';
+      const deliveryPlatform = ['Grab', 'Foodpanda'].includes(platform);
+      window.selectedPaymentMethod = deliveryPlatform ? platform : 'Cash';
+      window.amountReceivedStr = deliveryPlatform
+        ? String(window.currentGrandTotal ?? 0) : '0';
+      area.style.display = deliveryPlatform ? 'none' : 'block';
+      area.querySelectorAll('.pay-btn').forEach(button => {
+        button.classList.toggle('active',
+          button.dataset.tkMethod === window.selectedPaymentMethod);
+      });
+      window.updateNumpadDisplay();
+      return result;
+    };
+
+    sync();
+  }
+
+  if (document.readyState === 'complete') install();
+  else window.addEventListener('load', install, { once: true });
+})();
