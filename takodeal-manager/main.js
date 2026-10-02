@@ -28276,34 +28276,43 @@ window.approveTopUp = async function(docId, riderId, riderName) {
         Swal.fire({title: 'Crediting Wallet...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
         try {
-            // 1. Fetch the rider's current balance
+            // Approve a pending request and credit the current wallet together.
+            // A simultaneous delivery claim triggers a retry using the new balance.
             const riderRef = window.doc(window.db, "riders", riderId);
-            const riderSnap = await window.getDoc(riderRef);
-            
-            if (riderSnap.exists()) {
-                let currentBal = parseFloat(riderSnap.data().walletBalance) || 0;
-                let newBal = currentBal + amount;
-
-                // 2. Update the Rider's Wallet
-                await window.updateDoc(riderRef, { walletBalance: newBal });
-
-                // 3. Mark the Top-Up request as Approved and log the amount
-                await window.updateDoc(window.doc(window.db, "rider_topups", docId), {
+            const requestRef = window.doc(window.db, "rider_topups", docId);
+            const processedBy = window.sessionUser ? window.sessionUser.cashierName : 'Manager';
+            const newBal = await window.runTransaction(window.db, async transaction => {
+                const requestSnap = await transaction.get(requestRef);
+                const riderSnap = await transaction.get(riderRef);
+                if (!requestSnap.exists() || requestSnap.data().status !== 'pending') {
+                    throw new Error('This top-up request has already been processed or is unavailable.');
+                }
+                if (requestSnap.data().riderId !== riderId || !riderSnap.exists()) {
+                    throw new Error('The rider does not match this top-up request.');
+                }
+                const currentBal = Number(riderSnap.data().walletBalance ?? 0);
+                if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(currentBal)) {
+                    throw new Error('The amount or wallet balance is invalid.');
+                }
+                const nextBalance = Math.round((currentBal + amount) * 100) / 100;
+                transaction.update(riderRef, { walletBalance: nextBalance });
+                transaction.update(requestRef, {
                     status: "approved",
                     amountAdded: amount,
                     processedAt: window.serverTimestamp(),
-                    processedBy: window.sessionUser ? window.sessionUser.cashierName : 'Manager'
+                    processedBy
                 });
+                return nextBalance;
+            });
 
                 Swal.fire('✅ Success!', `₱${amount.toFixed(2)} added to ${riderName}'s wallet. New Balance: ₱${newBal.toFixed(2)}`, 'success');
                 
                 // Refresh both tables
                 window.loadRiderTopUps();
                 window.loadRiderManagement();
-            }
         } catch(e) {
             console.error(e);
-            Swal.fire('Error', 'Failed to process top-up.', 'error');
+            Swal.fire('Error', e.message || 'Failed to process top-up.', 'error');
         }
     }
 };
@@ -28312,12 +28321,22 @@ window.rejectTopUp = async function(docId, riderName) {
     if (!confirm(`Are you sure you want to reject the top-up request from ${riderName}?`)) return;
 
     try {
-        await window.updateDoc(window.doc(window.db, "rider_topups", docId), {
-            status: "rejected",
-            processedAt: window.serverTimestamp()
+        const requestRef = window.doc(window.db, "rider_topups", docId);
+        await window.runTransaction(window.db, async transaction => {
+            const requestSnap = await transaction.get(requestRef);
+            if (!requestSnap.exists() || requestSnap.data().status !== 'pending') {
+                throw new Error('This top-up request has already been processed or is unavailable.');
+            }
+            transaction.update(requestRef, {
+                status: "rejected",
+                processedAt: window.serverTimestamp()
+            });
         });
         window.loadRiderTopUps();
-    } catch(e) { console.error(e); }
+    } catch(e) {
+        console.error(e);
+        Swal.fire('Error', e.message || 'Failed to reject top-up.', 'error');
+    }
 };
 
 // Hook it into the tab switcher so it loads automatically!
