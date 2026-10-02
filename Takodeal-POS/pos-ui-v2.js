@@ -743,3 +743,82 @@
   if (document.readyState === 'complete') installPhotoPOS();
   else window.addEventListener('load', installPhotoPOS, { once: true });
 })();
+
+/* Keep checkout and Add Order above the tablet keyboard */
+(() => {
+  function install() {
+    const root = document.documentElement;
+    if (root.dataset.tkViewportReady === '1') return;
+    root.dataset.tkViewportReady = '1';
+
+    const viewport = window.visualViewport;
+    const checkout = document.getElementById('checkoutModal');
+    const variant = document.getElementById('variantModal');
+
+    let queued = false;
+    let revealInput = false;
+
+    function update() {
+      queued = false;
+
+      const height = viewport?.height || window.innerHeight;
+      root.style.setProperty('--tk-visible-height', `${height}px`);
+      root.style.setProperty(
+        '--tk-visible-top',
+        `${viewport?.offsetTop || 0}px`
+      );
+
+      const active = document.activeElement;
+      const editing = active &&
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(
+          active.tagName.toUpperCase()
+        );
+
+      const short = height < 520 ||
+        height < window.innerHeight - 120;
+
+      checkout?.classList.toggle(
+        'tk-checkout-typing',
+        Boolean(editing && short && checkout.contains(active))
+      );
+
+      if (revealInput && editing) {
+        const modal = active.closest('#checkoutModal, #variantModal');
+        if (modal?.style.display === 'flex') {
+          active.scrollIntoView({
+            block: 'nearest',
+            inline: 'nearest'
+          });
+        }
+      }
+
+      revealInput = false;
+    }
+
+    function queue(reveal = false) {
+      revealInput = revealInput || reveal;
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(update);
+    }
+
+    viewport?.addEventListener('resize', () => queue(true));
+    viewport?.addEventListener('scroll', () => queue());
+    window.addEventListener('resize', () => queue(true));
+    document.addEventListener('focusin', () => queue(true));
+    document.addEventListener('focusout', () => queue());
+
+    const observer = new MutationObserver(() => queue());
+    [checkout, variant].filter(Boolean).forEach(modal => {
+      observer.observe(modal, {
+        attributes: true,
+        attributeFilter: ['style']
+      });
+    });
+
+    update();
+  }
+
+  if (document.readyState === 'complete') install();
+  else window.addEventListener('load', install, { once: true });
+})();
