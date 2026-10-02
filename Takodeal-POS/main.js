@@ -12639,3 +12639,239 @@ import { getDocsFromCache as tkCachedDocs, getDocFromCache as tkCachedDoc } from
     await offline.prepare(true); window.location.reload();
   };
 })();
+// OWNER ROVING + SAFE UPDATE HOTFIX 2026-10-03
+// Paste this ENTIRE block at the VERY BOTTOM of Cashier main.js,
+// AFTER its existing final })();. Keep the existing Offline-03 code.
+(function installTakodealOwnerRovingHotfix() {
+  if (window.TKOwnerRoving) return;
+  const OWNER = 'jgo031996@gmail.com';
+  const HOME = 'Main Office';
+  const ENTRY = 'tk_owner_roving_entry_20261003';
+  const pos = window.TKOffline;
+  if (!pos || !window.TKOperations) throw new Error('Paste this hotfix after the complete Offline-03 code');
+  let busy = false, allowPrepare = false, maintenance;
+  const branch = () => localStorage.getItem('takodeal_device_branch');
+  const device = () => localStorage.getItem('takodeal_device_id');
+  const verified = user => user?.email === OWNER && user.emailVerified === true;
+  const keys = ['takodeal_offline_menu', 'takodeal_cached_allowed_cats', 'takodeal_cached_settings',
+    'takodeal_cached_categories', 'takodeal_cached_item_layout', 'takodeal_cached_addon_layout',
+    'takodeal_cached_addons', 'takodeal_cached_mixmatch', 'takodeal_cashier_cache'];
+  function ownerServices() {
+    if (!maintenance) {
+      // Google verification has its own Auth instance. It cannot replace the
+      // anonymous identity used by this physical tablet's sales and presence.
+      const ownerApp = initializeApp(firebaseConfig, 'takodeal-owner-roving-20261003');
+      maintenance = { auth: getAuth(ownerApp), db: initializeFirestore(ownerApp, {}) };
+    }
+    return maintenance;
+  }
+  function message(error) {
+    if (error?.code === 'permission-denied') return 'Device setup was denied. Check that the complete Offline-03 Firestore Rules are published and that you selected the verified Owner Google account.';
+    if (error?.code === 'auth/operation-not-allowed') return 'Enable Anonymous sign-in in Firebase Authentication before preparing this tablet.';
+    return error?.message || 'Owner access could not finish. Saved tablet records are retained.';
+  }
+  async function drained() {
+    await pos.ready;
+    if (pos.engine.busy) throw new Error('A record is syncing. Wait for it to finish before changing the working branch');
+    const rows = await pos.store.list();
+    if (rows.some(row => !['synced', 'rejected'].includes(row.state) || row.auditPending))
+      throw new Error('This tablet has records awaiting sync or Owner review. Reconcile them before changing its working branch');
+    for (const key of ['takodeal_offline_queue', 'takodeal_delivery_outbox', 'takodeal_audit_queue']) {
+      const raw = localStorage.getItem(key); if (!raw) continue;
+      let values; try { values = JSON.parse(raw); } catch { throw new Error('An earlier tablet queue needs Owner review'); }
+      if (values && Object.keys(values).length) throw new Error('Reconcile the earlier tablet queues before changing branch. Do not clear them');
+    }
+    if (window.cart?.length) throw new Error('Finish or park the current order before changing branch');
+  }
+  const loadedBranch = branch();
+  const accept = pos.engine.accept;
+  pos.engine.accept = function (...args) {
+    if (busy || branch() !== loadedBranch) return Promise.reject(new Error('Owner branch preparation is still running. Reload this Cashier tab'));
+    return accept.apply(this, args);
+  };
+  const sync = pos.engine.sync;
+  pos.engine.sync = function (...args) { if (busy) return Promise.resolve(); return sync.apply(this, args); };
+  const prepare = pos.prepare, prepareOperations = window.TKOperations.prepare;
+  pos.prepare = function (...args) { if (busy && !allowPrepare) return Promise.resolve(); return prepare.apply(this, args); };
+  window.TKOperations.prepare = function (...args) { if (busy && !allowPrepare) return Promise.resolve(); return prepareOperations.apply(this, args); };
+
+  // Staff authorizations inside a logged-in Owner session still work. The
+  // login screen on an Owner roaming device requires Owner Google access.
+  const pin = window.verifyPin;
+  window.verifyPin = async function (...args) {
+    const secure = await pos.store.meta('secure-device:' + device());
+    const login = document.getElementById('loginOverlay');
+    if (secure?.mode === 'OwnerRoving' && login?.style.display !== 'none') {
+      window.Swal.fire('Owner device', 'Use the Owner Access button to open this roaming device. Staff tablets keep their normal branch and PIN login.', 'info');
+      return 'BLOCKED';
+    }
+    return pin.apply(this, args);
+  };
+
+  async function finishEntry(entry) {
+    const owner = ownerServices(); await owner.auth.authStateReady?.();
+    const tabletAuth = tkGetAuth(); await tabletAuth.authStateReady?.();
+    if (!verified(owner.auth.currentUser)) throw new Error('Use Owner Access and verify the Owner Google account again');
+    const secure = await pos.store.meta('secure-device:' + device());
+    if (entry.branch !== branch() || entry.deviceId !== device() || secure?.mode !== 'OwnerRoving'
+      || !tabletAuth.currentUser?.isAnonymous || tabletAuth.currentUser.uid !== secure.uid)
+      throw new Error('The saved Owner entry does not match this tablet and working branch');
+    const approval = navigator.onLine === false ? await pos.store.meta('approval:' + device()) : await pos.refreshTrustedBinding();
+    if (!approval?.approved || approval.branch !== branch() || approval.trustedUid !== secure.uid)
+      throw new Error('Owner approval of this working branch is required');
+    window.Swal.fire({ title: 'Preparing Owner access…', text: 'Loading the selected branch and its saved data.', allowOutsideClick: false, allowEscapeKey: false, didOpen: () => window.Swal.showLoading() });
+    window.sessionUser = { email: OWNER, branch: branch(), cashierName: 'Owner', isOwner: true, role: 'Owner' };
+    window.currentShift = null; window.activeShiftDetails = null; window.systemReady = false;
+    localStorage.setItem('cashierName', 'Owner');
+    const label = document.getElementById('displayBranchText') || document.getElementById('displayBranch');
+    if (label) label.textContent = branch();
+    const name = document.getElementById('displayCashierText') || document.getElementById('displayCashier');
+    if (name) name.textContent = 'Owner';
+    if (typeof window.loadPOSData !== 'function') throw new Error('The POS menu loader has not started');
+    await window.loadPOSData();
+    if (navigator.onLine !== false) {
+      allowPrepare = true;
+      try { await pos.prepare(true); } finally { allowPrepare = false; }
+    }
+    if (!pos.prepared) throw new Error('Branch preparation is incomplete. Use Device preparation to finish saving its menu, photos and action data, then open Owner Access again');
+    if (typeof window.checkCurrentShift !== 'function') throw new Error('The shift screen has not started');
+    await window.checkCurrentShift();
+    const login = document.getElementById('loginOverlay'); if (login) login.style.display = 'none';
+    const control = document.getElementById('ownerAccessBtnContainer'); if (control) control.style.display = 'none';
+    window.updateParkedBadge?.(); window.requestWakeLock?.();
+    window.startMobileOrdersListener?.(branch());
+    sessionStorage.removeItem(ENTRY);
+    window.Swal.close();
+  }
+
+  window.ownerBypassLogin = async function () {
+    if (busy) return;
+    busy = true;
+    try {
+      await pos.ready;
+      const owner = ownerServices(); await owner.auth.authStateReady?.();
+      if (navigator.onLine === false) {
+        // Previously verified Owner sessions can resume their already prepared
+        // branch offline. Selecting a different branch needs server approval.
+        await finishEntry({ branch: branch(), deviceId: device() });
+        return;
+      }
+      const google = new GoogleAuthProvider(); google.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(owner.auth, google);
+      const token = await result.user.getIdTokenResult();
+      if (!verified(result.user) || token.claims.email !== OWNER || token.claims.email_verified !== true) {
+        await tkSignOut(owner.auth); throw new Error('Only the verified Owner Google account can select a roaming branch');
+      }
+      if (!device()) throw new Error('Register this physical device in the Manager app first');
+      const legacy = await pos.deadline(tkGetDocsFromServer(query(collection(owner.db, 'pos_devices'), where('deviceId', '==', device()))));
+      if (legacy.size !== 1 || legacy.docs[0].data().status !== 'Active') throw new Error('This physical device must have exactly one Active registration in Manager');
+      if (legacy.docs[0].data().branch !== HOME) throw new Error('This is a fixed branch tablet. Use its normal PIN login. Roaming Owner Access requires a device registered to Main Office');
+      const branches = await pos.deadline(tkGetDocsFromServer(collection(owner.db, 'branches')));
+      const byName = new Map();
+      for (const row of branches.docs) { const name = row.data().name; if (name) { if (byName.has(name)) throw new Error('Duplicate branch names need Owner review'); byName.set(name, row); } }
+      const choice = await window.Swal.fire({ title: 'Owner working branch', input: 'select',
+        inputOptions: Object.fromEntries([...byName.keys()].sort().map(name => [name, name])),
+        inputValue: byName.has(branch()) ? branch() : '', inputPlaceholder: 'Select branch',
+        text: 'Main Office remains this device’s home. The selected branch receives its real sales and stock records.',
+        showCancelButton: true, confirmButtonText: 'Open selected branch', inputValidator: value => !value ? 'Select a branch' : undefined });
+      if (!choice.isConfirmed || !byName.has(choice.value)) return;
+      const target = choice.value;
+      const secure = await pos.store.meta('secure-device:' + device());
+      const tabletAuth = tkGetAuth(); await tabletAuth.authStateReady?.();
+      // Resuming the same authenticated device keeps pending receipts intact.
+      if (target === branch() && secure?.mode === 'OwnerRoving' && tabletAuth.currentUser?.isAnonymous && tabletAuth.currentUser.uid === secure.uid) {
+        await finishEntry({ branch: target, deviceId: device() }); return;
+      }
+      await drained();
+      if (secure && (!tabletAuth.currentUser?.isAnonymous || tabletAuth.currentUser.uid !== secure.uid))
+        throw new Error('The stored tablet identity has changed. Retain its records and ask the Owner to reconcile that identity before re-enrollment');
+      if (tabletAuth.currentUser && !tabletAuth.currentUser.isAnonymous) {
+        if (!verified(tabletAuth.currentUser)) throw new Error('Sign out the unrelated Google session before Owner device setup');
+        await tkSignOut(tabletAuth);
+      }
+      const user = tabletAuth.currentUser || (await tkSignInAnonymously(tabletAuth)).user;
+      const bindingRef = doc(owner.db, 'pos_bindings', user.uid);
+      const physicalRef = doc(owner.db, 'pos_devices', legacy.docs[0].id);
+      const targetRef = doc(owner.db, 'branches', byName.get(target).id);
+      await pos.deadline(tkRunTransaction(owner.db, async tx => {
+        const old = await tx.get(bindingRef), physical = await tx.get(physicalRef), selected = await tx.get(targetRef);
+        if (!physical.exists() || physical.data().status !== 'Active' || physical.data().branch !== HOME || physical.data().deviceId !== device())
+          throw new Error('The physical Main Office registration changed during setup');
+        if (!selected.exists() || selected.data().name !== target) throw new Error('The selected branch changed during setup');
+        if (old.exists() && (old.data().deviceId !== device() || old.data().legacyDeviceDocId !== physicalRef.id))
+          throw new Error('This anonymous identity belongs to another physical device');
+        if (old.exists() && old.data().status === 'Revoked') throw new Error('This device was revoked. Review it in Manager before reactivating');
+        tx.set(bindingRef, { uid: user.uid, deviceId: device(), branch: target,
+          deviceName: physical.data().deviceName || device(), legacyDeviceDocId: physicalRef.id,
+          status: 'Active', mode: 'OwnerRoving', homeBranch: HOME, approvedBy: OWNER,
+          approvedAt: serverTimestamp(), requestedAt: old.exists() ? old.data().requestedAt || serverTimestamp() : serverTimestamp() });
+      }), 20000);
+      await pos.store.meta('secure-device:' + device(), { uid: user.uid, mode: 'OwnerRoving', homeBranch: HOME });
+      await pos.store.meta('approval:' + device(), { approved: true, branch: target, docId: physicalRef.id, trustedUid: user.uid, checkedAt: Date.now() });
+      // Restore the target branch's snapshot, then restart the private POS and
+      // operation caches. The physical registration and every ledger survive.
+      const backup = await pos.store.meta('catalog:' + target);
+      for (const key of keys) { const value = backup?.local?.[key]; if (value != null) localStorage.setItem(key, value); }
+      localStorage.setItem('takodeal_cached_allowed_cats', JSON.stringify(byName.get(target).data().allowedCategories || []));
+      localStorage.setItem('takodeal_device_branch', target);
+      localStorage.removeItem('currentShiftId'); localStorage.removeItem('cashierName');
+      sessionStorage.setItem(ENTRY, JSON.stringify({ branch: target, deviceId: device() }));
+      window.location.reload();
+    } catch (error) {
+      sessionStorage.removeItem(ENTRY);
+      window.sessionUser = null;
+      await window.Swal.fire('Owner access held', message(error), 'warning');
+    } finally { busy = false; }
+  };
+
+  window.executeCacheWipe = async function () {
+    try {
+      if (busy) throw new Error('Finish Owner branch preparation before updating');
+      await drained();
+      if (navigator.onLine === false) throw new Error('Connect this device before requesting an app update');
+      const registration = await navigator.serviceWorker?.getRegistration();
+      if (!registration) throw new Error('App installation is not ready. Reload while connected');
+      // Download an updated app without erasing photos, IndexedDB or identity.
+      // Device approval is checked by preparation, not by updating app files.
+      await pos.deadline(registration.update(), 20000);
+      const worker = registration.installing || registration.waiting;
+      if (worker && worker.state !== 'activated') {
+        let changed;
+        try {
+          await pos.deadline(new Promise((resolve, reject) => {
+            changed = () => {
+              if (worker.state === 'activated') resolve();
+              else if (worker.state === 'redundant') reject(new Error('The new app files could not be installed. The preceding app and tablet records are retained'));
+            };
+            worker.addEventListener('statechange', changed); changed();
+          }), 120000);
+        } finally { if (changed) worker.removeEventListener('statechange', changed); }
+      }
+      window.Swal.close(); window.location.reload();
+    } catch (error) { await window.Swal.fire('Update held', message(error), 'warning'); }
+  };
+  window.manualHardUpdate = async function () {
+    const result = await window.Swal.fire({ title: 'Update app files?', text: 'Saved tablet records, photos and device registration are retained.', showCancelButton: true, confirmButtonText: 'Update now' });
+    if (!result.isConfirmed) return;
+    window.Swal.fire({ title: 'Updating app files…', allowOutsideClick: false, didOpen: () => window.Swal.showLoading() });
+    await window.executeCacheWipe();
+  };
+  const logout = window.logoutCashier;
+  window.logoutCashier = async function (...args) {
+    try { if (maintenance) await tkSignOut(maintenance.auth); }
+    finally { sessionStorage.removeItem(ENTRY); return logout.apply(this, args); }
+  };
+  window.TKOwnerRoving = { version: '20261003', homeBranch: HOME, get preparing() { return busy; } };
+  const resume = async () => {
+    const raw = sessionStorage.getItem(ENTRY); if (!raw) return;
+    busy = true;
+    try { await pos.ready; await window.TKOperations.ready; await finishEntry(JSON.parse(raw)); }
+    catch (error) { sessionStorage.removeItem(ENTRY); window.sessionUser = null; await window.Swal.fire('Owner access held', message(error), 'warning'); }
+    finally { busy = false; }
+  };
+  window.addEventListener('storage', event => {
+    if (event.key !== 'takodeal_device_branch' || event.oldValue === event.newValue) return;
+    busy = true; window.sessionUser = null; window.location.reload();
+  });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resume, { once: true }); else resume();
+})();
