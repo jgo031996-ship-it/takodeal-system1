@@ -1216,3 +1216,273 @@
   if (document.readyState === 'complete') install();
   else window.addEventListener('load', install, { once: true });
 })();
+
+(function takodealFrame() {
+  function install() {
+    const get = id => document.getElementById(id);
+    const sidebar = get('mainSidebar');
+
+    if (!sidebar || document.body.dataset.tkFrame === '1') return;
+
+    document.body.dataset.tkFrame = '1';
+    document.body.classList.add('tk-frame');
+
+    const paths = {
+      pos: 'M3 4h18v13H3z M8 21h8 M12 17v4 M7 8h4 M7 12h7',
+      sales: 'M6 3h12v18l-3-2-3 2-3-2-3 2z M9 7h6 M9 11h6 M9 15h3',
+      mobilehub: 'M7 2h10v20H7z M10 5h4 M11 18h2',
+      stockreq: 'M3 7l9-4 9 4v11l-9 4-9-4z M3 7l9 4 9-4 M12 11v11',
+      prep: 'M5 4l15 15-3 3-5-5 2-2 M5 4c-3 5 0 10 7 13',
+      consumables: 'M7 7h10v14H7z M10 3h4v4 M8 12h8 M8 16h8',
+      waste: 'M4 6h16 M9 6V3h6v3 M7 6l1 15h8l1-15 M10 10v7 M14 10v7',
+      schedule: 'M4 5h16v16H4z M8 3v4 M16 3v4 M4 10h16 M8 14h2 M14 14h2 M8 18h2',
+      remit: 'M3 7h18v13H3z M3 11h18 M16 16h2 M7 3h10',
+      printer: 'M6 8V3h12v5 M6 17H3V8h18v9h-3 M6 14h12v8H6z M17 11h1',
+      timeclock: 'M12 3a9 9 0 1 0 0 18 9 9 0 1 0 0-18 M12 7v5l3 2',
+      bulletin: 'M4 9h5l10-5v16L9 15H4z M7 15l2 6h3l-2-6',
+      staffreq: 'M5 4h14v17H5z M8 3h8v3H8z M8 11h8 M8 15h6',
+      sop: 'M4 5h16v16H4z M8 3h8v4H8z M8 12l2 2 5-5 M8 18h7',
+      deliveries: 'M2 5h12v13H2z M14 10h4l4 4v4h-8 M5 18a2 2 0 1 0 4 0 M16 18a2 2 0 1 0 4 0',
+      grab: 'M3 7h18v13H3z M3 11h18 M16 16h2 M8 7V4h8v3',
+      settings: 'M9 3h6l1 4 4 2v6l-4 2-1 4H9l-1-4-4-2V9l4-2z M12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6',
+      person: 'M12 3a4 4 0 1 0 0 8 4 4 0 1 0 0-8 M5 21v-3a7 7 0 0 1 14 0v3',
+      location: 'M12 22s7-7 7-13a7 7 0 0 0-14 0c0 6 7 13 7 13 M12 6a3 3 0 1 0 0 6 3 3 0 1 0 0-6',
+      exit: 'M9 3H3v18h6 M9 12h12 M17 8l4 4-4 4',
+      more: 'M4 6h16 M4 12h16 M4 18h16'
+    };
+
+    const svg = name =>
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" ' +
+      'aria-hidden="true"><path d="' +
+      (paths[name] || paths.pos) + '"/></svg>';
+
+    function paint(node, name) {
+      if (!node || node.dataset.tkIcon === name && node.querySelector('svg')) return;
+      node.classList.add('tk-line-icon');
+      node.innerHTML = svg(name);
+      node.dataset.tkIcon = name;
+      node.setAttribute('aria-hidden', 'true');
+    }
+
+    function labelButton(button, name, label) {
+      const icon = document.createElement('span');
+      paint(icon, name);
+
+      const text = document.createElement('span');
+      text.className = 'tk-tool-label';
+      text.textContent = label;
+
+      button.replaceChildren(icon, text);
+    }
+
+    const menu = sidebar.querySelector('.nav-menu');
+    const footer = sidebar.querySelector('.sidebar-footer');
+
+    const tools = document.createElement('div');
+    tools.className = 'tk-sidebar-tools';
+
+    if (footer) sidebar.insertBefore(tools, footer);
+    else sidebar.append(tools);
+
+    const dropdown = get('posSettingsDropdown');
+    const settingsWrap = dropdown?.parentElement;
+    const settingsButton = dropdown?.previousElementSibling;
+
+    if (settingsWrap && settingsButton) {
+      settingsWrap.classList.add('tk-side-settings');
+      settingsButton.title = 'Settings';
+      settingsButton.setAttribute('aria-controls', 'posSettingsDropdown');
+      settingsButton.setAttribute('aria-haspopup', 'true');
+
+      labelButton(settingsButton, 'settings', 'Settings');
+      tools.append(settingsWrap);
+    }
+
+    const shift = get('btnTopShift');
+
+    if (shift) {
+      shift.classList.add('tk-side-shift');
+      tools.append(shift);
+    }
+
+    get('expQtyInput')?.parentElement?.parentElement
+      ?.classList.add('tk-expense-fields');
+
+    function skinNavigation() {
+      menu?.querySelectorAll('.nav-item').forEach(item => {
+        const name = item.id.replace(/^nav-/, '');
+        const icon = item.querySelector('.nav-icon-wrapper > span')
+          || [...item.children].find(
+            child => child.tagName.toUpperCase() === 'SPAN'
+          );
+
+        paint(icon, name);
+
+        const label = item.querySelector('.nav-item-text')
+          ?.textContent.trim() || name;
+
+        item.title = label;
+        item.setAttribute('aria-label', label);
+
+        if (item.dataset.tkKeyboard === '1') return;
+
+        item.dataset.tkKeyboard = '1';
+        item.tabIndex = 0;
+        item.setAttribute('role', 'button');
+
+        item.addEventListener('keydown', event => {
+          if (
+            event.target === item &&
+            (event.key === 'Enter' || event.key === ' ')
+          ) {
+            event.preventDefault();
+            item.click();
+          }
+        });
+      });
+
+      document.querySelectorAll('.tk-dock-btn').forEach(button =>
+        paint(button.firstElementChild, button.dataset.target)
+      );
+
+      paint(get('displayCashierContainer')?.querySelector('.f-icon'), 'person');
+      paint(get('displayBranchContainer')?.querySelector('.f-icon'), 'location');
+      paint(sidebar.querySelector('.logout-icon'), 'exit');
+
+      ['displayCashierContainer', 'displayBranchContainer'].forEach(id => {
+        const node = get(id);
+        if (node) {
+          node.title = node.querySelector('.f-text')?.textContent.trim() || '';
+        }
+      });
+
+      if (shift) {
+        const label = shift.textContent.trim()
+          .replace(/^[^\p{L}\p{N}]+/u, '');
+
+        shift.dataset.tkActive = String(/active\s+shift/i.test(label));
+        shift.title = label || 'Shift Management';
+        shift.setAttribute('aria-label', shift.title);
+
+        if (
+          !shift.querySelector('.tk-tool-label') ||
+          shift.dataset.tkLabel !== label
+        ) {
+          labelButton(shift, 'timeclock', label || 'Shift Management');
+          shift.dataset.tkLabel = label;
+        }
+      }
+    }
+
+    function positionSettings() {
+      if (!dropdown || !settingsButton || dropdown.style.display !== 'flex') return;
+
+      const rect = settingsButton.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      const top = viewport?.offsetTop || 0;
+      const height = viewport?.height || window.innerHeight;
+      const width = Math.min(280, window.innerWidth - 24);
+      const popupHeight = Math.min(dropdown.scrollHeight, height - 24);
+
+      const x = Math.max(
+        12,
+        Math.min(rect.right + 8, window.innerWidth - width - 12)
+      );
+      const y = Math.max(
+        top + 12,
+        Math.min(rect.top, top + height - popupHeight - 12)
+      );
+
+      const values = {
+        '--tk-settings-x': x + 'px',
+        '--tk-settings-y': y + 'px',
+        '--tk-settings-width': width + 'px',
+        '--tk-settings-height': (height - 24) + 'px'
+      };
+
+      for (const [key, value] of Object.entries(values)) {
+        if (dropdown.style.getPropertyValue(key) !== value) {
+          dropdown.style.setProperty(key, value);
+        }
+      }
+    }
+
+    let queued = false;
+    let reveal = false;
+
+    function refresh() {
+      queued = false;
+      skinNavigation();
+
+      const compact = Boolean(get('view-pos')?.classList.contains('active'));
+
+      if (document.body.classList.contains('tk-pos-focused') !== compact) {
+        document.body.classList.toggle('tk-pos-focused', compact);
+      }
+
+      settingsButton?.setAttribute(
+        'aria-expanded',
+        String(dropdown?.style.display === 'flex')
+      );
+
+      positionSettings();
+
+      if (reveal) {
+        const input = document.activeElement;
+        const modal = input?.closest(
+          '#shiftModal, #endShiftModal, #expenseModal'
+        );
+
+        if (
+          modal?.style.display === 'flex' &&
+          ['INPUT', 'SELECT', 'TEXTAREA'].includes(input.tagName.toUpperCase())
+        ) {
+          input.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+      }
+
+      reveal = false;
+    }
+
+    function queue(showInput = false) {
+      reveal = reveal || showInput === true;
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(refresh);
+    }
+
+    const observer = new MutationObserver(() => queue());
+
+    [menu, footer, shift].filter(Boolean).forEach(node =>
+      observer.observe(node, { childList: true, subtree: true })
+    );
+
+    if (dropdown) {
+      observer.observe(dropdown, {
+        attributes: true,
+        attributeFilter: ['style']
+      });
+    }
+
+    document.querySelectorAll('.view-container').forEach(node =>
+      observer.observe(node, {
+        attributes: true,
+        attributeFilter: ['class']
+      })
+    );
+
+    document.addEventListener('click', () => queue());
+    document.addEventListener('scroll', () => queue(), true);
+    document.addEventListener('focusin', () => queue(true));
+
+    window.addEventListener('resize', () => queue(true));
+    window.visualViewport?.addEventListener('resize', () => queue(true));
+    window.visualViewport?.addEventListener('scroll', () => queue());
+
+    refresh();
+  }
+
+  if (document.readyState === 'complete') install();
+  else window.addEventListener('load', install, { once: true });
+})();
