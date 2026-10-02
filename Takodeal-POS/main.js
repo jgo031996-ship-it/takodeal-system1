@@ -11414,7 +11414,7 @@ import { getAuth as tkGetAuth, signInAnonymously as tkSignInAnonymously,
   window.updateNetworkStatusUI = status;
   status();
   const inventoryRefs = new Map();
-  async function commit(record, resumeAudit) {
+    async function commit(record, resumeAudit) {
     const saleRef = window.doc(window.db, 'transactions', record.id);
     const refs = [];
     if (!record.auditPending || resumeAudit) {
@@ -11478,6 +11478,19 @@ import { getAuth as tkGetAuth, signInAnonymously as tkSignInAnonymously,
       // Read every side-effect target before any write. Existing dispatches are preserved.
       const effectRefs = record.effects.map(effect => window.doc(window.db, effect.collection, effect.id));
       const effectDocs = previous.exists() ? [] : await Promise.all(effectRefs.map(ref => tx.get(ref)));
+      // OFFLINE-03: reserve the shared daily meal in the same sale transaction.
+      const mealIndex = record.effects.findIndex(effect => effect.collection === 'pos_staff_meal_claims');
+      if (!previous.exists() && mealIndex >= 0 && effectDocs[mealIndex].exists()
+        && effectDocs[mealIndex].data().saleId !== record.id) {
+        const reason = 'Another device already recorded this daily staff meal. Owner must review the additional meal before its salary and stock effects are applied.';
+        tx.set(window.doc(window.db, 'pos_operation_reviews', record.id), { id: record.id,
+          branch: record.payload.branch, deviceId: record.payload.deviceId, type: 'sale-reconciliation',
+          acceptedAt: new Date(record.acceptedAt), fingerprint: record.fingerprint, writes: [], guards: [],
+          evidence: { sale: tkEncode(record), dailyMealConflict: true, existingMeal: tkEncode(effectDocs[mealIndex].data()) },
+          attachmentPaths: [], status: 'Pending', reviewReason: reason, receivedAt: window.serverTimestamp() });
+        tx.set(reviewRef, { branch: record.payload.branch, fingerprint: record.fingerprint, state: 'owner_review', reviewReason: reason });
+        return { ownerReview: true, reviewReason: reason };
+      }
       const inventoryState = record.auditPending && !resumeAudit ? 'audit_pending' : 'applied';
       if (!previous.exists()) {
         tx.set(saleRef, { ...record.payload, timestamp: new Date(record.acceptedAt),
@@ -11511,6 +11524,7 @@ import { getAuth as tkGetAuth, signInAnonymously as tkSignInAnonymously,
           data: { ...snap.data(), currentStock: (Number(snap.data().currentStock) || 0) - refs[index].quantity } }))] };
     });
   }
+
   const engine = createTakodealOfflineEngine({ store, cloud: { commit,
     commitOperation: record => window.TKOperations.commit(record),
     onResolved: (record, result) => window.TKOperations?.onResolved(record, result) }, now: Date.now, uuid, onStatus: status });
@@ -12352,14 +12366,265 @@ import { getDocsFromCache as tkCachedDocs, getDocFromCache as tkCachedDoc } from
       return { documents: entities.size, savedAt: Date.now() };
     })().catch(error => { problem = error.message; throw error; }).finally(() => { preparation = null; }); return preparation;
   };
-  const originalPrepare = offline.prepare;
-  offline.prepare = async (...args) => { const result = await originalPrepare(...args); await api.prepare(args[0] === true); return result; };
-  // Never erase the only offline assets while receipts/actions are outstanding.
-  window.executeCacheWipe = async () => {
-    await api.ready;
-    if (navigator.onLine === false || (await store.list()).some(row => !['synced', 'rejected'].includes(row.state)))
-      return window.Swal.fire('Update held', 'Ask the owner to finish checking saved records before updating this tablet.', 'info');
-    const registration = await navigator.serviceWorker.ready; await registration.update();
-    await offline.prepare(true); window.location.reload();
-  };
-})();
+    // OFFLINE-03: paste inside installTakodealOperations, immediately before
+  // the line: const originalPrepare = offline.prepare;
+  (function installOffline03Forms() {
+    if (window.TKOffline03) return;
+    const previousAssertReady = assertReady;
+    assertReady = async () => {
+      await previousAssertReady();
+      const approval = await store.meta('approval:' + device());
+      if (!approval?.trustedUid) throw new Error('Complete Owner device approval and preparation first');
+    };
+    const dayFor = value => {
+      const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value);
+      const part = type => parts.find(p => p.type === type).value;
+      return part('year') + '-' + part('month') + '-' + part('day');
+    };
+    const staffMealName = name => String(name || '').replace(/ \(Staff\)$/, '').trim();
+    async function mealIdentity(name, when = new Date()) {
+      const staffName = staffMealName(name);
+      const matches = [...await view()].filter(([path, data]) => path.startsWith('cashiers/') && data.cashierName === staffName);
+      if (matches.length !== 1) throw new Error('Owner must resolve the missing or duplicate staff profile: ' + staffName);
+      const staffId = matches[0][0].split('/')[1], day = dayFor(when);
+      return { staffId, staffName, day, id: staffId + '__' + day };
+    }
+    async function hasClaim(identity) {
+      if (await store.meal('meal03:' + identity.id)) return true;
+      const saved = await store.meta('meal03-server:' + identity.id);
+      if (saved?.claimed) return true;
+      if ((await store.list()).some(row => row.payload?.staffMealClaimId === identity.id || row.evidence?.staffMealClaimId === identity.id)) return true;
+      // Respect earlier meals already present in the prepared history too.
+      for (const [path, row] of await view()) {
+        const meal = path.startsWith('staff_requests/') && String(row.type || '').toLowerCase().includes('staff meal') && row.staffName === identity.staffName;
+        const sale = path.startsWith('transactions/') && row.globalDiscountType === 'staff_meal' && staffMealName(row.customerName) === identity.staffName;
+        if (!(meal || sale) || ['Voided', 'Rejected', 'Cancelled'].includes(row.status)) continue;
+        const date = tkDecode(row.timestamp || row.localTimestamp);
+        if (date && Number.isFinite(new Date(date).getTime()) && dayFor(new Date(date)) === identity.day) return true;
+      }
+      if (navigator.onLine !== false) {
+        try {
+          const snap = await offline.deadline(tkGetDocFromServer(adapter.doc('pos_staff_meal_claims/' + identity.id)));
+          if (snap.exists()) { await store.meta('meal03-server:' + identity.id, { claimed: true }); return true; }
+        } catch (error) {
+          if (error.code === 'permission-denied') throw new Error('Owner must finish installing the matching device and meal Rules');
+        }
+      }
+      return false;
+    }
+    const oldHasMeal = offline.hasMealToday;
+    offline.hasMealToday = async name => Boolean(await oldHasMeal(name)) || hasClaim(await mealIdentity(name));
+    const originalAccept = offline.engine.accept;
+    const originalAdd = store.add;
+    store.add = (record, key, metadata) => originalAdd(record, key || (record.evidence?.staffMealClaimId ? 'meal03:' + record.evidence.staffMealClaimId : null), metadata);
+    offline.engine.accept = async (payload, options) => {
+      await assertReady();
+      if (payload.globalDiscountType !== 'staff_meal') return originalAccept(payload, options);
+      const existing = payload.localSaleId && await store.get(payload.localSaleId);
+      if (existing) return originalAccept(payload, options);
+      const identity = await mealIdentity(payload.customerName);
+      if (await hasClaim(identity)) throw new Error('This staff member already has a meal recorded for today');
+      payload.staffMealClaimId = identity.id;
+      payload.staffMealStaffId = identity.staffId;
+      payload.staffMealDay = identity.day;
+      const effects = [...options.effects, { collection: 'pos_staff_meal_claims', id: identity.id, mode: 'create',
+        data: { ...identity, branch: payload.branch, deviceId: device(), saleId: payload.localSaleId } }];
+      return originalAccept(payload, { ...options, effects, mealKey: 'meal03:' + identity.id });
+    };
+
+    // A single receiving action includes every stock delta, dispatch status,
+    // stock log and discrepancy alert. A changed dispatch goes to Owner review.
+    window.submitGroupedDispatch = (groupKey, encodedItems) => action('shipment-received', async p => {
+      const items = JSON.parse(decodeURIComponent(encodedItems));
+      if (!Array.isArray(items) || !items.length || new Set(items.map(item => item.id)).size !== items.length) throw new Error('Invalid shipment sheet');
+      const map = await view();
+      const current = items.map(item => ({ item, data: tkDecode(map.get('dispatch_logs/' + item.id)) }));
+      const terminal = new Set(['Received', 'Discrepancy', 'Lost in Transit']);
+      if (current.every(entry => entry.data && terminal.has(entry.data.status))) {
+        await window.Swal.fire('Already recorded', 'This shipment already has a receiving record. No stock was added again.', 'info'); return;
+      }
+      for (const { item, data } of current) {
+        if (!data || data.toBranch !== branch() || data.status !== 'Arrived' || data.item !== item.item) throw new Error('Refresh the arrived shipment sheet before receiving it');
+        const field = document.getElementById('recv_val_' + item.id);
+        const missing = Boolean(document.getElementById('missing_check_' + item.id)?.checked);
+        if (!missing && (!field || field.value.trim() === '')) throw new Error('Enter the actual received quantity for ' + item.item);
+        const received = missing ? 0 : amount(field.value);
+        const inv = p.inventory(item.item, true);
+        const conversion = Number(inv.data.conversionRate || inv.data.conversion || 1);
+        if (!Number.isFinite(conversion) || conversion <= 0) throw new Error('Owner must check the unit conversion for ' + item.item);
+        if (item.convRate && Number(item.convRate) !== conversion) throw new Error('Unit conversion changed. Refresh this shipment sheet');
+        const expected = amount(data.qty), quantity = received * conversion, variance = quantity - expected;
+        const status = missing ? 'Lost in Transit' : variance === 0 ? 'Received' : 'Discrepancy';
+        const remarks = document.getElementById('remark_val_' + item.id)?.value.trim() || '';
+        p.guard('dispatch_logs/' + item.id, { status: 'Arrived', toBranch: branch(), item: data.item, qty: encode(data.qty) });
+        p.guard(inv.path, { branch: branch(), name: inv.data.name, conversionRate: inv.data.conversionRate ?? null, conversion: inv.data.conversion ?? null });
+        if (quantity) p.stock(inv, quantity, { type: 'Delivery Received', dispatchId: item.id, note: remarks || 'Complete shipment received' });
+        p.patch('dispatch_logs/' + item.id, { status, receivedQty: quantity, variance, receivedDisplayQty: received,
+          receivedAt: new Date(), receivedBy: cashier(), receivingRemarks: remarks, receivingOperationId: p.id });
+        if (missing || variance) p.add('manager_alerts', { type: 'DELIVERY_DISCREPANCY', branch: branch(), cashier: cashier(),
+          message: data.item + ': expected ' + expected + ', received ' + quantity + '. ' + remarks,
+          timestamp: new Date(), isRead: false, operationId: p.id });
+      }
+      if (!(await confirm('Receive this shipment?', 'Save the actual quantities and delivery status together?'))) return;
+      await p.finish();
+      await window.Swal.fire('Receiving record saved', 'All shipment items were saved together.', 'success');
+      window.loadStockRequestUI?.();
+    });
+
+    // Freeze the raw ingredients used by each batch so an undo never guesses
+    // from a recipe that the Manager may have changed later.
+    window.confirmPrepCart = () => action('kitchen-prep', async p => {
+      const cart = window.kitchenPrepCart || [];
+      if (!cart.length) throw new Error('Prep cart is empty');
+      const bom = (await store.meta('catalog:' + branch()))?.bom;
+      if (!Array.isArray(bom)) throw new Error('Recipe backup is missing');
+      for (const item of cart) {
+        if (item.branch !== branch()) throw new Error('Prep branch does not match this tablet');
+        const inv = p.inventory(item.id), count = amount(item.purchQty);
+        const conversion = Number(inv.data.conversionRate || inv.data.conversion || 1);
+        if (!count || !Number.isFinite(conversion) || conversion <= 0) throw new Error('Enter a valid batch quantity and conversion');
+        const rawPlan = {};
+        for (const recipe of bom.filter(row => row.menuItem === item.name)) {
+          const quantity = amount(recipe.qty || 0) * count;
+          if (quantity) rawPlan[recipe.ingredientName] = (rawPlan[recipe.ingredientName] || 0) + quantity;
+        }
+        for (const name of Object.keys(rawPlan)) p.inventory(name, true);
+        p.stock(inv, count * conversion, { type: 'End-of-Shift Kitchen Prep', purchUom: item.purchUom || inv.data.uom || 'units',
+          purchQty: count, rawIngredientReturnPlan: rawPlan, preparedQty: count * conversion,
+          note: 'Prepared ' + count + ' by ' + cashier() });
+        for (const [name, quantity] of Object.entries(rawPlan)) p.stock(p.inventory(name, true), -quantity);
+      }
+      if (!(await confirm('Confirm kitchen prep', 'Record prepared batches and their ingredient use?'))) return;
+      await p.finish(); window.kitchenPrepCart = []; window.renderPrepCart?.(); window.loadKitchenPrep?.();
+      await window.Swal.fire('Prep recorded', 'Batches and their exact ingredient use were saved together.', 'success');
+    });
+    window.undoKitchenPrep = logId => action('kitchen-prep-reversal', async p => {
+      const path = 'stock_logs/' + logId, data = tkDecode((await view()).get(path));
+      if (!data || data.branch !== branch()) throw new Error('Prep record is missing');
+      if (data.undone || data.undoReviewOperationId) throw new Error('This batch already has an undo or review record');
+      if (!(Number(data.variance) > 0) || !String(data.type).toLowerCase().includes('prep')) throw new Error('Select an original prepared batch');
+      p.guard(path, { undone: data.undone ?? null, undoReviewOperationId: data.undoReviewOperationId ?? null, variance: data.variance });
+      if (!data.rawIngredientReturnPlan || typeof data.rawIngredientReturnPlan !== 'object') {
+        p.review = 'Legacy prep has no frozen ingredient plan. Owner must reconstruct the original ingredient use before any stock reversal.';
+        p.evidence = { originalPrepLogId: logId, originalPrep: encode(data) };
+        p.patch(path, { undoReviewOperationId: p.id });
+      } else {
+        p.stock(p.inventory(data.item, true), -amount(data.preparedQty || data.variance), { type: 'Kitchen Prep Reversal', originalPrepLogId: logId });
+        for (const [name, quantity] of Object.entries(data.rawIngredientReturnPlan)) p.stock(p.inventory(name, true), amount(quantity), { type: 'Ingredient Return', originalPrepLogId: logId });
+        p.patch(path, { undone: true, undoneAt: new Date(), undoneBy: cashier(), undoneOperationId: p.id });
+      }
+      if (!(await confirm('Record a batch reversal?', 'Preserve the original prep record and save all reversals together?'))) return;
+      await p.finish(); window.loadKitchenPrepHistory?.();
+      await window.Swal.fire('Reversal recorded', p.review ? 'The earlier batch requires Owner reconciliation. Stock has not been reversed.' : 'The original batch and its reversal are retained.', 'success');
+    });
+
+    // HR meal entries use the same daily claim as POS meals. Photos are saved
+    // as bytes on the tablet; uploading is deferred until the action commits.
+    const oldStaffRequest = window.submitStaffRequest;
+    window.submitStaffRequest = type => type !== 'Staff Meal' ? oldStaffRequest(type) : action('staff-meal-request', async p => {
+      const identity = await mealIdentity(cashier()), item = input('reqMealItem').trim(), cost = amount(input('reqMealCost'));
+      if (!item || input('reqMealCost').trim() === '') throw new Error('Enter the meal and its cost');
+      if (await hasClaim(identity)) throw new Error('This staff member already has a meal recorded for today');
+      const claimPath = 'pos_staff_meal_claims/' + identity.id;
+      p.guards.push({ path: claimPath, exists: false });
+      let photo = null;
+      const file = document.getElementById('reqMealProof')?.files?.[0];
+      if (file) {
+        if (file.size > 10 * 1024 * 1024) throw new Error('Choose a proof photo smaller than 10 MB');
+        const path = 'staff_requests/' + p.id + '/proof';
+        p.attachments.push({ path, type: file.type || 'application/octet-stream', bytes: await file.arrayBuffer() }); photo = { __tkAttachment: path };
+      }
+      const request = p.add('staff_requests', { type: 'Staff Meal', branch: branch(), staffName: identity.staffName,
+        staffId: identity.staffId, item, amount: cost, status: 'Pending', timestamp: new Date(), operationId: p.id, proofImageUrl: photo }, 'meal');
+      p.writes.push({ path: claimPath, mode: 'create', data: { ...identity, branch: branch(), deviceId: device(), requestId: request.id, acceptedAt: encode(new Date()) } });
+      p.evidence = { staffMealClaimId: identity.id };
+      const record = await journal.accept(p);
+      offline.sync().catch(() => {});
+      for (const id of ['reqMealItem', 'reqMealCost', 'reqMealProof']) if (document.getElementById(id)) document.getElementById(id).value = '';
+      const modal = document.getElementById('staffRequestsModal'); if (modal) modal.style.display = 'none';
+      await window.Swal.fire('Meal recorded', 'The meal and any proof photo were saved together.', 'success');
+      return record;
+    });
+
+    const make = (tag, text) => { const node = document.createElement(tag); node.textContent = text; return node; };
+    let dialog, info, controls, timer;
+    function legacyQueues() {
+      const keys = ['takodeal_offline_queue', 'takodeal_delivery_outbox', 'takodeal_audit_queue'];
+      return keys.filter(key => { const raw = localStorage.getItem(key); if (!raw) return false; try { return Object.keys(JSON.parse(raw) || {}).length > 0; } catch { return true; } });
+    }
+    window.openCashierPreparation = async () => {
+      const auth = tkGetAuth(); await auth.authStateReady?.();
+      const isOwner = auth.currentUser?.email === 'jgo031996@gmail.com' && auth.currentUser.emailVerified;
+      if (!isOwner) {
+        const result = await window.Swal.fire({ title: 'Owner device preparation', input: 'password', inputLabel: 'Owner or Manager staff PIN', showCancelButton: true });
+        if (!result.isConfirmed) return;
+        const cached = JSON.parse(localStorage.getItem('takodeal_cashier_cache') || '[]');
+        const staff = cached.find(row => String(row.pin) === String(result.value));
+        if (!staff || !/(owner|manager)/i.test(staff.role || '')) throw new Error('Owner or Manager preparation access required');
+      }
+      if (!dialog) {
+        dialog = document.createElement('dialog'); dialog.id = 'tk03PreparationDialog';
+        dialog.style.cssText = 'width:min(650px,94vw);max-height:85dvh;overflow:auto;border:1px solid #e8dfd3;border-radius:20px;padding:22px;background:#fff;color:#27231f';
+        const close = make('button', 'Close'); close.onclick = () => { clearInterval(timer); dialog.close(); };
+        info = make('div', ''); controls = make('div', '');
+        dialog.append(make('h2', 'Device preparation'), close, info, controls); document.body.append(dialog);
+      }
+      const refresh = async () => {
+        const secure = await store.meta('secure-device:' + device());
+        info.replaceChildren(make('p', 'Branch: ' + (branch() || 'Unassigned')), make('p', 'Device: ' + (device() || 'Unregistered')),
+          make('p', 'Approval UID: ' + (secure?.uid || 'Not enrolled')));
+        controls.replaceChildren();
+        const button = (label, task) => {
+          const node = make('button', label); node.style.cssText = 'min-height:48px;padding:12px;margin:6px;border:1px solid #e5d8bd;border-radius:10px;background:#fff4d9;font-weight:700';
+          node.onclick = async () => { node.disabled = true; try { await task(); } catch (error) { await window.Swal.fire('Preparation held', error.message, 'warning'); } finally { node.disabled = false; await refresh(); } };
+          controls.append(node);
+        };
+        button('Export saved tablet records', async () => {
+          const queues = Object.fromEntries(['takodeal_offline_queue', 'takodeal_delivery_outbox', 'takodeal_audit_queue'].map(key => [key, localStorage.getItem(key)]));
+          const records = { exportedAt: new Date().toISOString(), branch: branch(), deviceId: device(), queues, ledger: await store.list(), documents: await store.documents() };
+          const text = JSON.stringify(records, (_, value) => value instanceof ArrayBuffer ? { __tkBytes: Array.from(new Uint8Array(value)) } : value, 2);
+          const url = URL.createObjectURL(new Blob([text], { type: 'application/json' })), link = document.createElement('a');
+          link.href = url; link.download = 'takodeal-tablet-records-' + device() + '-' + dayFor(new Date()) + '.json';
+          link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
+        });
+        if (legacyQueues().length) info.append(make('p', 'Owner reconciliation required for earlier queues: ' + legacyQueues().join(', ') + '. Export and retain these records.'));
+        if (!secure) button('Request Owner device approval', async () => {
+          if (legacyQueues().length) throw new Error('Export and reconcile the earlier sales, delivery or audit queues first. Do not clear them to bypass this check');
+          if (window.currentShift?.active || (await store.list()).some(row => !['synced', 'rejected'].includes(row.state))) throw new Error('Close and reconcile saved shifts and records before enrollment');
+          const answer = await window.Swal.fire({ title: 'Enroll this tablet?', text: 'This may sign the Owner out of this Cashier browser. Checkout waits for approval in the separate Manager app. Tablet records are retained.', showCancelButton: true, confirmButtonText: 'Request approval' });
+          if (answer.isConfirmed) await offline.beginSecureDeviceEnrollment();
+        });
+        else {
+          button('Check Owner approval', async () => { await offline.refreshTrustedBinding(); await window.Swal.fire('Approval confirmed', 'This tablet identity is approved.', 'success'); });
+          button('Prepare this tablet', async () => {
+            if (navigator.onLine === false) throw new Error('Reconnect for the initial preparation');
+            await offline.prepare(true); await offline.heartbeat();
+            if (!offline.prepared) throw new Error('Preparation is incomplete');
+            await window.Swal.fire('Preparation complete', 'Menu, photos, recipes and action data are saved on this tablet.', 'success');
+          });
+        }
+        info.append(make('p', offline.prepared ? 'Asset and action backup: prepared' : 'Asset and action backup: preparation required'));
+        const catalog = await store.meta('catalog:' + branch());
+        info.append(make('p', catalog?.modelsComplete ? 'Attendance models: saved' : 'Attendance models: preparation required'));
+        if (offline.problem) info.append(make('p', offline.problem));
+      };
+      await refresh(); if (!dialog.open) dialog.showModal();
+    };
+    function installSetupButton() {
+      const menu = document.getElementById('posSettingsDropdown');
+      if (!menu || document.getElementById('tk03PreparationButton')) return;
+      const node = make('button', 'Device preparation'); node.id = 'tk03PreparationButton';
+      node.style.cssText = 'min-height:48px;padding:12px;border:1px solid #e8dfd3;border-radius:10px;background:#faf8f4;color:#27231f;font-weight:700';
+      node.onclick = () => window.openCashierPreparation().catch(error => window.Swal.fire('Preparation held', error.message, 'warning'));
+      menu.append(node);
+      const loginControl = document.querySelector?.('button[onclick*="ownerBypassLogin"]');
+      if (loginControl?.parentElement && !document.getElementById('tk03LoginPreparationButton')) {
+        const loginButton = make('button', 'Device preparation'); loginButton.id = 'tk03LoginPreparationButton';
+        loginButton.style.cssText = node.style.cssText; loginButton.onclick = node.onclick;
+        loginControl.parentElement.append(loginButton);
+      }
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installSetupButton); else installSetupButton();
+    window.TKOffline03 = { version: 3, dayFor, mealIdentity, hasClaim };
+  })();
+
