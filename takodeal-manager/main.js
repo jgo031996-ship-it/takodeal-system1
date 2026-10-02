@@ -29238,7 +29238,13 @@ function tkReconcileSale(record, targetShift, inventory, effects, owner, note) {
   for (const effect of record.effects) {
     const path = effect.collection + '/' + effect.id, old = effects.find(item => item.path === path)?.data || null;
     guards.push({ path, exists: Boolean(old), fields: old ? tkEncode(old) : {} });
-    if (effect.mode === 'mobile-paid') {
+    if (effect.collection === 'pos_staff_meal_claims' && old && old.saleId !== record.id) {
+      // Owner explicitly approves an additional meal. Preserve the first claim;
+      // retain the exception and Owner note with this second receipt.
+      writes.push({ path: 'pos_staff_meal_exceptions/' + record.id, mode: 'create', data: tkEncode({
+        branch: payload.branch, claimId: effect.id, receiptId: payload.receiptId, saleId: record.id,
+        originalMeal: old, approvedBy: owner, approvalNote: note, timestamp: new Date() }) });
+    } else if (effect.mode === 'mobile-paid') {
       if (!old || (old.paymentStatus === 'paid' && old.receiptId && old.receiptId !== payload.receiptId))
         throw new Error('The customer order payment needs manual reconciliation');
       writes.push({ path, mode: 'update', data: tkEncode({ paymentStatus: 'paid', receiptId: payload.receiptId, encodedAt: new Date() }) });
@@ -29248,6 +29254,7 @@ function tkReconcileSale(record, targetShift, inventory, effects, owner, note) {
   }
   return { writes, guards };
 }
+
 
 // Append to the existing Manager main.js. No Upgrade-01 Manager replacement is needed.
 (function installCashierStatus() {
@@ -29562,4 +29569,75 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
     button.style.cssText = 'position:fixed;bottom:72px;right:18px;z-index:1000;min-height:44px;border:1px solid #e5d8bd;border-radius:12px;padding:12px 16px;background:#fff4d9;color:#27231f;font-weight:700';
     button.onclick = open; document.body.append(button);
   }, 10000);
+})();
+
+// OFFLINE-03: append at the very bottom of Manager main.js.
+(function installOwnerDevicePreparation() {
+  if (window.TKDeviceAdmin) return;
+  const originalCommit = tkCommitOperation;
+  tkCommitOperation = (record, adapter, resolution) => {
+    if (resolution?.action === 'approve' && record.type === 'kitchen-prep-reversal' && record.evidence?.originalPrepLogId)
+      throw new Error('This earlier batch has no frozen ingredient plan. Reconstruct it from original evidence or use a fresh reconciled physical count. Approving this placeholder cannot restore ingredients.');
+    return originalCommit(record, adapter, resolution);
+  };
+  const owner = () => window.auth?.currentUser?.email === 'jgo031996@gmail.com' && window.auth.currentUser.emailVerified === true;
+  const make = (tag, value) => { const node = document.createElement(tag); node.textContent = value; return node; };
+  const style = 'min-height:48px;padding:12px 16px;margin:6px;border:1px solid #e5d8bd;border-radius:10px;background:#fff4d9;color:#27231f;font-weight:700;cursor:pointer';
+  let panel, list, busy = false;
+  async function refresh() {
+    if (!owner()) throw new Error('Verified Owner account required');
+    if (busy) return; busy = true;
+    list.replaceChildren(make('p', 'Loading device approvals…'));
+    try {
+      const snapshots = await tkOwnerDocs(window.collection(window.db, 'pos_bindings'));
+      list.replaceChildren();
+      for (const snap of snapshots.docs) {
+        const data = snap.data(), card = make('article', '');
+        card.style.cssText = 'padding:16px;margin:12px 0;border:1px solid #e8dfd3;border-radius:14px;background:#faf8f4';
+        card.append(make('h3', data.branch + ' · ' + (data.deviceName || data.deviceId)), make('p', 'Status: ' + data.status),
+          make('p', 'Device ID: ' + data.deviceId), make('p', 'Approval UID: ' + snap.id));
+        const action = (label, work) => {
+          const button = make('button', label); button.style.cssText = style;
+          button.onclick = async () => {
+            if (!owner()) return; button.disabled = true;
+            try { await work(); } catch (error) { await window.Swal.fire('Device approval held', error.message, 'warning'); }
+            finally { button.disabled = false; await refresh(); }
+          }; card.append(button);
+        };
+        if (data.status === 'Pending') action('Approve matched tablet', () => window.TKCashierStatus.approveEnrollment(snap.id));
+        if (data.status === 'Active') action('Revoke this tablet', async () => {
+          const answer = await window.Swal.fire({ title: 'Revoke this device?', text: 'It loses server access. Keep its tablet records for reconciliation; an offline tablet sees revocation when it reconnects.', showCancelButton: true, confirmButtonText: 'Revoke device' });
+          if (!answer.isConfirmed) return;
+          await window.updateDoc(window.doc(window.db, 'pos_bindings', snap.id), { status: 'Revoked', revokedAt: window.serverTimestamp(), revokedBy: window.auth.currentUser.email });
+        });
+        list.append(card);
+      }
+      if (snapshots.empty) list.append(make('p', 'Request approval from Device preparation on each Cashier tablet first.'));
+    } catch (error) { list.replaceChildren(make('p', 'Device setup could not load: ' + error.message)); }
+    finally { busy = false; }
+  }
+  async function open() {
+    if (!owner()) throw new Error('Verified Owner account required');
+    if (!panel) {
+      panel = document.createElement('dialog'); panel.id = 'tk03OwnerDevices';
+      panel.style.cssText = 'width:min(780px,94vw);max-height:85dvh;overflow:auto;border:1px solid #e8dfd3;border-radius:20px;padding:22px;background:#fff;color:#27231f';
+      const close = make('button', 'Close'); close.style.cssText = style; close.onclick = () => panel.close();
+      const reload = make('button', 'Refresh requests'); reload.style.cssText = style; reload.onclick = refresh;
+      list = make('div', '');
+      panel.append(make('h2', 'Cashier device approvals'), make('p', 'Compare the branch, Device ID and Approval UID with the physical tablet before approval.'), close, reload, list);
+      document.body.append(panel);
+    }
+    if (!panel.open) panel.showModal(); await refresh();
+  }
+  window.TKDeviceAdmin = { open, refresh };
+  function install() {
+    const old = document.getElementById('tk03OwnerDevicesButton');
+    if (!owner()) { old?.remove(); panel?.close(); return; }
+    if (old) return;
+    const button = make('button', 'Device approvals'); button.id = 'tk03OwnerDevicesButton';
+    button.style.cssText = style + ';position:fixed;right:18px;bottom:126px;z-index:1000';
+    button.onclick = () => open().catch(error => window.Swal.fire('Owner access required', error.message, 'warning'));
+    document.body.append(button);
+  }
+  setInterval(install, 10000); install();
 })();
