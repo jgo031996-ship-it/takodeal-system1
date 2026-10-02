@@ -1,68 +1,53 @@
-// Bumped to v5 to force the tablet to replace the crashing engine!
-const CACHE_NAME = 'takodeal-pos-core-v10'; 
+const CACHE_NAME = 'takodeal-pos-core-v11';
 const IMAGE_CACHE = 'takodeal-image-storage-v1';
+const CORE_ASSETS = ['./', './index.html', './main.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json'];
 
-const CORE_ASSETS = [
-    '/',
-    '/index.html',
-    '/main.js',
-    '/style.css',
-    '/logo.jpg',
-    '/manifest.json'
-];
-
-self.addEventListener('install', (event) => {
-    event.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => cache.addAll(CORE_ASSETS))
-    );
-    self.skipWaiting();
+self.addEventListener('install', event => {
+  event.waitUntil(caches.open(CACHE_NAME).then(async cache => {
+    await cache.addAll(CORE_ASSETS);
+    await cache.add('./logo.jpg').catch(() => {});
+    await self.skipWaiting();
+  }));
 });
-
-self.addEventListener('activate', (event) => {
-    event.waitUntil(
-        caches.keys().then(keys => Promise.all(
-            keys.filter(key => key !== CACHE_NAME && key !== IMAGE_CACHE).map(key => caches.delete(key))
-        ))
-    );
-    event.waitUntil(clients.claim()); 
+self.addEventListener('activate', event => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(key => key.startsWith('takodeal-pos-core-') && key !== CACHE_NAME).map(key => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
-
-self.addEventListener('fetch', (event) => {
-    const url = new URL(event.request.url);
-
-    // 🚨 THE CRASH FIX: FIREBASE DATABASE BYPASS
-    // If the request is going to the live database or auth servers, do NOT touch it!
-    if (event.request.method !== 'GET' || url.hostname.includes('googleapis.com') || url.hostname.includes('firebase')) {
-        return; // Let the live database talk to the cloud normally!
+self.addEventListener('fetch', event => {
+  const request = event.request;
+  const url = new URL(request.url);
+  if (request.method !== 'GET' || url.hostname.includes('googleapis.com') || url.hostname.includes('firebase')) return;
+  if (request.destination === 'image') {
+    event.respondWith((async () => {
+      const cached = await caches.match(request, { ignoreSearch: true });
+      if (cached) return cached;
+      try {
+        const response = await fetch(request);
+        if (response.ok || response.type === 'opaque') {
+          const cache = await caches.open(IMAGE_CACHE);
+          await cache.put(request, response.clone()).catch(() => {});
+        }
+        return response;
+      } catch {
+        return new Response('<svg width="150" height="150" xmlns="http://www.w3.org/2000/svg"><rect width="150" height="150" fill="#f2efe9"/></svg>', { headers: { 'Content-Type': 'image/svg+xml' } });
+      }
+    })());
+    return;
+  }
+  event.respondWith((async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const cached = await cache.match(request, { ignoreSearch: true });
+    const refresh = fetch(request).then(async response => {
+      if (response.ok || response.type === 'opaque') await cache.put(request, response.clone()).catch(() => {});
+      return response;
+    }).catch(() => cached || new Response('This file is not available offline yet.', { status: 503 }));
+    if (cached) {
+      event.waitUntil(refresh.then(() => {}));
+      return cached;
     }
-
-    // 📸 1. IMAGES
-    if (event.request.destination === 'image' || url.hostname.includes('firebasestorage')) {
-        event.respondWith(
-            caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
-                if (cachedResponse) return cachedResponse;
-                return fetch(event.request).then((networkResponse) => {
-                    const responseToCache = networkResponse.clone();
-                    caches.open(IMAGE_CACHE).then((cache) => cache.put(event.request, responseToCache));
-                    return networkResponse;
-                }).catch(() => {
-                    return new Response('<svg width="150" height="150" xmlns="http://www.w3.org/2000/svg"><rect width="150" height="150" fill="#f1f5f9"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" font-size="20" fill="#94a3b8">No Image</text></svg>', { headers: { 'Content-Type': 'image/svg+xml' } });
-                });
-            })
-        );
-        return;
-    }
-
-    // ⚡ 2. CORE FILES
-    event.respondWith(
-        caches.match(event.request, { ignoreSearch: true }).then((cachedResponse) => {
-            const fetchPromise = fetch(event.request).then((networkResponse) => {
-                const responseToCache = networkResponse.clone();
-                caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseToCache));
-                return networkResponse;
-            }).catch(() => {});
-
-            return cachedResponse || fetchPromise;
-        })
-    );
+    return refresh;
+  })());
 });
