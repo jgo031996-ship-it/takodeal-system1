@@ -1,6 +1,6 @@
-/* Local app files, Firebase SDK modules and menu photos. Database/API traffic
-   is never cached here. Deploy only with the matching patched Cashier files. */
-const CORE = 'takodeal-pos-core-offline03-startupfix-20261003';
+// In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
+// with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
+const CORE = 'takodeal-pos-core-owner-roving-hotfix-20261003';
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
 const required = ['./', './index.html', './main.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json'];
