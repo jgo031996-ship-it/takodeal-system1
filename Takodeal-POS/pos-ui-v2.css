@@ -516,3 +516,76 @@ button, select, .nav-item, .item-card { -webkit-tap-highlight-color: transparent
   .num-btn, .pay-btn { min-height: 52px !important; }
   .payment-grid { grid-template-columns: repeat(2,1fr) !important; }
 }
+
+/* Restore the category dropdown */
+body.tk-ui-v2 #menuCategoryDropdown {
+  display: block !important;
+  appearance: auto !important;
+  width: 100%;
+  min-height: 44px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #ebe7df;
+  border-radius: 10px;
+  background: white;
+  color: #241b17;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* Replace the horizontal category buttons */
+body.tk-ui-v2 #tkCategoryPills {
+  display: none !important;
+}
+
+/* Grab theme */
+body.tk-ui-v2[data-pos-theme="Grab"] {
+  --tk-gold: #16a34a;
+  --tk-gold-2: #22c55e;
+  --tk-gold-soft: #dcfce7;
+  --tk-bg: #f0fdf4;
+  --tk-line: #bbf7d0;
+  --primary: #16a34a;
+}
+
+/* Foodpanda theme */
+body.tk-ui-v2[data-pos-theme="Foodpanda"] {
+  --tk-gold: #db2777;
+  --tk-gold-2: #ec4899;
+  --tk-gold-soft: #fce7f3;
+  --tk-bg: #fff1f7;
+  --tk-line: #fbcfe8;
+  --primary: #db2777;
+}
+
+body.tk-ui-v2.tk-delivery-theme #posCartHeader,
+body.tk-ui-v2.tk-delivery-theme #menuCategoryDropdown {
+  background: var(--tk-gold-soft) !important;
+  border-color: var(--tk-gold) !important;
+}
+
+body.tk-ui-v2.tk-delivery-theme #posPlatformSelect,
+body.tk-ui-v2.tk-delivery-theme #btnMainPlaceOrder,
+body.tk-ui-v2.tk-delivery-theme .tk-add-btn:not(:disabled),
+body.tk-ui-v2.tk-delivery-theme .nav-item.active {
+  color: white !important;
+}
+
+body.tk-ui-v2.tk-delivery-theme #btnMainParkOrder {
+  background: var(--tk-gold-soft) !important;
+  color: var(--primary) !important;
+  border-color: var(--tk-gold) !important;
+}
+
+body.tk-ui-v2.tk-delivery-theme .tk-category-pill.active,
+body.tk-ui-v2.tk-delivery-theme .tk-category-option.active,
+body.tk-ui-v2.tk-delivery-theme #tkCartToggle {
+  background: var(--tk-gold) !important;
+  border-color: var(--tk-gold) !important;
+  color: white !important;
+}
+
+body.tk-ui-v2.tk-delivery-theme .tk-product-price,
+body.tk-ui-v2.tk-delivery-theme #displayGrandTotal {
+  color: var(--primary) !important;
+}
