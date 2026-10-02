@@ -822,3 +822,397 @@
   if (document.readyState === 'complete') install();
   else window.addEventListener('load', install, { once: true });
 })();
+
+(function standardWorkTabs() {
+  function install() {
+    if (document.body.dataset.tkWorkUI === '1') return;
+    document.body.dataset.tkWorkUI = '1';
+
+    const get = id => document.getElementById(id);
+    const mark = (node, name) => {
+      if (node && !node.classList.contains(name)) node.classList.add(name);
+    };
+    const setStyle = (node, key, value) => {
+      if (node.style.getPropertyValue(key) !== value)
+        node.style.setProperty(key, value);
+    };
+    const markAll = (selector, name) =>
+      document.querySelectorAll(selector).forEach(node => mark(node, name));
+
+    const roots = [
+      'sales', 'mobilehub', 'stockreq', 'prep',
+      'consumables', 'waste', 'schedule'
+    ].map(name => get(`view-${name}`)).filter(Boolean);
+
+    roots.forEach(node => mark(node, 'tk-work-tab'));
+    [get('remittanceModal'), get('timeClockModal')]
+      .filter(Boolean).forEach(node => mark(node, 'tk-work-dialog'));
+
+    [
+      '#view-sales > div > div',
+      '#view-stockreq > div',
+      '#view-prep > div',
+      '#view-consumables .menu-panel',
+      '#consumablesCartPanel',
+      '#view-mobilehub > div > div:last-child',
+      '#view-mobilehub > div > div:first-child > div',
+      '#view-waste > div > div',
+      '#view-schedule > div > div'
+    ].forEach(selector => markAll(selector, 'tk-work-card'));
+
+    [
+      '#view-sales > div > div > div:first-child',
+      '#view-stockreq > div > div:first-child',
+      '#view-prep > div > div:first-child',
+      '#view-mobilehub > div > div:last-child > div:first-child',
+      '#view-mobilehub > div > div:first-child > div > div:first-child',
+      '#view-waste > div > div > div:first-child',
+      '#view-consumables .menu-panel > div:first-child',
+      '#consumablesCartPanel .ticket-header'
+    ].forEach(selector => markAll(selector, 'tk-work-header'));
+
+    mark(get('view-mobilehub')?.firstElementChild, 'tk-hub-layout');
+    mark(get('prepCartBody')?.parentElement, 'tk-prep-cart');
+    mark(get('menuToggleHeader')?.parentElement, 'tk-hub-menu-body');
+    mark(get('view-consumables')?.firstElementChild, 'tk-supplies-layout');
+    mark(get('manualCountCycleFilter')?.parentElement, 'tk-count-tools');
+    mark(
+      get('manualCountCycleFilter')?.parentElement?.parentElement,
+      'tk-count-toolbar'
+    );
+    mark(get('clockVideo')?.parentElement, 'tk-clock-preview');
+
+    const groups = [
+      ['stockReqTabNew', 'btnTabReqNew', 'stockReqTabHistory', 'btnTabReqHist'],
+      ['prepTabNew', 'btnTabPrepNew', 'prepTabHistory', 'btnTabPrepHist'],
+      ['consumablesTabNew', 'btnTabConsNew', 'consumablesTabHistory', 'btnTabConsHist'],
+      ['mobileHubListContainer', 'btnMobLive', 'mobileHubHistoryContainer', 'btnMobHist'],
+      ['remitFormSection', 'tabRemitForm', 'remitHistorySection', 'tabRemitHistory']
+    ];
+    groups.forEach(group =>
+      [group[1], group[3]].forEach(id => mark(get(id), 'tk-work-switch'))
+    );
+
+    function syncTabs() {
+      groups.forEach(([first, firstButton, second, secondButton]) => {
+        [[first, firstButton], [second, secondButton]]
+          .forEach(([panel, button]) => {
+            const control = get(button), content = get(panel);
+            if (!control || !content) return;
+            const active = content.style.display !== 'none' && !content.hidden;
+            if (control.classList.contains('tk-work-selected') !== active)
+              control.classList.toggle('tk-work-selected', active);
+          });
+      });
+
+      const layout = get('view-consumables')?.firstElementChild;
+      const history = get('consumablesTabHistory');
+      if (layout && history) {
+        const active = history.style.display !== 'none';
+        if (layout.classList.contains('tk-supplies-history') !== active)
+          layout.classList.toggle('tk-supplies-history', active);
+      }
+    }
+
+    function decorateSales() {
+      const body = get('tbTransBody');
+      if (!body) return;
+      const labels = [
+        'Receipt', 'Customer', 'Payment', 'Status',
+        'Date', 'Time', 'Amount', ''
+      ];
+
+      [...body.children].forEach(row => {
+        if (row.children.length === 8) {
+          mark(row, 'tk-sale-row');
+          [...row.children].forEach((cell, index) => {
+            if (cell.dataset.label !== labels[index])
+              cell.dataset.label = labels[index];
+          });
+
+          const voided = Boolean(row.querySelector('.status-out'));
+          if (row.classList.contains('tk-sale-void') !== voided)
+            row.classList.toggle('tk-sale-void', voided);
+
+          row.querySelectorAll('.dot-menu').forEach(button => {
+            if (button.textContent.trim() !== 'Actions ▾')
+              button.textContent = 'Actions ▾';
+          });
+
+          row.querySelectorAll('.action-item').forEach(item => {
+            if (item.dataset.tkKeys === '1') return;
+            item.dataset.tkKeys = '1';
+            item.tabIndex = 0;
+            item.setAttribute('role', 'button');
+            item.addEventListener('keydown', event => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                item.click();
+              }
+            });
+          });
+        } else if (row.querySelector('strong') && row.children.length === 1) {
+          mark(row, 'tk-sales-summary');
+          const cell = row.firstElementChild;
+          if (cell.dataset.tkChips !== '1') {
+            const totals = document.createElement('div');
+            totals.className = 'tk-sales-totals';
+            totals.append(...cell.children);
+            cell.replaceChildren(totals);
+            cell.dataset.tkChips = '1';
+          }
+        } else {
+          mark(row, 'tk-sales-message');
+        }
+      });
+    }
+
+    function positionActions() {
+      document.querySelectorAll('#tbTransBody .action-dropdown.show')
+        .forEach(menu => {
+          const button = menu.parentElement.querySelector('.dot-menu');
+          if (!button) return;
+
+          const rect = button.getBoundingClientRect();
+          const viewport = window.visualViewport;
+          const top = viewport?.offsetTop || 0;
+          const height = viewport?.height || window.innerHeight;
+          const width = window.innerWidth;
+
+          if (rect.bottom < top || rect.top > top + height) {
+            menu.classList.remove('show');
+            return;
+          }
+
+          const menuHeight = Math.min(menu.scrollHeight || 170, height - 24);
+          const y = rect.bottom + 6 + menuHeight <= top + height - 8
+            ? rect.bottom + 6
+            : Math.max(top + 8, rect.top - menuHeight - 6);
+          const x = Math.max(8, Math.min(rect.right - 210, width - 218));
+
+          setStyle(menu, '--tk-action-top', `${y}px`);
+          setStyle(menu, '--tk-action-left', `${x}px`);
+          setStyle(menu, '--tk-action-height', `${Math.max(80, height - 24)}px`);
+        });
+    }
+
+    function installHubPicker() {
+      const select = get('categoryFilter');
+      const header = get('menuToggleHeader');
+      if (!select || !header) return () => {};
+
+      const launch = document.createElement('button');
+      launch.type = 'button';
+      launch.id = 'tkHubCategories';
+      launch.textContent = '▦ All categories';
+      launch.setAttribute('aria-haspopup', 'dialog');
+      launch.setAttribute('aria-controls', 'tkHubCategoryModal');
+
+      const current = document.createElement('small');
+      current.className = 'tk-hub-current';
+      header.prepend(launch);
+      header.append(current);
+
+      const overlay = document.createElement('div');
+      overlay.id = 'tkHubCategoryModal';
+      overlay.className = 'overlay tk-hub-picker';
+      overlay.style.display = 'none';
+      overlay.setAttribute('role', 'dialog');
+      overlay.setAttribute('aria-modal', 'true');
+      overlay.setAttribute('aria-labelledby', 'tkHubCategoryTitle');
+
+      const panel = document.createElement('div');
+      const head = document.createElement('div');
+      const title = document.createElement('h2');
+      title.id = 'tkHubCategoryTitle';
+      title.textContent = 'Choose a menu category';
+
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.textContent = '✕';
+      close.setAttribute('aria-label', 'Close categories');
+      head.append(title, close);
+
+      const grid = document.createElement('div');
+      grid.className = 'tk-hub-category-grid';
+      panel.append(head, grid);
+      overlay.append(panel);
+      document.body.append(overlay);
+
+      let signature = '';
+
+      function shut() {
+        overlay.style.display = 'none';
+        launch.focus();
+      }
+
+      function sync() {
+        const label = !select.value || select.value === 'All'
+          ? 'Showing all items' : select.value;
+        if (current.textContent !== label) current.textContent = label;
+        if (overlay.style.display !== 'flex') return;
+
+        const cached = window.masterPOSData?.items;
+        const items = Array.isArray(window.globalMenuToggleList)
+          ? window.globalMenuToggleList
+          : (Array.isArray(cached) ? cached : []);
+
+        const data = [...select.options].map(option => {
+          const category = option.value;
+          const matches = category === 'All'
+            ? items : items.filter(item => item.category === category);
+          const imageItem = matches.find(item => item.image || item.imageUrl);
+          return [
+            category,
+            imageItem?.image || imageItem?.imageUrl || '',
+            matches.length
+          ];
+        });
+
+        const next = JSON.stringify(data);
+        if (next !== signature) {
+          const focused = document.activeElement?.dataset?.category;
+
+          grid.replaceChildren(...data.map(([category, photo, count]) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'tk-hub-category';
+            button.dataset.category = category;
+
+            const media = document.createElement('span');
+            media.className = 'tk-category-photo';
+            media.setAttribute('aria-hidden', 'true');
+            media.textContent = category === 'All' ? '🍽️' : '🍴';
+
+            if (photo) {
+              const image = document.createElement('img');
+              image.alt = '';
+              image.loading = 'lazy';
+              image.src = photo;
+              image.addEventListener('error', () => { image.hidden = true; });
+              media.append(image);
+            }
+
+            const label = document.createElement('strong');
+            label.textContent = category === 'All' ? 'All items' : category;
+            const total = document.createElement('small');
+            total.textContent = `${count} ${count === 1 ? 'item' : 'items'}`;
+
+            button.append(media, label, total);
+            button.addEventListener('click', () => {
+              select.value = category;
+              if (typeof window.filterMenuToggle === 'function')
+                window.filterMenuToggle();
+              sync();
+              shut();
+            });
+            return button;
+          }));
+
+          signature = next;
+          if (focused)
+            [...grid.children]
+              .find(button => button.dataset.category === focused)?.focus();
+        }
+
+        [...grid.children].forEach(button => {
+          const active = button.dataset.category === select.value;
+          if (button.classList.contains('active') !== active)
+            button.classList.toggle('active', active);
+          button.setAttribute('aria-pressed', String(active));
+        });
+      }
+
+      launch.addEventListener('click', () => {
+        overlay.style.display = 'flex';
+        sync();
+        grid.querySelector('.active')?.focus();
+      });
+      close.addEventListener('click', shut);
+      overlay.addEventListener('click', event => {
+        if (event.target === overlay) shut();
+      });
+      overlay.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          shut();
+        }
+        if (event.key === 'Tab') {
+          const controls = [close, ...grid.children];
+          const first = controls[0], last = controls[controls.length - 1];
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+          } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+          }
+        }
+      });
+      select.addEventListener('change', sync);
+      return sync;
+    }
+
+    const syncHub = installHubPicker();
+
+    function printerSkin() {
+      document.querySelectorAll('.swal2-popup').forEach(popup => {
+        const buttons = [...popup.querySelectorAll('button')];
+        if (!buttons.some(button =>
+          (button.getAttribute('onclick') || '')
+            .includes('connectSpecificPrinter'))) return;
+
+        mark(popup, 'tk-printer-popup');
+        buttons.forEach(button => {
+          const action = button.getAttribute('onclick') || '';
+          if (action.includes('testPrint'))
+            mark(button, 'tk-printer-test');
+
+          if (action.includes('connectSpecificPrinter')) {
+            mark(button, 'tk-printer-pair');
+            const connected = button.textContent.includes('Paired & Online');
+            if (button.classList.contains('tk-printer-online') !== connected)
+              button.classList.toggle('tk-printer-online', connected);
+          }
+        });
+      });
+    }
+
+    let queued = false;
+    function refresh() {
+      queued = false;
+      decorateSales();
+      syncTabs();
+      syncHub();
+      printerSkin();
+      positionActions();
+    }
+    function queue() {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(refresh);
+    }
+
+    const observer = new MutationObserver(queue);
+    [...roots, get('remittanceModal'), get('timeClockModal')]
+      .filter(Boolean).forEach(root =>
+        observer.observe(root, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['style']
+        })
+      );
+
+    new MutationObserver(queue)
+      .observe(document.body, { childList: true });
+
+    document.addEventListener('click', queue);
+    document.addEventListener('scroll', queue, true);
+    window.addEventListener('resize', queue);
+    refresh();
+  }
+
+  if (document.readyState === 'complete') install();
+  else window.addEventListener('load', install, { once: true });
+})();
