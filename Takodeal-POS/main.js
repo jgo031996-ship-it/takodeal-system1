@@ -1239,8 +1239,41 @@ window.updateActiveShiftCashier = async function(newCashierName) {
 // 🛒 TRUE OFFLINE CHECKOUT & SYNC ENGINE
 // ========================================================
 window.offlineQueue = JSON.parse(localStorage.getItem('takodeal_offline_queue')) || [];
+window.deliveryOutbox = JSON.parse(localStorage.getItem('takodeal_delivery_outbox')) || [];
+window.isSyncingDeliveryOutbox = false;
 window.isSyncing = false;
 window.isProcessingOrder = false; // 🛡️ Initialize the lock variable
+
+// Direct-delivery dispatch persists separately from the existing sales queue.
+// Receipt-derived IDs and an existing-record check make retries idempotent.
+window.syncDeliveryOutbox = async function() {
+    if (window.isSyncingDeliveryOutbox || window.deliveryOutbox.length === 0) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    window.isSyncingDeliveryOutbox = true;
+    try {
+        while (window.deliveryOutbox.length > 0) {
+            const entry = window.deliveryOutbox[0];
+            const orderRef = window.doc(window.db, "incoming_orders", entry.docId);
+            const existing = await window.getDoc(orderRef);
+            // A cached absence cannot prove that a remote order does not exist.
+            // Retain the outbox until the server can confirm its current state.
+            if (existing.metadata && existing.metadata.fromCache) return;
+            if (!existing.exists()) {
+                await window.setDoc(orderRef, {
+                    ...entry.order,
+                    timestamp: window.serverTimestamp()
+                });
+            }
+            // Existing records may already be ready/completed; never reset them.
+            window.deliveryOutbox.shift();
+            localStorage.setItem('takodeal_delivery_outbox', JSON.stringify(window.deliveryOutbox));
+        }
+    } catch (error) {
+        console.warn("Delivery dispatch pending: will retry on reconnect or app startup.", error);
+    } finally {
+        window.isSyncingDeliveryOutbox = false;
+    }
+};
 
 window.processCheckout = async function (payload) {
     // 🛡️ 1. THE SHIELD: Instantly block spam-clicks!
@@ -1305,11 +1338,14 @@ window.processCheckout = async function (payload) {
         // Auto-close split container
         if (splitContainer) splitContainer.style.display = 'none';
 
-        // 🔥 NEW: INJECT DELIVERY ORDERS INTO THE MOBILE HUB DISPATCHER
-        if (payload.orderType === "Delivery") {
-            try {
-                window.addDoc(window.collection(window.db, "incoming_orders"), {
+        // Accepted mobile deliveries already have their incoming-order record.
+        // Direct deliveries persist locally and dispatch without delaying checkout.
+        if (payload.orderType === "Delivery" && !window.activeMobileOrderId && !payload.isMobileOrder) {
+            window.deliveryOutbox.push({
+                docId: "pos-delivery-" + receiptId,
+                order: {
                     branch: payload.branch,
+                    orderType: payload.orderType,
                     customerName: payload.customerName || "Delivery Customer",
                     contactNumber: payload.contactNumber || "",
                     deliveryAddress: payload.deliveryAddress || "",
@@ -1317,14 +1353,15 @@ window.processCheckout = async function (payload) {
                     items: payload.cart,
                     status: "preparing", // 🍳 Puts it in the Mobile Hub so the Cashier can mark it 'Ready' later!
                     orderCode: receiptId,
-                    paymentMethod: payload.paymentMethod || "Cash",
-                    timestamp: window.serverTimestamp()
-                });
-            } catch(e) { console.error("Failed to push to dispatch hub:", e); }
+                    paymentMethod: payload.paymentMethod || "Cash"
+                }
+            });
+            localStorage.setItem('takodeal_delivery_outbox', JSON.stringify(window.deliveryOutbox));
         }
 
         // 2. WAKE UP THE BACKGROUND SYNC ROBOT
         window.syncOfflineQueue();
+        window.syncDeliveryOutbox();
 
         // 3. INSTANT RETURN: The cashier sees the success screen immediately!
         return receiptId;
@@ -1467,10 +1504,14 @@ window.addEventListener('online', () => {
     window.isAppOnline = true; 
     if(typeof window.updateNetworkStatusUI === 'function') window.updateNetworkStatusUI(); 
     window.syncOfflineQueue(); 
+    window.syncDeliveryOutbox();
 });
 
 // Run once on boot to clear out any trapped sales from yesterday
-setTimeout(window.syncOfflineQueue, 5000);
+setTimeout(() => {
+    window.syncOfflineQueue();
+    window.syncDeliveryOutbox();
+}, 5000);
 
 // --- THE DASHBOARD ENGINE ---
 window.getSalesDashboardData = async function (branch, shiftStartTime) {
@@ -4084,11 +4125,11 @@ window.toggleMobileOrderingStatus = async function() {
 window.startMobileOrdersListener = function(branch) {
     if (window.mobileOrdersUnsubscribe) window.mobileOrdersUnsubscribe(); 
 
-    // Listen for BOTH Incoming AND Preparing orders
+    // Keep ready orders visible for the existing pickup/dispatch controls.
     const q = window.query(
         window.collection(window.db, "incoming_orders"),
         window.where("branch", "==", branch),
-        window.where("status", "in", ["mobile_queue", "preparing"]) 
+        window.where("status", "in", ["mobile_queue", "preparing", "ready"]) 
     );
 
     window.mobileOrdersUnsubscribe = window.onSnapshot(q, (snapshot) => {
@@ -4341,81 +4382,9 @@ window.stopMobileOrderAlarm = function() {
 
 window.showMobileOrders = function() {
     window.stopMobileOrderAlarm();
-    document.getElementById('mobileOrdersModal').style.display = 'flex';
-    let container = document.getElementById('mobileListContainer');
-
-    if (window.mobileOrdersList.length === 0) {
-        container.innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Queue is empty. No incoming orders.</div>';
-        return;
-    }
-
-    let html = '';
-    window.mobileOrdersList.forEach(o => {
-        // ... (Inside renderMobileHubOrders loop) ...
-        let itemsHtml = o.items.map(i => {
-            // 🔥 THE FIX: Accept 'qty' (POS) OR 'quantity' (Customer App)
-            let q = i.quantity || i.qty || 1;
-            let p = i.price || i.basePrice || 0;
-            return `<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px; border-bottom:1px dashed #e2e8f0; padding-bottom:3px; color:#334155;">
-                      <div><strong>${q}x ${i.name}</strong></div>
-                      <div style="font-weight:bold;">₱${(p * q).toFixed(2)}</div>
-                    </div>`;
-        }).join('');
-
-        let customerName = (o.customerName || o.name || 'Mobile Customer').split('(')[0].trim(); 
-        let contactInfo = o.contactNumber ? `📞 ${o.contactNumber}` : '';
-        
-        // 🔥 NEW: Extract the exact time the order arrived
-        let arrivalTime = o.timestamp ? new Date(o.timestamp.toMillis ? o.timestamp.toMillis() : o.timestamp).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
-        
-        // Format the Due Time / ASAP
-        let orderTime = o.preferredTime ? `⏰ Due: ${o.preferredTime}` : 'ASAP';
-        
-        let searchAddr = encodeURIComponent(o.deliveryAddress || '');
-        
-        // ... (Keep your map buttons and locText logic here) ...
-
-        // 🔥 DYNAMIC CONTROLS BASED ON STATUS 🔥
-        let actionButtons = '';
-        let statusBadge = '';
-
-        if (isIncoming) {
-            statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #fcd34d;">⚠️ PENDING ACCEPT</span>`;
-            actionButtons = `
-                <div style="display:flex; gap:10px; margin-top: 15px;">
-                    <button onclick="window.rejectMobileOrder('${o.id}')" style="flex:1; padding:12px; background:white; color:#ef4444; border:1px solid #fca5a5; border-radius: 8px; font-weight: bold; font-size:12px; cursor:pointer;">✖ Reject</button>
-                    <button onclick="window.acceptMobileOrder('${o.id}')" style="flex:2; padding:12px; background:#10b981; color:white; border:none; border-radius: 8px; font-weight: bold; font-size:12px; box-shadow: 0 2px 4px rgba(16,185,129,0.3); cursor:pointer;">📥 Accept & Copy to POS</button>
-                </div>`;
-        } else {
-            statusBadge = `<span style="background:#e0f2fe; color:#0284c7; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #bae6fd;">🍳 PREPARING</span>`;
-            actionButtons = `
-                <div style="display:flex; gap:10px; margin-top: 15px;">
-                    <button onclick="window.markMobileOrderReady('${o.id}')" style="flex:1; padding:12px; background:#3b82f6; color:white; border:none; border-radius: 8px; font-weight: bold; font-size:13px; box-shadow: 0 4px 6px rgba(59,130,246,0.3); cursor:pointer;">🛵 Mark Ready / Dispatch</button>
-                </div>`;
-        }
-
-        // Apply the new arrivalTime to the HTML card
-        html += `<div style="background: white; border: ${isIncoming ? '2px solid #fcd34d' : '1px solid #cbd5e1'}; border-radius: 12px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; align-items: flex-start;">
-                        <div>
-                            <strong style="font-size:15px; color: #0f172a;">${customerName}</strong><br>
-                            <span style="font-size:11px; color:#64748b; font-weight:bold;">${contactInfo} | 🕒 Placed: ${arrivalTime} | ${orderTime}</span>
-                        </div>
-                        <div style="text-align: right;">
-                            <strong style="color:var(--primary); font-size:16px; display:block; margin-bottom: 4px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
-                            ${statusBadge}
-                        </div>
-                    </div>
-                    
-                    ${locText}
-                    ${posBadge}
-                    
-                    <div style="margin-top: 8px; display: flex; gap: 8px;">${mapBtn}</div>
-                    <div style="margin-top:15px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">${itemsHtml}</div>
-                    ${actionButtons}
-                 </div>`;
-    });
-    container.innerHTML = html;
+    // The current page has a Mobile Hub, rather than the removed popup.
+    if (typeof window.switchView === 'function') window.switchView('mobilehub');
+    if (typeof window.renderMobileHubOrders === 'function') window.renderMobileHubOrders();
 };
 
 // ==========================================
@@ -4574,19 +4543,54 @@ window.acceptMobileOrder = async function(docId) {
 
     if (!prepTime) return;
 
-    if (typeof cart !== 'undefined' && cart.length > 0) {
+    if (Array.isArray(window.cart) && window.cart.length > 0) {
         if (!confirm("You have items in your current cart. Overwrite them with this mobile order?")) return;
     }
 
-    cart = order.items.map(i => ({
-        name: i.name, basePrice: i.price, variantName: 'Standard', variantPrice: i.price,
-        qty: i.quantity, lineTotalFinal: i.price * i.quantity, discountType: 'none', discountVal: 0,
-        addons: i.addons || {}, notes: i.notes || '📱 Mobile App Order'
-    }));
+    const incomingOrderType = order.orderType || 'Take-Out';
+    const numberOrUndefined = value => {
+        const parsed = parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : undefined;
+    };
+    window.cart = order.items.map(item => {
+        const qty = numberOrUndefined(item.qty) ?? numberOrUndefined(item.quantity) ?? 1;
+        const basePrice = numberOrUndefined(item.basePrice) ?? numberOrUndefined(item.price) ?? numberOrUndefined(item.variantPrice) ?? 0;
+        const variantPrice = numberOrUndefined(item.variantPrice) ?? numberOrUndefined(item.price) ?? basePrice;
+        const addons = item.addons || {};
+        const addonTotal = Object.values(addons).reduce((sum, addon) => {
+            if (!addon) return sum;
+            return sum + (numberOrUndefined(addon.price) ?? 0) * (numberOrUndefined(addon.qty) ?? 0);
+        }, 0);
+        const discountType = item.discountType || 'none';
+        const discountVal = numberOrUndefined(item.discountVal) ?? 0;
+        const gross = (variantPrice + addonTotal) * qty;
+        const discount = discountType === 'percentage' && discountVal > 0
+            ? gross * discountVal / 100
+            : discountType === 'fixed' && discountVal > 0 ? discountVal : 0;
+        const savedTotal = numberOrUndefined(item.lineTotalFinal);
 
-    document.getElementById('finalCustomerName').value = order.customerName;
+        // Preserve the customer's final line amount, including a valid zero.
+        // Older records without that amount use the existing POS line formula.
+        return {
+            ...item,
+            name: item.name || item.itemName,
+            basePrice,
+            variantName: item.variantName || 'Standard',
+            variantPrice,
+            qty,
+            lineTotalFinal: savedTotal !== undefined && savedTotal >= 0 ? savedTotal : Math.max(0, gross - discount),
+            discountType,
+            discountVal,
+            addons,
+            notes: item.notes ?? '📱 Mobile App Order',
+            orderType: item.orderType || incomingOrderType
+        };
+    });
+
+    const customerNameInput = document.getElementById('finalCustomerName');
+    if (customerNameInput) customerNameInput.value = order.customerName || order.name || '';
     let orderTypeDrop = document.getElementById('mainOrderType');
-    if (orderTypeDrop && order.orderType) orderTypeDrop.value = order.orderType;
+    if (orderTypeDrop) orderTypeDrop.value = incomingOrderType;
 
     // 🔥 UPDATE FIREBASE SO CUSTOMER CAN TRACK IT (DO NOT DELETE IT YET!)
     await window.updateDoc(window.doc(window.db, "incoming_orders", docId), {
@@ -4599,10 +4603,10 @@ window.acceptMobileOrder = async function(docId) {
     window.activeMobileOrderCode = order.orderCode || docId; // Pulls TKDL-12345
     window.isActiveOrderMobile = true;
 
-    let incomingOrderType = order.orderType || 'Take-Out';
-
-    if (typeof renderCart === 'function') renderCart();
-    closeModal('mobileOrdersModal');
+    if (typeof window.renderCart === 'function') window.renderCart();
+    const legacyModal = document.getElementById('mobileOrdersModal');
+    if (legacyModal) legacyModal.style.display = 'none';
+    if (typeof window.switchView === 'function') window.switchView('pos');
 };
 
 window.rejectMobileOrder = async function(docId) {
