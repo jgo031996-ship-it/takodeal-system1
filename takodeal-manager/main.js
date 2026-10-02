@@ -28276,43 +28276,34 @@ window.approveTopUp = async function(docId, riderId, riderName) {
         Swal.fire({title: 'Crediting Wallet...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
         try {
-            // Approve a pending request and credit the current wallet together.
-            // A simultaneous delivery claim triggers a retry using the new balance.
+            // 1. Fetch the rider's current balance
             const riderRef = window.doc(window.db, "riders", riderId);
-            const requestRef = window.doc(window.db, "rider_topups", docId);
-            const processedBy = window.sessionUser ? window.sessionUser.cashierName : 'Manager';
-            const newBal = await window.runTransaction(window.db, async transaction => {
-                const requestSnap = await transaction.get(requestRef);
-                const riderSnap = await transaction.get(riderRef);
-                if (!requestSnap.exists() || requestSnap.data().status !== 'pending') {
-                    throw new Error('This top-up request has already been processed or is unavailable.');
-                }
-                if (requestSnap.data().riderId !== riderId || !riderSnap.exists()) {
-                    throw new Error('The rider does not match this top-up request.');
-                }
-                const currentBal = Number(riderSnap.data().walletBalance ?? 0);
-                if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(currentBal)) {
-                    throw new Error('The amount or wallet balance is invalid.');
-                }
-                const nextBalance = Math.round((currentBal + amount) * 100) / 100;
-                transaction.update(riderRef, { walletBalance: nextBalance });
-                transaction.update(requestRef, {
+            const riderSnap = await window.getDoc(riderRef);
+            
+            if (riderSnap.exists()) {
+                let currentBal = parseFloat(riderSnap.data().walletBalance) || 0;
+                let newBal = currentBal + amount;
+
+                // 2. Update the Rider's Wallet
+                await window.updateDoc(riderRef, { walletBalance: newBal });
+
+                // 3. Mark the Top-Up request as Approved and log the amount
+                await window.updateDoc(window.doc(window.db, "rider_topups", docId), {
                     status: "approved",
                     amountAdded: amount,
                     processedAt: window.serverTimestamp(),
-                    processedBy
+                    processedBy: window.sessionUser ? window.sessionUser.cashierName : 'Manager'
                 });
-                return nextBalance;
-            });
 
                 Swal.fire('✅ Success!', `₱${amount.toFixed(2)} added to ${riderName}'s wallet. New Balance: ₱${newBal.toFixed(2)}`, 'success');
                 
                 // Refresh both tables
                 window.loadRiderTopUps();
                 window.loadRiderManagement();
+            }
         } catch(e) {
             console.error(e);
-            Swal.fire('Error', e.message || 'Failed to process top-up.', 'error');
+            Swal.fire('Error', 'Failed to process top-up.', 'error');
         }
     }
 };
@@ -28321,22 +28312,12 @@ window.rejectTopUp = async function(docId, riderName) {
     if (!confirm(`Are you sure you want to reject the top-up request from ${riderName}?`)) return;
 
     try {
-        const requestRef = window.doc(window.db, "rider_topups", docId);
-        await window.runTransaction(window.db, async transaction => {
-            const requestSnap = await transaction.get(requestRef);
-            if (!requestSnap.exists() || requestSnap.data().status !== 'pending') {
-                throw new Error('This top-up request has already been processed or is unavailable.');
-            }
-            transaction.update(requestRef, {
-                status: "rejected",
-                processedAt: window.serverTimestamp()
-            });
+        await window.updateDoc(window.doc(window.db, "rider_topups", docId), {
+            status: "rejected",
+            processedAt: window.serverTimestamp()
         });
         window.loadRiderTopUps();
-    } catch(e) {
-        console.error(e);
-        Swal.fire('Error', e.message || 'Failed to reject top-up.', 'error');
-    }
+    } catch(e) { console.error(e); }
 };
 
 // Hook it into the tab switcher so it loads automatically!
@@ -29065,3 +29046,520 @@ window.resyncTakoyakiMilestone = async function() {
         Swal.fire('Error', 'Failed to recalculate milestone. Check console.', 'error');
     }
 };
+
+
+/* Pure operation journal. One durable tablet record, one cloud commit marker.
+   The caller supplies Firebase/storage adapters; this file has no network calls. */
+function tkEncode(value) {
+  if (value === undefined) throw new Error('An operation contains an undefined value');
+  if (value === null || typeof value !== 'object') {
+    if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Invalid operation amount');
+    return value;
+  }
+  if (value instanceof Date || typeof value.toDate === 'function')
+    return { __tkDate: (value.toDate?.() || value).toISOString() };
+  if (Array.isArray(value)) return value.map(tkEncode);
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, tkEncode(item)]));
+}
+function tkDecode(value) {
+  if (value === null || typeof value !== 'object') return value;
+  if (value.__tkDate) { const date = new Date(value.__tkDate); date.toDate = () => new Date(date); return date; }
+  if (Array.isArray(value)) return value.map(tkDecode);
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, tkDecode(item)]));
+}
+function tkApplyWrite(before, write) {
+  if (write.mode === 'delete') return null;
+  const result = write.mode === 'create' || write.mode === 'set' ? {} : { ...(before || {}) };
+  for (const [key, value] of Object.entries(write.data || {})) {
+    if (key.includes('.')) throw new Error('Nested field paths require a tailored journal action');
+    result[key] = value && typeof value === 'object' && '__tkIncrement' in value
+      ? (Number(result[key]) || 0) + value.__tkIncrement : value;
+  }
+  if (write.restock) {
+    const stock = Number(before?.currentStock) || 0, cost = Number(before?.cost) || 0;
+    result.currentStock = stock + write.restock.quantity;
+    result.cost = result.currentStock > 0 ? (stock * cost + write.restock.cost) / result.currentStock
+      : write.restock.cost / write.restock.quantity;
+  }
+  return result;
+}
+async function tkFingerprint(value) {
+  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
+  return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+function createTakodealOperationJournal({ store, now = Date.now, uuid = () => crypto.randomUUID() }) {
+  async function accept({ id = 'op-' + uuid(), branch, deviceId, type, writes, guards = [], review = '', evidence = {}, attachments = [] }, metadata = []) {
+    if (!branch || !deviceId || !type || !Array.isArray(writes) || !writes.length)
+      throw new Error('The tablet action is incomplete');
+    if (writes.length > 400) throw new Error('This action is too large; ask the owner to split it');
+    const encoded = tkEncode({ writes, guards, evidence });
+    if (new TextEncoder().encode(JSON.stringify(encoded)).byteLength > 350000)
+      throw new Error('This record is too large to sync safely; reduce its photo size or split the action');
+    for (const write of encoded.writes) {
+      if (!/^[^/]+\/[^/]+$/.test(write.path) || !['create', 'set', 'merge', 'update', 'delete'].includes(write.mode))
+        throw new Error('Invalid action document');
+    }
+    const fingerprint = await tkFingerprint([branch, deviceId, type, encoded, review,
+      await Promise.all(attachments.map(async file => [file.path, file.type, file.bytes.byteLength,
+        await tkFingerprint(Array.from(new Uint8Array(file.bytes)))]))]);
+    const previous = await store.get(id);
+    if (previous) {
+      if (previous.fingerprint !== fingerprint) throw new Error('Saved action changed; owner review required');
+      return previous;
+    }
+    const record = { id, kind: 'operation', state: 'pending', acceptedAt: new Date(now()).toISOString(),
+      fingerprint, branch, deviceId, type, review, ...encoded, attachments };
+    try { await store.add(record, null, metadata); }
+    catch (error) {
+      const old = await store.get(id);
+      if (!old || old.fingerprint !== fingerprint) throw error;
+      return old;
+    }
+    return record;
+  }
+  return { accept };
+}
+
+async function tkCommitOperation(record, adapter, resolution) {
+  const marker = adapter.doc('pos_operation_commits/' + record.id);
+  const proposal = adapter.doc('pos_operation_reviews/' + record.id);
+  if ((record.attachments || []).length && adapter.read && !resolution) {
+    const snap = await adapter.read(marker);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.fingerprint !== record.fingerprint || data.branch !== record.branch) throw new Error('Cloud action identity differs');
+      return data.state === 'owner_review' ? { ownerReview: true, reviewReason: data.reviewReason }
+        : { state: data.state, documents: data.documents || [] };
+    }
+  }
+  // A stored immutable proposal contains only document data, never attachment bytes.
+  const proposalData = { id: record.id, branch: record.branch, deviceId: record.deviceId, type: record.type,
+    acceptedAt: new Date(record.acceptedAt), fingerprint: record.fingerprint, writes: record.writes,
+    guards: record.guards, evidence: record.evidence, attachmentPaths: (record.attachments || []).map(file => file.path) };
+  let writes = record.writes;
+  const uploadURLs = new Map();
+  for (const file of record.attachments || []) {
+    // A stable object name and the same bytes make Storage retries safe.
+    uploadURLs.set(file.path, await adapter.upload(file));
+  }
+  const substitute = value => {
+    if (value === null || typeof value !== 'object') return value;
+    if (value.__tkAttachment) {
+      if (!uploadURLs.has(value.__tkAttachment)) throw new Error('The saved receipt attachment is missing');
+      return uploadURLs.get(value.__tkAttachment);
+    }
+    if (Array.isArray(value)) return value.map(substitute);
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, substitute(item)]));
+  };
+  writes = writes.map(write => ({ ...write, data: substitute(write.data) }));
+  return adapter.transaction(async tx => {
+    const saved = await tx.get(marker);
+    if (saved.exists()) {
+      const data = saved.data();
+      if (data.fingerprint !== record.fingerprint || data.branch !== record.branch)
+        throw new Error('Cloud action identity differs; owner review required');
+      if (data.state !== 'owner_review') return { state: data.state, documents: data.documents || [] };
+      if (!resolution) return { ownerReview: true, reviewReason: data.reviewReason };
+    } else if (resolution) throw new Error('The review marker is missing');
+    const paths = [...new Set([...record.guards.map(guard => guard.path), ...writes.map(write => write.path)])];
+    const snapshots = await Promise.all(paths.map(path => tx.get(adapter.doc(path))));
+    const before = new Map(paths.map((path, index) => [path, snapshots[index].exists() ? tkEncode(snapshots[index].data()) : null]));
+    if (resolution?.action === 'reject') {
+      // Return the actual shared records so the tablet removes its rejected
+      // projection without reverting to an older prepared stock baseline.
+      const documents = paths.map(path => ({ path, data: before.get(path) }));
+      tx.update(marker, { state: 'rejected', documents, resolvedAt: adapter.serverTime(), resolvedBy: resolution.owner,
+        resolutionNote: resolution.note });
+      tx.update(proposal, { status: 'Rejected', resolvedBy: resolution.owner, resolutionNote: resolution.note });
+      return { state: 'rejected', documents };
+    }
+    let conflict = '';
+    for (const guard of record.guards) {
+      const current = before.get(guard.path);
+      if (guard.exists !== undefined && Boolean(current) !== guard.exists) conflict ||= 'A shared record was created or removed';
+      for (const [key, expected] of Object.entries(guard.fields || {}))
+        if (JSON.stringify(current?.[key] ?? null) !== JSON.stringify(expected)) conflict ||= 'A shared record changed: ' + guard.path;
+    }
+    for (const write of writes) {
+      if (write.mode === 'create' && before.get(write.path)) conflict ||= 'A target document already exists';
+      if (write.mode === 'update' && !before.get(write.path)) conflict ||= 'A required target document is missing';
+    }
+    const reason = conflict || record.review;
+    if (conflict && record.type === 'settlement')
+      throw new Error('Branch records changed during settlement. Refresh the clearance totals and review them again.');
+    if (reason && !resolution) {
+      tx.set(proposal, { ...proposalData, writes, status: 'Pending', reviewReason: reason, receivedAt: adapter.serverTime() });
+      tx.set(marker, { branch: record.branch, fingerprint: record.fingerprint, state: 'owner_review', reviewReason: reason });
+      return { ownerReview: true, reviewReason: reason };
+    }
+    // Approval never bypasses stale preconditions. A changed shared record needs
+    // rejection and a fresh, reconciled action, rather than a blind overwrite.
+    if (resolution && conflict)
+      throw new Error('The shared records changed again. Reject and enter a reconciled action.');
+    const output = new Map(before);
+    for (const write of writes) {
+      const current = output.get(write.path);
+      if (write.mode === 'create' && current) throw new Error('Cannot approve over an existing document');
+      if (write.mode === 'update' && !current) throw new Error('Cannot approve a missing document');
+      output.set(write.path, tkApplyWrite(current, write));
+    }
+    const documents = [...new Set(writes.map(write => write.path))].map(path => ({ path, data: output.get(path), appliedBy: record.id }));
+    // All reads above precede all writes below. Marker and effects commit together.
+    for (const entry of documents) entry.data === null ? tx.delete(adapter.doc(entry.path))
+      : tx.set(adapter.doc(entry.path), tkDecode(entry.data));
+    tx.set(marker, { branch: record.branch, fingerprint: record.fingerprint, state: 'synced',
+      committedAt: adapter.serverTime(), documents });
+    if (resolution) tx.update(proposal, { status: 'Approved', resolvedBy: resolution.owner, resolutionNote: resolution.note,
+      resolvedWrites: writes, resolvedGuards: record.guards });
+    return { state: 'synced', documents };
+  });
+}
+
+// Owner-only reconstruction of a received payment held outside an active shift.
+// Original evidence is preserved; quantities are frozen, while stock deltas use
+// the current inventory. The caller supplies fresh server snapshots.
+function tkReconcileSale(record, targetShift, inventory, effects, owner, note) {
+  const payload = record.payload, guards = [], writes = [];
+  if (targetShift.data.branch !== payload.branch || targetShift.data.active !== true || targetShift.data.status === 'Closed')
+    throw new Error('Choose an active, unsettled shift in the same branch');
+  guards.push({ path: targetShift.path, exists: true, fields: tkEncode(targetShift.data) });
+  writes.push({ path: targetShift.path, mode: 'update', data: { saleRevision: { __tkIncrement: 1 } } });
+  writes.push({ path: 'transactions/' + record.id, mode: 'create', data: tkEncode({ ...payload,
+    shiftId: targetShift.path.split('/')[1], originalShiftId: payload.shiftId, assignedBy: owner, assignmentNote: note,
+    timestamp: new Date(record.acceptedAt), localOrderFingerprint: record.fingerprint, syncVersion: 2,
+    inventoryState: 'applied', stockDeductionPlan: record.deductions }) });
+  for (const [name, quantity] of Object.entries(record.deductions)) {
+    const entry = inventory.find(item => item.data?.name === name && item.data.branch === payload.branch);
+    if (!entry || inventory.filter(item => item.data?.name === name && item.data.branch === payload.branch).length !== 1)
+      throw new Error('Stock mapping requires reconciliation: ' + name);
+    guards.push({ path: entry.path, exists: true, fields: { branch: payload.branch, name } });
+    writes.push({ path: entry.path, mode: 'update', data: { currentStock: { __tkIncrement: -quantity } } });
+  }
+  for (const effect of record.effects) {
+    const path = effect.collection + '/' + effect.id, old = effects.find(item => item.path === path)?.data || null;
+    guards.push({ path, exists: Boolean(old), fields: old ? tkEncode(old) : {} });
+    if (effect.mode === 'mobile-paid') {
+      if (!old || (old.paymentStatus === 'paid' && old.receiptId && old.receiptId !== payload.receiptId))
+        throw new Error('The customer order payment needs manual reconciliation');
+      writes.push({ path, mode: 'update', data: tkEncode({ paymentStatus: 'paid', receiptId: payload.receiptId, encodedAt: new Date() }) });
+    } else if (effect.mode === 'increment') {
+      writes.push({ path, mode: 'merge', data: Object.fromEntries(Object.entries(effect.data).map(([key, value]) => [key, { __tkIncrement: value }])) });
+    } else if (!old) writes.push({ path, mode: 'create', data: tkEncode({ ...effect.data, timestamp: new Date(record.acceptedAt) }) });
+  }
+  return { writes, guards };
+}
+
+// Append to the existing Manager main.js. No Upgrade-01 Manager replacement is needed.
+(function installCashierStatus() {
+  if (window.TKCashierStatus) return;
+  const entries = new Map(), unsubscribers = [];
+  let userKey = '', panel, interval, lastState = new Map(), starting = false, nextRetry = 0, monitorProblem = '';
+  const owner = () => window.auth?.currentUser?.email === 'jgo031996@gmail.com';
+  const time = value => value?.toMillis?.() || 0;
+  const text = (tag, value) => { const node = document.createElement(tag); node.textContent = value; return node; };
+  function status(data, fromCache) {
+    if (navigator.onLine === false || fromCache) return 'Connection unknown';
+    if (!data?.seenAt) return 'Not prepared';
+    if (Date.now() - time(data.seenAt) < -30000) return 'Connection unknown';
+    if (Date.now() - time(data.seenAt) >= 180000) return 'Cashier disconnected';
+    return data.setupProblem ? 'Owner attention needed' : (data.accepting ? 'Connected' : 'Shift closed / not ready');
+  }
+  function render() {
+    if (!panel) return;
+    const list = panel.querySelector('[data-tk-list]'); list.replaceChildren();
+    if (monitorProblem) list.append(text('p', monitorProblem));
+    for (const [branch, snapshot] of entries) {
+      const devices = Object.entries(snapshot.data?.cashierPresenceV2 || {});
+      const heading = text('h3', branch); heading.style.margin = '16px 0 8px'; list.append(heading);
+      if (!devices.length) { list.append(text('p', 'No prepared Cashier device has checked in.')); continue; }
+      for (const [id, device] of devices) {
+        const state = status(device, snapshot.fromCache);
+        const key = branch + '/' + id, old = lastState.get(key); lastState.set(key, state);
+        // In-app owner notification only; no messages sent to third parties.
+        if (old === 'Connected' && state === 'Cashier disconnected' && window.Swal)
+          window.Swal.fire({ toast: true, position: 'top-end', timer: 7000, showConfirmButton: false,
+            icon: 'warning', title: branch + ': Cashier connection lost' });
+        const card = document.createElement('div');
+        card.style.cssText = 'border:1px solid #e8e1d7;border-radius:14px;padding:14px;margin:8px 0;background:#faf8f5;color:#27231f';
+        card.append(text('strong', device.deviceName || id), text('p', state));
+    const last = time(device.seenAt);
+        card.append(text('p', 'Cashier: ' + (device.cashier || '—') + ' · Last reported pending sales: ' + (device.pendingSales || 0)),
+          text('small', 'Last confirmed check-in: ' + (last ? new Date(last).toLocaleString() : '—')));
+        card.append(text('p', 'Saved actions awaiting upload: ' + (device.pendingOperations || 0) + ' · Owner reviews: ' + (device.ownerReviews || 0)));
+        if (device.setupProblem) card.append(text('p', device.setupProblem));
+        list.append(card);
+      }
+    }
+  }
+  function ensurePanel() {
+    if (panel) return;
+    panel = document.createElement('dialog'); panel.id = 'tkCashierStatusDialog';
+    panel.style.cssText = 'width:min(680px,92vw);max-height:85vh;overflow:auto;border:1px solid #e8e1d7;border-radius:22px;padding:22px;background:white;color:#27231f';
+    const header = document.createElement('div'); header.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px';
+    const close = text('button', 'Close'); close.onclick = () => panel.close();
+    header.append(text('h2', 'Cashier connections'), close);
+    const list = document.createElement('div'); list.dataset.tkList = '';
+    panel.append(header, text('p', 'Connection loss is detected after three minutes. Local sales reach the Manager after the tablet reconnects.'), list);
+    document.body.append(panel);
+    const button = text('button', 'Cashier connections'); button.id = 'tkCashierStatusButton';
+    button.style.cssText = 'position:fixed;bottom:18px;right:18px;z-index:1000;border:1px solid #e5d8bd;border-radius:12px;padding:12px 16px;background:#ffbb3e;color:#27231f;font-weight:700;cursor:pointer';
+    button.onclick = () => { render(); panel.showModal(); }; document.body.append(button);
+  }
+  async function start() {
+    const user = window.sessionUser;
+    if (!user || !window.db || !window.onSnapshot || starting || Date.now() < nextRetry) return;
+    const key = JSON.stringify([user.email, user.allowedBranches, user.isOwner]);
+    if (key === userKey) return;
+    starting = true;
+    try {
+    unsubscribers.splice(0).forEach(stop => stop()); entries.clear(); lastState.clear();
+    ensurePanel(); monitorProblem = '';
+    let branches = [];
+    if (!owner()) {
+      const access = await window.getDoc(window.doc(window.db, 'hq_email_access', user.email));
+      if (!access.exists() || access.data().active !== true) throw new Error('Owner must grant access to the protected Cashier monitor');
+      branches = access.data().allowedBranches || [];
+    }
+    if (owner() || branches.includes('All')) {
+      const snap = await window.getDocs(window.collection(window.db, 'branches'));
+      branches = snap.docs.map(doc => doc.data().name).filter(Boolean);
+    }
+    for (const branch of [...new Set(branches)]) {
+      const target = window.query(window.collection(window.db, 'cashier_presence'), window.where('branch', '==', branch));
+      const stop = window.onSnapshot(target,
+        { includeMetadataChanges: true }, snapshot => {
+          entries.set(branch, { data: { cashierPresenceV2: Object.fromEntries(snapshot.docs.map(doc => [doc.id, doc.data()])) },
+            fromCache: snapshot.metadata.fromCache }); render();
+        }, () => { entries.set(branch, { data: null, fromCache: true }); render(); });
+      unsubscribers.push(stop);
+    }
+    userKey = key;
+    render();
+    } catch (error) {
+      unsubscribers.splice(0).forEach(stop => stop()); userKey = ''; nextRetry = Date.now() + 60000;
+      monitorProblem = 'Cashier monitor needs owner review: ' + error.message; render();
+      throw error;
+    } finally { starting = false; }
+  }
+  async function approveEnrollment(uid) {
+    if (!owner()) throw new Error('Owner approval required');
+    const bindingRef = window.doc(window.db, 'pos_bindings', uid);
+    const snap = await window.getDoc(bindingRef);
+    if (!snap.exists() || snap.data().status !== 'Pending') throw new Error('No pending enrollment for this UID');
+    const binding = snap.data();
+    const legacy = await window.getDoc(window.doc(window.db, 'pos_devices', binding.legacyDeviceDocId));
+    if (!legacy.exists() || legacy.data().status !== 'Active' || legacy.data().deviceId !== binding.deviceId || legacy.data().branch !== binding.branch)
+      throw new Error('Device and branch do not match. Review the physical tablet first.');
+    const result = await window.Swal.fire({ title: 'Approve this Cashier tablet?',
+      text: 'Match UID ' + uid + ' on the physical tablet. Branch: ' + binding.branch + '. Device: ' + binding.deviceName + ' (' + binding.deviceId + ').',
+      icon: 'question', showCancelButton: true, confirmButtonText: 'Approve matched tablet' });
+    if (!result.isConfirmed) return;
+    await window.updateDoc(bindingRef, { status: 'Active', approvedAt: window.serverTimestamp(), approvedBy: window.auth.currentUser.email });
+  }
+  async function grantMonitorAccess(managerId) {
+    if (!owner()) throw new Error('Only the owner can grant monitor access');
+    const snap = await window.getDoc(window.doc(window.db, 'hq_managers', managerId));
+    if (!snap.exists()) throw new Error('Manager not found');
+    const data = snap.data(), email = String(data.email || '').trim();
+    if (!email || email.includes('/')) throw new Error('Invalid Manager email');
+    const branches = data.role !== 'Franchisee' && data.permissions?.includes('all') ? ['All'] :
+      String(data.assignedBranch || '').split(',').map(value => value.trim()).filter(Boolean);
+    if (!branches.length) throw new Error('Assign this Manager a branch first');
+    await window.setDoc(window.doc(window.db, 'hq_email_access', email), { active: true, allowedBranches: branches });
+  }
+  window.TKCashierStatus = { start, render, status, approveEnrollment, grantMonitorAccess };
+  const original = window.applyPermissions;
+  window.applyPermissions = function(...args) { const result = original?.apply(this, args); start().catch(console.error); return result; };
+  interval = setInterval(() => {
+    if (!window.sessionUser) {
+      unsubscribers.splice(0).forEach(stop => stop()); userKey = ''; entries.clear();
+      document.getElementById('tkCashierStatusButton')?.remove(); panel?.remove(); panel = null;
+    } else { start().catch(console.error); render(); }
+  }, 10000);
+  window.addEventListener('offline', render); window.addEventListener('online', render);
+  start().catch(console.error);
+})();
+
+import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
+  getDocFromServer as tkOwnerDoc } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
+
+(function installTakodealOwnerReview() {
+  const owner = () => window.auth?.currentUser?.email === 'jgo031996@gmail.com' && window.auth.currentUser.emailVerified === true;
+  const text = (tag, value) => { const node = document.createElement(tag); node.textContent = value; return node; };
+  let panel, busy = false;
+  const doc = path => window.doc(window.db, path);
+  const adapter = { doc, serverTime: () => window.serverTimestamp(), transaction: fn => tkOwnerTransaction(window.db, fn),
+    upload() { throw new Error('Receipt attachments must arrive from the original tablet before review'); } };
+  const fresh = report => report?.seenAt?.toMillis?.() <= Date.now() && Date.now() - report.seenAt.toMillis() < 180000;
+  async function resolve(id, action, note) {
+    if (!owner() || navigator.onLine === false) throw new Error('A connected, verified Owner session is required');
+    const snap = await tkOwnerDoc(doc('pos_operation_reviews/' + id));
+    if (!snap.exists()) throw new Error('This review record was not found');
+    if (snap.data().status === 'Approved' && snap.data().type === 'shift-close' && action === 'approve') {
+      const saved = await tkOwnerDoc(doc('pos_operation_commits/settle-' + id));
+      if (saved.exists() && saved.data().state === 'synced') return { state: 'synced', documents: saved.data().documents || [] };
+    }
+    if (snap.data().status !== 'Pending') throw new Error('This action has already been reviewed');
+    const row = snap.data();
+    if (row.type === 'sale-reconciliation') {
+      if (action !== 'approve') throw new Error('This record includes a received payment. Reconcile it instead of deleting or rejecting it.');
+      return assignSale(row, note);
+    }
+    if (action === 'approve' && row.type === 'shift-close') return settleClearance(row, note);
+    return tkCommitOperation({ ...row, acceptedAt: row.acceptedAt.toDate().toISOString(), review: row.reviewReason,
+      attachments: [] }, adapter, { action, note, owner: window.auth.currentUser.email });
+  }
+  async function assignSale(row, note) {
+    const sale = tkDecode(row.evidence.sale);
+    const shifts = await tkOwnerDocs(window.query(window.collection(window.db, 'shifts'), window.where('branch', '==', row.branch), window.where('active', '==', true)));
+    const choices = Object.fromEntries(shifts.docs.filter(snap => !['Closed', 'Clearance Pending'].includes(snap.data().status))
+      .map(snap => [snap.id, snap.id + ' · ' + (snap.data().cashier || '')]));
+    if (!Object.keys(choices).length) throw new Error('Open and reconcile a valid branch shift before assigning this payment');
+    const answer = await window.Swal.fire({ title: 'Assign received payment', input: 'select', inputOptions: choices,
+      inputLabel: `Order ${sale.payload.receiptId} · ₱${Number(sale.payload.netTotal).toFixed(2)}. This applies its saved stock plan once, including any paused audit deductions.`,
+      showCancelButton: true, confirmButtonText: 'Assign payment and apply stock', inputValidator: value => !value ? 'Choose a shift.' : undefined });
+    if (!answer.isConfirmed) return;
+    const target = shifts.docs.find(snap => snap.id === answer.value);
+    if (!target) throw new Error('Selected shift was not found');
+    const inventory = [];
+    for (const name of Object.keys(sale.deductions)) {
+      const rows = await tkOwnerDocs(window.query(window.collection(window.db, 'inventory'), window.where('branch', '==', row.branch), window.where('name', '==', name)));
+      if (rows.size !== 1) throw new Error('Resolve duplicate or missing stock items first: ' + name);
+      inventory.push({ path: rows.docs[0].ref.path, data: rows.docs[0].data() });
+    }
+    const effects = await Promise.all(sale.effects.map(async effect => {
+      const snap = await tkOwnerDoc(doc(effect.collection + '/' + effect.id));
+      return { path: snap.ref.path, data: snap.exists() ? snap.data() : null };
+    }));
+    const rebuilt = tkReconcileSale(sale, { path: target.ref.path, data: target.data() }, inventory, effects, window.auth.currentUser.email, note);
+    return tkCommitOperation({ ...row, ...rebuilt, acceptedAt: row.acceptedAt.toDate().toISOString(), attachments: [] }, adapter,
+      { action: 'approve', owner: window.auth.currentUser.email, note });
+  }
+  async function settleClearance(row, note) {
+    const id = row.evidence.shiftId, targetBranch = row.branch;
+    // Read before listing receipts. Sale creation advances this record's
+    // revision, and the final transaction guards this original snapshot.
+    const shifts = await tkOwnerDoc(doc('shifts/' + id)); if (!shifts.exists() || shifts.data().status === 'Closed') throw new Error('Shift is missing or already settled');
+    const fleet = await tkOwnerDocs(window.query(window.collection(window.db, 'pos_bindings'), window.where('branch', '==', targetBranch), window.where('status', '==', 'Active')));
+    if (fleet.empty) throw new Error('No owner-approved branch devices were found');
+    const reports = await Promise.all(fleet.docs.map(binding => tkOwnerDoc(doc('cashier_presence/' + binding.id))));
+    if (reports.some(report => !report.exists() || !fresh(report.data()) || report.data().pendingSales !== 0 || report.data().pendingOperations !== 0 || report.data().accepting === true))
+      throw new Error('Every approved tablet must reconnect, stop accepting sales, and finish its saved receipts before settlement');
+    const otherReviews = await tkOwnerDocs(window.query(window.collection(window.db, 'pos_operation_reviews'), window.where('branch', '==', targetBranch), window.where('status', '==', 'Pending')));
+    if (otherReviews.docs.some(snap => snap.id !== row.id && snap.data().type !== 'shift-close'))
+      throw new Error('Review other cash, stock and attendance conflicts for this branch before settling its shift');
+    const sales = await tkOwnerDocs(window.query(window.collection(window.db, 'transactions'), window.where('branch', '==', targetBranch), window.where('shiftId', '==', id)));
+    const expenses = await tkOwnerDocs(window.query(window.collection(window.db, 'expenses'), window.where('branch', '==', targetBranch), window.where('shiftId', '==', id)));
+    const guards = [], writes = [], digital = {}; let cash = 0, cashOut = 0;
+    const guard = snapshot => guards.push({ path: snapshot.ref.path, exists: true, fields: tkEncode(snapshot.data()) });
+    guard(shifts);
+    for (const report of reports) guard(report);
+    for (const receipt of sales.docs) {
+      const sale = receipt.data(); guard(receipt); if (sale.status === 'Voided') continue;
+      if (sale.inventoryState === 'audit_pending') throw new Error('Finish paused stock audits before settlement');
+      for (const payment of sale.splitDetails || [{ method: sale.paymentMethod || 'Cash', amount: sale.netTotal }]) {
+        if (payment.method === 'Cash') cash += Number(payment.amount) || 0;
+        else digital[payment.method] = (digital[payment.method] || 0) + (Number(payment.amount) || 0);
+      }
+    }
+    for (const expense of expenses.docs) { guard(expense); if (expense.data().paidFrom !== 'ManagerFund') cashOut += Number(expense.data().amount) || 0; }
+    const starting = Number(shifts.data().startingCash) || 0, expected = starting + cash - cashOut;
+    const closed = { ...shifts.data(), ...row.evidence, active: false, status: 'Closed', totalCashSales: cash,
+      totalDigitalSales: Object.values(digital).reduce((a, b) => a + b, 0), digitalBreakdown: digital,
+      expectedCash: expected, cashOut, settlementId: 'settle-' + row.id, settledBy: window.auth.currentUser.email,
+      settlementNote: note, endTime: row.acceptedAt.toDate() };
+    writes.push({ path: shifts.ref.path, mode: 'set', data: tkEncode(closed) });
+    const config = await tkOwnerDocs(window.query(window.collection(window.db, 'branches'), window.where('name', '==', targetBranch)));
+    const branchConfig = config.docs[0]?.data() || {}; config.docs.forEach(guard);
+    async function deposit(accountBranch, name, value) {
+      if (!value) return;
+      const accounts = await tkOwnerDocs(window.query(window.collection(window.db, 'cash_accounts'), window.where('branch', '==', accountBranch), window.where('name', '==', name)));
+      if (accounts.size > 1) throw new Error('Duplicate cash account needs reconciliation: ' + name);
+      const account = accounts.docs[0];
+      const path = account?.ref.path || 'cash_accounts/settle-account-' + encodeURIComponent(accountBranch + '-' + name);
+      if (account) guard(account); else guards.push({ path, exists: false });
+      writes.push({ path, mode: account ? 'update' : 'create', data: { name, branch: accountBranch, balance: { __tkIncrement: value } } });
+      writes.push({ path: 'account_logs/settle-' + row.id + '-' + encodeURIComponent(name), mode: 'create', data: tkEncode({
+        accountId: path.split('/')[1], accountName: name, branch: accountBranch, action: 'Owner-reviewed Shift Settlement',
+        amount: value, user: window.auth.currentUser.email, timestamp: new Date(), shiftId: id, operationId: row.id }) });
+    }
+    for (const [method, value] of Object.entries(digital)) if (method.toLowerCase() !== 'gcash') await deposit('Main Office', method, value);
+    if (branchConfig.isMallBranch) await deposit(targetBranch, 'Manager Fund', Number(row.evidence.declaredCash) - starting);
+    const royalty = (cash + Object.values(digital).reduce((a, b) => a + b, 0)) * ((Number(branchConfig.royaltyPercent) || 0) / 100);
+    if (royalty > 0) writes.push({ path: 'franchise_ledger/settle-' + row.id, mode: 'create', data: tkEncode({ branch: targetBranch,
+      type: 'Charge', category: 'Daily Franchise Royalty', amount: royalty, description: 'Owner-reviewed shift royalty', loggedBy: window.auth.currentUser.email,
+      timestamp: new Date(), shiftId: id, operationId: row.id }) });
+    const state = await tkOwnerDoc(doc('pos_branch_shifts/' + targetBranch));
+    if (state.exists() && state.data().shiftId === id) { guard(state); writes.push({ path: state.ref.path, mode: 'update', data: { shiftId: null } }); }
+    const originalMarker = await tkOwnerDoc(doc('pos_operation_commits/' + row.id)); guard(originalMarker);
+    writes.push({ path: originalMarker.ref.path, mode: 'update', data: { state: 'synced', resolvedBy: window.auth.currentUser.email,
+      documents: [{ path: shifts.ref.path, data: tkEncode(closed) }] } });
+    writes.push({ path: 'pos_operation_reviews/' + row.id, mode: 'update', data: { status: 'Approved', resolvedBy: window.auth.currentUser.email, resolutionNote: note } });
+    if (guards.length + writes.length > 420) throw new Error('Large settlement requires a server-side reconciliation tool');
+    const record = { id: 'settle-' + row.id, branch: targetBranch, deviceId: 'owner-review', type: 'settlement', writes,
+      guards, evidence: { clearanceId: row.id }, review: '', attachments: [], acceptedAt: new Date().toISOString() };
+    record.fingerprint = await tkFingerprint([row.id, writes, guards]);
+    // Present the reconciled server totals before asking for final approval.
+    const confirmation = await window.Swal.fire({ title: 'Approve reconciled shift settlement?',
+      text: `Cash ₱${cash.toFixed(2)} · Digital ₱${closed.totalDigitalSales.toFixed(2)} · Expenses ₱${cashOut.toFixed(2)} · Declared ₱${Number(row.evidence.declaredCash).toFixed(2)}. Confirm that you checked every branch tablet and that no receipt is missing.`,
+      icon: 'warning', showCancelButton: true, confirmButtonText: 'All tablets checked — settle once' });
+    if (!confirmation.isConfirmed) return;
+    // If records changed during the confirmation, guard failure holds a new
+    // proposal and makes no financial write. It is never silently overridden.
+    return tkCommitOperation(record, adapter);
+  }
+  async function refresh() {
+    if (!panel || !owner() || busy) return; busy = true;
+    const list = panel.querySelector('[data-review-list]'); list.replaceChildren(text('p', 'Loading owner review records…'));
+    try {
+      const query = window.query(window.collection(window.db, 'pos_operation_reviews'), window.where('status', '==', 'Pending'));
+      const snap = await tkOwnerDocs(query); list.replaceChildren();
+      for (const entry of snap.docs) {
+        const row = entry.data(), card = document.createElement('article');
+        card.style.cssText = 'padding:16px;border:1px solid #e8dfd3;border-radius:14px;margin:12px 0;background:#faf8f4';
+        card.append(text('h3', row.branch + ' · ' + row.type), text('p', row.reviewReason), text('small', 'Device ' + row.deviceId + ' · ' + row.acceptedAt.toDate().toLocaleString()));
+        const details = document.createElement('details'), summary = text('summary', 'View saved evidence and affected records');
+        const pre = text('pre', JSON.stringify({ evidence: row.evidence, writes: row.writes, guards: row.guards, attachments: row.attachmentPaths }, null, 2));
+        pre.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto;font-size:12px'; details.append(summary, pre); card.append(details);
+        const actions = [['approve', row.type === 'shift-close' ? 'Reconcile & settle' : row.type === 'sale-reconciliation' ? 'Assign received payment' : 'Approve unchanged records']];
+        if (row.type !== 'sale-reconciliation') actions.push(['reject', 'Reject — preserve evidence']);
+        for (const [action, label] of actions) {
+          const button = text('button', label); button.style.cssText = 'min-height:44px;padding:10px 14px;margin:12px 8px 0 0;border-radius:10px;border:1px solid #ddd;background:' + (action === 'approve' ? '#ffbc40' : '#fff');
+          button.onclick = async () => {
+            const result = await window.Swal.fire({ title: label, input: 'textarea', inputLabel: 'Owner review note', inputPlaceholder: 'Record what you checked and why.',
+              showCancelButton: true, inputValidator: value => value.trim().length < 5 ? 'Enter a review note.' : undefined });
+            if (!result.isConfirmed) return; button.disabled = true;
+            try { const resolved = await resolve(entry.id, action, result.value.trim());
+              if (resolved?.ownerReview) throw new Error('Shared records changed; a new review was preserved without applying the settlement');
+              await refresh(); }
+            catch (error) { await window.Swal.fire('Review held', error.message, 'warning'); }
+            finally { button.disabled = false; }
+          }; card.append(button);
+        }
+        list.append(card);
+      }
+      if (snap.empty) list.append(text('p', 'No records await owner review.'));
+    } catch (error) { list.replaceChildren(text('p', 'Owner review could not load: ' + error.message)); }
+    finally { busy = false; }
+  }
+  function open() {
+    if (!owner()) throw new Error('Verified Owner access required');
+    if (!panel) {
+      panel = document.createElement('dialog'); panel.style.cssText = 'width:min(880px,94vw);max-height:88vh;overflow:auto;border:1px solid #e8dfd3;border-radius:22px;padding:22px;background:#fff;color:#27231f';
+      const header = document.createElement('div'); header.style.cssText = 'display:flex;justify-content:space-between;align-items:center';
+      const close = text('button', 'Close'); close.onclick = () => panel.close(); header.append(text('h2', 'Owner review'), close);
+      const reload = text('button', 'Refresh records'); reload.onclick = refresh;
+      const list = document.createElement('div'); list.dataset.reviewList = '';
+      panel.append(header, text('p', 'Original tablet evidence is retained. Changed stock counts need a fresh count; every tablet must be checked before cash settlement.'), reload, list); document.body.append(panel);
+    }
+    panel.showModal(); refresh();
+  }
+  window.TKOwnerReview = { open, refresh, resolve };
+  setInterval(() => {
+    const old = document.getElementById('tkOwnerReviewButton'); if (!owner()) { old?.remove(); return; }
+    if (old) return;
+    const button = text('button', 'Owner review'); button.id = 'tkOwnerReviewButton';
+    button.style.cssText = 'position:fixed;bottom:72px;right:18px;z-index:1000;min-height:44px;border:1px solid #e5d8bd;border-radius:12px;padding:12px 16px;background:#fff4d9;color:#27231f;font-weight:700';
+    button.onclick = open; document.body.append(button);
+  }, 10000);
+})();
