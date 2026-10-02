@@ -780,3 +780,384 @@ body.tk-ui-v2 .tk-menu-toolbar {
   margin-bottom: 0 !important;
   justify-content: flex-end;
 }
+
+/* ===== TAKODEAL PHOTO POS ===== */
+
+body.tk-ui-v2.tk-photo-pos {
+  --tk-bg: #f6f2eb;
+  --tk-line: #e9e2d8;
+  --tk-text: #30261e;
+}
+
+body.tk-ui-v2.tk-photo-pos .sidebar {
+  background: linear-gradient(160deg, #2c211b, #17120f) !important;
+}
+body.tk-ui-v2.tk-photo-pos .nav-item {
+  min-height: 48px !important;
+  border-radius: 14px !important;
+}
+body.tk-ui-v2.tk-photo-pos .top-bar {
+  background: #fcfaf6 !important;
+}
+body.tk-ui-v2.tk-photo-pos #view-pos {
+  padding: 16px !important;
+}
+body.tk-ui-v2.tk-photo-pos .tk-pos-shell {
+  grid-template-columns: minmax(0, 1fr) 370px !important;
+  gap: 18px !important;
+}
+body.tk-ui-v2.tk-photo-pos .tk-menu-shell,
+body.tk-ui-v2.tk-photo-pos .tk-cart-shell {
+  border-radius: 22px !important;
+  box-shadow: 0 8px 28px rgb(48 38 30 / 5%) !important;
+}
+
+/* Menu heading */
+body.tk-ui-v2.tk-photo-pos .tk-menu-shell > div:first-child {
+  padding: 16px !important;
+  flex-shrink: 0;
+  background: #fff !important;
+}
+body.tk-ui-v2.tk-photo-pos #menuCategoryDropdown,
+body.tk-ui-v2.tk-photo-pos #tkMenuSearch,
+body.tk-ui-v2.tk-photo-pos #tkMenuCount {
+  display: none !important;
+}
+body.tk-ui-v2.tk-photo-pos .tk-menu-toolbar {
+  gap: 12px;
+  margin-bottom: 14px !important;
+}
+.tk-menu-heading {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+.tk-menu-heading strong {
+  font-size: 21px;
+  letter-spacing: -.6px;
+}
+.tk-menu-heading > span {
+  font-size: 12px;
+  color: #86796b;
+  overflow-wrap: anywhere;
+}
+#tkBrowseCategories {
+  min-height: 46px;
+  border: 1px solid var(--tk-line);
+  border-radius: 14px;
+  padding: 10px 16px;
+  background: #faf7f2;
+  color: #30261e;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+/* Photo categories */
+body.tk-ui-v2.tk-photo-pos #tkCategoryPills {
+  display: flex !important;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 3px 3px 9px;
+  scrollbar-width: thin;
+  scrollbar-color: #d8cdbc transparent;
+  touch-action: pan-x pan-y;
+}
+body.tk-ui-v2.tk-photo-pos .tk-category-pill,
+body.tk-ui-v2.tk-photo-pos .tk-category-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  flex: 0 0 112px;
+  min-height: 132px;
+  padding: 10px 8px;
+  border: 2px solid transparent;
+  border-radius: 16px;
+  background: #f8f5ef;
+  color: #4b3b2e;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+body.tk-ui-v2.tk-photo-pos .tk-category-pill.active,
+body.tk-ui-v2.tk-photo-pos .tk-category-option.active {
+  border-color: var(--tk-gold);
+  background: var(--tk-gold-soft);
+  color: #30261e;
+  box-shadow: 0 3px 12px rgb(48 38 30 / 8%);
+}
+.tk-category-photo {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 66px;
+  height: 54px;
+  flex: 0 0 54px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #eee7dc;
+  font-size: 30px;
+}
+.tk-category-photo img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.tk-category-photo img[hidden] {
+  display: none;
+}
+.tk-category-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.tk-category-total {
+  margin-top: auto;
+  font-size: 10px;
+  color: #827568;
+}
+
+/* Product cards */
+body.tk-ui-v2.tk-photo-pos #menuGrid {
+  grid-template-columns: repeat(auto-fill, minmax(174px, 1fr)) !important;
+  gap: 14px !important;
+  padding: 16px !important;
+  background: #faf8f4 !important;
+}
+body.tk-ui-v2.tk-photo-pos #menuGrid .tk-product-card {
+  height: auto !important;
+  min-height: 248px;
+  border-radius: 18px !important;
+  border-color: #eee7dd !important;
+  box-shadow: 0 3px 10px rgb(48 38 30 / 4%) !important;
+}
+body.tk-ui-v2.tk-photo-pos .tk-product-media {
+  height: 148px !important;
+  flex-basis: 148px !important;
+}
+body.tk-ui-v2.tk-photo-pos .tk-product-info {
+  padding: 12px !important;
+  min-height: 98px;
+  gap: 8px !important;
+}
+body.tk-ui-v2.tk-photo-pos .tk-product-name {
+  font-size: 14px;
+  line-height: 1.3;
+}
+body.tk-ui-v2.tk-photo-pos .tk-product-price {
+  font-size: 17px;
+  line-height: 44px;
+}
+body.tk-ui-v2.tk-photo-pos .tk-add-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  font-size: 24px;
+}
+
+/* Order panel */
+body.tk-ui-v2.tk-photo-pos #posCartHeader {
+  flex-wrap: wrap;
+  padding: 18px !important;
+  background: var(--tk-gold-soft) !important;
+}
+.tk-order-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 8px;
+}
+.tk-order-heading strong {
+  font-size: 20px;
+  letter-spacing: -.5px;
+}
+.tk-order-heading > span {
+  padding: 6px 10px;
+  border-radius: 20px;
+  background: white;
+  color: #746352;
+  font-size: 12px;
+  font-weight: 800;
+}
+body.tk-ui-v2.tk-photo-pos #posPlatformSelect,
+body.tk-ui-v2.tk-photo-pos #mainOrderType {
+  min-width: 0;
+  min-height: 46px !important;
+  border-radius: 12px !important;
+}
+body.tk-ui-v2.tk-photo-pos #cartList {
+  padding: 14px !important;
+  gap: 10px !important;
+  background: #fcfaf7 !important;
+}
+body.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line {
+  grid-template-columns: minmax(0,1fr) 44px minmax(0,1fr) 44px !important;
+  padding: 14px !important;
+  border-radius: 16px;
+  align-items: center !important;
+}
+body.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line > div:first-child > span {
+  font-size: 14px !important;
+}
+body.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line button {
+  width: 44px !important;
+  height: 44px !important;
+  border-radius: 12px !important;
+  font-size: 14px !important;
+}
+body.tk-ui-v2.tk-photo-pos .tk-cart-empty {
+  padding: 24px !important;
+  font-style: normal !important;
+  color: #62503f !important;
+  font-size: 16px !important;
+}
+body.tk-ui-v2.tk-photo-pos .tk-cart-empty::before {
+  content: '＋';
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  margin: 0 auto 16px;
+  border-radius: 24px;
+  background: var(--tk-gold-soft);
+  color: #a87b35;
+  font-size: 38px;
+}
+body.tk-ui-v2.tk-photo-pos .tk-cart-empty::after {
+  content: 'Tap a product to add it to the order.';
+  display: block;
+  margin-top: 8px;
+  color: #9a8978;
+  font-size: 12px;
+  line-height: 1.5;
+}
+body.tk-ui-v2.tk-photo-pos .tk-cart-shell > div:last-child {
+  padding: 18px !important;
+}
+body.tk-ui-v2.tk-photo-pos #displayGrandTotal {
+  font-size: 29px !important;
+  letter-spacing: -1px;
+}
+body.tk-ui-v2.tk-photo-pos .tk-cart-shell > div:last-child button {
+  min-height: 46px;
+  border-radius: 12px !important;
+}
+body.tk-ui-v2.tk-photo-pos #btnMainPlaceOrder {
+  min-height: 56px;
+  font-size: 16px !important;
+}
+
+/* Full photo category picker */
+body.tk-ui-v2.tk-photo-pos #categoryModal > div {
+  width: 820px !important;
+  height: auto !important;
+  max-height: 85vh;
+  max-height: 85dvh;
+  border-radius: 24px !important;
+  background: #fff !important;
+}
+body.tk-ui-v2.tk-photo-pos #categoryModal > div > div:first-child {
+  padding: 18px 22px !important;
+  background: #30261e !important;
+  border-bottom: 0 !important;
+}
+body.tk-ui-v2.tk-photo-pos #categoryModal h2 {
+  font-size: 20px !important;
+  letter-spacing: -.3px !important;
+}
+body.tk-ui-v2.tk-photo-pos #categoryModal > div > div:last-child {
+  min-height: 0;
+  padding: 20px !important;
+}
+body.tk-ui-v2.tk-photo-pos #categoryModalGrid {
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)) !important;
+  gap: 12px !important;
+}
+body.tk-ui-v2.tk-photo-pos .tk-category-option {
+  min-height: 138px;
+}
+
+/* Tablet */
+@media (max-width: 1180px) {
+  body.tk-ui-v2.tk-photo-pos .tk-pos-shell {
+    grid-template-columns: minmax(0, 1fr) 320px !important;
+    gap: 12px !important;
+  }
+  body.tk-ui-v2.tk-photo-pos #menuGrid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+    gap: 10px !important;
+  }
+}
+
+/* Phone */
+@media (max-width: 768px) {
+  body.tk-ui-v2.tk-photo-pos #view-pos {
+    padding: 8px !important;
+  }
+  body.tk-ui-v2.tk-photo-pos .tk-menu-shell > div:first-child {
+    padding: 12px !important;
+  }
+  body.tk-ui-v2.tk-photo-pos .tk-menu-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .tk-menu-heading {
+    flex-basis: 100%;
+  }
+  .tk-menu-heading strong {
+    font-size: 18px;
+  }
+  .tk-menu-heading > span {
+    display: none;
+  }
+  body.tk-ui-v2.tk-photo-pos #tkCartToggle,
+  #tkBrowseCategories {
+    flex: 1;
+    max-width: none;
+    min-height: 44px;
+    font-size: 12px;
+  }
+  body.tk-ui-v2.tk-photo-pos .tk-category-pill {
+    flex-basis: 100px;
+    min-height: 124px;
+  }
+  body.tk-ui-v2.tk-photo-pos #menuGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    padding: 10px !important;
+    gap: 10px !important;
+  }
+  body.tk-ui-v2.tk-photo-pos .tk-product-media {
+    height: 126px !important;
+    flex-basis: 126px !important;
+  }
+  body.tk-ui-v2.tk-photo-pos #menuGrid .tk-product-card {
+    min-height: 226px;
+  }
+  body.tk-ui-v2.tk-photo-pos .tk-product-info {
+    padding: 10px !important;
+  }
+  body.tk-ui-v2.tk-photo-pos .tk-product-price {
+    font-size: 15px;
+  }
+  body.tk-ui-v2.tk-photo-pos #categoryModalGrid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+  body.tk-ui-v2.tk-photo-pos #categoryModal > div > div:last-child {
+    padding: 12px !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  body.tk-ui-v2.tk-photo-pos .tk-product-card {
+    transition: none;
+  }
+}
