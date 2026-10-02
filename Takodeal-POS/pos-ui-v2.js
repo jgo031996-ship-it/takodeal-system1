@@ -515,3 +515,231 @@
   if (document.readyState === 'complete') install();
   else window.addEventListener('load', install, { once: true });
 })();
+
+/* TAKODEAL: photo categories and refreshed POS */
+(() => {
+  function installPhotoPOS() {
+    const select = document.getElementById('menuCategoryDropdown');
+    const rail = document.getElementById('tkCategoryPills');
+    const toolbar = document.querySelector('.tk-menu-toolbar');
+    const header = document.getElementById('posCartHeader');
+    const popup = document.getElementById('categoryModal');
+
+    if (!select || !rail || !toolbar || !header || !popup ||
+        document.body.classList.contains('tk-photo-pos')) return;
+
+    document.body.classList.add('tk-photo-pos');
+
+    const heading = document.createElement('div');
+    heading.className = 'tk-menu-heading';
+
+    const title = document.createElement('strong');
+    title.textContent = 'Explore the menu';
+
+    const caption = document.createElement('span');
+    heading.append(title, caption);
+
+    const browse = document.createElement('button');
+    browse.type = 'button';
+    browse.id = 'tkBrowseCategories';
+    browse.textContent = '▦ All categories';
+    browse.setAttribute('aria-controls', 'categoryModal');
+    browse.setAttribute('aria-haspopup', 'dialog');
+    browse.addEventListener('click', () => window.openCategoryModal());
+
+    toolbar.prepend(heading);
+    toolbar.append(browse);
+
+    const orderHeading = document.createElement('div');
+    orderHeading.className = 'tk-order-heading';
+
+    const orderTitle = document.createElement('strong');
+    orderTitle.textContent = 'Current order';
+
+    const quantity = document.createElement('span');
+    orderHeading.append(orderTitle, quantity);
+    header.prepend(orderHeading);
+
+    popup.setAttribute('role', 'dialog');
+    popup.setAttribute('aria-modal', 'true');
+
+    const popupTitle = popup.querySelector('h2');
+    if (popupTitle) {
+      popupTitle.id = 'tkPhotoCategoryTitle';
+      popupTitle.textContent = 'Choose a category';
+      popup.setAttribute('aria-labelledby', popupTitle.id);
+    }
+
+    function icon(category) {
+      const name = category.toLowerCase();
+      if (name.includes('takoyaki')) return '🐙';
+      if (name.includes('coffee') || name.includes('latte')) return '☕';
+      if (name.includes('milk') || name.includes('tea')) return '🧋';
+      if (name.includes('fries')) return '🍟';
+      if (/shake|soda|smooth|drink/.test(name)) return '🥤';
+      if (/pudding|tiramisu/.test(name)) return '🍮';
+      if (/pack|consum|prep/.test(name)) return '📦';
+      return category === 'All' ? '🍽️' : '🍴';
+    }
+
+    function paintCategories() {
+      const items = Array.isArray(window.masterPOSData?.items)
+        ? window.masterPOSData.items : [];
+
+      const photos = new Map();
+      const counts = new Map();
+      let firstPhoto = '';
+
+      items.forEach(item => {
+        const image = item.image || item.imageUrl;
+        counts.set(item.category, (counts.get(item.category) || 0) + 1);
+
+        if (image && !photos.has(item.category)) {
+          photos.set(item.category, String(image));
+        }
+        if (image && !firstPhoto) firstPhoto = String(image);
+      });
+
+      document.querySelectorAll(
+        '.tk-category-pill, .tk-category-option'
+      ).forEach(button => {
+        const category = button.dataset.category || 'All';
+        const photo = category === 'All'
+          ? firstPhoto : (photos.get(category) || '');
+        const count = category === 'All'
+          ? items.length : (counts.get(category) || 0);
+        const signature = JSON.stringify([category, photo, count]);
+
+        if (button.dataset.tkPhoto !== signature) {
+          const media = document.createElement('span');
+          media.className = 'tk-category-photo';
+          media.setAttribute('aria-hidden', 'true');
+
+          const fallback = document.createElement('span');
+          fallback.textContent = icon(category);
+          media.append(fallback);
+
+          if (photo) {
+            const image = document.createElement('img');
+            image.alt = '';
+            image.loading = 'lazy';
+            image.decoding = 'async';
+            image.addEventListener('error', () => {
+              image.hidden = true;
+            });
+            image.src = photo;
+            media.append(image);
+          }
+
+          const label = document.createElement('span');
+          label.className = 'tk-category-label';
+          label.textContent = category === 'All' ? 'All items' : category;
+
+          const total = document.createElement('small');
+          total.className = 'tk-category-total';
+          total.textContent = `${count} ${count === 1 ? 'item' : 'items'}`;
+
+          button.replaceChildren(media, label, total);
+          button.dataset.tkPhoto = signature;
+        }
+
+        const active = category === (select.value || 'All');
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-pressed', String(active));
+      });
+
+      const current = select.value || 'All';
+      caption.textContent = current === 'All'
+        ? 'Pick a category to get started' : current;
+    }
+
+    function paintOrder() {
+      const cart = Array.isArray(window.cart) ? window.cart : [];
+      const count = cart.reduce((sum, item) =>
+        sum + (Number(item.qty) || Number(item.quantity) || 1), 0);
+
+      quantity.textContent = `${count} ${count === 1 ? 'item' : 'items'}`;
+
+      document.querySelectorAll('#cartList .tk-cart-empty').forEach(row => {
+        if (row.textContent !== 'Your order starts here') {
+          row.textContent = 'Your order starts here';
+        }
+      });
+    }
+
+    function wrap(name, after) {
+      const original = window[name];
+      if (typeof original !== 'function') return;
+
+      window[name] = function (...args) {
+        const result = original.apply(this, args);
+        after();
+        return result;
+      };
+    }
+
+    wrap('renderMenuItems', paintCategories);
+    wrap('renderCart', paintOrder);
+
+    const originalFilter = window.filterMenu;
+    if (typeof originalFilter === 'function') {
+      window.filterMenu = function (...args) {
+        const previous = select.value;
+        const result = originalFilter.apply(this, args);
+        paintCategories();
+
+        if (select.value !== previous) {
+          document.getElementById('menuGrid').scrollTop = 0;
+        }
+        return result;
+      };
+    }
+
+    wrap('openCategoryModal', () => {
+      paintCategories();
+      popup.querySelector('.tk-category-option.active')?.focus();
+    });
+
+    wrap('closeCategoryModal', () => {
+      if (popup.contains(document.activeElement)) browse.focus();
+    });
+
+    document.addEventListener('keydown', event => {
+      if (popup.style.display !== 'flex') return;
+
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        window.closeCategoryModal();
+      } else if (event.key === 'Tab') {
+        const buttons = [...popup.querySelectorAll('button')]
+          .filter(button => !button.disabled);
+        const first = buttons[0];
+        const last = buttons[buttons.length - 1];
+
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last?.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first?.focus();
+        }
+      }
+    });
+
+    let scheduled = false;
+    new MutationObserver(() => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        paintCategories();
+      });
+    }).observe(select, { childList: true });
+
+    paintCategories();
+    paintOrder();
+  }
+
+  if (document.readyState === 'complete') installPhotoPOS();
+  else window.addEventListener('load', installPhotoPOS, { once: true });
+})();
