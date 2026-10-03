@@ -98,6 +98,7 @@ function fixture() {
     const nodes=new Map(ids.map(id=>[id,{id,value:'',innerHTML:'',textContent:'',hidden:false,style:{},classList:{contains:()=>true},
         querySelector:()=>({}),querySelectorAll:()=>[],setAttribute(){}}]));
     nodes.set('dashBranchFilter',{...nodes.get('dashStartDate'),id:'dashBranchFilter',value:'All',onchange:null});
+    nodes.get('dashStartDate').value='2026-10-03';nodes.get('dashEndDate').value='2026-10-03';
     const d={getElementById:id=>nodes.get(id),body:{classList:{add(){}}}};
     const source={branches:[{name:'Cabantian'},{name:'Maa'}],inventory:[],bom:[],menu:[]};
     const snapshot=data=>({docs:data.map((data,i)=>({id:String(i),data:()=>data})),exists:()=>data.length>0,data:()=>data[0],metadata:{fromCache:false}});
