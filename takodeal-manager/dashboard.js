@@ -250,8 +250,11 @@ export function createDashboard(w = window, d = document) {
             const snap = await (w.getDocsFromServer || w.getDocs)(collection('transactions'));
             const statsSnap = await (w.getDocFromServer || w.getDoc)(doc('global_stats'));
             const stats = statsSnap.exists() ? statsSnap.data() : {};
-            const audit = ballAudit(rows(snap),stats,countBalls,state.scope);
             const global = state.branch === 'All' && !w.sessionUser.isFranchisee;
+            const receipts = rows(snap);
+            // Global lifetime totals also include sales from branches later retired from the branch list.
+            const auditScope = global ? [...new Set(receipts.map(tx=>tx.branch))] : state.scope;
+            const audit = ballAudit(receipts,stats,countBalls,auditScope);
             const html = `<div class="dash-audit"><p>Counted from ${audit.receipts.toLocaleString()} retained paid receipts in your branch selection.</p><dl><dt>Takoyaki balls in retained receipts</dt><dd>${audit.calculated.toLocaleString()}</dd><dt>Recorded receipt counter amounts</dt><dd>${audit.recorded.toLocaleString()}</dd>${global ? '<dt>Saved historical base</dt><dd>'+ (audit.historical == null ? 'Not recorded' : audit.historical.toLocaleString())+'</dd><dt>Current saved total</dt><dd>'+audit.stored.toLocaleString()+'</dd>' : ''}</dl><p>${audit.unknown ? audit.unknown+' item lines need a pack-size check. ' : ''}${global && audit.expected != null ? 'Historical base + retained receipt count: '+audit.expected.toLocaleString()+'. ' : ''}Archived or deleted receipts can prevent a complete comparison. This check does not overwrite the counter.</p></div>`;
             await w.Swal.fire({title:'Takoyaki counter check',html,confirmButtonText:'Done',width:620});
         } catch(error) { await w.Swal.fire('Counter check unavailable',error.message,'warning'); }
