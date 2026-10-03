@@ -1,6 +1,9 @@
 import { createSaleEngine } from './pos-safety.js';
 import { recipeProblems, ingredientUses } from './recipe-integrity.js';
 import { createLiveReport } from './live-report.js';
+import { calculateLateMinutes, resolveScheduledShift, scheduledShiftForDate, latePay, nightRate, earnedNightBonus,
+    attendanceLateMinutes, isLatenessRequest, requestLateMinutes, legacyAttendanceCandidates,
+    reviewLateRequest, shiftType, shiftTimes, validateShiftConfig } from './payroll-safety.js';
 const historyLive = createLiveReport({
     subscribe: (...args) => window.onSnapshot(...args),
     status: text => { const el = document.getElementById('histLiveStatus'); if (el) el.textContent = text; }
@@ -31,86 +34,7 @@ window.promptMobileInstall = function() {
 // ==========================================
 // 🕒 UNIVERSAL SHIFT MATCHER (LATE DETECTOR)
 // ==========================================
-window.calculateLateMinutes = function(logDate, branch, staffName, scheduleData, staffDictOrProfiles, parseTimeStrFn) {
-    let lateMinutes = 0;
-    let expectedStartHour = null; 
-    let wasScheduled = false;
-
-    if (!scheduleData || !scheduleData.branchConfig || !scheduleData.branchConfig[branch]) {
-        return { lateMinutes, expectedStartHour, wasScheduled };
-    }
-
-    let lDay = logDate.getDate(); 
-    let lMonth = logDate.getMonth() + 1; 
-    let lYear = logDate.getFullYear();
-    let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
-    let dayOfWeek = logDate.getDay();
-
-    // 1. Try to find their explicitly scheduled shift first
-    if (scheduleData.currentSchedule && scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
-        let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][branch] : null;
-        if (branchSched && branchSched.scheduled) {
-            let nickname = staffName;
-            if (staffDictOrProfiles && staffDictOrProfiles[staffName]) {
-                nickname = staffDictOrProfiles[staffName].scheduleNickname || staffDictOrProfiles[staffName].nickname || staffName;
-            }
-            
-            let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname);
-            if (assignedShiftId) {
-                wasScheduled = true;
-                let shiftConfig = scheduleData.branchConfig[branch].find(s => s.id === assignedShiftId);
-                if (shiftConfig) {
-                    if (shiftConfig.startTime) {
-                        let parts = shiftConfig.startTime.split(':');
-                        expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
-                    } else if (parseTimeStrFn) {
-                        let match = shiftConfig.name.match(/\((.*?)-/);
-                        if (match && match[1]) expectedStartHour = parseTimeStrFn(match[1]);
-                    }
-                }
-            }
-        }
-    }
-
-    // 2. UNIVERSAL FALLBACK: If NOT explicitly scheduled, find the closest active shift!
-    if (expectedStartHour === null) {
-        let minDiff = Infinity;
-        scheduleData.branchConfig[branch].forEach(shiftConfig => {
-            if (!shiftConfig.active) return;
-            if (shiftConfig.days && !shiftConfig.days.includes(dayOfWeek)) return;
-
-            let shiftStartHour = null;
-            if (shiftConfig.startTime) {
-                let parts = shiftConfig.startTime.split(':');
-                shiftStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
-            } else if (parseTimeStrFn) {
-                let match = shiftConfig.name.match(/\((.*?)-/);
-                if (match && match[1]) shiftStartHour = parseTimeStrFn(match[1]);
-            }
-
-            if (shiftStartHour !== null) {
-                let diffHours = actualHour - shiftStartHour;
-                // If they clock in between 1.5 hrs early and up to 4 hrs late, attach them to this shift!
-                if (diffHours > -1.5 && diffHours < 4) {
-                    if (Math.abs(diffHours) < Math.abs(minDiff)) {
-                        minDiff = diffHours;
-                        expectedStartHour = shiftStartHour;
-                    }
-                }
-            }
-        });
-    }
-
-    // 3. Calculate actual Late Minutes
-    if (expectedStartHour !== null) {
-        let diffHours = actualHour - expectedStartHour;
-        if (diffHours > 0) {
-            lateMinutes = Math.floor(diffHours * 60);
-        }
-    }
-
-    return { lateMinutes, expectedStartHour, wasScheduled };
-};
+window.calculateLateMinutes = calculateLateMinutes;
 
 window.loadAdminDashboard = async function() {
   const tbody = document.getElementById('adminTableBody');
@@ -9087,7 +9011,7 @@ window.loadAttendanceLogs = async function () {
                 
                 // 🔥 THE FIX: Universal Shift Matcher Call
                 let { lateMinutes: calcMins, expectedStartHour, wasScheduled } = window.calculateLateMinutes(logDate, data.branch, data.staffName, scheduleData, staffProfiles, parseTimeStr);
-                lateMinutes = calcMins;
+                lateMinutes = attendanceLateMinutes(data, calcMins);
 
                 if (expectedStartHour !== null) {
                     if (lateMinutes > 0) {
@@ -9211,7 +9135,8 @@ window.saveToCloud = async function() {
     try {
         const appData = { branchConfig, employees, unavailability, currentSchedule, currentYear, currentMonth, holidays: window.scheduleHolidays };
         await setDoc(doc(db, "settings", "global_schedule"), appData);
-    } catch(e) { console.error("Cloud Save Error:", e); }
+        return true;
+    } catch(e) { console.error("Cloud Save Error:", e); return false; }
 };
 
 window.loadFromCloud = async function() {
@@ -9417,8 +9342,10 @@ window.captureTempShiftConfig = function() {
             if (inp) shift.name = inp.value.trim();
             if (start) shift.startTime = start.value;
             if (end) shift.endTime = end.value;
+            const kind = document.getElementById(`kind_${branch}_${index}`);
+            if (kind) shift.shiftType = kind.value;
             
-            const dChks = document.querySelectorAll(`.day-chk-${branch}-${index}`);
+            const dChks = inp?.closest('.shift-rule-row')?.querySelectorAll('input[data-shift-day]') || [];
             if (dChks.length > 0) {
                 shift.days = Array.from(dChks).filter(c => c.checked).map(c => parseInt(c.value));
             }
@@ -9427,21 +9354,19 @@ window.captureTempShiftConfig = function() {
 };
 
 // 🔥 NEW: Instantly adds a new shift slot!
-window.addNewShiftToBranch = function(branch) {
-    window.captureTempShiftConfig(); // Save what they typed so far
+window.addNewShiftToBranch = function(branch, kind = 'morning') {
+    if (!window.isBranchAllowed(branch)) return;
+    window.captureTempShiftConfig();
     if (!branchConfig[branch]) branchConfig[branch] = [];
-    
-    let newShiftId = 'shift_' + Date.now().toString().slice(-6);
-    branchConfig[branch].push({
-        id: newShiftId,
-        name: 'New Shift',
-        active: true,
-        startTime: '08:00',
-        endTime: '17:00',
-        days: [0, 1, 2, 3, 4, 5, 6]
-    });
-    
-    window.renderConfigUI(); // Redraw UI
+    const matching = branchConfig[branch].filter(shift => shiftType(shift) === kind);
+    const template = matching[0];
+    const clock = value => value === null ? '' : `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+    const times = template ? shiftTimes(template) : { start: null, end: null };
+    branchConfig[branch].push({ id: 'shift_' + crypto.randomUUID(),
+        name: `${kind[0].toUpperCase() + kind.slice(1)} ${matching.length + 1}`,
+        shiftType: kind, active: true, startTime: clock(times.start), endTime: clock(times.end),
+        days: [0, 1, 2, 3, 4, 5, 6] });
+    window.renderConfigUI();
 };
 
 // 🔥 NEW: Deletes a shift slot!
@@ -9490,6 +9415,10 @@ window.renderConfigUI = function() {
         branchConfig[branch].forEach((shift, index) => {
             let defaultStart = shift.startTime || ""; 
             let defaultEnd = shift.endTime || "";
+            const times = shiftTimes(shift);
+            const clock = value => value === null ? '' : `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+            defaultStart = defaultStart || clock(times.start);
+            defaultEnd = defaultEnd || clock(times.end);
             
             // Legacy Time Extractor (If they haven't saved modern times yet)
             if (!defaultStart && shift.name) {
@@ -9507,7 +9436,7 @@ window.renderConfigUI = function() {
 
             // 🔥 INJECTED THE UP/DOWN ARROW BUTTONS HERE!
             html += `
-                <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); position: relative;">
+                <div class="shift-rule-row" style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); position: relative;">
                     
                     <div style="position: absolute; top: 10px; right: 10px; display: flex; gap: 4px;">
                         <button onclick="window.moveShiftOrder('${branch}', ${index}, -1)" style="background: #f1f5f9; border: 1px solid #cbd5e1; color: #475569; border-radius: 4px; cursor: ${index === 0 ? 'not-allowed' : 'pointer'}; font-size: 10px; font-weight: bold; padding: 4px 8px; transition: 0.2s;" ${index === 0 ? 'disabled' : ''} title="Move Up">▲</button>
@@ -9522,6 +9451,12 @@ window.renderConfigUI = function() {
                         <input type="text" value="${shift.name.replace(/"/g, '&quot;')}" id="inp_${branch}_${index}" placeholder="Shift Name (e.g. Opener)" style="flex: 1; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-weight: bold; color: #334155; outline: none; font-size: 13px;">
                     </div>
                     
+                    <label style="display:block;font-size:11px;font-weight:bold;margin-bottom:10px;">Shift type
+                        <select id="kind_${branch}_${index}" style="margin-left:8px;padding:6px;border:1px solid #cbd5e1;border-radius:4px;">
+                            ${['morning','mid','night','other'].map(kind => `<option value="${kind}" ${shiftType(shift) === kind ? 'selected' : ''}>${kind[0].toUpperCase() + kind.slice(1)}</option>`).join('')}
+                        </select>
+                        <span style="display:block;color:#64748b;font-weight:normal;margin-top:4px;">Mid and Night use the employee’s bonus rate when Time Out is reached.</span>
+                    </label>
                     <div style="display: flex; gap: 15px; align-items: center; margin-bottom: 12px; background: #f1f5f9; padding: 10px; border-radius: 6px; border: 1px dashed #cbd5e1;">
                         <div style="flex: 1;">
                             <label style="font-size: 10px; font-weight: 900; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 4px;">🟢 Time In</label>
@@ -9538,7 +9473,7 @@ window.renderConfigUI = function() {
             dayNames.forEach((name, i) => {
                 let safeDays = Array.isArray(shift.days) ? shift.days : [0, 1, 2, 3, 4, 5, 6];
                 html += `<label style="font-size: 12px; font-weight: bold; color: #475569; display: flex; align-items: center; gap: 4px; cursor: pointer;">
-                            <input type="checkbox" value="${i}" class="day-chk-${branch}-${index}" ${safeDays.includes(i) ? 'checked' : ''} style="accent-color: #0f766e; width: 14px; height: 14px;">${name}
+                            <input type="checkbox" value="${i}" data-shift-day class="day-chk-${branch}-${index}" ${safeDays.includes(i) ? 'checked' : ''} style="accent-color: #0f766e; width: 14px; height: 14px;">${name}
                          </label>`;
             });
             
@@ -9546,15 +9481,20 @@ window.renderConfigUI = function() {
         });
 
         html += `</div>
-                 <button onclick="window.addNewShiftToBranch('${branch}')" style="width: 100%; margin-top: auto; padding: 12px; background: #e0f2fe; color: #0284c7; border: 2px dashed #bae6fd; border-radius: 8px; font-weight: 900; cursor: pointer; transition: 0.2s; font-size: 13px;">➕ Add New Shift</button>
+                 <div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:auto;">
+                    ${['morning','mid','night'].map(kind => `<button onclick="window.addNewShiftToBranch('${branch}', '${kind}')" style="flex:1;padding:10px;background:#e0f2fe;color:#0284c7;border:1px dashed #bae6fd;border-radius:6px;font-weight:bold;cursor:pointer;">➕ ${kind[0].toUpperCase() + kind.slice(1)} Shift</button>`).join('')}
+                 </div>
               </div>`;
     });
     
     container.innerHTML = html;
 };
 
-window.saveShiftConfigChanges = function() {
+window.saveShiftConfigChanges = async function() {
     window.captureTempShiftConfig();
+    Object.entries(branchConfig).forEach(([branch, shifts]) => {
+        if (window.isBranchAllowed(branch)) shifts.forEach(shift => validateShiftConfig(shift));
+    });
     
     if (currentSchedule[1]) {
         for (let day in currentSchedule) {
@@ -9580,7 +9520,7 @@ window.saveShiftConfigChanges = function() {
         window.renderTables();
     }
     
-    window.saveToCloud();
+    if (await window.saveToCloud() === false) throw new Error('Shift rules were not saved. Check the connection and try again.');
     const msg = document.getElementById("configSaveMsg");
     if(msg) { msg.style.display = "inline"; setTimeout(() => msg.style.display = "none", 2000); }
 };
@@ -9588,7 +9528,7 @@ window.saveShiftConfigChanges = function() {
 window.saveManualSchedule = async function() {
     Swal.fire({title: 'Saving Schedule...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     try {
-        await window.saveToCloud();
+        if (await window.saveToCloud() === false) throw new Error('Schedule was not saved.');
         Swal.fire({
             title: '✅ Saved!', 
             text: 'Your manual schedule edits have been safely locked in.', 
@@ -10952,22 +10892,84 @@ window.toggleResolvedStaff = function(staffId) {
 // ========================================================
 // 📩 UPGRADED STAFF REQUEST HUB (WITH LEDGER INTEGRATION)
 // ========================================================
-window.handleRequest = function(docId, action, type, amount, staffName) {
-    const isReasonLetter = type === "Reason Letter" || type === "Cash Shortage / Mishandling";
+const requestEscape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+window.updateLateRequestPreview = function() {
+    const context = window.lateRequestContext;
+    if (!context) return;
+    const id = document.getElementById('replyAttendanceLog').value;
+    const attendance = context.logs.find(log => log.id === id);
+    const target = document.getElementById('replyLateCalculation');
+    if (!attendance) { target.textContent = 'Select the correct clock-in before confirming.'; return; }
+    const shift = resolveScheduledShift(attendance.timestamp, attendance.branch, attendance.staffName,
+        context.schedule, { [attendance.staffName]: context.profile });
+    const late = latePay(context.minutes, context.profile, shift, context.action === 'Approved');
+    target.textContent = context.action === 'Approved' ? `${context.minutes} minutes late — exempted from the late deduction.`
+        : `${context.minutes} minutes late → ${late.hours} hour(s) × ₱${late.ratePerHour.toFixed(2)} = ₱${late.amount.toFixed(2)}. Applied once through attendance when payroll is generated.`;
+};
+window.handleRequest = async function(docId, action, type, amount, staffName) {
+    let req;
+    try {
+        const snap = await tkOwnerDoc(window.doc(window.db, 'staff_requests', docId));
+        if (!snap.exists()) throw new Error('This request no longer exists. Refresh the inbox.');
+        req = snap.data();
+        if (req.status !== 'Pending') throw new Error('This request was already reviewed. Refresh the inbox.');
+        if (!window.isBranchAllowed(req.branch)) throw new Error('This branch is outside your access.');
+        type = req.type; amount = Number(req.amount) || 0; staffName = req.staffName;
+        window.lateRequestContext = null;
+        if (isLatenessRequest(req)) {
+            const [profileSnap, scheduleSnap] = await Promise.all([
+                tkOwnerDocs(window.query(window.collection(window.db, 'cashiers'), window.where('cashierName', '==', staffName))),
+                tkOwnerDoc(window.doc(window.db, 'settings', 'global_schedule'))
+            ]);
+            if (profileSnap.docs.length !== 1) throw new Error('The staff profile is missing or duplicated. Check Payroll & Rates first.');
+            const profile = profileSnap.docs[0].data();
+            if (action === 'Rejected' && !(Number(profile.hourlyRate) > 0)) throw new Error('Set this staff member’s Daily Rate before calculating a late deduction.');
+            let logs;
+            if (req.attendanceLogId) {
+                const att = await tkOwnerDoc(window.doc(window.db, 'attendance_logs', req.attendanceLogId));
+                logs = att.exists() ? [{ ...att.data(), id: att.id }] : [];
+            } else {
+                const at = req.timestamp?.toDate ? req.timestamp.toDate() : new Date(req.timestamp);
+                if (!Number.isFinite(at.getTime())) throw new Error('This letter has no date to match to attendance.');
+                const snap = await tkOwnerDocs(window.query(window.collection(window.db, 'attendance_logs'),
+                    window.where('timestamp', '>=', new Date(at.getTime() - 5 * 60000)),
+                    window.where('timestamp', '<=', new Date(at.getTime() + 120 * 60000)),
+                    window.orderBy('timestamp', 'asc'), window.limit(200)));
+                if (snap.docs.length >= 200) throw new Error('Too many clock-ins in this letter’s time window. Check attendance before reviewing it.');
+                logs = legacyAttendanceCandidates(req, snap.docs.map(d => ({ ...d.data(), id: d.id })));
+            }
+            if (!logs.length) throw new Error('No matching clock-in was found for this letter. Check the staff member’s attendance before reviewing it.');
+            const minutes = requestLateMinutes(req, logs[0]);
+            window.lateRequestContext = { requestId: docId, action, logs, minutes, profile,
+                schedule: scheduleSnap.exists() ? scheduleSnap.data() : null };
+        }
+    } catch (error) { return Swal.fire('Check request', error.message, 'warning'); }
+    const isLateLetter = isLatenessRequest(req);
+    const isReasonLetter = !isLateLetter && (type === "Reason Letter" || type === "Cash Shortage / Mishandling");
 
     const modalHtml = `
         <div id="dynamicReplyModal" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 9999;">
             <div style="background: white; padding: 25px; border-radius: 12px; width: 450px; max-width: 90%; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
                 <h3 style="margin-top: 0; color: #0f172a;">${action === 'Approved' ? '✅ Approve' : '❌ Reject'} Request</h3>
-                <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Send a message to <strong>${staffName}</strong> regarding this ${type}.</p>
+                <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Send a message to <strong>${requestEscape(staffName)}</strong> regarding this ${requestEscape(type)}.</p>
 
                 <label style="font-size: 12px; font-weight: bold; color: #334155;">Manager Reply / Reason:</label>
                 <textarea id="replyMessage" placeholder="Type your explanation or instructions here..." style="width: 100%; height: 80px; padding: 10px; margin-top: 5px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-family: inherit; resize: none;"></textarea>
 
-                ${action === 'Approved' ? `
+                ${action === 'Approved' && !isLateLetter ? `
                 <label style="font-size: 12px; font-weight: bold; color: #334155;">Proof of Payment (Screenshot):</label>
                 <input type="file" id="replyProofImage" accept="image/jpeg, image/png, image/webp" style="width: 100%; padding: 8px; margin-top: 5px; margin-bottom: 20px; border: 1px dashed #cbd5e1; border-radius: 6px; box-sizing: border-box;">
                 ` : ''}
+
+                ${isLateLetter ? `
+                <div style="background:#f0fdf4;border:1px dashed #bbf7d0;padding:15px;border-radius:8px;margin-bottom:20px;">
+                    <label for="replyAttendanceLog" style="font-size:12px;font-weight:bold;">Linked clock-in</label>
+                    <select id="replyAttendanceLog" onchange="window.updateLateRequestPreview()" style="width:100%;padding:8px;margin:6px 0;">
+                        ${window.lateRequestContext.logs.length > 1 ? '<option value="">Select the correct clock-in</option>' : ''}
+                        ${window.lateRequestContext.logs.map(log => `<option value="${requestEscape(log.id)}">${requestEscape(log.timestamp.toDate ? log.timestamp.toDate().toLocaleString('en-PH') : new Date(log.timestamp).toLocaleString('en-PH'))}</option>`).join('')}
+                    </select>
+                    <div id="replyLateCalculation" style="font-size:12px;color:#166534;line-height:1.5;"></div>
+                </div>` : ''}
 
                 <!-- 🔥 THE SHORTAGE PENALTY PIPELINE 🔥 -->
                 ${isReasonLetter ? `
@@ -10980,15 +10982,22 @@ window.handleRequest = function(docId, action, type, amount, staffName) {
 
                 <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px;">
                     <button onclick="document.getElementById('dynamicReplyModal').remove()" style="padding: 10px 15px; border: none; background: #e2e8f0; color: #475569; border-radius: 6px; cursor: pointer; font-weight: bold;">Cancel</button>
-                    <button id="btnSubmitReply" onclick="window.submitRequestReply('${docId}', '${action}', '${type}', ${amount}, '${staffName}')" style="padding: 10px 15px; border: none; background: ${action === 'Approved' ? '#10b981' : '#ef4444'}; color: white; border-radius: 6px; cursor: pointer; font-weight: bold;">Confirm ${action}</button>
+                    <button id="btnSubmitReply" onclick="window.submitCurrentRequestReply()" style="padding: 10px 15px; border: none; background: ${action === 'Approved' ? '#10b981' : '#ef4444'}; color: white; border-radius: 6px; cursor: pointer; font-weight: bold;">Confirm ${action}</button>
                 </div>
             </div>
         </div>
     `;
 
+    document.getElementById('dynamicReplyModal')?.remove();
+    window.currentRequestReply = { docId, action, type, amount, staffName };
     document.body.insertAdjacentHTML('beforeend', modalHtml);
+    if (isLateLetter) window.updateLateRequestPreview();
 };
 
+window.submitCurrentRequestReply = function() {
+    const request = window.currentRequestReply;
+    if (request) return window.submitRequestReply(request.docId, request.action, request.type, request.amount, request.staffName);
+};
 window.submitRequestReply = async function(docId, action, type, amount, staffName) {
     const btn = document.getElementById('btnSubmitReply');
     const replyMsg = document.getElementById('replyMessage').value.trim();
@@ -11000,6 +11009,25 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
     btn.disabled = true;
 
     try {
+        const originalRequest = await tkOwnerDoc(window.doc(window.db, 'staff_requests', docId));
+        if (!originalRequest.exists()) throw new Error('This request no longer exists. Refresh the inbox.');
+        if (!window.isBranchAllowed(originalRequest.data().branch)) throw new Error('This branch is outside your access.');
+        const context = window.lateRequestContext;
+        if (isLatenessRequest(originalRequest.data())) {
+            if (context?.requestId !== docId) throw new Error('Reopen this lateness letter before confirming its linked clock-in.');
+            const result = await reviewLateRequest({ db: window.db, doc: window.doc,
+                runTransaction: window.runTransaction, serverTimestamp: window.serverTimestamp }, {
+                requestId: docId, attendanceId: document.getElementById('replyAttendanceLog').value,
+                action, reply: replyMsg, actor: window.sessionUser?.cashierName || 'Manager'
+            });
+            document.getElementById('dynamicReplyModal')?.remove();
+            window.lateRequestContext = null;
+            await window.loadInbox();
+            Swal.fire(`Request ${action}`, result.repeated ? 'This decision was already saved. No additional deduction was created.'
+                : action === 'Approved' ? 'Late deduction exempted. Regenerate the unpaid payroll preview to apply it.'
+                : `${result.minutes} minutes late rounds up to ${result.hours} hour(s). Regenerate the unpaid payroll preview to apply the deduction once.`, 'success');
+            return;
+        }
         let proofUrl = "";
 
         if (action === 'Approved' && fileInput && fileInput.files.length > 0) {
@@ -11104,7 +11132,7 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
 
     } catch (e) {
         console.error("Action Error:", e);
-        Swal.fire('Error', 'Failed to process request. Check connection.', 'error');
+        Swal.fire('Error', e.message || 'Failed to process request. Check connection.', 'error');
         btn.innerText = `Confirm ${action}`;
         btn.disabled = false;
     }
@@ -11381,23 +11409,15 @@ window.loadPayrollGenerator = async function() {
                     let logDate = log.timestamp.toDate();
                     
                     // 🔥 THE FIX: Safe variable aliases (calcMins, expStart) prevent crashes with leftover code!
-                    let { lateMinutes: calcMins, expectedStartHour: expStart, wasScheduled: wasSched } = window.calculateLateMinutes(logDate, log.branch, name, scheduleData, staffDict, parseTimeStr);
-
-                    // 🔥 THE FIX: Custom Individual Rates Math Injection!
-                    let dailyRate = staffDict[name] ? (parseFloat(staffDict[name].hourlyRate) || 0) : 0;
-                    let isNightEligibleLegacy = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
-                    let customNightRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) : (isNightEligibleLegacy ? 50 : 0)) : 50;
-                    
-                    let effectiveDailyRate = dailyRate;
-                    if (customNightRate > 0 && expStart !== null && expStart >= 14) {
-                        effectiveDailyRate += customNightRate; 
-                    }
-                    
-                    let ratePerHour = effectiveDailyRate / 8; 
-                    let lateHoursToDeduct = Math.ceil(calcMins / 60); 
-                    let lateAmount = (calcMins > 0 && !log.lateExempted) ? (lateHoursToDeduct * ratePerHour) : 0;
+                    const matchedShift = resolveScheduledShift(logDate, log.branch, name, scheduleData, staffDict);
+                    let { lateMinutes: calcMins, expectedStartHour: expStart, wasScheduled: wasSched } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
+                    calcMins = attendanceLateMinutes(log, calcMins);
+                    const late = latePay(calcMins, staffDict[name], matchedShift, log.lateExempted === true);
+                    const lateHoursToDeduct = late.hours;
+                    const lateAmount = late.amount;
 
                     activeShifts[name] = { 
+                        matchedShift,
                         time: logDate, 
                         lateMinutes: calcMins, 
                         lateAmount: lateAmount, 
@@ -11465,14 +11485,12 @@ window.loadPayrollGenerator = async function() {
                     staffData[name].lateDeduction += totalManualPenaltyForShift;
                 }
 
-                let outHour = timeOut.getHours();
-                let isNightEligibleLegacy = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
-                let customNightRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) : (isNightEligibleLegacy ? 50 : 0)) : 50;
-                let thisShiftNightBonus = 0;
-
-                if (outHour >= 0 && outHour <= 4) {
+                const thisShiftNightBonus = shiftMultiplier > 0
+                    ? earnedNightBonus(staffDict[name], activeShifts[name].matchedShift, timeOut) : 0;
+                if (thisShiftNightBonus > 0) {
                     staffData[name].nightShifts += 1;
-                    if (customNightRate > 0) { thisShiftNightBonus = customNightRate; staffData[name].nightBonusTotal += thisShiftNightBonus; }
+                    staffData[name].nightBonusTotal += thisShiftNightBonus;
+                    remark += `<br><span style="color:#d97706; font-weight:bold;">Mid/Night bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
                 }
 
                 let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
@@ -11616,18 +11634,19 @@ window.loadPayrollGenerator = async function() {
                         name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0,
-                        logs: staffData[name].logs, profile: staffDict[name] || null, start: startInput, end: endInput,
+                        logs: staffData[name].logs, profile: staffDict[name] || null, start: startDateRaw, end: endDateRaw,
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
                     d = window.globalPayrollCache[name];
                 }
 
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
-                let estGross = d.basicPay + (d.nightBonusTotal || 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0);
+                let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0) masterPayrollTotal += estNet;
                 
-                let bonusLabel = d.nightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${d.nightBonus} Night Bonus</span>` : '';
+                const displayedNightBonus = d.nightBonus ?? d.nightBonusTotal ?? 0;
+                let bonusLabel = displayedNightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${displayedNightBonus} Mid/Night Bonus</span>` : '';
                 let straightLabel = (d.straightBonus || 0) > 0 ? `<br><span style="font-size:11px; color:#8b5cf6; font-weight:bold;">+₱${d.straightBonus.toFixed(2)} Straight Bonus</span>` : '';
                 let holLabel = d.holidayPayTotal > 0 ? `<br><span style="font-size:11px; color:#ea580c; font-weight:bold;">+₱${d.holidayPayTotal.toFixed(2)} Holiday Pay</span>` : '';
                 let foodLabel = d.meals > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.meals.toFixed(2)} (Meals)</span>` : '';
@@ -11643,7 +11662,7 @@ window.loadPayrollGenerator = async function() {
                     <tr style="border-bottom: 1px dashed #e2e8f0; ${isPaid ? "background: #f8fafc; opacity: 0.85;" : ""}">
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
-                        <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">${(d.hours ?? d.totalHours ?? 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel}</td>
                         <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
@@ -12578,23 +12597,15 @@ window.generateAutoPayslips = async function() {
                     let logDate = log.timestamp.toDate();
                     
                     // 🔥 UPGRADE: Use the Universal Shift Matcher Engine for Payroll!
-                    let { lateMinutes, expectedStartHour, wasScheduled } = window.calculateLateMinutes(logDate, log.branch, name, scheduleData, staffDict, parseTimeStr);
-
-                    // 🔥 THE FIX: Custom Individual Rates Math Injection!
-                    let dailyRate = staffDict[name] ? (parseFloat(staffDict[name].hourlyRate) || 0) : 0;
-                    let isNightEligibleLegacy = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
-                    let customNightRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) : (isNightEligibleLegacy ? 50 : 0)) : 50;
-                    
-                    let effectiveDailyRate = dailyRate;
-                    if (customNightRate > 0 && expectedStartHour !== null && expectedStartHour >= 14) {
-                        effectiveDailyRate += customNightRate; 
-                    }
-                    
-                    let ratePerHour = effectiveDailyRate / 8; 
-                    let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
-                    let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * ratePerHour) : 0;
+                    const matchedShift = resolveScheduledShift(logDate, log.branch, name, scheduleData, staffDict);
+                    let { lateMinutes: lateMinutes, expectedStartHour: expectedStartHour, wasScheduled: wasScheduled } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
+                    lateMinutes = attendanceLateMinutes(log, lateMinutes);
+                    const late = latePay(lateMinutes, staffDict[name], matchedShift, log.lateExempted === true);
+                    const lateHoursToDeduct = late.hours;
+                    const lateAmount = late.amount;
 
                     activeShifts[name] = { 
+                        matchedShift,
                         time: logDate, 
                         lateMinutes: lateMinutes, 
                         lateAmount: lateAmount, 
@@ -12656,16 +12667,12 @@ window.generateAutoPayslips = async function() {
                     staffData[name].lateDeduction += totalManualPenaltyForShift;
                 }
 
-                let outHour = timeOut.getHours();
-                
-                // 🔥 THE FIX: Custom Individual Rates Math Injection!
-                let isNightEligibleLegacy = staffDict[name] ? (staffDict[name].eligibleNightDiff !== false) : true;
-                let customNightRate = staffDict[name] ? (staffDict[name].nightDiffRate !== undefined ? parseFloat(staffDict[name].nightDiffRate) : (isNightEligibleLegacy ? 50 : 0)) : 50;
-                let thisShiftNightBonus = 0;
-
-                if (outHour >= 0 && outHour <= 4) {
+                const thisShiftNightBonus = shiftMultiplier > 0
+                    ? earnedNightBonus(staffDict[name], activeShifts[name].matchedShift, timeOut) : 0;
+                if (thisShiftNightBonus > 0) {
                     staffData[name].nightShifts += 1;
-                    if (customNightRate > 0) { thisShiftNightBonus = customNightRate; staffData[name].nightBonusTotal += thisShiftNightBonus; }
+                    staffData[name].nightBonusTotal += thisShiftNightBonus;
+                    remark += `<br><span style="color:#d97706; font-weight:bold;">Mid/Night bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
                 }
 
                 let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
@@ -12799,11 +12806,12 @@ window.generateAutoPayslips = async function() {
                 }
 
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
-                let estGross = d.basicPay + (d.nightBonusTotal || 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0) + (d.perfBonus || 0);
+                let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0) + (d.perfBonus || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0) masterPayrollTotal += estNet;
                 
-                let bonusLabel = d.nightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${d.nightBonus} Night Bonus</span>` : '';
+                const displayedNightBonus = d.nightBonus ?? d.nightBonusTotal ?? 0;
+                let bonusLabel = displayedNightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${displayedNightBonus} Mid/Night Bonus</span>` : '';
                 let straightLabel = (d.straightBonus || 0) > 0 ? `<br><span style="font-size:11px; color:#8b5cf6; font-weight:bold;">+₱${d.straightBonus.toFixed(2)} Straight Bonus</span>` : '';
                 let holLabel = d.holidayPayTotal > 0 ? `<br><span style="font-size:11px; color:#ea580c; font-weight:bold;">+₱${d.holidayPayTotal.toFixed(2)} Holiday Pay</span>` : '';
                 let foodLabel = d.meals > 0 ? `<br><span style="font-size:11px; color:#ef4444;">-₱${d.meals.toFixed(2)} (Meals)</span>` : '';
@@ -12822,7 +12830,7 @@ window.generateAutoPayslips = async function() {
                     <tr style="border-bottom: 1px dashed #e2e8f0; ${isPaid ? "background: #f8fafc; opacity: 0.85;" : ""}">
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
-                        <td style="padding: 12px; font-weight: bold;">${(d.hours || 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel} ${perfLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">${(d.hours ?? d.totalHours ?? 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel} ${perfLabel}</td>
                         <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
@@ -14192,63 +14200,20 @@ window.calcAutoOvertime = function() {
 
     // Retrieve rates (Note: hourlyRate field acts as Daily Rate in Takodeal DB)
     let dailyRate = parseFloat(profile.hourlyRate) || 0; 
-    let isNightEligibleLegacy = (profile.eligibleNightDiff !== false);
-    let nightRate = profile.nightDiffRate !== undefined ? parseFloat(profile.nightDiffRate) : (isNightEligibleLegacy ? 50 : 0);
+    const customNightRate = nightRate(profile);
     
-    // Determine Shift via Schedule Calendar
-    let isNightShift = false;
-    let shiftName = "Unscheduled";
-    let schedData = window.otCache.schedule;
-    
-    if (schedData && schedData.currentSchedule) {
-        let otDate = new Date(dateRaw + 'T12:00:00');
-        let lDay = otDate.getDate(); let lMonth = otDate.getMonth() + 1; let lYear = otDate.getFullYear();
-
-        if (schedData.currentYear === lYear && schedData.currentMonth === lMonth) {
-            let branchSched = schedData.currentSchedule[lDay] ? schedData.currentSchedule[lDay][profile.branch] : null;
-            if (branchSched && branchSched.scheduled) {
-                let nickname = profile.scheduleNickname || profile.cashierName;
-                let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname);
-                
-                if (assignedShiftId && schedData.branchConfig[profile.branch]) {
-                    let shiftConfig = schedData.branchConfig[profile.branch].find(s => s.id === assignedShiftId);
-                    if (shiftConfig) {
-                        shiftName = shiftConfig.name;
-                        let expectedStartHour = null;
-                        
-                        if (shiftConfig.startTime) {
-                            let parts = shiftConfig.startTime.split(':');
-                            expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
-                        } else {
-                            let match = shiftConfig.name.match(/\((.*?)-/);
-                            if (match && match[1]) {
-                                let t = match[1].toLowerCase().replace(/\s/g, '');
-                                let isPM = t.includes('pm'); let isNN = t.includes('nn');
-                                let parts = t.replace(/(am|pm|nn)/, '').split(':');
-                                let hour = parseInt(parts[0]) || 0; let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
-                                if ((isPM || isNN) && hour < 12) hour += 12;
-                                if (t.includes('am') && hour === 12) hour = 0;
-                                expectedStartHour = hour + (minute / 60);
-                            }
-                        }
-
-                        // Shifts starting at or after 2 PM (14:00) trigger the Night Rate
-                        if (expectedStartHour !== null && expectedStartHour >= 14) {
-                            isNightShift = true;
-                        }
-                    }
-                }
-            }
-        }
-    }
+    const matched = scheduledShiftForDate(new Date(dateRaw + 'T12:00:00+08:00'), profile.branch,
+        staffName, window.otCache.schedule, { [staffName]: profile });
+    const isNightShift = matched?.isNightShift === true;
+    const shiftName = matched?.shiftName || 'Unscheduled';
 
     // Mathematical Engine
     let effectiveDailyRate = dailyRate;
     let appliedNightRate = 0;
     
     if (isNightShift) {
-        effectiveDailyRate += nightRate;
-        appliedNightRate = nightRate;
+        effectiveDailyRate += customNightRate;
+        appliedNightRate = customNightRate;
     }
 
     let ratePerHour = effectiveDailyRate / 8;
@@ -20614,6 +20579,7 @@ setTimeout(() => {
             }
         } catch (error) {
             console.error(error);
+            Swal.fire('Check shift rules', error.message || 'Shift rules were not saved. Check the connection.', 'warning');
         } finally {
             if (btn) { btn.innerText = origText; btn.disabled = false; }
         }
