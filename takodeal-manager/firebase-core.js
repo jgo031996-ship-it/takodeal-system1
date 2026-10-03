@@ -1,5 +1,5 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch, startAfter, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, getDocsFromServer, getDocFromServer, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch, startAfter, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
@@ -25,6 +25,7 @@ window.storage = getStorage(app);
 // Expose Firebase Functions Globally (Bridge for main.js)
 window.query = query; window.where = where; window.collection = collection;
 window.getDocs = getDocs; window.getDoc = getDoc; window.addDoc = addDoc;
+window.getDocsFromServer = getDocsFromServer; window.getDocFromServer = getDocFromServer;
 window.updateDoc = updateDoc; window.deleteDoc = deleteDoc; window.doc = doc;
 window.setDoc = setDoc; window.serverTimestamp = serverTimestamp;
 window.increment = increment; window.orderBy = orderBy; window.limit = limit;

@@ -163,8 +163,8 @@ test('permission failure persists two receipts; recovery uploads them once with 
     const page = await browser.newPage();
     try {
         await page.goto(`http://127.0.0.1:${server.address().port}`);
-        const source = readFileSync(resolve(root, 'tests/pos-safety.test.mjs'), 'utf8');
-        const harness = source.slice(source.indexOf('export function firestoreHarness()'), source.indexOf('\nconst bom =')).replace('export function', 'function');
+        const source = readFileSync(resolve(root, 'tests/helpers/firestore-harness.mjs'), 'utf8');
+        const harness = source.slice(source.indexOf('export function firestoreHarness()')).trim().replace('export function', 'function');
         const result = await page.evaluate(async harness => {
             const assert = { equal(a, b, message) { if (a !== b) throw new Error(message || `${a} !== ${b}`); } };
             const h = eval(`(${harness})`)();
