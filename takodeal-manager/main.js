@@ -1,3 +1,4 @@
+import { initManagerTheme } from './manager-theme.js';
 import { createDashboard } from './dashboard.js';
 const globalDashboard = createDashboard();
 import { createSaleEngine } from './pos-safety.js';
@@ -28587,3 +28588,6 @@ window.openDashboardPartner = async function(partner) {
     try { await window.calculatePlatformFinancials(); window.openPlatformFinanceModal(partner); }
     catch(error) { await window.Swal.fire('Partner details unavailable', error.message, 'warning'); }
 };
+
+// Keep the shared shell in sync with all existing navigation paths.
+initManagerTheme({ onViewChange: view => { if (view !== 'dashboard') globalDashboard.stop(); } });

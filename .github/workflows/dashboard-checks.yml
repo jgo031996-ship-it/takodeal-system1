@@ -17,5 +17,6 @@ jobs:
         run: |
           node --check takodeal-manager/main.js
           node --check takodeal-manager/dashboard.js
+          node --check takodeal-manager/manager-theme.js
       - name: Verify dashboard, checkout, inventory, recipes and payroll
         run: node --test tests/dashboard-data.test.mjs tests/pos-safety.test.mjs tests/pending-sales.test.mjs tests/recipe-repair.test.mjs tests/payroll-safety.test.mjs
