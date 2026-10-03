@@ -1,5 +1,22 @@
 import { SALE_VERSION, saleIdentity, safeId, createOutbox, createSaleEngine } from './pos-safety.js';
 
+export function mergePendingSales(transactions, queue, branch, shiftStartTime, shiftId) {
+    const start = shiftStartTime?.toDate?.() || new Date(shiftStartTime);
+    const result = [...transactions];
+    if (!Number.isFinite(start.getTime())) return result;
+    const ids = new Set(transactions.flatMap(p => [p.id, p.saleId, p.receiptId].filter(Boolean)));
+    for (const sale of queue) {
+        const time = new Date(sale.localTimestamp);
+        if (sale.branch !== branch || !Number.isFinite(time.getTime()) || time < start ||
+            (shiftId && sale.shiftId && sale.shiftId !== 'UNKNOWN' && sale.shiftId !== shiftId) ||
+            [sale.saleId, sale.receiptId].some(id => id && ids.has(id))) continue;
+        result.push({ ...sale, id: 'LOCAL-' + (sale.saleId || sale.receiptId), timestamp: time,
+            isPendingSync: true, status: 'Pending Sync' });
+        for (const id of [sale.saleId, sale.receiptId].filter(Boolean)) ids.add(id);
+    }
+    return result;
+}
+
 export function installSaleSafety(api, environment = globalThis) {
     const w = environment.window || environment;
     const ls = environment.localStorage;
@@ -50,9 +67,11 @@ export function installSaleSafety(api, environment = globalThis) {
         return value && value !== '{}' && value !== 'null';
     }
     async function refreshQueue() {
-        w.offlineQueue = [...(await outbox.list()).map(row => row.payload), ...legacySales()];
+        w.offlineQueue = [...(await outbox.list()).map(row => ({ ...row.payload, syncError: row.syncError })), ...legacySales()];
         return w.offlineQueue;
     }
+    w.getPendingSales = refreshQueue;
+    w.mergePendingSales = mergePendingSales;
     function updateBadge(error) {
         const badge = environment.document.getElementById('liveClock')?.nextElementSibling;
         if (!badge) return;
@@ -60,7 +79,18 @@ export function installSaleSafety(api, environment = globalThis) {
             const review = w.offlineQueue.filter(p => p.needsReconciliation).length;
             badge.innerHTML = `<span style="background:#eab308;color:white;padding:2px 8px;border-radius:12px;font-weight:bold;font-size:10px;">⏳ SAVED LOCALLY (${w.offlineQueue.length})${review ? ' · REVIEW REQUIRED (' + review + ')' : ''}</span>`;
             badge.title = error?.message || (review ? 'Older sales need inventory reconciliation before replay.' : 'Waiting for safe database synchronization.');
-        } else if (typeof w.updateNetworkStatusUI === 'function') w.updateNetworkStatusUI();
+            badge.style.cursor = 'pointer';
+            badge.onclick = () => w.Swal?.fire({ title: 'Sales awaiting upload', icon: 'warning',
+                text: w.offlineQueue.map(p => `${p.receiptId}: ${p.needsReconciliation ? 'Older sale needs reconciliation.' : p.syncError?.message || 'Waiting for upload.'}`).join('\n') });
+        } else {
+            badge.onclick = null; badge.style.cursor = ''; badge.title = '';
+            if (typeof w.updateNetworkStatusUI === 'function') w.updateNetworkStatusUI();
+        }
+        const last = w.lastTransactionData;
+        if (last?.saleId) {
+            const pending = w.offlineQueue.find(p => p.saleId === last.saleId);
+            w.updateReceiptSyncStatus?.(pending ? 'queued' : 'committed', pending?.syncError?.message);
+        }
     }
     w.processCheckout = async function(payload) {
         if (w.isProcessingOrder) return { status: 'failed', error: 'Checkout is already processing.' };
@@ -141,6 +171,7 @@ export function installSaleSafety(api, environment = globalThis) {
                     await outbox.acknowledge(payload.saleId);
                 } catch (error) {
                     syncError = error;
+                    await outbox.noteError(payload.saleId, owner, error).catch(storageError => console.warn('Could not retain upload diagnostics:', storageError));
                     console.warn('Sale safely queued; synchronization pending:', payload.receiptId, error);
                 } finally { await outbox.release(payload.saleId, owner); }
             }

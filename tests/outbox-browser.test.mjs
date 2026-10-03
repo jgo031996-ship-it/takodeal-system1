@@ -123,6 +123,7 @@ test('existing checkout UI retains failed carts and shows receipts for safely qu
             window.currentGrandTotal = 50; window.finalCheckoutAmount = 50;
             window.amountReceivedStr = '100'; window.selectedPaymentMethod = 'Cash';
             window.isSubmittingOrder = false; window.renderCart = () => {}; window.closeModal = () => {};
+            window.updateReceiptSyncStatus = () => {};
             window.processCheckout = async payload => ({ status, receiptId: status === 'queued' ? 'SAVED-123' : undefined, payload, error: 'Local save failed' });
             window.alert = text => { window.lastAlert = text; };
             (0, eval)(fn);
@@ -156,4 +157,94 @@ test('universal signature pad still supports receipt, sanction and bulletin canv
         }, { init: block('initSignaturePad'), clear: block('clearSignature'), canvasId });
         assert.equal(result.signed, true); assert.equal(result.cleared, true);
     }
+});
+
+test('permission failure persists two receipts; recovery uploads them once with exact stock', async () => {
+    const page = await browser.newPage();
+    try {
+        await page.goto(`http://127.0.0.1:${server.address().port}`);
+        const source = readFileSync(resolve(root, 'tests/pos-safety.test.mjs'), 'utf8');
+        const harness = source.slice(source.indexOf('export function firestoreHarness()'), source.indexOf('\nconst bom =')).replace('export function', 'function');
+        const result = await page.evaluate(async harness => {
+            const assert = { equal(a, b, message) { if (a !== b) throw new Error(message || `${a} !== ${b}`); } };
+            const h = eval(`(${harness})`)();
+            let denied = true;
+            const transaction = h.api.runTransaction;
+            h.api.runTransaction = async (...args) => {
+                if (denied) throw Object.assign(new Error('Missing or insufficient permissions.'), { code: 'permission-denied' });
+                return transaction(...args);
+            };
+            h.put('inventory/batter', { branch: 'Main Office', name: 'Batter', currentStock: 100 });
+            const values = new Map([['takodeal_device_branch', 'Main Office'], ['cashierName', 'Cashier']]);
+            const w = { addEventListener() {}, masterPOSData: { bom: [{ menuItem: '6 Pcs Takoyaki', ingredientName: 'Batter', qty: 6 }] } };
+            const { installSaleSafety } = await import('/Takodeal-POS/pos-checkout.js');
+            installSaleSafety(h.api, { window: w, crypto, indexedDB, navigator: { onLine: true }, document,
+                localStorage: { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) },
+                setTimeout() {}, setInterval() {} });
+            const idle = async () => {
+                for (let n = 0; w.isSyncing && n < 100; n++) await new Promise(resolve => setTimeout(resolve, 10));
+                if (w.isSyncing) throw new Error('Sync did not finish');
+            };
+            const ids = [];
+            for (let n = 0; n < 2; n++) {
+                const saved = await w.processCheckout({ branch: 'Main Office', shiftId: 'S1', paymentMethod: 'Cash',
+                    cart: [{ name: '6 Pcs Takoyaki', qty: 1 }], netTotal: 125 });
+                ids.push(saved.saleId); await idle();
+            }
+            const held = await w.saleOutbox.list();
+            const heldStock = h.get('inventory/batter').currentStock;
+            denied = false;
+            await w.syncOfflineQueue(); await w.syncOfflineQueue();
+            const after = await w.saleOutbox.list();
+            return { held: held.length, errors: held.map(r => r.syncError?.code), heldStock,
+                uploaded: ids.map(id => h.get('transactions/' + id)?.receiptId), after: after.length,
+                stock: h.get('inventory/batter').currentStock, count: h.get('settings/global_stats').totalTakoyakiBalls,
+                statsSale: h.get('settings/global_stats').lastSaleId, ids };
+        }, harness);
+        assert.equal(result.held, 2); assert.deepEqual(result.errors, ['permission-denied', 'permission-denied']);
+        assert.equal(result.heldStock, 100); assert.equal(result.after, 0);
+        assert.equal(new Set(result.uploaded).size, 2); assert.ok(result.uploaded.every(Boolean));
+        assert.equal(result.stock, 88); assert.equal(result.count, 12); assert.ok(result.ids.includes(result.statsSale));
+    } finally { await page.close(); }
+});
+
+test('Shift Sales renders durable pending receipts, escapes errors and excludes them from confirmed totals', async () => {
+    const html = readFileSync(resolve(root, 'Takodeal-POS/index.html'), 'utf8');
+    const start = html.indexOf('window.loadSalesDashboard = async function');
+    const end = html.indexOf('\n};', start) + 3;
+    const result = await second.evaluate(async fn => {
+        const { mergePendingSales } = await import('/Takodeal-POS/pos-checkout.js');
+        document.body.innerHTML = '<table><tbody id="tbTransBody"></tbody></table>';
+        window.currentShift = { active: true, shiftId: 'S1', startTime: new Date('2026-10-03T00:00:00Z') };
+        window.sessionUser = { branch: 'Main Office' };
+        window.getSalesDashboardData = async () => [];
+        window.query = (...args) => args; window.collection = (...args) => args; window.where = (...args) => args;
+        window.getDocs = async () => ({ forEach() {} }); window.mergePendingSales = mergePendingSales;
+        window.getPendingSales = async () => [{ saleId: 'sale-pending', receiptId: 'R-PENDING', branch: 'Main Office',
+            shiftId: 'S1', localTimestamp: '2026-10-03T05:48:00Z', netTotal: 125, paymentMethod: 'GCash',
+            syncError: { message: '<img src=x onerror="window.injected=true"> Missing permissions' } }];
+        eval(fn); await window.loadSalesDashboard();
+        return { text: document.body.textContent, markup: document.body.innerHTML,
+            buttons: document.querySelectorAll('button.dot-menu').length, images: document.querySelectorAll('img').length };
+    }, html.slice(start, end));
+    assert.match(result.text, /R-PENDING/); assert.match(result.text, /Pending Sync/);
+    assert.match(result.text, /Missing permissions/); assert.match(result.text, /GCash: ₱0.00/);
+    assert.equal(result.images, 0); assert.equal(result.buttons, 0);
+});
+
+test('receipt distinguishes local acceptance from confirmed upload without rendering error HTML', async () => {
+    const html = readFileSync(resolve(root, 'Takodeal-POS/index.html'), 'utf8');
+    const start = html.indexOf('    window.updateReceiptSyncStatus = function');
+    const end = html.indexOf('\n    };', start) + '\n    };'.length;
+    const result = await second.evaluate(fn => {
+        document.body.innerHTML = '<span id="receiptSyncHeading"></span><span id="receiptSyncStatus"></span><div id="receiptSyncExplanation"></div>';
+        eval(fn);
+        window.updateReceiptSyncStatus('queued', '<img src=x> Missing or insufficient permissions.');
+        const queued = document.body.textContent;
+        const images = document.querySelectorAll('img').length;
+        window.updateReceiptSyncStatus('committed');
+        return { queued, images, uploaded: document.body.textContent };
+    }, html.slice(start, end));
+    assert.match(result.queued, /Saved locally/); assert.match(result.queued, /Missing or insufficient permissions/);
+    assert.equal(result.images, 0); assert.match(result.uploaded, /Payment Completed — Uploaded/);
 });

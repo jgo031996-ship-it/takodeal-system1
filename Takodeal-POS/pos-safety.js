@@ -119,6 +119,15 @@ export function createOutbox(indexedDB = globalThis.indexedDB) {
             return request;
         }),
         acknowledge: saleId => transact('readwrite', store => store.delete(saleId)),
+        noteError: (saleId, owner, error) => transact('readwrite', store => {
+            const request = store.get(saleId);
+            request.onsuccess = () => {
+                const row = request.result;
+                if (row?.owner === owner) store.put({ ...row,
+                    syncError: { code: String(error?.code || ''), message: String(error?.message || error), at: new Date().toISOString() } });
+            };
+            return request;
+        }),
         release: (saleId, owner) => transact('readwrite', store => {
             const request = store.get(saleId);
             request.onsuccess = () => {
@@ -158,7 +167,8 @@ export function createSaleEngine(api) {
         const balls = payload.ballsCounted ?? countBalls(payload.cart);
         if (balls > 0) tx.set(ref('settings', 'global_stats'), {
             totalTakoyakiBalls: increment(direction * balls),
-            ['balls_' + payload.branch]: increment(direction * balls)
+            ['balls_' + payload.branch]: increment(direction * balls),
+            lastSaleId: payload.saleId, lastSaleBranch: payload.branch, lastSaleDirection: direction
         }, { merge: true });
     }
     function assertSale(existing, payload) {
@@ -333,7 +343,7 @@ export function createSaleEngine(api) {
                 const order = parked.data();
                 if (order.branch !== branch) throw new Error('Parked order belongs to another branch.');
                 tx.set(ref('transactions', id), {
-                    branch, cashier, shiftId, receiptId: 'PRK-VOID-' + parkedId, netTotal: order.total || order.netTotal || 0,
+                    branch, cashier, shiftId, parkedOrderId: parkedId, receiptId: 'PRK-VOID-' + parkedId, netTotal: order.total || order.netTotal || 0,
                     status: 'Voided', orderType: (order.orderType || 'Dine-In') + ' (PARKED)',
                     paymentMethod: 'Unpaid / Deleted', customerName: order.name || order.customerName || 'Guest',
                     cart: order.items || order.cart || [], inventoryState: 'none', inventoryMovements: [], timestamp: serverTimestamp()
