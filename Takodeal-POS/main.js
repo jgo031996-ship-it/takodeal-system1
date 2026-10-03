@@ -162,9 +162,15 @@ document.addEventListener("DOMContentLoaded", () => {
 window.isAppOnline = navigator.onLine;
 
 window.updateNetworkStatusUI = function() {
-    const badge = document.getElementById('liveClock')?.nextElementSibling;
-    if (badge) badge.innerHTML = '<span style="color:#cce5c9;font-size:10px;font-weight:800">● POS READY</span>';
-  };
+    let statusBadge = document.getElementById('liveClock').nextElementSibling;
+    if (statusBadge) {
+        if (window.isAppOnline) {
+            statusBadge.innerHTML = `<span style="background: #16a34a; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(22,163,74,0.5);">🟢 ONLINE & SYNCING</span>`;
+        } else {
+            statusBadge.innerHTML = `<span style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(220,38,38,0.5);">🔴 OFFLINE (SAVING LOCALLY)</span>`;
+        }
+    }
+};
 
 window.addEventListener('online', () => { window.isAppOnline = true; window.updateNetworkStatusUI(); });
 window.addEventListener('offline', () => { window.isAppOnline = false; window.updateNetworkStatusUI(); });
@@ -278,13 +284,13 @@ window.lockDeviceToBranch = async function () {
     localStorage.setItem('takodeal_device_id', deviceId);
     localStorage.setItem('takodeal_device_name', deviceName);
 
-    await window.addDoc(collection(db, "pos_devices"), {
+    await addDoc(collection(db, "pos_devices"), {
       deviceId: deviceId,
       deviceName: deviceName,
       branch: selectedBranch,
       status: 'Pending', // 🔥 DEFAULTS TO PENDING NOW!
-      registeredAt: window.serverTimestamp(),
-      lastSeen: window.serverTimestamp()
+      registeredAt: serverTimestamp(),
+      lastSeen: serverTimestamp()
     });
 
     alert(`⏳ Device Registered!\n\nPlease tell the Manager to approve "${deviceName}" in the HQ Control Center before you can log in.`);
@@ -298,7 +304,7 @@ window.lockDeviceToBranch = async function () {
 // 🔥 THE LOCAL OFFLINE CACHE FOR PINS
 setTimeout(async () => {
     try {
-        const snap = await window.getDocs(collection(db, "cashiers"));
+        const snap = await getDocs(collection(db, "cashiers"));
         let cashiers = [];
         snap.forEach(d => cashiers.push(d.data()));
         if(cashiers.length > 0) localStorage.setItem('takodeal_cashier_cache', JSON.stringify(cashiers));
@@ -311,8 +317,8 @@ window.verifyPin = async function (pin) {
     // 🚨 1. NEW DEVICE SECURITY CHECK 🚨
     let deviceId = localStorage.getItem('takodeal_device_id');
     if (deviceId) {
-        const devQ = window.query(collection(db, "pos_devices"), window.where("deviceId", "==", deviceId));
-        const devSnap = await window.getDocs(devQ);
+        const devQ = query(collection(db, "pos_devices"), where("deviceId", "==", deviceId));
+        const devSnap = await getDocs(devQ);
         
         if (!devSnap.empty) {
             let devStatus = devSnap.docs[0].data().status;
@@ -1187,8 +1193,8 @@ window.calcSplitRemaining = function() {
 // --- THE SHIFT ENGINE ---
 window.checkShiftStatus = async function (branch) {
   try {
-    const q = window.query(collection(db, "shifts"), window.where("branch", "==", branch), window.where("active", "==", true), window.limit(1));
-    const snap = await window.getDocs(q);
+    const q = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true), limit(1));
+    const snap = await getDocs(q);
     if (!snap.empty) {
       let data = snap.docs[0].data();
       // 🔥 THE CRITICAL FIX: We MUST grab the actual Document ID (shiftId) so orders can attach to it!
@@ -1233,35 +1239,238 @@ window.updateActiveShiftCashier = async function(newCashierName) {
 // 🛒 TRUE OFFLINE CHECKOUT & SYNC ENGINE
 // ========================================================
 window.offlineQueue = JSON.parse(localStorage.getItem('takodeal_offline_queue')) || [];
-window.deliveryOutbox = JSON.parse(localStorage.getItem('takodeal_delivery_outbox')) || [];
-window.isSyncingDeliveryOutbox = false;
 window.isSyncing = false;
 window.isProcessingOrder = false; // 🛡️ Initialize the lock variable
 
-// Direct-delivery dispatch persists separately from the existing sales queue.
-// Receipt-derived IDs and an existing-record check make retries idempotent.
-window.syncDeliveryOutbox = async function() { /* Legacy dispatches remain saved for owner reconciliation. */ };
+window.processCheckout = async function (payload) {
+    // 🛡️ 1. THE SHIELD: Instantly block spam-clicks!
+    if (window.isProcessingOrder) {
+        console.warn("Checkout Shield activated: Ignored rapid double-click!");
+        return null; 
+    }
+    window.isProcessingOrder = true; // Lock the checkout process
 
-window.processCheckout = async function(payload) { return null; }; // New engine installs below; never invent a receipt.
+    try {
+        // 🔥 THE CASHIER OVERRIDE FIX: 
+        // This forces the receipt to use the person actively logged into the screen right now,
+        // ignoring who originally opened the shift!
+        let activeCashierName = (window.sessionUser && window.sessionUser.cashierName) 
+            ? window.sessionUser.cashierName 
+            : (localStorage.getItem('cashierName') || 'Unknown');
+        
+        payload.cashier = activeCashierName;
+
+        // 🔥 TAG DIGITAL PAYMENTS AS UNVERIFIED AUTOMATICALLY
+        if (payload.paymentMethod && payload.paymentMethod.toLowerCase() !== "cash") {
+            payload.paymentVerified = false;
+        } else {
+            payload.paymentVerified = true; // Cash is pre-verified by the cashier
+        }
+
+        // 🔀 SPLIT PAYMENT INTERCEPTOR & VALIDATOR
+        let splitContainer = document.getElementById('splitPaymentContainer');
+        if (splitContainer && splitContainer.style.display !== 'none') {
+            let m1 = document.getElementById('splitMethod1').value;
+            let a1 = parseFloat(document.getElementById('splitAmount1').value) || 0;
+            let m2 = document.getElementById('splitMethod2').value;
+            let a2 = parseFloat(document.getElementById('splitAmount2').value) || 0;
+            
+            if (Math.abs((a1 + a2) - payload.netTotal) > 0.01) {
+                alert(`❌ ERROR: The Split Amounts (₱${a1+a2}) do not match the Order Total (₱${payload.netTotal})!\n\nPlease adjust the split amounts.`);
+                return null; 
+            }
+            
+            payload.paymentMethod = `Split (${m1} & ${m2})`;
+            payload.splitDetails = [ { method: m1, amount: a1 }, { method: m2, amount: a2 } ];
+        }
+
+        // 🔥 100% OFFLINE RECEIPT GENERATOR!
+        let d = new Date();
+        let dateStr = d.getFullYear().toString() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+        let localCounter = parseInt(localStorage.getItem('takodeal_offline_rcpt_count')) || 1;
+        localStorage.setItem('takodeal_offline_rcpt_count', localCounter + 1);
+        let randomHash = Math.random().toString(36).substring(2, 5).toUpperCase();
+        
+        // 🔥 OVERRIDE OR# WITH MOBILE APP RECEIPT CODE IF IT EXISTS!
+        const receiptId = payload.mobileOrderCode || `${dateStr}-${localCounter.toString().padStart(4, '0')}-${randomHash}`;
+
+        // Stamp the payload with the exact local time and receipt ID
+        payload.receiptId = receiptId;
+        payload.localTimestamp = new Date().toISOString(); 
+
+        // 1. PUSH TO LOCAL OFFLINE QUEUE (Saves securely to the tablet's hard drive)
+        window.offlineQueue.push(payload);
+        localStorage.setItem('takodeal_offline_queue', JSON.stringify(window.offlineQueue));
+
+        // Auto-close split container
+        if (splitContainer) splitContainer.style.display = 'none';
+
+        // 🔥 NEW: INJECT DELIVERY ORDERS INTO THE MOBILE HUB DISPATCHER
+        if (payload.orderType === "Delivery") {
+            try {
+                window.addDoc(window.collection(window.db, "incoming_orders"), {
+                    branch: payload.branch,
+                    customerName: payload.customerName || "Delivery Customer",
+                    contactNumber: payload.contactNumber || "",
+                    deliveryAddress: payload.deliveryAddress || "",
+                    totalAmount: payload.netTotal,
+                    items: payload.cart,
+                    status: "preparing", // 🍳 Puts it in the Mobile Hub so the Cashier can mark it 'Ready' later!
+                    orderCode: receiptId,
+                    paymentMethod: payload.paymentMethod || "Cash",
+                    timestamp: window.serverTimestamp()
+                });
+            } catch(e) { console.error("Failed to push to dispatch hub:", e); }
+        }
+
+        // 2. WAKE UP THE BACKGROUND SYNC ROBOT
+        window.syncOfflineQueue();
+
+        // 3. INSTANT RETURN: The cashier sees the success screen immediately!
+        return receiptId;
+
+    } catch (error) { 
+        console.error("Critical Checkout Error:", error); 
+        return "OFFLINE-" + Date.now().toString().slice(-6); 
+    } finally {
+        // 🔓 2. THE RELEASE: Always unlock the button when the process finishes!
+        window.isProcessingOrder = false;
+    }
+};
 
 // ========================================================
 // ⚡ ATOMIC BATCH SYNC ENGINE (CORRUPTION & LEAK FIX)
 // ========================================================
-window.syncOfflineQueue = async function() { return window.TKOffline?.sync(); };
+window.syncOfflineQueue = async function() {
+    if (window.isSyncing || window.offlineQueue.length === 0) return;
+    
+    window.isSyncing = true;
+    let badge = document.getElementById('liveClock').nextElementSibling;
+
+    try {
+        // 🔥 THE LEAK FIX: Force BOM to load if the internet was slow during boot!
+        if (!window.masterPOSData) window.masterPOSData = {};
+        if (!window.masterPOSData.bom || window.masterPOSData.bom.length === 0) {
+            let tempBom = [];
+            const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
+            bomSnap.forEach(doc => tempBom.push(doc.data()));
+            window.masterPOSData.bom = tempBom;
+        }
+
+        let localInvCache = {};
+
+        while (window.offlineQueue.length > 0) {
+            if (badge) {
+                badge.innerHTML = `<span style="background: #eab308; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px;">⏳ SYNCING SALES (${window.offlineQueue.length})...</span>`;
+            }
+
+            let payload = window.offlineQueue[0];
+            let promises = []; 
+            
+            // 1. Save Transaction to Firebase
+            let txRef = window.doc(window.collection(window.db, "transactions"));
+            promises.push(window.setDoc(txRef, {
+                ...payload,
+                timestamp: new Date(payload.localTimestamp)
+            }));
+
+            // 2. Gather all ingredient deductions (Base Recipe + Addons)
+            let ingredientsToDeduct = {};
+
+            if (payload.cart && Array.isArray(payload.cart)) {
+                payload.cart.forEach(cartItem => {
+                    let itemName = cartItem.name || cartItem.itemName;
+                    let qtySold = parseFloat(cartItem.qty) || 1;
+
+                    let recipe = (window.masterPOSData && window.masterPOSData.bom) ? window.masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
+                    
+                    // 🔥 THE MATH FIX: Prioritize the INDIVIDUAL ITEM's order type for mixed orders!
+                    let itemOrderType = cartItem.orderType || payload.orderType || 'Dine-In'; 
+                    
+                    recipe.forEach(r => {
+                        let deductAmount = (parseFloat(r.qty) || 0) * qtySold;
+                        
+                        let ingName = (r.ingredientName || "").toLowerCase();
+                        if (ingName.includes("box")) {
+                            if (itemOrderType.toLowerCase().includes("dine-in")) {
+                                deductAmount = deductAmount / 2; // Deduct exactly half a box!
+                            }
+                        }
+
+                        if (!ingredientsToDeduct[r.ingredientName]) ingredientsToDeduct[r.ingredientName] = 0;
+                        ingredientsToDeduct[r.ingredientName] += deductAmount;
+                    });
+
+                    // B. Deduct Add-ons & Mix-Match Fillings
+                    if (cartItem.addons) {
+                        for (let key in cartItem.addons) {
+                            let addon = cartItem.addons[key];
+                            if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
+                                if (!ingredientsToDeduct[addon.linkedIngredient]) ingredientsToDeduct[addon.linkedIngredient] = 0;
+                                ingredientsToDeduct[addon.linkedIngredient] += (parseFloat(addon.deductQty) * parseFloat(addon.qty) * qtySold);
+                            }
+                        }
+                    }
+                });
+            }
+
+            // 3. Process Live Inventory Deductions (WITH AUDIT PAUSE ENGINE)
+            if (window.isAuditModeActive) {
+                let auditQueue = JSON.parse(localStorage.getItem('takodeal_audit_queue')) || {};
+                for (let ing in ingredientsToDeduct) {
+                    auditQueue[ing] = (auditQueue[ing] || 0) + ingredientsToDeduct[ing];
+                }
+                localStorage.setItem('takodeal_audit_queue', JSON.stringify(auditQueue));
+            } else {
+                for (let ing in ingredientsToDeduct) {
+                    let totalDeduct = ingredientsToDeduct[ing];
+                    if (totalDeduct > 0) {
+                        if (!localInvCache[ing]) {
+                            const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", payload.branch), window.where("name", "==", ing));
+                            const invSnap = await window.getDocs(invQ);
+                            if (!invSnap.empty) {
+                                localInvCache[ing] = invSnap.docs[0].ref;
+                            }
+                        }
+                        
+                        if (localInvCache[ing]) {
+                            promises.push(window.updateDoc(localInvCache[ing], { 
+                                currentStock: window.increment(-totalDeduct) 
+                            }));
+                        }
+                    }
+                }
+            }
+
+            await Promise.all(promises);
+
+            // 5. Remove processed order from local queue securely
+            window.offlineQueue.shift();
+            localStorage.setItem('takodeal_offline_queue', JSON.stringify(window.offlineQueue));
+        }
+    } catch(e) {
+        console.warn("Offline Sync Paused: Will retry automatically when connection stabilizes.", e);
+    } finally {
+        window.isSyncing = false;
+        if (window.isAppOnline && typeof window.updateNetworkStatusUI === 'function') {
+            window.updateNetworkStatusUI();
+        } else if (badge && window.isAppOnline === false) {
+            badge.innerHTML = `<span style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(220,38,38,0.5);">🔴 OFFLINE (SAVING LOCALLY)</span>`;
+        } else if (badge) {
+            badge.innerHTML = `<span style="background: #16a34a; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(22,163,74,0.5);">🟢 ONLINE & SYNCING</span>`;
+        }
+    }
+};
 
 // Automatically wake up the robot whenever the tablet connects to Wi-Fi
 window.addEventListener('online', () => { 
     window.isAppOnline = true; 
     if(typeof window.updateNetworkStatusUI === 'function') window.updateNetworkStatusUI(); 
     window.syncOfflineQueue(); 
-    window.syncDeliveryOutbox();
 });
 
 // Run once on boot to clear out any trapped sales from yesterday
-setTimeout(() => {
-    window.syncOfflineQueue();
-    window.syncDeliveryOutbox();
-}, 5000);
+setTimeout(window.syncOfflineQueue, 5000);
 
 // --- THE DASHBOARD ENGINE ---
 window.getSalesDashboardData = async function (branch, shiftStartTime) {
@@ -1271,11 +1480,11 @@ window.getSalesDashboardData = async function (branch, shiftStartTime) {
     // 🔥 FIX 1: Force the time into a proper object so Firebase can read it!
     let validStartTime = shiftStartTime instanceof Date ? shiftStartTime : (shiftStartTime && shiftStartTime.toDate ? shiftStartTime.toDate() : new Date(shiftStartTime));
 
-    const q = window.query(collection(db, "transactions"),
-      window.where("branch", "==", branch),
-      window.where("timestamp", ">=", validStartTime)
+    const q = query(collection(db, "transactions"),
+      where("branch", "==", branch),
+      where("timestamp", ">=", validStartTime)
     );
-    const snapshot = await window.getDocs(q);
+    const snapshot = await getDocs(q);
 
     let transactions = [];
     snapshot.forEach(doc => { transactions.push({ id: doc.id, ...doc.data() }); });
@@ -1288,8 +1497,8 @@ window.getSalesDashboardData = async function (branch, shiftStartTime) {
 // --- LIVE SHIFT & CLOSE ENGINE ---
 window.getLiveShiftDetails = async function (branch) {
   try {
-    const shiftQ = window.query(collection(db, "shifts"), window.where("branch", "==", branch), window.where("active", "==", true), window.limit(1));
-    const shiftSnap = await window.getDocs(shiftQ);
+    const shiftQ = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true), limit(1));
+    const shiftSnap = await getDocs(shiftQ);
     if (shiftSnap.empty) return null;
 
     const shiftDoc = shiftSnap.docs[0];
@@ -1299,13 +1508,13 @@ window.getLiveShiftDetails = async function (branch) {
     let validStartTime = shiftData.startTime && shiftData.startTime.toDate ? shiftData.startTime.toDate() : new Date(shiftData.startTime);
 
     // 1. Get Transactions
-    const txQ = window.query(collection(db, "transactions"), window.where("branch", "==", branch), window.where("timestamp", ">=", validStartTime));
-    const txSnap = await window.getDocs(txQ);
+    const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", validStartTime));
+    const txSnap = await getDocs(txQ);
 
     // 2. Get Expenses (Cash Out)
     // 🔥 FIX 2: ONLY look for expenses that were explicitly linked to THIS exact drawer shift!
-    const expQ = window.query(collection(db, "expenses"), window.where("shiftId", "==", shiftDoc.id));
-    const expSnap = await window.getDocs(expQ);
+    const expQ = query(collection(db, "expenses"), where("shiftId", "==", shiftDoc.id));
+    const expSnap = await getDocs(expQ);
     
     let totalExpenses = 0;
     expSnap.forEach(e => { totalExpenses += (e.data().amount || 0); });
@@ -1339,7 +1548,7 @@ window.getLiveShiftDetails = async function (branch) {
 window.closeShift = async function (branch, shiftId, actualCash, expectedCash, diff) {
   try {
     const shiftRef = doc(db, "shifts", shiftId);
-    await window.updateDoc(shiftRef, { active: false, endTime: window.serverTimestamp(), actualCash: actualCash, expectedCash: expectedCash, difference: diff });
+    await updateDoc(shiftRef, { active: false, endTime: serverTimestamp(), actualCash: actualCash, expectedCash: expectedCash, difference: diff });
     return true;
   } catch (e) { console.error(e); throw e; }
 };
@@ -1349,7 +1558,7 @@ window.getBranchInventoryForExpense = async function (branch) { return []; }; //
 
 window.processPettyCashExpense = async function (payload) {
   try {
-    await window.addDoc(collection(db, "expenses"), { ...payload, timestamp: window.serverTimestamp() });
+    await addDoc(collection(db, "expenses"), { ...payload, timestamp: serverTimestamp() });
     return "Expense recorded successfully!";
   } catch (e) { console.error(e); throw e; }
 };
@@ -1490,15 +1699,15 @@ window.submitInventoryCheck = async function () {
 // --- PARKED ORDERS ENGINE ---
 window.parkOrderToDB = async function (payload) {
   try {
-    const docRef = await window.addDoc(collection(db, "parked_orders"), { ...payload, timestamp: window.serverTimestamp() });
+    const docRef = await addDoc(collection(db, "parked_orders"), { ...payload, timestamp: serverTimestamp() });
     return docRef.id;
   } catch (e) { console.error(e); return null; }
 };
 
 window.getParkedOrders = async function (branch) {
   try {
-    const q = window.query(collection(db, "parked_orders"), window.where("branch", "==", branch));
-    const snap = await window.getDocs(q);
+    const q = query(collection(db, "parked_orders"), where("branch", "==", branch));
+    const snap = await getDocs(q);
     
     let orders = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     
@@ -1518,7 +1727,7 @@ window.getParkedOrders = async function (branch) {
 
 window.deleteParkedOrder = async function (docId) {
   try {
-    await window.deleteDoc(doc(db, "parked_orders", docId));
+    await deleteDoc(doc(db, "parked_orders", docId));
     return true;
   } catch (e) { console.error(e); return false; }
 };
@@ -1526,8 +1735,8 @@ window.deleteParkedOrder = async function (docId) {
 // --- VOID & DETAILS ENGINE (WITH INVENTORY REPLENISHMENT) ---
 window.voidTransaction = async function (receiptId, cashierName, branch) {
   try {
-    const q = window.query(collection(db, "transactions"), window.where("receiptId", "==", receiptId));
-    const snap = await window.getDocs(q);
+    const q = query(collection(db, "transactions"), where("receiptId", "==", receiptId));
+    const snap = await getDocs(q);
     if (snap.empty) throw new Error("Transaction not found");
     
     const txDoc = snap.docs[0];
@@ -1541,7 +1750,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
     }
 
     // 1. Void the transaction record
-    await window.updateDoc(doc(db, "transactions", docId), { status: "Voided", voidedBy: cashierName, voidTime: window.serverTimestamp() });
+    await updateDoc(doc(db, "transactions", docId), { status: "Voided", voidedBy: cashierName, voidTime: serverTimestamp() });
 
     // 2. 🔥 INVENTORY REPLENISHMENT ENGINE 🔥
     if (txData.cart && Array.isArray(txData.cart)) {
@@ -1550,8 +1759,8 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
         let qtyVoided = parseFloat(cartItem.qty) || 1;
 
         // --- A. REPLENISH MAIN RECIPE (BOM) ---
-        const bomQ = window.query(collection(db, "bom"), window.where("menuItem", "==", itemName));
-        const bomSnap = await window.getDocs(bomQ);
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+        const bomSnap = await getDocs(bomQ);
 
         for (let bomDoc of bomSnap.docs) {
           let recipeData = bomDoc.data();
@@ -1570,8 +1779,8 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
           }
 
           // Find the ingredient in this specific branch's inventory
-          const invQ = window.query(collection(db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", ingredientName));
-          const invSnap = await window.getDocs(invQ);
+          const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", ingredientName));
+          const invSnap = await getDocs(invQ);
 
           if (!invSnap.empty) {
             let invDocRef = invSnap.docs[0].ref;
@@ -1579,9 +1788,9 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
             
             // Add it back to the current stock!
             let newStock = (parseFloat(invData.currentStock) || 0) + totalAmountToReturn;
-            await window.updateDoc(invDocRef, { currentStock: newStock });
+            await updateDoc(invDocRef, { currentStock: newStock });
 
-            await window.addDoc(collection(db, "stock_logs"), {
+            await addDoc(collection(db, "stock_logs"), {
                 branch: branch,
                 item: ingredientName,
                 uom: invData.uom || 'units',
@@ -1591,7 +1800,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
                 type: "Transaction Voided",
                 note: `Receipt ${receiptId} voided by ${cashierName}`,
                 user: cashierName,
-                timestamp: window.serverTimestamp()
+                timestamp: serverTimestamp()
             });
           }
         }
@@ -1604,17 +1813,17 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
                 if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
                     let totalAddonReturn = parseFloat(addon.deductQty) * parseFloat(addon.qty) * qtyVoided;
 
-                    const addonInvQ = window.query(collection(db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", addon.linkedIngredient));
-                    const addonInvSnap = await window.getDocs(addonInvQ);
+                    const addonInvQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", addon.linkedIngredient));
+                    const addonInvSnap = await getDocs(addonInvQ);
 
                     if (!addonInvSnap.empty) {
                         let invDocRef = addonInvSnap.docs[0].ref;
                         let invData = addonInvSnap.docs[0].data();
                         
                         let newStock = (parseFloat(invData.currentStock) || 0) + totalAddonReturn;
-                        await window.updateDoc(invDocRef, { currentStock: newStock });
+                        await updateDoc(invDocRef, { currentStock: newStock });
 
-                      await window.addDoc(collection(db, "stock_logs"), {
+                      await addDoc(collection(db, "stock_logs"), {
                           branch: branch,
                           item: addon.linkedIngredient,
                           uom: invData.uom || 'units',
@@ -1624,7 +1833,7 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
                           type: "Transaction Voided (Addon)",
                           note: `Receipt ${receiptId} voided by ${cashierName}`,
                           user: cashierName,
-                          timestamp: window.serverTimestamp()
+                          timestamp: serverTimestamp()
                       });
                     }
                 }
@@ -1646,19 +1855,19 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
 
     if (totalBallsToReturn > 0) {
         const statsRef = doc(db, "settings", "global_stats");
-        await window.setDoc(statsRef, { 
-            totalTakoyakiBalls: window.increment(-totalBallsToReturn) 
+        await setDoc(statsRef, { 
+            totalTakoyakiBalls: increment(-totalBallsToReturn) 
         }, { merge: true });
     }
 
     // 3. 🚨 THE MANAGER ALARM
-    await window.addDoc(collection(db, "manager_alerts"), {
+    await addDoc(collection(db, "manager_alerts"), {
       type: "VOID_ALERT",
       branch: branch,
       cashier: cashierName,
       receiptId: receiptId,
       message: `WARNING: Cashier ${cashierName} voided Receipt ${receiptId}. Inventory has been automatically replenished.`,
-      timestamp: window.serverTimestamp(),
+      timestamp: serverTimestamp(),
       isRead: false
     });
 
@@ -1672,8 +1881,8 @@ window.voidTransaction = async function (receiptId, cashierName, branch) {
 // --- RECEIPT DETAILS ENGINE ---
 window.getReceiptDetails = async function (receiptId) {
   try {
-    const q = window.query(collection(db, "transactions"), window.where("receiptId", "==", receiptId));
-    const snap = await window.getDocs(q);
+    const q = query(collection(db, "transactions"), where("receiptId", "==", receiptId));
+    const snap = await getDocs(q);
     if (snap.empty) return null;
     return snap.docs[0].data();
   } catch (e) { console.error(e); return null; }
@@ -1882,11 +2091,11 @@ window.openEndShiftClearance = async function() {
             if (typeof currentShift === 'undefined' || !currentShift || !currentShift.startTime) {
                 prepContainer.innerHTML = '<div style="text-align:center; color: #dc2626;">No active shift found.</div>';
             } else {
-                const q = window.query(collection(db, "stock_logs"), 
-                    window.where("branch", "==", sessionUser.branch), 
-                    window.where("timestamp", ">=", currentShift.startTime)
+                const q = query(collection(db, "stock_logs"), 
+                    where("branch", "==", sessionUser.branch), 
+                    where("timestamp", ">=", currentShift.startTime)
                 );
-                const snap = await window.getDocs(q);
+                const snap = await getDocs(q);
                 
                 let logs = [];
                 snap.forEach(doc => {
@@ -1928,7 +2137,7 @@ window.openEndShiftClearance = async function() {
     if (blindContainer) {
         blindContainer.innerHTML = '<div style="text-align:center; font-size: 13px; color: #888;">Fetching required items...</div>';
         try {
-            const configSnap = await window.getDoc(doc(db, "settings", "global_pos_config"));
+            const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
             let auditItemsList = [];
             if (configSnap.exists() && configSnap.data().shiftAuditItems) {
                 auditItemsList = configSnap.data().shiftAuditItems.map(i => i.trim());
@@ -1941,8 +2150,8 @@ window.openEndShiftClearance = async function() {
                 window.currentBlindCountItems = []; 
                 
                 for (let itemName of auditItemsList) {
-                    const invQ = window.query(collection(db, "inventory"), window.where("branch", "==", sessionUser.branch), window.where("name", "==", itemName));
-                    const invSnap = await window.getDocs(invQ);
+                    const invQ = query(collection(db, "inventory"), where("branch", "==", sessionUser.branch), where("name", "==", itemName));
+                    const invSnap = await getDocs(invQ);
                     
                     if (!invSnap.empty) {
                         let invData = invSnap.docs[0].data();
@@ -2118,8 +2327,8 @@ window.submitComprehensiveCloseShift = async function () {
         let totalCashSales = 0; let totalDigitalSales = 0;
         let digitalBreakdown = {}; let shiftIngredientBurn = {}; 
 
-        const txQ = window.query(collection(db, "transactions"), window.where("branch", "==", branchName), window.where("timestamp", ">=", startTime));
-        const txSnap = await window.getDocs(txQ);
+        const txQ = query(collection(db, "transactions"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
+        const txSnap = await getDocs(txQ);
 
         txSnap.forEach(docSnap => {
             let tx = docSnap.data();
@@ -2183,8 +2392,8 @@ window.submitComprehensiveCloseShift = async function () {
         });
 
         // 4. Crunch Expenses
-        const expQ = window.query(collection(db, "expenses"), window.where("branch", "==", branchName), window.where("timestamp", ">=", startTime));
-        const expSnap = await window.getDocs(expQ);
+        const expQ = query(collection(db, "expenses"), where("branch", "==", branchName), where("timestamp", ">=", startTime));
+        const expSnap = await getDocs(expQ);
         let cashOut = 0;
         expSnap.forEach(e => cashOut += (parseFloat(e.data().amount) || 0));
 
@@ -2223,21 +2432,21 @@ window.submitComprehensiveCloseShift = async function () {
                 return; 
             }
             
-            await window.addDoc(collection(db, "manager_alerts"), {
+            await addDoc(collection(db, "manager_alerts"), {
                 type: "VARIANCE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
                 expected: expectedCash, declared: declaredCash, varianceAmount: variance, stockCounts: {}, 
                 message: `CASH ${isOver ? "OVER" : "SHORT"}: ₱${Math.abs(variance).toFixed(2)} variance detected.`,
                 explanationCause: "Awaiting Staff Letter...", explanationMessage: "", explanationStatus: "Pending", 
-                timestamp: window.serverTimestamp(), isRead: false
+                timestamp: serverTimestamp(), isRead: false
             });
         }
 
         confirmBtn.innerText = "⏳ Saving to Cloud...";
         
         // 6. FIREBASE: CLOSE SHIFT
-        await window.updateDoc(doc(db, "shifts", shiftId), {
+        await updateDoc(doc(db, "shifts", shiftId), {
             active: false,
-            endTime: window.serverTimestamp(),
+            endTime: serverTimestamp(),
             declaredCash: declaredCash,
             expectedCash: expectedCash,
             totalCashSales: totalCashSales, 
@@ -2253,20 +2462,20 @@ window.submitComprehensiveCloseShift = async function () {
             if (method.toLowerCase() === "gcash") continue; 
             let amountToDeposit = digitalBreakdown[method];
             if (amountToDeposit > 0) {
-                const accQ = window.query(collection(db, "cash_accounts"), window.where("branch", "==", "Main Office"), window.where("name", "==", method));
-                const accSnap = await window.getDocs(accQ);
+                const accQ = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", method));
+                const accSnap = await getDocs(accQ);
                 if (!accSnap.empty) {
                     let accDoc = accSnap.docs[0];
                     let currentBal = accDoc.data().balance || 0;
-                    await window.updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
-                    await window.addDoc(collection(db, "account_logs"), {
+                    await updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
+                    await addDoc(collection(db, "account_logs"), {
                         accountId: accDoc.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (Shift Close)",
-                        amount: amountToDeposit, newBalance: currentBal + amountToDeposit, user: cashierName, timestamp: window.serverTimestamp(), note: `From ${branchName}`
+                        amount: amountToDeposit, newBalance: currentBal + amountToDeposit, user: cashierName, timestamp: serverTimestamp(), note: `From ${branchName}`
                     });
                 } else {
-                    const newAccRef = await window.addDoc(collection(db, "cash_accounts"), { name: method, branch: "Main Office", balance: amountToDeposit, createdAt: window.serverTimestamp() });
-                    await window.addDoc(collection(db, "account_logs"), {
-                        accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account Generated)", amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: window.serverTimestamp(), note: `From ${branchName}`
+                    const newAccRef = await addDoc(collection(db, "cash_accounts"), { name: method, branch: "Main Office", balance: amountToDeposit, createdAt: serverTimestamp() });
+                    await addDoc(collection(db, "account_logs"), {
+                        accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account Generated)", amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: serverTimestamp(), note: `From ${branchName}`
                     });
                 }
             }
@@ -2276,8 +2485,8 @@ window.submitComprehensiveCloseShift = async function () {
         // 💳 7.7 FRANCHISE BILLING ENGINE (AUTO-SYNC)
         // ========================================================
         try {
-            const bQ = window.query(collection(db, "branches"), window.where("name", "==", branchName));
-            const bSnap = await window.getDocs(bQ);
+            const bQ = query(collection(db, "branches"), where("name", "==", branchName));
+            const bSnap = await getDocs(bQ);
             let isFranchise = false;
             let royaltyPct = 0;
             
@@ -2294,14 +2503,14 @@ window.submitComprehensiveCloseShift = async function () {
                 let royaltyAmount = totalGrossForRoyalty * (royaltyPct / 100);
                 
                 if (royaltyAmount > 0) {
-                    await window.addDoc(collection(db, "franchise_ledger"), {
+                    await addDoc(collection(db, "franchise_ledger"), {
                         branch: branchName,
                         type: "Charge", // "Charge" means they owe HQ money
                         category: "Daily Franchise Royalty",
                         amount: royaltyAmount,
                         description: `Shift Close: Auto-Billed ${royaltyPct}% Royalty on ₱${totalGrossForRoyalty.toLocaleString(undefined, {minimumFractionDigits: 2})} Gross Sales`,
                         loggedBy: "System Z-Reading",
-                        timestamp: window.serverTimestamp()
+                        timestamp: serverTimestamp()
                     });
                 }
             }
@@ -2309,8 +2518,8 @@ window.submitComprehensiveCloseShift = async function () {
 
         // 🛍️ 7.6 MALL BRANCH MANAGER FUND AUTO-DEPOSIT
         try {
-            const bQ = window.query(collection(db, "branches"), window.where("name", "==", branchName));
-            const bSnap = await window.getDocs(bQ);
+            const bQ = query(collection(db, "branches"), where("name", "==", branchName));
+            const bSnap = await getDocs(bQ);
             let isMallBranch = false;
             if (!bSnap.empty) {
                 isMallBranch = bSnap.docs[0].data().isMallBranch === true;
@@ -2321,24 +2530,24 @@ window.submitComprehensiveCloseShift = async function () {
                 let netCashEarned = declaredCash - startingCash;
                 
                 if (netCashEarned !== 0) {
-                    const accQ = window.query(collection(db, "cash_accounts"), window.where("branch", "==", branchName), window.where("name", "==", "Manager Fund"));
-                    const accSnap = await window.getDocs(accQ);
+                    const accQ = query(collection(db, "cash_accounts"), where("branch", "==", branchName), where("name", "==", "Manager Fund"));
+                    const accSnap = await getDocs(accQ);
                     
                     if (!accSnap.empty) {
                         let accDoc = accSnap.docs[0];
                         let currentBal = parseFloat(accDoc.data().balance) || 0;
                         let newBal = currentBal + netCashEarned;
                         
-                        await window.updateDoc(accDoc.ref, { balance: newBal });
-                        await window.addDoc(collection(db, "account_logs"), {
+                        await updateDoc(accDoc.ref, { balance: newBal });
+                        await addDoc(collection(db, "account_logs"), {
                             accountId: accDoc.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Net)",
-                            amount: netCashEarned, newBalance: newBal, user: cashierName, timestamp: window.serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
+                            amount: netCashEarned, newBalance: newBal, user: cashierName, timestamp: serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
                         });
                     } else {
-                        const newAccRef = await window.addDoc(collection(db, "cash_accounts"), { name: "Manager Fund", branch: branchName, balance: netCashEarned, createdAt: window.serverTimestamp() });
-                        await window.addDoc(collection(db, "account_logs"), {
+                        const newAccRef = await addDoc(collection(db, "cash_accounts"), { name: "Manager Fund", branch: branchName, balance: netCashEarned, createdAt: serverTimestamp() });
+                        await addDoc(collection(db, "account_logs"), {
                             accountId: newAccRef.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Account Created)",
-                            amount: netCashEarned, newBalance: netCashEarned, user: "System", timestamp: window.serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
+                            amount: netCashEarned, newBalance: netCashEarned, user: "System", timestamp: serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
                         });
                     }
                 }
@@ -2350,10 +2559,10 @@ window.submitComprehensiveCloseShift = async function () {
             let variance = item.actualCount - item.systemExpected;
             if (variance < 0) {
                 let valueLost = Math.abs(variance) * item.baseCost;
-                await window.addDoc(collection(db, "manager_alerts"), {
+                await addDoc(collection(db, "manager_alerts"), {
                     type: "STOCK_SHORTAGE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
                     message: `STOCK SHORTAGE: ${cashierName} reported ${item.actualCount} ${item.uom} of ${item.name} (System Expected: ${item.systemExpected.toFixed(1)}). Loss Value: ₱${valueLost.toFixed(2)}`,
-                    timestamp: window.serverTimestamp(), isRead: false
+                    timestamp: serverTimestamp(), isRead: false
                 });
             }
         }
@@ -2361,10 +2570,10 @@ window.submitComprehensiveCloseShift = async function () {
         for (let ingName in shiftIngredientBurn) {
             let totalBurn = shiftIngredientBurn[ingName];
             if (totalBurn > 0) {
-                await window.addDoc(collection(db, "stock_logs"), {
+                await addDoc(collection(db, "stock_logs"), {
                     branch: branchName, item: ingName, uom: "Units", oldQty: "Shift", newQty: "Summary",
                     variance: -totalBurn, type: "Shift Sales Deduction", note: `Ingredients used during ${cashierName}'s shift`,
-                    user: cashierName, timestamp: window.serverTimestamp()
+                    user: cashierName, timestamp: serverTimestamp()
                 });
             }
         }
@@ -2429,8 +2638,8 @@ window.openExpenseModal = async function () {
     
     // 1. Fetch Inventory
     try {
-        const q = window.query(collection(db, "inventory"), window.where("branch", "==", branch));
-        const snap = await window.getDocs(q);
+        const q = query(collection(db, "inventory"), where("branch", "==", branch));
+        const snap = await getDocs(q);
         snap.forEach(docSnap => {
             let item = docSnap.data();
             item.id = docSnap.id;
@@ -2440,7 +2649,7 @@ window.openExpenseModal = async function () {
 
     // 2. Fetch Branch Settings (Check for Mall Branch Mode)
     try {
-        const bSnap = await window.getDocs(window.query(collection(db, "branches"), window.where("name", "==", branch)));
+        const bSnap = await getDocs(query(collection(db, "branches"), where("name", "==", branch)));
         if (!bSnap.empty) {
             window.isMallBranch = bSnap.docs[0].data().isMallBranch || false;
         }
@@ -2667,7 +2876,7 @@ window.submitExpenseCart = async function() {
                 finalDescription = `${item.description} (Qty: ${item.displayQty} ${item.displayUom})`;
             }
 
-            await window.addDoc(collection(db, "expenses"), {
+            await addDoc(collection(db, "expenses"), {
                 branch: branch,
                 shiftId: fundSource === "Drawer" ? activeShiftDetails.logId : "Manager_Fund",
                 cashier: cashier,
@@ -2675,13 +2884,13 @@ window.submitExpenseCart = async function() {
                 description: finalDescription,
                 receiptPhoto: photoUrl, 
                 paidFrom: fundSource, // 🔥 TELLS THE HQ EXACTLY WHERE THE MONEY CAME FROM!
-                timestamp: window.serverTimestamp()
+                timestamp: serverTimestamp()
             });
 
             // 3. 🧠 THE AUTO-AVERAGE COSTING & INVENTORY INJECTOR
             if (item.isRestock && item.dbId && item.baseQty > 0) {
                 const invRef = doc(db, "inventory", item.dbId);
-                const invSnap = await window.getDoc(invRef);
+                const invSnap = await getDoc(invRef);
                 if (invSnap.exists()) {
                     let d = invSnap.data();
                     let currentStock = parseFloat(d.currentStock) || 0;
@@ -2692,14 +2901,14 @@ window.submitExpenseCart = async function() {
                     let newTotalStock = currentStock + item.baseQty;
                     let newAverageCost = newTotalStock > 0 ? (newTotalValue / newTotalStock) : unitCostOfThisPurchase;
 
-                    await window.updateDoc(invRef, {
+                    await updateDoc(invRef, {
                         currentStock: newTotalStock,
                         cost: newAverageCost 
                     });
 
-                    await window.addDoc(collection(db, "stock_logs"), {
+                    await addDoc(collection(db, "stock_logs"), {
                         branch: branch, item: item.dbName, uom: item.uom, oldQty: currentStock, newQty: newTotalStock, variance: item.baseQty,
-                        type: "Store Restock (Expense)", note: `Purchased ${item.displayQty} ${item.displayUom} for ₱${item.cost}`, user: cashier, timestamp: window.serverTimestamp()
+                        type: "Store Restock (Expense)", note: `Purchased ${item.displayQty} ${item.displayUom} for ₱${item.cost}`, user: cashier, timestamp: serverTimestamp()
                     });
                 }
             }
@@ -2708,9 +2917,9 @@ window.submitExpenseCart = async function() {
         // 🔥 ONLY DEDUCT FROM THE DRAWER IF THEY SELECTED DRAWER!
         if (fundSource === "Drawer") {
             const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
-            const shiftSnap = await window.getDoc(shiftRef);
+            const shiftSnap = await getDoc(shiftRef);
             let currentExp = shiftSnap.data().expenses || shiftSnap.data().cashOut || 0;
-            await window.updateDoc(shiftRef, { expenses: currentExp + grandTotal, cashOut: currentExp + grandTotal });
+            await updateDoc(shiftRef, { expenses: currentExp + grandTotal, cashOut: currentExp + grandTotal });
             alert(`✅ Success! ₱${grandTotal.toFixed(2)} deducted from POS drawer for ${window.expenseCart.length} item(s).`);
         } else {
             alert(`✅ Success! Logged ${window.expenseCart.length} item(s). Deducted from Manager's Floating Cash.`);
@@ -2755,12 +2964,12 @@ window.openExplanationModal = async function() {
     document.getElementById('explanationModal').style.display = 'flex';
 
     try {
-        const q = window.query(collection(db, "manager_alerts"), 
-            window.where("type", "==", "VARIANCE_ALERT"), 
-            window.where("cashier", "==", cashier),
-            window.where("explanationStatus", "==", "Pending")
+        const q = query(collection(db, "manager_alerts"), 
+            where("type", "==", "VARIANCE_ALERT"), 
+            where("cashier", "==", cashier),
+            where("explanationStatus", "==", "Pending")
         );
-        const snap = await window.getDocs(q);
+        const snap = await getDocs(q);
 
         if (snap.empty) {
             selectList.innerHTML = '<option value="">No pending variances found! Excellent job.</option>';
@@ -2790,7 +2999,7 @@ window.submitReasonLetter = async function() {
     if (!message) { alert("You must type a detailed explanation."); return; }
 
     try {
-        await window.updateDoc(doc(db, "manager_alerts", alertId), {
+        await updateDoc(doc(db, "manager_alerts", alertId), {
             explanationCause: cause,
             explanationMessage: message,
             explanationStatus: "Submitted - Awaiting Owner Approval"
@@ -2815,8 +3024,8 @@ window.validateStockLevels = async function(cartPayload) {
         let qtySold = item.qty || 1;
 
         // A. Sum up the Main Recipe (BOM)
-        const bomQ = window.query(collection(db, "bom"), window.where("menuItem", "==", itemName));
-        const bomSnap = await window.getDocs(bomQ);
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+        const bomSnap = await getDocs(bomQ);
         bomSnap.forEach(docSnap => {
             let ing = docSnap.data().ingredientName;
             let amountNeeded = (docSnap.data().qty || 0) * qtySold;
@@ -2843,8 +3052,8 @@ window.validateStockLevels = async function(cartPayload) {
     for (let ing in requiredIngredients) {
         let needed = requiredIngredients[ing];
         
-        const invQ = window.query(collection(db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", ing));
-        const invSnap = await window.getDocs(invQ);
+        const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", ing));
+        const invSnap = await getDocs(invQ);
 
         if (!invSnap.empty) {
             let currentStock = invSnap.docs[0].data().currentStock || 0;
@@ -2897,8 +3106,8 @@ window.openRemittanceModal = async function() {
     try {
         let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
         // Pull the exact end date of their LAST remittance
-        const q = window.query(collection(db, "remittances"), window.where("branch", "==", safeBranch), window.orderBy("timestamp", "desc"), window.limit(1));
-        const snap = await window.getDocs(q);
+        const q = query(collection(db, "remittances"), where("branch", "==", safeBranch), orderBy("timestamp", "desc"), limit(1));
+        const snap = await getDocs(q);
         
         if (!snap.empty) {
             let lastData = snap.docs[0].data();
@@ -2940,8 +3149,8 @@ window.loadHqAccountsForRemittance = async function() {
     select.innerHTML = '<option value="">Loading HQ Accounts...</option>';
     try {
         // 🔥 ONLY pull accounts assigned to the Main Office
-        const q = window.query(collection(db, "cash_accounts"), window.where("branch", "==", "Main Office"));
-        const snap = await window.getDocs(q);
+        const q = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"));
+        const snap = await getDocs(q);
         
         // 🛡️ Use a "Set" to automatically prevent any accidental duplicate names
         let uniqueAccounts = new Set();
@@ -2985,8 +3194,8 @@ window.submitRemittance = async function() {
         let drawerCash = 0;
         let shiftIdToLog = "Accumulated_Floating";
         
-        const activeQ = window.query(collection(db, "shifts"), window.where("branch", "==", safeBranch), window.where("active", "==", true), window.limit(1));
-        const activeSnap = await window.getDocs(activeQ);
+        const activeQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("active", "==", true), limit(1));
+        const activeSnap = await getDocs(activeQ);
         
         if (!activeSnap.empty) {
             let shiftData = activeSnap.docs[0].data();
@@ -2996,8 +3205,8 @@ window.submitRemittance = async function() {
             
             let cashSales = 0;
             let validStartTime = shiftData.startTime.toDate ? shiftData.startTime.toDate() : new Date(shiftData.startTime);
-            const txQ = window.query(collection(db, "transactions"), window.where("branch", "==", safeBranch), window.where("timestamp", ">=", validStartTime));
-            const txSnap = await window.getDocs(txQ);
+            const txQ = query(collection(db, "transactions"), where("branch", "==", safeBranch), where("timestamp", ">=", validStartTime));
+            const txSnap = await getDocs(txQ);
             txSnap.forEach(d => {
                 let tx = d.data();
                 if (tx.status !== 'Voided') {
@@ -3011,8 +3220,8 @@ window.submitRemittance = async function() {
             });
             drawerCash = (start + cashSales) - cashOut;
         } else {
-            const lastShiftQ = window.query(collection(db, "shifts"), window.where("branch", "==", safeBranch), window.where("status", "==", "Closed"), window.orderBy("endTime", "desc"), window.limit(1));
-            const lastShiftSnap = await window.getDocs(lastShiftQ);
+            const lastShiftQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
+            const lastShiftSnap = await getDocs(lastShiftQ);
             if (!lastShiftSnap.empty) {
                 drawerCash = parseFloat(lastShiftSnap.docs[0].data().declaredCash) || 0;
             }
@@ -3024,17 +3233,17 @@ window.submitRemittance = async function() {
             return;
         }
 
-        await window.addDoc(collection(db, "remittances"), {
+        await addDoc(collection(db, "remittances"), {
             branch: safeBranch, cashier: identity.cashierName, amount: remitAmount,
             channel: channel, recipient: recipient, referenceNumber: refNum,
             salesPeriodStart: startDate, salesPeriodEnd: endDate,
-            status: "Pending", timestamp: window.serverTimestamp()
+            status: "Pending", timestamp: serverTimestamp()
         });
 
         // Log the expense so it removes the physical cash from the building correctly
-        await window.addDoc(collection(db, "expenses"), {
+        await addDoc(collection(db, "expenses"), {
             branch: safeBranch, shiftId: shiftIdToLog, cashier: identity.cashierName, amount: remitAmount,
-            description: `[REMITTANCE TO HQ] - ${channel} to ${recipient}`, timestamp: window.serverTimestamp()
+            description: `[REMITTANCE TO HQ] - ${channel} to ${recipient}`, timestamp: serverTimestamp()
         });
 
         alert("✅ Remittance sent to HQ!");
@@ -3052,8 +3261,8 @@ window.loadRemittanceHistory = async function() {
         // 🛡️ Bulletproof branch grabber for the database query
         let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
         
-        const q = window.query(collection(db, "remittances"), window.where("branch", "==", safeBranch), window.orderBy("timestamp", "desc"), window.limit(20));
-        const snap = await window.getDocs(q);
+        const q = query(collection(db, "remittances"), where("branch", "==", safeBranch), orderBy("timestamp", "desc"), limit(20));
+        const snap = await getDocs(q);
         
         let html = '';
         snap.forEach(docSnap => {
@@ -3117,8 +3326,8 @@ window.openTimeClockModal = async function() {
     
     try {
         // 🔥 ALL STAFF FETCH: No branch limits. Anyone can log in here!
-        const q = window.query(collection(db, "cashiers"));
-        const snap = await window.getDocs(q);
+        const q = query(collection(db, "cashiers"));
+        const snap = await getDocs(q);
         
         currentBranchStaffCache = [];
         let html = '<option value="">-- Select Your Name --</option>';
@@ -3183,7 +3392,7 @@ window.submitAttendance = async function(type) {
     let punchCooldownKey = `takodeal_punch_${staffName}`;
     let lastPunchTime = localStorage.getItem(punchCooldownKey);
     if (lastPunchTime && (Date.now() - parseInt(lastPunchTime) < 60000)) { 
-        alert("⏳ Sync in progress!\n\nYour previous attendance punch was already saved. Please wait 1 minute before entering another punch.");
+        alert("⏳ Sync in progress!\n\nYour previous punch is still processing due to slow internet. Please wait 1 minute before trying again to prevent duplicate logs.");
         unlockUI();
         return;
     }
@@ -3192,8 +3401,8 @@ window.submitAttendance = async function(type) {
     
     if (!staffProfile) {
         try {
-            const staffQ = window.query(collection(db, "cashiers"), window.where("cashierName", "==", staffName));
-            const staffSnap = await window.getDocs(staffQ);
+            const staffQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
+            const staffSnap = await getDocs(staffQ);
             
             if (!staffSnap.empty) {
                 staffProfile = staffSnap.docs[0].data();
@@ -3237,10 +3446,10 @@ window.submitAttendance = async function(type) {
                     }
                 } else {
                     if (inputPin && staffProfile.pin === inputPin) {
-                        const cashierQ = window.query(collection(db, "cashiers"), window.where("cashierName", "==", staffName));
-                        const cashierSnap = await window.getDocs(cashierQ);
+                        const cashierQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
+                        const cashierSnap = await getDocs(cashierQ);
                         if (!cashierSnap.empty) {
-                            await window.updateDoc(cashierSnap.docs[0].ref, {
+                            await updateDoc(cashierSnap.docs[0].ref, {
                                 faceDescriptor: Array.from(detection.descriptor)
                             });
                             alert("✅ Face ID Successfully Registered!\n\nFor your next shift, you can leave the PIN blank and just look at the camera.");
@@ -3279,8 +3488,8 @@ window.submitAttendance = async function(type) {
     // 🚨 HR SANCTION & NTE LOCK (TIME CLOCK BLOCKER)
     // ==========================================
     try {
-        const nteQ = window.query(collection(db, "hr_sanctions"), window.where("staffName", "==", staffName), window.where("status", "==", "Pending Reply"));
-        const nteSnap = await window.getDocs(nteQ);
+        const nteQ = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
+        const nteSnap = await getDocs(nteQ);
         
         if (!nteSnap.empty) {
             let nteData = nteSnap.docs[0].data();
@@ -3315,8 +3524,8 @@ window.submitAttendance = async function(type) {
     // 📩 PROCESSED REQUEST INTERCEPTOR (APPROVED & REJECTED)
     // ==========================================
     try {
-        const reqQ = window.query(collection(db, "staff_requests"), window.where("staffName", "==", staffName));
-        const reqSnap = await window.getDocs(reqQ);
+        const reqQ = query(collection(db, "staff_requests"), where("staffName", "==", staffName));
+        const reqSnap = await getDocs(reqQ);
         
         let unreadRequest = null;
         let unreadReqId = null;
@@ -3339,7 +3548,7 @@ window.submitAttendance = async function(type) {
                     unreadReqId = docSnap.id;
                 } else {
                     // Silently clear out ancient requests in the background so they don't pile up!
-                    window.updateDoc(doc(db, "staff_requests", docSnap.id), { staffAcknowledged: true }).catch(e => console.log("Silently cleared old request."));
+                    updateDoc(doc(db, "staff_requests", docSnap.id), { staffAcknowledged: true }).catch(e => console.log("Silently cleared old request."));
                 }
             }
         });
@@ -3376,7 +3585,7 @@ window.submitAttendance = async function(type) {
 
             if (result.isConfirmed) {
                 Swal.fire({title: 'Clearing Alert...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-                await window.updateDoc(doc(db, "staff_requests", unreadReqId), { staffAcknowledged: true });
+                await updateDoc(doc(db, "staff_requests", unreadReqId), { staffAcknowledged: true });
                 
                 Swal.fire({
                     title: 'Unlocked',
@@ -3402,12 +3611,12 @@ window.submitAttendance = async function(type) {
     let userLogs = [];
     try {
         // Try the optimal indexed query first
-        const q = window.query(collection(db, "attendance_logs"), 
-            window.where("staffName", "==", staffName), 
-            window.orderBy("timestamp", "desc"), 
-            window.limit(1)
+        const q = query(collection(db, "attendance_logs"), 
+            where("staffName", "==", staffName), 
+            orderBy("timestamp", "desc"), 
+            limit(1)
         );
-        const lastLogSnap = await window.getDocs(q);
+        const lastLogSnap = await getDocs(q);
         lastLogSnap.forEach(docSnap => userLogs.push(docSnap.data()));
     } catch(e) {
         console.warn("Firebase Index missing. Falling back to unbreakable index-free scan...");
@@ -3415,8 +3624,8 @@ window.submitAttendance = async function(type) {
         let lookBack = new Date();
         lookBack.setHours(lookBack.getHours() - 72); 
         
-        const fallbackQ = window.query(collection(db, "attendance_logs"), window.where("timestamp", ">=", lookBack));
-        const fallbackSnap = await window.getDocs(fallbackQ);
+        const fallbackQ = query(collection(db, "attendance_logs"), where("timestamp", ">=", lookBack));
+        const fallbackSnap = await getDocs(fallbackQ);
         
         fallbackSnap.forEach(docSnap => {
             let data = docSnap.data();
@@ -3463,7 +3672,7 @@ window.submitAttendance = async function(type) {
 
                     let autoOutTime = new Date(lastTime.getTime() + (9 * 60 * 60 * 1000));
                     
-                    await window.addDoc(collection(db, "attendance_logs"), {
+                    await addDoc(collection(db, "attendance_logs"), {
                         staffName: staffName, 
                         branch: userLogs[0].branch, 
                         type: "AUTO TIME OUT (Penalty)", 
@@ -3476,7 +3685,7 @@ window.submitAttendance = async function(type) {
                         notes: "Forced Auto-Out. Paid next cut-off."
                     });
 
-                    await window.addDoc(collection(db, "manager_alerts"), {
+                    await addDoc(collection(db, "manager_alerts"), {
                         type: "ATTENDANCE_PENALTY", branch: localStorage.getItem('takodeal_device_branch') || 'Unknown', cashier: staffName,
                         message: `HR PENALTY: ${staffName} forgot to Time Out yesterday. System auto-closed their shift at 9 hours and applied the 'Paid Next Cut-Off' penalty.`,
                         timestamp: new Date(), isRead: false
@@ -3501,7 +3710,7 @@ window.submitAttendance = async function(type) {
             }
 
             if (hoursSinceLastLog > 14) {
-                await window.addDoc(collection(db, "manager_alerts"), {
+                await addDoc(collection(db, "manager_alerts"), {
                     type: "ATTENDANCE_ALERT", branch: localStorage.getItem('takodeal_device_branch') || 'Unknown', cashier: staffName,
                     message: `URGENT HR ALERT: ${staffName} just timed out after ${hoursSinceLastLog.toFixed(1)} hours. Straight Duties MUST be logged as two separate shifts.`,
                     timestamp: new Date(), isRead: false
@@ -3529,7 +3738,7 @@ window.submitAttendance = async function(type) {
                 }
 
                 let finalBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-                await window.addDoc(collection(db, "staff_requests"), {
+                await addDoc(collection(db, "staff_requests"), {
                     type: "Reason Letter",
                     staffName: staffName,
                     branch: finalBranch,
@@ -3629,7 +3838,7 @@ window.submitAttendance = async function(type) {
         }
         
         try {
-            await window.addDoc(collection(db, "attendance_logs"), {
+            await addDoc(collection(db, "attendance_logs"), {
                 staffName: staffName, 
                 branch: finalBranch, 
                 type: type, 
@@ -3691,8 +3900,8 @@ window.loadStaffPersonalInbox = async function() {
     container.innerHTML = "<div style='padding:20px; text-align:center; color:#666;'>Loading your records...</div>";
     
     try {
-        const q = window.query(collection(db, "staff_requests"), window.where("staffName", "==", safeCashierName), window.orderBy("timestamp", "desc"));
-        const snap = await window.getDocs(q);
+        const q = query(collection(db, "staff_requests"), where("staffName", "==", safeCashierName), orderBy("timestamp", "desc"));
+        const snap = await getDocs(q);
         
         let html = '';
         snap.forEach(docSnap => {
@@ -3785,7 +3994,7 @@ window.submitStaffRequest = async function(requestType) {
     }
     
     try {
-        await window.addDoc(collection(db, "staff_requests"), payload);
+        await addDoc(collection(db, "staff_requests"), payload);
         alert(`✅ Success! ${requestType} submitted.`);
         
         // Clean up the forms
@@ -3858,10 +4067,10 @@ window.toggleMobileOrderingStatus = async function() {
     btn.innerText = "⏳..."; btn.disabled = true;
 
     try {
-        await window.setDoc(doc(db, "settings", "status_" + branch), { 
+        await setDoc(doc(db, "settings", "status_" + branch), { 
             mobileOrdersActive: newState,
             lastUpdatedBy: localStorage.getItem('cashierName') || 'System',
-            lastUpdated: window.serverTimestamp()
+            lastUpdated: serverTimestamp()
         }, { merge: true });
         
     } catch(e) {
@@ -3875,11 +4084,11 @@ window.toggleMobileOrderingStatus = async function() {
 window.startMobileOrdersListener = function(branch) {
     if (window.mobileOrdersUnsubscribe) window.mobileOrdersUnsubscribe(); 
 
-    // Keep ready orders visible for the existing pickup/dispatch controls.
+    // Listen for BOTH Incoming AND Preparing orders
     const q = window.query(
         window.collection(window.db, "incoming_orders"),
         window.where("branch", "==", branch),
-        window.where("status", "in", ["mobile_queue", "preparing", "ready"]) 
+        window.where("status", "in", ["mobile_queue", "preparing"]) 
     );
 
     window.mobileOrdersUnsubscribe = window.onSnapshot(q, (snapshot) => {
@@ -4132,9 +4341,81 @@ window.stopMobileOrderAlarm = function() {
 
 window.showMobileOrders = function() {
     window.stopMobileOrderAlarm();
-    // The current page has a Mobile Hub, rather than the removed popup.
-    if (typeof window.switchView === 'function') window.switchView('mobilehub');
-    if (typeof window.renderMobileHubOrders === 'function') window.renderMobileHubOrders();
+    document.getElementById('mobileOrdersModal').style.display = 'flex';
+    let container = document.getElementById('mobileListContainer');
+
+    if (window.mobileOrdersList.length === 0) {
+        container.innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Queue is empty. No incoming orders.</div>';
+        return;
+    }
+
+    let html = '';
+    window.mobileOrdersList.forEach(o => {
+        // ... (Inside renderMobileHubOrders loop) ...
+        let itemsHtml = o.items.map(i => {
+            // 🔥 THE FIX: Accept 'qty' (POS) OR 'quantity' (Customer App)
+            let q = i.quantity || i.qty || 1;
+            let p = i.price || i.basePrice || 0;
+            return `<div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:5px; border-bottom:1px dashed #e2e8f0; padding-bottom:3px; color:#334155;">
+                      <div><strong>${q}x ${i.name}</strong></div>
+                      <div style="font-weight:bold;">₱${(p * q).toFixed(2)}</div>
+                    </div>`;
+        }).join('');
+
+        let customerName = (o.customerName || o.name || 'Mobile Customer').split('(')[0].trim(); 
+        let contactInfo = o.contactNumber ? `📞 ${o.contactNumber}` : '';
+        
+        // 🔥 NEW: Extract the exact time the order arrived
+        let arrivalTime = o.timestamp ? new Date(o.timestamp.toMillis ? o.timestamp.toMillis() : o.timestamp).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'}) : 'Unknown';
+        
+        // Format the Due Time / ASAP
+        let orderTime = o.preferredTime ? `⏰ Due: ${o.preferredTime}` : 'ASAP';
+        
+        let searchAddr = encodeURIComponent(o.deliveryAddress || '');
+        
+        // ... (Keep your map buttons and locText logic here) ...
+
+        // 🔥 DYNAMIC CONTROLS BASED ON STATUS 🔥
+        let actionButtons = '';
+        let statusBadge = '';
+
+        if (isIncoming) {
+            statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #fcd34d;">⚠️ PENDING ACCEPT</span>`;
+            actionButtons = `
+                <div style="display:flex; gap:10px; margin-top: 15px;">
+                    <button onclick="window.rejectMobileOrder('${o.id}')" style="flex:1; padding:12px; background:white; color:#ef4444; border:1px solid #fca5a5; border-radius: 8px; font-weight: bold; font-size:12px; cursor:pointer;">✖ Reject</button>
+                    <button onclick="window.acceptMobileOrder('${o.id}')" style="flex:2; padding:12px; background:#10b981; color:white; border:none; border-radius: 8px; font-weight: bold; font-size:12px; box-shadow: 0 2px 4px rgba(16,185,129,0.3); cursor:pointer;">📥 Accept & Copy to POS</button>
+                </div>`;
+        } else {
+            statusBadge = `<span style="background:#e0f2fe; color:#0284c7; padding:4px 8px; border-radius:4px; font-size:10px; font-weight:bold; border: 1px solid #bae6fd;">🍳 PREPARING</span>`;
+            actionButtons = `
+                <div style="display:flex; gap:10px; margin-top: 15px;">
+                    <button onclick="window.markMobileOrderReady('${o.id}')" style="flex:1; padding:12px; background:#3b82f6; color:white; border:none; border-radius: 8px; font-weight: bold; font-size:13px; box-shadow: 0 4px 6px rgba(59,130,246,0.3); cursor:pointer;">🛵 Mark Ready / Dispatch</button>
+                </div>`;
+        }
+
+        // Apply the new arrivalTime to the HTML card
+        html += `<div style="background: white; border: ${isIncoming ? '2px solid #fcd34d' : '1px solid #cbd5e1'}; border-radius: 12px; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                    <div style="display:flex; justify-content:space-between; margin-bottom:10px; align-items: flex-start;">
+                        <div>
+                            <strong style="font-size:15px; color: #0f172a;">${customerName}</strong><br>
+                            <span style="font-size:11px; color:#64748b; font-weight:bold;">${contactInfo} | 🕒 Placed: ${arrivalTime} | ${orderTime}</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <strong style="color:var(--primary); font-size:16px; display:block; margin-bottom: 4px;">₱${(o.totalAmount || 0).toFixed(2)}</strong>
+                            ${statusBadge}
+                        </div>
+                    </div>
+                    
+                    ${locText}
+                    ${posBadge}
+                    
+                    <div style="margin-top: 8px; display: flex; gap: 8px;">${mapBtn}</div>
+                    <div style="margin-top:15px; border-top: 1px dashed #e2e8f0; padding-top: 10px;">${itemsHtml}</div>
+                    ${actionButtons}
+                 </div>`;
+    });
+    container.innerHTML = html;
 };
 
 // ==========================================
@@ -4248,7 +4529,7 @@ window.toggleItemStatus = async function(docId, makeAvailable) {
         
         // 🔥 FIX: Removed "window." prefixes so it correctly uses the imported Firebase functions!
         const itemRef = doc(db, "menu", docId);
-        const itemSnap = await window.getDoc(itemRef);
+        const itemSnap = await getDoc(itemRef);
         let unavailableBranches = itemSnap.data().unavailableAt || [];
 
         // Add or remove this specific branch from the "Sold Out" list
@@ -4259,7 +4540,7 @@ window.toggleItemStatus = async function(docId, makeAvailable) {
         }
 
         // 1. Update Cloud
-        await window.updateDoc(itemRef, { unavailableAt: unavailableBranches });
+        await updateDoc(itemRef, { unavailableAt: unavailableBranches });
         
         // 2. Update local memory immediately!
         let item = window.globalMenuToggleList.find(i => i.id === docId);
@@ -4293,54 +4574,19 @@ window.acceptMobileOrder = async function(docId) {
 
     if (!prepTime) return;
 
-    if (Array.isArray(window.cart) && window.cart.length > 0) {
+    if (typeof cart !== 'undefined' && cart.length > 0) {
         if (!confirm("You have items in your current cart. Overwrite them with this mobile order?")) return;
     }
 
-    const incomingOrderType = order.orderType || 'Take-Out';
-    const numberOrUndefined = value => {
-        const parsed = parseFloat(value);
-        return Number.isFinite(parsed) ? parsed : undefined;
-    };
-    window.cart = order.items.map(item => {
-        const qty = numberOrUndefined(item.qty) ?? numberOrUndefined(item.quantity) ?? 1;
-        const basePrice = numberOrUndefined(item.basePrice) ?? numberOrUndefined(item.price) ?? numberOrUndefined(item.variantPrice) ?? 0;
-        const variantPrice = numberOrUndefined(item.variantPrice) ?? numberOrUndefined(item.price) ?? basePrice;
-        const addons = item.addons || {};
-        const addonTotal = Object.values(addons).reduce((sum, addon) => {
-            if (!addon) return sum;
-            return sum + (numberOrUndefined(addon.price) ?? 0) * (numberOrUndefined(addon.qty) ?? 0);
-        }, 0);
-        const discountType = item.discountType || 'none';
-        const discountVal = numberOrUndefined(item.discountVal) ?? 0;
-        const gross = (variantPrice + addonTotal) * qty;
-        const discount = discountType === 'percentage' && discountVal > 0
-            ? gross * discountVal / 100
-            : discountType === 'fixed' && discountVal > 0 ? discountVal : 0;
-        const savedTotal = numberOrUndefined(item.lineTotalFinal);
+    cart = order.items.map(i => ({
+        name: i.name, basePrice: i.price, variantName: 'Standard', variantPrice: i.price,
+        qty: i.quantity, lineTotalFinal: i.price * i.quantity, discountType: 'none', discountVal: 0,
+        addons: i.addons || {}, notes: i.notes || '📱 Mobile App Order'
+    }));
 
-        // Preserve the customer's final line amount, including a valid zero.
-        // Older records without that amount use the existing POS line formula.
-        return {
-            ...item,
-            name: item.name || item.itemName,
-            basePrice,
-            variantName: item.variantName || 'Standard',
-            variantPrice,
-            qty,
-            lineTotalFinal: savedTotal !== undefined && savedTotal >= 0 ? savedTotal : Math.max(0, gross - discount),
-            discountType,
-            discountVal,
-            addons,
-            notes: item.notes ?? '📱 Mobile App Order',
-            orderType: item.orderType || incomingOrderType
-        };
-    });
-
-    const customerNameInput = document.getElementById('finalCustomerName');
-    if (customerNameInput) customerNameInput.value = order.customerName || order.name || '';
+    document.getElementById('finalCustomerName').value = order.customerName;
     let orderTypeDrop = document.getElementById('mainOrderType');
-    if (orderTypeDrop) orderTypeDrop.value = incomingOrderType;
+    if (orderTypeDrop && order.orderType) orderTypeDrop.value = order.orderType;
 
     // 🔥 UPDATE FIREBASE SO CUSTOMER CAN TRACK IT (DO NOT DELETE IT YET!)
     await window.updateDoc(window.doc(window.db, "incoming_orders", docId), {
@@ -4353,10 +4599,10 @@ window.acceptMobileOrder = async function(docId) {
     window.activeMobileOrderCode = order.orderCode || docId; // Pulls TKDL-12345
     window.isActiveOrderMobile = true;
 
-    if (typeof window.renderCart === 'function') window.renderCart();
-    const legacyModal = document.getElementById('mobileOrdersModal');
-    if (legacyModal) legacyModal.style.display = 'none';
-    if (typeof window.switchView === 'function') window.switchView('pos');
+    let incomingOrderType = order.orderType || 'Take-Out';
+
+    if (typeof renderCart === 'function') renderCart();
+    closeModal('mobileOrdersModal');
 };
 
 window.rejectMobileOrder = async function(docId) {
@@ -4395,10 +4641,10 @@ window.toggleGlobalDelivery = async function() {
     if (!confirm(`Are you sure you want to turn Delivery ${newState ? 'ON' : 'OFF'} for all customers across all branches?`)) return;
     
     try {
-        await window.setDoc(doc(db, "settings", "global_delivery"), { 
+        await setDoc(doc(db, "settings", "global_delivery"), { 
             enabled: newState,
             lastChangedBy: localStorage.getItem('cashierName') || 'Cashier',
-            timestamp: window.serverTimestamp()
+            timestamp: serverTimestamp()
         }, { merge: true });
     } catch(e) {
         console.error("Delivery Toggle Error", e);
@@ -4438,8 +4684,8 @@ window.submitGrabEarnings = async function() {
     btn.innerText = "Saving..."; btn.disabled = true;
 
     try {
-        await window.addDoc(collection(db, "grab_payouts"), {
-            dateStr: dateVal, amount: amount, branch: branch, cashier: cashier, timestamp: window.serverTimestamp()
+        await addDoc(collection(db, "grab_payouts"), {
+            dateStr: dateVal, amount: amount, branch: branch, cashier: cashier, timestamp: serverTimestamp()
         });
         alert(`✅ Grab Net Earnings of ₱${amount.toFixed(2)} logged for ${dateVal}!`);
         document.getElementById('grabEarningsModal').style.display = 'none';
@@ -4571,7 +4817,7 @@ setTimeout(() => {
     let safeBranch = localStorage.getItem('takodeal_device_branch');
     if (!safeBranch) return;
 
-    onSnapshot(window.query(collection(db, "dispatch_logs"), window.where("toBranch", "==", safeBranch), window.where("status", "in", ["In Transit", "Arrived"])), (snap) => {
+    onSnapshot(query(collection(db, "dispatch_logs"), where("toBranch", "==", safeBranch), where("status", "in", ["In Transit", "Arrived"])), (snap) => {
         window.incomingDeliveriesList = [];
         snap.forEach(doc => window.incomingDeliveriesList.push({ id: doc.id, ...doc.data() }));
 
@@ -4792,18 +5038,18 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
             }
 
             if (!item.isMissing && actualBaseQty > 0) {
-                const targetQ = window.query(collection(db, "inventory"), window.where("branch", "==", safeBranch), window.where("name", "==", item.item));
-                const targetSnap = await window.getDocs(targetQ);
+                const targetQ = query(collection(db, "inventory"), where("branch", "==", safeBranch), where("name", "==", item.item));
+                const targetSnap = await getDocs(targetQ);
 
                 let oldStockForLog = 0;
 
                 if (targetSnap.empty) {
                     // 🔥 THE NEW ITEM CLONE FIX: Fetch HQ Master Data to perfectly copy the image and settings!
-                    const hqQ = window.query(collection(db, "inventory"), window.where("branch", "==", "Main Office"), window.where("name", "==", item.item));
-                    const hqSnap = await window.getDocs(hqQ);
+                    const hqQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"), where("name", "==", item.item));
+                    const hqSnap = await getDocs(hqQ);
                     let hqData = hqSnap.empty ? {} : hqSnap.docs[0].data();
 
-                    await window.addDoc(collection(db, "inventory"), { 
+                    await addDoc(collection(db, "inventory"), { 
                         branch: safeBranch, 
                         name: item.item, 
                         uom: hqData.uom || baseUom, 
@@ -4829,36 +5075,36 @@ window.submitGroupedDispatch = async function(groupKey, encodedItems) {
                     let baseStockMath = originalStock < 0 ? 0 : originalStock;
                     let newStock = baseStockMath + actualBaseQty;
 
-                    await window.updateDoc(tRef, { currentStock: newStock });
+                    await updateDoc(tRef, { currentStock: newStock });
                 }
 
                 // Add a note in the Manager's Trace Ledger so they know the ghost debt was wiped!
                 let resetNote = oldStockForLog < 0 ? ` (Wiped ${oldStockForLog.toFixed(2)} negative ghost debt)` : '';
 
-                await window.addDoc(collection(db, "stock_logs"), {
+                await addDoc(collection(db, "stock_logs"), {
                     branch: safeBranch, item: item.item, uom: baseUom, oldQty: oldStockForLog,
                     newQty: (oldStockForLog < 0 ? 0 : oldStockForLog) + actualBaseQty, variance: actualBaseQty, 
-                    type: "Delivery Received", note: `Group Batch Shipment Confirmed${resetNote}`, user: localStorage.getItem('cashierName') || 'System', timestamp: window.serverTimestamp()
+                    type: "Delivery Received", note: `Group Batch Shipment Confirmed${resetNote}`, user: localStorage.getItem('cashierName') || 'System', timestamp: serverTimestamp()
                 });
             }
 
-            await window.updateDoc(doc(db, "dispatch_logs", item.id), {
+            await updateDoc(doc(db, "dispatch_logs", item.id), {
                 status: exceptionStatus,
                 receivedQty: actualBaseQty, 
                 variance: varianceBase,     
                 receivedDisplayQty: item.actualDisplayQty, 
-                receivedAt: window.serverTimestamp(),
+                receivedAt: serverTimestamp(),
                 receivedBy: localStorage.getItem('cashierName') || 'Cashier',
                 receivingRemarks: item.remarks
             });
 
             if (item.isMissing || varianceBase !== 0) {
-                await window.addDoc(collection(db, "manager_alerts"), {
+                await addDoc(collection(db, "manager_alerts"), {
                     type: "DELIVERY_DISCREPANCY",
                     branch: safeBranch,
                     cashier: localStorage.getItem('cashierName') || 'Cashier',
                     message: `SH_ALERT: ${item.item} delivery discrepancy flagged at ${safeBranch}. Status: ${exceptionStatus}. Expected: ${expectedDisplayQty}, Got: ${item.actualDisplayQty}. Note: "${item.remarks || 'No remarks'}"`,
-                    timestamp: window.serverTimestamp(),
+                    timestamp: serverTimestamp(),
                     isRead: false
                 });
             }
@@ -5480,10 +5726,10 @@ window.toggleMobileOrderingStatus = async function() {
     btn.innerText = "⏳..."; btn.disabled = true;
 
     try {
-        await window.setDoc(doc(db, "settings", "status_" + branch), { 
+        await setDoc(doc(db, "settings", "status_" + branch), { 
             mobileOrdersActive: newState,
             lastUpdatedBy: localStorage.getItem('cashierName') || 'System',
-            lastUpdated: window.serverTimestamp()
+            lastUpdated: serverTimestamp()
         }, { merge: true });
         
     } catch(e) {
@@ -6172,7 +6418,7 @@ window.stockReqPoUnsubscribe = null;
 window.listenToStockRequests = function(branch) {
     if (window.stockReqPoUnsubscribe) window.stockReqPoUnsubscribe();
 
-    const poQ = window.query(collection(db, "purchase_orders"), window.where("branch", "==", branch));
+    const poQ = query(collection(db, "purchase_orders"), where("branch", "==", branch));
     
     window.stockReqPoUnsubscribe = onSnapshot(poQ, (poSnap) => {
         let allOrders = [];
@@ -6897,11 +7143,11 @@ window.submitSanctionReply = async function() {
         const canvas = document.getElementById('signatureCanvas');
         const signatureDataUrl = canvas.toDataURL('image/png');
 
-        await window.updateDoc(doc(db, "hr_sanctions", sanctionId), {
+        await updateDoc(doc(db, "hr_sanctions", sanctionId), {
             staffReply: replyText,
             signatureBase64: signatureDataUrl, // Saves the drawing to the cloud!
             status: "Replied",
-            repliedAt: window.serverTimestamp()
+            repliedAt: serverTimestamp()
         });
 
         Swal.fire('✅ Submitted', 'Your explanation and signature have been securely logged. The POS is now unlocked.', 'success');
@@ -7005,8 +7251,8 @@ window.checkActiveSanctions = async function(staffName) {
     if (!staffName) return;
     
     try {
-        const q = window.query(collection(db, "hr_sanctions"), window.where("staffName", "==", staffName), window.where("status", "==", "Pending Reply"));
-        const snap = await window.getDocs(q);
+        const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
+        const snap = await getDocs(q);
         
         if (!snap.empty) {
             let sanction = snap.docs[0].data();
@@ -7048,11 +7294,11 @@ window.submitSanctionReply = async function() {
         const canvas = document.getElementById('signatureCanvas');
         const signatureDataUrl = canvas.toDataURL('image/png');
 
-        await window.updateDoc(doc(db, "hr_sanctions", sanctionId), {
+        await updateDoc(doc(db, "hr_sanctions", sanctionId), {
             staffReply: replyText,
             signatureBase64: signatureDataUrl, // Saves the drawing to the cloud!
             status: "Replied",
-            repliedAt: window.serverTimestamp()
+            repliedAt: serverTimestamp()
         });
 
         Swal.fire('✅ Submitted', 'Your explanation and signature have been securely logged. The POS is now unlocked.', 'success');
@@ -7083,7 +7329,7 @@ window.loadSopView = async function() {
     if (Object.keys(window.cashierSopData).length === 0) {
         select.innerHTML = '<option value="">⏳ Downloading checklists...</option>';
         try {
-            const docSnap = await window.getDoc(doc(db, "settings", "sop_" + branch));
+            const docSnap = await getDoc(doc(db, "settings", "sop_" + branch));
             if (docSnap.exists() && docSnap.data().roles) {
                 window.cashierSopData = docSnap.data().roles;
             } else {
@@ -7260,13 +7506,13 @@ window.submitSopChecklist = async function() {
     try {
         let score = Math.round((completedTasks / totalTasks) * 100);
 
-        await window.addDoc(collection(db, "sop_logs"), {
+        await addDoc(collection(db, "sop_logs"), {
             branch: branch,
             staffName: cashierName,
             roleName: role,
             tasks: window.currentSopTasks,
             scorePercentage: score,
-            timestamp: window.serverTimestamp()
+            timestamp: serverTimestamp()
         });
 
         Swal.fire({
@@ -7377,8 +7623,8 @@ window.loadKitchenPrepHistory = async function() {
     today.setHours(0,0,0,0);
 
     try {
-        const q = window.query(collection(db, "stock_logs"), window.where("branch", "==", branch), window.where("timestamp", ">=", today));
-        const snap = await window.getDocs(q);
+        const q = query(collection(db, "stock_logs"), where("branch", "==", branch), where("timestamp", ">=", today));
+        const snap = await getDocs(q);
         
         let logs = [];
         snap.forEach(doc => {
@@ -7429,7 +7675,7 @@ window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
         
         // 1. Fetch the exact log so we know exactly how many batches they made!
         const logRef = doc(db, "stock_logs", logId);
-        const logSnap = await window.getDoc(logRef);
+        const logSnap = await getDoc(logRef);
         
         if (!logSnap.exists()) {
             return Swal.fire('Error', 'This log has already been deleted.', 'error');
@@ -7439,18 +7685,18 @@ window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
         let purchQtyToReturn = logData.purchQty || 1; // Grab the batch multiplier
 
         // 2. Deduct the finished product from the shelf
-        const q = window.query(collection(db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", itemName));
-        const snap = await window.getDocs(q);
+        const q = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", itemName));
+        const snap = await getDocs(q);
         
         if(!snap.empty) {
             let itemRef = snap.docs[0].ref;
             let currentStock = parseFloat(snap.docs[0].data().currentStock) || 0;
-            await window.updateDoc(itemRef, { currentStock: currentStock - varianceAmount });
+            await updateDoc(itemRef, { currentStock: currentStock - varianceAmount });
         }
 
         // 3. 🔥 THE UPGRADE: Auto-replenish Raw Ingredients using the BOM!
-        const bomQ = window.query(collection(db, "bom"), window.where("menuItem", "==", itemName));
-        const bomSnap = await window.getDocs(bomQ);
+        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
+        const bomSnap = await getDocs(bomQ);
 
         if (!bomSnap.empty) {
             for (let bomDoc of bomSnap.docs) {
@@ -7458,8 +7704,8 @@ window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
                 let rawIngredient = recipe.ingredientName;
                 let amountToReturn = (recipe.qty || 0) * purchQtyToReturn;
 
-                const rawQ = window.query(collection(db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", rawIngredient));
-                const rawSnap = await window.getDocs(rawQ);
+                const rawQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", rawIngredient));
+                const rawSnap = await getDocs(rawQ);
 
                 if (!rawSnap.empty) {
                     let rawRef = rawSnap.docs[0].ref;
@@ -7467,23 +7713,23 @@ window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
                     let currentRawStock = parseFloat(rawData.currentStock) || 0;
 
                     // Add it back to the vault!
-                    await window.updateDoc(rawRef, { currentStock: currentRawStock + amountToReturn });
+                    await updateDoc(rawRef, { currentStock: currentRawStock + amountToReturn });
 
                     // Log the replenishment in the ledger for the Manager
-                    await window.addDoc(collection(db, "stock_logs"), {
+                    await addDoc(collection(db, "stock_logs"), {
                         branch: branch, item: rawIngredient, uom: rawData.uom || 'units',
                         oldQty: currentRawStock, newQty: currentRawStock + amountToReturn,
                         variance: amountToReturn,
                         type: "Kitchen Prep Undone",
                         note: `Returned raw ingredients from voided ${purchQtyToReturn} batch(es) of ${itemName}`,
-                        user: localStorage.getItem('cashierName') || 'System', timestamp: window.serverTimestamp()
+                        user: localStorage.getItem('cashierName') || 'System', timestamp: serverTimestamp()
                     });
                 }
             }
         }
 
         // 4. Delete the old log
-        await window.deleteDoc(logRef); 
+        await deleteDoc(logRef); 
         
         Swal.fire({ title: '✅ Undone!', text: 'Prep batch reversed and raw ingredients returned to the vault.', icon: 'success', customClass: { popup: 'rounded-2xl' } });
         window.loadKitchenPrepHistory(); // Refresh table
@@ -8551,7 +8797,7 @@ window.submitBulletinAcknowledgment = async function() {
         let cashier = localStorage.getItem('cashierName') || 'Staff';
 
         // 1. Save Signature to Database
-        await window.addDoc(collection(db, "acknowledgments"), {
+        await addDoc(collection(db, "acknowledgments"), {
             announcementId: announcement.id,
             staffName: cashier,
             signature: signatureBase64,
@@ -8709,12 +8955,12 @@ window.loadBulletinHistory = async function() {
 
     try {
         // 1. Get all active announcements from HQ
-        const annQ = window.query(collection(db, "announcements"), window.where("active", "==", true));
-        const annSnap = await window.getDocs(annQ);
+        const annQ = query(collection(db, "announcements"), where("active", "==", true));
+        const annSnap = await getDocs(annQ);
         
         // 2. Get this specific cashier's signatures
-        const ackQ = window.query(collection(db, "acknowledgments"), window.where("staffName", "==", cashierName));
-        const ackSnap = await window.getDocs(ackQ);
+        const ackQ = query(collection(db, "acknowledgments"), where("staffName", "==", cashierName));
+        const ackSnap = await getDocs(ackQ);
         
         // Map the signatures to the announcement ID
         let signatures = {};
@@ -8946,11 +9192,11 @@ window.submitSignature = async function(announcementId) {
     let cashierName = localStorage.getItem('cashierName') || (window.sessionUser ? window.sessionUser.cashierName : 'Unknown Staff');
 
     try {
-        await window.addDoc(collection(db, "acknowledgments"), {
+        await addDoc(collection(db, "acknowledgments"), {
             announcementId: announcementId,
             staffName: cashierName,
             signature: sigDataUrl,
-            timestamp: window.serverTimestamp()
+            timestamp: serverTimestamp()
         });
 
         Swal.fire({
@@ -8991,8 +9237,8 @@ window.fetchLoginRanking = async function() {
     try {
         // 🔥 THE FIX 1: Instantly abort if the tablet is offline
         if (!window.isAppOnline) {
-            listEl.innerHTML = '<div style="font-size: 13px; color: #fca5a5; font-weight: bold; text-align: center; padding: 10px 0;">Leaderboard updates soon</div>';
-            quoteEl.innerHTML = "Ready for the next order!";
+            listEl.innerHTML = '<div style="font-size: 13px; color: #fca5a5; font-weight: bold; text-align: center; padding: 10px 0;">Offline - Leaderboard Paused</div>';
+            quoteEl.innerHTML = "Ready for offline sales!";
             return;
         }
 
@@ -9100,7 +9346,7 @@ window.loadKitchenPrep = async function() {
 
     try {
         // 1. Fetch Global Allowed Categories
-        const configSnap = await window.getDoc(doc(db, "settings", "global_pos_config"));
+        const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
         let allowedCats = ["Prepared Batch"]; 
         if (configSnap.exists() && configSnap.data().kitchenPrepCats && configSnap.data().kitchenPrepCats.length > 0) {
             allowedCats = configSnap.data().kitchenPrepCats.map(c => c.trim().toLowerCase());
@@ -9108,15 +9354,15 @@ window.loadKitchenPrep = async function() {
 
         // 2. 🔥 NEW: Fetch Branch-Specific Allowed Prep Items Filter!
         let allowedPrepItems = [];
-        const bQ = window.query(collection(db, "branches"), window.where("name", "==", branch));
-        const bSnap = await window.getDocs(bQ);
+        const bQ = query(collection(db, "branches"), where("name", "==", branch));
+        const bSnap = await getDocs(bQ);
         if (!bSnap.empty && bSnap.docs[0].data().allowedPrepItems) {
             allowedPrepItems = bSnap.docs[0].data().allowedPrepItems;
         }
 
         // 3. Fetch Inventory
-        const q = window.query(collection(db, "inventory"), window.where("branch", "==", branch));
-        const snap = await window.getDocs(q);
+        const q = query(collection(db, "inventory"), where("branch", "==", branch));
+        const snap = await getDocs(q);
         
         let html = '';
         let hasItems = false;
@@ -9269,7 +9515,7 @@ window.confirmPrepCart = async function() {
 
         for (let item of window.kitchenPrepCart) {
             const invRef = doc(db, "inventory", item.id);
-            const invSnap = await window.getDoc(invRef);
+            const invSnap = await getDoc(invRef);
             
             if (invSnap.exists()) {
                 let invData = invSnap.data();
@@ -9278,10 +9524,10 @@ window.confirmPrepCart = async function() {
                 let convRate = parseFloat(invData.conversionRate) || parseFloat(invData.conversion) || 1;
                 let baseQtyToAdd = item.purchQty * convRate;
 
-                await window.updateDoc(invRef, { currentStock: currentStock + baseQtyToAdd });
+                await updateDoc(invRef, { currentStock: currentStock + baseQtyToAdd });
 
-                const bomQ = window.query(collection(db, "bom"), window.where("menuItem", "==", item.name));
-                const bomSnap = await window.getDocs(bomQ);
+                const bomQ = query(collection(db, "bom"), where("menuItem", "==", item.name));
+                const bomSnap = await getDocs(bomQ);
 
                 if (!bomSnap.empty) {
                     for (let bomDoc of bomSnap.docs) {
@@ -9289,20 +9535,20 @@ window.confirmPrepCart = async function() {
                         let rawIngredient = recipe.ingredientName;
                         let totalAmountToDeduct = (recipe.qty || 0) * item.purchQty; 
 
-                        const rawQ = window.query(collection(db, "inventory"), window.where("branch", "==", item.branch), window.where("name", "==", rawIngredient));
-                        const rawSnap = await window.getDocs(rawQ);
+                        const rawQ = query(collection(db, "inventory"), where("branch", "==", item.branch), where("name", "==", rawIngredient));
+                        const rawSnap = await getDocs(rawQ);
 
                         if (!rawSnap.empty) {
                             let rawRef = rawSnap.docs[0].ref;
                             let rawCurrentStock = rawSnap.docs[0].data().currentStock || 0;
-                            await window.updateDoc(rawRef, { currentStock: rawCurrentStock - totalAmountToDeduct });
+                            await updateDoc(rawRef, { currentStock: rawCurrentStock - totalAmountToDeduct });
                         } else {
                             if (!missingItems.includes(rawIngredient)) missingItems.push(rawIngredient);
                         }
                     }
                 }
 
-                await window.addDoc(collection(db, "stock_logs"), {
+                await addDoc(collection(db, "stock_logs"), {
                     branch: item.branch, item: item.name, variance: baseQtyToAdd, uom: item.baseUom,
                     purchUom: item.purchUom, purchQty: item.purchQty, 
                     type: "End-of-Shift Kitchen Prep", 
@@ -10139,8 +10385,8 @@ window.checkPredictiveStockLevels = async function() {
         fourteenDaysAgo.setDate(today.getDate() - 14);
         
         // 1. Calculate Local Burn Rate (Last 14 Days)
-        const logsQ = window.query(collection(db, "stock_logs"), window.where("branch", "==", branch), window.where("timestamp", ">=", fourteenDaysAgo));
-        const logsSnap = await window.getDocs(logsQ);
+        const logsQ = query(collection(db, "stock_logs"), where("branch", "==", branch), where("timestamp", ">=", fourteenDaysAgo));
+        const logsSnap = await getDocs(logsQ);
 
         let burnData = {};
         logsSnap.forEach(docSnap => {
@@ -10156,8 +10402,8 @@ window.checkPredictiveStockLevels = async function() {
         });
 
         // 2. Fetch Live Stock and compare against the timeline!
-        const invQ = window.query(collection(db, "inventory"), window.where("branch", "==", branch));
-        const invSnap = await window.getDocs(invQ);
+        const invQ = query(collection(db, "inventory"), where("branch", "==", branch));
+        const invSnap = await getDocs(invQ);
         
         let criticalCount = 0;
         window.predictedCriticalItems = {}; 
@@ -11021,1857 +11267,3 @@ window.compressImage = function(file, maxWidth = 800, maxHeight = 800, quality =
         reader.onerror = error => reject(error);
     });
 };
-
-
-/* Append this and pos-offline-integration.js to the END of Cashier main.js.
-   Does not alter the POS UI. IndexedDB is the authoritative local sale ledger. */
-function createTakodealOfflineEngine({ store, cloud, now, uuid, onStatus = () => {} }) {
-  let busy = false;
-  function deductions(payload, bom) {
-    const totals = Object.create(null);
-    const add = (name, qty) => {
-      if (!name || !Number.isFinite(qty) || qty < 0) throw new Error('Invalid recipe quantity');
-      if (qty > 0) totals[name] = (totals[name] || 0) + qty;
-    };
-    for (const item of payload.cart || []) {
-      const name = item.name || item.itemName;
-      const qty = Number(item.qty ?? 1);
-      if (!name || !Number.isFinite(qty) || qty <= 0) throw new Error('Invalid order quantity');
-      const type = String(item.orderType || payload.orderType || 'Dine-In').toLowerCase();
-      for (const row of bom.filter(row => row.menuItem === name)) {
-        let amount = Number(row.qty || 0) * qty;
-        if (String(row.ingredientName).toLowerCase().includes('box') && type.includes('dine-in')) amount /= 2;
-        add(row.ingredientName, amount);
-      }
-      for (const addon of Object.values(item.addons || {})) {
-        if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0)
-          add(addon.linkedIngredient, Number(addon.deductQty) * Number(addon.qty) * qty);
-      }
-    }
-    return { ...totals };
-  }
-  async function accept(payload, options) {
-    if (!Array.isArray(options.bom)) throw new Error('Recipe backup is not ready');
-    if (!payload.branch || !payload.shiftId || payload.shiftId === 'UNKNOWN') throw new Error('No locally recorded shift');
-    if (!Number.isFinite(Number(payload.netTotal)) || Number(payload.netTotal) < 0) throw new Error('Invalid order total');
-    const id = payload.localSaleId || 'pos-' + uuid();
-    const identity = JSON.stringify([payload.branch, payload.shiftId, payload.netTotal,
-      payload.paymentMethod, payload.splitDetails || null, payload.customerName || '',
-      payload.orderType, payload.globalDiscountType || 'none', payload.globalDiscountAmount || 0, payload.cart]);
-    const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity));
-    const fingerprint = Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
-    const existing = await store.get(id);
-    if (existing) {
-      if (existing.fingerprint !== fingerprint) throw new Error('Saved sale identity changed; owner review required');
-      return existing;
-    }
-    const acceptedAt = new Date(now()).toISOString();
-    const clean = JSON.parse(JSON.stringify(payload));
-    const sale = {
-      id, fingerprint, kind: 'sale', state: 'pending', acceptedAt,
-      auditPending: Boolean(options.audit),
-      payload: { ...clean, localSaleId: id, receiptId: clean.mobileOrderCode || clean.receiptId || id,
-        localTimestamp: acceptedAt, paymentVerified: String(clean.paymentMethod || 'Cash').toLowerCase() === 'cash' },
-      deductions: deductions(clean, options.bom), effects: options.effects || []
-    };
-    // IDB add, ledger and one-meal-per-day reservation commit together.
-    try { await store.add(sale, options.mealKey || null); }
-    catch (error) {
-      // Another app tab may have committed the same order between get and add.
-      const previous = await store.get(id);
-      if (!previous || previous.fingerprint !== fingerprint) throw error;
-      return previous;
-    }
-    onStatus();
-    return sale;
-  }
-  async function sync({ online = true, resumeAudit = false } = {}) {
-    if (!online || busy) return;
-    busy = true; onStatus();
-    try {
-      const records = await store.list();
-      for (const record of records.sort((a, b) => a.acceptedAt.localeCompare(b.acceptedAt))) {
-        if (record.state === 'rejected') continue;
-        if (record.state === 'synced' && !(resumeAudit && record.auditPending)) continue;
-        if (record.auditPending && !resumeAudit && record.state === 'synced') continue;
-        if (record.kind !== 'sale' && record.kind !== 'operation') throw new Error('Unsupported queued operation');
-        // Cloud adapter uses ONE Firestore transaction for sale, stock and effects.
-        const result = record.kind === 'operation' ? await cloud.commitOperation(record) : await cloud.commit(record, resumeAudit);
-        await store.mark(record.id, {
-          state: result.ownerReview ? 'owner_review' : (result.state || 'synced'), auditPending: result.ownerReview ? record.auditPending : result.inventoryState === 'audit_pending',
-          reviewReason: result.reviewReason || '', syncedAt: new Date(now()).toISOString()
-        }, result.documents || []);
-        await cloud.onResolved?.(record, result);
-      }
-    } finally { busy = false; onStatus(); }
-  }
-  return { accept, sync, deductions, get busy() { return busy; } };
-}
-
-function openTakodealLocalStore(indexedDB) {
-  const opened = new Promise((resolve, reject) => {
-    const request = indexedDB.open('takodeal-pos-local-v2', 1);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      db.createObjectStore('ledger', { keyPath: 'id' });
-      db.createObjectStore('meta');
-      db.createObjectStore('mealClaims');
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error('Close other POS tabs to finish the local database upgrade'));
-  });
-  async function transaction(names, mode, use) {
-    const db = await opened;
-    return new Promise((resolve, reject) => {
-      let tx;
-      try { tx = db.transaction(names, mode, { durability: 'strict' }); }
-      catch { tx = db.transaction(names, mode); }
-      let result;
-      const done = value => { result = value; };
-      tx.oncomplete = () => resolve(result);
-      tx.onerror = tx.onabort = () => reject(tx.error || new Error('Could not save on this tablet'));
-      try { use(tx, done); } catch (error) { tx.abort(); reject(error); }
-    });
-  }
-  return {
-    ready: opened,
-    get(id) { return transaction(['ledger'], 'readonly', (tx, done) => {
-      tx.objectStore('ledger').get(id).onsuccess = event => done(event.target.result);
-    }); },
-    list() { return transaction(['ledger'], 'readonly', (tx, done) => {
-      tx.objectStore('ledger').getAll().onsuccess = event => done(event.target.result);
-    }); },
-    add(record, mealKey, metadata = []) { return transaction(['ledger', 'mealClaims', 'meta'], 'readwrite', tx => {
-      tx.objectStore('ledger').add(record);
-      if (mealKey) tx.objectStore('mealClaims').add({ saleId: record.id }, mealKey);
-      metadata.forEach(([key, value]) => tx.objectStore('meta').put(value, key));
-    }); },
-    mark(id, patch, documents = []) { return transaction(['ledger', 'meta'], 'readwrite', tx => {
-      const table = tx.objectStore('ledger');
-      table.get(id).onsuccess = event => {
-        if (!event.target.result) { tx.abort(); return; }
-        const record = event.target.result;
-        table.put({ ...record, ...patch });
-        if (patch.state === 'rejected' && record.kind === 'operation' && record.type === 'shift-open') {
-          const meta = tx.objectStore('meta'), key = 'local-shift:' + record.branch;
-          meta.get(key).onsuccess = current => {
-            if (current.target.result?.operationId === id)
-              meta.put({ ...current.target.result, active: false, rejected: true }, key);
-          };
-        }
-      };
-      documents.forEach(entry => tx.objectStore('meta').put({ ...entry,
-        data: typeof tkEncode === 'function' ? tkEncode(entry.data) : entry.data,
-        savedAt: Date.now() }, 'document:' + entry.path));
-    }); },
-    meta(key, value) { return transaction(['meta'], value === undefined ? 'readonly' : 'readwrite', (tx, done) => {
-      const table = tx.objectStore('meta');
-      if (value === undefined) table.get(key).onsuccess = event => done(event.target.result);
-      else table.put(value, key);
-    }); },
-    meal(key) { return transaction(['mealClaims'], 'readonly', (tx, done) => {
-      tx.objectStore('mealClaims').get(key).onsuccess = event => done(event.target.result);
-    }); },
-    documents() { return transaction(['meta'], 'readonly', (tx, done) => {
-      tx.objectStore('meta').getAll().onsuccess = event => done(event.target.result.filter(value => value?.path && 'data' in value));
-    }); }
-  };
-}
-
-/* Pure operation journal. One durable tablet record, one cloud commit marker.
-   The caller supplies Firebase/storage adapters; this file has no network calls. */
-function tkEncode(value) {
-  if (value === undefined) throw new Error('An operation contains an undefined value');
-  if (value === null || typeof value !== 'object') {
-    if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Invalid operation amount');
-    return value;
-  }
-  if (value instanceof Date || typeof value.toDate === 'function')
-    return { __tkDate: (value.toDate?.() || value).toISOString() };
-  if (Array.isArray(value)) return value.map(tkEncode);
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, tkEncode(item)]));
-}
-function tkDecode(value) {
-  if (value === null || typeof value !== 'object') return value;
-  if (value.__tkDate) { const date = new Date(value.__tkDate); date.toDate = () => new Date(date); return date; }
-  if (Array.isArray(value)) return value.map(tkDecode);
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, tkDecode(item)]));
-}
-function tkApplyWrite(before, write) {
-  if (write.mode === 'delete') return null;
-  const result = write.mode === 'create' || write.mode === 'set' ? {} : { ...(before || {}) };
-  for (const [key, value] of Object.entries(write.data || {})) {
-    if (key.includes('.')) throw new Error('Nested field paths require a tailored journal action');
-    result[key] = value && typeof value === 'object' && '__tkIncrement' in value
-      ? (Number(result[key]) || 0) + value.__tkIncrement : value;
-  }
-  if (write.restock) {
-    const stock = Number(before?.currentStock) || 0, cost = Number(before?.cost) || 0;
-    result.currentStock = stock + write.restock.quantity;
-    result.cost = result.currentStock > 0 ? (stock * cost + write.restock.cost) / result.currentStock
-      : write.restock.cost / write.restock.quantity;
-  }
-  return result;
-}
-async function tkFingerprint(value) {
-  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(value)));
-  return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
-}
-function createTakodealOperationJournal({ store, now = Date.now, uuid = () => crypto.randomUUID() }) {
-  async function accept({ id = 'op-' + uuid(), branch, deviceId, type, writes, guards = [], review = '', evidence = {}, attachments = [] }, metadata = []) {
-    if (!branch || !deviceId || !type || !Array.isArray(writes) || !writes.length)
-      throw new Error('The tablet action is incomplete');
-    if (writes.length > 400) throw new Error('This action is too large; ask the owner to split it');
-    const encoded = tkEncode({ writes, guards, evidence });
-    if (new TextEncoder().encode(JSON.stringify(encoded)).byteLength > 350000)
-      throw new Error('This record is too large to sync safely; reduce its photo size or split the action');
-    for (const write of encoded.writes) {
-      if (!/^[^/]+\/[^/]+$/.test(write.path) || !['create', 'set', 'merge', 'update', 'delete'].includes(write.mode))
-        throw new Error('Invalid action document');
-    }
-    const fingerprint = await tkFingerprint([branch, deviceId, type, encoded, review,
-      await Promise.all(attachments.map(async file => [file.path, file.type, file.bytes.byteLength,
-        await tkFingerprint(Array.from(new Uint8Array(file.bytes)))]))]);
-    const previous = await store.get(id);
-    if (previous) {
-      if (previous.fingerprint !== fingerprint) throw new Error('Saved action changed; owner review required');
-      return previous;
-    }
-    const record = { id, kind: 'operation', state: 'pending', acceptedAt: new Date(now()).toISOString(),
-      fingerprint, branch, deviceId, type, review, ...encoded, attachments };
-    try { await store.add(record, null, metadata); }
-    catch (error) {
-      const old = await store.get(id);
-      if (!old || old.fingerprint !== fingerprint) throw error;
-      return old;
-    }
-    return record;
-  }
-  return { accept };
-}
-
-async function tkCommitOperation(record, adapter, resolution) {
-  const marker = adapter.doc('pos_operation_commits/' + record.id);
-  const proposal = adapter.doc('pos_operation_reviews/' + record.id);
-  if ((record.attachments || []).length && adapter.read && !resolution) {
-    const snap = await adapter.read(marker);
-    if (snap.exists()) {
-      const data = snap.data();
-      if (data.fingerprint !== record.fingerprint || data.branch !== record.branch) throw new Error('Cloud action identity differs');
-      return data.state === 'owner_review' ? { ownerReview: true, reviewReason: data.reviewReason }
-        : { state: data.state, documents: data.documents || [] };
-    }
-  }
-  // A stored immutable proposal contains only document data, never attachment bytes.
-  const proposalData = { id: record.id, branch: record.branch, deviceId: record.deviceId, type: record.type,
-    acceptedAt: new Date(record.acceptedAt), fingerprint: record.fingerprint, writes: record.writes,
-    guards: record.guards, evidence: record.evidence, attachmentPaths: (record.attachments || []).map(file => file.path) };
-  let writes = record.writes;
-  const uploadURLs = new Map();
-  for (const file of record.attachments || []) {
-    // A stable object name and the same bytes make Storage retries safe.
-    uploadURLs.set(file.path, await adapter.upload(file));
-  }
-  const substitute = value => {
-    if (value === null || typeof value !== 'object') return value;
-    if (value.__tkAttachment) {
-      if (!uploadURLs.has(value.__tkAttachment)) throw new Error('The saved receipt attachment is missing');
-      return uploadURLs.get(value.__tkAttachment);
-    }
-    if (Array.isArray(value)) return value.map(substitute);
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, substitute(item)]));
-  };
-  writes = writes.map(write => ({ ...write, data: substitute(write.data) }));
-  return adapter.transaction(async tx => {
-    const saved = await tx.get(marker);
-    if (saved.exists()) {
-      const data = saved.data();
-      if (data.fingerprint !== record.fingerprint || data.branch !== record.branch)
-        throw new Error('Cloud action identity differs; owner review required');
-      if (data.state !== 'owner_review') return { state: data.state, documents: data.documents || [] };
-      if (!resolution) return { ownerReview: true, reviewReason: data.reviewReason };
-    } else if (resolution) throw new Error('The review marker is missing');
-    const paths = [...new Set([...record.guards.map(guard => guard.path), ...writes.map(write => write.path)])];
-    const snapshots = await Promise.all(paths.map(path => tx.get(adapter.doc(path))));
-    const before = new Map(paths.map((path, index) => [path, snapshots[index].exists() ? tkEncode(snapshots[index].data()) : null]));
-    if (resolution?.action === 'reject') {
-      // Return the actual shared records so the tablet removes its rejected
-      // projection without reverting to an older prepared stock baseline.
-      const documents = paths.map(path => ({ path, data: before.get(path) }));
-      tx.update(marker, { state: 'rejected', documents, resolvedAt: adapter.serverTime(), resolvedBy: resolution.owner,
-        resolutionNote: resolution.note });
-      tx.update(proposal, { status: 'Rejected', resolvedBy: resolution.owner, resolutionNote: resolution.note });
-      return { state: 'rejected', documents };
-    }
-    let conflict = '';
-    for (const guard of record.guards) {
-      const current = before.get(guard.path);
-      if (guard.exists !== undefined && Boolean(current) !== guard.exists) conflict ||= 'A shared record was created or removed';
-      for (const [key, expected] of Object.entries(guard.fields || {}))
-        if (JSON.stringify(current?.[key] ?? null) !== JSON.stringify(expected)) conflict ||= 'A shared record changed: ' + guard.path;
-    }
-    for (const write of writes) {
-      if (write.mode === 'create' && before.get(write.path)) conflict ||= 'A target document already exists';
-      if (write.mode === 'update' && !before.get(write.path)) conflict ||= 'A required target document is missing';
-    }
-    const reason = conflict || record.review;
-    if (conflict && record.type === 'settlement')
-      throw new Error('Branch records changed during settlement. Refresh the clearance totals and review them again.');
-    if (reason && !resolution) {
-      tx.set(proposal, { ...proposalData, writes, status: 'Pending', reviewReason: reason, receivedAt: adapter.serverTime() });
-      tx.set(marker, { branch: record.branch, fingerprint: record.fingerprint, state: 'owner_review', reviewReason: reason });
-      return { ownerReview: true, reviewReason: reason };
-    }
-    // Approval never bypasses stale preconditions. A changed shared record needs
-    // rejection and a fresh, reconciled action, rather than a blind overwrite.
-    if (resolution && conflict)
-      throw new Error('The shared records changed again. Reject and enter a reconciled action.');
-    const output = new Map(before);
-    for (const write of writes) {
-      const current = output.get(write.path);
-      if (write.mode === 'create' && current) throw new Error('Cannot approve over an existing document');
-      if (write.mode === 'update' && !current) throw new Error('Cannot approve a missing document');
-      output.set(write.path, tkApplyWrite(current, write));
-    }
-    const documents = [...new Set(writes.map(write => write.path))].map(path => ({ path, data: output.get(path), appliedBy: record.id }));
-    // All reads above precede all writes below. Marker and effects commit together.
-    for (const entry of documents) entry.data === null ? tx.delete(adapter.doc(entry.path))
-      : tx.set(adapter.doc(entry.path), tkDecode(entry.data));
-    tx.set(marker, { branch: record.branch, fingerprint: record.fingerprint, state: 'synced',
-      committedAt: adapter.serverTime(), documents });
-    if (resolution) tx.update(proposal, { status: 'Approved', resolvedBy: resolution.owner, resolutionNote: resolution.note,
-      resolvedWrites: writes, resolvedGuards: record.guards });
-    return { state: 'synced', documents };
-  });
-}
-
-// Owner-only reconstruction of a received payment held outside an active shift.
-// Original evidence is preserved; quantities are frozen, while stock deltas use
-// the current inventory. The caller supplies fresh server snapshots.
-function tkReconcileSale(record, targetShift, inventory, effects, owner, note) {
-  const payload = record.payload, guards = [], writes = [];
-  if (targetShift.data.branch !== payload.branch || targetShift.data.active !== true || targetShift.data.status === 'Closed')
-    throw new Error('Choose an active, unsettled shift in the same branch');
-  guards.push({ path: targetShift.path, exists: true, fields: tkEncode(targetShift.data) });
-  writes.push({ path: targetShift.path, mode: 'update', data: { saleRevision: { __tkIncrement: 1 } } });
-  writes.push({ path: 'transactions/' + record.id, mode: 'create', data: tkEncode({ ...payload,
-    shiftId: targetShift.path.split('/')[1], originalShiftId: payload.shiftId, assignedBy: owner, assignmentNote: note,
-    timestamp: new Date(record.acceptedAt), localOrderFingerprint: record.fingerprint, syncVersion: 2,
-    inventoryState: 'applied', stockDeductionPlan: record.deductions }) });
-  for (const [name, quantity] of Object.entries(record.deductions)) {
-    const entry = inventory.find(item => item.data?.name === name && item.data.branch === payload.branch);
-    if (!entry || inventory.filter(item => item.data?.name === name && item.data.branch === payload.branch).length !== 1)
-      throw new Error('Stock mapping requires reconciliation: ' + name);
-    guards.push({ path: entry.path, exists: true, fields: { branch: payload.branch, name } });
-    writes.push({ path: entry.path, mode: 'update', data: { currentStock: { __tkIncrement: -quantity } } });
-  }
-  for (const effect of record.effects) {
-    const path = effect.collection + '/' + effect.id, old = effects.find(item => item.path === path)?.data || null;
-    guards.push({ path, exists: Boolean(old), fields: old ? tkEncode(old) : {} });
-    if (effect.mode === 'mobile-paid') {
-      if (!old || (old.paymentStatus === 'paid' && old.receiptId && old.receiptId !== payload.receiptId))
-        throw new Error('The customer order payment needs manual reconciliation');
-      writes.push({ path, mode: 'update', data: tkEncode({ paymentStatus: 'paid', receiptId: payload.receiptId, encodedAt: new Date() }) });
-    } else if (effect.mode === 'increment') {
-      writes.push({ path, mode: 'merge', data: Object.fromEntries(Object.entries(effect.data).map(([key, value]) => [key, { __tkIncrement: value }])) });
-    } else if (!old) writes.push({ path, mode: 'create', data: tkEncode({ ...effect.data, timestamp: new Date(record.acceptedAt) }) });
-  }
-  return { writes, guards };
-}
-
-// Append after pos-offline-core.js at the end of Cashier main.js.
-import { runTransaction as tkRunTransaction, getDocsFromServer as tkGetDocsFromServer,
-  getDocFromServer as tkGetDocFromServer } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
-import { getAuth as tkGetAuth, signInAnonymously as tkSignInAnonymously,
-  signOut as tkSignOut } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
-
-(function installTakodealLocalPOS() {
-  if (window.TKOffline) return;
-  const store = openTakodealLocalStore(window.indexedDB);
-  const branch = () => localStorage.getItem('takodeal_device_branch');
-  const device = () => localStorage.getItem('takodeal_device_id');
-  const uuid = () => crypto.randomUUID();
-  let setupProblem = '', syncProblem = '', checkoutProblem = '', prepared = false,
-    lastPrepare = 0, preparing = null, serverSeenAt = 0;
-  const problem = () => setupProblem || syncProblem || checkoutProblem;
-  const snapshotKeys = ['takodeal_offline_menu', 'takodeal_cached_allowed_cats',
-    'takodeal_cached_settings', 'takodeal_cached_categories', 'takodeal_cached_item_layout',
-    'takodeal_cached_addon_layout', 'takodeal_cached_addons', 'takodeal_cached_mixmatch',
-    'takodeal_cashier_cache'];
-  const json = key => { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } };
-  const deadline = (promise, ms = 8000) => {
-    let timer;
-    return Promise.race([promise, new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error('Server confirmation pending')), ms);
-    })]).finally(() => clearTimeout(timer));
-  };
-  const status = () => {
-    const badge = document.getElementById('liveClock')?.nextElementSibling;
-    // A neutral label, never a false claim that the server is online/synced.
-    if (badge) badge.innerHTML = '<span style="color:#cce5c9;font-size:10px;font-weight:800">● POS READY</span>';
-  };
-  window.updateNetworkStatusUI = status;
-  status();
-  const inventoryRefs = new Map();
-    async function commit(record, resumeAudit) {
-    const saleRef = window.doc(window.db, 'transactions', record.id);
-    const refs = [];
-    if (!record.auditPending || resumeAudit) {
-      for (const [name, quantity] of Object.entries(record.deductions)) {
-        const key = JSON.stringify([record.payload.branch, name]);
-        if (!inventoryRefs.has(key)) {
-          const result = await tkGetDocsFromServer(window.query(window.collection(window.db, 'inventory'),
-            window.where('branch', '==', record.payload.branch), window.where('name', '==', name)));
-          if (result.size !== 1) throw new Error('Inventory mapping requires owner review: ' + name);
-          inventoryRefs.set(key, result.docs[0].ref);
-        }
-        refs.push({ ref: inventoryRefs.get(key), quantity });
-      }
-    }
-    if (refs.length + record.effects.length > 440) throw new Error('Order exceeds the safe transaction size');
-    return tkRunTransaction(window.db, async tx => {
-      const previous = await tx.get(saleRef);
-      if (previous.exists()) {
-        const prior = previous.data();
-        if (prior.localSaleId !== record.id || prior.branch !== record.payload.branch || prior.localOrderFingerprint !== record.fingerprint)
-          throw new Error('Sale identity mismatch; owner review required');
-        if (!['applied', 'audit_pending'].includes(prior.inventoryState))
-          throw new Error('Saved stock application state requires owner reconciliation');
-        if (prior.inventoryState !== 'audit_pending' || !resumeAudit) {
-          const confirmed = await Promise.all(refs.map(entry => tx.get(entry.ref)));
-          return { inventoryState: prior.inventoryState, documents: [{ path: saleRef.path, data: prior },
-            ...confirmed.filter(snap => snap.exists()).map(snap => ({ path: snap.ref.path, data: snap.data() }))] };
-        }
-      }
-      const reviewRef = window.doc(window.db, 'pos_operation_commits', record.id);
-      let acceptedShift = null;
-      if (!previous.exists()) {
-        const marker = await tx.get(reviewRef);
-        if (marker.exists()) {
-          const saved = marker.data();
-          if (saved.branch !== record.payload.branch || saved.fingerprint !== record.fingerprint)
-            throw new Error('Sale review identity mismatch');
-          if (saved.state === 'owner_review') return { ownerReview: true, reviewReason: saved.reviewReason };
-          if (saved.state === 'synced') return { inventoryState: 'applied', documents: saved.documents || [] };
-          throw new Error('A received payment cannot be discarded as a rejected action');
-        }
-        const shift = await tx.get(window.doc(window.db, 'shifts', record.payload.shiftId));
-        if (!shift.exists() || shift.data().branch !== record.payload.branch || shift.data().active !== true
-          || ['Closed', 'Clearance Pending'].includes(shift.data().status)) {
-          const reason = 'The saved sale belongs to a missing, closed or disputed shift. Owner must assign its payment before settlement.';
-          tx.set(window.doc(window.db, 'pos_operation_reviews', record.id), { id: record.id,
-            branch: record.payload.branch, deviceId: record.payload.deviceId, type: 'sale-reconciliation',
-            acceptedAt: new Date(record.acceptedAt), fingerprint: record.fingerprint, writes: [], guards: [],
-            evidence: { sale: tkEncode(record) }, attachmentPaths: [], status: 'Pending', reviewReason: reason,
-            receivedAt: window.serverTimestamp() });
-          tx.set(reviewRef, { branch: record.payload.branch, fingerprint: record.fingerprint, state: 'owner_review', reviewReason: reason });
-          return { ownerReview: true, reviewReason: reason };
-        }
-        acceptedShift = shift;
-      }
-      const inventory = await Promise.all(refs.map(entry => tx.get(entry.ref)));
-      inventory.forEach((snapshot, index) => {
-        if (!snapshot.exists() || snapshot.data().branch !== record.payload.branch)
-          throw new Error('Inventory record moved or deleted: ' + refs[index].ref.id);
-      });
-      // Read every side-effect target before any write. Existing dispatches are preserved.
-      const effectRefs = record.effects.map(effect => window.doc(window.db, effect.collection, effect.id));
-      const effectDocs = previous.exists() ? [] : await Promise.all(effectRefs.map(ref => tx.get(ref)));
-      // OFFLINE-03: reserve the shared daily meal in the same sale transaction.
-      const mealIndex = record.effects.findIndex(effect => effect.collection === 'pos_staff_meal_claims');
-      if (!previous.exists() && mealIndex >= 0 && effectDocs[mealIndex].exists()
-        && effectDocs[mealIndex].data().saleId !== record.id) {
-        const reason = 'Another device already recorded this daily staff meal. Owner must review the additional meal before its salary and stock effects are applied.';
-        tx.set(window.doc(window.db, 'pos_operation_reviews', record.id), { id: record.id,
-          branch: record.payload.branch, deviceId: record.payload.deviceId, type: 'sale-reconciliation',
-          acceptedAt: new Date(record.acceptedAt), fingerprint: record.fingerprint, writes: [], guards: [],
-          evidence: { sale: tkEncode(record), dailyMealConflict: true, existingMeal: tkEncode(effectDocs[mealIndex].data()) },
-          attachmentPaths: [], status: 'Pending', reviewReason: reason, receivedAt: window.serverTimestamp() });
-        tx.set(reviewRef, { branch: record.payload.branch, fingerprint: record.fingerprint, state: 'owner_review', reviewReason: reason });
-        return { ownerReview: true, reviewReason: reason };
-      }
-      const inventoryState = record.auditPending && !resumeAudit ? 'audit_pending' : 'applied';
-      if (!previous.exists()) {
-        tx.set(saleRef, { ...record.payload, timestamp: new Date(record.acceptedAt),
-          localOrderFingerprint: record.fingerprint, syncVersion: 2, inventoryState, stockDeductionPlan: record.deductions });
-        // Settlement guards this revision, including receipts arriving during
-        // the Owner's confirmation. A query alone cannot guard a new receipt.
-        tx.update(acceptedShift.ref, { saleRevision: window.increment(1) });
-        record.effects.forEach((effect, index) => {
-          const ref = effectRefs[index], old = effectDocs[index];
-          if (effect.mode === 'mobile-paid') {
-            if (!old.exists()) throw new Error('Accepted customer order is missing');
-            if (old.data().paymentStatus === 'paid' && old.data().receiptId && old.data().receiptId !== record.payload.receiptId)
-              throw new Error('Customer order was already paid; owner reconciliation required');
-            tx.update(ref, { paymentStatus: 'paid', receiptId: record.payload.receiptId,
-              encodedAt: window.serverTimestamp() });
-          } else if (effect.mode === 'increment') {
-            const values = Object.fromEntries(Object.entries(effect.data).map(([key, value]) =>
-              [key, window.increment(value)]));
-            tx.set(ref, values, { merge: true });
-          } else if (!old.exists()) {
-            tx.set(ref, { ...effect.data, timestamp: new Date(record.acceptedAt) });
-          }
-        });
-      } else tx.update(saleRef, { inventoryState: 'applied' });
-      refs.forEach(entry => tx.update(entry.ref, { currentStock: window.increment(-entry.quantity) }));
-      const data = previous.exists() ? { ...previous.data(), inventoryState } : { ...record.payload,
-        timestamp: new Date(record.acceptedAt), localOrderFingerprint: record.fingerprint, syncVersion: 2, inventoryState, stockDeductionPlan: record.deductions };
-      return { inventoryState, documents: [{ path: saleRef.path, data },
-        ...(acceptedShift ? [{ path: acceptedShift.ref.path, data: { ...acceptedShift.data(), saleRevision: (Number(acceptedShift.data().saleRevision) || 0) + 1 } }] : []),
-        ...inventory.map((snap, index) => ({ path: refs[index].ref.path,
-          data: { ...snap.data(), currentStock: (Number(snap.data().currentStock) || 0) - refs[index].quantity } }))] };
-    });
-  }
-
-  const engine = createTakodealOfflineEngine({ store, cloud: { commit,
-    commitOperation: record => window.TKOperations.commit(record),
-    onResolved: (record, result) => window.TKOperations?.onResolved(record, result) }, now: Date.now, uuid, onStatus: status });
-  const api = window.TKOffline = { store, engine, deadline,
-    get problem() { return problem() || window.TKOperations?.problem || ''; },
-    get prepared() { return prepared && (window.TKOperations ? window.TKOperations.prepared : true); },
-    get serverSeenAt() { return serverSeenAt; } };
-
-  api.ready = (async () => {
-    await store.ready;
-    const backup = await store.meta('catalog:' + branch());
-    if (backup) {
-      for (const [key, value] of Object.entries(backup.local))
-        if (localStorage.getItem(key) === null) localStorage.setItem(key, value);
-      window.masterPOSData = window.masterPOSData || {};
-      window.masterPOSData.bom = backup.bom;
-      prepared = backup.imagesComplete === true && Array.isArray(backup.photos);
-      if (prepared && window.caches) {
-        const photoCache = await window.caches.open('takodeal-pos-photos-offline02');
-        const saved = await Promise.all(backup.photos.map(async value => {
-          const url = new URL(value, document.baseURI);
-          return url.protocol === 'data:' || (url.protocol !== 'blob:' && Boolean(await photoCache.match(url.href)));
-        }));
-        prepared = saved.every(Boolean);
-        if (!prepared) setupProblem = 'Menu photo backup must be prepared again';
-      }
-    }
-    navigator.storage?.persist?.().catch(() => {});
-  })().catch(error => { setupProblem = error.message; throw error; });
-  // Avoid an unhandled startup rejection. Checkout still awaits and fails safely.
-  api.ready.catch(() => {});
-
-  api.prepare = async function(force = false) {
-    if (preparing) return preparing;
-    if (navigator.onLine === false || !branch()) return;
-    preparing = (async () => {
-      await api.ready;
-      await api.refreshApproval();
-      const old = await store.meta('catalog:' + branch());
-      let rows = old?.bom;
-      // Photos and changed categories are backed up on every menu update;
-      // recipes are refreshed only once per 15 minutes or on an owner request.
-      if (force || !rows || Date.now() - lastPrepare >= 15 * 60000) {
-        const bom = await deadline(tkGetDocsFromServer(window.collection(window.db, 'bom')));
-        rows = bom.docs.map(doc => doc.data());
-        lastPrepare = Date.now();
-        const shift = await window.checkShiftStatus(branch());
-        if (shift.active) await window.getLiveShiftDetails(branch());
-      }
-      const raw = json('takodeal_offline_menu') || [];
-      if (!raw.length) throw new Error('Menu backup is not ready');
-      const local = Object.fromEntries(snapshotKeys.map(key => [key, localStorage.getItem(key)])
-        .filter(([, value]) => value !== null));
-      const photos = [...new Set(raw.flatMap(item => [item.image, item.imageUrl])
-        .filter(value => typeof value === 'string' && value.trim()))];
-      if (!navigator.serviceWorker) throw new Error('Install this POS from its secure app address');
-      const registration = await deadline(navigator.serviceWorker.ready, 15000);
-      const worker = registration.active;
-      if (!worker) throw new Error('The tablet asset store is not ready');
-      const assets = await deadline(new Promise((resolve, reject) => {
-        const channel = new MessageChannel();
-        channel.port1.onmessage = event => { channel.port1.close();
-          event.data.ok ? resolve(event.data) : reject(new Error(event.data.error)); };
-        worker.postMessage({ type: 'TK_PREPARE_OFFLINE', photos, models: true }, [channel.port2]);
-      }), 120000);
-      // Opaque image responses cannot report HTTP status. Verify that every
-      // downloaded URL can actually be displayed before reporting readiness.
-      const verify = await Promise.allSettled(photos.map(url => deadline(new Promise((resolve, reject) => {
-        const photo = new Image();
-        photo.onload = resolve; photo.onerror = () => reject(new Error('Unreadable image'));
-        photo.src = url;
-      }), 15000)));
-      verify.forEach((entry, index) => {
-        if (entry.status === 'rejected' && !assets.failed.includes(photos[index])) assets.failed.push(photos[index]);
-      });
-      await store.meta('catalog:' + branch(), { local, bom: rows, photos,
-        imagesComplete: assets.failed.length === 0, modelsComplete: assets.modelsComplete === true,
-        failedImages: assets.failed, savedAt: Date.now() });
-      window.masterPOSData.bom = rows;
-      prepared = assets.failed.length === 0;
-      if (!prepared) throw new Error('Some menu images need an online download retry');
-      setupProblem = '';
-      return { imageCount: photos.length, savedAt: lastPrepare };
-    })().catch(error => { setupProblem = error.message; throw error; }).finally(() => { preparing = null; });
-    return preparing;
-  };
-
-  const originalSaveMenu = window.saveMenuToLocalHardDrive;
-  window.saveMenuToLocalHardDrive = function(...args) {
-    const result = originalSaveMenu.apply(this, args);
-    // Debounce updates; no new database read for every render/category click.
-    clearTimeout(api.menuTimer);
-    api.menuTimer = setTimeout(() => api.prepare().catch(() => {}), 3000);
-    return result;
-  };
-
-  window.processCheckout = async function(payload) {
-    if (window.isProcessingOrder) return null;
-    window.isProcessingOrder = true;
-    try {
-      await api.ready;
-      const approval = await store.meta('approval:' + device());
-      if (!approval?.approved || approval.branch !== branch() || payload.branch !== branch())
-        throw new Error('Sale is not assigned to this approved tablet');
-      if (!window.currentShift?.active || window.currentShift.shiftId !== payload.shiftId)
-        throw new Error('Sale does not belong to the locally active shift');
-      const localShift = await store.meta('local-shift:' + branch());
-      if (localShift?.shiftId === payload.shiftId && !localShift.active)
-        throw new Error('This tablet shift is closed; record a valid opening first');
-      const backup = await store.meta('catalog:' + payload.branch);
-      if (!backup || !Array.isArray(backup.bom)) throw new Error('The owner must prepare this tablet before checkout');
-      if (window.TKOperations && !window.TKOperations.prepared) throw new Error('The owner must finish this tablet’s data preparation before checkout');
-      const split = document.getElementById('splitPaymentContainer');
-      if (split && split.style.display !== 'none') {
-        const details = [1, 2].map(n => ({ method: document.getElementById('splitMethod' + n).value,
-          amount: Number(document.getElementById('splitAmount' + n).value) || 0 }));
-        if (details.some(part => part.amount < 0) || Math.abs(details.reduce((sum, part) => sum + part.amount, 0) - payload.netTotal) > 0.01)
-          throw new Error('Split payments do not match the order total');
-        payload.paymentMethod = `Split (${details[0].method} & ${details[1].method})`;
-        payload.splitDetails = details;
-      }
-      payload.cashier = window.sessionUser?.cashierName || localStorage.getItem('cashierName') || payload.cashier;
-      payload.deviceId = device();
-      payload.localSaleId = payload.localSaleId || (window.activeMobileOrderId ? 'pos-mobile-' + window.activeMobileOrderId : 'pos-' + uuid());
-      const day = new Date().toLocaleDateString('en-CA');
-      payload.receiptId = payload.mobileOrderCode || day.replaceAll('-', '') + '-' + payload.localSaleId.slice(-8).toUpperCase();
-      const effects = [];
-      const add = (collection, suffix, data, mode = 'create') => effects.push({ collection,
-        id: payload.localSaleId + '-' + suffix, data, mode });
-      if (payload.globalDiscountType && payload.globalDiscountType !== 'none')
-        add('manager_alerts', 'discount', { type: 'DISCOUNT_APPLIED', branch: payload.branch,
-          cashier: payload.cashier, message: `Discount ${payload.globalDiscountType} on Order #${payload.receiptId}.`, isRead: false });
-      if (['staff_meal', 'manager_meal'].includes(payload.globalDiscountType))
-        add('staff_requests', 'meal', { type: (payload.globalDiscountType === 'manager_meal' ? 'Manager Meal' : 'Staff Meal') + ' (POS Auto)',
-          branch: payload.branch, staffName: payload.customerName.replace(/ \((Staff|Manager)\)$/, ''),
-          amount: payload.netTotal, item: payload.cart.map(item => `${item.qty}x ${item.name}`).join(', ') + ' | OR#: ' + payload.receiptId,
-          receiptId: payload.receiptId, status: 'Pending', staffAcknowledged: false });
-      if (window.activeMobileOrderId) effects.push({ collection: 'incoming_orders', id: window.activeMobileOrderId, mode: 'mobile-paid', data: {} });
-      else if (payload.orderType === 'Delivery' && !payload.isMobileOrder)
-        add('incoming_orders', 'delivery', { branch: payload.branch, orderType: 'Delivery',
-          customerName: payload.customerName || 'Delivery Customer', contactNumber: payload.contactNumber || '',
-          deliveryAddress: payload.deliveryAddress || '', totalAmount: payload.netTotal, items: payload.cart,
-          status: 'preparing', orderCode: payload.receiptId, paymentMethod: payload.paymentMethod || 'Cash' });
-      const balls = payload.cart.reduce((sum, item) => sum + (Number((item.name || item.itemName).match(/(\d+)\s*Pcs/i)?.[1]) || 0) * item.qty, 0);
-      if (balls > 0) effects.push({ collection: 'settings', id: 'global_stats', mode: 'increment',
-        data: { totalTakoyakiBalls: balls, ['balls_' + payload.branch]: balls } });
-      const mealKey = payload.globalDiscountType === 'staff_meal' ? JSON.stringify([payload.branch, day, payload.customerName]) : null;
-      const record = await engine.accept(payload, { bom: backup.bom, audit: window.isAuditModeActive, effects, mealKey });
-      if (split) split.style.display = 'none';
-      checkoutProblem = '';
-      api.sync().catch(() => {});
-      return record.payload.receiptId;
-    } catch (error) {
-      checkoutProblem = error.message;
-      // Never invent a successful receipt if durable local storage failed.
-      console.error('Local checkout rejected:', error);
-      return null;
-    } finally { window.isProcessingOrder = false; status(); }
-  };
-  api.sync = async () => {
-    await api.ready;
-    if (navigator.onLine === false) return;
-    try { await engine.sync({ online: true, resumeAudit: !window.isAuditModeActive }); syncProblem = ''; }
-    catch (error) { syncProblem = error.message; throw error; }
-  };
-  // Stops the old random-ID, partially atomic sale writer. Old records remain intact.
-  window.syncOfflineQueue = api.sync;
-  window.processAuditQueue = async () => {
-    if (Object.keys(json('takodeal_audit_queue') || {}).length)
-      throw new Error('Legacy audit deductions require owner reconciliation before migration');
-    await api.sync();
-  };
-  const originalToggleAudit = window.toggleAuditMode;
-  if (originalToggleAudit) window.toggleAuditMode = async function(...args) {
-    if (window.isAuditModeActive && Object.keys(json('takodeal_audit_queue') || {}).length) {
-      alert('The owner must reconcile earlier audit deductions before resuming.');
-      return;
-    }
-    return originalToggleAudit.apply(this, args);
-  };
-  api.hasMealToday = async staffName => {
-    await api.ready;
-    const day = new Date().toLocaleDateString('en-CA');
-    return Boolean(await store.meal(JSON.stringify([branch(), day, staffName + ' (Staff)'])));
-  };
-
-  api.refreshApproval = async () => {
-    if (navigator.onLine === false || !device()) return;
-    if (await store.meta('secure-device:' + device())) return api.refreshTrustedBinding();
-    const snap = await deadline(tkGetDocsFromServer(window.query(window.collection(window.db, 'pos_devices'),
-      window.where('deviceId', '==', device()))));
-    const approved = snap.size === 1 && snap.docs[0].data().status === 'Active' && snap.docs[0].data().branch === branch();
-    const approval = { approved, branch: branch(), docId: approved ? snap.docs[0].id : null, checkedAt: Date.now() };
-    await store.meta('approval:' + device(), approval);
-    if (!approved) throw new Error('Owner must approve this device for its assigned branch');
-    return approval;
-  };
-
-  api.refreshTrustedBinding = async () => {
-    const auth = tkGetAuth();
-    await auth.authStateReady?.();
-    const user = auth.currentUser;
-    if (!user?.isAnonymous) throw new Error('Owner must enroll a separate Cashier device identity');
-    const snap = await deadline(tkGetDocFromServer(window.doc(window.db, 'pos_bindings', user.uid)));
-    const binding = snap.exists() ? snap.data() : {};
-    const approved = binding.status === 'Active' && binding.branch === branch() && binding.deviceId === device();
-    const approval = { approved, branch: branch(), docId: binding.legacyDeviceDocId || null,
-      trustedUid: user.uid, checkedAt: Date.now() };
-    await store.meta('approval:' + device(), approval);
-    if (!approved) throw new Error('Owner approval of the Cashier identity is required');
-    return approval;
-  };
-  // Explicit owner setup only. Never automatically sign out an operating device,
-  // approve a UID, activate a policy, or erase the local ledger.
-  api.beginSecureDeviceEnrollment = async () => {
-    if (navigator.onLine === false || !device() || !branch()) throw new Error('Enrollment needs an online prepared tablet');
-    await api.ready;
-    const legacy = await deadline(tkGetDocsFromServer(window.query(window.collection(window.db, 'pos_devices'),
-      window.where('deviceId', '==', device()))));
-    if (legacy.size !== 1 || legacy.docs[0].data().status !== 'Active' || legacy.docs[0].data().branch !== branch())
-      throw new Error('Review the existing device and assigned branch first');
-    const auth = tkGetAuth(); await auth.authStateReady?.();
-    if (auth.currentUser && !auth.currentUser.isAnonymous) {
-      if (auth.currentUser.email !== 'jgo031996@gmail.com') throw new Error('Only the owner can migrate an existing Google device session');
-      await tkSignOut(auth);
-    }
-    const user = auth.currentUser || (await tkSignInAnonymously(auth)).user;
-    const ref = window.doc(window.db, 'pos_bindings', user.uid);
-    await tkRunTransaction(window.db, async tx => {
-      const old = await tx.get(ref);
-      if (old.exists()) {
-        if (old.data().deviceId !== device() || old.data().branch !== branch()) throw new Error('Device identity belongs to a different tablet or branch');
-        return;
-      }
-      tx.set(ref, { uid: user.uid, deviceId: device(), branch: branch(),
-        deviceName: localStorage.getItem('takodeal_device_name') || device(),
-        legacyDeviceDocId: legacy.docs[0].id, status: 'Pending', requestedAt: window.serverTimestamp() });
-    });
-    await store.meta('secure-device:' + device(), { uid: user.uid });
-    // Pending enrollment must not keep a previously public approval locally.
-    await store.meta('approval:' + device(), { approved: false, branch: branch(), trustedUid: user.uid });
-    return { uid: user.uid, deviceId: device(), branch: branch() };
-  };
-
-  window.verifyPin = async pin => {
-    await api.ready;
-    const id = device();
-    let approval = await store.meta('approval:' + id);
-    if (navigator.onLine !== false) {
-      try {
-        approval = await api.refreshApproval();
-      } catch { /* Only a previously approved tablet may use the saved identity. */ }
-      // A confirmed revocation overrides the older cached approval.
-      approval = await store.meta('approval:' + id);
-    }
-    if (!approval?.approved || approval.branch !== branch()) return 'BLOCKED';
-    const cached = json('takodeal_cashier_cache') || [];
-    const identity = cached.find(cashier => String(cashier.pin) === String(pin)) || null;
-    if (identity) {
-      window.checkActiveSanctions?.(identity.cashierName);
-      setTimeout(() => window.checkForAnnouncements?.(identity.cashierName), 1500);
-    }
-    return identity;
-  };
-  window.checkShiftStatus = async targetBranch => {
-    await api.ready;
-    if (navigator.onLine !== false) {
-      try {
-        const snap = await deadline(tkGetDocsFromServer(window.query(window.collection(window.db, 'shifts'),
-          window.where('branch', '==', targetBranch), window.where('active', '==', true), window.limit(1))));
-        const entry = snap.empty ? { active: false } : { active: true, shiftId: snap.docs[0].id,
-          startedBy: snap.docs[0].data().cashier, startingCash: snap.docs[0].data().startingCash || 0,
-          startTime: (snap.docs[0].data().startTime?.toDate?.() || new Date(snap.docs[0].data().startTime)).toISOString() };
-        await store.meta('shift:' + targetBranch, entry);
-        return { ...entry, startTime: entry.startTime ? new Date(entry.startTime) : undefined };
-      } catch { /* Resume the saved local shift instead of falsely closing it. */ }
-    }
-    const entry = await store.meta('shift:' + targetBranch);
-    return entry ? { ...entry, startTime: entry.startTime ? new Date(entry.startTime) : undefined } : { active: false };
-  };
-  const dateValue = value => value?.toDate?.() || new Date(value);
-  const displaySale = row => {
-    const timestamp = dateValue(row.timestamp || row.localTimestamp);
-    timestamp.toDate = () => new Date(timestamp.getTime());
-    return { ...row, timestamp };
-  };
-  window.getSalesDashboardData = async (targetBranch, since) => {
-    await api.ready;
-    if (!since) return [];
-    const start = dateValue(since), key = 'sales:' + targetBranch + ':' + start.toISOString();
-    let serverRows = await store.meta(key) || [];
-    if (navigator.onLine !== false) {
-      try {
-        const snapshot = await deadline(tkGetDocsFromServer(window.query(window.collection(window.db, 'transactions'),
-          window.where('branch', '==', targetBranch), window.where('timestamp', '>=', start))));
-        serverRows = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id,
-          timestamp: dateValue(doc.data().timestamp).toISOString() }));
-        await store.meta(key, serverRows);
-      } catch { /* Local ledger remains readable while server confirmation is unavailable. */ }
-    }
-    const rows = new Map(serverRows.map(row => [row.id, row]));
-    for (const record of await store.list()) {
-      if (record.kind !== 'sale' || record.payload.branch !== targetBranch || new Date(record.acceptedAt) < start || rows.has(record.id)) continue;
-      rows.set(record.id, { ...record.payload, id: record.id, timestamp: record.acceptedAt });
-    }
-    return [...rows.values()].map(displaySale).sort((a, b) => b.timestamp - a.timestamp);
-  };
-  window.getLiveShiftDetails = async targetBranch => {
-    const shift = await window.checkShiftStatus(targetBranch);
-    if (!shift.active) return null;
-    const sales = await window.getSalesDashboardData(targetBranch, shift.startTime);
-    const key = 'expenses:' + shift.shiftId;
-    let expenses = await store.meta(key);
-    if (navigator.onLine !== false) {
-      try {
-        const snapshot = await deadline(tkGetDocsFromServer(window.query(window.collection(window.db, 'expenses'),
-          window.where('shiftId', '==', shift.shiftId))));
-        expenses = snapshot.docs.map(doc => ({ id: doc.id, amount: Number(doc.data().amount) || 0 }));
-        await store.meta(key, expenses);
-      } catch {}
-    }
-    if (!expenses) throw new Error('Shift expense baseline has not been prepared on this tablet');
-    const cashIn = sales.filter(sale => sale.status !== 'Voided').reduce((sum, sale) =>
-      sum + (sale.splitDetails ? sale.splitDetails.filter(part => part.method === 'Cash').reduce((amount, part) => amount + Number(part.amount), 0)
-        : (!sale.paymentMethod || sale.paymentMethod === 'Cash' ? Number(sale.netTotal) || 0 : 0)), 0);
-    const cashOut = expenses.reduce((sum, row) => sum + row.amount, 0);
-    return { logId: shift.shiftId, startedBy: shift.startedBy, startTime: shift.startTime,
-      startingCash: shift.startingCash || 0, cashIn, cashOut, expectedCash: (shift.startingCash || 0) + cashIn - cashOut };
-  };
-  api.heartbeat = async () => {
-    if (navigator.onLine === false || !device() || !branch()) return;
-    await api.ready;
-    const approval = await store.meta('approval:' + device());
-    if (!approval?.approved || approval.branch !== branch() || !approval.trustedUid) return;
-    const auth = tkGetAuth(); await auth.authStateReady?.();
-    if (!auth.currentUser?.isAnonymous || auth.currentUser.uid !== approval.trustedUid) return;
-    const records = await store.list();
-    const oldPending = (json('takodeal_offline_queue') || []).length;
-    const uid = approval.trustedUid;
-    const ref = window.doc(window.db, 'cashier_presence', uid);
-    const lease = window.doc(window.db, 'cashier_leases', branch());
-    // Transactions cannot be queued while disconnected: no stale lease written later.
-    await deadline(tkRunTransaction(window.db, async tx => {
-      const approvedDevice = await tx.get(window.doc(window.db, 'pos_bindings', uid));
-      if (!approvedDevice.exists() || approvedDevice.data().status !== 'Active'
-        || approvedDevice.data().branch !== branch() || approvedDevice.data().deviceId !== device())
-        throw new Error('Device approval changed; owner review required');
-      const disputedOpening = records.some(record => record.type === 'shift-open' && record.state === 'owner_review');
-      const accepting = api.prepared && !oldPending && !disputedOpening && !api.problem && Boolean(window.currentShift?.active);
-      tx.set(ref, { uid, branch: branch(), deviceId: device(),
-        seenAt: window.serverTimestamp(), accepting, shiftId: window.currentShift?.shiftId || '',
-        deviceName: localStorage.getItem('takodeal_device_name') || device(),
-        cashier: window.sessionUser?.cashierName || '', pendingSales: records.filter(record => record.kind === 'sale' && !['synced', 'rejected'].includes(record.state)).length,
-        pendingOperations: records.filter(record => record.kind === 'operation' && record.state === 'pending').length,
-        ownerReviews: records.filter(record => record.state === 'owner_review').length,
-        lastReceipt: records.filter(record => record.kind === 'sale').at(-1)?.payload.receiptId || '',
-        setupProblem: problem() || (oldPending ? 'Legacy sales queue needs owner review' : '')
-      });
-      // Public lease contains no staff names, queue counts or receipt details.
-      // A device that closes/stops readiness does not erase another device's
-      // healthy check-in. If no ready device renews it, it expires in 3 minutes.
-      if (accepting) tx.set(lease, { uid, branch: branch(), seenAt: window.serverTimestamp() });
-    }));
-    serverSeenAt = Date.now();
-  };
-  let ticking = false;
-  api.tick = async () => {
-    if (ticking) return;
-    ticking = true;
-    try {
-      await api.sync().catch(error => { console.warn('Owner sync status:', error.message); });
-      await window.TKOperations?.prepare().catch(error => { console.warn('Owner data status:', error.message); });
-      await api.heartbeat();
-    } catch (error) { console.warn('Owner sync status:', error.message); }
-    finally { ticking = false; status(); }
-  };
-  window.addEventListener('online', () => api.tick());
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) api.tick(); });
-  setInterval(() => api.tick(), 120000);
-  setTimeout(() => { api.prepare().catch(() => {}); api.tick(); }, 6000);
-})();
-
-import { getDocsFromCache as tkCachedDocs, getDocFromCache as tkCachedDoc } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
-
-(function installTakodealOperations() {
-  const offline = window.TKOffline, store = offline.store;
-  const branch = () => localStorage.getItem('takodeal_device_branch');
-  const device = () => localStorage.getItem('takodeal_device_id');
-  const cashier = () => window.sessionUser?.cashierName || localStorage.getItem('cashierName') || 'Staff';
-  const journal = createTakodealOperationJournal({ store });
-  const native = Object.fromEntries(['query', 'where', 'orderBy', 'limit', 'getDocs', 'getDoc', 'addDoc', 'updateDoc', 'setDoc', 'deleteDoc', 'increment', 'serverTimestamp'].map(key => [key, window[key]]));
-  const descriptors = new WeakMap(), transforms = new WeakMap();
-  const locked = new Set(); let preparation = null, prepared = false, problem = '', entities = new Map(), coverage = new Set(), savedBranch, savedAt = 0;
-  const api = window.TKOperations = { get prepared() { return prepared && savedBranch === branch(); }, get problem() { return problem; } };
-  const adapter = { doc: path => window.doc(window.db, path), serverTime: () => native.serverTimestamp(),
-    read: target => tkGetDocFromServer(target),
-    transaction: fn => tkRunTransaction(window.db, fn),
-    async upload(file) {
-      const target = ref(window.storage, file.path);
-      const snapshot = await uploadBytes(target, file.bytes, { contentType: file.type });
-      return getDownloadURL(snapshot.ref);
-    } };
-  api.commit = record => tkCommitOperation(record, adapter);
-  api.onResolved = async (record, result) => {
-    if (record.type !== 'shift-open' || result.state !== 'rejected') return;
-    const current = await store.meta('local-shift:' + branch());
-    if (current?.operationId !== record.id) return;
-    window.currentShift = { active: false }; window.activeShiftDetails = null;
-    if (typeof currentShift !== 'undefined') currentShift = null;
-    if (typeof activeShiftDetails !== 'undefined') activeShiftDetails = null;
-    localStorage.removeItem('currentShiftId');
-    const place = document.getElementById('btnMainPlaceOrder'); if (place) place.disabled = true;
-    const lock = document.getElementById('shiftLockout'); if (lock) lock.style.display = 'flex';
-    const top = document.getElementById('btnTopShift'); if (top) top.innerText = 'Shift Closed';
-  };
-  for (const key of ['where', 'orderBy', 'limit']) window[key] = (...args) => {
-    const result = native[key](...args); descriptors.set(result, { type: key, args }); return result;
-  };
-  window.query = (base, ...constraints) => {
-    const result = native.query(base, ...constraints);
-    descriptors.set(result, { path: base.path || descriptors.get(base)?.path,
-      constraints: [...(descriptors.get(base)?.constraints || []), ...constraints.map(value => descriptors.get(value))] });
-    return result;
-  };
-  window.increment = amount => { const result = native.increment(amount); transforms.set(result, { __tkIncrement: Number(amount) }); return result; };
-  window.serverTimestamp = () => { const result = native.serverTimestamp(); transforms.set(result, { __tkDate: new Date().toISOString() }); return result; };
-  function encode(value) {
-    if (transforms.has(value)) return transforms.get(value);
-    if (value === null || typeof value !== 'object' || value instanceof Date || value?.toDate) return tkEncode(value);
-    if (Array.isArray(value)) return value.map(encode);
-    return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined).map(([key, item]) => [key, encode(item)]));
-  }
-  const snapshot = (path, data) => ({ id: path.split('/').at(-1), ref: adapter.doc(path), exists: () => data !== null,
-    data: () => tkDecode(data), metadata: { fromCache: true, hasPendingWrites: false } });
-  api.ready = (async () => {
-    await offline.ready;
-    const saved = await store.meta('operations-cache:' + branch());
-    if (saved) { entities = new Map(saved.entities); coverage = new Set(saved.coverage); savedBranch = saved.branch; savedAt = saved.savedAt; prepared = true; }
-  })(); api.ready.catch(error => { problem = error.message; });
-  async function view() {
-    await api.ready;
-    const map = new Map(entities);
-    for (const entry of await store.documents()) if (entry.savedAt >= savedAt) entry.data === null ? map.delete(entry.path) : map.set(entry.path, entry.data);
-    const ledger = (await store.list()).sort((a, b) => a.acceptedAt.localeCompare(b.acceptedAt));
-    for (const record of ledger) {
-      if (record.state === 'synced' || record.state === 'rejected') continue;
-      if (record.kind === 'operation' && record.branch === branch()) {
-        for (const write of record.writes) {
-          const value = tkApplyWrite(map.get(write.path), write);
-          value === null ? map.delete(write.path) : map.set(write.path, value);
-        }
-      } else if (record.kind === 'sale' && record.payload.branch === branch()) {
-        map.set('transactions/' + record.id, encode({ ...record.payload, stockDeductionPlan: record.deductions,
-          inventoryState: record.auditPending ? 'audit_pending' : 'applied', timestamp: new Date(record.acceptedAt) }));
-        if (!record.auditPending) for (const [name, qty] of Object.entries(record.deductions)) {
-          const found = [...map].filter(([path, data]) => path.startsWith('inventory/') && data.branch === branch() && data.name === name);
-          if (found.length === 1) map.set(found[0][0], { ...found[0][1], currentStock: (Number(found[0][1].currentStock) || 0) - qty });
-        }
-      }
-    }
-    return map;
-  }
-  const comparable = value => value?.__tkDate ? new Date(value.__tkDate).getTime() : value instanceof Date ? value.getTime() : value?.toMillis?.() ?? value;
-  function matches(data, field, operator, value) {
-    const a = comparable(data[field]), b = comparable(encode(value));
-    switch (operator) {
-      case '==': return a === b; case '!=': return a !== undefined && a !== b;
-      case '>=': return a >= b; case '>': return a > b; case '<=': return a <= b; case '<': return a < b;
-      case 'in': return value.includes(a); case 'array-contains': return Array.isArray(a) && a.includes(value);
-      default: throw new Error('This query needs an owner-prepared cache');
-    }
-  }
-  async function readQuery(target) {
-    const definition = descriptors.get(target) || { path: target.path, constraints: [] };
-    if (!definition.path || !coverage.has(definition.path)) return null;
-    if (definition.constraints.some(value => !value)) throw new Error('This query is not prepared on this tablet');
-    let rows = [...await view()].filter(([path]) => path.startsWith(definition.path + '/') && path.split('/').length === 2);
-    for (const constraint of definition.constraints.filter(value => value.type === 'where'))
-      rows = rows.filter(([, data]) => matches(data, ...constraint.args));
-    const ordering = definition.constraints.filter(value => value.type === 'orderBy');
-    rows = rows.filter(([, data]) => ordering.every(value => data[value.args[0]] !== undefined));
-    rows.sort((a, b) => {
-      for (const { args: [field, direction] } of ordering) {
-        const x = comparable(a[1][field]), y = comparable(b[1][field]);
-        if (x !== y) return (x < y ? -1 : 1) * (direction === 'desc' ? -1 : 1);
-      }
-      return a[0].localeCompare(b[0]);
-    });
-    const capped = definition.constraints.find(value => value.type === 'limit');
-    if (capped) rows = rows.slice(0, capped.args[0]);
-    const docs = rows.map(([path, data]) => snapshot(path, data));
-    return { docs, size: docs.length, empty: !docs.length, metadata: { fromCache: true }, forEach: fn => docs.forEach(fn) };
-  }
-  window.getDocs = async target => {
-    await api.ready;
-    const local = await readQuery(target); if (local) return local;
-    if (navigator.onLine !== false) try { return await offline.deadline(native.getDocs(target)); } catch {}
-    const result = await tkCachedDocs(target);
-    if (result.empty) throw new Error('This list has not been prepared on the tablet. Ask the owner to prepare it.');
-    return result;
-  };
-  window.getDoc = async target => {
-    await api.ready;
-    if (coverage.has(target.path.split('/')[0])) return snapshot(target.path, (await view()).get(target.path) ?? null);
-    if (navigator.onLine !== false) try { return await offline.deadline(native.getDoc(target)); } catch {}
-    return tkCachedDoc(target);
-  };
-  async function assertReady() {
-    await api.ready;
-    if (!api.prepared) throw new Error('Owner must finish preparing this tablet before accepting actions');
-    const approval = await store.meta('approval:' + device());
-    if (!approval?.approved || approval.branch !== branch()) throw new Error('This tablet needs owner approval');
-  }
-  async function plan(type) {
-    await assertReady();
-    const id = 'op-' + crypto.randomUUID(), map = await view(), writes = [], guards = [], attachments = [];
-    const p = { id, branch: branch(), deviceId: device(), type, writes, guards, attachments, evidence: {}, review: '' };
-    p.add = (collection, data, suffix = String(writes.length)) => {
-      const path = collection + '/' + id + '-' + suffix;
-      writes.push({ path, mode: 'create', data: encode(data) }); return adapter.doc(path);
-    };
-    p.patch = (path, data, mode = 'update') => { writes.push({ path, mode, data: encode(data) }); };
-    p.inventory = (idOrName, byName = false) => {
-      const found = byName ? [...map].filter(([path, data]) => path.startsWith('inventory/') && data.branch === branch() && data.name === idOrName)
-        : [['inventory/' + idOrName, map.get('inventory/' + idOrName)]];
-      if (found.length !== 1 || !found[0][1] || found[0][1].branch !== branch()) throw new Error('Stock mapping needs owner review: ' + idOrName);
-      return { path: found[0][0], data: tkDecode(found[0][1]) };
-    };
-    p.stock = (item, quantity, log) => {
-      if (!Number.isFinite(quantity)) throw new Error('Invalid stock quantity');
-      p.patch(item.path, { currentStock: { __tkIncrement: quantity } });
-      if (log) p.add('stock_logs', { branch: branch(), item: item.data.name, uom: item.data.baseUom || item.data.uom || 'units',
-        oldQty: Number(item.data.currentStock) || 0, newQty: (Number(item.data.currentStock) || 0) + quantity,
-        variance: quantity, user: cashier(), timestamp: new Date(), operationId: id, ...log });
-    };
-    p.guard = (path, fields) => guards.push({ path, exists: Boolean(map.get(path)), fields: encode(fields) });
-    p.finish = async metadata => {
-      const record = await journal.accept(p, metadata);
-      problem = '';
-      window.TK_CACHE && (window.TK_CACHE.lastInventoryByBranch[branch()] = 0);
-      offline.sync().catch(() => {}); return record;
-    };
-    return p;
-  }
-  async function action(type, work, propagate = false) {
-    if (locked.has('financial-action')) return;
-    locked.add('financial-action');
-    try { return await work(await plan(type)); }
-    catch (error) { problem = error.message; await window.Swal?.fire('Record not saved', error.message + '. Keep the form and ask the owner to check this tablet.', 'error'); if (propagate) throw error; }
-    finally { locked.delete('financial-action'); }
-  }
-  const amount = value => { const number = Number(value); if (!Number.isFinite(number) || number < 0) throw new Error('Enter a valid positive amount'); return number; };
-  const input = id => document.getElementById(id)?.value || '';
-  const shiftID = () => window.currentShift?.shiftId || window.activeShiftDetails?.logId || localStorage.getItem('currentShiftId');
-  const requireShift = () => { const id = shiftID(); if (!id || !window.currentShift?.active) throw new Error('Open a shift first'); return id; };
-  const confirm = async (title, text) => Boolean((await window.Swal.fire({ title, text, icon: 'question', showCancelButton: true, confirmButtonText: 'Save record' })).isConfirmed);
-  async function salesForShift(id) { return [...await view()].filter(([path, row]) => path.startsWith('transactions/') && row.branch === branch() && row.shiftId === id).map(([, row]) => tkDecode(row)); }
-  async function shiftTotals(id) {
-    const map = await view(), shift = tkDecode(map.get('shifts/' + id)); if (!shift) throw new Error('Shift backup is missing');
-    const sales = (await salesForShift(id)).filter(row => row.status !== 'Voided');
-    const digitalBreakdown = {}; let cashIn = 0;
-    for (const sale of sales) for (const part of sale.splitDetails || [{ method: sale.paymentMethod || 'Cash', amount: sale.netTotal }]) {
-      if (part.method === 'Cash') cashIn += amount(part.amount); else digitalBreakdown[part.method] = (digitalBreakdown[part.method] || 0) + amount(part.amount);
-    }
-    const cashOut = [...map].filter(([path, row]) => path.startsWith('expenses/') && row.branch === branch() && row.shiftId === id && row.paidFrom !== 'ManagerFund')
-      .reduce((sum, [, row]) => sum + amount(row.amount), 0);
-    const startingCash = amount(shift.startingCash || 0);
-    return { shift, sales, startingCash, cashIn, cashOut, digitalBreakdown, expectedCash: startingCash + cashIn - cashOut };
-  }
-  const oldCheck = window.checkShiftStatus;
-  window.checkShiftStatus = async target => {
-    await api.ready;
-    if (api.prepared && target === branch()) {
-      const override = await store.meta('local-shift:' + target);
-      if (override) return { ...override, startTime: override.startTime ? new Date(override.startTime) : undefined };
-      const active = [...await view()].find(([path, row]) => path.startsWith('shifts/') && row.branch === target && row.active === true);
-      if (active) return { active: true, shiftId: active[0].split('/')[1], startedBy: active[1].cashier,
-        startingCash: active[1].startingCash || 0, startTime: tkDecode(active[1].startTime) };
-      return { active: false };
-    }
-    return oldCheck(target);
-  };
-  const oldDetails = window.getLiveShiftDetails;
-  window.getLiveShiftDetails = async target => {
-    if (!api.prepared || target !== branch()) return oldDetails(target);
-    const current = await window.checkShiftStatus(target); if (!current.active) return null;
-    const total = await shiftTotals(current.shiftId);
-    return { logId: current.shiftId, startTime: current.startTime, startedBy: current.startedBy, ...total };
-  };
-  window.openNewShift = async (targetBranch, staff, startCash, handover = {}) => {
-    if (targetBranch !== branch()) throw new Error('Shift branch does not match this tablet');
-    const p = await plan('shift-open'), statePath = 'pos_branch_shifts/' + branch(), state = (await view()).get(statePath) || null;
-    const id = p.add('shifts', { branch: branch(), cashier: staff, startingCash: amount(startCash), startTime: new Date(),
-      active: true, grossSales: 0, netSales: 0, operationId: p.id, deviceId: device() }, 'shift').id;
-    p.guards.push({ path: statePath, exists: Boolean(state), fields: { shiftId: state?.shiftId ?? null } });
-    if (state?.shiftId) p.review = 'Another device has an active shift claim';
-    // Legacy active shifts also need adoption rather than a second blind opening.
-    const others = [...await view()].filter(([path, row]) => path.startsWith('shifts/') && row.branch === branch() && row.active);
-    if (others.length) p.review ||= 'An existing branch shift needs owner reconciliation';
-    p.patch(statePath, { branch: branch(), shiftId: id, operationId: p.id, deviceId: device() }, 'set');
-    p.evidence = { ...handover, shiftId: id };
-    if (handover.cashDifference || handover.stockDisputes?.length) {
-      p.review ||= 'Owner must reconcile the saved cash or stock handover difference';
-      p.add('manager_alerts', { branch: branch(), shiftId: id, cashier: staff, type: 'HANDOVER_DISPUTE',
-        message: 'Cash or stock handover difference recorded with shift opening.', evidence: handover, isRead: false, timestamp: new Date() });
-    }
-    await p.finish([['local-shift:' + branch(), { active: true, shiftId: id, operationId: p.id, startedBy: staff, startingCash: amount(startCash), startTime: new Date().toISOString() }],
-      ['expenses:' + id, []]]);
-    return id;
-  };
-  window.submitOpenShift = () => action('open-form', async () => {
-    const existing = await window.checkShiftStatus(branch());
-    if (existing.active) throw new Error('This tablet already has an active shift');
-    const startCash = amount(input('inputStartingCash'));
-    const last = amount(window.lastEndingCash || 0);
-    if (startCash !== last && last > 0 && !(await confirm('Cash handover differs', 'Save the entered float and preserve the difference for owner review?'))) return;
-    const stockDisputes = [];
-    for (const node of document.querySelectorAll('input[id^="handoverDispBase_"]')) {
-      const index = node.id.split('_')[1], purch = document.getElementById('handoverDispPurch_' + index);
-      const count = amount(purch?.value || 0) * amount(node.dataset.conv || 1) + amount(node.value || 0);
-      const previous = amount(node.dataset.prev || 0);
-      if (count !== previous) stockDisputes.push({ name: node.dataset.name, prevCount: previous, newCount: count,
-        variance: count - previous, baseCost: amount(node.dataset.cost || 0), uom: node.dataset.uom || 'units' });
-    }
-    if (stockDisputes.length && !(await confirm('Stock handover differs', 'Preserve the entered counts for owner review with this shift opening?'))) return;
-    const id = await window.openNewShift(branch(), cashier(), startCash, { previousCash: last,
-      cashDifference: last > 0 ? startCash - last : 0, stockDisputes,
-      previousCashier: window.lastShiftDataForDispute?.cashier || '' });
-    const shift = await window.checkShiftStatus(branch()); window.currentShift = shift;
-    window.activeShiftDetails = { ...shift, logId: id }; if (typeof currentShift !== 'undefined') currentShift = shift;
-    if (typeof activeShiftDetails !== 'undefined') activeShiftDetails = window.activeShiftDetails;
-    localStorage.setItem('currentShiftId', id);
-    for (const [id, display] of [['shiftLockout', 'none'], ['shiftModal', 'none']]) if (document.getElementById(id)) document.getElementById(id).style.display = display;
-    const top = document.getElementById('btnTopShift'); if (top) top.innerText = 'Active Shift';
-    const place = document.getElementById('btnMainPlaceOrder'); if (place) place.disabled = false;
-  });
-  window.MASTER_CloseShift = () => action('shift-close', async p => {
-    const id = requireShift(), total = await shiftTotals(id), physicalStockCount = [], cashBreakdown = {}; let declaredCash = 0;
-    for (const item of window.currentBlindCountItems || []) {
-      const purch = [...document.querySelectorAll('.blind-count-purch')].find(node => node.dataset.name === item.name);
-      const base = [...document.querySelectorAll('.blind-count-base')].find(node => node.dataset.name === item.name);
-      if (!purch?.value.trim() && !base?.value.trim()) throw new Error('Count every mandatory stock item');
-      const rawPurchCount = amount(purch?.value || 0), rawBaseCount = amount(base?.value || 0);
-      physicalStockCount.push({ ...item, rawPurchCount, rawBaseCount, actualCount: rawPurchCount * (item.convRate || 1) + rawBaseCount });
-    }
-    for (const node of document.querySelectorAll('.denom-input')) {
-      const pcs = amount(node.value || 0); if (!Number.isInteger(pcs)) throw new Error('Bill counts must be whole numbers');
-      const value = amount(node.dataset.val); declaredCash += value * pcs; if (pcs) cashBreakdown['₱' + value] = pcs;
-    }
-    if (total.expectedCash > 0 && declaredCash === 0) throw new Error('Enter the physical cash count before closing');
-    if (!(await confirm('Save shift clearance', 'Record the cash and stock counts, then close this tablet’s shift?'))) return;
-    p.review = 'Multiple devices may hold receipts for this shift. Owner must reconcile all devices before settlement.';
-    p.evidence = { shiftId: id, declaredCash, cashBreakdown, physicalStockCount, localReceiptIds: total.sales.map(row => row.localSaleId || row.receiptId),
-      startingCash: total.startingCash, expectedCash: total.expectedCash, totalCashSales: total.cashIn, totalDigitalSales: Object.values(total.digitalBreakdown).reduce((a, b) => a + b, 0),
-      digitalBreakdown: total.digitalBreakdown, cashOut: total.cashOut };
-    p.guard('shifts/' + id, { active: true });
-    p.patch('shifts/' + id, { active: false, status: 'Clearance Pending', endTime: new Date(), ...p.evidence });
-    p.add('manager_alerts', { branch: branch(), shiftId: id, cashier: cashier(), type: 'SHIFT_CLEARANCE_REVIEW',
-      message: 'Cash and stock clearance saved; reconcile all device receipts before settlement.', isRead: false, timestamp: new Date(), operationId: p.id });
-    await p.finish([['local-shift:' + branch(), { active: false, shiftId: id }]]);
-    window.currentShift = { active: false }; window.activeShiftDetails = null;
-    if (typeof currentShift !== 'undefined') currentShift = null; if (typeof activeShiftDetails !== 'undefined') activeShiftDetails = null;
-    localStorage.removeItem('currentShiftId'); window.cashDrawerMemory = {}; window.blindCountMemory = {};
-    localStorage.removeItem('takodeal_blind_count_memory'); localStorage.removeItem('takodeal_sop_progress');
-    const modal = document.getElementById('endShiftModal'); if (modal) modal.style.display = 'none';
-    const top = document.getElementById('btnTopShift'); if (top) top.innerText = 'Shift Closed';
-    const lock = document.getElementById('shiftLockout'); if (lock) lock.style.display = 'flex';
-    const place = document.getElementById('btnMainPlaceOrder'); if (place) place.disabled = true;
-    await window.Swal.fire('Shift record saved', 'Cash and stock clearance recorded.', 'success');
-  });
-  window.submitExpenseCart = () => action('expense', async p => {
-    const cart = window.expenseCart || []; if (!cart.length) throw new Error('Expense cart is empty');
-    const id = requireShift(), fund = input('expFundSource') || 'Drawer'; let total = 0, photo = null;
-    p.guard('shifts/' + id, { active: true });
-    const file = document.getElementById('expenseReceiptPhoto')?.files?.[0];
-    if (file) { if (file.size > 10 * 1024 * 1024) throw new Error('Choose a receipt photo smaller than 10 MB');
-      const path = 'expenses/' + p.id + '/receipt'; p.attachments.push({ path, type: file.type || 'application/octet-stream', bytes: await file.arrayBuffer() }); photo = { __tkAttachment: path }; }
-    for (const item of cart) {
-      const cost = amount(item.cost); total += cost;
-      p.add('expenses', { branch: branch(), shiftId: fund === 'Drawer' ? id : 'Manager_Fund', cashier: cashier(), amount: cost,
-        description: item.isRestock && item.displayQty > 0 ? `${item.description} (Qty: ${item.displayQty} ${item.displayUom})` : item.description,
-        paidFrom: fund, receiptPhoto: photo, timestamp: new Date(), operationId: p.id });
-      if (item.isRestock && item.baseQty > 0) {
-        const inv = p.inventory(item.dbId); const quantity = amount(item.baseQty);
-        p.writes.push({ path: inv.path, mode: 'update', data: {}, restock: { quantity, cost } });
-        p.add('stock_logs', { branch: branch(), item: inv.data.name, variance: quantity, uom: item.uom || inv.data.uom,
-          type: 'Store Restock (Expense)', note: 'Purchased for ₱' + cost, user: cashier(), timestamp: new Date(), operationId: p.id });
-      }
-    }
-    if (fund === 'Drawer') p.patch('shifts/' + id, { expenses: { __tkIncrement: total }, cashOut: { __tkIncrement: total } });
-    else { p.review = 'Owner must reconcile manager floating cash before account settlement'; }
-    await p.finish(); window.expenseCart = []; window.renderExpenseCart?.();
-    const modal = document.getElementById('expenseModal'); if (modal) modal.style.display = 'none';
-    await window.Swal.fire('Expense recorded', 'The receipt and all items were saved together.', 'success');
-  });
-  window.submitRemittance = () => action('remittance', async p => {
-    p.guard('shifts/' + requireShift(), { active: true });
-    const value = amount(input('remitAmount')); if (!value || !input('remitChannel') || !input('remitRecipient').trim()) throw new Error('Enter amount, channel and recipient');
-    const identity = await window.verifyPin(input('remitPinCode')); if (!identity) throw new Error('Incorrect PIN');
-    const id = requireShift(), total = await shiftTotals(id); if (value > total.expectedCash) throw new Error('Remittance exceeds the recorded drawer cash');
-    p.review = 'Owner must confirm physical cash transfer and reconcile other devices';
-    p.add('remittances', { branch: branch(), cashier: identity.cashierName, amount: value, channel: input('remitChannel'), recipient: input('remitRecipient').trim(),
-      referenceNumber: input('remitRefNum').trim(), salesPeriodStart: input('remitStartDate'), salesPeriodEnd: input('remitEndDate'),
-      status: 'Pending', timestamp: new Date(), operationId: p.id });
-    p.add('expenses', { branch: branch(), shiftId: id, cashier: identity.cashierName, amount: value, paidFrom: 'Drawer',
-      description: '[REMITTANCE TO HQ] - ' + input('remitChannel') + ' to ' + input('remitRecipient'), timestamp: new Date(), operationId: p.id });
-    p.patch('shifts/' + id, { cashOut: { __tkIncrement: value } });
-    await p.finish(); document.getElementById('remitAmount').value = ''; document.getElementById('remitRefNum').value = '';
-    await window.Swal.fire('Remittance recorded', 'Cash transfer record saved.', 'success'); window.switchRemittanceTab?.('history');
-  });
-  window.submitAllManualCounts = () => action('physical-count', async p => {
-    const requests = [];
-    for (const item of window.currentStockChecklist || []) {
-      const purch = window.stockCountMemory?.[item.id + '_purch'], loose = window.stockCountMemory?.[item.id + '_base'];
-      if ((purch === undefined || purch === '') && (loose === undefined || loose === '')) continue;
-      const inv = p.inventory(item.id), old = Number(inv.data.currentStock) || 0, conversion = Number(item.conversionRate || item.conversion) || 1;
-      const actual = amount(purch || 0) * conversion + amount(loose || 0);
-      p.guard(inv.path, { currentStock: encode(inv.data.currentStock ?? null) }); p.patch(inv.path, { currentStock: actual });
-      p.add('stock_logs', { branch: branch(), item: item.name, uom: item.baseUom || item.uom || 'units', oldQty: old, newQty: actual,
-        variance: actual - old, type: 'Staff Physical Count', note: 'Manual Count: ' + actual, user: cashier(), timestamp: new Date(), operationId: p.id });
-      if (Number(item.maintainingStock) > actual) requests.push({ itemName: item.name, name: item.name,
-        qty: Math.ceil((item.maintainingStock - actual) / conversion) * conversion, rawQty: Math.ceil((item.maintainingStock - actual) / conversion),
-        uom: item.baseUom || item.uom || 'units', purchaseUom: item.purchaseUom || item.uom || 'units', requestType: 'Maintaining Stock (Auto-Fill)' });
-    }
-    if (!p.writes.length) throw new Error('Enter at least one count');
-    if (requests.length) p.add('purchase_orders', { branch: branch(), items: requests, status: 'Pending', type: 'Silent Auto-Request', requestedBy: 'System (via Staff Count)', timestamp: new Date(), operationId: p.id });
-    await p.finish(); window.stockCountMemory = {}; localStorage.removeItem('takodeal_stock_count_memory');
-    document.querySelectorAll('.stock-count-input').forEach(node => { node.value = ''; }); window.loadStockReport?.();
-    await window.Swal.fire('Counts recorded', 'Physical counts saved.', 'success');
-  });
-  window.submitConsumablesCart = () => action('store-use', async p => {
-    const cart = window.consumablesCart || []; if (!cart.length) throw new Error('Cart is empty');
-    if (!(await confirm('Confirm store use', 'Deduct these items for branch use?'))) return;
-    for (const item of cart) p.stock(p.inventory(item.id), -amount(item.qty), { type: 'Store Use', note: 'Consumables taken for branch use' });
-    p.add('store_use_logs', { branch: branch(), loggedBy: cashier(), items: cart, timestamp: new Date(), operationId: p.id });
-    await p.finish(); window.consumablesCart = []; window.renderConsumablesCart(); window.loadConsumables?.();
-    await window.Swal.fire('Store use recorded', 'All items saved together.', 'success');
-  });
-  window.submitWasteCart = () => action('waste', async p => {
-    const cart = window.wasteCart || []; if (!cart.length) throw new Error('Waste list is empty');
-    for (const item of cart) p.stock(p.inventory(item.name, true), -amount(item.baseQty), { type: 'Waste / Spoilage', note: item.reason || '', displayQty: amount(item.rawQty), displayUom: item.displayUom || item.baseUom || 'units' });
-    await p.finish(); window.wasteCart = []; window.renderWasteCart(); window.loadWasteHistory?.();
-    await window.Swal.fire('Waste recorded', 'All deductions saved together.', 'success');
-  });
-  window.confirmPrepCart = () => action('kitchen-prep', async p => {
-    const cart = window.kitchenPrepCart || []; if (!cart.length) throw new Error('Prep cart is empty');
-    if (!(await confirm('Confirm kitchen prep', 'Record prepared batches and their ingredient use?'))) return;
-    const bom = (await store.meta('catalog:' + branch()))?.bom; if (!Array.isArray(bom)) throw new Error('Recipe backup is missing');
-    for (const item of cart) {
-      if (item.branch !== branch()) throw new Error('Prep branch does not match this tablet');
-      const inv = p.inventory(item.id), quantity = amount(item.purchQty), conversion = Number(inv.data.conversionRate || inv.data.conversion) || 1;
-      p.stock(inv, quantity * conversion, { type: 'End-of-Shift Kitchen Prep', purchUom: item.purchUom || inv.data.uom || 'units', purchQty: quantity,
-        note: 'Prepared ' + quantity + ' by ' + cashier() });
-      for (const recipe of bom.filter(row => row.menuItem === item.name)) p.stock(p.inventory(recipe.ingredientName, true), -amount(recipe.qty || 0) * quantity);
-    }
-    await p.finish(); window.kitchenPrepCart = []; window.renderPrepCart(); window.loadKitchenPrep();
-    await window.Swal.fire('Prep recorded', 'Batches and ingredient deductions saved together.', 'success');
-  });
-  window.voidTransaction = (receiptId, staff, targetBranch) => action('void', async p => {
-    if (targetBranch !== branch()) throw new Error('Receipt branch does not match this tablet');
-    const found = [...await view()].filter(([path, row]) => path.startsWith('transactions/') && row.branch === branch() && row.receiptId === receiptId);
-    if (found.length !== 1) throw new Error('Receipt backup is missing or ambiguous');
-    const [path, data] = found[0]; if (data.status === 'Voided') return false;
-    const recipe = data.stockDeductionPlan || offline.engine.deductions(tkDecode(data), (await store.meta('catalog:' + branch()))?.bom || []);
-    p.review = 'Owner must authorize receipt cancellation and stock restoration';
-    p.guard(path, { status: data.status ?? null }); p.patch(path, { status: 'Voided', voidedBy: staff, voidTime: new Date() });
-    if (data.inventoryState !== 'audit_pending') for (const [name, quantity] of Object.entries(recipe)) p.stock(p.inventory(name, true), Number(quantity));
-    p.add('manager_alerts', { type: 'VOID_ALERT', branch: branch(), cashier: staff, receiptId, timestamp: new Date(), isRead: false, operationId: p.id });
-    await p.finish(); return true;
-  }, true);
-  // Other existing forms, including PIN/face attendance and acknowledgments,
-  // keep their validation/UI, but their individual writes become durable actions.
-  async function singleWrite(target, values, mode) {
-    const p = await plan('form-' + target.path.split('/')[0]), before = (await view()).get(target.path);
-    const data = encode(values);
-    if (target.path.startsWith('inventory/') && mode === 'update' && typeof data.currentStock === 'number') {
-      if (!before || before.branch !== branch()) throw new Error('Inventory backup is missing');
-      data.currentStock = { __tkIncrement: data.currentStock - (Number(before.currentStock) || 0) };
-    } else if (mode === 'update') {
-      if (!before) throw new Error('This record was not prepared on the tablet');
-      p.guard(target.path, Object.fromEntries(Object.keys(data).map(key => [key, before[key] ?? null])));
-    }
-    p.writes.push({ path: target.path, mode, data });
-    if (/^(transactions|cash_accounts|staff_deductions|payroll_records|staff_ledger|branches)\//.test(target.path))
-      p.review = 'Owner must review this protected form action';
-    let metadata = [];
-    if (target.path.startsWith('attendance_logs/') && ['TIME IN', 'TIME OUT'].includes(values.type)) {
-      const key = 'punch:' + values.staffName, last = await store.meta(key);
-      if (last && Date.now() - last.at < 60000) throw new Error('Previous attendance punch already saved; wait one minute');
-      const headPath = 'pos_attendance_heads/' + encodeURIComponent(values.staffName);
-      const head = (await view()).get(headPath) || null;
-      p.guards.push({ path: headPath, exists: Boolean(head), fields: { operationId: head?.operationId ?? null } });
-      p.patch(headPath, { branch: branch(), staffName: values.staffName, operationId: p.id, type: values.type, timestamp: values.timestamp }, 'set');
-      metadata = [[key, { at: Date.now(), type: values.type, id: p.id }]];
-    }
-    await p.finish(metadata); return target;
-  }
-  window.addDoc = (collection, values) => singleWrite(adapter.doc(collection.path + '/op-' + crypto.randomUUID()), values, 'create');
-  window.updateDoc = (target, values) => singleWrite(target, values, 'update');
-  window.setDoc = (target, values, options) => singleWrite(target, values, options?.merge ? 'merge' : 'set');
-  window.deleteDoc = target => singleWrite(target, {}, 'delete');
-  api.prepare = async (force = false) => {
-    if (preparation) return preparation;
-    preparation = (async () => {
-      await api.ready; if (navigator.onLine === false || !branch()) return;
-      if (!force && api.prepared && Date.now() - savedAt < 15 * 60000) return;
-      if ((await store.list()).some(row => row.state !== 'synced' && row.state !== 'rejected')) {
-        if (!api.prepared) throw new Error('Reconcile saved actions before preparing a fresh data baseline'); return;
-      }
-      const map = new Map(), sets = new Set();
-      const load = async (name, constraints = []) => {
-        const base = window.collection(window.db, name), target = constraints.length ? native.query(base, ...constraints) : base;
-        const snap = await offline.deadline(tkGetDocsFromServer(target), 15000);
-        sets.add(name); for (const doc of snap.docs) map.set(doc.ref.path, encode(doc.data())); return snap;
-      };
-      const local = name => load(name, [native.where('branch', '==', branch())]);
-      await load('inventory', [native.where('branch', '==', branch())]); await load('bom'); await load('branches');
-      const staff = await load('cashiers'); await load('settings');
-      await load('shifts', [native.where('branch', '==', branch()), native.orderBy('startTime', 'desc'), native.limit(30)]);
-      const current = [...map].find(([path, row]) => path.startsWith('shifts/') && row.active === true);
-      const since = current ? tkDecode(current[1].startTime) : new Date(Date.now() - 7 * 86400000);
-      await load('expenses', [native.where('branch', '==', branch()), native.where('timestamp', '>=', since)]);
-      await load('transactions', [native.where('branch', '==', branch()), native.where('timestamp', '>=', since)]);
-      for (const name of ['remittances', 'stock_logs', 'store_use_logs', 'purchase_orders', 'manager_alerts'])
-        await load(name, [native.where('branch', '==', branch()), native.orderBy('timestamp', 'desc'), native.limit(100)]);
-      await load('dispatch_logs', [native.where('toBranch', '==', branch())]); await load('announcements', [native.where('active', '==', true)]);
-      for (const doc of staff.docs) {
-        const name = doc.data().cashierName; if (!name) continue;
-        for (const collection of ['hr_sanctions', 'staff_requests', 'acknowledgments']) await load(collection, [native.where('staffName', '==', name)]);
-        await load('attendance_logs', [native.where('staffName', '==', name), native.orderBy('timestamp', 'desc'), native.limit(20)]);
-        const head = await offline.deadline(tkGetDocFromServer(adapter.doc('pos_attendance_heads/' + encodeURIComponent(name))));
-        sets.add('pos_attendance_heads'); if (head.exists()) map.set(head.ref.path, encode(head.data()));
-      }
-      const state = await offline.deadline(tkGetDocFromServer(adapter.doc('pos_branch_shifts/' + branch())));
-      sets.add('pos_branch_shifts'); if (state.exists()) map.set(state.ref.path, encode(state.data()));
-      // Save the complete replacement baseline before exposing it to any form.
-      await store.meta('operations-cache:' + branch(), { branch: branch(), entities: [...map], coverage: [...sets], savedAt: Date.now() });
-      entities = map; coverage = sets; savedBranch = branch(); savedAt = Date.now(); prepared = true; problem = '';
-      return { documents: entities.size, savedAt: Date.now() };
-    })().catch(error => { problem = error.message; throw error; }).finally(() => { preparation = null; }); return preparation;
-  };
-    // OFFLINE-03: paste inside installTakodealOperations, immediately before
-  // the line: const originalPrepare = offline.prepare;
-  (function installOffline03Forms() {
-    if (window.TKOffline03) return;
-    const previousAssertReady = assertReady;
-    assertReady = async () => {
-      await previousAssertReady();
-      const approval = await store.meta('approval:' + device());
-      if (!approval?.trustedUid) throw new Error('Complete Owner device approval and preparation first');
-    };
-    const dayFor = value => {
-      const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(value);
-      const part = type => parts.find(p => p.type === type).value;
-      return part('year') + '-' + part('month') + '-' + part('day');
-    };
-    const staffMealName = name => String(name || '').replace(/ \(Staff\)$/, '').trim();
-    async function mealIdentity(name, when = new Date()) {
-      const staffName = staffMealName(name);
-      const matches = [...await view()].filter(([path, data]) => path.startsWith('cashiers/') && data.cashierName === staffName);
-      if (matches.length !== 1) throw new Error('Owner must resolve the missing or duplicate staff profile: ' + staffName);
-      const staffId = matches[0][0].split('/')[1], day = dayFor(when);
-      return { staffId, staffName, day, id: staffId + '__' + day };
-    }
-    async function hasClaim(identity) {
-      if (await store.meal('meal03:' + identity.id)) return true;
-      const saved = await store.meta('meal03-server:' + identity.id);
-      if (saved?.claimed) return true;
-      if ((await store.list()).some(row => row.payload?.staffMealClaimId === identity.id || row.evidence?.staffMealClaimId === identity.id)) return true;
-      // Respect earlier meals already present in the prepared history too.
-      for (const [path, row] of await view()) {
-        const meal = path.startsWith('staff_requests/') && String(row.type || '').toLowerCase().includes('staff meal') && row.staffName === identity.staffName;
-        const sale = path.startsWith('transactions/') && row.globalDiscountType === 'staff_meal' && staffMealName(row.customerName) === identity.staffName;
-        if (!(meal || sale) || ['Voided', 'Rejected', 'Cancelled'].includes(row.status)) continue;
-        const date = tkDecode(row.timestamp || row.localTimestamp);
-        if (date && Number.isFinite(new Date(date).getTime()) && dayFor(new Date(date)) === identity.day) return true;
-      }
-      if (navigator.onLine !== false) {
-        try {
-          const snap = await offline.deadline(tkGetDocFromServer(adapter.doc('pos_staff_meal_claims/' + identity.id)));
-          if (snap.exists()) { await store.meta('meal03-server:' + identity.id, { claimed: true }); return true; }
-        } catch (error) {
-          if (error.code === 'permission-denied') throw new Error('Owner must finish installing the matching device and meal Rules');
-        }
-      }
-      return false;
-    }
-    const oldHasMeal = offline.hasMealToday;
-    offline.hasMealToday = async name => Boolean(await oldHasMeal(name)) || hasClaim(await mealIdentity(name));
-    const originalAccept = offline.engine.accept;
-    const originalAdd = store.add;
-    store.add = (record, key, metadata) => originalAdd(record, key || (record.evidence?.staffMealClaimId ? 'meal03:' + record.evidence.staffMealClaimId : null), metadata);
-    offline.engine.accept = async (payload, options) => {
-      await assertReady();
-      if (payload.globalDiscountType !== 'staff_meal') return originalAccept(payload, options);
-      const existing = payload.localSaleId && await store.get(payload.localSaleId);
-      if (existing) return originalAccept(payload, options);
-      const identity = await mealIdentity(payload.customerName);
-      if (await hasClaim(identity)) throw new Error('This staff member already has a meal recorded for today');
-      payload.staffMealClaimId = identity.id;
-      payload.staffMealStaffId = identity.staffId;
-      payload.staffMealDay = identity.day;
-      const effects = [...options.effects, { collection: 'pos_staff_meal_claims', id: identity.id, mode: 'create',
-        data: { ...identity, branch: payload.branch, deviceId: device(), saleId: payload.localSaleId } }];
-      return originalAccept(payload, { ...options, effects, mealKey: 'meal03:' + identity.id });
-    };
-
-    // A single receiving action includes every stock delta, dispatch status,
-    // stock log and discrepancy alert. A changed dispatch goes to Owner review.
-    window.submitGroupedDispatch = (groupKey, encodedItems) => action('shipment-received', async p => {
-      const items = JSON.parse(decodeURIComponent(encodedItems));
-      if (!Array.isArray(items) || !items.length || new Set(items.map(item => item.id)).size !== items.length) throw new Error('Invalid shipment sheet');
-      const map = await view();
-      const current = items.map(item => ({ item, data: tkDecode(map.get('dispatch_logs/' + item.id)) }));
-      const terminal = new Set(['Received', 'Discrepancy', 'Lost in Transit']);
-      if (current.every(entry => entry.data && terminal.has(entry.data.status))) {
-        await window.Swal.fire('Already recorded', 'This shipment already has a receiving record. No stock was added again.', 'info'); return;
-      }
-      for (const { item, data } of current) {
-        if (!data || data.toBranch !== branch() || data.status !== 'Arrived' || data.item !== item.item) throw new Error('Refresh the arrived shipment sheet before receiving it');
-        const field = document.getElementById('recv_val_' + item.id);
-        const missing = Boolean(document.getElementById('missing_check_' + item.id)?.checked);
-        if (!missing && (!field || field.value.trim() === '')) throw new Error('Enter the actual received quantity for ' + item.item);
-        const received = missing ? 0 : amount(field.value);
-        const inv = p.inventory(item.item, true);
-        const conversion = Number(inv.data.conversionRate || inv.data.conversion || 1);
-        if (!Number.isFinite(conversion) || conversion <= 0) throw new Error('Owner must check the unit conversion for ' + item.item);
-        if (item.convRate && Number(item.convRate) !== conversion) throw new Error('Unit conversion changed. Refresh this shipment sheet');
-        const expected = amount(data.qty), quantity = received * conversion, variance = quantity - expected;
-        const status = missing ? 'Lost in Transit' : variance === 0 ? 'Received' : 'Discrepancy';
-        const remarks = document.getElementById('remark_val_' + item.id)?.value.trim() || '';
-        p.guard('dispatch_logs/' + item.id, { status: 'Arrived', toBranch: branch(), item: data.item, qty: encode(data.qty) });
-        p.guard(inv.path, { branch: branch(), name: inv.data.name, conversionRate: inv.data.conversionRate ?? null, conversion: inv.data.conversion ?? null });
-        if (quantity) p.stock(inv, quantity, { type: 'Delivery Received', dispatchId: item.id, note: remarks || 'Complete shipment received' });
-        p.patch('dispatch_logs/' + item.id, { status, receivedQty: quantity, variance, receivedDisplayQty: received,
-          receivedAt: new Date(), receivedBy: cashier(), receivingRemarks: remarks, receivingOperationId: p.id });
-        if (missing || variance) p.add('manager_alerts', { type: 'DELIVERY_DISCREPANCY', branch: branch(), cashier: cashier(),
-          message: data.item + ': expected ' + expected + ', received ' + quantity + '. ' + remarks,
-          timestamp: new Date(), isRead: false, operationId: p.id });
-      }
-      if (!(await confirm('Receive this shipment?', 'Save the actual quantities and delivery status together?'))) return;
-      await p.finish();
-      await window.Swal.fire('Receiving record saved', 'All shipment items were saved together.', 'success');
-      window.loadStockRequestUI?.();
-    });
-
-    // Freeze the raw ingredients used by each batch so an undo never guesses
-    // from a recipe that the Manager may have changed later.
-    window.confirmPrepCart = () => action('kitchen-prep', async p => {
-      const cart = window.kitchenPrepCart || [];
-      if (!cart.length) throw new Error('Prep cart is empty');
-      const bom = (await store.meta('catalog:' + branch()))?.bom;
-      if (!Array.isArray(bom)) throw new Error('Recipe backup is missing');
-      for (const item of cart) {
-        if (item.branch !== branch()) throw new Error('Prep branch does not match this tablet');
-        const inv = p.inventory(item.id), count = amount(item.purchQty);
-        const conversion = Number(inv.data.conversionRate || inv.data.conversion || 1);
-        if (!count || !Number.isFinite(conversion) || conversion <= 0) throw new Error('Enter a valid batch quantity and conversion');
-        const rawPlan = {};
-        for (const recipe of bom.filter(row => row.menuItem === item.name)) {
-          const quantity = amount(recipe.qty || 0) * count;
-          if (quantity) rawPlan[recipe.ingredientName] = (rawPlan[recipe.ingredientName] || 0) + quantity;
-        }
-        for (const name of Object.keys(rawPlan)) p.inventory(name, true);
-        p.stock(inv, count * conversion, { type: 'End-of-Shift Kitchen Prep', purchUom: item.purchUom || inv.data.uom || 'units',
-          purchQty: count, rawIngredientReturnPlan: rawPlan, preparedQty: count * conversion,
-          note: 'Prepared ' + count + ' by ' + cashier() });
-        for (const [name, quantity] of Object.entries(rawPlan)) p.stock(p.inventory(name, true), -quantity);
-      }
-      if (!(await confirm('Confirm kitchen prep', 'Record prepared batches and their ingredient use?'))) return;
-      await p.finish(); window.kitchenPrepCart = []; window.renderPrepCart?.(); window.loadKitchenPrep?.();
-      await window.Swal.fire('Prep recorded', 'Batches and their exact ingredient use were saved together.', 'success');
-    });
-    window.undoKitchenPrep = logId => action('kitchen-prep-reversal', async p => {
-      const path = 'stock_logs/' + logId, data = tkDecode((await view()).get(path));
-      if (!data || data.branch !== branch()) throw new Error('Prep record is missing');
-      if (data.undone || data.undoReviewOperationId) throw new Error('This batch already has an undo or review record');
-      if (!(Number(data.variance) > 0) || !String(data.type).toLowerCase().includes('prep')) throw new Error('Select an original prepared batch');
-      p.guard(path, { undone: data.undone ?? null, undoReviewOperationId: data.undoReviewOperationId ?? null, variance: data.variance });
-      if (!data.rawIngredientReturnPlan || typeof data.rawIngredientReturnPlan !== 'object') {
-        p.review = 'Legacy prep has no frozen ingredient plan. Owner must reconstruct the original ingredient use before any stock reversal.';
-        p.evidence = { originalPrepLogId: logId, originalPrep: encode(data) };
-        p.patch(path, { undoReviewOperationId: p.id });
-      } else {
-        p.stock(p.inventory(data.item, true), -amount(data.preparedQty || data.variance), { type: 'Kitchen Prep Reversal', originalPrepLogId: logId });
-        for (const [name, quantity] of Object.entries(data.rawIngredientReturnPlan)) p.stock(p.inventory(name, true), amount(quantity), { type: 'Ingredient Return', originalPrepLogId: logId });
-        p.patch(path, { undone: true, undoneAt: new Date(), undoneBy: cashier(), undoneOperationId: p.id });
-      }
-      if (!(await confirm('Record a batch reversal?', 'Preserve the original prep record and save all reversals together?'))) return;
-      await p.finish(); window.loadKitchenPrepHistory?.();
-      await window.Swal.fire('Reversal recorded', p.review ? 'The earlier batch requires Owner reconciliation. Stock has not been reversed.' : 'The original batch and its reversal are retained.', 'success');
-    });
-
-    // HR meal entries use the same daily claim as POS meals. Photos are saved
-    // as bytes on the tablet; uploading is deferred until the action commits.
-    const oldStaffRequest = window.submitStaffRequest;
-    window.submitStaffRequest = type => type !== 'Staff Meal' ? oldStaffRequest(type) : action('staff-meal-request', async p => {
-      const identity = await mealIdentity(cashier()), item = input('reqMealItem').trim(), cost = amount(input('reqMealCost'));
-      if (!item || input('reqMealCost').trim() === '') throw new Error('Enter the meal and its cost');
-      if (await hasClaim(identity)) throw new Error('This staff member already has a meal recorded for today');
-      const claimPath = 'pos_staff_meal_claims/' + identity.id;
-      p.guards.push({ path: claimPath, exists: false });
-      let photo = null;
-      const file = document.getElementById('reqMealProof')?.files?.[0];
-      if (file) {
-        if (file.size > 10 * 1024 * 1024) throw new Error('Choose a proof photo smaller than 10 MB');
-        const path = 'staff_requests/' + p.id + '/proof';
-        p.attachments.push({ path, type: file.type || 'application/octet-stream', bytes: await file.arrayBuffer() }); photo = { __tkAttachment: path };
-      }
-      const request = p.add('staff_requests', { type: 'Staff Meal', branch: branch(), staffName: identity.staffName,
-        staffId: identity.staffId, item, amount: cost, status: 'Pending', timestamp: new Date(), operationId: p.id, proofImageUrl: photo }, 'meal');
-      p.writes.push({ path: claimPath, mode: 'create', data: { ...identity, branch: branch(), deviceId: device(), requestId: request.id, acceptedAt: encode(new Date()) } });
-      p.evidence = { staffMealClaimId: identity.id };
-      const record = await journal.accept(p);
-      offline.sync().catch(() => {});
-      for (const id of ['reqMealItem', 'reqMealCost', 'reqMealProof']) if (document.getElementById(id)) document.getElementById(id).value = '';
-      const modal = document.getElementById('staffRequestsModal'); if (modal) modal.style.display = 'none';
-      await window.Swal.fire('Meal recorded', 'The meal and any proof photo were saved together.', 'success');
-      return record;
-    });
-
-    const make = (tag, text) => { const node = document.createElement(tag); node.textContent = text; return node; };
-    let dialog, info, controls, timer;
-    function legacyQueues() {
-      const keys = ['takodeal_offline_queue', 'takodeal_delivery_outbox', 'takodeal_audit_queue'];
-      return keys.filter(key => { const raw = localStorage.getItem(key); if (!raw) return false; try { return Object.keys(JSON.parse(raw) || {}).length > 0; } catch { return true; } });
-    }
-    window.openCashierPreparation = async () => {
-      const auth = tkGetAuth(); await auth.authStateReady?.();
-      const isOwner = auth.currentUser?.email === 'jgo031996@gmail.com' && auth.currentUser.emailVerified;
-      if (!isOwner) {
-        const result = await window.Swal.fire({ title: 'Owner device preparation', input: 'password', inputLabel: 'Owner or Manager staff PIN', showCancelButton: true });
-        if (!result.isConfirmed) return;
-        const cached = JSON.parse(localStorage.getItem('takodeal_cashier_cache') || '[]');
-        const staff = cached.find(row => String(row.pin) === String(result.value));
-        if (!staff || !/(owner|manager)/i.test(staff.role || '')) throw new Error('Owner or Manager preparation access required');
-      }
-      if (!dialog) {
-        dialog = document.createElement('dialog'); dialog.id = 'tk03PreparationDialog';
-        dialog.style.cssText = 'width:min(650px,94vw);max-height:85dvh;overflow:auto;border:1px solid #e8dfd3;border-radius:20px;padding:22px;background:#fff;color:#27231f';
-        const close = make('button', 'Close'); close.onclick = () => { clearInterval(timer); dialog.close(); };
-        info = make('div', ''); controls = make('div', '');
-        dialog.append(make('h2', 'Device preparation'), close, info, controls); document.body.append(dialog);
-      }
-      const refresh = async () => {
-        const secure = await store.meta('secure-device:' + device());
-        info.replaceChildren(make('p', 'Branch: ' + (branch() || 'Unassigned')), make('p', 'Device: ' + (device() || 'Unregistered')),
-          make('p', 'Approval UID: ' + (secure?.uid || 'Not enrolled')));
-        controls.replaceChildren();
-        const button = (label, task) => {
-          const node = make('button', label); node.style.cssText = 'min-height:48px;padding:12px;margin:6px;border:1px solid #e5d8bd;border-radius:10px;background:#fff4d9;font-weight:700';
-          node.onclick = async () => { node.disabled = true; try { await task(); } catch (error) { await window.Swal.fire('Preparation held', error.message, 'warning'); } finally { node.disabled = false; await refresh(); } };
-          controls.append(node);
-        };
-        button('Export saved tablet records', async () => {
-          const queues = Object.fromEntries(['takodeal_offline_queue', 'takodeal_delivery_outbox', 'takodeal_audit_queue'].map(key => [key, localStorage.getItem(key)]));
-          const records = { exportedAt: new Date().toISOString(), branch: branch(), deviceId: device(), queues, ledger: await store.list(), documents: await store.documents() };
-          const text = JSON.stringify(records, (_, value) => value instanceof ArrayBuffer ? { __tkBytes: Array.from(new Uint8Array(value)) } : value, 2);
-          const url = URL.createObjectURL(new Blob([text], { type: 'application/json' })), link = document.createElement('a');
-          link.href = url; link.download = 'takodeal-tablet-records-' + device() + '-' + dayFor(new Date()) + '.json';
-          link.click(); setTimeout(() => URL.revokeObjectURL(url), 60000);
-        });
-        if (legacyQueues().length) info.append(make('p', 'Owner reconciliation required for earlier queues: ' + legacyQueues().join(', ') + '. Export and retain these records.'));
-        if (!secure) button('Request Owner device approval', async () => {
-          if (legacyQueues().length) throw new Error('Export and reconcile the earlier sales, delivery or audit queues first. Do not clear them to bypass this check');
-          if (window.currentShift?.active || (await store.list()).some(row => !['synced', 'rejected'].includes(row.state))) throw new Error('Close and reconcile saved shifts and records before enrollment');
-          const answer = await window.Swal.fire({ title: 'Enroll this tablet?', text: 'This may sign the Owner out of this Cashier browser. Checkout waits for approval in the separate Manager app. Tablet records are retained.', showCancelButton: true, confirmButtonText: 'Request approval' });
-          if (answer.isConfirmed) await offline.beginSecureDeviceEnrollment();
-        });
-        else {
-          button('Check Owner approval', async () => { await offline.refreshTrustedBinding(); await window.Swal.fire('Approval confirmed', 'This tablet identity is approved.', 'success'); });
-          button('Prepare this tablet', async () => {
-            if (navigator.onLine === false) throw new Error('Reconnect for the initial preparation');
-            await offline.prepare(true); await offline.heartbeat();
-            if (!offline.prepared) throw new Error('Preparation is incomplete');
-            await window.Swal.fire('Preparation complete', 'Menu, photos, recipes and action data are saved on this tablet.', 'success');
-          });
-        }
-        info.append(make('p', offline.prepared ? 'Asset and action backup: prepared' : 'Asset and action backup: preparation required'));
-        const catalog = await store.meta('catalog:' + branch());
-        info.append(make('p', catalog?.modelsComplete ? 'Attendance models: saved' : 'Attendance models: preparation required'));
-        if (offline.problem) info.append(make('p', offline.problem));
-      };
-      await refresh(); if (!dialog.open) dialog.showModal();
-    };
-    function installSetupButton() {
-      const menu = document.getElementById('posSettingsDropdown');
-      if (!menu || document.getElementById('tk03PreparationButton')) return;
-      const node = make('button', 'Device preparation'); node.id = 'tk03PreparationButton';
-      node.style.cssText = 'min-height:48px;padding:12px;border:1px solid #e8dfd3;border-radius:10px;background:#faf8f4;color:#27231f;font-weight:700';
-      node.onclick = () => window.openCashierPreparation().catch(error => window.Swal.fire('Preparation held', error.message, 'warning'));
-      menu.append(node);
-      const loginControl = document.querySelector?.('button[onclick*="ownerBypassLogin"]');
-      if (loginControl?.parentElement && !document.getElementById('tk03LoginPreparationButton')) {
-        const loginButton = make('button', 'Device preparation'); loginButton.id = 'tk03LoginPreparationButton';
-        loginButton.style.cssText = node.style.cssText; loginButton.onclick = node.onclick;
-        loginControl.parentElement.append(loginButton);
-      }
-    }
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installSetupButton); else installSetupButton();
-    window.TKOffline03 = { version: 3, dayFor, mealIdentity, hasClaim };
-  })();
-
-  const originalPrepare = offline.prepare;
-  offline.prepare = async (...args) => { const result = await originalPrepare(...args); await api.prepare(args[0] === true); return result; };
-
-  window.executeCacheWipe = async () => {
-    await api.ready;
-    if (navigator.onLine === false || (await store.list()).some(row => !['synced', 'rejected'].includes(row.state)))
-      return window.Swal.fire('Update held', 'Ask the owner to finish checking saved records before updating this tablet.', 'info');
-    const registration = await navigator.serviceWorker.ready; await registration.update();
-    await offline.prepare(true); window.location.reload();
-  };
-})();
-// OWNER ROVING + SAFE UPDATE HOTFIX 2026-10-03
-// Paste this ENTIRE block at the VERY BOTTOM of Cashier main.js,
-// AFTER its existing final })();. Keep the existing Offline-03 code.
-(function installTakodealOwnerRovingHotfix() {
-  if (window.TKOwnerRoving) return;
-  const OWNER = 'jgo031996@gmail.com';
-  const HOME = 'Main Office';
-  const ENTRY = 'tk_owner_roving_entry_20261003';
-  const pos = window.TKOffline;
-  if (!pos || !window.TKOperations) throw new Error('Paste this hotfix after the complete Offline-03 code');
-  let busy = false, allowPrepare = false, maintenance;
-  const branch = () => localStorage.getItem('takodeal_device_branch');
-  const device = () => localStorage.getItem('takodeal_device_id');
-  const verified = user => user?.email === OWNER && user.emailVerified === true;
-  const keys = ['takodeal_offline_menu', 'takodeal_cached_allowed_cats', 'takodeal_cached_settings',
-    'takodeal_cached_categories', 'takodeal_cached_item_layout', 'takodeal_cached_addon_layout',
-    'takodeal_cached_addons', 'takodeal_cached_mixmatch', 'takodeal_cashier_cache'];
-  function ownerServices() {
-    if (!maintenance) {
-      // Google verification has its own Auth instance. It cannot replace the
-      // anonymous identity used by this physical tablet's sales and presence.
-      const ownerApp = initializeApp(firebaseConfig, 'takodeal-owner-roving-20261003');
-      maintenance = { auth: getAuth(ownerApp), db: initializeFirestore(ownerApp, {}) };
-    }
-    return maintenance;
-  }
-  function message(error) {
-    if (error?.code === 'permission-denied') return 'Device setup was denied. Check that the complete Offline-03 Firestore Rules are published and that you selected the verified Owner Google account.';
-    if (error?.code === 'auth/operation-not-allowed') return 'Enable Anonymous sign-in in Firebase Authentication before preparing this tablet.';
-    return error?.message || 'Owner access could not finish. Saved tablet records are retained.';
-  }
-  async function drained() {
-    await pos.ready;
-    if (pos.engine.busy) throw new Error('A record is syncing. Wait for it to finish before changing the working branch');
-    const rows = await pos.store.list();
-    if (rows.some(row => !['synced', 'rejected'].includes(row.state) || row.auditPending))
-      throw new Error('This tablet has records awaiting sync or Owner review. Reconcile them before changing its working branch');
-    for (const key of ['takodeal_offline_queue', 'takodeal_delivery_outbox', 'takodeal_audit_queue']) {
-      const raw = localStorage.getItem(key); if (!raw) continue;
-      let values; try { values = JSON.parse(raw); } catch { throw new Error('An earlier tablet queue needs Owner review'); }
-      if (values && Object.keys(values).length) throw new Error('Reconcile the earlier tablet queues before changing branch. Do not clear them');
-    }
-    if (window.cart?.length) throw new Error('Finish or park the current order before changing branch');
-  }
-  const loadedBranch = branch();
-  const accept = pos.engine.accept;
-  pos.engine.accept = function (...args) {
-    if (busy || branch() !== loadedBranch) return Promise.reject(new Error('Owner branch preparation is still running. Reload this Cashier tab'));
-    return accept.apply(this, args);
-  };
-  const sync = pos.engine.sync;
-  pos.engine.sync = function (...args) { if (busy) return Promise.resolve(); return sync.apply(this, args); };
-  const prepare = pos.prepare, prepareOperations = window.TKOperations.prepare;
-  pos.prepare = function (...args) { if (busy && !allowPrepare) return Promise.resolve(); return prepare.apply(this, args); };
-  window.TKOperations.prepare = function (...args) { if (busy && !allowPrepare) return Promise.resolve(); return prepareOperations.apply(this, args); };
-
-  // Staff authorizations inside a logged-in Owner session still work. The
-  // login screen on an Owner roaming device requires Owner Google access.
-  const pin = window.verifyPin;
-  window.verifyPin = async function (...args) {
-    const secure = await pos.store.meta('secure-device:' + device());
-    const login = document.getElementById('loginOverlay');
-    if (secure?.mode === 'OwnerRoving' && login?.style.display !== 'none') {
-      window.Swal.fire('Owner device', 'Use the Owner Access button to open this roaming device. Staff tablets keep their normal branch and PIN login.', 'info');
-      return 'BLOCKED';
-    }
-    return pin.apply(this, args);
-  };
-
-  async function finishEntry(entry) {
-    const owner = ownerServices(); await owner.auth.authStateReady?.();
-    const tabletAuth = tkGetAuth(); await tabletAuth.authStateReady?.();
-    if (!verified(owner.auth.currentUser)) throw new Error('Use Owner Access and verify the Owner Google account again');
-    const secure = await pos.store.meta('secure-device:' + device());
-    if (entry.branch !== branch() || entry.deviceId !== device() || secure?.mode !== 'OwnerRoving'
-      || !tabletAuth.currentUser?.isAnonymous || tabletAuth.currentUser.uid !== secure.uid)
-      throw new Error('The saved Owner entry does not match this tablet and working branch');
-    const approval = navigator.onLine === false ? await pos.store.meta('approval:' + device()) : await pos.refreshTrustedBinding();
-    if (!approval?.approved || approval.branch !== branch() || approval.trustedUid !== secure.uid)
-      throw new Error('Owner approval of this working branch is required');
-    window.Swal.fire({ title: 'Preparing Owner access…', text: 'Loading the selected branch and its saved data.', allowOutsideClick: false, allowEscapeKey: false, didOpen: () => window.Swal.showLoading() });
-    window.sessionUser = { email: OWNER, branch: branch(), cashierName: 'Owner', isOwner: true, role: 'Owner' };
-    window.currentShift = null; window.activeShiftDetails = null; window.systemReady = false;
-    localStorage.setItem('cashierName', 'Owner');
-    const label = document.getElementById('displayBranchText') || document.getElementById('displayBranch');
-    if (label) label.textContent = branch();
-    const name = document.getElementById('displayCashierText') || document.getElementById('displayCashier');
-    if (name) name.textContent = 'Owner';
-    if (typeof window.loadPOSData !== 'function') throw new Error('The POS menu loader has not started');
-    await window.loadPOSData();
-    if (navigator.onLine !== false) {
-      allowPrepare = true;
-      try { await pos.prepare(true); } finally { allowPrepare = false; }
-    }
-    if (!pos.prepared) throw new Error('Branch preparation is incomplete. Use Device preparation to finish saving its menu, photos and action data, then open Owner Access again');
-    if (typeof window.checkCurrentShift !== 'function') throw new Error('The shift screen has not started');
-    await window.checkCurrentShift();
-    const login = document.getElementById('loginOverlay'); if (login) login.style.display = 'none';
-    const control = document.getElementById('ownerAccessBtnContainer'); if (control) control.style.display = 'none';
-    window.updateParkedBadge?.(); window.requestWakeLock?.();
-    window.startMobileOrdersListener?.(branch());
-    sessionStorage.removeItem(ENTRY);
-    window.Swal.close();
-  }
-
-  window.ownerBypassLogin = async function () {
-    if (busy) return;
-    busy = true;
-    try {
-      await pos.ready;
-      const owner = ownerServices(); await owner.auth.authStateReady?.();
-      if (navigator.onLine === false) {
-        // Previously verified Owner sessions can resume their already prepared
-        // branch offline. Selecting a different branch needs server approval.
-        await finishEntry({ branch: branch(), deviceId: device() });
-        return;
-      }
-      const google = new GoogleAuthProvider(); google.setCustomParameters({ prompt: 'select_account' });
-      const result = await signInWithPopup(owner.auth, google);
-      const token = await result.user.getIdTokenResult();
-      if (!verified(result.user) || token.claims.email !== OWNER || token.claims.email_verified !== true) {
-        await tkSignOut(owner.auth); throw new Error('Only the verified Owner Google account can select a roaming branch');
-      }
-      if (!device()) throw new Error('Register this physical device in the Manager app first');
-      const legacy = await pos.deadline(tkGetDocsFromServer(query(collection(owner.db, 'pos_devices'), where('deviceId', '==', device()))));
-      if (legacy.size !== 1 || legacy.docs[0].data().status !== 'Active') throw new Error('This physical device must have exactly one Active registration in Manager');
-      if (legacy.docs[0].data().branch !== HOME) throw new Error('This is a fixed branch tablet. Use its normal PIN login. Roaming Owner Access requires a device registered to Main Office');
-      const branches = await pos.deadline(tkGetDocsFromServer(collection(owner.db, 'branches')));
-      const byName = new Map();
-      for (const row of branches.docs) { const name = row.data().name; if (name) { if (byName.has(name)) throw new Error('Duplicate branch names need Owner review'); byName.set(name, row); } }
-      const choice = await window.Swal.fire({ title: 'Owner working branch', input: 'select',
-        inputOptions: Object.fromEntries([...byName.keys()].sort().map(name => [name, name])),
-        inputValue: byName.has(branch()) ? branch() : '', inputPlaceholder: 'Select branch',
-        text: 'Main Office remains this device’s home. The selected branch receives its real sales and stock records.',
-        showCancelButton: true, confirmButtonText: 'Open selected branch', inputValidator: value => !value ? 'Select a branch' : undefined });
-      if (!choice.isConfirmed || !byName.has(choice.value)) return;
-      const target = choice.value;
-      const secure = await pos.store.meta('secure-device:' + device());
-      const tabletAuth = tkGetAuth(); await tabletAuth.authStateReady?.();
-      // Resuming the same authenticated device keeps pending receipts intact.
-      if (target === branch() && secure?.mode === 'OwnerRoving' && tabletAuth.currentUser?.isAnonymous && tabletAuth.currentUser.uid === secure.uid) {
-        await finishEntry({ branch: target, deviceId: device() }); return;
-      }
-      await drained();
-      if (secure && (!tabletAuth.currentUser?.isAnonymous || tabletAuth.currentUser.uid !== secure.uid))
-        throw new Error('The stored tablet identity has changed. Retain its records and ask the Owner to reconcile that identity before re-enrollment');
-      if (tabletAuth.currentUser && !tabletAuth.currentUser.isAnonymous) {
-        if (!verified(tabletAuth.currentUser)) throw new Error('Sign out the unrelated Google session before Owner device setup');
-        await tkSignOut(tabletAuth);
-      }
-      const user = tabletAuth.currentUser || (await tkSignInAnonymously(tabletAuth)).user;
-      const bindingRef = doc(owner.db, 'pos_bindings', user.uid);
-      const physicalRef = doc(owner.db, 'pos_devices', legacy.docs[0].id);
-      const targetRef = doc(owner.db, 'branches', byName.get(target).id);
-      await pos.deadline(tkRunTransaction(owner.db, async tx => {
-        const old = await tx.get(bindingRef), physical = await tx.get(physicalRef), selected = await tx.get(targetRef);
-        if (!physical.exists() || physical.data().status !== 'Active' || physical.data().branch !== HOME || physical.data().deviceId !== device())
-          throw new Error('The physical Main Office registration changed during setup');
-        if (!selected.exists() || selected.data().name !== target) throw new Error('The selected branch changed during setup');
-        if (old.exists() && (old.data().deviceId !== device() || old.data().legacyDeviceDocId !== physicalRef.id))
-          throw new Error('This anonymous identity belongs to another physical device');
-        if (old.exists() && old.data().status === 'Revoked') throw new Error('This device was revoked. Review it in Manager before reactivating');
-        tx.set(bindingRef, { uid: user.uid, deviceId: device(), branch: target,
-          deviceName: physical.data().deviceName || device(), legacyDeviceDocId: physicalRef.id,
-          status: 'Active', mode: 'OwnerRoving', homeBranch: HOME, approvedBy: OWNER,
-          approvedAt: serverTimestamp(), requestedAt: old.exists() ? old.data().requestedAt || serverTimestamp() : serverTimestamp() });
-      }), 20000);
-      await pos.store.meta('secure-device:' + device(), { uid: user.uid, mode: 'OwnerRoving', homeBranch: HOME });
-      await pos.store.meta('approval:' + device(), { approved: true, branch: target, docId: physicalRef.id, trustedUid: user.uid, checkedAt: Date.now() });
-      // Restore the target branch's snapshot, then restart the private POS and
-      // operation caches. The physical registration and every ledger survive.
-      const backup = await pos.store.meta('catalog:' + target);
-      for (const key of keys) { const value = backup?.local?.[key]; if (value != null) localStorage.setItem(key, value); }
-      localStorage.setItem('takodeal_cached_allowed_cats', JSON.stringify(byName.get(target).data().allowedCategories || []));
-      localStorage.setItem('takodeal_device_branch', target);
-      localStorage.removeItem('currentShiftId'); localStorage.removeItem('cashierName');
-      sessionStorage.setItem(ENTRY, JSON.stringify({ branch: target, deviceId: device() }));
-      window.location.reload();
-    } catch (error) {
-      sessionStorage.removeItem(ENTRY);
-      window.sessionUser = null;
-      await window.Swal.fire('Owner access held', message(error), 'warning');
-    } finally { busy = false; }
-  };
-
-  window.executeCacheWipe = async function () {
-    try {
-      if (busy) throw new Error('Finish Owner branch preparation before updating');
-      await drained();
-      if (navigator.onLine === false) throw new Error('Connect this device before requesting an app update');
-      const registration = await navigator.serviceWorker?.getRegistration();
-      if (!registration) throw new Error('App installation is not ready. Reload while connected');
-      // Download an updated app without erasing photos, IndexedDB or identity.
-      // Device approval is checked by preparation, not by updating app files.
-      await pos.deadline(registration.update(), 20000);
-      const worker = registration.installing || registration.waiting;
-      if (worker && worker.state !== 'activated') {
-        let changed;
-        try {
-          await pos.deadline(new Promise((resolve, reject) => {
-            changed = () => {
-              if (worker.state === 'activated') resolve();
-              else if (worker.state === 'redundant') reject(new Error('The new app files could not be installed. The preceding app and tablet records are retained'));
-            };
-            worker.addEventListener('statechange', changed); changed();
-          }), 120000);
-        } finally { if (changed) worker.removeEventListener('statechange', changed); }
-      }
-      window.Swal.close(); window.location.reload();
-    } catch (error) { await window.Swal.fire('Update held', message(error), 'warning'); }
-  };
-  window.manualHardUpdate = async function () {
-    const result = await window.Swal.fire({ title: 'Update app files?', text: 'Saved tablet records, photos and device registration are retained.', showCancelButton: true, confirmButtonText: 'Update now' });
-    if (!result.isConfirmed) return;
-    window.Swal.fire({ title: 'Updating app files…', allowOutsideClick: false, didOpen: () => window.Swal.showLoading() });
-    await window.executeCacheWipe();
-  };
-  const logout = window.logoutCashier;
-  window.logoutCashier = async function (...args) {
-    try { if (maintenance) await tkSignOut(maintenance.auth); }
-    finally { sessionStorage.removeItem(ENTRY); return logout.apply(this, args); }
-  };
-  window.TKOwnerRoving = { version: '20261003', homeBranch: HOME, get preparing() { return busy; } };
-  const resume = async () => {
-    const raw = sessionStorage.getItem(ENTRY); if (!raw) return;
-    busy = true;
-    try { await pos.ready; await window.TKOperations.ready; await finishEntry(JSON.parse(raw)); }
-    catch (error) { sessionStorage.removeItem(ENTRY); window.sessionUser = null; await window.Swal.fire('Owner access held', message(error), 'warning'); }
-    finally { busy = false; }
-  };
-  window.addEventListener('storage', event => {
-    if (event.key !== 'takodeal_device_branch' || event.oldValue === event.newValue) return;
-    busy = true; window.sessionUser = null; window.location.reload();
-  });
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resume, { once: true }); else resume();
-})();
