@@ -1,6 +1,6 @@
-const CACHE_NAME = 'takodeal-manager-core-v3';
+const CACHE_NAME = 'takodeal-manager-core-v4-sale-safety';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
-const CORE_ASSETS = ['./', './index.html', './main.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
+const CORE_ASSETS = ['./', './index.html', './main.js', './pos-safety.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
 
 self.addEventListener('install', event => {
     event.waitUntil(caches.open(CACHE_NAME).then(async cache => {
