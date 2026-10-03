@@ -1,3 +1,4 @@
+import { createSaleEngine } from './pos-safety.js';
 // --- ACCESS CONTROL ENGINE (FRANCHISE PROFILES) ---
 const MASTER_EMAIL = "jgo031996@gmail.com";
 
@@ -26043,142 +26044,25 @@ window.viewReceiptDetails = function(receiptId, customer, time, payment, total, 
 };
 
 window.voidAndReplenishTransaction = async function(receiptId, branch, cartEncoded) {
-    const confirm = await Swal.fire({
+    const confirmation = await Swal.fire({
         title: '⚠️ VOID TRANSACTION?',
-        html: `Are you sure you want to void this receipt?<br><br><b>This will:</b><br>1. Mark the sale as Voided.<br>2. Deduct Takoyaki Balls from the 1 Million Milestone.<br>3. Return all ingredients back to ${branch} Inventory.`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc2626',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: 'Yes, Void & Replenish!',
-        customClass: { popup: 'rounded-2xl shadow-xl' }
+        text: 'Void this receipt? Recorded stock deductions will be returned, or paused deductions cancelled, exactly once.',
+        icon: 'warning', showCancelButton: true, confirmButtonColor: '#dc2626', confirmButtonText: 'Yes, Void'
     });
-
-    if (!confirm.isConfirmed) return;
-    Swal.fire({title: 'Voiding & Replenishing...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
+    if (!confirmation.isConfirmed) return;
+    Swal.fire({title: 'Voiding...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     try {
-        // 1. Locate the exact transaction document via the Receipt ID
-        const txQ = window.query(window.collection(window.db, "transactions"), window.where("receiptId", "==", receiptId), window.limit(1));
-        const txSnap = await window.getDocs(txQ);
-        if (txSnap.empty) {
-            Swal.fire('Error', 'Could not locate the transaction in the database.', 'error');
-            return;
-        }
-        let docId = txSnap.docs[0].id;
-
-        let cart = JSON.parse(decodeURIComponent(cartEncoded));
-        let ballsToDeduct = 0;
-        let itemsToReturn = {}; 
-
-        const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
-        let recipes = {};
-        bomSnap.forEach(d => {
-            let r = d.data();
-            if (!recipes[r.menuItem]) recipes[r.menuItem] = [];
-            recipes[r.menuItem].push({ ingredient: r.ingredientName, qty: parseFloat(r.qty) || 0 });
+        const engine = createSaleEngine({
+            db: window.db, doc: window.doc, collection: window.collection, query: window.query, where: window.where,
+            getDocsFromServer: tkOwnerDocs, runTransaction: tkOwnerTransaction,
+            increment: window.increment, serverTimestamp: window.serverTimestamp
         });
-
-        cart.forEach(item => {
-            let qty = parseFloat(item.qty) || 1;
-            let itemName = item.name || item.itemName || "";
-            let itemCategory = (item.category || "").toLowerCase();
-
-            // Calculate Takoyaki Balls to deduct based on portions!
-            let normalizedName = itemName.toLowerCase();
-            if (normalizedName.includes("takoyaki") || itemCategory.includes("takoyaki")) {
-                if (normalizedName.includes("4pcs") || normalizedName.includes("4 pcs")) ballsToDeduct += (4 * qty);
-                else if (normalizedName.includes("8pcs") || normalizedName.includes("8 pcs")) ballsToDeduct += (8 * qty);
-                else if (normalizedName.includes("12pcs") || normalizedName.includes("12 pcs")) ballsToDeduct += (12 * qty);
-                else ballsToDeduct += (4 * qty); // Fallback standard
-            }
-
-            let recipe = recipes[itemName] || [];
-            recipe.forEach(ing => {
-                if (!itemsToReturn[ing.ingredient]) itemsToReturn[ing.ingredient] = 0;
-                itemsToReturn[ing.ingredient] += (ing.qty * qty);
-            });
-
-            if (item.addons) {
-                for (let key in item.addons) {
-                    let addon = item.addons[key];
-                    if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
-                        if (!itemsToReturn[addon.linkedIngredient]) itemsToReturn[addon.linkedIngredient] = 0;
-                        itemsToReturn[addon.linkedIngredient] += (addon.deductQty * addon.qty * qty);
-                    }
-                }
-            }
-        });
-
-        // 2. Mark Transaction as Voided
-        await window.updateDoc(window.doc(window.db, "transactions", docId), {
-            status: "Voided",
-            voidedAt: window.serverTimestamp(),
-            voidedBy: window.sessionUser ? window.sessionUser.cashierName : 'Manager'
-        });
-
-        // 3. Deduct Milestone Balls safely!
-        if (ballsToDeduct > 0) {
-            const statsRef = window.doc(window.db, "settings", "global_stats");
-            const statsSnap = await window.getDoc(statsRef);
-            if (statsSnap.exists()) {
-                let currentTotal = statsSnap.data().totalTakoyakiBalls || 0;
-                let currentBranchTotal = statsSnap.data()[`balls_${branch}`] || 0;
-                
-                let payload = { totalTakoyakiBalls: Math.max(0, currentTotal - ballsToDeduct) };
-                payload[`balls_${branch}`] = Math.max(0, currentBranchTotal - ballsToDeduct);
-                
-                await window.updateDoc(statsRef, payload);
-            }
-        }
-
-        // 4. Return Inventory safely via Batch!
-        const batch = window.writeBatch(window.db);
-        let returnCount = 0;
-
-        for (let ingName in itemsToReturn) {
-            let returnQty = itemsToReturn[ingName];
-            const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", ingName));
-            const invSnap = await window.getDocs(invQ);
-            
-            if (!invSnap.empty) {
-                let invDoc = invSnap.docs[0];
-                let currentStock = parseFloat(invDoc.data().currentStock) || 0;
-                let newStock = currentStock + returnQty;
-                
-                batch.update(invDoc.ref, { currentStock: newStock });
-                
-                let newLogRef = window.doc(window.collection(window.db, "stock_logs"));
-                batch.set(newLogRef, {
-                    branch: branch,
-                    item: ingName,
-                    uom: invDoc.data().uom || 'units',
-                    oldQty: currentStock,
-                    newQty: newStock,
-                    variance: returnQty,
-                    type: "Voided Sale Return",
-                    note: `Refunded from voided receipt: ${receiptId}`,
-                    user: window.sessionUser ? window.sessionUser.cashierName : 'Manager',
-                    timestamp: window.serverTimestamp()
-                });
-                returnCount++;
-            }
-        }
-
-        if (returnCount > 0) await batch.commit();
-
-        Swal.fire('✅ Voided & Replenished!', `Receipt marked as Voided.\n-${ballsToDeduct} Takoyaki Balls deducted.\nIngredients returned to ${branch} stock.`, 'success');
-        
-        let modal = document.getElementById('dynamicReceiptModal');
-        if (modal) modal.remove();
-        
+        const voided = await engine.voidSale(receiptId, window.sessionUser?.cashierName || 'Manager', branch);
+        await Swal.fire(voided ? 'Transaction voided' : 'Already voided', voided ? 'The receipt, inventory, counters and logs were updated together.' : 'No additional inventory was returned.', 'success');
+        document.getElementById('dynamicReceiptModal')?.remove();
         if (typeof window.loadGlobalDashboard === 'function') window.loadGlobalDashboard();
         if (typeof window.loadSalesHistoryTab === 'function') window.loadSalesHistoryTab();
-        
-    } catch(e) {
-        console.error("Void Error:", e);
-        Swal.fire('Error', 'Failed to void and replenish. Check console.', 'error');
-    }
+    } catch (error) { Swal.fire('Void not completed', error.message, 'error'); }
 };
 
 // ========================================================
@@ -29463,7 +29347,7 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
     for (const report of reports) guard(report);
     for (const receipt of sales.docs) {
       const sale = receipt.data(); guard(receipt); if (sale.status === 'Voided') continue;
-      if (sale.inventoryState === 'audit_pending') throw new Error('Finish paused stock audits before settlement');
+      if (sale.inventoryState === 'audit_pending' || sale.inventoryState === 'deferred') throw new Error('Finish paused stock audits before settlement');
       for (const payment of sale.splitDetails || [{ method: sale.paymentMethod || 'Cash', amount: sale.netTotal }]) {
         if (payment.method === 'Cash') cash += Number(payment.amount) || 0;
         else digital[payment.method] = (digital[payment.method] || 0) + (Number(payment.amount) || 0);

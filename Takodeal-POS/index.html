@@ -2744,7 +2744,7 @@ window.loadSalesDashboard = async function () {
 
     async function voidTx(receiptId) {
       if (confirm(`Are you sure you want to VOID transaction ${receiptId}?\n\n⚠️ WARNING: This action will be reported immediately to the Manager.`)) {
-        try { await window.voidTransaction(receiptId, sessionUser.cashierName, sessionUser.branch); alert(`Transaction voided. The Manager has been notified.`); loadSalesDashboard(); }
+        try { const voided = await window.voidTransaction(receiptId, sessionUser.cashierName, sessionUser.branch); alert(voided ? 'Transaction voided. The Manager has been notified.' : 'This transaction is already voided.'); loadSalesDashboard(); }
         catch (e) { alert("Error voiding transaction: " + e.message); }
       }
     }
@@ -3717,82 +3717,30 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         globalDiscountValue: dVal,
         globalDiscountAmount: dAmount,
         globalDiscountReason: dReason,
-        netTotal: window.finalCheckoutAmount || window.currentGrandTotal,
+        netTotal: window.finalCheckoutAmount ?? window.currentGrandTotal,
         customerName: custName,
-        amountReceived: dType === 'staff_meal' || dType === 'manager_meal' ? (window.finalCheckoutAmount || window.currentGrandTotal) : window.amountReceivedStr,
+        amountReceived: dType === 'staff_meal' || dType === 'manager_meal' ? (window.finalCheckoutAmount ?? window.currentGrandTotal) : window.amountReceivedStr,
         cart: window.cart,
         wasParked: window.isResumedParkedOrder || false,
         isMobileOrder: window.isActiveOrderMobile || false,
         mobileOrderCode: window.activeMobileOrderCode || null,
+        mobileOrderId: window.activeMobileOrderId || null,
+        mealStaffName: staffIdentity ? staffIdentity.cashierName : null,
         deliveryAddress: deliveryAddress,
         contactNumber: contactNumber
       };
 
-      let receiptId = await window.processCheckout(payload);
+      const checkout = await window.processCheckout(payload);
+      const receiptId = checkout.receiptId;
 
-      if (receiptId) {
-        // 🔥 SECURITY ALARM: ALERTS MANAGER OF DISCOUNTS 🔥
-        if (dType !== 'none' && dType !== '') {
-            try {
-                let alertMsg = `💸 DISCOUNT FLAG: A [${dType.toUpperCase()}] discount was applied to Order #${receiptId}. Please verify if this is valid.`;
-                
-                if (dType === 'staff_meal' || dType === 'manager_meal') {
-                    let cName = document.getElementById('finalCustomerName') ? document.getElementById('finalCustomerName').value : 'Staff';
-                    alertMsg = `🍔 MEAL CLAIMED: ${cName} claimed a meal allowance on Order #${receiptId}.`;
-                }
-
-                await window.addDoc(window.collection(window.db, "manager_alerts"), {
-                    type: "DISCOUNT_APPLIED",
-                    branch: window.sessionUser.branch,
-                    cashier: window.sessionUser.cashierName,
-                    message: alertMsg,
-                    timestamp: window.serverTimestamp(),
-                    isRead: false
-                });
-            } catch(e) { console.error("Failed to send discount alert", e); }
-        }
-
-        // 📥 FIRE TO MANAGER INBOX IF IT'S A STAFF OR MANAGER MEAL
-        if ((dType === 'staff_meal' || dType === 'manager_meal') && staffIdentity) {
-            try {
-                let mealTypeLabel = dType === 'manager_meal' ? 'Manager Meal' : 'Staff Meal';
-                let shortDesc = window.cart.map(i => `${i.qty}x ${i.name}`).join(', ');
-                await window.addDoc(window.collection(window.db, "staff_requests"), {
-                    type: `${mealTypeLabel} (POS Auto)`,
-                    branch: window.sessionUser.branch,
-                    staffName: staffIdentity.cashierName,
-                    amount: payload.netTotal,
-                    item: shortDesc + " | OR#: " + receiptId,
-                    receiptId: receiptId,
-                    status: "Pending",
-                    staffAcknowledged: false,
-                    timestamp: window.serverTimestamp()
-                });
-
-                let pinBox = document.getElementById('checkoutStaffPin');
-                if (pinBox) pinBox.value = '';
-            } catch(e) { console.error("Failed to log meal to inbox:", e); }
-        }
-
-        if (window.activeMobileOrderId) {
-            window.updateDoc(window.doc(window.db, "incoming_orders", window.activeMobileOrderId), {
-                paymentStatus: "paid", receiptId: receiptId, encodedAt: window.serverTimestamp()
-            }).catch(e => console.log(e));
-
-            window.activeMobileOrderId = null; window.activeMobileOrderCode = null; window.isActiveOrderMobile = false;
-        }
-
-        let totalBallsSold = 0;
-        window.cart.forEach(item => {
-            let match = (item.name || item.itemName).match(/(\d+)\s*Pcs/i);
-            if (match) totalBallsSold += (parseInt(match[1]) * (item.qty || 1));
-        });
-
-        if (totalBallsSold > 0) {
-            let statsPayload = { totalTakoyakiBalls: window.increment(totalBallsSold) };
-            statsPayload[`balls_${window.sessionUser.branch}`] = window.increment(totalBallsSold);
-            window.setDoc(window.doc(window.db, "settings", "global_stats"), statsPayload, { merge: true }).catch(e => console.log(e));
-        }
+      if (checkout.status === 'queued' || checkout.status === 'committed') {
+        // Related records and counters are written with the sale, once.
+        Object.assign(payload, checkout.payload);
+        const pinBox = document.getElementById('checkoutStaffPin');
+        if (pinBox) pinBox.value = '';
+        window.activeMobileOrderId = null;
+        window.activeMobileOrderCode = null;
+        window.isActiveOrderMobile = false;
 
         window.lastTransactionData = { ...payload, receiptId: receiptId };
         document.getElementById('rcptId').innerText = `: ${receiptId}`;
@@ -3820,7 +3768,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
         document.getElementById('receiptModal').style.display = 'flex';
       } else {
-        alert("Network Error: Could not save to database.");
+        alert("Checkout was not saved. Your cart is unchanged.\n\n" + (checkout.error || "Please try again."));
         btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false;
       }
     };
@@ -4182,128 +4130,18 @@ window.resumeOrder = async function(docId) {
 window.isDeletingParkedOrder = false; // 🔥 1. Add the global safety lock
 
 window.deleteParkedOrderManually = async function(docId) {
-      // 🔥 2. The Shield: Block rapid double-clicks instantly!
-      if (window.isDeletingParkedOrder) return; 
-
-      let order = window.currentParkedOrdersList.find(o => o.id === docId);
-      if (!order) return; // Extra safety check if it's already gone
-
-      if(!confirm("⚠️ Are you sure you want to permanently delete this parked order?\n\nIt will be recorded as a Voided Receipt in Shift Sales, and all its ingredients will be auto-replenished into the inventory.")) return;
-      
-      window.isDeletingParkedOrder = true; // 🔥 3. Lock the door
-
-      try {
-          let exactShiftId = (typeof currentShift !== 'undefined' && currentShift && currentShift.shiftId) ? currentShift.shiftId : "UNKNOWN";
-          let voidReceiptId = "PRK-VOID-" + Math.floor(Math.random()*10000);
-
-          // 1. Log as a Voided Transaction for Shift Sales accountability
-          await addDoc(collection(db, "transactions"), {
-              branch: order.branch,
-              cashier: localStorage.getItem('cashierName') || 'Staff',
-              shiftId: exactShiftId, 
-              receiptId: voidReceiptId,
-              netTotal: order.total || order.netTotal || 0,
-              status: "Voided",
-              orderType: (order.orderType || "DINE-IN") + " (PARKED)",
-              paymentMethod: "Unpaid / Deleted",
-              customerName: order.name || order.customerName || "Guest",
-              cart: order.items || order.cart || [],
-              timestamp: serverTimestamp()
-          });
-
-          // 2. Fire an alert to the Manager
-          await addDoc(collection(db, "manager_alerts"), {
-              type: "PARKED_VOID_ALERT",
-              branch: order.branch,
-              cashier: localStorage.getItem('cashierName') || 'Staff',
-              message: `🚨 PARKED ORDER DELETED: Cashier removed a parked order for ${order.name || 'Guest'} totaling ₱${(order.total || 0).toFixed(2)}. It has been logged as Voided and ingredients were replenished.`,
-              timestamp: serverTimestamp(),
-              isRead: false
-          });
-
-          // 3. 🔥 REPLENISH INVENTORY ENGINE 🔥
-          let cartItems = order.items || order.cart || [];
-          for (let cartItem of cartItems) {
-              let itemName = cartItem.name || cartItem.itemName;
-              let qtyVoided = parseFloat(cartItem.qty) || 1;
-
-              // A. Replenish Main Recipe (BOM)
-              const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
-              const bomSnap = await getDocs(bomQ);
-
-              for (let bomDoc of bomSnap.docs) {
-                  let recipeData = bomDoc.data();
-                  let ingredientName = recipeData.ingredientName;
-                  let totalAmountToReturn = (parseFloat(recipeData.qty) || 0) * qtyVoided;
-
-                  // Dine-In Box Halving Logic
-                  let ingNameLower = (ingredientName || "").toLowerCase();
-                  let orderTypeLower = (order.orderType || 'Dine-In').toLowerCase();
-                  if (ingNameLower.includes("box") && orderTypeLower.includes("dine-in")) {
-                      totalAmountToReturn = totalAmountToReturn / 2;
-                  }
-
-                  const invQ = query(collection(db, "inventory"), where("branch", "==", order.branch), where("name", "==", ingredientName));
-                  const invSnap = await getDocs(invQ);
-
-                  if (!invSnap.empty) {
-                      let invDocRef = invSnap.docs[0].ref;
-                      let invData = invSnap.docs[0].data();
-                      let newStock = (parseFloat(invData.currentStock) || 0) + totalAmountToReturn;
-                      
-                      await updateDoc(invDocRef, { currentStock: newStock });
-
-                      await addDoc(collection(db, "stock_logs"), {
-                          branch: order.branch, item: ingredientName, uom: invData.uom || 'units',
-                          oldQty: invData.currentStock || 0, newQty: newStock, variance: totalAmountToReturn, 
-                          type: "Parked Order Voided", note: `Replenished from deleted parked order: ${order.name || 'Guest'}`,
-                          user: localStorage.getItem('cashierName') || 'Staff', timestamp: serverTimestamp()
-                      });
-                  }
-              }
-
-              // B. Replenish Add-ons
-              if (cartItem.addons) {
-                  for (let addonKey in cartItem.addons) {
-                      let addon = cartItem.addons[addonKey];
-                      if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
-                          let totalAddonReturn = parseFloat(addon.deductQty) * parseFloat(addon.qty) * qtyVoided;
-
-                          const addonInvQ = query(collection(db, "inventory"), where("branch", "==", order.branch), where("name", "==", addon.linkedIngredient));
-                          const addonInvSnap = await getDocs(addonInvQ);
-
-                          if (!addonInvSnap.empty) {
-                              let invDocRef = addonInvSnap.docs[0].ref;
-                              let invData = addonInvSnap.docs[0].data();
-                              let newStock = (parseFloat(invData.currentStock) || 0) + totalAddonReturn;
-                              
-                              await updateDoc(invDocRef, { currentStock: newStock });
-
-                              await addDoc(collection(db, "stock_logs"), {
-                                  branch: order.branch, item: addon.linkedIngredient, uom: invData.uom || 'units',
-                                  oldQty: invData.currentStock || 0, newQty: newStock, variance: totalAddonReturn, 
-                                  type: "Parked Order Voided (Addon)", note: `Replenished from deleted parked order: ${order.name || 'Guest'}`,
-                                  user: localStorage.getItem('cashierName') || 'Staff', timestamp: serverTimestamp()
-                              });
-                          }
-                      }
-                  }
-              }
-          }
-
-          // 4. Delete it from the database and refresh UI
-          await window.deleteParkedOrder(docId);
-          window.showParkedOrders();
-          window.updateParkedBadge();
-          
-          if (typeof window.loadSalesDashboard === 'function') window.loadSalesDashboard();
-          
-          Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Voided & Replenished!', showConfirmButton: false, timer: 2500});
-      } catch(e) {
-          console.error(e); alert("Failed to delete and void.");
-      } finally {
-          window.isDeletingParkedOrder = false; // 🔥 4. Unlock the door when finished!
-      }
+    if (window.isDeletingParkedOrder) return;
+    if (!confirm('Delete this unpaid parked order? It will be logged as Voided. Inventory will stay unchanged.')) return;
+    window.isDeletingParkedOrder = true;
+    try {
+        const shiftId = window.currentShift?.shiftId || 'UNKNOWN';
+        await window.discardParkedOrder(docId, localStorage.getItem('cashierName') || 'Staff', window.sessionUser.branch, shiftId);
+        window.showParkedOrders();
+        window.updateParkedBadge();
+        if (typeof window.loadSalesDashboard === 'function') window.loadSalesDashboard();
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Parked order deleted', showConfirmButton: false, timer: 2500});
+    } catch (error) { alert('Parked order was not deleted. ' + error.message); }
+    finally { window.isDeletingParkedOrder = false; }
 };
 
 // ==========================================
@@ -4760,7 +4598,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=10.0"></script>
+    <script type="module" src="main.js?v=10.1-sale-safety"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {

@@ -2,7 +2,9 @@
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { installSaleSafety } from './pos-checkout.js';
+import { saleIdentity } from './pos-safety.js';
 // 🔥 NEW: Import Firebase Storage
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
@@ -1238,239 +1240,7 @@ window.updateActiveShiftCashier = async function(newCashierName) {
 // ========================================================
 // 🛒 TRUE OFFLINE CHECKOUT & SYNC ENGINE
 // ========================================================
-window.offlineQueue = JSON.parse(localStorage.getItem('takodeal_offline_queue')) || [];
-window.isSyncing = false;
-window.isProcessingOrder = false; // 🛡️ Initialize the lock variable
-
-window.processCheckout = async function (payload) {
-    // 🛡️ 1. THE SHIELD: Instantly block spam-clicks!
-    if (window.isProcessingOrder) {
-        console.warn("Checkout Shield activated: Ignored rapid double-click!");
-        return null; 
-    }
-    window.isProcessingOrder = true; // Lock the checkout process
-
-    try {
-        // 🔥 THE CASHIER OVERRIDE FIX: 
-        // This forces the receipt to use the person actively logged into the screen right now,
-        // ignoring who originally opened the shift!
-        let activeCashierName = (window.sessionUser && window.sessionUser.cashierName) 
-            ? window.sessionUser.cashierName 
-            : (localStorage.getItem('cashierName') || 'Unknown');
-        
-        payload.cashier = activeCashierName;
-
-        // 🔥 TAG DIGITAL PAYMENTS AS UNVERIFIED AUTOMATICALLY
-        if (payload.paymentMethod && payload.paymentMethod.toLowerCase() !== "cash") {
-            payload.paymentVerified = false;
-        } else {
-            payload.paymentVerified = true; // Cash is pre-verified by the cashier
-        }
-
-        // 🔀 SPLIT PAYMENT INTERCEPTOR & VALIDATOR
-        let splitContainer = document.getElementById('splitPaymentContainer');
-        if (splitContainer && splitContainer.style.display !== 'none') {
-            let m1 = document.getElementById('splitMethod1').value;
-            let a1 = parseFloat(document.getElementById('splitAmount1').value) || 0;
-            let m2 = document.getElementById('splitMethod2').value;
-            let a2 = parseFloat(document.getElementById('splitAmount2').value) || 0;
-            
-            if (Math.abs((a1 + a2) - payload.netTotal) > 0.01) {
-                alert(`❌ ERROR: The Split Amounts (₱${a1+a2}) do not match the Order Total (₱${payload.netTotal})!\n\nPlease adjust the split amounts.`);
-                return null; 
-            }
-            
-            payload.paymentMethod = `Split (${m1} & ${m2})`;
-            payload.splitDetails = [ { method: m1, amount: a1 }, { method: m2, amount: a2 } ];
-        }
-
-        // 🔥 100% OFFLINE RECEIPT GENERATOR!
-        let d = new Date();
-        let dateStr = d.getFullYear().toString() + String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
-        let localCounter = parseInt(localStorage.getItem('takodeal_offline_rcpt_count')) || 1;
-        localStorage.setItem('takodeal_offline_rcpt_count', localCounter + 1);
-        let randomHash = Math.random().toString(36).substring(2, 5).toUpperCase();
-        
-        // 🔥 OVERRIDE OR# WITH MOBILE APP RECEIPT CODE IF IT EXISTS!
-        const receiptId = payload.mobileOrderCode || `${dateStr}-${localCounter.toString().padStart(4, '0')}-${randomHash}`;
-
-        // Stamp the payload with the exact local time and receipt ID
-        payload.receiptId = receiptId;
-        payload.localTimestamp = new Date().toISOString(); 
-
-        // 1. PUSH TO LOCAL OFFLINE QUEUE (Saves securely to the tablet's hard drive)
-        window.offlineQueue.push(payload);
-        localStorage.setItem('takodeal_offline_queue', JSON.stringify(window.offlineQueue));
-
-        // Auto-close split container
-        if (splitContainer) splitContainer.style.display = 'none';
-
-        // 🔥 NEW: INJECT DELIVERY ORDERS INTO THE MOBILE HUB DISPATCHER
-        if (payload.orderType === "Delivery") {
-            try {
-                window.addDoc(window.collection(window.db, "incoming_orders"), {
-                    branch: payload.branch,
-                    customerName: payload.customerName || "Delivery Customer",
-                    contactNumber: payload.contactNumber || "",
-                    deliveryAddress: payload.deliveryAddress || "",
-                    totalAmount: payload.netTotal,
-                    items: payload.cart,
-                    status: "preparing", // 🍳 Puts it in the Mobile Hub so the Cashier can mark it 'Ready' later!
-                    orderCode: receiptId,
-                    paymentMethod: payload.paymentMethod || "Cash",
-                    timestamp: window.serverTimestamp()
-                });
-            } catch(e) { console.error("Failed to push to dispatch hub:", e); }
-        }
-
-        // 2. WAKE UP THE BACKGROUND SYNC ROBOT
-        window.syncOfflineQueue();
-
-        // 3. INSTANT RETURN: The cashier sees the success screen immediately!
-        return receiptId;
-
-    } catch (error) { 
-        console.error("Critical Checkout Error:", error); 
-        return "OFFLINE-" + Date.now().toString().slice(-6); 
-    } finally {
-        // 🔓 2. THE RELEASE: Always unlock the button when the process finishes!
-        window.isProcessingOrder = false;
-    }
-};
-
-// ========================================================
-// ⚡ ATOMIC BATCH SYNC ENGINE (CORRUPTION & LEAK FIX)
-// ========================================================
-window.syncOfflineQueue = async function() {
-    if (window.isSyncing || window.offlineQueue.length === 0) return;
-    
-    window.isSyncing = true;
-    let badge = document.getElementById('liveClock').nextElementSibling;
-
-    try {
-        // 🔥 THE LEAK FIX: Force BOM to load if the internet was slow during boot!
-        if (!window.masterPOSData) window.masterPOSData = {};
-        if (!window.masterPOSData.bom || window.masterPOSData.bom.length === 0) {
-            let tempBom = [];
-            const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
-            bomSnap.forEach(doc => tempBom.push(doc.data()));
-            window.masterPOSData.bom = tempBom;
-        }
-
-        let localInvCache = {};
-
-        while (window.offlineQueue.length > 0) {
-            if (badge) {
-                badge.innerHTML = `<span style="background: #eab308; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px;">⏳ SYNCING SALES (${window.offlineQueue.length})...</span>`;
-            }
-
-            let payload = window.offlineQueue[0];
-            let promises = []; 
-            
-            // 1. Save Transaction to Firebase
-            let txRef = window.doc(window.collection(window.db, "transactions"));
-            promises.push(window.setDoc(txRef, {
-                ...payload,
-                timestamp: new Date(payload.localTimestamp)
-            }));
-
-            // 2. Gather all ingredient deductions (Base Recipe + Addons)
-            let ingredientsToDeduct = {};
-
-            if (payload.cart && Array.isArray(payload.cart)) {
-                payload.cart.forEach(cartItem => {
-                    let itemName = cartItem.name || cartItem.itemName;
-                    let qtySold = parseFloat(cartItem.qty) || 1;
-
-                    let recipe = (window.masterPOSData && window.masterPOSData.bom) ? window.masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
-                    
-                    // 🔥 THE MATH FIX: Prioritize the INDIVIDUAL ITEM's order type for mixed orders!
-                    let itemOrderType = cartItem.orderType || payload.orderType || 'Dine-In'; 
-                    
-                    recipe.forEach(r => {
-                        let deductAmount = (parseFloat(r.qty) || 0) * qtySold;
-                        
-                        let ingName = (r.ingredientName || "").toLowerCase();
-                        if (ingName.includes("box")) {
-                            if (itemOrderType.toLowerCase().includes("dine-in")) {
-                                deductAmount = deductAmount / 2; // Deduct exactly half a box!
-                            }
-                        }
-
-                        if (!ingredientsToDeduct[r.ingredientName]) ingredientsToDeduct[r.ingredientName] = 0;
-                        ingredientsToDeduct[r.ingredientName] += deductAmount;
-                    });
-
-                    // B. Deduct Add-ons & Mix-Match Fillings
-                    if (cartItem.addons) {
-                        for (let key in cartItem.addons) {
-                            let addon = cartItem.addons[key];
-                            if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
-                                if (!ingredientsToDeduct[addon.linkedIngredient]) ingredientsToDeduct[addon.linkedIngredient] = 0;
-                                ingredientsToDeduct[addon.linkedIngredient] += (parseFloat(addon.deductQty) * parseFloat(addon.qty) * qtySold);
-                            }
-                        }
-                    }
-                });
-            }
-
-            // 3. Process Live Inventory Deductions (WITH AUDIT PAUSE ENGINE)
-            if (window.isAuditModeActive) {
-                let auditQueue = JSON.parse(localStorage.getItem('takodeal_audit_queue')) || {};
-                for (let ing in ingredientsToDeduct) {
-                    auditQueue[ing] = (auditQueue[ing] || 0) + ingredientsToDeduct[ing];
-                }
-                localStorage.setItem('takodeal_audit_queue', JSON.stringify(auditQueue));
-            } else {
-                for (let ing in ingredientsToDeduct) {
-                    let totalDeduct = ingredientsToDeduct[ing];
-                    if (totalDeduct > 0) {
-                        if (!localInvCache[ing]) {
-                            const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", payload.branch), window.where("name", "==", ing));
-                            const invSnap = await window.getDocs(invQ);
-                            if (!invSnap.empty) {
-                                localInvCache[ing] = invSnap.docs[0].ref;
-                            }
-                        }
-                        
-                        if (localInvCache[ing]) {
-                            promises.push(window.updateDoc(localInvCache[ing], { 
-                                currentStock: window.increment(-totalDeduct) 
-                            }));
-                        }
-                    }
-                }
-            }
-
-            await Promise.all(promises);
-
-            // 5. Remove processed order from local queue securely
-            window.offlineQueue.shift();
-            localStorage.setItem('takodeal_offline_queue', JSON.stringify(window.offlineQueue));
-        }
-    } catch(e) {
-        console.warn("Offline Sync Paused: Will retry automatically when connection stabilizes.", e);
-    } finally {
-        window.isSyncing = false;
-        if (window.isAppOnline && typeof window.updateNetworkStatusUI === 'function') {
-            window.updateNetworkStatusUI();
-        } else if (badge && window.isAppOnline === false) {
-            badge.innerHTML = `<span style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(220,38,38,0.5);">🔴 OFFLINE (SAVING LOCALLY)</span>`;
-        } else if (badge) {
-            badge.innerHTML = `<span style="background: #16a34a; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(22,163,74,0.5);">🟢 ONLINE & SYNCING</span>`;
-        }
-    }
-};
-
-// Automatically wake up the robot whenever the tablet connects to Wi-Fi
-window.addEventListener('online', () => { 
-    window.isAppOnline = true; 
-    if(typeof window.updateNetworkStatusUI === 'function') window.updateNetworkStatusUI(); 
-    window.syncOfflineQueue(); 
-});
-
-// Run once on boot to clear out any trapped sales from yesterday
-setTimeout(window.syncOfflineQueue, 5000);
+installSaleSafety({ db, doc, collection, query, where, getDocsFromServer, runTransaction, increment, serverTimestamp, onSnapshot });
 
 // --- THE DASHBOARD ENGINE ---
 window.getSalesDashboardData = async function (branch, shiftStartTime) {
@@ -1733,150 +1503,7 @@ window.deleteParkedOrder = async function (docId) {
 };
 
 // --- VOID & DETAILS ENGINE (WITH INVENTORY REPLENISHMENT) ---
-window.voidTransaction = async function (receiptId, cashierName, branch) {
-  try {
-    const q = query(collection(db, "transactions"), where("receiptId", "==", receiptId));
-    const snap = await getDocs(q);
-    if (snap.empty) throw new Error("Transaction not found");
-    
-    const txDoc = snap.docs[0];
-    const docId = txDoc.id;
-    const txData = txDoc.data();
 
-    // Prevent double-voiding glitches
-    if (txData.status === "Voided") {
-        alert("⚠️ This transaction is already voided.");
-        return false;
-    }
-
-    // 1. Void the transaction record
-    await updateDoc(doc(db, "transactions", docId), { status: "Voided", voidedBy: cashierName, voidTime: serverTimestamp() });
-
-    // 2. 🔥 INVENTORY REPLENISHMENT ENGINE 🔥
-    if (txData.cart && Array.isArray(txData.cart)) {
-      for (let cartItem of txData.cart) {
-        let itemName = cartItem.name || cartItem.itemName;
-        let qtyVoided = parseFloat(cartItem.qty) || 1;
-
-        // --- A. REPLENISH MAIN RECIPE (BOM) ---
-        const bomQ = query(collection(db, "bom"), where("menuItem", "==", itemName));
-        const bomSnap = await getDocs(bomQ);
-
-        for (let bomDoc of bomSnap.docs) {
-          let recipeData = bomDoc.data();
-          let ingredientName = recipeData.ingredientName;
-          
-          let totalAmountToReturn = (parseFloat(recipeData.qty) || 0) * qtyVoided;
-
-          // 🔥 THE SMART DINE-IN PACKAGING ENGINE (FOR VOIDS)
-          let ingName = (ingredientName || "").toLowerCase();
-          // 🔥 THE MATH FIX: Prioritize the INDIVIDUAL ITEM's order type!
-          let itemOrderType = cartItem.orderType || txData.orderType || 'Dine-In';
-          if (ingName.includes("box")) {
-              if (itemOrderType.toLowerCase().includes("dine-in")) {
-                  totalAmountToReturn = totalAmountToReturn / 2; // Return exactly half a box!
-              }
-          }
-
-          // Find the ingredient in this specific branch's inventory
-          const invQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", ingredientName));
-          const invSnap = await getDocs(invQ);
-
-          if (!invSnap.empty) {
-            let invDocRef = invSnap.docs[0].ref;
-            let invData = invSnap.docs[0].data();
-            
-            // Add it back to the current stock!
-            let newStock = (parseFloat(invData.currentStock) || 0) + totalAmountToReturn;
-            await updateDoc(invDocRef, { currentStock: newStock });
-
-            await addDoc(collection(db, "stock_logs"), {
-                branch: branch,
-                item: ingredientName,
-                uom: invData.uom || 'units',
-                oldQty: invData.currentStock || 0,
-                newQty: newStock,
-                variance: totalAmountToReturn, 
-                type: "Transaction Voided",
-                note: `Receipt ${receiptId} voided by ${cashierName}`,
-                user: cashierName,
-                timestamp: serverTimestamp()
-            });
-          }
-        }
-
-        // --- B. REPLENISH ADD-ONS ---
-        if (cartItem.addons) {
-            for (let addonKey in cartItem.addons) {
-                let addon = cartItem.addons[addonKey];
-                
-                if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
-                    let totalAddonReturn = parseFloat(addon.deductQty) * parseFloat(addon.qty) * qtyVoided;
-
-                    const addonInvQ = query(collection(db, "inventory"), where("branch", "==", branch), where("name", "==", addon.linkedIngredient));
-                    const addonInvSnap = await getDocs(addonInvQ);
-
-                    if (!addonInvSnap.empty) {
-                        let invDocRef = addonInvSnap.docs[0].ref;
-                        let invData = addonInvSnap.docs[0].data();
-                        
-                        let newStock = (parseFloat(invData.currentStock) || 0) + totalAddonReturn;
-                        await updateDoc(invDocRef, { currentStock: newStock });
-
-                      await addDoc(collection(db, "stock_logs"), {
-                          branch: branch,
-                          item: addon.linkedIngredient,
-                          uom: invData.uom || 'units',
-                          oldQty: invData.currentStock || 0,
-                          newQty: newStock,
-                          variance: totalAddonReturn, 
-                          type: "Transaction Voided (Addon)",
-                          note: `Receipt ${receiptId} voided by ${cashierName}`,
-                          user: cashierName,
-                          timestamp: serverTimestamp()
-                      });
-                    }
-                }
-            }
-        }
-      }
-    }
-
-    // 🔥 REVERSE THE 1 MILLION BALLS TRACKER 🔥
-    let totalBallsToReturn = 0;
-    for (let cartItem of txData.cart) {
-        let itemName = cartItem.name || cartItem.itemName;
-        let match = itemName.match(/(\d+)\s*Pcs/i);
-        if (match) {
-            let ballsInBox = parseInt(match[1]);
-            totalBallsToReturn += (ballsInBox * (cartItem.qty || 1));
-        }
-    }
-
-    if (totalBallsToReturn > 0) {
-        const statsRef = doc(db, "settings", "global_stats");
-        await setDoc(statsRef, { 
-            totalTakoyakiBalls: increment(-totalBallsToReturn) 
-        }, { merge: true });
-    }
-
-    // 3. 🚨 THE MANAGER ALARM
-    await addDoc(collection(db, "manager_alerts"), {
-      type: "VOID_ALERT",
-      branch: branch,
-      cashier: cashierName,
-      receiptId: receiptId,
-      message: `WARNING: Cashier ${cashierName} voided Receipt ${receiptId}. Inventory has been automatically replenished.`,
-      timestamp: serverTimestamp(),
-      isRead: false
-    });
-
-    return true;
-  } catch (e) { 
-    console.error(e); 
-    throw e; 
-  }
-};
 
 // --- RECEIPT DETAILS ENGINE ---
 window.getReceiptDetails = async function (receiptId) {
@@ -4053,33 +3680,7 @@ setTimeout(() => {
     });
 }, 3000);
 
-window.toggleMobileOrderingStatus = async function() {
-    let branch = localStorage.getItem('takodeal_device_branch');
-    if (!branch) { alert("Branch not set!"); return; }
 
-    let newState = !window.isMobileOrderingActive;
-    
-    if (!newState) {
-        if (!confirm("🚨 WARNING: This will immediately PAUSE the Customer App for your branch. Customers will see a 'Currently Unavailable' message and cannot place orders.\n\nAre you sure you want to pause mobile ordering?")) return;
-    }
-
-    let btn = document.getElementById('btnMobileKillSwitch');
-    btn.innerText = "⏳..."; btn.disabled = true;
-
-    try {
-        await setDoc(doc(db, "settings", "status_" + branch), { 
-            mobileOrdersActive: newState,
-            lastUpdatedBy: localStorage.getItem('cashierName') || 'System',
-            lastUpdated: serverTimestamp()
-        }, { merge: true });
-        
-    } catch(e) {
-        console.error("Kill Switch Error:", e);
-        alert("Failed to toggle Mobile Ordering. Check internet connection.");
-    } finally {
-        btn.disabled = false;
-    }
-};
 
 window.startMobileOrdersListener = function(branch) {
     if (window.mobileOrdersUnsubscribe) window.mobileOrdersUnsubscribe(); 
@@ -5410,7 +5011,9 @@ window.renderWasteCart = function() {
 };
 
 window.submitWasteCart = async function() {
+    if (window.isSubmittingWasteCart) return;
     if (!window.wasteCart || window.wasteCart.length === 0) return Swal.fire('Empty', 'Your waste list is empty.', 'info');
+    window.isSubmittingWasteCart = true;
 
     let btn = document.getElementById('btnSubmitWasteCart');
     let origText = btn ? btn.innerText : "🗑️ Submit Waste to HQ for Approval";
@@ -5420,6 +5023,7 @@ window.submitWasteCart = async function() {
     let cashier = localStorage.getItem('cashierName') || 'Staff';
 
     try {
+        window.wasteSubmissionId ||= 'waste_' + saleIdentity({}, crypto);
         let totalValueLost = 0;
         let uploadedItems = [];
 
@@ -5445,11 +5049,10 @@ window.submitWasteCart = async function() {
         }
 
         // 2. Submit to the Manager's Staff Request Inbox
-        // 🔥 THE ULTIMATE FIX: We create our own custom ID and use setDoc! NO ADDDOC ALLOWED!
-        let customDocId = "waste_" + Date.now() + "_" + Math.floor(Math.random() * 1000);
-        let newRequestRef = window.doc(window.db, "staff_requests", customDocId);
+        // One request ID survives retries. Never reset an approved report to Pending.
+        let newRequestRef = window.doc(window.db, "staff_requests", window.wasteSubmissionId);
         
-        await window.setDoc(newRequestRef, {
+        const requestData = {
             type: "Waste Report",
             branch: branch,
             staffName: cashier,
@@ -5457,6 +5060,10 @@ window.submitWasteCart = async function() {
             totalValueLost: totalValueLost,
             status: "Pending",
             timestamp: window.serverTimestamp ? window.serverTimestamp() : new Date()
+        };
+        await runTransaction(db, async tx => {
+            const existing = await tx.get(newRequestRef);
+            if (!existing.exists()) tx.set(newRequestRef, requestData);
         });
 
         Swal.fire({
@@ -5467,12 +5074,14 @@ window.submitWasteCart = async function() {
         });
         
         window.wasteCart = [];
+        window.wasteSubmissionId = null;
         if (typeof window.renderWasteCart === 'function') window.renderWasteCart();
         
     } catch (e) {
         console.error("Waste Submit Error:", e);
         Swal.fire('Error', 'Failed to submit waste report. Check console for details.', 'error');
     } finally {
+        window.isSubmittingWasteCart = false;
         if(btn) { btn.innerText = origText; btn.disabled = false; }
     }
 };
@@ -6606,191 +6215,7 @@ window.openShiftModal = function() {
     }
 };
 
-window.submitOpenShift = async function() {
-    let btn = document.getElementById('btnOpenShiftSubmit');
-    let origText = btn ? btn.innerText : "Open Shift";
-    if (btn) { btn.innerText = "Opening..."; btn.disabled = true; }
 
-    try {
-        let shiftName = (window.sessionUser && window.sessionUser.cashierName) 
-            ? window.sessionUser.cashierName 
-            : (localStorage.getItem('cashierName') || 'Unknown');
-
-        let startEl = document.getElementById('inputStartingCash');
-        let startCash = (startEl && parseFloat(startEl.value)) ? parseFloat(startEl.value) : 0;
-        let lastEndingCash = window.lastEndingCash || 0;
-        let branch = localStorage.getItem('takodeal_device_branch') || (window.sessionUser ? window.sessionUser.branch : 'Unknown');
-
-        // 1. CASH DISPUTE CHECK
-        if (startCash !== lastEndingCash && lastEndingCash > 0) {
-            let diff = lastEndingCash - startCash;
-            if (diff > 0) {
-                let result = await Swal.fire({
-                    title: '⚠️ Missing Cash Detected!',
-                    html: `The previous shift left <b>₱${lastEndingCash.toFixed(2)}</b> in the drawer.<br>You are starting with <b>₱${startCash.toFixed(2)}</b>.<br><br><span style="color:#ef4444; font-weight:bold; font-size: 16px;">Where did the ₱${diff.toFixed(2)} go?</span>`,
-                    icon: 'warning',
-                    showDenyButton: true,
-                    showCancelButton: true,
-                    confirmButtonText: 'Owner/Manager Took It',
-                    denyButtonText: 'I Don\'t Know (Shortage)',
-                    cancelButtonText: 'Cancel',
-                    confirmButtonColor: '#10b981',
-                    denyButtonColor: '#ef4444',
-                    customClass: { popup: 'rounded-2xl' }
-                });
-
-                if (result.isConfirmed) {
-                    window.addDoc(window.collection(window.db, "remittances"), {
-                        branch: branch, cashierName: "Auto-Logged (Shift Start)", amount: diff, type: "Cash Collection", channel: "Owner Collection", timestamp: window.serverTimestamp(), dateStr: new Date().toLocaleDateString('en-CA')
-                    }).catch(e => console.error(e));
-                } else if (result.isDenied) {
-                    window.addDoc(window.collection(window.db, "expenses"), {
-                        branch: branch, amount: diff, category: "Unexplained Shortage", description: `Missing cash between shifts (Expected: ₱${lastEndingCash}, Started With: ₱${startCash})`, loggedBy: shiftName, timestamp: window.serverTimestamp()
-                    }).catch(e => console.error(e));
-                } else {
-                    if (btn) { btn.innerText = origText; btn.disabled = false; }
-                    return; 
-                }
-            }
-        }
-
-        // 2. STOCK HANDOVER DISPUTES (PARALLEL WRITE)
-        let stockDisputes = [];
-        document.querySelectorAll('input[id^="handoverDispBase_"]').forEach(inp => {
-            let idx = inp.id.split('_')[1];
-            let purchInp = document.getElementById(`handoverDispPurch_${idx}`);
-            
-            let pVal = purchInp ? parseFloat(purchInp.value) || 0 : 0;
-            let bVal = parseFloat(inp.value) || 0;
-            let conv = parseFloat(inp.getAttribute('data-conv')) || 1;
-            let newCount = (pVal * conv) + bVal;
-            let prevCount = parseFloat(inp.getAttribute('data-prev')) || 0;
-            let itemName = inp.getAttribute('data-name');
-            let baseCost = parseFloat(inp.getAttribute('data-cost')) || 0;
-            let uom = inp.getAttribute('data-uom');
-
-            if (!isNaN(newCount) && newCount !== prevCount) {
-                stockDisputes.push({
-                    name: itemName, prevCount: prevCount, newCount: newCount,
-                    variance: newCount - prevCount, baseCost: baseCost, uom: uom
-                });
-            }
-        });
-
-        if (stockDisputes.length > 0) {
-            let prevCashier = window.lastShiftDataForDispute ? window.lastShiftDataForDispute.cashier : 'Previous Staff';
-            let totalPenalty = 0;
-            let disputeHtml = '<div style="text-align: left; font-size: 13px; margin-top: 10px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0;">';
-            
-            stockDisputes.forEach(d => {
-                if (d.variance < 0) {
-                    let costLost = Math.abs(d.variance) * d.baseCost;
-                    totalPenalty += costLost;
-                    disputeHtml += `<div style="margin-bottom: 5px;"><b style="color:#dc2626;">${d.name}:</b> Missing ${Math.abs(d.variance)} ${d.uom} <span style="font-size:11px; color:#64748b;">(Penalty: ₱${costLost.toFixed(2)})</span></div>`;
-                } else {
-                    disputeHtml += `<div style="margin-bottom: 5px;"><b style="color:#16a34a;">${d.name}:</b> Found excess ${Math.abs(d.variance)} ${d.uom}</div>`;
-                }
-            });
-            
-            if (totalPenalty > 0) {
-                disputeHtml += `</div><div style="margin-top: 15px; padding: 10px; background: #fef2f2; border: 1px dashed #fca5a5; border-radius: 6px;"><strong style="color: #dc2626; font-size: 15px;">Total Penalty for ${prevCashier}: ₱${totalPenalty.toFixed(2)}</strong></div>`;
-            } else {
-                disputeHtml += `</div>`;
-            }
-
-            let result = await Swal.fire({
-                title: '⚠️ Handover Dispute Detected',
-                html: `You are altering the stock count left by <b>${prevCashier}</b>. Are you sure?<br>${disputeHtml}`,
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonText: totalPenalty > 0 ? 'Submit Dispute & Charge' : 'Submit & Adjust Stock',
-                confirmButtonColor: '#dc2626',
-                customClass: { popup: 'rounded-2xl shadow-xl' }
-            });
-
-            if (!result.isConfirmed) {
-                if (btn) { btn.innerText = origText; btn.disabled = false; }
-                return;
-            }
-
-            // Sync stock disputes in background so UI doesn't hang!
-            Promise.all(stockDisputes.map(async (d) => {
-                const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", d.name));
-                const invSnap = await window.getDocs(invQ);
-                if (!invSnap.empty) {
-                    let invDoc = invSnap.docs[0];
-                    await window.updateDoc(invDoc.ref, { currentStock: d.newCount });
-                    await window.addDoc(window.collection(window.db, "stock_logs"), {
-                        branch: branch, item: d.name, uom: d.uom,
-                        oldQty: d.prevCount, newQty: d.newCount, variance: d.variance,
-                        type: d.variance < 0 ? "Audit Adjustment (Penalty)" : "Audit Adjustment (Recovery)", 
-                        note: `Disputed Handover by ${shiftName}. ${prevCashier} claimed ${d.prevCount}, actual is ${d.newCount}.`,
-                        user: "System (HQ)", timestamp: window.serverTimestamp()
-                    });
-                }
-            })).catch(e => console.error("Dispute sync error:", e));
-
-            if (totalPenalty > 0) {
-                window.addDoc(window.collection(window.db, "staff_deductions"), {
-                    staffName: prevCashier, type: "Missing Stock Penalty", amount: totalPenalty,
-                    dateAdded: new Date(), status: "Unpaid", remarks: `Stock missing during handover to ${shiftName}.`
-                }).catch(e => console.error(e));
-
-                window.addDoc(window.collection(window.db, "manager_alerts"), {
-                    type: "STOCK_PENALTY_APPLIED", branch: branch, cashier: prevCashier,
-                    message: `🚨 HANDOVER PENALTY: ${shiftName} disputed ${prevCashier}'s stock count. ₱${totalPenalty.toFixed(2)} penalty issued to ${prevCashier}.`,
-                    timestamp: window.serverTimestamp(), isRead: false
-                }).catch(e => console.error(e));
-            }
-        }
-
-        // 3. CREATE SHIFT & INSTANT MEMORY UNLOCK (Bypasses slow cloud download)
-        let shiftId = await window.openNewShift(branch, shiftName, startCash);
-        
-        if (shiftId) {
-            let newShiftObj = {
-                active: true,
-                startedBy: shiftName,
-                startTime: new Date(),
-                shiftId: shiftId,
-                startingCash: startCash
-            };
-            
-            // Immediate local memory assignment
-            window.currentShift = newShiftObj;
-            window.activeShiftDetails = newShiftObj;
-            localStorage.setItem('currentShiftId', shiftId);
-
-            // Instant UI switch (no cloud roundtrips)
-            let topBtn = document.getElementById('btnTopShift');
-            let lock = document.getElementById('shiftLockout');
-            let placeBtn = document.getElementById('btnMainPlaceOrder');
-            
-            if (topBtn) topBtn.innerText = "🟢 Active Shift";
-            if (lock) lock.style.display = "none";
-            if (placeBtn) placeBtn.disabled = false;
-
-            if (typeof closeModal === 'function') closeModal('shiftModal');
-            else if (typeof window.closeModal === 'function') window.closeModal('shiftModal');
-            
-            // 🔥 ADD THE THURSDAY ALARM TRIGGER HERE 🔥
-            if (new Date().getDay() === 4) { // 4 represents Thursday!
-                setTimeout(() => {
-                    window.triggerThursdayInventoryAlarm(shiftName, branch);
-                }, 1000);
-            }
-            
-        } else {
-            alert("Failed to open shift. Check connection!");
-        }
-
-    } catch (e) {
-        console.error("Open shift error:", e);
-        alert("Error opening shift. Please try again.");
-    } finally {
-        if (btn) { btn.innerText = origText; btn.disabled = false; }
-    }
-};
 
 // ========================================================
 // 📅 THURSDAY INVENTORY ALARM & SIGNATURE ENGINE
@@ -6801,7 +6226,7 @@ window.initThursdayCanvas = function() {
     const canvas = document.getElementById('thursdayCanvas');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    
+
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
     ctx.strokeStyle = '#b45309'; // Dark orange ink
@@ -6819,21 +6244,21 @@ window.initThursdayCanvas = function() {
         };
     };
 
-    const startDraw = (e) => { 
-        drawing = true; 
+    const startDraw = (e) => {
+        drawing = true;
         window.isThursdayCanvasBlank = false;
-        const pos = getPos(e); 
-        ctx.beginPath(); 
-        ctx.moveTo(pos.x, pos.y); 
-        if(e.cancelable && e.type.includes('touch')) e.preventDefault(); 
+        const pos = getPos(e);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+        if(e.cancelable && e.type.includes('touch')) e.preventDefault();
     };
 
-    const draw = (e) => { 
-        if (!drawing) return; 
-        const pos = getPos(e); 
-        ctx.lineTo(pos.x, pos.y); 
-        ctx.stroke(); 
-        if(e.cancelable && e.type.includes('touch')) e.preventDefault(); 
+    const draw = (e) => {
+        if (!drawing) return;
+        const pos = getPos(e);
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+        if(e.cancelable && e.type.includes('touch')) e.preventDefault();
     };
 
     const stopDraw = () => { drawing = false; ctx.closePath(); };
@@ -7017,149 +6442,16 @@ window.safeSubmitComprehensiveCloseShift = async function() {
 // ========================================================
 window.hasSignedNTE = false;
 
-window.initSignaturePad = function() {
-    const canvas = document.getElementById('signatureCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    let isDrawing = false;
 
-    // Reset variables on load
-    window.hasSignedNTE = false;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Style the pen
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#0f172a';
 
-    const startPosition = (e) => {
-        isDrawing = true;
-        window.hasSignedNTE = true; // Flips to true the moment they touch the pad!
-        draw(e);
-    };
 
-    const stopPosition = () => {
-        isDrawing = false;
-        ctx.beginPath(); // Prevents lines from connecting weirdly
-    };
-
-    const draw = (e) => {
-        if (!isDrawing) return;
-        e.preventDefault(); // CRITICAL: Stops the tablet screen from scrolling while drawing!
-
-        let x, y;
-        const rect = canvas.getBoundingClientRect();
-        
-        // Handle both Touch (Tablets) and Mouse (PC)
-        if (e.type.includes('touch')) {
-            x = e.touches[0].clientX - rect.left;
-            y = e.touches[0].clientY - rect.top;
-        } else {
-            x = e.clientX - rect.left;
-            y = e.clientY - rect.top;
-        }
-
-        ctx.lineTo(x, y);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-    };
-
-    // Remove old listeners to prevent duplicates
-    canvas.replaceWith(canvas.cloneNode(true));
-    const newCanvas = document.getElementById('signatureCanvas');
-
-    // Mouse listeners
-    newCanvas.addEventListener('mousedown', startPosition);
-    newCanvas.addEventListener('mousemove', draw);
-    newCanvas.addEventListener('mouseup', stopPosition);
-    newCanvas.addEventListener('mouseout', stopPosition);
-
-    // Touch listeners (for tablets/phones)
-    newCanvas.addEventListener('touchstart', startPosition, { passive: false });
-    newCanvas.addEventListener('touchmove', draw, { passive: false });
-    newCanvas.addEventListener('touchend', stopPosition);
-};
-
-window.clearSignature = function() {
-    const canvas = document.getElementById('signatureCanvas');
-    if (canvas) {
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        window.hasSignedNTE = false;
-    }
-};
 
 // ========================================================
 // 🛑 HR SANCTION LOCK SCREEN ENGINE (STAFF APP REDIRECT)
 // ========================================================
-window.checkActiveSanctions = async function(staffName) {
-    if (!staffName) return;
-    
-    try {
-        const q = window.query(window.collection(window.db, "hr_sanctions"), window.where("staffName", "==", staffName), window.where("status", "==", "Pending Reply"));
-        const snap = await window.getDocs(q);
-        
-        if (!snap.empty) {
-            let sanction = snap.docs[0].data();
-            
-            Swal.fire({
-                title: '🚨 POS ACCESS LOCKED',
-                html: `You have an unresolved <b>Notice to Explain (NTE)</b> regarding:<br><br>
-                       <span style="color:#dc2626; font-weight:bold; font-size:16px;">"${sanction.type}"</span><br><br>
-                       <span style="color:#475569; font-size:14px;">You <b>cannot access the Cash Register</b> until you acknowledge and reply to this notice.</span><br><br>
-                       <i>Please open the <b>TAKODEAL STAFF APP</b> on your personal phone to read, explain, and sign your notice. Once submitted, your POS access will be restored automatically.</i>`,
-                icon: 'error',
-                confirmButtonText: 'Log Out',
-                confirmButtonColor: '#dc2626',
-                allowOutsideClick: false,
-                customClass: { popup: 'rounded-2xl shadow-2xl border border-red-100' }
-            }).then(() => {
-                window.logoutCashier(); // Boot them back to the PIN screen!
-            });
-        }
-    } catch (e) { console.error("Error checking sanctions:", e); }
-};
 
-window.submitSanctionReply = async function() {
-    let sanctionId = document.getElementById('activeSanctionId').value;
-    let replyText = document.getElementById('sanctionStaffReply').value.trim();
 
-    if (!replyText || replyText.length < 15) {
-        Swal.fire('Too Short', 'You must provide a detailed written explanation (at least 15 characters).', 'warning');
-        return;
-    }
 
-    if (!window.hasSignedNTE) {
-        Swal.fire('Signature Required', 'Please sign inside the signature box to legally acknowledge this notice.', 'error');
-        return;
-    }
-
-    let btn = document.getElementById('btnSubmitSanctionReply');
-    btn.innerText = "⏳ Submitting..."; btn.disabled = true;
-
-    try {
-        // 🔥 CAPTURE THE SIGNATURE AS AN IMAGE!
-        const canvas = document.getElementById('signatureCanvas');
-        const signatureDataUrl = canvas.toDataURL('image/png');
-
-        await updateDoc(doc(db, "hr_sanctions", sanctionId), {
-            staffReply: replyText,
-            signatureBase64: signatureDataUrl, // Saves the drawing to the cloud!
-            status: "Replied",
-            repliedAt: serverTimestamp()
-        });
-
-        Swal.fire('✅ Submitted', 'Your explanation and signature have been securely logged. The POS is now unlocked.', 'success');
-        document.getElementById('hrSanctionModal').style.display = 'none';
-
-    } catch (e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to submit. Check internet connection.', 'error');
-    } finally {
-        btn.innerText = "Submit & Unlock"; btn.disabled = false;
-    }
-};
 
 window.logoutCashier = function() {
     localStorage.removeItem('cashierName');
@@ -7178,74 +6470,9 @@ window.logoutCashier = function() {
 // ========================================================
 window.hasSignedNTE = false;
 
-window.initSignaturePad = function() {
-    const canvas = document.getElementById('signatureCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    let isDrawing = false;
 
-    // Reset variables on load
-    window.hasSignedNTE = false;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Style the pen
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#0f172a';
 
-    const startPosition = (e) => {
-        isDrawing = true;
-        window.hasSignedNTE = true; // Flips to true the moment they touch the pad!
-        draw(e);
-    };
 
-    const stopPosition = () => {
-        isDrawing = false;
-        ctx.beginPath(); // Prevents lines from connecting weirdly
-    };
-
-    const draw = (e) => {
-        if (!isDrawing) return;
-        e.preventDefault(); // CRITICAL: Stops the tablet screen from scrolling while drawing!
-
-        let x, y;
-        const rect = canvas.getBoundingClientRect();
-        
-        // Handle both Touch (Tablets) and Mouse (PC)
-        if (e.type.includes('touch')) {
-            x = e.touches[0].clientX - rect.left;
-            y = e.touches[0].clientY - rect.top;
-        } else {
-            x = e.clientX - rect.left;
-            y = e.clientY - rect.top;
-        }
-
-        ctx.lineTo(x, y);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-    };
-
-    // Mouse listeners
-    canvas.addEventListener('mousedown', startPosition);
-    canvas.addEventListener('mousemove', draw);
-    canvas.addEventListener('mouseup', stopPosition);
-    canvas.addEventListener('mouseout', stopPosition);
-
-    // Touch listeners (for tablets/phones)
-    canvas.addEventListener('touchstart', startPosition, { passive: false });
-    canvas.addEventListener('touchmove', draw, { passive: false });
-    canvas.addEventListener('touchend', stopPosition);
-};
-
-window.clearSignature = function() {
-    const canvas = document.getElementById('signatureCanvas');
-    if (canvas) {
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        window.hasSignedNTE = false;
-    }
-};
 
 window.checkActiveSanctions = async function(staffName) {
     if (!staffName) return;
@@ -8471,138 +7698,11 @@ window.updateWasteUomLabel = async function() {
 };
 
 // Override the Add To Cart function to support the UOM conversion
-window.addWasteToCart = function() {
-    let itemInput = document.getElementById('wasteSearchInput');
-    let rawQty = parseFloat(document.getElementById('wasteQty').value);
-    let reason = document.getElementById('wasteReason').value;
 
-    if (!itemInput || !itemInput.value || isNaN(rawQty) || rawQty <= 0) {
-        return Swal.fire('Error', 'Please select a valid item and enter a quantity.', 'error');
-    }
 
-    let itemName = itemInput.value.trim();
-    let uomDrop = document.getElementById('wasteUomSelect');
-    
-    let convRate = 1;
-    let displayUom = window.currentWasteItemBUom || 'units';
-    let baseUom = window.currentWasteItemBUom || 'units';
 
-    if (uomDrop && uomDrop.tagName === 'SELECT') {
-        let selOpt = uomDrop.options[uomDrop.selectedIndex];
-        convRate = parseFloat(selOpt.getAttribute('data-conv')) || 1;
-        displayUom = selOpt.text;
-    }
 
-    let finalQty = rawQty * convRate; 
 
-    if (typeof window.wasteCart === 'undefined') window.wasteCart = [];
-
-    window.wasteCart.push({
-        id: window.currentWasteItemId || null,
-        name: itemName,
-        rawQty: rawQty,
-        displayUom: displayUom,
-        baseQty: finalQty,
-        baseUom: baseUom,
-        reason: reason
-    });
-
-    // Clear Inputs
-    document.getElementById('wasteQty').value = '';
-    itemInput.value = '';
-    if(uomDrop) uomDrop.innerHTML = '<option value="base" data-conv="1">Units</option>';
-    
-    // Render Cart
-    if (typeof window.renderWasteCart === 'function') window.renderWasteCart();
-};
-
-window.renderWasteCart = function() {
-    let tbody = document.getElementById('wasteCartBody');
-    let container = document.getElementById('wasteCartContainer');
-    
-    if (!tbody || !container) return;
-
-    if (window.wasteCart.length > 0) {
-        container.style.display = 'block';
-        let html = '';
-        window.wasteCart.forEach((item, idx) => {
-            html += `
-                <tr style="border-bottom: 1px solid #e2e8f0;">
-                    <td style="padding: 8px 0;">
-                        <strong style="color: #0f172a;">${item.name}</strong><br>
-                        <span style="font-size: 11px; color: #dc2626;">Reason: ${item.reason}</span>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                        <strong style="color: #dc2626;">-${item.rawQty} ${item.displayUom}</strong><br>
-                        <span style="font-size: 10px; color: #64748b;">(Deducts ${item.baseQty} ${item.baseUom})</span>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                        <button onclick="window.wasteCart.splice(${idx}, 1); window.renderWasteCart();" style="background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 11px; font-weight: bold;">✖</button>
-                    </td>
-                </tr>
-            `;
-        });
-        tbody.innerHTML = html;
-    } else {
-        container.style.display = 'none';
-        tbody.innerHTML = '';
-    }
-};
-
-window.submitWasteCart = async function() {
-    if (!window.wasteCart || window.wasteCart.length === 0) return Swal.fire('Empty', 'Your waste list is empty.', 'info');
-
-    let btn = document.getElementById('btnSubmitWasteCart');
-    let origText = btn ? btn.innerText : "Permanently Deduct All Items";
-    if(btn) { btn.innerText = "⏳ Processing..."; btn.disabled = true; }
-
-    let branch = localStorage.getItem('takodeal_device_branch');
-    let cashier = localStorage.getItem('cashierName') || 'Staff';
-
-    try {
-        for (let item of window.wasteCart) {
-            // Fetch current stock directly so we don't accidentally overwrite with stale data
-            let q = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", item.name));
-            let snap = await window.getDocs(q);
-            
-            if (!snap.empty) {
-                let invDoc = snap.docs[0];
-                let currentStock = parseFloat(invDoc.data().currentStock) || 0;
-                let newStock = currentStock - item.baseQty;
-
-                await window.updateDoc(invDoc.ref, { currentStock: newStock });
-
-                await window.addDoc(window.collection(window.db, "stock_logs"), {
-                    branch: branch,
-                    item: item.name,
-                    uom: item.baseUom,
-                    oldQty: currentStock,
-                    newQty: newStock,
-                    variance: -item.baseQty,
-                    displayQty: item.rawQty,
-                    displayUom: item.displayUom,
-                    type: "Waste / Spoilage",
-                    note: item.reason,
-                    user: cashier,
-                    timestamp: new Date()
-                });
-            }
-        }
-
-        Swal.fire('✅ Waste Logged', `Successfully deducted ${window.wasteCart.length} items from inventory.`, 'success');
-        
-        window.wasteCart = [];
-        window.renderWasteCart();
-        
-        if (typeof window.loadWasteHistory === 'function') window.loadWasteHistory();
-
-    } catch (e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to process waste. Check internet connection.', 'error');
-    } finally {
-        if(btn) { btn.innerText = origText; btn.disabled = false; }
-    }
-};
 
 // ==========================================
 // 📢 FORCED COMPLIANCE CAROUSEL ENGINE
@@ -8730,14 +7830,14 @@ window.nextBulletinSlide = function() {
 window.initBulletinSignaturePad = function() {
     let oldCanvas = document.getElementById('bulletinCanvas');
     if (!oldCanvas) return;
-    
+
     let newCanvas = oldCanvas.cloneNode(true);
     oldCanvas.parentNode.replaceChild(newCanvas, oldCanvas);
-    
+
     // 🔥 THE FIX: Sync internal resolution to CSS display size to fix the offset!
     newCanvas.width = newCanvas.offsetWidth;
     newCanvas.height = newCanvas.offsetHeight;
-    
+
     const ctx = newCanvas.getContext('2d');
     let isDrawing = false;
     window.hasSignedBulletin = false;
@@ -8749,10 +7849,10 @@ window.initBulletinSignaturePad = function() {
     const draw = (e) => {
         if (!isDrawing) return;
         e.preventDefault(); // Stops the tablet screen from scrolling
-        
+
         let x, y;
         const rect = newCanvas.getBoundingClientRect();
-        
+
         // Calculate the scale difference to perfectly track the finger!
         const scaleX = newCanvas.width / rect.width;
         const scaleY = newCanvas.height / rect.height;
@@ -9050,7 +8150,7 @@ window.loadBulletinHistory = async function() {
     }
 };
 
-window.viewAnnouncement = function(encodedData) {
+window.showStandardAnnouncement = function(encodedData) {
     let data = JSON.parse(decodeURIComponent(encodedData));
     let imagesHtml = '';
     
@@ -9112,69 +8212,9 @@ window.viewAnnouncement = function(encodedData) {
     });
 };
 
-window.initSignaturePad = function() {
-    const canvas = document.getElementById('sigCanvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    
-    ctx.lineWidth = 3;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#0f172a';
-    window.isSignatureBlank = true;
 
-    let drawing = false;
 
-    const getPos = (e) => {
-        const rect = canvas.getBoundingClientRect();
-        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-        return {
-            x: (clientX - rect.left) * (canvas.width / rect.width),
-            y: (clientY - rect.top) * (canvas.height / rect.height)
-        };
-    };
 
-    const startDraw = (e) => { 
-        drawing = true; 
-        window.isSignatureBlank = false;
-        const pos = getPos(e); 
-        ctx.beginPath(); 
-        ctx.moveTo(pos.x, pos.y); 
-        e.preventDefault(); 
-    };
-
-    const draw = (e) => { 
-        if (!drawing) return; 
-        const pos = getPos(e); 
-        ctx.lineTo(pos.x, pos.y); 
-        ctx.stroke(); 
-        e.preventDefault(); 
-    };
-
-    const stopDraw = (e) => { 
-        drawing = false; 
-        ctx.closePath(); 
-        if(e) e.preventDefault(); 
-    };
-
-    canvas.addEventListener('mousedown', startDraw);
-    canvas.addEventListener('mousemove', draw);
-    canvas.addEventListener('mouseup', stopDraw);
-    canvas.addEventListener('mouseout', stopDraw);
-
-    canvas.addEventListener('touchstart', startDraw, {passive: false});
-    canvas.addEventListener('touchmove', draw, {passive: false});
-    canvas.addEventListener('touchend', stopDraw, {passive: false});
-};
-
-window.clearSignature = function() {
-    const canvas = document.getElementById('sigCanvas');
-    if (canvas) {
-        const ctx = canvas.getContext('2d');
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        window.isSignatureBlank = true;
-    }
-};
 
 window.submitSignature = async function(announcementId) {
     const canvas = document.getElementById('sigCanvas');
@@ -10043,73 +9083,7 @@ setTimeout(() => {
 // ==========================================
 // 🖨️ SILENT BLUETOOTH AUTO-RECONNECT ENGINE
 // ==========================================
-window.autoConnectPrinters = async function() {
-    let targets = ['main', 'kitchen', 'bar'];
-    let connectedCount = 0;
 
-    for (let target of targets) {
-        // If already connected, skip
-        if (target === 'main' && window.mainPrinterChar) continue;
-        if (target === 'kitchen' && window.kitchenPrinterChar) continue;
-        if (target === 'bar' && window.barPrinterChar) continue;
-
-        let savedDeviceId = localStorage.getItem(`takodeal_printer_${target}_id`);
-        
-        if (savedDeviceId && navigator.bluetooth && navigator.bluetooth.getDevices) {
-            try {
-                const permittedDevices = await navigator.bluetooth.getDevices();
-                let device = permittedDevices.find(d => d.id === savedDeviceId);
-                
-                // Only try to connect if we have permission AND it isn't already connected
-                if (device && (!device.gatt || !device.gatt.connected)) {
-                    console.log(`Auto-connecting to ${target} printer in background...`);
-                    
-                    device.addEventListener('gattserverdisconnected', () => {
-                        if (target === 'main') window.mainPrinterChar = null;
-                        else if (target === 'kitchen') window.kitchenPrinterChar = null;
-                        else if (target === 'bar') window.barPrinterChar = null;
-                        
-                        // Retry loop if it gets disconnected
-                        setTimeout(() => window.autoConnectPrinters(), 3000);
-                    });
-
-                    const server = await device.gatt.connect();
-                    let foundChar = null;
-                    const services = await server.getPrimaryServices();
-                    
-                    for (let service of services) {
-                        const characteristics = await service.getCharacteristics();
-                        for (let char of characteristics) {
-                            if (char.properties.write || char.properties.writeWithoutResponse) {
-                                foundChar = char; break;
-                            }
-                        }
-                        if (foundChar) break;
-                    }
-
-                    if (foundChar) {
-                        if (target === 'main') window.mainPrinterChar = foundChar;
-                        else if (target === 'kitchen') window.kitchenPrinterChar = foundChar;
-                        else if (target === 'bar') window.barPrinterChar = foundChar;
-                        connectedCount++;
-                    }
-                }
-            } catch (e) {
-                console.warn(`Failed to auto-connect ${target} printer. Retrying shortly...`, e);
-                // If it fails because printer is powered off, try again in 10 seconds!
-                setTimeout(() => window.autoConnectPrinters(), 3000);
-            }
-        }
-    }
-    
-    if (connectedCount > 0) {
-        Swal.fire({
-            toast: true, position: 'top-end', icon: 'success', 
-            title: `⚡ ${connectedCount} Printer(s) Auto-Connected!`, 
-            showConfirmButton: false, timer: 3000
-        });
-    }
-};
 
 // Run on boot if already logged in!
 setTimeout(() => {
@@ -10446,9 +9420,7 @@ setTimeout(window.startSmartReorderListener, 4000);
 // 📅 DYNAMIC SCHEDULE IMAGE NOTIFICATION ENGINE
 // ========================================================
 
-if (typeof window.originalViewAnnouncement === 'undefined') {
-    window.originalViewAnnouncement = window.viewAnnouncement;
-}
+// Schedule and standard bulletin views have explicit, separate entry points.
 
 window.viewAnnouncement = async function(encodedData) {
     let data = JSON.parse(decodeURIComponent(encodedData));
@@ -10489,7 +9461,7 @@ window.viewAnnouncement = async function(encodedData) {
     }
 
     // If it's a normal memo announcement, run the standard code!
-    window.originalViewAnnouncement(encodedData);
+    window.showStandardAnnouncement(encodedData);
 };
 
 window.submitScheduleAck = async function(announcementId) {
@@ -10665,78 +9637,11 @@ window.ownerBypassLogin = async function() {
 // ========================================================
 // ⏸️ LIVE INVENTORY AUDIT PAUSE ENGINE
 // ========================================================
-window.isAuditModeActive = localStorage.getItem('takodeal_audit_mode') === 'true';
 
-window.toggleAuditMode = async function() {
-    // 🔥 UI FIX: Instantly close the dropdown menu so it doesn't get stuck behind the popup!
-    let dropdown = document.getElementById('posSettingsDropdown');
-    if (dropdown) dropdown.style.display = 'none';
 
-    window.isAuditModeActive = !window.isAuditModeActive;
-    localStorage.setItem('takodeal_audit_mode', window.isAuditModeActive);
-    
-    let btn = document.getElementById('btnAuditModeToggle');
-    
-    if (window.isAuditModeActive) {
-        if (btn) {
-            btn.innerHTML = '▶️ Resume Live Deductions';
-            btn.style.background = '#f59e0b';
-        }
-        Swal.fire({
-            title: '⏸️ Inventory Paused',
-            text: 'Live deductions are paused. You can safely count your stock without numbers changing. Customer orders will still process normally, and ingredient deductions will be queued in the background.',
-            icon: 'info',
-            customClass: { popup: 'rounded-2xl' }
-        });
-    } else {
-        if (btn) {
-            btn.innerHTML = '⏸️ Pause Inventory (Audit Mode)';
-            btn.style.background = '#334155';
-        }
-        await window.processAuditQueue();
-    }
-};
 
-window.processAuditQueue = async function() {
-    let auditQueue = JSON.parse(localStorage.getItem('takodeal_audit_queue')) || {};
-    let branch = localStorage.getItem('takodeal_device_branch');
-    let keys = Object.keys(auditQueue);
-    
-    if (keys.length === 0) {
-        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Live Deductions Resumed!', showConfirmButton: false, timer: 2000});
-        return;
-    }
-    
-    Swal.fire({title: 'Syncing Queue...', text: 'Applying paused deductions to live inventory...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-    
-    try {
-        let promises = [];
-        for (let ing in auditQueue) {
-            let totalDeduct = auditQueue[ing];
-            if (totalDeduct > 0) {
-                const invQ = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch), window.where("name", "==", ing));
-                const invSnap = await window.getDocs(invQ);
-                if (!invSnap.empty) {
-                    promises.push(window.updateDoc(invSnap.docs[0].ref, { 
-                        currentStock: window.increment(-totalDeduct) 
-                    }));
-                }
-            }
-        }
-        await Promise.all(promises);
-        localStorage.removeItem('takodeal_audit_queue');
-        
-        Swal.fire({
-            title: '✅ Resumed & Synced!', 
-            text: 'All orders processed during the pause have now been accurately deducted from your live inventory.', 
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl' }
-        });
-    } catch(e) {
-        console.error("Audit Queue Sync Error:", e);
-        Swal.fire('Error', 'Failed to sync queued inventory deductions. Please check your connection.', 'error');
-    }
-};
+
+
 
 // Ensures the button shows the correct state if they refresh the page!
 document.addEventListener("DOMContentLoaded", () => {
