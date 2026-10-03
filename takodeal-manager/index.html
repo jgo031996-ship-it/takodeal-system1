@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>TAKODEÁL Control Center</title>
+  <title>Global Dashboard · TAKODEÁL Manager</title>
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -437,9 +437,11 @@
         margin-top: 5px;
     }
 </style>
+  <meta name="theme-color" content="#173f32">
+  <link rel="stylesheet" href="manager-theme.css?v=20261003">
 </head>
 
-<body>
+<body class="manager-theme">
   <nav class="sidebar" id="sidebar">
     
     <div class="sidebar-header" style="display: flex; align-items: center; justify-content: space-between; padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); width: 100%; box-sizing: border-box;">
@@ -613,9 +615,13 @@
 
   <main class="main-content">
     <header class="topbar">
-      <div style="display: flex; align-items: center; gap: 12px; flex-shrink: 0;">
-        <button class="mobile-menu-btn" onclick="window.toggleManagerSidebar()">☰</button>
-        <h1 id="pageTitle">Global Dashboard</h1>
+      <div class="manager-page-heading">
+        <button class="mobile-menu-btn" aria-label="Open navigation" onclick="window.toggleManagerSidebar()">☰</button>
+        <div class="manager-page-copy">
+          <div class="manager-breadcrumb"><span>TAKODEÁL MANAGER</span><i aria-hidden="true">/</i><span id="managerPageSection">Overview</span></div>
+          <h1 id="pageTitle">Global Dashboard</h1>
+          <p id="managerPageDescription">Your sales, branch performance, and team in one place.</p>
+        </div>
       </div>
       
       <div id="globalDateControls" class="actions">
@@ -6690,7 +6696,7 @@
 
   <script type="module" src="firebase-core.js"></script>
   <script type="module" src="auth.js"></script>
-  <script type="module" src="main.js?v=dashboard-20261003"></script>
+  <script type="module" src="main.js?v=manager-theme-20261003"></script>
   
 </body>
 </html>

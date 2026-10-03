@@ -1,0 +1,131 @@
+/* Shared Manager theme. Screen scope keeps payroll printing/export layouts intact. */
+@media screen {
+  body.manager-theme {
+    --primary:#12644f; --primary-hover:#0b4d3c; --bg-color:#f5f7f3;
+    --surface:#fff; --text-main:#20392e; --text-muted:#718177; --border:#e0e7e2;
+    --sidebar-bg:#133d31; --sidebar-hover:#204d3d;
+    --success:#24724e; --success-light:#eaf5ed; --danger:#b83e3b; --danger-light:#fff1ef;
+    --theme-amber:#dca550; background:var(--bg-color); color:var(--text-main);
+    font-size:13px;
+  }
+  body.manager-theme .main-content { min-width:0; padding-bottom:45px!important; background:var(--bg-color); }
+  body.manager-theme .sidebar { background:#133d31!important; border-right:1px solid #ffffff10; }
+  body.manager-theme .sidebar-header { padding:23px 20px!important; border-bottom:1px solid #ffffff14!important; min-height:94px; }
+  body.manager-theme .sidebar-header img { width:38px!important; height:38px!important; border:1px solid #dca55070!important; border-radius:11px!important; }
+  body.manager-theme .logo-text { gap:7px; }
+  body.manager-theme .logo-text>span:first-child { letter-spacing:1.1px!important; font-size:14px!important; }
+  body.manager-theme #sidebarLogoBranchText { color:#d8bc86!important; letter-spacing:.7px; font-size:9px!important; text-transform:uppercase; }
+  body.manager-theme .nav-menu { padding:16px 9px 28px!important; }
+  body.manager-theme .nav-item { font-size:12px; font-weight:500; color:#adc6b8; padding:11px 13px; border-radius:7px; margin:2px 0; border-left:3px solid transparent; line-height:1.45; }
+  body.manager-theme .nav-item:hover { background:#ffffff09; color:#fff; border-left-color:#718f7d; }
+  body.manager-theme .nav-item.active { background:#ffffff0e; color:#f0dfbc; border-left-color:#dcad65; font-weight:700; }
+  body.manager-theme .nav-icon { font-size:15px; min-width:29px; opacity:.9; }
+  body.manager-theme .nav-item:hover .nav-icon { animation:none; }
+  body.manager-theme .nav-submenu { background:#0d3126; border-color:#325643; margin:0 3px 8px 17px; border-radius:6px; }
+  body.manager-theme .nav-subitem { color:#a2bdac; font-size:11px; line-height:1.5; padding:10px 12px; }
+  body.manager-theme .nav-subitem:hover { background:#ffffff06; color:#fff; border-color:#8aaa94; }
+  body.manager-theme .nav-subitem.active { background:#ffffff08; color:#f0dfbc; border-color:#dca550; }
+  body.manager-theme .user-profile { border-color:#ffffff14; padding:18px; gap:11px; }
+  body.manager-theme .user-profile .avatar { background:#ffffff0a; border:1px solid #ffffff12; border-radius:12px; font-size:20px; }
+  body.manager-theme .user-profile .name { font-size:12px; }
+  body.manager-theme .user-profile .role { font-size:10px; color:#8fae9b; margin-top:5px; }
+  body.manager-theme .sidebar.collapsed .sidebar-header { padding:20px 13px!important; }
+  body.manager-theme .sidebar.collapsed .nav-menu { padding-inline:5px!important; }
+  body.manager-theme .sidebar.collapsed .nav-item { border-radius:7px; }
+  body.manager-theme .nav-menu::-webkit-scrollbar-thumb { background:#365846; }
+
+  /* One identifiable title for every page, with controls alongside it. */
+  body.manager-theme .topbar { padding:24px 32px 23px!important; min-height:128px; background:#fff!important; border-bottom:1px solid #e0e7e2; box-shadow:none; gap:22px; align-items:center; flex-wrap:wrap; position:relative; }
+  body.manager-theme .topbar:before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:#173f32; }
+  .manager-page-heading { display:flex; align-items:center; gap:14px; min-width:0; flex:1 1 330px; }
+  .manager-page-copy { min-width:0; }
+  .manager-breadcrumb { display:flex; align-items:center; gap:9px; font-size:9px; font-weight:700; letter-spacing:1.25px; color:#829288; text-transform:uppercase; margin-bottom:9px; }
+  .manager-breadcrumb>span:first-child { color:#12644f; }
+  .manager-breadcrumb i { color:#c0cbc3; font-style:normal; }
+  body.manager-theme .topbar h1 { font-size:25px!important; letter-spacing:-.75px; color:#20392e; line-height:1.25; font-weight:800; }
+  #managerPageDescription { font-size:11px; color:#809087; line-height:1.6; margin-top:6px; max-width:550px; }
+  body.manager-theme #globalDateControls { gap:7px!important; width:auto; flex:0 1 auto; padding:8px; border:1px solid #e7ece7; border-radius:11px; background:#f8faf6; align-items:center; }
+  body.manager-theme #globalDateControls[hidden],body.manager-theme .topbar [hidden] { display:none!important; }
+  body.manager-theme #globalDateControls>span { font-size:9px!important; font-weight:600!important; color:#87958c!important; padding-left:4px; }
+  body.manager-theme #globalDateControls input,body.manager-theme #dashBranchFilter { min-height:36px!important; font-size:11px!important; background:#fff!important; border:1px solid #dce5dc!important; border-radius:7px!important; padding:7px 9px!important; color:#486050; outline:none; width:auto; }
+  body.manager-theme #btnRefreshData,body.manager-theme #btnExportSales,body.manager-theme #btnWipeData { min-height:36px; font-size:11px!important; font-weight:600!important; border-radius:7px; padding:8px 12px!important; flex:0 0 auto!important; box-shadow:none; margin:0!important; }
+  body.manager-theme #btnRefreshData { background:#12644f!important; color:#fff!important; }
+  body.manager-theme #btnExportSales { background:#edf4ed!important; color:#276447!important; border:1px solid #dce8db!important; }
+  body.manager-theme #btnWipeData { background:#fff!important; color:#aa4841!important; border:1px solid #ebdcd7!important; }
+  body.manager-theme .mobile-menu-btn { border:1px solid #dce5dc; background:#f4f7f1; border-radius:8px; color:#2d5b40; height:38px; width:38px; padding:0; flex-shrink:0; }
+
+  body.manager-theme .view { padding:28px 32px!important; background:var(--bg-color)!important; color:var(--text-main); max-width:1900px!important; margin-inline:auto!important; }
+  body.manager-theme .view * { box-sizing:border-box; }
+  body.manager-theme .view:not(#view-dashboard) { font-size:13px; }
+  body.manager-theme .view:not(#view-dashboard) :is(h2,h3):not(#proposalContainer *) { letter-spacing:-.35px; line-height:1.45; }
+  body.manager-theme .view:not(#view-dashboard) h2:not(#proposalContainer *) { font-size:19px!important; font-weight:750!important; color:#264433!important; }
+  body.manager-theme .view:not(#view-dashboard) h3:not(#proposalContainer *) { font-weight:700!important; }
+  body.manager-theme .view:not(#view-dashboard) :is(.card,.stat-card,.cash-accounts-panel,.budget-panel,.sched-panel,.shift-config-box,.theme-surface) { background:#fff!important; border:1px solid #e0e7e2!important; border-radius:13px!important; box-shadow:0 3px 10px #1b3d2903!important; }
+  body.manager-theme .view:not(#view-dashboard) .theme-surface-danger { border-color:#ead4d0!important; background:#fff9f7!important; }
+  body.manager-theme .view:not(#view-dashboard) :is(.card-header,.theme-panel-heading) { background:#f9fbf7!important; border-bottom:1px solid #e5ece2!important; padding:20px 23px!important; gap:12px!important; }
+  body.manager-theme .view:not(#view-dashboard) :is(.card-header,.theme-panel-heading) :is(h2,h3):not(#proposalContainer *) { font-size:17px!important; }
+  body.manager-theme .view:not(#view-dashboard) :is(.theme-hero) { background:#173f32!important; border-color:#234b38!important; box-shadow:none!important; color:#e0ede4!important; border-radius:13px!important; }
+  body.manager-theme .view:not(#view-dashboard) .theme-hero :is(h2,h3,p) { color:#e0ede4!important; }
+  body.manager-theme .view:not(#view-dashboard) :is(.stat-card,.theme-surface)>.value { font-size:30px!important; letter-spacing:-.8px; font-weight:800!important; overflow-wrap:anywhere; }
+  body.manager-theme .view:not(#view-dashboard) :is(.stat-card,.theme-surface)>.value+h3 { margin-top:7px; }
+  body.manager-theme .theme-flex { flex-wrap:wrap; min-width:0; }
+  body.manager-theme .theme-grid { min-width:0; }
+  body.manager-theme .theme-grid>* { min-width:0; }
+  body.manager-theme .view:not(#view-dashboard) :is(button,.btn-refresh,.action-btn):not(#proposalContainer *) { border-radius:7px!important; font-weight:650!important; font-size:12px; box-shadow:none!important; transition:background .15s,border-color .15s; cursor:pointer; }
+  body.manager-theme .view:not(#view-dashboard) :is(button,.btn-refresh,.action-btn):not(#proposalContainer *):focus-visible { outline:3px solid #dca55080!important; outline-offset:3px; }
+  body.manager-theme .view:not(#view-dashboard) button:disabled { opacity:.55; cursor:not-allowed; }
+  body.manager-theme .view:not(#view-dashboard) .theme-button-primary { background:#12644f!important; border-color:#12644f!important; color:#fff!important; }
+  body.manager-theme .view:not(#view-dashboard) .theme-button-primary:hover { background:#0c523e!important; }
+  body.manager-theme .view:not(#view-dashboard) .theme-button-dark { background:#254734!important; border-color:#254734!important; color:#fff!important; }
+  body.manager-theme .view:not(#view-dashboard) .theme-button-danger { background:#b83e3b!important; border-color:#b83e3b!important; color:#fff!important; }
+  body.manager-theme .view:not(#view-dashboard) .theme-button-danger:hover { background:#9c302d!important; }
+  body.manager-theme .view:not(#view-dashboard) .btn-refresh:not(.theme-button-primary):not(.theme-button-danger):not(.theme-button-dark) { color:#416349; background:#fff; border-color:#dce6dc; }
+  body.manager-theme .view:not(#view-dashboard) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(.ps-input),select,textarea) { max-width:100%; min-width:0; border:1px solid #dce5db!important; background:#fcfdfb!important; border-radius:7px!important; color:#38523f; font-size:13px; outline:none; box-shadow:none; }
+  body.manager-theme .view:not(#view-dashboard) :is(input,select,textarea):focus { border-color:#518f6c!important; outline:2px solid #e0eddf; }
+  body.manager-theme .view input[type="checkbox"],body.manager-theme .view input[type="radio"] { accent-color:#12644f; }
+  body.manager-theme .view :is(label,small) { line-height:1.5; }
+  body.manager-theme .view .badge { border-radius:6px; font-size:10px; padding:5px 8px; }
+  body.manager-theme .view .tab-container { gap:3px; border-bottom:1px solid #dfe7dc; }
+  body.manager-theme .view .tab-btn { font-size:11px!important; padding:11px 15px!important; letter-spacing:0!important; text-transform:none!important; color:#7a8d7b!important; background:transparent!important; border-radius:7px 7px 0 0!important; }
+  body.manager-theme .view .tab-btn.active { color:#12644f!important; border-bottom-color:#12644f!important; background:#fff!important; }
+  body.manager-theme :is(.mobile-table-wrapper,.table-responsive) { overflow-x:auto; width:100%; max-width:100%; -webkit-overflow-scrolling:touch; }
+  body.manager-theme .view:not(#view-dashboard) table:not(#proposalContainer *) { width:100%; font-variant-numeric:tabular-nums; }
+  body.manager-theme .view:not(#view-dashboard) table:not(#proposalContainer *) th { background:#f7f9f4!important; border-color:#e2e9de!important; color:#7a8d7b!important; font-size:10px!important; letter-spacing:.5px; font-weight:650!important; padding:12px 15px!important; white-space:nowrap; }
+  body.manager-theme .view:not(#view-dashboard) table:not(#proposalContainer *) td { font-size:12px!important; border-color:#edf1e8!important; padding:14px 15px!important; line-height:1.6; }
+  body.manager-theme .view:not(#view-dashboard) table:not(#proposalContainer *) tbody tr:hover { background:#f8fbf5; }
+  body.manager-theme .view .sched-table td { padding:8px!important; }
+  body.manager-theme .view .sched-table :is(.clickable,.staff-chip) { background:#eef5e9; color:#326340; border-color:#dae7d2; }
+  body.manager-theme .view .action-menu-btn { border-color:#dce5d8; color:#46634a; background:#fff; }
+  body.manager-theme :is(.modal,dialog,.swal2-popup) { border-radius:15px; color:#2b4332; }
+  body.manager-theme #proposalContainer { font-size:16px; }
+  body.manager-theme ::selection { background:#d5e6ce; color:#183e26; }
+
+  @media (max-width:1200px) {
+    body.manager-theme .topbar { padding:22px!important; gap:16px; }
+    body.manager-theme #globalDateControls { flex-wrap:wrap; }
+    body.manager-theme .view { padding:24px!important; }
+    body.manager-theme .view:not(#view-dashboard) .theme-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))!important; gap:16px!important; }
+  }
+  @media (max-width:768px) {
+    body.manager-theme .topbar { padding:18px 16px!important; gap:15px!important; min-height:0; }
+    .manager-page-heading { flex:0 0 auto; width:100%; gap:11px; }
+    body.manager-theme .topbar h1 { font-size:23px!important; }
+    .manager-breadcrumb { font-size:8px; letter-spacing:1px; margin-bottom:7px; }
+    #managerPageDescription { font-size:10px; }
+    body.manager-theme #globalDateControls { flex:0 0 auto; width:100%!important; gap:7px!important; padding:8px; }
+    body.manager-theme #globalDateControls[hidden] { display:none!important; }
+    body.manager-theme #globalDateControls input[type="date"] { flex:1 1 110px!important; min-width:100px!important; width:110px; }
+    body.manager-theme #dashBranchFilter { flex:1 1 100%!important; width:100%!important; }
+    body.manager-theme #btnRefreshData { margin-left:auto!important; }
+    body.manager-theme .view { padding:18px 15px!important; }
+    body.manager-theme .view:not(#view-dashboard) :is(.theme-grid,.grid-container,.stat-grid,.shift-config-grid) { grid-template-columns:minmax(0,1fr)!important; gap:14px!important; }
+    body.manager-theme .view:not(#view-dashboard) :is(.card-header,.theme-panel-heading) { padding:17px!important; }
+    body.manager-theme .view:not(#view-dashboard) .theme-surface { max-width:100%; padding:20px!important; }
+    body.manager-theme .view:not(#view-dashboard) .theme-hero { padding:24px!important; }
+    body.manager-theme .view .theme-panel-heading .theme-flex { width:100%; }
+    body.manager-theme .view:not(#view-dashboard) :is(h2,h3):not(#proposalContainer *) { overflow-wrap:anywhere; }
+  }
+  @media (prefers-reduced-motion:reduce) {
+    body.manager-theme *,body.manager-theme *:before,body.manager-theme *:after { animation-duration:.01ms!important; transition-duration:.01ms!important; }
+  }
+}
