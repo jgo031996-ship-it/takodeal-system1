@@ -186,16 +186,30 @@ export function createSaleEngine(api) {
             if (payload.inventoryMovements) return payload;
             const movements = collectDeductions(payload, payload.recipeSnapshot || bom);
             const resolved = new Map();
+            const normalizedName = name => String(name ?? '').trim().replace(/\s+/g, ' ');
+            let branchInventory;
+            async function findIngredient(name) {
+                const exact = await queryDocs('inventory', [['branch', payload.branch], ['name', name]]);
+                if (exact.docs.length) return exact.docs;
+                // Firestore compares spaces exactly. Only a unique whitespace
+                // match in this branch is safe; never guess another ingredient.
+                branchInventory ||= await queryDocs('inventory', [['branch', payload.branch]]);
+                return branchInventory.docs.filter(row => normalizedName(row.data().name) === normalizedName(name));
+            }
             for (const movement of movements) {
                 let ingredientName = movement.ingredientName;
-                let snap = await queryDocs('inventory', [['branch', payload.branch], ['name', ingredientName]]);
+                let matches = await findIngredient(ingredientName);
                 // Never use a replacement to hide duplicate stock records.
-                if (!snap.docs.length && INGREDIENT_REPLACEMENTS[ingredientName]) {
+                if (!matches.length && INGREDIENT_REPLACEMENTS[ingredientName]) {
                     ingredientName = INGREDIENT_REPLACEMENTS[ingredientName];
-                    snap = await queryDocs('inventory', [['branch', payload.branch], ['name', ingredientName]]);
+                    matches = await findIngredient(ingredientName);
                 }
-                if (snap.docs.length !== 1) throw new Error('Missing or duplicate inventory item: ' + movement.ingredientName);
-                const inventoryId = snap.docs[0].id;
+                if (matches.length !== 1) throw new Error('Missing or duplicate inventory item: ' + ingredientName +
+                    ' (branch: ' + payload.branch + ', matches: ' + matches.length + ')');
+                const inventoryId = matches[0].id;
+                // Keep the actual stored spelling for strict transaction-time
+                // validation and later audit/void inventory movements.
+                ingredientName = matches[0].data().name;
                 const previous = resolved.get(inventoryId);
                 const quantity = (previous?.quantity || 0) + movement.quantity;
                 if (!Number.isFinite(quantity)) throw new Error('Invalid ingredient deduction.');

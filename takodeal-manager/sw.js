@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v6-recipe-repair';
+const CACHE_NAME = 'takodeal-manager-core-v7-stock-spaces';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = ['./', './index.html', './main.js', './pos-safety.js', './recipe-integrity.js', './live-report.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
 
