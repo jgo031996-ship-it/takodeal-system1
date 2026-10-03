@@ -50,8 +50,14 @@ export function collectDeductions(payload, bom) {
 
 export function countBalls(cart = []) {
     return cart.reduce((sum, item) => {
-        const match = String(item.name || item.itemName || '').match(/(\d+)\s*Pcs/i);
-        return sum + (match ? Number(match[1]) * Number(item.qty ?? 1) : 0);
+        const name = [item.realName, item.name, item.itemName].filter(Boolean).join(' ');
+        const category = String(item.category || '');
+        // Packaging and add-on sauces may contain "6 Pcs" but are not takoyaki sales.
+        if (!/takoyaki/i.test(name + ' ' + category) || /extra|sauce|take\s*out|packaging|box/i.test(name)) return sum;
+        const pack = (name + ' ' + (item.variantName || '')).match(/(\d+)\s*(?:pcs|pieces)\b/i);
+        const qty = Number(item.qty ?? 1);
+        if (!pack || !Number.isFinite(qty) || qty <= 0) return sum;
+        return sum + Number(pack[1]) * qty;
     }, 0);
 }
 
@@ -257,15 +263,16 @@ export function createSaleEngine(api) {
                     tx.update(row.inventoryRef, { currentStock: increment(-row.movement.quantity) });
                 }
                 const { recipeSnapshot, ...sale } = payload;
+                const ballsCounted = countBalls(payload.cart);
                 tx.set(saleRef, {
                     ...sale, timestamp: new Date(payload.localTimestamp),
                     inventoryState: deferred ? 'deferred' : 'applied',
-                    ballsCounted: countBalls(payload.cart), statsApplied: true
+                    ballsCounted, statsApplied: true
                 });
                 // Retain this marker even when receipt history is archived.
                 tx.set(markerRef(payload.saleId), { saleId: payload.saleId, branch: payload.branch,
                     receiptId: payload.receiptId, fingerprint: saleFingerprint(payload), committedAt: serverTimestamp() });
-                stats(tx, payload, 1);
+                stats(tx, { ...payload, ballsCounted }, 1);
                 if (mobileRef) tx.update(mobileRef, { paymentStatus: 'paid', receiptId: payload.receiptId, encodedAt: serverTimestamp() });
                 else if (payload.orderType === 'Delivery') tx.set(ref('incoming_orders', 'delivery-' + payload.saleId), {
                     branch: payload.branch, customerName: payload.customerName || 'Delivery Customer',
