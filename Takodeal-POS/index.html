@@ -3717,9 +3717,9 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         globalDiscountValue: dVal,
         globalDiscountAmount: dAmount,
         globalDiscountReason: dReason,
-        netTotal: window.finalCheckoutAmount ?? window.currentGrandTotal,
+        netTotal: window.finalCheckoutAmount || window.currentGrandTotal,
         customerName: custName,
-        amountReceived: dType === 'staff_meal' || dType === 'manager_meal' ? (window.finalCheckoutAmount ?? window.currentGrandTotal) : window.amountReceivedStr,
+        amountReceived: dType === 'staff_meal' || dType === 'manager_meal' ? (window.finalCheckoutAmount || window.currentGrandTotal) : window.amountReceivedStr,
         cart: window.cart,
         wasParked: window.isResumedParkedOrder || false,
         isMobileOrder: window.isActiveOrderMobile || false,
@@ -4914,7 +4914,5 @@ window.showMobileOrders = function() {
           </div>
       </div>
   </div>
-  <link rel="stylesheet" href="pos-ui-v2.css?v=2.1.0">
-  <script defer src="pos-ui-v2.js?v=2.1.0"></script>
 </body>
 </html>
