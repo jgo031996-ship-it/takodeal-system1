@@ -29197,6 +29197,7 @@ function tkReconcileSale(record, targetShift, inventory, effects, owner, note) {
     button.onclick = () => { render(); panel.showModal(); }; document.body.append(button);
   }
   async function start() {
+      return;
     const user = window.sessionUser;
     if (!user || !window.db || !window.onSnapshot || starting || Date.now() < nextRetry) return;
     const key = JSON.stringify([user.email, user.allowedBranches, user.isOwner]);
@@ -29447,6 +29448,7 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
   }
   window.TKOwnerReview = { open, refresh, resolve };
   setInterval(() => {
+      return;
     const old = document.getElementById('tkOwnerReviewButton'); if (!owner()) { old?.remove(); return; }
     if (old) return;
     const button = text('button', 'Owner review'); button.id = 'tkOwnerReviewButton';
@@ -29515,6 +29517,7 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
   }
   window.TKDeviceAdmin = { open, refresh };
   function install() {
+      return;
     const old = document.getElementById('tk03OwnerDevicesButton');
     if (!owner()) { old?.remove(); panel?.close(); return; }
     if (old) return;
