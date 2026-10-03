@@ -60,10 +60,23 @@ browser/IndexedDB checks. New cases cover permission rejection, retaining two
 receipts, recovering each once, pending-list deduplication/branch/shift isolation,
 escaped errors, confirmed totals, and receipt acceptance/upload labels. They use
 the application engine and a transaction harness, not a live Firebase database.
-The actual Firebase rule compiler/emulator and live roles are not available in
-this workspace. The proposed rules require Firebase compilation and real SDK
-permission tests before production publication. Rules syntax/reference review
-and structural checks are not substitutes for that validation.
+The Firebase Console Rules Playground was subsequently available on October 3,
+2026. Its draft simulation accepts both exact held receipt marker reads with
+authentication off and denies sale-marker deletion. The marker read now checks
+`resource == null`, using the document already requested rather than a separate
+`exists()` lookup. The simulator had reported an evaluation error for the extra
+lookup; the direct check permits the intended missing-marker read.
+
+The currently published policy still has no `pos_sale_commits` match. Its
+contents match the policy supplied by the owner after comments/whitespace are
+removed. The Cashier production UI shows the same two receipts as Pending Sync.
+The replacement is prepared as an unpublished Firebase draft. No live rules or
+production data have been changed by this work.
+
+These console simulations do not execute the multi-document sale transaction.
+Actual emulator/staging role tests and the full live receipt/stock upload remain
+unverified. The original receipts must be checked after permission publication;
+an unsuccessful atomic write must remain queued without partial stock changes.
 
 References: https://firebase.google.com/docs/firestore/security/test-rules-emulator
 and https://firebase.google.com/docs/firestore/manage-data/transactions.

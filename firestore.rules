@@ -156,7 +156,7 @@ service cloud.firestore {
     match /pos_sale_commits/{id} {
       // Missing markers must be readable before the first atomic sale commit.
       // Existing legacy-branch receipts already have public reads in this policy.
-      allow get: if !exists(/databases/$(database)/documents/pos_sale_commits/$(id))
+      allow get: if resource == null
         || !protectedSales(resource.data.branch) || verifiedHQ(resource.data.branch) || trustedPOS(resource.data.branch);
       allow list: if offlineOwner() || verifiedHQ(resource.data.branch) || trustedPOS(resource.data.branch);
       allow create: if saleWriter(request.resource.data.get('branch', ''))
