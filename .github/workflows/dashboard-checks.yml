@@ -1,0 +1,21 @@
+name: Dashboard and sale safety
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  calculations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check Manager scripts
+        run: |
+          node --check takodeal-manager/main.js
+          node --check takodeal-manager/dashboard.js
+      - name: Verify dashboard, checkout, inventory, recipes and payroll
+        run: node --test tests/dashboard-data.test.mjs tests/pos-safety.test.mjs tests/pending-sales.test.mjs tests/recipe-repair.test.mjs tests/payroll-safety.test.mjs

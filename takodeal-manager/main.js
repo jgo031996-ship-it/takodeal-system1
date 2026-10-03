@@ -1,3 +1,5 @@
+import { createDashboard } from './dashboard.js';
+const globalDashboard = createDashboard();
 import { createSaleEngine } from './pos-safety.js';
 import { recipeProblems, ingredientUses } from './recipe-integrity.js';
 import { createLiveReport } from './live-report.js';
@@ -295,124 +297,7 @@ window.removeHqManager = async function (docId, email) {
   } catch (e) { console.error(e); alert("Failed to remove manager."); }
 };
 
-window.loadGlobalDashboard = async function() {
-    const startDateInput = document.getElementById('dashStartDate');
-    const endDateInput = document.getElementById('dashEndDate');
-
-    if (!startDateInput.value) startDateInput.valueAsDate = new Date();
-    if (!endDateInput.value) endDateInput.valueAsDate = new Date();
-
-    // Title and Branch Filter Logic
-    let dashFilter = document.getElementById('dashBranchFilter');
-    if (!dashFilter) {
-        let dateControls = document.getElementById('globalDateControls');
-        if (dateControls) {
-            dateControls.insertAdjacentHTML('afterbegin', `
-                <select id="dashBranchFilter" style="padding: 8px 12px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: bold; color: #0f766e; margin-right: 10px; background: white; outline: none; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);" onchange="window.loadGlobalDashboard()">
-                    <option value="All">🌐 All Branches</option>
-                </select>
-            `);
-            dashFilter = document.getElementById('dashBranchFilter');
-            if (typeof window.injectDynamicBranchDropdowns === 'function') window.injectDynamicBranchDropdowns();
-        }
-    }
-
-    let selectedBranch = dashFilter ? dashFilter.value : "All";
-    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-    if (isFranchisee && dashFilter) { selectedBranch = window.sessionUser.branch; dashFilter.value = selectedBranch; dashFilter.disabled = true; }
-
-    let branches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : [];
-    if (selectedBranch !== "All") { branches = [selectedBranch]; } 
-    else if (isFranchisee) { branches = window.sessionUser.allowedBranches; }
-
-    try {
-        let tableHtml = '';
-        
-        // 8:30 AM reset logic
-        let liveStartOfDay = new Date(); 
-        if (liveStartOfDay.getHours() < 8 || (liveStartOfDay.getHours() === 8 && liveStartOfDay.getMinutes() < 30)) {
-            liveStartOfDay.setDate(liveStartOfDay.getDate() - 1);
-        }
-        liveStartOfDay.setHours(8, 30, 0, 0);
-
-        // 🔥 THE MAXIMUM OPTIMIZATION ENGINE 🔥
-        // We only ask Firebase for the Shift Document. 1 Read per branch!
-        const branchPromises = branches.map(async (branch) => {
-            const shiftQ = window.query(
-                window.collection(window.db, "shifts"), 
-                window.where("branch", "==", branch), 
-                window.where("startTime", ">=", liveStartOfDay), 
-                window.orderBy("startTime", "desc"), 
-                window.limit(1)
-            );
-            const shiftSnap = await window.getDocs(shiftQ);
-
-            let shiftData = !shiftSnap.empty ? shiftSnap.docs[0].data() : null;
-            let isActive = shiftData && shiftData.active === true;
-            let isClosed = shiftData && shiftData.status === "Closed";
-
-            if (!shiftData) return null;
-
-            let displayCashier = shiftData.cashier ? shiftData.cashier.split('/').pop().trim() : '-';
-            
-            // If closed, read the saved totals directly. If active, we don't calculate to save Firebase Reads!
-            let branchNet = isClosed ? (shiftData.netSales || 0) : 0;
-            let branchExp = isClosed ? (shiftData.expenses || shiftData.cashOut || 0) : 0;
-            let expectedCash = isClosed ? (shiftData.expectedCash || 0) : 0;
-
-            let varianceHtml = '<span style="color: var(--text-muted);">-</span>';
-            if (isClosed) varianceHtml = `<span style="color: #10b981; font-weight: bold; font-style: italic;">Saved to Z-Reading ✓</span>`;
-            else if (isActive) varianceHtml = `<span style="color: #64748b; font-style: italic; font-weight: bold; animation: pulse 2s infinite;">Live / In Progress...</span>`;
-
-            let shiftBadge = isActive 
-                ? `<span class="badge badge-active"><span class="status-dot green"></span> Active</span>` 
-                : '<span class="badge badge-closed"><span class="status-dot gray"></span> Closed</span>';
-
-            let netSalesUI = isActive ? `<span style="color:#94a3b8; font-style:italic; font-size: 11px;">Calculated on close</span>` : window.formatMoney(branchNet);
-            let expUI = isActive ? `<span style="color:#94a3b8; font-style:italic; font-size: 11px;">Calculated on close</span>` : window.formatMoney(branchExp);
-            let expectedUI = isActive ? `<span style="color:#94a3b8; font-style:italic; font-size: 11px;">-</span>` : window.formatMoney(expectedCash);
-
-            return `
-                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                    <td style="padding: 15px 25px;"><strong style="cursor:pointer; color:#0f766e; font-size: 14px; text-decoration:none;" onclick="openBranchDetails('${branch}')">${branch} </strong></td>
-                    <td style="padding: 15px 25px;">${shiftBadge}</td>
-                    <td style="padding: 15px 25px; font-weight: bold; color: #334155;">${displayCashier}</td>
-                    <td style="padding: 15px 25px; color: #64748b; font-weight: 600;">${window.formatMoney(shiftData.startingCash || 0)}</td>
-                    <td style="padding: 15px 25px; font-weight: 900; color: #0f766e;">${netSalesUI}</td>
-                    <td style="padding: 15px 25px; color: #dc2626; font-weight: bold;">${expUI}</td>
-                    <td style="padding: 15px 25px; font-weight: 900; color: #0f172a;">${expectedUI}</td>
-                    <td style="padding: 15px 25px;">${varianceHtml}</td>
-                </tr>
-            `;
-        });
-
-        const results = await Promise.all(branchPromises);
-        results.forEach(res => { if (res) { tableHtml += res; } });
-        document.getElementById('branchTableBody').innerHTML = tableHtml || '<tr><td colspan="8" class="text-center" style="padding: 30px; color: #94a3b8; font-style: italic;">No shifts recorded today.</td></tr>';
-
-        // 🔥 THE FIX: Live Real-Time Milestone Listener
-        try {
-            if (window.milestoneUnsubscribe) window.milestoneUnsubscribe();
-            
-            // Uses onSnapshot so it updates live instantly when a Cashier makes a sale!
-            window.milestoneUnsubscribe = onSnapshot(doc(db, "settings", "global_stats"), (statsSnap) => {
-                let totalBalls = 0;
-                if (statsSnap.exists()) {
-                    let data = statsSnap.data();
-                    totalBalls = selectedBranch !== "All" ? (data[`balls_${selectedBranch}`] || 0) : (data.totalTakoyakiBalls || 0);
-                }
-                let milestoneDiv = document.getElementById('milestoneCounter');
-                let titleDiv = milestoneDiv ? milestoneDiv.previousElementSibling : null; 
-                if (titleDiv) titleDiv.innerText = selectedBranch !== "All" ? `ROAD TO 1 MILLION TAKOYAKI BALLS - ${selectedBranch.toUpperCase()} 🐙` : `ROAD TO 1 MILLION TAKOYAKI BALLS 🐙`;
-                if (milestoneDiv) milestoneDiv.innerText = `${totalBalls.toLocaleString()} Balls Sold!`;
-            });
-        } catch(e) { console.error("Milestone Error:", e); }
-
-    } catch(e) { console.error("Global Dash Error:", e); }
-
-    if (typeof window.calculatePlatformFinancials === 'function') window.calculatePlatformFinancials();
-    if (typeof window.renderDashboardCharts === 'function') window.renderDashboardCharts();
-};
+window.loadGlobalDashboard = () => globalDashboard.load();
 
 // --- WIRING THE BUTTONS ---
 // Run the radar the moment the page loads
@@ -426,9 +311,8 @@ document.addEventListener("DOMContentLoaded", () => {
     refreshBtn.addEventListener('click', async () => {
       refreshBtn.innerText = "Scanning Cloud...";
       refreshBtn.style.opacity = "0.7";
-      await window.loadGlobalDashboard();
-      refreshBtn.innerText = "🔄 Refresh Live Data";
-      refreshBtn.style.opacity = "1";
+      try { await globalDashboard.load({ force: true }); }
+      finally { refreshBtn.innerText = "↻ Refresh"; refreshBtn.style.opacity = "1"; }
     });
   }
 
@@ -13920,123 +13804,7 @@ window.confirmPayableSettlement = async function() {
 // ========================================================
 // 📈 PRODUCT OPTIMIZATION & ANALYTICS ENGINE (DUAL-SYNC UPGRADE)
 // ========================================================
-window.loadProductAnalytics = async function(startOfDay, endOfDay, branchFilter) {
-    // 🔥 THE FIX: Finds EVERY Product Analytics table on the app (Dashboard AND History)
-    const tbodies = document.querySelectorAll('[id="productAnalyticsBody"]');
-    if(tbodies.length === 0) return;
-    
-    tbodies.forEach(tbody => {
-        tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="padding: 20px; color: #0ea5e9; font-weight: bold;">⏳ Crunching big data & COGS...</td></tr>';
-    });
-
-    try {
-        // 1. Fetch Latest Inventory Unit Costs
-        const invSnap = await window.getDocs(window.collection(window.db, "inventory"));
-        let invCosts = {};
-        invSnap.forEach(d => invCosts[d.data().name] = parseFloat(d.data().baseCost) || 0);
-
-        // 2. Fetch Recipes to calculate Base COGS
-        const bomSnap = await window.getDocs(window.collection(window.db, "bom"));
-        let recipeCosts = {};
-        bomSnap.forEach(d => {
-            let bom = d.data();
-            if(!recipeCosts[bom.menuItem]) recipeCosts[bom.menuItem] = 0;
-            recipeCosts[bom.menuItem] += (invCosts[bom.ingredientName] || 0) * (bom.qty || 1);
-        });
-
-        // 3. Fetch Transactions within the Date Range (🔒 FRANCHISE LOCKED)
-        let txQ = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
-        if (branchFilter && branchFilter !== "All") {
-            txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branchFilter), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
-        }
-        const txSnap = await window.getDocs(txQ);
-
-        let productStats = {};
-
-        // 4. Rip through every transaction and build the stats
-        txSnap.forEach(doc => {
-            let tx = doc.data();
-            
-            if(tx.status === "Voided" || !tx.cart) return; // Ignore voided items
-
-            tx.cart.forEach(item => {
-                let name = item.name || item.itemName;
-                if (!name) return;
-                
-                let qty = item.qty || 1;
-                if (!productStats[name]) productStats[name] = { qty: 0, sales: 0, cogs: 0 };
-
-                // Tally Quantity and Sales
-                productStats[name].qty += qty;
-                let revenue = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * qty);
-                productStats[name].sales += revenue;
-
-                // Tally Base COGS
-                let baseCogs = (recipeCosts[name] || 0) * qty;
-
-                // Tally Add-on COGS
-                let addonCogs = 0;
-                if (item.addons) {
-                    for (let key in item.addons) {
-                        let addon = item.addons[key];
-                        if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
-                            addonCogs += (invCosts[addon.linkedIngredient] || 0) * addon.deductQty * addon.qty * qty;
-                        }
-                    }
-                }
-
-                productStats[name].cogs += (baseCogs + addonCogs);
-            });
-        });
-
-        // 5. Render the Beautiful Table
-        let html = '';
-        // Sort by Highest Sales first
-        let sortedProducts = Object.keys(productStats).sort((a, b) => productStats[b].sales - productStats[a].sales); 
-
-        sortedProducts.forEach(name => {
-            let stats = productStats[name];
-            let margin = stats.sales - stats.cogs;
-            let cogsPct = stats.sales > 0 ? (stats.cogs / stats.sales) * 100 : 0;
-
-            // 🧠 The AI Health Tagger
-            let statusBadge = '';
-            if (cogsPct > 55) {
-                statusBadge = '<span style="background:#fef2f2; color:#b91c1c; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">🚨 Bleeder (High Cost)</span>';
-            } else if (cogsPct < 35 && stats.qty >= 5) {
-                statusBadge = '<span style="background:#f0fdf4; color:#15803d; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">🏆 Top Performer</span>';
-            } else {
-                statusBadge = '<span style="background:#f8fafc; color:#475569; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">⚖️ Average</span>';
-            }
-
-            let cogsColor = cogsPct > 50 ? '#b91c1c' : (cogsPct < 35 ? '#15803d' : '#d97706');
-
-            html += `
-                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                    <td style="padding: 15px 25px; font-weight: 800; color: #0f172a; font-size: 13px;">${name}</td>
-                    <td style="padding: 15px 25px; font-weight: 900; color: #475569;">${stats.qty}</td>
-                    <td style="padding: 15px 25px; font-weight: 800; color: #0ea5e9;">₱${stats.sales.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 25px; color: #dc2626; font-weight: 600;">₱${stats.cogs.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 25px; font-weight: 900; color: ${cogsColor};">${cogsPct.toFixed(1)}%</td>
-                    <td style="padding: 15px 25px; color: #16a34a; font-weight: 900; font-size: 14px;">₱${margin.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 25px;">${statusBadge}</td>
-                </tr>
-            `;
-        });
-
-        // 🔥 THE FIX: Inject the data into BOTH tables!
-        let finalHtml = html || '<tr><td colspan="7" class="text-center" style="padding: 20px; color: #64748b;">No sales data available for this period.</td></tr>';
-        tbodies.forEach(tbody => {
-            tbody.innerHTML = finalHtml;
-        });
-
-    } catch(e) {
-        console.error("Product Analytics Error:", e);
-        tbodies.forEach(tbody => {
-            tbody.innerHTML = '<tr><td colspan="7" class="text-center" style="color:red; padding: 20px;">Error loading analytics. Check console.</td></tr>';
-        });
-    }
-};
+window.loadProductAnalytics = (start, end, branch) => globalDashboard.historyProducts(start, end, branch);
 
 // ==========================================
 // 📝 MANUAL ATTENDANCE OVERRIDE ENGINE
@@ -16485,118 +16253,7 @@ window.editSalesTarget = async function() {
     window.loadMonthlyTarget();
 };
 
-window.loadMonthlyTarget = async function() {
-    try {
-        let dashFilter = document.getElementById('dashBranchFilter');
-        let selectedBranch = dashFilter ? dashFilter.value : "All";
-        
-        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-        if (isFranchisee) selectedBranch = window.sessionUser.branch;
-
-        const snap = await getDoc(doc(db, "settings", "sales_target"));
-        
-        // 🔥 THE FIX: Strictly separate the Global Target from the Branch Target so they never mix!
-        let targetAmount = 0;
-        if (snap.exists()) {
-            let data = snap.data();
-            if (selectedBranch === "All") {
-                targetAmount = parseFloat(data.amount) || 0; // The 1M Global Target
-            } else {
-                targetAmount = parseFloat(data[selectedBranch]) || 0; // The Branch Specific Target (Defaults to 0 if not set!)
-            }
-        }
-        
-        let now = new Date();
-        let firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-        let lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-        let daysInMonth = lastDay.getDate();
-        let currentDay = now.getDate();
-        let daysLeft = daysInMonth - currentDay + 1; // +1 includes today
-        
-        // 🔒 Apply Branch Filter to Query!
-        let q = query(collection(db, "transactions"), where("timestamp", ">=", firstDay));
-        if (selectedBranch !== "All") {
-            q = query(collection(db, "transactions"), where("branch", "==", selectedBranch), where("timestamp", ">=", firstDay));
-        }
-
-        const txSnap = await getDocs(q);
-        
-        let mtdSales = 0;
-        txSnap.forEach(d => {
-            let tx = d.data();
-            if (tx.status !== 'Voided') {
-                if (tx.splitDetails && tx.splitDetails.length > 0) {
-                    tx.splitDetails.forEach(split => {
-                        let amount = parseFloat(split.amount) || 0;
-                        if (split.method === 'Grab') mtdSales += (amount * 0.82); else mtdSales += amount;
-                    });
-                } else {
-                    let amount = parseFloat(tx.netTotal) || 0;
-                    if (tx.paymentMethod === 'Grab') mtdSales += (amount * 0.82); else mtdSales += amount;
-                }
-            }
-        });
-        
-        let percent = targetAmount > 0 ? (mtdSales / targetAmount) * 100 : 0;
-        if (percent > 100) percent = 100;
-        
-        let expectedPace = targetAmount > 0 ? (targetAmount / daysInMonth) * currentDay : 0;
-        let isBehind = mtdSales < expectedPace;
-        
-        let remainingToTarget = targetAmount - mtdSales;
-        let requiredDaily = remainingToTarget > 0 ? remainingToTarget / daysLeft : 0;
-        
-        document.getElementById('targetGoalAmount').innerText = `₱${targetAmount.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-        document.getElementById('targetMtdSales').innerText = `MTD Sales (Net 18%): ₱${mtdSales.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-        document.getElementById('targetProgressBar').style.width = `${percent}%`;
-        document.getElementById('targetProgressText').innerText = `${percent.toFixed(1)}% Completed`;
-        
-        document.getElementById('targetDaysLeft').innerText = `${daysLeft} days left`;
-        document.getElementById('targetRequiredDaily').innerText = `₱${requiredDaily.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-        
-        let statusEl = document.getElementById('targetStatusText');
-        let paceEl = document.getElementById('targetPaceText');
-        
-        if (targetAmount === 0) {
-            statusEl.innerText = "Target Not Set"; statusEl.style.color = "#94a3b8";
-            paceEl.innerText = `Click Edit Target to begin for ${selectedBranch}`; paceEl.style.color = "#94a3b8";
-        } else if (remainingToTarget <= 0) {
-            statusEl.innerText = "🏆 Target Hit!"; statusEl.style.color = "#10b981";
-            paceEl.innerText = "Goal achieved!"; paceEl.style.color = "#10b981";
-        } else if (isBehind) {
-            statusEl.innerText = "Behind Target"; statusEl.style.color = "#ef4444";
-            paceEl.innerText = `₱${(expectedPace - mtdSales).toLocaleString(undefined, {minimumFractionDigits:2})} below pace`; paceEl.style.color = "#ef4444";
-        } else {
-            statusEl.innerText = "🔥 On Pace"; statusEl.style.color = "#10b981";
-            paceEl.innerText = `₱${(mtdSales - expectedPace).toLocaleString(undefined, {minimumFractionDigits:2})} ahead of pace`; paceEl.style.color = "#10b981";
-        }
-        
-    } catch(e) {
-        console.error("Dashboard Target Error:", e);
-    }
-};
-
-// 🔥 THE BULLETPROOF AUTO-LOADER
-window.hasLoadedSalesTarget = false;
-
-// 1. Hook into your standard tab switching
-if (typeof window.switchManagerTab === 'function') {
-    const originalSwitchTab = window.switchManagerTab;
-    window.switchManagerTab = function(tabName) {
-        originalSwitchTab(tabName);
-        window.loadMonthlyTarget(); 
-    };
-}
-
-// 2. Watchdog: Checks every 2 seconds if the widget loaded properly
-setInterval(() => {
-    let targetUI = document.getElementById('targetGoalAmount');
-    // If the widget is on the screen, but hasn't loaded data yet, force a fetch!
-    if (targetUI && !window.hasLoadedSalesTarget) {
-        window.loadMonthlyTarget();
-        window.hasLoadedSalesTarget = true; 
-    }
-}, 2000);
+window.loadMonthlyTarget = () => globalDashboard.refreshTarget();
 
 // ========================================================
 // 🧠 TAKODEÁL CEO AI ORACLE & YIELD TRACKING ENGINE
@@ -21561,168 +21218,7 @@ window.triggerAutoSanctionForMissedTimeOut = async function(staffName, timeInDat
 // ========================================================
 // 👥 LIVE STAFF ON DUTY ENGINE (WITH GHOST DETECTOR)
 // ========================================================
-window.fetchLiveStaffOnDuty = async function() {
-    let container = document.getElementById('liveStaffGrid');
-    if (!container) return;
-    
-    try {
-        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
-        let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
-
-        const staffSnap = await getDocs(collection(db, "cashiers"));
-        let staffProfiles = {};
-        staffSnap.forEach(docSnap => {
-            let d = docSnap.data();
-            staffProfiles[d.cashierName] = {
-                nickname: d.scheduleNickname || d.cashierName,
-                isWorkingStudent: d.isWorkingStudent || false
-            };
-        });
-
-        const parseTimeStr = (timeStr) => {
-            let t = timeStr.toLowerCase().replace(/\s/g, '');
-            let isPM = t.includes('pm'); let isNN = t.includes('nn');
-            let parts = t.replace(/(am|pm|nn)/, '').split(':');
-            let hour = parseInt(parts[0]) || 0;
-            let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
-            if ((isPM || isNN) && hour < 12) hour += 12;
-            if (t.includes('am') && hour === 12) hour = 0;
-            return hour + (minute / 60);
-        };
-
-        // 🔥 THE FIX: Look back 3 days to catch ghost punches from yesterday!
-        let lookbackDate = new Date();
-        lookbackDate.setDate(lookbackDate.getDate() - 3);
-        lookbackDate.setHours(0,0,0,0);
-        
-        const q = query(collection(db, "attendance_logs"), where("timestamp", ">=", lookbackDate));
-        
-        onSnapshot(q, (snap) => {
-            let logsArray = [];
-            snap.forEach(docSnap => logsArray.push({ id: docSnap.id, ...docSnap.data() }));
-            
-            // Sort strictly chronological so we can see if they Timed In twice in a row
-            logsArray.sort((a,b) => {
-                let tA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate() : new Date(a.timestamp)) : new Date(0);
-                let tB = b.timestamp ? (b.timestamp.toDate ? b.timestamp.toDate() : new Date(b.timestamp)) : new Date(0);
-                return tA - tB;
-            });
-
-            let staffState = {};
-            
-            logsArray.forEach(data => {
-                let staff = data.staffName;
-                let punchTime = data.timestamp ? (data.timestamp.toDate ? data.timestamp.toDate() : new Date(data.timestamp)) : new Date();
-                
-                // 🔥 ANTI-FALSE FLAG FIX: Force to uppercase so it catches both apps!
-                let pType = (data.type || "").toUpperCase(); 
-
-                if (pType === "TIME IN") {
-                    // 🚨 GHOST DETECTOR: If they were ALREADY timed in, the previous one was a missed time out!
-                    if (staffState[staff] && staffState[staff].status === "IN") {
-                        let isStudent = staffProfiles[staff] ? staffProfiles[staff].isWorkingStudent : false;
-                        if (!isStudent && !data.isManual) {
-                            window.triggerAutoSanctionForMissedTimeOut(staff, staffState[staff].time, staffState[staff].branch);
-                        }
-                    }
-                    staffState[staff] = { status: "IN", time: punchTime, branch: data.branch, lateExempted: data.lateExempted };
-                } else if (pType.includes("TIME OUT")) {
-                    staffState[staff] = { status: "OUT", time: punchTime, branch: data.branch };
-                }
-            });
-
-            let activeStaffByBranch = {};
-            let now = new Date();
-
-            for (let staff in staffState) {
-                let state = staffState[staff];
-                if (!window.isBranchAllowed(state.branch)) continue; 
-
-                if (state.status === "IN") {
-                    let hrsSinceIn = (now - state.time) / (1000 * 60 * 60);
-                    let isStudent = staffProfiles[staff] ? staffProfiles[staff].isWorkingStudent : false;
-                    
-                    // 🚨 GHOST DETECTOR 2: If they've been timed in for >16 hours right now
-                    if (hrsSinceIn > 16 && !isStudent) {
-                        window.triggerAutoSanctionForMissedTimeOut(staff, state.time, state.branch);
-                    } else {
-                        // Truly active! Calculate late minutes.
-                        if (!activeStaffByBranch[state.branch]) activeStaffByBranch[state.branch] = [];
-                        
-                        // 🔥 THE FIX: Universal Shift Matcher Call (Replaces the old manual block)
-                        let { lateMinutes } = window.calculateLateMinutes(state.time, state.branch, staff, scheduleData, staffProfiles, parseTimeStr);
-
-                        activeStaffByBranch[state.branch].push({
-                            name: staff,
-                            timeIn: state.time,
-                            lateMinutes: lateMinutes,
-                            lateExempted: state.lateExempted
-                        });
-                    }
-                }
-            }
-            
-            // Render UI
-            let html = '';
-            let branches = Object.keys(activeStaffByBranch).sort();
-            
-            if (branches.length === 0) {
-                html = '<div style="grid-column: 1/-1; background: white; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; text-align: center; color: #64748b; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">No staff members are currently timed in today.</div>';
-            } else {
-                branches.forEach(branch => {
-                    let staffListHtml = '';
-                    activeStaffByBranch[branch].sort((a,b) => a.timeIn - b.timeIn);
-                    
-                    activeStaffByBranch[branch].forEach(s => {
-                        let timeStr = s.timeIn.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-                        let lateBadge = '';
-                        if (s.lateMinutes > 0) {
-                            if (s.lateExempted) {
-                                lateBadge = `<div style="font-size: 10px; color: #16a34a; font-weight: bold; margin-top: 2px;">✅ Late Exempted</div>`;
-                            } else {
-                                lateBadge = `<div style="font-size: 10px; color: #dc2626; font-weight: bold; margin-top: 2px;">⏰ Late: ${s.lateMinutes} mins</div>`;
-                            }
-                        }
-
-                        staffListHtml += `
-                            <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px dashed #e2e8f0;">
-                                <div style="display: flex; align-items: center; gap: 8px;">
-                                    <span style="font-size: 16px;">👤</span>
-                                    <div style="display: flex; flex-direction: column;">
-                                        <span style="font-weight: bold; color: #334155; font-size: 13px;">${s.name}</span>
-                                        ${lateBadge}
-                                    </div>
-                                </div>
-                                <span style="font-size: 11px; background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 6px; font-weight: bold; border: 1px solid #bbf7d0;">In @ ${timeStr}</span>
-                            </div>
-                        `;
-                    });
-                    
-                    html += `
-                        <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.02); transition: 0.2s;" onmouseover="this.style.transform='translateY(-2px)';" onmouseout="this.style.transform='translateY(0)';">
-                            <h4 style="margin: 0 0 15px 0; color: #0f172a; border-bottom: 2px solid #f1f5f9; padding-bottom: 12px; display: flex; justify-content: space-between; align-items: center;">
-                                <span style="font-size: 15px; font-weight: 900;">📍 ${branch}</span>
-                                <span style="background: #0f766e; color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: bold;">${activeStaffByBranch[branch].length} Active</span>
-                            </h4>
-                            <div style="display: flex; flex-direction: column;">
-                                ${staffListHtml}
-                            </div>
-                        </div>
-                    `;
-                });
-            }
-            container.innerHTML = html;
-        });
-    } catch (e) {
-        console.error("Live Staff Setup Error:", e);
-        container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #ef4444; background: #fef2f2; padding: 20px; border-radius: 8px; border: 1px dashed #fca5a5;">Failed to initialize live staff scanner.</div>';
-    }
-};
-
-// Auto-start the scanner!
-setTimeout(() => {
-    window.fetchLiveStaffOnDuty();
-}, 1500);
+window.fetchLiveStaffOnDuty = () => globalDashboard.refreshStaff();
 
 // ========================================================
 // ⚠️ UNVERIFIED DIGITAL PAYMENTS ENGINE (ULTRA OPTIMIZED)
@@ -22247,231 +21743,12 @@ window.chartFilters = { cash: true, gcash: true, grab: true, foodpanda: true };
 window.revenueChartInstance = null;
 window.categoryMixChartInstance = null;
 
-window.toggleChartFilter = function(filterType) {
-    window.chartFilters[filterType] = !window.chartFilters[filterType];
-    const cashBtn = document.getElementById('btnFilterCash');
-    const gcashBtn = document.getElementById('btnFilterGcash');
-    const grabBtn = document.getElementById('btnFilterGrab');
-    const fpBtn = document.getElementById('btnFilterFoodpanda');
-
-    if (cashBtn) { cashBtn.style.background = window.chartFilters.cash ? '#334155' : '#e2e8f0'; cashBtn.style.color = window.chartFilters.cash ? '#ffffff' : '#94a3b8'; }
-    if (gcashBtn) { gcashBtn.style.background = window.chartFilters.gcash ? '#0284c7' : '#e2e8f0'; gcashBtn.style.color = window.chartFilters.gcash ? '#ffffff' : '#94a3b8'; }
-    if (grabBtn) { grabBtn.style.background = window.chartFilters.grab ? '#00b14f' : '#e2e8f0'; grabBtn.style.color = window.chartFilters.grab ? '#ffffff' : '#94a3b8'; }
-    if (fpBtn) { fpBtn.style.background = window.chartFilters.foodpanda ? '#d70f64' : '#e2e8f0'; fpBtn.style.color = window.chartFilters.foodpanda ? '#ffffff' : '#94a3b8'; }
-
-    window.renderDashboardCharts();
+window.toggleChartFilter = function(type) {
+    window.chartFilters[type] = !window.chartFilters[type];
+    globalDashboard.renderCharts();
 };
 
-window.renderDashboardCharts = async function() {
-    const lineCanvas = document.getElementById('revenueTrendChart');
-    const pieCanvas = document.getElementById('categoryMixChart');
-    if (!lineCanvas) return;
-
-    try {
-        const toLocalISODate = (d) => new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-        
-        const startDateInput = document.getElementById('dashStartDate');
-        const endDateInput = document.getElementById('dashEndDate');
-        
-        let startDay = startDateInput && startDateInput.value ? new Date(startDateInput.value) : new Date();
-        startDay.setHours(8, 30, 0, 0); // 🔥 8:30 AM Business Day
-        
-        let endDay = endDateInput && endDateInput.value ? new Date(endDateInput.value) : new Date();
-        endDay.setDate(endDay.getDate() + 1);
-        endDay.setHours(3, 59, 59, 999); // 🔥 3:59 AM Next Day
-
-        let daysDiff = Math.round((endDay - startDay) / (1000 * 60 * 60 * 24));
-        let isMonthly = daysDiff > 31; 
-        
-        let labels = [];
-        let dateKeys = []; 
-
-        // 🔥 THE CHART FIX: If you select 1 to 6 days, FORCE it to look back 7 days automatically!
-        if (daysDiff <= 6) {
-            let anchorDate = new Date(endDay.getTime());
-            anchorDate.setDate(anchorDate.getDate() - 1); 
-            
-            for (let i = 6; i >= 0; i--) {
-                let d = new Date(anchorDate.getTime());
-                d.setDate(anchorDate.getDate() - i);
-                dateKeys.push(toLocalISODate(d));
-                labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-            }
-            
-            // Push the database query window backward so it actually fetches all 7 days of data!
-            startDay = new Date(anchorDate.getTime());
-            startDay.setDate(startDay.getDate() - 6);
-            startDay.setHours(8, 30, 0, 0);
-            
-            daysDiff = 7; 
-        } 
-        else if (isMonthly) {
-            let curr = new Date(startDay.getFullYear(), startDay.getMonth(), 1);
-            let endMonth = new Date(endDay.getFullYear(), endDay.getMonth(), 1);
-            while (curr <= endMonth) {
-                let y = curr.getFullYear();
-                let m = String(curr.getMonth() + 1).padStart(2, '0');
-                dateKeys.push(`${y}-${m}`);
-                labels.push(curr.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
-                curr.setMonth(curr.getMonth() + 1);
-            }
-        } else {
-            for (let i = 0; i < daysDiff; i++) {
-                let d = new Date(startDay);
-                d.setDate(startDay.getDate() + i);
-                dateKeys.push(toLocalISODate(d));
-                labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-            }
-        }
-
-        let titleEl = document.getElementById('revenueChartTitle');
-        if (titleEl) {
-            let spanIcon = `<span style="font-size: 20px;">📈</span>`;
-            if (isMonthly) {
-                titleEl.innerHTML = `${spanIcon} Monthly Gross Revenue Trend`;
-            } else {
-                titleEl.innerHTML = `${spanIcon} ${daysDiff}-Day Gross Revenue Trend`;
-            }
-        }
-
-        const q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startDay), window.where("timestamp", "<=", endDay));
-        const snap = await window.getDocs(q);
-
-        const menuSnap = await window.getDocs(window.collection(window.db, "menu"));
-        let menuCategories = {};
-        menuSnap.forEach(doc => { menuCategories[doc.data().name] = doc.data().category || 'Uncategorized'; });
-
-        const branchColors = {
-            "Cabantian": { border: "#f59e0b", bg: "rgba(245, 158, 11, 0.1)" },
-            "Citygate":  { border: "#8b5cf6", bg: "rgba(139, 92, 246, 0.1)" },
-            "Maa":       { border: "#0284c7", bg: "rgba(2, 132, 199, 0.1)" },
-            "Main Office": { border: "#10b981", bg: "rgba(16, 185, 129, 0.1)" }
-        };
-
-        let activeBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ["Cabantian", "Citygate", "Maa"];
-        if (window.sessionUser && window.sessionUser.isFranchisee) activeBranches = window.sessionUser.allowedBranches;
-        
-        let branchSalesData = {};
-        activeBranches.forEach(b => { 
-            branchSalesData[b] = {}; 
-            dateKeys.forEach(k => branchSalesData[b][k] = 0); 
-        });
-
-        let categorySales = {}; 
-        
-        let liveBusinessDay = new Date();
-        // 🔥 Apply the new 8:30 AM logic to the Pie Chart as well!
-        if (liveBusinessDay.getHours() < 8 || (liveBusinessDay.getHours() === 8 && liveBusinessDay.getMinutes() < 30)) {
-            liveBusinessDay.setDate(liveBusinessDay.getDate() - 1);
-        }
-        let todayStr = toLocalISODate(liveBusinessDay);
-
-        snap.forEach(docSnap => {
-            let tx = docSnap.data();
-            if (tx.status === "Voided") return;
-
-            let txBranch = tx.branch || "Unknown";
-            let txDateObj = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)) : null;
-
-            if (txDateObj) {
-                let businessDateObj = new Date(txDateObj.getTime());
-                if (businessDateObj.getHours() < 8 || (businessDateObj.getHours() === 8 && businessDateObj.getMinutes() < 30)) {
-                    businessDateObj.setDate(businessDateObj.getDate() - 1);
-                }
-                let exactLocalStr = toLocalISODate(businessDateObj);
-
-                let keyToUse = "";
-                if (isMonthly) {
-                    let y = businessDateObj.getFullYear();
-                    let m = String(businessDateObj.getMonth() + 1).padStart(2, '0');
-                    keyToUse = `${y}-${m}`;
-                } else {
-                    keyToUse = exactLocalStr;
-                }
-
-                if (branchSalesData[txBranch] && branchSalesData[txBranch][keyToUse] !== undefined) {
-                    let txGross = parseFloat(tx.subTotalBeforeDiscount);
-                    if (isNaN(txGross) || txGross < tx.netTotal) txGross = parseFloat(tx.netTotal) || 0;
-
-                    if (tx.splitDetails && Array.isArray(tx.splitDetails)) {
-                        tx.splitDetails.forEach(split => {
-                            let method = (split.method || '').toLowerCase();
-                            if ((method === 'cash' && window.chartFilters.cash) || 
-                                (method.includes('gcash') && window.chartFilters.gcash) || 
-                                (method.includes('grab') && window.chartFilters.grab) || 
-                                (method.includes('foodpanda') && window.chartFilters.foodpanda)) {
-                                let ratio = (tx.netTotal > 0) ? (parseFloat(split.amount) / parseFloat(tx.netTotal)) : 0;
-                                branchSalesData[txBranch][keyToUse] += (txGross * ratio);
-                            }
-                        });
-                    } else {
-                        let method = (tx.paymentMethod || 'cash').toLowerCase();
-                        let isCash = (method === 'cash' || method === '' || method.includes('store use')) && window.chartFilters.cash;
-                        let isGcash = method.includes('gcash') && window.chartFilters.gcash;
-                        let isGrab = method.includes('grab') && window.chartFilters.grab;
-                        let isFoodpanda = method.includes('foodpanda') && window.chartFilters.foodpanda;
-                        let isOtherDigital = !isCash && !isGcash && !isGrab && !isFoodpanda && window.chartFilters.gcash; 
-
-                        if (isCash || isGcash || isGrab || isFoodpanda || isOtherDigital) {
-                            branchSalesData[txBranch][keyToUse] += txGross;
-                        }
-                    }
-                }
-            }
-
-            if (txDateObj) {
-                let businessDateObj = new Date(txDateObj.getTime());
-                if (businessDateObj.getHours() < 8 || (businessDateObj.getHours() === 8 && businessDateObj.getMinutes() < 30)) {
-                    businessDateObj.setDate(businessDateObj.getDate() - 1);
-                }
-                
-                if (toLocalISODate(businessDateObj) === todayStr && pieCanvas && tx.cart && window.isBranchAllowed(txBranch)) {
-                    tx.cart.forEach(item => {
-                        let itemName = item.name || item.itemName;
-                        let cat = menuCategories[itemName] || item.category || "Uncategorized";
-                        let lineTotal = item.lineTotalFinal !== undefined ? item.lineTotalFinal : ((item.variantPrice || item.basePrice || 0) * (item.qty || 1));
-                        if (!categorySales[cat]) categorySales[cat] = 0;
-                        categorySales[cat] += lineTotal;
-                    });
-                }
-            }
-        });
-
-        let lineDatasets = [];
-        activeBranches.forEach(branch => {
-            let color = branchColors[branch] || { border: "#0f766e", bg: "rgba(15, 118, 110, 0.1)" };
-            lineDatasets.push({
-                label: branch, 
-                data: dateKeys.map(k => branchSalesData[branch][k]), 
-                borderColor: color.border, backgroundColor: color.bg, borderWidth: 3, tension: 0.4, fill: true, pointRadius: 4, pointHoverRadius: 6
-            });
-        });
-
-        if (window.revenueChartInstance) window.revenueChartInstance.destroy();
-        window.revenueChartInstance = new Chart(lineCanvas.getContext('2d'), {
-            type: 'line', data: { labels: labels, datasets: lineDatasets },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'top', labels: { font: { weight: 'bold', size: 12 } } }, tooltip: { callbacks: { label: function(context) { return ` ${context.dataset.label}: ₱${context.parsed.y.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } } }, scales: { y: { beginAtZero: true, ticks: { callback: function(value) { return '₱' + value.toLocaleString(); } } } } }
-        });
-
-        if (pieCanvas) {
-            let sortedCats = Object.keys(categorySales).map(cat => ({ name: cat, sales: categorySales[cat] })).sort((a, b) => b.sales - a.sales);
-            let top5 = sortedCats.slice(0, 5); 
-            
-            if (window.categoryMixChartInstance) window.categoryMixChartInstance.destroy();
-            const ctxPie = pieCanvas.getContext('2d');
-            
-            if (top5.length === 0) {
-                window.categoryMixChartInstance = new Chart(ctxPie, { type: 'doughnut', data: { labels: ["No Sales Today"], datasets: [{ data: [1], backgroundColor: ['#e2e8f0'] }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { tooltip: { enabled: false }, legend: { display: false } } } });
-            } else {
-                window.categoryMixChartInstance = new Chart(ctxPie, {
-                    type: 'doughnut',
-                    data: { labels: top5.map(c => c.name), datasets: [{ data: top5.map(c => c.sales), backgroundColor: ['#0ea5e9', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444'], borderWidth: 2, borderColor: '#ffffff' }] },
-                    options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'right', labels: { font: { weight: 'bold', size: 11 } } }, tooltip: { callbacks: { label: function(context) { return ` ${context.label}: ₱${context.parsed.toLocaleString(undefined, {minimumFractionDigits: 2})}`; } } } } }
-                });
-            }
-        }
-    } catch(e) { console.error("Chart Error:", e); }
-};
+window.renderDashboardCharts = () => globalDashboard.renderCharts();
 
 // ========================================================
 // 🧠 PHASE 5: SMART BURN RATE & AI DELIVERY SCHEDULER
@@ -25423,15 +24700,7 @@ window.injectDynamicBranchDropdowns = function() {
 };
 
 // 🔐 CORE 3: Dashboard Interceptor
-if (typeof window.originalRenderDashboardCharts === 'undefined') {
-    window.originalRenderDashboardCharts = window.renderDashboardCharts;
-}
-window.renderDashboardCharts = async function() {
-    let backup = window.globalActiveBranches;
-    if (window.sessionUser && window.sessionUser.isFranchisee) window.globalActiveBranches = window.sessionUser.allowedBranches;
-    await window.originalRenderDashboardCharts();
-    if (window.sessionUser && window.sessionUser.isFranchisee) window.globalActiveBranches = backup;
-};
+
 
 // 🔐 CORE 4: Data Eraser (Hides rows belonging to other branches)
 window.wipeAlienData = function(selector) {
@@ -28400,127 +27669,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 // =======================================================
 // 📊 LIVE AUTOMATED METRICS ENGINE (CLOUD LISTENER)
 // =======================================================
-window.automatedMetricsUnsubscribe = null;
-
-window.startAutomatedMetricsListener = function() {
-    // Stop any old listeners so we don't get duplicate data when changing dates
-    if (window.automatedMetricsUnsubscribe) window.automatedMetricsUnsubscribe();
-
-    // Get the exact date currently selected on the dashboard filter
-    let dateInput = document.getElementById('dashStartDate');
-    
-    // Format the local date to match exactly how the Cloud Function saves it (YYYY-MM-DD)
-    let targetDateObj = dateInput && dateInput.value ? new Date(dateInput.value) : new Date();
-    let yyyy = targetDateObj.getFullYear();
-    let mm = String(targetDateObj.getMonth() + 1).padStart(2, '0');
-    let dd = String(targetDateObj.getDate()).padStart(2, '0');
-    let targetDateStr = `${yyyy}-${mm}-${dd}`;
-
-    // Target the daily_metrics collection
-    const q = window.query(window.collection(window.db, "daily_metrics"), window.where("dateStr", "==", targetDateStr));
-
-    // Boot up the live real-time listener!
-    window.automatedMetricsUnsubscribe = window.onSnapshot(q, (snap) => {
-        let metricsByBranch = {};
-        snap.forEach(doc => {
-            let data = doc.data();
-            metricsByBranch[data.branch] = data;
-        });
-        window.renderAutomatedMetrics(metricsByBranch);
-    });
-};
-
-window.renderAutomatedMetrics = function(metrics) {
-    let companyGrid = document.getElementById('companyMetricsGrid');
-    let franchiseGrid = document.getElementById('franchiseMetricsGrid');
-    if (!companyGrid || !franchiseGrid) return;
-
-    let companyHtml = '';
-    let franchiseHtml = '';
-    let companyBranches = [];
-    let franchiseBranches = [];
-
-    // 1. Sort branches dynamically using your Global Branch Manager data!
-    if (window.globalBranchData) {
-        Object.values(window.globalBranchData).forEach(b => {
-            if (b.name === "Main Office") return; // Skip HQ
-            if (b.isCore) companyBranches.push(b.name);
-            else franchiseBranches.push(b.name);
-        });
-    } else {
-        // Failsafe fallback
-        companyBranches = ["Cabantian", "Citygate", "Maa"];
-    }
-
-    // 🛡️ FRANCHISEE WALLED GARDEN SECURITY
-    if (window.sessionUser && window.sessionUser.isFranchisee) {
-        let myBranches = window.sessionUser.allowedBranches || [];
-        companyBranches = companyBranches.filter(b => myBranches.includes(b));
-        franchiseBranches = franchiseBranches.filter(b => myBranches.includes(b));
-        
-        // Hide the Company section completely if they don't own any core branches
-        let compContainer = companyGrid.previousElementSibling; // The <h3> tag
-        if (companyBranches.length === 0 && compContainer) {
-            compContainer.style.display = 'none';
-            companyGrid.style.display = 'none';
-        }
-    }
-
-    // 2. Build the UI Card dynamically
-    const buildCard = (branchName, isCompany) => {
-        let data = metrics[branchName];
-        let gross = data ? (parseFloat(data.totalGross) || 0) : 0;
-        let cash = data ? (parseFloat(data.totalCash) || 0) : 0;
-        let digital = data ? (parseFloat(data.totalDigital) || 0) : 0;
-        
-        // Visual cues: Blue for Company, Purple for Franchise
-        let edgeColor = isCompany ? '#0ea5e9' : '#8b5cf6'; 
-        let icon = isCompany ? '🏢' : '🤝';
-        let liveBadge = data ? '<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:bold; box-shadow: 0 0 5px rgba(22,163,74,0.3);">🟢 LIVE</span>' : '<span style="background:#f1f5f9; color:#64748b; padding:2px 8px; border-radius:12px; font-size:10px; font-weight:bold;">⚪ Waiting...</span>';
-
-        return `
-            <div class="auto-metric-card" style="border-left-color: ${edgeColor};">
-                <div class="auto-metric-title">
-                    <span style="display:flex; align-items:center; gap:8px;">${icon} ${branchName}</span>
-                    ${liveBadge}
-                </div>
-                <div class="auto-metric-gross">₱${gross.toLocaleString('en-US', {minimumFractionDigits: 2})}</div>
-                <div class="auto-metric-details">
-                    <span>Cash: <span style="color:#334155;">₱${cash.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></span>
-                    <span>Digital: <span style="color:#0284c7;">₱${digital.toLocaleString('en-US', {minimumFractionDigits: 2})}</span></span>
-                </div>
-            </div>
-        `;
-    };
-
-    // 3. Inject the HTML into the correct grids
-    companyBranches.sort().forEach(b => { companyHtml += buildCard(b, true); });
-    franchiseBranches.sort().forEach(b => { franchiseHtml += buildCard(b, false); });
-
-    companyGrid.innerHTML = companyHtml || '<div style="color: #94a3b8; font-size: 13px; font-style: italic; padding: 10px;">No company-owned branches found.</div>';
-    franchiseGrid.innerHTML = franchiseHtml || '<div style="color: #94a3b8; font-size: 13px; font-style: italic; padding: 10px;">No franchised branches found.</div>';
-};
-
-// 4. Hook it seamlessly into the Global Dashboard Loader
-if (typeof window.origLoadGlobalDashboardForMetrics === 'undefined') {
-    window.origLoadGlobalDashboardForMetrics = window.loadGlobalDashboard;
-    window.loadGlobalDashboard = async function() {
-        // Run all your heavy legacy dashboard code first
-        await window.origLoadGlobalDashboardForMetrics();
-        // Fire up the new super-fast automated listener right after!
-        if (typeof window.startAutomatedMetricsListener === 'function') {
-            window.startAutomatedMetricsListener();
-        }
-    };
-}
-
-// Auto-start it if they are already sitting on the dashboard
-setTimeout(() => {
-    if (document.getElementById('view-dashboard') && document.getElementById('view-dashboard').classList.contains('active')) {
-        window.startAutomatedMetricsListener();
-    }
-}, 2000);
-
 // ==========================================
 // 🔥 EDITABLE STAFF POOL ENGINE
 // ==========================================
@@ -28857,109 +28005,7 @@ window.deletePerfBonus = async function(id) {
 // ========================================================
 // 🐙 TAKOYAKI MILESTONE AUTO-AUDITOR (ARCHIVE-PROOF)
 // ========================================================
-window.resyncTakoyakiMilestone = async function() {
-    // 1. Fetch current stats to remember the historical base
-    const statsRef = window.doc(window.db, "settings", "global_stats");
-    const statsSnap = await window.getDoc(statsRef);
-    let currentHistorical = 0;
-    if (statsSnap.exists() && statsSnap.data().historicalBalls) {
-        currentHistorical = statsSnap.data().historicalBalls;
-    }
-
-    // 2. Ask the Manager for the Historical Base (Defaults to the exact missing amount!)
-    const { value: historicalInput, isConfirmed } = await Swal.fire({
-        title: 'Auto-Audit Counter',
-        html: `
-            <div style="text-align: left; font-size: 13px; color: #475569;">
-                Because you archive/delete old transactions to save space, the system cannot count them anymore.<br><br>
-                Please enter the number of Takoyaki balls from your <b>Archived Data</b>. The system will add this to your live transactions to get the true total.<br><br>
-                <span style="color: #0ea5e9; font-weight: bold;">(Hint: To restore your previous 133k milestone, we entered the exact missing amount below).</span>
-            </div>
-        `,
-        input: 'number',
-        inputValue: currentHistorical || 75315, // Automatically restores the missing balls!
-        showCancelButton: true,
-        confirmButtonText: 'Start Audit',
-        confirmButtonColor: '#0ea5e9',
-        customClass: { popup: 'rounded-2xl shadow-xl' }
-    });
-
-    if (!isConfirmed) return;
-
-    let baseBalls = parseInt(historicalInput) || 0;
-
-    Swal.fire({
-        title: 'Auditing Live Sales...',
-        html: 'Scanning active transactions and combining them with your historical base...',
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading()
-    });
-
-    try {
-        const txSnap = await window.getDocs(window.collection(window.db, "transactions"));
-        let liveBalls = 0;
-        let branchBalls = {};
-
-        txSnap.forEach(docSnap => {
-            let tx = docSnap.data();
-            if (tx.status === "Voided") return;
-            
-            let branch = tx.branch || "Unknown";
-            if (!branchBalls[branch]) branchBalls[branch] = 0;
-
-            if (tx.cart && Array.isArray(tx.cart)) {
-                tx.cart.forEach(item => {
-                    let name = (item.name || item.itemName || "").toLowerCase();
-                    let cat = (item.category || "").toLowerCase();
-                    let qty = parseFloat(item.qty || item.quantity) || 1;
-                    
-                    // Identify if the item is a Takoyaki
-                    if (name.includes("takoyaki") || cat.includes("takoyaki") || name.includes("tako")) {
-                        let balls = 4; // Default standard
-                        if (name.includes("4pcs") || name.includes("4 pcs") || name.match(/\b4\s*pcs\b/)) balls = 4;
-                        else if (name.includes("8pcs") || name.includes("8 pcs") || name.match(/\b8\s*pcs\b/)) balls = 8;
-                        else if (name.includes("12pcs") || name.includes("12 pcs") || name.match(/\b12\s*pcs\b/)) balls = 12;
-                        else if (name.includes("16pcs") || name.includes("16 pcs") || name.match(/\b16\s*pcs\b/)) balls = 16;
-                        
-                        let totalLineBalls = balls * qty;
-                        liveBalls += totalLineBalls;
-                        branchBalls[branch] += totalLineBalls;
-                    }
-                });
-            }
-        });
-
-        // 3. Mathematical combination!
-        let grandTotal = baseBalls + liveBalls;
-
-        let payload = { 
-            totalTakoyakiBalls: grandTotal,
-            historicalBalls: baseBalls // Saves the memory so you don't have to type it again next time
-        };
-        
-        for (let b in branchBalls) {
-            payload[`balls_${b}`] = branchBalls[b]; 
-        }
-
-        await window.setDoc(statsRef, payload, { merge: true });
-
-        Swal.fire({
-            title: '✅ Milestone Synced!',
-            html: `
-                Database audited successfully.<br><br>
-                Archived: <b style="color:#64748b;">${baseBalls.toLocaleString()}</b><br>
-                Live DB: <b style="color:#16a34a;">${liveBalls.toLocaleString()}</b><br><br>
-                Grand Total: <b style="color:#0ea5e9; font-size:18px;">${grandTotal.toLocaleString()} balls</b>!
-            `,
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl' }
-        });
-
-    } catch(e) {
-        console.error("Audit Error:", e);
-        Swal.fire('Error', 'Failed to recalculate milestone. Check console.', 'error');
-    }
-};
+window.resyncTakoyakiMilestone = () => globalDashboard.auditCounter();
 
 
 /* Pure operation journal. One durable tablet record, one cloud commit marker.
@@ -29222,9 +28268,7 @@ function tkReconcileSale(record, targetShift, inventory, effects, owner, note) {
     const list = document.createElement('div'); list.dataset.tkList = '';
     panel.append(header, text('p', 'Connection loss is detected after three minutes. Local sales reach the Manager after the tablet reconnects.'), list);
     document.body.append(panel);
-    const button = text('button', 'Cashier connections'); button.id = 'tkCashierStatusButton';
-    button.style.cssText = 'position:fixed;bottom:18px;right:18px;z-index:1000;border:1px solid #e5d8bd;border-radius:12px;padding:12px 16px;background:#ffbb3e;color:#27231f;font-weight:700;cursor:pointer';
-    button.onclick = () => { render(); panel.showModal(); }; document.body.append(button);
+
   }
   async function start() {
     const user = window.sessionUser;
@@ -29289,16 +28333,7 @@ function tkReconcileSale(record, targetShift, inventory, effects, owner, note) {
     await window.setDoc(window.doc(window.db, 'hq_email_access', email), { active: true, allowedBranches: branches });
   }
   window.TKCashierStatus = { start, render, status, approveEnrollment, grantMonitorAccess };
-  const original = window.applyPermissions;
-  window.applyPermissions = function(...args) { const result = original?.apply(this, args); start().catch(console.error); return result; };
-  interval = setInterval(() => {
-    if (!window.sessionUser) {
-      unsubscribers.splice(0).forEach(stop => stop()); userKey = ''; entries.clear();
-      document.getElementById('tkCashierStatusButton')?.remove(); panel?.remove(); panel = null;
-    } else { start().catch(console.error); render(); }
-  }, 10000);
-  window.addEventListener('offline', render); window.addEventListener('online', render);
-  start().catch(console.error);
+
 })();
 
 import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
@@ -29476,13 +28511,7 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
     panel.showModal(); refresh();
   }
   window.TKOwnerReview = { open, refresh, resolve };
-  setInterval(() => {
-    const old = document.getElementById('tkOwnerReviewButton'); if (!owner()) { old?.remove(); return; }
-    if (old) return;
-    const button = text('button', 'Owner review'); button.id = 'tkOwnerReviewButton';
-    button.style.cssText = 'position:fixed;bottom:72px;right:18px;z-index:1000;min-height:44px;border:1px solid #e5d8bd;border-radius:12px;padding:12px 16px;background:#fff4d9;color:#27231f;font-weight:700';
-    button.onclick = open; document.body.append(button);
-  }, 10000);
+
 })();
 
 // OFFLINE-03: append at the very bottom of Manager main.js.
@@ -29544,14 +28573,17 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
     if (!panel.open) panel.showModal(); await refresh();
   }
   window.TKDeviceAdmin = { open, refresh };
-  function install() {
-    const old = document.getElementById('tk03OwnerDevicesButton');
-    if (!owner()) { old?.remove(); panel?.close(); return; }
-    if (old) return;
-    const button = make('button', 'Device approvals'); button.id = 'tk03OwnerDevicesButton';
-    button.style.cssText = style + ';position:fixed;right:18px;bottom:126px;z-index:1000';
-    button.onclick = () => open().catch(error => window.Swal.fire('Owner access required', error.message, 'warning'));
-    document.body.append(button);
-  }
-  setInterval(install, 10000); install();
+
 })();
+
+// Dashboard subscriptions belong to the visible view, never to a hidden panel.
+const dashboardSwitchView = window.switchView;
+window.switchView = function(view, ...args) {
+    if (view !== 'dashboard') globalDashboard.stop();
+    document.body.classList.toggle('dashboard-open', view === 'dashboard');
+    return dashboardSwitchView.call(this, view, ...args);
+};
+window.openDashboardPartner = async function(partner) {
+    try { await window.calculatePlatformFinancials(); window.openPlatformFinanceModal(partner); }
+    catch(error) { await window.Swal.fire('Partner details unavailable', error.message, 'warning'); }
+};
