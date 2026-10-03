@@ -126,7 +126,7 @@ window.${name} = `) + 1;
     return source.slice(start,source.indexOf('\n};',start)+3);
 }
 function payrollUi({exempt=false,end='23:30',type='mid',frozen=null}={}) {
-    const elements={payrollStart:{value:'2026-10-03'},payrollEnd:{value:'2026-10-03'},payrollGeneratorBody:{innerHTML:''}};
+    const elements={payrollStart:{value:'2026-10-03'},payrollEnd:{value:'2026-10-03'},payrollGeneratorBody:{innerHTML:''},payrollGrandTotalContainer:{style:{}},payrollGrandTotalAmount:{}};
     const errors=[];
     const stamp=date=>({toDate:()=>date});
     const data={cashiers:[profile],staff_ledger:[],payroll_records:frozen?[{staffName:'Test Staff',frozenData:frozen}]:[],
@@ -146,6 +146,7 @@ for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
         assert.deepEqual(h.errors,[]);const row=h.window.globalPayrollCache['Test Staff'];
         assert.equal(row.nightBonus,50);assert.equal(row.lateDeduction,62.5);assert.equal(row.basicPay,450);
         assert.equal(row.logs.length,1);
+        assert.equal(h.elements.payrollGrandTotalAmount.innerText,'₱437.50');
     });
     test(`${name}: approved attendance is exempt and frozen paid payroll remains unchanged`,async()=>{
         const h=payrollUi({exempt:true});vm.runInContext(extract(name),h.context);await h.window[name]();

@@ -10963,7 +10963,7 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
 
                 ${isLateLetter ? `
                 <div style="background:#f0fdf4;border:1px dashed #bbf7d0;padding:15px;border-radius:8px;margin-bottom:20px;">
-                    <label style="font-size:12px;font-weight:bold;">Linked clock-in</label>
+                    <label for="replyAttendanceLog" style="font-size:12px;font-weight:bold;">Linked clock-in</label>
                     <select id="replyAttendanceLog" onchange="window.updateLateRequestPreview()" style="width:100%;padding:8px;margin:6px 0;">
                         ${window.lateRequestContext.logs.length > 1 ? '<option value="">Select the correct clock-in</option>' : ''}
                         ${window.lateRequestContext.logs.map(log => `<option value="${requestEscape(log.id)}">${requestEscape(log.timestamp.toDate ? log.timestamp.toDate().toLocaleString('en-PH') : new Date(log.timestamp).toLocaleString('en-PH'))}</option>`).join('')}
@@ -11009,8 +11009,12 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
     btn.disabled = true;
 
     try {
+        const originalRequest = await tkOwnerDoc(window.doc(window.db, 'staff_requests', docId));
+        if (!originalRequest.exists()) throw new Error('This request no longer exists. Refresh the inbox.');
+        if (!window.isBranchAllowed(originalRequest.data().branch)) throw new Error('This branch is outside your access.');
         const context = window.lateRequestContext;
-        if (context?.requestId === docId) {
+        if (isLatenessRequest(originalRequest.data())) {
+            if (context?.requestId !== docId) throw new Error('Reopen this lateness letter before confirming its linked clock-in.');
             const result = await reviewLateRequest({ db: window.db, doc: window.doc,
                 runTransaction: window.runTransaction, serverTimestamp: window.serverTimestamp }, {
                 requestId: docId, attendanceId: document.getElementById('replyAttendanceLog').value,
@@ -11637,7 +11641,7 @@ window.loadPayrollGenerator = async function() {
                 }
 
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
-                let estGross = d.basicPay + (d.nightBonusTotal || 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0);
+                let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0) masterPayrollTotal += estNet;
                 
@@ -12802,7 +12806,7 @@ window.generateAutoPayslips = async function() {
                 }
 
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
-                let estGross = d.basicPay + (d.nightBonusTotal || 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0) + (d.perfBonus || 0);
+                let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0) + (d.perfBonus || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0) masterPayrollTotal += estNet;
                 
