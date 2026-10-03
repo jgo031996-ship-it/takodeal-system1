@@ -1,7 +1,8 @@
+import { calculateLateMinutes, resolveScheduledShift, latePay, earnedNightBonus, attendanceLateMinutes } from './payroll-safety.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 // 🔥 UPGRADE: Imported the Offline Cache Engines!
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot, enableNetwork, disableNetwork } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot, enableNetwork, disableNetwork, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
   
 const firebaseConfig = {
@@ -86,85 +87,7 @@ console.log("🚀 Takodeál Staff Portal Booted (v3.0 - Fleet Engine Active)");
 // ==========================================
 // 🕒 UNIVERSAL SHIFT MATCHER (LATE DETECTOR)
 // ==========================================
-window.calculateLateMinutes = function(logDate, branch, staffName, scheduleData, staffDictOrProfiles, parseTimeStrFn) {
-    let lateMinutes = 0;
-    let expectedStartHour = null; 
-    let wasScheduled = false;
-
-    if (!scheduleData || !scheduleData.branchConfig || !scheduleData.branchConfig[branch]) {
-        return { lateMinutes, expectedStartHour, wasScheduled };
-    }
-
-    let lDay = logDate.getDate(); 
-    let lMonth = logDate.getMonth() + 1; 
-    let lYear = logDate.getFullYear();
-    let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
-    let dayOfWeek = logDate.getDay();
-
-    // 1. Try to find explicitly scheduled shift
-    if (scheduleData.currentSchedule && scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
-        let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][branch] : null;
-        if (branchSched && branchSched.scheduled) {
-            let nickname = staffName;
-            if (staffDictOrProfiles && staffDictOrProfiles[staffName]) {
-                nickname = staffDictOrProfiles[staffName].scheduleNickname || staffDictOrProfiles[staffName].nickname || staffName;
-            }
-            
-            let assignedShiftId = Object.keys(branchSched.scheduled).find(k => branchSched.scheduled[k] === nickname || branchSched.scheduled[k] === staffName);
-            if (assignedShiftId) {
-                wasScheduled = true;
-                let shiftConfig = scheduleData.branchConfig[branch].find(s => s.id === assignedShiftId);
-                if (shiftConfig) {
-                    if (shiftConfig.startTime) {
-                        let parts = shiftConfig.startTime.split(':');
-                        expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
-                    } else if (parseTimeStrFn) {
-                        let match = shiftConfig.name.match(/\((.*?)-/);
-                        if (match && match[1]) expectedStartHour = parseTimeStrFn(match[1]);
-                    }
-                }
-            }
-        }
-    }
-
-    // 2. UNIVERSAL FALLBACK: Detect Relievers pulled from other branches
-    if (expectedStartHour === null) {
-        let minDiff = Infinity;
-        scheduleData.branchConfig[branch].forEach(shiftConfig => {
-            if (!shiftConfig.active) return;
-            if (shiftConfig.days && !shiftConfig.days.includes(dayOfWeek)) return;
-
-            let shiftStartHour = null;
-            if (shiftConfig.startTime) {
-                let parts = shiftConfig.startTime.split(':');
-                shiftStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
-            } else if (parseTimeStrFn) {
-                let match = shiftConfig.name.match(/\((.*?)-/);
-                if (match && match[1]) shiftStartHour = parseTimeStrFn(match[1]);
-            }
-
-            if (shiftStartHour !== null) {
-                let diffHours = actualHour - shiftStartHour;
-                if (diffHours > -1.5 && diffHours < 4) {
-                    if (Math.abs(diffHours) < Math.abs(minDiff)) {
-                        minDiff = diffHours;
-                        expectedStartHour = shiftStartHour;
-                    }
-                }
-            }
-        });
-    }
-
-    // 3. Calculate actual Late Minutes
-    if (expectedStartHour !== null) {
-        let diffHours = actualHour - expectedStartHour;
-        if (diffHours > 0) {
-            lateMinutes = Math.floor(diffHours * 60);
-        }
-    }
-
-    return { lateMinutes, expectedStartHour, wasScheduled };
-};
+window.calculateLateMinutes = calculateLateMinutes;
 
 window.BRANCH_ZONES = {
     "Cabantian": { lat: 7.130415, lng: 125.617306 },
@@ -1524,6 +1447,11 @@ window.punchTime = async function(type) {
     if (btnIn) btnIn.disabled = true; 
     if (btnOut) btnOut.disabled = true;
 
+    const attendanceRef = doc(collection(db, 'attendance_logs'));
+    const lateRequestRef = doc(collection(db, 'staff_requests'));
+    let pendingLateRequest = null;
+    let recordedLateMinutes;
+
     try {
         Swal.fire({title: 'Verifying with HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
@@ -1666,6 +1594,7 @@ window.punchTime = async function(type) {
 
                     // 🔥 THE UPGRADE: Cross-Branch Universal Matcher Call
                     let { lateMinutes } = window.calculateLateMinutes(new Date(), closestBranch, staffName, scheduleData, staffProfiles, parseTimeStrFn);
+                    recordedLateMinutes = lateMinutes;
                     
                     // Trigger Interceptor Letter if they are more than 3 minutes late!
                     if (lateMinutes > 3) {
@@ -1711,7 +1640,9 @@ window.punchTime = async function(type) {
                         const snapshot = await uploadBytes(storageRef, lateForm.file);
                         proofUrl = await getDownloadURL(snapshot.ref);
 
-                        await addDoc(collection(db, "staff_requests"), {
+                        pendingLateRequest = {
+                            attendanceLogId: attendanceRef.id,
+                            lateMinutes,
                             type: "Reason Letter",
                             staffName: staffName,
                             branch: closestBranch,
@@ -1720,13 +1651,14 @@ window.punchTime = async function(type) {
                             explanationMessage: `Clocked in ${lateMinutes} minutes late. Reason: ${lateForm.reason}`,
                             proofImageUrl: proofUrl,
                             timestamp: serverTimestamp()
-                        });
+                        };
                         
                         Swal.fire({title: 'Verifying location...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
                     }
                 }
             } catch(e) {
                 console.error("Late Checker Error:", e);
+                throw e;
             }
         }
 
@@ -1743,11 +1675,20 @@ window.punchTime = async function(type) {
         }
 
         // 6. 💾 SAVE TO FIREBASE
-        await addDoc(collection(db, "attendance_logs"), {
-            staffName: staffName, branch: closestBranch, type: type, timestamp: serverTimestamp(),
+        const attendance = {
+            staffName, branch: closestBranch, type, timestamp: serverTimestamp(),
             locationLat: window.currentLat, locationLng: window.currentLng, distanceMeters: Math.round(minDistance),
-            photoBase64: photoBase64
-        });
+            photoBase64
+        };
+        if (type === 'TIME IN' && recordedLateMinutes !== undefined) attendance.lateMinutes = recordedLateMinutes;
+        const batch = writeBatch(db);
+        if (pendingLateRequest) {
+            attendance.lateReasonRequestId = lateRequestRef.id;
+            batch.set(lateRequestRef, pendingLateRequest);
+        }
+        batch.set(attendanceRef, attendance);
+        await batch.commit();
+
         
         Swal.fire('✅ Success', `${type} logged securely at ${closestBranch}!`, 'success');
 
@@ -2351,47 +2292,13 @@ window.loadPayslipVault = async function() {
                         sPairs.push({ dateObj: missedIn, in: missedIn, out: "MISSED", hrs: "0.00", remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>`, lateMins: activeShift.lateMinutes || 0 });
                     }
 
-                    if (scheduleData && scheduleData.currentSchedule) {
-                        let lDay = logDate.getDate(); let lMonth = logDate.getMonth() + 1; let lYear = logDate.getFullYear();
-                        if (scheduleData.currentYear === lYear && scheduleData.currentMonth === lMonth) {
-                            let branchSafe = log.branch || "Unknown";
-                            let branchSched = scheduleData.currentSchedule[lDay] ? scheduleData.currentSchedule[lDay][branchSafe] : null;
-                            if (branchSched && branchSched.scheduled) {
-                                let assignedShiftId = Object.keys(branchSched.scheduled).find(k => isMatch(branchSched.scheduled[k]));
-                                if (assignedShiftId && scheduleData.branchConfig && scheduleData.branchConfig[branchSafe]) {
-                                    wasScheduled = true;
-                                    let shiftConfig = scheduleData.branchConfig[branchSafe].find(s => s.id === assignedShiftId);
-                                    if (shiftConfig) {
-                                        if (shiftConfig.startTime) {
-                                            let parts = String(shiftConfig.startTime).split(':'); expectedStartHour = parseInt(parts[0]) + (parseInt(parts[1]) / 60);
-                                        } else if (shiftConfig.name) {
-                                            let match = shiftConfig.name.match(/\((.*?)-/); if (match && match[1]) expectedStartHour = parseTimeStr(match[1]);
-                                        }
-                                        if (expectedStartHour !== null) {
-                                            let actualHour = logDate.getHours() + (logDate.getMinutes() / 60);
-                                            let diffHours = actualHour - expectedStartHour;
-                                            if (diffHours > -1.5 && diffHours < 4) { lateMinutes = Math.floor(diffHours * 60); if (lateMinutes < 0) lateMinutes = 0; }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // 🔥 THE FIX: Custom Individual Rates Math Injection!
-                    let effectiveDailyRate = dailyRate;
-                    let isNightEligibleLegacy = staffProfile.eligibleNightDiff !== false;
-                    let customNightRate = staffProfile.nightDiffRate !== undefined ? parseFloat(staffProfile.nightDiffRate) : (isNightEligibleLegacy ? 50 : 0);
-                    
-                    if (customNightRate > 0 && expectedStartHour !== null && expectedStartHour >= 14) {
-                        effectiveDailyRate += customNightRate; 
-                    }
-                    
-                    let currentRatePerHour = effectiveDailyRate / 8;
-                    let lateHoursToDeduct = Math.ceil(lateMinutes / 60); 
-                    let lateAmount = (lateMinutes > 0 && !log.lateExempted) ? (lateHoursToDeduct * currentRatePerHour) : 0;
-
-                    activeShift = { time: logDate, lateMinutes: lateMinutes, lateAmount: lateAmount, lateExempted: log.lateExempted || false, manualPenalty: manualPenalty, wasScheduled: wasScheduled };
+                    const matchedShift = resolveScheduledShift(logDate, log.branch, staffProfile.cashierName || log.staffName,
+                        scheduleData, { [staffProfile.cashierName || log.staffName]: staffProfile });
+                    lateMinutes = attendanceLateMinutes(log, matchedShift?.lateMinutes || 0);
+                    wasScheduled = matchedShift?.wasScheduled || false;
+                    const late = latePay(lateMinutes, staffProfile, matchedShift, log.lateExempted === true);
+                    activeShift = { time: logDate, lateMinutes, lateAmount: late.amount, lateExempted: log.lateExempted === true,
+                        manualPenalty, wasScheduled, matchedShift };
 
                 } else if (logType.includes("TIME OUT") && activeShift) {
                     let timeIn = activeShift.time; let lMins = activeShift.lateMinutes;
@@ -2415,17 +2322,9 @@ window.loadPayslipVault = async function() {
                     else if (hoursWorked >= 13.5) { shiftMultiplier = 2; tBonuses += 50; remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty</span>`; } 
                     else if (hoursWorked < 8 && !isAutoClosed) { remark = wasScheduled ? `<span style="color:#ef4444; font-weight:bold;">Short</span>` : `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`; }
 
-                    let outHour = timeOut.getHours(); 
-                    
-                    // 🔥 THE FIX: Custom Individual Rates Math Injection!
-                    let isNightEligibleLegacy = staffProfile.eligibleNightDiff !== false;
-                    let customNightRate = staffProfile.nightDiffRate !== undefined ? parseFloat(staffProfile.nightDiffRate) : (isNightEligibleLegacy ? 50 : 0);
-                    let thisShiftNightBonus = 0;
-
-                    if (outHour >= 0 && outHour <= 4 && customNightRate > 0) {
-                        thisShiftNightBonus = customNightRate;
-                        tBonuses += thisShiftNightBonus;
-                    }
+                    const thisShiftNightBonus = shiftMultiplier > 0
+                        ? earnedNightBonus(staffProfile, activeShift.matchedShift, timeOut) : 0;
+                    tBonuses += thisShiftNightBonus;
 
                     let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
                     let hType = holidaysObj[logDateStr];

@@ -3199,7 +3199,7 @@
 
         <div class="sched-panel" style="background: #fffcf0; border-color: #fde68a; box-shadow: 0 10px 30px -10px rgba(245, 158, 11, 0.1);">
             <h3 style="margin: 0; color: #b45309; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 24px;">⚙️</span> Shift Configuration</h3>
-            <p style="font-size: 14px; color: #92400e; margin: 8px 0 20px 0; font-weight: 500;">Rename shifts, toggle them off, or set active days. (Reshuffle not required after saving).</p>
+            <p style="font-size: 14px; color: #92400e; margin: 8px 0 20px 0; font-weight: 500;">Set each branch’s Morning, Mid and Night shifts. Adjust Time In/Time Out and add a second shift of any type. Click Save Shift Rules to apply the times to payroll; reshuffling is not required.</p>
             <div class="shift-config-grid" id="shiftConfigGrid"></div>
             <div style="display: flex; align-items: center; margin-top: 25px;">
                 <button class="action-btn" style="background: #d97706; box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);" onclick="saveShiftConfigChanges()">💾 Save Shift Rules</button>
@@ -5838,7 +5838,7 @@
             <div style="background: #f0fdf4; padding: 15px; border-radius: 8px; border: 1px dashed #bbf7d0; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                 <div>
                     <strong style="color: #166534; font-size: 14px; display: block;">🌙 Night / Mid-Shift Bonus Rate (₱)</strong>
-                    <span style="font-size: 11px; color: #15803d;">Set the specific bonus amount added to their daily rate for night shifts. Enter 0 if none.</span>
+                    <span style="font-size: 11px; color: #15803d;">Applied to Mid/Night shifts when the staff reaches the Time Out set in Schedule Manager. Enter 0 if none.</span>
                 </div>
                 <input type="number" id="empNightDiffRate" placeholder="50" style="width: 100px; padding: 10px; border: 2px solid #bbf7d0; border-radius: 6px; box-sizing: border-box; font-weight: 900; color: #16a34a; font-size: 18px; text-align: center; outline: none; background: white;">
             </div>
@@ -6844,7 +6844,7 @@
 
   <script type="module" src="firebase-core.js"></script>
   <script type="module" src="auth.js"></script>
-  <script type="module" src="main.js?v=offline03-paste"></script>
+  <script type="module" src="main.js?v=payroll-schedule-20261003"></script>
   
 </body>
 </html>
