@@ -1,6 +1,9 @@
 // The local outbox and the Firestore sale are separate durable transactions.
 // A lost acknowledgement leaves the same saleId in the outbox for a safe retry.
 export const SALE_VERSION = 2;
+// Owner-confirmed replacement for the deleted ingredient. This also repairs
+// queued recipe snapshots; receipt identities and recipe quantities stay intact.
+const INGREDIENT_REPLACEMENTS = Object.freeze({ 'T.Reg.Sauce': 'Takoyaki Sauce Regular' });
 export const safeId = value => encodeURIComponent(String(value)).replace(/\./g, '%2E');
 export function saleFingerprint(payload) {
     const canonical = value => Array.isArray(value) ? value.map(canonical) : value && typeof value === 'object'
@@ -182,13 +185,23 @@ export function createSaleEngine(api) {
             if (!payload.saleId || payload.saleVersion !== SALE_VERSION) throw new Error('Legacy sale requires reconciliation.');
             if (payload.inventoryMovements) return payload;
             const movements = collectDeductions(payload, payload.recipeSnapshot || bom);
-            const resolved = [];
+            const resolved = new Map();
             for (const movement of movements) {
-                const snap = await queryDocs('inventory', [['branch', payload.branch], ['name', movement.ingredientName]]);
+                let ingredientName = movement.ingredientName;
+                let snap = await queryDocs('inventory', [['branch', payload.branch], ['name', ingredientName]]);
+                // Never use a replacement to hide duplicate stock records.
+                if (!snap.docs.length && INGREDIENT_REPLACEMENTS[ingredientName]) {
+                    ingredientName = INGREDIENT_REPLACEMENTS[ingredientName];
+                    snap = await queryDocs('inventory', [['branch', payload.branch], ['name', ingredientName]]);
+                }
                 if (snap.docs.length !== 1) throw new Error('Missing or duplicate inventory item: ' + movement.ingredientName);
-                resolved.push({ ...movement, inventoryId: snap.docs[0].id });
+                const inventoryId = snap.docs[0].id;
+                const previous = resolved.get(inventoryId);
+                const quantity = (previous?.quantity || 0) + movement.quantity;
+                if (!Number.isFinite(quantity)) throw new Error('Invalid ingredient deduction.');
+                resolved.set(inventoryId, { ingredientName, quantity, inventoryId });
             }
-            return { ...payload, inventoryMovements: resolved };
+            return { ...payload, inventoryMovements: [...resolved.values()] };
         },
         // Used before preparation, so a committed retry can be acknowledged even
         // if recipes or inventory configuration have subsequently changed.

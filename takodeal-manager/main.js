@@ -1,4 +1,10 @@
 import { createSaleEngine } from './pos-safety.js';
+import { recipeProblems, ingredientUses } from './recipe-integrity.js';
+import { createLiveReport } from './live-report.js';
+const historyLive = createLiveReport({
+    subscribe: (...args) => window.onSnapshot(...args),
+    status: text => { const el = document.getElementById('histLiveStatus'); if (el) el.textContent = text; }
+});
 // --- ACCESS CONTROL ENGINE (FRANCHISE PROFILES) ---
 const MASTER_EMAIL = "jgo031996@gmail.com";
 
@@ -856,6 +862,7 @@ window.deleteSingleAlert = async function(docId) {
 
 // --- NAVIGATION SYSTEM ---
 window.switchView = function (viewId) {
+  if (viewId !== 'history') historyLive.stop();
   // Hide all views
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   // Remove highlight from all sidebar items
@@ -6099,6 +6106,8 @@ window.loadMenuCosting = async function() {
 
       let price = parseFloat(item.price) || 0;
       let recipe = recipes[item.name] || [];
+      const recipeIssues = recipeProblems(recipe, new Set(Object.keys(globalInventoryCosts)));
+      const validRecipe = recipe.length > 0 && recipeIssues.length === 0;
 
       let cogs = 0;
       recipe.forEach(ing => {
@@ -6109,10 +6118,10 @@ window.loadMenuCosting = async function() {
       let margin = price - cogs;
       let marginPct = price > 0 ? (margin / price) * 100 : 0;
 
-      if (recipe.length === 0) missingBomCount++;
+      if (!validRecipe) missingBomCount++;
       else { totalMarginPct += marginPct; menuCount++; }
 
-      let cogsDisplay = recipe.length > 0 ? formatMoney(cogs) : '<span style="color:var(--text-muted); font-size:12px;">No Recipe Setup</span>';
+      let cogsDisplay = recipeIssues.length ? '<span style="color:#b91c1c; font-size:12px;">Recipe needs correction</span>' : recipe.length > 0 ? formatMoney(cogs) : '<span style="color:var(--text-muted); font-size:12px;">No Recipe Setup</span>';
       let marginColor = margin > 0 ? 'var(--success)' : 'var(--danger)';
 
       html += `
@@ -6121,7 +6130,7 @@ window.loadMenuCosting = async function() {
           <td><strong>${item.name}</strong></td>
           <td style="font-weight: 600;">${formatMoney(price)}</td>
           <td style="color: var(--danger); font-weight: 600;">${cogsDisplay}</td>
-          <td style="color: ${marginColor}; font-weight: 700;">${recipe.length > 0 ? formatMoney(margin) + ` <span style="font-size:11px; color:var(--text-muted);">(${marginPct.toFixed(0)}%)</span>` : '-'}</td>
+          <td style="color: ${marginColor}; font-weight: 700;">${validRecipe ? formatMoney(margin) + ` <span style="font-size:11px; color:var(--text-muted);">(${marginPct.toFixed(0)}%)</span>` : '-'}</td>
           <td>
               <div style="display: flex; gap: 5px;">
                   <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 6px 12px; font-size: 12px; border-radius: 4px; cursor: pointer;" onclick="openBomEditor('${item.name}')">✏️ Update</button>
@@ -6145,6 +6154,8 @@ window.loadMenuCosting = async function() {
 };
 
 window.openNewProductModal = async function () {
+  if (document.getElementById('btnSaveAdvProd')?.disabled) return;
+  window.deletedAdvRecipes = [];
   document.getElementById('advancedProductModal').style.display = 'flex';
   document.getElementById('advProdId').value = '';
   document.getElementById('advProdName').value = '';
@@ -6334,6 +6345,9 @@ window.saveAdvancedInventoryItem = async function () {
 window.currentAdvRecipe = []; // Stores the live rows in the modal
 
 window.openBomEditor = async function (menuItemName) {
+  if (document.getElementById('btnSaveAdvProd')?.disabled) return;
+  window.deletedAdvRecipes = [];
+  document.getElementById('advProdId').value = '';
   document.getElementById('advancedProductModal').style.display = 'flex';
   document.getElementById('advProdName').value = menuItemName;
   document.getElementById('advRecipeBody').innerHTML = '<tr><td colspan="5" class="text-center">Loading...</td></tr>';
@@ -6526,9 +6540,7 @@ window.renderAdvRecipeTable = function () {
       totalCost += lineCost;
 
       // 2. The Upgraded Searchable Input box
-      let nameField = item.isNew
-        ? `<input type="text" list="inventoryDatalist" value="${item.ingredientName}" placeholder="Type to search..." style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; outline: none; box-sizing: border-box; font-weight: bold; color: #0284c7;" onchange="updateAdvRecipeName(${index}, this.value)">`
-        : `<input type="text" value="${item.ingredientName}" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; background: #f9fafb; outline: none; box-sizing: border-box;" readonly>`;
+      let nameField = `<input type="text" list="inventoryDatalist" value="${item.ingredientName}" placeholder="Type to search..." style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; outline: none; box-sizing: border-box;" onchange="updateAdvRecipeName(${index}, this.value)">${!invData ? '<small style="color:#b91c1c;">Missing inventory ingredient — select its replacement.</small>' : ''}`;
 
       html += `
         <tr style="border-bottom: 1px solid #f3f4f6;">
@@ -6583,6 +6595,14 @@ window.removeAdvRecipeRow = function (index) {
 window.calcAdvProfit = function (forceCogs = null) {
   let sellPrice = parseFloat(document.getElementById('advProdPrice').value) || 0;
 
+  const problems = recipeProblems(window.currentAdvRecipe, new Set(Object.keys(globalInventoryCosts)));
+  if (problems.length) {
+    document.getElementById('advTotalCost').innerText = 'Recipe needs correction';
+    document.getElementById('profSellPrice').innerText = formatMoney(sellPrice);
+    for (const id of ['profProdCost', 'profMargin', 'profMarginPct']) document.getElementById(id).innerText = '—';
+    return;
+  }
+
   let cogs = forceCogs;
   if (cogs === null) {
     cogs = 0;
@@ -6605,6 +6625,7 @@ window.calcAdvProfit = function (forceCogs = null) {
 
 window.saveAdvancedProduct = async function () {
   let btn = document.getElementById('btnSaveAdvProd');
+  if (btn?.disabled) return;
   if(btn) { btn.innerText = "⏳ Packaging Data..."; btn.disabled = true; }
 
   let menuId = document.getElementById('advProdId').value;
@@ -6630,6 +6651,8 @@ window.saveAdvancedProduct = async function () {
   }
 
   try {
+    const recipeRows = window.currentAdvRecipe.map(item => ({ ...item }));
+    const deletedRecipes = [...(window.deletedAdvRecipes || [])];
     let addonsArray = [];
     document.querySelectorAll('#addonTableBody tr').forEach(row => {
       let nameInput = row.querySelector('.addon-name');
@@ -6643,6 +6666,10 @@ window.saveAdvancedProduct = async function () {
       }
     });
 
+    const inventorySnap = await window.getDocsFromServer(window.collection(window.db, 'inventory'));
+    const availableNames = new Set(inventorySnap.docs.map(d => d.data().name));
+    const problems = recipeProblems(recipeRows, availableNames);
+    if (problems.length) throw new Error(problems.join('\n'));
     // 🔥 1. INITIALIZE THE BATCH ENGINE
     if(btn) btn.innerText = "⚡ Blasting to Cloud...";
     const batch = window.writeBatch(window.db);
@@ -6658,22 +6685,21 @@ window.saveAdvancedProduct = async function () {
     } else {
         let newMenuRef = window.doc(window.collection(window.db, "menu"));
         batch.set(newMenuRef, menuPayload);
-        document.getElementById('advProdId').value = newMenuRef.id;
+        menuId = newMenuRef.id;
     }
 
     // 3. Package Deleted Recipes
-    if (window.deletedAdvRecipes && window.deletedAdvRecipes.length > 0) {
-        for (let delId of window.deletedAdvRecipes) {
+    if (deletedRecipes.length > 0) {
+        for (let delId of deletedRecipes) {
             batch.delete(window.doc(window.db, "bom", delId));
         }
-        window.deletedAdvRecipes = [];
     }
 
     // 4. Package New & Updated Recipes
-    for (let item of window.currentAdvRecipe) {
+    for (let item of recipeRows) {
         if (!item.ingredientName || item.qty <= 0) continue; 
         if (item.docId && !item.isNew) {
-            batch.update(window.doc(window.db, "bom", item.docId), { qty: item.qty });
+            batch.update(window.doc(window.db, "bom", item.docId), { menuItem: prodName, ingredientName: item.ingredientName, qty: Number(item.qty) });
         } else {
             let newBomRef = window.doc(window.collection(window.db, "bom"));
             batch.set(newBomRef, { menuItem: prodName, ingredientName: item.ingredientName, qty: item.qty });
@@ -6682,6 +6708,9 @@ window.saveAdvancedProduct = async function () {
 
     // 🔥 5. FIRE THE ENTIRE PACKAGE IN ONE SINGLE MILLISECOND BURST!
     await batch.commit();
+    document.getElementById('advProdId').value = menuId;
+    window.deletedAdvRecipes = [];
+    window.invalidateCache('menu'); window.invalidateCache('bom');
 
     Swal.fire({ toast: true, position: 'top', icon: 'success', title: 'Product & Recipes Saved!', showConfirmButton: false, timer: 2000, customClass: { popup: 'rounded-xl' }});
         
@@ -6692,7 +6721,7 @@ window.saveAdvancedProduct = async function () {
 
   } catch (error) {
     console.error("Save Error:", error); 
-    alert("Failed to save product. Check Console for details.");
+    alert('Product was not saved. Your edits remain open.\n' + error.message);
   } finally {
     if (typeof btn !== 'undefined' && btn) { btn.innerText = "Save Changes"; btn.disabled = false; }
   }
@@ -10526,18 +10555,37 @@ window.manageStandbyStaff = async function(day, branch, staffName) {
 // 🧬 RECIPE CLONER ENGINE & INVENTORY TOOLS
 // ==========================================
 
+// Always check current server data. A cached/offline result cannot authorize deletion.
+window.checkInventoryDeletion = async function(ids) {
+    const [inventoryRows, bomSnap, menuSnap, addonsSnap, mixSnap] = await Promise.all([
+        Promise.all(ids.map(id => window.getDocFromServer(window.doc(window.db, 'inventory', id)))),
+        window.getDocsFromServer(window.collection(window.db, 'bom')),
+        window.getDocsFromServer(window.collection(window.db, 'menu')),
+        window.getDocsFromServer(window.collection(window.db, 'global_addons')),
+        window.getDocFromServer(window.doc(window.db, 'settings', 'global_mixmatch'))
+    ]);
+    if (inventoryRows.some(row => !row.exists())) throw new Error('An inventory item has changed. Refresh Live Stocks first.');
+    const names = new Set(inventoryRows.map(row => row.data().name));
+    const rows = snap => snap.docs.map(d => d.data());
+    const mix = mixSnap.exists() ? mixSnap.data().mappings || [] : [];
+    const uses = ingredientUses(names, rows(bomSnap), rows(menuSnap), rows(addonsSnap), mix);
+    if (uses.length) throw new Error('These ingredients are still used. Replace their recipe/add-on links before deleting stock.\n\n' + uses.slice(0, 15).join('\n') + (uses.length > 15 ? '\n…and ' + (uses.length - 15) + ' more links.' : ''));
+};
+
 window.deleteInventoryItem = async function(docId, itemName) {
     // Make sure we have the right ID!
     if (!docId || docId === 'undefined') { alert("❌ Error: Invalid Item ID."); return; }
-    if (confirm(`⚠️ Are you sure you want to completely delete "${itemName}"? This cannot be undone!`)) {
-        try {
+    try {
+        await window.checkInventoryDeletion([docId]);
+        if (confirm(`⚠️ Are you sure you want to completely delete "${itemName}"? This cannot be undone!`)) {
             await deleteDoc(doc(db, "inventory", docId)); 
+            window.invalidateCache('inventory');
             alert(`✅ "${itemName}" has been permanently deleted.`);
             window.loadInventoryData();
-        } catch (error) {
-            console.error("Error deleting item:", error);
-            alert("❌ Failed to delete the ingredient. Check console.");
         }
+    } catch (error) {
+        console.error("Error deleting item:", error);
+        alert('Ingredient was not deleted.\n' + error.message);
     }
 };
 
@@ -14426,6 +14474,7 @@ window.runProductReport = function() {
 // 🧾 MASTER SALES HISTORY & FINANCIAL ENGINE (SECURED)
 // ========================================================
 window.loadSalesHistoryTab = async function() {
+    const reportSession = historyLive.start();
     const tbodyTx = document.getElementById('historyTableBody');
     const tbodyShifts = document.getElementById('historyShiftsBody');
     const tbodyDaily = document.getElementById('historyDailyBody');
@@ -14477,6 +14526,7 @@ window.loadSalesHistoryTab = async function() {
             getDocsFn(qShifts), getDocsFn(qRej), getDocsFn(qParked)
         ]);
 
+        if (!reportSession.active()) return;
         // 1. PROCESS COSTS & MENU CATEGORIES
         let inventoryCosts = {};
         invSnap.forEach(doc => { inventoryCosts[doc.data().name] = parseFloat(doc.data().baseCost) || 0; });
@@ -14491,6 +14541,8 @@ window.loadSalesHistoryTab = async function() {
         let menuCats = {};
         menuSnap.forEach(d => { menuCats[d.data().name] = d.data().category || "Uncategorized"; });
 
+        async function renderHistory(liveTxSnap, isLiveUpdate = false) {
+        if (!reportSession.active()) return;
         // 2. PROCESS ACTUAL SHIFTS
         window.globalShiftReports = {}; 
         shiftSnap.forEach(doc => {
@@ -14517,8 +14569,7 @@ window.loadSalesHistoryTab = async function() {
         let allTxArray = [];
 
         if (dataSource === "LIVE") {
-            const qTx = window.query ? window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay)) : query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
-            const liveTxSnap = await getDocsFn(qTx);
+            // Transactions arrive from the bounded live listener.
             liveTxSnap.forEach(doc => allTxArray.push({id: doc.id, ...doc.data()}));
             
             rejectedSnap.forEach(doc => allTxArray.push({id: doc.id, isMobileRejected: true, ...doc.data()}));
@@ -14534,6 +14585,7 @@ window.loadSalesHistoryTab = async function() {
             // Unzip the file from Firebase Storage memory!
             const response = await fetch(dataSource);
             const rawJsonData = await response.json();
+            if (!reportSession.active()) return;
             
             // Backwards compatible router: checks if the file is an old transactions-only array or the new Universal format
             let archiveTx = Array.isArray(rawJsonData) ? rawJsonData : (rawJsonData.transactions || []);
@@ -14848,9 +14900,18 @@ window.loadSalesHistoryTab = async function() {
         if(document.getElementById('distOrderTypeBody')) document.getElementById('distOrderTypeBody').innerHTML = buildDistHtml(distOrderType);
         if(document.getElementById('distPaymentBody')) document.getElementById('distPaymentBody').innerHTML = buildDistHtml(distPayment);
 
-        if (typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
+        if (!isLiveUpdate && typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
+        }
+        if (dataSource === 'LIVE') {
+            const qTx = window.query ? window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay)) : query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
+            reportSession.watch(qTx, renderHistory);
+        } else {
+            const status = document.getElementById('histLiveStatus'); if (status) status.textContent = 'Archived report';
+            await renderHistory(null);
+        }
 
     } catch (e) {
+        if (!reportSession.active()) return;
         console.error("History Error:", e);
         if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
     }
@@ -16147,15 +16208,18 @@ window.bulkDeleteInventory = async function() {
         return;
     }
 
-    if (!confirm(`⚠️ WARNING: You are about to permanently delete ${checkboxes.length} items from this branch. This cannot be undone. Proceed?`)) {
-        return;
-    }
-
     try {
+        const ids = [...checkboxes].map(cb => cb.value);
+        if (ids.length > 500) throw new Error('Select at most 500 items at a time.');
+        await window.checkInventoryDeletion(ids);
+        if (!confirm(`⚠️ WARNING: You are about to permanently delete ${ids.length} items from this branch. This cannot be undone. Proceed?`)) return;
+        const batch = window.writeBatch(window.db);
         for (let cb of checkboxes) {
             let docId = cb.value;
-            await deleteDoc(doc(db, "inventory", docId));
+            batch.delete(window.doc(window.db, "inventory", docId));
         }
+        await batch.commit();
+        window.invalidateCache('inventory');
         alert(`✅ Successfully deleted ${checkboxes.length} items!`);
             document.getElementById('selectAllInv').checked = false; // Reset master checkbox
             
@@ -16170,7 +16234,7 @@ window.bulkDeleteInventory = async function() {
             }
     } catch (error) {
         console.error("Bulk Delete Error:", error);
-        alert("❌ Error deleting items. Check F12 console.");
+        alert('Items were not deleted.\n' + error.message);
     }
 };
 
@@ -29197,7 +29261,6 @@ function tkReconcileSale(record, targetShift, inventory, effects, owner, note) {
     button.onclick = () => { render(); panel.showModal(); }; document.body.append(button);
   }
   async function start() {
-      return;
     const user = window.sessionUser;
     if (!user || !window.db || !window.onSnapshot || starting || Date.now() < nextRetry) return;
     const key = JSON.stringify([user.email, user.allowedBranches, user.isOwner]);
@@ -29448,7 +29511,6 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
   }
   window.TKOwnerReview = { open, refresh, resolve };
   setInterval(() => {
-      return;
     const old = document.getElementById('tkOwnerReviewButton'); if (!owner()) { old?.remove(); return; }
     if (old) return;
     const button = text('button', 'Owner review'); button.id = 'tkOwnerReviewButton';
@@ -29517,7 +29579,6 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
   }
   window.TKDeviceAdmin = { open, refresh };
   function install() {
-      return;
     const old = document.getElementById('tk03OwnerDevicesButton');
     if (!owner()) { old?.remove(); panel?.close(); return; }
     if (old) return;
