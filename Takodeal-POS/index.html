@@ -1709,14 +1709,15 @@
 
   <div class="overlay" id="receiptModal">
     <div class="modal receipt-modal">
-      <div class="modal-head"><span>Transaction Complete</span><span class="close-modal"
+      <div class="modal-head"><span id="receiptSyncHeading">Order Saved</span><span class="close-modal"
           onclick="closeModal('receiptModal')">✖</span></div>
       <div class="modal-body" style="padding: 25px; display: flex; flex-direction: column; gap: 15px;">
         <div style="text-align: center;">
           <div
             style="width: 50px; height: 50px; border-radius: 50%; border: 3px solid #198754; color: #198754; display: flex; align-items: center; justify-content: center; font-size: 30px; margin: 0 auto 10px auto;">
             ✓</div>
-          <div style="color: #198754; font-weight: bold; font-size: 18px;">Payment Completed</div>
+          <div id="receiptSyncStatus" style="color: #198754; font-weight: bold; font-size: 18px;">Saved locally — awaiting upload</div>
+          <div id="receiptSyncExplanation" style="margin-top:8px;color:#64748b;font-size:13px;overflow-wrap:anywhere;">Manager can see this sale after it uploads.</div>
         </div>
         <div style="border-top: 1px dashed #ccc; border-bottom: 1px dashed #ccc; padding: 15px 0;">
           <div class="shift-row"><span>Rcpt #</span><span class="receipt-value" id="rcptId">: 000000</span></div>
@@ -2617,23 +2618,12 @@ window.loadSalesDashboard = async function () {
       });
   } catch(e) { console.error("Error injecting parked orders:", e); }
 
-  // 🚨 THE OFFLINE QUEUE INJECTOR 🚨
+  // Read the durable outbox as well as preserved legacy sales. A pending sale
+  // must stay visible on its originating device without becoming a second row.
   try {
-      let offlineQ = JSON.parse(localStorage.getItem('takodeal_offline_queue')) || [];
-      let validStartTime = window.currentShift.startTime instanceof Date ? window.currentShift.startTime : (window.currentShift.startTime && window.currentShift.startTime.toDate ? window.currentShift.startTime.toDate() : new Date(window.currentShift.startTime));
-      
-      offlineQ.forEach(p => {
-          let pTime = p.localTimestamp ? new Date(p.localTimestamp) : new Date();
-          if (pTime >= validStartTime) {
-              transactions.push({
-                  ...p,
-                  id: "OFFLINE-" + p.receiptId,
-                  timestamp: pTime,
-                  isPendingSync: true,
-                  status: "Paid"
-              });
-          }
-      });
+      const pending = await window.getPendingSales();
+      transactions = window.mergePendingSales(transactions, pending, window.sessionUser.branch,
+          window.currentShift.startTime, window.currentShift.shiftId);
   } catch(e) { console.error("Offline queue injection error", e); }
 
   transactions.sort((a, b) => {
@@ -2654,6 +2644,9 @@ window.loadSalesDashboard = async function () {
       else if (tx.status === 'Parked') statusBadge = '<span class="status-badge" style="background:#fef3c7; color:#d97706; border:1px solid #fcd34d;">Parked</span>';
       else if (tx.isPendingSync) statusBadge = '<span class="status-badge" style="background:#fef9c3; color:#ca8a04; border:1px solid #fde047; animation: pulse 2s infinite;">⏳ Pending Sync</span>';
       else statusBadge = '<span class="status-badge status-good">Paid</span>';
+      if (tx.needsReconciliation) statusBadge = '<span class="status-badge" style="background:#fff1f2;color:#be123c;">Review Required</span>';
+      const escapeSyncText = value => String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+      if (tx.isPendingSync && tx.syncError?.message) statusBadge += `<br><small style="color:#b45309;white-space:normal;">${escapeSyncText(tx.syncError.message)}</small>`;
 
       let txDate = "Today"; let txTime = "--:--";
       if (tx.timestamp) { 
@@ -2662,7 +2655,7 @@ window.loadSalesDashboard = async function () {
           txTime = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); 
       }
 
-      if (tx.status !== 'Voided') {
+      if (tx.status !== 'Voided' && !tx.isPendingSync) {
           let payMethod = (tx.paymentMethod || '').toLowerCase();
           if (payMethod === 'grab') totalGrab += (tx.netTotal || 0);
           else if (payMethod === 'gcash') totalGCash += (tx.netTotal || 0);
@@ -2710,6 +2703,7 @@ window.loadSalesDashboard = async function () {
         <td style="padding: 15px 25px; color: #64748b; font-size: 13px; white-space: nowrap;">${txTime}</td>
         <td style="padding: 15px 25px; font-weight: 900; color: var(--primary); font-size: 15px; white-space: nowrap;">${displayAmount}</td>
         <td style="padding: 15px 25px; text-align: center; vertical-align: middle; white-space: nowrap;">
+            ${tx.isPendingSync ? '<span style="color:#b45309;">Awaiting upload</span>' : `
             <div style="position: relative; display: inline-block;">
                 <button class="dot-menu" onclick="toggleTxMenu('txMenu-${idx}')" style="background: white; border: 1px solid #cbd5e1; color: #475569; padding: 6px 12px; border-radius: 6px; font-weight: bold; font-size: 11px; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: 0.2s;" onmouseover="this.style.background='#f8fafc';" onmouseout="this.style.background='white';">
                     ⚙️ Action ▼
@@ -2719,7 +2713,7 @@ window.loadSalesDashboard = async function () {
                     <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')" style="border-bottom: 1px solid #f1f5f9; padding: 10px 15px;">🖨️ Print Receipt</div>
                     <div class="action-item danger" onclick="voidTx('${tx.receiptId}')" style="color: #dc2626; padding: 10px 15px;">🗑️ Void Transaction</div>
                 </div>
-            </div>
+            </div>`}
         </td>
       </tr>`;
     });
@@ -3743,6 +3737,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         window.isActiveOrderMobile = false;
 
         window.lastTransactionData = { ...payload, receiptId: receiptId };
+        window.updateReceiptSyncStatus(checkout.status, checkout.error);
         document.getElementById('rcptId').innerText = `: ${receiptId}`;
         document.getElementById('rcptDate').innerText = `: ${new Date().toLocaleDateString()}`;
         document.getElementById('rcptTime').innerText = `: ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
@@ -3771,6 +3766,16 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         alert("Checkout was not saved. Your cart is unchanged.\n\n" + (checkout.error || "Please try again."));
         btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false;
       }
+    };
+
+    window.updateReceiptSyncStatus = function(status, problem) {
+      const uploaded = status === 'committed';
+      const heading = document.getElementById('receiptSyncHeading');
+      const label = document.getElementById('receiptSyncStatus');
+      const explanation = document.getElementById('receiptSyncExplanation');
+      if (heading) heading.textContent = uploaded ? 'Transaction Complete' : 'Order Saved';
+      if (label) { label.textContent = uploaded ? 'Payment Completed — Uploaded' : 'Saved locally — awaiting upload'; label.style.color = uploaded ? '#198754' : '#b45309'; }
+      if (explanation) explanation.textContent = uploaded ? 'This sale is saved in the database.' : problem || 'Manager can see this sale after it uploads. Keep this device’s saved data.';
     };
 
 // ==========================================

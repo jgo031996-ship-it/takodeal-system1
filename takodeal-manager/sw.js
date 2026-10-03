@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v4-sale-safety';
+const CACHE_NAME = 'takodeal-manager-core-v5-sale-sync';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = ['./', './index.html', './main.js', './pos-safety.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
 

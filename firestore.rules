@@ -1,0 +1,350 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+    function isOwner() {
+      return isSignedIn() && (
+        request.auth.token.email == 'jgo031996@gmail.com' ||
+        (request.auth.token.email_verified == true && request.auth.token.email == 'jgo031996@gmail.com')
+      );
+    }
+    function isHQUser() { return isSignedIn(); }
+    function offlineOwner() {
+      return isSignedIn() && request.auth.token.get('email', '') == 'jgo031996@gmail.com'
+        && request.auth.token.get('email_verified', false) == true;
+    }
+    function offlineGate(branch) {
+      return branch is string
+        && exists(/databases/$(database)/documents/offline_policy/$(branch))
+        && get(/databases/$(database)/documents/offline_policy/$(branch)).data.get('requireCashierForCustomerOrders', false) == true;
+    }
+    function protectedSales(branch) {
+      return branch is string
+        && exists(/databases/$(database)/documents/offline_policy/$(branch))
+        && get(/databases/$(database)/documents/offline_policy/$(branch)).data.get('protectSalesV2', false) == true;
+    }
+    function verifiedHQ(branch) {
+      let email = isSignedIn() ? request.auth.token.get('email', '') : '';
+      return offlineOwner() || (isSignedIn()
+        && request.auth.token.get('email_verified', false) == true
+        && email != ''
+        && exists(/databases/$(database)/documents/hq_email_access/$(email))
+        && get(/databases/$(database)/documents/hq_email_access/$(email)).data.get('active', false) == true
+        && ('All' in get(/databases/$(database)/documents/hq_email_access/$(email)).data.get('allowedBranches', [])
+          || branch in get(/databases/$(database)/documents/hq_email_access/$(email)).data.get('allowedBranches', [])));
+    }
+    function approvedUID(uid, branch) {
+      return exists(/databases/$(database)/documents/pos_bindings/$(uid))
+        && get(/databases/$(database)/documents/pos_bindings/$(uid)).data.get('status', '') == 'Active'
+        && get(/databases/$(database)/documents/pos_bindings/$(uid)).data.get('branch', '') == branch;
+    }
+    function trustedPOS(branch) {
+      return isSignedIn()
+        && request.auth.token.firebase.sign_in_provider == 'anonymous'
+        && approvedUID(request.auth.uid, branch);
+    }
+    function ownTrustedDevice() {
+      return isSignedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous'
+        && exists(/databases/$(database)/documents/pos_bindings/$(request.auth.uid))
+        && get(/databases/$(database)/documents/pos_bindings/$(request.auth.uid)).data.status == 'Active';
+    }
+    function freshCashier(branch) {
+      let lease = get(/databases/$(database)/documents/cashier_leases/$(branch)).data;
+      return lease.get('seenAt', null) is timestamp
+        && lease.seenAt <= request.time
+        && request.time < lease.seenAt + duration.value(3, 'm')
+        && approvedUID(lease.get('uid', ''), branch);
+    }
+    function admittedCustomer(data) {
+      let branch = data.get('branch', '');
+      let state = get(/databases/$(database)/documents/settings/$('status_' + branch)).data;
+      return isSignedIn() && request.auth.token.get('email_verified', false) == true
+        && data.get('customerEmail', '') == request.auth.token.get('email', '')
+        && data.get('status', '') == 'mobile_queue'
+        && data.get('paymentStatus', 'unpaid') != 'paid'
+        && data.get('totalAmount', -1) is number && data.totalAmount >= 0
+        && data.get('items', []) is list && data.items.size() > 0
+        && state.get('mobileOrdersActive', true) == true && freshCashier(branch);
+    }
+    function incomingCreate(data) {
+      let branch = data.get('branch', '');
+      return !offlineGate(branch) || trustedPOS(branch) || verifiedHQ(branch) || admittedCustomer(data);
+    }
+    function incomingUpdate(before, after) {
+      let oldBranch = before.get('branch', '');
+      let newBranch = after.get('branch', '');
+      return (!offlineGate(oldBranch) && !offlineGate(newBranch))
+        || (oldBranch == newBranch && (trustedPOS(oldBranch) || verifiedHQ(oldBranch)
+          || !after.diff(before).affectedKeys().hasAny([
+            'branch', 'items', 'totalAmount', 'customerEmail', 'customerName',
+            'orderCode', 'orderType', 'contactNumber', 'deliveryAddress', 'mapLink',
+            'preferredTime', 'paymentMode', 'paymentReference', 'changeFor',
+            'deliveryFee', 'timestamp'
+          ])));
+    }
+    // Sale-safety compatibility. Keep the existing staged branch policy.
+    function saleWriter(branch) {
+      return branch is string && branch.size() > 0
+        && (!protectedSales(branch) || verifiedHQ(branch) || trustedPOS(branch));
+    }
+    function safetySale(data, id) {
+      let marker = getAfter(/databases/$(database)/documents/pos_sale_commits/$(id)).data;
+      return data.get('saleVersion', 0) == 2 && data.get('saleId', '') == id
+        && data.get('inventoryMovements', null) is list
+        && data.get('inventoryState', '') in ['applied', 'deferred']
+        && marker.saleId == id && marker.branch == data.branch && marker.receiptId == data.receiptId;
+    }
+    function safetyTransition(before, after, id) {
+      let changed = after.diff(before).affectedKeys();
+      return before.get('saleVersion', 0) == 2 && before.get('saleId', '') == id
+        && (
+          (before.get('inventoryState', '') == 'deferred' && after.get('inventoryState', '') == 'applied'
+            && after.inventoryAppliedAt == request.time && changed.hasOnly(['inventoryState', 'inventoryAppliedAt']))
+          || (before.get('status', '') == 'Voided' && before.get('inventoryState', '') == 'deferred'
+            && after.get('inventoryState', '') == 'cancelled' && changed.hasOnly(['inventoryState']))
+          || (before.get('status', '') != 'Voided' && before.get('inventoryState', '') in ['applied', 'deferred']
+            && after.get('status', '') == 'Voided' && after.get('voidedBy', null) is string
+            && after.voidTime == request.time
+            && after.get('inventoryState', '') == (before.inventoryState == 'applied' ? 'reversed' : 'cancelled')
+            && changed.hasOnly(['status', 'voidedBy', 'voidTime', 'inventoryState']))
+        );
+    }
+    function parkedAccountability(data, id) {
+      let parkedId = data.get('parkedOrderId', '');
+      return parkedId is string && parkedId.size() > 0 && id == 'parked-delete-' + parkedId
+        && data.get('status', '') == 'Voided' && data.get('inventoryState', '') == 'none'
+        && data.get('inventoryMovements', null) == []
+        && exists(/databases/$(database)/documents/parked_orders/$(parkedId))
+        && get(/databases/$(database)/documents/parked_orders/$(parkedId)).data.branch == data.branch
+        && !existsAfter(/databases/$(database)/documents/parked_orders/$(parkedId));
+    }
+    function saleCounterWrite() {
+      let after = request.resource.data;
+      let id = after.get('lastSaleId', '');
+      let branch = after.get('lastSaleBranch', '');
+      let direction = after.get('lastSaleDirection', 0);
+      let sale = getAfter(/databases/$(database)/documents/transactions/$(id)).data;
+      let marker = getAfter(/databases/$(database)/documents/pos_sale_commits/$(id)).data;
+      let prior = exists(/databases/$(database)/documents/settings/global_stats) ? resource.data : {};
+      let beforeSale = exists(/databases/$(database)/documents/transactions/$(id))
+        ? get(/databases/$(database)/documents/transactions/$(id)).data : {};
+      return saleWriter(branch) && id is string && id.size() > 0 && direction in [1, -1]
+        && sale.get('saleVersion', 0) == 2 && sale.saleId == id && sale.branch == branch
+        && marker.saleId == id && marker.branch == branch && marker.receiptId == sale.receiptId
+        && sale.ballsCounted is number && sale.ballsCounted > 0
+        && after.diff(prior).affectedKeys().hasOnly([
+          'totalTakoyakiBalls', 'balls_' + branch, 'lastSaleId', 'lastSaleBranch', 'lastSaleDirection'])
+        && after.totalTakoyakiBalls == prior.get('totalTakoyakiBalls', 0) + direction * sale.ballsCounted
+        && after.get('balls_' + branch, 0) == prior.get('balls_' + branch, 0) + direction * sale.ballsCounted
+        && ((direction == 1 && !exists(/databases/$(database)/documents/transactions/$(id))
+              && sale.get('status', '') != 'Voided')
+          || (direction == -1 && beforeSale.get('saleVersion', 0) == 2
+              && beforeSale.get('saleId', '') == id && beforeSale.get('branch', '') == branch
+              && beforeSale.get('ballsCounted', 0) == sale.ballsCounted
+              && beforeSale.get('status', '') != 'Voided' && sale.get('status', '') == 'Voided'));
+    }
+    function saleAuditWrite(id) {
+      let data = request.resource.data;
+      let branch = data.get('branch', '');
+      // The present branch names use ASCII letters, spaces, dots and hyphens.
+      // Other names keep the existing signed-in settings path.
+      return branch is string && branch.matches('[A-Za-z0-9 _.-]+')
+        && id == 'audit_' + branch.replace(' ', '%20').replace('[.]', '%2E')
+        && saleWriter(branch) && data.keys().hasOnly(['active', 'branch', 'updatedBy', 'updatedAt'])
+        && data.active is bool && data.updatedBy is string && data.updatedAt == request.time;
+    }
+    match /pos_sale_commits/{id} {
+      // Missing markers must be readable before the first atomic sale commit.
+      // Existing legacy-branch receipts already have public reads in this policy.
+      allow get: if !exists(/databases/$(database)/documents/pos_sale_commits/$(id))
+        || !protectedSales(resource.data.branch) || verifiedHQ(resource.data.branch) || trustedPOS(resource.data.branch);
+      allow list: if offlineOwner() || verifiedHQ(resource.data.branch) || trustedPOS(resource.data.branch);
+      allow create: if saleWriter(request.resource.data.get('branch', ''))
+        && request.resource.data.keys().hasOnly(['saleId', 'branch', 'receiptId', 'fingerprint', 'committedAt'])
+        && request.resource.data.saleId == id && request.resource.data.receiptId is string
+        && request.resource.data.fingerprint is string && request.resource.data.committedAt == request.time
+        && !exists(/databases/$(database)/documents/transactions/$(id))
+        && safetySale(getAfter(/databases/$(database)/documents/transactions/$(id)).data, id);
+      allow update, delete: if false;
+    }
+    match /offline_policy/{branch} { allow read: if true; allow write: if offlineOwner(); }
+    match /hq_email_access/{email} {
+      allow read: if offlineOwner() || (isSignedIn() && request.auth.token.get('email', '') == email);
+      allow write: if offlineOwner();
+    }
+    match /pos_bindings/{uid} {
+      allow read: if offlineOwner() || (isSignedIn() && request.auth.uid == uid);
+      allow create: if offlineOwner() || (isSignedIn()
+        && request.auth.uid == uid && request.auth.token.firebase.sign_in_provider == 'anonymous'
+        && request.resource.data.keys().hasOnly(['uid', 'deviceId', 'deviceName', 'branch', 'legacyDeviceDocId', 'status', 'requestedAt'])
+        && request.resource.data.uid == uid && request.resource.data.status == 'Pending'
+        && request.resource.data.branch is string && request.resource.data.branch.size() > 0
+        && request.resource.data.deviceId is string && request.resource.data.legacyDeviceDocId is string
+        && request.resource.data.deviceName is string && request.resource.data.requestedAt == request.time);
+      allow update, delete: if offlineOwner();
+    }
+    match /cashier_presence/{uid} {
+      allow read: if offlineOwner() || (isSignedIn() && request.auth.uid == uid) || verifiedHQ(resource.data.branch);
+      allow create, update: if trustedPOS(request.resource.data.branch) && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['uid', 'branch', 'deviceId', 'deviceName', 'cashier', 'shiftId', 'seenAt', 'accepting', 'pendingSales', 'pendingOperations', 'ownerReviews', 'lastReceipt', 'setupProblem'])
+        && request.resource.data.uid == uid && request.resource.data.seenAt == request.time
+        && request.resource.data.accepting is bool && request.resource.data.pendingSales is int
+        && request.resource.data.pendingSales >= 0
+        && request.resource.data.deviceId == get(/databases/$(database)/documents/pos_bindings/$(uid)).data.deviceId;
+      allow delete: if offlineOwner();
+    }
+    match /cashier_leases/{branch} {
+      allow read: if true;
+      allow create, update: if trustedPOS(branch)
+        && request.resource.data.keys().hasOnly(['branch', 'uid', 'seenAt'])
+        && request.resource.data.branch == branch && request.resource.data.uid == request.auth.uid
+        && request.resource.data.seenAt == request.time
+        && getAfter(/databases/$(database)/documents/cashier_presence/$(request.auth.uid)).data.accepting == true
+        && getAfter(/databases/$(database)/documents/cashier_presence/$(request.auth.uid)).data.seenAt == request.time;
+      allow delete: if offlineOwner();
+    }
+    match /pos_operation_commits/{id} {
+      allow get: if offlineOwner()
+        || (!exists(/databases/$(database)/documents/pos_operation_commits/$(id)) && ownTrustedDevice())
+        || verifiedHQ(resource.data.branch) || trustedPOS(resource.data.branch);
+      allow list: if offlineOwner() || verifiedHQ(resource.data.branch) || trustedPOS(resource.data.branch);
+      allow create: if offlineOwner() || (trustedPOS(request.resource.data.branch)
+        && request.resource.data.state in ['synced', 'owner_review']);
+      allow update: if offlineOwner();
+      allow delete: if false;
+    }
+    match /pos_operation_reviews/{id} {
+      allow get: if offlineOwner()
+        || (!exists(/databases/$(database)/documents/pos_operation_reviews/$(id)) && ownTrustedDevice())
+        || verifiedHQ(resource.data.branch) || trustedPOS(resource.data.branch);
+      allow list: if offlineOwner() || verifiedHQ(resource.data.branch) || trustedPOS(resource.data.branch);
+      allow create: if offlineOwner() || (trustedPOS(request.resource.data.branch)
+        && request.resource.data.status == 'Pending' && request.resource.data.id == id
+        && request.resource.data.deviceId == get(/databases/$(database)/documents/pos_bindings/$(request.auth.uid)).data.deviceId);
+      allow update: if offlineOwner();
+      allow delete: if false;
+    }
+    match /pos_branch_shifts/{branch} {
+      allow read: if offlineOwner() || verifiedHQ(branch) || trustedPOS(branch);
+      allow create, update: if offlineOwner() || (trustedPOS(branch) && request.resource.data.branch == branch);
+      allow delete: if false;
+    }
+    match /pos_attendance_heads/{staff} {
+      allow read: if isSignedIn();
+      allow create, update: if offlineOwner() || trustedPOS(request.resource.data.branch);
+      allow delete: if false;
+    }
+    match /pos_staff_meal_claims/{id} {
+      allow get: if offlineOwner() || ownTrustedDevice();
+      allow list: if offlineOwner();
+      allow create: if offlineOwner() || (
+        trustedPOS(request.resource.data.branch)
+        && request.resource.data.deviceId == get(/databases/$(database)/documents/pos_bindings/$(request.auth.uid)).data.deviceId
+        && request.resource.data.staffId is string && request.resource.data.day is string
+        && id == request.resource.data.staffId + '__' + request.resource.data.day
+        && exists(/databases/$(database)/documents/cashiers/$(request.resource.data.staffId))
+        && get(/databases/$(database)/documents/cashiers/$(request.resource.data.staffId)).data.cashierName == request.resource.data.staffName
+        && (
+          (request.resource.data.get('saleId', '') != ''
+            && getAfter(/databases/$(database)/documents/transactions/$(request.resource.data.saleId)).data.get('staffMealClaimId', '') == id
+            && getAfter(/databases/$(database)/documents/transactions/$(request.resource.data.saleId)).data.branch == request.resource.data.branch
+            && getAfter(/databases/$(database)/documents/transactions/$(request.resource.data.saleId)).data.globalDiscountType == 'staff_meal')
+          || (request.resource.data.get('requestId', '') != ''
+            && getAfter(/databases/$(database)/documents/staff_requests/$(request.resource.data.requestId)).data.get('staffId', '') == request.resource.data.staffId
+            && getAfter(/databases/$(database)/documents/staff_requests/$(request.resource.data.requestId)).data.branch == request.resource.data.branch
+            && getAfter(/databases/$(database)/documents/staff_requests/$(request.resource.data.requestId)).data.type == 'Staff Meal')
+        )
+      );
+      allow update: if offlineOwner();
+      allow delete: if false;
+    }
+    match /pos_staff_meal_exceptions/{id} { allow read, create: if offlineOwner(); allow update, delete: if false; }
+    match /shift_metric_commits/{id} { allow read: if offlineOwner(); allow write: if false; }
+
+    match /hq_managers/{managerId} { allow read: if isSignedIn(); allow write: if isOwner(); }
+    match /settings/{docId} {
+      allow read: if true;
+      allow write: if isHQUser() || docId.matches("status_.*");
+      // PIN-only legacy Cashiers can update counters only with their atomic sale
+      // or first void, with exact deltas. No general settings write is opened.
+      allow create, update: if docId == 'global_stats' && saleCounterWrite();
+      allow create, update: if docId.matches('audit_.*') && saleAuditWrite(docId);
+    }
+    match /global_addons/{addonId} { allow read: if true; allow write: if isOwner(); }
+    match /bom/{bomId} { allow read: if true; allow write: if isOwner(); }
+    match /branches/{branchId} { allow read, write: if true; }
+    match /menu/{menuId} { allow read, update: if true; allow create, delete: if isOwner(); }
+    match /announcements/{document=**} { allow read, write: if true; }
+    match /acknowledgments/{document=**} { allow read, write: if true; }
+    match /reviews/{document=**} { allow read, create: if true; allow update, delete: if isHQUser(); }
+    match /customer_feedback/{document=**} { allow create: if true; allow read, update, delete: if isHQUser(); }
+    match /franchise_leads/{document=**} { allow create: if true; allow read, update, delete: if isHQUser(); }
+    match /customer_app_categories/{document=**} { allow read, write: if isHQUser(); }
+
+    match /transactions/{txId} {
+      allow read: if true;
+      allow create: if !protectedSales(request.resource.data.get('branch', ''))
+        || verifiedHQ(request.resource.data.get('branch', ''))
+        || (trustedPOS(request.resource.data.get('branch', ''))
+          && ((request.resource.data.get('localSaleId', '') == txId && request.resource.data.get('syncVersion', 0) == 2)
+            || safetySale(request.resource.data, txId) || parkedAccountability(request.resource.data, txId)));
+      allow update: if (!protectedSales(resource.data.get('branch', '')) && !protectedSales(request.resource.data.get('branch', '')))
+        || (resource.data.get('branch', '') == request.resource.data.get('branch', '')
+          && (verifiedHQ(resource.data.get('branch', ''))
+            || (trustedPOS(resource.data.get('branch', ''))
+              && ((resource.data.get('inventoryState', '') == 'audit_pending'
+                && request.resource.data.get('inventoryState', '') == 'applied'
+                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['inventoryState']))
+                || safetyTransition(resource.data, request.resource.data, txId)))));
+      allow delete: if (!protectedSales(resource.data.get('branch', '')) && isHQUser()) || isOwner();
+    }
+    match /stock_logs/{logId} { allow read, create, update: if true; allow delete: if isOwner(); }
+    match /attendance_logs/{logId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /manager_alerts/{alertId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /sop_logs/{sopId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /shift_swaps/{swapId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /shifts/{shiftId} { allow read, create, update: if true; allow delete: if isOwner(); }
+    match /expenses/{expenseId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /remittances/{remitId} { allow read, create, update: if true; allow delete: if isOwner(); }
+    match /store_use_logs/{document=**} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /account_logs/{logId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /cash_accounts/{accountId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /inventory/{itemId} { allow read, create, update: if true; allow delete: if isOwner(); }
+    match /stock_counts/{countId} { allow read, create, update: if true; allow delete: if isOwner(); }
+    match /inventory_logs/{document=**} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /purchase_orders/{poId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /dispatch_logs/{dispatchId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /incoming_orders/{orderId} {
+      allow read: if true;
+      allow create: if incomingCreate(request.resource.data);
+      allow update: if incomingUpdate(resource.data, request.resource.data);
+      allow delete: if (!offlineGate(resource.data.get('branch', '')) && isHQUser()) || verifiedHQ(resource.data.get('branch', ''));
+    }
+    match /parked_orders/{orderId} { allow read, write: if true; }
+    match /pos_devices/{deviceId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /cashiers/{cashierId} { allow read, update: if true; allow create, delete: if isHQUser(); }
+    match /staff_requests/{reqId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /hr_sanctions/{sanctionId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /acknowledgments/{ackId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /payroll_records/{recordId} { allow read, update: if true; allow create, delete: if isHQUser(); }
+    match /staff_ledger/{ledgerId} { allow read: if true; allow write: if isHQUser(); }
+    match /staff_deductions/{deductId} { allow read: if true; allow write: if isHQUser(); }
+    match /staff_bonuses/{bonusId} { allow read: if true; allow write: if isHQUser(); }
+    match /budgets/{budgetId} { allow read, write: if isHQUser(); }
+    match /equipment_assets/{assetId} { allow read, write: if isHQUser(); }
+    match /yield_logs/{yieldId} { allow read, write: if isHQUser(); }
+    match /grab_payouts/{payoutId} { allow read, create: if true; allow update, delete: if isHQUser(); }
+    match /foodpanda_payouts/{payoutId} { allow read, create: if true; allow update, delete: if isHQUser(); }
+    match /payables/{payableId} { allow read, write: if isHQUser(); }
+    match /hq_restocks/{restockId} { allow read, write: if isHQUser(); }
+    match /suppliers/{document=**} { allow read, write: if isHQUser(); }
+    match /daily_metrics/{document=**} { allow read, write: if isHQUser(); }
+    match /archived_months/{document=**} { allow read, write: if isHQUser(); }
+    match /franchise_ledger/{ledgerId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /franchise_comms/{commId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    match /franchise_accounts/{document=**} { allow read, write: if isHQUser(); }
+    match /franchise_budgets/{document=**} { allow read, write: if isHQUser(); }
+    match /riders/{riderId} { allow read, write: if isHQUser(); }
+    match /rider_topups/{topupId} { allow read, write: if isHQUser(); }
+  }
+}
