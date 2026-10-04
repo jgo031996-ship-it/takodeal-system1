@@ -1,0 +1,147 @@
+/* Formal communication workspace, scoped away from printable reports. */
+body.manager-theme #view-bulletin .aih-shell { max-width:1450px; margin:0 auto; color:#26372f; font-family:inherit; }
+#view-bulletin .aih-shell * { box-sizing:border-box; }
+#view-bulletin .aih-shell [hidden] { display:none!important; }
+body.manager-theme #view-bulletin .aih-intro { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:4px 0 26px; }
+#view-bulletin .aih-eyebrow { font-size:10px; letter-spacing:1.5px; font-weight:700; color:#567266; }
+body.manager-theme #view-bulletin .aih-intro h2 { font-size:32px!important; font-weight:750!important; letter-spacing:-1px; margin:10px 0!important; line-height:1.2; color:#1b352b!important; }
+#view-bulletin .aih-intro p { max-width:650px; margin:0; color:#708078; line-height:1.65; font-size:13px; }
+#view-bulletin .aih-mode { font-size:12px; font-weight:650; color:#25664e; flex-shrink:0; }
+#view-bulletin .aih-mode>span { display:inline-block; width:7px; height:7px; background:#398664; border-radius:50%; margin-right:7px; }
+#view-bulletin .aih-mode small { display:block; font-size:11px; margin:7px 0 0; font-weight:400; color:#809087; }
+#view-bulletin .aih-overview { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)) minmax(260px,1.3fr); align-items:center; border:1px solid #dfe7e1; border-radius:12px; background:#fff; padding:20px 24px; gap:25px; }
+#view-bulletin .aih-overview>div { border-right:1px solid #e7ece7; }
+#view-bulletin .aih-overview>div>span { display:block; color:#75867c; font-size:9px; font-weight:650; letter-spacing:1px; }
+#view-bulletin .aih-overview strong { display:block; font-size:25px; font-weight:650; line-height:1.4; margin-top:6px; color:#1d4433; }
+#view-bulletin .aih-overview p { margin:0; font-size:12px; color:#577366; text-align:right; white-space:nowrap; }
+#view-bulletin .aih-overview p span { color:#a3b5a8; margin:0 9px; }
+#view-bulletin .aih-tabs { display:flex; gap:25px; margin:23px 0 0; border-bottom:1px solid #dce5de; overflow-x:auto; }
+body.manager-theme #view-bulletin .aih-tabs button { display:flex; align-items:center; gap:8px; padding:13px 1px 16px; border:none; background:transparent; border-bottom:2px solid transparent; border-radius:0!important; color:#7b8b80; white-space:nowrap; min-height:46px; }
+body.manager-theme #view-bulletin .aih-tabs button[aria-selected="true"] { border-color:#246749; color:#185238; }
+#view-bulletin .aih-status { margin:13px 0; min-height:4px; font-size:12px; line-height:1.6; color:#3c7055; }
+#view-bulletin .aih-status:empty { margin:10px 0; }
+#view-bulletin .aih-workspace { display:grid; grid-template-columns:minmax(260px,.78fr) minmax(0,1.6fr); gap:22px; align-items:start; }
+#view-bulletin .aih-panel { border:1px solid #dfe7e1; border-radius:12px; background:#fff; padding:25px; min-width:0; }
+#view-bulletin .aih-brief { background:#f8faf6; }
+#view-bulletin .aih-panel-title { display:flex; align-items:flex-start; gap:12px; margin-bottom:22px; }
+body.manager-theme #view-bulletin .aih-panel-title h3 { font-size:17px!important; font-weight:650!important; letter-spacing:-.2px; color:#243c2e!important; margin:0 0 6px!important; line-height:1.4; }
+#view-bulletin .aih-panel-title p { margin:0; font-size:12px; line-height:1.6; color:#7c8b81; }
+#view-bulletin .aih-panel-title>div { flex:1; min-width:0; }
+#view-bulletin .aih-step { background:#eef3eb; border:1px solid #dbe5d6; color:#5a735f; width:31px; height:31px; display:grid; place-items:center; border-radius:6px; font-size:11px; font-weight:650; flex-shrink:0; }
+#view-bulletin .aih-formats { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:22px; }
+body.manager-theme #view-bulletin .aih-formats button { display:block; padding:12px; text-align:left; border:1px solid #dce5da; background:white; color:#536b59; min-height:88px; font-size:11px; }
+#view-bulletin .aih-formats button span { font-size:11px; font-weight:650; display:block; line-height:1.5; }
+#view-bulletin .aih-formats button small { display:block; font-size:10px; font-weight:400; line-height:1.5; color:#8a958b; margin-top:5px; }
+body.manager-theme #view-bulletin .aih-formats button[aria-pressed="true"] { border-color:#649276; background:#eff6ec; color:#1c5c3b; box-shadow:inset 0 0 0 .5px #649276!important; }
+#view-bulletin .aih-shell label { display:block; margin:17px 0 8px; font-size:12px; font-weight:600; color:#415746; }
+#view-bulletin .aih-shell label>span:not(.aih-required) { color:#8b978d; font-weight:400; }
+body.manager-theme #view-bulletin .aih-shell :is(input:not([type="checkbox"]),textarea,select) { display:block; width:100%!important; max-width:none; border:1px solid #dbe4da!important; border-radius:7px!important; padding:12px 13px!important; font-size:12px!important; color:#304934!important; background:white!important; min-height:43px; line-height:1.6; font-family:inherit; outline:none; }
+body.manager-theme #view-bulletin .aih-shell textarea { resize:vertical; }
+body.manager-theme #view-bulletin .aih-shell :is(input,textarea,select):focus { border-color:#4b8063!important; box-shadow:0 0 0 3px #4b806317!important; }
+#view-bulletin .aih-shell input::placeholder,#view-bulletin .aih-shell textarea::placeholder { color:#9aa69a; font-weight:400; }
+body.manager-theme #view-bulletin .aih-shell button:focus-visible { outline:3px solid #63927680; outline-offset:3px; }
+body.manager-theme #view-bulletin .aih-shell button:disabled { opacity:.55; cursor:default; }
+body.manager-theme #view-bulletin .aih-primary { display:inline-flex; justify-content:center; align-items:center; gap:10px; padding:12px 17px; min-height:44px; color:#fff!important; border:1px solid #23674c!important; background:#23674c!important; font-size:12px; font-weight:600!important; }
+body.manager-theme #view-bulletin .aih-primary:hover:not(:disabled) { background:#194f39!important; }
+#view-bulletin .aih-wide { width:100%; margin-top:21px; }
+body.manager-theme #view-bulletin .aih-secondary { display:inline-flex; justify-content:center; align-items:center; gap:8px; border:1px solid #d7e2d6!important; background:#fff!important; color:#49664e!important; padding:10px 14px; min-height:42px; font-size:12px; }
+body.manager-theme #view-bulletin .aih-secondary:hover { background:#f3f7ef!important; }
+body.manager-theme #view-bulletin .aih-text-button { background:transparent!important; border:0!important; color:#69816c!important; font-size:11px; padding:8px 3px; min-height:40px; font-weight:500!important; white-space:nowrap; }
+#view-bulletin .aih-helper { font-size:11px; line-height:1.75; color:#8a978b; margin:13px 0 0; }
+#view-bulletin .aih-editor-meta { display:flex; justify-content:space-between; gap:12px; margin:-7px 0 22px; border-bottom:1px solid #ecf0e9; padding-bottom:13px; color:#8a978b; font-size:10px; }
+#view-bulletin .aih-editor-meta>span:first-child { color:#638366; }
+#view-bulletin .aih-label-row { display:flex; justify-content:space-between; align-items:center; }
+#view-bulletin .aih-label-row>span { font-size:10px; color:#97a291; }
+#view-bulletin .aih-required { color:#799281; font-size:9px; letter-spacing:.4px; padding-left:7px; font-weight:400; }
+#view-bulletin .aih-section-label { padding-top:23px; margin-top:22px; border-top:1px solid #e8ede4; font-size:9px; letter-spacing:1.3px; font-weight:650; color:#849580; }
+#view-bulletin .aih-target-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:15px; }
+#view-bulletin .aih-target-grid label { margin-top:14px; }
+#view-bulletin .aih-attachments { display:flex!important; flex-wrap:wrap; align-items:center; gap:12px; padding:15px; border:1px dashed #d0ddcb; border-radius:8px; margin-top:21px!important; color:#7b9378; }
+#view-bulletin .aih-attachments>span { flex:1; color:#526a4f!important; font-weight:600!important; }
+#view-bulletin .aih-attachments small { display:block; font-weight:400; font-size:10px; color:#95a08e; margin-top:5px; line-height:1.5; }
+body.manager-theme #view-bulletin .aih-shell .aih-attachments input { width:100%!important; font-size:10px!important; min-height:34px; border:0!important; padding:2px 0!important; color:#8b9886!important; background:transparent!important; }
+#view-bulletin .aih-attachments input::file-selector-button { border:1px solid #dae4d4; background:white; padding:8px 12px; border-radius:5px; color:#526d4f; margin-right:10px; font-size:11px; cursor:pointer; }
+#view-bulletin .aih-files { display:flex; flex-wrap:wrap; gap:6px; margin-top:9px; }
+#view-bulletin .aih-files span { font-size:10px; padding:7px 9px; border-radius:5px; background:#f2f5ee; color:#6a8164; overflow-wrap:anywhere; }
+#view-bulletin .aih-files small { color:#98a28d; }
+#view-bulletin .aih-editor-actions { margin-top:24px; border-top:1px solid #e6ede1; padding-top:21px; display:flex; align-items:center; justify-content:space-between; gap:15px; }
+#view-bulletin .aih-editor-actions strong { display:block; font-size:11px; font-weight:600; color:#546d4d; overflow-wrap:anywhere; }
+#view-bulletin .aih-editor-actions small { display:block; font-size:10px; color:#91a085; margin-top:6px; }
+#view-bulletin .aih-draft-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+#view-bulletin .aih-draft-card { border:1px solid #e0e8da; border-radius:9px; padding:19px; }
+#view-bulletin .aih-draft-card>div:first-child { display:flex; align-items:flex-start; gap:12px; color:#70936c; }
+#view-bulletin .aih-draft-card strong { display:block; font-size:13px; line-height:1.6; color:#325230; overflow-wrap:anywhere; }
+#view-bulletin .aih-draft-card small { display:block; font-size:10px; color:#96a38b; margin-top:5px; }
+#view-bulletin .aih-draft-card p { font-size:11px; line-height:1.7; color:#7d8f71; margin:15px 0 18px; white-space:pre-line; overflow-wrap:anywhere; }
+#view-bulletin .aih-draft-card>div:last-child { display:flex; gap:17px; }
+#view-bulletin .aih-table-wrap { overflow:auto; }
+#view-bulletin .aih-table { width:100%; border-collapse:collapse; min-width:690px; text-align:left; }
+#view-bulletin .aih-table th { font-size:9px; text-transform:uppercase; letter-spacing:.7px; font-weight:650; padding:13px 16px; background:#f6f9f3; color:#87a079; border-block:1px solid #dfe8d8; }
+#view-bulletin .aih-table td { vertical-align:top; padding:20px 16px; border-bottom:1px solid #e9efdf; font-size:11px; color:#839775; line-height:1.6; }
+#view-bulletin .aih-table td:first-child { width:170px; }
+#view-bulletin .aih-table td small { display:block; margin-top:5px; font-size:10px; color:#95a886; }
+body.manager-theme #view-bulletin .aih-history-title { border:0; background:none; text-align:left; color:#335b2d; padding:0; font-size:12px; font-weight:600!important; max-width:370px; overflow-wrap:anywhere; }
+#view-bulletin .aih-badge { display:inline-block; border:1px solid #dfe6d6; border-radius:5px; padding:4px 8px; background:#f4f7ee; font-size:10px; color:#8c9c78; }
+#view-bulletin .aih-badge.is-active { background:#edf6e7; border-color:#cfe4c2; color:#4a8139; }
+#view-bulletin .aih-history-actions { display:flex; gap:12px; align-items:center; }
+#view-bulletin .aih-empty { padding:35px!important; text-align:center; color:#8ca079; font-size:12px; line-height:1.7; }
+#view-bulletin .aih-error { color:#b04e42!important; }
+#view-bulletin .aih-dialog { border:1px solid #d4dfcf; border-radius:13px; padding:0; width:min(790px,calc(100vw - 32px)); max-height:90dvh; color:#314b2a; box-shadow:0 30px 100px #12340e30; margin:auto; background:#f9fbf5; }
+#view-bulletin .aih-dialog::backdrop { background:#192c2369; }
+#view-bulletin .aih-dialog[open] { display:flex; flex-direction:column; }
+#view-bulletin .aih-dialog-heading { display:flex; align-items:center; justify-content:space-between; gap:15px; padding:22px 27px; background:#fff; border-bottom:1px solid #e5eddf; flex-shrink:0; }
+body.manager-theme #view-bulletin .aih-dialog-heading h3 { margin:8px 0 0!important; font-size:20px!important; font-weight:650!important; color:#2f4b29!important; line-height:1.4; }
+#view-bulletin .aih-dialog-body { overflow:auto; min-height:0; padding:23px 27px; }
+body.manager-theme #view-bulletin .aih-icon-button { background:none; border:1px solid #dbe4d4; color:#92a281; width:36px; height:36px; display:grid; place-items:center; flex-shrink:0; }
+#view-bulletin .aih-review-audience { margin:0 0 18px; font-size:12px; font-weight:600; color:#6e8f5e; }
+#view-bulletin .aih-paper { background:#fff; border:1px solid #e3ecda; border-top:4px solid #456f37; border-radius:5px; padding:32px; }
+#view-bulletin .aih-paper-brand { font-size:14px; letter-spacing:1px; font-weight:750; color:#446d35; }
+#view-bulletin .aih-paper-brand span { display:block; color:#a2b291; font-size:8px; margin-top:7px; font-weight:500; letter-spacing:1.4px; }
+body.manager-theme #view-bulletin .aih-paper h2 { font-size:23px!important; font-weight:650!important; line-height:1.4; color:#355526!important; margin:26px 0 12px!important; overflow-wrap:anywhere; }
+#view-bulletin #aihReviewSummary { margin:0 0 23px; color:#7e986a; font-size:12px; line-height:1.6; }
+#view-bulletin #aihReviewMessage,#view-bulletin .aih-detail-message { white-space:pre-wrap; overflow-wrap:anywhere; font-size:13px; line-height:1.85; color:#536d43; }
+#view-bulletin .aih-paper footer { border-top:1px solid #e4edd9; color:#99aa85; padding-top:18px; margin-top:25px; font-size:11px; }
+#view-bulletin .aih-review-images { display:grid; gap:12px; margin-top:20px; }
+#view-bulletin .aih-review-images:empty { display:none; }
+#view-bulletin .aih-review-images img { max-width:100%; border-radius:5px; border:1px solid #e0e9d3; }
+#view-bulletin .aih-review-check { display:flex!important; gap:11px; align-items:flex-start; margin-top:22px!important; font-size:12px; line-height:1.6; }
+#view-bulletin .aih-review-check input { width:17px; height:17px; margin-top:2px; accent-color:#4c7d39; flex-shrink:0; }
+#view-bulletin .aih-review-check span { color:#607e4c!important; }
+#view-bulletin .aih-dialog-actions { display:flex; gap:10px; justify-content:flex-end; padding:19px 27px; background:#fff; border-top:1px solid #e0ead6; flex-shrink:0; }
+#view-bulletin .aih-signature-heading { margin:24px 0 12px; font-size:13px; font-weight:600; }
+#view-bulletin .aih-signature-heading span { color:#92ad7b; margin-left:8px; }
+#view-bulletin .aih-signature-list { list-style:none; padding:0; margin:0; }
+#view-bulletin .aih-signature-list li { display:flex; justify-content:space-between; gap:12px; padding:13px 0; border-bottom:1px solid #e0ebd2; font-size:11px; }
+#view-bulletin .aih-signature-list li strong { font-weight:500; color:#5c7d44; }
+#view-bulletin .aih-signature-list li span { color:#9ab37f; }
+@media(max-width:1100px) {
+    #view-bulletin .aih-overview { grid-template-columns:repeat(3,minmax(0,1fr)); gap:20px; }
+    #view-bulletin .aih-overview>div:nth-child(3) { border:0; }
+    #view-bulletin .aih-overview p { grid-column:1/-1; text-align:left; padding-top:15px; border-top:1px solid #e7ece3; }
+    #view-bulletin .aih-workspace { grid-template-columns:minmax(240px,.8fr) minmax(0,1.2fr); gap:15px; }
+    #view-bulletin .aih-panel { padding:20px; }
+    #view-bulletin .aih-editor-actions { flex-wrap:wrap; }
+    #view-bulletin .aih-editor-actions>button { width:100%; }
+}
+@media(max-width:800px) {
+    body.manager-theme #view-bulletin .aih-intro { align-items:flex-start; flex-direction:column; gap:16px; }
+    #view-bulletin .aih-workspace { grid-template-columns:minmax(0,1fr); }
+    #view-bulletin .aih-brief .aih-formats { grid-template-columns:repeat(4,minmax(0,1fr)); }
+    #view-bulletin .aih-brief textarea { min-height:125px; }
+    #view-bulletin .aih-draft-list { grid-template-columns:1fr; }
+}
+@media(max-width:540px) {
+    #view-bulletin .aih-overview { padding:17px; gap:12px; }
+    #view-bulletin .aih-overview>div>span { font-size:8px; line-height:1.6; min-height:26px; letter-spacing:.5px; }
+    #view-bulletin .aih-overview strong { font-size:22px; }
+    #view-bulletin .aih-overview p { font-size:11px; }
+    #view-bulletin .aih-tabs { gap:20px; }
+    #view-bulletin .aih-tabs button { font-size:11px!important; }
+    #view-bulletin .aih-brief .aih-formats { grid-template-columns:1fr 1fr; }
+    #view-bulletin .aih-panel { padding:17px; }
+    #view-bulletin .aih-target-grid { grid-template-columns:1fr; gap:0; }
+    #view-bulletin .aih-dialog-heading,#view-bulletin .aih-dialog-body,#view-bulletin .aih-dialog-actions { padding:18px; }
+    #view-bulletin .aih-paper { padding:22px; }
+    #view-bulletin .aih-dialog-actions { flex-wrap:wrap; }
+    #view-bulletin .aih-dialog-actions button { flex:1; }
+}
