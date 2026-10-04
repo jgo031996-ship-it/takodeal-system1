@@ -81,7 +81,7 @@ export function initAIHub({document:d = document, window:w = window} = {}) {
         el('aihWordCount').textContent = `${words} ${words === 1 ? 'word' : 'words'}`;
         el('aihAudienceSummary').textContent = audienceLabel(readFields());
     }
-    function releaseImages() { imageURLs.forEach(url => w.URL.revokeObjectURL(url)); imageURLs = []; attachments = []; el('announceImages').value = ''; el('aihFiles').replaceChildren(); }
+    function releaseImages(clearInput = true) { imageURLs.forEach(url => w.URL.revokeObjectURL(url)); imageURLs = []; attachments = []; if (clearInput) el('announceImages').value = ''; el('aihFiles').replaceChildren(); }
     function fillDraft(value) {
         draft = {...value}; releaseImages();
         for (const [key,id] of Object.entries(fields)) el(id).value = draft[key] || (key === 'targetType' ? 'All' : '');
@@ -234,7 +234,7 @@ export function initAIHub({document:d = document, window:w = window} = {}) {
         if (event.target.id === 'announceTargetType') { readFields(); updateTargets(); save(); updateCounts(); }
         if (event.target.id === 'announceImages') {
             const files = [...event.target.files]; const issues = validateDraft({title:'File validation',message:'File validation',targetType:'All'},files);
-            releaseImages(); if (issues.length) { status(issues.join(' '),true); return; }
+            releaseImages(false); if (issues.length) { event.target.value = ''; status(issues.join(' '),true); return; }
             attachments = files; imageURLs = files.map(file => w.URL.createObjectURL(file));
             el('aihFiles').innerHTML = files.map(file => `<span>${esc(file.name)} <small>${(file.size/1024/1024).toFixed(1)} MB</small></span>`).join('');
             status(files.length ? `${files.length} image${files.length === 1 ? '' : 's'} selected. Images are uploaded only when you publish.` : 'Image attachments removed.');
