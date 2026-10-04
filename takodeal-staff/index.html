@@ -2,12 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Takodeál Staff Portal</title>
-    <link rel="icon" type="image/jpeg" href="logo.jpg">
-    <link rel="apple-touch-icon" href="logo.jpg">
-    <link rel="manifest" href="manifest.json?v=2">
-    <link rel="stylesheet" href="style.css">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="manifest" href="manifest.json?v=staff-portal-20261004">
+    <meta name="theme-color" content="#173f35">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="TAKODEÁL Staff">
+    <link rel="stylesheet" href="style.css?v=staff-portal-20261004">
+    <link rel="stylesheet" href="staff-theme.css?v=staff-portal-20261004">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
@@ -29,13 +33,13 @@
         <div class="login-card" id="registerCard">
             <div class="login-header">
                 <img src="logo.jpg" alt="Takodeál" class="login-logo">
-                <h2 style="color: #0f766e; font-size: 22px; margin-bottom: 5px;">Register Device</h2>
-                <p style="font-size: 12px; color: #64748b; line-height: 1.4; margin-bottom: 15px;">Enter a name for this phone and select your branch to request access from HQ.</p>
+                <span class="eyebrow">TAKODEÁL TEAM</span><h2>Set up your device</h2>
+                <p style="font-size: 12px; color: #64748b; line-height: 1.4; margin-bottom: 15px;">Give this device a name and choose your branch. HQ will review your request before you sign in.</p>
             </div>
             
-            <input type="text" id="deviceNameInput" placeholder="e.g. Aljhon Phone" autocomplete="off" style="width: 100%; padding: 12px; font-size: 15px; font-weight: bold; text-align: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 12px; box-sizing: border-box; outline: none;">
+            <label class="field-label" for="deviceNameInput">Device name</label><input type="text" id="deviceNameInput" placeholder="e.g. Aljhon Phone" autocomplete="off" style="width: 100%; padding: 12px; font-size: 15px; font-weight: bold; text-align: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 12px; box-sizing: border-box; outline: none;">
             
-            <select id="deviceBranchInput" style="width: 100%; padding: 12px; font-size: 14px; font-weight: bold; text-align-last: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; outline: none; background: white; color: #0f172a; cursor: pointer;">
+            <label class="field-label" for="deviceBranchInput">Your branch</label><select id="deviceBranchInput" style="width: 100%; padding: 12px; font-size: 14px; font-weight: bold; text-align-last: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; outline: none; background: white; color: #0f172a; cursor: pointer;">
                 <option value="Auto">📍 Auto-Detect Branch via GPS</option>
                 <option value="Cabantian">📍 Cabantian Branch</option>
                 <option value="Citygate">📍 Citygate Branch</option>
@@ -46,7 +50,7 @@
             <button class="btn-primary" onclick="window.requestDeviceAccess()">Request Access</button>
 
             <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM REGISTRATION -->
-            <button type="button" onclick="window.forceUpdateApp()" style="margin-top: 25px; background: transparent; color: #64748b; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 12px; transition: 0.2s;">🔄 App Glitched? Click here to Update</button>
+            <button type="button" onclick="window.forceUpdateApp()" style="margin-top: 25px; background: transparent; color: #64748b; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 12px; transition: 0.2s;">Check for app updates</button>
         </div>
 
         <div class="login-card" id="pendingCard" style="display: none;">
@@ -63,15 +67,15 @@
         <div class="login-card">
             <div class="login-header">
                 <img src="logo.jpg" alt="Takodeál" class="login-logo">
-                <h2>Staff Portal</h2>
-                <p>Welcome back! Please enter your PIN.</p>
+                <span class="eyebrow">TAKODEÁL TEAM</span><h2>Welcome to your portal</h2>
+                <p>Your workday, schedule, and requests in one place.</p>
             </div>
-            <input type="password" id="loginPin" placeholder="Enter PIN" autocomplete="off">
+            <label class="field-label" for="loginPin">Staff login PIN</label><input type="password" inputmode="numeric" id="loginPin" placeholder="Enter PIN" autocomplete="off">
             <button class="btn-primary" onclick="window.loginStaff()">Secure Login</button>
             <div id="loginError" style="color: #dc2626; margin-top: 15px; font-size: 13px; font-weight: bold; display: none;">❌ Incorrect PIN. Please try again.</div>
             
             <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM LOGIN -->
-            <button type="button" onclick="window.forceUpdateApp()" style="margin-top: 25px; background: transparent; color: #64748b; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 12px; transition: 0.2s;">🔄 App Glitched? Click here to Update</button>
+            <button type="button" onclick="window.forceUpdateApp()" style="margin-top: 25px; background: transparent; color: #64748b; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 12px; transition: 0.2s;">Check for app updates</button>
         </div>
     </div>
 
@@ -179,7 +183,7 @@
                 <h3 style="color: #16a34a; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #bbf7d0; padding-bottom: 5px;">🔒 Security & System</h3>
                 <div class="form-group">
                     <label>Change Login PIN</label>
-                    <input type="text" id="profPin" placeholder="Enter new PIN (Leave blank to keep current PIN)" style="border-color: #86efac; background: #f0fdf4;">
+                    <input type="password" inputmode="numeric" id="profPin" placeholder="Enter new PIN (Leave blank to keep current PIN)" style="border-color: #86efac; background: #f0fdf4;">
                 </div>
                 
                 <!-- 🔥 NEW FORCE UPDATE BUTTON -->
@@ -188,19 +192,7 @@
                     <button type="button" onclick="window.forceUpdateApp()" style="background: #0f172a; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 13px; box-shadow: 0 4px 6px rgba(15, 23, 42, 0.3);">🔄 Force App Update & Clear Cache</button>
                 </div>
 
-                <h3 style="color: #64748b; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">💸 Payroll Deductions (View Only)</h3>
-                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1; margin-bottom: 15px;">
-                    <div class="profile-grid" style="margin-bottom: 15px; grid-template-columns: 1fr 1fr 1fr;">
-                        <div><label style="font-size: 11px; color: #64748b; display: block;">SSS</label><span id="viewSssDed" style="font-weight: bold; color: #dc2626; font-size: 14px;">₱0.00</span></div>
-                        <div><label style="font-size: 11px; color: #64748b; display: block;">PhilHealth</label><span id="viewPhDed" style="font-weight: bold; color: #dc2626; font-size: 14px;">₱0.00</span></div>
-                        <div><label style="font-size: 11px; color: #64748b; display: block;">Pag-IBIG</label><span id="viewPagibigDed" style="font-weight: bold; color: #dc2626; font-size: 14px;">₱0.00</span></div>
-                    </div>
-                    <div>
-                        <label style="font-size: 11px; color: #64748b; display: block; margin-bottom: 4px;">Other Custom Deductions</label>
-                        <div id="viewCustomDed" style="font-weight: bold; color: #dc2626; font-size: 13px;">None</div>
-                    </div>
-                    <div style="font-size: 10px; color: #94a3b8; margin-top: 12px; font-style: italic;">* Note: Deductions are managed securely by HQ and cannot be edited here.</div>
-                </div>
+                <section class="profile-security"><h3>Payslip privacy</h3><p>Use a separate PIN for your Payslip Vault. Pay details are available in the Pay tab.</p><button type="button" class="btn-outline" onclick="window.openVaultPin('change')">Set up or change Payslip PIN</button></section>
             </div>
             <div style="background: white; padding: 15px 20px; border-top: 1px solid #e2e8f0; border-radius: 0 0 20px 20px;">
                 <button class="btn-primary" id="btnSaveProfileData" onclick="window.saveProfileData()" style="width: 100%; padding: 15px; font-size: 16px;">💾 Save Employee Data</button>
@@ -261,21 +253,21 @@
     <!-- 📱 MAIN APP CONTAINER -->
     <div id="appContainer" style="display: none;">
         <header class="app-header">
-            <div class="header-left">
-                <div id="topAvatar" class="avatar" onclick="window.openProfile()" style="cursor: pointer; background-size: cover; background-position: center;">👤</div>
+            <button type="button" class="header-left profile-button" onclick="window.openProfile()" aria-label="Open my employee profile">
+                <div id="topAvatar" class="avatar" role="img" aria-label="Staff picture" style="background-size: cover; background-position: center;">👤</div>
                 <div class="header-text">
-                    <span class="greeting">Hello,</span>
-                    <strong id="loggedInName">Staff Name</strong>
+                    <span class="greeting">TAKODEÁL · STAFF PORTAL</span>
+                    <strong id="loggedInName">Staff Name</strong><span id="staffProfileMeta">Your staff portal</span><span class="profile-hint">View profile &amp; security →</span>
                 </div>
-            </div>
-            <button class="btn-logout" onclick="window.logoutStaff()">Sign Out</button>
+            </button>
+            <div class="header-actions"><button class="btn-outline" onclick="window.openVaultPin('change')">Payslip PIN</button><button class="btn-logout" onclick="window.logoutStaff()">Sign out</button></div>
         </header>
 
         <main class="content-area">
             <div id="view-bulletin" class="view active">
                 <div class="view-header">
-                    <h2>📢 Bulletin Board</h2>
-                    <p>Latest corporate announcements and updates.</p>
+                    <h2>Bulletin Board</h2>
+                    <p>Updates from HQ, branch notices, and messages that need your attention.</p>
                 </div>
                 <div id="bulletinList">
                     <div style="text-align:center; padding: 40px; color: #94a3b8;">Loading announcements...</div>
@@ -284,16 +276,16 @@
 
             <div id="view-timeclock" class="view">
                 <div class="view-header">
-                    <h2>⏱️ Time Clock</h2>
-                    <p>GPS verified attendance logging.</p>
+                    <h2>Time Clock</h2>
+                    <p>Clock in at your branch and keep track of your attendance.</p>
                 </div>
-                <div class="clock-card">
+                <div class="clock-card"><div class="clock-layout">
                     <div id="cameraContainer" style="margin-bottom: 15px; border-radius: 12px; overflow: hidden; background: #000; height: 250px; position: relative;">
                         <video id="clockVideo" autoplay muted playsinline style="width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1);"></video>
                         <canvas id="clockCanvas" style="display: none;"></canvas>
                         <div id="cameraStatus" style="position: absolute; bottom: 10px; left: 10px; right: 10px; background: rgba(0,0,0,0.6); color: white; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-weight: bold;">📷 Initializing Camera...</div>
                     </div>
-                    <h1 id="liveTime">00:00 AM</h1>
+                    <div class="clock-controls"><span class="eyebrow">YOUR WORKDAY</span><h1 id="liveTime">00:00 AM</h1>
                     <p id="liveDate">Loading Date...</p>
                     <div class="location-status" id="gpsStatus" onclick="window.refreshGPS()" style="cursor: pointer; user-select: none; transition: all 0.2s ease; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin: 10px 0; text-align: center; border: 1px dashed #cbd5e1;">
                         📍 Verifying GPS Location... (Tap to Refresh 🔄)
@@ -302,19 +294,23 @@
                         <button class="btn-timein" id="btnTimeIn" onclick="window.punchTime('TIME IN')">TIME IN</button>
                         <button class="btn-timeout" id="btnTimeOut" onclick="window.punchTime('TIME OUT')">TIME OUT</button>
                     </div>
-                </div>
+                </div></div></div>
+                <section class="attendance-card">
+                    <div class="section-heading"><div><span class="eyebrow">YOUR RECORDS</span><h3>My attendance <span id="attendanceCount"></span></h3><p>Recorded time punches, hours, and late notices.</p></div><div class="attendance-filters"><label for="attendanceMonth">Month<input type="month" id="attendanceMonth" onchange="window.loadMyAttendance()"></label><button class="btn-outline" onclick="window.loadMyAttendance(true)">Refresh</button></div></div>
+                    <div id="myAttendanceList"><p class="empty-state">Open Clock to load your attendance.</p></div>
+                </section>
             </div>
 
             <div id="view-requests" class="view">
                 <div class="view-header">
-                    <h2>📥 Staff Requests</h2>
-                    <p>File leaves, advances, and view manager replies.</p>
+                    <h2>Staff Requests</h2>
+                    <p>Send a request to HQ and follow its progress.</p>
                 </div>
                 <div class="request-grid">
-                    <button class="req-card" onclick="window.openReqForm('Leave')">🏖️<br>Leave</button>
-                    <button class="req-card" onclick="window.openReqForm('Cash Advance')">💸<br>Cash Advance</button>
-                    <button class="req-card" onclick="window.openReqForm('Inbox')">📬<br>My Inbox</button>
-                    <button class="req-card" onclick="window.openReqForm('Loans')" style="background: #fffbeb; border-color: #fcd34d; color: #b45309;">💳<br>My Loans</button>
+                    <button class="req-card" onclick="window.openReqForm('Leave')"><span class="request-icon">↗</span><strong>Request leave</strong><span>Choose your dates and send a reason.</span></button>
+                    <button class="req-card" onclick="window.openReqForm('Cash Advance')"><span class="request-icon">₱</span><strong>Cash advance</strong><span>Submit an amount for HQ review.</span></button>
+                    <button class="req-card" onclick="window.openReqForm('Inbox')"><span class="request-icon">✉</span><strong>My inbox</strong><span>See decisions and manager replies.</span></button>
+                    <button class="req-card" onclick="window.openReqForm('Loans')" style="background: #fffbeb; border-color: #fcd34d; color: #b45309;"><span class="request-icon">≡</span><strong>My loans</strong><span>Review your balance and agreements.</span></button>
                 </div>
                 <button onclick="window.loadMySanctionsHistory()" style="background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; margin-top: 15px; width: 100%; font-size: 14px; box-shadow: 0 2px 4px rgba(220,38,38,0.1);">
                     ⚖️ View My Sanctions & NTEs
@@ -334,7 +330,7 @@
 
             <div id="view-schedule" class="view">
                 <div class="view-header">
-                    <h2>🗓️ My Schedule</h2>
+                    <h2>My Schedule</h2>
                     <p>Select a month below to view your shifts.</p>
                 </div>
                 <div style="padding: 0 15px; margin-bottom: 15px;">
@@ -348,7 +344,7 @@
             <!-- 📋 DAILY SOP VIEW -->
             <div id="view-sop" class="view">
                 <div class="view-header">
-                    <h2>📋 Daily SOP Checklist</h2>
+                    <h2>Daily Checklist</h2>
                     <p>Complete your shift tasks and submit compliance report to HQ.</p>
                 </div>
 
@@ -395,10 +391,13 @@
             <!-- 💸 PAYSLIP VAULT VIEW -->
             <div id="view-payslip" class="view">
                 <div class="view-header">
-                    <h2>💸 Payslip Vault</h2>
-                    <p>Track your live earnings and download past records.</p>
+                    <h2>Payslip Vault</h2>
+                    <p>Your pay details, kept behind your own separate PIN.</p>
                 </div>
 
+                <div class="vault-toolbar"><span class="status-pill" id="vaultState">Private · PIN required</span><div><button class="btn-outline" onclick="window.openVaultPin('change')">Manage PIN</button><button class="btn-outline" id="vaultLockButton" hidden onclick="window.lockPayslipVault()">Lock vault</button></div></div>
+                <section id="vaultGate" class="vault-gate"><span class="vault-symbol" aria-hidden="true">🔒</span><span class="eyebrow">YOUR PAY IS PERSONAL</span><h3>Your Payslip Vault is locked</h3><p>Enter your separate Payslip PIN to see estimates, pending payouts, and past payslips. First time here? You can create your PIN below.</p><button class="btn-primary" onclick="window.openVaultPin()">Unlock or set up PIN</button><small>Locks when you leave Pay, hide the app, or stay idle for 2 minutes.</small></section>
+                <div id="vaultContent" hidden>
                 <div style="display: flex; gap: 10px; margin-bottom: 20px; background: white; padding: 5px; border-radius: 10px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                     <button id="btnTabLivePay" onclick="window.switchPayslipTab('Live')" style="flex: 1; padding: 12px; background: #0f766e; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s;">Live Estimate</button>
                     <button id="btnTabPendingPay" onclick="window.switchPayslipTab('Pending')" style="flex: 1; padding: 12px; background: transparent; color: #64748b; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s; position: relative;">
@@ -449,6 +448,7 @@
                         <div style="text-align:center; padding: 40px; color: #94a3b8;">Loading past records...</div>
                     </div>
                 </div>
+                </div>
             </div>
         </main>
 
@@ -461,19 +461,29 @@
             </button>
             <button class="nav-item" onclick="window.switchView('requests', this)">
                 <span class="icon" style="position:relative;">📥<span id="navReqBadge" style="display:none; position:absolute; top:-5px; right:-10px; background:#dc2626; color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">!</span></span>
-                <span>Reqs</span>
+                <span>Requests</span>
             </button>
             <button class="nav-item" onclick="window.switchView('schedule', this)">
                 <span class="icon" style="position:relative;">🗓️<span id="navSchedBadge" style="display:none; position:absolute; top:-5px; right:-10px; background:#dc2626; color:white; font-size:10px; padding:2px 6px; border-radius:10px; font-weight:bold; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">!</span></span>
-                <span>Sched</span>
+                <span>Schedule</span>
             </button>
             <button class="nav-item" onclick="window.switchView('sop', this)">
-                <span class="icon">📋</span><span>SOP</span>
+                <span class="icon">📋</span><span>Checklist</span>
             </button>
             <button class="nav-item" onclick="window.switchView('payslip', this)">
-                <span class="icon">💸</span><span>Pay</span>
+                <span class="icon">🔒</span><span>Pay</span>
             </button>
         </nav>
+    </div>
+
+    <div id="vaultPinModal" class="overlay" style="display:none; z-index:10020;" role="dialog" aria-modal="true" aria-labelledby="vaultPinTitle">
+        <div class="modal-card vault-pin-card"><button type="button" class="modal-close" onclick="window.closeVaultPin()" aria-label="Close PIN dialog">×</button><span class="eyebrow">PAYSLIP PRIVACY</span><h2 id="vaultPinTitle">Unlock Payslip Vault</h2><p id="vaultPinIntro"></p>
+            <form id="vaultPinForm" onsubmit="window.submitVaultPin(event)" hidden>
+                <label class="field-label" id="vaultCurrentLabel" for="vaultCurrentPin">Payslip PIN</label><input type="password" id="vaultCurrentPin" inputmode="numeric" autocomplete="off" required>
+                <div id="vaultNewFields" hidden><label class="field-label" for="vaultNewPin">New Payslip PIN · 6–8 digits</label><input type="password" id="vaultNewPin" inputmode="numeric" maxlength="8" autocomplete="new-password"><label class="field-label" for="vaultConfirmPin">Confirm new PIN</label><input type="password" id="vaultConfirmPin" inputmode="numeric" maxlength="8" autocomplete="new-password"></div>
+                <button type="submit" class="btn-primary" id="vaultSubmit">Unlock vault</button>
+            </form><p id="vaultError" class="form-error" role="alert" hidden></p><p class="pin-help">Keep this PIN to yourself. It is separate from your staff login PIN.</p>
+        </div>
     </div>
 
     <!-- 🔄 SHIFT SWAP MODAL -->
@@ -634,6 +644,6 @@
       </div>
   </div>
 
-    <script type="module" src="app.js?v=payroll-schedule-20261003"></script>
+    <script type="module" src="app.js?v=staff-portal-20261004"></script>
 </body>
 </html>

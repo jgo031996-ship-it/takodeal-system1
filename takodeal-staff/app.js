@@ -1,3 +1,4 @@
+import { installStaffPortal } from './staff-portal.js';
 import { calculateLateMinutes, resolveScheduledShift, latePay, earnedNightBonus, attendanceLateMinutes } from './payroll-safety.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
@@ -129,11 +130,14 @@ window.requestDeviceAccess = async function() {
     if(btn) { btn.innerText = "⏳ Registering..."; btn.disabled = true; }
 
     let targetBranch = selectedBranch;
-    if (selectedBranch === 'Auto') {
-        targetBranch = window.getClosestBranch() || "Main Office";
-    }
-
     try {
+         if (selectedBranch === 'Auto') {
+             if (!navigator.geolocation) throw new Error('Location is unavailable. Please choose your branch manually.');
+             const location = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy:true, timeout:12000, maximumAge:60000 }));
+             window.currentLat = location.coords.latitude; window.currentLng = location.coords.longitude;
+             targetBranch = window.getClosestBranch();
+             if (!targetBranch) throw new Error('Your branch could not be detected. Please choose it manually.');
+         }
          let deviceId = localStorage.getItem('takodeal_device_id');
          if (!deviceId) {
              deviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
@@ -175,6 +179,7 @@ window.listenToDeviceStatus = function(deviceId) {
 
         if (docSnap.exists()) {
             let status = docSnap.data().status;
+            if (status !== 'Active' && status !== 'Approved') window.lockPayslipVault?.();
             
             // 🔥 THE BUG FIX: The Manager app uses "Approved" but the Staff App expected "Active"!
             // Now it accepts both!
@@ -202,6 +207,8 @@ window.listenToDeviceStatus = function(deviceId) {
                     `;
                     document.body.appendChild(blockScreen);
                 }
+                blockScreen.querySelector('h2').textContent = status === 'Pending' ? 'Request sent to HQ' : 'Device access paused';
+                blockScreen.querySelector('p').textContent = status === 'Pending' ? 'Your device registration is awaiting HQ approval. This screen will update when it is approved.' : 'Please contact HQ to review this device in Fleet Management.';
                 blockScreen.style.display = 'flex';
             }
         } else {
@@ -986,7 +993,7 @@ window.switchView = function(viewId, btnElement) {
     
     if (viewId === 'timeclock') window.startCameraAndGPS();
     else window.stopCamera();
-    if (viewId === 'payslip') window.loadPayslipVault();
+    if (viewId === 'payslip' && window.staffVaultSession?.allows(localStorage.getItem('takodeal_staff_id'))) window.loadPayslipVault();
     if (viewId === 'schedule') window.loadStaffSchedule();
 };
 
@@ -1676,7 +1683,7 @@ window.punchTime = async function(type) {
 
         // 6. 💾 SAVE TO FIREBASE
         const attendance = {
-            staffName, branch: closestBranch, type, timestamp: serverTimestamp(),
+            staffName, staffId: localStorage.getItem('takodeal_staff_id'), branch: closestBranch, type, timestamp: serverTimestamp(),
             locationLat: window.currentLat, locationLng: window.currentLng, distanceMeters: Math.round(minDistance),
             photoBase64
         };
@@ -1690,6 +1697,7 @@ window.punchTime = async function(type) {
         await batch.commit();
 
         
+        window.loadMyAttendance?.(true);
         Swal.fire('✅ Success', `${type} logged securely at ${closestBranch}!`, 'success');
 
     } catch(e) { 
@@ -2174,7 +2182,9 @@ window.switchPayslipTab = function(tabName) {
 window.loadPayslipVault = async function() {
     let staffName = localStorage.getItem('takodeal_staff_name');
     let staffId = localStorage.getItem('takodeal_staff_id');
-    if (!staffName || !staffId) return;
+    if (!staffName || !staffId || !window.staffVaultSession?.allows(staffId)) return;
+    const vaultEpoch = window.staffVaultSession.epoch;
+    const stillOpen = () => window.staffVaultSession.allows(staffId, vaultEpoch) && localStorage.getItem('takodeal_staff_id') === staffId;
 
     const safeDate = (fbDate) => {
         if (!fbDate) return new Date();
@@ -2210,6 +2220,7 @@ window.loadPayslipVault = async function() {
 
     try {
         const staffRef = await getDoc(doc(db, "cashiers", staffId));
+        if (!stillOpen()) return;
         let staffProfile = staffRef.exists() ? staffRef.data() : {};
         let dailyRate = parseFloat(staffProfile.hourlyRate) || 0;
         let ratePerHour = dailyRate / 8;
@@ -2222,10 +2233,11 @@ window.loadPayslipVault = async function() {
         const isMatch = (dbName) => {
             if (!dbName) return false;
             let n = String(dbName).toLowerCase().trim();
-            return n === baseNameLower || n === nickNameLower || n === strippedNameLower || n.includes(strippedNameLower) || strippedNameLower.includes(n);
+            return n === baseNameLower || n === nickNameLower || n === strippedNameLower;
         };
 
         const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+        if (!stillOpen()) return;
         let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
 
@@ -2240,11 +2252,13 @@ window.loadPayslipVault = async function() {
         };
 
         let fetchStart = new Date(prevStartStr + 'T00:00:00');
-        const attQ = query(collection(db, "attendance_logs"), where("timestamp", ">=", fetchStart), orderBy("timestamp", "asc"));
+        const attQ = query(collection(db, "attendance_logs"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10)));
         const attSnap = await getDocs(attQ);
+        if (!stillOpen()) return;
         
-        const bonusQ = query(collection(db, "staff_bonuses"), where("dateAdded", ">=", fetchStart));
+        const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10)));
         const bonusSnap = await getDocs(bonusQ);
+        if (!stillOpen()) return;
 
         const analyzeCutoff = (startT, endT) => {
             let fLogs = [];
@@ -2378,7 +2392,8 @@ window.loadPayslipVault = async function() {
         let estGross = currentData.shiftsWorked * dailyRate;
         let prevEstGross = prevData.shiftsWorked * dailyRate;
 
-        const dedSnap = await getDocs(query(collection(db, "staff_deductions"), where("status", "==", "Unpaid")));
+        const dedSnap = await getDocs(query(collection(db, "staff_deductions"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10))));
+        if (!stillOpen()) return;
         let liveUnpaidVales = 0; let liveActiveDeductions = [];
         let pendingUnpaidVales = 0; 
         
@@ -2387,7 +2402,7 @@ window.loadPayslipVault = async function() {
         
         dedSnap.forEach(d => { 
             let data = d.data();
-            if (isMatch(data.staffName)) {
+            if (data.status === "Unpaid" && isMatch(data.staffName)) {
                 let dDate = safeDate(data.dateAdded || data.timestamp);
                 if (data.type === "Cash Advance" || data.type === "Staff Meal") {
                     let val = parseFloat(data.amount) || 0; 
@@ -2402,7 +2417,8 @@ window.loadPayslipVault = async function() {
             }
         });
 
-        const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
+        const ledgerSnap = await getDocs(query(collection(db, "staff_ledger"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10))));
+        if (!stillOpen()) return;
         let loanData = null;
         ledgerSnap.forEach(d => {
             if (isMatch(d.data().staffName)) loanData = d.data();
@@ -2514,7 +2530,8 @@ window.loadPayslipVault = async function() {
         detailsHtml += `</div></div>`;
         logsContainer.innerHTML = detailsHtml;
 
-        const prSnap = await getDocs(collection(db, "payroll_records"));
+        const prSnap = await getDocs(query(collection(db, "payroll_records"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10))));
+        if (!stillOpen()) return;
 
         let pendingHtml = ''; let pastHtml = ''; let pendingCount = 0;
         let allRecords = [];
@@ -2626,6 +2643,7 @@ window.loadPayslipVault = async function() {
         }
 
     } catch (e) {
+        if (!stillOpen()) return;
         console.error("Payslip Fetch Error:", e);
         document.getElementById('liveEstNetPay').innerText = "Error";
         let parentEl = document.getElementById('liveEstNetPay').parentElement;
@@ -2639,6 +2657,8 @@ window.loadPayslipVault = async function() {
 // 🧾 THE UPGRADED PAYSLIP UI ENGINE
 // ==========================================
 window.viewPastPayslip = function(encodedData) {
+    if (!window.staffVaultSession?.allows(localStorage.getItem('takodeal_staff_id'))) return;
+    const payEpoch = window.staffVaultSession.epoch;
     let d = JSON.parse(decodeURIComponent(encodedData));
     
     let disbursedDateStr = 'Pending';
@@ -2881,6 +2901,8 @@ window.viewPastPayslip = function(encodedData) {
 
 // 🔥 NEW: DEDICATED IMAGE DOWNLOADER FOR STAFF PHONES
 window.downloadStaffPayslipImage = function(encodedData) {
+    if (!window.staffVaultSession?.allows(localStorage.getItem('takodeal_staff_id'))) return;
+    const payEpoch = window.staffVaultSession.epoch;
     let d = JSON.parse(decodeURIComponent(encodedData));
     let payslipNode = document.getElementById('printableStaffPayslip');
     if (!payslipNode) return;
@@ -2891,6 +2913,7 @@ window.downloadStaffPayslipImage = function(encodedData) {
 
     // Create an invisible, perfect 800px wrapper so the phone doesn't compress it
     const printWrapper = document.createElement('div');
+    printWrapper.setAttribute('data-pay-export', 'true');
     printWrapper.style.position = 'absolute';
     printWrapper.style.left = '-9999px'; 
     printWrapper.style.top = '0';
@@ -2910,6 +2933,7 @@ window.downloadStaffPayslipImage = function(encodedData) {
 
     // Blast it into an HD Canvas!
     html2canvas(printWrapper, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
+        if (!window.staffVaultSession.allows(localStorage.getItem('takodeal_staff_id'), payEpoch)) { printWrapper.remove(); return; }
         let imgData = canvas.toDataURL("image/png");
         let link = document.createElement('a');
         
@@ -2920,12 +2944,12 @@ window.downloadStaffPayslipImage = function(encodedData) {
         link.href = imgData;
         link.click();
 
-        document.body.removeChild(printWrapper); 
+        printWrapper.remove(); 
         if (btn) { btn.innerText = origText; btn.disabled = false; }
     }).catch(err => {
         console.error("Error generating image:", err);
         Swal.fire('Error', 'Failed to generate image.', 'error');
-        document.body.removeChild(printWrapper);
+        printWrapper.remove();
         if (btn) { btn.innerText = origText; btn.disabled = false; }
     });
 };
@@ -3832,6 +3856,8 @@ window.loadMySanctionsHistory = async function() {
 // ✍️ STAFF APP: PAYSLIP SIGNATURE ENGINE
 // ========================================================
 window.openPayslipSignatureModal = function(recordId, encodedData) {
+    if (!window.staffVaultSession?.allows(localStorage.getItem('takodeal_staff_id'))) return;
+    const payEpoch = window.staffVaultSession.epoch;
     let d = JSON.parse(decodeURIComponent(encodedData));
     
     // Calculate preview math
@@ -3921,11 +3947,12 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
             canvas.addEventListener('mouseup', stopDraw);
         },
         preConfirm: () => {
+            if (!window.staffVaultSession.allows(localStorage.getItem('takodeal_staff_id'), payEpoch)) return false;
             if (!window.hasSignedStaffNTE) { Swal.showValidationMessage("You must sign inside the box to accept your payslip."); return false; }
             return document.getElementById('payslipSignatureCanvas').toDataURL('image/png');
         }
     }).then(async (res) => {
-        if (res.isConfirmed) {
+        if (res.isConfirmed && window.staffVaultSession.allows(localStorage.getItem('takodeal_staff_id'), payEpoch)) {
             Swal.fire({title: 'Saving Signature...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
             try {
                 await updateDoc(doc(db, "payroll_records", recordId), {
@@ -3933,6 +3960,7 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
                     acknowledgedAt: serverTimestamp(),
                     signatureBase64: res.value // Save drawing to Firebase!
                 });
+                if (!window.staffVaultSession.allows(localStorage.getItem('takodeal_staff_id'), payEpoch)) return;
                 Swal.fire({title: '✅ Payslip Acknowledged!', text: 'Your signed record has been securely moved to the Past Payslips vault.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
                 window.loadPayslipVault(); // Instantly refresh
             } catch(e) {
@@ -4380,3 +4408,5 @@ window.forceUpdateApp = async function() {
         }
     });
 };
+
+installStaffPortal();
