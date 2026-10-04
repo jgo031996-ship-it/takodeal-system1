@@ -303,15 +303,7 @@ window.openProfile = async function() {
             setupIdLink('linkPhilhealth', d.philhealthIdUrl);
             setupIdLink('linkPagibig', d.pagibigIdUrl);
             
-            document.getElementById('viewSssDed').innerText = '₱' + (parseFloat(d.sssDeduction) || 0).toFixed(2);
-            document.getElementById('viewPhDed').innerText = '₱' + (parseFloat(d.philhealthDeduction) || 0).toFixed(2);
-            document.getElementById('viewPagibigDed').innerText = '₱' + (parseFloat(d.pagibigDeduction) || 0).toFixed(2);
-            
-            let customDedText = "None";
-            if (d.customDeductions && d.customDeductions.length > 0) {
-                customDedText = d.customDeductions.map(c => `${c.name}: ₱${parseFloat(c.amount).toFixed(2)}`).join('<br>');
-            }
-            document.getElementById('viewCustomDed').innerHTML = customDedText;
+            // Payroll deductions are rendered only inside the locked Pay vault.
             // 🔥 LOAD PROMOTION HISTORY
             let historyHtml = "";
             if (d.roleHistory && d.roleHistory.length > 0) {

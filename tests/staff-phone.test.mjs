@@ -146,6 +146,17 @@ test('live Fleet receives new records without refresh and releases subscription 
     });
 });
 const engine=readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
+test('Profile history and contracts render without the removed public payroll fields',async()=>{
+    const h=domHarness(),errors=[];
+    const removed=new Set(['viewSssDed','viewPhDed','viewPagibigDed','viewCustomDed']);
+    h.document.getElementById=id=>removed.has(id)?null:h.node(id);
+    const source=engine.slice(engine.indexOf('window.openProfile = async function'),engine.indexOf('window.saveProfileData = async function'));
+    const context={...h,doc:()=>null,db:{},getDoc:async()=>({exists:()=>true,data:()=>({cashierName:'Sample Staff',role:'Crew'})}),console:{error:(...args)=>errors.push(args)}};
+    vm.runInNewContext(source,context);await h.window.openProfile();
+    assert.deepEqual(errors,[]);assert.match(h.node('profRoleHistory').innerHTML,/Crew/);
+    assert.match(h.node('profContracts').innerHTML,/No signed contracts/);
+    assert.equal(h.node('profileModal').style.display,'flex');
+});
 function punchHarness(fixes){
     let writes=0;const records=[],alerts=[],nodes=new Map();
     const window={getAttendanceLocation:async()=>{const next=fixes.shift();if(next instanceof Error)throw next;return next;},loadMyAttendance(){}};
