@@ -1,6 +1,7 @@
 // Only a freshly verified account and its configured PIN can start the Manager.
 export function createUnlockGate({ verify, load, change = () => {}, now = Date.now }) {
     let generation = 0, account = null, phase = 'signed-out', verifiedAt = 0;
+    const configuredPin = data => String(data?.pin === '' || data?.pin == null ? data?.securityPin ?? '' : data.pin);
     const report = (next, details = {}) => { phase = next; change({ phase, account, ...details }); };
     return {
         async identify(user) {
@@ -10,14 +11,14 @@ export function createUnlockGate({ verify, load, change = () => {}, now = Date.n
             try {
                 const data = await verify(user);
                 if (current !== generation) return;
-                if (!data || !String(data.pin ?? data.securityPin ?? '')) throw new Error('No Manager PIN is configured for this account. Ask the owner to check Staff & Security.');
+                if (!data || !configuredPin(data)) throw new Error('No Manager PIN is configured for this account. Ask the owner to check Staff & Security.');
                 account = { user, data }; verifiedAt = now(); report('pin');
             } catch (error) { if (current === generation) report('unavailable', { message: error.message }); }
         },
         async unlock(pin) {
             if (phase !== 'pin' || !account) return false;
             if (now() - verifiedAt > 300000) { await this.identify(account.user); return false; }
-            if (!pin || String(pin) !== String(account.data.pin ?? account.data.securityPin)) {
+            if (!pin || String(pin) !== configuredPin(account.data)) {
                 report('pin', { message: pin ? 'That PIN is incorrect. Please try again.' : 'Enter your Manager PIN.' }); return false;
             }
             const current = generation; report('opening');

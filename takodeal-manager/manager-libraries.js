@@ -32,9 +32,18 @@ export function prepareManagerTools(w=window,d=document) {
         generateFranchiseSOA:'html2canvas',generateIDCard:'html2canvas',exportProspectusPDF:'html2pdf',downloadContractPDF:'html2pdf',openArchiveSalesModal:'XLSX',openAddBranchModal:'L'};
     for(const [action,library] of Object.entries(tools)) {
         const original=w[action];if(typeof original!=='function') continue;
+        let busy=false;
         w[action]=async function(...args) {
-            try { await ensureManagerLibrary(library,w,d);return await original.apply(this,args); }
+            if(busy) return;busy=true;
+            try {
+                const waiting=!w[library];
+                if(waiting) w.Swal.fire({title:'Preparing your tools…',text:'This tool saves on your device after its first use.',allowOutsideClick:false,didOpen:()=>w.Swal.showLoading()});
+                await ensureManagerLibrary(library,w,d);
+                if(waiting) w.Swal.close();
+                return await original.apply(this,args);
+            }
             catch(error) { await w.Swal.fire({icon:'warning',title:'Tool unavailable',text:error.message}); }
+            finally {busy=false;}
         };
     }
 }

@@ -125,7 +125,7 @@ import { loadManagerLibraries, prepareManagerTools } from '../takodeal-manager/m
 test('first unlock only loads charts and dialogs; export and map libraries load on demand',async()=> {
     const loaded=[];const w={};const d={head:{appendChild:script=>{loaded.push(script.src);queueMicrotask(()=>script.onload?.());}},createElement:()=>({remove(){}}),getElementById:()=>null};
     await loadManagerLibraries(w,d);assert.equal(loaded.length,2);assert.ok(loaded.some(url=>url.includes('chart.js')));assert.ok(loaded.some(url=>url.includes('sweetalert2')));assert.ok(!loaded.some(url=>/xlsx|leaflet|html2pdf/.test(url)));
-    let exports=0;w.Swal={fire:async()=>{}};w.openArchiveSalesModal=()=>exports++;prepareManagerTools(w,d);await w.openArchiveSalesModal();
+    let exports=0;w.Swal={fire:async()=>{},close(){}};w.openArchiveSalesModal=()=>exports++;prepareManagerTools(w,d);await w.openArchiveSalesModal();
     assert.equal(exports,1);assert.ok(loaded.at(-1).includes('xlsx'));
 });
 test('IndexedDB reference adapter commits writes, survives reopening, isolates users and deletes edited rows',async()=> {
@@ -139,4 +139,10 @@ test('IndexedDB reference adapter commits writes, survives reopening, isolates u
 test('blocked IndexedDB does not hold the app open waiting for a database',async()=> {
     const blocked={open(){const request={};queueMicrotask(()=>request.onblocked());return request;}};
     assert.equal(await createDeviceStore(blocked).get(user.uid,'menu'),null);
+});
+test('existing numeric and legacy securityPin values remain valid configured credentials',async()=> {
+    for(const data of [{...profile,pin:6241},{...profile,pin:'',securityPin:'6241'},{...profile,pin:null,securityPin:6241}]) {
+        const gate=createUnlockGate({verify:async()=>data,load:async()=>{}});await gate.identify(user);
+        assert.equal(await gate.unlock('0000'),false);assert.equal(await gate.unlock('6241'),true);
+    }
 });
