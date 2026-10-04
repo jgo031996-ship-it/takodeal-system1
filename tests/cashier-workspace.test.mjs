@@ -2,9 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
-import {businessDate,dayWindow,attendanceRows,imageFor,updateBlocker,labelSettings,drinkLabels} from '../Takodeal-POS/cashier-data.js';
+import {businessDate,dayWindow,attendanceRows,imageFor,updateBlocker,labelSettings,drinkLabels,parkedOrderDetails} from '../Takodeal-POS/cashier-data.js';
+import {pendingSalesMarkup} from '../Takodeal-POS/pos-checkout.js';
 const punch=(name,branch,type,time)=>({staffName:name,branch,type,timestamp:new Date(time)});
 const now=+new Date('2026-10-04T14:00:00+08:00');
+test('parked details use actual Philippine timestamps, legacy items and staff metadata',()=>{
+ const d=parkedOrderDetails({timestamp:{seconds:1791095400},name:'Maya',cashier:'Ana',branch:'Cabantian',platform:'Grab',total:129,orderType:'Grab',items:[{name:'Latte',qty:2,variantName:'Large',notes:'Less ice',addons:{Shot:{qty:1},Pearls:{qty:0}}}]});
+ assert.match(d.parkedAt,/Oct 4, 2026/);assert.equal(d.cashier,'Ana');assert.equal(d.platform,'Grab');assert.deepEqual(d.items[0].addons,['1× Shot']);assert.equal(d.items[0].notes,'Less ice');
+ assert.equal(parkedOrderDetails({}).parkedAt,'Parked time not recorded');assert.equal(parkedOrderDetails({}).cashier,'Not recorded');assert.equal(parkedOrderDetails({cart:[{name:'Original',quantity:3}]}).items[0].qty,3);
+});
+test('pending sale warning escapes stored text and retains separate review-required errors',()=>{
+ const html=pendingSalesMarkup([{receiptId:'<img onerror="bad">',branch:'Maa & HQ',localTimestamp:'2026-10-04T09:00:00+08:00',syncError:{message:'Missing <LID>'}},{receiptId:'old',needsReconciliation:true}]);
+ assert.ok(!html.includes('<img'));assert.match(html,/&lt;LID&gt;/);assert.match(html,/Maa &amp; HQ/);assert.match(html,/manager reconciliation/);assert.match(html,/Oct 4, 2026/);assert.match(pendingSalesMarkup([]),/confirmed by the server/);
+});
 test('calendar dates use Philippine time around UTC midnight',()=>{assert.equal(businessDate(new Date('2026-10-03T17:00:00Z')),'2026-10-04');assert.equal(dayWindow('2026-10-04').start,+new Date('2026-10-03T16:00:00Z'));assert.throws(()=>dayWindow('2026-02-30'));});
 test('attendance pairs overnight shifts and identifies people currently on duty',()=>{
  const logs=[punch('Ana','Maa','TIME IN','2026-10-03T18:30:00+08:00'),punch('Ana','Maa','TIME OUT','2026-10-04T03:00:00+08:00'),punch('Bea','Cabantian','TIME IN','2026-10-04T09:00:00+08:00')];

@@ -72,6 +72,20 @@ export function installSaleSafety(api, environment = globalThis) {
     }
     w.getPendingSales = refreshQueue;
     w.mergePendingSales = mergePendingSales;
+    w.showPendingSales = async function() {
+        await refreshQueue();
+        const rows = w.offlineQueue;
+        const result = await w.Swal?.fire({ title: rows.length ? 'Sales awaiting upload' : 'All sales uploaded',
+            html: pendingSalesMarkup(rows), width: 740, showCancelButton: !!rows.length,
+            confirmButtonText: rows.length ? 'Retry upload' : 'Done', cancelButtonText: 'Close',
+            confirmButtonColor: '#c65c24', customClass: { popup: 'cashier-sync-dialog' } });
+        if (rows.length && result?.isConfirmed) {
+            await w.syncOfflineQueue();
+            await refreshQueue(); updateBadge();
+            await w.Swal?.fire({title: w.offlineQueue.length ? 'Some sales still need attention' : 'All sales uploaded',
+                html: pendingSalesMarkup(w.offlineQueue), width:740,confirmButtonText:'Done',confirmButtonColor:'#c65c24',customClass:{popup:'cashier-sync-dialog'}});
+        }
+    };
     function updateBadge(error) {
         const badge = environment.document.getElementById('liveClock')?.nextElementSibling;
         if (!badge) return;
@@ -80,8 +94,7 @@ export function installSaleSafety(api, environment = globalThis) {
             badge.innerHTML = `<span style="background:#eab308;color:white;padding:2px 8px;border-radius:12px;font-weight:bold;font-size:10px;">⏳ SAVED LOCALLY (${w.offlineQueue.length})${review ? ' · REVIEW REQUIRED (' + review + ')' : ''}</span>`;
             badge.title = error?.message || (review ? 'Older sales need inventory reconciliation before replay.' : 'Waiting for safe database synchronization.');
             badge.style.cursor = 'pointer';
-            badge.onclick = () => w.Swal?.fire({ title: 'Sales awaiting upload', icon: 'warning',
-                text: w.offlineQueue.map(p => `${p.receiptId}: ${p.needsReconciliation ? 'Older sale needs reconciliation.' : p.syncError?.message || 'Waiting for upload.'}`).join('\n') });
+            badge.onclick = () => w.showPendingSales();
         } else {
             badge.onclick = null; badge.style.cursor = ''; badge.title = '';
             if (typeof w.updateNetworkStatusUI === 'function') w.updateNetworkStatusUI();
@@ -244,4 +257,14 @@ export function installSaleSafety(api, environment = globalThis) {
     environment.setInterval(() => w.syncOfflineQueue(), 15000);
     refreshQueue().then(() => updateBadge()).catch(error => console.error('Local checkout storage unavailable:', error));
     watchAuditBranch();
+}
+
+export function pendingSalesMarkup(rows) {
+    const escape = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    if (!rows.length) return '<p class="cashier-sync-help">All saved sales have been confirmed by the server.</p>';
+    return '<p class="cashier-sync-help">These sales are saved on this device. Keep the app connected to upload them.</p><div class="cashier-sync-list">'+rows.map(p=>{
+        const time = p.localTimestamp == null ? NaN : +new Date(p.localTimestamp);
+        const date = Number.isFinite(time) ? new Date(time).toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'}) : 'Time not recorded';
+        return `<article><strong>${escape(p.receiptId || p.saleId || 'Saved sale')}</strong><small>${escape(date)} · ${escape(p.branch || 'Branch not recorded')}</small><p>${escape(p.needsReconciliation ? 'Older sale requires manager reconciliation before it can be replayed.' : p.syncError?.message || 'Waiting for upload.')}</p></article>`;
+    }).join('')+'</div>';
 }
