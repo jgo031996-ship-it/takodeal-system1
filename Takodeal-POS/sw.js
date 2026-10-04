@@ -3,7 +3,7 @@
 const CORE = 'takodeal-pos-core-branch-operations-20261004';
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
-const required = ['./', './index.html', './main.js', './branch-operations.js','./cash-settlement.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json'];
+const required = ['./', './index.html', './main.js', './branch-operations.js','./cash-settlement.js', './dispatch-safety.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json'];
 const sdk = 'https://www.gstatic.com/firebasejs/10.8.1/';
 const libraries = [sdk + 'firebase-app.js', sdk + 'firebase-firestore.js', sdk + 'firebase-auth.js', sdk + 'firebase-storage.js',
   'https://cdn.jsdelivr.net/npm/sweetalert2@11',

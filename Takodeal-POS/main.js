@@ -1,10 +1,11 @@
+import { receiveDispatch } from './dispatch-safety.js';
 import { MALL_FLOAT, stockRequestDue, autoRequestId, businessClock } from './branch-operations.js';
 import { closeShiftAtomic, readBranchPolicy } from './cash-settlement.js';
 // ========================================================
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer, getDocFromServer } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { installSaleSafety } from './pos-checkout.js';
 import { saleIdentity } from './pos-safety.js';
 // 🔥 NEW: Import Firebase Storage
@@ -64,6 +65,9 @@ window.query = query;
 window.where = where;
 window.collection = collection;
 window.getDocs = getDocs;
+window.getDocsFromServer = getDocsFromServer;
+window.getDocFromServer = getDocFromServer;
+window.runTransaction = runTransaction;
 window.deleteDoc = deleteDoc;
 window.doc = doc;
 window.updateDoc = updateDoc;
@@ -4472,7 +4476,7 @@ window.renderDeliveriesTab = function() {
     // 📦 STEP 1: GROUP SEPARATE FIREBASE DOCS BY DISPATCH
     let dispatchGroups = {};
     window.incomingDeliveriesList.forEach(del => {
-        let groupKey = del.dispatchId || `${del.date}_${del.driver}`;
+        let groupKey = del.batchId || del.dispatchId || `${del.date}_${del.driver}`;
         if (!dispatchGroups[groupKey]) {
             dispatchGroups[groupKey] = {
                 dispatchId: groupKey,
@@ -4595,132 +4599,24 @@ window.toggleMissingItemRow = function(itemId) {
 };
 
 window.submitGroupedDispatch = async function(groupKey, encodedItems) {
-    let items = JSON.parse(decodeURIComponent(encodedItems));
-    let masterBtn = document.getElementById(`btn_submit_dispatch_${groupKey}`);
-    
-    let itemsToProcess = [];
-    for (let item of items) {
-        let isMissing = document.getElementById(`missing_check_${item.id}`).checked;
-        let inputVal = document.getElementById(`recv_val_${item.id}`).value;
-        let remarkVal = document.getElementById(`remark_val_${item.id}`).value.trim();
-        let actualDisplayQty = parseFloat(inputVal);
-
-        if (isMissing) {
-            actualDisplayQty = 0;
-        } else if (isNaN(actualDisplayQty) || actualDisplayQty < 0) {
-            actualDisplayQty = parseFloat(document.getElementById(`recv_val_${item.id}`).placeholder);
-        }
-
-        itemsToProcess.push({
-            ...item,
-            actualDisplayQty: actualDisplayQty,
-            isMissing: isMissing,
-            remarks: remarkVal
-        });
+    const button=document.getElementById('btn_submit_dispatch_'+groupKey);
+    if (button?.disabled) return;
+    const items=JSON.parse(decodeURIComponent(encodedItems)),values=[];
+    for (const item of items) {
+        const input=document.getElementById('recv_val_'+item.id),missing=document.getElementById('missing_check_'+item.id)?.checked;
+        const actualDisplayQty=missing?0:Number(input?.value===''?input.placeholder:input?.value);
+        if (!Number.isFinite(actualDisplayQty) || actualDisplayQty<0) return Swal.fire('Check quantity','Enter a valid received quantity for '+item.item+'.','warning');
+        values.push({id:item.id,actualDisplayQty,isMissing:!!missing,remarks:document.getElementById('remark_val_'+item.id)?.value.trim() || ''});
     }
-
-    if (!confirm(`Are you sure you want to verify receipt for this entire shipment sheet?`)) return;
-
-    if (masterBtn) { masterBtn.innerText = "⏳ Processing Bulk Safe-Deposit..."; masterBtn.disabled = true; }
-    let safeBranch = localStorage.getItem('takodeal_device_branch');
-
+    const confirm=await Swal.fire({title:'Receive this shipment?',text:'The saved quantities will be added to this branch once.',icon:'question',showCancelButton:true});
+    if (!confirm.isConfirmed) return;
+    if (button) {button.disabled=true;button.innerText='Receiving shipment…';}
     try {
-        await Promise.all(itemsToProcess.map(async (item) => {
-            let convRate = item.convRate || 1;
-            let baseUom = item.uom;
-            let actualBaseQty = item.actualDisplayQty * convRate;
-            let expectedDisplayQty = item.displayQty || item.qty;
-            let expectedBaseQty = expectedDisplayQty * convRate;
-            let varianceBase = actualBaseQty - expectedBaseQty;
-
-            let exceptionStatus = "Received";
-            if (item.isMissing) {
-                exceptionStatus = "Lost in Transit";
-            } else if (varianceBase !== 0) {
-                exceptionStatus = "Discrepancy";
-            }
-
-            if (!item.isMissing && actualBaseQty > 0) {
-                const targetQ = query(collection(db, "inventory"), where("branch", "==", safeBranch), where("name", "==", item.item));
-                const targetSnap = await getDocs(targetQ);
-
-                let oldStockForLog = 0;
-
-                if (targetSnap.empty) {
-                    // 🔥 THE NEW ITEM CLONE FIX: Fetch HQ Master Data to perfectly copy the image and settings!
-                    const hqQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"), where("name", "==", item.item));
-                    const hqSnap = await getDocs(hqQ);
-                    let hqData = hqSnap.empty ? {} : hqSnap.docs[0].data();
-
-                    await addDoc(collection(db, "inventory"), { 
-                        branch: safeBranch, 
-                        name: item.item, 
-                        uom: hqData.uom || baseUom, 
-                        currentStock: actualBaseQty, 
-                        category: hqData.category || item.category || "Ingredients", 
-                        purchaseUom: hqData.purchaseUom || item.purchaseUom || baseUom,
-                        conversionOriginal: convRate, 
-                        conversionRate: convRate, 
-                        cost: item.cost || 0, 
-                        baseCost: hqData.baseCost || 0,
-                        reorderLevel: item.reorderLevel || 10, 
-                        showInPrep: hqData.showInPrep !== undefined ? hqData.showInPrep : true,
-                        allowRequest: hqData.allowRequest !== undefined ? hqData.allowRequest : true,
-                        image: hqData.image || null // 🔥 Securely copies the picture!
-                    });
-                } else {
-                    let tRef = targetSnap.docs[0].ref;
-                    let originalStock = targetSnap.docs[0].data().currentStock || 0;
-                    oldStockForLog = originalStock;
-
-                    // 🔥 THE WIPE-THE-SLATE FIX
-                    // If current stock is negative (ghost debt), we force it to 0 before adding the delivery!
-                    let baseStockMath = originalStock < 0 ? 0 : originalStock;
-                    let newStock = baseStockMath + actualBaseQty;
-
-                    await updateDoc(tRef, { currentStock: newStock });
-                }
-
-                // Add a note in the Manager's Trace Ledger so they know the ghost debt was wiped!
-                let resetNote = oldStockForLog < 0 ? ` (Wiped ${oldStockForLog.toFixed(2)} negative ghost debt)` : '';
-
-                await addDoc(collection(db, "stock_logs"), {
-                    branch: safeBranch, item: item.item, uom: baseUom, oldQty: oldStockForLog,
-                    newQty: (oldStockForLog < 0 ? 0 : oldStockForLog) + actualBaseQty, variance: actualBaseQty, 
-                    type: "Delivery Received", note: `Group Batch Shipment Confirmed${resetNote}`, user: localStorage.getItem('cashierName') || 'System', timestamp: serverTimestamp()
-                });
-            }
-
-            await updateDoc(doc(db, "dispatch_logs", item.id), {
-                status: exceptionStatus,
-                receivedQty: actualBaseQty, 
-                variance: varianceBase,     
-                receivedDisplayQty: item.actualDisplayQty, 
-                receivedAt: serverTimestamp(),
-                receivedBy: localStorage.getItem('cashierName') || 'Cashier',
-                receivingRemarks: item.remarks
-            });
-
-            if (item.isMissing || varianceBase !== 0) {
-                await addDoc(collection(db, "manager_alerts"), {
-                    type: "DELIVERY_DISCREPANCY",
-                    branch: safeBranch,
-                    cashier: localStorage.getItem('cashierName') || 'Cashier',
-                    message: `SH_ALERT: ${item.item} delivery discrepancy flagged at ${safeBranch}. Status: ${exceptionStatus}. Expected: ${expectedDisplayQty}, Got: ${item.actualDisplayQty}. Note: "${item.remarks || 'No remarks'}"`,
-                    timestamp: serverTimestamp(),
-                    isRead: false
-                });
-            }
-        }));
-
-        alert("🎉 Complete shipment sheet successfully verified and deposited to database registers!");
-
-    } catch (error) {
-        console.error("Bulk Process Error: ", error);
-        alert("❌ Bulk write execution failure. Please check your data connection settings.");
-    } finally {
-        if (masterBtn) { masterBtn.innerText = "Confirm and Receive Complete Shipment"; masterBtn.disabled = false; }
-    }
+        await receiveDispatch(window,{branch:localStorage.getItem('takodeal_device_branch'),actor:localStorage.getItem('cashierName') || 'Cashier',items:values});
+        window.invalidateCache?.('inventory');await window.loadStockRequestUI?.();
+        Swal.fire('Shipment received','Stock and the delivery record were saved together.','success');
+    } catch(error) {Swal.fire('Receipt not completed',error.message,'error');}
+    finally {if(button){button.disabled=false;button.innerText='Confirm and Receive Complete Shipment';}}
 };
 
 // ==========================================

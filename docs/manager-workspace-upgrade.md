@@ -14,7 +14,7 @@ Bulk menu CSVs contain actual BOM rows and all platform prices. Use the file exp
 
 ## Validation
 
-98 calculation, retry, rollback, recipe, payroll, cache, dispatch, CSV, and scheduling checks pass locally. The added tests exercise concurrent clients, lost acknowledgements, partial deliveries, and a scheduler lock that survives request deletion. Both app scripts parse. The Manager UI was checked in a local preview with sample data; no production checkout, remittance receipt, or purge was performed during verification.
+103 calculation, retry, rollback, recipe, payroll, cache, dispatch, CSV, and scheduling checks pass locally. The added tests exercise concurrent clients, lost acknowledgements, partial deliveries, and a scheduler lock that survives request deletion. Both app scripts parse. The Manager UI was checked in a local preview with sample data; no production checkout, remittance receipt, or purge was performed during verification.
 
 ## Quick check after updating
 
@@ -24,3 +24,5 @@ Bulk menu CSVs contain actual BOM rows and all platform prices. Use the file exp
 4. Open Financial Flow and Dispatch Stock: titles, amounts, and filter choices should be readable.
 5. Open Request schedule and review the saved day/time.
 6. At the next genuine mall shift, confirm ₱2,000 starting cash. After closing, inspect the pending remittance before verifying actual receipt.
+
+Delivery returns and cashier receipt are saved as transactions. A returned delivery cannot be received, stock returns only once to its original source, and existing negative balances remain visible until an actual stock count corrects them.

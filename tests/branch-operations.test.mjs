@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
 import { mallCashPlan, stockRequestDue, autoRequestId, businessClock, archiveableShift } from '../takodeal-manager/branch-operations.js';
 import { closeShiftAtomic, approveRemittanceAtomic } from '../takodeal-manager/cash-settlement.js';
-import { commitDispatch } from '../takodeal-manager/dispatch-safety.js';
+import { commitDispatch, transitionDispatch, receiveDispatch } from '../takodeal-manager/dispatch-safety.js';
 import { createCollectionCache } from '../takodeal-manager/collection-cache.js';
 import { reconcileOrder, renderFinancialFlow } from '../takodeal-manager/manager-workspace.js';
 import { menuCsv, validateMenuCsv, parseCsv } from '../takodeal-manager/menu-bulk.js';
@@ -112,7 +112,7 @@ test('sidebar ordering reconciles removed tabs and new tabs without duplicates; 
     assert.match(html,/₱90,246\.60/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);
 });
 test('independently hosted apps share identical cash policies and settlement modules',()=> {
-    for(const name of ['branch-operations.js','cash-settlement.js'])assert.equal(readFileSync(new URL('../Takodeal-POS/'+name,import.meta.url),'utf8'),readFileSync(new URL('../takodeal-manager/'+name,import.meta.url),'utf8'));
+    for(const name of ['branch-operations.js','cash-settlement.js','dispatch-safety.js'])assert.equal(readFileSync(new URL('../Takodeal-POS/'+name,import.meta.url),'utf8'),readFileSync(new URL('../takodeal-manager/'+name,import.meta.url),'utf8'));
 });
 test('bulk menu export uses actual BOM rows and round-trips comma/quote/newline names with platform prices',()=> {
     const menu=[{id:'one',name:'Sauce, "special"\nlarge',category:'Takoyaki',price:90,grabPrice:110,foodpandaPrice:115,addons:[]}];
@@ -151,4 +151,48 @@ test('actual Cashier scheduler makes no early reads and uses a shared daily lock
     assert.equal([...h.docs.keys()].filter(key=>key.startsWith('purchase_orders/')).length,1);
     const requestId=autoRequestId('Citygate',new Date('2026-10-09T10:00:00Z'));assert.equal(h.get('purchase_orders/'+requestId).items[0].physicalStock,undefined);
     h.docs.delete('purchase_orders/'+requestId);const another=stockRequestClient(h,new Date('2026-10-09T11:00:00Z'));await another.run();assert.equal(h.get('purchase_orders/'+requestId),undefined);
+});
+
+
+function receivingEnvironment() {
+    const h=deliveryEnvironment();
+    h.api.getDocFromServer=async reference=>({exists:()=>h.docs.has(reference.path),data:()=>structuredClone(h.get(reference.path))});return h;
+}
+test('delivery returns credit only their original source once, including franchise credit and lost acknowledgments',async()=>{
+    const h=receivingEnvironment();h.put('branches/mall',{name:'Citygate',isFranchise:true});
+    await commitDispatch(h.api,{id:'return-one',source:'Main Office',destination:'Citygate',driver:'Test',actor:'Test',items:[{name:'Fork',qty:30,cost:2}]});
+    h.loseNextAck();await assert.rejects(transitionDispatch(h.api,{ids:['return-one-0'],mode:'return',actor:'Test'}),/lost/);
+    await Promise.all(Array.from({length:15},()=>transitionDispatch(h.api,{ids:['return-one-0'],mode:'return',actor:'Test'})));
+    assert.equal(h.get('inventory/hq').currentStock,100);assert.equal(h.get('inventory/city').currentStock,7);
+    assert.equal(h.get('franchise_ledger/supply-return-return-one-0').amount,60);assert.equal(h.get('dispatch_logs/return-one-0').status,'Backloaded');
+    h.docs.delete('dispatch_logs/return-one-0');await commitDispatch(h.api,{id:'return-one',source:'Main Office',destination:'Citygate',driver:'Test',actor:'Test',items:[{name:'Fork',qty:30,cost:2}]});assert.equal(h.get('inventory/hq').currentStock,100);
+});
+test('arrival and cashier receipt retain existing negative stock, create one receipt, and cannot be returned afterward',async()=>{
+    const h=receivingEnvironment();h.put('inventory/city',{branch:'Citygate',name:'Fork',currentStock:-5,uom:'piece'});
+    await commitDispatch(h.api,{id:'receipt',source:'Main Office',destination:'Citygate',driver:'Test',actor:'Test',items:[{name:'Fork',qty:30}]});
+    await transitionDispatch(h.api,{ids:['receipt-0'],mode:'arrive',actor:'Test'});
+    const input={branch:'Citygate',actor:'Cashier',items:[{id:'receipt-0',actualDisplayQty:30,isMissing:false}]};
+    h.loseNextAck();await assert.rejects(receiveDispatch(h.api,input),/lost/);await Promise.all(Array.from({length:15},()=>receiveDispatch(h.api,input)));
+    assert.equal(h.get('inventory/city').currentStock,25);assert.equal(h.get('dispatch_logs/receipt-0').status,'Received');
+    await assert.rejects(transitionDispatch(h.api,{ids:['receipt-0'],mode:'return',actor:'Test'}),/cashier/);assert.equal(h.get('inventory/hq').currentStock,70);
+});
+test('return and receipt contention cannot create stock at both locations; failures and duplicate stock roll back',async()=>{
+    const h=receivingEnvironment();await commitDispatch(h.api,{id:'race',source:'Main Office',destination:'Citygate',driver:'Test',actor:'Test',items:[{name:'Fork',qty:30}]});await transitionDispatch(h.api,{ids:['race-0'],mode:'arrive',actor:'Test'});
+    const input={branch:'Citygate',actor:'Cashier',items:[{id:'race-0',actualDisplayQty:30,isMissing:false}]};
+    h.failNextCommit();await assert.rejects(receiveDispatch(h.api,input),/rejected/);assert.equal(h.get('inventory/city').currentStock,7);
+    h.put('inventory/city-copy',{branch:'Citygate',name:'Fork',currentStock:2});await assert.rejects(receiveDispatch(h.api,input),/Duplicate/);h.docs.delete('inventory/city-copy');
+    const results=await Promise.allSettled([receiveDispatch(h.api,input),transitionDispatch(h.api,{ids:['race-0'],mode:'return',actor:'Test'})]);assert.equal(results.filter(x=>x.status==='fulfilled').length,1);
+    assert.equal(h.get('inventory/hq').currentStock+h.get('inventory/city').currentStock,107);
+});
+test('first delivery to a new branch item clones its source metadata once across tablets',async()=>{
+    const h=receivingEnvironment();h.docs.delete('inventory/city');h.put('inventory/hq',{branch:'Main Office',name:'Fork',currentStock:100,uom:'piece',image:'sample.png',baseCost:2});
+    await commitDispatch(h.api,{id:'new-stock',source:'Main Office',destination:'Citygate',driver:'Test',actor:'Test',items:[{name:'Fork',qty:30}]});await transitionDispatch(h.api,{ids:['new-stock-0'],mode:'arrive',actor:'Test'});
+    await Promise.all(Array.from({length:15},()=>receiveDispatch(h.api,{branch:'Citygate',actor:'Cashier',items:[{id:'new-stock-0',actualDisplayQty:30,isMissing:false}]})));
+    const created=[...h.docs.values()].filter(x=>x.branch==='Citygate'&&x.name==='Fork');assert.equal(created.length,1);assert.equal(created[0].currentStock,30);assert.equal(created[0].image,'sample.png');
+});
+test('Cashier exposes each server and transaction API required by the imported cash and delivery workflows',()=>{
+    const source=readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8'),context={window:{}};
+    for(const name of ['getDocsFromServer','getDocFromServer','runTransaction','serverTimestamp']){
+        context[name]=()=>name;const bridge=source.match(new RegExp('window\\.'+name+' = '+name+';'))?.[0];assert.ok(bridge,'Missing workflow API '+name);vm.runInNewContext(bridge,context);assert.equal(context.window[name],context[name]);
+    }
 });

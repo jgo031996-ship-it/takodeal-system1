@@ -1,6 +1,6 @@
 import { installMenuBulk } from './menu-bulk.js';
 import { approveRemittanceAtomic } from './cash-settlement.js';
-import { commitDispatch } from './dispatch-safety.js';
+import { commitDispatch, transitionDispatch } from './dispatch-safety.js';
 import { initManagerDialogs } from './manager-dialogs.js';
 import { initManagerWorkspace, renderFinancialFlow, escapeHtml } from './manager-workspace.js';
 import { archiveableShift, businessClock, money, mallCashPlan } from './branch-operations.js';
@@ -2153,55 +2153,15 @@ window.approvePurchaseOrder = async function(poId) {
 // ========================================================
 // 🚚 UPGRADED DISPATCH DETAILS MODAL (WITH VARIANCE & TIME)
 // ========================================================
-window.backloadDispatchItem = async function(logId, itemName, qtyToReturn, destinationBranch) {
-    if (!(await window.ManagerUI.confirm(`⚠️ BACKLOAD ITEM\n\nAre you sure you want to cancel the delivery of ${qtyToReturn} units of "${itemName}" to ${destinationBranch}?\n\nThis will mark the item as "Backloaded" and securely return the physical stock to the Main Office warehouse.`))) return;
-
-    Swal.fire({ title: 'Processing Backload...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-
+window.backloadDispatchItem = async function(logId) {
+    if (!await window.ManagerUI.confirm('Return this unreceived delivery item to its original source stock?')) return;
+    Swal.fire({title:'Returning delivery',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
     try {
-        // 1. Mark the dispatch log as Backloaded
-        await updateDoc(doc(db, "dispatch_logs", logId), { 
-            status: "Backloaded", 
-            receivedDisplayQty: 0, 
-            receivedQty: 0 
-        });
-
-        // 2. Refund the stock back to the Main Office
-        const invQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"), where("name", "==", itemName));
-        const invSnap = await getDocs(invQ);
-        
-        if (!invSnap.empty) {
-            let invDoc = invSnap.docs[0];
-            let currentStock = parseFloat(invDoc.data().currentStock) || 0;
-            let uom = invDoc.data().uom || 'units';
-            
-            await updateDoc(invDoc.ref, { currentStock: currentStock + qtyToReturn });
-
-            // 3. Write an official Stock Log for the return
-            await addDoc(collection(db, "stock_logs"), {
-                branch: "Main Office", item: itemName, uom: uom,
-                oldQty: currentStock, newQty: currentStock + qtyToReturn, variance: qtyToReturn,
-                type: "Delivery Backload", note: `Cancelled transit to ${destinationBranch}. Stock returned.`,
-                user: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: new Date()
-            });
-        }
-
-        Swal.fire({
-            title: '✅ Item Backloaded',
-            text: `${itemName} has been successfully cancelled and returned to HQ inventory.`,
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl' }
-        });
-        
-        // Refresh UI
-        document.getElementById('dispatchDetailsModal').style.display = 'none';
-        window.loadDispatchLogs();
-        if(typeof window.loadInventoryData === 'function') window.loadInventoryData();
-        
-    } catch(e) {
-        console.error("Backload Error:", e);
-        Swal.fire('Error', 'Failed to backload item. Please check console.', 'error');
-    }
+        await transitionDispatch(window,{ids:[logId],mode:'return',actor:window.sessionUser?.cashierName || 'Manager'});
+        document.getElementById('dispatchDetailsModal').style.display='none';
+        window.invalidateCache('inventory');window.loadDispatchLogs();
+        Swal.fire('Stock returned','This delivery item was returned to its source once.','success');
+    } catch(error) { Swal.fire('Return not completed',error.message,'error'); }
 };
 
 window.resolveMissingDispatchItems = async function(encodedGroup) {
@@ -2947,7 +2907,7 @@ window.renderLogisticsUI = function() {
 
     let dispatchGroups = {};
     delData.forEach(del => {
-        let groupKey = del.dispatchId || `${del.date}_${del.driver}`;
+        let groupKey = del.batchId || del.dispatchId || `${del.date}_${del.driver}`;
         if (!dispatchGroups[groupKey]) dispatchGroups[groupKey] = { dispatchId: groupKey, toBranch: del.toBranch, date: del.date, time: del.time, driver: del.driver, status: del.status, items: [] };
         dispatchGroups[groupKey].items.push(del);
     });
@@ -3221,19 +3181,12 @@ window.viewDeliveryDetails = function(encodedGroup) {
 };
 
 window.markDispatchArrived = async function(encodedGroup) {
-    let group = JSON.parse(decodeURIComponent(encodedGroup));
-    if (!(await window.ManagerUI.confirm(`Mark delivery to ${group.toBranch} as ARRIVED?\n\nThe branch staff will now be notified and can begin receiving the items.`))) return;
-
-    Swal.fire({title: 'Updating Status...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
+    const group=JSON.parse(decodeURIComponent(encodedGroup));
+    if (!await window.ManagerUI.confirm('Mark the delivery to '+group.toBranch+' as arrived for cashier receipt?')) return;
     try {
-        let promises = [];
-        group.items.forEach(item => {
-            if (item.status === 'In Transit') promises.push(updateDoc(doc(db, "dispatch_logs", item.id), { status: 'Arrived', arrivedAt: serverTimestamp() }));
-        });
-        await Promise.all(promises);
-        Swal.fire('Arrived!', 'Delivery marked as arrived at the branch.', 'success');
-    } catch (e) { console.error(e); Swal.fire('Error', 'Failed to update status.', 'error'); }
+        await transitionDispatch(window,{ids:group.items.map(item=>item.id),mode:'arrive',actor:window.sessionUser?.cashierName || 'Manager'});
+        window.loadDispatchLogs();Swal.fire('Delivery arrived','The cashier can now receive the stock.','success');
+    } catch(error) { Swal.fire('Status not changed',error.message,'error'); }
 };
 
 window.resolveMissingDispatchItems = async function(encodedGroup) {
@@ -3327,50 +3280,25 @@ window.resolveMissingDispatchItems = async function(encodedGroup) {
 };
 
 window.recallDispatch = async function(encodedGroup) {
-    let group = JSON.parse(decodeURIComponent(encodedGroup));
-    if (!(await window.ManagerUI.confirm("⚠️ RECALL DISPATCH?\n\nThis will remove the delivery from the destination branch, refund the inventory back to HQ, and load the items into your Dispatch Cart to edit. Proceed?"))) return;
-
-    Swal.fire({title: 'Recalling Delivery...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
+    const group=JSON.parse(decodeURIComponent(encodedGroup));
+    if (!await window.ManagerUI.confirm('Recall this unreceived delivery? Its stock will return to the original source and the items will be loaded for editing.')) return;
+    Swal.fire({title:'Recalling delivery',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
     try {
-        if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
-        let branchSelect = document.getElementById('dispTo');
-        if(branchSelect) branchSelect.value = group.toBranch;
-
-        for (let item of group.items) {
-            let originBranch = item.fromBranch || "Main Office";
-            const invQ = query(collection(db, "inventory"), where("branch", "==", originBranch), where("name", "==", item.item));
-            const invSnap = await getDocs(invQ);
-            
-            if (!invSnap.empty) {
-                let invDoc = invSnap.docs[0];
-                let currentStock = parseFloat(invDoc.data().currentStock) || 0;
-                let refundQty = parseFloat(item.qty) || 0; 
-                
-                await updateDoc(invDoc.ref, { currentStock: currentStock + refundQty });
-                await addDoc(collection(db, "stock_logs"), { branch: originBranch, item: item.item, oldQty: currentStock, newQty: currentStock + refundQty, variance: refundQty, type: "Dispatch Recalled", note: `Recalled delivery originally sent to ${group.toBranch}`, user: localStorage.getItem('cashierName') || 'Manager', timestamp: serverTimestamp() });
-            }
-
-            window.dispatchCart.push({
-                id: item.sourceId || item.id, sourceId: item.sourceId || item.id, itemName: item.item, name: item.item,
-                rawQty: parseFloat(item.displayQty) || parseFloat(item.qty) || 0, qty: parseFloat(item.qty) || 0,
-                uom: item.baseUom || item.uom, baseUom: item.baseUom || item.uom, friendlyUom: item.displayUom || item.uom,
-                purchaseUom: item.purchaseUom || item.displayUom || item.uom, selectedUom: (item.displayUom !== item.uom) ? 'purch' : 'base',
-                convRate: parseFloat(item.convRate) || 1, conversionRate: parseFloat(item.convRate) || 1, category: item.category || "Ingredients"
-            });
-
-            await deleteDoc(doc(db, "dispatch_logs", item.id));
-        }
-
-        localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-
-        if (typeof window.renderDispatchCart === 'function') window.renderDispatchCart();
-        if (typeof window.switchView === 'function') window.switchView('dispatch');
-        
-        document.getElementById('dispatchDetailsModal').style.display = 'none';
-        Swal.fire({title: 'Recalled!', text: 'Dispatch reverted. Items are back in your Dispatch Cart.', icon: 'success', timer: 2500, showConfirmButton: false});
-
-    } catch (e) { console.error(e); Swal.fire('Error', 'Failed to recall dispatch.', 'error'); }
+        const returned=await transitionDispatch(window,{ids:group.items.map(item=>item.id),mode:'return',actor:window.sessionUser?.cashierName || 'Manager'});
+        const source=returned[0]?.sourceBranch || returned[0]?.fromBranch;
+        const sourceSelect=document.getElementById('dispFrom');if(sourceSelect && source)sourceSelect.value=source;
+        const destination=document.getElementById('dispTo');if(destination)destination.value=group.toBranch;
+        window.dispatchCart ||= [];
+        for (const item of returned) if (!window.dispatchCart.some(row=>row.recalledFrom===item.id)) window.dispatchCart.push({
+            id:item.sourceId || item.id,sourceId:item.sourceId || item.id,recalledFrom:item.id,itemName:item.item,name:item.item,
+            rawQty:Number(item.displayQty || item.qty),qty:Number(item.qty),uom:item.uom,baseUom:item.uom,friendlyUom:item.displayUom || item.uom,
+            purchaseUom:item.displayUom || item.uom,selectedUom:item.displayUom!==item.uom?'purch':'base',convRate:Number(item.convRate || 1),conversionRate:Number(item.convRate || 1),category:item.category || 'Ingredients'
+        });
+        localStorage.setItem('takodeal_dispatch_cart',JSON.stringify(window.dispatchCart));
+        window.invalidateCache('inventory');window.renderDispatchCart();window.switchView('dispatch');
+        document.getElementById('dispatchDetailsModal').style.display='none';window.loadDispatchLogs();
+        Swal.fire('Delivery recalled',returned.length?'Stock returned once; items are ready for editing.':'This delivery was already returned. Stock was not added again.','success');
+    } catch(error) { Swal.fire('Recall not completed',error.message,'error'); }
 };
 
 window.bulkDeleteLogistics = async function() {
