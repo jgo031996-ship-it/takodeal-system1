@@ -10,6 +10,12 @@ export function initManagerWorkspace() {
     const edit = document.getElementById('editSidebarTabs');
     if (!menu || !edit) return;
     document.getElementById('nav-products')?.remove();
+    const placeSopBelowHr = () => {
+        const hr = document.getElementById('nav-payroll')?.closest('.nav-item-wrapper');
+        const sop = document.getElementById('nav-sop');
+        if (hr?.parentElement === menu && sop?.parentElement === menu) hr.after(sop);
+    };
+    placeSopBelowHr();
     const rows = [...menu.children].filter(el => el.matches('a,.nav-item-wrapper'));
     const idFor = el => el.id || el.querySelector('[id^="nav-"]')?.id;
     const defaults = rows.map(idFor), byId = new Map(rows.map(el => [idFor(el),el]));
@@ -18,6 +24,18 @@ export function initManagerWorkspace() {
     const save = () => { try { localStorage.setItem(key, JSON.stringify([...menu.children].map(idFor).filter(Boolean))); } catch { window.ManagerUI.notify('This browser could not save your sidebar arrangement.'); } };
     const apply = order => reconcileOrder(order, defaults).forEach(id => menu.append(byId.get(id)));
     try { apply(JSON.parse(localStorage.getItem(key) || '[]')); } catch { apply(defaults); }
+    // Apply the requested placement once to existing saved arrangements too.
+    // Other tabs retain their order, and future user rearrangements remain editable.
+    const sopPlacementKey = 'takodeal_manager_sop_below_hr_v1';
+    let sopPlacementApplied = false;
+    try { sopPlacementApplied = localStorage.getItem(sopPlacementKey) === 'done'; } catch {}
+    if (!sopPlacementApplied) {
+        placeSopBelowHr();
+        try {
+            localStorage.setItem(key, JSON.stringify([...menu.children].map(idFor).filter(Boolean)));
+            localStorage.setItem(sopPlacementKey, 'done');
+        } catch {}
+    }
     for (const row of rows) {
         const controls = document.createElement('span'); controls.className = 'sidebar-move-controls';
         for (const [label,offset,glyph] of [['Move up',-1,'↑'],['Move down',1,'↓']]) {
