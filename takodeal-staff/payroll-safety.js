@@ -89,7 +89,7 @@ export function resolveScheduledShift(logDate, branch, staffName, schedule, prof
     // Multiple staff slots may share one rule (e.g. Night 1, 2 and 3).
     // For older cutoffs with no saved assignment, infer only a common time/category;
     // never pick an employee slot or resolve genuinely conflicting configurations.
-    if (!assigned.length && matches[1]?.distance === matches[0]?.distance) {
+    if (!assigned.length && matches.length > 1 && matches[1].distance === matches[0].distance) {
         const nearest = matches.filter(match => match.distance === matches[0].distance);
         const first = nearest[0];
         const sameRule = nearest.every(match => match.expectedStartAt.getTime() === first.expectedStartAt.getTime()

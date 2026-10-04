@@ -219,3 +219,42 @@ for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
         assert.equal(h.elements.payrollGrandTotalAmount.innerText,'₱6,450.00');
     });
 }
+
+
+test('no matching shift returns null for empty, inactive, invalid and out-of-window configurations',()=>{
+    const cases = [
+        {configs:[],time:'15:41'},
+        {configs:[{id:'mid',startTime:'15:30',endTime:'23:30',active:false}],time:'15:41'},
+        {configs:[{id:'mid',startTime:'invalid',endTime:'23:30'}],time:'15:41'},
+        {configs:[{id:'mid',startTime:'15:30',endTime:'23:30',days:[0]}],time:'15:41'},
+        {configs:[{id:'mid',startTime:'15:30',endTime:'23:30'}],time:'06:00'}
+    ];
+    for(const {configs,time} of cases) {
+        const s=schedule();s.currentSchedule={};s.branchConfig['Test Branch']=configs;
+        const shift=match(s,at(time));
+        assert.equal(shift,null);
+        assert.equal(payroll.earnedNightBonus(profile,shift,at('23:30')),0);
+        assert.deepEqual(payroll.calculateLateMinutes(at(time),'Test Branch','Test Staff',s),
+            {lateMinutes:0,expectedStartHour:null,wasScheduled:false});
+    }
+});
+for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
+    test(`${name}: unmatched clock-in keeps attendance and does not abort other eligible shifts`,async()=>{
+        const stamp=date=>({toDate:()=>new Date(date)});
+        const logs=[
+            {staffName:'Test Staff',branch:'Test Branch',type:'TIME IN',timestamp:stamp('2026-09-17T06:00:00+08:00')},
+            {staffName:'Test Staff',branch:'Test Branch',type:'TIME OUT',timestamp:stamp('2026-09-17T14:00:00+08:00')},
+            {staffName:'Test Staff',branch:'Test Branch',type:'TIME IN',timestamp:stamp('2026-09-17T18:30:00+08:00')},
+            {staffName:'Test Staff',branch:'Test Branch',type:'TIME OUT',timestamp:stamp('2026-09-18T03:00:00+08:00')}
+        ];
+        const h=payrollUi({logs,scheduleData:repeatedNightSchedule(),startDate:'2026-09-16',endDate:'2026-09-30'});
+        vm.runInContext(extract(name),h.context);await h.window[name]();
+        assert.deepEqual(h.errors,[]);
+        const row=h.window.globalPayrollCache['Test Staff'];
+        assert.equal(row.basicPay,900);assert.equal(row.nightBonus,50);assert.equal(row.lateDeduction,0);
+        assert.equal(row.logs.length,2);assert.equal(row.logs[0].hrs,'8.00');
+        assert.doesNotMatch(row.logs[0].remark,/bonus|Late/);
+        assert.match(row.logs[1].remark,/Night bonus: \+₱50.00/);
+        assert.equal(h.elements.payrollGrandTotalAmount.innerText,'₱950.00');
+    });
+}
