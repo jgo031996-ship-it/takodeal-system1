@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v2-payroll-schedule';
+const CACHE_NAME = 'takodeal-staff-v3-shared-shift-rules';
 self.addEventListener('install', (e) => {
     e.waitUntil(caches.open(CACHE_NAME).then((cache) => {
         return cache.addAll(['/', '/index.html', '/logo.jpg', '/payroll-safety.js']);
