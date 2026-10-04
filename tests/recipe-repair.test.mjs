@@ -136,16 +136,16 @@ function managerFunction(name, context) {
     return context.window[name];
 }
 test('failed recipe save retains deletions and a new product stays new; retry commits both links together', async () => {
-    const elements = Object.fromEntries(Object.entries({ btnSaveAdvProd: '', advProdId: '', advProdName: 'A', advProdCat: 'Food', advProdPrice: '10', advProdMixMatch: '', advancedProductModal: '' }).map(([id, value]) => [id, { value, style: {}, disabled: false }]));
+    const elements = Object.fromEntries(Object.entries({ btnSaveAdvProd: '', advProdId: '', advProdName: 'A', advProdCat: 'Food', advProdPrice: '10', advProdGrabPrice: '12', advProdFpPrice: '13', advProdMixMatch: '', advancedProductModal: '' }).map(([id, value]) => [id, { value, style: {}, disabled: false }]));
     let fail = true, saves = [], invalidations = [];
     const context = { console: { error() {} }, alert() {}, recipeProblems,
         document: { getElementById: id => elements[id], querySelectorAll: () => [] },
         Swal: { fire() {} },
-        window: { db: {}, currentAdvRecipe: [{ docId: 'bom-1', ingredientName: 'Sauce', qty: 35 }], deletedAdvRecipes: ['remove-1'],
+        window: { ManagerUI:{notify(){}}, query:(...args)=>args, where:()=>({}), db: {}, currentAdvRecipe: [{ docId: 'bom-1', ingredientName: 'Sauce', qty: 35 }], deletedAdvRecipes: ['remove-1'],
             collection: (_, name) => name, doc: (...args) => args.length === 1 ? { id: 'new-menu' } : { id: args[2] },
-            getDocsFromServer: async () => ({ docs: [{ data: () => ({ name: 'Sauce' }) }] }),
+            getDocsFromServer: async q => q === 'inventory' ? ({ docs: [{ data: () => ({ name: 'Sauce' }) }] }) : ({docs:[]}),
             writeBatch: () => { const writes = []; return { update: (ref, data) => writes.push(['update', ref.id, data]), set: (ref, data) => writes.push(['set', ref.id, data]), delete: ref => writes.push(['delete', ref.id]), commit: async () => { saves.push(writes); if(fail) throw new Error('offline'); } }; },
-            invalidateCache: name => invalidations.push(name), loadMenuCosting() {} } };
+            invalidateCache: name => invalidations.push(name), loadMenuEditor() {} } };
     const save = managerFunction('saveAdvancedProduct', context);
     await save();
     assert.equal(elements.advProdId.value, '');
@@ -163,7 +163,7 @@ test('single and bulk deletion never execute a write when dependency checks fail
     const context = { console: { error() {} }, alert() {}, confirm: () => { confirmed++; return true; },
         document: { querySelectorAll: () => [{ value: 'stock-1' }] },
         deleteDoc: async () => writes++, doc() {}, db: {},
-        window: { checkInventoryDeletion: async () => { throw new Error('Ingredient used by A'); }, writeBatch: () => { writes++; } } };
+        window: { ManagerUI:{notify(){},confirm:()=>{confirmed++;return true;}}, checkInventoryDeletion: async () => { throw new Error('Ingredient used by A'); }, writeBatch: () => { writes++; } } };
     await managerFunction('deleteInventoryItem', context)('stock-1', 'Sauce');
     await managerFunction('bulkDeleteInventory', context)();
     assert.equal(writes, 0); assert.equal(confirmed, 0);
@@ -171,7 +171,7 @@ test('single and bulk deletion never execute a write when dependency checks fail
 
 test('opening a different recipe or a new product clears abandoned deletion intent', async () => {
     const elements = new Map();
-    const context = { document: { getElementById: id => { if(!elements.has(id)) elements.set(id, { style: {}, value: '' }); return elements.get(id); } },
+    const context = { document: { getElementById: id => { if(!elements.has(id)) elements.set(id, { style: {}, value: '', replaceChildren() {} }); return elements.get(id); } },
         window: { deletedAdvRecipes: ['old-recipe'], preloadInventoryForAddons: async () => { throw new Error('offline'); } } };
     await assert.rejects(managerFunction('openBomEditor', context)('Other product'), /offline/);
     assert.equal(context.window.deletedAdvRecipes.length, 0);
@@ -207,4 +207,21 @@ test('actual history renderer receives new sales without downloading reference c
     assert.ok(el('histSumNet').innerText.includes('405'));
     assert.equal(readCount, 6);
     live.stop();
+});
+
+
+test('new product and recipe retries reuse the same IDs after a lost server acknowledgment', async () => {
+    const elements = Object.fromEntries(Object.entries({btnSaveAdvProd:'',advProdId:'',advProdName:'A',advProdCat:'Food',advProdPrice:'10',advProdGrabPrice:'12',advProdFpPrice:'13',advProdMixMatch:'',advancedProductModal:''}).map(([id,value])=>[id,{value,style:{},disabled:false}]));
+    const committed = new Map(); let counter=0,attempts=0;
+    const context={console:{error(){}},recipeProblems,document:{getElementById:id=>elements[id],querySelectorAll:()=>[]},Swal:{fire(){}},window:{db:{},ManagerUI:{notify(){}},currentAdvRecipe:[{ingredientName:'Sauce',qty:35,isNew:true}],deletedAdvRecipes:[],collection:(_,name)=>name,doc:(...args)=>({id:args.length===1?args[0]+'-'+(++counter):args[2]}),query:()=>({}),where:()=>({}),getDocsFromServer:async q=>q==='inventory'?{docs:[{data:()=>({name:'Sauce'})}]}:{docs:[...committed.keys()].filter(id=>id.startsWith('menu-')).map(id=>({id}))},invalidateCache(){},loadMenuEditor(){},writeBatch:()=>{const writes=[];return {set:(ref,data)=>writes.push([ref.id,data]),update:(ref,data)=>writes.push([ref.id,data]),delete:ref=>writes.push([ref.id,null]),commit:async()=>{for(const [id,data] of writes)committed.set(id,data);if(++attempts===1)throw Error('Lost acknowledgment');}};}}};
+    const save=managerFunction('saveAdvancedProduct',context);await save();await save();
+    assert.equal(committed.size,2);assert.equal(counter,2);assert.equal(elements.advProdId.value,'menu-1');
+    assert.equal(committed.get('bom-2').qty,35);
+});
+
+test('unified editor refuses missing add-on stock and invalid prices before any write', async()=>{
+    const elements=Object.fromEntries(Object.entries({btnSaveAdvProd:'',advProdId:'item',advProdName:'A',advProdCat:'Food',advProdPrice:'10',advProdGrabPrice:'12',advProdFpPrice:'13',advProdMixMatch:'',advancedProductModal:''}).map(([id,value])=>[id,{value,style:{},disabled:false}]));
+    let writes=0,message='';const addon={querySelector:selector=>({value:({'.addon-name':'Extra sauce','.addon-price':'-1','.addon-ingredient':'Deleted sauce','.addon-qty':'5'})[selector]})};
+    const context={console:{error(){}},recipeProblems,document:{getElementById:id=>elements[id],querySelectorAll:selector=>selector==='#addonTableBody tr'?[addon]:[]},Swal:{fire(){}},window:{db:{},ManagerUI:{notify:text=>message=text},currentAdvRecipe:[],deletedAdvRecipes:[],collection:(_,name)=>name,query:()=>({}),where:()=>({}),getDocsFromServer:async q=>q==='inventory'?{docs:[{data:()=>({name:'Sauce'})}]}:{docs:[]},writeBatch:()=>writes++}};
+    await managerFunction('saveAdvancedProduct',context)();assert.equal(writes,0);assert.match(message,/Invalid add-on price/);assert.match(message,/Missing ingredient: Deleted sauce/);
 });

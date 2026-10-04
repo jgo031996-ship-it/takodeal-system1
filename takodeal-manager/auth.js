@@ -83,7 +83,7 @@ window.checkManagerPin = function() {
         if (err) { err.innerText = '❌ Please enter a PIN.'; err.style.display = 'block'; }
         return;
     }
-    if (!window.tempAuthData) return alert("Authentication data lost. Please refresh the page.");
+    if (!window.tempAuthData) return Swal.fire({ icon: "error", title: "Please refresh", text: "Authentication data lost. Please refresh the page." });
 
     let correctPin = String(window.tempAuthData.pin || window.tempAuthData.securityPin || "");
 

@@ -1,3 +1,4 @@
+import { createCollectionCache } from './collection-cache.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, getDocsFromServer, getDocFromServer, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch, startAfter, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
@@ -34,32 +35,12 @@ window.writeBatch = writeBatch; window.onSnapshot = onSnapshot; window.startAfte
 window.runTransaction = runTransaction;
 window.enableNetwork = enableNetwork; window.disableNetwork = disableNetwork;
 
-// TAKODEAL GLOBAL CACHE ENGINE
-window.TK_CACHE = {
-    menu: null, bom: null, inventory: null,
-    lastMenu: 0, lastBom: 0, lastInventory: 0,
-    ttl: 60 * 1000 
-};
-
-window.fetchCachedCollection = async function(colName) {
-    let now = Date.now();
-    let timeKey = 'last' + colName.charAt(0).toUpperCase() + colName.slice(1); 
-    
-    if (window.TK_CACHE[colName] && (now - window.TK_CACHE[timeKey] < window.TK_CACHE.ttl)) {
-        console.log(`📦 Loaded ${colName.toUpperCase()} from RAM (0 Firebase Reads)`);
-        return window.TK_CACHE[colName];
-    }
-
-    console.log(`☁️ Fetching ${colName.toUpperCase()} from Firebase...`);
-    const snap = await window.getDocs(window.collection(window.db, colName));
-    let data = [];
-    snap.forEach(doc => data.push({ id: doc.id, ...doc.data() }));
-    
-    window.TK_CACHE[colName] = data;
-    window.TK_CACHE[timeKey] = now;
-    return data;
-};
-
-window.invalidateCache = function(colName) { window.TK_CACHE[colName] = null; };
-
-console.log("🚀 TAKODEÁL Offline Storage & Cache is ACTIVE!");
+// Views share one cache and invalidate it after edits or edits in another tab.
+const cache = createCollectionCache(async name => {
+    const snap = await getDocs(collection(window.db, name));
+    return snap.docs.map(row => ({id:row.id,...row.data()}));
+});
+const cacheChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('takodeal-manager-cache') : null;
+cacheChannel?.addEventListener('message', event => cache.invalidate(event.data));
+window.fetchCachedCollection = name => cache.get(name);
+window.invalidateCache = name => { cache.invalidate(name); cacheChannel?.postMessage(name); };

@@ -1,3 +1,10 @@
+import { installMenuBulk } from './menu-bulk.js';
+import { approveRemittanceAtomic } from './cash-settlement.js';
+import { commitDispatch } from './dispatch-safety.js';
+import { initManagerDialogs } from './manager-dialogs.js';
+import { initManagerWorkspace, renderFinancialFlow, escapeHtml } from './manager-workspace.js';
+import { archiveableShift, businessClock, money, mallCashPlan } from './branch-operations.js';
+const cachedSnapshot = async name => { const rows = await window.fetchCachedCollection(name); return ({forEach: fn => rows.forEach(row => fn({id:row.id,data:()=>row})),docs:rows.map(row=>({id:row.id,data:()=>row})),empty:rows.length===0,size:rows.length}); };
 import { initManagerTheme } from './manager-theme.js';
 import { createDashboard } from './dashboard.js';
 const globalDashboard = createDashboard();
@@ -291,11 +298,11 @@ window.editManagerProfile = async function(docId, currentName, currentPhone, ema
 };
 
 window.removeHqManager = async function (docId, email) {
-  if (!confirm(`Are you sure you want to REVOKE access for ${email}? They will be immediately locked out.`)) return;
+  if (!(await window.ManagerUI.confirm(`Are you sure you want to REVOKE access for ${email}? They will be immediately locked out.`))) return;
   try {
     await deleteDoc(doc(db, "hq_managers", docId));
     loadAdminDashboard();
-  } catch (e) { console.error(e); alert("Failed to remove manager."); }
+  } catch (e) { console.error(e); window.ManagerUI.notify("Failed to remove manager."); }
 };
 
 window.loadGlobalDashboard = () => globalDashboard.load();
@@ -446,14 +453,14 @@ window.loadHRModule = async function() {
 // ========================================================
 window.resetStaffPin = async function (staffId, staffName) {
   // 1. Ask the manager for the new Password
-  let newPin = prompt(`Enter a new Login Password for ${staffName} (Min 4 characters):`);
+  let newPin = (await window.ManagerUI.prompt(`Enter a new Login Password for ${staffName} (Min 4 characters):`));
 
   // If they click Cancel or leave it blank, do nothing
   if (!newPin) return;
 
   // 2. Strict Security: Make sure it is at least 4 characters long (letters or numbers!)
   if (newPin.trim().length < 4) {
-    alert("❌ Invalid format. The password must be at least 4 characters long.");
+    window.ManagerUI.notify("❌ Invalid format. The password must be at least 4 characters long.");
     return;
   }
 
@@ -463,14 +470,14 @@ window.resetStaffPin = async function (staffId, staffName) {
       pin: newPin.trim()
     });
 
-    alert(`✅ Security Password for ${staffName} has been successfully updated!`);
+    window.ManagerUI.notify(`✅ Security Password for ${staffName} has been successfully updated!`);
 
     // Refresh the table to show the update
     window.loadHRModule();
     
   } catch (error) {
     console.error("Password Reset Error:", error);
-    alert("❌ Failed to update the password in the database.");
+    window.ManagerUI.notify("❌ Failed to update the password in the database.");
   }
 };
 
@@ -622,7 +629,7 @@ window.dismissAlert = async function (docId) {
   try {
     await updateDoc(doc(db, "manager_alerts", docId), { isRead: true });
   } catch (e) {
-    console.error(e); alert("Failed to dismiss alert. Check connection.");
+    console.error(e); window.ManagerUI.notify("Failed to dismiss alert. Check connection.");
   }
 };
 
@@ -665,12 +672,13 @@ window.bulkDeleteAlerts = async function() {
 };
 
 window.deleteSingleAlert = async function(docId) {
-    if(!confirm("Permanently delete this security alert?")) return;
-    try { await deleteDoc(doc(db, "manager_alerts", docId)); } catch(e) { console.error(e); alert("Failed to delete alert."); }
+    if(!(await window.ManagerUI.confirm("Permanently delete this security alert?"))) return;
+    try { await deleteDoc(doc(db, "manager_alerts", docId)); } catch(e) { console.error(e); window.ManagerUI.notify("Failed to delete alert."); }
 };
 
 // --- NAVIGATION SYSTEM ---
 window.switchView = function (viewId) {
+  if (viewId === 'products') viewId = 'menu';
   if (viewId !== 'history') historyLive.stop();
   // Hide all views
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -985,10 +993,10 @@ window.addRestockToCart = function () {
   let subtotal = parseFloat(document.getElementById('restockSubtotal').value) || 0; 
   let unitCost = parseFloat(document.getElementById('restockUnitCost').value) || 0;
 
-  if (!itemName || isNaN(purchQty) || purchQty <= 0) { alert("Select an item and enter a valid quantity."); return; }
+  if (!itemName || isNaN(purchQty) || purchQty <= 0) { window.ManagerUI.notify("Select an item and enter a valid quantity."); return; }
 
   let item = window.globalInventoryList.find(i => i.name === itemName && i.branch === "Main Office");
-  if (!item) { alert("Item not found in Main Office."); return; }
+  if (!item) { window.ManagerUI.notify("Item not found in Main Office."); return; }
 
   let convRate = parseFloat(item.conversionRate) || 1;
   let baseQtyToAdd = purchQty * convRate;
@@ -2053,10 +2061,10 @@ window.reviewPurchaseOrder = async function(poId) {
 window.processRejectRequest = async function(docId) {
     if (!docId) return;
 
-    let reason = prompt(
+    let reason = (await window.ManagerUI.prompt(
         "🛑 REJECTING REQUEST\n\nEnter the reason for rejection (this will pop up on the Cashier's screen):",
         "Incorrect Unit of Quantity (e.g., inputted Cans instead of Grams). Please recount physically and submit a new request."
-    );
+    ));
 
     if (reason === null || reason.trim() === "") return;
 
@@ -2146,7 +2154,7 @@ window.approvePurchaseOrder = async function(poId) {
 // 🚚 UPGRADED DISPATCH DETAILS MODAL (WITH VARIANCE & TIME)
 // ========================================================
 window.backloadDispatchItem = async function(logId, itemName, qtyToReturn, destinationBranch) {
-    if (!confirm(`⚠️ BACKLOAD ITEM\n\nAre you sure you want to cancel the delivery of ${qtyToReturn} units of "${itemName}" to ${destinationBranch}?\n\nThis will mark the item as "Backloaded" and securely return the physical stock to the Main Office warehouse.`)) return;
+    if (!(await window.ManagerUI.confirm(`⚠️ BACKLOAD ITEM\n\nAre you sure you want to cancel the delivery of ${qtyToReturn} units of "${itemName}" to ${destinationBranch}?\n\nThis will mark the item as "Backloaded" and securely return the physical stock to the Main Office warehouse.`))) return;
 
     Swal.fire({ title: 'Processing Backload...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
@@ -2450,7 +2458,7 @@ window.updateDispatchUomLabel = async function() {
 
             let dailyBurn = totalBurn / 14;
             let daysLeft = dailyBurn > 0 ? (currentStock / dailyBurn) : Infinity;
-            let daysText = daysLeft === Infinity ? "∞" : daysLeft.toFixed(1) + " Days";
+            let daysText = currentStock < 0 ? "Count needed" : (daysLeft === Infinity ? "No recent use" : Math.max(0,daysLeft).toFixed(1) + " days");
             let statusColor = currentStock <= 0 ? "#dc2626" : (daysLeft <= 3 ? "#ea580c" : "#16a34a");
 
             aiContainer.innerHTML = `
@@ -2482,7 +2490,7 @@ window.updateDispatchUomLabel = async function() {
 window.addToDispatchCart = function () {
     let itemName = document.getElementById('dispItem').value;
     let rawQty = parseFloat(document.getElementById('dispQty').value);
-    if (!itemName || isNaN(rawQty) || rawQty <= 0) { alert("Please select an item and valid quantity."); return; }
+    if (!itemName || isNaN(rawQty) || rawQty <= 0) { window.ManagerUI.notify("Please select an item and valid quantity."); return; }
 
     let invItem = window.dispatchInventoryList.find(i => i.name === itemName);
     if (!invItem) return;
@@ -2698,8 +2706,8 @@ window.submitMultiDispatch = async function () {
     let fromBranch = document.getElementById('dispFrom').value;
     let toBranch = document.getElementById('dispTo').value;
 
-    if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
-    if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
+    if (!fromBranch || !toBranch) { window.ManagerUI.notify("Please select Source and Destination branches."); return; }
+    if (fromBranch === toBranch) { window.ManagerUI.notify("Source and Destination cannot be the same."); return; }
 
     let btn = document.getElementById('btnSubmitDispatch');
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
@@ -2712,7 +2720,7 @@ window.submitMultiDispatch = async function () {
     }
 
     if (isFranchisee) {
-        if (window.dispatchCart.length === 0) { alert("Cart is empty."); return; }
+        if (window.dispatchCart.length === 0) { window.ManagerUI.notify("Cart is empty."); return; }
         btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
         try {
             // Apply emergency tags to items
@@ -2784,7 +2792,7 @@ window.submitMultiDispatch = async function () {
     btn.innerText = "🚀 Processing Delivery..."; btn.disabled = true;
 
     try {
-        let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
+        let driverName = (await window.ManagerUI.prompt("Enter the name of the Delivery Driver/Person in charge:"));
         if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
 
         for (let item of validCart) {
@@ -3096,190 +3104,36 @@ window.renderLogisticsUI = function() {
     }
 };
 
-window.submitMultiDispatch = async function () {
-    let fromBranch = document.getElementById('dispFrom').value;
-    let toBranch = document.getElementById('dispTo').value;
-
-    if (!fromBranch || !toBranch) { alert("Please select Source and Destination branches."); return; }
-    if (fromBranch === toBranch) { alert("Source and Destination cannot be the same."); return; }
-
-    let btn = document.getElementById('btnSubmitDispatch');
-    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-
-    if (isFranchisee) {
-        if (window.dispatchCart.length === 0) { alert("Cart is empty."); return; }
-        btn.innerText = "⏳ Sending Request..."; btn.disabled = true;
-        try {
-            await addDoc(collection(db, "purchase_orders"), { branch: toBranch, items: window.dispatchCart, status: "Pending", requestedBy: window.sessionUser.cashierName, timestamp: serverTimestamp() });
-            Swal.fire('📝 Purchase Order Sent!', `HQ has received your request.`, 'success');
-            window.dispatchCart = []; window.renderDispatchCart();
-        } catch (e) { Swal.fire('Error', 'Failed to send Purchase Order.', 'error'); } 
-        finally { btn.innerText = "📝 Request Stock from HQ"; btn.disabled = false; }
-        return; 
-    }
-
-    for (let i = 0; i < window.dispatchCart.length; i++) {
-        let inp = document.getElementById(`cartQty_${i}`);
-        if (inp) {
-            let val = parseFloat(inp.value) || 0;
-            let conv = window.dispatchCart[i].convRate || 1;
-            window.dispatchCart[i].rawQty = val; window.dispatchCart[i].qty = val * conv;
-        }
-    }
-
-    let validCart = [];
-    let skippedCart = []; 
-
-    window.dispatchCart.forEach(item => {
-        let sentRaw = parseFloat(item.rawQty) || 0;
-        let sentBase = parseFloat(item.qty) || 0;
-        
-        let origRaw = parseFloat(item.origRawQty) || 0;
-        let origBase = parseFloat(item.origBaseQty) || 0;
-
-        let isAutoAlert = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.physicalStock !== undefined);
-
-        if (sentBase > 0) validCart.push(item);
-
-        let remainingRaw = origRaw - sentRaw;
-        let remainingBase = origBase - sentBase;
-
-        // 🔥 THE LOGIC FIX: If it's an auto-alert and you sent 0, OR if there's unfulfilled requested stock, send to Delayed!
-        if (remainingBase > 0 || (isAutoAlert && sentBase <= 0)) {
-            
-            // Resurrect the original badge text so it doesn't get corrupted
-            let badgeText = item.requestType || 'Request';
-            if (badgeText === 'Delayed / Backlogged' && isAudit) {
-                badgeText = (item.physicalStock <= 0) ? 'Out of Stock' : 'Low Stock';
-            }
-
-            skippedCart.push({
-                ...item,
-                qty: isAutoAlert ? 0 : remainingBase,
-                displayQty: isAutoAlert ? 0 : remainingRaw,
-                rawQty: isAutoAlert ? 0 : remainingRaw,
-                requestType: badgeText // PROTECT the original badge!
-            });
-        }
-    });
-
-    if (validCart.length === 0) return Swal.fire('Empty Dispatch', 'You must send a quantity greater than 0 for at least one item.', 'warning'); 
-
-    btn.innerText = "🚀 Processing Delivery & Audits..."; btn.disabled = true;
-
-    try {
-        let driverName = prompt("Enter the name of the Delivery Driver/Person in charge:");
-        if (!driverName) { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; return; }
-
-        let totalPenaltiesIssued = 0;
-
-        for (let item of validCart) {
-            let itemNameToFind = item.itemName || item.name;
-            let invItem = window.dispatchInventoryList.find(i => i.name === itemNameToFind);
-
-            let sourceRef; let currentHqStock = 0;
-            if (!invItem) {
-                const newInvRef = await addDoc(collection(db, "inventory"), { branch: fromBranch, name: itemNameToFind, uom: item.baseUom || 'units', category: item.category || 'Ingredients', currentStock: 0, conversionRate: item.convRate || 1, purchaseUom: item.purchaseUom || 'units' });
-                sourceRef = newInvRef; invItem = { id: newInvRef.id, uom: item.baseUom || 'units', category: item.category || "Ingredients", purchaseUom: item.purchaseUom || 'units', cost: item.cost || 0, reorderLevel: 10 };
-            } else {
-                sourceRef = doc(db, "inventory", invItem.id);
-                let liveSnap = await getDoc(sourceRef);
-                if (liveSnap.exists()) currentHqStock = parseFloat(liveSnap.data().currentStock) || 0;
-            }
-
-            await updateDoc(sourceRef, { currentStock: currentHqStock - item.qty });
-
-            await addDoc(collection(db, "stock_logs"), {
-                branch: fromBranch, item: itemNameToFind, uom: item.baseUom || invItem.uom || 'units', oldQty: currentHqStock, newQty: currentHqStock - item.qty, variance: -item.qty,
-                type: "Dispatch Delivery", note: `Sent to ${toBranch} (Driver: ${driverName})`, user: window.sessionUser ? window.sessionUser.cashierName : "Manager", timestamp: serverTimestamp()
-            });
-
-            await addDoc(collection(db, "stock_logs"), {
-                branch: toBranch, item: itemNameToFind, uom: item.baseUom || invItem.uom || 'units', oldQty: 0, newQty: 0, variance: 0,
-                type: "Incoming Dispatch", note: `Dispatched from ${fromBranch} (Driver: ${driverName}). Awaiting receipt by cashier.`, user: "System (In Transit)", timestamp: serverTimestamp()
-            });
-
-            if (item.requestType === "Low Stock" || item.requestType === "Out of Stock" || item.physicalStock !== undefined) {
-                const branchInvQ = query(collection(db, "inventory"), where("branch", "==", toBranch), where("name", "==", itemNameToFind));
-                const branchInvSnap = await getDocs(branchInvQ);
-                
-                if (!branchInvSnap.empty) {
-                    let bDoc = branchInvSnap.docs[0]; let bData = bDoc.data();
-                    let sysStock = parseFloat(bData.currentStock) || 0; let physStock = parseFloat(item.physicalStock) || 0;
-
-                    if (sysStock > 0 && physStock < sysStock) {
-                        let missingQty = sysStock - physStock;
-                        let costPerUnit = parseFloat(bData.baseCost) || parseFloat(bData.cost) || parseFloat(item.cost) || 0;
-                        let penaltyValue = missingQty * costPerUnit;
-
-                        await updateDoc(bDoc.ref, { currentStock: physStock });
-                        await addDoc(collection(db, "stock_logs"), { branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units', oldQty: sysStock, newQty: physStock, variance: -missingQty, type: "Audit Adjustment (Penalty)", note: `System expected ${sysStock.toFixed(2)}, staff reported ${physStock.toFixed(2)}.`, user: "System (HQ)", timestamp: serverTimestamp() });
-
-                        if (penaltyValue > 0) {
-                            await addDoc(collection(db, "staff_deductions"), { staffName: `Team ${toBranch}`, type: "Missing Stock Penalty", amount: penaltyValue, dateAdded: new Date(), status: "Unpaid", remarks: `Missing ${missingQty.toFixed(2)} ${bData.uom} of ${itemNameToFind} before restock.` });
-                            await addDoc(collection(db, "manager_alerts"), { type: "STOCK_PENALTY_APPLIED", branch: toBranch, cashier: "Team", message: `🚨 PENALTY APPLIED: ${itemNameToFind} baseline reset to ${physStock}. ₱${penaltyValue.toFixed(2)} penalty issued to Team ${toBranch}.`, timestamp: serverTimestamp(), isRead: false });
-                            totalPenaltiesIssued++;
-                        }
-                    } 
-                    else if (sysStock <= 0) {
-                        await updateDoc(bDoc.ref, { currentStock: physStock });
-                        await addDoc(collection(db, "stock_logs"), { branch: toBranch, item: itemNameToFind, uom: bData.uom || 'units', oldQty: sysStock, newQty: physStock, variance: physStock - sysStock, type: "Negative Stock Wipe", note: `Clean slate reset before restock.`, user: "System (HQ)", timestamp: serverTimestamp() });
-                    }
-                }
-            }
-
-            await addDoc(collection(db, "dispatch_logs"), {
-                date: new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }),
-                time: new Date().toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), timestamp: new Date(),
-                item: itemNameToFind, qty: item.qty || 0, uom: item.uom || invItem.uom || 'units', 
-                details: `${fromBranch} ➡️ ${toBranch}`, toBranch: toBranch, driver: driverName, status: "In Transit", 
-                displayQty: item.rawQty || item.qty || 0, displayUom: item.friendlyUom || item.uom || invItem.uom || 'units', 
-                convRate: item.convRate || 1, category: item.category || invItem.category || "Uncategorized"
-            });
-        }
-
-        if (skippedCart.length > 0) {
-            let safeSkippedCart = skippedCart.map(i => ({ ...i, category: i.category || "Uncategorized", purchaseUom: i.purchaseUom || i.uom || "units" }));
-            let todayStr = new Date().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' });
-            
-            const pendingQ = query(collection(db, "purchase_orders"), where("branch", "==", toBranch), where("status", "==", "Delayed"));
-            const pendingSnap = await getDocs(pendingQ);
-            
-            if (!pendingSnap.empty) {
-                let existingTicket = pendingSnap.docs[0]; let existingItems = existingTicket.data().items || [];
-                safeSkippedCart.forEach(skippedItem => {
-                    let match = existingItems.find(i => (i.itemName || i.name) === (skippedItem.itemName || skippedItem.name));
-                    if (match) { match.qty = (parseFloat(match.qty) || 0) + (parseFloat(skippedItem.qty) || 0); match.displayQty = match.qty; } 
-                    else { existingItems.push(skippedItem); }
-                });
-                await updateDoc(existingTicket.ref, { items: existingItems, timestamp: serverTimestamp() });
-            } else {
-                await addDoc(collection(db, "purchase_orders"), { branch: toBranch, items: safeSkippedCart, status: "Delayed", type: "Delayed Delivery", originalRequestDate: todayStr, requestedBy: "System (Postponed / Set Aside)", timestamp: serverTimestamp() });
-            }
-        }
-
-        let activePoStr = localStorage.getItem('takodeal_active_po');
-        if (activePoStr) {
-            let poIds = activePoStr.split(',');
-            for (let id of poIds) {
-                if (id) {
-                    try { await deleteDoc(doc(db, "purchase_orders", id)); } catch(e){}
-                }
-            }
-            localStorage.removeItem('takodeal_active_po');
-        }
-
-        window.dispatchCart = []; localStorage.removeItem('takodeal_dispatch_cart'); localStorage.removeItem('takodeal_dispatch_to');
-        Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
-
-        let extraMessage = skippedCart.length > 0 ? `<br><br>(${skippedCart.length} item(s) unfulfilled were auto-set aside into the Delayed Items tab).` : '';
-        let penaltyMessage = totalPenaltiesIssued > 0 ? `<br><br>🚨 <b>${totalPenaltiesIssued} Penalty Deduction(s)</b> automatically issued to Team ${toBranch} for missing stock!` : '';
-        
-        Swal.fire({ title: '🚚 Dispatch Successful!', html: `${validCart.length} items are now In Transit to ${toBranch} via ${driverName}.${penaltyMessage}${extraMessage}`, icon: 'success', customClass: { popup: 'rounded-2xl shadow-xl' } });
-        
-        window.renderDispatchCart(); if(typeof window.loadDispatchInventory === 'function') window.loadDispatchInventory(); 
-    } catch (e) { Swal.fire('Dispatch Error', e.message || 'Check the console for details.', 'error'); } 
-    finally { btn.innerText = "🚀 Send Dispatch Delivery"; btn.disabled = false; }
+window.submitMultiDispatch = async function() {
+ const button=document.getElementById('btnSubmitDispatch'); if(button?.disabled)return;
+ const source=document.getElementById('dispFrom').value,destination=document.getElementById('dispTo').value;
+ if(!source||!destination||source===destination)return Swal.fire('Check branches','Choose different source and destination branches.','warning');
+ const items=[],skipped=[];
+ for(let index=0;index<window.dispatchCart.length;index++) {
+  const original=window.dispatchCart[index],field=document.getElementById('cartQty_'+index),raw=field ? Number(field.value) : Number(original.rawQty ?? original.qty),conv=Number(original.convRate || 1),qty=raw*conv;
+  if(!Number.isFinite(qty)||qty<0||!Number.isFinite(conv)||conv<=0)return Swal.fire('Check quantity','Enter valid positive quantities.','warning');
+  const row={...original,rawQty:raw,qty}; if(qty>0)items.push(row);
+  const remaining=Number(original.origBaseQty ?? original.qty)-qty;
+  if(remaining>0)skipped.push({...original,qty:remaining,origBaseQty:remaining,rawQty:remaining/conv,displayQty:remaining/conv,origRawQty:remaining/conv});
+ }
+ if(!items.length)return Swal.fire('Empty delivery','Add an item with a quantity greater than zero.','warning');
+ const actor=window.sessionUser?.cashierName || 'Manager';button.disabled=true;
+ try {
+  const signature=JSON.stringify({source,destination,items,skipped,orders:localStorage.getItem('takodeal_active_po')});
+  let pending;try{pending=JSON.parse(localStorage.getItem('takodeal_dispatch_attempt')||'null')}catch{}
+  if(!pending||pending.signature!==signature) {pending={id:'dispatch-'+crypto.randomUUID(),signature};localStorage.setItem('takodeal_dispatch_attempt',JSON.stringify(pending));}
+  if(window.sessionUser?.isFranchisee) {
+   if(destination!==window.sessionUser.branch)throw Error('You may only request stock for your own branch.');
+   await window.runTransaction(window.db,async tx=>{const ref=window.doc(window.db,'purchase_orders',pending.id);if((await tx.get(ref)).exists())return;tx.set(ref,{branch:destination,items,status:'Pending',requestedBy:actor,timestamp:window.serverTimestamp()});});
+  } else {
+   const driver=await window.ManagerUI.prompt('Who is delivering this stock?');if(!driver?.trim())return;
+   button.textContent='Sending delivery…';
+   await commitDispatch(window,{id:pending.id,source,destination,driver:driver.trim(),actor,items,skipped,purchaseOrderIds:(localStorage.getItem('takodeal_active_po')||'').split(',')});
+  }
+  window.dispatchCart=[];localStorage.removeItem('takodeal_dispatch_cart');localStorage.removeItem('takodeal_active_po');localStorage.removeItem('takodeal_dispatch_attempt');window.invalidateCache('inventory');window.renderDispatchCart();window.loadDispatchDashboard();
+  window.ManagerUI.notify(window.sessionUser?.isFranchisee ? 'Stock request sent to HQ.' : 'Delivery sent. Stock arrives in the destination when the cashier receives it.');
+ } catch(error) {Swal.fire('Delivery was not sent',error.message,'error');}
+ finally {button.disabled=false;button.textContent='Send delivery';}
 };
 
 window.viewDeliveryDetails = function(encodedGroup) {
@@ -3368,7 +3222,7 @@ window.viewDeliveryDetails = function(encodedGroup) {
 
 window.markDispatchArrived = async function(encodedGroup) {
     let group = JSON.parse(decodeURIComponent(encodedGroup));
-    if (!confirm(`Mark delivery to ${group.toBranch} as ARRIVED?\n\nThe branch staff will now be notified and can begin receiving the items.`)) return;
+    if (!(await window.ManagerUI.confirm(`Mark delivery to ${group.toBranch} as ARRIVED?\n\nThe branch staff will now be notified and can begin receiving the items.`))) return;
 
     Swal.fire({title: 'Updating Status...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
@@ -3474,7 +3328,7 @@ window.resolveMissingDispatchItems = async function(encodedGroup) {
 
 window.recallDispatch = async function(encodedGroup) {
     let group = JSON.parse(decodeURIComponent(encodedGroup));
-    if (!confirm("⚠️ RECALL DISPATCH?\n\nThis will remove the delivery from the destination branch, refund the inventory back to HQ, and load the items into your Dispatch Cart to edit. Proceed?")) return;
+    if (!(await window.ManagerUI.confirm("⚠️ RECALL DISPATCH?\n\nThis will remove the delivery from the destination branch, refund the inventory back to HQ, and load the items into your Dispatch Cart to edit. Proceed?"))) return;
 
     Swal.fire({title: 'Recalling Delivery...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
@@ -3549,7 +3403,7 @@ window.bulkDeleteLogistics = async function() {
 
 window.deleteDeliveryGroup = async function(encodedGroup) {
     let group = JSON.parse(decodeURIComponent(encodedGroup));
-    if (!confirm(`⚠️ Are you sure you want to permanently delete the delivery to ${group.toBranch}?\n\nThis will instantly remove all items inside it from the system.`)) return;
+    if (!(await window.ManagerUI.confirm(`⚠️ Are you sure you want to permanently delete the delivery to ${group.toBranch}?\n\nThis will instantly remove all items inside it from the system.`))) return;
 
     Swal.fire({title: 'Deleting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
@@ -3633,7 +3487,7 @@ window.updateDispatchUomLabel = async function() {
 
             let dailyBurn = totalBurn / 14;
             let daysLeft = dailyBurn > 0 ? (currentStock / dailyBurn) : Infinity;
-            let daysText = daysLeft === Infinity ? "∞" : daysLeft.toFixed(1) + " Days";
+            let daysText = currentStock < 0 ? "Count needed" : (daysLeft === Infinity ? "No recent use" : Math.max(0,daysLeft).toFixed(1) + " days");
             let statusColor = currentStock <= 0 ? "#dc2626" : (daysLeft <= 3 ? "#ea580c" : "#16a34a");
 
             aiContainer.innerHTML = `
@@ -3686,11 +3540,13 @@ window.loadMenuEditor = async function() {
 
   try {
     // 🔥 Use the Zero-Cost Cache!
-    const cachedMenu = await window.fetchCachedCollection("menu");
+    const [cachedMenu, recipeRows] = await Promise.all([window.fetchCachedCollection("menu"), window.fetchCachedCollection("bom"), window.loadMenuCosting()]);
+    window.menuRecipeRows = recipeRows;
     
     let layoutOrder = [];
     try {
-        const layoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_item_layout"));
+        const layoutSnap = window.menuLayoutSnapshot || await window.getDoc(window.doc(window.db, "settings", "pos_item_layout"));
+        window.menuLayoutSnapshot = layoutSnap;
         if (layoutSnap.exists()) layoutOrder = layoutSnap.data().items || [];
     } catch(e) {}
 
@@ -3795,57 +3651,26 @@ window.handleMenuDragEnd = function(e) {
 
 window.renderMenuEditorUI = function() {
     const tbody = document.getElementById('menuTableBody');
-    let catFilterEl = document.getElementById('menuEditorCatFilter');
-    let selectedCat = catFilterEl ? catFilterEl.value : 'All';
-    let html = '';
-    let count = 0;
-
-    let visibleItems = window.globalMenuItemsCache.filter(item => {
-        let cat = item.category || 'Uncategorized';
-        return selectedCat === 'All' || cat === selectedCat;
-    });
-
-    visibleItems.forEach(data => {
-      count++;
-      let safePrice = parseFloat(data.price) || 0;
-      let safeName = data.name ? data.name.replace(/'/g, "\\'") : 'Unnamed';
-      let safeCat = (data.category || 'Uncategorized').replace(/'/g, "\\'");
-      
-      let imgHtml = data.image 
-          ? `<img src="${data.image}" style="width:40px; height:40px; border-radius:6px; object-fit:cover; display:inline-block; vertical-align:middle; border:1px solid #e2e8f0;">` 
-          : `<div style="width:40px; height:40px; border-radius:6px; background:#f1f5f9; display:inline-flex; align-items:center; justify-content:center; font-size:18px; vertical-align:middle; border:1px solid #e2e8f0;">🍲</div>`;
-
-      // 🔥 THE BEAUTIFUL DRAG HANDLE
-      let dragHandle = `<span style="color: #94a3b8; font-size: 18px; margin-right: 10px; cursor: grab;" title="Hold and drag to reorder">↕️</span>`;
-
-      html += `
-        <tr draggable="true"
-            ondragstart="window.handleMenuDragStart(event, '${data.id}')"
-            ondragover="window.handleMenuDragOver(event)"
-            ondragenter="window.handleMenuDragEnter(event)"
-            ondragleave="window.handleMenuDragLeave(event)"
-            ondrop="window.handleMenuDrop(event, '${data.id}')"
-            ondragend="window.handleMenuDragEnd(event)"
-            style="border-bottom: 1px solid #f1f5f9; background: white; transition: background 0.2s;"
-            onmouseover="this.style.background='#f8fafc'"
-            onmouseout="this.style.background='white'">
-          <td style="padding: 12px; display: flex; align-items: center;">${dragHandle}${imgHtml}<strong style="margin-left: 8px;"> ${data.name}</strong></td>
-          <td style="padding: 12px;"><span class="badge badge-closed">${data.category || 'Uncategorized'}</span></td>
-          <td style="padding: 12px; font-weight: 600; color: var(--primary);">${formatMoney(safePrice)}</td>
-          <td style="padding: 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-            <button class="btn-refresh" style="background: white; border: 1px solid var(--primary); color: var(--primary); padding: 6px 12px; font-size: 12px; border-radius: 4px; cursor: pointer;" onclick="openBomEditor('${safeName}')">🍟 Recipe/Addons</button>
-            <button class="btn-refresh" onclick="window.editMenuItem('${data.id}', '${safeName}', '${safeCat}', ${safePrice})">✏️ Edit</button>
-            <label style="cursor: pointer; background: #f0fdf4; border: 1px solid #16a34a; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; margin: 0; display: inline-flex; align-items: center;">
-                📷 Pic
-                <input type="file" accept="image/jpeg, image/png, image/webp" style="display:none;" onchange="window.uploadMenuImage(event, '${data.id}')">
-            </label>
-            <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger);" onclick="deleteMenuItem('${data.id}', '${safeName}')">🗑️</button>
-          </td>
-        </tr>
-      `;
-    });
-    
-    tbody.innerHTML = count > 0 ? html : `<tr><td colspan="4" class="text-center">No items found in category: ${selectedCat}.</td></tr>`;
+    const category = document.getElementById('menuEditorCatFilter')?.value || 'All';
+    const search = document.getElementById('menuWorkspaceSearch')?.value.toLowerCase().trim() || '';
+    const items = window.globalMenuItemsCache || [];
+    let missing = 0, margins = [];
+    const summary = item => {
+        const recipe = (window.menuRecipeRows || []).filter(row => row.menuItem === item.name);
+        const problems = recipeProblems(recipe, new Set(Object.keys(globalInventoryCosts)));
+        const valid = recipe.length > 0 && !problems.length;
+        const cost = recipe.reduce((sum,row) => sum + Number(row.qty || 0) * Number(globalInventoryCosts[row.ingredientName]?.cost || 0), 0);
+        const price = Number(item.price ?? item.basePrice ?? 0);
+        return {valid,cost,price,margin:price - cost,pct:price > 0 ? (price-cost)/price*100 : 0};
+    };
+    items.forEach(item => { const value = summary(item); if (!value.valid) missing++; else margins.push(value.pct); });
+    document.getElementById('menuWorkspaceSummary').innerHTML = '<article><span>Menu items</span><strong>'+items.length+'</strong></article><article><span>Average recipe margin</span><strong>'+(margins.length ? (margins.reduce((a,b)=>a+b,0)/margins.length).toFixed(1)+'%' : '—')+'</strong></article><article><span>Recipes needing attention</span><strong>'+missing+'</strong></article>';
+    const visible = items.filter(item => (category === 'All' || item.category === category) && (item.name || '').toLowerCase().includes(search));
+    tbody.innerHTML = visible.map(item => {
+        const value = summary(item), id = escapeHtml(item.id), name = escapeHtml(item.name), cat = escapeHtml(item.category || 'Uncategorized');
+        const photo = item.image ? '<img loading="lazy" src="'+escapeHtml(item.image)+'" alt="" width="40" height="40">' : '<span class="menu-item-placeholder">🍲</span>';
+        return '<tr draggable="true" ondragstart="window.handleMenuDragStart(event,\''+id+'\')" ondragover="window.handleMenuDragOver(event)" ondrop="window.handleMenuDrop(event,\''+id+'\')" ondragend="window.handleMenuDragEnd(event)"><td><div class="menu-item-name"><span title="Drag to arrange">↕</span>'+photo+'<strong>'+name+'</strong></div></td><td><span class="badge badge-closed">'+cat+'</span></td><td class="menu-platform-prices"><strong>'+formatMoney(value.price)+'</strong><small>Grab '+formatMoney(item.grabPrice ?? value.price)+' · Panda '+formatMoney(item.foodpandaPrice ?? value.price)+'</small></td><td>'+(value.valid ? formatMoney(value.cost) : '<span class="recipe-needs-attention">Check recipe</span>')+'</td><td>'+(value.valid ? '<strong>'+formatMoney(value.margin)+'</strong><small> '+value.pct.toFixed(1)+'%</small>' : '—')+'</td><td><div class="menu-item-actions"><button class="btn-refresh" onclick="window.editMenuItem(\''+id+'\')">Edit item & recipe</button><label class="menu-photo-button">Photo<input type="file" accept="image/jpeg,image/png,image/webp" hidden onchange="window.uploadMenuImage(event,\''+id+'\')"></label><button class="btn-refresh" aria-label="Delete '+name+'" onclick="window.deleteMenuItem(\''+id+'\',window.globalMenuItemsCache.find(x=>x.id===\''+id+'\').name)">×</button></div></td></tr>';
+    }).join('') || '<tr><td colspan="6">No matching menu items.</td></tr>';
 };
 
 window.saveMenuItemLayout = async function() {
@@ -3857,6 +3682,7 @@ window.saveMenuItemLayout = async function() {
 
     try {
         await setDoc(doc(db, "settings", "pos_item_layout"), { items: layoutIds }, { merge: true });
+        window.menuLayoutSnapshot = null;
         Swal.fire({
             title: '✅ Layout Saved!',
             text: 'Menu item arrangement saved. Cashier apps will update instantly.',
@@ -3871,124 +3697,12 @@ window.saveMenuItemLayout = async function() {
     }
 };
 
-window.addMenuItem = async function () {
-  let name = prompt("Enter new item name (e.g., Spicy Takoyaki):");
-  if (!name) return;
-
-  let category = prompt("Enter Category (e.g., Takoyaki, Milk Tea, Coffee):");
-  if (!category) return;
-
-  let priceStr = prompt(`Enter Base Price for ${name} (₱):`);
-  if (!priceStr) return;
-
-  let price = parseFloat(priceStr);
-  if (isNaN(price) || price < 0) { alert("❌ Error: Invalid price."); return; }
-
-  try {
-    await addDoc(collection(db, "menu"), { name: name, category: category, price: price });
-    alert(`✅ Success! ${name} added to the global menu.`);
-    window.loadMenuEditor();
-  } catch (error) {
-    console.error(error); alert("❌ Failed to add item.");
-  }
-};
+window.addMenuItem = async function() { return window.openNewProductModal(); };
 
 // ==========================================
 // ✏️ EDIT MENU ITEM (WITH GRAB & FOODPANDA)
 // ==========================================
-window.editMenuItem = async function (docId, currentName, currentCat, currentPrice) {
-    Swal.fire({title: 'Loading Pricing Data...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-    
-    // Fetch existing platform prices
-    let grabPrice = currentPrice;
-    let fpPrice = currentPrice;
-    try {
-        const itemRef = doc(db, "menu", docId);
-        const itemSnap = await getDoc(itemRef);
-        if (itemSnap.exists()) {
-            grabPrice = itemSnap.data().grabPrice || currentPrice;
-            fpPrice = itemSnap.data().foodpandaPrice || currentPrice;
-        }
-    } catch(e) { console.error("Error fetching prices:", e); }
-    
-    Swal.close();
-
-    const { value: formValues, isConfirmed } = await Swal.fire({
-        title: '✏️ Edit Menu Item',
-        html: `
-            <div style="text-align: left; margin-top: 10px;">
-                <label style="font-size: 12px; font-weight: bold; color: #475569;">Item Name:</label>
-                <input type="text" id="swal-menu-name" class="input-box" value="${currentName}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
-
-                <label style="font-size: 12px; font-weight: bold; color: #475569;">Category:</label>
-                <input type="text" id="swal-menu-cat" class="input-box" value="${currentCat}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 10px; outline: none;">
-
-                <label style="font-size: 12px; font-weight: bold; color: #475569;">Base Price (₱):</label>
-                <input type="number" id="swal-menu-price" class="input-box" value="${currentPrice}" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; font-weight: bold;">
-                
-                <div style="background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1;">
-                    <label style="font-size: 12px; font-weight: 900; color: #16a34a; display: block; margin-bottom: 5px;">🟢 GRAB Price (₱):</label>
-                    <input type="number" id="swal-menu-grab" class="input-box" value="${grabPrice}" style="width: 100%; padding: 10px; border-radius: 6px; border: 2px solid #bbf7d0; background: #f0fdf4; color: #16a34a; margin-bottom: 10px; outline: none; font-weight: 900;">
-
-                    <label style="font-size: 12px; font-weight: 900; color: #d70f64; display: block; margin-bottom: 5px;">🐼 Foodpanda Price (₱):</label>
-                    <input type="number" id="swal-menu-fp" class="input-box" value="${fpPrice}" style="width: 100%; padding: 10px; border-radius: 6px; border: 2px solid #fbcfe8; background: #fdf2f8; color: #d70f64; outline: none; font-weight: 900;">
-                </div>
-            </div>
-        `,
-        focusConfirm: false,
-        showCancelButton: true,
-        confirmButtonColor: '#0ea5e9',
-        confirmButtonText: 'Save Changes',
-        customClass: { popup: 'rounded-2xl shadow-xl' },
-        preConfirm: () => {
-            return {
-                name: document.getElementById('swal-menu-name').value.trim(),
-                category: document.getElementById('swal-menu-cat').value.trim(),
-                price: parseFloat(document.getElementById('swal-menu-price').value),
-                grabPrice: parseFloat(document.getElementById('swal-menu-grab').value),
-                foodpandaPrice: parseFloat(document.getElementById('swal-menu-fp').value)
-            };
-        }
-    });
-
-    if (!isConfirmed || !formValues.name || isNaN(formValues.price)) return;
-
-    Swal.fire({title: 'Syncing Database...', text: 'Updating menu and linked recipes...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-    try {
-        await updateDoc(doc(db, "menu", docId), { 
-            name: formValues.name, 
-            category: formValues.category, 
-            price: formValues.price, 
-            basePrice: formValues.price,
-            grabPrice: formValues.grabPrice,
-            foodpandaPrice: formValues.foodpandaPrice
-        });
-
-        if (currentName !== formValues.name) {
-            const bomQ = query(collection(db, "bom"), where("menuItem", "==", currentName));
-            const bomSnap = await getDocs(bomQ);
-            let updatePromises = [];
-            bomSnap.forEach(bDoc => {
-                updatePromises.push(updateDoc(doc(db, "bom", bDoc.id), { menuItem: formValues.name }));
-            });
-            await Promise.all(updatePromises);
-        }
-        
-        Swal.fire({
-            title: '✅ Saved!',
-            text: `${formValues.name} pricing has been updated globally.`,
-            icon: 'success',
-            timer: 1500,
-            showConfirmButton: false,
-            customClass: { popup: 'rounded-2xl' }
-        });
-        
-        window.loadMenuEditor();
-    } catch (error) {
-        console.error(error); Swal.fire('Error', 'Failed to update item.', 'error');
-    }
-};
+window.editMenuItem = async function(id) { const item = window.globalMenuItemsCache.find(row => row.id === id); if (item) return window.openBomEditor(item.name, id); };
 
 // --- 🖼️ IMAGE UPLOAD ENGINE ---
 window.uploadMenuImage = async function(event, docId) {
@@ -4022,12 +3736,13 @@ window.uploadMenuImage = async function(event, docId) {
             image: downloadURL
         });
 
-        alert("✅ Image compressed and uploaded successfully!");
+        window.ManagerUI.notify("✅ Image compressed and uploaded successfully!");
+        window.invalidateCache('menu');
         window.loadMenuEditor(); // Refresh table to show the new thumbnail
         
     } catch (e) {
         console.error("Upload error:", e);
-        alert("❌ Failed to upload image. Ensure Firebase Storage is fully activated.");
+        window.ManagerUI.notify("❌ Failed to upload image. Ensure Firebase Storage is fully activated.");
     } finally {
         // Restore the button to its normal state no matter what happens
         label.innerHTML = originalHTML;
@@ -4558,19 +4273,19 @@ window.openInventoryLogs = function() {
 };
 
 window.addNewInventoryItem = async function () {
-  let branch = prompt("Enter Branch (Main Office, Cabantian, Citygate, Maa):", "Main Office");
+  let branch = (await window.ManagerUI.prompt("Enter Branch (Main Office, Cabantian, Citygate, Maa):", "Main Office"));
   if (!branch) return;
-  let name = prompt("Enter Raw Material Name (e.g., Flour, Takoyaki Sauce):");
+  let name = (await window.ManagerUI.prompt("Enter Raw Material Name (e.g., Flour, Takoyaki Sauce):"));
   if (!name) return;
-  let category = prompt("Enter Category (Ingredients, Packaging, Beverage):", "Ingredients");
+  let category = (await window.ManagerUI.prompt("Enter Category (Ingredients, Packaging, Beverage):", "Ingredients"));
   if (!category) return;
-  let uom = prompt("Enter Unit of Measurement (e.g., kg, grams, pcs):", "kg");
+  let uom = (await window.ManagerUI.prompt("Enter Unit of Measurement (e.g., kg, grams, pcs):", "kg"));
   if (!uom) return;
-  let costStr = prompt(`Enter Cost per ${uom} (₱):`);
+  let costStr = (await window.ManagerUI.prompt(`Enter Cost per ${uom} (₱):`));
   let cost = parseFloat(costStr);
-  if (isNaN(cost)) { alert("❌ Invalid cost."); return; }
+  if (isNaN(cost)) { window.ManagerUI.notify("❌ Invalid cost."); return; }
 
-  let initStockStr = prompt(`Enter Initial Stock Level (in ${uom}):`, "0");
+  let initStockStr = (await window.ManagerUI.prompt(`Enter Initial Stock Level (in ${uom}):`, "0"));
   let initStock = parseFloat(initStockStr) || 0;
 
   try {
@@ -4578,37 +4293,37 @@ window.addNewInventoryItem = async function () {
         const duplicateSnap = await getDocs(duplicateQuery);
         
         if (!duplicateSnap.empty) {
-            alert(`❌ Blocked: "${name}" already exists in your inventory! Please use Multi-Restock to add more quantity.`);
+            window.ManagerUI.notify(`❌ Blocked: "${name}" already exists in your inventory! Please use Multi-Restock to add more quantity.`);
             return; // Stops the code dead in its tracks!
         }
     } catch (err) {
         console.error("Error checking for duplicates:", err);
-        alert("Database connection error while verifying item.");
+        window.ManagerUI.notify("Database connection error while verifying item.");
         return;
     }
   
   try {
     await addDoc(collection(db, "inventory"), { branch: branch, name: name, category: category, uom: uom, baseCost: cost, currentStock: initStock, reorderLevel: 5 });
-    alert(`✅ Success! ${name} added to ${branch} warehouse.`);
+    window.ManagerUI.notify(`✅ Success! ${name} added to ${branch} warehouse.`);
     window.loadInventoryData();
   } catch (error) {
-    console.error(error); alert("❌ Failed to add item.");
+    console.error(error); window.ManagerUI.notify("❌ Failed to add item.");
   }
 };
 
 window.restockItem = async function () {
-  let itemName = prompt("Enter the EXACT name of the item you received a delivery for:");
+  let itemName = (await window.ManagerUI.prompt("Enter the EXACT name of the item you received a delivery for:"));
   if (!itemName) return;
-  let addedStockStr = prompt(`How many units did you receive?`);
+  let addedStockStr = (await window.ManagerUI.prompt(`How many units did you receive?`));
   let addedStock = parseFloat(addedStockStr);
-  if (isNaN(addedStock) || addedStock <= 0) { alert("❌ Invalid quantity."); return; }
+  if (isNaN(addedStock) || addedStock <= 0) { window.ManagerUI.notify("❌ Invalid quantity."); return; }
 
   try {
     // Find the item first
     const q = query(collection(db, "inventory"), where("name", "==", itemName));
     const snap = await getDocs(q);
 
-    if (snap.empty) { alert("❌ Item not found. Check the spelling exactly as it appears in the table."); return; }
+    if (snap.empty) { window.ManagerUI.notify("❌ Item not found. Check the spelling exactly as it appears in the table."); return; }
 
     // Update the stock!
     let docRef = snap.docs[0].ref;
@@ -4616,10 +4331,10 @@ window.restockItem = async function () {
     let newStock = (parseFloat(currentData.currentStock) || 0) + addedStock;
 
     await updateDoc(docRef, { currentStock: newStock });
-    alert(`📦 Success! Added ${addedStock} to ${itemName}. New total: ${newStock}.`);
+    window.ManagerUI.notify(`📦 Success! Added ${addedStock} to ${itemName}. New total: ${newStock}.`);
     window.loadInventoryData();
   } catch (error) {
-    console.error(error); alert("❌ Failed to restock.");
+    console.error(error); window.ManagerUI.notify("❌ Failed to restock.");
   }
 };
 
@@ -4676,7 +4391,7 @@ window.executeBatchPrep = async function () {
     let prepQty = parseFloat(document.getElementById('batchQty').value);
 
     if (!branch || !targetItem || isNaN(prepQty) || prepQty <= 0) {
-        alert("Please fill all fields correctly."); return;
+        window.ManagerUI.notify("Please fill all fields correctly."); return;
     }
 
     let btn = document.getElementById('btnExecuteBatch');
@@ -4688,7 +4403,7 @@ window.executeBatchPrep = async function () {
         const bomSnap = await getDocs(bomQ);
 
         if (bomSnap.empty) {
-            alert(`❌ Missing Recipe!\n\nYou haven't set up a recipe for "${targetItem}" in the Menu Costing & BOM tab yet.`);
+            window.ManagerUI.notify(`❌ Missing Recipe!\n\nYou haven't set up a recipe for "${targetItem}" in the Menu Costing & BOM tab yet.`);
             btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
             return;
         }
@@ -4704,7 +4419,7 @@ window.executeBatchPrep = async function () {
             const invSnap = await getDocs(invQ);
 
             if (invSnap.empty) {
-                alert(`❌ Missing Inventory Item!\n\nYour recipe requires "${recipeIngredient.ingredientName}", but it doesn't exist in the ${branch} warehouse.`);
+                window.ManagerUI.notify(`❌ Missing Inventory Item!\n\nYour recipe requires "${recipeIngredient.ingredientName}", but it doesn't exist in the ${branch} warehouse.`);
                 btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
                 return;
             }
@@ -4714,7 +4429,7 @@ window.executeBatchPrep = async function () {
 
             // ANTI-FRAUD: Check if they actually have enough raw materials to make this batch!
             if (currentStock < totalNeeded) {
-                alert(`❌ Insufficient Raw Materials!\n\nYou need ${totalNeeded} of ${recipeIngredient.ingredientName} to make this batch, but you only have ${currentStock} in stock at ${branch}.`);
+                window.ManagerUI.notify(`❌ Insufficient Raw Materials!\n\nYou need ${totalNeeded} of ${recipeIngredient.ingredientName} to make this batch, but you only have ${currentStock} in stock at ${branch}.`);
                 btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
                 return;
             }
@@ -4776,7 +4491,7 @@ window.executeBatchPrep = async function () {
         }
 
     } catch (error) {
-        console.error(error); alert("Failed to prepare batch.");
+        console.error(error); window.ManagerUI.notify("Failed to prepare batch.");
     } finally {
         btn.innerText = "🚀 Mix & Deduct Ingredients"; btn.disabled = false;
     }
@@ -5128,35 +4843,35 @@ window.openBranchAccountHistory = async function(branchName) {
 };
 
 window.deleteCashAccount = async function(docId, accName) {
-    if (!confirm(`⚠️ ARE YOU SURE?\n\nDelete cash account: ${accName}?\nThis cannot be undone.`)) return;
+    if (!(await window.ManagerUI.confirm(`⚠️ ARE YOU SURE?\n\nDelete cash account: ${accName}?\nThis cannot be undone.`))) return;
     try {
         await deleteDoc(doc(db, "cash_accounts", docId));
-        alert(`🗑️ ${accName} deleted.`);
+        window.ManagerUI.notify(`🗑️ ${accName} deleted.`);
         window.loadAccountsAndBudget();
-    } catch(e) { console.error(e); alert("Failed to delete account."); }
+    } catch(e) { console.error(e); window.ManagerUI.notify("Failed to delete account."); }
 };
 
 // --- BUDGET CATEGORY EDIT & DELETE ACTIONS ---
 window.editBudgetCategory = async function(docId, catName, currentLimit) {
-    let newLimitStr = prompt(`Update monthly limit for ${catName} (₱):`, currentLimit);
+    let newLimitStr = (await window.ManagerUI.prompt(`Update monthly limit for ${catName} (₱):`, currentLimit));
     if (newLimitStr === null) return;
     let newLimit = parseFloat(newLimitStr);
-    if (isNaN(newLimit) || newLimit < 0) { alert("❌ Invalid limit amount."); return; }
+    if (isNaN(newLimit) || newLimit < 0) { window.ManagerUI.notify("❌ Invalid limit amount."); return; }
 
     try {
         await updateDoc(doc(db, "budgets", docId), { limit: newLimit });
-        alert(`✅ ${catName} limit successfully updated to ₱${newLimit.toLocaleString()}!`);
+        window.ManagerUI.notify(`✅ ${catName} limit successfully updated to ₱${newLimit.toLocaleString()}!`);
         window.loadAccountsAndBudget();
-    } catch(e) { console.error(e); alert("Failed to update budget limit."); }
+    } catch(e) { console.error(e); window.ManagerUI.notify("Failed to update budget limit."); }
 };
 
 window.deleteBudgetCategory = async function(docId, catName) {
-    if (!confirm(`⚠️ ARE YOU SURE?\n\nDelete budget category: ${catName}?\nThis cannot be undone.`)) return;
+    if (!(await window.ManagerUI.confirm(`⚠️ ARE YOU SURE?\n\nDelete budget category: ${catName}?\nThis cannot be undone.`))) return;
     try {
         await deleteDoc(doc(db, "budgets", docId));
-        alert(`🗑️ ${catName} budget category deleted.`);
+        window.ManagerUI.notify(`🗑️ ${catName} budget category deleted.`);
         window.loadAccountsAndBudget();
-    } catch(e) { console.error(e); alert("Failed to delete budget."); }
+    } catch(e) { console.error(e); window.ManagerUI.notify("Failed to delete budget."); }
 };
 
 // ==========================================
@@ -5174,19 +4889,19 @@ window.saveNewCashAccount = async function() {
     let name = document.getElementById('newAccName').value.trim();
     let bal = parseFloat(document.getElementById('newAccBalance').value) || 0;
 
-    if (!name) { alert("Please enter an Account Name."); return; }
+    if (!name) { window.ManagerUI.notify("Please enter an Account Name."); return; }
 
     let btn = document.getElementById('btnSaveNewAcc');
     btn.innerText = "⏳ Saving..."; btn.disabled = true;
 
     try {
         await addDoc(collection(db, "cash_accounts"), { branch, name, balance: bal });
-        alert(`✅ ${name} Account successfully created for ${branch}!`);
+        window.ManagerUI.notify(`✅ ${name} Account successfully created for ${branch}!`);
         document.getElementById('addAccountModal').style.display = 'none';
         window.loadAccountsAndBudget();
     } catch (e) { 
         console.error(e); 
-        alert("Failed to add account."); 
+        window.ManagerUI.notify("Failed to add account."); 
     } finally {
         btn.innerText = "💾 Save Account"; btn.disabled = false;
     }
@@ -5197,7 +4912,7 @@ window.saveNewCashAccount = async function() {
 // ==========================================
 window.transferCash = function () {
   if (!window.liveAccounts || window.liveAccounts.length < 2) { 
-      alert("You need at least 2 accounts to make a transfer."); 
+      window.ManagerUI.notify("You need at least 2 accounts to make a transfer."); 
       return; 
   }
 
@@ -5221,15 +4936,15 @@ window.submitCashTransfer = async function() {
     let toId = document.getElementById('transferToAcc').value;
     let amt = parseFloat(document.getElementById('transferAmount').value);
 
-    if (!fromId || !toId) { alert("Please select both accounts."); return; }
-    if (fromId === toId) { alert("Cannot transfer to the same account."); return; }
-    if (isNaN(amt) || amt <= 0) { alert("Please enter a valid amount."); return; }
+    if (!fromId || !toId) { window.ManagerUI.notify("Please select both accounts."); return; }
+    if (fromId === toId) { window.ManagerUI.notify("Cannot transfer to the same account."); return; }
+    if (isNaN(amt) || amt <= 0) { window.ManagerUI.notify("Please enter a valid amount."); return; }
 
     let fromAcc = window.liveAccounts.find(a => a.id === fromId);
     let toAcc = window.liveAccounts.find(a => a.id === toId);
 
     if (fromAcc.balance < amt) { 
-        alert(`❌ Insufficient funds in ${fromAcc.name}.\nAvailable balance: ₱${fromAcc.balance.toLocaleString()}`); 
+        window.ManagerUI.notify(`❌ Insufficient funds in ${fromAcc.name}.\nAvailable balance: ₱${fromAcc.balance.toLocaleString()}`); 
         return; 
     }
 
@@ -5269,7 +4984,7 @@ window.submitCashTransfer = async function() {
         window.loadAccountsAndBudget();
     } catch (e) { 
         console.error(e); 
-        alert("Transfer failed. Check console."); 
+        window.ManagerUI.notify("Transfer failed. Check console."); 
     } finally {
         btn.innerText = "Confirm Transfer"; btn.disabled = false;
     }
@@ -5408,7 +5123,7 @@ window.submitNewBudget = async function() {
     let limit = parseFloat(document.getElementById('newBudgetLimit').value);
 
     if (!category || isNaN(limit) || limit < 0) {
-        alert("Please provide a valid category name and limit amount."); return;
+        window.ManagerUI.notify("Please provide a valid category name and limit amount."); return;
     }
 
     let btn = document.getElementById('btnSubmitNewBudget');
@@ -5426,12 +5141,12 @@ window.submitNewBudget = async function() {
             currentMonth: currentMonthStr,
             createdAt: serverTimestamp()
         });
-        alert(`✅ Success! Budget added for ${branch}.`);
+        window.ManagerUI.notify(`✅ Success! Budget added for ${branch}.`);
         document.getElementById('addBudgetModal').style.display = 'none';
         window.loadAccountsAndBudget();
     } catch (e) {
         console.error("Error adding budget:", e);
-        alert("Failed to add category.");
+        window.ManagerUI.notify("Failed to add category.");
     } finally {
         btn.innerText = "💾 Save Category"; btn.disabled = false;
     }
@@ -5449,7 +5164,7 @@ window.submitEditBudget = async function() {
     let newLimit = parseFloat(document.getElementById('editBudgetLimit').value);
 
     if (isNaN(newLimit) || newLimit < 0) {
-        alert("❌ Invalid amount entered."); return;
+        window.ManagerUI.notify("❌ Invalid amount entered."); return;
     }
 
     let btn = document.getElementById('btnSubmitEditBudget');
@@ -5463,24 +5178,24 @@ window.submitEditBudget = async function() {
         document.getElementById('editBudgetModal').style.display = 'none';
         window.loadAccountsAndBudget(); // Instantly refresh UI
     } catch (e) {
-        console.error(e); alert("❌ Failed to update budget.");
+        console.error(e); window.ManagerUI.notify("❌ Failed to update budget.");
     } finally {
         btn.innerText = "💾 Update Limit"; btn.disabled = false;
     }
 };
 
 window.deleteBudgetCategory = async function(docId, catName) {
-    if (!confirm(`⚠️ ARE YOU SURE?\n\nDelete budget category: ${catName}?\nThis cannot be undone.`)) return;
+    if (!(await window.ManagerUI.confirm(`⚠️ ARE YOU SURE?\n\nDelete budget category: ${catName}?\nThis cannot be undone.`))) return;
     try {
         await deleteDoc(doc(db, "budgets", docId));
-        alert(`🗑️ ${catName} budget category deleted.`);
+        window.ManagerUI.notify(`🗑️ ${catName} budget category deleted.`);
         window.loadAccountsAndBudget();
-    } catch(e) { console.error(e); alert("Failed to delete budget."); }
+    } catch(e) { console.error(e); window.ManagerUI.notify("Failed to delete budget."); }
 };
 
 window.openLogExpenseModal = function() {
-    if (!window.liveBudgets || window.liveBudgets.length === 0) { alert("Add a Budget Category first."); return; }
-    if (!window.liveAccounts || window.liveAccounts.length === 0) { alert("Add a Cash Account first."); return; }
+    if (!window.liveBudgets || window.liveBudgets.length === 0) { window.ManagerUI.notify("Add a Budget Category first."); return; }
+    if (!window.liveAccounts || window.liveAccounts.length === 0) { window.ManagerUI.notify("Add a Cash Account first."); return; }
 
     let budgetSelect = document.getElementById('logExpBudgetSelect');
     let accSelect = document.getElementById('logExpAccSelect');
@@ -5516,14 +5231,14 @@ window.submitLogExpense = async function() {
     let expDateVal = document.getElementById('logExpDate').value;
     let finalDate = expDateVal ? new Date(expDateVal + 'T12:00:00') : new Date();
 
-    if (!budId || !accId) { alert("Please select a budget and a cash account."); return; }
-    if (isNaN(amt) || amt <= 0) { alert("Please enter a valid amount."); return; }
+    if (!budId || !accId) { window.ManagerUI.notify("Please select a budget and a cash account."); return; }
+    if (isNaN(amt) || amt <= 0) { window.ManagerUI.notify("Please enter a valid amount."); return; }
 
     let selBud = window.liveBudgets.find(b => b.id === budId);
     let selAcc = window.liveAccounts.find(a => a.id === accId);
 
     if (selAcc.balance < amt) {
-        if (!confirm(`⚠️ WARNING: ${selAcc.name} only has ₱${selAcc.balance}. Deducting this will make the account negative. Continue?`)) return;
+        if (!(await window.ManagerUI.confirm(`⚠️ WARNING: ${selAcc.name} only has ₱${selAcc.balance}. Deducting this will make the account negative. Continue?`))) return;
     }
 
     let btn = document.getElementById('btnSubmitLogExpense');
@@ -5556,7 +5271,7 @@ window.submitLogExpense = async function() {
         document.getElementById('logExpenseModal').style.display = 'none';
         window.loadAccountsAndBudget();
     } catch (e) {
-        console.error(e); alert("Failed to log expense.");
+        console.error(e); window.ManagerUI.notify("Failed to log expense.");
     } finally {
         btn.innerText = "💸 Confirm & Deduct"; btn.disabled = false;
     }
@@ -5613,12 +5328,12 @@ window.openBudgetLogsModal = async function() {
 };
 
 window.editBudget = async function(id, name, currentLimit, branch) {
-    let newLimitStr = prompt(`Edit Monthly Budget Limit for ${branch} - ${name}:\n\nEnter new amount (₱):`, currentLimit);
+    let newLimitStr = (await window.ManagerUI.prompt(`Edit Monthly Budget Limit for ${branch} - ${name}:\n\nEnter new amount (₱):`, currentLimit));
     if (newLimitStr === null || newLimitStr === "") return;
     
     let newLimit = parseFloat(newLimitStr);
     if (isNaN(newLimit) || newLimit < 0) {
-        alert("❌ Invalid amount entered.");
+        window.ManagerUI.notify("❌ Invalid amount entered.");
         return;
     }
 
@@ -5630,44 +5345,44 @@ window.editBudget = async function(id, name, currentLimit, branch) {
         window.loadAccountsAndBudget(); // Instantly refresh UI
     } catch (e) {
         console.error(e);
-        alert("❌ Failed to update budget.");
+        window.ManagerUI.notify("❌ Failed to update budget.");
     }
 };
 
 window.deleteBudget = async function(id) {
-    if (!confirm("⚠️ Are you sure you want to permanently delete this budget category?")) return;
+    if (!(await window.ManagerUI.confirm("⚠️ Are you sure you want to permanently delete this budget category?"))) return;
     
     try {
         await deleteDoc(doc(db, "budgets", id));
         window.loadAccountsAndBudget(); // Instantly refresh UI
     } catch (e) {
         console.error(e);
-        alert("❌ Failed to delete budget.");
+        window.ManagerUI.notify("❌ Failed to delete budget.");
     }
 };
 
 window.logExpense = async function () {
-  if (!window.liveBudgets || window.liveBudgets.length === 0) { alert("Add a Budget Category first."); return; }
-  if (!window.liveAccounts || window.liveAccounts.length === 0) { alert("Add a Cash Account first."); return; }
+  if (!window.liveBudgets || window.liveBudgets.length === 0) { window.ManagerUI.notify("Add a Budget Category first."); return; }
+  if (!window.liveAccounts || window.liveAccounts.length === 0) { window.ManagerUI.notify("Add a Cash Account first."); return; }
 
   let catList = window.liveBudgets.map((b, i) => `[${i}] ${b.category} (${b.branch})`).join('\n');
-  let catIdx = parseInt(prompt("SELECT BUDGET CATEGORY (Enter Number):\n\n" + catList));
+  let catIdx = parseInt((await window.ManagerUI.prompt("SELECT BUDGET CATEGORY (Enter Number):\n\n" + catList)));
   if (isNaN(catIdx) || !window.liveBudgets[catIdx]) return;
 
   let accList = window.liveAccounts.map((a, i) => `[${i}] ${a.name} (${a.branch})`).join('\n');
-  let accIdx = parseInt(prompt("DEDUCT FROM ACCOUNT (Enter Number):\n\n" + accList));
+  let accIdx = parseInt((await window.ManagerUI.prompt("DEDUCT FROM ACCOUNT (Enter Number):\n\n" + accList)));
   if (isNaN(accIdx) || !window.liveAccounts[accIdx]) return;
 
-  let amt = parseFloat(prompt("Expense Amount (₱):"));
+  let amt = parseFloat((await window.ManagerUI.prompt("Expense Amount (₱):")));
   if (isNaN(amt) || amt <= 0) return;
 
-  let note = prompt("Notes/Description (e.g., August Rent):", "");
+  let note = (await window.ManagerUI.prompt("Notes/Description (e.g., August Rent):", ""));
 
   let selBud = window.liveBudgets[catIdx];
   let selAcc = window.liveAccounts[accIdx];
 
   if (selAcc.balance < amt) {
-    if (!confirm(`⚠️ WARNING: ${selAcc.name} only has ₱${selAcc.balance}. Deducting this will make the account negative. Continue?`)) return;
+    if (!(await window.ManagerUI.confirm(`⚠️ WARNING: ${selAcc.name} only has ₱${selAcc.balance}. Deducting this will make the account negative. Continue?`))) return;
   }
 
   try {
@@ -5688,9 +5403,9 @@ window.logExpense = async function () {
       timestamp: selectedDate
     });
 
-    alert(`🧾✅ Expense Logged! ₱${amt} deducted from ${selAcc.name}.`);
+    window.ManagerUI.notify(`🧾✅ Expense Logged! ₱${amt} deducted from ${selAcc.name}.`);
     window.loadAccountsAndBudget();
-  } catch (e) { console.error(e); alert("Failed to log expense."); }
+  } catch (e) { console.error(e); window.ManagerUI.notify("Failed to log expense."); }
 };
 
 // --- THE PAYROLL & HR ENGINE ---
@@ -5781,17 +5496,17 @@ window.loadPayrollDashboard = async function() {
 };
 
 window.adjustPayroll = async function (shiftId, name, basePay) {
-  let bonus = parseFloat(prompt(`Adding BONUS for ${name}.\nBase Pay is ${formatMoney(basePay)}.\n\nEnter bonus amount (₱):`, "0")) || 0;
-  let deduct = parseFloat(prompt(`Adding DEDUCTION for ${name}.\n\nEnter deduction amount (₱):`, "0")) || 0;
+  let bonus = parseFloat((await window.ManagerUI.prompt(`Adding BONUS for ${name}.\nBase Pay is ${formatMoney(basePay)}.\n\nEnter bonus amount (₱):`, "0"))) || 0;
+  let deduct = parseFloat((await window.ManagerUI.prompt(`Adding DEDUCTION for ${name}.\n\nEnter deduction amount (₱):`, "0"))) || 0;
 
   if (bonus === 0 && deduct === 0) return;
 
   try {
     await updateDoc(doc(db, "shifts", shiftId), { payrollBonus: bonus, payrollDeduct: deduct });
-    alert(`✅ Success! Payroll recalculated for ${name}.`);
+    window.ManagerUI.notify(`✅ Success! Payroll recalculated for ${name}.`);
     window.loadPayrollDashboard();
   } catch (e) {
-    console.error(e); alert("Failed to adjust payroll.");
+    console.error(e); window.ManagerUI.notify("Failed to adjust payroll.");
   }
 };
 
@@ -5851,7 +5566,7 @@ window.loadMenuCosting = async function() {
 
   try {
       // 1. Get Live Inventory Costs (WITH SMART MULTI-BRANCH FILTER)
-      const invSnap = await getDocs(collection(db, "inventory"));
+      const invSnap = await cachedSnapshot('inventory');
       globalInventoryCosts = {};
         
       invSnap.forEach(doc => {
@@ -5865,7 +5580,7 @@ window.loadMenuCosting = async function() {
       });
 
     // 2. Get Recipes
-    const bomSnap = await getDocs(collection(db, "bom"));
+    const bomSnap = await cachedSnapshot('bom');
     let recipes = {};
     bomSnap.forEach(doc => {
       let data = doc.data();
@@ -5874,7 +5589,7 @@ window.loadMenuCosting = async function() {
     });
 
     // 3. Get Menu & Collect Unique Categories!
-    const menuSnap = await getDocs(collection(db, "menu"));
+    const menuSnap = await cachedSnapshot('menu');
     let html = '';
     let totalMarginPct = 0; let menuCount = 0; let missingBomCount = 0;
 
@@ -5965,12 +5680,17 @@ window.loadMenuCosting = async function() {
 window.openNewProductModal = async function () {
   if (document.getElementById('btnSaveAdvProd')?.disabled) return;
   window.deletedAdvRecipes = [];
+  window.pendingAdvMenuRef = null;
   document.getElementById('advancedProductModal').style.display = 'flex';
   document.getElementById('advProdId').value = '';
   document.getElementById('advProdName').value = '';
   document.getElementById('advProdName').readOnly = false; 
   document.getElementById('advProdCat').value = window.activeCostingTab !== 'All' ? window.activeCostingTab : 'Main Menu';
   document.getElementById('advProdPrice').value = 0;
+  document.getElementById('advProdGrabPrice').value = '';
+  document.getElementById('advProdFpPrice').value = '';
+  window.currentMixMatchConfig = [];
+  document.getElementById('mixMatchMappingContainer')?.replaceChildren();
   // Clear the box for new items!
   let mixInput = document.getElementById('advProdMixMatch');
   if (mixInput) mixInput.value = '';
@@ -6153,9 +5873,10 @@ window.saveAdvancedInventoryItem = async function () {
 // ========================================================
 window.currentAdvRecipe = []; // Stores the live rows in the modal
 
-window.openBomEditor = async function (menuItemName) {
+window.openBomEditor = async function (menuItemName, selectedId) {
   if (document.getElementById('btnSaveAdvProd')?.disabled) return;
   window.deletedAdvRecipes = [];
+  window.pendingAdvMenuRef = null;
   document.getElementById('advProdId').value = '';
   document.getElementById('advancedProductModal').style.display = 'flex';
   document.getElementById('advProdName').value = menuItemName;
@@ -6166,7 +5887,9 @@ window.openBomEditor = async function (menuItemName) {
 
   try {
     const menuQ = query(collection(db, "menu"), where("name", "==", menuItemName));
-    const menuSnap = await getDocs(menuQ);
+    const menuRows = (await window.fetchCachedCollection('menu')).filter(row => selectedId ? row.id === selectedId : row.name === menuItemName);
+    if (menuRows.length !== 1) throw new Error('Select a unique menu item before editing.');
+    const menuSnap = {empty:false,docs:menuRows.map(row=>({id:row.id,data:()=>row}))};
     if (!menuSnap.empty) {
       let mData = menuSnap.docs[0].data();
       document.getElementById('addonTableBody').innerHTML = '';
@@ -6177,7 +5900,9 @@ window.openBomEditor = async function (menuItemName) {
       }
       document.getElementById('advProdId').value = menuSnap.docs[0].id;
       document.getElementById('advProdCat').value = mData.category || '';
-      document.getElementById('advProdPrice').value = mData.price || 0;
+      document.getElementById('advProdPrice').value = mData.price ?? 0;
+      document.getElementById('advProdGrabPrice').value = mData.grabPrice ?? mData.price ?? 0;
+      document.getElementById('advProdFpPrice').value = mData.foodpandaPrice ?? mData.price ?? 0;
       
       // Load the Mix & Match flavors into the box!
       let mixInput = document.getElementById('advProdMixMatch');
@@ -6203,7 +5928,8 @@ window.openBomEditor = async function (menuItemName) {
     }
 
     const bomQ = query(collection(db, "bom"), where("menuItem", "==", menuItemName));
-    const bomSnap = await getDocs(bomQ);
+    const recipeRows = (await window.fetchCachedCollection('bom')).filter(row => row.menuItem === menuItemName);
+    const bomSnap = {forEach:fn=>recipeRows.forEach(row=>fn({id:row.id,data:()=>({...row})}))};
     window.currentAdvRecipe = [];
     bomSnap.forEach(docSnap => {
       let data = docSnap.data();
@@ -6226,7 +5952,7 @@ window.openBomEditor = async function (menuItemName) {
     }
 
   } catch (e) {
-    console.error(e); alert("Failed to load product details.");
+    console.error(e); window.ManagerUI.notify("Failed to load product details.");
   }
 };
 
@@ -6440,7 +6166,9 @@ window.saveAdvancedProduct = async function () {
   let menuId = document.getElementById('advProdId').value;
   let prodName = document.getElementById('advProdName').value.trim();
   let category = document.getElementById('advProdCat').value.trim();
-  let price = parseFloat(document.getElementById('advProdPrice').value) || 0;
+  let price = Number(document.getElementById('advProdPrice').value);
+  let grabPrice = document.getElementById('advProdGrabPrice').value === '' ? price : Number(document.getElementById('advProdGrabPrice').value);
+  let foodpandaPrice = document.getElementById('advProdFpPrice').value === '' ? price : Number(document.getElementById('advProdFpPrice').value);
   
   let mixMatchRaw = document.getElementById('advProdMixMatch') ? document.getElementById('advProdMixMatch').value : "";
   let mixMatchArr = mixMatchRaw.split(',').map(s => s.trim()).filter(Boolean);
@@ -6449,17 +6177,20 @@ window.saveAdvancedProduct = async function () {
   document.querySelectorAll('.mix-match-row').forEach(row => {
       let flavor = row.getAttribute('data-flavor');
       let ingredient = row.querySelector('.mm-ingredient').value;
-      let qty = parseFloat(row.querySelector('.mm-qty').value) || 0;
-      if (ingredient && qty > 0) mixMatchConfigArray.push({ flavor: flavor, linkedIngredient: ingredient, deductQty: qty });
+      let qty = Number(row.querySelector('.mm-qty').value);
+      if (ingredient) mixMatchConfigArray.push({ flavor: flavor, linkedIngredient: ingredient, deductQty: qty });
   });
 
   if (!prodName) {
-    alert("❌ Error: Product name is required.");
+    window.ManagerUI.notify("❌ Error: Product name is required.");
     if(btn) { btn.innerText = "Save Changes"; btn.disabled = false; }
     return;
   }
 
   try {
+    if (!category || [price, grabPrice, foodpandaPrice].some(n => !Number.isFinite(n) || n < 0)) throw new Error('Enter a category and valid prices.');
+    const duplicates = await window.getDocsFromServer(window.query(window.collection(window.db, 'menu'), window.where('name', '==', prodName)));
+    if (duplicates.docs.some(row => row.id !== (menuId || window.pendingAdvMenuRef?.id))) throw new Error('Another menu item already uses this name.');
     const recipeRows = window.currentAdvRecipe.map(item => ({ ...item }));
     const deletedRecipes = [...(window.deletedAdvRecipes || [])];
     let addonsArray = [];
@@ -6468,9 +6199,9 @@ window.saveAdvancedProduct = async function () {
       if (nameInput && nameInput.value.trim() !== '') { 
         addonsArray.push({
           name: nameInput.value.trim(),
-          price: parseFloat(row.querySelector('.addon-price').value) || 0,
+          price: Number(row.querySelector('.addon-price').value),
           linkedIngredient: row.querySelector('.addon-ingredient').value,
-          deductQty: parseFloat(row.querySelector('.addon-qty').value) || 0
+          deductQty: Number(row.querySelector('.addon-qty').value)
         });
       }
     });
@@ -6478,13 +6209,20 @@ window.saveAdvancedProduct = async function () {
     const inventorySnap = await window.getDocsFromServer(window.collection(window.db, 'inventory'));
     const availableNames = new Set(inventorySnap.docs.map(d => d.data().name));
     const problems = recipeProblems(recipeRows, availableNames);
-    if (problems.length) throw new Error(problems.join('\n'));
+    for (const addon of addonsArray) {
+      if (!Number.isFinite(addon.price) || addon.price < 0) problems.push('Invalid add-on price: ' + addon.name);
+      if (addon.linkedIngredient) problems.push(...recipeProblems([{ingredientName: addon.linkedIngredient, qty: addon.deductQty}], availableNames));
+      else if (addon.deductQty !== 0) problems.push('Choose a stock ingredient for add-on: ' + addon.name);
+    }
+    for (const flavor of mixMatchConfigArray) problems.push(...recipeProblems([{ingredientName: flavor.linkedIngredient, qty: flavor.deductQty}], availableNames));
+    if (problems.length) throw new Error([...new Set(problems)].join('\n'));
+    if (recipeRows.length + deletedRecipes.length + 1 > 400) throw new Error('This recipe is too large to save together. Reduce it to 399 rows.');
     // 🔥 1. INITIALIZE THE BATCH ENGINE
     if(btn) btn.innerText = "⚡ Blasting to Cloud...";
     const batch = window.writeBatch(window.db);
 
     let menuPayload = { 
-        name: prodName, category: category, price: price, basePrice: price, 
+        name: prodName, category: category, price: price, basePrice: price, grabPrice, foodpandaPrice, 
         addons: addonsArray, mixMatchFlavors: mixMatchArr, mixMatchConfig: mixMatchConfigArray 
     };
 
@@ -6492,7 +6230,7 @@ window.saveAdvancedProduct = async function () {
     if (menuId) {
         batch.update(window.doc(window.db, "menu", menuId), menuPayload);
     } else {
-        let newMenuRef = window.doc(window.collection(window.db, "menu"));
+        let newMenuRef = window.pendingAdvMenuRef ||= window.doc(window.collection(window.db, "menu"));
         batch.set(newMenuRef, menuPayload);
         menuId = newMenuRef.id;
     }
@@ -6505,12 +6243,13 @@ window.saveAdvancedProduct = async function () {
     }
 
     // 4. Package New & Updated Recipes
-    for (let item of recipeRows) {
+    for (const [recipeIndex, item] of recipeRows.entries()) {
         if (!item.ingredientName || item.qty <= 0) continue; 
         if (item.docId && !item.isNew) {
             batch.update(window.doc(window.db, "bom", item.docId), { menuItem: prodName, ingredientName: item.ingredientName, qty: Number(item.qty) });
         } else {
-            let newBomRef = window.doc(window.collection(window.db, "bom"));
+            let newBomRef = item.docId ? window.doc(window.db, "bom", item.docId) : window.doc(window.collection(window.db, "bom"));
+            window.currentAdvRecipe[recipeIndex].docId = newBomRef.id;
             batch.set(newBomRef, { menuItem: prodName, ingredientName: item.ingredientName, qty: item.qty });
         }
     }
@@ -6518,6 +6257,7 @@ window.saveAdvancedProduct = async function () {
     // 🔥 5. FIRE THE ENTIRE PACKAGE IN ONE SINGLE MILLISECOND BURST!
     await batch.commit();
     document.getElementById('advProdId').value = menuId;
+    window.pendingAdvMenuRef = null;
     window.deletedAdvRecipes = [];
     window.invalidateCache('menu'); window.invalidateCache('bom');
 
@@ -6526,11 +6266,11 @@ window.saveAdvancedProduct = async function () {
     let modal = document.getElementById('advancedProductModal');
     if (modal) modal.style.display = 'none';
 
-    window.loadMenuCosting(); 
+    window.loadMenuEditor(); 
 
   } catch (error) {
     console.error("Save Error:", error); 
-    alert('Product was not saved. Your edits remain open.\n' + error.message);
+    window.ManagerUI.notify('Product was not saved. Your edits remain open.\n' + error.message);
   } finally {
     if (typeof btn !== 'undefined' && btn) { btn.innerText = "Save Changes"; btn.disabled = false; }
   }
@@ -6595,10 +6335,10 @@ window.processRecipeCsvUpload = function (event) {
 
         successCount++;
       }
-      alert(`✅ Recipes Uploaded!\n\nAdded ${successCount} ingredient links.\nErrors: ${errorCount}`);
+      window.ManagerUI.notify(`✅ Recipes Uploaded!\n\nAdded ${successCount} ingredient links.\nErrors: ${errorCount}`);
       window.loadMenuCosting();
     } catch (error) {
-      console.error(error); alert("❌ Fatal Error.");
+      console.error(error); window.ManagerUI.notify("❌ Fatal Error.");
     } finally {
       // ✅ THE BULLETPROOF FIX (BOTTOM)
       if (uploadBtn) { 
@@ -6681,10 +6421,10 @@ window.processCsvUpload = function (event) {
         });
         successCount++;
       }
-      alert(`✅ Mission Accomplished!\n\nAdded: ${successCount}\nErrors: ${errorCount}`);
+      window.ManagerUI.notify(`✅ Mission Accomplished!\n\nAdded: ${successCount}\nErrors: ${errorCount}`);
       window.loadInventoryData();
     } catch (error) {
-      console.error(error); alert("❌ Fatal Error.");
+      console.error(error); window.ManagerUI.notify("❌ Fatal Error.");
     } finally {
       // ✅ THE BULLETPROOF FIX (BOTTOM)
       if (uploadBtn) { 
@@ -6799,8 +6539,8 @@ window.openEditInvModal = async function(id) {
             window.calcEditVariance();
             if(typeof window.calcEditCost === 'function') window.calcEditCost();
 
-        } else { alert("Item not found in database."); }
-    } catch (e) { console.error("Error opening edit modal:", e); alert("Failed to load item."); }
+        } else { window.ManagerUI.notify("Item not found in database."); }
+    } catch (e) { console.error("Error opening edit modal:", e); window.ManagerUI.notify("Failed to load item."); }
 };
 
 window.calcEditVariance = function() {
@@ -6903,7 +6643,7 @@ window.saveInventoryEdit = async function() {
 
     let assignedRestockCycle = document.getElementById('editInvCycle') ? document.getElementById('editInvCycle').value : 'Monthly';
 
-    if (!name) { alert("Item name is required!"); return; }
+    if (!name) { window.ManagerUI.notify("Item name is required!"); return; }
 
     let finalQty = oldQty;
     let isAdjusting = false;
@@ -6914,7 +6654,7 @@ window.saveInventoryEdit = async function() {
         
         finalQty = (pVal * conversion) + bVal;
         isAdjusting = true;
-        if (!note) { alert("You must provide an Adjustment Note/Reason if you are changing the stock quantity."); return; }
+        if (!note) { window.ManagerUI.notify("You must provide an Adjustment Note/Reason if you are changing the stock quantity."); return; }
     }
 
     // 🧠 Read the Maintaining Stock Boxes!
@@ -7025,7 +6765,7 @@ window.saveInventoryEdit = async function() {
         if (typeof window.loadMenuCosting === 'function') window.loadMenuCosting();
 
     } catch (e) {
-        console.error(e); alert("Failed to save changes.");
+        console.error(e); window.ManagerUI.notify("Failed to save changes.");
     } finally {
         if (btn) { btn.innerText = "💾 Save All Changes"; btn.disabled = false; }
     }
@@ -7044,7 +6784,7 @@ window.openSelectiveResetModal = function() {
 window.executeSelectiveWipe = async function() {
     let confirmWord = document.getElementById('wipeConfirmText').value.trim();
     if (confirmWord !== "CLEAN SLATE") {
-        alert("❌ You must type CLEAN SLATE to confirm.");
+        window.ManagerUI.notify("❌ You must type CLEAN SLATE to confirm.");
         return;
     }
 
@@ -7060,7 +6800,7 @@ window.executeSelectiveWipe = async function() {
     let resetMilestone = document.getElementById('wipeMilestone').checked;
 
     if (collectionsToWipe.length === 0 && !resetInv && !resetMilestone) {
-        alert("⚠️ Please select at least one box to reset.");
+        window.ManagerUI.notify("⚠️ Please select at least one box to reset.");
         return;
     }
 
@@ -7090,12 +6830,12 @@ window.executeSelectiveWipe = async function() {
             await setDoc(doc(db, "settings", "global_stats"), { totalTakoyakiBalls: 0 });
         }
 
-        alert("✅ Selective Reset Complete!\n\nYour selected databases have been cleared.");
+        window.ManagerUI.notify("✅ Selective Reset Complete!\n\nYour selected databases have been cleared.");
         location.reload();
 
     } catch (error) {
         console.error("Incinerator Error:", error);
-        alert("❌ An error occurred while wiping the data.");
+        window.ManagerUI.notify("❌ An error occurred while wiping the data.");
     } finally {
         btn.innerText = "🗑️ Delete Selected";
         btn.disabled = false;
@@ -7201,7 +6941,7 @@ window.loadCashFlowHub = async function() {
                 const closedQ = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
                 const closedSnap = await getDocs(closedQ);
                 if (!closedSnap.empty) {
-                    drawerAmount = parseFloat(closedSnap.docs[0].data().declaredCash) || 0;
+                    drawerAmount = Number(closedSnap.docs[0].data().retainedCash ?? closedSnap.docs[0].data().declaredCash ?? 0);
                     drawerStatus = '<span style="color:#64748b; font-weight:bold; font-size:11px;">⚪ Register Closed</span>';
                 } else {
                     drawerStatus = '<span style="color:#94a3b8; font-weight:bold; font-size:11px;">No Data</span>';
@@ -7249,7 +6989,7 @@ window.loadCashFlowHub = async function() {
 window.openBranchTransferHistory = async function(branchName) {
     let modal = document.getElementById('branchTransferHistoryModal');
     if (!modal) {
-        alert("Modal HTML not found! Make sure Step 2 from the previous prompt was pasted into your index.html.");
+        window.ManagerUI.notify("Modal HTML not found! Make sure Step 2 from the previous prompt was pasted into your index.html.");
         return;
     }
     
@@ -7330,14 +7070,14 @@ window.openBranchTransferHistory = async function(branchName) {
 };
 
 window.rejectRemittance = async function(docId, branchName) {
-    let reason = prompt(`WARNING: You are about to reject a remittance from ${branchName}.\n\nPlease enter the reason for rejection (this will be saved in the logs):`);
+    let reason = (await window.ManagerUI.prompt(`WARNING: You are about to reject a remittance from ${branchName}.\n\nPlease enter the reason for rejection (this will be saved in the logs):`));
     
     // If they click cancel or leave it blank, abort the rejection.
     if (reason === null || reason.trim() === "") {
         return; 
     }
     
-    if (confirm(`Final Confirmation: Reject this remittance?`)) {
+    if ((await window.ManagerUI.confirm(`Final Confirmation: Reject this remittance?`))) {
         try {
             Swal.fire({title: 'Rejecting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
@@ -7367,90 +7107,18 @@ window.rejectRemittance = async function(docId, branchName) {
 };
 
 // --- THE NEW SMART DEPOSIT APPROVAL BUTTON (ULTRA MODE UI) ---
-window.approveRemittance = async function (docId) {
-    // 🔥 Replaced ugly confirm() with a beautiful modern prompt!
-    Swal.fire({
-        title: 'Receive Remittance?',
-        text: "Mark this remittance as safely received and route it into your Cash Accounts?",
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonColor: '#10b981', // Emerald green for money!
-        cancelButtonColor: '#ef4444',
-        confirmButtonText: 'Yes, Deposit It!',
-        customClass: { popup: 'rounded-2xl shadow-xl' }
-    }).then(async (result) => {
-        if (result.isConfirmed) {
-            try {
-                Swal.fire({title: 'Approving...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-                // 1. Fetch the exact remittance document to see how much money is coming in
-                const remitRef = doc(db, "remittances", docId);
-                const remitSnap = await getDoc(remitRef);
-                if (!remitSnap.exists()) return;
-
-                const data = remitSnap.data();
-                const amountToDeposit = parseFloat(data.amount) || 0;
-                const channelUsed = data.channel || "Physical Handover";
-
-                // 2. Map the channel to your actual Manager Account names
-                let targetAccountName = channelUsed;
-                if (channelUsed === "Physical Handover") {
-                    targetAccountName = "Cash"; 
-                }
-
-                // 3. Find that matching account in your Master Cash & Budget database
-                const accQuery = query(collection(db, "cash_accounts"), where("branch", "==", "Main Office"), where("name", "==", targetAccountName));
-                const accSnap = await getDocs(accQuery);
-
-                if (accSnap.empty) {
-                    Swal.fire('⚠️ Routing Error', `No cash account named "${targetAccountName}" found in the Main Office!\n\nPlease go to Cash & Budget, click "+ Add" to create an account named "${targetAccountName}" for the Main Office, and try approving this again.`, 'error');
-                    return; 
-                }
-
-                // 4. Deposit the money!
-                const targetAccDoc = accSnap.docs[0];
-                const currentBalance = parseFloat(targetAccDoc.data().balance) || 0;
-                const newBalance = currentBalance + amountToDeposit;
-                
-                await updateDoc(doc(db, "cash_accounts", targetAccDoc.id), { balance: newBalance });
-
-                await addDoc(collection(db, "account_logs"), {
-                    accountId: targetAccDoc.id,
-                    accountName: targetAccountName,
-                    branch: "Main Office",
-                    action: "Remittance Received",
-                    amount: amountToDeposit,
-                    newBalance: newBalance,
-                    user: window.sessionUser ? window.sessionUser.cashierName : 'Owner',
-                    timestamp: serverTimestamp(),
-                    note: `Remitted by ${data.cashier || data.staffName || 'Staff'} from ${data.branch}`
-                });
-
-                // 5. Finally, mark the remittance as safely Received
-                await updateDoc(remitRef, { status: "Received" });
-
-                Swal.fire({
-                    title: '✅ Success!', 
-                    text: `₱${amountToDeposit.toLocaleString('en-US', {minimumFractionDigits: 2})} has been deposited into your [${targetAccountName}] account.`, 
-                    icon: 'success',
-                    customClass: { popup: 'rounded-2xl' }
-                });
-                
-                // Refresh the screens
-                if (typeof window.loadCashExplorer === 'function') window.loadCashExplorer(); 
-                if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
-
-                // 🔥 THE UI FIX: Refresh the Modal so the button disappears instantly!
-                if (document.getElementById('branchTransferHistoryModal') && document.getElementById('branchTransferHistoryModal').style.display === 'flex') {
-                    if (typeof window.openBranchTransferHistory === 'function') window.openBranchTransferHistory(data.branch);
-                }
-
-            } catch (e) {
-                console.error("Deposit Error:", e); 
-                Swal.fire("Error", "Failed to approve and route the remittance.", "error");
-            }
-        }
-    });
+window.approveRemittance = async function(id) {
+ if(!await window.ManagerUI.confirm('Confirm that you received this remittance and want to deposit it into the HQ cash account.'))return;
+ try {
+  const remit=await window.getDoc(window.doc(window.db,'remittances',id));if(!remit.exists())throw Error('Remittance not found.');
+  if(remit.data().status==='Received')return window.ManagerUI.notify('This remittance was already received.');
+  const name=remit.data().channel==='Physical Handover' ? 'Cash' : remit.data().channel;
+  const accounts=await window.getDocs(window.query(window.collection(window.db,'cash_accounts'),window.where('branch','==','Main Office'),window.where('name','==',name)));
+  if(accounts.docs.length!==1)throw Error('Choose or create one HQ '+name+' account before receiving this remittance.');
+  await approveRemittanceAtomic(window,id,accounts.docs[0].ref,window.sessionUser?.cashierName || 'Manager');
+  window.ManagerUI.notify('Remittance received and deposited.');window.loadCashFlowHub();window.loadAccountsAndBudget();
+  if(document.getElementById('branchTransferHistoryModal')?.style.display==='flex')window.openBranchTransferHistory(remit.data().branch);
+ }catch(error){Swal.fire('Could not receive remittance',error.message,'error');}
 };
 
 // ========================================================
@@ -7477,7 +7145,7 @@ window.exportInventoryCSV = async function () {
     link.href = URL.createObjectURL(blob);
     link.download = `Takodeal_Inventory_Master.csv`;
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
-  } catch (e) { console.error(e); alert("Failed to export CSV."); }
+  } catch (e) { console.error(e); window.ManagerUI.notify("Failed to export CSV."); }
 };
 
 
@@ -7535,12 +7203,12 @@ window.smartImportCSV = function (event) {
         else await addDoc(collection(db, "inventory"), payload);
       }
 
-      alert(`✅ Smart Sync Complete!\n\nUpdated: ${updatedCount} existing items.\nAdded: ${addedCount} brand new items.`);
+      window.ManagerUI.notify(`✅ Smart Sync Complete!\n\nUpdated: ${updatedCount} existing items.\nAdded: ${addedCount} brand new items.`);
       if (typeof window.loadInventoryData === 'function') window.loadInventoryData();
       else location.reload();
 
     } catch (error) {
-      console.error(error); alert("❌ Fatal Error syncing CSV data.");
+      console.error(error); window.ManagerUI.notify("❌ Fatal Error syncing CSV data.");
     } finally {
       event.target.value = ''; // Reset the file input
       uploadLabel.innerHTML = originalText; // Restore original button text
@@ -7623,19 +7291,19 @@ window.loadDeviceFleet = async function () {
 };
 
 window.toggleDeviceStatus = async function (deviceId, newStatus) {
-  if (!confirm(`Are you sure you want to change this device to ${newStatus}?`)) return;
+  if (!(await window.ManagerUI.confirm(`Are you sure you want to change this device to ${newStatus}?`))) return;
   try {
     await updateDoc(doc(db, "pos_devices", deviceId), { status: newStatus });
     window.loadDeviceFleet();
-  } catch (e) { alert("Failed to update status."); }
+  } catch (e) { window.ManagerUI.notify("Failed to update status."); }
 };
 
 window.deleteDevice = async function (deviceId) {
-  if (!confirm("Are you sure you want to permanently delete this device? It will log out the tablet.")) return;
+  if (!(await window.ManagerUI.confirm("Are you sure you want to permanently delete this device? It will log out the tablet."))) return;
   try {
     await deleteDoc(doc(db, "pos_devices", deviceId));
     window.loadDeviceFleet();
-  } catch (e) { alert("Failed to delete device."); }
+  } catch (e) { window.ManagerUI.notify("Failed to delete device."); }
 };
 
 window.toggleAllDeviceCheckboxes = function(source) {
@@ -8012,11 +7680,11 @@ window.cachedInventoryOptions = '<option value="">-- Select Raw Ingredient --</o
 window.preloadInventoryForAddons = async function () {
   try {
     // 🔥 THE FIX: Strictly search Main Office to prevent duplicate branches from cluttering the list!
-    const snap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
+    const snap = await cachedSnapshot('inventory');
     let options = '<option value="">-- Select Raw Ingredient --</option>';
     
     let items = [];
-    snap.forEach(docSnap => items.push(docSnap.data()));
+    snap.forEach(docSnap => { if (docSnap.data().branch === 'Main Office') items.push(docSnap.data()); });
     items.sort((a,b) => (a.name || "").localeCompare(b.name || ""));
 
     items.forEach(item => {
@@ -8082,11 +7750,11 @@ window.cloneAddons = async function() {
     const sourceName = selectDropdown.options[selectDropdown.selectedIndex].text;
 
     if (!sourceId) {
-        alert("Please select a product to copy Add-ons from!");
+        window.ManagerUI.notify("Please select a product to copy Add-ons from!");
         return;
     }
 
-    if (!confirm(`Copy all Add-ons from ${sourceName}? This will add them to your current list.`)) {
+    if (!(await window.ManagerUI.confirm(`Copy all Add-ons from ${sourceName}? This will add them to your current list.`))) {
         return;
     }
 
@@ -8112,13 +7780,13 @@ window.cloneAddons = async function() {
                 count++;
             });
 
-            alert(`✅ Successfully added ${count} Add-ons!`);
+            window.ManagerUI.notify(`✅ Successfully added ${count} Add-ons!`);
         } else {
-            alert(`⚠️ No Add-ons found for "${sourceName}".`);
+            window.ManagerUI.notify(`⚠️ No Add-ons found for "${sourceName}".`);
         }
     } catch (error) {
         console.error("🔴 Error cloning Add-ons:", error);
-        alert("Failed to copy Add-ons.");
+        window.ManagerUI.notify("Failed to copy Add-ons.");
     }
 };
 
@@ -8157,7 +7825,7 @@ window.saveBomRecipe = async function (productId) {
       lastUpdated: serverTimestamp()
     });
 
-    alert("✅ Recipe and Add-ons successfully updated!");
+    window.ManagerUI.notify("✅ Recipe and Add-ons successfully updated!");
 
     // Close the modal (Adjust ID if your modal is named differently)
     let modal = document.getElementById('updateProductModal');
@@ -8165,7 +7833,7 @@ window.saveBomRecipe = async function (productId) {
 
   } catch (error) {
     console.error("Error saving BOM:", error);
-    alert("❌ Failed to save recipe. Check console.");
+    window.ManagerUI.notify("❌ Failed to save recipe. Check console.");
   }
 };
 
@@ -8185,7 +7853,7 @@ window.downloadMenuCSV = function () {
   });
 
   if (!targetTable) {
-    alert("❌ Could not find the table data to download.");
+    window.ManagerUI.notify("❌ Could not find the table data to download.");
     return;
   }
 
@@ -8231,7 +7899,7 @@ window.downloadMenuCSV = function () {
 // --- 1. DOWNLOAD THE EXCEL TEMPLATE ---
 window.downloadRecipeTemplate = async function () {
   try {
-    const snap = await getDocs(collection(db, "menu"));
+    const snap = await cachedSnapshot('menu');
     // The exact strict headers the uploader needs to read
     let csv = "ProductID,ProductName,Category,SellingPrice,BaseRecipe(Item:Qty|Item:Qty),Addons(Name:Price:Item:Qty)\n";
 
@@ -8269,7 +7937,7 @@ window.downloadRecipeTemplate = async function () {
 
   } catch (e) {
     console.error(e);
-    alert("❌ Error generating bulk template. Check console.");
+    window.ManagerUI.notify("❌ Error generating bulk template. Check console.");
   }
 };
 
@@ -8283,7 +7951,7 @@ window.processBulkUpload = function (event) {
     let text = e.target.result;
     let rows = text.split("\n");
 
-    if (!confirm(`⚠️ WARNING: You are about to mass-update ${rows.length - 2} menu items in your live database. This cannot be undone. Proceed?`)) {
+    if (!(await window.ManagerUI.confirm(`⚠️ WARNING: You are about to mass-update ${rows.length - 2} menu items in your live database. This cannot be undone. Proceed?`))) {
       event.target.value = ''; // Reset the input if they cancel
       return;
     }
@@ -8340,7 +8008,7 @@ window.processBulkUpload = function (event) {
       }
     }
 
-    alert(`✅ Bulk Upload Complete! Successfully updated ${successCount} menu items.`);
+    window.ManagerUI.notify(`✅ Bulk Upload Complete! Successfully updated ${successCount} menu items.`);
     location.reload(); // Refresh the page to show the massive update
   };
   reader.readAsText(file);
@@ -8662,14 +8330,14 @@ window.editExpenseLog = async function(docId, currentAmount, currentDesc) {
 };
 
 window.deleteExpenseLog = async function(docId) {
-    if (!confirm("⚠️ URGENT WARNING:\n\nAre you sure you want to permanently delete this expense record?\nThis action cannot be undone and will affect your total profit calculations.")) return;
+    if (!(await window.ManagerUI.confirm("⚠️ URGENT WARNING:\n\nAre you sure you want to permanently delete this expense record?\nThis action cannot be undone and will affect your total profit calculations."))) return;
     
     try {
         await deleteDoc(doc(db, "expenses", docId));
         window.loadExpenseLogs(); // Instantly refresh the table!
     } catch (e) {
         console.error(e);
-        alert("❌ Failed to delete the record. Please try again.");
+        window.ManagerUI.notify("❌ Failed to delete the record. Please try again.");
     }
 };
 
@@ -8807,10 +8475,10 @@ window.saveReceiptSettings = async function() {
     try {
         // We use setDoc with {merge: true} to safely create or update the global settings file
         await setDoc(doc(db, "settings", "global_receipt"), rSettings, { merge: true });
-        alert("✅ Receipt Layout Saved to Cloud!");
+        window.ManagerUI.notify("✅ Receipt Layout Saved to Cloud!");
     } catch (error) {
         console.error("Error saving receipt:", error);
-        alert("Failed to save layout.");
+        window.ManagerUI.notify("Failed to save layout.");
     }
 }
 
@@ -8963,18 +8631,18 @@ window.loadAttendanceLogs = async function () {
 };
 
 window.exemptLatePunch = async function(docId, staffName) {
-    if (!confirm(`Are you sure you want to EXEMPT ${staffName} from this late penalty?\n\nThe system will not deduct this from their next payslip.`)) return;
+    if (!(await window.ManagerUI.confirm(`Are you sure you want to EXEMPT ${staffName} from this late penalty?\n\nThe system will not deduct this from their next payslip.`))) return;
     try {
         await updateDoc(doc(db, "attendance_logs", docId), { lateExempted: true });
         window.loadAttendanceLogs(); 
-        alert(`✅ ${staffName} is exempted! Generate the Payroll list again to apply the changes.`);
+        window.ManagerUI.notify(`✅ ${staffName} is exempted! Generate the Payroll list again to apply the changes.`);
     } catch (e) {
         console.error(e);
-        alert("Failed to exempt late penalty.");
+        window.ManagerUI.notify("Failed to exempt late penalty.");
     }
 };
 window.viewSelfie = function(base64Data, detailsText) {
-    if (!base64Data || base64Data === 'undefined') { alert("No photo attached."); return; }
+    if (!base64Data || base64Data === 'undefined') { window.ManagerUI.notify("No photo attached."); return; }
     document.getElementById('viewedSelfie').src = base64Data;
     document.getElementById('selfieDetails').innerText = detailsText;
     document.getElementById('photoViewerModal').style.display = 'flex';
@@ -9182,14 +8850,14 @@ document.addEventListener("DOMContentLoaded", () => {
 window.addHoliday = function() {
     const date = document.getElementById('holidayDate').value;
     const type = document.getElementById('holidayType').value;
-    if (!date) return alert("Select a date.");
+    if (!date) return window.ManagerUI.notify("Select a date.");
     window.scheduleHolidays[date] = type;
     window.updateHolidayList();
     window.saveToCloud(); // Auto-save to Firebase
 };
 
-window.removeHoliday = function(date) {
-    if (!confirm(`Remove holiday on ${date}?`)) return;
+window.removeHoliday = async function(date) {
+    if (!(await window.ManagerUI.confirm(`Remove holiday on ${date}?`))) return;
     delete window.scheduleHolidays[date];
     window.updateHolidayList();
     window.saveToCloud();
@@ -9255,8 +8923,8 @@ window.addNewShiftToBranch = function(branch, kind = 'morning') {
 };
 
 // 🔥 NEW: Deletes a shift slot!
-window.removeShiftFromBranch = function(branch, index) {
-    if (!confirm("Are you sure you want to delete this shift?")) return;
+window.removeShiftFromBranch = async function(branch, index) {
+    if (!(await window.ManagerUI.confirm("Are you sure you want to delete this shift?"))) return;
     window.captureTempShiftConfig();
     branchConfig[branch].splice(index, 1);
     window.renderConfigUI();
@@ -9429,8 +9097,8 @@ window.saveManualSchedule = async function() {
 window.addEmployee = function() {
     const name = document.getElementById('empName').value.trim();
     const branch = document.getElementById('empBranch').value;
-    if (!name) return alert("Enter name.");
-    if (employees.some(e => e.name === name)) return alert("Exists.");
+    if (!name) return window.ManagerUI.notify("Enter name.");
+    if (employees.some(e => e.name === name)) return window.ManagerUI.notify("Exists.");
     employees.push({ name, branch });
     document.getElementById('empName').value = '';
     
@@ -9447,8 +9115,8 @@ window.addEmployee = function() {
     window.updateStaffDisplay(); window.updateAvailDropdown(); window.renderTables(); window.saveToCloud();
 };
 
-window.removeEmployee = function(name) {
-    if(!confirm(`Delete ${name}?`)) return;
+window.removeEmployee = async function(name) {
+    if(!(await window.ManagerUI.confirm(`Delete ${name}?`))) return;
     employees = employees.filter(e => e.name !== name);
     if (currentSchedule[1]) {
         for (let day in currentSchedule) {
@@ -9735,7 +9403,7 @@ window.markUnavailable = function() {
     const datesRaw = document.getElementById('availDate').value;
     const status = document.getElementById('availStatus').value;
     
-    if (!emp || !datesRaw) return alert("Select staff and at least one date.");
+    if (!emp || !datesRaw) return window.ManagerUI.notify("Select staff and at least one date.");
     
     // Split the comma-separated string back into an array
     let datesArray = datesRaw.split(',').map(d => d.trim());
@@ -9911,7 +9579,7 @@ window.generateSchedule = async function() {
 // ==========================================
 window.openSwapModal = async function(day, branch, shiftId) {
     let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
-    if (!schedObj || !schedObj[day] || !schedObj[day][branch]) return alert("Schedule data error.");
+    if (!schedObj || !schedObj[day] || !schedObj[day][branch]) return window.ManagerUI.notify("Schedule data error.");
     
     let dayData = schedObj[day][branch];
     let curStaff = dayData.scheduled[shiftId];
@@ -10399,18 +10067,18 @@ window.checkInventoryDeletion = async function(ids) {
 
 window.deleteInventoryItem = async function(docId, itemName) {
     // Make sure we have the right ID!
-    if (!docId || docId === 'undefined') { alert("❌ Error: Invalid Item ID."); return; }
+    if (!docId || docId === 'undefined') { window.ManagerUI.notify("❌ Error: Invalid Item ID."); return; }
     try {
         await window.checkInventoryDeletion([docId]);
-        if (confirm(`⚠️ Are you sure you want to completely delete "${itemName}"? This cannot be undone!`)) {
+        if ((await window.ManagerUI.confirm(`⚠️ Are you sure you want to completely delete "${itemName}"? This cannot be undone!`))) {
             await deleteDoc(doc(db, "inventory", docId)); 
             window.invalidateCache('inventory');
-            alert(`✅ "${itemName}" has been permanently deleted.`);
+            window.ManagerUI.notify(`✅ "${itemName}" has been permanently deleted.`);
             window.loadInventoryData();
         }
     } catch (error) {
         console.error("Error deleting item:", error);
-        alert('Ingredient was not deleted.\n' + error.message);
+        window.ManagerUI.notify('Ingredient was not deleted.\n' + error.message);
     }
 };
 
@@ -10431,7 +10099,7 @@ window.loadCloneDropdown = async function() {
 
     try {
         console.log("🟢 STEP 3: Contacting Firebase...");
-        const snap = await getDocs(collection(db, "menu"));
+        const snap = await cachedSnapshot('menu');
         console.log(`🟢 STEP 4: Firebase returned ${snap.size} items!`);
         
         // Setup the default top choices for BOTH
@@ -10475,11 +10143,11 @@ window.cloneRecipe = async function() {
     const sourceName = selectDropdown.options[selectDropdown.selectedIndex].text;
 
     if (!sourceId) {
-        alert("Please select a product to copy from first!");
+        window.ManagerUI.notify("Please select a product to copy from first!");
         return;
     }
 
-    if (!confirm("Are you sure? This will overwrite your currently listed ingredients!")) {
+    if (!(await window.ManagerUI.confirm("Are you sure? This will overwrite your currently listed ingredients!"))) {
         return;
     }
 
@@ -10524,14 +10192,14 @@ window.cloneRecipe = async function() {
                 window.calcAdvProfit(); 
             }
           
-            alert(`✅ Recipe successfully cloned! Don't forget to click "Save Changes" at the bottom!`);
+            window.ManagerUI.notify(`✅ Recipe successfully cloned! Don't forget to click "Save Changes" at the bottom!`);
 
         } else {
-            alert(`⚠️ "${sourceName}" doesn't have any ingredients saved in the BOM yet!`);
+            window.ManagerUI.notify(`⚠️ "${sourceName}" doesn't have any ingredients saved in the BOM yet!`);
         }
     } catch (error) {
         console.error("🔴 Error cloning recipe:", error);
-        alert("Failed to clone recipe.");
+        window.ManagerUI.notify("Failed to clone recipe.");
     }
 };
 
@@ -10564,19 +10232,20 @@ window.filterAlertsTable = function() {
 // 🗑️ MASTER DELETE FUNCTIONS (ATTENDANCE & BOM)
 // ==========================================
 window.deleteAttendanceLog = async function(docId, staffName) {
-    if(!confirm(`⚠️ Are you sure you want to permanently delete this time punch for ${staffName}?`)) return;
+    if(!(await window.ManagerUI.confirm(`⚠️ Are you sure you want to permanently delete this time punch for ${staffName}?`))) return;
     try {
         await deleteDoc(doc(db, "attendance_logs", docId));
         window.loadAttendanceLogs(); // Refresh the table instantly!
-    } catch(e) { console.error(e); alert("Failed to delete log."); }
+    } catch(e) { console.error(e); window.ManagerUI.notify("Failed to delete log."); }
 };
 
 window.deleteMenuAndBom = async function(docId, name) {
-    if (!confirm(`⚠️ Are you absolutely sure you want to delete "${name}"?\n\nThis will remove it from the POS and delete its Recipe/BOM forever.`)) return;
+    if (!(await window.ManagerUI.confirm(`⚠️ Are you absolutely sure you want to delete "${name}"?\n\nThis will remove it from the POS and delete its Recipe/BOM forever.`))) return;
     
     try {
         // 1. Delete the Menu Item
         await deleteDoc(doc(db, "menu", docId));
+            window.invalidateCache("menu");
         
         // 2. Find and delete all Recipe items attached to it
         const bomQ = query(collection(db, "bom"), where("menuItem", "==", name));
@@ -10585,7 +10254,7 @@ window.deleteMenuAndBom = async function(docId, name) {
             await deleteDoc(doc(db, "bom", b.id)); 
         }
 
-        alert(`✅ "${name}" has been completely deleted.`);
+        window.ManagerUI.notify(`✅ "${name}" has been completely deleted.`);
         
         // 3. Smart Refresh: Reload whichever tab you are currently looking at!
         if (document.getElementById('view-menu') && document.getElementById('view-menu').classList.contains('active')) window.loadMenuEditor();
@@ -10593,7 +10262,7 @@ window.deleteMenuAndBom = async function(docId, name) {
         
     } catch(e) { 
         console.error("Delete Error:", e); 
-        alert("❌ Failed to delete item."); 
+        window.ManagerUI.notify("❌ Failed to delete item."); 
     }
 };
 
@@ -10603,10 +10272,10 @@ window.closeTimeClock = function() {
     if (modal) modal.style.display = 'none';
 };
 window.submitAttendance = function(type) {
-    alert("This module is logged via the Cashier POS app.");
+    window.ManagerUI.notify("This module is logged via the Cashier POS app.");
 };
 window.submitReasonLetter = function() {
-    alert("Reason letters are submitted from the Cashier POS app.");
+    window.ManagerUI.notify("Reason letters are submitted from the Cashier POS app.");
 };
 
 console.log("HEARTBEAT 2: File finished reading!");
@@ -11156,7 +10825,7 @@ window.loadPayrollGenerator = async function() {
 
     let startDateRaw = document.getElementById('payrollStart').value;
     let endDateRaw = document.getElementById('payrollEnd').value;
-    if (!startDateRaw || !endDateRaw) { alert("Please set both cutoff dates."); return; }
+    if (!startDateRaw || !endDateRaw) { window.ManagerUI.notify("Please set both cutoff dates."); return; }
 
     tbody.innerHTML = '<tr><td colspan="5" class="text-center">⏳ Crunching payroll numbers & resolving typos...</td></tr>';
 
@@ -11939,7 +11608,7 @@ window.finalizePayslip = async function() {
         if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
 
     } catch (e) {
-        console.error(e); alert("❌ Failed to finalize payslip.");
+        console.error(e); window.ManagerUI.notify("❌ Failed to finalize payslip.");
         if (btn) { btn.innerText = "✅ Mark Paid & Auto-Deduct"; btn.disabled = false; }
     } 
 };
@@ -12001,7 +11670,7 @@ window.downloadPayslipImage = function() {
         if (btn) { btn.innerText = originalText; btn.disabled = false; }
     }).catch(err => {
         console.error("Error generating image:", err);
-        alert("❌ Failed to generate image.");
+        window.ManagerUI.notify("❌ Failed to generate image.");
         document.body.removeChild(printWrapper);
         if (btn) { btn.innerText = originalText; btn.disabled = false; }
     });
@@ -12298,7 +11967,7 @@ window.logLoanPayment = async function(docId, staffName, currentPaid, currentBal
 // 🧹 PRE-LAUNCH FACTORY RESET ENGINE
 // ==========================================
 window.resetAllInventoryToZero = async function() {
-    if(!confirm("⚠️ WARNING: This will set ALL inventory items to exactly 0 stock! Are you 100% sure?")) return;
+    if(!(await window.ManagerUI.confirm("⚠️ WARNING: This will set ALL inventory items to exactly 0 stock! Are you 100% sure?"))) return;
     
     console.log("Starting inventory reset...");
     let count = 0;
@@ -12312,11 +11981,11 @@ window.resetAllInventoryToZero = async function() {
             count++;
             console.log(`Resetting item ${count} of ${snap.size}...`);
         }
-        alert(`✅ Grand Wipe Complete! ${count} items have been reset to 0 stock.`);
+        window.ManagerUI.notify(`✅ Grand Wipe Complete! ${count} items have been reset to 0 stock.`);
         window.loadInventoryData(); // Refresh the table
     } catch(e) {
         console.error(e);
-        alert("❌ Error resetting inventory.");
+        window.ManagerUI.notify("❌ Error resetting inventory.");
     }
 };
 
@@ -12335,10 +12004,10 @@ window.refreshInventoryView = function() {
 // ==========================================
 window.adjustStaffLoan = async function(ledgerId, staffName, currentLoan, currentPaid) {
     // 1. Ask the boss for the corrected numbers
-    let newLoan = prompt(`[ADJUSTMENT] Enter the corrected TOTAL LOANED for ${staffName}:`, currentLoan);
+    let newLoan = (await window.ManagerUI.prompt(`[ADJUSTMENT] Enter the corrected TOTAL LOANED for ${staffName}:`, currentLoan));
     if (newLoan === null) return; 
 
-    let newPaid = prompt(`[ADJUSTMENT] Enter the corrected TOTAL PAID for ${staffName}:`, currentPaid);
+    let newPaid = (await window.ManagerUI.prompt(`[ADJUSTMENT] Enter the corrected TOTAL PAID for ${staffName}:`, currentPaid));
     if (newPaid === null) return; 
 
     // Convert them to safe numbers
@@ -12347,7 +12016,7 @@ window.adjustStaffLoan = async function(ledgerId, staffName, currentLoan, curren
     let newBalance = newLoan - newPaid;
 
     // 2. Final Confirmation Screen
-    if (!confirm(`🚨 Confirm manual override for ${staffName}?\n\nTotal Loaned: ₱${newLoan.toFixed(2)}\nTotal Paid: ₱${newPaid.toFixed(2)}\nNew Remaining Balance: ₱${newBalance.toFixed(2)}`)) {
+    if (!(await window.ManagerUI.confirm(`🚨 Confirm manual override for ${staffName}?\n\nTotal Loaned: ₱${newLoan.toFixed(2)}\nTotal Paid: ₱${newPaid.toFixed(2)}\nNew Remaining Balance: ₱${newBalance.toFixed(2)}`))) {
         return;
     }
 
@@ -12377,14 +12046,14 @@ window.adjustStaffLoan = async function(ledgerId, staffName, currentLoan, curren
             isRead: true 
         });
 
-        alert("✅ Ledger successfully adjusted!");
+        window.ManagerUI.notify("✅ Ledger successfully adjusted!");
         
         // 5. Instantly refresh the table WITHOUT reloading the whole app!
         window.loadLedger();
 
     } catch (error) {
         console.error("Error adjusting loan:", error);
-        alert("❌ Failed to adjust database. Check F12 Console.");
+        window.ManagerUI.notify("❌ Failed to adjust database. Check F12 Console.");
     }
 };
 
@@ -12399,7 +12068,7 @@ window.generateAutoPayslips = async function() {
     let tableBody = document.getElementById('payrollGeneratorBody'); 
 
     if (!tableBody) return;
-    if (!startInput || !endInput) { alert("Please select both Cutoff Start and End dates."); return; }
+    if (!startInput || !endInput) { window.ManagerUI.notify("Please select both Cutoff Start and End dates."); return; }
 
     tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px; font-weight:bold; color: #d97706;">⚙️ Crunching Strict HR Metrics...</td></tr>`;
 
@@ -13674,11 +13343,11 @@ window.saveNewPayable = async function() {
 };
 
 window.deletePayable = async function(id) {
-    if(!confirm("⚠️ Delete this invoice? (Note: This will NOT undo any physical inventory that was already added).")) return;
+    if(!(await window.ManagerUI.confirm("⚠️ Delete this invoice? (Note: This will NOT undo any physical inventory that was already added)."))) return;
     try {
         await deleteDoc(doc(db, "payables", id));
         window.loadPayablesDashboard();
-    } catch(e) { alert("Failed to delete."); }
+    } catch(e) { window.ManagerUI.notify("Failed to delete."); }
 };
 
 window.openSettlePayable = async function(id, supplier, amount, invoice) {
@@ -13722,13 +13391,13 @@ window.confirmPayableSettlement = async function() {
     let accountId = document.getElementById('settleCashAccount').value;
     let fee = parseFloat(document.getElementById('settlePayFee').value) || 0; 
 
-    if (!accountId) { alert("Please select a Cash Account to deduct funds from."); return; }
+    if (!accountId) { window.ManagerUI.notify("Please select a Cash Account to deduct funds from."); return; }
 
     let totalDeduction = amount + fee; 
     let accData = window.livePayableAccounts[accountId];
 
     if (accData.balance < totalDeduction) {
-        if(!confirm(`⚠️ WARNING: ${accData.name} only has ₱${accData.balance.toLocaleString()}.\nDeducting ₱${totalDeduction.toLocaleString()} (Invoice + Fee) will make it negative. Continue anyway?`)) return;
+        if(!(await window.ManagerUI.confirm(`⚠️ WARNING: ${accData.name} only has ₱${accData.balance.toLocaleString()}.\nDeducting ₱${totalDeduction.toLocaleString()} (Invoice + Fee) will make it negative. Continue anyway?`))) return;
     }
 
     let btn = document.getElementById('btnConfirmSettle');
@@ -13796,7 +13465,7 @@ window.confirmPayableSettlement = async function() {
         window.loadPayablesDashboard();
         if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
     } catch (e) {
-        console.error("Error settling payment:", e); alert("Payment failed. Check connection.");
+        console.error("Error settling payment:", e); window.ManagerUI.notify("Payment failed. Check connection.");
     } finally {
         btn.innerText = "✅ Confirm Payment"; btn.disabled = false;
     }
@@ -13848,7 +13517,7 @@ window.submitManualAttendance = async function() {
     let remarks = document.getElementById('manAttRemarks').value.trim();
 
     if (!staffName || !dateTimeRaw || !remarks) {
-        alert("❌ Please fill out Staff Name, Exact Time, and Manager Remarks.");
+        window.ManagerUI.notify("❌ Please fill out Staff Name, Exact Time, and Manager Remarks.");
         return;
     }
 
@@ -13888,16 +13557,16 @@ window.submitManualAttendance = async function() {
             loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager"
         });
 
-        alert(`✅ Success! Manual ${type} for ${staffName} has been recorded.`);
+        window.ManagerUI.notify(`✅ Success! Manual ${type} for ${staffName} has been recorded.`);
         document.getElementById('manualAttendanceModal').style.display = 'none';
         window.loadAttendanceLogs(); // Refresh the feed
 
         // If they had the Payroll tab open, this will nudge them to refresh it
-        alert("Reminder: If you are calculating payroll, click 'Generate List' again to apply this new time punch.");
+        window.ManagerUI.notify("Reminder: If you are calculating payroll, click 'Generate List' again to apply this new time punch.");
 
     } catch (error) {
         console.error("Manual Log Error:", error);
-        alert("❌ Failed to save manual log.");
+        window.ManagerUI.notify("❌ Failed to save manual log.");
     } finally {
         btn.innerText = "💾 Save Override Log"; btn.disabled = false;
     }
@@ -14007,12 +13676,12 @@ window.submitManualOvertime = async function() {
     let amount = window.currentCalculatedOtAmount || 0;
 
     if (!staffName || !dateRaw || isNaN(hours) || hours <= 0 || !remarks) {
-        alert("❌ Please select a staff member, enter valid hours, and provide a reason.");
+        window.ManagerUI.notify("❌ Please select a staff member, enter valid hours, and provide a reason.");
         return;
     }
 
     if (amount <= 0) {
-        alert("❌ The calculated amount is 0. Please verify the staff's Daily Rate in their profile.");
+        window.ManagerUI.notify("❌ The calculated amount is 0. Please verify the staff's Daily Rate in their profile.");
         return;
     }
 
@@ -14033,14 +13702,14 @@ window.submitManualOvertime = async function() {
             timestamp: serverTimestamp()
         });
 
-        alert(`✅ Success! ₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})} Overtime Bonus added for ${staffName}.`);
+        window.ManagerUI.notify(`✅ Success! ₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})} Overtime Bonus added for ${staffName}.`);
         document.getElementById('manualOvertimeModal').style.display = 'none';
         
-        alert("Reminder: If you are currently generating payroll, click 'Generate List' again to automatically inject this new bonus into their payslip.");
+        window.ManagerUI.notify("Reminder: If you are currently generating payroll, click 'Generate List' again to automatically inject this new bonus into their payslip.");
 
     } catch (error) {
         console.error("OT Log Error:", error);
-        alert("❌ Failed to save overtime bonus.");
+        window.ManagerUI.notify("❌ Failed to save overtime bonus.");
     } finally {
         btn.innerText = "💾 Save Overtime Bonus"; btn.disabled = false;
     }
@@ -14190,7 +13859,7 @@ window.runProductReport = function() {
     let branchFilter = document.getElementById('histBranchFilter').value;
     
     if (!startDateRaw || !endDateRaw) {
-        alert("Please select a Start and End date.");
+        window.ManagerUI.notify("Please select a Start and End date.");
         return;
     }
     
@@ -14200,7 +13869,7 @@ window.runProductReport = function() {
     if (typeof window.loadProductAnalytics === 'function') {
         window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
     } else {
-        alert("Analytics Engine is still loading. Please try again in a moment.");
+        window.ManagerUI.notify("Analytics Engine is still loading. Please try again in a moment.");
     }
 };
 
@@ -14960,7 +14629,7 @@ window.openGlobalAddonModal = async function(id = '', name = '', price = '0', qt
         select.innerHTML = html;
 
         // 2. 🔥 THE FIX: Fetch Live Categories for the "Menu Category" Dropdown
-        const menuSnap = await getDocs(collection(db, "menu"));
+        const menuSnap = await cachedSnapshot('menu');
         let uniqueCats = new Set();
         
         // Scan the entire menu and collect every unique category
@@ -15007,7 +14676,7 @@ window.extractAddonsToGlobal = async function() {
         globalSnap.forEach(d => existingGlobalNames.push(d.data().name.toLowerCase()));
         
         // Scan the Menu
-        const menuSnap = await getDocs(collection(db, "menu"));
+        const menuSnap = await cachedSnapshot('menu');
         let extractedCount = 0;
         let uniqueExtracted = {};
         
@@ -15075,7 +14744,7 @@ window.syncGlobalAddonsToMenu = async function() {
             return;
         }
 
-        const menuSnap = await getDocs(collection(db, "menu"));
+        const menuSnap = await cachedSnapshot('menu');
         let updateCount = 0;
         let batchPromises = [];
 
@@ -15157,7 +14826,7 @@ window.saveGlobalAddon = async function() {
     let ing = document.getElementById('gaIngredient').value;
     let cat = document.getElementById('gaCategory').value;
 
-    if (!name) { alert("Add-on name is required!"); return; }
+    if (!name) { window.ManagerUI.notify("Add-on name is required!"); return; }
     
     let btn = document.getElementById('btnSaveGA');
     let origText = btn.innerText;
@@ -15168,16 +14837,16 @@ window.saveGlobalAddon = async function() {
 
         if (id) {
             await updateDoc(doc(db, "global_addons", id), payload);
-            alert(`✅ Success! ${name} has been updated.`);
+            window.ManagerUI.notify(`✅ Success! ${name} has been updated.`);
         } else {
             await addDoc(collection(db, "global_addons"), payload);
-            alert(`✅ Success! ${name} added globally.`);
+            window.ManagerUI.notify(`✅ Success! ${name} added globally.`);
         }
 
         document.getElementById('globalAddonModal').style.display = 'none';
         window.loadGlobalAddons();
     } catch(e) { 
-        console.error(e); alert("Failed to save."); 
+        console.error(e); window.ManagerUI.notify("Failed to save."); 
     } finally { 
         btn.innerText = origText; btn.disabled = false; 
     }
@@ -15205,7 +14874,7 @@ window.deleteGlobalAddon = async function(id, name) {
         await deleteDoc(doc(db, "global_addons", id));
         
         // 2. Scan entire menu and strip it from all products!
-        const menuSnap = await getDocs(collection(db, "menu"));
+        const menuSnap = await cachedSnapshot('menu');
         let batchPromises = [];
         let updateCount = 0;
         
@@ -15236,7 +14905,7 @@ window.deleteGlobalAddon = async function(id, name) {
 window.exportTransactionsCSV = async function() {
     let select = document.getElementById('histShiftSelect');
     if (!select || select.selectedIndex <= 0) { 
-        alert("Please select a specific shift to export."); 
+        window.ManagerUI.notify("Please select a specific shift to export."); 
         return; 
     }
 
@@ -15280,7 +14949,7 @@ window.exportTransactionsCSV = async function() {
         downloadLink.style.display = "none";
         document.body.appendChild(downloadLink); downloadLink.click(); document.body.removeChild(downloadLink);
     } catch (e) {
-        console.error("Export Error:", e); alert("Failed to export sales data.");
+        console.error("Export Error:", e); window.ManagerUI.notify("Failed to export sales data.");
     } finally {
         if (btn) { btn.innerText = oldText; btn.disabled = false; }
     }
@@ -15492,7 +15161,7 @@ window.loadPosConfigHub = async function() {
         }
     } catch (error) {
         console.error("Error loading config:", error);
-        alert("Failed to load POS Configuration.");
+        window.ManagerUI.notify("Failed to load POS Configuration.");
     } finally {
         if (btn) btn.innerText = originalText;
     }
@@ -15938,7 +15607,7 @@ window.toggleAllInvCheckboxes = function(source) {
 window.bulkDeleteInventory = async function() {
     let checkboxes = document.querySelectorAll('.inv-bulk-checkbox:checked');
     if (checkboxes.length === 0) {
-        alert("Please select at least one item to delete.");
+        window.ManagerUI.notify("Please select at least one item to delete.");
         return;
     }
 
@@ -15946,7 +15615,7 @@ window.bulkDeleteInventory = async function() {
         const ids = [...checkboxes].map(cb => cb.value);
         if (ids.length > 500) throw new Error('Select at most 500 items at a time.');
         await window.checkInventoryDeletion(ids);
-        if (!confirm(`⚠️ WARNING: You are about to permanently delete ${ids.length} items from this branch. This cannot be undone. Proceed?`)) return;
+        if (!(await window.ManagerUI.confirm(`⚠️ WARNING: You are about to permanently delete ${ids.length} items from this branch. This cannot be undone. Proceed?`))) return;
         const batch = window.writeBatch(window.db);
         for (let cb of checkboxes) {
             let docId = cb.value;
@@ -15954,7 +15623,7 @@ window.bulkDeleteInventory = async function() {
         }
         await batch.commit();
         window.invalidateCache('inventory');
-        alert(`✅ Successfully deleted ${checkboxes.length} items!`);
+        window.ManagerUI.notify(`✅ Successfully deleted ${checkboxes.length} items!`);
             document.getElementById('selectAllInv').checked = false; // Reset master checkbox
             
             // 🔥 SMART SCROLL MEMORY FIX 🔥
@@ -15968,7 +15637,7 @@ window.bulkDeleteInventory = async function() {
             }
     } catch (error) {
         console.error("Bulk Delete Error:", error);
-        alert('Items were not deleted.\n' + error.message);
+        window.ManagerUI.notify('Items were not deleted.\n' + error.message);
     }
 };
 
@@ -15978,7 +15647,7 @@ window.bulkDeleteInventory = async function() {
 window.downloadScheduleImage = function() {
     const schedElement = document.getElementById('scheduleContainer');
     if (!schedElement || schedElement.innerHTML.trim() === '') {
-        alert("No schedule has been generated yet!"); return;
+        window.ManagerUI.notify("No schedule has been generated yet!"); return;
     }
     
     let btn = document.getElementById('btnDownloadSched');
@@ -16057,7 +15726,7 @@ window.downloadScheduleImage = function() {
         if (btn) { btn.innerText = origText; btn.disabled = false; }
     }).catch(err => {
         console.error("Canvas Error:", err);
-        alert("❌ Failed to capture schedule.");
+        window.ManagerUI.notify("❌ Failed to capture schedule.");
         document.body.removeChild(printWrapper);
         if (btn) { btn.innerText = origText; btn.disabled = false; }
     });
@@ -16240,7 +15909,7 @@ window.editSalesTarget = async function() {
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
     if (isFranchisee) selectedBranch = window.sessionUser.branch;
 
-    let newTarget = prompt(`Enter new Monthly Sales Target for ${selectedBranch} (₱):`);
+    let newTarget = (await window.ManagerUI.prompt(`Enter new Monthly Sales Target for ${selectedBranch} (₱):`));
     if (!newTarget || isNaN(newTarget)) return;
     
     // 🔥 THE FIX: We moved the watchdog reset switch directly inside the main function!
@@ -16540,7 +16209,7 @@ window.loadForecasterEngine = async function() {
 
     try {
         // 📸 FETCH MENU IMAGES FOR THE CARDS!
-        const menuSnap = await getDocs(collection(db, "menu"));
+        const menuSnap = await cachedSnapshot('menu');
         let itemImages = {};
         menuSnap.forEach(doc => { 
             let d = doc.data();
@@ -16778,9 +16447,9 @@ window.renderAuditModalItems = function() {
 
 window.submitGeneralAudit = async function() {
     let branch = document.getElementById('auditModalBranch').value;
-    if (!branch) { alert("Please select a branch first."); return; }
+    if (!branch) { window.ManagerUI.notify("Please select a branch first."); return; }
 
-    if (!confirm(`⚠️ CRITICAL ACTION: Are you sure you want to finalize this audit for ${branch}?`)) return;
+    if (!(await window.ManagerUI.confirm(`⚠️ CRITICAL ACTION: Are you sure you want to finalize this audit for ${branch}?`))) return;
 
     let btn = document.getElementById('btnSubmitGeneralAudit');
     btn.innerText = "⏳ Syncing Database..."; btn.disabled = true;
@@ -17050,7 +16719,7 @@ window.announceNewGlobalUpdate = async function() {
 
 // 🔥 BRANCH BUTTON: Pushes the new update directly to the specific branch!
 window.pushBranchUpdate = async function(docId, branchName, targetVersion) {
-    if (!confirm(`Deploy the latest update to ${branchName}?`)) return;
+    if (!(await window.ManagerUI.confirm(`Deploy the latest update to ${branchName}?`))) return;
     
     try {
         Swal.fire({title: 'Pushing Update...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
@@ -17070,7 +16739,7 @@ window.pushBranchUpdate = async function(docId, branchName, targetVersion) {
 
 // 🔥 THE NEW 1-CLICK PUSH ENGINE
 window.pushBranchUpdate = async function(docId, branchName, targetVersion) {
-    if (!confirm(`Are you sure you want to push Update v${targetVersion} to the ${branchName} tablets?`)) return;
+    if (!(await window.ManagerUI.confirm(`Are you sure you want to push Update v${targetVersion} to the ${branchName} tablets?`))) return;
     
     try {
         Swal.fire({title: 'Pushing Update...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
@@ -17183,19 +16852,19 @@ window.saveNewBranch = async function() {
 };
 
 window.deleteBranch = async function(docId, name) {
-    if (!confirm(`⚠️ CRITICAL WARNING!\n\nAre you sure you want to delete the branch: ${name}?`)) return;
-    let confirmText = prompt(`Type DELETE to confirm removal of ${name}:`);
+    if (!(await window.ManagerUI.confirm(`⚠️ CRITICAL WARNING!\n\nAre you sure you want to delete the branch: ${name}?`))) return;
+    let confirmText = (await window.ManagerUI.prompt(`Type DELETE to confirm removal of ${name}:`));
     if (confirmText !== "DELETE") return;
 
     try {
         await deleteDoc(doc(db, "branches", docId));
-        alert(`🗑️ ${name} has been taken offline.`);
+        window.ManagerUI.notify(`🗑️ ${name} has been taken offline.`);
         
         // 🔥 THE FIX: Passed the 'name' variable directly into the Automator!
         window.autoCleanupDeletedBranch(name);
         
         window.loadBranchManager();
-    } catch (e) { console.error(e); alert("Failed to delete branch."); }
+    } catch (e) { console.error(e); window.ManagerUI.notify("Failed to delete branch."); }
 };
 
 // ⚙️ CENTRAL SETTINGS CONTROLLER (WITH ROYALTY ENGINE)
@@ -17307,7 +16976,7 @@ window.saveBranchSettings = async function() {
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Settings Pushed to Cashier!', showConfirmButton: false, timer: 2000});
         document.getElementById('branchSettingsModal').style.display = 'none';
         window.loadBranchManager();
-    } catch (e) { console.error(e); alert("Failed to push settings."); }
+    } catch (e) { console.error(e); window.ManagerUI.notify("Failed to push settings."); }
 };
 
 // 💉 THE DOM INJECTOR
@@ -17320,17 +16989,17 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 window.deleteBranch = async function(docId, name) {
-    if (!confirm(`⚠️ CRITICAL WARNING!\n\nAre you sure you want to delete the branch: ${name}?\n\nThis will remove it from all dropdowns. Existing data (sales, inventory) will still exist but might be orphaned.`)) return;
+    if (!(await window.ManagerUI.confirm(`⚠️ CRITICAL WARNING!\n\nAre you sure you want to delete the branch: ${name}?\n\nThis will remove it from all dropdowns. Existing data (sales, inventory) will still exist but might be orphaned.`))) return;
     
-    let confirmText = prompt(`Type DELETE to confirm removal of ${name}:`);
+    let confirmText = (await window.ManagerUI.prompt(`Type DELETE to confirm removal of ${name}:`));
     if (confirmText !== "DELETE") return;
 
     try {
         await deleteDoc(doc(db, "branches", docId));
         window.autoCleanupDeletedBranch(name);
-        alert(`🗑️ ${name} has been taken offline.`);
+        window.ManagerUI.notify(`🗑️ ${name} has been taken offline.`);
         window.loadBranchManager();
-    } catch (e) { console.error(e); alert("Failed to delete branch."); }
+    } catch (e) { console.error(e); window.ManagerUI.notify("Failed to delete branch."); }
 };
 
 // Hook the Branch Manager to open when you visit the "Staff & Security" tab
@@ -17381,7 +17050,7 @@ window.loadPosLayout = async function() {
     }
 
     try {
-        const menuSnap = await getDocs(collection(db, "menu"));
+        const menuSnap = await cachedSnapshot('menu');
         let categories = new Set();
 
         menuSnap.forEach(d => {
@@ -17498,6 +17167,7 @@ window.deleteMenuItem = async function(docId) {
         try {
             // Delete from Firebase
             await deleteDoc(doc(db, "menu", docId));
+            window.invalidateCache("menu");
             
             Swal.fire({
                 title: 'Deleted!',
@@ -17824,9 +17494,9 @@ window.addCustomDeductionRow = function(name = '', amount = '') {
 // ==========================================
 // ➕ DYNAMIC INVENTORY CATEGORY BUILDER
 // ==========================================
-window.handleCategoryDropdown = function(selectElement) {
+window.handleCategoryDropdown = async function(selectElement) {
     if (selectElement.value === "ADD_NEW") {
-        let newCat = prompt("Enter the name of your new custom category:");
+        let newCat = (await window.ManagerUI.prompt("Enter the name of your new custom category:"));
         
         if (newCat && newCat.trim() !== "") {
             newCat = newCat.trim();
@@ -18563,19 +18233,19 @@ window.submitNewSanction = async function() {
 };
 
 window.resolveSanction = async function(docId, staffName) {
-    if (!confirm(`Mark this issue as resolved for ${staffName}?`)) return;
+    if (!(await window.ManagerUI.confirm(`Mark this issue as resolved for ${staffName}?`))) return;
     try {
         await updateDoc(doc(db, "hr_sanctions", docId), { status: "Resolved", resolvedAt: serverTimestamp() });
         window.loadSanctionsDashboard();
-    } catch (e) { alert("Failed to resolve."); }
+    } catch (e) { window.ManagerUI.notify("Failed to resolve."); }
 };
 
 window.deleteSanction = async function(docId) {
-    if (!confirm(`Are you sure you want to delete this record?`)) return;
+    if (!(await window.ManagerUI.confirm(`Are you sure you want to delete this record?`))) return;
     try {
         await deleteDoc(doc(db, "hr_sanctions", docId));
         window.loadSanctionsDashboard();
-    } catch (e) { alert("Failed to delete."); }
+    } catch (e) { window.ManagerUI.notify("Failed to delete."); }
 };
 
 // ========================================================
@@ -18643,7 +18313,7 @@ window.createNewSopRole = async function() {
     let branch = document.getElementById('sopBuilderBranch').value;
     if (!branch) return Swal.fire('Wait!', 'Please select a branch first.', 'warning');
     
-    let roleName = prompt(`Enter new Role/Shift name for ${branch}:\n(e.g. "Staff 1 (9AM-5PM)")`);
+    let roleName = (await window.ManagerUI.prompt(`Enter new Role/Shift name for ${branch}:\n(e.g. "Staff 1 (9AM-5PM)")`));
     if (!roleName || roleName.trim() === "") return;
     roleName = roleName.trim();
 
@@ -18663,7 +18333,7 @@ window.deleteSopRole = async function() {
     let roleName = document.getElementById('sopBuilderRole').value;
     if (!branch || !roleName) return;
 
-    if (!confirm(`Are you sure you want to permanently delete the SOP for ${roleName}?`)) return;
+    if (!(await window.ManagerUI.confirm(`Are you sure you want to permanently delete the SOP for ${roleName}?`))) return;
 
     delete window.globalSopData[roleName];
     try {
@@ -19301,11 +18971,11 @@ window.markEquipmentBroken = async function(docId, name, branch) {
 };
 
 window.deleteEquipment = async function(docId) {
-    if (!confirm("Delete this equipment record permanently? This will not refund any expenses logged in the ledger.")) return;
+    if (!(await window.ManagerUI.confirm("Delete this equipment record permanently? This will not refund any expenses logged in the ledger."))) return;
     try {
         await deleteDoc(doc(db, "equipment_assets", docId));
         window.loadEquipmentDashboard();
-    } catch(e) { console.error(e); alert("Failed to delete."); }
+    } catch(e) { console.error(e); window.ManagerUI.notify("Failed to delete."); }
 };
 
 // ==========================================
@@ -19608,13 +19278,13 @@ window.handleAddonDragEnd = function(e) {
 // 💸 ATTENDANCE PENALTY ENGINE
 // ==========================================
 window.applyAttendancePenalty = async function(docId, staffName, dateStr, currentPenalty) {
-    let penaltyInput = prompt(`Apply Late/Undertime Deduction for ${staffName} on ${dateStr}?\n\nEnter deduction amount (₱):\n(Enter 0 to remove penalty)`, currentPenalty);
+    let penaltyInput = (await window.ManagerUI.prompt(`Apply Late/Undertime Deduction for ${staffName} on ${dateStr}?\n\nEnter deduction amount (₱):\n(Enter 0 to remove penalty)`, currentPenalty));
     
     if (penaltyInput === null) return; 
     
     let penaltyAmt = parseFloat(penaltyInput);
     if (isNaN(penaltyAmt) || penaltyAmt < 0) {
-        alert("❌ Invalid amount entered.");
+        window.ManagerUI.notify("❌ Invalid amount entered.");
         return;
     }
 
@@ -19624,12 +19294,12 @@ window.applyAttendancePenalty = async function(docId, staffName, dateStr, curren
             penaltyAmount: penaltyAmt
         });
         
-        alert(`✅ Penalty of ₱${penaltyAmt.toFixed(2)} applied successfully to ${staffName}.`);
+        window.ManagerUI.notify(`✅ Penalty of ₱${penaltyAmt.toFixed(2)} applied successfully to ${staffName}.`);
         
         if (typeof window.loadAttendanceLogs === 'function') window.loadAttendanceLogs(); 
     } catch (e) {
         console.error("Error applying penalty:", e);
-        alert("❌ Failed to apply penalty. Check console.");
+        window.ManagerUI.notify("❌ Failed to apply penalty. Check console.");
     }
 };
 
@@ -19657,7 +19327,7 @@ window.openGlobalAddonModal = async function(id = '', name = '', price = 0, dedu
     let menuCats = new Set();
     let invOptions = '<option value="">-- No Linked Ingredient --</option>';
     try {
-        const menuSnap = await getDocs(collection(db, "menu"));
+        const menuSnap = await cachedSnapshot('menu');
         menuSnap.forEach(d => { if(d.data().category) menuCats.add(d.data().category); });
         
         const invSnap = await getDocs(query(collection(db, "inventory"), where("branch", "==", "Main Office")));
@@ -19755,7 +19425,7 @@ window.openGlobalMixMatchModal = async function() {
     let invOptions = '<option value="">-- Select Raw Ingredient --</option>';
 
     try {
-        const snap = await getDocs(collection(db, "menu"));
+        const snap = await cachedSnapshot('menu');
         snap.forEach(d => { if(d.data().category) menuCats.add(d.data().category); });
 
         // 🔥 THE FIX: Force fetch the inventory list from Main Office every single time!
@@ -20730,7 +20400,7 @@ window.generateFranchiseProposal = async function() {
 
     try {
         // 2. FETCH REAL HISTORICAL DATA
-        const menuSnap = await getDocs(collection(db, "menu"));
+        const menuSnap = await cachedSnapshot('menu');
         let itemMap = {}; 
         
         // Categorize the entire menu into our 4 Modules!
@@ -20980,7 +20650,7 @@ window.exportProspectusPDF = function() {
 // ✅ MANAGER GCASH / GRAB VERIFICATION ENGINE
 // ========================================================
 window.verifyDigitalPayment = async function(docId, receiptId) {
-    if (!confirm(`Confirm receipt of funds for Order ${receiptId} into the bank account?`)) return;
+    if (!(await window.ManagerUI.confirm(`Confirm receipt of funds for Order ${receiptId} into the bank account?`))) return;
     
     try {
         await updateDoc(doc(db, "transactions", docId), {
@@ -20999,7 +20669,7 @@ window.verifyDigitalPayment = async function(docId, receiptId) {
         });
     } catch(e) {
         console.error("Verification Error:", e);
-        alert("Failed to verify payment. Check connection.");
+        window.ManagerUI.notify("Failed to verify payment. Check connection.");
     }
 };
 
@@ -21019,7 +20689,7 @@ window.bulkVerifyDigitalPayments = async function() {
         return;
     }
     
-    if (!confirm(`Are you sure you want to verify all ${buttons.length} pending digital payments?`)) return;
+    if (!(await window.ManagerUI.confirm(`Are you sure you want to verify all ${buttons.length} pending digital payments?`))) return;
     
     Swal.fire({title: 'Verifying All...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     
@@ -21123,7 +20793,7 @@ window.copyAIPrompt = function() {
 // 💾 CSV ARCHIVE & PURGE ENGINE (STORAGE CLEANER)
 // ========================================================
 window.purgeOldWasteData = async function() {
-    if(!confirm("⚠️ DATA PURGE: This will download all Approved/Rejected Waste Reports older than 30 days as an Excel CSV, and permanently delete them from the database to save memory.\n\nProceed?")) return;
+    if(!(await window.ManagerUI.confirm("⚠️ DATA PURGE: This will download all Approved/Rejected Waste Reports older than 30 days as an Excel CSV, and permanently delete them from the database to save memory.\n\nProceed?"))) return;
 
     Swal.fire({title: "Scanning database...", didOpen: () => Swal.showLoading()});
 
@@ -21382,7 +21052,7 @@ window.verifySingleHistoryPayment = async function(txId) {
 window.verifyAllPendingHistory = async function() {
     if(!window.pendingVerifications || window.pendingVerifications.length === 0) return Swal.fire('Oops', 'No payments to verify!', 'info');
     
-    if(!confirm(`Are you sure you want to verify all ${window.pendingVerifications.length} payments?`)) return;
+    if(!(await window.ManagerUI.confirm(`Are you sure you want to verify all ${window.pendingVerifications.length} payments?`))) return;
 
     Swal.fire({
         title: 'Verifying Payments...', 
@@ -21702,13 +21372,13 @@ window.deleteCurrentStaff = async function() {
     }
 
     // Prompt the user to type the name manually to prevent accidental clicks
-    let typedName = prompt(`⚠️ WARNING: This will permanently delete ${expectedName} and remove them from the entire system.\n\nTo confirm, type their exact Full Name:`);
+    let typedName = (await window.ManagerUI.prompt(`⚠️ WARNING: This will permanently delete ${expectedName} and remove them from the entire system.\n\nTo confirm, type their exact Full Name:`));
 
     if (!typedName) return; // User clicked cancel or left it blank
 
     // Check if the typed name matches the expected name (case-insensitive)
     if (typedName.trim().toLowerCase() !== expectedName.toLowerCase()) {
-        return alert("❌ Deletion Failed: Staff name did not match exactly.");
+        return window.ManagerUI.notify("❌ Deletion Failed: Staff name did not match exactly.");
     }
 
     Swal.fire({title: 'Deleting Staff...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
@@ -22605,11 +22275,11 @@ window.loadFinancialFlow = async function() {
         const txSnap = await getDocs(txQ);
         
         // Fetch Live Inventory Costs for COGS math
-        const invSnap = await getDocs(collection(db, "inventory"));
+        const invSnap = await cachedSnapshot('inventory');
         let invCosts = {};
         invSnap.forEach(d => { invCosts[`${d.data().branch}_${d.data().name}`] = parseFloat(d.data().baseCost) || 0; });
 
-        const bomSnap = await getDocs(collection(db, "bom"));
+        const bomSnap = await cachedSnapshot('bom');
         let recipes = {};
         bomSnap.forEach(d => {
             let data = d.data();
@@ -22717,83 +22387,7 @@ window.loadFinancialFlow = async function() {
         if (opExBoxes === '') opExBoxes = '<div style="color: #94a3b8; font-style: italic; font-size: 14px; padding: 20px;">No operational expenses logged.</div>';
 
         // 🔥 THE FIX: Injected Mobile-Responsive CSS directly into the UI!
-        let flowHtml = `
-            <style>
-                @media (max-width: 768px) {
-                    .waterfall-lines { display: none !important; }
-                    .waterfall-card { width: 100% !important; min-width: 100% !important; margin-bottom: 10px !important; box-sizing: border-box !important; }
-                    .waterfall-container { flex-direction: column !important; gap: 10px !important; margin-top: 10px !important; }
-                    .waterfall-opex-row { padding-left: 0 !important; width: 100% !important; padding-right: 0 !important; }
-                    .waterfall-opex-grid { flex-direction: column !important; width: 100% !important; box-sizing: border-box !important; }
-                    .waterfall-opex-grid > div { width: 100% !important; box-sizing: border-box !important; }
-                    .waterfall-net-profit { padding: 25px 20px !important; }
-                    .waterfall-net-profit-val { font-size: 40px !important; }
-                }
-            </style>
-            <div style="display: flex; flex-direction: column; align-items: center; font-family: 'Segoe UI', Tahoma, sans-serif; padding: 20px 0;">
-                
-                <!-- TOP NODE: REVENUE -->
-                <div class="waterfall-card" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px 50px; border-radius: 20px; box-shadow: 0 15px 30px rgba(16, 185, 129, 0.3); z-index: 2; position: relative; color: white; border: 1px solid #047857; min-width: 320px; box-sizing: border-box;">
-                    <div style="font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 1.5px; opacity: 0.9;">Gross Revenue</div>
-                    <div style="font-size: 46px; font-weight: 900; margin-top: 5px; line-height: 1;">₱${totalRevenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                    <div style="font-size: 12px; margin-top: 10px; font-weight: bold; background: rgba(255,255,255,0.2); padding: 4px 12px; border-radius: 20px; display: inline-block;">${periodLabel} • ${branch}</div>
-                </div>
-
-                <!-- MAIN SPLIT ARROWS -->
-                <div class="waterfall-lines" style="display: flex; justify-content: center; width: 100%; max-width: 680px; height: 40px; border-top: 3px solid #cbd5e1; border-left: 3px solid #cbd5e1; border-right: 3px solid #cbd5e1; margin-top: 20px; position: relative;">
-                    <div style="position: absolute; top: -22px; left: 50%; transform: translateX(-50%); width: 3px; height: 20px; background: #cbd5e1;"></div>
-                    <!-- Dropdown lines -->
-                    <div style="position: absolute; top: 40px; left: 0; width: 3px; height: 20px; background: #cbd5e1;"></div>
-                    <div style="position: absolute; top: 40px; left: 50%; transform: translateX(-50%); width: 3px; height: 20px; background: #cbd5e1;"></div>
-                    <div style="position: absolute; top: 40px; right: 0; width: 3px; height: 20px; background: #cbd5e1;"></div>
-                </div>
-
-                <!-- ROW 2: THE DEDUCTIONS -->
-                <div class="waterfall-container" style="display: flex; justify-content: center; gap: 30px; width: 100%; margin-top: 20px; position: relative; flex-wrap: wrap;">
-                    
-                    <!-- COGS -->
-                    <div onclick="window.openFlowCogsModal()" class="waterfall-card" style="background: white; border: 2px dashed #fca5a5; padding: 25px; border-radius: 16px; width: 240px; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); box-sizing: border-box;" onmouseover="this.style.background='#fff1f2'; this.style.boxShadow='0 10px 15px -3px rgba(220, 38, 38, 0.1)';" onmouseout="this.style.background='white'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.05)';">
-                        <div style="font-size: 12px; font-weight: 800; color: #dc2626; text-transform: uppercase; letter-spacing: 0.5px;">Cost of Goods (COGS)</div>
-                        <div style="font-size: 26px; font-weight: 900; color: #b91c1c; margin-top: 5px;">-₱${totalCOGS.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                        <div style="font-size: 11px; color: #ef4444; margin-top: 10px; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 4px;">🔍 Trace Logs</div>
-                    </div>
-
-                    <!-- PAYROLL -->
-                    <div class="waterfall-card" style="background: white; border: 1px solid #cbd5e1; padding: 25px; border-radius: 16px; width: 240px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); box-sizing: border-box;">
-                        <div style="font-size: 12px; font-weight: 800; color: #475569; text-transform: uppercase; letter-spacing: 0.5px;">Payroll Paid</div>
-                        <div style="font-size: 26px; font-weight: 900; color: #334155; margin-top: 5px;">-₱${totalPayroll.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                    </div>
-
-                    <!-- OPEX -->
-                    <div class="waterfall-card" style="background: white; border: 1px solid #fcd34d; padding: 25px; border-radius: 16px; width: 240px; position: relative; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); box-sizing: border-box;">
-                        <div style="font-size: 12px; font-weight: 800; color: #d97706; text-transform: uppercase; letter-spacing: 0.5px;">Operating Expenses</div>
-                        <div style="font-size: 26px; font-weight: 900; color: #b45309; margin-top: 5px;">-₱${totalExpenses.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                        
-                        <!-- Mini Dropdown Line to OpEx Boxes -->
-                        <div class="waterfall-lines" style="position: absolute; bottom: -20px; left: 50%; transform: translateX(-50%); width: 3px; height: 20px; background: #cbd5e1;"></div>
-                    </div>
-
-                </div>
-
-                <!-- OPEX BREAKDOWN ROW -->
-                <div class="waterfall-opex-row" style="display: flex; justify-content: center; width: 100%; max-width: 900px; margin-top: 20px; position: relative; margin-left: auto; margin-right: auto; padding-left: 510px; box-sizing: border-box;">
-                    <div class="waterfall-opex-grid" style="display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; padding: 25px; background: #f8fafc; border: 2px dashed #cbd5e1; border-radius: 16px; max-width: 550px; width: 100%; box-sizing: border-box;">
-                        ${opExBoxes}
-                    </div>
-                </div>
-
-                <!-- FINAL NET PROFIT -->
-                <div class="waterfall-card" style="margin-top: 50px; position: relative; width: 100%; max-width: 450px; box-sizing: border-box;">
-                    <div class="waterfall-lines" style="position: absolute; top: -40px; left: 50%; transform: translateX(-50%); font-size: 32px; color: #94a3b8; font-weight: 900;">↓</div>
-                    <div class="waterfall-net-profit" style="background: ${netProfit >= 0 ? 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)' : 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)'}; color: white; padding: 35px 50px; border-radius: 24px; box-shadow: 0 15px 40px ${netProfit >= 0 ? 'rgba(14, 165, 233, 0.35)' : 'rgba(239, 68, 68, 0.35)'}; border: 1px solid ${netProfit >= 0 ? '#0284c7' : '#9f1239'}; box-sizing: border-box; width: 100%;">
-                        <div style="font-size: 15px; font-weight: 900; text-transform: uppercase; letter-spacing: 2px; color: rgba(255,255,255,0.9);">Remaining Net Profit</div>
-                        <div class="waterfall-net-profit-val" style="font-size: 56px; font-weight: 900; margin-top: 5px; line-height: 1; text-shadow: 0 4px 6px rgba(0,0,0,0.2);">₱${netProfit.toLocaleString(undefined, {minimumFractionDigits: 2})}</div>
-                        <div style="font-size: 15px; margin-top: 15px; font-weight: bold; background: rgba(255,255,255,0.2); padding: 8px 16px; border-radius: 20px; display: inline-block;">${totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : 0}% Profit Margin</div>
-                    </div>
-                </div>
-
-            </div>
-        `;
+        let flowHtml = renderFinancialFlow({totalRevenue, totalCOGS, totalPayroll, totalOpEx, netProfit, expenseBreakdown});
         container.innerHTML = flowHtml;
 
         // 📊 6. RENDER THE CHARTS
@@ -22981,7 +22575,7 @@ window.openFlowCogsModal = function() {
 // ========================================================
 // 📱 LIVE STOREFRONT PREVIEWER ENGINE (FIXED IFRAME)
 // ========================================================
-window.openStorefrontPreview = function() {
+window.openStorefrontPreview = async function() {
     let modal = document.getElementById('storefrontPreviewModal');
     let iframe = document.getElementById('storefrontIframe');
     
@@ -22990,7 +22584,7 @@ window.openStorefrontPreview = function() {
     
     // If not, ask the manager to paste it!
     if (!savedUrl) {
-        savedUrl = prompt("Enter your Live Customer App URL (e.g. https://takodeal-customer.vercel.app):");
+        savedUrl = (await window.ManagerUI.prompt("Enter your Live Customer App URL (e.g. https://takodeal-customer.vercel.app):"));
         if (savedUrl) {
             localStorage.setItem('takodeal_customer_app_url', savedUrl);
         } else {
@@ -22998,8 +22592,8 @@ window.openStorefrontPreview = function() {
         }
     }
     
-    if (iframe.src !== savedUrl) {
-        iframe.src = savedUrl;
+    if (iframe.getAttribute('src') !== new URL(savedUrl, location.href).href) {
+        iframe.src = new URL(savedUrl, location.href).href;
     }
     
     modal.style.display = 'flex';
@@ -23007,8 +22601,8 @@ window.openStorefrontPreview = function() {
 };
 
 // Also give them a way to reset the URL if they make a typo!
-window.resetStorefrontUrl = function() {
-    let newUrl = prompt("Update your Live Customer App URL:", localStorage.getItem('takodeal_customer_app_url'));
+window.resetStorefrontUrl = async function() {
+    let newUrl = (await window.ManagerUI.prompt("Update your Live Customer App URL:", localStorage.getItem('takodeal_customer_app_url')));
     if (newUrl) {
         localStorage.setItem('takodeal_customer_app_url', newUrl);
         document.getElementById('storefrontIframe').src = newUrl;
@@ -24485,27 +24079,6 @@ window.billFranchiseForStock = async function(branchName, itemsDispatched, dispa
     } catch(e) { console.error("B2B Billing Error:", e); }
 };
 
-// 🔌 Hooking into the existing dispatcher
-setTimeout(() => {
-    if (typeof window.submitMultiDispatch === 'function') {
-        const originalDispatch = window.submitMultiDispatch;
-        window.submitMultiDispatch = async function() {
-            // Let the original function run first
-            await originalDispatch();
-            
-            // Check if cart was emptied (meaning it was successful)
-            if (window.dispatchCart.length === 0) {
-                let toBranch = document.getElementById('dispTo').value;
-                let oldCartData = JSON.parse(localStorage.getItem('takodeal_dispatch_cart') || '[]');
-                
-                if (oldCartData.length > 0) {
-                    window.billFranchiseForStock(toBranch, oldCartData, "DISP-" + Date.now());
-                }
-            }
-        };
-    }
-}, 3000);
-
 // ========================================================
 // 📄 FRANCHISE STATEMENT OF ACCOUNT (SOA) GENERATOR
 // ========================================================
@@ -24924,7 +24497,7 @@ window.checkManagerPin = function() {
         return;
     }
 
-    if (!window.tempAuthData) return alert("Authentication data lost. Please refresh the page.");
+    if (!window.tempAuthData) return window.ManagerUI.notify("Authentication data lost. Please refresh the page.");
 
     let correctPin = String(window.tempAuthData.pin || window.tempAuthData.securityPin || "");
 
@@ -25705,7 +25278,7 @@ window.saveEmployeeProfile = async function() {
     let nightRate = parseFloat(document.getElementById('empNightDiffRate').value) || 0;
 
     if (!name || isNaN(rate) || !pin || pin.length < 4) {
-        alert("❌ Error: Name, Hourly Rate, and a Password (minimum 4 characters) are strictly required!");
+        window.ManagerUI.notify("❌ Error: Name, Hourly Rate, and a Password (minimum 4 characters) are strictly required!");
         if (window.sessionUser && window.sessionUser.isFranchisee && bAssignEl) bAssignEl.disabled = true;
         return;
     }
@@ -25920,7 +25493,7 @@ window.massGenerateStaffIDs = async function() {
 };
 
 window.deleteStaffDeduction = async function(docId, staffName, staffDocId) {
-    if(!confirm("Are you sure you want to permanently delete this deduction?")) return;
+    if(!(await window.ManagerUI.confirm("Are you sure you want to permanently delete this deduction?"))) return;
     try {
         await window.deleteDoc(window.doc(window.db, "staff_deductions", docId));
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Deleted!', showConfirmButton: false, timer: 2000});
@@ -26367,11 +25940,11 @@ window.addSupplierModal = async function(encodedData = null) {
 };
 
 window.deleteSupplier = async function(id, name) {
-    if (!confirm(`Are you sure you want to permanently delete ${name} from your directory?`)) return;
+    if (!(await window.ManagerUI.confirm(`Are you sure you want to permanently delete ${name} from your directory?`))) return;
     try {
         await window.deleteDoc(window.doc(window.db, "suppliers", id));
         window.loadSupplierDirectory();
-    } catch(e) { console.error(e); alert('Failed to delete.'); }
+    } catch(e) { console.error(e); window.ManagerUI.notify('Failed to delete.'); }
 };
 
 // 🗺️ 2. AI SMART ROUTE PLANNER (GPS UPGRADE)
@@ -26851,12 +26424,12 @@ window.editStorefrontProfile = async function(encodedData) {
 // ========================================================
 // ☁️ UNIVERSAL CLOUD AUTO-ARCHIVER ENGINE (EXCEL + JSON)
 // ========================================================
-window.openArchiveSalesModal = async function() {
+window.openArchiveSalesModal = async function(scope = 'all') {
     const { value: formValues } = await Swal.fire({
-        title: '🌪️ Universal Cloud Archiver',
+        title: scope === 'zreadings' ? 'Archive old Z-Readings' : 'Archive operational records',
         html: `
             <div style="text-align: left; font-size: 13px; color: #475569; margin-bottom: 15px; line-height: 1.5;">
-                This will sweep the database for <b>Transactions, Shifts, Attendance, Stock Logs, and Expenses</b>. It will first download a Multi-Tab Excel file to your computer, then move the data to Cold Storage to stop Firebase fees.
+                ${scope === 'zreadings' ? 'Export and back up old closed Z-Readings before removing them from the live database.' : 'Export and back up old transactions, closed shifts, attendance, stock logs, and expenses before removing them.'} Active shifts, today’s records, and each branch’s latest handover are retained. Backups still use storage; sale retry markers and lifetime counters are retained.
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                 <div>
@@ -26877,6 +26450,7 @@ window.openArchiveSalesModal = async function() {
             const start = document.getElementById('swalArchiveStart').value;
             const end = document.getElementById('swalArchiveEnd').value;
             if (!start || !end) { Swal.showValidationMessage("Please select both dates."); return false; }
+            if (start > end || end >= businessClock().day) { Swal.showValidationMessage('Choose an ordered date range ending before today.'); return false; }
             return { start, end };
         }
     });
@@ -26891,18 +26465,21 @@ window.openArchiveSalesModal = async function() {
 
         // Fetch from all 5 expensive collections simultaneously
         const qTx = window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
-        const qShifts = window.query(window.collection(window.db, "shifts"), window.where("startTime", ">=", startOfDay), window.where("startTime", "<=", endOfDay));
+        const qShifts = window.query(window.collection(window.db, "shifts"), window.where("endTime", ">=", startOfDay), window.where("endTime", "<=", endOfDay));
         const qAtt = window.query(window.collection(window.db, "attendance_logs"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
         const qStock = window.query(window.collection(window.db, "stock_logs"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
         const qExp = window.query(window.collection(window.db, "expenses"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay));
 
         const [snapTx, snapShifts, snapAtt, snapStock, snapExp] = await Promise.all([
-            window.getDocs(qTx), window.getDocs(qShifts), window.getDocs(qAtt), window.getDocs(qStock), window.getDocs(qExp)
+            scope === 'zreadings' ? Promise.resolve({docs:[],size:0,forEach:()=>{}}) : window.getDocs(qTx), window.getDocs(qShifts), scope === 'zreadings' ? Promise.resolve({docs:[],size:0,forEach:()=>{}}) : window.getDocs(qAtt), scope === 'zreadings' ? Promise.resolve({docs:[],size:0,forEach:()=>{}}) : window.getDocs(qStock), scope === 'zreadings' ? Promise.resolve({docs:[],size:0,forEach:()=>{}}) : window.getDocs(qExp)
         ]);
 
-        let totalDocs = snapTx.size + snapShifts.size + snapAtt.size + snapStock.size + snapExp.size;
-        if (totalDocs === 0) return Swal.fire('No Data', 'No operational logs found for this date range.', 'info');
-
+        const latestByBranch = new Map();
+        await Promise.all([...new Set(snapShifts.docs.map(row=>row.data().branch))].map(async branch => {
+            const latest = await window.getDocs(window.query(window.collection(window.db,'shifts'),window.where('branch','==',branch),window.where('status','==','Closed'),window.orderBy('endTime','desc'),window.limit(1)));
+            if (latest.docs[0]) latestByBranch.set(branch,latest.docs[0].id);
+        }));
+        let totalDocs = 0;
         const extractMs = (ts) => ts ? (ts.toMillis ? ts.toMillis() : new Date(ts).getTime()) : Date.now();
         const formatDate = (ms) => new Date(ms).toLocaleDateString('en-PH');
         const formatTime = (ms) => new Date(ms).toLocaleTimeString('en-PH');
@@ -26922,9 +26499,11 @@ window.openArchiveSalesModal = async function() {
         // 2. PROCESS SHIFTS
         let exShifts = [];
         snapShifts.forEach(docSnap => {
-            let d = docSnap.data(); d.id = docSnap.id; deleteIds.shifts.push(d.id);
+            let d = docSnap.data(); d.id = docSnap.id;
+            if (!archiveableShift(d,{latestId:latestByBranch.get(d.branch)})) return;
+            deleteIds.shifts.push(d.id);
             d.startTimeMs = extractMs(d.startTime); d.endTimeMs = extractMs(d.endTime); archiveData.shifts.push(d);
-            exShifts.push({ "Shift ID": d.id, "Date": formatDate(d.startTimeMs), "Branch": d.branch, "Cashier": d.cashier, "Time In": formatTime(d.startTimeMs), "Time Out": formatTime(d.endTimeMs), "Gross": parseFloat(d.grossSales) || 0, "Net Sales": parseFloat(d.netSales) || 0, "COGS": parseFloat(d.cogs) || 0, "Exp Cash": parseFloat(d.expectedCash) || 0, "Dec Cash": parseFloat(d.declaredCash) || 0 });
+            exShifts.push({ "Shift ID": d.id, "Date": formatDate(d.startTimeMs), "Branch": d.branch, "Cashier": d.cashier, "Time In": formatTime(d.startTimeMs), "Time Out": formatTime(d.endTimeMs), "Gross": parseFloat(d.grossSales) || 0, "Net Sales": parseFloat(d.netSales) || 0, "COGS": parseFloat(d.cogs) || 0, "Exp Cash": parseFloat(d.expectedCash) || 0, "Dec Cash": parseFloat(d.declaredCash) || 0, "Cash Variance": Number(d.declaredCash || 0)-Number(d.expectedCash || 0), "Retained Cash": d.retainedCash ?? d.declaredCash, "Remitted Cash": d.remittedCash || 0, "Remittance ID": d.remittanceId || "" });
         });
 
         // 3. PROCESS ATTENDANCE
@@ -26952,9 +26531,11 @@ window.openArchiveSalesModal = async function() {
         });
 
         // ⏬ DOWNLOAD THE EXCEL FILE (.XLSX) WITH TABS!
+        totalDocs = Object.values(archiveData).reduce((sum,rows)=>sum+rows.length,0);
+        if (!totalDocs) return Swal.fire('No records to archive','The selected shifts are active, recent, or needed for the latest handover.','info');
         let wb = window.XLSX.utils.book_new();
         if (exTx.length > 0) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exTx), "Transactions");
-        if (exShifts.length > 0) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exShifts), "Shifts");
+        if (exShifts.length > 0) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exShifts), "Z-Readings");
         if (exAtt.length > 0) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exAtt), "Attendance");
         if (exStock.length > 0) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exStock), "Stock Logs");
         if (exExp.length > 0) window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.json_to_sheet(exExp), "Expenses");
@@ -26998,22 +26579,29 @@ window.openArchiveSalesModal = async function() {
         });
 
         // 🧹 DELETE EVERYTHING SAFELY IN CHUNKS
-        let deletePromises = [];
-        deleteIds.transactions.forEach(id => deletePromises.push(window.deleteDoc(window.doc(window.db, "transactions", id))));
-        deleteIds.shifts.forEach(id => deletePromises.push(window.deleteDoc(window.doc(window.db, "shifts", id))));
-        deleteIds.attendance_logs.forEach(id => deletePromises.push(window.deleteDoc(window.doc(window.db, "attendance_logs", id))));
-        deleteIds.stock_logs.forEach(id => deletePromises.push(window.deleteDoc(window.doc(window.db, "stock_logs", id))));
-        deleteIds.expenses.forEach(id => deletePromises.push(window.deleteDoc(window.doc(window.db, "expenses", id))));
-        
-        for (let i = 0; i < deletePromises.length; i += 500) {
-            const chunk = deletePromises.slice(i, i + 500);
-            await Promise.all(chunk);
+        let removed = 0;
+        const pendingDeletes = Object.entries(deleteIds).flatMap(([collection,ids])=>ids.map(id=>({collection,id})));
+        // Reads precede writes and each small transaction is awaited.
+        for (let offset=0;offset<pendingDeletes.length;offset+=40) {
+            const chunk = pendingDeletes.slice(offset,offset+40);
+            removed += await window.runTransaction(window.db,async tx=> {
+                const rows=[];
+                for (const row of chunk) {
+                    const reference=window.doc(window.db,row.collection,row.id), snapshot=await tx.get(reference);
+                    if (!snapshot.exists()) continue;
+                    if (row.collection==='shifts' && !archiveableShift({...snapshot.data(),id:row.id},{latestId:latestByBranch.get(snapshot.data().branch)})) continue;
+                    rows.push(reference);
+                }
+                for (const reference of rows) tx.delete(reference);
+                return rows.length;
+            });
         }
 
-        Swal.fire('Archived!', `${totalDocs} logs successfully moved to Cold Storage. Your Firebase bill is safe.`, 'success');
+        Swal.fire('Archived!', `${removed} records archived and removed. Protected shifts were retained. The backup is available in your archive list.`, 'success');
         
         window.loadArchiveDropdown();
         window.loadSalesHistoryTab();
+        window.loadZReadingReports();
 
     } catch (e) {
         console.error("Archive Error:", e);
@@ -27493,7 +27081,7 @@ window.approveTopUp = async function(docId, riderId, riderName) {
 };
 
 window.rejectTopUp = async function(docId, riderName) {
-    if (!confirm(`Are you sure you want to reject the top-up request from ${riderName}?`)) return;
+    if (!(await window.ManagerUI.confirm(`Are you sure you want to reject the top-up request from ${riderName}?`))) return;
 
     try {
         await window.updateDoc(window.doc(window.db, "rider_topups", docId), {
@@ -27826,26 +27414,7 @@ window.compressImage = function(file, maxWidth = 800, maxHeight = 800, quality =
     });
 };
 
-window.runDataArchiver = async function() {
-    let cutoff = new Date();
-    cutoff.setMonth(cutoff.getMonth() - 2); // Deletes logs older than 2 months
-    
-    console.log("🧹 Archiving transactions older than: ", cutoff);
-    const q = window.query(window.collection(window.db, "transactions"), window.where("timestamp", "<", cutoff));
-    const snap = await window.getDocs(q);
-    
-    let batch = window.writeBatch(window.db);
-    let count = 0;
-    
-    snap.forEach(doc => {
-        batch.delete(doc.ref);
-        count++;
-        if (count === 400) { batch.commit(); batch = window.writeBatch(window.db); count = 0; } // Firebase limits batches to 500
-    });
-    
-    await batch.commit();
-    console.log(`✅ Archiver Complete! Purged old logs to keep the system lightning fast.`);
-};
+window.runDataArchiver = async function() { return window.openArchiveSalesModal(); };
 
 // ==========================================
 // 🏆 TOP PERFORMER BONUS ENGINE (WITH EDIT/DELETE HISTORY)
@@ -27996,11 +27565,11 @@ window.editPerfBonus = function(id, staff, dateStr, amount, reason) {
 };
 
 window.deletePerfBonus = async function(id) {
-    if (!confirm("Remove this bonus completely?")) return;
+    if (!(await window.ManagerUI.confirm("Remove this bonus completely?"))) return;
     try {
         await window.deleteDoc(window.doc(window.db, "staff_bonuses", id));
         window.loadPerfBonusHistory();
-    } catch (e) { alert("Failed to delete bonus."); }
+    } catch (e) { window.ManagerUI.notify("Failed to delete bonus."); }
 };
 
 // ========================================================
@@ -28441,7 +28010,15 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
         amount: value, user: window.auth.currentUser.email, timestamp: new Date(), shiftId: id, operationId: row.id }) });
     }
     for (const [method, value] of Object.entries(digital)) if (method.toLowerCase() !== 'gcash') await deposit('Main Office', method, value);
-    if (branchConfig.isMallBranch) await deposit(targetBranch, 'Manager Fund', Number(row.evidence.declaredCash) - starting);
+    if (branchConfig.isMallBranch) {
+      const plan = mallCashPlan(Number(row.evidence.declaredCash));
+      const remittanceId = 'mall-' + shifts.id;
+      const existingRemittance = await tkOwnerDoc(doc('remittances/' + remittanceId)); guard(existingRemittance);
+      if (existingRemittance.exists()) throw new Error('This shift already has a mall remittance. Review its existing settlement.');
+      Object.assign(closed, {isMallBranch:true,mallFloat:2000,retainedCash:plan.retainedCash,remittedCash:plan.remittedCash,floatShortage:plan.floatShortage,remittanceId:plan.remittedCash>0 ? remittanceId : '',cashPolicyVersion:1});
+      writes.find(write=>write.path === shifts.ref.path).data = tkEncode(closed);
+      if (plan.remittedCash>0) writes.push({path:'remittances/'+remittanceId,mode:'set',data:tkEncode({branch:targetBranch,shiftId:shifts.id,cashierName:row.cashier || 'Owner review',amount:plan.remittedCash,retainedCash:plan.retainedCash,type:'Mall Daily Remittance',channel:'Physical Handover',status:'Pending',dateStr:businessClock().day,timestamp:new Date(),cashPolicyVersion:1})});
+    }
     const royalty = (cash + Object.values(digital).reduce((a, b) => a + b, 0)) * ((Number(branchConfig.royaltyPercent) || 0) / 100);
     if (royalty > 0) writes.push({ path: 'franchise_ledger/settle-' + row.id, mode: 'create', data: tkEncode({ branch: targetBranch,
       type: 'Charge', category: 'Daily Franchise Royalty', amount: royalty, description: 'Owner-reviewed shift royalty', loggedBy: window.auth.currentUser.email,
@@ -28591,3 +28168,8 @@ window.openDashboardPartner = async function(partner) {
 
 // Keep the shared shell in sync with all existing navigation paths.
 initManagerTheme({ onViewChange: view => { if (view !== 'dashboard') globalDashboard.stop(); } });
+
+initManagerDialogs();
+initManagerWorkspace();
+
+installMenuBulk();
