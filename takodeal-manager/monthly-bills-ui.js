@@ -1,4 +1,4 @@
-import {billToday,billSchedule,billDueDate,billPeriods,billsForPeriod,recordBillPayment} from './monthly-bills.js';
+import {billToday,billSchedule,billDueDate,billPeriods,billsForPeriod,billAmount,saveBillAmount,recordBillPayment} from './monthly-bills.js';
 const esc=value=>String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=value=>'₱'+Number(value || 0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const date=value=>new Date(value+'T12:00:00+08:00').toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'});
@@ -13,6 +13,30 @@ export function installMonthlyBills() {
     let bills=[],loading=null,lastRefresh=0,alarmKey='',audio=null,sound=false,scope='';
     const api={db:window.db,doc:window.doc,collection:window.collection,runTransaction:window.runTransaction,serverTimestamp:window.serverTimestamp};
     const notify=message=>window.ManagerUI.notify(message);
+    // Keep the existing modal and add a month selector next to its amount.
+    const amountInput=el('editBudgetLimit'),amountLabel=amountInput?.previousElementSibling;
+    if(amountInput && !el('editBudgetMonth')) {
+        amountLabel.textContent='Bill amount for this month (₱)';amountLabel.htmlFor='editBudgetLimit';
+        amountInput.step='0.01';amountInput.min='0.01';
+        const fields=document.createElement('div');fields.className='bill-month-fields';
+        fields.innerHTML='<label for="editBudgetMonth">Billing month *</label><input id="editBudgetMonth" type="month" required><small id="editBudgetAmountHelp"></small>';
+        amountLabel.before(fields);
+        const option=document.createElement('label');option.className='bill-default-option';
+        option.innerHTML='<input id="editBudgetUseDefault" type="checkbox"> Also use this amount as the default for future months';amountInput.after(option);
+    }
+    if(el('newBudgetLimit')){el('newBudgetLimit').step='0.01';el('newBudgetLimit').previousElementSibling.textContent='Default monthly amount / estimate (₱)';}
+    function selectEditMonth() {
+        const b=bills.find(b=>b.id===el('editBudgetId').value);if(!b)return;
+        const month=el('editBudgetMonth').value,paid=!!b.billPayments?.[month];
+        el('editBudgetLimit').value=billAmount(b,month);el('editBudgetLimit').readOnly=paid;
+        el('editBudgetUseDefault').checked=false;el('editBudgetUseDefault').disabled=paid;
+        el('editBudgetAmountHelp').textContent=paid?'This month is paid. Its recorded amount is preserved; choose another month to adjust a bill.':`Only this month changes. Other months use the ${money(b.limit ?? b.amount)} default estimate unless you adjust them. Reminder dates stay the same.`;
+    }
+    el('editBudgetMonth')?.addEventListener('change',selectEditMonth);
+    el('editBudgetDueDate')?.addEventListener('change',()=>{
+        const first=el('editBudgetDueDate').value.slice(0,7);el('editBudgetMonth').min=first;
+        if(el('editBudgetMonth').value<first){el('editBudgetMonth').value=first;selectEditMonth();}
+    });
     function scheduleFields(prefix) {
         return billSchedule({dueDate:el(prefix+'BudgetDueDate').value,reminderDays:el(prefix+'BudgetReminderDays').value,reminderTime:el(prefix+'BudgetReminderTime').value});
     }
@@ -21,15 +45,17 @@ export function installMonthlyBills() {
     }
     function row(bill,now) {
         const current=billToday(now).slice(0,7),end=bill.billStartDate?.slice(0,7)>current?bill.billStartDate.slice(0,7):current;
-        const amount=Number(bill.limit || bill.amount || 0),periods=billPeriods(bill,now,end);
-        const next=periods.find(p=>!p.payment) || {month:current,dueDate:billDueDate(bill,current),state:'paid'};
+        const periods=billPeriods(bill,now,end);
+        const next=periods.find(p=>!p.payment) || periods.at(-1) || {month:current,dueDate:billDueDate(bill,current),state:'paid'};
         const pending=periods.filter(p=>!p.payment),paid=Object.values(bill.billPayments || {}).filter(p=>p.paymentDate?.slice(0,7)===current).reduce((sum,p)=>sum+Number(p.amount || 0),0);
         const schedule=next.dueDate;
-        return `<article class="monthly-bill" data-bill-id="${esc(bill.id)}"><div class="monthly-bill-heading"><div><strong>${esc(bill.category || bill.name || 'Monthly bill')}</strong><small>${schedule?`Due ${date(next.dueDate)} · repeats monthly · remind ${bill.billReminderDays} day(s) before at ${esc(bill.billReminderTime)} (PH)`:'First due date required'}</small></div><span class="bill-state ${schedule?next.state:'unscheduled'}">${schedule?{paid:'Paid',overdue:'Overdue',due:'Reminder due',upcoming:'Upcoming'}[next.state]:'Schedule needed'}</span></div><div class="monthly-bill-bottom"><span>${money(paid)} paid this month / ${money(amount)} monthly budget${pending.length>1?` · ${pending.length} unpaid months`:''}</span><div><button type="button" data-bill-action="edit">${schedule?'Edit':'Set schedule'}</button><button type="button" data-bill-action="pay" ${schedule && pending.length?'':'disabled'}>Log payment</button></div></div></article>`;
+        const amount=billAmount(bill,next.month);
+        return `<article class="monthly-bill" data-bill-id="${esc(bill.id)}"><div class="monthly-bill-heading"><div><strong>${esc(bill.category || bill.name || 'Monthly bill')}</strong><small>${schedule?`Due ${date(next.dueDate)} · repeats monthly · remind ${bill.billReminderDays} day(s) before at ${esc(bill.billReminderTime)} (PH)`:'First due date required'}</small></div><span class="bill-state ${schedule?next.state:'unscheduled'}">${schedule?{paid:'Paid',overdue:'Overdue',due:'Reminder due',upcoming:'Upcoming'}[next.state]:'Schedule needed'}</span></div><div class="monthly-bill-bottom"><span>${money(amount)} · ${esc(next.month)} bill${!bill.billAmounts?.[next.month] && !next.payment?' (estimate)':''}${paid?` · ${money(paid)} paid this month`:''}${pending.length>1?` · ${pending.length} unpaid months`:''}</span><div><button type="button" data-bill-action="edit">${schedule?'Edit amount & reminder':'Set schedule'}</button><button type="button" data-bill-action="pay" ${schedule && pending.length?'':'disabled'}>Log payment</button></div></div></article>`;
     }
     function draw() {
         if(!canManage()){if(el('monthlyBillAlarm'))el('monthlyBillAlarm').hidden=true;return;}
         const now=new Date(),groups=new Map();
+        if(el('accTotalBudget'))el('accTotalBudget').textContent=money(bills.reduce((sum,b)=>sum+billAmount(b,billToday(now).slice(0,7)),0));
         for(const b of bills) {if(!groups.has(b.branch))groups.set(b.branch,[]);groups.get(b.branch).push(b);}
         if(el('budgetListBody'))el('budgetListBody').innerHTML=[...groups].sort(([a],[b])=>a.localeCompare(b)).map(([branch,items])=>`<section class="monthly-bill-branch"><h3>🏢 ${esc(branch)}</h3>${items.map(b=>row(b,now)).join('')}</section>`).join('') || '<p class="bill-empty">Add a monthly bill and its first due date to start.</p>';
         const alerted=bills.flatMap(b=>billPeriods(b,now).filter(p=>['overdue','due'].includes(p.state)).map(p=>({b,p})));
@@ -67,7 +93,8 @@ export function installMonthlyBills() {
     };
     window.openEditBudgetModal=function(id) {
         const b=bills.find(b=>b.id===id);if(!b || !canManage())return;
-        el('editBudgetId').value=id;el('editBudgetTitle').textContent=`${b.branch} · ${b.category || b.name}`;el('editBudgetLimit').value=b.limit || b.amount || 0;
+        el('editBudgetId').value=id;el('editBudgetTitle').textContent=`${b.branch} · ${b.category || b.name}`;
+        const current=billToday().slice(0,7);el('editBudgetMonth').value=b.billStartDate?.slice(0,7)>current?b.billStartDate.slice(0,7):current;el('editBudgetMonth').min=b.billStartDate?.slice(0,7) || '';selectEditMonth();
         el('editBudgetDueDate').value=b.billStartDate || '';el('editBudgetDueDate').readOnly=!!b.billStartDate;
         el('editBudgetReminderDays').value=b.billReminderDays ?? 3;el('editBudgetReminderTime').value=b.billReminderTime || '09:00';el('editBudgetModal').style.display='flex';
     };
@@ -80,20 +107,14 @@ export function installMonthlyBills() {
             if(!el(prefix+'BudgetLimit').value || !Number.isFinite(limit) || limit<=0)throw new Error('Enter a monthly bill amount greater than zero.');
             btn.disabled=true;
             if(edit) {
-                const id=el('editBudgetId').value,ref=window.doc(window.db,'budgets',id);
-                await window.runTransaction(window.db,async tx=>{
-                    const snapshot=await tx.get(ref);if(!snapshot.exists())throw new Error('This bill no longer exists.');
-                    const existing=snapshot.data();if(!window.isBranchAllowed(existing.branch))throw new Error('This branch is outside your access.');
-                    if(existing.billStartDate && existing.billStartDate!==schedule.billStartDate)throw new Error('Keep the first due date so unpaid months remain visible.');
-                    tx.update(ref,{limit,amount:limit,...schedule});
-                });
+                await saveBillAmount(api,{billId:el('editBudgetId').value,month:el('editBudgetMonth').value,amount:limit,schedule,useAsDefault:el('editBudgetUseDefault').checked,actor:window.auth.currentUser?.uid,allowedBranch:window.isBranchAllowed});
             } else {
                 const category=el('newBudgetCategory').value.trim(),branch=el('newBudgetBranch').value;
                 if(!category || !branch || !window.isBranchAllowed(branch))throw new Error('Select your branch and enter the bill name.');
                 await window.addDoc(window.collection(window.db,'budgets'),{branch,category,limit,spent:0,currentMonth:billToday().slice(0,7),...schedule,createdAt:window.serverTimestamp()});
             }
             el(edit?'editBudgetModal':'addBudgetModal').style.display='none';await window.loadAccountsAndBudget();
-            notify('Monthly bill and reminder saved.');
+            notify(edit?'Bill amount saved for the selected month; reminder saved.':'Monthly bill and reminder saved.');
         } catch(error){notify(error.message);}finally{btn.disabled=false;}
     }
     window.submitNewBudget=()=>save(false);window.submitEditBudget=()=>save(true);window.editBudget=id=>window.openEditBudgetModal(id);
@@ -104,7 +125,7 @@ export function installMonthlyBills() {
         const pending=billPeriods(bill,new Date(),end).filter(p=>!p.payment);
         el('logExpBillMonth').innerHTML=pending.map(p=>`<option value="${p.month}">${p.month} · due ${date(p.dueDate)}</option>`).join('');
         if(preferredMonth && pending.some(p=>p.month===preferredMonth))el('logExpBillMonth').value=preferredMonth;
-        el('logExpAmount').value=bill.limit || bill.amount || '';
+        el('logExpAmount').value=billAmount(bill,el('logExpBillMonth').value) || '';
         el('logExpAccSelect').innerHTML='<option value="">Choose a cash account</option>'+(window.liveAccounts || []).filter(a=>window.isBranchAllowed(a.branch) && [bill.branch,'Main Office'].includes(a.branch)).map(a=>`<option value="${esc(a.id)}">${esc(a.branch)} · ${esc(a.name)} · ${money(a.balance)}</option>`).join('');
         el('btnSubmitLogExpense').disabled=!pending.length;
         el('billPaymentHelp').textContent=bill.billStartDate?(pending.length?'Log the actual payment once for this billing month. It updates cash, expense logs and Financial Flow.':'All scheduled months are paid.'):'Set this category’s first due date before logging a monthly payment.';
@@ -126,6 +147,9 @@ export function installMonthlyBills() {
         } catch(error){notify(error.message);}finally{btn.disabled=false;}
     };
     el('logExpBudgetSelect')?.addEventListener('change',()=>updatePaymentOptions());
+    el('logExpBillMonth')?.addEventListener('change',()=>{
+        const b=bills.find(b=>b.id===el('logExpBudgetSelect').value);if(b)el('logExpAmount').value=billAmount(b,el('logExpBillMonth').value);
+    });
     el('budgetListBody')?.addEventListener('click',event=>{
         const button=event.target.closest('[data-bill-action]'),id=button?.closest('[data-bill-id]')?.dataset.billId;
         if(!id)return;if(button.dataset.billAction==='edit')window.openEditBudgetModal(id);else window.openLogExpenseModal(id);
