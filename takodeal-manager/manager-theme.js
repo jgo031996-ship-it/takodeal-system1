@@ -1,9 +1,9 @@
 // Presentation only: no database calls, permissions, or business calculations.
 export const MANAGER_PAGES = Object.freeze({
     dashboard: ['Overview', 'Global Dashboard', 'Your sales, branch performance, and team in one place.'],
-    accounts: ['Finance', 'Cash & Budget', 'Keep cash accounts and monthly spending in view.'],
+    accounts: ['Finance', 'Cash & Budget', 'Schedule branch bills, review reminders, and keep monthly spending in view.'],
     'financial-flow': ['Finance', 'Financial Flow', 'Follow revenue, expenses, and the movement of funds.'],
-    'franchise-hub': ['Partners', 'Franchise HQ Hub', 'Manage partner performance, accounts, and conversations.'],
+    'franchise-hub': ['Partners', 'Franchise HQ Hub', 'Manage franchise partners, accounts, conversations, and new proposals.'],
     transfers: ['Finance', 'EOD Remittance Hub', 'Review branch remittances and cash awaiting verification.'],
     payables: ['Finance', 'Supplier Payables', 'Track suppliers, payment terms, and outstanding balances.'],
     devices: ['Operations', 'Device Fleet', 'Review Staff and Cashier phones, pending requests, and approval status.'],
@@ -27,7 +27,7 @@ export const MANAGER_PAGES = Object.freeze({
     purchases: ['Inventory', 'Purchases & Alerts', 'Review purchase needs and low stock alerts.'],
     alerts: ['Operations', 'Security Alerts', 'Review incidents and activity requiring attention.'],
     bulletin: ['Communication', 'Bulletin & AI', 'Share branch updates and review business insights.'],
-    franchise: ['Planning', 'Franchise Simulator', 'Explore franchise packages, setup costs, and projections.'],
+    franchise: ['Partners', 'Franchise HQ Hub', 'Manage franchise partners, accounts, conversations, and new proposals.'],
     addons: ['Menu', 'Global Add-Ons', 'Maintain the extras available across your menu.'],
     admin: ['Configuration', 'Access Control', 'Manage existing staff access and branch permissions.']
 });
