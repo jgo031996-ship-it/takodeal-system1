@@ -25,6 +25,9 @@
   body.manager-theme .nav-subitem { color:#a2bdac; font-size:11px; line-height:1.5; padding:10px 12px; }
   body.manager-theme .nav-subitem:hover { background:#ffffff06; color:#fff; border-color:#8aaa94; }
   body.manager-theme .nav-subitem.active { background:#ffffff08; color:#f0dfbc; border-color:#dca550; }
+  body.manager-theme #hrSubmenu #nav-sop { margin:0; border-radius:0; padding:10px 12px; font-size:11px; line-height:1.5; }
+  body.manager-theme #hrSubmenu #nav-sop .nav-icon { min-width:0; font-size:12px; }
+  body.manager-theme #hrSubmenu #nav-sop .nav-text { display:inline; }
   body.manager-theme .user-profile { border-color:#ffffff14; padding:18px; gap:11px; }
   body.manager-theme .user-profile .avatar { background:#ffffff0a; border:1px solid #ffffff12; border-radius:12px; font-size:20px; }
   body.manager-theme .user-profile .name { font-size:12px; }

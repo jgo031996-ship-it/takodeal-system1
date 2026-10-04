@@ -82,7 +82,7 @@ test('device store never saves PINs, permissions, sales, or live inventory',asyn
     assert.equal(opens,0);
 });
 test('actual auth controller checks server access before PIN and loads the dashboard once',async()=> {
-    const nodes=new Map();const node=id=>nodes.get(id)||nodes.set(id,{id,hidden:false,disabled:false,value:'',textContent:'',style:{},focus(){}}).get(id);
+    const nodes=new Map();const node=id=>nodes.get(id)||nodes.set(id,{id,hidden:false,disabled:false,value:'',textContent:'',style:{},focus(){},querySelectorAll:()=>[]}).get(id);
     let identify,serverReads=0,workspaceLoads=0,dashboardLoads=0;
     const w={auth:{currentUser:user},provider:{},ManagerLogin:{show(){},status(){},error(){},busy(){}},
         query:(...args)=>args,collection:()=>({}),where:()=>({}),getDocsFromServer:async()=>{serverReads++;return {empty:false,docs:[{id:'approved',data:()=>profile}]};},
@@ -92,6 +92,24 @@ test('actual auth controller checks server access before PIN and loads the dashb
     vm.runInNewContext(auth,context);identify(user);await new Promise(resolve=>setImmediate(resolve));
     assert.equal(serverReads,1);assert.equal(workspaceLoads,0);node('managerPinInput').value='0000';await w.checkManagerPin();assert.equal(workspaceLoads,0);
     node('managerPinInput').value=profile.pin;await w.checkManagerPin();assert.equal(workspaceLoads,1);assert.equal(dashboardLoads,1);assert.equal(node('loginOverlay').style.display,'none');assert.equal(w.tempAuthData,null);
+});
+test('grouped SOP remains accessible alone without granting payroll or SOP to unrelated accounts',()=> {
+    for (const permissions of [['sop'],['payroll'],['dashboard'],['ledger']]) {
+        const ids=['nav-dashboard','nav-payroll','nav-sop','nav-admin','subnav-Feed','subnav-Schedule','subnav-Ledger','subnav-Sanctions','subnav-Inbox'];
+        const nodes=new Map(ids.map(id=>[id,{id,style:{}}]));
+        const childIds=ids.filter(id=>id.startsWith('subnav-')).concat('nav-sop');
+        nodes.set('hrSubmenu',{querySelectorAll:()=>childIds.map(id=>nodes.get(id))});
+        const context={window:{sessionUser:{permissions}},el:id=>nodes.get(id),
+            document:{getElementById:id=>nodes.get(id),querySelectorAll:()=>ids.filter(id=>id.startsWith('nav-')).map(id=>nodes.get(id))}};
+        const auth=source('auth.js'),start=auth.indexOf('window.applyPermissions =');
+        vm.runInNewContext(auth.slice(start,auth.indexOf('\n};',start)+3),context);
+        context.window.applyPermissions();
+        assert.equal(nodes.get('nav-sop').style.display,permissions.includes('sop')?'flex':'none');
+        assert.equal(nodes.get('nav-payroll').style.display,permissions.includes('dashboard')?'none':'flex');
+        assert.equal(nodes.get('subnav-Feed').style.display,permissions.includes('payroll')?'flex':'none');
+        assert.equal(nodes.get('subnav-Ledger').style.display,permissions.includes('payroll')||permissions.includes('ledger')?'flex':'none');
+        assert.deepEqual(context.window.sessionUser.permissions,permissions);
+    }
 });
 function workerHarness() {
     const handlers={},stores=new Map();let network=0;
