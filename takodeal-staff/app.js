@@ -1,5 +1,5 @@
 import { installStaffPortal } from './staff-portal.js';
-import { calculateLateMinutes, resolveScheduledShift, latePay, earnedNightBonus, attendanceLateMinutes } from './payroll-safety.js';
+import { calculateLateMinutes, resolveScheduledShift, latePay, earnedNightBonus, attendanceLateMinutes, isMealDeduction } from './payroll-safety.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 // 🔥 UPGRADE: Imported the Offline Cache Engines!
@@ -2404,7 +2404,7 @@ window.loadPayslipVault = async function() {
             let data = d.data();
             if (data.status === "Unpaid" && isMatch(data.staffName)) {
                 let dDate = safeDate(data.dateAdded || data.timestamp);
-                if (data.type === "Cash Advance" || data.type === "Staff Meal") {
+                if (data.type === "Cash Advance" || isMealDeduction(data.type)) {
                     let val = parseFloat(data.amount) || 0; 
                     if (dDate <= cutoffEndTimestamp) {
                         liveUnpaidVales += val; 

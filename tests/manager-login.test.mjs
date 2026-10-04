@@ -88,7 +88,7 @@ test('actual auth controller checks server access before PIN and loads the dashb
         query:(...args)=>args,collection:()=>({}),where:()=>({}),getDocsFromServer:async()=>{serverReads++;return {empty:false,docs:[{id:'approved',data:()=>profile}]};},
         dispatchEvent(){},loadWorkspaceTest:async()=>{workspaceLoads++;w.switchView=()=>dashboardLoads++;},applyFranchiseUIProtections(){}};
     const context={window:w,document:{getElementById:node,querySelectorAll:()=>[],createElement:()=>({})},navigator:{onLine:true},location:{reload(){}},Event:class{},setTimeout,clearTimeout,createUnlockGate,bounded,loadManagerLibraries:async()=>{},prepareManagerTools:()=>{},signInWithPopup:async()=>{},signOut:async()=>{},onAuthStateChanged:(_,fn)=>identify=fn};
-    const auth=source('auth.js').replace(/^import .*;\r?\n/gm,'').replace("await import('./main.js?v=manager-login-20261004')",'await window.loadWorkspaceTest()');
+    const auth=source('auth.js').replace(/^import .*;\r?\n/gm,'').replace(/await import\('\.\/main\.js\?v=[^']+'\)/,'await window.loadWorkspaceTest()');
     vm.runInNewContext(auth,context);identify(user);await new Promise(resolve=>setImmediate(resolve));
     assert.equal(serverReads,1);assert.equal(workspaceLoads,0);node('managerPinInput').value='0000';await w.checkManagerPin();assert.equal(workspaceLoads,0);
     node('managerPinInput').value=profile.pin;await w.checkManagerPin();assert.equal(workspaceLoads,1);assert.equal(dashboardLoads,1);assert.equal(node('loginOverlay').style.display,'none');assert.equal(w.tempAuthData,null);

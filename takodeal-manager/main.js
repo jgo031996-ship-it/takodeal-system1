@@ -1,4 +1,6 @@
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
+import { requestHistory, historyTime } from './request-history.js';
+import { enhanceScheduleLayout } from './schedule-layout.js';
 import { generateEmployeeID } from './employee-id.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { installMenuBulk } from './menu-bulk.js';
@@ -16,7 +18,7 @@ import { recipeProblems, ingredientUses } from './recipe-integrity.js';
 import { createLiveReport } from './live-report.js';
 import { calculateLateMinutes, resolveScheduledShift, scheduledShiftForDate, latePay, nightRate, earnedNightBonus,
     attendanceLateMinutes, isLatenessRequest, requestLateMinutes, legacyAttendanceCandidates,
-    reviewLateRequest, shiftType, shiftTimes, validateShiftConfig } from './payroll-safety.js';
+    reviewLateRequest, shiftType, shiftTimes, validateShiftConfig, isMealDeduction } from './payroll-safety.js';
 const historyLive = createLiveReport({
     subscribe: (...args) => window.onSnapshot(...args),
     status: text => { const el = document.getElementById('histLiveStatus'); if (el) el.textContent = text; }
@@ -9852,6 +9854,7 @@ window.renderTables = function() {
             tableHTML += `<td style="text-align: center; border-left: 1px solid #e2e8f0; background: #fef2f2; padding: 6px;">${offHtml} ${pulledOutHtml}</td><td style="text-align: center; border-left: 1px solid #e2e8f0; background: #fff1f2; padding: 6px;">${suspHtml || "-"}</td></tr>`;
         }
         cBox.innerHTML = tableHTML + `</tbody></table></div>`;
+        enhanceScheduleLayout(cBox, branch);
         contentWrap.appendChild(cBox);
     });
 };
@@ -10224,25 +10227,38 @@ window.loadInbox = async function() {
             // Franchisees only download requests from their own staff
             q = query(collection(db, "staff_requests"), where("branch", "==", window.sessionUser.branch), orderBy("timestamp", "desc"));
         }
-        const snap = await getDocs(q);
+        const deductionQuery = isFranchisee && window.sessionUser.branch
+            ? query(collection(db, "staff_deductions"), where("branch", "==", window.sessionUser.branch))
+            : collection(db, "staff_deductions");
+        const [snap, deductionSnap] = await Promise.all([getDocs(q), getDocs(deductionQuery)]);
+        const requests = [], deductions = [];
+        snap.forEach(row => requests.push({ ...row.data(), id: row.id }));
+        deductionSnap.forEach(row => deductions.push({ ...row.data(), id: row.id }));
+        const history = requestHistory(requests, deductions, isFranchisee ? window.sessionUser.branch : null);
 
         let pendingHtml = '';
         let pendingCount = 0;
-        let resolvedByStaff = {}; // 🔥 NEW: Grouping object for the Accordion!
+        let resolvedByStaff = Object.create(null);
 
-        snap.forEach(docSnap => {
-            let d = docSnap.data();
-            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Unknown';
+        history.forEach(d => {
+            const docSnap = { id: d.id };
+            const time = historyTime(d.timestamp);
+            let dateStr = time ? new Date(time).toLocaleDateString() : 'Unknown';
+            const staffKey = String(d.staffName || 'Unknown');
             let safeName = d.staffName ? d.staffName.replace(/'/g, "\\'") : 'Unknown';
 
             let detailsStr = "";
-            if (d.type === "Leave") {
+            if (d.historySource === 'deduction') {
+                detailsStr = `<strong style="color:#0f766e;">${escapeHtml(d.item || 'POS meal deduction')}</strong>
+                    <br><span style="color:var(--danger);font-weight:bold;">Deduct: ₱${(Number(d.amount) || 0).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                    <br><small style="color:#64748b;">Recorded automatically by POS${d.receiptId ? ' · Receipt ' + escapeHtml(d.receiptId) : ''}</small>`;
+            } else if (d.type === "Leave") {
                 detailsStr = `<strong style="color: #1e293b;">${d.leaveType || 'Leave'}</strong><br><span style="font-size:11px; font-weight:bold; color:var(--primary);">${d.startDate || '?'} to ${d.endDate || '?'}</span><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.reason || 'No reason provided'}"</span>`;
             } else if (d.type === "Cash Advance") {
                 detailsStr = `<strong style="color:var(--danger); font-size:15px;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</strong><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.reason || 'No reason provided'}"</span>`;
             } else if (d.type === "Reason Letter") {
                 detailsStr = `<strong style="color: #1e293b;">Cause: ${d.explanationCause || 'Variance'}</strong><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.explanationMessage || 'No explanation provided'}"</span>`;
-            } else if (d.type.includes("Meal")) {
+            } else if (isMealDeduction(d.type)) {
                 // 🔥 THE FIX: Catches all manual and POS-Auto meals, then formats the items cleanly!
                 let itemsList = d.item ? d.item.replace(/ \| /g, '<br><span style="color:#64748b; font-size:11px; font-family:monospace;">') + '</span>' : 'Food Item';
                 detailsStr = `
@@ -10264,10 +10280,10 @@ window.loadInbox = async function() {
                 pendingHtml += `
                     <tr style="border-bottom: 1px solid #f1f5f9;">
                         <td style="padding: 12px; color: #64748b;">${dateStr}</td>
-                        <td style="padding: 12px; font-weight: bold; color: #334155;">${safeName}</td>
-                        <td style="padding: 12px;"><span class="badge badge-closed">${d.branch || 'Unknown'}</span></td>
+                        <td style="padding: 12px; font-weight: bold; color: #334155;">${escapeHtml(staffKey)}</td>
+                        <td style="padding: 12px;"><span class="badge badge-closed">${escapeHtml(d.branch || 'Not recorded')}</span></td>
                         <td style="padding: 12px;">
-                            <span style="font-weight: bold; color: var(--primary); font-size: 14px;">${d.type}</span><br>
+                            <span style="font-weight: bold; color: var(--primary); font-size: 14px;">${escapeHtml(d.type || 'Request')}</span><br>
                             <span style="background: #fef9c3; color: #ca8a04; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-top: 4px; display: inline-block;">Pending Review</span>
                         </td>
                         <td style="padding: 12px; max-width: 250px; white-space: normal;">${detailsStr}</td>
@@ -10279,10 +10295,10 @@ window.loadInbox = async function() {
                 `;
             } else {
                 // 🔥 NEW: Store resolved items into the group memory
-                if (!resolvedByStaff[safeName]) resolvedByStaff[safeName] = [];
+                if (!resolvedByStaff[staffKey]) resolvedByStaff[staffKey] = [];
                 d.dateStr = dateStr;
                 d.detailsStr = detailsStr;
-                resolvedByStaff[safeName].push(d);
+                resolvedByStaff[staffKey].push(d);
             }
         });
 
@@ -10290,14 +10306,14 @@ window.loadInbox = async function() {
         let resolvedHtml = '';
         for (let staff in resolvedByStaff) {
             let reqs = resolvedByStaff[staff];
-            let safeStaffId = staff.replace(/[^a-zA-Z0-9]/g, ''); // Removes spaces for HTML IDs
+            let safeStaffId = 'history' + Object.keys(resolvedByStaff).indexOf(staff); // Removes spaces for HTML IDs
             
             resolvedHtml += `
                 <tr style="background: white; cursor: pointer; border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" 
                     onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'"
                     onclick="window.toggleResolvedStaff('${safeStaffId}')">
                     <td colspan="4" style="font-weight: 900; color: #334155; font-size: 15px; padding: 18px;">
-                        <span id="icon_res_${safeStaffId}" style="display:inline-block; width:20px; color:#94a3b8;">▼</span> 👤 ${staff}
+                        <span id="icon_res_${safeStaffId}" style="display:inline-block; width:20px; color:#94a3b8;">▼</span> 👤 ${escapeHtml(staff)}
                     </td>
                     <td style="text-align: right; padding: 18px;">
                         <span style="font-size: 12px; color: white; background: var(--primary); padding: 6px 12px; border-radius: 20px; font-weight: bold; display: inline-flex; align-items: center; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.3);">
@@ -10308,15 +10324,16 @@ window.loadInbox = async function() {
             `;
             
             reqs.forEach(d => {
-                let statusColor = d.status === "Approved" ? "#16a34a" : "#dc2626";
-                let statusBg = d.status === "Approved" ? "#dcfce7" : "#fef2f2";
+                let statusColor = d.status === "Rejected" ? "#dc2626" : "#0f766e";
+                let statusBg = d.status === "Rejected" ? "#fef2f2" : "#e8f3ed";
+                const deductionBadge = d.deductionStatus ? `<br><span style="display:inline-block;margin-top:5px;font-size:11px;font-weight:bold;color:${d.deductionStatus === 'Paid' ? '#16a34a' : '#b45309'};">${escapeHtml(d.deductionStatus)}</span>` : '';
                 resolvedHtml += `
                     <tr class="res-row-${safeStaffId}" style="display: none; background: #f8fafc; border-bottom: 1px dashed #cbd5e1;">
                         <td style="padding: 12px; padding-left: 45px; color: #64748b;">${d.dateStr}</td>
-                        <td style="padding: 12px;"><span style="font-size:11px; color:#64748b; font-weight:bold;">📍 ${d.branch || 'Unknown'}</span></td>
-                        <td style="padding: 12px;"><span style="font-weight: bold; color: var(--primary);">${d.type}</span></td>
+                        <td style="padding: 12px;"><span style="font-size:11px; color:#64748b; font-weight:bold;">📍 ${escapeHtml(d.branch || 'Not recorded')}</span></td>
+                        <td style="padding: 12px;"><span style="font-weight: bold; color: var(--primary);">${escapeHtml(d.type || 'Request')}</span></td>
                         <td style="padding: 12px; max-width: 250px; white-space: normal;">${d.detailsStr}</td>
-                        <td style="padding: 12px; text-align:right;"><span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${d.status}</span></td>
+                        <td style="padding: 12px; text-align:right;"><span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${escapeHtml(d.status)}</span>${deductionBadge}</td>
                     </tr>
                 `;
             });
@@ -10567,6 +10584,10 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
                 staffName: staffName,
                 type: type,
                 amount: amount,
+                requestId: docId,
+                branch: reqData.branch || '',
+                receiptId: reqData.receiptId || '',
+                item: reqData.item || '',
                 dateAdded: originalDate, // Logs on the exact day they took the cash/meal!
                 status: "Unpaid" 
             });
@@ -11018,7 +11039,7 @@ window.loadPayrollGenerator = async function() {
                 staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
             let amt = parseFloat(deduct.amount) || 0;
-            if (deduct.type === "Staff Meal") staffData[name].foodDeductions += amt;
+            if (isMealDeduction(deduct.type)) staffData[name].foodDeductions += amt;
             else if (deduct.type === "Cash Advance") staffData[name].cashAdvances += amt;
         });
 
@@ -11434,8 +11455,11 @@ window.finalizePayslip = async function() {
             const deductSnap = await getDocs(deductQ);
             
             let pendingDeductions = [];
+            const cutoffEnd = new Date(data.end + 'T23:59:59.999');
             deductSnap.forEach(d => {
-                if (d.data().status === "Unpaid") pendingDeductions.push({ id: d.id, ...d.data() });
+                const row = d.data();
+                const added = row.dateAdded?.toDate?.() || new Date(row.dateAdded || row.timestamp);
+                if (row.status === "Unpaid" && added <= cutoffEnd) pendingDeductions.push({ id: d.id, ...row });
             });
 
             pendingDeductions.sort((a, b) => (a.dateAdded?.toDate() || 0) - (b.dateAdded?.toDate() || 0));
@@ -11453,7 +11477,7 @@ window.finalizePayslip = async function() {
                         remainingValeToClear = 0; 
                     }
                 }
-                else if (dData.type === "Staff Meal" && remainingFoodToClear > 0) {
+                else if (isMealDeduction(dData.type) && remainingFoodToClear > 0) {
                     if (remainingFoodToClear >= dAmt) {
                         await updateDoc(dRef, { status: "Paid", paidAt: serverTimestamp() });
                         remainingFoodToClear -= dAmt;
@@ -12196,7 +12220,7 @@ window.generateAutoPayslips = async function() {
                 staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
             let amt = parseFloat(deduct.amount) || 0;
-            if (deduct.type === "Staff Meal") staffData[name].foodDeductions += amt;
+            if (isMealDeduction(deduct.type)) staffData[name].foodDeductions += amt;
             else if (deduct.type === "Cash Advance") staffData[name].cashAdvances += amt;
         });
 

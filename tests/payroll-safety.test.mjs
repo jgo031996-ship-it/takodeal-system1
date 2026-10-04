@@ -2,10 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { requestHistory, historyTime } from '../takodeal-manager/request-history.js';
 import * as payroll from '../takodeal-manager/payroll-safety.js';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
 
 const profile = { cashierName: 'Test Staff', scheduleNickname: 'TEST', branch: 'Test Branch', hourlyRate: 450, nightDiffRate: 50 };
+test('manual and POS meal labels share one Foods category, excluding other deductions', () => {
+    for (const type of ['Staff Meal','Staff Meal (POS Auto)','Manager Meal','Manager Meal (POS Auto)',' staff meal (pos auto) ']) {
+        assert.equal(payroll.isMealDeduction(type), true, type);
+    }
+    for (const type of ['Cash Advance','Company Loan Payment','Missing Stock Penalty','Staff Meal Refund','Meal Allowance',null]) {
+        assert.equal(payroll.isMealDeduction(type), false, String(type));
+    }
+});
 const at = time => new Date(`2026-10-03T${time}:00+08:00`);
 function schedule(end = '23:30', type = 'mid') {
     return { currentYear: 2026, currentMonth: 10, currentSchedule: { 3: { 'Test Branch': { scheduled: { mid: 'TEST' } } } },
@@ -125,22 +134,43 @@ window.${name} = `) + 1;
     assert.ok(start>=0);
     return source.slice(start,source.indexOf('\n};',start)+3);
 }
-function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,scheduleData=null,startDate='2026-10-03',endDate='2026-10-03'}={}) {
+function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,scheduleData=null,startDate='2026-10-03',endDate='2026-10-03',deductions=[]}={}) {
     const elements={payrollStart:{value:startDate},payrollEnd:{value:endDate},payrollGeneratorBody:{innerHTML:''},payrollGrandTotalContainer:{style:{}},payrollGrandTotalAmount:{}};
     const errors=[];
     const stamp=date=>({toDate:()=>date});
     const data={cashiers:[profile],staff_ledger:[],payroll_records:frozen?[{staffName:'Test Staff',frozenData:frozen}]:[],
         attendance_logs:logs || [{staffName:'Test Staff',branch:'Test Branch',type:'TIME IN',timestamp:stamp(at('15:41')),lateExempted:exempt,reviewedLateMinutes:11},
-            {staffName:'Test Staff',branch:'Test Branch',type:'TIME OUT',timestamp:stamp(at(end))}],staff_deductions:[],staff_bonuses:[]};
+            {staffName:'Test Staff',branch:'Test Branch',type:'TIME OUT',timestamp:stamp(at(end))}],staff_deductions:deductions,staff_bonuses:[]};
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),
         getDoc:async()=>({exists:()=>true,data:()=>scheduleData || schedule(end,type)}),
-        getDocs:async q=>{const docs=(data[q.table]||[]).map((row,i)=>({id:String(i),data:()=>row}));return {docs,forEach:fn=>docs.forEach(fn)};}};
+        getDocs:async q=>{const docs=(data[q.table]||[]).filter(row=>q.table!=='staff_deductions' || row.status==='Unpaid').map((row,i)=>({id:String(i),data:()=>row}));return {docs,forEach:fn=>docs.forEach(fn)};}};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true};
     const context=vm.createContext({...api,...payroll,window,Date,document:{getElementById:id=>elements[id]||null},
         alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
     return {context,window,elements,errors};
 }
 for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
+    test(`${name}: POS meals of 224 and 106.25 reach Foods and reduce net pay once`,async()=>{
+        const deduct=(amount,day,type='Staff Meal (POS Auto)',status='Unpaid')=>({staffName:'Test Staff',type,amount,status,dateAdded:{toDate:()=>new Date(`2026-${day}T12:00:00+08:00`)}});
+        const deductions=[deduct(224,'09-23'),deduct(106.25,'09-28'),deduct(0,'09-18','Staff Meal'),
+            deduct(136,'09-09','Staff Meal','Paid'),deduct(50,'10-01'),deduct(500,'09-23','Cash Advance'),deduct(1500,'09-25','Company Loan Issued')];
+        const h=payrollUi({logs:[],startDate:'2026-09-16',endDate:'2026-09-30',deductions});
+        vm.runInContext(extract(name),h.context);await h.window[name]();
+        assert.deepEqual(h.errors,[]);const row=h.window.globalPayrollCache['Test Staff'];
+        assert.equal(row.meals,330.25);assert.equal(row.advances,500);
+        assert.match(h.elements.payrollGeneratorBody.innerHTML,/-₱330\.25 \(Meals\)/);
+        // Re-generating an unpaid preview must not accumulate the same meal twice.
+        await h.window[name]();assert.equal(h.window.globalPayrollCache['Test Staff'].meals,330.25);
+    });
+    test(`${name}: unpaid manual/manager meals carry forward, while a paid snapshot stays frozen`,async()=>{
+        const deductions=['Staff Meal','Manager Meal','Manager Meal (POS Auto)'].map(type=>({staffName:'Test Staff',type,amount:10,status:'Unpaid',dateAdded:{toDate:()=>new Date('2026-09-10T12:00:00+08:00')}}));
+        const h=payrollUi({exempt:true,deductions});vm.runInContext(extract(name),h.context);await h.window[name]();
+        assert.deepEqual(h.errors,[]);assert.equal(h.window.globalPayrollCache['Test Staff'].meals,30);
+        assert.equal(h.elements.payrollGrandTotalAmount.innerText,'₱470.00');
+        const frozen={name:'Test Staff',branch:'Test Branch',basicPay:450,meals:7.5,logs:[],isPaid:true};
+        const paid=payrollUi({frozen,deductions});vm.runInContext(extract(name),paid.context);await paid.window[name]();
+        assert.deepEqual(paid.errors,[]);assert.deepEqual(paid.window.globalPayrollCache['Test Staff'],frozen);
+    });
     test(`${name}: real UI calculation includes one Mid bonus and one rounded late deduction`,async()=>{
         const h=payrollUi();vm.runInContext(extract(name),h.context);await h.window[name]();
         assert.deepEqual(h.errors,[]);const row=h.window.globalPayrollCache['Test Staff'];
@@ -163,6 +193,46 @@ test('manual OT uses selected shift category and the employee bonus rate',()=>{
     vm.runInContext(extract('calcAutoOvertime'),context);window.calcAutoOvertime();
     assert.equal(window.currentCalculatedOtAmount,62.5);
     window.otCache.schedule=schedule('23:30','morning');window.calcAutoOvertime();assert.equal(window.currentCalculatedOtAmount,56.25);
+});
+test('the generated Foods deduction is subtracted from the payslip total and net pay',()=>{
+    const elements=Object.fromEntries(['psBasicPay','psOvertime','psStraightBonus','psHoliday','psPerfBonus','psLate','psSSS','psPhil','psPagibig','psAdvance','psLoans','psFoods','psGross','psTotalDeduct','psNetPay'].map(id=>[id,{tagName:'INPUT',value:'0',innerText:''}]));
+    Object.assign(elements.psBasicPay,{value:'5830'});elements.psAdvance.value='500';elements.psLoans.value='250';elements.psFoods.value='330.25';
+    const context={window:{},document:{getElementById:id=>elements[id],querySelectorAll:()=>[{value:'50'}]}};
+    vm.runInNewContext(extract('recalcPayslip'),context);context.window.recalcPayslip();
+    assert.equal(elements.psTotalDeduct.innerText,'1,130.25');assert.equal(elements.psNetPay.innerText,'4,699.75');
+});
+function paymentFixture(food=330.25) {
+    const stamp=day=>({toDate:()=>new Date(`2026-${day}T12:00:00+08:00`)});
+    const rows=[
+        {id:'paid',staffName:'Test Staff',type:'Staff Meal',amount:136,status:'Paid',dateAdded:stamp('09-09')},
+        {id:'pos-1',staffName:'Test Staff',type:'Staff Meal (POS Auto)',amount:224,status:'Unpaid',dateAdded:stamp('09-23')},
+        {id:'pos-2',staffName:'Test Staff',type:'Staff Meal (POS Auto)',amount:106.25,status:'Unpaid',dateAdded:stamp('09-28')},
+        {id:'future',staffName:'Test Staff',type:'Manager Meal (POS Auto)',amount:100,status:'Unpaid',dateAdded:stamp('10-04')}
+    ];
+    const changes=[],records=[],errors=[];
+    const elements=new Map();const node=id=>{if(!elements.has(id))elements.set(id,{tagName:'INPUT',value:'0',innerText:'',style:{}});return elements.get(id);};
+    node('psFoods').value=String(food);node('psNetPay').innerText='500.00';
+    const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),
+        serverTimestamp:()=>stamp('10-04'),getDocs:async()=>({forEach:fn=>rows.forEach(row=>fn({id:row.id,data:()=>({...row})}))}),
+        updateDoc:async(ref,change)=>{changes.push({ref,change});const row=rows.find(r=>ref.table==='staff_deductions'&&r.id===ref.id);if(row)Object.assign(row,change);},
+        addDoc:async(ref,row)=>{records.push({table:ref.table,...row});return {id:'sample'};}};
+    const window={...api,currentPayslipData:{name:'Test Staff',branch:'Test',start:'2026-09-16',end:'2026-09-30'},
+        liveAccounts:[{id:'sample-account',name:'Sample account',balance:5000}],downloadPayslipImage(){},ManagerUI:{notify:text=>errors.push(text)}};
+    const context={...api,...payroll,window,document:{getElementById:node},Date,Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:e=>errors.push(e)}};
+    vm.runInNewContext(extract('finalizePayslip'),context);
+    return {window,rows,changes,records,errors};
+}
+test('payroll clears POS meals already deducted, leaving paid and future-cutoff meals untouched',async()=>{
+    const h=paymentFixture();await h.window.finalizePayslip();assert.deepEqual(h.errors,[]);
+    assert.equal(h.rows.find(r=>r.id==='pos-1').status,'Paid');assert.equal(h.rows.find(r=>r.id==='pos-2').status,'Paid');
+    assert.equal(h.rows.find(r=>r.id==='future').status,'Unpaid');
+    assert.equal(h.changes.some(r=>r.ref.id==='paid'||r.ref.id==='future'),false);
+    const saved=h.records.find(r=>r.table==='payroll_records');assert.equal(saved.frozenData.meals,330.25);
+});
+test('an edited partial Foods amount leaves only its undeducted balance for the next payroll',async()=>{
+    const h=paymentFixture(250);await h.window.finalizePayslip();assert.deepEqual(h.errors,[]);
+    assert.equal(h.rows.find(r=>r.id==='pos-1').status,'Paid');
+    assert.equal(h.rows.find(r=>r.id==='pos-2').status,'Unpaid');assert.equal(h.rows.find(r=>r.id==='pos-2').amount,80.25);
 });
 test('Manager and Staff serve identical shared math; source links new letters to attendance atomically',()=>{
     assert.equal(readFileSync(new URL('../takodeal-staff/payroll-safety.js',import.meta.url),'utf8'),readFileSync(new URL('../takodeal-manager/payroll-safety.js',import.meta.url),'utf8'));
@@ -258,3 +328,50 @@ for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
         assert.equal(h.elements.payrollGrandTotalAmount.innerText,'₱950.00');
     });
 }
+
+const historyStamp = day => ({toDate:()=>new Date(`2026-09-${String(day).padStart(2,'0')}T12:00:00+08:00`)});
+const autoMeal = (id, amount=77, day=30, extra={}) => ({id,staffName:'Test Staff',type:'Staff Meal (POS Auto)',amount,
+    dateAdded:historyStamp(day),status:'Unpaid',branch:'Test Branch',...extra});
+test('resolved history includes orphan automatic meals, retaining Paid and Unpaid ledger states',()=>{
+    const rows=requestHistory([{id:'manual',type:'Staff Meal',status:'Approved',timestamp:historyStamp(8),staffName:'Test Staff'}],
+        [autoMeal('meal1'),autoMeal('meal2',77,30),autoMeal('paid',68,8,{status:'Paid'}),autoMeal('refund',1,9,{type:'Staff Meal Refund'})]);
+    assert.equal(rows.length,4);assert.equal(rows.filter(row=>row.historySource==='deduction').length,3);
+    assert.equal(rows.find(row=>row.id==='paid').deductionStatus,'Paid');assert.equal(rows[0].deductionStatus,'Unpaid');
+    assert.equal(rows[0].status,'Recorded');assert.equal(rows.filter(row=>row.amount===77).length,2);
+});
+test('resolved history pairs request links and exact legacy records once without duplicating or mutating them',()=>{
+    const request={id:'request',staffName:'Test Staff',type:'Staff Meal (POS Auto)',status:'Approved',amount:77,timestamp:historyStamp(30)};
+    for(const ledger of [autoMeal('linked',30,28,{requestId:'request'}),autoMeal('legacy')]) {
+        const rows=requestHistory([request],[ledger]);assert.equal(rows.length,1);assert.equal(rows[0].deductionStatus,'Unpaid');
+        assert.equal(request.deductionStatus,undefined);
+    }
+    const two=requestHistory([request],[autoMeal('one'),autoMeal('two')]);assert.equal(two.length,2);
+    const pending=requestHistory([{...request,status:'Pending'}],[autoMeal('one')]);
+    assert.equal(pending.length,2);assert.equal(pending.filter(row=>row.status==='Pending').length,1);
+});
+test('history does not pair separate receipts or meals on different times; franchise rows stay in their branch',()=>{
+    const request={id:'request',staffName:'Test Staff',type:'Staff Meal',status:'Approved',amount:77,timestamp:historyStamp(30),receiptId:'one',branch:'Test Branch'};
+    assert.equal(requestHistory([request],[autoMeal('two',77,30,{receiptId:'two'})]).length,2);
+    assert.equal(requestHistory([request],[autoMeal('old',77,29)]).length,2);
+    const rows=requestHistory([request,{...request,id:'other',branch:'Other'}],[autoMeal('foreign',21,29,{branch:'Other'}),autoMeal('legacy',21,29,{branch:''}),autoMeal('own',21,29)],'Test Branch');
+    assert.deepEqual(rows.map(row=>row.id),['request','own']);
+    assert.equal(historyTime('bad date'),0);assert.equal(historyTime({seconds:123}),123000);
+});
+test('the real Inbox renders ledger-only POS meals without putting them in pending approvals or writing data',async()=>{
+    const nodes=Object.fromEntries(['inboxTableBody','resolvedRequestsBody','inboxBadge'].map(id=>[id,{innerHTML:'',style:{}}]));
+    const requests=[{id:'approved',staffName:'Test Staff',type:'Staff Meal',status:'Approved',amount:68,timestamp:historyStamp(8)}];
+    const deductions=[autoMeal('one'),autoMeal('two',77,30),autoMeal('paid',68,8,{status:'Paid'})];
+    const calls=[],errors=[];
+    const window={sessionUser:{isFranchisee:false}};
+    const context={window,requestHistory,historyTime,isMealDeduction:payroll.isMealDeduction,db:{},
+        escapeHtml:value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])),
+        collection:(_,table)=>({table}),query:ref=>ref,orderBy:()=>({}),where:()=>({}),
+        getDocs:async ref=>{calls.push(ref.table);return {forEach:fn=>(ref.table==='staff_requests'?requests:deductions).forEach(row=>fn({id:row.id,data:()=>row}))};},
+        document:{getElementById:id=>nodes[id]},console:{error:e=>errors.push(e)}};
+    vm.runInNewContext(extract('loadInbox'),context);await window.loadInbox();
+    assert.deepEqual(errors,[]);assert.deepEqual(calls,['staff_requests','staff_deductions']);
+    assert.match(nodes.resolvedRequestsBody.innerHTML,/View 3 Records/);
+    assert.equal((nodes.resolvedRequestsBody.innerHTML.match(/Recorded automatically by POS/g)||[]).length,2);
+    assert.match(nodes.resolvedRequestsBody.innerHTML,/>Paid<\/span>/);assert.match(nodes.resolvedRequestsBody.innerHTML,/>Unpaid<\/span>/);
+    assert.match(nodes.inboxTableBody.innerHTML,/No pending requests/);assert.equal(nodes.inboxBadge.innerText,0);
+});

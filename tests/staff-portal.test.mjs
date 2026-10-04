@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { webcrypto } from 'node:crypto';
 import vm from 'node:vm';
 import { VaultSession, createPinVerifier, verifyPin, validVerifier, validVaultPin, attendanceHistory, belongsToStaff } from '../takodeal-staff/staff-privacy.js';
+import * as payroll from '../takodeal-staff/payroll-safety.js';
 
 test('separate PIN verifier uses unique salts and rejects incorrect, malformed and unsafe input', async () => {
     const a = await createPinVerifier('246810', webcrypto), b = await createPinVerifier('246810', webcrypto);
@@ -45,6 +46,24 @@ test('an unrelated time out a week later cannot complete a missing shift', () =>
     assert.deepEqual(rows.map(r=>r.status),['Missing time in','Missing time out']);
 });
 const engine = readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
+test('unlocked Staff estimates include the same POS meals in current and pending cutoff deductions',async()=>{
+    const nodes=new Map(),errors=[];
+    const node=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'',innerText:'',style:{},parentElement:{insertAdjacentHTML(){}},appendChild(){}});return nodes.get(id);};
+    class FixedDate extends Date { constructor(...args){super(...(args.length?args:['2026-10-04T12:00:00+08:00']));} }
+    const meal=(amount,day,status='Unpaid',staffName='Test Staff')=>({type:'Staff Meal (POS Auto)',amount,status,staffName,dateAdded:{toDate:()=>new Date(`2026-${day}T12:00:00+08:00`)}});
+    const deductions=[meal(224,'09-23'),meal(106.25,'09-28'),meal(136,'09-09','Paid'),meal(50,'10-16'),meal(99,'09-23','Unpaid','Other Staff')];
+    const snapshot=rows=>({docs:rows.map((row,i)=>({id:String(i),data:()=>row})),forEach:fn=>rows.forEach((row,i)=>fn({id:String(i),data:()=>row}))});
+    const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),
+        getDoc:async ref=>({exists:()=>true,data:()=>ref.table==='cashiers'?{hourlyRate:450,scheduleNickname:'TEST'}:{}}),
+        getDocs:async ref=>snapshot(ref.table==='staff_deductions'?deductions:[])};
+    const context={...api,...payroll,Date:FixedDate,console:{error:(...e)=>errors.push(e)},
+        window:{staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
+    const start=engine.indexOf('window.loadPayslipVault = async function() {'),end=engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',start);
+    vm.runInNewContext(engine.slice(start,end),context);await context.window.loadPayslipVault();
+    assert.deepEqual(errors,[]);assert.equal(node('liveEstVales').innerText,'-₱330.25');
+    assert.match(node('payslipPendingList').innerHTML,/-₱330\.25/);
+    assert.match(node('liveCutoffDetailedLogs').innerHTML,/Staff Meal \(POS Auto\)/);
+});
 test('locked Pay entry makes zero payroll reads even if its loader is called directly', async () => {
     const start=engine.indexOf('window.loadPayslipVault = async function() {'), end=engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',start);
     let reads=0; const context={window:{staffVaultSession:new VaultSession()},localStorage:{getItem:key=>key.endsWith('_id')?'id':'Ann'},
