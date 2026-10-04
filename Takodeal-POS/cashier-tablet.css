@@ -11,7 +11,8 @@
  .top-bar #topBarTitle {flex:1;min-width:0;}
  body.cashier-orange.tk-ui-v2.tk-photo-pos #btnTopShift {display:inline-flex;gap:7px;align-items:center;background:#fff0df!important;color:#8d451d!important;border:1px solid #e6c4a3!important;padding:9px 13px!important;white-space:nowrap;}
  #btnTopShift::before {content:'';width:7px;height:7px;border-radius:50%;background:#b89675;flex-shrink:0;}
- #btnTopShift[data-shift-state="active"]::before {background:#cb6429;box-shadow:0 0 0 3px #f7ddc3;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #btnTopShift[data-shift-state="active"] {background:#e7f8ec!important;color:#166534!important;border-color:#aedcbb!important;box-shadow:0 2px 8px #1665340d!important;}
+ #btnTopShift[data-shift-state="active"]::before {background:#20a451;box-shadow:0 0 0 3px #c9efd5;}
  body.cashier-orange.tk-ui-v2.tk-photo-pos .tk-order-heading {font-size:16px!important;align-items:center;padding-bottom:8px!important;}
  body.cashier-orange.tk-ui-v2.tk-photo-pos #posCartHeader {gap:8px!important;padding:14px!important;}
  body.cashier-orange.tk-ui-v2.tk-photo-pos #posCartHeader select {min-width:0!important;flex:1 1 130px!important;font-size:12px!important;padding:10px!important;min-height:42px!important;text-overflow:ellipsis;}
@@ -96,6 +97,24 @@
  .cashier-sync-list p {font-size:12px;color:#9a4f27;line-height:1.6;margin:8px 0 0;}
  body.cashier-orange.tk-ui-v2.tk-photo-pos #checkoutModal .modal {width:940px!important;}
  #checkoutModal .num-btn {font-size:20px!important;min-height:50px!important;padding:12px!important;}
+ #checkoutModal .num-btn:disabled {opacity:.35;cursor:default;}
+ #checkoutModal .checkout-keypad-title {font-size:12px;font-weight:650;color:#8d4a23;margin:0 0 10px;}
+ #checkoutModal .pay-btn {display:flex;align-items:center;justify-content:center;gap:8px;}
+ #checkoutModal .payment-icon {width:25px;height:25px;flex-shrink:0;}
+ #checkoutModal .payment-icon.gcash {color:#007dff;}
+ #checkoutModal .pay-btn[data-payment-method="gcash"].active {color:#0051c7!important;background:#edf5ff!important;border-color:#8ebcff!important;}
+ #checkoutModal .pay-btn[data-payment-method="grab"].active {color:#008c46!important;background:#eaf8ef!important;border-color:#acd9bd!important;}
+ #checkoutModal .pay-btn[data-payment-method="foodpanda"].active {color:#d70f64!important;background:#fff0f6!important;border-color:#f3b6d0!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #updateAppBanner {position:fixed!important;inset:76px 16px auto auto!important;z-index:100010!important;width:min(440px,calc(100vw - 32px))!important;padding:16px!important;border:1px solid #efd9c1!important;border-radius:16px!important;box-shadow:0 10px 32px #61381c1f!important;background:#fffcf7!important;display:none;align-items:flex-start!important;gap:12px;flex-wrap:wrap;}
+ #updateAppBanner .cashier-update-symbol {display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;border-radius:11px;background:#ffead0;color:#b7511c;font-size:22px;}
+ #updateAppBanner .cashier-update-copy {flex:1;min-width:190px;padding:1px 28px 0 0;}
+ #updateAppBanner .cashier-update-copy strong {font-size:14px;line-height:1.45;color:#754127;}
+ #updateAppBanner .cashier-update-copy span {display:block!important;font-size:12px;line-height:1.6;color:#8b715b;margin-top:4px;font-weight:400;}
+ #updateAppBanner .cashier-update-actions {flex:1 0 100%;display:flex;justify-content:flex-end;gap:8px;}
+ #updateAppBanner .cashier-update-actions button {font-size:12px;min-height:38px;padding:9px 14px;}
+ #updateAppBanner #cashierUpdateClose {position:absolute;right:9px;top:8px;border:0;background:transparent;color:#997d67;min-width:30px;min-height:30px;padding:4px;font-size:20px;cursor:pointer;}
+ #updateAppBanner:is([data-update-state="current"],[data-update-state="updated"]) .cashier-update-symbol {background:#e7f8ec;color:#22844b;}
+ @media(max-width:768px){body.cashier-orange.tk-ui-v2.tk-photo-pos #updateAppBanner{inset:68px 12px auto auto!important;width:calc(100vw - 24px)!important;}#updateAppBanner .cashier-update-copy{min-width:150px;}}
  #checkoutModal .checkout-yellow-box {background:#fff1dd!important;border-color:#ead4b6!important;}
  #checkoutModal .checkout-grey-box {background:#fffcf8!important;}
  #checkoutModal #btnSubmitFinal {background:#c65c24!important;color:white!important;font-size:15px!important;padding:14px!important;}

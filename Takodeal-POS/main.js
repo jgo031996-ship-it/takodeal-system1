@@ -1,4 +1,6 @@
 import { imageFor } from './cashier-data.js';
+import { createShiftCloseDraftStore, countValue } from './shift-close-draft.js';
+import { createPrinterConnections, createPrinterWriter } from './printer-connection.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { receiveDispatch } from './dispatch-safety.js';
 import { MALL_FLOAT, mallOpeningCash, stockRequestDue, autoRequestId, businessClock } from './branch-operations.js';
@@ -597,7 +599,7 @@ window.renderOrderAndPaymentUI = function() {
     window.masterPOSData.settings.payMethods.forEach((m, idx) => { 
         let act = idx === 0 ? 'active' : ''; if (idx === 0) window.selectedPaymentMethod = m; 
         // Added 'window.' before setPaymentMethod
-        pmHtml += `<button class="pay-btn ${act}" onclick="window.setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
+        pmHtml += `<button class="pay-btn ${act}" data-payment-method="${m.toLowerCase()}" onclick="window.setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${window.paymentButtonContent(m)}</button>`; 
         optHtml += `<option value="${m}">${m}</option>`;
     });
     
@@ -1682,16 +1684,67 @@ window.calculateDenominations = function() {
 // ========================================================
 // 💵 CASH DENOMINATION & BLIND COUNT MEMORY ENGINE
 // ========================================================
-window.cashDrawerMemory = {}; // Global memory to store typed bills
-window.blindCountMemory = JSON.parse(localStorage.getItem('takodeal_blind_count_memory')) || {};
+const shiftCloseDraftStore = createShiftCloseDraftStore(localStorage);
+window.cashDrawerMemory = {};
+window.blindCountMemory = {};
+window.shiftCloseDraftScope = null;
+function currentCloseDraftScope() {
+    const branch = typeof sessionUser !== 'undefined' ? sessionUser.branch : '';
+    const shiftId = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails?.logId) || (typeof currentShift !== 'undefined' && currentShift?.logId) || localStorage.getItem('currentShiftId');
+    return branch && shiftId ? {branch, shiftId} : null;
+}
+function closeDraftStatus(text) {
+    let status = document.getElementById('shiftCloseDraftStatus');
+    if (!status) {
+        const modal = document.getElementById('endShiftModal');
+        if (!modal) return;
+        status = document.createElement('p'); status.id = 'shiftCloseDraftStatus';
+        status.className = 'cashier-help'; status.setAttribute('role', 'status');
+        status.style.cssText = 'margin:0;padding:12px 20px;color:#8a4a25;background:#fff7ed;border-bottom:1px solid #f0dcc6';
+        modal.querySelector('.modal-body').before(status);
+    }
+    status.textContent = text;
+}
+window.saveCurrentShiftCloseDraft = function() {
+    const scope = window.shiftCloseDraftScope, current = currentCloseDraftScope();
+    if (!scope || !current || scope.branch !== current.branch || scope.shiftId !== current.shiftId) return;
+    document.querySelectorAll('#endShiftModal .denom-input').forEach(input => {
+        window.cashDrawerMemory[input.dataset.val] = countValue(input.value, true);
+    });
+    document.querySelectorAll('#endShiftModal .blind-count-purch, #endShiftModal .blind-count-base').forEach(input => {
+        const type = input.classList.contains('blind-count-purch') ? 'purch' : 'base';
+        window.blindCountMemory[`${input.dataset.name}_${type}`] = countValue(input.value);
+    });
+    const saved = shiftCloseDraftStore.save(scope, window.cashDrawerMemory, window.blindCountMemory);
+    closeDraftStatus(saved.persistent ? 'Draft saved on this device for this shift. You can close this window and return later.' : 'Draft kept in this open app only. Device storage is unavailable; keep the app open until the shift closes.');
+};
+function clearCurrentShiftCloseDraft(scope) {
+    shiftCloseDraftStore.clear(scope);
+    window.shiftCloseDraftScope = null;
+}
+for (const event of ['input', 'change']) document.addEventListener(event, e => {
+    if (e.target.matches?.('#endShiftModal .denom-input, #endShiftModal .blind-count-purch, #endShiftModal .blind-count-base')) window.saveCurrentShiftCloseDraft();
+});
+window.addEventListener('pagehide', () => window.saveCurrentShiftCloseDraft());
+document.addEventListener('visibilitychange', () => { if (document.hidden) window.saveCurrentShiftCloseDraft(); });
 
 window.saveBlindCountMemory = function(itemName, type, val) {
     if (!window.blindCountMemory) window.blindCountMemory = {};
     window.blindCountMemory[`${itemName}_${type}`] = val;
-    localStorage.setItem('takodeal_blind_count_memory', JSON.stringify(window.blindCountMemory));
+    window.saveCurrentShiftCloseDraft();
 };
 
 window.openEndShiftClearance = async function() {
+    const generation = window.shiftCloseDraftGeneration = (window.shiftCloseDraftGeneration || 0) + 1;
+    const scope = currentCloseDraftScope();
+    if (!scope) { Swal.fire('No active shift', 'Open an active shift before entering closing counts.', 'warning'); return; }
+    window.shiftCloseDraftScope = scope;
+    const restored = shiftCloseDraftStore.load(scope);
+    window.cashDrawerMemory = restored?.cash || {};
+    window.blindCountMemory = restored?.stock || {};
+    // Old modal inputs must never be captured into a different shift's draft.
+    document.getElementById('dynamicBlindCountList')?.replaceChildren();
+    closeDraftStatus(restored ? 'Saved counts restored for this shift. Continue or review them before closing.' : 'Counts save automatically on this device for this shift.');
     if (typeof closeModal === 'function') closeModal('shiftModal');
     let endModal = document.getElementById('endShiftModal');
     if (endModal) endModal.style.display = 'flex';
@@ -1709,7 +1762,7 @@ window.openEndShiftClearance = async function() {
         <tr style="border-bottom: 1px solid #eee;">
             <td style="padding: 8px 5px; font-weight: bold; color: #555;">₱${val}</td>
             <td style="padding: 8px 5px;">
-                <input type="number" class="denom-input input-box" data-val="${val}" placeholder="0" value="${savedQty}" style="width: 100%; text-align: center; padding: 6px;" onkeyup="if(typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash()" onchange="if(typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash()">
+                <input type="number" class="denom-input input-box" min="0" step="1" inputmode="numeric" data-val="${val}" placeholder="0" value="${savedQty}" style="width: 100%; text-align: center; padding: 6px;" oninput="if(typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash()" onchange="if(typeof window.calculateGrandTotalCash === 'function') window.calculateGrandTotalCash()">
             </td>
             <td style="padding: 8px 5px; text-align: right; font-weight: bold; color: var(--primary);" class="denom-row-total">${displayTotal}</td>
         </tr>`;
@@ -1734,6 +1787,7 @@ window.openEndShiftClearance = async function() {
                     where("timestamp", ">=", currentShift.startTime)
                 );
                 const snap = await getDocs(q);
+                if (generation !== window.shiftCloseDraftGeneration) return;
                 
                 let logs = [];
                 snap.forEach(doc => {
@@ -1776,6 +1830,7 @@ window.openEndShiftClearance = async function() {
         blindContainer.innerHTML = '<div style="text-align:center; font-size: 13px; color: #888;">Fetching required items...</div>';
         try {
             const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
+            if (generation !== window.shiftCloseDraftGeneration) return;
             let auditItemsList = [];
             if (configSnap.exists() && configSnap.data().shiftAuditItems) {
                 auditItemsList = configSnap.data().shiftAuditItems.map(i => i.trim());
@@ -1790,6 +1845,7 @@ window.openEndShiftClearance = async function() {
                 for (let itemName of auditItemsList) {
                     const invQ = query(collection(db, "inventory"), where("branch", "==", sessionUser.branch), where("name", "==", itemName));
                     const invSnap = await getDocs(invQ);
+                    if (generation !== window.shiftCloseDraftGeneration) return;
                     
                     if (!invSnap.empty) {
                         let invData = invSnap.docs[0].data();
@@ -1870,6 +1926,7 @@ window.calculateGrandTotalCash = function() {
         }
     });
     
+    window.saveCurrentShiftCloseDraft();
     let grandTotalEl = document.getElementById('grandTotalCash');
     if (grandTotalEl) {
         grandTotalEl.innerText = '₱' + total.toLocaleString(undefined, {minimumFractionDigits: 2});
@@ -7188,6 +7245,7 @@ window.loadConsumablesHistory = async function() {
 // 🛑 THE MASTER SHIFT CLOSING ENGINE (CRASH-PROOF & BLIND COUNT SECURED)
 // ========================================================
 window.MASTER_CloseShift = async function () {
+    window.saveCurrentShiftCloseDraft();
     let confirmBtn = document.querySelector('button[onclick*="MASTER_CloseShift"]');
     let origText = confirmBtn ? confirmBtn.innerText : 'Confirm & End Shift';
 
@@ -7399,6 +7457,8 @@ window.MASTER_CloseShift = async function () {
         if (confirmBtn) confirmBtn.innerHTML = "⏳ Lightning Syncing to Cloud...";
         await closeShiftAtomic(window, {shiftId,branch:branchName,cashier:cashierName,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance,cashOut,...dailyClose,closing:{cashBreakdown,physicalStockCount}});
 
+        // Clear the draft only after the atomic close succeeds.
+        clearCurrentShiftCloseDraft({branch: branchName, shiftId});
         // 9. Memory Wipe & Force UI Lockout
         window.cashDrawerMemory = {};
         window.blindCountMemory = {};
@@ -8537,7 +8597,7 @@ window.openPrinterManager = function() {
         html: `
             <div style="margin-bottom: 20px; padding: 15px; background: #f0fdf4; border-radius: 8px; border: 1px dashed #16a34a; text-align: left;">
                 <span style="font-size: 14px; color: #15803d; font-weight: 900;">⚡ Lightning Direct Bluetooth Active</span><br>
-                <span style="font-size: 12px; color: #166534; font-weight: 500; display: block; margin-top: 5px;">Printers stay permanently connected after the first pairing. The system will auto-reconnect silently in the background even if you refresh the app or restart the printer hardware.</span>
+                <span style="font-size: 12px; color: #166534; font-weight: 500; display: block; margin-top: 5px;">Pairing is remembered on this device. If the printer sleeps or disconnects, the app retries automatically while it is open and checks the connection before printing.</span>
             </div>
 
             <div style="display: flex; flex-direction:column; gap:12px; text-align: left;">
@@ -8596,91 +8656,32 @@ window.testPrint = async function(target, event) {
     btn.disabled = false;
 };
 
+const printerConnections = createPrinterConnections({
+    bluetooth: navigator.bluetooth, storage: localStorage,
+    visible: () => !document.hidden,
+    onState(role, state) {
+        window[role + 'PrinterChar'] = state.character;
+        document.dispatchEvent(new CustomEvent('cashier-printer-state', {detail: {role, ...state}}));
+    }
+});
+const printerWriter = createPrinterWriter(printerConnections);
+window.getPrinterState = role => printerConnections.snapshot(role);
 window.connectSpecificPrinter = async function(target) {
     try {
-        let device = null;
-        let savedDeviceId = localStorage.getItem(`takodeal_printer_${target}_id`);
-
-        // 🔥 PHASE 1: THE SILENT MEMORY BYPASS (INSTANT CONNECT)
-        if (savedDeviceId && navigator.bluetooth && navigator.bluetooth.getDevices) {
-            const permittedDevices = await navigator.bluetooth.getDevices();
-            device = permittedDevices.find(d => d.id === savedDeviceId);
-            
-            if (device) {
-                console.log(`Found authorized ${target} printer in memory. Bypassing scan...`);
-            }
-        }
-
-        // 🔥 PHASE 2: FALLBACK MANUAL SCAN (Only ever happens the very first time you pair it!)
-        if (!device) {
-            console.log(`No memory for ${target} printer. Opening Bluetooth scanner...`);
-            device = await navigator.bluetooth.requestDevice({
-                acceptAllDevices: true,
-                optionalServices: [
-                    '000018f0-0000-1000-8000-00805f9b34fb', 
-                    'e7810a71-73ae-499d-8c15-faa9aef0c3f2', 
-                    '0000ae30-0000-1000-8000-00805f9b34fb',
-                    '49535343-fe7d-4ae5-8fa9-9fafd205e455'
-                ]
-            });
-            // Save the unique hardware ID so we never have to scan for it again!
-            localStorage.setItem(`takodeal_printer_${target}_id`, device.id);
-        }
-
-        Swal.fire({title: 'Connecting...', text: 'Establishing secure link...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-        
-        const server = await device.gatt.connect();
-        let foundChar = null;
-        const services = await server.getPrimaryServices();
-        
-        for (let service of services) {
-            const characteristics = await service.getCharacteristics();
-            for (let char of characteristics) {
-                if (char.properties.write || char.properties.writeWithoutResponse) {
-                    foundChar = char; 
-                    break;
-                }
-            }
-            if (foundChar) break;
-        }
-
-        if (foundChar) {
-            // Assign to the correct global variable based on the target
-            if (target === 'main') window.mainPrinterChar = foundChar;
-            else if (target === 'kitchen') window.kitchenPrinterChar = foundChar;
-            else if (target === 'bar') window.barPrinterChar = foundChar;
-
-            Swal.fire({ 
-                toast: true, position: 'top-end', icon: 'success', 
-                title: `⚡ ${target.toUpperCase()} Printer Online!`, 
-                showConfirmButton: false, timer: 2000 
-            });
-            
-            window.openPrinterManager(); 
-            
-            // 🔥 INDESTRUCTIBLE AUTO-RECONNECT LISTENER 🔥
-            device.addEventListener('gattserverdisconnected', () => {
-                console.warn(`🚨 ${target.toUpperCase()} Printer disconnected! Attempting auto-reconnect...`);
-                if (target === 'main') window.mainPrinterChar = null;
-                else if (target === 'kitchen') window.kitchenPrinterChar = null;
-                else if (target === 'bar') window.barPrinterChar = null;
-                
-                // Silently try to get it back in 3 seconds without bothering the cashier!
-                setTimeout(() => window.autoConnectPrinters(), 3000);
-            });
-            
-        } else {
-            throw new Error("Device does not support direct ESC/POS writing.");
-        }
+        await printerConnections.connect(target, {choose: true});
+        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Printer connected. Pairing remembered on this device.', showConfirmButton: false, timer: 2500});
     } catch (error) {
-        console.error(error);
-        if (error.name === 'NotFoundError' || error.code === 8) {
-            Swal.close(); return; // Cashier just closed the popup
-        }
-        Swal.fire('Connection Failed', error.message || 'Could not connect. Please ensure it is powered on and within range.', 'error')
-            .then(() => window.openPrinterManager());
+        if (error.name !== 'NotFoundError') Swal.fire('Printer connection', error.message || 'Power on the printer and keep it nearby, then try again.', 'warning');
     }
 };
+document.addEventListener('visibilitychange', () => {
+    if (document.hidden) printerConnections.pause(); else printerConnections.reconnect();
+});
+window.addEventListener('pageshow', () => printerConnections.reconnect());
+window.addEventListener('focus', () => printerConnections.reconnect());
+window.addEventListener('pagehide', () => printerConnections.pause());
+// Detect a missed disconnect notification without sending paper or drawer commands.
+setInterval(() => printerConnections.reconnect(), 30000);
 
 // ==========================================
 // 🛡️ RAW BYTE ENGINE & BULLETPROOF SANITIZER
@@ -8777,72 +8778,23 @@ window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeig
 // ==========================================
 // ⚡ DIRECT BLUETOOTH SENDER & QUEUE SYSTEM
 // ==========================================
-window.bluetoothPrintQueue = [];
-window.isBluetoothPrinting = false;
-
-window.processBluetoothQueue = async function() {
-    if (window.isBluetoothPrinting || window.bluetoothPrintQueue.length === 0) return;
-    
-    window.isBluetoothPrinting = true; 
-    let job = window.bluetoothPrintQueue.shift(); 
-    
-    try {
-        let buffer = (job.data instanceof Uint8Array) ? job.data : window.stringToBuffer(job.data);
-        
-        // 🔥 THE ALIEN TEXT FIX 3 (BUFFER OVERFLOW PROTECTION) 🔥
-        // Back down to 100 chunks. 300 was overflowing the tiny thermal printer brain!
-        const CHUNK_SIZE = 100; 
-        
-        for (let i = 0; i < buffer.length; i += CHUNK_SIZE) {
-            let chunk = buffer.slice(i, i + CHUNK_SIZE);
-            
-            if (job.activeChar.properties.writeWithoutResponse) {
-                await job.activeChar.writeValueWithoutResponse(chunk);
-                // Give the printer 30ms to digest the data before sending more
-                await new Promise(resolve => setTimeout(resolve, 30)); 
-            } else {
-                await job.activeChar.writeValue(chunk);
-                await new Promise(resolve => setTimeout(resolve, 30)); 
-            }
-        }
-        
-        // Give the printer a tiny breather before cutting the paper
-        await new Promise(resolve => setTimeout(resolve, 100)); 
-        
-    } catch(e) {
-        console.error("Print Error:", e);
-        if (job.activeChar === window.kitchenPrinterChar) window.kitchenPrinterChar = null;
-        else if (job.activeChar === window.barPrinterChar) window.barPrinterChar = null;
-        else window.mainPrinterChar = null;
-    } finally {
-        window.isBluetoothPrinting = false; 
-        setTimeout(window.processBluetoothQueue, 50); 
-    }
-};
-
+let pendingPrinterJobs = 0;
 window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, target = 'main') {
-    let activeChar = null;
-    if (target === 'kitchen') activeChar = window.kitchenPrinterChar || window.mainPrinterChar;
-    else if (target === 'bar') activeChar = window.barPrinterChar || window.mainPrinterChar;
-    else activeChar = window.mainPrinterChar;
-
-    if (!activeChar) {
-        console.log("Printer not active. Attempting auto-reconnect...");
-        await window.autoConnectPrinters();
-        
-        if (target === 'kitchen') activeChar = window.kitchenPrinterChar || window.mainPrinterChar;
-        else if (target === 'bar') activeChar = window.barPrinterChar || window.mainPrinterChar;
-        else activeChar = window.mainPrinterChar;
+    const buffer = data instanceof Uint8Array ? data : window.stringToBuffer(data);
+    pendingPrinterJobs++;
+    window.isBluetoothPrinting = true;
+    try {
+        return await printerWriter.send(buffer, target);
+    } catch (error) {
+        console.warn('Printer job did not complete:', error);
+        Swal.fire('Print not completed', error.bytesWritten > 0
+            ? 'The printer disconnected while printing. Check the paper before reprinting this receipt from Shift Sales.'
+            : 'Power on the saved printer and keep it nearby. The app will reconnect automatically. If needed, tap Connect printer in Printer Hub, then reprint from Shift Sales.', 'warning');
+        return false;
+    } finally {
+        pendingPrinterJobs--;
+        window.isBluetoothPrinting = pendingPrinterJobs > 0;
     }
-    
-    if (!activeChar) {
-        Swal.fire('🖨️ Printer Offline', 'The printer is disconnected or asleep. Please tap the Printer Hub icon to reconnect it.', 'warning');
-        return; 
-    }
-
-    // Send the receipt to the waiting line instead of attacking the printer!
-    window.bluetoothPrintQueue.push({ data: data, activeChar: activeChar });
-    window.processBluetoothQueue();
 };
 
 // Auto-override the sidebar button
@@ -8919,7 +8871,8 @@ setTimeout(() => {
             if (updateBanner) {
                 // If the Manager pushed a newer timestamp, show the button!
                 if (cloudVersion > localVersion) {
-                    updateBanner.style.display = 'flex';
+                    if (!window.CASHIER_UPDATE_WAITING && window.showCashierUpdateNotice) window.showCashierUpdateNotice('available', 'Check for a Cashier update', 'HQ requested an app update. Finish or park your order, then check for the latest version.');
+                    else updateBanner.style.display = 'flex';
                     // Save the target timestamp so the button knows what to upgrade to
                     window.TARGET_UPDATE_VERSION = cloudVersion;
                 } else {
@@ -8966,72 +8919,7 @@ setTimeout(async () => {
 // ==========================================
 // 🖨️ SILENT BLUETOOTH AUTO-RECONNECT ENGINE
 // ==========================================
-window.autoConnectPrinters = async function() {
-    let currentMode = localStorage.getItem('takodeal_printer_mode') || 'ble';
-    if (currentMode !== 'ble') return; // Only applies to modern direct Bluetooth mode
-    
-    let targets = ['main', 'kitchen', 'bar'];
-    let connectedCount = 0;
-
-    for (let target of targets) {
-        let savedDeviceId = localStorage.getItem(`takodeal_printer_${target}_id`);
-        if (savedDeviceId && navigator.bluetooth && navigator.bluetooth.getDevices) {
-            try {
-                const permittedDevices = await navigator.bluetooth.getDevices();
-                let device = permittedDevices.find(d => d.id === savedDeviceId);
-                
-                // Only try to connect if we have permission AND it isn't already connected
-                if (device && (!device.gatt || !device.gatt.connected)) {
-                    console.log(`Auto-connecting to ${target} printer in background...`);
-                    
-                    // We must add an event listener to handle accidental disconnects!
-                    device.addEventListener('gattserverdisconnected', () => {
-                        console.warn(`${target.toUpperCase()} Printer disconnected. Will auto-retry...`);
-                        if (target === 'main') window.mainPrinterChar = null;
-                        else if (target === 'kitchen') window.kitchenPrinterChar = null;
-                        else if (target === 'bar') window.barPrinterChar = null;
-                        
-                        // 🔥 PERSISTENT RECONNECT FIX: If it sleeps, try to wake it up every 5 seconds!
-                        setTimeout(() => window.autoConnectPrinters(), 5000);
-                    });
-
-                    const server = await device.gatt.connect();
-                    let foundChar = null;
-                    const services = await server.getPrimaryServices();
-                    
-                    for (let service of services) {
-                        const characteristics = await service.getCharacteristics();
-                        for (let char of characteristics) {
-                            if (char.properties.write || char.properties.writeWithoutResponse) {
-                                foundChar = char; break;
-                            }
-                        }
-                        if (foundChar) break;
-                    }
-
-                    if (foundChar) {
-                        if (target === 'main') window.mainPrinterChar = foundChar;
-                        else if (target === 'kitchen') window.kitchenPrinterChar = foundChar;
-                        else if (target === 'bar') window.barPrinterChar = foundChar;
-                        connectedCount++;
-                    }
-                }
-            } catch (e) {
-                console.warn(`Failed to auto-connect ${target} printer. Retrying shortly...`, e);
-                // If it fails because printer is powered off, try again in 10 seconds!
-                setTimeout(() => window.autoConnectPrinters(), 10000);
-            }
-        }
-    }
-    
-    if (connectedCount > 0) {
-        Swal.fire({
-            toast: true, position: 'top-end', icon: 'success', 
-            title: `🖨️ ${connectedCount} Printer(s) Auto-Connected!`, 
-            showConfirmButton: false, timer: 3000
-        });
-    }
-};
+window.autoConnectPrinters = () => printerConnections.reconnect();
 
 // Run on boot if already logged in!
 setTimeout(() => {
@@ -9293,7 +9181,7 @@ window.ownerBypassLogin = async function() {
         
         bSnap.forEach(doc => {
             let name = doc.data().name;
-            if (name && name !== "Main Office") {
+            if (name) {
                 branchOptions[name] = `📍 ${name}`;
             }
         });
