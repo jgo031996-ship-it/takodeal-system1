@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {buildMenu,withinBranchHours,readCart,readMenuCache,writeMenuCache,validateCart,escapeHTML,encodeItem,MENU_TTL,MENU_CACHE_KEY} from '../Customer/customer-menu.js';
+import {franchiseInquiry} from '../Customer/customer-franchise.js';
 const item=(name,category='Takoyaki',price=80,other={})=>({id:name,name,category,price,...other});
 const branch={name:'Cabantian',allowedCategories:['Takoyaki','Coffee']};
 const storage=()=>{const data=new Map();return {getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)};};
@@ -12,9 +13,9 @@ test('internal prep, packaging and duplicate extra SKUs never appear as standalo
  const rows=['Prep Batch','Prepared Batch','Consumables','Raw Ingredients','Kitchen Prep','TAKEOUT PACKAGING','Extras'].map(cat=>item(cat,cat));
  assert.equal(buildMenu([...rows,item('Original 6 Pcs')],{}).menu.length,1);
 });
-test('branch category configuration is obeyed, including explicit empty configuration',()=>{
+test('empty branch categories use the full menu, matching the Manager and POS defaults',()=>{
  const raw=[item('A'),item('B','Coffee'),item('C','Tea')];
- assert.equal(buildMenu(raw,branch).menu.length,2);assert.equal(buildMenu(raw,{name:'Maa',allowedCategories:[]}).menu.length,0);assert.equal(buildMenu(raw,{}).menu.length,3);
+ assert.equal(buildMenu(raw,branch).menu.length,2);assert.equal(buildMenu(raw,{name:'Maa',allowedCategories:[]}).menu.length,3);assert.equal(buildMenu(raw,{}).menu.length,3);
 });
 test('disabled, malformed, negative price and nameless items are filtered',()=>{
  const raw=[item('A','Takoyaki',-1),item('B','Takoyaki','bad'),item(''),item('C','Takoyaki',80,{isAvailable:false}),item('D','Takoyaki',80,{customerVisible:false}),item('E','Takoyaki',0)];
@@ -60,7 +61,7 @@ test('changed menu price, removed item or sold-out item blocks stale cart submis
  assert.throws(()=>validateCart([cartLine()],[],branch),/unavailable/);assert.throws(()=>validateCart([cartLine()],[{...raw[0],price:90}],branch),/price/);assert.throws(()=>validateCart([cartLine()],[{...raw[0],unavailableAt:['Cabantian']}],branch),/unavailable/);
 });
 test('branch-disabled categories and duplicate legacy item names block submission',()=>{
- assert.throws(()=>validateCart([cartLine()],raw,{name:'Maa',allowedCategories:[]}),/unavailable/);
+ assert.throws(()=>validateCart([cartLine()],raw,{name:'Maa',allowedCategories:['Coffee']}),/unavailable/);
  assert.throws(()=>validateCart([cartLine({menuId:undefined})],[...raw,...raw],branch),/unavailable/);
 });
 test('invalid quantities, altered totals and removed or re-priced add-ons block submission',()=>{
@@ -105,4 +106,33 @@ test('actual submission validates fresh server menu and authentication before wr
 test('actual transaction refuses paused branches and stale cashier leases without leaving an offline write',async()=>{
  const {h,gate,payload}=gateFixture();h.put('settings/status_Cabantian',{mobileOrdersActive:false});await assert.rejects(gate.saveOrder(payload),/unavailable/);
  h.put('settings/status_Cabantian',{mobileOrdersActive:true});h.put('offline_policy/Cabantian',{requireCashierForCustomerOrders:true});h.put('cashier_leases/Cabantian',{seenAt:{seconds:0}});await assert.rejects(gate.saveOrder(payload),/unavailable/);assert.equal([...h.docs.keys()].filter(k=>k.startsWith('incoming_orders/')).length,0);
+});
+
+test('legacy empty branch categories can submit a valid order while internal items remain hidden',async()=>{
+ const {h,gate,payload}=gateFixture();h.put('branches/Cabantian',{name:'Cabantian',allowedCategories:[]});
+ assert.equal(await gate.saveOrder(payload),'TEST-001');
+ assert.deepEqual(buildMenu([...raw,item('Prep','Prep Batch'),item('Extra','Extras')],{name:'Cabantian',allowedCategories:[]}).menu.map(i=>i.name),['A']);
+});
+const leadValues={name:' Example Partner ',phone:'0912 345 6789',email:' partner@example.test ',location:' Davao City ',formatInterest:'kiosk',consent:true};
+test('franchise inquiry keeps the existing Manager inbox schema and normalizes whitespace',()=>{
+ assert.deepEqual(franchiseInquiry(leadValues),{name:'Example Partner',phone:'0912 345 6789',email:'partner@example.test',location:'Davao City',formatInterest:'kiosk',status:'Pending'});
+ assert.equal(franchiseInquiry({...leadValues,email:'',formatInterest:'undecided'}).email,'N/A');
+});
+test('franchise inquiry requires usable contact details, location and consent',()=>{
+ for (const values of [{name:''},{phone:'09'},{phone:'not-a-number'},{email:'broken'},{location:''},{formatInterest:'fake'},{consent:false}]) assert.throws(()=>franchiseInquiry({...leadValues,...values}));
+});
+function leadFixture(write) {
+ const fields=Object.fromEntries(Object.entries({leadName:leadValues.name,leadPhone:leadValues.phone,leadEmail:leadValues.email,leadLocation:leadValues.location,teaserFormatSelect:'kiosk'}).map(([id,value])=>[id,{value}]));
+ fields.leadConsent={checked:true};fields.customerLeadMessage={hidden:true,textContent:'',classList:{add(){},remove(){}}};fields.btnSubmitLead={disabled:false,textContent:''};fields.customerFranchiseForm={resets:0,reset(){this.resets++;}};
+ const html=readFileSync(new URL('../Customer/index.html',import.meta.url),'utf8'),start=html.indexOf('        window.submitFranchiseLead ='),end=html.indexOf('        // End franchise inquiry workflow.',start);
+ const context=vm.createContext({window:{},document:{getElementById:id=>fields[id]},franchiseInquiry,db:{},collection:(_,name)=>name,serverTimestamp:()=>({server:true}),addDoc:write,console:{error(){}}});vm.runInContext(html.slice(start,end),context);
+ return {submit:context.window.submitFranchiseLead,fields};
+}
+test('actual inquiry workflow blocks duplicate clicks and delivers the Manager fields once',async()=>{
+ let finish;const writes=[];const {submit,fields}=leadFixture((path,values)=>{writes.push({path,values});return new Promise(resolve=>{finish=resolve;});});
+ const pending=submit();assert.equal(fields.btnSubmitLead.disabled,true);await submit();assert.equal(writes.length,1);assert.equal(writes[0].path,'franchise_leads');assert.equal(writes[0].values.status,'Pending');assert.equal(writes[0].values.formatInterest,'kiosk');assert.ok(writes[0].values.timestamp.server);
+ finish();await pending;assert.equal(fields.customerFranchiseForm.resets,1);assert.equal(fields.btnSubmitLead.disabled,false);assert.match(fields.customerLeadMessage.textContent,/has been sent/);
+});
+test('failed franchise inquiry preserves entered fields and restores retry controls',async()=>{
+ const {submit,fields}=leadFixture(async()=>{throw Error('offline');});await submit();assert.equal(fields.customerFranchiseForm.resets,0);assert.equal(fields.leadName.value,leadValues.name);assert.equal(fields.btnSubmitLead.disabled,false);assert.equal(fields.customerLeadMessage.hidden,false);assert.match(fields.customerLeadMessage.textContent,/could not be sent/);
 });
