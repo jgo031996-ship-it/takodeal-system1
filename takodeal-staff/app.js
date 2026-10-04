@@ -1,3 +1,6 @@
+import { installStaffLocation } from './staff-location.js';
+import { installStaffRegistration } from './staff-registration.js';
+import { installStaffPhone } from './staff-phone.js';
 import { installStaffPortal } from './staff-portal.js';
 import { calculateLateMinutes, resolveScheduledShift, latePay, earnedNightBonus, attendanceLateMinutes, isMealDeduction } from './payroll-safety.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
@@ -19,7 +22,8 @@ const app = initializeApp(firebaseConfig);
 
 // 🔥 UPGRADE: This activates the "Indestructible Offline Mode" on the Staff App!
 const db = initializeFirestore(app, {
-  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
+  localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()}),
+  experimentalForceLongPolling: true, experimentalAutoDetectLongPolling: false
 });
 const storage = getStorage(app);
 
@@ -120,107 +124,7 @@ document.addEventListener("DOMContentLoaded", () => {
 // ==========================================
 // 🔒 DEVICE FLEET & SECURITY ENGINE
 // ==========================================
-window.requestDeviceAccess = async function() {
-    let name = document.getElementById('deviceNameInput').value.trim();
-    let selectedBranch = document.getElementById('deviceBranchInput').value;
-
-    if (!name) return Swal.fire('Required', 'Please enter a device name (e.g. Aljhon Phone).', 'warning');
-
-    let btn = document.querySelector('#registerCard .btn-primary');
-    if(btn) { btn.innerText = "⏳ Registering..."; btn.disabled = true; }
-
-    let targetBranch = selectedBranch;
-    try {
-         if (selectedBranch === 'Auto') {
-             if (!navigator.geolocation) throw new Error('Location is unavailable. Please choose your branch manually.');
-             const location = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy:true, timeout:12000, maximumAge:60000 }));
-             window.currentLat = location.coords.latitude; window.currentLng = location.coords.longitude;
-             targetBranch = window.getClosestBranch();
-             if (!targetBranch) throw new Error('Your branch could not be detected. Please choose it manually.');
-         }
-         let deviceId = localStorage.getItem('takodeal_device_id');
-         if (!deviceId) {
-             deviceId = 'DEV-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-             localStorage.setItem('takodeal_device_id', deviceId);
-         }
-
-         await setDoc(doc(db, "pos_devices", deviceId), {
-             deviceId: deviceId,
-             deviceName: name + " (Staff)",
-             branch: targetBranch,
-             status: "Pending",
-             registeredAt: serverTimestamp(),
-             lastActive: serverTimestamp()
-         });
-
-         window.listenToDeviceStatus(deviceId);
-
-      } catch(e) {
-        console.error("Device Reg Error:", e);
-        // 🔥 THE DIAGNOSTIC UPGRADE: Reveal the true error message on the screen!
-        Swal.fire('Connection Failed', 'System Details: ' + e.message, 'error');
-        if(btn) { btn.innerText = "Request Access"; btn.disabled = false; }
-    }
-};
-
-window.listenToDeviceStatus = function(deviceId) {
-    let regCard = document.getElementById('registerCard');
-    let penCard = document.getElementById('pendingCard');
-    let authOverlay = document.getElementById('deviceAuthOverlay');
-    
-    if(authOverlay) authOverlay.style.display = 'flex';
-    if(regCard) regCard.style.display = 'none';
-    if(penCard) penCard.style.display = 'none';
-    document.getElementById('loginOverlay').style.display = 'none';
-    document.getElementById('appContainer').style.display = 'none';
-
-    onSnapshot(doc(db, "pos_devices", deviceId), (docSnap) => {
-        let blockScreen = document.getElementById('deviceBlockedOverlay');
-
-        if (docSnap.exists()) {
-            let status = docSnap.data().status;
-            if (status !== 'Active' && status !== 'Approved') window.lockPayslipVault?.();
-            
-            // 🔥 THE BUG FIX: The Manager app uses "Approved" but the Staff App expected "Active"!
-            // Now it accepts both!
-            if (status === 'Active' || status === 'Approved') {
-                if(authOverlay) authOverlay.style.display = 'none';
-                if(blockScreen) blockScreen.style.display = 'none';
-                window.checkNormalLogin();
-                window.listenToIncomingSwaps();
-            } else {
-                if(authOverlay) authOverlay.style.display = 'none';
-                
-                if (!blockScreen) {
-                    blockScreen = document.createElement('div');
-                    blockScreen.id = 'deviceBlockedOverlay';
-                    blockScreen.style.cssText = "position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.95); z-index: 999999; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 20px; backdrop-filter: blur(4px);";
-                    blockScreen.innerHTML = `
-                        <div style="background: white; padding: 30px; border-radius: 16px; max-width: 400px; width: 100%; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
-                            <h2 style="color: #dc2626; margin-top: 0; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                                <span style="font-size: 24px;">🚫</span> Access Blocked
-                            </h2>
-                            <p style="color: #475569; font-size: 14px; margin-bottom: 20px; line-height: 1.5;">This device is locked. Please ask HQ to click <b>Approve</b> in the Fleet Management Dashboard to grant access.</p>
-                            <div style="font-size: 45px; margin-bottom: 20px;">🔒</div>
-                            <div style="font-size: 11px; color: #94a3b8; font-weight: bold; background: #f1f5f9; padding: 8px; border-radius: 6px; border: 1px dashed #cbd5e1;">Device ID: ${deviceId}</div>
-                        </div>
-                    `;
-                    document.body.appendChild(blockScreen);
-                }
-                blockScreen.querySelector('h2').textContent = status === 'Pending' ? 'Request sent to HQ' : 'Device access paused';
-                blockScreen.querySelector('p').textContent = status === 'Pending' ? 'Your device registration is awaiting HQ approval. This screen will update when it is approved.' : 'Please contact HQ to review this device in Fleet Management.';
-                blockScreen.style.display = 'flex';
-            }
-        } else {
-            // 🔥 THE LOOP KILLER: If deleted by Manager, wipe local memory so it stops spamming HQ!
-            localStorage.removeItem('takodeal_device_id');
-            if(blockScreen) blockScreen.style.display = 'none';
-            if(authOverlay) authOverlay.style.display = 'flex';
-            if(regCard) regCard.style.display = 'block';
-        }
-    });
-};
-
+// Device registration and cloud-confirmed approval are installed below.
 window.getClosestBranch = function() {
     if (!window.currentLat || !window.currentLng) return null;
     let closestBranch = "Main Office";
@@ -534,7 +438,7 @@ window.saveProfileData = async function() {
 
         let successMsg = newPin ? 'Your profile, files, and PIN have been saved.' : 'Your HR profile and IDs have securely synced to HQ.';
         Swal.fire('✅ Saved', successMsg, 'success');
-        document.getElementById('profileModal').style.display = 'none';
+        window.closeStaffProfile();
         document.getElementById('profPin').value = ''; 
     } catch (e) {
         console.error("Save Profile Error:", e);
@@ -1306,138 +1210,8 @@ window.submitSignature = async function(announcementId) {
 // ==========================================
 // ⏱️ TIME CLOCK, CAMERA & GPS ENGINE
 // ==========================================
+// Camera and bounded location sessions are installed by staff-location.js.
 window.cameraStream = null;
-
-window.startLiveClock = function() {
-    setInterval(() => {
-        const now = new Date();
-        const timeEl = document.getElementById('liveTime');
-        const dateEl = document.getElementById('liveDate');
-        if (timeEl) timeEl.innerHTML = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        if (dateEl) dateEl.innerHTML = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-    }, 1000);
-};
-
-// ==========================================
-// ⏱️ TIME CLOCK, CAMERA & FAST GPS ENGINE
-// ==========================================
-window.cameraStream = null;
-
-window.startLiveClock = function() {
-    setInterval(() => {
-        const now = new Date();
-        const timeEl = document.getElementById('liveTime');
-        const dateEl = document.getElementById('liveDate');
-        if (timeEl) timeEl.innerHTML = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        if (dateEl) dateEl.innerHTML = now.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-    }, 1000);
-};
-
-window.startCameraAndGPS = async function() {
-    let videoEl = document.getElementById('clockVideo');
-    let statusEl = document.getElementById('cameraStatus');
-    
-    // 🚀 BUDGET PHONE OPTIMIZATION: Request standard 480p instead of full HD to prevent memory crashes
-    try {
-        window.cameraStream = await navigator.mediaDevices.getUserMedia({ 
-            video: { 
-                facingMode: "user",
-                width: { ideal: 640 },
-                height: { ideal: 480 }
-            } 
-        });
-        videoEl.srcObject = window.cameraStream;
-        statusEl.innerText = "🟢 Camera Ready"; 
-        statusEl.style.background = "rgba(22, 163, 74, 0.8)";
-    } catch (e) {
-        statusEl.innerText = "❌ Camera Access Denied"; 
-        statusEl.style.background = "rgba(220, 38, 38, 0.8)";
-    }
-
-    // Trigger instant location fetch
-    window.refreshGPS();
-};
-
-// 🔄 ONE-CLICK GPS REFRESH (Works on all budget devices)
-window.refreshGPS = function() {
-    let gpsEl = document.getElementById('gpsStatus');
-    if (!navigator.geolocation) {
-        if (gpsEl) {
-            gpsEl.innerText = "❌ GPS not supported on this device.";
-            gpsEl.style.color = "#dc2626";
-            gpsEl.style.background = "#fef2f2";
-        }
-        return;
-    }
-
-    if (gpsEl) {
-        gpsEl.innerHTML = `⏳ Verifying GPS... <span style="font-size:11px; opacity:0.8;">(Tap to retry)</span>`;
-        gpsEl.style.color = "#0284c7";
-        gpsEl.style.background = "#e0f2fe";
-    }
-
-    // Tier 1: Try High-Accuracy (6s limit)
-    navigator.geolocation.getCurrentPosition(
-        (pos) => window.handleGpsSuccess(pos),
-        (err) => {
-            console.warn("Satellite GPS delayed. Switching to fast cellular/network fallback...", err);
-            // Tier 2: Instant Fallback to Network Triangulation (Low battery & low memory friendly)
-            navigator.geolocation.getCurrentPosition(
-                (fallbackPos) => window.handleGpsSuccess(fallbackPos),
-                (fallbackErr) => window.handleGpsError(fallbackErr),
-                { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
-            );
-        },
-        { enableHighAccuracy: true, timeout: 6000, maximumAge: 10000 }
-    );
-};
-
-window.handleGpsSuccess = function(position) {
-    window.currentLat = position.coords.latitude;
-    window.currentLng = position.coords.longitude;
-
-    let closest = "Unknown";
-    let minDist = 999999;
-    for (let b in window.BRANCH_ZONES) {
-        let z = window.BRANCH_ZONES[b];
-        let d = window.getDistanceInMeters(window.currentLat, window.currentLng, z.lat, z.lng);
-        if (d < minDist) { 
-            minDist = d; 
-            closest = b; 
-        }
-    }
-
-    let gpsEl = document.getElementById('gpsStatus');
-    if (!gpsEl) return;
-
-    let dist = Math.round(minDist);
-    let allowedRadius = window.ALLOWED_RADIUS_METERS || 300;
-
-    if (dist <= allowedRadius) {
-        gpsEl.innerHTML = `🟢 <b>${closest} Verified</b> (${dist}m) • <span style="text-decoration: underline;">Refresh 🔄</span>`;
-        gpsEl.style.color = "#16a34a";
-        gpsEl.style.background = "#dcfce7";
-    } else {
-        gpsEl.innerHTML = `⚠️ <b>${dist}m away from ${closest}</b> (Max: ${allowedRadius}m) • <span style="text-decoration: underline;">Refresh 🔄</span>`;
-        gpsEl.style.color = "#b45309";
-        gpsEl.style.background = "#fef3c7";
-    }
-};
-
-window.handleGpsError = function(error) {
-    let gpsEl = document.getElementById('gpsStatus');
-    if (!gpsEl) return;
-    gpsEl.innerHTML = `❌ GPS Signal Weak • <b>Tap to Retry 🔄</b>`;
-    gpsEl.style.color = "#dc2626";
-    gpsEl.style.background = "#fef2f2";
-};
-
-window.stopCamera = function() {
-    if (window.cameraStream) {
-        window.cameraStream.getTracks().forEach(t => t.stop()); window.cameraStream = null;
-    }
-};
-
 window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
     var R = 6371e3; var dLat = (lat2 - lat1) * Math.PI / 180; var dLon = (lon2 - lon1) * Math.PI / 180;
     var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
@@ -1448,6 +1222,9 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
 window.punchTime = async function(type) {
     let staffName = localStorage.getItem('takodeal_staff_name');
     if (!staffName) return Swal.fire('Error', 'Not logged in.', 'error');
+    if (window.staffPunchBusy) return;
+    window.staffPunchBusy = true;
+    const punchStaffId = localStorage.getItem('takodeal_staff_id');
 
     let btnIn = document.getElementById('btnTimeIn'); 
     let btnOut = document.getElementById('btnTimeOut');
@@ -1556,23 +1333,9 @@ window.punchTime = async function(type) {
             }
         }
 
-        // 3. 📍 GPS VERIFICATION (MOVED UP FOR LATE CHECKER)
-        if (!window.currentLat || !window.currentLng) {
-            Swal.fire('GPS Required', 'Please wait for GPS verification. Ensure your location is turned on.', 'warning');
-            return;
-        }
-        
-        let closestBranch = "Unknown"; let minDistance = 999999;
-        for (let branch in window.BRANCH_ZONES) {
-            let zone = window.BRANCH_ZONES[branch];
-            let dist = window.getDistanceInMeters(window.currentLat, window.currentLng, zone.lat, zone.lng);
-            if (dist < minDistance) { minDistance = dist; closestBranch = branch; }
-        }
-
-        if (minDistance > window.ALLOWED_RADIUS_METERS) {
-            Swal.fire('Out of Range', `You are ${Math.round(minDistance)}m away from ${closestBranch}. You must be within ${window.ALLOWED_RADIUS_METERS}m to punch.`, 'error');
-            return;
-        }
+        // Confirm a fresh, accurate location without changing the branch radius.
+        let punchLocation = await window.getAttendanceLocation();
+        let closestBranch = punchLocation.branch, minDistance = punchLocation.distance;
 
         // 4. ⏰ THE STRICT LATE DETECTOR & PHOTO INTERCEPTOR
         if (type === "TIME IN") {
@@ -1669,22 +1432,29 @@ window.punchTime = async function(type) {
             }
         }
 
+        // Proof uploads and dialogs can take minutes; check location and identity again.
+        const latestLocation = await window.getAttendanceLocation();
+        if (latestLocation.branch !== closestBranch) throw Error('Your branch changed during verification. Please record attendance again.');
+        if (localStorage.getItem('takodeal_staff_id') !== punchStaffId) throw Error('Your staff session changed. Sign in again before recording attendance.');
+        punchLocation = latestLocation; minDistance = latestLocation.distance;
+
         // 5. 📸 PHOTO CAPTURE
         let photoBase64 = "";
         const video = document.getElementById('clockVideo');
         const canvas = document.getElementById('clockCanvas');
         if (video && canvas && video.videoWidth > 0) {
-            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            canvas.width = Math.min(480, video.videoWidth); canvas.height = Math.round(video.videoHeight * canvas.width / video.videoWidth);
             const ctx = canvas.getContext('2d');
             ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
-            ctx.drawImage(video, 0, 0);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
         }
 
         // 6. 💾 SAVE TO FIREBASE
         const attendance = {
             staffName, staffId: localStorage.getItem('takodeal_staff_id'), branch: closestBranch, type, timestamp: serverTimestamp(),
-            locationLat: window.currentLat, locationLng: window.currentLng, distanceMeters: Math.round(minDistance),
+            locationLat: punchLocation.lat, locationLng: punchLocation.lng, distanceMeters: Math.round(minDistance),
+            locationAccuracyMeters: Math.ceil(punchLocation.accuracy), locationCapturedAt: new Date(punchLocation.timestamp).toISOString(),
             photoBase64
         };
         if (type === 'TIME IN' && recordedLateMinutes !== undefined) attendance.lateMinutes = recordedLateMinutes;
@@ -1702,9 +1472,10 @@ window.punchTime = async function(type) {
 
     } catch(e) { 
         console.error(e); 
-        Swal.fire('Error', 'Failed to log time. Check internet connection.', 'error'); 
+        Swal.fire('Attendance not saved', e.message || 'Check your connection and location, then try again.', 'warning'); 
     } 
     finally { 
+        window.staffPunchBusy = false;
         if(btnIn) btnIn.disabled = false; 
         if(btnOut) btnOut.disabled = false; 
     }
@@ -4277,62 +4048,6 @@ document.addEventListener("visibilitychange", async () => {
 // ==========================================
 // 🔄 FORCE UPDATE & CACHE CLEARING ENGINE
 // ==========================================
-window.forceUpdateApp = async function() {
-    Swal.fire({
-        title: 'Force App Update?',
-        text: 'This will clear old system caches and fetch the latest version from HQ. You will not lose your device registration.',
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonColor: '#0f766e',
-        confirmButtonText: 'Yes, Update Now'
-    }).then(async (result) => {
-        if (result.isConfirmed) {
-            Swal.fire({title: 'Updating System...', text: 'Please wait...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-            
-            try {
-                // 1. Destroy old Service Workers (The main culprit for stuck web apps)
-                if ('serviceWorker' in navigator) {
-                    const registrations = await navigator.serviceWorker.getRegistrations();
-                    for (let registration of registrations) {
-                        await registration.unregister();
-                    }
-                }
-
-                // 2. Clear standard browser caches
-                if ('caches' in window) {
-                    const cacheNames = await caches.keys();
-                    for (let name of cacheNames) {
-                        await caches.delete(name);
-                    }
-                }
-
-                // 3. 🛡️ THE SHIELD: Save the critical IDs before wiping local memory!
-                let safeDeviceId = localStorage.getItem('takodeal_device_id');
-                let safeStaffName = localStorage.getItem('takodeal_staff_name');
-                let safeStaffId = localStorage.getItem('takodeal_staff_id');
-                let safeStaffPic = localStorage.getItem('takodeal_staff_pic');
-                
-                // Wipe the corrupted/old local storage
-                localStorage.clear();
-                
-                // Restore the protected variables back into the phone
-                if (safeDeviceId) localStorage.setItem('takodeal_device_id', safeDeviceId);
-                if (safeStaffName) localStorage.setItem('takodeal_staff_name', safeStaffName);
-                if (safeStaffId) localStorage.setItem('takodeal_staff_id', safeStaffId);
-                if (safeStaffPic) localStorage.setItem('takodeal_staff_pic', safeStaffPic);
-
-                // 4. Force a hard reload from the live server by attaching a unique timestamp
-                window.location.href = window.location.href.split('?')[0] + '?update=' + new Date().getTime();
-                
-            } catch(e) {
-                console.error("Update failed:", e);
-                window.location.reload(true); // Fallback standard reload
-            }
-        }
-    });
-};
-
-// =======================================================
 // 🍔 1-CLICK MEAL CONFIRMATION ENGINE
 // =======================================================
 window.acknowledgeMeal = async function(docId) {
@@ -4354,59 +4069,7 @@ window.acknowledgeMeal = async function(docId) {
 // ==========================================
 // 🔄 FORCE UPDATE & CACHE CLEARING ENGINE
 // ==========================================
-window.forceUpdateApp = async function() {
-    Swal.fire({
-        title: 'Force App Update?',
-        text: 'This will clear old system data and fetch the newest TAKODEÁL version from HQ. You will NOT lose your device registration.',
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonColor: '#0f766e',
-        confirmButtonText: 'Yes, Update Now'
-    }).then(async (result) => {
-        if (result.isConfirmed) {
-            Swal.fire({title: 'Updating System...', text: 'Please wait...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-            
-            try {
-                // 1. Destroy old Service Workers holding onto outdated code
-                if ('serviceWorker' in navigator) {
-                    const registrations = await navigator.serviceWorker.getRegistrations();
-                    for (let registration of registrations) {
-                        await registration.unregister();
-                    }
-                }
-
-                // 2. Wipe standard browser caches
-                if ('caches' in window) {
-                    const cacheNames = await caches.keys();
-                    for (let name of cacheNames) {
-                        await caches.delete(name);
-                    }
-                }
-
-                // 3. 🛡️ THE SHIELD: Save the critical IDs before wiping local memory!
-                let safeDeviceId = localStorage.getItem('takodeal_device_id');
-                let safeStaffName = localStorage.getItem('takodeal_staff_name');
-                let safeStaffId = localStorage.getItem('takodeal_staff_id');
-                let safeStaffPic = localStorage.getItem('takodeal_staff_pic');
-                
-                // Erase everything else
-                localStorage.clear();
-                
-                // Restore the protected variables back into the phone
-                if (safeDeviceId) localStorage.setItem('takodeal_device_id', safeDeviceId);
-                if (safeStaffName) localStorage.setItem('takodeal_staff_name', safeStaffName);
-                if (safeStaffId) localStorage.setItem('takodeal_staff_id', safeStaffId);
-                if (safeStaffPic) localStorage.setItem('takodeal_staff_pic', safeStaffPic);
-
-                // 4. Force a hard reload bypassing the cache
-                window.location.href = window.location.href.split('?')[0] + '?update=' + new Date().getTime();
-                
-            } catch(e) {
-                console.error("Update failed:", e);
-                window.location.reload(true); 
-            }
-        }
-    });
-};
-
 installStaffPortal();
+installStaffLocation();
+installStaffRegistration({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey});
+installStaffPhone();

@@ -1,4 +1,5 @@
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
+import { installDeviceFleet } from './device-fleet.js';
 import { requestHistory, historyTime } from './request-history.js';
 import { enhanceScheduleLayout } from './schedule-layout.js';
 import { generateEmployeeID } from './employee-id.js';
@@ -7147,75 +7148,7 @@ window.smartImportCSV = function (event) {
 // ========================================================
 // 💻 ULTRA-FAST DEVICE FLEET MANAGER ENGINE
 // ========================================================
-window.isFetchingDevices = false;
-window.loadDeviceFleet = async function () {
-  if (window.isFetchingDevices) return;
-  window.isFetchingDevices = true;
-
-  const tbody = document.getElementById('deviceFleetBody');
-  if (!tbody) { window.isFetchingDevices = false; return; }
-  
-  tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 25px; color: #0ea5e9; font-weight: bold;">⚡ Fast-scanning registered fleet...</td></tr>';
-
-  try {
-    const q = query(collection(db, "pos_devices"), orderBy("registeredAt", "desc"), limit(50));
-    const snap = await getDocs(q);
-    let html = '';
-
-    if (snap.empty) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="padding: 30px; color: var(--text-muted);">No devices are currently registered in the cloud.</td></tr>';
-      return;
-    }
-
-    let devices = [];
-    snap.forEach(doc => devices.push({ id: doc.id, ...doc.data() }));
-
-    devices.forEach(d => {
-      if (!window.isBranchAllowed(d.branch)) return;
-      
-      let statusBadge = '';
-      if (d.status === 'Blocked') {
-          statusBadge = `<span class="badge" style="background: var(--danger); color: white; padding: 4px 8px; border-radius: 6px;">🚫 Blocked</span>`;
-      } else if (d.status === 'Pending') {
-          statusBadge = `<span class="badge" style="background: #f59e0b; color: white; padding: 4px 8px; border-radius: 6px; animation: pulse 2s infinite;">⏳ Pending Approval</span>`;
-      } else {
-          statusBadge = `<span class="badge badge-active" style="padding: 4px 8px; border-radius: 6px;">✅ Active</span>`;
-      }
-
-      let dateStr = d.registeredAt ? (d.registeredAt.toDate ? d.registeredAt.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date(d.registeredAt).toLocaleDateString()) : 'Unknown';
-
-      let actionsHtml = '<div style="display: flex; gap: 5px; flex-wrap: wrap;">';
-      if (d.status === 'Pending') {
-          actionsHtml += `<button class="btn-refresh" style="background: #10b981; color: white; border: none; padding: 5px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="toggleDeviceStatus('${d.id}', 'Active')">✅ Approve</button>`;
-          actionsHtml += `<button class="btn-refresh" style="background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="toggleDeviceStatus('${d.id}', 'Blocked')">🚫 Reject</button>`;
-      } else if (d.status === 'Active' || d.status === 'Approved') {
-          actionsHtml += `<button class="btn-refresh" style="background: #fef2f2; border: 1px solid var(--danger); color: var(--danger); padding: 5px 10px; border-radius: 4px; cursor: pointer; font-weight: bold;" onclick="toggleDeviceStatus('${d.id}', 'Blocked')">🚫 Block</button>`;
-      } else {
-          actionsHtml += `<button class="btn-refresh" style="background: #f0fdf4; border: 1px solid var(--success); color: var(--success); padding: 5px 10px; border-radius: 4px; cursor: pointer; font-weight: bold;" onclick="toggleDeviceStatus('${d.id}', 'Active')">✅ Unblock</button>`;
-      }
-      actionsHtml += `<button class="btn-refresh" style="background: white; border: 1px solid var(--text-muted); color: var(--text-muted); padding: 5px 10px; border-radius: 4px; cursor: pointer;" onclick="deleteDevice('${d.id}')">🗑️ Delete</button></div>`;
-
-      html += `
-        <tr style="${d.status === 'Pending' ? 'background: #fffbeb;' : ''}; border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-          <td style="text-align: center; vertical-align: middle;"><input type="checkbox" class="device-bulk-cb" value="${d.id}" style="cursor: pointer; width: 16px; height: 16px; accent-color: #ef4444;"></td>
-          <td style="vertical-align: middle;"><strong>${d.deviceName || 'Unnamed Tablet'}</strong><br><span style="font-size: 11px; color: gray; font-family: monospace;">ID: ${d.id}</span></td>
-          <td style="vertical-align: middle;">📍 ${d.branch}</td>
-          <td style="vertical-align: middle; color: #64748b; font-size: 13px;">${dateStr}</td>
-          <td style="vertical-align: middle;">${statusBadge}</td>
-          <td style="vertical-align: middle;">${actionsHtml}</td>
-        </tr>
-      `;
-    });
-
-    tbody.innerHTML = html;
-  } catch (error) {
-    console.error("Device Fleet Error:", error);
-    tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: red; padding: 25px;">Error loading fleet. Check console.</td></tr>';
-  } finally {
-      window.isFetchingDevices = false; // 🔓 Unlock!
-  }
-};
-
+// The live fleet view is installed below; cloud approvals retain their existing actions.
 window.toggleDeviceStatus = async function (deviceId, newStatus) {
   if (!(await window.ManagerUI.confirm(`Are you sure you want to change this device to ${newStatus}?`))) return;
   try {
@@ -27842,3 +27775,5 @@ window.switchView = function(view,...args) {
     if (view === 'history') window.loadHistoryShiftDropdown();
     return result;
 };
+
+installDeviceFleet();

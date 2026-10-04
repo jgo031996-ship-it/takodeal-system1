@@ -6,7 +6,7 @@ export const MANAGER_PAGES = Object.freeze({
     'franchise-hub': ['Partners', 'Franchise HQ Hub', 'Manage partner performance, accounts, and conversations.'],
     transfers: ['Finance', 'EOD Remittance Hub', 'Review branch remittances and cash awaiting verification.'],
     payables: ['Finance', 'Supplier Payables', 'Track suppliers, payment terms, and outstanding balances.'],
-    devices: ['Operations', 'Device Fleet', 'Review registered cashier devices and their status.'],
+    devices: ['Operations', 'Device Fleet', 'Review Staff and Cashier phones, pending requests, and approval status.'],
     payroll: ['Human resources', 'Payroll & Time Feed', 'Prepare payslips and review staff attendance.'],
     schedule: ['Human resources', 'Schedule Manager', 'Plan branch staffing and configure Morning, Mid, and Night shifts.'],
     ledger: ['Human resources', 'Loans & Ledger', 'Review staff accounts, loans, and repayments.'],

@@ -129,3 +129,11 @@
     body.manager-theme *,body.manager-theme *:before,body.manager-theme *:after { animation-duration:.01ms!important; transition-duration:.01ms!important; }
   }
 }
+.fleet-actions { display:flex; gap:6px; flex-wrap:wrap; }
+.fleet-actions .btn-refresh { padding:8px 12px; border:1px solid #dce6dd; border-radius:7px; background:#fff; color:#173f35; cursor:pointer; }
+.fleet-status { display:inline-block; padding:6px 9px; border-radius:6px; background:#f0f2ee; font-size:12px; font-weight:600; }
+.fleet-status.pending { background:#fff2d7; color:#80580b; }
+.fleet-status.active { background:#e6f4ea; color:#23744f; }
+.fleet-status.paused { background:#fbecec; color:#a13e34; }
+.fleet-pending { background:#fffaf0; }
+#deviceFleetBody small { font-size:11px; color:#667a72; overflow-wrap:anywhere; }
