@@ -1,4 +1,4 @@
-// Only a freshly verified account and its configured PIN can start the Manager.
+// Only a freshly verified account and its configured PIN can open the workspace.
 export function createUnlockGate({ verify, load, change = () => {}, now = Date.now, verifyOnUnlock = false }) {
     let generation = 0, account = null, phase = 'signed-out', verifiedAt = 0;
     const configuredPin = data => String(data?.pin === '' || data?.pin == null ? data?.securityPin ?? '' : data.pin);
@@ -11,7 +11,7 @@ export function createUnlockGate({ verify, load, change = () => {}, now = Date.n
             try {
                 const data = await verify(user);
                 if (current !== generation) return;
-                if (!data || !configuredPin(data)) throw new Error('No Manager PIN is configured for this account. Ask the main owner to check HQ Access Control.');
+                if (!data || !configuredPin(data)) throw new Error('No account PIN is configured for this account. Ask the main owner to check HQ Access Control.');
                 account = { user, data }; verifiedAt = now(); report('pin');
             } catch (error) { if (current === generation) report('unavailable', { message: error.message }); }
         },
@@ -27,7 +27,7 @@ export function createUnlockGate({ verify, load, change = () => {}, now = Date.n
                 } catch (error) { if (attempt === generation) report('unavailable',{message:error.message}); return false; }
             }
             if (!pin || !configuredPin(account.data) || String(pin) !== configuredPin(account.data)) {
-                report('pin', { message: pin ? 'That PIN is incorrect. Please try again.' : 'Enter your Manager PIN.' }); return false;
+                report('pin', { message: pin ? 'That PIN is incorrect. Please try again.' : 'Enter your account PIN.' }); return false;
             }
             const current = generation; report('opening');
             try {

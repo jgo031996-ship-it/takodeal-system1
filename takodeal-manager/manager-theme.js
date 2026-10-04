@@ -44,11 +44,11 @@ const INVENTORY_PAGES = Object.freeze({
 });
 
 export function managerPageMeta(viewId, { inventoryTab, hrTab } = {}) {
-    const page = MANAGER_PAGES[viewId] || ['Workspace', 'Manager Workspace', 'Manage your TAKODEÁL business.'];
+    const page = MANAGER_PAGES[viewId] || ['Workspace', 'Owner Workspace', 'Manage your TAKODEÁL business.'];
     const [section, originalTitle, description] = page;
     const title = viewId === 'inventory' ? (INVENTORY_PAGES[inventoryTab] || originalTitle)
         : viewId === 'payroll' && hrTab === 'Sanctions' ? 'Disciplinary Actions' : originalTitle;
-    return { section, title, description, tabTitle: `${title} · TAKODEÁL Manager` };
+    return { section, title, description, tabTitle: `${title} · TAKODEÁL Owner` };
 }
 
 // Existing inline styles use several generations of palettes. Classify only
