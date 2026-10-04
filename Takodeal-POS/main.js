@@ -1,3 +1,4 @@
+import { imageFor } from './cashier-data.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { receiveDispatch } from './dispatch-safety.js';
 import { MALL_FLOAT, mallOpeningCash, stockRequestDue, autoRequestId, businessClock } from './branch-operations.js';
@@ -6,7 +7,7 @@ import { closeShiftAtomic, readBranchPolicy, readMallOpeningCash } from './cash-
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer, getDocFromServer } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer, getDocFromServer, startAfter } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { installSaleSafety } from './pos-checkout.js';
 import { saleIdentity } from './pos-safety.js';
 // 🔥 NEW: Import Firebase Storage
@@ -14,6 +15,9 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstati
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 window.onSnapshot = onSnapshot;
+window.orderBy = orderBy;
+window.limit = limit;
+window.startAfter = startAfter;
  
 const firebaseConfig = {
   apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -6924,12 +6928,13 @@ window.loadConsumablesView = async function() {
             let bUom = item.uom || item.baseUom || 'units';
             let pUom = item.purchaseUom || item.purchUom || bUom;
             let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-            let bgStyle = item.image ? `background-image: url('${item.image}');` : `background-color: #f1f5f9;`;
+            const supplyPhoto = imageFor(item, window.masterPOSData?.items || []);
+            let bgStyle = supplyPhoto ? `background-image: url(${JSON.stringify(supplyPhoto).replace(/"/g, '&quot;')});` : `background-color: #fff2df;`;
             let safeName = item.name.replace(/'/g, "\\'");
             let catSafe = (item.category || '').replace(/'/g, "\\'");
             
             // Background preloader
-            if (item.image) { let img = new Image(); img.src = item.image; }
+            if (supplyPhoto) { let img = new Image(); img.src = supplyPhoto; }
 
             html += `
                 <div class="item-card cons-ultra-card" data-category="${catSafe}" onclick="window.addToConsumablesCart('${item.id}', '${safeName}', '${bUom}', '${pUom}', ${conv})" style="display: flex;">
@@ -8155,7 +8160,7 @@ window.loadKitchenPrep = async function() {
     try {
         // 1. Fetch Global Allowed Categories
         const configSnap = await getDoc(doc(db, "settings", "global_pos_config"));
-        let allowedCats = ["Prepared Batch"]; 
+        let allowedCats = ["prepared batch"]; 
         if (configSnap.exists() && configSnap.data().kitchenPrepCats && configSnap.data().kitchenPrepCats.length > 0) {
             allowedCats = configSnap.data().kitchenPrepCats.map(c => c.trim().toLowerCase());
         }
@@ -8844,7 +8849,7 @@ setTimeout(() => {
     if (printerBtn) {
         printerBtn.removeAttribute('onclick');
         printerBtn.onclick = window.openPrinterManager;
-        printerBtn.innerHTML = `<span style="font-size: 18px;">🖨️</span><div class="nav-item-text">Printer Hub</div>`;
+        printerBtn.innerHTML = `<span aria-hidden="true">▤</span><div class="nav-item-text">Printer Hub</div>`;
     }
 }, 2000);
 
@@ -8916,7 +8921,7 @@ setTimeout(() => {
                     // Save the target timestamp so the button knows what to upgrade to
                     window.TARGET_UPDATE_VERSION = cloudVersion;
                 } else {
-                    updateBanner.style.display = 'none';
+                    if (!window.CASHIER_UPDATE_WAITING) updateBanner.style.display = 'none';
                 }
             }
         }
@@ -8928,62 +8933,10 @@ setTimeout(() => {
 // ==========================================
 
 // 1. The function that runs when they click the Red Banner at the top
-window.forceAppUpdate = function() {
-    Swal.fire({
-        title: 'Updating System...',
-        html: 'Downloading the latest features from HQ.<br><b>Please wait, the app will restart...</b>',
-        allowOutsideClick: false,
-        didOpen: () => Swal.showLoading()
-    });
-
-    if (window.TARGET_UPDATE_VERSION) {
-        localStorage.setItem('takodeal_local_version', window.TARGET_UPDATE_VERSION.toString());
-    }
-
-    window.executeCacheWipe();
-};
-
-// 2. The function that runs when they click the "Force System Update" button on the Login Screen
-window.manualHardUpdate = function() {
-    Swal.fire({
-        title: 'Force Update?',
-        text: 'This will clear the app cache and download the newest files from the server. You will not lose your device registration.',
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonColor: '#0ea5e9',
-        confirmButtonText: 'Yes, Update Now!'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            Swal.fire({title: 'Clearing Cache...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-            window.executeCacheWipe();
-        }
-    });
-};
-
-// 3. The surgical strike that kills the Service Worker WITHOUT wiping the Device ID!
-window.executeCacheWipe = function() {
-    // A. Unregister the stubborn Service Workers
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistrations().then(function(registrations) {
-            for(let registration of registrations) {
-                registration.unregister();
-            }
-        });
-    }
-
-    // B. Nuke the old PWA file storage
-    if ('caches' in window) {
-        caches.keys().then(names => { 
-            for (let name of names) caches.delete(name); 
-        }).then(() => {
-            // C. Force reload the page from Vercel bypassing the browser cache
-            setTimeout(() => {
-                window.location.reload(true);
-            }, 1500); 
-        });
-    } else {
-        setTimeout(() => { window.location.reload(true); }, 1500); 
-    }
+// Updates retain the photo cache, offline sale ledger and device registration.
+window.forceAppUpdate = window.manualHardUpdate = window.executeCacheWipe = function() {
+    if (typeof window.checkCashierUpdate === 'function') return window.checkCashierUpdate();
+    alert('The app is still starting. Please try again in a moment.');
 };
 
 // ==========================================
