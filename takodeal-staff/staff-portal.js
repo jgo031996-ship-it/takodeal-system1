@@ -42,6 +42,11 @@ export function installStaffPortal() {
         $('vaultSubmit').disabled = false;
         try {
             const data = await profile(id); if (!current(token)) return;
+            if (!data.payslipPin && mode === 'unlock') {
+                window.closeVaultPin(); window.openProfile();
+                document.querySelector('.profile-security')?.scrollIntoView?.({block:'center'});
+                return;
+            }
             if (data.payslipPin && !validVerifier(data.payslipPin)) throw new Error('Your PIN settings need a review by HQ.');
             modalMode = data.payslipPin ? mode : 'setup';
             const editing = modalMode !== 'unlock';

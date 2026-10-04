@@ -6,18 +6,14 @@
     <title>Takodeál Staff Portal</title>
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-192.png">
-    <link rel="manifest" href="manifest.json?v=staff-portal-20261004">
+    <link rel="manifest" href="manifest.json?v=staff-phone-20261004-r1">
     <meta name="theme-color" content="#173f35">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="TAKODEÁL Staff">
-    <link rel="stylesheet" href="style.css?v=staff-portal-20261004">
-    <link rel="stylesheet" href="staff-theme.css?v=staff-portal-20261004">
+    <link rel="stylesheet" href="style.css?v=staff-phone-20261004-r1">
+    <link rel="stylesheet" href="staff-theme.css?v=staff-phone-20261004-r1">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
-    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
-    <!-- 🔥 ADD THIS MISSING LINE RIGHT HERE: -->
-    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     
     <style>
         /* 🔥 FIX: Forces SweetAlert to the absolute front so it never hides behind the End of Contract overlay! */
@@ -47,18 +43,18 @@
                 <option value="Main Office">🏢 Main Office / Roving</option>
             </select>
 
-            <button class="btn-primary" onclick="window.requestDeviceAccess()">Request Access</button>
+            <button class="btn-primary" onclick="window.requestDeviceAccess()">Request access</button><p id="deviceRegistrationStatus" class="device-registration-status" role="status" aria-live="polite"></p>
 
             <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM REGISTRATION -->
             <button type="button" onclick="window.forceUpdateApp()" style="margin-top: 25px; background: transparent; color: #64748b; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 12px; transition: 0.2s;">Check for app updates</button>
         </div>
 
-        <div class="login-card" id="pendingCard" style="display: none;">
-            <div class="login-header">
-                <h2 style="color: #dc2626; font-size: 22px; margin-bottom: 5px;">🚫 Access Blocked</h2>
-                <p style="font-size: 12px; color: #64748b; line-height: 1.4;">This device is locked. Please ask HQ to click <b>Unblock</b> in the Fleet Management Dashboard to grant access.</p>
-            </div>
-            <div style="margin-top: 20px; font-size: 40px; text-align: center;">🔒</div>
+        <div class="login-card" id="pendingCard" style="display:none;">
+            <span class="eyebrow">DEVICE REGISTRATION</span><h2 id="devicePendingTitle">Checking your device</h2>
+            <p id="devicePendingText" role="status" aria-live="polite">Connecting to HQ.</p>
+            <p id="devicePendingId" class="device-registration-id"></p>
+            <button class="btn-primary" id="deviceRetryButton" onclick="window.retryDeviceRegistration()" hidden>Check again</button>
+            <button class="btn-outline" onclick="window.forceUpdateApp()">Check for app updates</button>
         </div>
     </div>
 
@@ -84,7 +80,7 @@
         <div class="modal-card" style="max-width: 500px; max-height: 90vh; display: flex; flex-direction: column; padding: 0;">
             <div style="background: #0f766e; color: white; padding: 15px 20px; border-radius: 20px 20px 0 0; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 10;">
                 <h2 style="margin: 0; font-size: 18px;">📋 Employee Profile</h2>
-                <button onclick="document.getElementById('profileModal').style.display='none'" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; font-weight: bold; cursor: pointer;">✖</button>
+                <button onclick="window.closeStaffProfile()" style="background: rgba(255,255,255,0.2); border: none; color: white; width: 30px; height: 30px; border-radius: 50%; font-weight: bold; cursor: pointer;">✖</button>
             </div>
             <div style="padding: 20px; overflow-y: auto; flex: 1; text-align: left;">
                 <div style="text-align: center; margin-bottom: 20px; padding-bottom: 20px; border-bottom: 2px dashed #e2e8f0;">
@@ -97,6 +93,8 @@
                         <button class="btn-primary" onclick="window.generateVirtualID()" style="padding: 8px 15px; font-size: 12px; width: auto; background: #0f172a; flex: 1; box-shadow: 0 4px 6px rgba(15,23,42,0.3);">🪪 Download Virtual ID</button>
                     </div>
                 </div>
+
+                <section class="profile-security"><h3>Payslip PIN</h3><p>Set up or change your private Payslip PIN here. Use the Pay tab to unlock and view your payslips.</p><button type="button" class="btn-outline" onclick="window.openVaultPin('change')">Set up or change Payslip PIN</button></section>
 
                 <h3 style="color: #0f766e; font-size: 14px; margin: 0 0 10px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;">👤 Personal Details</h3>
                 <div class="profile-grid">
@@ -189,10 +187,10 @@
                 <!-- 🔥 NEW FORCE UPDATE BUTTON -->
                 <div style="margin-top: 15px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1; text-align: center;">
                     <label style="font-size: 11px; font-weight: bold; color: #475569; display: block; margin-bottom: 8px;">Experiencing bugs or missing features?</label>
-                    <button type="button" onclick="window.forceUpdateApp()" style="background: #0f172a; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 13px; box-shadow: 0 4px 6px rgba(15, 23, 42, 0.3);">🔄 Force App Update & Clear Cache</button>
+                    <button type="button" onclick="window.forceUpdateApp()" style="background: #0f172a; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 13px; box-shadow: 0 4px 6px rgba(15, 23, 42, 0.3);">Check for app updates</button>
                 </div>
 
-                <section class="profile-security"><h3>Payslip privacy</h3><p>Use a separate PIN for your Payslip Vault. Pay details are available in the Pay tab.</p><button type="button" class="btn-outline" onclick="window.openVaultPin('change')">Set up or change Payslip PIN</button></section>
+
             </div>
             <div style="background: white; padding: 15px 20px; border-top: 1px solid #e2e8f0; border-radius: 0 0 20px 20px;">
                 <button class="btn-primary" id="btnSaveProfileData" onclick="window.saveProfileData()" style="width: 100%; padding: 15px; font-size: 16px;">💾 Save Employee Data</button>
@@ -260,7 +258,7 @@
                     <strong id="loggedInName">Staff Name</strong><span id="staffProfileMeta">Your staff portal</span><span class="profile-hint">View profile &amp; security →</span>
                 </div>
             </button>
-            <div class="header-actions"><button class="btn-outline" onclick="window.openVaultPin('change')">Payslip PIN</button><button class="btn-logout" onclick="window.logoutStaff()">Sign out</button></div>
+            <div class="header-actions"><button class="btn-logout" onclick="window.logoutStaff()">Sign out</button></div>
         </header>
 
         <main class="content-area">
@@ -287,9 +285,12 @@
                     </div>
                     <div class="clock-controls"><span class="eyebrow">YOUR WORKDAY</span><h1 id="liveTime">00:00 AM</h1>
                     <p id="liveDate">Loading Date...</p>
-                    <div class="location-status" id="gpsStatus" onclick="window.refreshGPS()" style="cursor: pointer; user-select: none; transition: all 0.2s ease; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin: 10px 0; text-align: center; border: 1px dashed #cbd5e1;">
-                        📍 Verifying GPS Location... (Tap to Refresh 🔄)
-                    </div>
+                    <section class="staff-location-card" aria-label="Branch location">
+                        <div id="gpsStatus" role="status" aria-live="polite" data-state="searching">Finding your branch location</div>
+                        <p id="gpsHint">Keep Clock open while your phone finds an accurate location.</p>
+                        <button type="button" class="btn-outline" onclick="window.refreshGPS()">Refresh location</button>
+                        <details><summary>Location help for older phones</summary><p>Turn on phone Location and allow Location for this website. Keep Wi-Fi enabled or enable Wi-Fi scanning to help your phone find its position. Try near a window or the entrance, and keep Clock open for up to 45 seconds.</p><p>The app does not change your branch's attendance boundary. Camera and location run independently and pause when you leave Clock or hide the app.</p></details>
+                    </section>
                     <div class="clock-actions">
                         <button class="btn-timein" id="btnTimeIn" onclick="window.punchTime('TIME IN')">TIME IN</button>
                         <button class="btn-timeout" id="btnTimeOut" onclick="window.punchTime('TIME OUT')">TIME OUT</button>
@@ -396,7 +397,7 @@
                 </div>
 
                 <div class="vault-toolbar"><span class="status-pill" id="vaultState">Private · PIN required</span><div><button class="btn-outline" onclick="window.openVaultPin('change')">Manage PIN</button><button class="btn-outline" id="vaultLockButton" hidden onclick="window.lockPayslipVault()">Lock vault</button></div></div>
-                <section id="vaultGate" class="vault-gate"><span class="vault-symbol" aria-hidden="true">🔒</span><span class="eyebrow">YOUR PAY IS PERSONAL</span><h3>Your Payslip Vault is locked</h3><p>Enter your separate Payslip PIN to see estimates, pending payouts, and past payslips. First time here? You can create your PIN below.</p><button class="btn-primary" onclick="window.openVaultPin()">Unlock or set up PIN</button><small>Locks when you leave Pay, hide the app, or stay idle for 2 minutes.</small></section>
+                <section id="vaultGate" class="vault-gate"><span class="vault-symbol" aria-hidden="true">🔒</span><span class="eyebrow">YOUR PAY IS PERSONAL</span><h3>Your Payslip Vault is locked</h3><p>Enter your separate Payslip PIN to see estimates, pending payouts, and past payslips. Set up or change your PIN in your Profile.</p><button class="btn-primary" onclick="window.openVaultPin()">Unlock Payslip Vault</button><small>Locks when you leave Pay, hide the app, or stay idle for 2 minutes.</small></section>
                 <div id="vaultContent" hidden>
                 <div style="display: flex; gap: 10px; margin-bottom: 20px; background: white; padding: 5px; border-radius: 10px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                     <button id="btnTabLivePay" onclick="window.switchPayslipTab('Live')" style="flex: 1; padding: 12px; background: #0f766e; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s;">Live Estimate</button>
@@ -644,6 +645,6 @@
       </div>
   </div>
 
-    <script type="module" src="app.js?v=staff-food-deductions-20261004"></script>
+    <script type="module" src="app.js?v=staff-phone-20261004-r1"></script>
 </body>
 </html>

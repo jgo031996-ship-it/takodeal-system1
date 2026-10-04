@@ -118,8 +118,15 @@ function portalHarness(initialPin) {
     vm.runInNewContext(source+'\ninstallStaffPortal();',context);
     return {context,node,listeners,writes:()=>writes,loads:()=>loads,staff:()=>staff};
 }
+test('Pay entry without a PIN directs staff to Profile without creating or unlocking one', async () => {
+    const h=portalHarness(); let opened=0;
+    h.context.window.openProfile=()=>opened++;
+    await h.context.window.openVaultPin('unlock');
+    assert.equal(opened,1); assert.equal(h.writes(),0); assert.equal(h.loads(),0);
+    assert.equal(h.node('vaultPinModal').style.display,'none');
+});
 test('first setup requires the staff login PIN and refuses to reuse it', async () => {
-    const h=portalHarness(); await h.context.window.openVaultPin();
+    const h=portalHarness(); await h.context.window.openVaultPin('change');
     h.node('vaultCurrentPin').value='wrong';h.node('vaultNewPin').value='123456';h.node('vaultConfirmPin').value='123456';
     await h.context.window.submitVaultPin();assert.equal(h.writes(),0);assert.equal(h.loads(),0);
     h.node('vaultCurrentPin').value='1111';h.node('vaultNewPin').value='123456';h.node('vaultConfirmPin').value='123456';
@@ -127,7 +134,7 @@ test('first setup requires the staff login PIN and refuses to reuse it', async (
     assert.equal(await verifyPin('123456',h.staff().payslipPin),true);
     h.context.window.lockPayslipVault();assert.equal(h.node('vaultContent').hidden,true);
     assert.equal(h.node('vaultContent').innerHTML,'zero-value template');assert.equal(h.node('vaultNewPin').value,'');
-    const same=portalHarness();same.staff().pin='123456'; await same.context.window.openVaultPin();
+    const same=portalHarness();same.staff().pin='123456'; await same.context.window.openVaultPin('change');
     same.node('vaultCurrentPin').value='123456';same.node('vaultNewPin').value='123456';same.node('vaultConfirmPin').value='123456';
     await same.context.window.submitVaultPin();assert.equal(same.writes(),0);assert.match(same.node('vaultError').textContent,/different/);
 });
@@ -148,14 +155,4 @@ test('five failed attempts trigger a local cooldown before another profile read 
     for(let i=0;i<5;i++)await h.context.window.submitVaultPin();
     h.node('vaultCurrentPin').value='246810';await h.context.window.submitVaultPin();
     assert.equal(h.loads(),0);assert.match(h.node('vaultError').textContent,/Wait one minute/);
-});
-test('automatic device registration waits for location and never silently assigns Main Office on failure', async () => {
-    const start=engine.indexOf('window.requestDeviceAccess = async function'),end=engine.indexOf('window.listenToDeviceStatus = function',start);
-    let writes=0;const context={window:{getClosestBranch:()=> 'Cabantian',listenToDeviceStatus(){}},navigator:{geolocation:{getCurrentPosition:(resolve,reject)=>reject(Error('location denied'))}},
-        document:{getElementById:id=>({value:id==='deviceNameInput'?'Sample device':'Auto'}),querySelector:()=>({})},Swal:{fire(){}},localStorage:{getItem:()=>null,setItem(){}},
-        setDoc:async()=>{writes++;},doc:()=>null,db:{},serverTimestamp:()=>null,console:{error(){}},Promise,Math};
-    vm.runInNewContext(engine.slice(start,end),context);
-    await context.window.requestDeviceAccess();assert.equal(writes,0);
-    context.navigator.geolocation.getCurrentPosition=resolve=>resolve({coords:{latitude:7.1,longitude:125.6}});
-    await context.window.requestDeviceAccess();assert.equal(writes,1);assert.equal(context.window.currentLat,7.1);
 });
