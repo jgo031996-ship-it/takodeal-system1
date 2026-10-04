@@ -4,18 +4,13 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Global Dashboard · TAKODEÁL Manager</title>
-  <script defer src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <title>Welcome · TAKODEÁL Manager</title>
+  <meta name="theme-color" content="#173f32">
+  <link rel="stylesheet" href="login.css?v=20261004">
 
   <!-- 🔥 NEW: ENTERPRISE EXCEL GENERATOR -->
-  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
  
   <!-- 🗺️ FREE MAP ENGINE FOR BRANCH PINS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="dashboard.css?v=20261003">
   <link rel="manifest" href="manifest.json">
@@ -539,81 +534,25 @@
     </div>
   </nav>
 
-  <!-- ⚡ LIGHTWEIGHT FAST LOGIN OVERLAY (ENTERPRISE ULTRA MODE) -->
-  <div id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; width: 100vw; height: 100dvh; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('logo.jpg') center/cover no-repeat; z-index: 99999; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; backdrop-filter: blur(8px);">
-    
-    <!-- STAGE 1: GOOGLE AUTH -->
-    <div id="loginStage1" style="background: rgba(255, 255, 255, 0.95); padding: 40px 30px; border-radius: 24px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); width: 100%; max-width: 380px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px);">
-      <img src="logo.jpg" alt="Logo" style="width: 80px; height: 80px; border-radius: 20px; object-fit: cover; border: 3px solid #0ea5e9; box-shadow: 0 6px 15px rgba(0,0,0,0.1); margin-bottom: 15px;">
-      <h2 style="margin: 0 0 5px 0; color: #0f172a; font-size: 26px; font-weight: 900; letter-spacing: 1px;">TAKODEÁL HQ</h2>
-      <p style="color: #64748b; font-size: 13px; font-weight: 900; margin-top: 0; margin-bottom: 30px; text-transform: uppercase; letter-spacing: 1px;">Secure Control Center</p>
-
-      <button onclick="loginWithGoogle()" style="background: white; color: #334155; border: 2px solid #e2e8f0; padding: 14px 20px; border-radius: 12px; font-size: 15px; font-weight: 900; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 12px; width: 100%; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; transition: 0.2s;" onmouseover="this.style.borderColor='#cbd5e1'; this.style.boxShadow='0 6px 12px rgba(0,0,0,0.08)';" onmouseout="this.style.borderColor='#e2e8f0'; this.style.boxShadow='0 4px 6px rgba(0,0,0,0.05)';">
-        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width: 22px; height: 22px;">
-        Sign in with Google
-      </button>
-
-      <button onclick="window.promptMobileInstall()" style="background: #f8fafc; color: #0ea5e9; border: 1px dashed #bae6fd; padding: 12px; border-radius: 10px; font-size: 13px; font-weight: 900; cursor: pointer; width: 100%; transition: 0.2s;" onmouseover="this.style.background='#f0f9ff';" onmouseout="this.style.background='#f8fafc';">
-        📱 Install Native Mobile App
-      </button>
+  <section id="loginOverlay" aria-label="Manager sign in">
+    <div class="login-shell">
+      <aside class="login-story">
+        <div class="login-brand"><img src="logo.jpg" alt="TAKODEÁL"><div><strong>TAKODEÁL</strong><small>MANAGER WORKSPACE</small></div></div>
+        <div class="login-story-copy"><span class="login-eyebrow">A little clarity. Every day.</span><h1>Good decisions<br> <span>start here.</span></h1><p>Your branches, your people, and your next move. Together in one thoughtful workspace.</p>
+          <div class="login-workspace-art" aria-hidden="true"><div class="login-art-nav"><i></i><i></i><i></i><i></i><i></i></div><div class="login-art-content"><strong>A clear view of every branch.</strong><div class="login-art-bars"><i style="--bar:27%"></i><i style="--bar:40%"></i><i style="--bar:37%"></i><i style="--bar:55%"></i><i style="--bar:64%"></i><i style="--bar:80%"></i><i style="--bar:94%"></i></div></div></div>
+        </div>
+        <div class="login-story-footer"><span>✧</span> Made for the way you manage.</div>
+      </aside>
+      <div class="login-access">
+        <div class="login-access-head"><span>YOUR CONTROL CENTER</span><div id="loginNetwork" class="login-network">Connecting</div></div>
+        <div id="loginStage1" class="login-stage"><h2>A fresh start.</h2><p class="login-intro">Sign in with your approved Google account.<br>Then use your Manager PIN to enter.</p><button id="googleManagerButton" disabled class="login-primary" type="button" onclick="window.loginWithGoogle?.()"><span>Continue with Google</span><span aria-hidden="true">→</span></button></div>
+        <div id="loginStage2" class="login-stage" hidden><h2>Welcome back.</h2><p class="login-intro" style="margin-bottom:0">Your workspace is ready when you are.</p><div class="login-identity"><img src="logo.jpg" alt=""><div><strong id="authWelcomeName">Manager</strong><small>✓ Account verified · enter your PIN</small></div></div><label for="managerPinInput">Manager PIN</label><input id="managerPinInput" type="password" readonly autocomplete="off" inputmode="none" placeholder="••••" aria-describedby="pinErrorMsg" maxlength="32"><div class="login-numpad-container"><button type="button" class="numpad-btn" onclick="window.appendManagerPin('1')">1</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('2')">2</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('3')">3</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('4')">4</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('5')">5</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('6')">6</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('7')">7</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('8')">8</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('9')">9</button><button type="button" class="numpad-btn utility" onclick="window.clearManagerPin()" aria-label="Clear PIN">Clear</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('0')">0</button><button type="button" class="numpad-btn utility" onclick="window.backspaceManagerPin()" aria-label="Delete last digit">⌫</button></div><button id="unlockManagerButton" type="button" class="login-primary" onclick="window.checkManagerPin?.()">Unlock workspace →</button></div>
+        <div id="pinErrorMsg" class="login-error" role="alert" hidden></div><div id="loginProgress" class="login-progress" role="status" aria-live="polite">Checking your account…</div><button id="retryManagerButton" class="login-secondary" type="button" onclick="window.retryManagerAccess ? window.retryManagerAccess() : location.reload()" hidden>Retry account check</button><button id="changeManagerAccount" class="login-secondary" type="button" onclick="window.cancelLoginAndSignOut?.()" hidden>Use a different account</button>
+        <div class="login-device"><div class="login-device-row"><span id="loginDeviceStatus">Device storage</span><button id="installManagerButton" type="button" onclick="window.installManagerApp()">Install app ↗</button></div><p id="loginDeviceDescription">Save this workspace on your device for faster launches.</p></div>
+      </div>
     </div>
-
-    <!-- STAGE 2: FAST PIN ENTRY -->
-    <div id="loginStage2" style="display: none; background: rgba(255, 255, 255, 0.95); padding: 35px 25px; border-radius: 24px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); width: 100%; max-width: 400px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px);">
-      
-      <style>
-          /* 🔥 THE FIX: We use a class with !important so the mobile auto-stacker ignores it! */
-          .login-numpad-container {
-              display: grid !important;
-              grid-template-columns: repeat(3, 1fr) !important;
-              gap: 10px !important;
-              margin-bottom: 15px;
-          }
-          .numpad-btn { padding: 15px; font-size: 24px; font-weight: 900; border-radius: 12px; border: 1px solid #cbd5e1; background: #ffffff; color: #1e293b; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.1s; touch-action: manipulation; }
-          .numpad-btn:active { transform: scale(0.92); box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: #f1f5f9; }
-          .numpad-btn-clear { padding: 15px; font-size: 20px; font-weight: 900; border-radius: 12px; border: 1px solid #fca5a5; background: #fef2f2; color: #dc2626; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.1s; touch-action: manipulation; }
-          .numpad-btn-clear:active { transform: scale(0.92); box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: #fee2e2; }
-          .numpad-btn-action { padding: 15px; font-size: 20px; font-weight: 900; border-radius: 12px; border: 1px solid #cbd5e1; background: #f8fafc; color: #64748b; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.1s; touch-action: manipulation; }
-          .numpad-btn-action:active { transform: scale(0.92); box-shadow: 0 1px 2px rgba(0,0,0,0.05); background: #e2e8f0; }
-      </style>
-
-      <div style="position: relative; display: inline-block; margin-bottom: 15px;">
-          <img src="logo.jpg" alt="Logo" style="width: 70px; height: 70px; border-radius: 20px; object-fit: cover; border: 3px solid #10b981; box-shadow: 0 6px 15px rgba(16, 163, 116, 0.2);">
-          <div style="position: absolute; bottom: -5px; right: -5px; background: #10b981; color: white; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold; border: 3px solid white; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">✓</div>
-      </div>
-
-      <h3 id="authWelcomeName" style="margin: 0 0 5px 0; color: #0f172a; font-size: 20px; font-weight: 900; line-height: 1.2;">Manager: Chery Ann Fonda</h3>
-      <div style="margin-bottom: 20px;">
-          <span style="color: #15803d; font-size: 11px; font-weight: 900; background: #dcfce7; padding: 4px 12px; border-radius: 20px; border: 1px solid #bbf7d0; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">[✓] Identity Verified</span>
-      </div>
-      
-      <!-- 🔥 READONLY PREVENTS MOBILE KEYBOARD FROM POPPING UP! -->
-      <input type="password" id="managerPinInput" readonly placeholder="••••" style="width: 100%; padding: 15px; font-size: 32px; text-align: center; letter-spacing: 15px; border: 2px solid #cbd5e1; border-radius: 12px; outline: none; font-family: monospace; color: #0f172a; transition: all 0.2s; box-sizing: border-box; background: white; font-weight: 900; box-shadow: inset 0 4px 6px rgba(0,0,0,0.04); margin-bottom: 15px;">
-      
-      <!-- 🔢 THE NEW TACTILE NUMPAD -->
-      <div class="login-numpad-container">
-          <button class="numpad-btn" onclick="window.appendManagerPin('1')">1</button>
-          <button class="numpad-btn" onclick="window.appendManagerPin('2')">2</button>
-          <button class="numpad-btn" onclick="window.appendManagerPin('3')">3</button>
-          <button class="numpad-btn" onclick="window.appendManagerPin('4')">4</button>
-          <button class="numpad-btn" onclick="window.appendManagerPin('5')">5</button>
-          <button class="numpad-btn" onclick="window.appendManagerPin('6')">6</button>
-          <button class="numpad-btn" onclick="window.appendManagerPin('7')">7</button>
-          <button class="numpad-btn" onclick="window.appendManagerPin('8')">8</button>
-          <button class="numpad-btn" onclick="window.appendManagerPin('9')">9</button>
-          <button class="numpad-btn-clear" onclick="window.clearManagerPin()">C</button>
-          <button class="numpad-btn" onclick="window.appendManagerPin('0')">0</button>
-          <button class="numpad-btn-action" onclick="window.backspaceManagerPin()">⌫</button>
-      </div>
-
-      <div id="pinErrorMsg" style="color: #dc2626; font-size: 13px; margin-bottom: 15px; font-weight: 900; display: none; background: #fef2f2; padding: 10px; border-radius: 8px; border: 1px dashed #fca5a5;">❌ ACCESS DENIED. INVALID PIN.</div>
-      
-      <button onclick="window.checkManagerPin()" style="width: 100%; padding: 16px; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); color: white; border: none; border-radius: 12px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 6px 15px rgba(14, 165, 233, 0.4); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 20px rgba(14, 165, 233, 0.5)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 6px 15px rgba(14, 165, 233, 0.4)';">🔓 Unlock System</button>
-
-      <button onclick="window.cancelLoginAndSignOut()" style="width: 100%; padding: 12px; margin-top: 12px; background: transparent; color: #64748b; border: none; font-size: 13px; font-weight: 900; cursor: pointer; transition: 0.2s;" onmouseover="this.style.color='#0f172a';">Cancel & Sign Out</button>
-    </div>
-
-  </div>
+    <dialog id="loginInstallDialog" class="login-install-dialog"><h2>Your workspace, installed.</h2><p>In Edge or Chrome, open the browser menu and choose <strong>Apps → Install this site as an app</strong> or <strong>Install TAKODEÁL Manager</strong>.</p><p>On iPhone or iPad, use Safari’s <strong>Share → Add to Home Screen</strong>.</p><p>Open it online once to save app files. Reconnect to verify your account and receive live updates.</p><button type="button" class="login-primary" onclick="document.getElementById('loginInstallDialog').close()">Got it</button></dialog>
+  </section>
 
   <main class="main-content">
     <header class="topbar">
@@ -6682,9 +6621,9 @@
     
   </style>
 
-  <script type="module" src="firebase-core.js"></script>
-  <script type="module" src="auth.js"></script>
-  <script type="module" src="main.js?v=manager-workspace-final-shift-20261004"></script>
+  <script type="module" src="login-ui.js?v=20261004"></script>
+  <script type="module" src="auth.js?v=manager-login-20261004"></script>
+
   
 </body>
 </html>

@@ -1,3 +1,4 @@
+const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { installMenuBulk } from './menu-bulk.js';
 import { approveRemittanceAtomic } from './cash-settlement.js';
@@ -310,7 +311,7 @@ window.loadGlobalDashboard = () => globalDashboard.load();
 
 // --- WIRING THE BUTTONS ---
 // Run the radar the moment the page loads
-document.addEventListener("DOMContentLoaded", () => {
+runManagerDomReady(() => {
     if (typeof window.setDefaultCutoffDates === 'function') { try { window.setDefaultCutoffDates(); } catch(e) {} }
 });
 
@@ -5967,13 +5968,6 @@ window.autoLoadCategoryAddons = async function() {
     }
 };
 
-  // The automatic Wake-Up trigger for the clone dropdown
-    setTimeout(() => {
-        if (typeof window.loadCloneDropdown === "function") {
-            window.loadCloneDropdown();
-        }
-    }, 200);
-
 window.renderAdvRecipeTable = function () {
   const tbody = document.getElementById('advRecipeBody');
   let html = '';
@@ -8768,12 +8762,7 @@ window.loadFromCloud = async function() {
     }
 };
 
-// 🔥 AUTO-BOOT ENGINE: Quietly loads the schedule data in the background as soon as the app turns on!
-document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => { 
-        if (typeof window.loadFromCloud === 'function') window.loadFromCloud(); 
-    }, 2500); 
-});
+// Data loads when this tab is opened.
 
 // 🏖️ HOLIDAY UI FUNCTIONS
 window.addHoliday = function() {
@@ -10012,25 +10001,21 @@ window.deleteInventoryItem = async function(docId, itemName) {
 };
 
 window.loadCloneDropdown = async function() {
-    console.log("🟢 STEP 1: Dropdown function triggered!");
-    
+
     // Find BOTH dropdowns on the screen
     let recipeDrop = document.getElementById('recipeCloneSelect');
     let addonDrop = document.getElementById('addonCloneSelect');
 
     // Only give up if BOTH are missing
     if (!recipeDrop && !addonDrop) {
-        console.warn("🔴 STEP 2: No dropdown HTML elements found on screen!");
+
         return;
     }
-    
-    console.log("🟢 STEP 2: Found dropdown element(s) in the HTML!");
 
     try {
-        console.log("🟢 STEP 3: Contacting Firebase...");
+
         const snap = await cachedSnapshot('menu');
-        console.log(`🟢 STEP 4: Firebase returned ${snap.size} items!`);
-        
+
         // Setup the default top choices for BOTH
         let recipeOptions = '<option value="">-- Select an existing product to copy... --</option>';
         let addonOptions = '<option value="">-- Copy Add-ons From... --</option>';
@@ -10056,8 +10041,6 @@ window.loadCloneDropdown = async function() {
         // Inject the HTML ONLY into the dropdowns that actually exist on the screen!
         if (recipeDrop) recipeDrop.innerHTML = recipeOptions;
         if (addonDrop) addonDrop.innerHTML = addonOptions;
-
-        console.log(`🟢 STEP 5: Successfully shoved ${items.length} options into the dropdowns!`);
 
     } catch (error) {
         console.error("🔴 FATAL ERROR loading cloning dropdowns:", error);
@@ -10206,8 +10189,6 @@ window.submitAttendance = function(type) {
 window.submitReasonLetter = function() {
     window.ManagerUI.notify("Reason letters are submitted from the Cashier POS app.");
 };
-
-console.log("HEARTBEAT 2: File finished reading!");
 
 // ==========================================
 // 📥 STAFF REQUEST INBOX ENGINE
@@ -10739,7 +10720,7 @@ window.setDefaultCutoffDates = function() {
 };
 
 // Safe trigger that waits for the HTML to finish loading!
-document.addEventListener("DOMContentLoaded", () => {
+runManagerDomReady(() => {
     if (typeof window.setDefaultCutoffDates === 'function') {
         try { window.setDefaultCutoffDates(); } catch(e) {}
     }
@@ -14915,7 +14896,7 @@ window.downloadExcel = function(tbodyId, fileName) {
 };
 
 // Auto-Load the dates when the page boots up
-document.addEventListener("DOMContentLoaded", () => {
+runManagerDomReady(() => {
     let today = new Date();
     today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
     let todayStr = today.toISOString().split('T')[0];
@@ -15033,9 +15014,7 @@ window.loadHistoryShiftDropdown = async function() {
 };
 
 // Wake it up automatically when the dashboard loads!
-document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => { if (document.getElementById('histShiftSelect')) window.loadHistoryShiftDropdown(); }, 1500);
-});
+// Data loads when this tab is opened.
 
 // ========================================================
 // ⚙️ MASTER POS CONFIGURATION ENGINE
@@ -16910,12 +16889,7 @@ window.saveBranchSettings = async function() {
 
 // 💉 THE DOM INJECTOR
 
-// Fire the engine up as soon as the app loads!
-document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => { 
-        if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
-    }, 1500); 
-});
+// Data loads when this tab is opened.
 
 window.deleteBranch = async function(docId, name) {
     if (!(await window.ManagerUI.confirm(`⚠️ CRITICAL WARNING!\n\nAre you sure you want to delete the branch: ${name}?\n\nThis will remove it from all dropdowns. Existing data (sales, inventory) will still exist but might be orphaned.`))) return;
@@ -16940,12 +16914,7 @@ window.switchView = function (viewId) {
     }
 };
 
-// Fire the engine up as soon as the app loads!
-document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => { 
-        if (typeof window.loadBranchManager === 'function') window.loadBranchManager(); 
-    }, 1500); // 1.5s delay gives Firebase time to auth
-});
+// Data loads when this tab is opened.
 
 // ========================================================
 // 📐 CENTRALIZED POS LAYOUT MANAGER
@@ -17722,7 +17691,7 @@ window.switchPayrollTab = function(tabName) {
 };
 
 // Make sure to populate the Branch Filter when the page loads
-document.addEventListener("DOMContentLoaded", () => {
+runManagerDomReady(() => {
     setTimeout(() => {
         let filter = document.getElementById('sanctionBranchFilter');
         if (filter && filter.options.length <= 1 && window.globalActiveBranches) {
@@ -21689,7 +21658,7 @@ setTimeout(window.initVersionWatchdog, 3000);
 // ========================================================
 // 📱 RESPONSIVE MOBILE ENGINE & TABLE AUTO-WRAPPER
 // ========================================================
-document.addEventListener("DOMContentLoaded", () => {
+runManagerDomReady(() => {
     
     // 1. INJECT BULLETPROOF MOBILE CSS GLOBALLY
     if (!document.getElementById('manager-mobile-fixes')) {
@@ -24146,39 +24115,6 @@ window.applyFranchiseUIProtections = function() {
     }
 };
 
-// 🔐 CORE 1: Multi-Branch Login Hook
-if (typeof window.originalFinalizeManagerLogin === 'undefined') {
-    window.originalFinalizeManagerLogin = window.finalizeManagerLogin;
-}
-window.finalizeManagerLogin = function() {
-    let isFranchisee = window.tempAuthData.role === 'Franchisee';
-    let branchStr = window.tempAuthData.assignedBranch || 'Main Office';
-    let allowedArr = branchStr.split(',').map(function(b) { return b.trim(); });
-
-    // 🔥 THE CRASH FIX: Added the safety fallback here too!
-    let safePermissions = window.tempAuthData.permissions || ['all'];
-
-    window.sessionUser = {
-        email: window.tempAuthUser.email,
-        branch: allowedArr[0], 
-        allowedBranches: allowedArr, 
-        isFranchisee: isFranchisee,
-        cashierName: window.tempAuthUser.displayName || window.tempAuthData.fullName || window.tempAuthData.name || 'Manager',
-        // 🔥 Now it safely reads from the fallback array!
-        isOwner: (window.tempAuthUser.email === MASTER_EMAIL || (!isFranchisee && safePermissions.includes('all'))),
-        permissions: safePermissions
-    };
-
-    let overlay = document.getElementById('loginOverlay');
-    if (overlay) overlay.style.display = 'none';
-
-    if (typeof window.applyPermissions === 'function') window.applyPermissions();
-    if (typeof window.applyFranchiseUIProtections === 'function') window.applyFranchiseUIProtections(); 
-    
-    if (typeof window.switchView === 'function') window.switchView('dashboard');
-    if (typeof window.loadGlobalDashboard === 'function') window.loadGlobalDashboard();
-};
-
 // 🔐 CORE 2: Smart Dropdown Lock
 if (typeof window.originalInjectDynamicBranchDropdowns === 'undefined') {
     window.originalInjectDynamicBranchDropdowns = window.injectDynamicBranchDropdowns;
@@ -24339,119 +24275,6 @@ if (typeof window.originalRenderTables === 'undefined' && typeof window.renderTa
         }
     };
 }
-
-// 🔐 CORE 9: Bulletproof PIN & UI Auto-Corrector
-if (typeof window.originalCheckManagerPin === 'undefined' && typeof window.checkManagerPin === 'function') {
-    window.originalCheckManagerPin = window.checkManagerPin;
-    window.checkManagerPin = function() {
-        
-        // 1. Force the database PIN to act as a String so the strict match never fails!
-        if (window.tempAuthData && window.tempAuthData.pin) {
-            window.tempAuthData.pin = String(window.tempAuthData.pin);
-        }
-        
-        // 2. Instantly erase the ugly "undefined" glitch if the role is missing in Firebase
-        document.querySelectorAll('h2, h3, div, span').forEach(function(el) {
-            if (el.innerText && el.innerText.includes('undefined:')) {
-                el.innerText = el.innerText.replace('undefined:', 'Manager:');
-            }
-        });
-
-        // 3. Run the original secure login now that the data is sanitized
-        window.originalCheckManagerPin();
-    };
-}
-
-// ========================================================
-// 🛡️ EMERGENCY LOGIN FIX (UNDEFINED & PIN FREEZE)
-// ========================================================
-// 1. Instantly fix the "undefined" text on the screen
-setInterval(function() {
-    document.querySelectorAll('h2, h3, h1, span, div').forEach(function(el) {
-        if (el.childNodes.length === 1 && el.childNodes[0].nodeType === 3) {
-            if (el.innerText && el.innerText.includes('undefined:')) {
-                el.innerText = el.innerText.replace('undefined:', 'Manager:');
-            }
-        }
-    });
-}, 500);
-
-// ========================================================
-// 🔢 NUMPAD LOGIC ENGINE
-// ========================================================
-window.appendManagerPin = function(num) {
-    let pinInput = document.getElementById('managerPinInput');
-    if (pinInput) {
-        pinInput.value += num;
-        
-        // Clean up any error styling when they start typing
-        pinInput.style.borderColor = '#cbd5e1';
-        let err = document.getElementById('pinErrorMsg');
-        if (err) err.style.display = 'none';
-        
-        // Removed the 4-digit auto-submit! 
-        // Now you can type as many numbers as you need.
-    }
-};
-
-window.clearManagerPin = function() {
-    let pinInput = document.getElementById('managerPinInput');
-    if (pinInput) {
-        pinInput.value = '';
-        pinInput.style.borderColor = '#cbd5e1';
-        let err = document.getElementById('pinErrorMsg');
-        if (err) err.style.display = 'none';
-    }
-};
-
-window.backspaceManagerPin = function() {
-    let pinInput = document.getElementById('managerPinInput');
-    if (pinInput && pinInput.value.length > 0) {
-        pinInput.value = pinInput.value.slice(0, -1);
-    }
-};
-
-// 2. The Bulletproof Debounced PIN Checker
-window.isLoggingIn = false;
-window.checkManagerPin = function() {
-    if (window.isLoggingIn) return; // 🛡️ Prevents double-firing ghost clicks!
-
-    let pinBox = document.getElementById('managerPinInput') || document.querySelector('input[type="password"]');
-    let enteredPin = pinBox ? pinBox.value.trim() : "";
-    let err = document.getElementById('pinErrorMsg');
-
-    if (!enteredPin) {
-        if (err) { err.innerText = '❌ Please enter a PIN.'; err.style.display = 'block'; }
-        else Swal.fire('Error', 'Please enter a PIN.', 'warning');
-        return;
-    }
-
-    if (!window.tempAuthData) return window.ManagerUI.notify("Authentication data lost. Please refresh the page.");
-
-    let correctPin = String(window.tempAuthData.pin || window.tempAuthData.securityPin || "");
-
-    // 🔥 SKELETON KEY ADDED: 0000 will always unlock the system!
-    if (String(enteredPin) === correctPin || enteredPin === "0000") {
-        window.isLoggingIn = true; // Lock the door
-        if (err) err.style.display = 'none';
-        
-        let btn = document.querySelector('button[onclick*="checkManagerPin"]');
-        if (btn) btn.innerText = "Unlocking...";
-        
-        if (pinBox) { pinBox.value = ''; pinBox.style.borderColor = '#cbd5e1'; }
-        
-        window.finalizeManagerLogin();
-        
-        setTimeout(() => { 
-            window.isLoggingIn = false; // Unlock after transition
-            if (btn) btn.innerText = "🔓 Unlock System";
-        }, 2000);
-    } else {
-        if (pinBox) { pinBox.value = ""; pinBox.style.borderColor = '#ef4444'; pinBox.focus(); }
-        if (err) { err.innerText = '❌ ACCESS DENIED. INVALID PIN.'; err.style.display = 'block'; }
-        else Swal.fire('Incorrect PIN', 'The PIN you entered is wrong. Please try again.', 'error');
-    }
-};
 
 // ========================================================
 // 📅 SCHEDULE PUBLISHING ENGINE (1-CLICK IMAGE ALARM)
@@ -25004,7 +24827,7 @@ window.generateIDCard = async function() {
 };
 
 // Auto-inject the Mass Generator button into the HR View
-document.addEventListener("DOMContentLoaded", () => {
+runManagerDomReady(() => {
     setTimeout(() => {
         let hrHeader = document.querySelector('#view-branches .btn-refresh')?.parentElement;
         if (hrHeader && !document.getElementById('btnMassGenIds')) {
@@ -25014,7 +24837,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // Auto-inject the Mass Generator button into the HR View
-document.addEventListener("DOMContentLoaded", () => {
+runManagerDomReady(() => {
     setTimeout(() => {
         let hrHeader = document.querySelector('#view-branches .btn-refresh')?.parentElement;
         if (hrHeader && !document.getElementById('btnMassGenIds')) {
@@ -26556,9 +26379,7 @@ window.loadArchiveDropdown = async function() {
 };
 
 // Wake it up automatically
-document.addEventListener("DOMContentLoaded", () => {
-    setTimeout(() => { if (typeof window.loadArchiveDropdown === 'function') window.loadArchiveDropdown(); }, 2000);
-});
+// Data loads when this tab is opened.
 
 // ========================================================
 // 🛡️ THE INTERCEPTOR: ROUTES THE HISTORY TAB TO COLD STORAGE
@@ -27170,7 +26991,7 @@ window.toggleMaintenanceMode = async function() {
 };
 
 // Check the status on boot so the button color is correct!
-document.addEventListener("DOMContentLoaded", async () => {
+runManagerDomReady(async () => {
     setTimeout(async () => {
         try {
             const docSnap = await window.getDoc(window.doc(window.db, "settings", "global_storefront"));
@@ -28108,3 +27929,18 @@ initManagerDialogs();
 initManagerWorkspace();
 
 installMenuBulk();
+
+// Reference dropdowns populate when a recipe is opened, not during app startup.
+for (const name of ['openBomEditor','openNewProductModal']) {
+    const original = window[name];
+    if (typeof original === 'function') window[name] = async function(...args) {
+        await original.apply(this,args);
+        if (document.getElementById('advancedProductModal')?.style.display === 'flex') await window.loadCloneDropdown();
+    };
+}
+const loginOriginalSwitchView = window.switchView;
+window.switchView = function(view,...args) {
+    const result = loginOriginalSwitchView.call(this,view,...args);
+    if (view === 'history') window.loadHistoryShiftDropdown();
+    return result;
+};

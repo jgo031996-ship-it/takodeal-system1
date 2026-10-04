@@ -1,10 +1,11 @@
+import './firebase-core.js';
 import { signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-
-const MASTER_EMAIL = "jgo031996@gmail.com";
-window.tempAuthUser = null;
-window.tempAuthData = null;
+import { createUnlockGate, bounded } from './unlock-gate.js';
+import { loadManagerLibraries, prepareManagerTools } from './manager-libraries.js';
+const MASTER_EMAIL = 'jgo031996@gmail.com';
+const el = id => document.getElementById(id);
+window.tempAuthUser = null; window.tempAuthData = null; window.sessionUser = null;
 window.isLoggingIn = false;
-
 window.applyPermissions = function() {
     if (!window.sessionUser) return;
     if (window.sessionUser.isOwner) {
@@ -34,121 +35,101 @@ window.isBranchAllowed = function(branchName) {
     return window.sessionUser.allowedBranches.includes(branchName);
 };
 
-onAuthStateChanged(window.auth, async (user) => {
-  const loginOverlay = document.getElementById('loginOverlay');
-  const stage1 = document.getElementById('loginStage1');
-  const stage2 = document.getElementById('loginStage2');
-  
-  if (user) {
-    let isAuthorized = false; let userData = null; let docId = null;
-    try {
-        if (user.email === MASTER_EMAIL) {
-            const q = window.query(window.collection(window.db, "hq_managers"), window.where("email", "==", user.email));
-            const snap = await window.getDocs(q);
-            if (snap.empty) {
-                const newDoc = await window.addDoc(window.collection(window.db, "hq_managers"), { email: user.email, role: 'Owner', permissions: ['all'], assignedBranch: 'All', pin: '0319' });
-                docId = newDoc.id; userData = { pin: '0319', permissions: ['all'], role: 'Owner', assignedBranch: 'All' };
-            } else { docId = snap.docs[0].id; userData = snap.docs[0].data(); }
-            isAuthorized = true;
-        } else {
-            const q = window.query(window.collection(window.db, "hq_managers"), window.where("email", "==", user.email));
-            const snap = await window.getDocs(q);
-            if (!snap.empty) { docId = snap.docs[0].id; userData = snap.docs[0].data(); isAuthorized = true; }
+
+let runtimeLoaded = false, workspaceLoading = false;
+const gate = createUnlockGate({
+    async verify(user) {
+        // One server check prevents stale cached access or a revoked PIN from unlocking.
+        const ref = window.query(window.collection(window.db, 'hq_managers'), window.where('email', '==', user.email));
+        let snap;
+        try { snap = await bounded(window.getDocsFromServer(ref)); }
+        catch (error) {
+            if (error.code === 'permission-denied') throw new Error('This account cannot access Manager permissions. Ask the owner to check access.');
+            throw new Error(navigator.onLine ? 'Unable to verify your account. Check the connection, then choose Retry.' : 'You are offline. Reconnect, then choose Retry to verify your account.');
         }
-    } catch (e) { console.error(e); }
-
-    if (isAuthorized) {
-        if (!userData.pin) { userData.pin = '1234'; await window.updateDoc(window.doc(window.db, "hq_managers", docId), { pin: '1234' }); }
-        window.tempAuthUser = user; window.tempAuthData = userData; window.tempAuthData.docId = docId;
-        document.getElementById('authWelcomeName').innerText = `${userData.role}: ${user.displayName || 'Authorized'}`;
-        stage1.style.display = 'none'; stage2.style.display = 'block'; loginOverlay.style.display = 'flex';
-        setTimeout(() => { let pinBox = document.getElementById('managerPinInput'); if(pinBox) pinBox.focus(); }, 300);
-    } else {
-        await signOut(window.auth);
-        if(typeof Swal !== 'undefined') Swal.fire('Clearance Denied', 'Your Google Account is not authorized.', 'error');
-        loginOverlay.style.display = 'flex'; stage1.style.display = 'block'; stage2.style.display = 'none';
+        if (snap.empty) throw new Error('This Google account is not approved for the Manager app. Use a different account.');
+        const profile = snap.docs[0];
+        return {...profile.data(), docId:profile.id};
+    },
+    async load({user, data}) {
+        workspaceLoading = true;
+        const isFranchisee = data.role === 'Franchisee';
+        const allowedBranches = String(data.assignedBranch || 'Main Office').split(',').map(branch => branch.trim());
+        const permissions = Array.isArray(data.permissions) ? data.permissions : user.email === MASTER_EMAIL ? ['all'] : [];
+        window.sessionUser = {email:user.email, branch:allowedBranches[0], allowedBranches, isFranchisee,
+            cashierName:user.displayName || data.fullName || data.name || 'Manager',
+            isOwner:user.email === MASTER_EMAIL || !isFranchisee && permissions.includes('all'), permissions};
+        try {
+            await loadManagerLibraries();
+            if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');
+            await import('./main.js?v=manager-login-20261004');
+            runtimeLoaded = true;
+            prepareManagerTools();
+            window.promptMobileInstall = window.installManagerApp;
+            const logo = el('sidebarLogoBranchText'), name = el('sidebarProfileName'), role = el('sidebarProfileRole');
+            if (logo) logo.textContent = isFranchisee ? allowedBranches.join(' & ').toUpperCase() : 'MAIN OFFICE';
+            if (name) name.textContent = window.sessionUser.cashierName;
+            if (role) role.textContent = isFranchisee ? 'Franchise Owner' : 'Admin Access';
+            window.applyPermissions(); window.applyFranchiseUIProtections?.();
+            // switchView owns the dashboard load; no second subscription pass.
+            window.switchView('dashboard');
+        } catch (error) { window.sessionUser = null; throw error; }
+        finally { workspaceLoading = false; }
+    },
+    change({phase, account, message}) {
+        window.isLoggingIn = phase === 'opening';
+        const ui = window.ManagerLogin;
+        ui.busy(phase === 'opening'); ui.error(message || '');
+        el('retryManagerButton').hidden = phase !== 'unavailable';
+        el('changeManagerAccount').hidden = phase === 'signed-out' || phase === 'opening';
+        el('googleManagerButton').disabled = phase === 'checking' || phase === 'unavailable';
+        if (phase === 'pin' || phase === 'opening') {
+            window.tempAuthUser = account.user; window.tempAuthData = account.data;
+            el('authWelcomeName').textContent = `${account.data.role || 'Manager'}: ${account.user.displayName || account.data.fullName || 'Authorized account'}`;
+            ui.show('pin');
+            ui.status(phase === 'opening' ? 'Loading workspace tools…' : 'Use the keypad or your keyboard. Press Enter to unlock.');
+            if (message) { el('managerPinInput').value = ''; el('managerPinInput').focus(); }
+        } else if (phase === 'open') {
+            ui.status(''); el('loginOverlay').style.display = 'none';
+            window.tempAuthData = null; window.tempAuthUser = null;
+        } else {
+            window.sessionUser = null; window.tempAuthData = null; window.tempAuthUser = null;
+            el('managerPinInput').value = ''; ui.show('google');
+            ui.status(phase === 'checking' ? 'Verifying your approved account…' : phase === 'signed-out' ? 'Sign in to open your Manager workspace.' : 'Your workspace stays locked until your account is verified.');
+        }
     }
-  } else {
-    if (loginOverlay) { loginOverlay.style.display = 'flex'; stage1.style.display = 'block'; stage2.style.display = 'none'; }
-  }
 });
-
-window.checkManagerPin = function() {
-    if (window.isLoggingIn) return; 
-    let pinBox = document.getElementById('managerPinInput');
-    let enteredPin = pinBox ? pinBox.value.trim() : "";
-    let err = document.getElementById('pinErrorMsg');
-
-    if (!enteredPin) {
-        if (err) { err.innerText = '❌ Please enter a PIN.'; err.style.display = 'block'; }
-        return;
-    }
-    if (!window.tempAuthData) return Swal.fire({ icon: "error", title: "Please refresh", text: "Authentication data lost. Please refresh the page." });
-
-    let correctPin = String(window.tempAuthData.pin || window.tempAuthData.securityPin || "");
-
-    if (String(enteredPin) === correctPin || enteredPin === "0000") {
-        window.isLoggingIn = true; 
-        if (err) err.style.display = 'none';
-        let btn = document.querySelector('button[onclick*="checkManagerPin"]');
-        if (btn) btn.innerText = "Unlocking...";
-        if (pinBox) { pinBox.value = ''; pinBox.style.borderColor = '#cbd5e1'; }
-        
-        window.finalizeManagerLogin();
-        setTimeout(() => { window.isLoggingIn = false; if (btn) btn.innerText = "🔓 Unlock System"; }, 2000);
-    } else {
-        if (pinBox) { pinBox.value = ""; pinBox.style.borderColor = '#ef4444'; pinBox.focus(); }
-        if (err) { err.innerText = '❌ ACCESS DENIED. INVALID PIN.'; err.style.display = 'block'; }
-    }
+window.checkManagerPin = async () => {
+    const entered = el('managerPinInput').value;
+    el('managerPinInput').value = '';
+    await gate.unlock(entered);
 };
-
-window.finalizeManagerLogin = function() {
-    let isFranchisee = window.tempAuthData.role === 'Franchisee';
-    let branchStr = window.tempAuthData.assignedBranch || 'Main Office';
-    let allowedArr = branchStr.split(',').map(b => b.trim());
-    let safePermissions = window.tempAuthData.permissions || ['all'];
-
-    window.sessionUser = {
-        email: window.tempAuthUser.email, branch: allowedArr[0], allowedBranches: allowedArr, isFranchisee: isFranchisee,
-        cashierName: window.tempAuthUser.displayName || window.tempAuthData.fullName || window.tempAuthData.name || 'Manager',
-        isOwner: (window.tempAuthUser.email === MASTER_EMAIL || (!isFranchisee && safePermissions.includes('all'))),
-        permissions: safePermissions
-    };
-
-    let logoTxt = document.getElementById('sidebarLogoBranchText');
-    if (logoTxt) logoTxt.innerText = isFranchisee ? allowedArr.join(' & ').toUpperCase() : "MAIN OFFICE";
-    let profName = document.getElementById('sidebarProfileName');
-    if (profName) profName.innerText = window.sessionUser.cashierName;
-    let profRole = document.getElementById('sidebarProfileRole');
-    if (profRole) profRole.innerText = isFranchisee ? "Franchise Owner" : "Admin Access";
-
-    let overlay = document.getElementById('loginOverlay');
-    if (overlay) overlay.style.display = 'none';
-    
-    if (typeof window.applyPermissions === 'function') window.applyPermissions();
-    if (typeof window.applyFranchiseUIProtections === 'function') window.applyFranchiseUIProtections(); 
-    if (typeof window.switchView === 'function') window.switchView('dashboard');
-    if (typeof window.loadGlobalDashboard === 'function') window.loadGlobalDashboard();
+window.finalizeManagerLogin = () => window.checkManagerPin();
+window.retryManagerAccess = () => {
+    const phase = gate.state().phase;
+    if (phase === 'open' || phase === 'opening' || phase === 'checking') return;
+    return gate.identify(window.auth.currentUser);
 };
-
-window.loginWithGoogle = async function() {
-  try {
-    let btn = document.querySelector('#loginStage1 button');
-    let oldHtml = btn.innerHTML;
-    btn.innerHTML = '⏳ Securely connecting...'; btn.disabled = true;
-    window.provider.setCustomParameters({ prompt: 'select_account' });
-    await signInWithPopup(window.auth, window.provider);
-  } catch (error) {
-    console.error("Login Trigger Error:", error);
-    let btn = document.querySelector('#loginStage1 button');
-    if (btn) { btn.innerHTML = '<img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width: 20px; height: 20px;"> Sign in with Google'; btn.disabled = false; }
-  }
+window.loginWithGoogle = async () => {
+    const button = el('googleManagerButton'); if (button.disabled) return;
+    button.disabled = true; window.ManagerLogin.error(''); window.ManagerLogin.status('Opening Google sign in…');
+    try {
+        window.provider.setCustomParameters({prompt:'select_account'});
+        await signInWithPopup(window.auth, window.provider);
+    } catch (error) {
+        window.ManagerLogin.error(error.code === 'auth/popup-blocked' ? 'Allow the Google sign-in window, then try again.' : error.code === 'auth/popup-closed-by-user' ? '' : 'Google sign in did not finish. Check your connection and try again.');
+        window.ManagerLogin.status('Sign in with your approved Google account.');
+    } finally { if (!window.auth.currentUser) button.disabled = false; }
 };
-
-window.cancelLoginAndSignOut = async function() {
+window.cancelLoginAndSignOut = async () => {
+    if (workspaceLoading) return;
+    gate.reset(); window.clearManagerMemoryCache?.();
     await signOut(window.auth);
-    window.tempAuthUser = null; window.tempAuthData = null;
-    let pinBox = document.getElementById('managerPinInput');
-    if (pinBox) { pinBox.value = ''; pinBox.style.borderColor = '#cbd5e1'; }
-    document.getElementById('pinErrorMsg').style.display = 'none';
 };
+onAuthStateChanged(window.auth, user => {
+    // Stop the previous workspace and all its timers when the signed-in account changes.
+    if (runtimeLoaded || workspaceLoading) { gate.reset(); window.clearManagerMemoryCache?.(); location.reload(); return; }
+    gate.identify(user);
+});
+window.managerAuthReady = true;
+window.dispatchEvent(new Event('manager-auth-ready'));

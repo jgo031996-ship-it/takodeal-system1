@@ -1,4 +1,5 @@
 import { createCollectionCache } from './collection-cache.js';
+import { createDeviceStore } from './device-store.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, getDocsFromServer, getDocFromServer, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch, startAfter, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
@@ -39,8 +40,9 @@ window.enableNetwork = enableNetwork; window.disableNetwork = disableNetwork;
 const cache = createCollectionCache(async name => {
     const snap = await getDocs(collection(window.db, name));
     return snap.docs.map(row => ({id:row.id,...row.data()}));
-});
+}, { storage: createDeviceStore(), scope: () => window.sessionUser && window.auth.currentUser?.uid || '' });
 const cacheChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('takodeal-manager-cache') : null;
 cacheChannel?.addEventListener('message', event => cache.invalidate(event.data));
-window.fetchCachedCollection = name => cache.get(name);
+window.fetchCachedCollection = name => window.sessionUser ? cache.get(name) : Promise.reject(new Error('Unlock the Manager before loading tab data.'));
 window.invalidateCache = name => { cache.invalidate(name); cacheChannel?.postMessage(name); };
+window.clearManagerMemoryCache = () => cache.clearMemory();
