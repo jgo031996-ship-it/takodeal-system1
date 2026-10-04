@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import {locationAssessment,createLocationSession,createClockCamera,installStaffLocation} from '../takodeal-staff/staff-location.js';
-import {createDeviceRegistration,installStaffRegistration} from '../takodeal-staff/staff-registration.js';
-import {fleetRows,installDeviceFleet} from '../takodeal-manager/device-fleet.js';
+import {createDeviceConnection,createDeviceRegistration,installStaffRegistration} from '../takodeal-staff/staff-registration.js';
+import {createFleetReader,fleetRows,installDeviceFleet} from '../takodeal-manager/device-fleet.js';
+import {waitForAppUpdate} from '../takodeal-staff/app-update.js';
 import {installStaffPhone} from '../takodeal-staff/staff-phone.js';
 
 const zones={Maa:{lat:7.0786417726231425,lng:125.58344120162646}},time=1800000000000;
@@ -172,4 +173,132 @@ test('attendance never writes on GPS failure or a branch change during proof ver
     const failed=punchHarness([Error('Location permission is off')]);await failed.window.punchTime('TIME IN');assert.equal(failed.writes(),0);assert.equal(failed.window.staffPunchBusy,false);
     const moved=punchHarness([fix,{...fix,branch:'Cabantian'}]);await moved.window.punchTime('TIME IN');assert.equal(moved.writes(),0);
     const successful=punchHarness([fix,fix]);await successful.window.punchTime('TIME IN');assert.equal(successful.writes(),1);assert.equal(successful.records[0].locationAccuracyMeters,12);assert.equal(successful.records[0].locationLat,fix.lat);
+});
+
+const restRecord=(id,status='Pending')=>({name:'projects/example/databases/(default)/documents/pos_devices/'+id,fields:{deviceName:{stringValue:'Sample phone (Staff)'},branch:{stringValue:'Maa'},status:{stringValue:status},registeredAt:{timestampValue:'2026-10-04T10:00:00Z'}}});
+function registrationHarness(h){
+    h.window.onSnapshot=()=>()=>{};h.window.checkNormalLogin=()=>{h.logins=(h.logins||0)+1;};h.window.listenToIncomingSwaps=()=>{};
+    h.store.set('takodeal_device_id',registration.deviceId);
+    return {...h,navigator:{},setTimeout:()=>1,clearTimeout(){}};
+}
+test('an orphaned phone ID recovers the setup form and resubmits the same ID into Fleet',async()=>{
+    const h=domHarness(),records=new Map(),calls=[];h.store.set('takodeal_staff_registration_receipt',JSON.stringify(registration));
+    const fetcher=async(url,options)=>{
+        calls.push(options.method);
+        if(options.method==='POST'){
+            const write=JSON.parse(options.body).writes[0];
+            assert.equal(write.currentDocument.exists,false);
+            const id=write.update.name.split('/').pop();records.set(id,{...write.update,fields:{...write.update.fields,registeredAt:{timestampValue:'2026-10-04T10:00:00Z'}}});
+            return response(200,{commitTime:'now'});
+        }
+        const record=records.get(registration.deviceId);return record?response(200,record):response(404,{error:{message:'Not found'}});
+    };
+    await globals(registrationHarness(h),async()=>{
+        installStaffRegistration({projectId:'example',apiKey:'public',fetcher});
+        await h.window.listenToDeviceStatus(registration.deviceId);
+        assert.equal(h.store.get('takodeal_device_id'),registration.deviceId);
+        assert.equal(h.node('registerCard').style.display,'block');assert.equal(h.node('deviceNameInput').value,registration.name);
+        assert.match(h.node('deviceRegistrationStatus').textContent,/HQ has not received/);
+        await h.window.requestDeviceAccess();
+        assert.equal(h.store.get('takodeal_device_id'),registration.deviceId);assert.equal(records.size,1);
+        assert.equal(h.node('devicePendingTitle').textContent,'Request received by HQ');assert.equal(h.logins||0,0);
+        const rows=await createFleetReader({projectId:'example',apiKey:'public',fetcher:async()=>response(200,{documents:[...records.values()]})})();
+        assert.match(fleetRows(rows),/Pending approval/);assert.match(fleetRows(rows),new RegExp(registration.deviceId));
+        assert.deepEqual(calls,['GET','POST','GET']);
+    });
+});
+test('HTTP approval checks work when realtime provides only a cached result',async()=>{
+    const h=domHarness();let realtime;
+    const context=registrationHarness(h);h.window.onSnapshot=(_,options,fn)=>{realtime=fn;return ()=>{};};
+    await globals(context,async()=>{
+        installStaffRegistration({projectId:'example',apiKey:'public',fetcher:async()=>response(200,restRecord(registration.deviceId,'Blocked'))});
+        const checking=h.window.listenToDeviceStatus(registration.deviceId);
+        realtime({metadata:{fromCache:true,hasPendingWrites:false},exists:()=>true,data:()=>({status:'Active'})});
+        await checking;assert.equal(h.logins||0,0);assert.equal(h.node('devicePendingTitle').textContent,'Device access paused');
+    });
+});
+test('network failure cannot turn an existing device into an unregistered phone',async()=>{
+    const h=domHarness();
+    await globals(registrationHarness(h),async()=>{
+        installStaffRegistration({projectId:'example',apiKey:'public',fetcher:async()=>{throw Error('offline');}});
+        await h.window.listenToDeviceStatus(registration.deviceId);
+        assert.equal(h.store.get('takodeal_device_id'),registration.deviceId);assert.equal(h.node('registerCard').style.display,'none');
+        assert.equal(h.node('devicePendingTitle').textContent,'Connection to HQ delayed');assert.equal(h.node('deviceRetryButton').hidden,false);
+    });
+});
+test('a newer realtime block wins over a late HTTP approval response',async()=>{
+    const h=domHarness();let realtime,finish;
+    const context=registrationHarness(h);h.window.onSnapshot=(_,options,fn)=>{realtime=fn;return ()=>{};};
+    await globals(context,async()=>{
+        installStaffRegistration({projectId:'example',apiKey:'public',fetcher:()=>new Promise(resolve=>finish=resolve)});
+        const checking=h.window.listenToDeviceStatus(registration.deviceId);
+        realtime({metadata:{fromCache:false,hasPendingWrites:false},exists:()=>true,data:()=>({status:'Blocked'})});
+        finish(response(200,restRecord(registration.deviceId,'Active')));await checking;
+        assert.equal(h.logins||0,0);assert.equal(h.node('devicePendingTitle').textContent,'Device access paused');
+    });
+});
+test('an abandoned approval read cannot overwrite the current registration check',async()=>{
+    const h=domHarness(),pending=[];
+    await globals(registrationHarness(h),async()=>{
+        installStaffRegistration({projectId:'example',apiKey:'public',fetcher:()=>new Promise(resolve=>pending.push(resolve))});
+        const old=h.window.listenToDeviceStatus(registration.deviceId),current=h.window.listenToDeviceStatus(registration.deviceId);
+        pending[1](response(200,restRecord(registration.deviceId,'Pending')));await current;
+        pending[0](response(200,restRecord(registration.deviceId,'Active')));await old;
+        assert.equal(h.logins||0,0);assert.equal(h.node('devicePendingTitle').textContent,'Request received by HQ');
+    });
+});
+test('permission errors during approval checks are not interpreted as a missing registration',async()=>{
+    const read=createDeviceConnection({projectId:'example',apiKey:'public',fetcher:async()=>response(403,{error:{message:'Permission denied'}})}).read;
+    await assert.rejects(read(registration.deviceId),/Permission denied/);
+});
+test('Fleet HTTP fallback loads every page and keeps pending, undated and branch-restricted rows',async()=>{
+    const calls=[];const read=createFleetReader({projectId:'example',apiKey:'public',getToken:async()=> 'sample-token',fetcher:async(url,options)=>{
+        calls.push({url,options});return response(200,calls.length===1?{documents:[restRecord('older','Active')],nextPageToken:'next/page'}:{documents:[restRecord('pending'),{name:'projects/example/databases/(default)/documents/pos_devices/private',fields:{branch:{stringValue:'Cabantian'},status:{stringValue:'Pending'}}}]});
+    }});
+    const rows=await read();assert.equal(rows.length,3);assert.match(calls[1].url,/pageToken=next%2Fpage/);assert.equal(calls[0].options.cache,'no-store');assert.equal(calls[0].options.headers.Authorization,'Bearer sample-token');
+    const html=fleetRows(rows,b=>b==='Maa');assert.match(html.slice(0,900),/pending/);assert.equal(html.includes('private'),false);
+});
+test('a stalled Fleet uses HTTP confirmation and ignores subsequent stale cache snapshots',async()=>{
+    const h=domHarness(),timers=new Map();let next=0,receive;
+    h.window.collection=()=>null;h.window.isBranchAllowed=()=>true;h.window.switchView=()=>{};h.window.onSnapshot=(_,options,fn)=>{receive=fn;return ()=>{};};
+    await globals({...h,setTimeout:fn=>{timers.set(++next,fn);return next;},clearTimeout:id=>timers.delete(id)},async()=>{
+        installDeviceFleet({projectId:'example',apiKey:'public',fetcher:async()=>response(200,{documents:[restRecord('new-pending')]})});
+        h.window.loadDeviceFleet();const [id,run]=timers.entries().next().value;timers.delete(id);await run();
+        assert.match(h.node('deviceFleetBody').innerHTML,/new-pending/);assert.match(h.node('deviceFleetStatus').textContent,/1 pending approval/);
+        receive({metadata:{fromCache:true},forEach(){}});assert.match(h.node('deviceFleetBody').innerHTML,/new-pending/);
+        h.window.switchView('dashboard');assert.equal(timers.size,0);
+    });
+});
+test('app update waits for activation and does not reload an installing shell',async()=>{
+    let changed,removed=0,cleared=0,finished=false;
+    const worker={state:'installing',addEventListener:(name,fn)=>changed=fn,removeEventListener:()=>removed++};
+    const pending=waitForAppUpdate({update:async()=>{},installing:worker},{delay:()=>1,cancelDelay:()=>cleared++}).then(()=>finished=true);
+    await Promise.resolve();await Promise.resolve();assert.equal(finished,false);
+    worker.state='installed';changed();await Promise.resolve();assert.equal(finished,false);
+    worker.state='activated';changed();await pending;assert.equal(finished,true);assert.equal(removed,1);assert.equal(cleared,1);
+});
+test('Staff and Manager ship the same update guard and cache the new helper',()=>{
+    const staff=readFileSync(new URL('../takodeal-staff/app-update.js',import.meta.url),'utf8');
+    assert.equal(readFileSync(new URL('../takodeal-manager/app-update.js',import.meta.url),'utf8'),staff);
+    for(const app of ['takodeal-staff','takodeal-manager'])assert.match(readFileSync(new URL('../'+app+'/sw.js',import.meta.url),'utf8'),/app-update.js/);
+});
+test('a live approval listener losing its cloud connection resumes HTTP checks',async()=>{
+    const h=domHarness(),timers=new Map();let receive,next=0,reads=0;
+    const context=registrationHarness(h);context.setTimeout=fn=>{timers.set(++next,fn);return next;};context.clearTimeout=id=>timers.delete(id);
+    h.window.onSnapshot=(_,options,fn)=>{receive=fn;return ()=>{};};
+    await globals(context,async()=>{
+        installStaffRegistration({projectId:'example',apiKey:'public',fetcher:async()=>response(200,restRecord(registration.deviceId,++reads===1?'Pending':'Active'))});
+        await h.window.listenToDeviceStatus(registration.deviceId);
+        receive({metadata:{fromCache:false,hasPendingWrites:false},exists:()=>true,data:()=>({status:'Pending'})});
+        assert.equal(timers.size,0);
+        receive({metadata:{fromCache:true,hasPendingWrites:false},exists:()=>true,data:()=>({status:'Pending'})});
+        const [id,run]=timers.entries().next().value;timers.delete(id);await run();
+        assert.equal(reads,2);assert.equal(h.logins,1);h.listeners.get('pagehide')();assert.equal(timers.size,0);
+    });
+});
+test('an update timeout leaves no listener and cannot activate a late shell update',async()=>{
+    let expire,changed,removed=0;
+    const worker={state:'installing',addEventListener:(_,fn)=>changed=fn,removeEventListener:()=>removed++};
+    const pending=waitForAppUpdate({update:async()=>{},installing:worker},{delay:fn=>{expire=fn;return 1;},cancelDelay(){}});
+    await Promise.resolve();expire();await assert.rejects(pending,/too long/);assert.equal(removed,1);assert.equal(typeof changed,'function');
 });
