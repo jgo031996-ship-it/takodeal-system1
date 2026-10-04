@@ -1,4 +1,4 @@
-import {CASHIER_RELEASE,businessDate,dayWindow,attendanceRows,imageFor,updateBlocker,labelSettings,drinkLabels} from './cashier-data.js';
+import {CASHIER_RELEASE,businessDate,dayWindow,attendanceRows,imageFor,updateBlocker,labelSettings,drinkLabels,parkedOrderDetails} from './cashier-data.js';
 const el = id => document.getElementById(id);
 const money = value => new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(Number(value)||0);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -101,7 +101,7 @@ function installPrinterHub(){
   const view=page('printer','Printer hub','Manage receipt and preparation printers, plus a dedicated label workspace for drinks.');
   const devices=document.createElement('div');devices.className='cashier-printer-grid';view.append(devices);
   [['main','Receipt printer','Customer receipts and cash drawer'],['kitchen','Kitchen printer','Food preparation tickets'],['bar','Bar printer','Drink preparation tickets']].forEach(([role,name,help])=>{
-    const card=document.createElement('section');card.className='cashier-panel';card.innerHTML=`<div class="cashier-panel-heading"><h2>${name}</h2><span class="cashier-badge" id="printerState-${role}">Not connected</span></div><p>${help}</p><div class="cashier-actions"><button class="cashier-button primary">Connect printer</button><button class="cashier-button">Test print</button></div>`;
+    const card=document.createElement('section');card.className='cashier-panel cashier-printer-card';card.innerHTML=`<div class="cashier-printer-symbol" aria-hidden="true">▤</div><div class="cashier-panel-heading"><h2>${name}</h2></div><span class="cashier-badge" id="printerState-${role}">Not connected</span><p>${help}</p><div class="cashier-actions"><button class="cashier-button primary">Connect printer</button><button class="cashier-button">Test print</button></div>`;
     const buttons=card.querySelectorAll('button');buttons[0].onclick=()=>window.connectSpecificPrinter(role);buttons[1].onclick=event=>window.testPrint(role,event);devices.append(card);});
   const label= document.createElement('section');label.className='cashier-panel cashier-label-panel';
   label.innerHTML='<div class="cashier-panel-heading"><div><h2>Drink labels</h2><p>Clabel CT221B · 203 dpi</p></div><span class="cashier-badge">Dedicated label output</span></div><p class="cashier-help">Pair your CT221B in Clabel trade for Bluetooth printing. Export the label image below and import it into Clabel trade. On a computer with the Clabel driver installed, choose the CT221B in the print dialog. This label output is separate from receipt printers.</p><div class="cashier-label-layout"><div><div class="cashier-filters"><label for="labelWidth">Width (mm)<input id="labelWidth" type="number" min="25" max="54" value="50"></label><label for="labelHeight">Height (mm)<input id="labelHeight" type="number" min="20" max="100" value="30"></label></div><label for="labelDrink">Drink<input id="labelDrink" placeholder="e.g. Spanish Latte"></label><label for="labelCustomer">Customer / order<input id="labelCustomer" placeholder="e.g. Maya · OR 1042"></label><label for="labelDetail">Size / customizations<textarea id="labelDetail" rows="2" placeholder="Large · Less ice"></textarea></label><label for="labelQuantity">Copies<input id="labelQuantity" type="number" min="1" max="30" value="1"></label><div class="cashier-actions"><button id="saveLabelSettings" class="cashier-button">Save label size</button><button id="latestDrinkLabels" class="cashier-button">Use last receipt</button><a class="cashier-button" href="https://global.ctaiot.com/app/" target="_blank" rel="noopener">Clabel setup ↗</a></div></div><div><canvas id="drinkLabelPreview" aria-label="Drink label preview"></canvas><p id="labelPrintStatus" class="cashier-help" role="status">Preview updates as you type.</p><div class="cashier-actions"><button id="downloadDrinkLabel" class="cashier-button primary">Download label image</button><button id="printDrinkLabel" class="cashier-button">Print labels</button></div></div></div>';
@@ -145,7 +145,7 @@ function printLabels(){
   labels.forEach(label=>{const canvas=document.createElement('canvas');canvas.width=Math.round(width/25.4*dpi);canvas.height=Math.round(height/25.4*dpi);renderLabel(canvas,label);const image=doc.createElement('img');image.src=canvas.toDataURL();doc.body.append(image);});
   Promise.all([...doc.images].map(img=>img.decode())).then(()=>{frame.contentWindow.focus();frame.contentWindow.addEventListener('afterprint',()=>frame.remove(),{once:true});frame.contentWindow.print();el('labelPrintStatus').textContent='Choose CT221B, actual size (100%), and your saved label dimensions in the print dialog.';}).catch(()=>{frame.remove();el('labelPrintStatus').textContent='Could not prepare the print sheet. Download the label image instead.';});
 }
-function refreshPrinters(){for(const role of ['main','kitchen','bar'])el('printerState-'+role).textContent=window[role+'PrinterChar']?'Connected':'Not connected';}
+function refreshPrinters(){for(const role of ['main','kitchen','bar']){const state=el('printerState-'+role),connected=!!window[role+'PrinterChar'];state.textContent=connected?'Connected':'Not connected';state.classList.toggle('is-connected',connected);}}
 
 function decorateInventory(){
   const catalogue=[...(window.masterPOSData?.items||[]),...Object.values(window.TK_CACHE?.inventoryByBranch||{}).flat()];
@@ -210,7 +210,57 @@ function installUpdates(){
   navigator.serviceWorker?.addEventListener('controllerchange',()=>{if(activateRequested && !updateBlocker(window)){if(window.TARGET_UPDATE_VERSION)localStorage.setItem('takodeal_local_version',String(window.TARGET_UPDATE_VERSION));location.reload();}});
   window.addEventListener('cashier-worker-ready',event=>ready(event.detail));
   window.setInterval(()=>{if(document.visibilityState==='visible' && navigator.onLine)releaseRegistration?.update().catch(()=>{});},15*60*1000);
-  if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){el('cashierUpdateTitle').textContent='Cashier workspace updated';el('cashierUpdateText').textContent='New orange theme, tablet layout, remittance history, daily attendance and drink label workspace are ready.';banner.style.display='flex';localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
+  if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){el('cashierUpdateTitle').textContent='Cashier workspace updated';el('cashierUpdateText').textContent='Tablet spacing, parked-order details, shift windows and delivery-platform colors are updated.';banner.style.display='flex';localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
 }
-function install(){installTheme();installRemittance();installClock();installPrinterHub();installUpdates();}
+function install(){installTheme();installRemittance();installClock();installPrinterHub();installTabletControls();installParkedOrders();installUpdates();}
 if(document.readyState==='complete')install();else window.addEventListener('load',install,{once:true});
+
+function installTabletControls(){
+  const sidebar=el('mainSidebar'), top=document.querySelector('.top-bar');
+  const toggle=document.createElement('button');toggle.id='cashierSidebarToggle';toggle.type='button';toggle.className='cashier-button';toggle.textContent='☰';toggle.setAttribute('aria-label','Toggle navigation');toggle.setAttribute('aria-controls','mainSidebar');top.prepend(toggle);
+  if(matchMedia('(min-width:769px) and (max-width:1180px)').matches)sidebar.classList.add('collapsed');
+  const reflect=()=>{const expanded=matchMedia('(max-width:768px)').matches?sidebar.classList.contains('tk-mobile-menu-open'):!sidebar.classList.contains('collapsed');if(sidebar.classList.contains('cashier-sidebar-expanded')!==expanded)sidebar.classList.toggle('cashier-sidebar-expanded',expanded);toggle.setAttribute('aria-expanded',String(expanded));};
+  toggle.onclick=()=>{if(matchMedia('(max-width:768px)').matches)sidebar.classList.toggle('tk-mobile-menu-open');else sidebar.classList.toggle('collapsed');reflect();};
+  new MutationObserver(reflect).observe(sidebar,{attributes:true,attributeFilter:['class']});reflect();
+  const platform=el('posPlatformSelect');const tint=()=>{document.body.dataset.cashierPlatform=platform.value;};platform.addEventListener('change',tint);
+  const switchPlatform=window.switchPosPlatform;
+  if(typeof switchPlatform==='function')window.switchPosPlatform=function(...args){const result=switchPlatform.apply(this,args);tint();return result;};tint();
+  const shift=el('btnTopShift');const showShift=()=>{const active=/active shift/i.test(shift.textContent);const text=shift.textContent.replace(/[🟢🔴🟠]/gu,'').trim();if(text!==shift.textContent)shift.textContent=text;shift.dataset.shiftState=active?'active':'closed';};new MutationObserver(showShift).observe(shift,{childList:true,subtree:true});showShift();
+  for(const id of ['shiftModal','endShiftModal','expenseModal','checkoutModal','parkedModal']){
+    const root=el(id);root.classList.add('cashier-dialog');root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');
+    const card=root.firstElementChild;card.classList.add('cashier-dialog-card');
+    card.firstElementChild.classList.add('cashier-dialog-heading');
+    const title=card.firstElementChild.firstElementChild;if(title){title.id ||= 'cashier-'+id+'-title';root.setAttribute('aria-labelledby',title.id);}
+    if(id!=='parkedModal')card.lastElementChild.classList.add('cashier-dialog-footer');
+    root.querySelectorAll('.close-modal,span[onclick*="style.display"],span[onclick*="closeModal("]').forEach(close=>{close.setAttribute('role','button');close.setAttribute('aria-label','Close window');close.tabIndex=0;close.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();close.click();}});});
+  }
+  el('endShiftModal').querySelector('.modal-body').classList.add('cashier-clearance-grid');
+  el('endShiftModal').querySelectorAll('.modal-body > div').forEach((card,i)=>{card.classList.add('cashier-clearance-card');card.querySelector('h3').textContent=['1. Cash drawer count','2. Kitchen preparation','3. Required stock count'][i];});
+  el('expenseModal').firstElementChild.children[1].classList.add('cashier-expense-body');
+  el('expenseModal').firstElementChild.firstElementChild.firstElementChild.textContent='Branch expenses';
+  el('btnCloseShiftSubmit').textContent='Begin Z-Reading';
+  el('shiftViewClose').querySelector('button[onclick="openExpenseModal()"]').textContent='Record expense';
+  el('endShiftModal').querySelector('button[onclick*="MASTER_CloseShift"]').textContent='Confirm & end shift';
+  for(const id of ['expSearchInput','expQtyInput','expAmtInput','expUomSelect','expenseReceiptPhoto']){
+    const input=el(id),label=input.previousElementSibling?.tagName==='LABEL'?input.previousElementSibling:input.parentElement.querySelector(':scope > label');if(label)label.htmlFor=id;
+  }
+}
+function installParkedOrders(){
+  const root=el('parkedModal'),list=el('parkedListContainer');let generation=0;
+  root.firstElementChild.firstElementChild.firstElementChild.textContent='Parked orders';
+  window.showParkedOrders=async function(){
+    const run=++generation,branch=localStorage.getItem('takodeal_device_branch')||'Unknown';root.style.display='flex';list.textContent='Loading parked orders…';
+    try{
+      const orders=await window.getParkedOrders(branch);if(run!==generation)return;window.currentParkedOrdersList=orders;list.replaceChildren();
+      const summary=document.createElement('p');summary.className='cashier-park-summary';summary.textContent=`${orders.length} unpaid orders · ${branch}`;list.append(summary);
+      if(!orders.length){summary.textContent='No parked orders for this branch.';return;}
+      orders.forEach(order=>{const d=parkedOrderDetails(order),card=document.createElement('article');card.className='cashier-park-card';card.dataset.platform=order.platform||'Standard';
+        card.innerHTML=`<header><strong>${escape(d.name)}</strong><strong>${money(d.total)}</strong></header><div class="cashier-park-meta"><span>Parked ${escape(d.parkedAt)}</span><span>By ${escape(d.cashier)} · ${escape(d.platform)} · ${escape(d.type)}</span></div>`;
+        const items=document.createElement('div');items.className='cashier-park-items';
+        d.items.forEach(item=>{const row=document.createElement('div');row.className='cashier-park-item';row.innerHTML=`<div><strong>${item.qty}× ${escape(item.name)}</strong><small>${escape([item.variant,...item.addons].filter(Boolean).join(' · '))}</small>${item.notes?`<p>${escape(item.notes)}</p>`:''}</div><strong>${money(item.total)}</strong>`;items.append(row);});card.append(items);
+        const actions=document.createElement('footer');actions.className='cashier-actions';
+        [['Reprint',()=>window.printParkedReceipt(order.id),''],['Resume & pay',()=>window.resumeOrder(order.id),'primary'],['Remove',()=>window.deleteParkedOrderManually(order.id),'danger']].forEach(([text,handler,style])=>{const button=document.createElement('button');button.type='button';button.className='cashier-button '+style;button.textContent=text;button.onclick=handler;actions.append(button);});card.append(actions);list.append(card);
+      });
+    }catch(error){if(run===generation){list.textContent='Parked orders could not load. Check the connection and try again.';const button=document.createElement('button');button.className='cashier-button';button.textContent='Retry';button.onclick=()=>window.showParkedOrders();list.append(button);}console.error('Parked orders:',error);}
+  };
+}

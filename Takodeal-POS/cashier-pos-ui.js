@@ -141,20 +141,11 @@
       select.id = 'menuCategoryDropdown';
       header.appendChild(select);
     }
+    select.hidden = true; // Retain category state for the existing photo chooser.
     select.setAttribute('aria-label', 'Product category');
     select.addEventListener('change', () => window.filterMenu(select.value));
     const toolbar = document.createElement('div');
     toolbar.className = 'tk-menu-toolbar';
-    const search = document.createElement('input');
-    search.type = 'search';
-    search.id = 'tkMenuSearch';
-    search.placeholder = 'Search products';
-    search.setAttribute('aria-label', 'Search products');
-    search.autocomplete = 'off';
-    search.addEventListener('input', () => {
-      query = search.value.trim().toLowerCase();
-      window.filterMenu(select.value || 'All');
-    });
     const count = document.createElement('span');
     count.id = 'tkMenuCount';
     count.className = 'tk-menu-count';
@@ -166,7 +157,7 @@
       shell.classList.add('tk-show-cart');
       document.getElementById('tkCartBack')?.focus();
     });
-    toolbar.append(search, count, orderButton);
+    toolbar.append(count, orderButton);
     const pills = document.createElement('div');
     pills.id = 'tkCategoryPills';
     pills.className = 'tk-category-pills';
@@ -337,8 +328,7 @@
     browse.setAttribute('aria-haspopup', 'dialog');
     browse.addEventListener('click', () => window.openCategoryModal());
 
-    toolbar.prepend(heading);
-    toolbar.append(browse);
+    toolbar.prepend(browse, heading);
 
     const orderHeading = document.createElement('div');
     orderHeading.className = 'tk-order-heading';

@@ -1,5 +1,5 @@
 // Presentation helpers only: no sale, inventory or attendance writes.
-export const CASHIER_RELEASE = 'cashier-orange-20261004-r2';
+export const CASHIER_RELEASE = 'cashier-tablet-20261004-r3';
 export function millis(value) {
   if (value == null) return NaN;
   if (typeof value.toMillis === 'function') return value.toMillis();
@@ -85,4 +85,24 @@ export function drinkLabels(receipt, categories = [], catalogue = []) {
       customer:String(receipt.customerName || receipt.customer || ''), order:String(receipt.receiptId || receipt.orderId || receipt.id || ''), copy:copy+'/'+qty});
   }
   return labels;
+}
+
+export function parkedOrderDetails(order) {
+  const time=millis(order.timestamp ?? order.parkedAt ?? order.localTimestamp);
+  return {
+    name:String(order.name || order.customerName || 'Guest'),
+    total:Number(order.total ?? order.netTotal) || 0,
+    parkedAt:Number.isFinite(time) ? new Date(time).toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'}) : 'Parked time not recorded',
+    cashier:String(order.cashier || order.parkedBy || 'Not recorded'),
+    branch:String(order.branch || 'Not recorded'),
+    type:String(order.orderType || 'Not recorded'),
+    platform:order.platform==='Grab' || order.platform==='Foodpanda' ? order.platform : 'Store POS',
+    items:(Array.isArray(order.items) ? order.items : Array.isArray(order.cart) ? order.cart : []).map(item=>({
+      name:String(item.name || 'Item'),qty:Number(item.qty ?? item.quantity) || 1,
+      total:Number(item.lineTotalFinal ?? item.lineTotal) || 0,
+      variant:item.variantName && item.variantName!=='Standard' ? String(item.variantName) : '',
+      notes:String(item.notes || ''),
+      addons:Object.entries(item.addons || {}).filter(([,a])=>Number(a?.qty)>0).map(([name,a])=>`${a.qty}× ${name}`)
+    }))
+  };
 }
