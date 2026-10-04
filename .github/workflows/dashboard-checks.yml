@@ -15,6 +15,6 @@ jobs:
           node-version: '22'
       - name: Check Manager and Cashier scripts
         run: |
-          for script in takodeal-manager/*.js Takodeal-POS/*.js; do node --check "$script"; done
+          for script in takodeal-manager/*.js Takodeal-POS/*.js Customer/*.js; do node --check "$script"; done
       - name: Verify dashboard, checkout, inventory, recipes and payroll
-        run: node --test tests/dashboard-data.test.mjs tests/pos-safety.test.mjs tests/pending-sales.test.mjs tests/recipe-repair.test.mjs tests/payroll-safety.test.mjs tests/branch-operations.test.mjs tests/manager-login.test.mjs tests/employee-id.test.mjs
+        run: node --test tests/dashboard-data.test.mjs tests/pos-safety.test.mjs tests/pending-sales.test.mjs tests/recipe-repair.test.mjs tests/payroll-safety.test.mjs tests/branch-operations.test.mjs tests/manager-login.test.mjs tests/employee-id.test.mjs tests/customer-menu.test.mjs
