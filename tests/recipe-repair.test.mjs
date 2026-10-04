@@ -40,23 +40,27 @@ test('sauce recovery survives lost acknowledgment and uses recorded canonical st
     await engine.voidSale(payload.receiptId, 'Owner', payload.branch);
     assert.equal(h.get('inventory/sauce-office').currentStock, 1000);
 });
-test('replacement never hides ambiguous stock, crosses branches, or skips a missing ingredient', async () => {
+test('replacement never deducts ambiguous or other-branch stock and preserves missing quantities for review', async () => {
     const { h, payload, engine } = sauceSale();
     h.put('inventory/sauce-copy', { name: 'Takoyaki Sauce Regular', branch: 'Main Office', currentStock: 100 });
-    await assert.rejects(engine.prepare(payload), /duplicate inventory/);
+    const duplicate = await engine.prepare(payload);
+    assert.equal(duplicate.inventoryIssues[0].reason, 'duplicate');
+    assert.equal(duplicate.inventoryIssues[0].quantity, 70);
     h.docs.delete('inventory/sauce-copy'); h.docs.delete('inventory/sauce-office');
-    await assert.rejects(engine.prepare(payload), /inventory item/);
+    assert.equal((await engine.prepare(payload)).inventoryMovements.length, 0);
     const unknown = { ...payload, recipeSnapshot: [{ menuItem: 'Takoyaki 8 Pcs', ingredientName: 'Unknown Sauce', qty: 35 }] };
-    await assert.rejects(engine.prepare(unknown), /Unknown Sauce/);
+    assert.equal((await engine.prepare(unknown)).inventoryIssues[0].ingredientName, 'Unknown Sauce');
     assert.equal(h.get('inventory/sauce-other').currentStock, 10000);
 });
-test('an existing old ingredient is preferred, but duplicate old records still fail closed', async () => {
+test('an existing old ingredient is preferred, but duplicate old records are sent to review', async () => {
     const { h, payload, engine } = sauceSale();
     h.put('inventory/old', { name: 'T.Reg.Sauce', branch: 'Main Office', currentStock: 100 });
     const prepared = await engine.prepare(payload);
     assert.equal(prepared.inventoryMovements.find(m => m.inventoryId === 'old').quantity, 70);
     h.put('inventory/old-copy', { name: 'T.Reg.Sauce', branch: 'Main Office', currentStock: 100 });
-    await assert.rejects(engine.prepare(payload), /duplicate inventory/);
+    const duplicate = await engine.prepare(payload);
+    assert.equal(duplicate.inventoryIssues[0].ingredientName, 'T.Reg.Sauce');
+    assert.ok(!duplicate.inventoryMovements.some(row => ['old','old-copy'].includes(row.inventoryId)));
 });
 
 test('extra spaces in actual stock names recover the same receipt and deduct once across retries', async () => {
@@ -76,15 +80,15 @@ test('extra spaces in actual stock names recover the same receipt and deduct onc
     assert.equal(h.get('inventory/sauce-office').currentStock, 1000);
 });
 
-test('whitespace fallback fails closed for multiple matches and cannot cross branches or ignore letter case', async () => {
+test('whitespace fallback flags multiple matches and cannot cross branches or ignore letter case', async () => {
     const { h, payload, engine } = sauceSale();
     h.put('inventory/sauce-office', { name: 'Takoyaki Sauce  Regular', branch: 'Main Office', currentStock: 1000 });
     h.put('inventory/sauce-copy', { name: ' Takoyaki Sauce Regular ', branch: 'Main Office', currentStock: 100 });
-    await assert.rejects(engine.prepare(payload), /branch: Main Office, matches: 2/);
+    assert.equal((await engine.prepare(payload)).inventoryIssues[0].matches, 2);
     h.docs.delete('inventory/sauce-copy'); h.docs.delete('inventory/sauce-office');
-    await assert.rejects(engine.prepare(payload), /branch: Main Office, matches: 0/);
+    assert.equal((await engine.prepare(payload)).inventoryMovements.length, 0);
     h.put('inventory/sauce-office', { name: 'takoyaki sauce regular', branch: 'Main Office', currentStock: 1000 });
-    await assert.rejects(engine.prepare(payload), /matches: 0/);
+    assert.equal((await engine.prepare(payload)).inventoryIssues[0].matches, 0);
     assert.equal(h.get('inventory/sauce-other').currentStock, 10000);
 });
 

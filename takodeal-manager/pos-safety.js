@@ -154,6 +154,8 @@ export function createSaleEngine(api) {
     const queryDocs = (table, filters) => getDocsFromServer(query(collection(db, table), ...filters.map(([key, value]) => where(key, '==', value))));
     const transactionRef = saleId => ref('transactions', saleId);
     const markerRef = saleId => ref('pos_sale_commits', saleId);
+    // The existing HQ alert feed renders message HTML. Keep business data text.
+    const alertText = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     function validateMovement(movement, branch, snapshot) {
         if (!Number.isFinite(movement.quantity) || movement.quantity <= 0 || !snapshot.exists() ||
             snapshot.data().branch !== branch || snapshot.data().name !== movement.ingredientName) {
@@ -192,6 +194,7 @@ export function createSaleEngine(api) {
             if (payload.inventoryMovements) return payload;
             const movements = collectDeductions(payload, payload.recipeSnapshot || bom);
             const resolved = new Map();
+            const inventoryIssues = [];
             const normalizedName = name => String(name ?? '').trim().replace(/\s+/g, ' ');
             let branchInventory;
             async function findIngredient(name) {
@@ -210,8 +213,14 @@ export function createSaleEngine(api) {
                     ingredientName = INGREDIENT_REPLACEMENTS[ingredientName];
                     matches = await findIngredient(ingredientName);
                 }
-                if (matches.length !== 1) throw new Error('Missing or duplicate inventory item: ' + ingredientName +
-                    ' (branch: ' + payload.branch + ', matches: ' + matches.length + ')');
+                if (matches.length !== 1) {
+                    // A stock configuration problem must not hold a paid sale
+                    // on the tablet. Preserve the deduction for HQ review;
+                    // never choose an ambiguous stock record or another branch.
+                    inventoryIssues.push({ ...movement, lookupName: ingredientName,
+                        reason: matches.length ? 'duplicate' : 'missing', matches: matches.length });
+                    continue;
+                }
                 const inventoryId = matches[0].id;
                 // Keep the actual stored spelling for strict transaction-time
                 // validation and later audit/void inventory movements.
@@ -221,7 +230,8 @@ export function createSaleEngine(api) {
                 if (!Number.isFinite(quantity)) throw new Error('Invalid ingredient deduction.');
                 resolved.set(inventoryId, { ingredientName, quantity, inventoryId });
             }
-            return { ...payload, inventoryMovements: [...resolved.values()] };
+            return { ...payload, inventoryMovements: [...resolved.values()], inventoryIssues,
+                inventoryReviewRequired: inventoryIssues.length > 0 };
         },
         // Used before preparation, so a committed retry can be acknowledged even
         // if recipes or inventory configuration have subsequently changed.
@@ -240,7 +250,13 @@ export function createSaleEngine(api) {
                 throw new Error('Sale is not prepared.');
             }
             const movements = payload.inventoryMovements;
-            if (movements.length > 200) throw new Error('Sale contains too many inventory items.');
+            const issues = payload.inventoryIssues || [];
+            if (!Array.isArray(issues) || issues.some(issue => !issue.ingredientName ||
+                !Number.isFinite(issue.quantity) || issue.quantity <= 0 ||
+                !['missing', 'duplicate'].includes(issue.reason) || !Number.isInteger(issue.matches) || issue.matches < 0)) {
+                throw new Error('Invalid inventory review record. Sale remains queued.');
+            }
+            if (movements.length + issues.length > 200) throw new Error('Sale contains too many inventory items.');
             return runTransaction(db, async tx => {
                 const saleRef = transactionRef(payload.saleId);
                 const marker = await tx.get(markerRef(payload.saleId));
@@ -267,12 +283,21 @@ export function createSaleEngine(api) {
                 tx.set(saleRef, {
                     ...sale, timestamp: new Date(payload.localTimestamp),
                     inventoryState: deferred ? 'deferred' : 'applied',
+                    inventoryIssues: issues, inventoryReviewRequired: issues.length > 0,
                     ballsCounted, statsApplied: true
                 });
                 // Retain this marker even when receipt history is archived.
                 tx.set(markerRef(payload.saleId), { saleId: payload.saleId, branch: payload.branch,
                     receiptId: payload.receiptId, fingerprint: saleFingerprint(payload), committedAt: serverTimestamp() });
                 stats(tx, { ...payload, ballsCounted }, 1);
+                if (issues.length) tx.set(ref('manager_alerts', 'inventory-review-' + payload.saleId), {
+                    type: 'INVENTORY_REVIEW', branch: payload.branch, cashier: payload.cashier || 'Unknown',
+                    receiptId: payload.receiptId, saleId: payload.saleId, inventoryIssues: issues, reviewStatus: 'Pending',
+                    message: `Receipt ${alertText(payload.receiptId)} uploaded. Stock deductions need review: ` +
+                        issues.map(issue => `${alertText(issue.ingredientName)} (${issue.quantity}; ${issue.reason}, ${issue.matches} matches)`).join(', ') +
+                        '. These unmatched quantities were not deducted. Sales and payments are recorded.',
+                    timestamp: serverTimestamp(), isRead: false
+                });
                 if (mobileRef) tx.update(mobileRef, { paymentStatus: 'paid', receiptId: payload.receiptId, encodedAt: serverTimestamp() });
                 else if (payload.orderType === 'Delivery') tx.set(ref('incoming_orders', 'delivery-' + payload.saleId), {
                     branch: payload.branch, customerName: payload.customerName || 'Delivery Customer',
@@ -361,6 +386,10 @@ export function createSaleEngine(api) {
                 tx.update(saleRef, { status: 'Voided', voidedBy: cashier, voidTime: serverTimestamp(),
                     inventoryState: data.inventoryState === 'applied' ? 'reversed' : 'cancelled' });
                 if (data.statsApplied) stats(tx, data, -1);
+                if (data.inventoryIssues?.length) tx.set(ref('manager_alerts', 'inventory-review-' + data.saleId), {
+                    reviewStatus: 'Cancelled', isRead: true,
+                    message: `Receipt ${alertText(receiptId)} was voided. Its unmatched stock deductions were cancelled; no stock was added for them.`
+                }, { merge: true });
                 tx.set(ref('manager_alerts', 'void-' + saleRef.id), {
                     type: 'VOID_ALERT', branch, cashier, receiptId,
                     message: `Cashier ${cashier} voided Receipt ${receiptId}. ${rows.length ? 'Recorded inventory deductions were returned.' : 'Paused inventory deductions were cancelled.'}`,

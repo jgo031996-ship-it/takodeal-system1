@@ -232,7 +232,7 @@ function installUpdates(){
   navigator.serviceWorker?.addEventListener('controllerchange',()=>{if(activateRequested && !updateBlocker(window)){if(window.TARGET_UPDATE_VERSION)localStorage.setItem('takodeal_local_version',String(window.TARGET_UPDATE_VERSION));location.reload();}});
   window.addEventListener('cashier-worker-ready',event=>ready(event.detail));
   window.setInterval(()=>{if(document.visibilityState==='visible' && navigator.onLine)releaseRegistration?.update().catch(()=>{});},15*60*1000);
-  if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){showCashierUpdateNotice('updated','Cashier workspace updated','Drawer counts now save for this shift. Printer recovery and checkout controls have been improved.');localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
+  if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){showCashierUpdateNotice('updated','Shift sales updated','Temporary inventory review: missing or duplicate ingredients no longer block sale uploads or shift closure. Skipped quantities are flagged in HQ. Shift Sales now updates live.');localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
 }
 function install(){installTheme();installRemittance();installClock();installPrinterHub();installTabletControls();installParkedOrders();installUpdates();}
 if(document.readyState==='complete')install();else window.addEventListener('load',install,{once:true});

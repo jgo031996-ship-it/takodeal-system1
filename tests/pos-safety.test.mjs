@@ -78,15 +78,20 @@ test('Firestore map key reordering does not change sale identity', async () => {
     assert.equal(await engine.alreadyCommitted(reordered), true);
     await assert.rejects(engine.alreadyCommitted({ ...payload, netTotal: 99 }), /identity conflict/);
 });
-test('inventory resolution is branch scoped and rejects missing or duplicate items', async () => {
+test('inventory resolution is branch scoped and flags missing or duplicate items without guessing', async () => {
     const { h, engine, payload } = setup();
     await engine.commit(await engine.prepare({ ...payload, branch: 'Maa' }, bom));
     assert.equal(h.get('inventory/Cabantian-Batter').currentStock, 100);
     assert.equal(h.get('inventory/Maa-Batter').currentStock, 88);
     h.put('inventory/duplicate', { name: 'Box', branch: 'Cabantian', currentStock: 100 });
-    await assert.rejects(engine.prepare(payload, bom), /duplicate inventory/);
+    const duplicate = await engine.prepare(payload, bom);
+    assert.equal(duplicate.inventoryIssues[0].ingredientName, 'Box');
+    assert.equal(duplicate.inventoryIssues[0].reason, 'duplicate');
+    assert.ok(!duplicate.inventoryMovements.some(row => row.ingredientName === 'Box'));
     h.docs.delete('inventory/Cabantian-Cheese');
-    await assert.rejects(engine.prepare(payload, bom), /inventory item/);
+    const missing = await engine.prepare(payload, bom);
+    assert.equal(missing.inventoryIssues.find(row => row.ingredientName === 'Cheese').quantity, 6);
+    assert.ok(!missing.inventoryMovements.some(row => row.ingredientName === 'Cheese'));
 });
 test('mixed order types, fractional packaging and addons retain exact quantities', () => {
     const cart = [{ name: '6 Pcs Takoyaki', qty: 1, orderType: 'Dine-In' },
