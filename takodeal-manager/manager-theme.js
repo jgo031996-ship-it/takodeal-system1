@@ -12,14 +12,14 @@ export const MANAGER_PAGES = Object.freeze({
     ledger: ['Human resources', 'Loans & Ledger', 'Review staff accounts, loans, and repayments.'],
     inbox: ['Human resources', 'Request Inbox', 'Review staff requests and keep decisions documented.'],
     branches: ['People', 'Staff & Security', 'Manage employment details and branch assignments.'],
-    products: ['Menu', 'Menu Costing & BOM', 'Connect recipes, ingredient costs, and selling prices.'],
+    products: ['Menu', 'Menu & Recipes', 'Edit prices, recipes, images, and margins in one workspace.'],
     dispatch: ['Operations', 'Dispatch Stock', 'Prepare deliveries and follow stock requests across branches.'],
     riders: ['Operations', 'Fleet & Riders', 'Keep rider assignments and delivery accounts organized.'],
     zreadings: ['Reports', 'Z-Reading Reports', 'Review completed shifts and cashier declarations.'],
     history: ['Reports', 'Sales History', 'Find receipts and review sales across your branches.'],
     expenses: ['Finance', 'Expense & Restock Feed', 'Review spending, purchases, and restock activity.'],
     sop: ['Operations', 'SOP Manager', 'Maintain procedures and review branch compliance.'],
-    menu: ['Menu', 'Menu Editor', 'Maintain the products and categories your cashiers use.'],
+    menu: ['Menu', 'Menu & Recipes', 'Edit prices, recipes, images, and margins in one workspace.'],
     posconfig: ['Configuration', 'POS Config Hub', 'Manage cashier settings and the layout of the POS.'],
     customerapp: ['Configuration', 'Customer App Hub', 'Manage the customer menu and ordering experience.'],
     equipment: ['Operations', 'Assets & Equipment', 'Track company equipment and asset records.'],
@@ -89,7 +89,7 @@ export function initManagerTheme({ document: d = document, window: w = window, o
             if (s.display === 'flex' && (s.gap || s.justifyContent === 'space-between') && s.flexDirection !== 'column') el.classList.add('theme-flex');
             if (s.borderRadius && s.padding && (s.background || s.backgroundColor) && !['absolute','fixed'].includes(s.position)) {
                 const tone = themeTone(s.background || s.backgroundColor);
-                el.classList.add(tone === 'dark' ? 'theme-hero' : 'theme-surface');
+                el.classList.add((tone === 'dark' || (tone === 'primary' && /white|#fff|rgb\(255/.test(s.color))) ? 'theme-hero' : 'theme-surface');
                 if (tone === 'danger' || /#(?:fef2f2|fff1f2|fee2e2)|rgb\((?:254, 242, 242|255, 241, 242|254, 226, 226)\)/i.test(s.background)) el.classList.add('theme-surface-danger');
             }
             if (s.borderBottom && el.querySelector('h2,h3') && s.padding) el.classList.add('theme-panel-heading');

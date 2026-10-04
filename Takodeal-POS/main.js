@@ -1,8 +1,11 @@
+import { receiveDispatch } from './dispatch-safety.js';
+import { MALL_FLOAT, stockRequestDue, autoRequestId, businessClock } from './branch-operations.js';
+import { closeShiftAtomic, readBranchPolicy } from './cash-settlement.js';
 // ========================================================
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer, getDocFromServer } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { installSaleSafety } from './pos-checkout.js';
 import { saleIdentity } from './pos-safety.js';
 // 🔥 NEW: Import Firebase Storage
@@ -62,6 +65,9 @@ window.query = query;
 window.where = where;
 window.collection = collection;
 window.getDocs = getDocs;
+window.getDocsFromServer = getDocsFromServer;
+window.getDocFromServer = getDocFromServer;
+window.runTransaction = runTransaction;
 window.deleteDoc = deleteDoc;
 window.doc = doc;
 window.updateDoc = updateDoc;
@@ -4470,7 +4476,7 @@ window.renderDeliveriesTab = function() {
     // 📦 STEP 1: GROUP SEPARATE FIREBASE DOCS BY DISPATCH
     let dispatchGroups = {};
     window.incomingDeliveriesList.forEach(del => {
-        let groupKey = del.dispatchId || `${del.date}_${del.driver}`;
+        let groupKey = del.batchId || del.dispatchId || `${del.date}_${del.driver}`;
         if (!dispatchGroups[groupKey]) {
             dispatchGroups[groupKey] = {
                 dispatchId: groupKey,
@@ -4593,132 +4599,24 @@ window.toggleMissingItemRow = function(itemId) {
 };
 
 window.submitGroupedDispatch = async function(groupKey, encodedItems) {
-    let items = JSON.parse(decodeURIComponent(encodedItems));
-    let masterBtn = document.getElementById(`btn_submit_dispatch_${groupKey}`);
-    
-    let itemsToProcess = [];
-    for (let item of items) {
-        let isMissing = document.getElementById(`missing_check_${item.id}`).checked;
-        let inputVal = document.getElementById(`recv_val_${item.id}`).value;
-        let remarkVal = document.getElementById(`remark_val_${item.id}`).value.trim();
-        let actualDisplayQty = parseFloat(inputVal);
-
-        if (isMissing) {
-            actualDisplayQty = 0;
-        } else if (isNaN(actualDisplayQty) || actualDisplayQty < 0) {
-            actualDisplayQty = parseFloat(document.getElementById(`recv_val_${item.id}`).placeholder);
-        }
-
-        itemsToProcess.push({
-            ...item,
-            actualDisplayQty: actualDisplayQty,
-            isMissing: isMissing,
-            remarks: remarkVal
-        });
+    const button=document.getElementById('btn_submit_dispatch_'+groupKey);
+    if (button?.disabled) return;
+    const items=JSON.parse(decodeURIComponent(encodedItems)),values=[];
+    for (const item of items) {
+        const input=document.getElementById('recv_val_'+item.id),missing=document.getElementById('missing_check_'+item.id)?.checked;
+        const actualDisplayQty=missing?0:Number(input?.value===''?input.placeholder:input?.value);
+        if (!Number.isFinite(actualDisplayQty) || actualDisplayQty<0) return Swal.fire('Check quantity','Enter a valid received quantity for '+item.item+'.','warning');
+        values.push({id:item.id,actualDisplayQty,isMissing:!!missing,remarks:document.getElementById('remark_val_'+item.id)?.value.trim() || ''});
     }
-
-    if (!confirm(`Are you sure you want to verify receipt for this entire shipment sheet?`)) return;
-
-    if (masterBtn) { masterBtn.innerText = "⏳ Processing Bulk Safe-Deposit..."; masterBtn.disabled = true; }
-    let safeBranch = localStorage.getItem('takodeal_device_branch');
-
+    const confirm=await Swal.fire({title:'Receive this shipment?',text:'The saved quantities will be added to this branch once.',icon:'question',showCancelButton:true});
+    if (!confirm.isConfirmed) return;
+    if (button) {button.disabled=true;button.innerText='Receiving shipment…';}
     try {
-        await Promise.all(itemsToProcess.map(async (item) => {
-            let convRate = item.convRate || 1;
-            let baseUom = item.uom;
-            let actualBaseQty = item.actualDisplayQty * convRate;
-            let expectedDisplayQty = item.displayQty || item.qty;
-            let expectedBaseQty = expectedDisplayQty * convRate;
-            let varianceBase = actualBaseQty - expectedBaseQty;
-
-            let exceptionStatus = "Received";
-            if (item.isMissing) {
-                exceptionStatus = "Lost in Transit";
-            } else if (varianceBase !== 0) {
-                exceptionStatus = "Discrepancy";
-            }
-
-            if (!item.isMissing && actualBaseQty > 0) {
-                const targetQ = query(collection(db, "inventory"), where("branch", "==", safeBranch), where("name", "==", item.item));
-                const targetSnap = await getDocs(targetQ);
-
-                let oldStockForLog = 0;
-
-                if (targetSnap.empty) {
-                    // 🔥 THE NEW ITEM CLONE FIX: Fetch HQ Master Data to perfectly copy the image and settings!
-                    const hqQ = query(collection(db, "inventory"), where("branch", "==", "Main Office"), where("name", "==", item.item));
-                    const hqSnap = await getDocs(hqQ);
-                    let hqData = hqSnap.empty ? {} : hqSnap.docs[0].data();
-
-                    await addDoc(collection(db, "inventory"), { 
-                        branch: safeBranch, 
-                        name: item.item, 
-                        uom: hqData.uom || baseUom, 
-                        currentStock: actualBaseQty, 
-                        category: hqData.category || item.category || "Ingredients", 
-                        purchaseUom: hqData.purchaseUom || item.purchaseUom || baseUom,
-                        conversionOriginal: convRate, 
-                        conversionRate: convRate, 
-                        cost: item.cost || 0, 
-                        baseCost: hqData.baseCost || 0,
-                        reorderLevel: item.reorderLevel || 10, 
-                        showInPrep: hqData.showInPrep !== undefined ? hqData.showInPrep : true,
-                        allowRequest: hqData.allowRequest !== undefined ? hqData.allowRequest : true,
-                        image: hqData.image || null // 🔥 Securely copies the picture!
-                    });
-                } else {
-                    let tRef = targetSnap.docs[0].ref;
-                    let originalStock = targetSnap.docs[0].data().currentStock || 0;
-                    oldStockForLog = originalStock;
-
-                    // 🔥 THE WIPE-THE-SLATE FIX
-                    // If current stock is negative (ghost debt), we force it to 0 before adding the delivery!
-                    let baseStockMath = originalStock < 0 ? 0 : originalStock;
-                    let newStock = baseStockMath + actualBaseQty;
-
-                    await updateDoc(tRef, { currentStock: newStock });
-                }
-
-                // Add a note in the Manager's Trace Ledger so they know the ghost debt was wiped!
-                let resetNote = oldStockForLog < 0 ? ` (Wiped ${oldStockForLog.toFixed(2)} negative ghost debt)` : '';
-
-                await addDoc(collection(db, "stock_logs"), {
-                    branch: safeBranch, item: item.item, uom: baseUom, oldQty: oldStockForLog,
-                    newQty: (oldStockForLog < 0 ? 0 : oldStockForLog) + actualBaseQty, variance: actualBaseQty, 
-                    type: "Delivery Received", note: `Group Batch Shipment Confirmed${resetNote}`, user: localStorage.getItem('cashierName') || 'System', timestamp: serverTimestamp()
-                });
-            }
-
-            await updateDoc(doc(db, "dispatch_logs", item.id), {
-                status: exceptionStatus,
-                receivedQty: actualBaseQty, 
-                variance: varianceBase,     
-                receivedDisplayQty: item.actualDisplayQty, 
-                receivedAt: serverTimestamp(),
-                receivedBy: localStorage.getItem('cashierName') || 'Cashier',
-                receivingRemarks: item.remarks
-            });
-
-            if (item.isMissing || varianceBase !== 0) {
-                await addDoc(collection(db, "manager_alerts"), {
-                    type: "DELIVERY_DISCREPANCY",
-                    branch: safeBranch,
-                    cashier: localStorage.getItem('cashierName') || 'Cashier',
-                    message: `SH_ALERT: ${item.item} delivery discrepancy flagged at ${safeBranch}. Status: ${exceptionStatus}. Expected: ${expectedDisplayQty}, Got: ${item.actualDisplayQty}. Note: "${item.remarks || 'No remarks'}"`,
-                    timestamp: serverTimestamp(),
-                    isRead: false
-                });
-            }
-        }));
-
-        alert("🎉 Complete shipment sheet successfully verified and deposited to database registers!");
-
-    } catch (error) {
-        console.error("Bulk Process Error: ", error);
-        alert("❌ Bulk write execution failure. Please check your data connection settings.");
-    } finally {
-        if (masterBtn) { masterBtn.innerText = "Confirm and Receive Complete Shipment"; masterBtn.disabled = false; }
-    }
+        await receiveDispatch(window,{branch:localStorage.getItem('takodeal_device_branch'),actor:localStorage.getItem('cashierName') || 'Cashier',items:values});
+        window.invalidateCache?.('inventory');await window.loadStockRequestUI?.();
+        Swal.fire('Shipment received','Stock and the delivery record were saved together.','success');
+    } catch(error) {Swal.fire('Receipt not completed',error.message,'error');}
+    finally {if(button){button.disabled=false;button.innerText='Confirm and Receive Complete Shipment';}}
 };
 
 // ==========================================
@@ -5425,16 +5323,12 @@ window.runAutonomousRestockAI = async function(forceRun = false) {
     let branch = localStorage.getItem('takodeal_device_branch');
     if (!branch) return;
 
-    let todayStr = new Date().toDateString();
-    let isFriday = new Date().getDay() === 5; // 5 = Friday
-    let lastRunDate = localStorage.getItem('takodeal_last_ai_restock_date');
-
-    // 🔥 WEEKLY LOCK: Only auto-run on Fridays, and only ONCE per Friday!
-    if (!forceRun) {
-        if (!isFriday) return; 
-        if (lastRunDate === todayStr) return; // Already generated the Friday report today!
-    }
-
+    if (branch === 'Main Office' || window.restockRequestRunning) return;
+    const clock = businessClock();
+    const lockKey = 'takodeal_ai_restock_' + branch;
+    const schedule = window.restockSchedule || {};
+    if (!forceRun && (!stockRequestDue(schedule) || localStorage.getItem(lockKey) === clock.day)) return;
+    window.restockRequestRunning = true;
     try {
         // 1. Fetch live velocity & inventory
         await window.calculateBranchVelocity(branch);
@@ -5446,6 +5340,8 @@ window.runAutonomousRestockAI = async function(forceRun = false) {
         let cycleDays = 7; 
         try {
             const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_delivery_schedule"));
+            if (schedSnap.exists()) window.restockSchedule = schedSnap.data();
+            if (!forceRun && !stockRequestDue(window.restockSchedule || {})) return;
             if (schedSnap.exists() && schedSnap.data().nextDeliveryDate) {
                 let targetDate = new Date(schedSnap.data().nextDeliveryDate + 'T00:00:00');
                 let today = new Date(); today.setHours(0,0,0,0);
@@ -5515,7 +5411,7 @@ window.runAutonomousRestockAI = async function(forceRun = false) {
                     selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
                     convRate: conv, conversionRate: conv, category: item.category || "Ingredients",
                     requestType: requestType,
-                    systemStock: currentStockBase, physicalStock: currentStockBase, displayQty: deficitPurch,
+                    systemStock: currentStockBase, isForecast: true, displayQty: deficitPurch,
                     dailyBurnPurch: dailyBurnPurch.toFixed(2), runwayDays: dailyBurnPurch > 0 ? (currentStockPurch / dailyBurnPurch).toFixed(1) : "N/A"
                 });
             }
@@ -5523,18 +5419,19 @@ window.runAutonomousRestockAI = async function(forceRun = false) {
 
         // 4. Auto-submit PO batch if triggered
         if (hasCriticalTrigger && aiDraftCart.length > 0) {
-            await window.addDoc(window.collection(window.db, "purchase_orders"), {
-                branch: branch,
-                type: "AI Weekly Auto Forecast",
-                items: aiDraftCart,
-                status: "Pending",
-                requestedBy: "TAKODEÁL AI FORECASTER",
-                timestamp: window.serverTimestamp()
+            const requestId = forceRun ? 'manual-' + crypto.randomUUID() : autoRequestId(branch);
+            const lockRef = window.doc(window.db, 'settings', 'restock_request_' + encodeURIComponent(branch));
+            const requestRef = window.doc(window.db, 'purchase_orders', requestId);
+            const created = await window.runTransaction(window.db, async tx => {
+                const existing = await tx.get(requestRef);
+                const lock = await tx.get(lockRef);
+                if (existing.exists() || (!forceRun && lock.exists() && lock.data().lastRequestDay >= clock.day)) return false;
+                tx.set(requestRef, {branch, type: forceRun ? 'Manual Forecast' : 'AI Weekly Auto Forecast', items:aiDraftCart,status:'Pending',requestedBy:'TAKODEÁL AI FORECASTER',timestamp:window.serverTimestamp(),requestId,requestDay:clock.day,isForecast:true});
+                if (!forceRun) tx.set(lockRef,{branch,lastRequestDay:clock.day,requestId,updatedAt:window.serverTimestamp()});
+                return true;
             });
-
-            // Lock it so it doesn't run again today!
-            localStorage.setItem('takodeal_last_ai_restock_date', todayStr);
-
+            localStorage.setItem(lockKey, clock.day);
+            if (!created) return;
             if (document.getElementById('view-stockreq') && document.getElementById('view-stockreq').classList.contains('active')) {
                 if (typeof window.loadStockRequestUI === 'function') window.loadStockRequestUI();
             }
@@ -5551,7 +5448,7 @@ window.runAutonomousRestockAI = async function(forceRun = false) {
         }
     } catch (e) {
         console.error("AI Forecaster Error:", e);
-    }
+    } finally { window.restockRequestRunning = false; }
 };
 
 // Periodic Background Evaluation (Every 15 minutes) - Will silently abort if it's not Friday!
@@ -6108,9 +6005,11 @@ window.toggleActualCount = function(id) {
     }
 };
 
-window.openShiftModal = function() {
+window.openShiftModal = async function() {
     if (!systemReady) return;
-    
+    const policy = await readBranchPolicy(window, sessionUser.branch).catch(error => { Swal.fire('Branch setup',error.message,'error'); return null; });
+    if (!policy) return;
+    window.shiftOpeningPolicy = policy;
     if (!currentShift) {
         document.getElementById('shiftViewOpen').style.display = "block";
         document.getElementById('shiftViewClose').style.display = "none";
@@ -6120,7 +6019,8 @@ window.openShiftModal = function() {
         
         let inputStart = document.getElementById('inputStartingCash');
         inputStart.placeholder = "Enter physical cash count...";
-        inputStart.value = ""; 
+        inputStart.value = policy.isMallBranch ? MALL_FLOAT : "";
+        inputStart.readOnly = policy.isMallBranch === true; 
 
         // 🔥 THE BEHAVIORAL WARNING & HANDOVER ENGINE
         const q = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", sessionUser.branch), window.where("status", "==", "Closed"), window.orderBy("endTime", "desc"), window.limit(1));
@@ -6135,12 +6035,13 @@ window.openShiftModal = function() {
 
             if(!snap.empty) {
                 let lastShift = snap.docs[0].data();
-                window.lastEndingCash = parseFloat(lastShift.declaredCash) || parseFloat(lastShift.actualCash) || 0;
+                window.lastEndingCash = policy.isMallBranch ? MALL_FLOAT : Number(lastShift.retainedCash ?? lastShift.declaredCash ?? lastShift.actualCash ?? 0);
                 window.lastShiftDataForDispute = lastShift; // 🔥 Save globally to know who to penalize!
 
                 let expected = parseFloat(lastShift.expectedCash) || 0;
                 let diff = window.lastEndingCash - expected;
-                inputStart.value = ""; 
+                inputStart.value = policy.isMallBranch ? MALL_FLOAT : "";
+        inputStart.readOnly = policy.isMallBranch === true; 
 
                 // 🔥 THE NEW EDITABLE BLIND COUNT HANDOVER
                 let stockNotes = '';
@@ -6193,10 +6094,12 @@ window.openShiftModal = function() {
                     noteEl.innerHTML = `🚨 The previous shift closed with a <b>CASH SHORTAGE</b>.<br><span style="font-size:11px; font-weight:normal; color:#b91c1c;">Please double-count the drawer carefully.</span>${stockNotes}`;
                     noteEl.style.background = "#fef2f2"; noteEl.style.color = "#dc2626"; noteEl.style.border = "1px solid #fecaca";
                 }
+                if (policy.isMallBranch) noteEl.innerHTML = "Mall branch: start with ₱2,000 petty cash. Cash above this amount is submitted for remittance at shift close." + stockNotes;
                 noteEl.style.display = "block";
             } else {
                 window.lastEndingCash = 0;
-                inputStart.value = "";
+                inputStart.value = policy.isMallBranch ? MALL_FLOAT : "";
+        inputStart.readOnly = policy.isMallBranch === true;
                 noteEl.style.display = "none";
             }
         });
@@ -7284,7 +7187,8 @@ window.MASTER_CloseShift = async function () {
 
     if (confirmBtn) {
         confirmBtn.innerHTML = "⏳ Processing Shift...";
-        //confirmBtn.disabled = true;
+        if (confirmBtn.disabled) return;
+        confirmBtn.disabled = true;
     }
 
     try {
@@ -7324,7 +7228,7 @@ window.MASTER_CloseShift = async function () {
             
             if (missingMandatory) {
                 Swal.fire('Missing Count', 'You must blind-count all mandatory items before closing the shift.', 'warning');
-                btn.innerText = "Confirm & End Shift"; btn.disabled = false;
+                if (confirmBtn) { confirmBtn.innerText = origText; confirmBtn.disabled = false; }
                 return;
             }
         }
@@ -7343,7 +7247,8 @@ window.MASTER_CloseShift = async function () {
 
         // 2. Identify Shift Data
         let shiftId = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? activeShiftDetails.logId : localStorage.getItem('currentShiftId');
-        if (!shiftId) throw new Error("No active shift found to close.");
+        if (!shiftId) throw new Error('No active shift found to close.');
+        if ((window.offlineQueue || []).some(row => row.shiftId === shiftId)) throw new Error('Sales are still awaiting upload. Sync them before closing this shift.');
 
         let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
         let cashierName = (window.sessionUser && window.sessionUser.cashierName) ? window.sessionUser.cashierName : (localStorage.getItem('cashierName') || 'Unknown');
@@ -7360,7 +7265,7 @@ window.MASTER_CloseShift = async function () {
         let totalCashSales = 0; let totalDigitalSales = 0;
         let digitalBreakdown = {}; let shiftIngredientBurn = {};
 
-        const txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branchName), window.where("timestamp", ">=", startTime));
+        const txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branchName), window.where("shiftId", "==", shiftId));
         const txSnap = await window.getDocs(txQ);
 
         let unverifiedDigitalCount = 0;
@@ -7432,10 +7337,10 @@ window.MASTER_CloseShift = async function () {
             }
         }
 
-        const expQ = window.query(window.collection(window.db, "expenses"), window.where("branch", "==", branchName), window.where("timestamp", ">=", startTime));
+        const expQ = window.query(window.collection(window.db, "expenses"), window.where("branch", "==", branchName), window.where("shiftId", "==", shiftId));
         const expSnap = await window.getDocs(expQ);
         let cashOut = 0;
-        expSnap.forEach(e => cashOut += (parseFloat(e.data().amount) || 0));
+        expSnap.forEach(e => { if (e.data().paidFrom !== 'Manager Fund' && e.data().sourceAccount !== 'Manager Fund' && e.data().paymentSource !== 'Manager Fund') cashOut += (parseFloat(e.data().amount) || 0); });
 
         let startingCash = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? (activeShiftDetails.startingCash || 0) : 0;
         let expectedCash = startingCash + totalCashSales - cashOut;
@@ -7474,157 +7379,12 @@ window.MASTER_CloseShift = async function () {
                 return; 
             }
 
-            await window.addDoc(window.collection(window.db, "manager_alerts"), {
-                type: "VARIANCE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
-                expected: expectedCash, declared: declaredCash, varianceAmount: variance, stockCounts: {}, 
-                message: `CASH ${isOver ? "OVER" : "SHORT"}: ₱${Math.abs(variance).toFixed(2)} variance detected.`,
-                explanationCause: "Awaiting Staff Letter...", explanationMessage: "", explanationStatus: "Pending", 
-                timestamp: window.serverTimestamp(), isRead: false
-            });
+
         }
 
         if (confirmBtn) confirmBtn.innerHTML = "⏳ Lightning Syncing to Cloud...";
         
-        let batchPromises = [];
-
-        // 6. FIREBASE: CLOSE SHIFT (NOW SAVES BLIND COUNT!)
-        batchPromises.push(window.updateDoc(window.doc(window.db, "shifts", shiftId), {
-            active: false,
-            endTime: window.serverTimestamp(),
-            declaredCash: declaredCash,
-            expectedCash: expectedCash,
-            totalCashSales: totalCashSales, 
-            totalDigitalSales: totalDigitalSales,
-            digitalBreakdown: digitalBreakdown,
-            cashBreakdown: cashBreakdown, 
-            physicalStockCount: physicalStockCount,
-            status: "Closed"
-        }));
-
-        // 7. FIREBASE: AUTO-SWEEP
-        for (let method in digitalBreakdown) {
-            if (method.toLowerCase() === "gcash") continue; 
-            let amountToDeposit = digitalBreakdown[method];
-            if (amountToDeposit > 0) {
-                batchPromises.push((async () => {
-                    const accQ = window.query(window.collection(window.db, "cash_accounts"), window.where("branch", "==", "Main Office"), window.where("name", "==", method));
-                    const accSnap = await window.getDocs(accQ);
-                    if (!accSnap.empty) {
-                        let accDoc = accSnap.docs[0];
-                        let currentBal = accDoc.data().balance || 0;
-                        await window.updateDoc(accDoc.ref, { balance: currentBal + amountToDeposit });
-                        await window.addDoc(window.collection(window.db, "account_logs"), {
-                            accountId: accDoc.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (Shift Close)",
-                            amount: amountToDeposit, newBalance: currentBal + amountToDeposit, user: cashierName, timestamp: window.serverTimestamp(), note: `From ${branchName}`
-                        });
-                    } else {
-                        const newAccRef = await window.addDoc(window.collection(window.db, "cash_accounts"), { name: method, branch: "Main Office", balance: amountToDeposit, createdAt: window.serverTimestamp() });
-                        await window.addDoc(window.collection(window.db, "account_logs"), {
-                            accountId: newAccRef.id, accountName: method, branch: "Main Office", action: "Auto-Sweep (New Account)", amount: amountToDeposit, newBalance: amountToDeposit, user: 'System', timestamp: window.serverTimestamp(), note: `From ${branchName}`
-                        });
-                    }
-                })());
-            }
-        }
-
-        // 👑 7.5 FRANCHISE ROYALTY & PROFIT SHARING ENGINE
-        batchPromises.push((async () => {
-            try {
-                const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", branchName));
-                const bSnap = await window.getDocs(bQ);
-                let isFranchise = false;
-                let royaltyPct = 0;
-                
-                if (!bSnap.empty) {
-                    isFranchise = bSnap.docs[0].data().isFranchise === true || parseFloat(bSnap.docs[0].data().royaltyPercent) > 0;
-                    royaltyPct = parseFloat(bSnap.docs[0].data().royaltyPercent) || 0;
-                }
-
-                if (isFranchise) {
-                    let totalGrossForRoyalty = totalCashSales + totalDigitalSales;
-                    let royaltyAmount = totalGrossForRoyalty * (royaltyPct / 100);
-                    
-                    if (royaltyAmount > 0) {
-                        await window.addDoc(window.collection(window.db, "franchise_ledger"), {
-                            branch: branchName,
-                            type: "Charge", 
-                            category: "Daily Franchise Royalty",
-                            amount: royaltyAmount,
-                            description: `Shift Close: Auto-Billed ${royaltyPct}% Royalty on ₱${totalGrossForRoyalty.toLocaleString(undefined, {minimumFractionDigits: 2})} Gross Sales`,
-                            loggedBy: "System Z-Reading",
-                            timestamp: window.serverTimestamp()
-                        });
-                    }
-                }
-            } catch(e) { console.error("Franchise Billing Engine Error:", e); }
-        })());
-
-        // 🛍️ 7.6 MALL BRANCH MANAGER FUND AUTO-DEPOSIT
-        batchPromises.push((async () => {
-            try {
-                const bQ = window.query(window.collection(window.db, "branches"), window.where("name", "==", branchName));
-                const bSnap = await window.getDocs(bQ);
-                let isMallBranch = false;
-                if (!bSnap.empty) {
-                    isMallBranch = bSnap.docs[0].data().isMallBranch === true;
-                }
-
-                if (isMallBranch) {
-                    let netCashEarned = declaredCash - startingCash;
-                    
-                    if (netCashEarned !== 0) {
-                        const accQ = window.query(window.collection(window.db, "cash_accounts"), window.where("branch", "==", branchName), window.where("name", "==", "Manager Fund"));
-                        const accSnap = await window.getDocs(accQ);
-                        
-                        if (!accSnap.empty) {
-                            let accDoc = accSnap.docs[0];
-                            let currentBal = parseFloat(accDoc.data().balance) || 0;
-                            let newBal = currentBal + netCashEarned;
-                            
-                            await window.updateDoc(accDoc.ref, { balance: newBal });
-                            await window.addDoc(window.collection(window.db, "account_logs"), {
-                                accountId: accDoc.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Net)",
-                                amount: netCashEarned, newBalance: newBal, user: cashierName, timestamp: window.serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
-                            });
-                        } else {
-                            const newAccRef = await window.addDoc(window.collection(window.db, "cash_accounts"), { name: "Manager Fund", branch: branchName, balance: netCashEarned, createdAt: window.serverTimestamp() });
-                            await window.addDoc(window.collection(window.db, "account_logs"), {
-                                accountId: newAccRef.id, accountName: "Manager Fund", branch: branchName, action: "Z-Reading Deposit (Account Created)",
-                                amount: netCashEarned, newBalance: netCashEarned, user: "System", timestamp: window.serverTimestamp(), note: `Shift Close: Declared ₱${declaredCash.toFixed(2)} - Float ₱${startingCash.toFixed(2)}`
-                            });
-                        }
-                    }
-                }
-            } catch(e) { console.error("Mall Branch Deposit Error:", e); }
-        })());
-
-        // 🚨 7.8 STOCK VARIANCE ALERTS FOR MANAGER
-        for (let item of physicalStockCount) {
-            let variance = item.actualCount - item.systemExpected;
-            if (variance < 0) {
-                let valueLost = Math.abs(variance) * item.baseCost;
-                batchPromises.push(window.addDoc(window.collection(window.db, "manager_alerts"), {
-                    type: "STOCK_SHORTAGE_ALERT", branch: branchName, cashier: cashierName, shiftId: shiftId,
-                    message: `STOCK SHORTAGE: ${cashierName} reported ${item.actualCount} ${item.uom} of ${item.name} (System Expected: ${item.systemExpected.toFixed(1)}). Loss Value: ₱${valueLost.toFixed(2)}`,
-                    timestamp: window.serverTimestamp(), isRead: false
-                }));
-            }
-        }
-
-        // 8. Deduct Ingredient Burn
-        for (let ingName in shiftIngredientBurn) {
-            let totalBurn = shiftIngredientBurn[ingName];
-            if (totalBurn > 0) {
-                batchPromises.push(window.addDoc(window.collection(window.db, "stock_logs"), {
-                    branch: branchName, item: ingName, uom: "Units", oldQty: "Shift", newQty: "Summary",
-                    variance: -totalBurn, type: "Shift Sales Deduction", note: `Ingredients used during ${cashierName}'s shift`,
-                    user: cashierName, timestamp: window.serverTimestamp()
-                }));
-            }
-        }
-
-        // 🔥 EXECUTE EVERYTHING SIMULTANEOUSLY FOR LIGHTNING SPEED 🔥
-        await Promise.all(batchPromises);
+        await closeShiftAtomic(window, {shiftId,branch:branchName,cashier:cashierName,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance,cashOut,closing:{cashBreakdown,physicalStockCount}});
 
         // 9. Memory Wipe & Force UI Lockout
         window.cashDrawerMemory = {};
@@ -9327,6 +9087,7 @@ window.globalDeliveryTarget = null;
 window.startSmartReorderListener = function() {
     onSnapshot(doc(db, "settings", "global_delivery_schedule"), (docSnap) => {
         if (docSnap.exists()) {
+            window.restockSchedule = docSnap.data();
             window.globalDeliveryTarget = docSnap.data().nextDeliveryDate;
             window.checkPredictiveStockLevels(); 
         }
@@ -9661,6 +9422,9 @@ document.addEventListener("DOMContentLoaded", () => {
 // ========================================================
 window.openNewShift = async function (branch, cashier, startCash) {
   try {
+    const policy = await readBranchPolicy(window,branch);
+    if (policy.isMallBranch) startCash = MALL_FLOAT;
+    if (!Number.isFinite(startCash) || startCash < 0) throw new Error('Enter a valid starting cash amount.');
     let safeCashier = localStorage.getItem('cashierName') || localStorage.getItem('activeCashier') || cashier || 'Unknown';
     
     // Save to Firebase
@@ -9668,6 +9432,8 @@ window.openNewShift = async function (branch, cashier, startCash) {
       branch: branch,
       cashier: safeCashier,
       startingCash: startCash,
+      isMallBranch: policy.isMallBranch === true,
+      mallFloat: policy.isMallBranch ? MALL_FLOAT : 0,
       startTime: window.serverTimestamp(),
       active: true,
       grossSales: 0,
@@ -9696,6 +9462,8 @@ window.submitOpenShift = async function() {
         let lastEndingCash = window.lastEndingCash || 0;
         let branch = localStorage.getItem('takodeal_device_branch') || (window.sessionUser ? window.sessionUser.branch : 'Unknown');
 
+        const policy = await readBranchPolicy(window,branch);
+        if (policy.isMallBranch) { startCash = MALL_FLOAT; startEl.value = MALL_FLOAT; lastEndingCash = MALL_FLOAT; }
         // 1. CASH DISPUTE CHECK
         if (startCash !== lastEndingCash && lastEndingCash > 0) {
             let diff = lastEndingCash - startCash;
@@ -10172,3 +9940,6 @@ window.compressImage = function(file, maxWidth = 800, maxHeight = 800, quality =
         reader.onerror = error => reject(error);
     });
 };
+
+// Keep legacy close controls on the same atomic settlement path.
+window.submitComprehensiveCloseShift = (...args) => window.MASTER_CloseShift(...args);

@@ -438,7 +438,8 @@
     }
 </style>
   <meta name="theme-color" content="#173f32">
-  <link rel="stylesheet" href="manager-theme.css?v=20261003">
+  <link rel="stylesheet" href="manager-theme.css?v=20261004">
+  <link rel="stylesheet" href="manager-workspace.css?v=20261004">
 </head>
 
 <body class="manager-theme">
@@ -488,7 +489,7 @@
       <a href="#" class="nav-item" id="nav-expenses" onclick="switchView('expenses')"><span class="nav-icon">💸</span> <span class="nav-text">Expense & Restock Feed</span></a>
       <a href="#" class="nav-item" id="nav-branches" onclick="switchView('branches')"><span class="nav-icon">👥</span> <span class="nav-text">Staff & Security</span></a>
       <a href="#" class="nav-item" id="nav-sop" onclick="switchView('sop'); window.loadSopManager();"><span class="nav-icon">📋</span> <span class="nav-text">SOP Manager</span></a>
-      <a href="#" class="nav-item" id="nav-menu" onclick="switchView('menu')"><span class="nav-icon">🍔</span> <span class="nav-text">Menu Editor</span></a>
+      <a href="#" class="nav-item" id="nav-menu" onclick="switchView('menu')"><span class="nav-icon">🍔</span> <span class="nav-text">Menu & Recipes</span></a>
       <a href="#" class="nav-item" id="nav-posconfig" onclick="switchView('posconfig'); loadPosConfigHub();"><span class="nav-icon">⚙️</span> <span class="nav-text">POS Config Hub</span></a>
       <a href="#" class="nav-item" id="nav-customerapp" onclick="switchView('customerapp'); window.loadCustomerAppHub();">
           <span class="nav-icon">🌐</span> 
@@ -528,6 +529,7 @@
       </a>
     </div>
 
+    <div class="sidebar-arrangement"><button id="editSidebarTabs" type="button">↕ Edit sidebar tabs</button><button id="restoreSidebarTabs" type="button" hidden>Restore default order</button></div>
     <div class="user-profile">
       <div class="avatar">👨‍💼</div>
       <div class="details">
@@ -1291,7 +1293,7 @@
             <div>
               <h2 style="margin: 0; color: #1e293b; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;">
                 <span style="font-size: 26px;">📊</span> Shift Variance Audit
-              </h2>
+              </h2><button class="btn-refresh" onclick="window.openArchiveSalesModal('zreadings')">Archive old Z-Readings</button>
               <span style="font-size: 13px; color: #64748b; margin-top: 6px; display: block; font-weight: 500;">Compare Expected vs Actual Cash and System vs Physical Stock.</span>
             </div>
             
@@ -1710,10 +1712,10 @@
 
     <div id="view-menu" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
       <div style="max-width: 1400px; margin: 0 auto;">
-        <div class="card" style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); overflow: hidden; margin-bottom: 30px;">
+        <div class="menu-workspace-summary" id="menuWorkspaceSummary"></div><div class="menu-workspace-tools"><input id="menuWorkspaceSearch" placeholder="Search menu items…" aria-label="Search menu items" oninput="window.renderMenuEditorUI()"><button onclick="window.switchView('addons')">Global add-ons</button><button onclick="downloadRecipeTemplate()">Download recipes</button><button onclick="document.getElementById('csvRecipeInput').click()">Upload bulk recipes</button><button onclick="window.invalidateCache('menu');window.invalidateCache('bom');window.invalidateCache('inventory');window.loadMenuEditor()">Refresh data</button></div><div class="card" style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); overflow: hidden; margin-bottom: 30px;">
           <div class="card-header" style="background: #f8fafc; padding: 25px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
             <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-              <h2 style="margin: 0; color: #1e293b; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">🍔</span> Central Menu Editor</h2>
+              <h2 style="margin: 0; color: #1e293b; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">🍔</span> Menu & Recipes</h2>
               <select id="menuEditorCatFilter" onchange="window.loadMenuEditor()" style="padding: 10px 15px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: 900; outline: none; cursor: pointer; color: #0ea5e9; background: white; font-size: 14px;">
                   <option value="All">All Categories</option>
               </select>
@@ -1725,14 +1727,7 @@
           </div>
           <div class="table-responsive">
             <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left;">
-              <thead style="background: white; border-bottom: 2px solid #cbd5e1;">
-                <tr>
-                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Item Name</th>
-                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Category</th>
-                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Base Price</th>
-                  <th style="padding: 15px 25px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; text-align: right;">Actions</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Menu item</th><th>Category</th><th>Base / Grab / Foodpanda</th><th>Recipe cost</th><th>Net margin</th><th>Edit</th></tr></thead>
               <tbody id="menuTableBody">
                 <tr>
                   <td colspan="4" class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">Loading menu items...</td>
@@ -3247,7 +3242,7 @@
 
 
     <div id="view-dispatch" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
-      <div style="max-width: 1400px; margin: 0 auto;">
+      <div style="max-width: 1400px; margin: 0 auto;"><section class="dispatch-workflow"><div><span class="workspace-eyebrow">BRANCH SUPPLY WORKSPACE</span><h2>From stock request to a received delivery.</h2><p>Review requests, prepare stock from the selected source, then track the cashier’s receipt.</p></div><ol><li><b>01</b> Review request</li><li><b>02</b> Prepare delivery</li><li><b>03</b> Cashier receives</li></ol></section>
         
         <!-- FORECASTER CARD (TOP) -->
         <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; border-top: 4px solid #8b5cf6; margin-bottom: 30px; overflow: hidden;">
@@ -3255,7 +3250,7 @@
             <div>
               <h2 style="margin: 0; color: #6d28d9; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 8px;">
                 <span style="font-size: 24px;">🧠</span> Smart Supply Chain Analytics
-              </h2>
+              </h2><button class="btn-refresh" onclick="window.openStockRequestSchedule()">Request schedule</button>
               <span style="font-size: 13px; color: #64748b; margin-top: 6px; display: block; font-weight: 500;">Calculates 7-Day Average Burn Rate to predict when branches will run out of stock.</span>
             </div>
             <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
@@ -4726,14 +4721,7 @@
           style="background: white; padding: 24px; border-radius: 8px; margin-bottom: 24px; border: 1px solid #e5e7eb;">
           <h3 style="margin-top: 0; margin-bottom: 20px; font-size: 16px; color: #111827;">Manage Product</h3>
 
-          <div style="margin-bottom: 24px;">
-            <label
-              style="font-size: 12px; color: #4b5563; font-weight: 600; display: block; margin-bottom: 8px;">Selling
-              price (₱)</label>
-            <input type="number" id="advProdPrice"
-              style="width: 100%; max-width: 250px; padding: 10px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 15px; box-sizing: border-box;"
-              onkeyup="calcAdvProfit()" onchange="calcAdvProfit()">
-          </div>
+          <div class="menu-price-grid"><label>Base price (₱)<input type="number" min="0" step="0.01" id="advProdPrice" oninput="calcAdvProfit()"></label><label>Grab price (₱)<input type="number" min="0" step="0.01" id="advProdGrabPrice" placeholder="Use base price"></label><label>Foodpanda price (₱)<input type="number" min="0" step="0.01" id="advProdFpPrice" placeholder="Use base price"></label></div>
 
           <div style="background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #f59e0b; margin-bottom: 24px;">
               <label style="font-size: 12px; color: #b45309; font-weight: bold; display: block; margin-bottom: 8px;">🐙 Mix & Match Fillings (Optional)</label>
@@ -6441,9 +6429,9 @@
                   <div style="grid-column: span 2; background: #f0fdf4; padding: 15px; border-radius: 8px; border: 1px dashed #16a34a; margin-bottom: 20px;">
                       <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: bold; color: #166534; cursor: pointer;">
                           <input type="checkbox" id="settingMallBranch" style="width: 18px; height: 18px; accent-color: #16a34a;">
-                          🏬 Mall Branch Mode (Enable "Manager Fund" Expenses)
+                          🏬 Mall Branch Mode · ₱2,000 petty cash
                       </label>
-                      <p style="margin: 5px 0 0 26px; font-size: 11px; color: #15803d;">Allows staff to log expenses that deduct from Weekly Unremitted Cash instead of the daily POS drawer.</p>
+                      <p style="margin: 5px 0 0 26px; font-size: 11px; color: #15803d;">Each new drawer shift starts at ₱2,000. Cash above ₱2,000 is submitted as a pending remittance at shift close. Manager verifies receipt before HQ accounts are credited. Manager Fund expenses remain separate.</p>
                   </div>
 
                   <button onclick="window.saveBranchSettings()" style="width: 100%; background: #0f172a; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Push Settings to Cashier App</button>
@@ -6696,7 +6684,7 @@
 
   <script type="module" src="firebase-core.js"></script>
   <script type="module" src="auth.js"></script>
-  <script type="module" src="main.js?v=manager-theme-20261003"></script>
+  <script type="module" src="main.js?v=manager-workspace-20261004"></script>
   
 </body>
 </html>
