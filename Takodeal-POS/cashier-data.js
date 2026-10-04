@@ -1,5 +1,5 @@
 // Presentation helpers only: no sale, inventory or attendance writes.
-export const CASHIER_RELEASE = 'cashier-reliability-20261004-r4';
+export const CASHIER_RELEASE = 'cashier-config-20261005-r5';
 export function millis(value) {
   if (value == null) return NaN;
   if (typeof value.toMillis === 'function') return value.toMillis();

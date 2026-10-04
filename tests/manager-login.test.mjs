@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import {resolveHQAccount} from '../takodeal-manager/hq-account-model.js';
 import { createUnlockGate, bounded } from '../takodeal-manager/unlock-gate.js';
 import { createCollectionCache } from '../takodeal-manager/collection-cache.js';
 import { createDeviceStore } from '../takodeal-manager/device-store.js';
@@ -87,11 +88,12 @@ test('actual auth controller checks server access before PIN and loads the dashb
     const w={auth:{currentUser:user},provider:{},ManagerLogin:{show(){},status(){},error(){},busy(){}},
         query:(...args)=>args,collection:()=>({}),where:()=>({}),getDocsFromServer:async()=>{serverReads++;return {empty:false,docs:[{id:'approved',data:()=>profile}]};},
         dispatchEvent(){},loadWorkspaceTest:async()=>{workspaceLoads++;w.switchView=()=>dashboardLoads++;},applyFranchiseUIProtections(){}};
-    const context={window:w,document:{getElementById:node,querySelectorAll:()=>[],createElement:()=>({})},navigator:{onLine:true},location:{reload(){}},Event:class{},setTimeout,clearTimeout,createUnlockGate,bounded,loadManagerLibraries:async()=>{},prepareManagerTools:()=>{},signInWithPopup:async()=>{},signOut:async()=>{},onAuthStateChanged:(_,fn)=>identify=fn};
+    const context={window:w,document:{getElementById:node,querySelectorAll:()=>[],createElement:()=>({})},navigator:{onLine:true},location:{reload(){}},Event:class{},setTimeout,clearTimeout,createUnlockGate,bounded,resolveHQAccount,loadManagerLibraries:async()=>{},prepareManagerTools:()=>{},signInWithPopup:async()=>{},signOut:async()=>{},onAuthStateChanged:(_,fn)=>identify=fn};
     const auth=source('auth.js').replace(/^import .*;\r?\n/gm,'').replace(/await import\('\.\/main\.js\?v=[^']+'\)/,'await window.loadWorkspaceTest()');
     vm.runInNewContext(auth,context);identify(user);await new Promise(resolve=>setImmediate(resolve));
     assert.equal(serverReads,1);assert.equal(workspaceLoads,0);node('managerPinInput').value='0000';await w.checkManagerPin();assert.equal(workspaceLoads,0);
     node('managerPinInput').value=profile.pin;await w.checkManagerPin();assert.equal(workspaceLoads,1);assert.equal(dashboardLoads,1);assert.equal(node('loginOverlay').style.display,'none');assert.equal(w.tempAuthData,null);
+    assert.equal(serverReads,3);
 });
 test('grouped SOP remains accessible alone without granting payroll or SOP to unrelated accounts',()=> {
     for (const permissions of [['sop'],['payroll'],['dashboard'],['ledger']]) {

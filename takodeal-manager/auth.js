@@ -1,6 +1,7 @@
 import './firebase-core.js';
 import { signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { createUnlockGate, bounded } from './unlock-gate.js';
+import { resolveHQAccount } from './hq-account-model.js';
 import { loadManagerLibraries, prepareManagerTools } from './manager-libraries.js';
 const MASTER_EMAIL = 'jgo031996@gmail.com';
 const el = id => document.getElementById(id);
@@ -53,6 +54,7 @@ window.isBranchAllowed = function(branchName) {
 
 let runtimeLoaded = false, workspaceLoading = false;
 const gate = createUnlockGate({
+    verifyOnUnlock:true,
     async verify(user) {
         // One server check prevents stale cached access or a revoked PIN from unlocking.
         const ref = window.query(window.collection(window.db, 'hq_managers'), window.where('email', '==', user.email));
@@ -63,8 +65,7 @@ const gate = createUnlockGate({
             throw new Error(navigator.onLine ? 'Unable to verify your account. Check the connection, then choose Retry.' : 'You are offline. Reconnect, then choose Retry to verify your account.');
         }
         if (snap.empty) throw new Error('This Google account is not approved for the Manager app. Use a different account.');
-        const profile = snap.docs[0];
-        return {...profile.data(), docId:profile.id};
+        return resolveHQAccount(snap.docs.map(profile => ({id:profile.id,data:profile.data()})));
     },
     async load({user, data}) {
         workspaceLoading = true;
@@ -102,7 +103,7 @@ const gate = createUnlockGate({
             window.tempAuthUser = account.user; window.tempAuthData = account.data;
             el('authWelcomeName').textContent = `${account.data.role || 'Manager'}: ${account.user.displayName || account.data.fullName || 'Authorized account'}`;
             ui.show('pin');
-            ui.status(phase === 'opening' ? 'Loading workspace tools…' : 'Use the keypad or your keyboard. Press Enter to unlock.');
+            ui.status(phase === 'opening' ? 'Verifying PIN and opening workspace…' : 'Use the keypad or your keyboard. Press Enter to unlock.');
             if (message) { el('managerPinInput').value = ''; el('managerPinInput').focus(); }
         } else if (phase === 'open') {
             ui.status(''); el('loginOverlay').style.display = 'none';

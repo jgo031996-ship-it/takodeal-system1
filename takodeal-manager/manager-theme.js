@@ -1,6 +1,8 @@
 import { initManagerScroll } from './manager-scroll.js';
 import { initAIHub } from './ai-hub.js';
 import { initAccessWorkspace } from './access-workspace.js';
+import { installHQProfile } from './hq-profile.js';
+import { initPosConfigWorkspace } from './pos-config-workspace.js';
 // Shared presentation and workspace initialization; preserve business calculations.
 export const MANAGER_PAGES = Object.freeze({
     dashboard: ['Overview', 'Global Dashboard', 'Your sales, branch performance, and team in one place.'],
@@ -64,6 +66,11 @@ export function initManagerTheme({ document: d = document, window: w = window, o
     d.body.dataset.managerTheme = '20261003';
     d.body.classList.add('manager-theme');
     const aiHub = initAIHub({ document:d, window:w });
+    const link = d.createElement('link'); link.rel = 'stylesheet'; link.href = './pos-config-workspace.css'; d.head.append(link);
+    installHQProfile({document:d,window:w});
+    initPosConfigWorkspace({document:d,window:w});
+    const originalGrant = w.addHqManager;
+    w.addHqManager = (...args) => { if (String(w.auth?.currentUser?.email || '').toLowerCase() !== 'jgo031996@gmail.com') { w.ManagerUI?.notify?.('Only the main owner can grant HQ access.'); return; } return originalGrant?.(...args); };
     const accessWorkspace = initAccessWorkspace({ document:d, window:w, pages:MANAGER_PAGES });
     // These legacy bars belong to Overview. Move the existing nodes so their
     // filters, upload control and event handlers are retained when tabs switch.
@@ -83,7 +90,7 @@ export function initManagerTheme({ document: d = document, window: w = window, o
         for (const el of nodes) {
             if (!el.matches || seen.has(el) || !el.closest('.view')) continue;
             // Preserve the dashboard design and all printable/exportable documents.
-            if (el.closest('#view-dashboard,#view-bulletin,#view-admin,#printablePayslip,#proposalContainer,.modal,.overlay,dialog')) continue;
+            if (el.closest('#view-dashboard,#view-bulletin,#view-admin,#section-master,#printablePayslip,#proposalContainer,.modal,.overlay,dialog')) continue;
             seen.add(el);
             const s = el.style;
             if (el.matches('table')) {

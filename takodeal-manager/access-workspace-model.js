@@ -9,8 +9,8 @@ export const canManageAccess = user => normalizeEmail(user?.email) === OWNER_EMA
 export function accountRecord(id, data = {}) {
     const email = normalizeEmail(data.email), owner = email === OWNER_EMAIL;
     return { id:String(id), email, name:text(data.fullName || data.name), phone:text(data.phone), owner,
-        role:owner ? 'Owner' : data.role === 'Franchisee' ? 'Franchise owner' : 'Manager',
-        branch:text(data.assignedBranch), pinConfigured:Boolean(data.pin),
+        role:owner ? 'Owner' : data.role === 'Franchisee' ? 'Franchise owner' : data.role === 'Co-Owner' ? 'Co-Owner' : 'Manager',
+        branch:text(data.assignedBranch), pinConfigured:Boolean(data.pin || data.securityPin),
         // Missing permissions do not imply all-access. Never keep credentials in the view model.
         permissions:Array.isArray(data.permissions) ? data.permissions.filter(p => typeof p === 'string').map(p => p.trim()).filter(Boolean) : [] };
 }

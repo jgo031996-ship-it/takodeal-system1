@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {updateBlocker} from '../Takodeal-POS/cashier-data.js';
+import {installMealCheckout} from '../Takodeal-POS/meal-checkout.js';
 const html=readFileSync(new URL('../Takodeal-POS/index.html',import.meta.url),'utf8');
 function checkout(){
  const elements={};
@@ -12,6 +13,7 @@ function checkout(){
  const context={document:{getElementById:id=>elements[id],querySelector:s=>s.includes('numpad')?numpad:payments,querySelectorAll:()=>buttons},window:{posPlatform:'Store POS',amountReceivedStr:'100',currentGrandTotal:180,updateNumpadDisplay:()=>displays++,query:(...args)=>args,collection:(db,name)=>name,where:(...args)=>args,getDocs:async()=>({empty:true})},Swal:{fire(){}},console,Date};
  const start=html.indexOf('window.checkoutPinKeypadActive = function()'),end=html.indexOf('window.updateNumpadDisplay = function()',start);
  vm.runInNewContext(html.slice(start,end),context);
+ installMealCheckout({window:context.window,document:context.document});
  return {context,elements,numpad,payments,displays:()=>displays};
 }
 test('meal keypad stays visible, enters only PIN digits and retains salary deduction',()=>{
@@ -33,9 +35,9 @@ test('delivery payment lock survives switching out of the meal keypad',()=>{
  elements.checkoutDiscountType.value='none';context.window.handleDiscountTypeChange();assert.equal(elements.standardPaymentArea.style.display,'none');assert.equal(payments.style.display,'none');assert.equal(context.window.selectedPaymentMethod,'Foodpanda');
 });
 test('a late identity lookup cannot accept a cleared or changed PIN',async()=>{
- const {context,elements}=checkout();let complete;context.window.getDocs=()=>new Promise(resolve=>complete=resolve);
+ const {context,elements}=checkout();let complete;context.window.authorizeMealPin=()=>new Promise(resolve=>complete=resolve);
  elements.checkoutDiscountType.value='manager_meal';elements.checkoutStaffPin.value='1234';const lookup=context.window.verifyStaffMealPin();
- context.window.clearNumpadAll();complete({empty:false,docs:[{data:()=>({cashierName:'Wrong identity'})}]});await lookup;assert.equal(elements.finalCustomerName.value,'');
+ context.window.clearNumpadAll();complete({cashierName:'Wrong identity',level:{name:'Manager Meal'}});await lookup;assert.equal(elements.finalCustomerName.value,'');
 });
 test('payment icons retain readable method labels and escape markup',()=>{
  const context={window:{}};const start=html.indexOf('window.paymentButtonContent = function('),end=html.indexOf('window.sessionUser =',start);vm.runInNewContext(html.slice(start,end),context);
