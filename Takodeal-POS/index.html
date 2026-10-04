@@ -2144,6 +2144,7 @@
     // --- 1. UI HELPERS ---
     function toggleSidebar() { const sidebar = document.getElementById('mainSidebar'); sidebar.classList.toggle('collapsed'); }
     function switchView(viewName) {
+      if (viewName !== 'sales') window.stopShiftSalesFeed?.();
       document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.view-container').forEach(el => el.classList.remove('active'));
       let navEl = document.getElementById('nav-' + viewName); if (navEl) navEl.classList.add('active');
@@ -2601,21 +2602,27 @@
     }
 
 // --- THE DASHBOARD ENGINE ---
-window.loadSalesDashboard = async function () {
+window.loadSalesDashboard = async function (liveTransactions) {
+  const renderGeneration = window.shiftSalesRenderGeneration = (window.shiftSalesRenderGeneration || 0) + 1;
   document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;">Loading live sales data...</td></tr>';
   
   if (!window.currentShift || !window.currentShift.active) { 
+      window.stopShiftSalesFeed?.();
       document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; color: #dc3545; font-weight: bold; padding:30px;">Register is Closed.<br>You must open a shift to view today\'s transactions.</td></tr>'; 
       return; 
   }
   
-  let transactions = await window.getSalesDashboardData(window.sessionUser.branch, window.currentShift.startTime);
+  const salesBranch = window.sessionUser.branch;
+  const salesShiftId = window.currentShift.shiftId;
+  const salesShiftStart = window.currentShift.startTime;
+  window.startShiftSalesFeed?.(salesBranch, salesShiftStart, salesShiftId);
+  let transactions = Array.isArray(liveTransactions) ? [...liveTransactions] : await window.getSalesDashboardData(salesBranch, salesShiftStart, salesShiftId);
   
   // 🔥 FETCH PARKED ORDERS AND INJECT THEM INTO SHIFT SALES
   try {
-      const parkedQ = window.query(window.collection(window.db, "parked_orders"), window.where("branch", "==", window.sessionUser.branch));
+      const parkedQ = window.query(window.collection(window.db, "parked_orders"), window.where("branch", "==", salesBranch));
       const parkedSnap = await window.getDocs(parkedQ);
-      let validStartTime = window.currentShift.startTime instanceof Date ? window.currentShift.startTime : (window.currentShift.startTime && window.currentShift.startTime.toDate ? window.currentShift.startTime.toDate() : new Date(window.currentShift.startTime));
+      let validStartTime = salesShiftStart instanceof Date ? salesShiftStart : (salesShiftStart && salesShiftStart.toDate ? salesShiftStart.toDate() : new Date(salesShiftStart));
       
       parkedSnap.forEach(doc => {
           let p = doc.data();
@@ -2642,9 +2649,10 @@ window.loadSalesDashboard = async function () {
   // must stay visible on its originating device without becoming a second row.
   try {
       const pending = await window.getPendingSales();
-      transactions = window.mergePendingSales(transactions, pending, window.sessionUser.branch,
-          window.currentShift.startTime, window.currentShift.shiftId);
+      transactions = window.mergePendingSales(transactions, pending, salesBranch, salesShiftStart, salesShiftId);
   } catch(e) { console.error("Offline queue injection error", e); }
+
+  if (renderGeneration !== window.shiftSalesRenderGeneration || window.sessionUser?.branch !== salesBranch || window.currentShift?.shiftId !== salesShiftId) return;
 
   transactions.sort((a, b) => {
       let tA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate().getTime() : (typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime())) : 0;
@@ -2667,6 +2675,7 @@ window.loadSalesDashboard = async function () {
       if (tx.needsReconciliation) statusBadge = '<span class="status-badge" style="background:#fff1f2;color:#be123c;">Review Required</span>';
       const escapeSyncText = value => String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       if (tx.isPendingSync && tx.syncError?.message) statusBadge += `<br><small style="color:#b45309;white-space:normal;">${escapeSyncText(tx.syncError.message)}</small>`;
+      if (!tx.isPendingSync && tx.status !== 'Voided' && tx.inventoryReviewRequired) statusBadge += '<br><small style="color:#b45309;">Stock review in HQ</small>';
 
       let txDate = "Today"; let txTime = "--:--";
       if (tx.timestamp) { 

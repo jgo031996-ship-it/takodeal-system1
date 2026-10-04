@@ -1,6 +1,7 @@
 import { imageFor } from './cashier-data.js';
 import { installMealCheckout } from './meal-checkout.js';
 import { createShiftCloseDraftStore, countValue } from './shift-close-draft.js';
+import { ensureShiftSalesUploaded, createShiftSalesFeed } from './shift-sales.js';
 import { createPrinterConnections, createPrinterWriter } from './printer-connection.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { receiveDispatch } from './dispatch-safety.js';
@@ -181,9 +182,9 @@ window.updateNetworkStatusUI = function() {
     let statusBadge = document.getElementById('liveClock').nextElementSibling;
     if (statusBadge) {
         if (window.isAppOnline) {
-            statusBadge.innerHTML = `<span style="background: #16a34a; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(22,163,74,0.5);">🟢 ONLINE & SYNCING</span>`;
+            statusBadge.innerHTML = `<span style="background: #16a34a; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px;">● ONLINE</span>`;
         } else {
-            statusBadge.innerHTML = `<span style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px; box-shadow: 0 0 5px rgba(220,38,38,0.5);">🔴 OFFLINE (SAVING LOCALLY)</span>`;
+            statusBadge.innerHTML = `<span style="background: #dc2626; color: white; padding: 2px 8px; border-radius: 12px; font-weight: bold; font-size: 10px;">● OFFLINE</span>`;
         }
     }
 };
@@ -1257,10 +1258,22 @@ window.updateActiveShiftCashier = async function(newCashierName) {
 // 🛒 TRUE OFFLINE CHECKOUT & SYNC ENGINE
 // ========================================================
 installSaleSafety({ db, doc, collection, query, where, getDocsFromServer, runTransaction, increment, serverTimestamp, onSnapshot });
+const shiftSalesFeed = createShiftSalesFeed({db, collection, query, where, onSnapshot}, rows => {
+    if (document.getElementById('view-sales')?.classList.contains('active') && window.sessionUser && window.currentShift) {
+        return window.loadSalesDashboard?.(rows);
+    }
+});
+window.startShiftSalesFeed = (...args) => shiftSalesFeed.start(...args);
+window.stopShiftSalesFeed = () => shiftSalesFeed.stop();
+window.refreshVisibleShiftSales = () => {
+    if (document.getElementById('view-sales')?.classList.contains('active')) {
+        window.loadSalesDashboard?.().catch(error => console.warn('Sales refresh is awaiting connection:', error));
+    }
+};
 installMealCheckout();
 
 // --- THE DASHBOARD ENGINE ---
-window.getSalesDashboardData = async function (branch, shiftStartTime) {
+window.getSalesDashboardData = async function (branch, shiftStartTime, shiftId) {
   try {
     if (!shiftStartTime) return [];
 
@@ -1271,10 +1284,10 @@ window.getSalesDashboardData = async function (branch, shiftStartTime) {
       where("branch", "==", branch),
       where("timestamp", ">=", validStartTime)
     );
-    const snapshot = await getDocs(q);
+    const snapshot = window.isAppOnline ? await getDocsFromServer(q) : await getDocs(q);
 
     let transactions = [];
-    snapshot.forEach(doc => { transactions.push({ id: doc.id, ...doc.data() }); });
+    snapshot.forEach(doc => { const data = doc.data(); if (!shiftId || !data.shiftId || data.shiftId === 'UNKNOWN' || data.shiftId === shiftId) transactions.push({ id: doc.id, ...data }); });
     transactions.sort((a, b) => b.timestamp - a.timestamp);
 
     return transactions;
@@ -7316,7 +7329,6 @@ window.MASTER_CloseShift = async function () {
         // 2. Identify Shift Data
         let shiftId = (typeof activeShiftDetails !== 'undefined' && activeShiftDetails) ? activeShiftDetails.logId : localStorage.getItem('currentShiftId');
         if (!shiftId) throw new Error('No active shift found to close.');
-        if ((window.offlineQueue || []).some(row => row.shiftId === shiftId)) throw new Error('Sales are still awaiting upload. Sync them before closing this shift.');
 
         let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
         let cashierName = (window.sessionUser && window.sessionUser.cashierName) ? window.sessionUser.cashierName : (localStorage.getItem('cashierName') || 'Unknown');
@@ -7329,18 +7341,22 @@ window.MASTER_CloseShift = async function () {
             startTime.setHours(0,0,0,0);
         }
 
+        if (confirmBtn) confirmBtn.innerText = 'Uploading shift sales...';
+        await ensureShiftSalesUploaded(window, {branch: branchName, shiftId, startTime});
+
         // 3. Crunch Sales & Split Payments
         let totalCashSales = 0; let totalDigitalSales = 0;
         let digitalBreakdown = {}; let shiftIngredientBurn = {};
 
         const txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branchName), window.where("shiftId", "==", shiftId));
-        const txSnap = await window.getDocs(txQ);
+        const txSnap = await window.getDocsFromServer(txQ);
 
-        let unverifiedDigitalCount = 0;
+        let unverifiedDigitalCount = 0, inventoryReviewCount = 0;
 
         txSnap.forEach(docSnap => {
             let tx = docSnap.data();
             if (tx.status !== 'Voided') {
+                if (tx.inventoryReviewRequired) inventoryReviewCount++;
                 
                 // 🚨 CHECK IF MANAGER HAS VERIFIED DIGITAL PAYMENTS
                 if (tx.paymentMethod && tx.paymentMethod.toLowerCase() !== 'cash' && tx.paymentVerified !== true) {
@@ -7406,7 +7422,7 @@ window.MASTER_CloseShift = async function () {
         }
 
         const expQ = window.query(window.collection(window.db, "expenses"), window.where("branch", "==", branchName), window.where("shiftId", "==", shiftId));
-        const expSnap = await window.getDocs(expQ);
+        const expSnap = await window.getDocsFromServer(expQ);
         let cashOut = 0;
         expSnap.forEach(e => { if (e.data().paidFrom !== 'Manager Fund' && e.data().sourceAccount !== 'Manager Fund' && e.data().paymentSource !== 'Manager Fund') cashOut += (parseFloat(e.data().amount) || 0); });
 
@@ -7484,7 +7500,8 @@ window.MASTER_CloseShift = async function () {
 
         Swal.fire({
             title: '✅ SHIFT CLOSED!',
-            text: `Bookkeeping Complete.\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}`,
+            text: `Bookkeeping Complete.\nCash Sales: ₱${totalCashSales.toFixed(2)}\nDigital Sales: ₱${totalDigitalSales.toFixed(2)}` +
+                (inventoryReviewCount ? `\n${inventoryReviewCount} receipt(s) have skipped stock deductions. HQ alerts contain the ingredients and quantities for review.` : ''),
             icon: 'success',
             customClass: { popup: 'rounded-2xl' }
         });

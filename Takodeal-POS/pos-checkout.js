@@ -88,14 +88,7 @@ export function installSaleSafety(api, environment = globalThis) {
     };
     function updateBadge(error) {
         const badge = environment.document.getElementById('liveClock')?.nextElementSibling;
-        if (!badge) return;
-        if (w.offlineQueue.length) {
-            const review = w.offlineQueue.filter(p => p.needsReconciliation).length;
-            badge.innerHTML = `<span style="background:#eab308;color:white;padding:2px 8px;border-radius:12px;font-weight:bold;font-size:10px;">⏳ SAVED LOCALLY (${w.offlineQueue.length})${review ? ' · REVIEW REQUIRED (' + review + ')' : ''}</span>`;
-            badge.title = error?.message || (review ? 'Older sales need inventory reconciliation before replay.' : 'Waiting for safe database synchronization.');
-            badge.style.cursor = 'pointer';
-            badge.onclick = () => w.showPendingSales();
-        } else {
+        if (badge) {
             badge.onclick = null; badge.style.cursor = ''; badge.title = '';
             if (typeof w.updateNetworkStatusUI === 'function') w.updateNetworkStatusUI();
         }
@@ -159,13 +152,23 @@ export function installSaleSafety(api, environment = globalThis) {
         return { status: 'queued', receiptId: saved.receiptId, saleId: saved.saleId, payload: saved };
     };
 
-    w.syncOfflineQueue = async function() {
+    let syncFlight;
+    // Shift closure must await a sync already in progress, not read an old
+    // offlineQueue while that same receipt is being uploaded.
+    w.syncOfflineQueue = function() {
+        if (syncFlight) return syncFlight;
+        syncFlight = synchronize().finally(() => { syncFlight = null; });
+        return syncFlight;
+    };
+    async function synchronize() {
         watchAuditBranch();
-        if (w.isSyncing || environment.navigator?.onLine === false) return;
+        if (environment.navigator?.onLine === false) return;
         w.isSyncing = true;
         let syncError;
+        let queueChanged = false;
         const sync = async () => {
             const rows = await outbox.list();
+            queueChanged = rows.length > 0;
             for (const row of rows) {
                 const payload = await outbox.claim(row.saleId, owner);
                 if (!payload) continue;
@@ -191,7 +194,7 @@ export function installSaleSafety(api, environment = globalThis) {
             await engine.resumeAvailableAudits(localAuditMode);
         };
         try {
-            if (environment.navigator?.locks) await environment.navigator.locks.request('takodeal-sale-sync-v2', { ifAvailable: true }, lock => lock ? sync() : undefined);
+            if (environment.navigator?.locks) await environment.navigator.locks.request('takodeal-sale-sync-v2', sync);
             else await sync(); // IndexedDB claims still serialize each sale.
         } catch (error) {
             syncError = error;
@@ -199,8 +202,10 @@ export function installSaleSafety(api, environment = globalThis) {
         } finally {
             w.isSyncing = false;
             try { await refreshQueue(); updateBadge(syncError); } catch (error) { console.error('Outbox unavailable:', error); }
+            // Pending rows become uploaded rows immediately in the visible view.
+            if (queueChanged) w.refreshVisibleShiftSales?.();
         }
-    };
+    }
     w.voidTransaction = (receiptId, cashier, branch) => engine.voidSale(receiptId, cashier, branch);
     w.discardParkedOrder = (id, cashier, branch, shiftId) => engine.discardParked(id, cashier, branch, shiftId);
     w.processAuditQueue = async function() {
