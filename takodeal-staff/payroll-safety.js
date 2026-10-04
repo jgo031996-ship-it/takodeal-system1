@@ -2,6 +2,12 @@
 // Times in Schedule Manager are Philippine wall-clock times, independent of device timezone.
 const minute = 60000;
 const day = 1440 * minute;
+// Both manual and POS-created meal charges belong in the Foods deduction.
+// Keep the source label for the history; ignore unrelated penalties/loan entries.
+export function isMealDeduction(type) {
+    return /^(?:staff|manager)\s+meal(?:\s*\(\s*pos\s+auto\s*\))?$/i.test(String(type || '').trim());
+}
+
 const nameKey = value => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
 export function asDate(value) {
     if (value?.toDate) return value.toDate();

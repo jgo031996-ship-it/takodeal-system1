@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v5-portal';
+const CACHE_NAME = 'takodeal-staff-v6-food-deductions';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-privacy.js', './payroll-safety.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 self.addEventListener('install', event => {
     event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
