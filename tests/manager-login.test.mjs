@@ -104,7 +104,8 @@ function workerHarness() {
 test('installed core cache serves repeat launches without fetching scripts or background refreshes',async()=> {
     const worker=workerHarness();await worker.request('https://sample.test/main.js?v=new');assert.equal(worker.network(),1);
     assert.equal(await (await worker.request('https://sample.test/main.js?v=another')).text(),'network');assert.equal(worker.network(),1);
-    await worker.cacheFor('takodeal-manager-core-v13-login').put('https://sample.test/index.html',new Response('saved app'));
+    const currentCore = source('sw.js').match(/const CACHE_NAME = '([^']+)'/)[1];
+    await worker.cacheFor(currentCore).put('https://sample.test/index.html',new Response('saved app'));
     assert.equal(await (await worker.request('https://sample.test/',{mode:'navigate'})).text(),'saved app');assert.equal(worker.network(),1);
 });
 test('worker never caches Firestore, authentication or business API responses',async()=> {

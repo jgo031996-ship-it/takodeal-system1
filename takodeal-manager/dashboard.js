@@ -1,5 +1,5 @@
 import { money, number, escapeHTML as esc, milliseconds, businessDay, calendarDay, dayStart, addDays,
-    dateRange, scopedSales, salesSummary, paymentParts, onDuty, branchPerformance, productReport, ballAudit } from './dashboard-data.js';
+    dateRange, scopedSales, salesSummary, paymentParts, onDuty, dutyAttendance, branchPerformance, productReport, ballAudit } from './dashboard-data.js';
 import { countBalls } from './pos-safety.js';
 
 // One dashboard owns its subscriptions. No payroll, stock, sale, or counter writes occur here.
@@ -75,7 +75,7 @@ export function createDashboard(w = window, d = document) {
         const nextKey = JSON.stringify([branch, dates, today, w.sessionUser.email, w.sessionUser.allowedBranches]);
         if (key === nextKey && !force) return;
         stop(); key = nextKey; const current = generation;
-        state = { branch, dates, range, today, errors: {}, cached: {}, ready: {}, shifts: [], attendance: [], expenses: [] };
+        state = { branch, dates, range, today, errors: {}, cached: {}, ready: {}, shifts: [], attendance: [], expenses: [], profiles: {} };
         text('dashScope', branch === 'All' ? 'Across your branches' : branch);
         text('dashPeriod', dates.start === dates.end ? dates.start : dates.start + ' — ' + dates.end);
         text('dashProductStatus', 'Loading sales and recipe costs…');
@@ -107,6 +107,11 @@ export function createDashboard(w = window, d = document) {
             }, current);
             watch('Shifts', w.query(collection('shifts'), w.where('startTime', '>=', lookback)), snap => { state.shifts = rows(snap); state.ready.shifts = true; renderOperations(); }, current);
             watch('Attendance', w.query(collection('attendance_logs'), w.where('timestamp', '>=', lookback)), snap => { state.attendance = rows(snap); state.ready.attendance = true; renderOperations(); }, current);
+            watch('Schedule', doc('global_schedule'), snap => { state.schedule = snap.exists() ? snap.data() : null; state.ready.schedule = true; renderOperations(); }, current);
+            watch('Staff profiles', collection('cashiers'), snap => {
+                state.profiles = Object.fromEntries(rows(snap).filter(p => p.cashierName).map(p => [p.cashierName, p]));
+                state.ready.profiles = true; renderOperations();
+            }, current);
             watch('Expenses', w.query(collection('expenses'), w.where('timestamp', '>=', lookback)), snap => { state.expenses = rows(snap); state.ready.expenses = true; renderOperations(); }, current);
             watch('Ball counter', doc('global_stats'), snap => { state.stats = snap.exists() ? snap.data() : {}; renderCounter(); }, current);
             watch('Monthly target', doc('sales_target'), snap => { state.target = snap.exists() ? snap.data() : {}; renderTarget(); }, current);
@@ -141,7 +146,16 @@ export function createDashboard(w = window, d = document) {
             const p = branchPerformance(branch, state.shifts, state.sales || [], state.expenses, state.today);
             const team = staff.filter(s => s.branch === branch);
             const known = state.sales && state.ready.shifts && state.ready.expenses && !state.errors.Sales && !state.errors.Shifts && !state.errors.Expenses;
-            const staffHTML = team.map(s => `<span class="dash-staff ${s.needsReview ? 'review' : ''}" title="${esc(s.needsReview ? 'Over 16 hours: check attendance' : 'Clocked in ' + new Date(milliseconds(s.timestamp)).toLocaleTimeString('en-PH', { timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit' }))}">${esc(s.staffName)}${s.needsReview ? ' · Check time out' : ''}</span>`).join('') || '<span class="dash-muted">No active time punches</span>';
+            const staffHTML = team.map(s => {
+                const detail = dutyAttendance(s, state.ready.profiles ? state.schedule : null, state.profiles);
+                const late = detail.lateMinutes > 0 && !detail.lateExempted;
+                const status = detail.lateExempted ? '<span class="dash-staff-status exempt">Late exempted</span>'
+                    : late ? `<span class="dash-staff-status late">Late · ${esc(detail.lateMinutes)} min</span>`
+                    : detail.lateMinutes == null && (state.errors.Schedule || state.errors['Staff profiles']) ? '<span class="dash-staff-status review">Late status unavailable</span>'
+                    : detail.lateMinutes == null && (!state.ready.schedule || !state.ready.profiles) ? '<span class="dash-muted">Checking schedule…</span>' : '';
+                const clock = detail.dateTime ? `<time datetime="${esc(detail.dateTime)}" title="${esc(detail.date + (detail.scheduledStart ? ' · Scheduled ' + detail.scheduledStart : ''))}">${esc(detail.clockIn)}</time>` : esc(detail.clockIn);
+                return `<div class="dash-staff ${late ? 'late' : s.needsReview ? 'review' : ''}"><span class="dash-staff-name">${esc(s.staffName || s.staffId)}</span><div class="dash-staff-detail"><span class="dash-staff-clock">In · ${clock}</span>${status}${s.needsReview ? '<span class="dash-staff-status review">Check time out · over 16h</span>' : ''}</div></div>`;
+            }).join('') || '<span class="dash-muted">No active time punches</span>';
             return `<tr><td><button type="button" class="dash-branch" data-branch="${esc(branch)}">${esc(branch)} <span>↗</span></button><small>${esc(p.shift?.cashier?.split('/').pop().trim() || 'No cashier assigned')}</small></td>
                 <td><span class="dash-badge ${p.state === 'Active' ? 'live' : ''}">${p.state}</span>${p.stale ? '<small>Earlier shift · review</small>' : ''}</td>
                 <td class="dash-team">${state.errors.Attendance ? 'Attendance unavailable' : !state.ready.attendance ? 'Connecting…' : staffHTML}</td>

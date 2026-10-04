@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { businessDay, calendarDay, dayStart, addDays, dateRange, scopedSales, salesSummary, productReport,
-    onDuty, branchPerformance, ballAudit } from '../takodeal-manager/dashboard-data.js';
+    onDuty, dutyAttendance, branchPerformance, ballAudit } from '../takodeal-manager/dashboard-data.js';
 import { countBalls, createSaleEngine, SALE_VERSION } from '../Takodeal-POS/pos-safety.js';
 import { createDashboard } from '../takodeal-manager/dashboard.js';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
@@ -62,6 +62,36 @@ test('latest time-out removes staff, including legacy logs without staff IDs; ov
     assert.equal(onDuty(logs,['Cabantian'],now).length,0);
     assert.equal(onDuty(logs,['Maa'],now)[0].needsReview,true);
 });
+
+const dutySchedule = {
+    currentYear:2026, currentMonth:10,
+    branchConfig:{Cabantian:[{id:'mid1',name:'Mid',startTime:'17:00',endTime:'23:30',shiftType:'mid'}],
+        Maa:[{id:'night1',name:'Night',startTime:'23:30',endTime:'07:30',shiftType:'night'}]},
+    currentSchedule:{3:{Cabantian:{scheduled:{mid1:'Alex'}},Maa:{scheduled:{night1:'Sam'}}}}
+};
+
+test('live duty details show Philippine clock-in time and match adjustable branch schedules and nicknames', () => {
+    const mid=dutyAttendance({staffName:'Alex Staff',branch:'Cabantian',timestamp:{seconds:Date.parse('2026-10-03T17:11:00+08:00')/1000}},dutySchedule,{'Alex Staff':{scheduleNickname:'Alex'}});
+    assert.equal(mid.clockIn,'05:11 PM');assert.equal(mid.lateMinutes,11);
+    assert.equal(mid.scheduledStart,'05:00 PM');assert.equal(mid.dateTime,'2026-10-03T09:11:00.000Z');
+    const overnight=dutyAttendance({staffName:'Sam',branch:'Maa',timestamp:'2026-10-04T00:09:00+08:00'},dutySchedule);
+    assert.equal(overnight.clockIn,'12:09 AM');assert.equal(overnight.lateMinutes,39);
+    assert.equal(overnight.scheduledStart,'11:30 PM');
+    const changed=structuredClone(dutySchedule);changed.branchConfig.Cabantian[0].startTime='17:30';
+    assert.equal(dutyAttendance({staffName:'Alex Staff',branch:'Cabantian',timestamp:mid.dateTime},changed,{'Alex Staff':{scheduleNickname:'Alex'}}).lateMinutes,0);
+});
+
+test('reviewed minutes and approval override recalculation without inventing lateness when data is missing', () => {
+    const log={staffName:'Alex',branch:'Cabantian',timestamp:'2026-10-03T17:11:00+08:00',lateMinutes:11,reviewedLateMinutes:12,lateExempted:true};
+    const reviewed=dutyAttendance(log,dutySchedule);
+    assert.equal(reviewed.lateMinutes,12);assert.equal(reviewed.lateExempted,true);
+    assert.equal(dutyAttendance({...log,reviewedLateMinutes:0},dutySchedule).lateMinutes,0);
+    assert.equal(dutyAttendance({...log,reviewedLateMinutes:undefined,lateMinutes:undefined},null).lateMinutes,null);
+    const missing=dutyAttendance({timestamp:'invalid',staffName:'Alex',branch:'Cabantian'},dutySchedule);
+    assert.equal(missing.clockIn,'Time unavailable');assert.equal(missing.dateTime,null);assert.equal(missing.lateMinutes,null);
+    const noMatch=dutyAttendance({staffName:'Alex',branch:'Unknown',timestamp:log.timestamp},dutySchedule);
+    assert.equal(noMatch.lateMinutes,null);
+});
 test('active drawer totals include split cash and only the matching shift expenses; closed totals stay frozen', () => {
     const shift={id:'s1',branch:'Cabantian',startTime:dayStart('2026-10-03'),startingCash:100,active:true};
     const expenses=[{branch:'Cabantian',shiftId:'s1',amount:10},{branch:'Cabantian',shiftId:'Manager_Fund',amount:50},{branch:'Cabantian',shiftId:'older',amount:30}];
@@ -114,9 +144,9 @@ function fixture() {
 }
 test('repeated dashboard loading reuses listeners; filter refresh and view exit invalidate old snapshots', async () => {
     const f=fixture();await f.controller.load();const reads=f.reads();await f.controller.load();
-    assert.equal(f.listeners.length,6);assert.equal(f.reads(),reads);
+    assert.equal(f.listeners.length,8);assert.equal(f.reads(),reads);
     const first=f.listeners[0];f.nodes.get('dashBranchFilter').value='Maa';await f.controller.load();
-    assert.equal(f.listeners.length,12);assert.ok(f.listeners.slice(0,6).every(l=>l.stopped));
+    assert.equal(f.listeners.length,16);assert.ok(f.listeners.slice(0,8).every(l=>l.stopped));
     f.emit('transactions',[]);const net=f.nodes.get('dashNetSales').textContent;
     first.next({docs:[{id:'late',data:()=>sale()}],metadata:{fromCache:false}});
     assert.equal(f.nodes.get('dashNetSales').textContent,net);
@@ -128,6 +158,50 @@ test('listener failures show actionable errors instead of hanging; cache metadat
     f.listeners[0].error(new Error('Missing permissions'));
     assert.match(f.nodes.get('dashDataMessage').textContent,/Missing permissions/);
     assert.match(f.nodes.get('dashProductAnalyticsBody').innerHTML,/Refresh/);
+    f.controller.stop();
+});
+
+test('duty clock-ins remain visible while schedule connects; live schedule and nickname updates restore red late badges', async () => {
+    const f=fixture();await f.controller.load();
+    const log={staffName:'Alex Staff',branch:'Cabantian',type:'TIME IN',timestamp:'2026-10-03T17:11:00+08:00'};
+    f.emit('attendance_logs',[log]);
+    assert.match(f.nodes.get('branchTableBody').innerHTML,/In · <time[^>]+>05:11 PM<\/time>/);
+    assert.match(f.nodes.get('branchTableBody').innerHTML,/Checking schedule/);
+    f.emit('settings/global_schedule',[dutySchedule]);
+    f.emit('cashiers',[{cashierName:'Alex Staff',scheduleNickname:'Alex'}]);
+    assert.match(f.nodes.get('branchTableBody').innerHTML,/class="dash-staff-status late">Late · 11 min/);
+    const changed=structuredClone(dutySchedule);changed.branchConfig.Cabantian[0].startTime='17:30';
+    f.emit('settings/global_schedule',[changed]);
+    assert.doesNotMatch(f.nodes.get('branchTableBody').innerHTML,/dash-staff-status late/);
+    assert.match(f.nodes.get('branchTableBody').innerHTML,/05:11 PM/);
+    f.controller.stop();
+});
+
+test('live attendance reviews switch red notices to exemptions; time-out removes the staff entry and text stays escaped', async () => {
+    const f=fixture();await f.controller.load();
+    const log={staffName:'Alex <script>',branch:'Cabantian',type:'TIME IN',timestamp:'2026-10-03T17:11:00+08:00',lateMinutes:11};
+    f.emit('attendance_logs',[log]);
+    assert.match(f.nodes.get('branchTableBody').innerHTML,/Alex &lt;script&gt;/);
+    assert.match(f.nodes.get('branchTableBody').innerHTML,/Late · 11 min/);
+    f.emit('attendance_logs',[{...log,lateExempted:true,reviewedLateMinutes:11}]);
+    assert.match(f.nodes.get('branchTableBody').innerHTML,/dash-staff-status exempt">Late exempted/);
+    assert.doesNotMatch(f.nodes.get('branchTableBody').innerHTML,/dash-staff-status late/);
+    assert.match(f.nodes.get('branchTableBody').innerHTML,/05:11 PM/);
+    f.emit('attendance_logs',[log,{...log,type:'TIME OUT',timestamp:'2026-10-03T23:30:00+08:00'}]);
+    assert.doesNotMatch(f.nodes.get('branchTableBody').innerHTML,/Alex &lt;script&gt;/);
+    f.controller.stop();
+});
+
+test('overdue attendance review stays distinct from lateness, and a schedule failure preserves clock-in details', async () => {
+    const f=fixture();await f.controller.load();
+    const log={staffName:'Earlier Staff',branch:'Maa',type:'TIME IN',timestamp:new Date(Date.now()-17*3600000).toISOString()};
+    f.emit('attendance_logs',[log]);
+    assert.match(f.nodes.get('branchTableBody').innerHTML,/Check time out · over 16h/);
+    assert.doesNotMatch(f.nodes.get('branchTableBody').innerHTML,/dash-staff-status late/);
+    f.listeners.find(l=>l.ref.table==='settings/global_schedule').error(new Error('Offline'));
+    assert.match(f.nodes.get('branchTableBody').innerHTML,/Late status unavailable/);
+    assert.match(f.nodes.get('branchTableBody').innerHTML,/In · <time/);
+    assert.equal(f.nodes.get('dashDutyCount').textContent,'0 staff on duty');
     f.controller.stop();
 });
 test('franchise All sums only permitted branches and never displays the global counter or target', async () => {
