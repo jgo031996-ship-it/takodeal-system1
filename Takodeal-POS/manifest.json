@@ -4,8 +4,8 @@
   "description": "Official TAKODEÁL Point of Sale System",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#2C2421",
-  "theme_color": "#E5A93D",
+  "background_color": "#fbf6ef",
+  "theme_color": "#c65c24",
   "icons": [
     {
       "src": "logo.jpg",

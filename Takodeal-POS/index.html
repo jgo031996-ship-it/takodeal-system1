@@ -4,7 +4,7 @@
 <head>
   <base target="_top">
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
   <link rel="icon" type="image/jpeg" href="logo.jpg">
   <link rel="apple-touch-icon" href="logo.jpg">
   <link rel="manifest" href="manifest.json">
@@ -342,9 +342,11 @@
         #loginRankingWidget { transform: scale(0.75); transform-origin: top left; }
     }
   </style>
+<link rel="stylesheet" href="cashier-pos-base.css?v=cashier-orange-20261004">
+<link rel="stylesheet" href="cashier-theme.css?v=cashier-orange-20261004">
 </head>
 
-<body>
+<body class="cashier-orange">
 
   <div style="background-color: #1A1513; color: #ffffff; width: 100%; height: 28px; display: flex; justify-content: space-between; align-items: center; padding: 0 15px; box-sizing: border-box; font-size: 12px; font-family: 'Segoe UI', Tahoma, sans-serif; z-index: 9999; position: absolute; top: 0; left: 0;">
       <div id="liveClock" style="font-weight: 500; letter-spacing: 0.5px;">Loading time...</div>
@@ -595,7 +597,7 @@
         <button onclick="submitLoginPin()" id="btnSubmitPin" style="width: 100%; padding: 18px; margin-top: 25px; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); color: white; border: none; border-radius: 12px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 6px 15px rgba(14, 165, 233, 0.4); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 20px rgba(14, 165, 233, 0.5)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 6px 15px rgba(14, 165, 233, 0.4)';">🔓 Secure Login</button>
 
         <div style="margin-top: 20px; font-size: 13px; color: #475569; cursor: pointer; font-weight: 900; padding: 14px; border: 1px dashed #cbd5e1; border-radius: 10px; background: #f8fafc; transition: 0.2s;" onmouseover="this.style.background='#f1f5f9';" onmouseout="this.style.background='#f8fafc';" onclick="window.manualHardUpdate()">
-            🔄 Force System Update (Clear Cache)
+            🔄 Check for updates
         </div>
     </div>
   </div>
@@ -697,7 +699,7 @@
       <div class="nav-item" id="nav-printer"
         onclick="alert('🖨️ PRINTER SETUP\n\n1. Go to your Tablet Settings and pair the Bluetooth Printer.\n2. Open your Print Service App (e.g., RawBT) and ensure it is active.\n\nThe POS will automatically route all tickets through your Print Service!')">
         <span>🖨️</span>
-        <div class="nav-item-text">Printer Setup</div>
+        <div class="nav-item-text">Printer Hub</div>
       </div>
     </div>
     <div class="sidebar-footer">
@@ -1450,6 +1452,7 @@
         <!-- 📝 NOTES (WITH PADDING FIX SO IT DOESN'T GET CUT OFF) -->
         <div style="margin-top: 15px; padding-bottom: 25px;">
           <div class="section-title" style="margin-bottom: 8px;">✎ Notes</div>
+          <div id="cashierAddonOptions"></div>
           <input type="text" id="orderNotesInput" class="input-box" placeholder="e.g., Spicy, No Mayo">
         </div>
       </div>
@@ -2147,7 +2150,7 @@
 
       // 🔥 ENFORCE GLOBAL SHIFT LOCKOUT 🔥
       let lock = document.getElementById('globalShiftLockout');
-      let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'sales'];
+      let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'sales', 'remit'];
       if (lock) {
           if (!currentShift && !exemptViews.includes(viewName)) {
               lock.style.display = 'flex';
@@ -2469,7 +2472,7 @@
 
           let currentView = document.querySelector('.view-container.active');
           let viewId = currentView ? currentView.id.replace('view-', '') : 'pos';
-          let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'sales'];
+          let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'sales', 'remit'];
           
           if (lock && !exemptViews.includes(viewId)) {
               lock.style.display = "flex"; 
@@ -2796,6 +2799,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
 
     let oldDropdown = document.getElementById('addonSelectDropdown');
     if(oldDropdown) oldDropdown.style.display = 'none';
+    document.getElementById('dynamicAddonUI')?.replaceChildren();
 
     let variantContainer = document.getElementById('variantOptions');
     let variantSection = variantContainer ? variantContainer.parentElement : null;
@@ -2843,7 +2847,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                 imgContainer.innerHTML = '';
             }
 
-            let addonContainer = document.getElementById('addonSelectDropdown').parentElement;
+            let addonContainer = document.getElementById('addonSelectDropdown')?.parentElement || document.getElementById('cashierAddonOptions');
             let newUiHtml = '';
 
             if (itemData.addons && itemData.addons.length > 0) {
@@ -4603,14 +4607,14 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=final-shift-20261004"></script>
+    <script type="module" src="main.js?v=cashier-orange-20261004"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
+        navigator.serviceWorker.register('sw.js', {updateViaCache:'none'})
           .then(registration => {
-            console.log('✅ App securely installed to tablet hard drive.', registration.scope);
+            window.dispatchEvent(new CustomEvent('cashier-worker-ready', {detail:registration}));
           })
           .catch(err => {
             console.error('❌ Hard drive installation failed: ', err);
@@ -4757,5 +4761,7 @@ window.showMobileOrders = function() {
           </div>
       </div>
   </div>
+<script src="cashier-pos-ui.js?v=cashier-orange-20261004"></script>
+<script type="module" src="cashier-workspace.js?v=cashier-orange-20261004"></script>
 </body>
 </html>

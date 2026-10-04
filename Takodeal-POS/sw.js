@@ -1,9 +1,9 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-final-shift-20261004';
+const CORE = 'takodeal-pos-core-cashier-orange-20261004';
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
-const required = ['./', './index.html', './main.js', './branch-operations.js','./cash-settlement.js','./shift-close-ui.js', './dispatch-safety.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json'];
+const required = ['./', './index.html', './main.js', './branch-operations.js','./cash-settlement.js','./shift-close-ui.js', './dispatch-safety.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json','./cashier-pos-base.css','./cashier-theme.css','./cashier-pos-ui.js','./cashier-workspace.js','./cashier-data.js'];
 const sdk = 'https://www.gstatic.com/firebasejs/10.8.1/';
 const libraries = [sdk + 'firebase-app.js', sdk + 'firebase-firestore.js', sdk + 'firebase-auth.js', sdk + 'firebase-storage.js',
   'https://cdn.jsdelivr.net/npm/sweetalert2@11',
@@ -40,7 +40,7 @@ async function prepareApp() {
 }
 self.addEventListener('install', event => {
   // A failed dependency download leaves the preceding worker in use.
-  event.waitUntil(prepareApp().then(() => self.skipWaiting()));
+  event.waitUntil(prepareApp());
 });
 self.addEventListener('activate', event => {
   // Keep preceding caches until the owner has tested the new installation.
@@ -76,6 +76,7 @@ async function prepareModels() {
   }
 }
 self.addEventListener('message', event => {
+  if (event.data?.type === 'TK_ACTIVATE_UPDATE') { event.waitUntil(self.skipWaiting()); return; }
   if (event.data?.type !== 'TK_PREPARE_OFFLINE' || !event.ports?.[0]) return;
   const port = event.ports[0];
   event.waitUntil((async () => {
