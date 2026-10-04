@@ -15,6 +15,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+window.deviceFleetConnection={projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,getToken:()=>window.auth.currentUser?.getIdToken()};
 
 // Expose Core Engines Globally
 window.db = initializeFirestore(app, {

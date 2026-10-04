@@ -1,3 +1,4 @@
+import {waitForAppUpdate} from './app-update.js';
 // Heavy download libraries are only needed when staff export a document.
 export function installStaffPhone() {
     const loading = new Map();
@@ -25,10 +26,11 @@ export function installStaffPhone() {
     }
     window.forceUpdateApp=async()=>{
         if(window.staffPunchBusy)return window.Swal.fire('Attendance is saving','Wait for your attendance to finish before updating.','info');
+        if(window.staffDeviceRegistrationBusy)return window.Swal.fire('Request is sending','Wait for your device request to finish before updating.','info');
         if(!navigator.onLine)return window.Swal.fire('Connection needed','Connect to the internet to check for app updates.','info');
         try {
             const registration=await navigator.serviceWorker?.getRegistration();
-            await registration?.update();
+            await waitForAppUpdate(registration);
             // Reload the shell only; keep device registration, PIN cooldowns and offline attendance.
             window.location.reload();
         } catch {window.Swal.fire('Update check unavailable','Check your connection and try again.','warning');}

@@ -27776,4 +27776,4 @@ window.switchView = function(view,...args) {
     return result;
 };
 
-installDeviceFleet();
+installDeviceFleet(window.deviceFleetConnection);
