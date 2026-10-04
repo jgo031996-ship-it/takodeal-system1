@@ -1,3 +1,4 @@
+import {renderPayments} from './cashier-payments.js';
 import { imageFor } from './cashier-data.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { receiveDispatch } from './dispatch-safety.js';
@@ -453,7 +454,10 @@ window.loadPOSData = async function() {
         window.masterPOSData = { items: [], variants: {}, categories: [], addons: [], settings: { orderTypes: [], payMethods: [] } };
     }
 
-    window.masterPOSData.settings = JSON.parse(localStorage.getItem('takodeal_cached_settings') || '{"orderTypes":["Dine-In", "Take-Out", "Delivery", "Grab"], "payMethods":["Cash", "GCash"]}');
+    try { window.masterPOSData.settings = JSON.parse(localStorage.getItem('takodeal_cached_settings') || '{}') || {}; }
+    catch { window.masterPOSData.settings = {}; }
+    // Payment controls must not wait for the menu or a successful cloud request.
+    window.renderOrderAndPaymentUI();
     window.masterPOSData.categories = JSON.parse(localStorage.getItem('takodeal_cached_categories') || '[]');
     window.globalItemLayout = JSON.parse(localStorage.getItem('takodeal_cached_item_layout') || '[]');
     window.masterPOSData.addonLayoutNames = JSON.parse(localStorage.getItem('takodeal_cached_addon_layout') || '[]');
@@ -467,7 +471,6 @@ window.loadPOSData = async function() {
         
         // Instantly draw the screen! No loading time!
         if (typeof window.buildCategories === 'function') window.buildCategories();
-        window.renderOrderAndPaymentUI(); 
         console.log("⚡ INSTANT BOOT: POS Engine loaded from local tablet cache in 1ms!");
     }
 
@@ -490,7 +493,7 @@ window.loadPOSData = async function() {
                 let configData = configSnap.data();
                 window.masterPOSData.settings = {
                     orderTypes: configData.orderTypes && configData.orderTypes.length > 0 ? configData.orderTypes : ["Dine-In", "Take-Out", "Delivery", "Grab"],
-                    payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash"],
+                    payMethods: configData.paymentMethods && configData.paymentMethods.length > 0 ? configData.paymentMethods : ["Cash", "GCash", "Bank"],
                     // 🔥 FETCH THE SPLIT PERCENTAGES!
                     staffMealTakoPct: configData.staffMealTakoPct !== undefined ? configData.staffMealTakoPct : 20,
                     staffMealOtherPct: configData.staffMealOtherPct !== undefined ? configData.staffMealOtherPct : 10,
@@ -499,6 +502,7 @@ window.loadPOSData = async function() {
                     managerMealOtherPct: configData.managerMealOtherPct !== undefined ? configData.managerMealOtherPct : 100
                 };
                 localStorage.setItem('takodeal_cached_settings', JSON.stringify(window.masterPOSData.settings));
+                window.renderOrderAndPaymentUI();
             }
             
             const catLayoutSnap = await window.getDoc(window.doc(window.db, "settings", "pos_layout"));
@@ -531,7 +535,7 @@ window.loadPOSData = async function() {
             }
 
             // If it's the very first time booting, draw the UI after the background sync finishes
-            if (!cachedMenu || cachedMenu.length === 0) window.renderOrderAndPaymentUI();
+            window.renderOrderAndPaymentUI();
 
         } catch(e) { console.warn("Cloud sync paused. Using local tablet storage.", e); }
     })();
@@ -570,62 +574,26 @@ window.loadPOSData = async function() {
 // 🎨 4. OFFLINE UI RENDERER FOR PAYMENTS & ORDER TYPES
 // ========================================================================
 window.renderOrderAndPaymentUI = function() {
-    let otHtml = '<option value="" disabled selected>-- Select Type --</option>'; 
-    window.masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); 
-    let otSelect = document.getElementById('mainOrderType');
-    if(otSelect) {
-        otSelect.innerHTML = otHtml;
-        otSelect.value = ""; 
-        
-        otSelect.removeEventListener('change', window.handleOrderTypeChange); 
+    const settings = window.masterPOSData?.settings || {};
+    const orderTypes = Array.isArray(settings.orderTypes) && settings.orderTypes.length ? settings.orderTypes : ['Dine-In', 'Take-Out', 'Delivery'];
+    const select = document.getElementById('mainOrderType');
+    if (select) {
+        const previous = select.value, partner = ['Grab','Foodpanda'].includes(window.posPlatform) ? window.posPlatform : null;
+        const names = [...new Set([...orderTypes.filter(value => typeof value === 'string' && value.trim()), ...(partner ? [partner] : [])])];
+        select.replaceChildren(new Option('-- Select Type --',''), ...names.map(name => new Option(name,name)));
+        select.options[0].disabled = true;
+        select.value = partner || (names.includes(previous) ? previous : '');
+        select.removeEventListener('change',window.handleOrderTypeChange);
         window.handleOrderTypeChange = function() {
-            let val = this.value.toLowerCase();
-            if (val.includes('grab')) {
-                let btn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('grab'));
-                if (btn) btn.click();
-            } else if (val.includes('foodpanda') || val.includes('panda')) {
-                let btn = Array.from(document.querySelectorAll('.pay-btn')).find(b => b.innerText.toLowerCase().includes('foodpanda') || b.innerText.toLowerCase().includes('panda'));
-                if (btn) btn.click();
-            }
+            const name = this.value.toLowerCase();
+            const method = name.includes('grab') ? 'grab' : /panda/.test(name) ? 'foodpanda' : null;
+            if (method) document.querySelectorAll('.pay-btn').forEach(button => {
+                if (button.dataset.paymentKind === method) button.click();
+            });
         };
-        otSelect.addEventListener('change', window.handleOrderTypeChange);
+        select.addEventListener('change',window.handleOrderTypeChange);
     }
-
-    let pmHtml = ''; 
-    let optHtml = '';
-
-    window.masterPOSData.settings.payMethods.forEach((m, idx) => { 
-        let act = idx === 0 ? 'active' : ''; if (idx === 0) window.selectedPaymentMethod = m; 
-        // Added 'window.' before setPaymentMethod
-        pmHtml += `<button class="pay-btn ${act}" onclick="window.setPaymentMethod(this, '${m}'); document.getElementById('splitPaymentContainer').style.display='none';">${m}</button>`; 
-        optHtml += `<option value="${m}">${m}</option>`;
-    });
-    
-    pmHtml += `<button class="pay-btn split-btn" onclick="window.toggleSplitPaymentUI(event)" style="background:#8b5cf6; color:white; border:none; box-shadow: 0 4px 6px rgba(139,92,246,0.3);">🔀 Split</button>`;
-    
-    let payGrid = document.querySelector('.payment-grid');
-    if (payGrid) {
-        payGrid.innerHTML = pmHtml;
-        if (!document.getElementById('splitPaymentContainer')) {
-            payGrid.insertAdjacentHTML('afterend', `
-                <div id="splitPaymentContainer" style="display:none; margin-top: 15px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 2px dashed #8b5cf6;">
-                    <div style="font-size:12px; font-weight:bold; color:#8b5cf6; margin-bottom:10px;">SPLIT PAYMENT DETAILS</div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
-                        <select id="splitMethod1" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex: 1; margin-right: 10px; font-weight:bold;">${optHtml}</select>
-                        <input type="number" id="splitAmount1" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="window.calcSplitRemaining()" onchange="window.calcSplitRemaining()">
-                    </div>
-                    <div style="display:flex; justify-content:space-between; margin-bottom: 10px;">
-                        <select id="splitMethod2" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; flex: 1; margin-right: 10px; font-weight:bold;">${optHtml}</select>
-                        <input type="number" id="splitAmount2" placeholder="Amount" style="padding: 8px; border-radius: 4px; border: 1px solid #cbd5e1; width: 100px; text-align:right; font-weight:bold; color:#0f766e;" onkeyup="window.calcSplitRemaining()" onchange="window.calcSplitRemaining()">
-                    </div>
-                    <div style="text-align: right; font-size: 14px; font-weight: 900; color: #ef4444;" id="splitRemainingAlert">Total Split Entered: ₱0.00</div>
-                </div>
-            `);
-        } else {
-            let m1 = document.getElementById('splitMethod1'); if(m1) m1.innerHTML = optHtml;
-            let m2 = document.getElementById('splitMethod2'); if(m2) m2.innerHTML = optHtml;
-        }
-    }
+    renderPayments(settings);
 };
 
 // --- UPGRADED CART & VARIANT LOGIC ---

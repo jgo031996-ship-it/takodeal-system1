@@ -1,9 +1,9 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-cashier-orange-20261004-r2';
+const CORE = 'takodeal-pos-core-cashier-tablet-20261004-r3';
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
-const required = ['./', './index.html', './main.js', './branch-operations.js','./cash-settlement.js','./shift-close-ui.js', './dispatch-safety.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json','./cashier-pos-base.css','./cashier-theme.css','./cashier-pos-ui.js','./cashier-workspace.js','./cashier-data.js'];
+const required = ['./', './index.html', './main.js', './branch-operations.js','./cash-settlement.js','./shift-close-ui.js', './dispatch-safety.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json','./cashier-pos-base.css','./cashier-theme.css','./cashier-pos-ui.js','./cashier-workspace.js','./cashier-data.js','./cashier-controls.js','./cashier-controls.css','./cashier-payments.js','./assets/gcash.svg'];
 const sdk = 'https://www.gstatic.com/firebasejs/10.8.1/';
 const libraries = [sdk + 'firebase-app.js', sdk + 'firebase-firestore.js', sdk + 'firebase-auth.js', sdk + 'firebase-storage.js',
   'https://cdn.jsdelivr.net/npm/sweetalert2@11',

@@ -342,8 +342,9 @@
         #loginRankingWidget { transform: scale(0.75); transform-origin: top left; }
     }
   </style>
-<link rel="stylesheet" href="cashier-pos-base.css?v=cashier-orange-20261004-r2">
-<link rel="stylesheet" href="cashier-theme.css?v=cashier-orange-20261004-r2">
+<link rel="stylesheet" href="cashier-pos-base.css?v=cashier-tablet-20261004-r3">
+<link rel="stylesheet" href="cashier-theme.css?v=cashier-tablet-20261004-r3">
+<link rel="stylesheet" href="cashier-controls.css?v=cashier-tablet-20261004-r3">
 </head>
 
 <body class="cashier-orange">
@@ -1656,7 +1657,7 @@
                 </div>
                 <div>
                     <label style="font-size: 11px; font-weight: bold; color: #64748b;">Value</label>
-                    <input type="number" id="checkoutDiscountValue" class="input-box" placeholder="0" style="width: 100%; box-sizing: border-box; padding: 10px;" onkeyup="window.updateNumpadDisplay()" onchange="window.updateNumpadDisplay()">
+                    <input type="number" id="checkoutDiscountValue" class="input-box" placeholder="0" style="width: 100%; box-sizing: border-box; padding: 10px;" oninput="window.updateNumpadDisplay()" onchange="window.updateNumpadDisplay()">
                 </div>
             </div>
             
@@ -3271,7 +3272,8 @@ window.adjustMixMatchQty = function(flavor, delta) {
 function selectRealVariant(realName, price, btn) { window.selectRealVariant(realName, price, btn); }
 
     // --- 8. CHECKOUT SYSTEM ---
-    window.openCheckoutModal = function() { 
+    window.openCheckoutModal = function() {
+        window.renderCashierPayments?.();
         if (window.cart.length === 0) return; 
         
         // 🔥 PLATFORM AUTO-SELECTION ENGINE
@@ -3296,15 +3298,38 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             delFields.style.display = (mainType === 'Delivery') ? 'flex' : 'none';
         }
 
+        if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
+        if(document.getElementById('checkoutDiscountValue')) document.getElementById('checkoutDiscountValue').value = '';
+        if(document.getElementById('checkoutDiscountReason')) document.getElementById('checkoutDiscountReason').value = '';
+        document.getElementById('checkoutDiscountValue').disabled = false;
+        document.getElementById('checkoutDiscountValue').placeholder = '0';
+        document.getElementById('checkoutDiscountValue').style.background = 'white';
+        document.getElementById('checkoutStaffPinContainer').style.display = 'none';
+        const customer = document.getElementById('finalCustomerName');
+        if (customer.readOnly) customer.value = '';
+        customer.readOnly = false;
+        customer.placeholder = 'Customer Name (Optional)';
+        customer.style.backgroundColor = 'white';
+        customer.style.borderColor = '#cbd5e1';
+        customer.style.color = '#334155';
+        window.finalCheckoutAmount = window.currentGrandTotal;
         document.getElementById('checkoutTotalPayable').innerText = '₱ ' + window.currentGrandTotal.toFixed(2); 
-        window.amountReceivedStr = "0"; 
+        window.amountReceivedStr = "0";
+        const split = document.getElementById('splitPaymentContainer');
+        if (split) split.style.display = 'none';
+        for (const id of ['splitAmount1','splitAmount2']) {
+            const input = document.getElementById(id); if (input) input.value = '';
+        }
+        if (window.selectedPaymentMethod === 'Split' || window.selectedPaymentMethod === 'Salary Deduction') window.selectedPaymentMethod = '';
+        document.getElementById('standardPaymentArea').style.display = 'block';
+        window.renderCashierPayments?.();
 
         // 🔥 STRICT PLATFORM LOCKOUT ENGINE
         let paymentGrid = document.querySelector('.payment-grid');
         let numpadGrid = document.querySelector('.numpad-grid');
         
         if (window.posPlatform === 'Grab' || window.posPlatform === 'Foodpanda') {
-            if (paymentGrid) paymentGrid.style.display = 'none'; // Lock Payment Method
+            if (paymentGrid) paymentGrid.style.display = 'grid'; // Show the locked platform method
             if (numpadGrid) numpadGrid.style.display = 'none';   // Lock Numpad
             let exactTotal = window.currentGrandTotal || 0;
             window.amountReceivedStr = exactTotal.toString(); // Auto-Fill Exact Amount!
@@ -3313,12 +3338,11 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             if (numpadGrid) numpadGrid.style.display = 'grid';   // Unlock Numpad
         }
 
+        if (window.selectedPaymentMethod !== 'Cash') window.amountReceivedStr = window.currentGrandTotal.toString();
         window.updateNumpadDisplay(); 
         document.getElementById('checkoutModal').style.display = 'flex'; 
         
-        if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
-        if(document.getElementById('checkoutDiscountValue')) document.getElementById('checkoutDiscountValue').value = '';
-        if(document.getElementById('checkoutDiscountReason')) document.getElementById('checkoutDiscountReason').value = '';
+
     };
     function openCheckoutModal() { window.openCheckoutModal(); }
     window.appendNumpad = function(num) { 
@@ -3397,14 +3421,9 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             
             // 🟢 RESTORE UI
             if (pinContainer) pinContainer.style.display = 'none';
-            if (standardPaymentArea) {
-                if (window.posPlatform === 'Grab' || window.posPlatform === 'Foodpanda') {
-                    standardPaymentArea.style.display = 'none';
-                } else {
-                    standardPaymentArea.style.display = 'block';
-                }
-            }
-            window.selectedPaymentMethod = "Cash"; 
+            if (standardPaymentArea) standardPaymentArea.style.display = 'block';
+            if (window.selectedPaymentMethod === 'Salary Deduction') window.selectedPaymentMethod = '';
+            window.renderCashierPayments?.();
             
             // 🟢 UNLOCK CUSTOMER NAME BOX
             if (nameBox) {
@@ -4607,7 +4626,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=cashier-orange-20261004-r2"></script>
+    <script type="module" src="main.js?v=cashier-tablet-20261004-r3"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {
@@ -4761,7 +4780,7 @@ window.showMobileOrders = function() {
           </div>
       </div>
   </div>
-<script src="cashier-pos-ui.js?v=cashier-orange-20261004-r2"></script>
-<script type="module" src="cashier-workspace.js?v=cashier-orange-20261004-r2"></script>
+<script src="cashier-pos-ui.js?v=cashier-tablet-20261004-r3"></script>
+<script type="module" src="cashier-workspace.js?v=cashier-tablet-20261004-r3"></script>
 </body>
 </html>
