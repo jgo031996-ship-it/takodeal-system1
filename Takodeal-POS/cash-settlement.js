@@ -1,9 +1,13 @@
-import { mallCashPlan, money, businessClock } from './branch-operations.js';
+import { mallCashPlan, mallOpeningCash, money, businessClock } from './branch-operations.js';
 const ref = (api, table, id) => api.doc(api.db, table, id);
 export async function readBranchPolicy(api, branch) {
-    const snap = await api.getDocs(api.query(api.collection(api.db,'branches'),api.where('name','==',branch)));
+    const snap = await (api.getDocsFromServer || api.getDocs)(api.query(api.collection(api.db,'branches'),api.where('name','==',branch)));
     if (snap.docs.length !== 1) throw new Error('Branch settings are missing or duplicated. Ask Manager to check this branch.');
     return { id:snap.docs[0].id, ...snap.docs[0].data() };
+}
+export async function readMallOpeningCash(api, branch) {
+    const snap=await api.getDocsFromServer(api.query(api.collection(api.db,'shifts'),api.where('branch','==',branch),api.where('status','==','Closed'),api.orderBy('endTime','desc'),api.limit(1)));
+    return mallOpeningCash(snap.docs[0]?.data());
 }
 export async function closeShiftAtomic(api, input) {
     const {shiftId,branch,cashier,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance} = input;
@@ -22,16 +26,18 @@ export async function closeShiftAtomic(api, input) {
         const currentPolicy = await tx.get(ref(api,'branches',policy.id));
         if (!currentPolicy.exists()) throw new Error('Branch settings were removed.');
         const stored = shift.data(), isMall = stored.isMallBranch ?? currentPolicy.data().isMallBranch === true;
-        const plan = isMall ? mallCashPlan(declaredCash) : null;
+        const isFinalShiftOfDay = isMall && input.isFinalShiftOfDay === true;
+        const plan = isFinalShiftOfDay ? mallCashPlan(declaredCash) : null;
         const accountReads = [];
         for (const account of accountPlans) accountReads.push({ ...account,snapshot:await tx.get(account.reference) });
         const remitRef = ref(api,'remittances','mall-'+shiftId);
-        if (isMall && (await tx.get(remitRef)).exists()) throw new Error('A mall remittance already exists for this open shift. Ask Manager to review.');
+        if (isFinalShiftOfDay && (await tx.get(remitRef)).exists()) throw new Error('A mall remittance already exists for this open shift. Ask Manager to review.');
         const expectedCash = money(stored.startingCash ?? 0) + money(totalCashSales) - money(input.cashOut);
-        const closing = {...input.closing,active:false,status:'Closed',endTime:api.serverTimestamp(),expectedCash,declaredCash:money(declaredCash),totalCashSales:money(totalCashSales),totalDigitalSales:money(totalDigitalSales),digitalBreakdown,cashPolicyVersion:1};
+        const closing = {...input.closing,active:false,status:'Closed',endTime:api.serverTimestamp(),expectedCash,declaredCash:money(declaredCash),totalCashSales:money(totalCashSales),totalDigitalSales:money(totalDigitalSales),digitalBreakdown,cashPolicyVersion:2};
+        if (isMall) Object.assign(closing,{isMallBranch:true,isFinalShiftOfDay,businessDay:input.businessDay || businessClock().day,retainedCash:money(declaredCash),remittedCash:0,remittanceId:''});
         if (plan) Object.assign(closing,{isMallBranch:true,mallFloat:2000,retainedCash:plan.retainedCash,remittedCash:plan.remittedCash,floatShortage:plan.floatShortage,remittanceId:plan.remittedCash>0 ? remitRef.id : ''});
         tx.update(shiftRef,closing);
-        if (plan?.remittedCash > 0) tx.set(remitRef,{branch,shiftId,cashierName:cashier,amount:plan.remittedCash,retainedCash:plan.retainedCash,type:'Mall Daily Remittance',channel:'Physical Handover',status:'Pending',dateStr:businessClock().day,timestamp:api.serverTimestamp(),cashPolicyVersion:1});
+        if (plan?.remittedCash > 0) tx.set(remitRef,{branch,shiftId,cashierName:cashier,amount:plan.remittedCash,retainedCash:plan.retainedCash,type:'Mall Daily Remittance',channel:'Physical Handover',status:'Pending',dateStr:closing.businessDay,timestamp:api.serverTimestamp(),cashPolicyVersion:2});
         for (const account of accountReads) {
             const data = account.snapshot.exists() ? account.snapshot.data() : {};
             if (account.snapshot.exists() && (data.branch !== 'Main Office' || data.name !== account.name)) throw new Error('HQ account identity changed.');

@@ -1,6 +1,7 @@
+import { confirmMallDailyClose } from './shift-close-ui.js';
 import { receiveDispatch } from './dispatch-safety.js';
-import { MALL_FLOAT, stockRequestDue, autoRequestId, businessClock } from './branch-operations.js';
-import { closeShiftAtomic, readBranchPolicy } from './cash-settlement.js';
+import { MALL_FLOAT, mallOpeningCash, stockRequestDue, autoRequestId, businessClock } from './branch-operations.js';
+import { closeShiftAtomic, readBranchPolicy, readMallOpeningCash } from './cash-settlement.js';
 // ========================================================
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
@@ -6035,13 +6036,13 @@ window.openShiftModal = async function() {
 
             if(!snap.empty) {
                 let lastShift = snap.docs[0].data();
-                window.lastEndingCash = policy.isMallBranch ? MALL_FLOAT : Number(lastShift.retainedCash ?? lastShift.declaredCash ?? lastShift.actualCash ?? 0);
+                window.lastEndingCash = policy.isMallBranch ? mallOpeningCash(lastShift) : Number(lastShift.retainedCash ?? lastShift.declaredCash ?? lastShift.actualCash ?? 0);
                 window.lastShiftDataForDispute = lastShift; // 🔥 Save globally to know who to penalize!
 
                 let expected = parseFloat(lastShift.expectedCash) || 0;
-                let diff = window.lastEndingCash - expected;
-                inputStart.value = policy.isMallBranch ? MALL_FLOAT : "";
-        inputStart.readOnly = policy.isMallBranch === true; 
+                let diff = Number(lastShift.declaredCash ?? lastShift.actualCash ?? 0) - expected;
+                inputStart.value = policy.isMallBranch ? window.lastEndingCash : "";
+                inputStart.readOnly = policy.isMallBranch === true; 
 
                 // 🔥 THE NEW EDITABLE BLIND COUNT HANDOVER
                 let stockNotes = '';
@@ -6094,7 +6095,7 @@ window.openShiftModal = async function() {
                     noteEl.innerHTML = `🚨 The previous shift closed with a <b>CASH SHORTAGE</b>.<br><span style="font-size:11px; font-weight:normal; color:#b91c1c;">Please double-count the drawer carefully.</span>${stockNotes}`;
                     noteEl.style.background = "#fef2f2"; noteEl.style.color = "#dc2626"; noteEl.style.border = "1px solid #fecaca";
                 }
-                if (policy.isMallBranch) noteEl.innerHTML = "Mall branch: start with ₱2,000 petty cash. Cash above this amount is submitted for remittance at shift close." + stockNotes;
+                if (policy.isMallBranch) noteEl.innerHTML = (lastShift.isFinalShiftOfDay === true ? "The previous business day is closed. Start with ₱2,000 petty cash." : `Earlier mall shift: carry forward ₱${window.lastEndingCash.toFixed(2)}. Remittance is submitted only at the final daily close.`) + stockNotes;
                 noteEl.style.display = "block";
             } else {
                 window.lastEndingCash = 0;
@@ -7382,9 +7383,16 @@ window.MASTER_CloseShift = async function () {
 
         }
 
+        const shiftSnapshot = await window.getDocFromServer(window.doc(window.db,'shifts',shiftId));
+        if (!shiftSnapshot.exists()) throw new Error('The active shift was not found.');
+        const branchPolicy = await readBranchPolicy(window,branchName);
+        let dailyClose = {isFinalShiftOfDay:false};
+        if (shiftSnapshot.data().isMallBranch ?? branchPolicy.isMallBranch === true) {
+            dailyClose = await confirmMallDailyClose(window,{branch:branchName,started:shiftSnapshot.data().startTime,declaredCash});
+            if (!dailyClose) { if (confirmBtn) { confirmBtn.innerHTML=origText; confirmBtn.disabled=false; } return; }
+        }
         if (confirmBtn) confirmBtn.innerHTML = "⏳ Lightning Syncing to Cloud...";
-        
-        await closeShiftAtomic(window, {shiftId,branch:branchName,cashier:cashierName,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance,cashOut,closing:{cashBreakdown,physicalStockCount}});
+        await closeShiftAtomic(window, {shiftId,branch:branchName,cashier:cashierName,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance,cashOut,...dailyClose,closing:{cashBreakdown,physicalStockCount}});
 
         // 9. Memory Wipe & Force UI Lockout
         window.cashDrawerMemory = {};
@@ -9423,7 +9431,7 @@ document.addEventListener("DOMContentLoaded", () => {
 window.openNewShift = async function (branch, cashier, startCash) {
   try {
     const policy = await readBranchPolicy(window,branch);
-    if (policy.isMallBranch) startCash = MALL_FLOAT;
+    if (policy.isMallBranch) startCash = await readMallOpeningCash(window,branch);
     if (!Number.isFinite(startCash) || startCash < 0) throw new Error('Enter a valid starting cash amount.');
     let safeCashier = localStorage.getItem('cashierName') || localStorage.getItem('activeCashier') || cashier || 'Unknown';
     
@@ -9463,7 +9471,7 @@ window.submitOpenShift = async function() {
         let branch = localStorage.getItem('takodeal_device_branch') || (window.sessionUser ? window.sessionUser.branch : 'Unknown');
 
         const policy = await readBranchPolicy(window,branch);
-        if (policy.isMallBranch) { startCash = MALL_FLOAT; startEl.value = MALL_FLOAT; lastEndingCash = MALL_FLOAT; }
+        if (policy.isMallBranch) { startCash = await readMallOpeningCash(window,branch); if (startEl) startEl.value = startCash; lastEndingCash = startCash; }
         // 1. CASH DISPUTE CHECK
         if (startCash !== lastEndingCash && lastEndingCash > 0) {
             let diff = lastEndingCash - startCash;
