@@ -77,6 +77,9 @@
  .cashier-payment-notice > span {animation:none!important;font-size:13px!important;border:1px solid #c18b53;border-radius:50%;width:20px;height:20px;text-align:center;}
  .cashier-payment-notice div > div:first-child {font-size:12px!important;font-weight:600!important;}
  .cashier-payment-notice div > div:last-child {font-size:11px!important;color:#956b47!important;}
+ .cashier-live-payment-notice {display:flex;align-items:center;gap:12px;padding:10px 18px;background:#fff1dd;color:#8d4b19;border-bottom:1px solid #ebd6bb;flex-shrink:0;}
+ .cashier-live-payment-notice > div {flex:1;text-align:left!important;}
+ .cashier-live-payment-notice > button {border:0;background:transparent;color:#8d4b19;font-size:20px;cursor:pointer;min-width:36px;min-height:36px;}
  .cashier-page-heading {margin:4px 0 22px;}
  .cashier-page-heading h1 {font-size:25px;font-weight:700;letter-spacing:-.7px;margin:0 0 7px;color:#49372b;}
  .cashier-page-heading p {font-size:12px;color:#8b7868;margin:0;line-height:1.6;}

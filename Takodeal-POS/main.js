@@ -7766,13 +7766,13 @@ window.startUnverifiedListener = function() {
         // Update sales tab badge
         if (currentShiftUnverified > 0 && currentShiftId) {
             if (salesTab) {
-                salesTab.innerHTML = `<span style="font-size: 20px; animation: pulse 1s infinite;">🚨</span><div class="nav-item-text" style="color: #dc2626; font-weight: 900; animation: pulse 1s infinite;">Shift Sales (${currentShiftUnverified})</div>`;
-                salesTab.style.background = '#fef2f2';
-                salesTab.style.borderLeftColor = '#dc2626';
+                salesTab.innerHTML = `<span aria-hidden="true" style="font-size:11px;">SL</span><div class="nav-item-text">Shift Sales (${currentShiftUnverified} pending)</div>`;
+                salesTab.style.background = '#fff0df';
+                salesTab.style.borderLeftColor = '#c65c24';
             }
         } else {
             if (salesTab) {
-                salesTab.innerHTML = `<span>🧾</span><div class="nav-item-text">Shift Sales</div>`;
+                salesTab.innerHTML = `<span aria-hidden="true" style="font-size:11px;">SL</span><div class="nav-item-text">Shift Sales</div>`;
                 salesTab.style.background = '';
                 salesTab.style.borderLeftColor = '';
             }
@@ -7783,16 +7783,18 @@ window.startUnverifiedListener = function() {
             if (!existingBanner) {
                 existingBanner = document.createElement('div');
                 existingBanner.id = 'globalUnverifiedBanner';
-                existingBanner.style.cssText = "position: fixed; top: 15px; left: 50%; transform: translateX(-50%); background: #fff1f2; color: #dc2626; border: 2px dashed #fca5a5; padding: 10px 20px; border-radius: 50px; font-weight: bold; display: flex; gap: 15px; align-items: center; box-shadow: 0 10px 25px rgba(220, 38, 38, 0.4); z-index: 999999;";
-                document.body.appendChild(existingBanner);
+                existingBanner.className = 'cashier-payment-notice cashier-live-payment-notice';
+                existingBanner.setAttribute('role','status');
+                document.querySelector('.top-bar').after(existingBanner);
             }
             
             existingBanner.innerHTML = `
-                <span style="font-size:24px; animation: pulse 1s infinite; cursor: pointer;" onclick="if(typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App.', 'warning')">🚨</span>
+                <span aria-hidden="true" style="cursor:pointer;" onclick="if(typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App.', 'warning')">!</span>
                 <div style="text-align: center; cursor: pointer;" onclick="if(typeof Swal !== 'undefined') Swal.fire('Action Required', 'The Manager must verify these digital payments in the HQ App.', 'warning')">
-                    <div style="font-size:14px; font-weight:900;">ACTION REQUIRED: ${unverifiedCount} Unverified Payment(s)!</div>
+                    <div>Payment review pending · ${unverifiedCount} payments</div>
+                    <div>A manager must verify these digital payments in HQ.</div>
                 </div>
-                <span onclick="document.getElementById('globalUnverifiedBanner').style.display='none'; window.hideUnverifiedBanner=true;" style="font-size: 24px; cursor: pointer; color: #9f1239; padding-left: 10px; font-weight: bold; transition: 0.2s;" title="Dismiss">&times;</span>
+                <button aria-label="Dismiss payment review notice" onclick="document.getElementById('globalUnverifiedBanner').style.display='none'; window.hideUnverifiedBanner=true;">&times;</button>
             `;
             existingBanner.style.display = 'flex';
         } else {

@@ -49,3 +49,13 @@ test('service worker stages a complete release and activates only on explicit me
   const labels=drinkLabels({cart:[{name:'Latte',qty:2,variantName:'Large',addons:{'Extra shot':20},notes:'Less ice'},{name:'Takoyaki',qty:1}]},[],[{name:'Latte',category:'Iced Coffee'},{name:'Takoyaki',category:'Bonito Takoyaki'}]);
   assert.equal(labels.length,2);assert.equal(labels[0].detail,'Large · Extra shot · Less ice');
  });
+
+test('live payment warning retains its branch filter and count in the workspace',()=>{
+ const source=readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8');
+ const start=source.indexOf('window.startUnverifiedListener = function() {'),end=source.indexOf('\n};',start)+3;
+ const elements={},filters=[];let mounted;
+ const document={getElementById:id=>elements[id]||null,createElement:()=>({style:{},setAttribute(key,value){this[key]=value;}}),querySelector:()=>({after:element=>{mounted=element;}})};
+ const context={document,localStorage:{getItem:key=>key==='takodeal_device_branch'?'Cabantian':null},window:{db:{},collection:(db,name)=>name,where:(...args)=>{filters.push(args);return args;},query:(...args)=>args,onSnapshot:(q,fn)=>{fn({forEach:cb=>[{status:'Paid',paymentMethod:'GCash',paymentVerified:false},{status:'Paid',paymentMethod:'Grab',paymentVerified:false},{status:'Voided',paymentMethod:'GCash',paymentVerified:false}].forEach(tx=>cb({data:()=>tx}))});return()=>{};}}};
+ vm.runInNewContext(source.slice(start,end),context);context.window.startUnverifiedListener();
+ assert.deepEqual(filters[0],['branch','==','Cabantian']);assert.equal(mounted.role,'status');assert.match(mounted.innerHTML,/2 payments/);assert.match(mounted.className,/cashier-live-payment-notice/);assert.ok(!mounted.style.cssText);
+});
