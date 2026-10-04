@@ -342,9 +342,9 @@
         #loginRankingWidget { transform: scale(0.75); transform-origin: top left; }
     }
   </style>
-<link rel="stylesheet" href="cashier-pos-base.css?v=cashier-tablet-20261004-r3">
-<link rel="stylesheet" href="cashier-theme.css?v=cashier-tablet-20261004-r3">
-<link rel="stylesheet" href="cashier-tablet.css?v=cashier-tablet-20261004-r3">
+<link rel="stylesheet" href="cashier-pos-base.css?v=cashier-reliability-20261004-r4">
+<link rel="stylesheet" href="cashier-theme.css?v=cashier-reliability-20261004-r4">
+<link rel="stylesheet" href="cashier-tablet.css?v=cashier-reliability-20261004-r4">
 </head>
 
 <body class="cashier-orange">
@@ -1678,6 +1678,7 @@
             </div>
         </div>
         <div id="standardPaymentArea">
+          <div class="checkout-keypad-title" id="checkoutKeypadTitle">Amount received</div>
           <div class="numpad-grid"><button class="num-btn" onclick="appendNumpad('1')">1</button><button class="num-btn"
               onclick="appendNumpad('2')">2</button><button class="num-btn"
               onclick="appendNumpad('3')">3</button><button class="num-btn"
@@ -1687,11 +1688,11 @@
               onclick="appendNumpad('7')">7</button><button class="num-btn"
               onclick="appendNumpad('8')">8</button><button class="num-btn"
               onclick="appendNumpad('9')">9</button><button class="num-btn"
-              onclick="appendNumpad('.')">.</button><button class="num-btn"
+              id="checkoutDecimalKey" onclick="appendNumpad('.')">.</button><button class="num-btn"
               onclick="appendNumpad('0')">0</button><button class="num-btn" onclick="clearNumpadOne()">⌫</button><button
-              class="num-btn" style="grid-column: span 2;" onclick="setExactAmount()">Exact Amount</button><button
+              class="num-btn" id="checkoutExactKey" style="grid-column: span 2;" onclick="setExactAmount()">Exact Amount</button><button
               class="num-btn" onclick="clearNumpadAll()">Clear</button></div>
-          <div class="section-title">Payment Method</div>
+          <div class="section-title" id="checkoutPaymentTitle">Payment Method</div>
           <div class="payment-grid"></div>
         </div>
         <div style="display: flex; gap: 10px; margin-top: 15px;">
@@ -2076,6 +2077,20 @@
   </div>
 
   <script>
+    window.paymentButtonContent = function(method) {
+        const key = String(method).toLowerCase();
+        const label = key === 'gcash' ? 'GCash' : String(method);
+        const safeLabel = label.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        const shapes = {
+            cash: '<rect x="2" y="5" width="20" height="14" rx="3"/><circle cx="12" cy="12" r="3"/><path d="M5 9h1M18 15h1"/>',
+            bank: '<path d="M3 9h18L12 3 3 9ZM4 21h16M6 10v8m6-8v8m6-8v8"/>',
+            gcash: '<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path d="M16.5 8a6 6 0 1 0 0 8v-4H12" stroke="white" stroke-width="2.4"/>',
+            grab: '<path d="M5 9h14l-1 10H6L5 9ZM9 9V7a3 3 0 0 1 6 0v2"/>',
+            foodpanda: '<circle cx="12" cy="13" r="8"/><circle cx="5" cy="5" r="3"/><circle cx="19" cy="5" r="3"/><path d="M8 12h1m6 0h1m-5 4h2"/>'
+        };
+        const icon = shapes[key] || '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18"/>';
+        return `<svg class="payment-icon ${key === 'gcash' ? 'gcash' : ''}" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${icon}</svg><span>${safeLabel}</span>`;
+    };
     window.sessionUser = { email: '', branch: 'Loading...', cashierName: 'User', isOwner: false };
     window.cart = []; 
     window.masterPOSData = { items: [], variants: {}, categories: [], addons: [], settings: { orderTypes: [], payMethods: [] } };
@@ -2185,7 +2200,7 @@
       buildCategories();
 
       let otHtml = ''; masterPOSData.settings.orderTypes.forEach(t => otHtml += `<option value="${t}">${t}</option>`); document.getElementById('mainOrderType').innerHTML = otHtml;
-      let pmHtml = ''; masterPOSData.settings.payMethods.forEach((m, idx) => { let act = idx === 0 ? 'active' : ''; if (idx === 0) selectedPaymentMethod = m; pmHtml += `<button class="pay-btn ${act}" onclick="setPaymentMethod(this, '${m}')">${m}</button>`; }); document.querySelector('.payment-grid').innerHTML = pmHtml;
+      let pmHtml = ''; masterPOSData.settings.payMethods.forEach((m, idx) => { let act = idx === 0 ? 'active' : ''; if (idx === 0) selectedPaymentMethod = m; pmHtml += `<button class="pay-btn ${act}" data-payment-method="${m.toLowerCase()}" onclick="setPaymentMethod(this, '${m}')">${window.paymentButtonContent(m)}</button>`; }); document.querySelector('.payment-grid').innerHTML = pmHtml;
     }
 
     // ==========================================
@@ -3314,15 +3329,39 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             if (numpadGrid) numpadGrid.style.display = 'grid';   // Unlock Numpad
         }
 
-        window.updateNumpadDisplay(); 
-        document.getElementById('checkoutModal').style.display = 'flex'; 
-        
         if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
         if(document.getElementById('checkoutDiscountValue')) document.getElementById('checkoutDiscountValue').value = '';
         if(document.getElementById('checkoutDiscountReason')) document.getElementById('checkoutDiscountReason').value = '';
+        window.handleDiscountTypeChange();
+        if (window.posPlatform === 'Grab' || window.posPlatform === 'Foodpanda') window.selectedPaymentMethod = window.posPlatform;
+        window.updateNumpadDisplay();
+        document.getElementById('checkoutModal').style.display = 'flex';
     };
     function openCheckoutModal() { window.openCheckoutModal(); }
+    window.checkoutPinKeypadActive = function() {
+        const type = document.getElementById('checkoutDiscountType')?.value;
+        return type === 'staff_meal' || type === 'manager_meal';
+    };
+    window.syncCheckoutKeypad = function() {
+        const pinMode = window.checkoutPinKeypadActive();
+        const platformLocked = window.posPlatform === 'Grab' || window.posPlatform === 'Foodpanda';
+        document.getElementById('standardPaymentArea').style.display = pinMode || !platformLocked ? 'block' : 'none';
+        document.querySelector('#standardPaymentArea .numpad-grid').style.display = 'grid';
+        document.getElementById('checkoutKeypadTitle').textContent = pinMode ? 'Security PIN keypad' : 'Amount received';
+        document.getElementById('checkoutDecimalKey').disabled = pinMode;
+        document.getElementById('checkoutExactKey').disabled = pinMode;
+        document.getElementById('checkoutPaymentTitle').style.display = pinMode ? 'none' : '';
+        document.querySelector('.payment-grid').style.display = pinMode || platformLocked ? 'none' : 'grid';
+        const split = document.getElementById('splitPaymentContainer');
+        if (split && pinMode) split.style.display = 'none';
+    };
     window.appendNumpad = function(num) { 
+        if (window.checkoutPinKeypadActive()) {
+            if (!/^\d$/.test(num)) return;
+            document.getElementById('checkoutStaffPin').value += num;
+            window.verifyStaffMealPin();
+            return;
+        }
         if (window.amountReceivedStr === "0" && num !== ".") window.amountReceivedStr = num; 
         else if (num === "." && window.amountReceivedStr.includes(".")) return; 
         else window.amountReceivedStr += num; 
@@ -3330,16 +3369,28 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
     };
 
     window.clearNumpadOne = function() { 
+        if (window.checkoutPinKeypadActive()) {
+            const pin = document.getElementById('checkoutStaffPin');
+            pin.value = pin.value.slice(0, -1);
+            window.verifyStaffMealPin();
+            return;
+        }
         window.amountReceivedStr = window.amountReceivedStr.length > 1 ? window.amountReceivedStr.slice(0, -1) : "0"; 
         window.updateNumpadDisplay(); 
     };
 
     window.clearNumpadAll = function() { 
+        if (window.checkoutPinKeypadActive()) {
+            document.getElementById('checkoutStaffPin').value = '';
+            window.verifyStaffMealPin();
+            return;
+        }
         window.amountReceivedStr = "0"; 
         window.updateNumpadDisplay(); 
     };
 
     window.setExactAmount = function() { 
+        if (window.checkoutPinKeypadActive()) return;
         let total = window.currentGrandTotal || 0; 
         window.amountReceivedStr = total.toString(); 
         window.updateNumpadDisplay(); 
@@ -3347,6 +3398,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
     // 🔥 THE RESTORED PAYMENT SELECTOR ENGINE 🔥
     window.setPaymentMethod = function(btn, method) { 
+        if (window.checkoutPinKeypadActive()) return;
         document.querySelectorAll('.pay-btn').forEach(b => b.classList.remove('active')); 
         btn.classList.add('active'); 
         window.selectedPaymentMethod = method; 
@@ -3377,7 +3429,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             
             // 🛑 LOCKDOWN UI
             if (pinContainer) pinContainer.style.display = 'block';
-            if (standardPaymentArea) standardPaymentArea.style.display = 'none'; 
+            if (standardPaymentArea) standardPaymentArea.style.display = 'block'; 
             window.selectedPaymentMethod = "Salary Deduction"; 
             
             let pinBox = document.getElementById('checkoutStaffPin');
@@ -3405,7 +3457,9 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                     standardPaymentArea.style.display = 'block';
                 }
             }
-            window.selectedPaymentMethod = "Cash"; 
+            window.selectedPaymentMethod = ['Grab', 'Foodpanda'].includes(window.posPlatform) ? window.posPlatform : "Cash";
+            const pinBox = document.getElementById('checkoutStaffPin');
+            if (pinBox) pinBox.value = '';
             
             // 🟢 UNLOCK CUSTOMER NAME BOX
             if (nameBox) {
@@ -3417,6 +3471,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                 nameBox.style.color = "#334155";
             }
         }
+        window.syncCheckoutKeypad();
         window.updateNumpadDisplay();
     };
 
@@ -3425,6 +3480,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         let pinInput = document.getElementById('checkoutStaffPin').value;
         let nameBox = document.getElementById('finalCustomerName');
         let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : '';
+        const stillCurrent = () => document.getElementById('checkoutStaffPin').value === pinInput && document.getElementById('checkoutDiscountType')?.value === dType;
         
         if (!nameBox) return;
 
@@ -3435,6 +3491,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             // Silent background lookup
             const qStr = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pinInput));
             const snapStr = await window.getDocs(qStr);
+            if (!stillCurrent()) return;
 
             if (!snapStr.empty) {
                 staffData = snapStr.docs[0].data();
@@ -3443,6 +3500,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                 if (!isNaN(pinNum)) {
                     const qNum = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pinNum));
                     const snapNum = await window.getDocs(qNum);
+                    if (!stillCurrent()) return;
                     if (!snapNum.empty) staffData = snapNum.docs[0].data();
                 }
             }
@@ -3467,6 +3525,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                             window.where("timestamp", ">=", startOfDay)
                         );
                         const reqSnap = await window.getDocs(reqQ);
+                        if (!stillCurrent()) return;
                         
                         let alreadyClaimed = false;
                         reqSnap.forEach(doc => {
@@ -3493,6 +3552,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
                             return;
                         }
                     } catch (e) {
+                        if (!stillCurrent()) return;
                         console.error("Meal Limit Check Error:", e);
                     }
                 }
@@ -4609,7 +4669,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=cashier-tablet-20261004-r3"></script>
+    <script type="module" src="main.js?v=cashier-reliability-20261004-r4"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {
@@ -4763,7 +4823,7 @@ window.showMobileOrders = function() {
           </div>
       </div>
   </div>
-<script src="cashier-pos-ui.js?v=cashier-tablet-20261004-r3"></script>
-<script type="module" src="cashier-workspace.js?v=cashier-tablet-20261004-r3"></script>
+<script src="cashier-pos-ui.js?v=cashier-reliability-20261004-r4"></script>
+<script type="module" src="cashier-workspace.js?v=cashier-reliability-20261004-r4"></script>
 </body>
 </html>

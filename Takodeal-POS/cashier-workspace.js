@@ -99,6 +99,7 @@ function paintAttendance(){
 }
 function installPrinterHub(){
   const view=page('printer','Printer hub','Manage receipt and preparation printers, plus a dedicated label workspace for drinks.');
+  const help=document.createElement('p');help.className='cashier-help';help.textContent='Printer pairing is saved on this device. If Bluetooth drops after idle time, we reconnect when you return and before printing. Keep the printer powered on and nearby; if it has an auto-sleep setting, turn that off in the printer’s own settings.';view.append(help);
   const devices=document.createElement('div');devices.className='cashier-printer-grid';view.append(devices);
   [['main','Receipt printer','Customer receipts and cash drawer'],['kitchen','Kitchen printer','Food preparation tickets'],['bar','Bar printer','Drink preparation tickets']].forEach(([role,name,help])=>{
     const card=document.createElement('section');card.className='cashier-panel cashier-printer-card';card.innerHTML=`<div class="cashier-printer-symbol" aria-hidden="true">▤</div><div class="cashier-panel-heading"><h2>${name}</h2></div><span class="cashier-badge" id="printerState-${role}">Not connected</span><p>${help}</p><div class="cashier-actions"><button class="cashier-button primary">Connect printer</button><button class="cashier-button">Test print</button></div>`;
@@ -145,7 +146,15 @@ function printLabels(){
   labels.forEach(label=>{const canvas=document.createElement('canvas');canvas.width=Math.round(width/25.4*dpi);canvas.height=Math.round(height/25.4*dpi);renderLabel(canvas,label);const image=doc.createElement('img');image.src=canvas.toDataURL();doc.body.append(image);});
   Promise.all([...doc.images].map(img=>img.decode())).then(()=>{frame.contentWindow.focus();frame.contentWindow.addEventListener('afterprint',()=>frame.remove(),{once:true});frame.contentWindow.print();el('labelPrintStatus').textContent='Choose CT221B, actual size (100%), and your saved label dimensions in the print dialog.';}).catch(()=>{frame.remove();el('labelPrintStatus').textContent='Could not prepare the print sheet. Download the label image instead.';});
 }
-function refreshPrinters(){for(const role of ['main','kitchen','bar']){const state=el('printerState-'+role),connected=!!window[role+'PrinterChar'];state.textContent=connected?'Connected':'Not connected';state.classList.toggle('is-connected',connected);}}
+function refreshPrinters(){for(const role of ['main','kitchen','bar']){
+  const badge=el('printerState-'+role);if(!badge)continue;
+  const state=window.getPrinterState?.(role) || {connected:false,status:'not-connected'};
+  badge.textContent=state.connected?'Connected':({'connecting':'Connecting…','reconnecting':'Reconnecting automatically','saved':'Pairing saved · waiting for printer'})[state.status] || 'Not connected';
+  badge.classList.toggle('is-connected',state.connected);badge.setAttribute('role','status');
+  const button=badge.closest('.cashier-printer-card').querySelector('button');
+  button.disabled=state.status==='connecting';button.textContent=state.connected?'Check connection':'Connect printer';
+}}
+document.addEventListener('cashier-printer-state',refreshPrinters);
 
 function decorateInventory(){
   const catalogue=[...(window.masterPOSData?.items||[]),...Object.values(window.TK_CACHE?.inventoryByBranch||{}).flat()];
@@ -186,31 +195,44 @@ function installTheme(){
   document.addEventListener('keydown',e=>{if(e.key==='Escape')el('posSettingsDropdown').style.display='none';});
   el('topBarTitle').textContent=titles.pos;
 }
+function showCashierUpdateNotice(state,title,message){
+  const banner=el('updateAppBanner');banner.dataset.updateState=state;
+  el('cashierUpdateTitle').textContent=title;el('cashierUpdateText').textContent=message;
+  el('cashierUpdateSymbol').textContent=['current','updated'].includes(state)?'✓':'↻';
+  el('cashierUpdateNow').textContent=state==='ready'?'Update app':'Check again';
+  el('cashierUpdateNow').disabled=state==='checking';
+  banner.style.display='flex';
+}
 function installUpdates(){
   const banner=el('updateAppBanner');banner.removeAttribute('onclick');banner.className='cashier-update-notice';
-  document.querySelector('.top-bar').after(banner);
-  banner.innerHTML='<div><strong id="cashierUpdateTitle">Cashier update available</strong><span id="cashierUpdateText">Finish or park the current order, then update this app.</span></div><button class="cashier-button primary" id="cashierUpdateNow">Check & update</button><button class="cashier-button" id="cashierUpdateDismiss" aria-label="Dismiss update notice">×</button>';
+  document.body.append(banner);banner.setAttribute('role','status');banner.setAttribute('aria-live','polite');
+  banner.innerHTML='<div class="cashier-update-symbol" id="cashierUpdateSymbol" aria-hidden="true">↻</div><div class="cashier-update-copy"><strong id="cashierUpdateTitle">Check for a Cashier update</strong><span id="cashierUpdateText">Finish or park your order before updating.</span></div><button id="cashierUpdateClose" aria-label="Dismiss update notice">×</button><div class="cashier-update-actions"><button class="cashier-button" id="cashierUpdateDismiss">Dismiss</button><button class="cashier-button primary" id="cashierUpdateNow">Check for update</button></div>';
   el('cashierUpdateDismiss').onclick=()=>{banner.style.display='none';};
+  el('cashierUpdateClose').onclick=el('cashierUpdateDismiss').onclick;
+  window.showCashierUpdateNotice=showCashierUpdateNotice;
   window.checkCashierUpdate=async function(){
-    const blocked=updateBlocker(window);if(blocked){banner.style.display='flex';el('cashierUpdateText').textContent=blocked;return;}
-    if(!navigator.onLine){banner.style.display='flex';el('cashierUpdateText').textContent='Connect to the internet to download the update. Saved offline sales stay on this device.';return;}
+    const blocked=updateBlocker(window);if(blocked){showCashierUpdateNotice('blocked','Finish your current work',blocked);return;}
+    if(!navigator.onLine){showCashierUpdateNotice('offline','Waiting for a connection','Connect to the internet to check for an update. Saved offline sales stay on this device.');return;}
+    showCashierUpdateNotice('checking','Checking for updates','Please wait while we check the latest Cashier app.');
     try{
       releaseRegistration ||= await navigator.serviceWorker?.getRegistration();
-      if(!releaseRegistration){el('cashierUpdateText').textContent='No installed worker yet. Reopen the app when online to complete installation.';banner.style.display='flex';return;}
+      if(!releaseRegistration){showCashierUpdateNotice('error','App setup is incomplete','Reopen the app when online to finish installation.');return;}
       await releaseRegistration.update();
-      if(releaseRegistration.waiting){activateRequested=true;releaseRegistration.waiting.postMessage({type:'TK_ACTIVATE_UPDATE'});}
-      else {el('cashierUpdateText').textContent=releaseRegistration.installing?'The update is downloading. Tap Check & update once it is ready.':'This device has the latest Cashier app.';banner.style.display='flex';}
-    }catch(error){el('cashierUpdateText').textContent='Update could not download. Check the connection and try again. Your saved data is retained.';banner.style.display='flex';console.error(error);}
+      const changed=updateBlocker(window);if(changed){showCashierUpdateNotice('blocked','Finish your current work',changed);return;}
+      if(releaseRegistration.waiting){activateRequested=true;releaseRegistration.waiting.postMessage({type:'TK_ACTIVATE_UPDATE'});showCashierUpdateNotice('checking','Opening the updated app','Your saved offline sales and printer settings are retained.');}
+      else if(releaseRegistration.installing)showCashierUpdateNotice('downloading','Update downloading','Keep the app open. We will let you know when it is ready.');
+      else {window.CASHIER_UPDATE_WAITING=false;showCashierUpdateNotice('current','Your Cashier app is up to date','This device has the latest version. You are ready to continue.');}
+    }catch(error){showCashierUpdateNotice('error','Could not check for updates','Check your connection and try again. Your saved data is retained.');console.error(error);}
   };
   el('cashierUpdateNow').onclick=()=>window.checkCashierUpdate();
   window.forceAppUpdate=window.manualHardUpdate=window.executeCacheWipe=()=>window.checkCashierUpdate();
-  const ready=registration=>{releaseRegistration=registration;const show=()=>{window.CASHIER_UPDATE_WAITING=true;el('cashierUpdateTitle').textContent='Cashier update ready';el('cashierUpdateText').textContent='Finish or park the current order, then update this app. Saved offline sales and printer settings are retained.';banner.style.display='flex';};
+  const ready=registration=>{releaseRegistration=registration;const show=()=>{window.CASHIER_UPDATE_WAITING=true;showCashierUpdateNotice('ready','Cashier update ready','Finish or park your order, then update. Saved offline sales and printer settings are retained.');};
     if(registration.waiting)show();registration.addEventListener('updatefound',()=>{const worker=registration.installing;worker?.addEventListener('statechange',()=>{if(worker.state==='installed' && navigator.serviceWorker.controller)show();});});};
   navigator.serviceWorker?.getRegistration().then(reg=>{if(reg)ready(reg);});
   navigator.serviceWorker?.addEventListener('controllerchange',()=>{if(activateRequested && !updateBlocker(window)){if(window.TARGET_UPDATE_VERSION)localStorage.setItem('takodeal_local_version',String(window.TARGET_UPDATE_VERSION));location.reload();}});
   window.addEventListener('cashier-worker-ready',event=>ready(event.detail));
   window.setInterval(()=>{if(document.visibilityState==='visible' && navigator.onLine)releaseRegistration?.update().catch(()=>{});},15*60*1000);
-  if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){el('cashierUpdateTitle').textContent='Cashier workspace updated';el('cashierUpdateText').textContent='Tablet spacing, parked-order details, shift windows and delivery-platform colors are updated.';banner.style.display='flex';localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
+  if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){showCashierUpdateNotice('updated','Cashier workspace updated','Drawer counts now save for this shift. Printer recovery and checkout controls have been improved.');localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
 }
 function install(){installTheme();installRemittance();installClock();installPrinterHub();installTabletControls();installParkedOrders();installUpdates();}
 if(document.readyState==='complete')install();else window.addEventListener('load',install,{once:true});
@@ -234,6 +256,8 @@ function installTabletControls(){
     if(id!=='parkedModal')card.lastElementChild.classList.add('cashier-dialog-footer');
     root.querySelectorAll('.close-modal,span[onclick*="style.display"],span[onclick*="closeModal("]').forEach(close=>{close.setAttribute('role','button');close.setAttribute('aria-label','Close window');close.tabIndex=0;close.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();close.click();}});});
   }
+  const closeModal=window.closeModal;
+  window.closeModal=function(id){if(id==='endShiftModal')window.saveCurrentShiftCloseDraft?.();return closeModal(id);};
   el('endShiftModal').querySelector('.modal-body').classList.add('cashier-clearance-grid');
   el('endShiftModal').querySelectorAll('.modal-body > div').forEach((card,i)=>{card.classList.add('cashier-clearance-card');card.querySelector('h3').textContent=['1. Cash drawer count','2. Kitchen preparation','3. Required stock count'][i];});
   el('expenseModal').firstElementChild.children[1].classList.add('cashier-expense-body');
