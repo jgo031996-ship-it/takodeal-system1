@@ -11,6 +11,71 @@ import { createCollectionCache } from '../takodeal-manager/collection-cache.js';
 import { reconcileOrder, renderFinancialFlow } from '../takodeal-manager/manager-workspace.js';
 import { menuCsv, validateMenuCsv, parseCsv } from '../takodeal-manager/menu-bulk.js';
 
+function financialFlowFixture({branch='All',period='month',empty=false}={}) {
+    const at=day=>new Date(day+'T12:00:00+08:00');
+    const data={transactions:[
+        {branch:'Cabantian',timestamp:at('2026-10-03'),netTotal:250,cart:[{name:'A',qty:2}]},
+        {branch:'Maa',timestamp:at('2026-10-03'),netTotal:300,cart:[{name:'A',qty:1}]},
+        {branch:'Cabantian',timestamp:at('2026-10-03'),netTotal:999,status:'Voided'},
+        {branch:'Cabantian',timestamp:at('2026-09-03'),netTotal:80,cart:[{name:'A',qty:1}]}],
+        inventory:[{branch:'Cabantian',name:'Sauce',baseCost:1.5},{branch:'Main Office',name:'Sauce',baseCost:5}],
+        bom:[{menuItem:'A',ingredientName:'Sauce',qty:2}],
+        expenses:[
+            {branch:'Cabantian',timestamp:at('2026-10-03'),category:'Payroll',amount:100},
+            {branch:'Maa',timestamp:at('2026-10-03'),category:'Payroll',amount:50},
+            {branch:'Cabantian',timestamp:at('2026-10-03'),category:'Rent',amount:40},
+            {branch:'Cabantian',timestamp:at('2026-10-03'),category:'Supplies',amount:30},
+            {branch:'Maa',timestamp:at('2026-10-03'),category:'Utilities',amount:20},
+            {branch:'Cabantian',timestamp:at('2026-10-03'),category:'Royalty',amount:25},
+            {branch:'Cabantian',timestamp:at('2026-09-03'),category:'Insurance',amount:10}],
+        budgets:[{branch:'Cabantian',category:'Rent',limit:50},{branch:'Maa',category:'Utilities',limit:30}]};
+    const nodes=new Map();
+    const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',innerHTML:'',options:[{},{}],getContext:()=>id});return nodes.get(id);};
+    node('flowBranchFilter').value=branch;node('flowTimeFilter').value=period;
+    node('flowMonthPicker').value='2026-10';node('flowYearPicker').value='2026';
+    const snapshots=rows=>({forEach:fn=>rows.forEach((data,id)=>fn({id:String(id),data:()=>data}))});
+    const charts=[],errors=[],rendered=[];let destroyed=0;
+    const window={sessionUser:{isOwner:true}};
+    const context={window,document:{getElementById:node},db:{},
+        collection:(_,table)=>({table}),where:(field,operator,value)=>({field,operator,value}),query:(ref,...filters)=>({...ref,filters}),
+        getDocs:async ref=>snapshots((empty?[]:data[ref.table]||[]).filter(row=>(ref.filters||[]).every(f=>f.operator==='>='?row[f.field]>=f.value:row[f.field]<=f.value))),
+        cachedSnapshot:async table=>snapshots(empty?[]:data[table]||[]),
+        renderFinancialFlow:totals=>{rendered.push(JSON.parse(JSON.stringify(totals)));return renderFinancialFlow(totals);},
+        Chart:class{constructor(ctx,config){charts.push({ctx,config});}destroy(){destroyed++;}},
+        console:{error:(...args)=>errors.push(args.map(String).join(' '))}};
+    const main=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
+    const start=main.indexOf('window.loadFinancialFlow =');
+    vm.runInNewContext(main.slice(start,main.indexOf('\n};',start)+3),context);
+    return {window,node,charts,errors,rendered,destroyed:()=>destroyed};
+}
+
+test('actual Financial Flow compiles nonzero operating expenses alongside revenue, recipe costs, payroll and both charts',async()=>{
+    const f=financialFlowFixture();await f.window.loadFinancialFlow();
+    assert.deepEqual(f.errors,[]);
+    assert.deepEqual(f.rendered[0],{totalRevenue:550,totalCOGS:16,totalPayroll:150,totalOpEx:90,netProfit:294,expenseBreakdown:{Rent:40,Supplies:30,Utilities:20}});
+    assert.match(f.node('financialFlowchartContainer').innerHTML,/Operating expenses/);
+    assert.doesNotMatch(f.node('financialFlowchartContainer').innerHTML,/Error compiling|NaN|undefined/);
+    assert.equal(f.charts.length,2);assert.equal(f.charts[0].config.type,'doughnut');assert.equal(f.charts[1].config.type,'bar');
+    assert.deepEqual([...f.charts[0].config.data.datasets[0].data],[16,150,40,30,20]);
+    assert.equal(f.window.tempOpExBreakdown.Rent[0].amount,40);
+});
+
+test('actual Financial Flow branch and year filters preserve the matching operating-expense total',async()=>{
+    const branch=financialFlowFixture({branch:'Cabantian'});await branch.window.loadFinancialFlow();
+    assert.deepEqual(branch.errors,[]);
+    assert.deepEqual(branch.rendered[0],{totalRevenue:250,totalCOGS:6,totalPayroll:100,totalOpEx:70,netProfit:74,expenseBreakdown:{Rent:40,Supplies:30}});
+    const year=financialFlowFixture({period:'year'});await year.window.loadFinancialFlow();
+    assert.deepEqual(year.errors,[]);assert.equal(year.rendered[0].totalRevenue,630);assert.equal(year.rendered[0].totalOpEx,100);assert.equal(year.rendered[0].netProfit,361);
+});
+
+test('actual Financial Flow handles an empty period and replaces charts on repeat loads without compilation errors',async()=>{
+    const f=financialFlowFixture({empty:true});await f.window.loadFinancialFlow();await f.window.loadFinancialFlow();
+    assert.deepEqual(f.errors,[]);assert.equal(f.rendered.length,2);
+    assert.deepEqual(f.rendered[0],{totalRevenue:0,totalCOGS:0,totalPayroll:0,totalOpEx:0,netProfit:0,expenseBreakdown:{}});
+    assert.match(f.node('financialFlowchartContainer').innerHTML,/No operating expenses in this period/);
+    assert.equal(f.charts.length,4);assert.equal(f.destroyed(),2);
+});
+
 test('earlier mall shifts carry all counted cash; only the final daily close remits accumulated cash',async()=> {
     const h=environment();await closeShiftAtomic(h.api,{...closing,isFinalShiftOfDay:false});
     const first=h.get('shifts/one');assert.equal(first.retainedCash,7500);assert.equal(first.remittedCash,0);assert.equal(first.isFinalShiftOfDay,false);assert.equal(h.get('remittances/mall-one'),undefined);

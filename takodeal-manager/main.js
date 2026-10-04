@@ -22285,7 +22285,7 @@ window.loadFinancialFlow = async function() {
         if (opExBoxes === '') opExBoxes = '<div style="color: #94a3b8; font-style: italic; font-size: 14px; padding: 20px;">No operational expenses logged.</div>';
 
         // 🔥 THE FIX: Injected Mobile-Responsive CSS directly into the UI!
-        let flowHtml = renderFinancialFlow({totalRevenue, totalCOGS, totalPayroll, totalOpEx, netProfit, expenseBreakdown});
+        let flowHtml = renderFinancialFlow({totalRevenue, totalCOGS, totalPayroll, totalOpEx: totalExpenses, netProfit, expenseBreakdown});
         container.innerHTML = flowHtml;
 
         // 📊 6. RENDER THE CHARTS
