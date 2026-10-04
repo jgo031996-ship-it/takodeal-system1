@@ -26,7 +26,7 @@ window.applyPermissions = function() {
         return;
     }
     document.querySelectorAll('.nav-item').forEach(el => { if (el.id !== 'nav-dashboard') el.style.display = 'none'; });
-    window.sessionUser.permissions.forEach(tabName => { let el = document.getElementById('nav-' + tabName); if (el) el.style.display = 'flex'; });
+    window.sessionUser.permissions.forEach(tabName => { let el = document.getElementById('nav-' + (tabName==='franchise'?'franchise-hub':tabName)); if (el) el.style.display = 'flex'; });
     let adminEl = document.getElementById('nav-admin'); if (adminEl) adminEl.style.display = 'none'; 
 };
 

@@ -1,5 +1,7 @@
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
 import { installDeviceFleet } from './device-fleet.js';
+import { installFranchiseWorkspace } from './franchise-workspace.js';
+import { installMonthlyBills } from './monthly-bills-ui.js';
 import { requestHistory, historyTime } from './request-history.js';
 import { enhanceScheduleLayout } from './schedule-layout.js';
 import { generateEmployeeID } from './employee-id.js';
@@ -4533,7 +4535,9 @@ window.loadAccountsAndBudget = async function() {
                 let spent = parseFloat(b.spent || 0);
                 let budgetMonth = b.currentMonth || "";
 
-                if (budgetMonth !== currentMonthStr) {
+                if (b.billStartDate) {
+                    spent=Object.values(b.billPayments || {}).filter(p=>p.paymentDate?.slice(0,7)===currentMonthStr).reduce((sum,p)=>sum+Number(p.amount || 0),0);
+                } else if (budgetMonth !== currentMonthStr) {
                     spent = 0; 
                     updateDoc(doc(db, "budgets", b.id), { spent: 0, currentMonth: currentMonthStr });
                 }
@@ -15132,6 +15136,9 @@ window.editManagerPermissions = async function(docId, email, existingPerms) {
         }
     });
 
+    // Simulator remains a separate permission inside the combined Franchise HQ Hub.
+    allPerms.push({id:'franchise',name:'🧮 Franchise HQ Hub · Simulator'});
+
     // Scan Sub-Items (HR Hub & Inventory Tabs)
     document.querySelectorAll('.sidebar .nav-subitem').forEach(el => {
         let onclick = el.getAttribute('onclick');
@@ -22090,7 +22097,7 @@ window.loadFinancialFlow = async function() {
         } else {
             let opts = '<option value="All">🌐 All Branches</option>';
             if (window.globalActiveBranches) {
-                window.globalActiveBranches.forEach(b => { if(b !== "Main Office") opts += `<option value="${b}">${b}</option>`; });
+                window.globalActiveBranches.forEach(b => { opts += `<option value="${b}">${b}</option>`; });
             }
             branchSelect.innerHTML = opts;
         }
@@ -22218,9 +22225,11 @@ window.loadFinancialFlow = async function() {
 
         // 3. FETCH BUDGET LIMITS (For the Bar Chart)
         let budgetLimits = {};
+        const scheduledBills = [];
         const budSnap = await getDocs(collection(db, "budgets"));
         budSnap.forEach(doc => {
-            let b = doc.data();
+            let b = {id:doc.id,...doc.data()};
+            if(window.isBranchAllowed?.(b.branch)!==false) scheduledBills.push(b);
             if (branch === "All" || b.branch === branch) {
                 if (!budgetLimits[b.category]) budgetLimits[b.category] = 0;
                 budgetLimits[b.category] += (parseFloat(b.limit) || 0);
@@ -22246,7 +22255,7 @@ window.loadFinancialFlow = async function() {
 
         // 🔥 THE FIX: Injected Mobile-Responsive CSS directly into the UI!
         let flowHtml = renderFinancialFlow({totalRevenue, totalCOGS, totalPayroll, totalOpEx: totalExpenses, netProfit, expenseBreakdown});
-        container.innerHTML = flowHtml;
+        container.innerHTML = flowHtml + (window.renderBillForecast?.(scheduledBills,branch,startOfDay,endOfDay) || "");
 
         // 📊 6. RENDER THE CHARTS
         let ctxSpend = document.getElementById('flowSpendChart').getContext('2d');
@@ -27777,3 +27786,6 @@ window.switchView = function(view,...args) {
 };
 
 installDeviceFleet(window.deviceFleetConnection);
+installFranchiseWorkspace();
+installMonthlyBills();
+
