@@ -1,5 +1,6 @@
 import { initManagerScroll } from './manager-scroll.js';
-// Presentation only: no database calls, permissions, or business calculations.
+import { initAIHub } from './ai-hub.js';
+// Shared presentation and workspace initialization; preserve business calculations.
 export const MANAGER_PAGES = Object.freeze({
     dashboard: ['Overview', 'Global Dashboard', 'Your sales, branch performance, and team in one place.'],
     accounts: ['Finance', 'Cash & Budget', 'Schedule branch bills, review reminders, and keep monthly spending in view.'],
@@ -27,7 +28,7 @@ export const MANAGER_PAGES = Object.freeze({
     inventory: ['Inventory', 'Live Inventory', 'Review branch stock, audits, and inventory activity.'],
     purchases: ['Inventory', 'Purchases & Alerts', 'Review purchase needs and low stock alerts.'],
     alerts: ['Operations', 'Security Alerts', 'Review incidents and activity requiring attention.'],
-    bulletin: ['Communication', 'Bulletin & AI', 'Share branch updates and review business insights.'],
+    bulletin: ['Communication', 'AI Hub', 'Draft, review, and publish formal team announcements.'],
     franchise: ['Partners', 'Franchise HQ Hub', 'Manage franchise partners, accounts, conversations, and new proposals.'],
     addons: ['Menu', 'Global Add-Ons', 'Maintain the extras available across your menu.'],
     admin: ['Configuration', 'Access Control', 'Manage existing staff access and branch permissions.']
@@ -61,6 +62,7 @@ export function initManagerTheme({ document: d = document, window: w = window, o
     if (d.body.dataset.managerTheme) return;
     d.body.dataset.managerTheme = '20261003';
     d.body.classList.add('manager-theme');
+    const aiHub = initAIHub({ document:d, window:w });
     // These legacy bars belong to Overview. Move the existing nodes so their
     // filters, upload control and event handlers are retained when tabs switch.
     const inventoryOverview = d.getElementById('invTabLiveContent');
@@ -79,7 +81,7 @@ export function initManagerTheme({ document: d = document, window: w = window, o
         for (const el of nodes) {
             if (!el.matches || seen.has(el) || !el.closest('.view')) continue;
             // Preserve the dashboard design and all printable/exportable documents.
-            if (el.closest('#view-dashboard,#printablePayslip,#proposalContainer,.modal,.overlay,dialog')) continue;
+            if (el.closest('#view-dashboard,#view-bulletin,#printablePayslip,#proposalContainer,.modal,.overlay,dialog')) continue;
             seen.add(el);
             const s = el.style;
             if (el.matches('table')) {
@@ -166,5 +168,5 @@ export function initManagerTheme({ document: d = document, window: w = window, o
     observer.observe(d.querySelector('.sidebar'), {subtree:true, attributes:true, attributeFilter:['class']});
     d.querySelectorAll('.view').forEach(decorate);
     sync();
-    return { sync, stop: () => { observer.disconnect(); scrolling.stop(); } };
+    return { sync, stop: () => { observer.disconnect(); scrolling.stop(); aiHub?.stop(); } };
 }
