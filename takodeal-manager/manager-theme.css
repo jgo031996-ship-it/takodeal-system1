@@ -8,7 +8,7 @@
     --theme-amber:#dca550; background:var(--bg-color); color:var(--text-main);
     font-size:13px;
   }
-  body.manager-theme .main-content { min-width:0; padding-bottom:45px!important; background:var(--bg-color); }
+  body.manager-theme .main-content { min-width:0; padding-top:0!important; padding-bottom:45px!important; background:var(--bg-color); scroll-padding-top:calc(var(--manager-title-height,128px) + 12px); }
   body.manager-theme .sidebar { background:#133d31!important; border-right:1px solid #ffffff10; }
   body.manager-theme .sidebar-header { padding:23px 20px!important; border-bottom:1px solid #ffffff14!important; min-height:94px; }
   body.manager-theme .sidebar-header img { width:38px!important; height:38px!important; border:1px solid #dca55070!important; border-radius:11px!important; }
@@ -35,7 +35,7 @@
   body.manager-theme .nav-menu::-webkit-scrollbar-thumb { background:#365846; }
 
   /* One identifiable title for every page, with controls alongside it. */
-  body.manager-theme .topbar { padding:24px 32px 23px!important; min-height:128px; background:#fff!important; border-bottom:1px solid #e0e7e2; box-shadow:none; gap:22px; align-items:center; flex-wrap:wrap; position:relative; }
+  body.manager-theme .topbar { padding:24px 32px 23px!important; min-height:128px; background:#fff!important; border-bottom:1px solid #e0e7e2; box-shadow:0 3px 12px #173f320d; gap:22px; align-items:center; flex-wrap:wrap; position:sticky; top:0; z-index:40; }
   body.manager-theme .topbar:before { content:''; position:absolute; top:0; left:0; right:0; height:3px; background:#173f32; }
   .manager-page-heading { display:flex; align-items:center; gap:14px; min-width:0; flex:1 1 330px; }
   .manager-page-copy { min-width:0; }
@@ -54,7 +54,7 @@
   body.manager-theme #btnWipeData { background:#fff!important; color:#aa4841!important; border:1px solid #ebdcd7!important; }
   body.manager-theme .mobile-menu-btn { border:1px solid #dce5dc; background:#f4f7f1; border-radius:8px; color:#2d5b40; height:38px; width:38px; padding:0; flex-shrink:0; }
 
-  body.manager-theme .view { padding:28px 32px!important; background:var(--bg-color)!important; color:var(--text-main); max-width:1900px!important; margin-inline:auto!important; }
+  body.manager-theme .view { padding:28px 32px!important; background:var(--bg-color)!important; color:var(--text-main); max-width:1900px!important; margin-inline:auto!important; flex:0 0 auto; width:100%; overflow:visible!important; }
   body.manager-theme .view * { box-sizing:border-box; }
   body.manager-theme .view:not(#view-dashboard) { font-size:13px; }
   body.manager-theme .view:not(#view-dashboard) :is(h2,h3):not(#proposalContainer *) { letter-spacing:-.35px; line-height:1.45; }
@@ -93,6 +93,10 @@
   body.manager-theme .view:not(#view-dashboard) table:not(#proposalContainer *) th { background:#f7f9f4!important; border-color:#e2e9de!important; color:#7a8d7b!important; font-size:10px!important; letter-spacing:.5px; font-weight:650!important; padding:12px 15px!important; white-space:nowrap; }
   body.manager-theme .view:not(#view-dashboard) table:not(#proposalContainer *) td { font-size:12px!important; border-color:#edf1e8!important; padding:14px 15px!important; line-height:1.6; }
   body.manager-theme .view:not(#view-dashboard) table:not(#proposalContainer *) tbody tr:hover { background:#f8fbf5; }
+  /* Translate the original heading, so controls, column widths and horizontal
+     swipes stay together. Screen scope leaves print and PDF layouts unchanged. */
+  body.manager-theme .view .manager-sticky-table>thead { position:relative!important; top:auto!important; z-index:3; transform:translateY(var(--manager-heading-offset,0px)); background:#f7f9f4; box-shadow:0 2px 0 #dfe7dc; }
+  body.manager-theme .view .manager-sticky-table>thead>tr>:is(th,td) { position:relative!important; top:auto!important; background:#f7f9f4!important; }
   body.manager-theme .view .sched-table td { padding:8px!important; }
   body.manager-theme .view .sched-table :is(.clickable,.staff-chip) { background:#eef5e9; color:#326340; border-color:#dae7d2; }
   body.manager-theme .view .action-menu-btn { border-color:#dce5d8; color:#46634a; background:#fff; }
@@ -172,6 +176,7 @@ body.manager-theme #franSecSimulator .franchise-simulator-fields { grid-template
 .bill-schedule-fields input,.bill-schedule-fields select { width:100%; box-sizing:border-box; padding:10px; border:1px solid #cedecb; border-radius:6px; background:#fff; }
 .bill-schedule-fields small { color:#6c816e; font-size:11px; line-height:1.5; }
 .bill-schedule-fields>div { display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:center; }
+.bill-month-fields { display:grid; gap:7px; margin:14px 0; }.bill-month-fields label { font-size:12px; font-weight:650; }.bill-month-fields input { width:100%; padding:10px; background:white; border:1px solid #d0dfcc; border-radius:6px; }.bill-month-fields small { color:#6c816e; font-size:11px; line-height:1.6; }.bill-default-option { display:flex; align-items:flex-start; gap:8px; font-size:11px; line-height:1.6; color:#506958; margin:-6px 0 18px; }.bill-default-option input { width:16px!important; min-width:16px!important; margin-top:2px; }
 #addBudgetModal>div,#editBudgetModal>div,#logExpenseModal>div { max-height:92dvh; overflow-y:auto!important; }
 .bill-forecast { margin-top:24px; padding:22px; border:1px solid #cbdcc7; border-radius:12px; display:flex; align-items:center; justify-content:space-between; gap:15px; background:#f5f9f0; text-align:left; }
 .bill-forecast h3 { margin:0; }.bill-forecast small { color:#6b806b; }

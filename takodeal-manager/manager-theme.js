@@ -1,3 +1,4 @@
+import { initManagerScroll } from './manager-scroll.js';
 // Presentation only: no database calls, permissions, or business calculations.
 export const MANAGER_PAGES = Object.freeze({
     dashboard: ['Overview', 'Global Dashboard', 'Your sales, branch performance, and team in one place.'],
@@ -60,6 +61,7 @@ export function initManagerTheme({ document: d = document, window: w = window, o
     if (d.body.dataset.managerTheme) return;
     d.body.dataset.managerTheme = '20261003';
     d.body.classList.add('manager-theme');
+    const scrolling = initManagerScroll({ document: d, window: w });
     let lastView = '', lastPage = '', queued = false;
     const seen = new WeakSet();
     function decorate(root) {
@@ -104,6 +106,8 @@ export function initManagerTheme({ document: d = document, window: w = window, o
         const meta = managerPageMeta(view, { hrTab, inventoryTab });
         const pageKey = `${view}:${meta.title}`;
         if (pageKey !== lastPage) {
+            // A different sidebar page starts at its beginning; refreshes retain position.
+            if (lastPage) d.querySelector('.main-content').scrollTop = 0;
             lastPage = pageKey;
             d.querySelector('.sidebar')?.classList.remove('show-mobile');
             const overlay = d.getElementById('mobileSidebarOverlay');
@@ -136,6 +140,7 @@ export function initManagerTheme({ document: d = document, window: w = window, o
         });
         d.querySelector('.mobile-menu-btn')?.setAttribute('aria-expanded', String(d.querySelector('.sidebar')?.classList.contains('show-mobile') || false));
         decorate(active);
+        scrolling.schedule();
         if (view !== lastView) { lastView = view; onViewChange(view); }
     }
     const queue = () => { if (!queued) { queued = true; w.requestAnimationFrame(() => { queued = false; sync(); }); } };
@@ -152,5 +157,5 @@ export function initManagerTheme({ document: d = document, window: w = window, o
     observer.observe(d.querySelector('.sidebar'), {subtree:true, attributes:true, attributeFilter:['class']});
     d.querySelectorAll('.view').forEach(decorate);
     sync();
-    return { sync, stop: () => observer.disconnect() };
+    return { sync, stop: () => { observer.disconnect(); scrolling.stop(); } };
 }

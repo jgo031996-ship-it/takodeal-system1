@@ -4,8 +4,9 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {allowedFranchiseTabs,installFranchiseWorkspace} from '../takodeal-manager/franchise-workspace.js';
-import {billToday,billSchedule,billDueDate,billPeriods,billsForPeriod,recordBillPayment} from '../takodeal-manager/monthly-bills.js';
+import {billToday,billSchedule,billDueDate,billPeriods,billsForPeriod,billAmount,saveBillAmount,recordBillPayment} from '../takodeal-manager/monthly-bills.js';
 import {renderBillForecast} from '../takodeal-manager/monthly-bills-ui.js';
+import {tableHeadingOffset} from '../takodeal-manager/manager-scroll.js';
 
 test('merged workspace keeps management and simulator permissions independent',()=>{
     assert.deepEqual(allowedFranchiseTabs({isOwner:true}),['Performance','Ledger','Chat','Leads','Simulator']);
@@ -87,4 +88,54 @@ test('bill payment refuses missing schedule, insufficient funds, denied branch a
 test('late bill payment records actual payment month for Financial Flow and preserves original due month',async()=>{
     const h=paymentEnv();h.put('budgets/rent',{branch:'Maa',category:'Rent',limit:100,spent:30,currentMonth:'2026-09',...billSchedule({dueDate:'2026-09-03',reminderDays:3,reminderTime:'09:00'})});
     await recordBillPayment(h.api,{...payment,month:'2026-09'});const b=h.get('budgets/rent'),exp=h.get('expenses/bill-rent-2026-09');assert.equal(b.spent,100);assert.equal(b.currentMonth,'2026-10');assert.equal(exp.billingMonth,'2026-09');assert.equal(exp.paymentDate,'2026-10-04');assert.equal(exp.billDueDate,'2026-09-03');
+});
+
+test('one variable bill month changes the forecast without touching other months, cash, or reminders',async()=>{
+    const h=paymentEnv(),original=h.get('budgets/rent');
+    await saveBillAmount(h.api,{billId:'rent',month:'2026-10',amount:145.25,schedule:original,actor:'manager',allowedBranch:()=>true});
+    const b=h.get('budgets/rent');assert.equal(billAmount(b,'2026-10'),145.25);assert.equal(billAmount(b,'2026-11'),100);assert.equal(b.limit,100);assert.equal(b.billStartDate,original.billStartDate);assert.equal(b.billReminderTime,original.billReminderTime);
+    assert.equal(h.get('cash_accounts/hq').balance,1000);assert.equal(h.get('expenses/bill-rent-2026-10'),undefined);
+    const rows=billsForPeriod([{id:'rent',...b}],'Maa',new Date('2026-10-01T00:00:00+08:00'),new Date('2026-11-30T23:59:00+08:00'));
+    assert.deepEqual(rows.map(r=>r.amount),[145.25,100]);
+});
+test('changing the default preserves earlier bills and existing future overrides',async()=>{
+    const h=paymentEnv(),b={...h.get('budgets/rent'),...billSchedule({dueDate:'2026-08-03',reminderDays:3,reminderTime:'09:00'}),billAmounts:{'2026-09':115,'2026-12':180}};h.put('budgets/rent',b);
+    await saveBillAmount(h.api,{billId:'rent',month:'2026-10',amount:140,schedule:b,useAsDefault:true,actor:'manager',allowedBranch:()=>true});
+    const saved=h.get('budgets/rent');assert.deepEqual(['2026-08','2026-09','2026-10','2026-11','2026-12'].map(m=>billAmount(saved,m)),[100,115,140,140,180]);
+});
+test('concurrent edits of different billing months preserve both amounts',async()=>{
+    const h=paymentEnv(),b=h.get('budgets/rent'),base={billId:'rent',schedule:b,actor:'manager',allowedBranch:()=>true};
+    await Promise.all([saveBillAmount(h.api,{...base,month:'2026-10',amount:123}),saveBillAmount(h.api,{...base,month:'2026-11',amount:156})]);
+    assert.deepEqual(h.get('budgets/rent').billAmounts,{'2026-10':123,'2026-11':156});assert.ok(h.retries()>0);
+});
+test('paid utility bills retain the actual paid amount and cannot be edited into another amount',async()=>{
+    const h=paymentEnv(),b=h.get('budgets/rent');await recordBillPayment(h.api,{...payment,amount:120});
+    assert.equal(billAmount(h.get('budgets/rent'),'2026-10'),120);
+    await assert.rejects(saveBillAmount(h.api,{billId:'rent',month:'2026-10',amount:130,schedule:b,actor:'manager',allowedBranch:()=>true}),/already paid/);
+    await saveBillAmount(h.api,{billId:'rent',month:'2026-10',amount:120,schedule:b,actor:'manager',allowedBranch:()=>true});
+    assert.equal(h.get('expenses/bill-rent-2026-10').amount,120);assert.equal(h.get('cash_accounts/hq').balance,880);
+});
+test('variable bill edits reject invalid amounts, months, first-date changes and unauthorized branches',async()=>{
+    const h=paymentEnv(),b=h.get('budgets/rent'),base={billId:'rent',month:'2026-10',amount:120,schedule:b,actor:'manager',allowedBranch:()=>true};
+    for(const amount of [0,-1,Infinity,'bad'])await assert.rejects(saveBillAmount(h.api,{...base,amount}));
+    await assert.rejects(saveBillAmount(h.api,{...base,month:'2026-09'}),/first due date/);
+    await assert.rejects(saveBillAmount(h.api,{...base,schedule:{...b,billStartDate:'2026-10-04'}}),/first due date/);
+    await assert.rejects(saveBillAmount(h.api,{...base,allowedBranch:()=>false}),/outside/);
+    assert.equal(h.get('budgets/rent').billAmounts,undefined);
+});
+test('failed amount edit commits preserve all earlier bill values',async()=>{
+    const h=paymentEnv(),b=h.get('budgets/rent');h.failNextCommit();
+    await assert.rejects(saveBillAmount(h.api,{billId:'rent',month:'2026-10',amount:125,schedule:b,actor:'manager',allowedBranch:()=>true}),/Commit rejected/);
+    assert.deepEqual(h.get('budgets/rent'),b);
+});
+test('frozen column headings remain inside their table and release at its last row',()=>{
+    assert.equal(tableHeadingOffset({naturalTop:300,tableBottom:1200,headingHeight:40,pinnedTop:128}),0);
+    assert.equal(tableHeadingOffset({naturalTop:-500,tableBottom:700,headingHeight:40,pinnedTop:128}),628);
+    assert.equal(tableHeadingOffset({naturalTop:-500,tableBottom:140,headingHeight:40,pinnedTop:128}),600);
+    assert.equal(tableHeadingOffset({naturalTop:-500,tableBottom:100,headingHeight:40,pinnedTop:128}),560);
+});
+test('nested report scrollers and multi-row headings use their visible edge and full heading height',()=>{
+    assert.equal(tableHeadingOffset({naturalTop:-100,tableBottom:800,headingHeight:80,pinnedTop:200}),300);
+    assert.equal(tableHeadingOffset({naturalTop:100,tableBottom:140,headingHeight:80,pinnedTop:200}),0);
+    assert.equal(tableHeadingOffset({naturalTop:NaN,tableBottom:800,headingHeight:80,pinnedTop:200}),0);
 });
