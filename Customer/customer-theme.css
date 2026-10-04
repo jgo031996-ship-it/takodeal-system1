@@ -163,3 +163,96 @@ body[data-screen="branchLocatorScreen"] :is(.customer-nav,#customerMobileCart,#l
   body { padding-bottom:110px!important; }
 }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important;transition:none!important;scroll-behavior:auto!important; } }
+
+/* Larger brand marks and a dedicated franchise path. */
+.customer-nav-inner { padding-top:14px;padding-bottom:14px; }
+.customer-brand { font-size:25px; }
+.customer-brand img { width:68px;height:68px;object-fit:contain;border-radius:17px; }
+.customer-nav-actions { gap:24px; }
+.customer-nav-link { font-size:12px; }
+body[data-screen="orderingScreen"] [data-nav="menu"],body[data-screen="partnersScreen"] [data-nav="partners"] { box-shadow:0 2px var(--customer-green); }
+.customer-locator-brand { font-size:26px;gap:13px; }
+.customer-locator-brand img { width:72px;height:72px;object-fit:contain;border-radius:18px; }
+.customer-locator-actions { margin-left:auto;display:flex;align-items:center;gap:24px; }
+.customer-locator-actions small { margin:0; }
+.customer-hero-photo { width:260px;height:200px; }
+.customer-hero-photo img { object-fit:contain;background:white;padding:8px; }
+.customer-menu-tools { top:97px; }
+.customer-partner-invite { display:flex;justify-content:space-between;align-items:center;gap:24px;background:#edf1e7;border:1px solid var(--customer-line);padding:24px 28px;border-radius:15px;margin:24px 0; }
+.customer-partner-invite h2 { font-size:19px;font-weight:800;letter-spacing:-.5px;margin:8px 0; }
+.customer-partner-invite p { color:var(--customer-muted);font-size:12px;line-height:1.7; }
+.customer-partners { max-width:1240px;padding:32px;margin:auto; }
+.customer-franchise-hero { display:grid;grid-template-columns:1.5fr .8fr;gap:60px;align-items:center;background:var(--customer-green);border-radius:22px;padding:52px;color:white; }
+.customer-franchise-hero .customer-eyebrow { color:#d3b66c; }
+.customer-franchise-hero h1 { font-size:44px;line-height:1.15;letter-spacing:-1.8px;font-weight:800;margin:20px 0; }
+.customer-franchise-hero p { color:#d3e0d7;font-size:14px;line-height:1.8;max-width:540px; }
+.customer-franchise-actions { display:flex;align-items:center;gap:24px;flex-wrap:wrap;margin:26px 0 22px; }
+.customer-franchise-hero .customer-primary-button { background:#f3ead5;color:var(--customer-green);font-size:12px;padding:15px 18px; }
+.customer-franchise-hero .customer-primary-button:hover { background:white; }
+.customer-franchise-hero .customer-text-button { color:#ebf1ec; }
+.customer-franchise-hero small { display:block;font-size:10px;line-height:1.7;color:#baccbd; }
+.customer-franchise-brand { text-align:center; }
+.customer-franchise-brand img { width:100%;max-width:280px;aspect-ratio:1;object-fit:contain;background:#fff;padding:18px;border-radius:24px; }
+.customer-franchise-brand span { display:block;color:#d3e0d7;font-size:10px;letter-spacing:1px;margin-top:17px; }
+.customer-franchise-section { margin:48px 0;scroll-margin-top:120px; }
+.customer-franchise-section-heading h2 { font-size:28px;line-height:1.35;letter-spacing:-.8px;font-weight:800;margin:10px 0; }
+.customer-franchise-section-heading p { font-size:13px;color:var(--customer-muted);line-height:1.8; }
+.customer-franchise-formats { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:24px; }
+.customer-franchise-formats article { display:flex;flex-direction:column;padding:28px;border:1px solid var(--customer-line);background:white;border-radius:16px; }
+.customer-format-number { font-size:10px;font-weight:800;letter-spacing:1px;color:var(--customer-orange); }
+.customer-franchise-formats h3 { font-size:21px;font-weight:800;letter-spacing:-.5px;margin:20px 0 10px; }
+.customer-franchise-formats p { font-size:12px;line-height:1.8;color:var(--customer-muted);margin-bottom:24px; }
+.customer-franchise-formats button { align-self:flex-start;margin-top:auto; }
+.customer-franchise-story { display:grid;grid-template-columns:1fr 1fr;gap:70px;padding:35px 0 48px;border-bottom:1px solid var(--customer-line); }
+.customer-franchise-story h2,.customer-franchise-inquiry h2 { font-size:32px;letter-spacing:-1px;font-weight:800;line-height:1.25;margin:12px 0 18px; }
+.customer-franchise-story p,.customer-franchise-inquiry-intro p { color:var(--customer-muted);font-size:13px;line-height:1.8;margin-bottom:16px; }
+.customer-franchise-story ol { display:flex;flex-direction:column;gap:25px;list-style:none; }
+.customer-franchise-story li { display:flex;gap:20px; }
+.customer-franchise-story li>b { color:#967c43;font-size:12px;flex-shrink:0;margin-top:4px; }
+.customer-franchise-story h3 { font-size:16px;font-weight:800;margin-bottom:6px; }
+.customer-franchise-story li p { font-size:12px;margin:0; }
+.customer-franchise-inquiry { display:grid;grid-template-columns:1fr 1.35fr;gap:50px;margin:48px 0;padding:36px;background:#edf1e7;border:1px solid var(--customer-line);border-radius:20px;scroll-margin-top:115px; }
+.customer-franchise-inquiry form { border:1px solid var(--customer-line);padding:28px;background:white;border-radius:15px; }
+.customer-franchise-fields { display:grid;grid-template-columns:1fr 1fr;gap:18px; }
+.customer-field-wide { grid-column:1/-1; }
+.customer-franchise-fields label { display:block;font-size:11px;font-weight:700;margin-bottom:8px; }
+.customer-franchise-fields label span { color:var(--customer-orange); }
+.customer-franchise-fields label small { font-size:10px;font-weight:400;color:var(--customer-muted);margin-left:6px; }
+.customer-franchise-fields :is(input,select) { width:100%;border:1px solid #d3ded5;background:#fbfcf9;border-radius:9px;padding:12px;color:var(--customer-ink);font:inherit;font-size:13px; }
+.customer-franchise-fields input::placeholder { color:#829185; }
+.customer-franchise-consent { display:flex;align-items:flex-start;gap:10px;margin:22px 0;font-size:11px;line-height:1.7;color:var(--customer-muted); }
+.customer-franchise-consent input { flex-shrink:0;margin-top:3px;accent-color:var(--customer-green);width:16px;height:16px; }
+.customer-franchise-inquiry form>.customer-primary-button { width:100%;font-size:12px;padding:14px; }
+.customer-franchise-note { border-left:3px solid #b79d60;padding:12px 16px;margin:24px 0;color:var(--customer-green);font-size:12px;line-height:1.7; }
+.customer-franchise-privacy { display:block;color:var(--customer-muted);font-size:10px;line-height:1.7;margin-top:12px; }
+.customer-lead-message { font-size:12px;line-height:1.8;border-radius:8px;padding:12px;background:#fff2e9;color:#974919;margin-bottom:16px; }
+.customer-lead-message.success { background:#eaf4ed;color:#225f3e; }
+.customer-franchise-faq { display:grid;grid-template-columns:1fr 1.35fr;gap:50px; }
+.customer-franchise-faq details { border-bottom:1px solid var(--customer-line);padding:18px 0; }
+.customer-franchise-faq summary { font-size:13px;font-weight:700;cursor:pointer; }
+.customer-franchise-faq details p { margin-top:13px;color:var(--customer-muted);font-size:12px;line-height:1.8; }
+body[data-screen="partnersScreen"] :is(#customerMobileCart,#liveOrderTracker) { display:none!important; }
+@media(max-width:900px) {
+  .customer-franchise-hero { gap:28px;padding:34px;grid-template-columns:1.4fr .8fr; }.customer-franchise-hero h1 { font-size:34px; }
+  .customer-franchise-formats article { padding:22px; }.customer-franchise-formats h3 { font-size:18px; }.customer-franchise-story { gap:35px; }
+  .customer-franchise-inquiry { gap:24px;padding:24px; }.customer-franchise-inquiry form { padding:22px; }.customer-franchise-fields { grid-template-columns:1fr; }.customer-field-wide { grid-column:auto; }
+}
+@media(max-width:760px) {
+  .customer-brand { font-size:21px; }.customer-brand img { width:56px;height:56px; }.customer-nav-actions { gap:16px; }.customer-nav-link { font-size:11px; }
+  .customer-menu-tools { top:85px; }.customer-hero-photo { width:190px;height:170px; }.customer-partners { padding:24px 20px; }
+  .customer-franchise-hero { grid-template-columns:1fr; }.customer-franchise-brand { display:none; }
+  .customer-franchise-formats { grid-template-columns:1fr; }.customer-franchise-formats article { padding:24px; }.customer-franchise-formats h3 { margin-top:12px; }
+  .customer-franchise-story,.customer-franchise-inquiry,.customer-franchise-faq { grid-template-columns:1fr;gap:24px; }.customer-franchise-inquiry-intro h2 br { display:none; }
+  .customer-partner-invite { align-items:flex-start;flex-direction:column;padding:22px; }.customer-partner-invite h2 { font-size:18px; }
+}
+@media(max-width:600px) {
+  .customer-nav-inner { flex-direction:column;gap:8px;padding:10px 16px; }.customer-brand { align-self:flex-start;font-size:23px; }.customer-brand img { width:56px;height:56px; }.customer-brand small { font-size:7px; }
+  .customer-nav-actions { width:100%;justify-content:space-between;gap:14px; }.customer-nav-link { font-size:12px; }.customer-cart-button { padding:10px 13px; }
+  .customer-menu-tools { top:124px; }.category-section { scroll-margin-top:265px; }
+  .customer-locator-brand { font-size:23px;gap:11px; }.customer-locator-brand img { width:58px;height:58px; }.customer-locator-actions { gap:0; }.customer-locator-actions small { display:none; }.customer-locator-actions button { font-size:10px;padding:10px; }
+  .customer-franchise-hero { padding:28px 24px; }.customer-franchise-hero h1 { font-size:33px;letter-spacing:-1px; }.customer-franchise-hero p { font-size:12px; }.customer-franchise-actions { gap:15px; }.customer-franchise-actions .customer-primary-button { white-space:normal;text-align:left; }
+  .customer-franchise-section { margin:34px 0;scroll-margin-top:145px; }.customer-franchise-section-heading h2 { font-size:25px; }.customer-franchise-section-heading p { font-size:12px; }
+  .customer-franchise-story { padding:10px 0 32px; }.customer-franchise-story h2,.customer-franchise-inquiry h2 { font-size:28px; }
+  .customer-franchise-inquiry { padding:22px 18px;margin:34px 0;scroll-margin-top:145px; }.customer-franchise-inquiry form { padding:20px 16px; }.customer-franchise-fields :is(input,select) { font-size:16px; }
+  .customer-menu-footer>div { display:flex;flex-wrap:wrap;gap:12px; }
+}

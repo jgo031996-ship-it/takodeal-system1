@@ -6,7 +6,7 @@
     <title>TAKODEÁL | Order fresh takoyaki</title>
     <meta name="theme-color" content="#173f35">
     <meta name="description" content="Choose a TAKODEÁL branch, browse its menu, and order takoyaki, drinks and more for pickup or delivery.">
-    <link rel="stylesheet" href="customer-theme.css?v=customer-20261004">
+    <link rel="stylesheet" href="customer-theme.css?v=customer-repair-20261004">
     
     <link rel="manifest" href="manifest.json">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -180,8 +180,10 @@
 
     <nav class="customer-nav" aria-label="Main navigation">
         <div class="customer-nav-inner">
-            <button class="customer-brand" onclick="window.switchScreen('orderingScreen')" aria-label="TAKODEÁL menu"><img src="customer-logo.jpg" alt=""><span>TAKODEÁL<small>YOUR IDEAL TAKOYAKI</small></span></button>
+            <button class="customer-brand" onclick="window.openCustomerMenu()" aria-label="TAKODEÁL menu"><img src="customer-logo.jpg" alt=""><span>TAKODEÁL<small>YOUR IDEAL TAKOYAKI</small></span></button>
             <div class="customer-nav-actions">
+                <button class="customer-nav-link" data-nav="menu" onclick="window.openCustomerMenu()">Menu</button>
+                <button class="customer-nav-link" data-nav="partners" onclick="window.switchScreen('partnersScreen')">Partners</button>
                 <button class="customer-nav-link" onclick="window.openUserProfile()">My orders</button>
                 <button onclick="window.openCheckoutModal()" id="globalCartBtn" class="customer-cart-button" aria-label="View cart">Cart <span id="globalCartBadge" class="hidden"></span><span id="globalCartTotal" class="hidden"></span></button>
             </div>
@@ -192,11 +194,12 @@
     <!-- 📍 STAGE 0: THE STOREFRONT LOCATOR SCREEN -->
     <!-- ========================================== -->
     <main id="branchLocatorScreen" class="app-screen customer-locator">
-        <div class="customer-locator-brand"><img src="customer-logo.jpg" alt=""><span>TAKODEÁL</span><small>YOUR IDEAL TAKOYAKI</small></div>
+        <div class="customer-locator-brand"><img src="customer-logo.jpg" alt=""><span>TAKODEÁL</span><div class="customer-locator-actions"><small>YOUR IDEAL TAKOYAKI</small><button class="customer-outline-button" onclick="window.switchScreen('partnersScreen')">Partners ↗</button></div></div>
         <div class="customer-locator-intro"><span class="customer-eyebrow">GOOD FOOD, CLOSE TO YOU</span><h1>Which branch is near you?</h1><p>Choose a branch to see its menu. Sign in when you’re ready to order.</p></div>
         <div class="customer-locator-toolbar"><span id="branchCountText">Finding your local branches…</span><button class="customer-text-button" onclick="window.loadBranchLocator()">Refresh availability ↻</button></div>
         <div id="branchCardsGrid" class="customer-branch-grid" aria-live="polite"><div class="customer-empty">Loading branches…</div></div>
         <p class="customer-locator-note">Order availability is confirmed with the branch. Pickup and delivery options are shown at checkout.</p>
+        <section class="customer-partner-invite"><div><span class="customer-eyebrow">GROW WITH TAKODEÁL</span><h2>Your favorite takoyaki. Your own neighborhood business.</h2><p>Explore franchising and start a conversation with our team.</p></div><button class="customer-outline-button" onclick="window.switchScreen('partnersScreen')">Explore franchising →</button></section>
         <footer class="customer-locator-footer">TAKODEÁL · Davao City <a href="https://www.facebook.com/Takodeal" target="_blank" rel="noopener">Need help?</a></footer>
     </main>
 
@@ -209,20 +212,44 @@
     <!-- 🛒 STAGE 2: THE MAIN ORDERING APP SCREEN -->
     <!-- ========================================== -->
     <main id="orderingScreen" class="app-screen hidden customer-ordering">
-        <section class="customer-menu-hero"><div><span class="customer-eyebrow">A LITTLE CRAVING. A LOT OF FLAVOR.</span><h1>Freshly made.<br>Ready when you are.</h1><p>Takoyaki, your favorite drinks, and a little something extra.<br class="customer-desktop"> Find your next favorite below.</p></div><div class="customer-hero-photo"><img id="customerHeroImage" src="customer-mobile-logo.jpg" alt="TAKODEÁL"><span>Made for your cravings</span></div></section>
+        <section class="customer-menu-hero"><div><span class="customer-eyebrow">A LITTLE CRAVING. A LOT OF FLAVOR.</span><h1>Freshly made.<br>Ready when you are.</h1><p>Takoyaki, your favorite drinks, and a little something extra.<br class="customer-desktop"> Find your next favorite below.</p></div><div class="customer-hero-photo"><img id="customerHeroImage" src="customer-mobile-logo.jpg" alt="TAKODEÁL"></div></section>
         <section class="customer-branch-bar" aria-label="Selected branch"><div><div class="customer-branch-heading"><span class="customer-eyebrow">YOUR BRANCH</span><span id="customerBranchStatus" class="customer-status waiting">Checking availability</span></div><h2 id="headerMenuBranchText">TAKODEÁL</h2><p id="customerBranchAddress"></p></div><div class="customer-branch-actions"><button class="customer-outline-button" onclick="window.switchScreen('branchLocatorScreen'); window.loadBranchLocator()">Change branch</button><button class="customer-text-button" onclick="window.openDeliveryPartners()">Delivery options ↗</button><button class="customer-text-button" onclick="window.openBranchMap()">Directions ↗</button></div></section>
         <select id="selectedBranch" hidden aria-hidden="true" tabindex="-1"></select>
         <section class="customer-menu-tools"><div class="customer-menu-title"><h2>Explore the menu</h2><span id="customerMenuCount"></span></div><div class="customer-search"><label for="searchInput">Search the menu</label><input type="search" id="searchInput" oninput="window.filterMenu()" placeholder="Find takoyaki, coffee, drinks…"></div><nav id="customerCategoryTabs" class="customer-category-tabs" aria-label="Menu categories"></nav></section>
         <div id="customerMenuMessage" class="customer-empty hidden" role="status"></div>
         <div id="liveMenuContainer" class="customer-menu-content" aria-live="polite"><div class="customer-empty">Loading menu…</div></div>
         <div id="customerNoResults" class="customer-empty hidden">No matching items. Try another search or category.</div>
-        <footer class="customer-menu-footer"><span>TAKODEÁL · Your ideal takoyaki</span><div><button class="customer-text-button" onclick="window.switchScreen('reviewsScreen')">Customer reviews</button><a href="https://www.facebook.com/Takodeal" target="_blank" rel="noopener">Contact us ↗</a></div></footer>
+        <footer class="customer-menu-footer"><span>TAKODEÁL · Your ideal takoyaki</span><div><button class="customer-text-button" onclick="window.switchScreen('partnersScreen')">Franchise with us</button><button class="customer-text-button" onclick="window.switchScreen('reviewsScreen')">Customer reviews</button><a href="https://www.facebook.com/Takodeal" target="_blank" rel="noopener">Contact us ↗</a></div></footer>
     </main>
     <button id="customerMobileCart" class="customer-mobile-cart hidden" onclick="window.openCheckoutModal()"><span>View cart <b id="customerMobileCount">0</b></span><strong id="customerMobileTotal">₱0.00</strong></button>
 
     <!-- ========================================== -->
     <!-- 🤝 STAGE 3.5: FRANCHISE / PARTNERS SCREEN -->
     <!-- ========================================== -->
+    <main id="partnersScreen" class="app-screen hidden customer-partners">
+        <section class="customer-franchise-hero">
+            <div><span class="customer-eyebrow">PARTNER WITH TAKODEÁL</span><h1>Bring TAKODEÁL<br>to your neighborhood.</h1><p>A local favorite, a new beginning. Explore a takoyaki business built around food people love and a location you believe in.</p><div class="customer-franchise-actions"><button class="customer-primary-button" onclick="document.getElementById('franchiseLeadForm').scrollIntoView({behavior:'smooth',block:'start'})">Request the franchise prospectus →</button><button class="customer-text-button" onclick="document.getElementById('franchiseFormats').scrollIntoView({behavior:'smooth',block:'start'})">Explore the formats ↓</button></div><small>Current packages, inclusions, and location requirements are discussed with our team.</small></div>
+            <div class="customer-franchise-brand"><img src="customer-mobile-logo.jpg" alt="TAKODEÁL — Your ideal takoyaki"><span>Davao roots. New neighborhoods.</span></div>
+        </section>
+        <section id="franchiseFormats" class="customer-franchise-section" aria-labelledby="franchiseFormatsTitle"><div class="customer-franchise-section-heading"><span class="customer-eyebrow">FIND YOUR FIT</span><h2 id="franchiseFormatsTitle">A format for your next step.</h2><p>Tell us about your space. We’ll discuss the current options and their requirements with you.</p></div><div class="customer-franchise-formats">
+            <article><span class="customer-format-number">01 / CART</span><h3>A compact start</h3><p>Explore a cart format for a smaller footprint. Discuss the setup, operating needs, and suitable locations with our team.</p><button class="customer-text-button" onclick="window.chooseFranchiseFormat('cart')">Ask about a cart →</button></article>
+            <article><span class="customer-format-number">02 / KIOSK</span><h3>Meet the foot traffic</h3><p>Explore a kiosk for a counter or shared retail space. Let’s review your proposed site and available packages.</p><button class="customer-text-button" onclick="window.chooseFranchiseFormat('kiosk')">Ask about a kiosk →</button></article>
+            <article><span class="customer-format-number">03 / STORE</span><h3>Make room to grow</h3><p>Have a storefront in mind? Start a conversation about the space, menu setup, and requirements for a store format.</p><button class="customer-text-button" onclick="window.chooseFranchiseFormat('store')">Ask about a store →</button></article>
+        </div></section>
+        <section class="customer-franchise-story"><div><span class="customer-eyebrow">MORE THAN A SIGN ABOVE THE DOOR</span><h2>A familiar brand.<br>A thoughtful plan.</h2><p>From takoyaki to drinks, TAKODEÁL brings together a menu customers can explore in one place. Ask how the menu, inventory, and daily operating tools fit into your franchise package.</p><a class="customer-text-button" href="https://www.facebook.com/Takodeal" target="_blank" rel="noopener">Get to know TAKODEÁL ↗</a></div><ol><li><b>01</b><div><h3>Share your location</h3><p>Tell us where you want to open and the format you’re considering.</p></div></li><li><b>02</b><div><h3>Talk through the package</h3><p>Discuss current pricing, inclusions, setup, and operating requirements.</p></div></li><li><b>03</b><div><h3>Review the next steps</h3><p>Review the written proposal and site requirements with our team before deciding.</p></div></li></ol></section>
+        <section id="franchiseLeadForm" class="customer-franchise-inquiry"><div class="customer-franchise-inquiry-intro"><span class="customer-eyebrow">LET’S START A CONVERSATION</span><h2>Your next chapter<br>starts here.</h2><p>Request the current franchise prospectus. Our team will review your inquiry and contact you about the available packages and next steps.</p><div class="customer-franchise-note">No payment is needed to send an inquiry.</div><a class="customer-text-button" href="https://www.facebook.com/Takodeal" target="_blank" rel="noopener">Prefer to message us? Visit our Facebook page ↗</a></div>
+            <form id="customerFranchiseForm" onsubmit="event.preventDefault();window.submitFranchiseLead()"><div class="customer-franchise-fields">
+                <div><label for="leadName">Full name <span>*</span></label><input id="leadName" name="name" autocomplete="name" placeholder="Your full name" required minlength="2" maxlength="100"></div>
+                <div><label for="leadPhone">Contact number <span>*</span></label><input id="leadPhone" name="phone" type="tel" autocomplete="tel" placeholder="09XX XXX XXXX" required maxlength="25"></div>
+                <div class="customer-field-wide"><label for="leadEmail">Email address <small>Optional</small></label><input id="leadEmail" name="email" type="email" autocomplete="email" placeholder="you@example.com" maxlength="254"></div>
+                <div class="customer-field-wide"><label for="leadLocation">Preferred location or city <span>*</span></label><input id="leadLocation" name="location" placeholder="e.g. Tagum City or your proposed site" required minlength="2" maxlength="160"></div>
+                <div class="customer-field-wide"><label for="teaserFormatSelect">Which format interests you?</label><select id="teaserFormatSelect" name="format"><option value="undecided">Help me choose a format</option><option value="cart">Cart</option><option value="kiosk">Kiosk</option><option value="store">Store</option></select></div>
+            </div><label class="customer-franchise-consent" for="leadConsent"><input id="leadConsent" type="checkbox" required><span>I agree that TAKODEÁL may contact me about this franchise inquiry.</span></label><p id="customerLeadMessage" role="status" aria-live="polite" class="customer-lead-message" hidden></p><button id="btnSubmitLead" type="submit" class="customer-primary-button">Send my franchise inquiry →</button><small class="customer-franchise-privacy">Your details go to the TAKODEÁL management team for this inquiry.</small></form>
+        </section>
+        <section class="customer-franchise-section customer-franchise-faq" aria-labelledby="franchiseFAQTitle"><div class="customer-franchise-section-heading"><span class="customer-eyebrow">BEFORE YOU BEGIN</span><h2 id="franchiseFAQTitle">A few helpful answers.</h2></div><div><details><summary>How much is the investment?</summary><p>Ask for the current franchise prospectus. Pricing, inclusions, and any ongoing fees depend on the package and are confirmed by our team.</p></details><details><summary>Can I suggest a location?</summary><p>Yes. Include your preferred city or proposed site in the inquiry so the team can discuss its suitability and requirements with you.</p></details><details><summary>Can you help me choose a format?</summary><p>Choose “Help me choose a format” in the form. Tell us about your space so we can discuss the available options.</p></details><details><summary>What happens after I send an inquiry?</summary><p>The TAKODEÁL team will receive your details and contact you to discuss the prospectus and next steps.</p></details></div></section>
+        <footer class="customer-menu-footer"><span>TAKODEÁL · Your ideal takoyaki</span><button class="customer-text-button" onclick="window.openCustomerMenu()">Back to the menu →</button></footer>
+    </main>
+
     <!-- ========================================== -->
     <!-- ⭐ STAGE 3: THE DEDICATED REVIEWS PAGE -->
     <!-- ========================================== -->
@@ -470,7 +497,8 @@
             appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
         };
 
-        import { buildMenu, escapeHTML, encodeItem, withinBranchHours, readMenuCache, writeMenuCache, readCart, validateCart, MENU_TTL } from './customer-menu.js';
+        import { buildMenu, escapeHTML, encodeItem, withinBranchHours, readMenuCache, writeMenuCache, readCart, validateCart, MENU_TTL } from './customer-menu.js?v=customer-repair-20261004';
+        import {franchiseInquiry} from './customer-franchise.js?v=customer-repair-20261004';
         const customerStorage=(()=>{try{return localStorage;}catch{return {getItem:()=>null,setItem:()=>{},removeItem:()=>{}};}})();
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -520,6 +548,36 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
             if (screenId === 'reviewsScreen') window.loadReviewsPage();
         };
+
+        window.openCustomerMenu = function() {
+            window.switchScreen(window.customerSelectedBranch ? 'orderingScreen' : 'branchLocatorScreen');
+        };
+        window.chooseFranchiseFormat = function(format) {
+            document.getElementById('teaserFormatSelect').value=format;
+            document.getElementById('franchiseLeadForm').scrollIntoView({behavior:'smooth',block:'start'});
+            document.getElementById('leadName').focus({preventScroll:true});
+        };
+        // Franchise inquiry workflow. No automated investment or ROI claims.
+        window.submitFranchiseLead = async function() {
+            if (window.customerLeadSending) return;
+            const message=document.getElementById('customerLeadMessage');
+            const form=document.getElementById('customerFranchiseForm');
+            message.hidden=true;message.classList.remove('success');
+            let inquiry;
+            try {
+                inquiry=franchiseInquiry({name:document.getElementById('leadName').value,phone:document.getElementById('leadPhone').value,email:document.getElementById('leadEmail').value,location:document.getElementById('leadLocation').value,formatInterest:document.getElementById('teaserFormatSelect').value,consent:document.getElementById('leadConsent').checked});
+            } catch(error) {message.textContent=error.message;message.hidden=false;return;}
+            const button=document.getElementById('btnSubmitLead');
+            window.customerLeadSending=true;button.disabled=true;button.textContent='Sending your inquiry…';
+            try {
+                await addDoc(collection(db,'franchise_leads'),{...inquiry,timestamp:serverTimestamp()});
+                form.reset();message.textContent='Thank you! Your inquiry has been sent to TAKODEÁL. Our team will contact you about the franchise prospectus.';message.classList.add('success');message.hidden=false;
+            } catch(error) {
+                console.error('Franchise inquiry could not be sent',error);
+                message.textContent='Your inquiry could not be sent. Please check your connection and try again, or contact us through our Facebook page.';message.hidden=false;
+            } finally {window.customerLeadSending=false;button.disabled=false;button.textContent='Send my franchise inquiry →';}
+        };
+        // End franchise inquiry workflow.
 
         onAuthStateChanged(auth, (user) => {
             window.currentUser = user;
@@ -654,8 +712,6 @@
             window.currentGrabLink=branch.grabLink || ''; window.currentFpLink=branch.foodpandaLink || '';
             const result=buildMenu(window.rawMenuCache,branch);
             window.masterMenu=result.menu;window.phantomVariants=result.variants;
-            const firstImage=result.menu.find(item=>item.image && !item.isSoldOut)?.image;
-            if (firstImage) document.getElementById('customerHeroImage').src=firstImage;
             document.getElementById('customerMenuCount').textContent=`${result.menu.length} items`;
             if (!result.categories[window.customerSelectedCategory]) window.customerSelectedCategory='';
             window.customerCategories=Object.keys(result.categories);
@@ -1538,7 +1594,7 @@
                         statusText = "🛍️ Order is Ready for Pick-up!";
                         timeStr = "Enjoy your meal!";
                         if (riderBox) riderBox.classList.add('hidden');
-                        if(trackerIcon) trackerIcon.innerHTML = `<img src="tako-bow.png" onerror="this.onerror=null; this.src='tako-bow.jpg';" class="w-16 h-16 object-contain drop-shadow-md">`;
+                        if(trackerIcon) trackerIcon.innerHTML = `<img src="tako-bow.jpg" onerror="this.onerror=null; this.src='customer-logo.jpg';" class="w-16 h-16 object-contain drop-shadow-md">`;
                     }
                     
                     if(btnRec) btnRec.classList.remove('hidden');

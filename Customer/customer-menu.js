@@ -14,8 +14,9 @@ export function publicItem(item, branch) {
     if (!item || typeof item.name !== 'string' || !item.name.trim() || itemPrice(item) === null) return false;
     if (internalCategories.has(categoryKey(item.category))) return false;
     if (item.isAvailable === false || item.customerVisible === false) return false;
-    // Missing configuration means unrestricted; an explicit empty selection means none.
-    if (Array.isArray(branch?.allowedCategories) && !branch.allowedCategories.some(c => categoryKey(c) === categoryKey(item.category || 'Other'))) return false;
+    // The Manager and POS use an empty category list for the default full menu.
+    // A non-empty list is an explicit restriction and must still be respected.
+    if (Array.isArray(branch?.allowedCategories) && branch.allowedCategories.length > 0 && !branch.allowedCategories.some(c => categoryKey(c) === categoryKey(item.category || 'Other'))) return false;
     return true;
 }
 export const soldOut = (item, branch) => Array.isArray(item?.unavailableAt) && item.unavailableAt.includes(branch);
