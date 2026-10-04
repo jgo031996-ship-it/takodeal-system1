@@ -1,5 +1,6 @@
 import { initManagerScroll } from './manager-scroll.js';
 import { initAIHub } from './ai-hub.js';
+import { initAccessWorkspace } from './access-workspace.js';
 // Shared presentation and workspace initialization; preserve business calculations.
 export const MANAGER_PAGES = Object.freeze({
     dashboard: ['Overview', 'Global Dashboard', 'Your sales, branch performance, and team in one place.'],
@@ -31,7 +32,7 @@ export const MANAGER_PAGES = Object.freeze({
     bulletin: ['Communication', 'AI Hub', 'Draft, review, and publish formal team announcements.'],
     franchise: ['Partners', 'Franchise HQ Hub', 'Manage franchise partners, accounts, conversations, and new proposals.'],
     addons: ['Menu', 'Global Add-Ons', 'Maintain the extras available across your menu.'],
-    admin: ['Configuration', 'Access Control', 'Manage existing staff access and branch permissions.']
+    admin: ['Configuration', 'Access Control', 'Review HQ accounts, permissions, and branch configuration.']
 });
 
 const INVENTORY_PAGES = Object.freeze({
@@ -63,6 +64,7 @@ export function initManagerTheme({ document: d = document, window: w = window, o
     d.body.dataset.managerTheme = '20261003';
     d.body.classList.add('manager-theme');
     const aiHub = initAIHub({ document:d, window:w });
+    const accessWorkspace = initAccessWorkspace({ document:d, window:w, pages:MANAGER_PAGES });
     // These legacy bars belong to Overview. Move the existing nodes so their
     // filters, upload control and event handlers are retained when tabs switch.
     const inventoryOverview = d.getElementById('invTabLiveContent');
@@ -81,7 +83,7 @@ export function initManagerTheme({ document: d = document, window: w = window, o
         for (const el of nodes) {
             if (!el.matches || seen.has(el) || !el.closest('.view')) continue;
             // Preserve the dashboard design and all printable/exportable documents.
-            if (el.closest('#view-dashboard,#view-bulletin,#printablePayslip,#proposalContainer,.modal,.overlay,dialog')) continue;
+            if (el.closest('#view-dashboard,#view-bulletin,#view-admin,#printablePayslip,#proposalContainer,.modal,.overlay,dialog')) continue;
             seen.add(el);
             const s = el.style;
             if (el.matches('table')) {
@@ -168,5 +170,5 @@ export function initManagerTheme({ document: d = document, window: w = window, o
     observer.observe(d.querySelector('.sidebar'), {subtree:true, attributes:true, attributeFilter:['class']});
     d.querySelectorAll('.view').forEach(decorate);
     sync();
-    return { sync, stop: () => { observer.disconnect(); scrolling.stop(); aiHub?.stop(); } };
+    return { sync, stop: () => { observer.disconnect(); scrolling.stop(); aiHub?.stop(); accessWorkspace?.stop(); } };
 }

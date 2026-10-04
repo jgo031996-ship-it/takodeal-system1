@@ -1,0 +1,107 @@
+#view-admin .acw-shell { max-width:1300px; margin:0 auto; color:#263e36; font-size:13px; line-height:1.55; }
+#view-admin .acw-shell *, .acw-dialog * { box-sizing:border-box; }
+#view-admin .acw-shell [hidden] { display:none!important; }
+#view-admin .acw-shell button, .acw-dialog button { display:inline-flex; align-items:center; justify-content:center; gap:8px; min-height:36px; padding:8px 12px; border:1px solid #dce5df; background:#fff; border-radius:7px; color:#355348; font-family:inherit; font-size:12px; font-weight:600; line-height:1.4; cursor:pointer; box-shadow:none; }
+#view-admin .acw-shell button:hover, .acw-dialog button:hover { background:#f1f6f2; border-color:#9fbcb0; }
+#view-admin .acw-shell button:focus-visible, .acw-dialog button:focus-visible { outline:3px solid #b7d8c7; outline-offset:3px; }
+#view-admin .acw-shell button:disabled { cursor:not-allowed; opacity:.5; }
+#view-admin .acw-shell .acw-primary { background:#14624c; border-color:#14624c; color:#fff; }
+#view-admin .acw-shell .acw-primary:hover { background:#0d503d; }
+.acw-intro { display:flex; align-items:center; justify-content:space-between; gap:28px; padding:0 0 18px; }
+.acw-eyebrow { color:#6c8478; font-size:10px; font-weight:700; letter-spacing:1.7px; margin-bottom:7px; }
+#view-admin .acw-shell h2, .acw-dialog h2 { font-size:27px; font-weight:700; letter-spacing:-.7px; margin:0 0 7px; color:#183e31; line-height:1.3; }
+#view-admin .acw-shell h3 { font-size:16px; margin:0 0 5px; font-weight:650; letter-spacing:-.15px; }
+.acw-intro p, .acw-panel-heading p, .acw-grant p { margin:0; color:#72847b; font-size:12px; }
+.acw-security { display:flex; align-items:center; gap:12px; color:#3e6451; font-size:12px; flex-shrink:0; }
+.acw-security>svg { width:34px; height:34px; padding:6px; border-radius:10px; background:#e7f0e8; }
+.acw-security small { display:block; font-size:10px; color:#7c8c82; margin-top:3px; }
+.acw-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); background:#fff; border:1px solid #dfe7e2; border-radius:12px; padding:17px 0; margin-bottom:18px; }
+.acw-metrics>div { padding:0 25px; border-right:1px solid #e7ece7; }
+.acw-metrics>div:last-child { border-right:0; }
+.acw-metrics span { display:block; color:#7f8e85; font-size:10px; font-weight:650; letter-spacing:1px; }
+.acw-metrics strong { display:block; font-size:28px; font-weight:700; line-height:1.4; letter-spacing:-.8px; }
+.acw-metrics small { color:#819087; font-size:10px; }
+.acw-tabs { display:flex; gap:25px; border-bottom:1px solid #dfe6e0; margin-bottom:22px; }
+#view-admin .acw-shell .acw-tabs button { border:0; border-radius:0; background:none; color:#7b8d83; padding:11px 2px 14px; border-bottom:3px solid transparent; font-size:13px; }
+#view-admin .acw-shell .acw-tabs button[aria-selected="true"] { border-bottom-color:#23644b; color:#20563f; }
+.acw-status { margin:0; font-size:12px; color:#446958; }
+.acw-status:not(:empty) { margin-bottom:16px; padding:12px 15px; background:#f4f7f2; border-radius:8px; border:1px solid #dfe9df; }
+.acw-error { color:#a83e36!important; }
+.acw-grant { background:#eaf1e9; border:1px solid #d9e5d8; border-radius:11px; padding:21px 24px; display:flex; align-items:center; justify-content:space-between; gap:25px; margin-bottom:20px; }
+.acw-grant form { display:flex; flex:1 1 46%; gap:10px; max-width:580px; }
+#view-admin .acw-shell input, #view-admin .acw-shell select { font:inherit; min-width:0; color:#355146; border:1px solid #d8e3da; background:#fff; border-radius:7px; padding:10px 12px; min-height:40px; outline:none; }
+#view-admin .acw-shell input:focus, #view-admin .acw-shell select:focus { border-color:#69987f; box-shadow:0 0 0 3px #dcecdf; }
+.acw-grant input { width:100%; }
+.acw-grant button { white-space:nowrap; }
+.acw-notice { display:flex; align-items:center; justify-content:space-between; gap:15px; border:1px solid #e8dec4; background:#fcf9ee; padding:13px 17px; border-radius:8px; margin-bottom:20px; font-size:12px; color:#83672e; }
+.acw-notice>span { display:flex; align-items:center; gap:10px; }
+.acw-notice svg { flex-shrink:0; }
+#view-admin .acw-shell .acw-notice button { color:#806329; border:0; background:transparent; white-space:nowrap; }
+.acw-panel { border:1px solid #dee6df; background:#fff; border-radius:11px; }
+.acw-panel-heading { display:flex; align-items:center; justify-content:space-between; gap:18px; padding:22px 24px; }
+.acw-filters { display:flex; align-items:center; gap:12px; padding:0 24px 20px; }
+.acw-search { display:flex; align-items:center; border:1px solid #dce4df; border-radius:7px; padding:0 12px; color:#7e9285; flex:1; background:#fbfcfa; }
+#view-admin .acw-shell .acw-search input { width:100%; border:0; background:transparent; padding-left:10px; box-shadow:none; }
+.acw-search:focus-within { outline:2px solid #dcecdf; border-color:#69987f; }
+.acw-select { flex-shrink:0; }
+.acw-filters>span { font-size:11px; color:#859488; white-space:nowrap; }
+.acw-table-wrap { overflow-x:auto; }
+.acw-table { width:100%; border-collapse:collapse; table-layout:auto; min-width:680px; font-size:12px; }
+.acw-table th { text-align:left; padding:13px 24px; background:#f5f8f3; border-top:1px solid #e4eae3; border-bottom:1px solid #dfe7df; color:#7e8d82; text-transform:uppercase; font-size:9px; font-weight:650; letter-spacing:.8px; white-space:nowrap; }
+.acw-table td { padding:20px 24px; border-bottom:1px solid #edf0eb; vertical-align:middle; line-height:1.6; }
+.acw-table tr:last-child td { border-bottom:0; }
+.acw-table tbody tr:hover { background:#fcfdfb; }
+.acw-table td:first-child { width:32%; }
+.acw-table td:last-child { width:25%; }
+.acw-table strong { display:block; font-weight:650; }
+.acw-email { color:#244b3a; overflow-wrap:anywhere; font-size:13px; }
+.acw-name { display:block; color:#667e70; font-size:12px; margin-top:3px; }
+.acw-table small { display:block; color:#849287; font-size:10px; margin-top:6px; }
+.acw-table .acw-empty { text-align:center; color:#7a8d7e; padding:40px; }
+.acw-badge { display:inline-block; color:#5e7368; background:#f0f4ef; border:1px solid #e3eae0; border-radius:5px; font-size:10px; font-weight:600; padding:3px 7px; margin-top:2px; }
+.acw-badge.acw-owner { background:#edf2f6; color:#456079; border-color:#dfe8ef; }
+.acw-badge.acw-good { background:#eaf5eb; color:#32804b; border-color:#dbeade; }
+.acw-badge.acw-warn { background:#fff6df; color:#957027; border-color:#efe0b8; }
+.acw-actions { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:6px; }
+.acw-panel-heading .acw-actions { margin:0; }
+#view-admin .acw-shell .acw-table button { min-height:30px; padding:6px 10px; font-size:10px; }
+.acw-panel-footer { display:flex; align-items:center; gap:9px; border-top:1px solid #e6ece3; padding:14px 24px; font-size:10px; color:#859184; background:#fbfcf8; border-radius:0 0 11px 11px; }
+.acw-panel-footer svg { width:14px; height:14px; flex-shrink:0; }
+#view-admin .acw-shell .acw-danger-text, .acw-dialog .acw-danger-text { color:#a94b45; background:#fff; border-color:#edd8d4; margin-top:8px; }
+.acw-dialog { width:min(720px,calc(100vw - 36px)); max-height:85vh; padding:0; border:1px solid #e0e8df; border-radius:13px; color:#294439; background:#fff; box-shadow:0 24px 80px #19362830; font-family:inherit; font-size:13px; line-height:1.6; }
+.acw-dialog::backdrop { background:#122d236b; }
+.acw-dialog-head { display:flex; justify-content:space-between; align-items:center; padding:24px 26px 20px; border-bottom:1px solid #e5ebe2; gap:15px; }
+.acw-dialog-head h2 { font-size:21px; overflow-wrap:anywhere; margin:0; }
+.acw-dialog-head button { min-width:36px; padding:8px; flex-shrink:0; }
+#acwDialogBody { padding:20px 26px; }
+.acw-review-notice { margin:0 0 20px; padding:13px 15px; font-size:12px; background:#fbf6e7; color:#80652b; border-radius:7px; border:1px solid #e9ddc0; }
+.acw-record { padding:18px; border:1px solid #e1e8df; border-radius:9px; margin-bottom:14px; }
+.acw-record:last-child { margin-bottom:0; }
+.acw-record-head { display:flex; justify-content:space-between; align-items:center; gap:15px; }
+.acw-record dl { display:grid; grid-template-columns:120px minmax(0,1fr); gap:6px 15px; margin:18px 0; font-size:12px; }
+.acw-record dt { color:#7a8d7e; }
+.acw-record dd { margin:0; overflow-wrap:anywhere; }
+.acw-id { font-family:ui-monospace,monospace; font-size:11px; }
+.acw-permissions { border-top:1px solid #e8eee4; padding-top:15px; }
+.acw-permissions span { font-size:9px; font-weight:650; letter-spacing:.8px; color:#7d8d80; }
+.acw-permissions p { margin:5px 0 14px; font-size:12px; }
+.acw-helper { font-size:10px; color:#859386; margin:12px 0 0; }
+.acw-registration { width:min(530px,calc(100vw - 32px)); background:#fff; border:1px solid #dfe7df; border-radius:13px; color:#294439; box-shadow:0 24px 80px #19362830; font-size:13px; }
+.acw-registration { padding:0; max-height:85vh; }
+.acw-registration::backdrop { background:#122d236b; }
+.acw-registration * { box-sizing:border-box; }
+.acw-registration .acw-dialog-head h2 { font-size:23px; margin:0; color:#183e31; }
+.acw-registration button { display:inline-flex; align-items:center; justify-content:center; min-height:38px; padding:8px 14px; border:1px solid #dce5df; border-radius:7px; background:#fff; color:#355348; font-family:inherit; cursor:pointer; }
+.acw-registration button.acw-primary { background:#14624c; color:#fff; border-color:#14624c; }
+.acw-registration form { padding:25px 26px; }
+.acw-registration label { display:block; margin-bottom:7px; font-size:12px; font-weight:600; }
+.acw-registration input { width:100%; padding:12px; border:1px solid #d8e3da; border-radius:7px; font:inherit; }
+.acw-registration input:focus { outline:2px solid #dcecdf; border-color:#69987f; }
+.acw-registration-note { padding:13px 15px; background:#f4f7f0; border:1px solid #e0e8da; border-radius:7px; color:#718272; font-size:12px; line-height:1.6; margin:18px 0; }
+.acw-registration-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px; }
+.acw-dialog footer { border-top:1px solid #e5ebe2; padding:15px 26px; display:flex; justify-content:flex-end; }
+.acw-sr { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+@media(max-width:1200px) { .acw-security { display:none; } .acw-grant { display:block; } .acw-grant form { max-width:none; margin-top:15px; } .acw-table td,.acw-table th { padding-left:17px; padding-right:17px; } }
+@media(max-width:800px) { .acw-metrics>div { padding:0 18px; } .acw-metrics small { display:block; min-height:30px; } .acw-filters { flex-wrap:wrap; } .acw-filters>span { display:none; } .acw-panel-heading,.acw-grant { padding:20px; } .acw-filters { padding-left:20px; padding-right:20px; } .acw-notice { align-items:flex-start; flex-direction:column; gap:4px; } }
+@media(max-width:520px) { #view-admin .acw-shell h2 { font-size:23px; } .acw-metrics { padding:17px 0; } .acw-metrics>div { padding:0 12px; } .acw-metrics span { font-size:8px; letter-spacing:.4px; } .acw-metrics strong { font-size:26px; } .acw-metrics small { font-size:9px; } .acw-grant form { flex-direction:column; } .acw-panel-heading { align-items:flex-start; flex-direction:column; } .acw-select,.acw-search { flex:1 1 100%; } .acw-select select { width:100%; } .acw-record dl { grid-template-columns:95px minmax(0,1fr); } #acwDialogBody { padding:16px; } .acw-dialog-head { padding:20px; } .acw-dialog-head h2 { font-size:18px; } }
+@media(prefers-reduced-motion:reduce) { #view-admin .acw-shell * { transition:none!important; scroll-behavior:auto!important; } }
