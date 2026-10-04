@@ -1,3 +1,4 @@
+import { confirmMallDailyClose } from './shift-close-ui.js';
 import { installMenuBulk } from './menu-bulk.js';
 import { approveRemittanceAtomic } from './cash-settlement.js';
 import { commitDispatch, transitionDispatch } from './dispatch-safety.js';
@@ -27905,7 +27906,7 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
     const sales = await tkOwnerDocs(window.query(window.collection(window.db, 'transactions'), window.where('branch', '==', targetBranch), window.where('shiftId', '==', id)));
     const expenses = await tkOwnerDocs(window.query(window.collection(window.db, 'expenses'), window.where('branch', '==', targetBranch), window.where('shiftId', '==', id)));
     const guards = [], writes = [], digital = {}; let cash = 0, cashOut = 0;
-    const guard = snapshot => guards.push({ path: snapshot.ref.path, exists: true, fields: tkEncode(snapshot.data()) });
+    const guard = snapshot => guards.push({ path: snapshot.ref.path, exists: snapshot.exists(), fields: snapshot.exists() ? tkEncode(snapshot.data()) : null });
     guard(shifts);
     for (const report of reports) guard(report);
     for (const receipt of sales.docs) {
@@ -27916,7 +27917,7 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
         else digital[payment.method] = (digital[payment.method] || 0) + (Number(payment.amount) || 0);
       }
     }
-    for (const expense of expenses.docs) { guard(expense); if (expense.data().paidFrom !== 'ManagerFund') cashOut += Number(expense.data().amount) || 0; }
+    for (const expense of expenses.docs) { guard(expense); const data=expense.data(); if (![data.paidFrom,data.sourceAccount,data.paymentSource].some(value=>['Manager Fund','ManagerFund'].includes(value))) cashOut += Number(data.amount) || 0; }
     const starting = Number(shifts.data().startingCash) || 0, expected = starting + cash - cashOut;
     const closed = { ...shifts.data(), ...row.evidence, active: false, status: 'Closed', totalCashSales: cash,
       totalDigitalSales: Object.values(digital).reduce((a, b) => a + b, 0), digitalBreakdown: digital,
@@ -27938,14 +27939,20 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
         amount: value, user: window.auth.currentUser.email, timestamp: new Date(), shiftId: id, operationId: row.id }) });
     }
     for (const [method, value] of Object.entries(digital)) if (method.toLowerCase() !== 'gcash') await deposit('Main Office', method, value);
-    if (branchConfig.isMallBranch) {
+    if (shifts.data().isMallBranch ?? branchConfig.isMallBranch === true) {
+      const dailyClose = await confirmMallDailyClose(window,{branch:targetBranch,started:shifts.data().startTime,declaredCash:Number(row.evidence.declaredCash)});
+      if (!dailyClose) return;
+      Object.assign(closed,{isMallBranch:true,...dailyClose,mallFloat:2000,retainedCash:Number(row.evidence.declaredCash),remittedCash:0,remittanceId:'',cashPolicyVersion:2});
+      writes.find(write=>write.path===shifts.ref.path).data=tkEncode(closed);
+      if (dailyClose.isFinalShiftOfDay) {
       const plan = mallCashPlan(Number(row.evidence.declaredCash));
       const remittanceId = 'mall-' + shifts.id;
       const existingRemittance = await tkOwnerDoc(doc('remittances/' + remittanceId)); guard(existingRemittance);
       if (existingRemittance.exists()) throw new Error('This shift already has a mall remittance. Review its existing settlement.');
-      Object.assign(closed, {isMallBranch:true,mallFloat:2000,retainedCash:plan.retainedCash,remittedCash:plan.remittedCash,floatShortage:plan.floatShortage,remittanceId:plan.remittedCash>0 ? remittanceId : '',cashPolicyVersion:1});
+      Object.assign(closed, {isMallBranch:true,mallFloat:2000,retainedCash:plan.retainedCash,remittedCash:plan.remittedCash,floatShortage:plan.floatShortage,remittanceId:plan.remittedCash>0 ? remittanceId : '',cashPolicyVersion:2});
       writes.find(write=>write.path === shifts.ref.path).data = tkEncode(closed);
-      if (plan.remittedCash>0) writes.push({path:'remittances/'+remittanceId,mode:'set',data:tkEncode({branch:targetBranch,shiftId:shifts.id,cashierName:row.cashier || 'Owner review',amount:plan.remittedCash,retainedCash:plan.retainedCash,type:'Mall Daily Remittance',channel:'Physical Handover',status:'Pending',dateStr:businessClock().day,timestamp:new Date(),cashPolicyVersion:1})});
+      if (plan.remittedCash>0) writes.push({path:'remittances/'+remittanceId,mode:'set',data:tkEncode({branch:targetBranch,shiftId:shifts.id,cashierName:row.cashier || 'Owner review',amount:plan.remittedCash,retainedCash:plan.retainedCash,type:'Mall Daily Remittance',channel:'Physical Handover',status:'Pending',dateStr:dailyClose.businessDay,timestamp:new Date(),cashPolicyVersion:2})});
+      }
     }
     const royalty = (cash + Object.values(digital).reduce((a, b) => a + b, 0)) * ((Number(branchConfig.royaltyPercent) || 0) / 100);
     if (royalty > 0) writes.push({ path: 'franchise_ledger/settle-' + row.id, mode: 'create', data: tkEncode({ branch: targetBranch,

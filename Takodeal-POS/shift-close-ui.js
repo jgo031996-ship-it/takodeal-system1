@@ -1,0 +1,9 @@
+import { mallCashPlan, mallFinalShiftHint } from './branch-operations.js';
+// The schedule suggests the daily closing stage; the cashier confirms exceptions.
+export async function confirmMallDailyClose(api, {branch, started, declaredCash}) {
+    const snap=await api.getDocFromServer(api.doc(api.db,'settings','global_schedule'));
+    const hint=mallFinalShiftHint(snap.exists() ? snap.data() : {},branch,started);
+    const plan=mallCashPlan(declaredCash), amount=value=>'₱'+value.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const result=await api.Swal.fire({title:'Mall branch · close this shift',html:`<div style="text-align:left;line-height:1.6;color:#234b3d"><p>${hint.closingTime ? 'Schedule Manager sets the last closing time to <b>'+hint.closingTime+'</b>.' : 'No closing time is configured. Choose whether another shift will follow.'}</p><label for="mallCloseStage" style="font-weight:700">Is this the last shift of the business day?</label><select id="mallCloseStage" style="display:block;width:100%;padding:12px;margin:10px 0;border:1px solid #cdded5;border-radius:10px;color:#234b3d;background:white"><option value="earlier" ${hint.final ? '' : 'selected'}>Earlier shift · carry all cash forward</option><option value="final" ${hint.final ? 'selected' : ''}>Final shift · submit daily remittance</option></select><p>Earlier shift: <b>${amount(Number(declaredCash))}</b> stays in the drawer.<br>Final shift: retain <b>${amount(plan.retainedCash)}</b> and submit <b>${amount(plan.remittedCash)}</b> for Manager verification.</p></div>`,showCancelButton:true,confirmButtonText:'Confirm & close shift',cancelButtonText:'Keep shift open',confirmButtonColor:'#14634f',preConfirm:()=>api.document.getElementById('mallCloseStage').value==='final'});
+    return result.isConfirmed ? {isFinalShiftOfDay:result.value===true,businessDay:hint.businessDay} : null;
+}

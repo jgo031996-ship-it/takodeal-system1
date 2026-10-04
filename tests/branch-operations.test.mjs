@@ -3,12 +3,96 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
-import { mallCashPlan, stockRequestDue, autoRequestId, businessClock, archiveableShift } from '../takodeal-manager/branch-operations.js';
-import { closeShiftAtomic, approveRemittanceAtomic } from '../takodeal-manager/cash-settlement.js';
+import { mallCashPlan, mallOpeningCash, mallFinalShiftHint, stockRequestDue, autoRequestId, businessClock, archiveableShift } from '../takodeal-manager/branch-operations.js';
+import { closeShiftAtomic, readMallOpeningCash, approveRemittanceAtomic } from '../takodeal-manager/cash-settlement.js';
+import { confirmMallDailyClose } from '../takodeal-manager/shift-close-ui.js';
 import { commitDispatch, transitionDispatch, receiveDispatch } from '../takodeal-manager/dispatch-safety.js';
 import { createCollectionCache } from '../takodeal-manager/collection-cache.js';
 import { reconcileOrder, renderFinancialFlow } from '../takodeal-manager/manager-workspace.js';
 import { menuCsv, validateMenuCsv, parseCsv } from '../takodeal-manager/menu-bulk.js';
+
+test('earlier mall shifts carry all counted cash; only the final daily close remits accumulated cash',async()=> {
+    const h=environment();await closeShiftAtomic(h.api,{...closing,isFinalShiftOfDay:false});
+    const first=h.get('shifts/one');assert.equal(first.retainedCash,7500);assert.equal(first.remittedCash,0);assert.equal(first.isFinalShiftOfDay,false);assert.equal(h.get('remittances/mall-one'),undefined);
+    h.put('shifts/two',{branch:'Citygate',active:true,startingCash:mallOpeningCash(first),isMallBranch:true});
+    await closeShiftAtomic(h.api,{...closing,shiftId:'two',declaredCash:8500,totalCashSales:1000,totalDigitalSales:0,digitalBreakdown:{},businessDay:'2026-10-04'});
+    assert.equal(h.get('shifts/two').expectedCash,8500);assert.equal(h.get('shifts/two').retainedCash,2000);assert.equal(h.get('remittances/mall-two').amount,6500);assert.equal(h.get('remittances/mall-two').dateStr,'2026-10-04');
+    assert.equal(mallOpeningCash(h.get('shifts/two')),2000);assert.equal(h.get('cash_accounts/cash').balance,10000);
+});
+
+test('opening cash preserves interim actual counts; a final close resets the next opening',()=> {
+    assert.equal(mallOpeningCash(),2000);assert.equal(mallOpeningCash({declaredCash:7500,isFinalShiftOfDay:false}),7500);
+    assert.equal(mallOpeningCash({declaredCash:7500,retainedCash:2000}),2000);
+    assert.equal(mallOpeningCash({declaredCash:1200,isFinalShiftOfDay:false}),1200);
+    assert.equal(mallOpeningCash({declaredCash:8500,retainedCash:2000,isFinalShiftOfDay:true}),2000);
+});
+
+const mallSchedule={branchConfig:{Citygate:[{id:'morning',startTime:'10:00',endTime:'19:00',days:[0,1,2,3,4,5,6]},{id:'night',startTime:'12:00',endTime:'21:00',days:[0,1,2,3,4,5,6]}]}};
+
+test('mall opening reads the latest server handover and does not reset an earlier shift to petty cash',async()=> {
+    let fetched;
+    const api={db:{},collection:(db,table)=>table,where:(...parts)=>parts,orderBy:(...parts)=>parts,limit:value=>value,query:(...parts)=>parts,getDocsFromServer:async query=>{fetched=query;return {docs:[{data:()=>({declaredCash:7500,isFinalShiftOfDay:false})}]};}};
+    assert.equal(await readMallOpeningCash(api,'Citygate'),7500);assert.equal(fetched[0],'shifts');assert.deepEqual(fetched[3],['endTime','desc']);assert.equal(fetched[4],1);
+    const source=readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8'),start=source.indexOf('window.openNewShift ='),end=source.indexOf('\n};',start)+3;
+    let created;const window={db:{},collection:()=>({}),serverTimestamp:()=>1,addDoc:async(ref,data)=>{created=data;return {id:'new'};}};
+    vm.runInNewContext(source.slice(start,end),{window,MALL_FLOAT:2000,readBranchPolicy:async()=>({isMallBranch:true}),readMallOpeningCash:async()=>7500,Number,localStorage:{getItem:()=>null},console});
+    await window.openNewShift('Citygate','Test',2000);assert.equal(created.startingCash,7500);assert.equal(created.isMallBranch,true);
+});
+
+test('owner-reviewed mall settlement preserves interim cash and only final closure creates a guarded pending remittance',async()=> {
+    const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),start=source.indexOf('  async function settleClearance('),end=source.indexOf('  async function refresh()',start);
+    for (const final of [false,true]) {
+        let committed;
+        const snapshot=(path,data)=>({id:path.split('/').at(-1),ref:{path},exists:()=>data!==undefined,data:()=>data});
+        const docs=new Map([['shifts/one',{branch:'Citygate',active:true,isMallBranch:true,startingCash:2000,startTime:new Date('2026-10-04T02:00:00Z')}],['cashier_presence/device',{pendingSales:0,pendingOperations:0,accepting:false}],['pos_operation_commits/review',{state:'owner_review'}]]);
+        const window={db:{},auth:{currentUser:{email:'owner@example.com'}},collection:(db,table)=>({table}),where:(key,op,value)=>({key,value}),query:(query)=>query,Swal:{fire:async()=>({isConfirmed:true})}};
+        const context={window,doc:path=>({path}),tkOwnerDoc:async ref=>snapshot(ref.path,docs.get(ref.path)),tkOwnerDocs:async query=>{
+            const rows=query.table==='pos_bindings'?[snapshot('pos_bindings/device',{})]:query.table==='branches'?[snapshot('branches/city',{isMallBranch:true})]:query.table==='expenses'?[snapshot('expenses/fund',{amount:100,paidFrom:'Manager Fund'})]:[];
+            return {docs:rows,empty:!rows.length,size:rows.length};
+        },fresh:()=>true,tkEncode:value=>value,tkFingerprint:async()=> 'fingerprint',tkCommitOperation:async record=>{committed=record;},adapter:{},mallCashPlan,businessClock,confirmMallDailyClose:async()=>({isFinalShiftOfDay:final,businessDay:'2026-10-04'}),Date,Number,Object,Math};
+        vm.runInNewContext(source.slice(start,end)+'\nwindow.testSettle=settleClearance;',context);
+        await window.testSettle({id:'review',branch:'Citygate',evidence:{shiftId:'one',declaredCash:7500},acceptedAt:{toDate:()=>new Date('2026-10-04T13:00:00Z')}},'Checked');
+        const shift=committed.writes.find(write=>write.path==='shifts/one').data,remit=committed.writes.find(write=>write.path==='remittances/mall-one');
+        assert.equal(shift.cashOut,0);assert.equal(shift.isFinalShiftOfDay,final);assert.equal(shift.retainedCash,final?2000:7500);
+        if (final) { assert.equal(remit.data.amount,5500);assert.equal(remit.data.status,'Pending');assert.equal(committed.guards.find(guard=>guard.path==='remittances/mall-one').exists,false); } else assert.equal(remit,undefined);
+    }
+});
+test('final daily close follows branch configuration times, active days and saved assignments',()=> {
+    const started=new Date('2026-10-04T02:00:00Z');
+    assert.equal(mallFinalShiftHint(mallSchedule,'Citygate',started,new Date('2026-10-04T11:00:00Z')).final,false);
+    assert.equal(mallFinalShiftHint(mallSchedule,'Citygate',started,new Date('2026-10-04T13:00:00Z')).final,true);
+    const changed=structuredClone(mallSchedule);changed.branchConfig.Citygate[1].endTime='23:30';
+    assert.equal(mallFinalShiftHint(changed,'Citygate',started,new Date('2026-10-04T13:00:00Z')).final,false);
+    assert.equal(mallFinalShiftHint(changed,'Citygate',started,new Date('2026-10-04T15:30:00Z')).final,true);
+    changed.branchConfig.Citygate[1].active=false;assert.equal(mallFinalShiftHint(changed,'Citygate',started,new Date('2026-10-04T11:00:00Z')).final,true);
+    changed.branchConfig.Citygate[1].active=true;changed.branchConfig.Citygate[1].days=[1];assert.equal(mallFinalShiftHint(changed,'Citygate',started,new Date('2026-10-04T11:00:00Z')).final,true);
+    const assigned={...mallSchedule,currentYear:2026,currentMonth:10,currentSchedule:{4:{Citygate:{scheduled:{morning:'Test'}}}}};
+    assert.equal(mallFinalShiftHint(assigned,'Citygate',started,new Date('2026-10-04T11:00:00Z')).final,true);
+    assert.equal(mallFinalShiftHint(mallSchedule,'Unknown',started).closingTime,null);
+});
+
+test('overnight and legacy closing times remain attached to the starting business day',()=> {
+    const schedule={branchConfig:{Maa:[{id:'night',name:'Night (8pm-2am)'}]}},started=new Date('2026-10-04T12:00:00Z');
+    assert.deepEqual(mallFinalShiftHint(schedule,'Maa',started,new Date('2026-10-04T17:59:00Z')),{final:false,closingTime:'02:00 next day',businessDay:'2026-10-04'});
+    assert.equal(mallFinalShiftHint(schedule,'Maa',started,new Date('2026-10-04T18:00:00Z')).final,true);
+});
+
+test('daily-close dialog reads live schedule, honors the selected closing stage, and cancellation stops',async()=> {
+    let options;const api={db:{},doc:()=>({path:'settings/global_schedule'}),getDocFromServer:async()=>({exists:()=>true,data:()=>mallSchedule}),document:{getElementById:()=>({value:'earlier'})},Swal:{fire:async value=>{options=value;return {isConfirmed:true,value:value.preConfirm()};}}};
+    const input={branch:'Citygate',started:new Date('2026-10-04T02:00:00Z'),declaredCash:7500};
+    assert.equal((await confirmMallDailyClose(api,input)).isFinalShiftOfDay,false);assert.match(options.html,/21:00/);assert.match(options.html,/₱5,500.00/);
+    api.document.getElementById=()=>({value:'final'});assert.equal((await confirmMallDailyClose(api,input)).isFinalShiftOfDay,true);
+    api.Swal.fire=async()=>({isConfirmed:false});assert.equal(await confirmMallDailyClose(api,input),null);
+    api.getDocFromServer=async()=>{throw Error('offline')};await assert.rejects(confirmMallDailyClose(api,input),/offline/);
+});
+
+test('delivery-date broadcasts preserve editable request day, time and enabled settings',async()=> {
+    const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),start=source.indexOf('window.broadcastDeliveryDate ='),end=source.indexOf('\n};',start)+3;
+    let settings={requestDay:4,requestTime:'17:30',requestEnabled:false};
+    const window={sessionUser:{cashierName:'Test'}},button={innerText:'Broadcast',disabled:false};
+    vm.runInNewContext(source.slice(start,end),{window,db:{},doc:()=>({}),setDoc:async(ref,data,options)=>{settings=options?.merge?{...settings,...data}:data;},serverTimestamp:()=>1,document:{getElementById:id=>id==='fcTargetDate'?{value:'2026-10-08'}:button},Swal:{fire:()=>{}},console});
+    await window.broadcastDeliveryDate();assert.equal(settings.requestDay,4);assert.equal(settings.requestTime,'17:30');assert.equal(settings.requestEnabled,false);assert.equal(settings.nextDeliveryDate,'2026-10-08');
+});
 
 function environment() {
     const h=firestoreHarness();h.api.getDocs=h.api.getDocsFromServer;
@@ -18,20 +102,20 @@ function environment() {
     h.put('cash_accounts/grab',{branch:'Main Office',name:'Grab',balance:100});
     return h;
 }
-const closing = {shiftId:'one',branch:'Citygate',cashier:'Test',declaredCash:7500,totalCashSales:5500,totalDigitalSales:400,digitalBreakdown:{Grab:400},physicalStockCount:[],shiftIngredientBurn:{Sauce:50},variance:0,cashOut:0,closing:{physicalStockCount:[],cashBreakdown:{}}};
+const closing = {isFinalShiftOfDay:true,shiftId:'one',branch:'Citygate',cashier:'Test',declaredCash:7500,totalCashSales:5500,totalDigitalSales:400,digitalBreakdown:{Grab:400},physicalStockCount:[],shiftIngredientBurn:{Sauce:50},variance:0,cashOut:0,closing:{physicalStockCount:[],cashBreakdown:{}}};
 test('mall float retains only actual cash and reports float shortage without inventing money',()=> {
     assert.deepEqual(mallCashPlan(7500),{startingCash:2000,retainedCash:2000,remittedCash:5500,floatShortage:0});
     assert.deepEqual(mallCashPlan(1200),{startingCash:2000,retainedCash:1200,remittedCash:0,floatShortage:800});
     assert.throws(()=>mallCashPlan(-1));assert.throws(()=>mallCashPlan(NaN));
 });
 test('scheduled requests use Philippine day/time and do not run early, disabled, or on another day',()=> {
-    const before=new Date('2026-10-09T09:59:00Z'),due=new Date('2026-10-09T10:00:00Z');
+    const before=new Date('2026-10-08T09:59:00Z'),due=new Date('2026-10-08T10:00:00Z');
     assert.equal(stockRequestDue({},before),false);assert.equal(stockRequestDue({},due),true);
     assert.equal(stockRequestDue({requestEnabled:false},due),false);
     assert.equal(stockRequestDue({requestDay:1,requestTime:'11:30'},new Date('2026-10-12T03:30:00Z')),true);
     assert.equal(stockRequestDue({requestTime:'25:00'},due),false);
     assert.equal(businessClock(new Date('2026-10-08T17:00:00Z')).day,'2026-10-09');
-    assert.equal(autoRequestId('Citygate',due),autoRequestId('Citygate',new Date('2026-10-09T14:00:00Z')));
+    assert.equal(autoRequestId('Citygate',due),autoRequestId('Citygate',new Date('2026-10-08T14:00:00Z')));
     assert.notEqual(autoRequestId('Citygate',due),autoRequestId('Maa',due));
 });
 test('20 concurrent mall closures produce one pending remittance, one sweep, and one burn log',async()=> {
@@ -112,7 +196,7 @@ test('sidebar ordering reconciles removed tabs and new tabs without duplicates; 
     assert.match(html,/₱90,246\.60/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);
 });
 test('independently hosted apps share identical cash policies and settlement modules',()=> {
-    for(const name of ['branch-operations.js','cash-settlement.js','dispatch-safety.js'])assert.equal(readFileSync(new URL('../Takodeal-POS/'+name,import.meta.url),'utf8'),readFileSync(new URL('../takodeal-manager/'+name,import.meta.url),'utf8'));
+    for(const name of ['branch-operations.js','cash-settlement.js','shift-close-ui.js','dispatch-safety.js'])assert.equal(readFileSync(new URL('../Takodeal-POS/'+name,import.meta.url),'utf8').replace(/\r\n/g,'\n'),readFileSync(new URL('../takodeal-manager/'+name,import.meta.url),'utf8').replace(/\r\n/g,'\n'));
 });
 test('bulk menu export uses actual BOM rows and round-trips comma/quote/newline names with platform prices',()=> {
     const menu=[{id:'one',name:'Sauce, "special"\nlarge',category:'Takoyaki',price:90,grabPrice:110,foodpandaPrice:115,addons:[]}];
