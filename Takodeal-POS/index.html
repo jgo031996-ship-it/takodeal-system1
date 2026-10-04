@@ -2,6 +2,7 @@
 <html>
   
 <head>
+<link rel="stylesheet" href="./meal-checkout.css">
   <base target="_top">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
@@ -3329,6 +3330,8 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             if (numpadGrid) numpadGrid.style.display = 'grid';   // Unlock Numpad
         }
 
+        window.syncMealDiscountOptions();
+        window.renderCustomCheckoutFields();
         if(document.getElementById('checkoutDiscountType')) document.getElementById('checkoutDiscountType').value = 'none';
         if(document.getElementById('checkoutDiscountValue')) document.getElementById('checkoutDiscountValue').value = '';
         if(document.getElementById('checkoutDiscountReason')) document.getElementById('checkoutDiscountReason').value = '';
@@ -3340,7 +3343,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
     function openCheckoutModal() { window.openCheckoutModal(); }
     window.checkoutPinKeypadActive = function() {
         const type = document.getElementById('checkoutDiscountType')?.value;
-        return type === 'staff_meal' || type === 'manager_meal';
+        return window.isMealDiscount(type);
     };
     window.syncCheckoutKeypad = function() {
         const pinMode = window.checkoutPinKeypadActive();
@@ -3420,12 +3423,12 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         let standardPaymentArea = document.getElementById('standardPaymentArea');
         let nameBox = document.getElementById('finalCustomerName');
 
-        if (dType === 'staff_meal' || dType === 'manager_meal') {
+        if (window.isMealDiscount(dType)) {
             valInput.value = ""; 
             valInput.placeholder = "Auto-Calculated";
             valInput.disabled = true; 
             valInput.style.background = '#f1f5f9';
-            reasonInput.value = dType === 'manager_meal' ? "Manager / Owner Meal" : "Staff Meal Salary Deduction";
+            reasonInput.value = window.getMealLevel(dType).name + " Salary Deduction";
             
             // 🛑 LOCKDOWN UI
             if (pinContainer) pinContainer.style.display = 'block';
@@ -3446,7 +3449,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
             valInput.placeholder = "0";
             valInput.disabled = false;
             valInput.style.background = 'white';
-            if (reasonInput.value === "Staff Meal Salary Deduction" || reasonInput.value === "Manager / Owner Meal") reasonInput.value = "";
+            if (reasonInput.value.endsWith(" Salary Deduction") || reasonInput.value === "Manager / Owner Meal") reasonInput.value = "";
             
             // 🟢 RESTORE UI
             if (pinContainer) pinContainer.style.display = 'none';
@@ -3475,111 +3478,6 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         window.updateNumpadDisplay();
     };
 
-    // 🔥 THE LIVE PIN AUTO-FILL ENGINE (WITH BULLETPROOF 1-PER-DAY LIMIT) 🔥
-    window.verifyStaffMealPin = async function() {
-        let pinInput = document.getElementById('checkoutStaffPin').value;
-        let nameBox = document.getElementById('finalCustomerName');
-        let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : '';
-        const stillCurrent = () => document.getElementById('checkoutStaffPin').value === pinInput && document.getElementById('checkoutDiscountType')?.value === dType;
-        
-        if (!nameBox) return;
-
-        // Only trigger the database search if they typed at least 4 digits
-        if (pinInput.length >= 4) {
-            let staffData = null;
-            
-            // Silent background lookup
-            const qStr = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pinInput));
-            const snapStr = await window.getDocs(qStr);
-            if (!stillCurrent()) return;
-
-            if (!snapStr.empty) {
-                staffData = snapStr.docs[0].data();
-            } else {
-                let pinNum = parseInt(pinInput);
-                if (!isNaN(pinNum)) {
-                    const qNum = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pinNum));
-                    const snapNum = await window.getDocs(qNum);
-                    if (!stillCurrent()) return;
-                    if (!snapNum.empty) staffData = snapNum.docs[0].data();
-                }
-            }
-
-            if (staffData) {
-                let nameSuffix = dType === 'manager_meal' ? " (Manager)" : " (Staff)";
-                let expectedCustomerName = staffData.cashierName + nameSuffix;
-
-                // 🔥 INFALLIBLE 1-PER-DAY LIMITER (CHECKS STAFF REQUESTS INBOX) 🔥
-                if (dType === 'staff_meal') {
-                    nameBox.value = "⏳ Verifying Meal Limit...";
-                    nameBox.style.color = "#d97706";
-                    nameBox.style.backgroundColor = "#fffbeb";
-                    
-                    let startOfDay = new Date();
-                    startOfDay.setHours(0, 0, 0, 0);
-
-                    try {
-                        // Check if this specific staff member already logged a Staff Meal today in staff_requests
-                        const reqQ = window.query(window.collection(window.db, "staff_requests"), 
-                            window.where("staffName", "==", staffData.cashierName), 
-                            window.where("timestamp", ">=", startOfDay)
-                        );
-                        const reqSnap = await window.getDocs(reqQ);
-                        if (!stillCurrent()) return;
-                        
-                        let alreadyClaimed = false;
-                        reqSnap.forEach(doc => {
-                            let rData = doc.data();
-                            if (rData.type && rData.type.toLowerCase().includes("staff meal")) {
-                                alreadyClaimed = true;
-                            }
-                        });
-
-                        if (alreadyClaimed) {
-                            nameBox.value = "❌ Limit Reached (1/Day)";
-                            nameBox.style.backgroundColor = "#fef2f2"; 
-                            nameBox.style.borderColor = "#dc2626";
-                            nameBox.style.color = "#b91c1c";
-                            
-                            Swal.fire({
-                                title: 'Limit Reached 🛑', 
-                                text: `${staffData.cashierName} has already claimed their 1 Staff Meal today.`, 
-                                icon: 'error',
-                                customClass: { popup: 'rounded-2xl' }
-                            });
-                            
-                            document.getElementById('checkoutStaffPin').value = ''; // Clear PIN
-                            return;
-                        }
-                    } catch (e) {
-                        if (!stillCurrent()) return;
-                        console.error("Meal Limit Check Error:", e);
-                    }
-                }
-
-                // Identity Confirmed and Limit Passed!
-                nameBox.value = expectedCustomerName;
-                nameBox.style.backgroundColor = "#dcfce7"; // Success Green
-                nameBox.style.borderColor = "#16a34a";
-                nameBox.style.color = "#15803d";
-                nameBox.style.fontWeight = "900";
-            } else {
-                // Invalid PIN! Flash the box red!
-                nameBox.value = "❌ Invalid PIN";
-                nameBox.style.backgroundColor = "#fef2f2"; // Danger Red
-                nameBox.style.borderColor = "#dc2626";
-                nameBox.style.color = "#b91c1c";
-            }
-        } else {
-            // Typing in progress... clear the box
-            nameBox.value = "";
-            nameBox.placeholder = "Awaiting PIN Verification...";
-            nameBox.style.backgroundColor = "#f8fafc";
-            nameBox.style.borderColor = "#cbd5e1";
-            nameBox.style.color = "#334155";
-        }
-    };
-
     window.updateNumpadDisplay = function() { 
         let originalTotal = window.currentGrandTotal || 0;
         let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
@@ -3588,31 +3486,8 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         let discountAmount = 0;
         
         // 🔥 THE BULLETPROOF SPLIT DISCOUNT ENGINE 🔥
-        if (dType === 'staff_meal' || dType === 'manager_meal') {
-            let pctTako = 0; let pctOther = 0;
-            
-            if (dType === 'manager_meal') {
-                pctTako = window.masterPOSData && window.masterPOSData.settings && window.masterPOSData.settings.managerMealTakoPct !== undefined ? window.masterPOSData.settings.managerMealTakoPct : 100;
-                pctOther = window.masterPOSData && window.masterPOSData.settings && window.masterPOSData.settings.managerMealOtherPct !== undefined ? window.masterPOSData.settings.managerMealOtherPct : 100;
-            } else {
-                pctTako = window.masterPOSData && window.masterPOSData.settings && window.masterPOSData.settings.staffMealTakoPct !== undefined ? window.masterPOSData.settings.staffMealTakoPct : 20;
-                pctOther = window.masterPOSData && window.masterPOSData.settings && window.masterPOSData.settings.staffMealOtherPct !== undefined ? window.masterPOSData.settings.staffMealOtherPct : 10;
-            }
-            
-            window.cart.forEach(item => {
-                let itemName = (item.name || item.itemName || "").toLowerCase();
-                let cat = (item.category || "").toLowerCase();
-                
-                if (!cat && window.masterPOSData && window.masterPOSData.items) {
-                    let menuItem = window.masterPOSData.items.find(i => (i.name || "").toLowerCase() === itemName || (i.realName || "").toLowerCase() === itemName);
-                    if (menuItem) cat = (menuItem.category || "").toLowerCase();
-                }
-                
-                let isTakoyaki = cat.includes("takoyaki") || itemName.includes("takoyaki");
-                let pctToApply = isTakoyaki ? pctTako : pctOther;
-                
-                discountAmount += (item.lineTotalFinal * (pctToApply / 100));
-            });
+        if (window.isMealDiscount(dType)) {
+            discountAmount = window.calculateMealDiscount(dType);
         } else if (dType === 'percentage' && dVal > 0) {
             discountAmount = originalTotal * (dVal / 100);
         } else if (dType === 'fixed' && dVal > 0) {
@@ -3639,7 +3514,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
 
         // 🔥 STAFF/MANAGER MEAL CASH OVERRIDE
         let received = parseFloat(window.amountReceivedStr) || 0; 
-        if (dType === 'staff_meal' || dType === 'manager_meal') {
+        if (window.isMealDiscount(dType)) {
             received = window.finalCheckoutAmount; 
             document.getElementById('checkoutReceived').innerText = '₱' + received.toFixed(2) + ' (Deduction)';
         } else {
@@ -3672,76 +3547,24 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
       let dType = document.getElementById('checkoutDiscountType') ? document.getElementById('checkoutDiscountType').value : 'none';
       let staffIdentity = null;
 
-      // 🚨 STAFF & MANAGER MEAL SECURITY INTERCEPTOR 🚨
-      if (dType === 'staff_meal' || dType === 'manager_meal') {
-          let pinInput = document.getElementById('checkoutStaffPin').value;
-          if (!pinInput) {
-              alert("🚨 Please enter your Security PIN to authorize this transaction.");
-              btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
+      // Every meal PIN is checked against current HQ settings before the sale is queued.
+      let customCheckoutSelections = [];
+      try {
+          if (window.isMealDiscount(dType)) {
+              const pinInput = document.getElementById('checkoutStaffPin').value;
+              const cartBeforeVerification = JSON.stringify(window.cart);
+              btn.innerText = "Verifying meal authorization…";
+              staffIdentity = await window.authorizeMealPin(pinInput,dType,{refresh:true});
+              if (document.getElementById('checkoutDiscountType').value !== dType || document.getElementById('checkoutStaffPin').value !== pinInput || JSON.stringify(window.cart) !== cartBeforeVerification)
+                  throw Error('The checkout changed during PIN verification. Review it and try again.');
+              window.updateNumpadDisplay();
+              window.selectedPaymentMethod = "Salary Deduction";
+              document.getElementById('finalCustomerName').value = staffIdentity.cashierName + ' (' + staffIdentity.level.name + ')';
           }
-
-          btn.innerText = "⏳ Verifying PIN...";
-          staffIdentity = await window.verifyPin(pinInput);
-
-          if (!staffIdentity || staffIdentity === "BLOCKED") {
-              alert("❌ Invalid PIN. Transaction unauthorized.");
-              btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
-          }
-
-          // 🛡️ ROLE SECURITY LOCK: Prevent Staff from using Manager Discounts!
-          if (dType === 'manager_meal') {
-              let userRole = (staffIdentity.role || "").toLowerCase();
-              if (!userRole.includes('owner') && !userRole.includes('manager') && !userRole.includes('franchisee')) {
-                  alert("❌ UNAUTHORIZED: Your PIN does not have Manager or Owner privileges. Please select 'Staff Meal' instead.");
-                  btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
-              }
-          }
-
-          // 🔥 INFALLIBLE 1-PER-DAY HARD LIMITER (BLOCKS CHECKOUT) 🔥
-          if (dType === 'staff_meal') {
-              btn.innerText = "⏳ Checking Meal Limits...";
-              let startOfDay = new Date();
-              startOfDay.setHours(0, 0, 0, 0);
-              
-              try {
-                  let expectedCustomerName = staffIdentity.cashierName + " (Staff)";
-                  
-                  // Grab today's transactions and filter locally to guarantee no Firebase index failures!
-                  const txQ = window.query(window.collection(window.db, "transactions"), 
-                      window.where("branch", "==", window.sessionUser.branch), 
-                      window.where("timestamp", ">=", startOfDay)
-                  );
-                  const txSnap = await window.getDocs(txQ);
-                  
-                  let alreadyClaimed = false;
-                  txSnap.forEach(doc => {
-                      let tx = doc.data();
-                      if (tx.status !== "Voided" && tx.customerName === expectedCustomerName && tx.globalDiscountType === 'staff_meal') {
-                          alreadyClaimed = true;
-                      }
-                  });
-
-                  if (alreadyClaimed) {
-                      Swal.fire({
-                          title: 'Limit Reached 🛑', 
-                          text: `${staffIdentity.cashierName} has already claimed their 1 Staff Meal today. Checkout Blocked.`, 
-                          icon: 'error',
-                          customClass: { popup: 'rounded-2xl' }
-                      });
-                      
-                      document.getElementById('checkoutStaffPin').value = ''; // Wipe PIN
-                      document.getElementById('finalCustomerName').value = ''; // Wipe Name
-                      btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; 
-                      return; // 🛑 KILLS THE CHECKOUT PROCESS INSTANTLY
-                  }
-              } catch(e) { 
-                  console.error("Hard Limit Check Error:", e); 
-              }
-          }
-
-          window.selectedPaymentMethod = "Salary Deduction";
-          let nameSuffix = dType === 'manager_meal' ? " (Manager)" : " (Staff)";
-          document.getElementById('finalCustomerName').value = staffIdentity.cashierName + nameSuffix;
+          customCheckoutSelections = window.collectCustomCheckoutFields();
+      } catch (error) {
+          Swal.fire('Checkout needs attention',error.message,'warning');
+          btn.innerText = "Complete checkout"; btn.disabled = false; btn.style.pointerEvents = "auto"; window.isSubmittingOrder = false; return;
       }
 
       let custName = document.getElementById('finalCustomerName').value.trim();
@@ -3778,13 +3601,19 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         globalDiscountReason: dReason,
         netTotal: window.finalCheckoutAmount ?? window.currentGrandTotal,
         customerName: custName,
-        amountReceived: dType === 'staff_meal' || dType === 'manager_meal' ? (window.finalCheckoutAmount ?? window.currentGrandTotal) : window.amountReceivedStr,
+        amountReceived: window.isMealDiscount(dType) ? (window.finalCheckoutAmount ?? window.currentGrandTotal) : window.amountReceivedStr,
         cart: window.cart,
         wasParked: window.isResumedParkedOrder || false,
         isMobileOrder: window.isActiveOrderMobile || false,
         mobileOrderCode: window.activeMobileOrderCode || null,
         mobileOrderId: window.activeMobileOrderId || null,
         mealStaffName: staffIdentity ? staffIdentity.cashierName : null,
+        mealLevelId: staffIdentity ? staffIdentity.level.id : null,
+        mealLevelName: staffIdentity ? staffIdentity.level.name : null,
+        mealRole: staffIdentity ? staffIdentity.role : null,
+        mealIdentityId: staffIdentity ? staffIdentity.id : null,
+        mealIdentitySource: staffIdentity ? staffIdentity.source : null,
+        customCheckoutSelections,
         deliveryAddress: deliveryAddress,
         contactNumber: contactNumber
       };
@@ -3961,6 +3790,7 @@ window.printReceipt = async function(type) {
 
     receiptTop += "Customer: " + customer + "\n";
     receiptTop += "Cashier:  " + cashierFirstName + "\n";
+    for (const field of d.customCheckoutSelections || []) receiptTop += String(field.label).replace(/[\x00-\x1f]/g," ") + ": " + String(field.value).replace(/[\x00-\x1f]/g," ") + "\n";
     receiptTop += drawDoubleLine();
     
     receiptTop += "ITEM/S PURCHASED\n" + drawLine();

@@ -286,10 +286,11 @@ export function createSaleEngine(api) {
                     timestamp: serverTimestamp(), isRead: false
                 });
                 if (payload.mealStaffName) tx.set(ref('staff_requests', 'meal-' + payload.saleId), {
-                    type: `${payload.globalDiscountType === 'manager_meal' ? 'Manager Meal' : 'Staff Meal'} (POS Auto)`,
+                    type: `${payload.mealLevelName ? payload.mealLevelName.replace(/\s+Meal$/i,'') + ' Meal' : payload.globalDiscountType === 'manager_meal' ? 'Manager Meal' : 'Staff Meal'} (POS Auto)`,
+                    mealLevelId:payload.mealLevelId || payload.globalDiscountType, mealRole:payload.mealRole || null,
                     branch: payload.branch, staffName: payload.mealStaffName, amount: payload.netTotal,
                     item: payload.cart.map(i => `${i.qty}x ${i.name || i.itemName}`).join(', ') + ' | OR#: ' + payload.receiptId,
-                    receiptId: payload.receiptId, status: 'Pending', staffAcknowledged: false, timestamp: serverTimestamp()
+                    receiptId: payload.receiptId, saleId:payload.saleId, status: 'Pending', staffAcknowledged: false, timestamp: serverTimestamp()
                 });
                 return 'committed';
             });

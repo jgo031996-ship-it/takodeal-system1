@@ -1,4 +1,5 @@
 import { imageFor } from './cashier-data.js';
+import { installMealCheckout } from './meal-checkout.js';
 import { createShiftCloseDraftStore, countValue } from './shift-close-draft.js';
 import { createPrinterConnections, createPrinterWriter } from './printer-connection.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
@@ -498,7 +499,9 @@ window.loadPOSData = async function() {
                     staffMealOtherPct: configData.staffMealOtherPct !== undefined ? configData.staffMealOtherPct : 10,
                     // 🔥 THE NEW MANAGER VARIABLES
                     managerMealTakoPct: configData.managerMealTakoPct !== undefined ? configData.managerMealTakoPct : 100,
-                    managerMealOtherPct: configData.managerMealOtherPct !== undefined ? configData.managerMealOtherPct : 100
+                    managerMealOtherPct: configData.managerMealOtherPct !== undefined ? configData.managerMealOtherPct : 100,
+                    ...(Array.isArray(configData.mealDiscountLevels) ? {mealDiscountLevels:configData.mealDiscountLevels} : {}),
+                    customCheckoutFields: configData.customCheckoutFields || []
                 };
                 localStorage.setItem('takodeal_cached_settings', JSON.stringify(window.masterPOSData.settings));
             }
@@ -1254,6 +1257,7 @@ window.updateActiveShiftCashier = async function(newCashierName) {
 // 🛒 TRUE OFFLINE CHECKOUT & SYNC ENGINE
 // ========================================================
 installSaleSafety({ db, doc, collection, query, where, getDocsFromServer, runTransaction, increment, serverTimestamp, onSnapshot });
+installMealCheckout();
 
 // --- THE DASHBOARD ENGINE ---
 window.getSalesDashboardData = async function (branch, shiftStartTime) {
@@ -1579,7 +1583,7 @@ window.viewReceiptDetails = async function (receiptId) {
     if (tx.globalDiscountAmount && tx.globalDiscountAmount > 0) {
         let discAmountDisplay = isCashTx ? '***' : tx.globalDiscountAmount.toFixed(2);
         let rawType = tx.globalDiscountType || 'Discount';
-        let discTypeStr = rawType === 'staff_meal' ? 'Staff Meal' : (rawType === 'manager_meal' ? 'Manager Meal' : rawType.toUpperCase());
+        let discTypeStr = String(tx.mealLevelName || (rawType === 'staff_meal' ? 'Staff Meal' : (rawType === 'manager_meal' ? 'Manager Meal' : rawType.toUpperCase()))).replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
         let discReasonStr = tx.globalDiscountReason ? `<br><span style="font-size: 11px; color: #fca5a5; font-style: italic;">Note: ${tx.globalDiscountReason}</span>` : '';
         
         discountHtml = `
