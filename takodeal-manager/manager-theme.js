@@ -61,6 +61,15 @@ export function initManagerTheme({ document: d = document, window: w = window, o
     if (d.body.dataset.managerTheme) return;
     d.body.dataset.managerTheme = '20261003';
     d.body.classList.add('manager-theme');
+    // These legacy bars belong to Overview. Move the existing nodes so their
+    // filters, upload control and event handlers are retained when tabs switch.
+    const inventoryOverview = d.getElementById('invTabLiveContent');
+    const inventoryRoot = inventoryOverview?.parentElement;
+    if (inventoryRoot) {
+        const overviewControls = ['invBranchFilter', 'csvInvUpload'].map(id => d.getElementById(id)).filter(Boolean);
+        const bars = [...inventoryRoot.children].filter(block => block !== inventoryOverview && overviewControls.some(control => block.contains(control)));
+        inventoryOverview.prepend(...bars);
+    }
     const scrolling = initManagerScroll({ document: d, window: w });
     let lastView = '', lastPage = '', queued = false;
     const seen = new WeakSet();
