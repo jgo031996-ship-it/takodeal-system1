@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Welcome · TAKODEÁL Manager</title>
+  <title>Welcome · TAKODEÁL Owner</title>
   <meta name="theme-color" content="#173f32">
   <link rel="stylesheet" href="login.css?v=20261004">
 
@@ -528,15 +528,15 @@
       <div class="avatar">👨‍💼</div>
       <div class="details">
         <span class="name" id="sidebarProfileName">Owner</span>
-        <span class="role" id="sidebarProfileRole">Admin Access</span>
+        <span class="role" id="sidebarProfileRole">Account access</span>
       </div>
     </div>
   </nav>
 
-  <section id="loginOverlay" aria-label="Manager sign in">
+  <section id="loginOverlay" aria-label="Owner workspace sign in">
     <div class="login-shell">
       <aside class="login-story">
-        <div class="login-brand"><img src="logo.jpg" alt="TAKODEÁL"><div><strong>TAKODEÁL</strong><small>MANAGER WORKSPACE</small></div></div>
+        <div class="login-brand"><img src="logo.jpg" alt="TAKODEÁL"><div><strong>TAKODEÁL</strong><small>OWNER WORKSPACE</small></div></div>
         <div class="login-story-copy"><span class="login-eyebrow">A little clarity. Every day.</span><h1>Good decisions<br> <span>start here.</span></h1><p>Your branches, your people, and your next move. Together in one thoughtful workspace.</p>
           <div class="login-workspace-art" aria-hidden="true"><div class="login-art-nav"><i></i><i></i><i></i><i></i><i></i></div><div class="login-art-content"><strong>A clear view of every branch.</strong><div class="login-art-bars"><i style="--bar:27%"></i><i style="--bar:40%"></i><i style="--bar:37%"></i><i style="--bar:55%"></i><i style="--bar:64%"></i><i style="--bar:80%"></i><i style="--bar:94%"></i></div></div></div>
         </div>
@@ -544,13 +544,13 @@
       </aside>
       <div class="login-access">
         <div class="login-access-head"><span>YOUR CONTROL CENTER</span><div id="loginNetwork" class="login-network">Connecting</div></div>
-        <div id="loginStage1" class="login-stage"><h2>A fresh start.</h2><p class="login-intro">Sign in with your approved Google account.<br>Then use your Manager PIN to enter.</p><button id="googleManagerButton" disabled class="login-primary" type="button" onclick="window.loginWithGoogle?.()"><span>Continue with Google</span><span aria-hidden="true">→</span></button></div>
-        <div id="loginStage2" class="login-stage" hidden><h2>Welcome back.</h2><p class="login-intro" style="margin-bottom:0">Your workspace is ready when you are.</p><div class="login-identity"><img src="logo.jpg" alt=""><div><strong id="authWelcomeName">Manager</strong><small>✓ Account verified · enter your PIN</small></div></div><label for="managerPinInput">Manager PIN</label><input id="managerPinInput" type="password" readonly autocomplete="off" inputmode="none" placeholder="••••" aria-describedby="pinErrorMsg" maxlength="32"><div class="login-numpad-container"><button type="button" class="numpad-btn" onclick="window.appendManagerPin('1')">1</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('2')">2</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('3')">3</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('4')">4</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('5')">5</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('6')">6</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('7')">7</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('8')">8</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('9')">9</button><button type="button" class="numpad-btn utility" onclick="window.clearManagerPin()" aria-label="Clear PIN">Clear</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('0')">0</button><button type="button" class="numpad-btn utility" onclick="window.backspaceManagerPin()" aria-label="Delete last digit">⌫</button></div><button id="unlockManagerButton" type="button" class="login-primary" onclick="window.checkManagerPin?.()">Unlock workspace →</button></div>
+        <div id="loginStage1" class="login-stage"><h2>A fresh start.</h2><p class="login-intro">Sign in with your approved Google account.<br>Then use your account PIN to enter.</p><button id="googleManagerButton" disabled class="login-primary" type="button" onclick="window.loginWithGoogle?.()"><span>Continue with Google</span><span aria-hidden="true">→</span></button></div>
+        <div id="loginStage2" class="login-stage" hidden><h2>Welcome back.</h2><p class="login-intro" style="margin-bottom:0">Your workspace is ready when you are.</p><div class="login-identity"><img src="logo.jpg" alt=""><div><strong id="authWelcomeName">Authorized account</strong><small>✓ Account verified · enter your PIN</small></div></div><label for="managerPinInput">Account PIN</label><input id="managerPinInput" type="password" autocomplete="off" inputmode="text" placeholder="••••" aria-describedby="pinErrorMsg" maxlength="32"><div class="login-numpad-container"><button type="button" class="numpad-btn" onclick="window.appendManagerPin('1')">1</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('2')">2</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('3')">3</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('4')">4</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('5')">5</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('6')">6</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('7')">7</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('8')">8</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('9')">9</button><button type="button" class="numpad-btn utility" onclick="window.clearManagerPin()" aria-label="Clear PIN">Clear</button><button type="button" class="numpad-btn" onclick="window.appendManagerPin('0')">0</button><button type="button" class="numpad-btn utility" onclick="window.backspaceManagerPin()" aria-label="Delete last digit">⌫</button></div><button id="unlockManagerButton" type="button" class="login-primary" onclick="window.checkManagerPin?.()">Unlock workspace →</button></div>
         <div id="pinErrorMsg" class="login-error" role="alert" hidden></div><div id="loginProgress" class="login-progress" role="status" aria-live="polite">Checking your account…</div><button id="retryManagerButton" class="login-secondary" type="button" onclick="window.retryManagerAccess ? window.retryManagerAccess() : location.reload()" hidden>Retry account check</button><button id="changeManagerAccount" class="login-secondary" type="button" onclick="window.cancelLoginAndSignOut?.()" hidden>Use a different account</button>
         <div class="login-device"><div class="login-device-row"><span id="loginDeviceStatus">Device storage</span><button id="installManagerButton" type="button" onclick="window.installManagerApp()">Install app ↗</button></div><p id="loginDeviceDescription">Save this workspace on your device for faster launches.</p></div>
       </div>
     </div>
-    <dialog id="loginInstallDialog" class="login-install-dialog"><h2>Your workspace, installed.</h2><p>In Edge or Chrome, open the browser menu and choose <strong>Apps → Install this site as an app</strong> or <strong>Install TAKODEÁL Manager</strong>.</p><p>On iPhone or iPad, use Safari’s <strong>Share → Add to Home Screen</strong>.</p><p>Open it online once to save app files. Reconnect to verify your account and receive live updates.</p><button type="button" class="login-primary" onclick="document.getElementById('loginInstallDialog').close()">Got it</button></dialog>
+    <dialog id="loginInstallDialog" class="login-install-dialog"><h2>Your workspace, installed.</h2><p>In Edge or Chrome, open the browser menu and choose <strong>Apps → Install this site as an app</strong> or <strong>Install TAKODEÁL Owner</strong>.</p><p>On iPhone or iPad, use Safari’s <strong>Share → Add to Home Screen</strong>.</p><p>Open it online once to save app files. Reconnect to verify your account and receive live updates.</p><button type="button" class="login-primary" onclick="document.getElementById('loginInstallDialog').close()">Got it</button></dialog>
   </section>
 
   <main class="main-content">
@@ -558,7 +558,7 @@
       <div class="manager-page-heading">
         <button class="mobile-menu-btn" aria-label="Open navigation" onclick="window.toggleManagerSidebar()">☰</button>
         <div class="manager-page-copy">
-          <div class="manager-breadcrumb"><span>TAKODEÁL MANAGER</span><i aria-hidden="true">/</i><span id="managerPageSection">Overview</span></div>
+          <div class="manager-breadcrumb"><span>TAKODEÁL OWNER</span><i aria-hidden="true">/</i><span id="managerPageSection">Overview</span></div>
           <h1 id="pageTitle">Global Dashboard</h1>
           <p id="managerPageDescription">Your sales, branch performance, and team in one place.</p>
         </div>

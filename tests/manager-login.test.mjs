@@ -6,6 +6,8 @@ import {resolveHQAccount} from '../takodeal-manager/hq-account-model.js';
 import { createUnlockGate, bounded } from '../takodeal-manager/unlock-gate.js';
 import { createCollectionCache } from '../takodeal-manager/collection-cache.js';
 import { createDeviceStore } from '../takodeal-manager/device-store.js';
+import {createWorkspaceSession,workspaceRole,workspaceLandingPage} from '../takodeal-manager/workspace-access-model.js';
+import {applyWorkspacePermissions} from '../takodeal-manager/workspace-access.js';
 const source = name => readFileSync(new URL('../takodeal-manager/'+name,import.meta.url),'utf8');
 const user = {uid:'sample-user',email:'sample@example.test',displayName:'Sample Manager'};
 const profile = {pin:'6241',role:'Manager',permissions:['dashboard'],assignedBranch:'Sample Branch'};
@@ -88,7 +90,7 @@ test('actual auth controller checks server access before PIN and loads the dashb
     const w={auth:{currentUser:user},provider:{},ManagerLogin:{show(){},status(){},error(){},busy(){}},
         query:(...args)=>args,collection:()=>({}),where:()=>({}),getDocsFromServer:async()=>{serverReads++;return {empty:false,docs:[{id:'approved',data:()=>profile}]};},
         dispatchEvent(){},loadWorkspaceTest:async()=>{workspaceLoads++;w.switchView=()=>dashboardLoads++;},applyFranchiseUIProtections(){}};
-    const context={window:w,document:{getElementById:node,querySelectorAll:()=>[],createElement:()=>({})},navigator:{onLine:true},location:{reload(){}},Event:class{},setTimeout,clearTimeout,createUnlockGate,bounded,resolveHQAccount,loadManagerLibraries:async()=>{},prepareManagerTools:()=>{},signInWithPopup:async()=>{},signOut:async()=>{},onAuthStateChanged:(_,fn)=>identify=fn};
+    const context={window:w,document:{getElementById:node,querySelectorAll:()=>[],createElement:()=>({})},navigator:{onLine:true},location:{reload(){}},Event:class{},setTimeout,clearTimeout,createUnlockGate,bounded,resolveHQAccount,createWorkspaceSession,workspaceRole,workspaceLandingPage,applyWorkspacePermissions,installWorkspaceAccess:()=>{},loadManagerLibraries:async()=>{},prepareManagerTools:()=>{},signInWithPopup:async()=>{},signOut:async()=>{},onAuthStateChanged:(_,fn)=>identify=fn};
     const auth=source('auth.js').replace(/^import .*;\r?\n/gm,'').replace(/await import\('\.\/main\.js\?v=[^']+'\)/,'await window.loadWorkspaceTest()');
     vm.runInNewContext(auth,context);identify(user);await new Promise(resolve=>setImmediate(resolve));
     assert.equal(serverReads,1);assert.equal(workspaceLoads,0);node('managerPinInput').value='0000';await w.checkManagerPin();assert.equal(workspaceLoads,0);
@@ -103,9 +105,7 @@ test('grouped SOP remains accessible alone without granting payroll or SOP to un
         nodes.set('hrSubmenu',{querySelectorAll:()=>childIds.map(id=>nodes.get(id))});
         const context={window:{sessionUser:{permissions}},el:id=>nodes.get(id),
             document:{getElementById:id=>nodes.get(id),querySelectorAll:()=>ids.filter(id=>id.startsWith('nav-')).map(id=>nodes.get(id))}};
-        const auth=source('auth.js'),start=auth.indexOf('window.applyPermissions =');
-        vm.runInNewContext(auth.slice(start,auth.indexOf('\n};',start)+3),context);
-        context.window.applyPermissions();
+        applyWorkspacePermissions(context.window,context.document);
         assert.equal(nodes.get('nav-sop').style.display,permissions.includes('sop')?'flex':'none');
         assert.equal(nodes.get('nav-payroll').style.display,permissions.includes('dashboard')?'none':'flex');
         assert.equal(nodes.get('subnav-Feed').style.display,permissions.includes('payroll')?'flex':'none');

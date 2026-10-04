@@ -1,6 +1,6 @@
 {
-  "name": "TAKODEÁL Manager",
-  "short_name": "TAKODEÁL Manager",
+  "name": "TAKODEÁL Owner",
+  "short_name": "TAKODEÁL Owner",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f5f7f3",
