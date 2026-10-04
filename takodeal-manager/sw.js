@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v17-unmatched-payroll';
+const CACHE_NAME = 'takodeal-manager-core-v18-remarks-alignment';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = ['./', './index.html', './main.js', './employee-id.js', './employee-id.css', './payslip.css', './login.css', './login-ui.js', './unlock-gate.js', './device-store.js', './manager-libraries.js', './branch-operations.js', './cash-settlement.js', './shift-close-ui.js', './collection-cache.js', './manager-dialogs.js', './manager-workspace.js', './manager-workspace.css', './dispatch-safety.js', './menu-bulk.js', './pos-safety.js', './recipe-integrity.js', './live-report.js', './payroll-safety.js', './dashboard.js', './dashboard-data.js', './dashboard.css', './manager-theme.css', './manager-theme.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
