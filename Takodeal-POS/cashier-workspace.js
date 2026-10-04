@@ -1,3 +1,5 @@
+import {installControls} from './cashier-controls.js';
+import {installPayments} from './cashier-payments.js';
 import {CASHIER_RELEASE,businessDate,dayWindow,attendanceRows,imageFor,updateBlocker,labelSettings,drinkLabels} from './cashier-data.js';
 const el = id => document.getElementById(id);
 const money = value => new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(Number(value)||0);
@@ -161,7 +163,7 @@ function decorateInventory(){
 function installTheme(){
   document.body.classList.add('cashier-orange');
   document.querySelectorAll('.nav-item').forEach(nav=>{nav.setAttribute('role','button');nav.tabIndex=0;nav.title=nav.querySelector('.nav-item-text')?.textContent.trim()||'';nav.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();nav.click();}});
-    const icon=nav.querySelector('.nav-icon-wrapper > span:first-child') || nav.querySelector(':scope > span');if(icon && !icon.id){icon.textContent=({'nav-pos':'PS','nav-sales':'SL','nav-remit':'RM','nav-staffreq':'RQ','nav-sop':'SP','nav-prep':'KP','nav-consumables':'SU','nav-mobilehub':'MO','nav-stockreq':'ST','nav-waste':'WS','nav-timeclock':'TC','nav-schedule':'SC','nav-grab':'GR','nav-bulletin':'BB','nav-printer':'PR'})[nav.id] || nav.title.slice(0,2).toUpperCase();icon.setAttribute('aria-hidden','true');}
+
   });
   const banner=el('unverifiedWarningBanner');banner.setAttribute('role','status');banner.classList.add('cashier-payment-notice');
   document.querySelector('.top-bar').after(banner);
@@ -212,5 +214,5 @@ function installUpdates(){
   window.setInterval(()=>{if(document.visibilityState==='visible' && navigator.onLine)releaseRegistration?.update().catch(()=>{});},15*60*1000);
   if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){el('cashierUpdateTitle').textContent='Cashier workspace updated';el('cashierUpdateText').textContent='New orange theme, tablet layout, remittance history, daily attendance and drink label workspace are ready.';banner.style.display='flex';localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
 }
-function install(){installTheme();installRemittance();installClock();installPrinterHub();installUpdates();}
+function install(){installTheme();installControls();installPayments();installRemittance();installClock();installPrinterHub();installUpdates();}
 if(document.readyState==='complete')install();else window.addEventListener('load',install,{once:true});

@@ -1,0 +1,170 @@
+/* Final cashier presentation layer; scoped away from Manager and printed receipts. */
+@media screen {
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls {--cashier-channel:#c65c24;--cashier-channel-ink:#8b421e;--cashier-channel-soft:#fff0df;--cashier-channel-border:#eed1b8;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls[data-pos-platform="Grab"] {--cashier-channel:#00a64b;--cashier-channel-ink:#08783b;--cashier-channel-soft:#eaf9ef;--cashier-channel-border:#b4e3c4;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls[data-pos-platform="Foodpanda"] {--cashier-channel:#d70f64;--cashier-channel-ink:#ad1251;--cashier-channel-soft:#fff0f6;--cashier-channel-border:#f3b8d0;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar {width:220px!important;min-width:220px!important;max-width:220px!important;transition:width .2s,min-width .2s,max-width .2s;overflow:visible!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed {width:72px!important;min-width:72px!important;max-width:72px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar > .sidebar-header {height:70px!important;min-height:70px!important;padding:0!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar .sidebar-header .sidebar-header {height:70px!important;min-height:70px!important;padding:10px!important;justify-content:space-between!important;gap:5px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed .sidebar-header .sidebar-header {padding:8px!important;flex-direction:column;gap:2px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar .brand-container {min-width:0;gap:8px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar .brand-text {font-size:14px!important;letter-spacing:0!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar:not(.collapsed) .brand-text {display:inline!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed .brand-container img {width:30px!important;height:30px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed .brand-text,
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed .nav-item-text,
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed .cashier-tool-label,
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed .footer-info .f-text,
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed .logout-text {display:none!important;}
+ .cashier-line-icon {display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 22px;min-width:22px!important;width:22px;height:22px;line-height:1;color:inherit;}
+ .cashier-line-icon svg {display:block!important;width:22px!important;height:22px!important;overflow:visible;}
+ .cashier-sidebar-toggle {display:grid;place-items:center;flex-shrink:0;min-height:28px;min-width:28px;background:transparent;color:#8b6549;border:0;border-radius:6px;cursor:pointer;}
+ .cashier-sidebar-toggle:hover {background:#fbe7d2;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .nav-menu {padding:8px!important;flex:1;min-height:0;overflow-y:auto!important;overflow-x:hidden!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .nav-item {margin:2px 0!important;min-height:40px!important;padding:8px 10px!important;justify-content:flex-start!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .nav-item-text {display:flex!important;white-space:normal;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed .nav-item {min-height:38px!important;margin:2px 0!important;padding:8px 0!important;justify-content:center!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed .nav-icon-wrapper {margin:0!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar-footer {display:block!important;padding:10px!important;flex-shrink:0;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar .footer-info {display:flex;gap:7px;margin-bottom:8px!important;justify-content:flex-start!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar .footer-info .f-text {display:inline!important;font-size:11px;overflow:hidden;text-overflow:ellipsis;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar .logout-text {display:inline!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed .footer-info {justify-content:center!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar .logout-btn {display:flex;justify-content:center;align-items:center;gap:8px;min-height:38px;padding:8px!important;}
+ .cashier-sidebar-tools {flex-shrink:0;padding:8px;border-top:1px solid #eadfd2;display:flex;flex-direction:column;gap:6px;}
+ .cashier-side-settings {width:100%;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-sidebar-action {display:flex!important;align-items:center;justify-content:flex-start;gap:9px;width:100%;min-height:42px!important;padding:9px 10px!important;border:1px solid #eadfd2!important;border-radius:9px!important;background:#fff!important;color:#704426!important;font-size:12px!important;font-weight:600!important;box-shadow:none!important;cursor:pointer;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-side-shift[data-active="true"] {background:#eaf9ef!important;color:#08783b!important;border-color:#b4e3c4!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed .cashier-sidebar-action {justify-content:center;padding:9px 0!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #posSettingsDropdown {position:fixed!important;left:var(--cashier-settings-x,82px)!important;top:var(--cashier-settings-y,100px)!important;right:auto!important;width:min(300px,calc(100vw - 24px))!important;min-width:0!important;max-height:calc(100dvh - 24px)!important;overflow-y:auto!important;z-index:100001!important;padding:14px!important;gap:9px!important;box-shadow:0 18px 55px #49372b25!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .top-bar {height:44px!important;min-height:44px!important;padding:7px 16px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .top-title {font-size:17px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #menuCategoryDropdown,
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #tkMenuSearch {display:none!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .tk-menu-shell > div:first-child {padding:10px 12px!important;flex-shrink:0;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .tk-menu-toolbar {width:100%;margin:0!important;flex-wrap:nowrap;gap:8px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #tkBrowseCategories {order:0;flex-shrink:0;min-height:40px;display:flex;align-items:center;gap:8px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #tkMenuCount {margin-left:auto;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .tk-menu-heading {display:none!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #posCartHeader {background:var(--cashier-channel-soft)!important;border-bottom:1px solid var(--cashier-channel-border)!important;color:var(--cashier-channel-ink)!important;padding:12px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #posPlatformSelect {background:var(--cashier-channel)!important;color:white!important;border:1px solid var(--cashier-channel)!important;font-size:12px!important;padding:10px 7px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #mainOrderType {background:white!important;color:var(--cashier-channel-ink)!important;border:1px solid var(--cashier-channel-border)!important;min-width:0!important;font-size:12px!important;padding:10px 7px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #btnMainPlaceOrder {background:var(--cashier-channel)!important;color:white!important;border:0!important;box-shadow:none!important;min-height:48px!important;font-weight:700!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #btnMainParkOrder {background:var(--cashier-channel-soft)!important;color:var(--cashier-channel-ink)!important;border:1px solid var(--cashier-channel-border)!important;box-shadow:none!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #displayGrandTotal {color:var(--cashier-channel-ink)!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .tk-add-btn {background:var(--cashier-channel-soft)!important;color:var(--cashier-channel-ink)!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .tk-product-info {grid-template-columns:minmax(0,1fr) 28px!important;padding:8px!important;gap:4px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .tk-product-price {font-size:14px!important;white-space:nowrap;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .tk-add-btn {width:28px!important;height:30px!important;min-width:28px!important;min-height:30px!important;padding:0!important;}
+
+ /* One dialog frame with a scrolling body and reachable actions. */
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#parkedModal,#shiftModal,#endShiftModal,#expenseModal,#checkoutModal) {padding:18px!important;background:#30241870!important;backdrop-filter:blur(4px)!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#parkedModal,#shiftModal,#endShiftModal,#expenseModal,#checkoutModal) > .modal {display:flex!important;flex-direction:column!important;width:min(680px,100%)!important;max-width:100%!important;max-height:calc(100dvh - 36px)!important;min-height:0!important;border:1px solid #eadfd2!important;border-radius:18px!important;box-shadow:0 24px 80px #30241838!important;overflow:hidden!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#parkedModal,#shiftModal,#endShiftModal,#expenseModal,#checkoutModal) .modal-head {display:flex;justify-content:space-between;align-items:center;gap:12px;flex-shrink:0;padding:18px 20px!important;background:#fffaf3!important;color:#49372b!important;border-bottom:1px solid #eadfd2!important;font-size:17px!important;font-weight:700!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#parkedModal,#shiftModal,#endShiftModal,#expenseModal,#checkoutModal) .close-modal {display:grid;place-items:center;min-width:38px;min-height:38px;border:1px solid #eadfd2;border-radius:10px;background:white;color:#796451!important;font-size:25px!important;cursor:pointer;line-height:1;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#parkedModal,#shiftModal,#endShiftModal,#expenseModal,#checkoutModal) .modal-body {flex:1;min-height:0;overflow:auto!important;padding:20px!important;background:#fff!important;overscroll-behavior:contain;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#endShiftModal,#expenseModal,#checkoutModal) .modal-foot {flex-shrink:0;display:flex;gap:10px;background:#fffaf3!important;border-top:1px solid #eadfd2!important;padding:14px 20px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#shiftModal,#endShiftModal,#expenseModal,#parkedModal) button {min-height:44px;font-size:13px!important;border-radius:10px!important;box-shadow:none!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#shiftModal,#endShiftModal,#expenseModal,#parkedModal) input,
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#shiftModal,#endShiftModal,#expenseModal) select {min-height:44px;font-size:14px!important;min-width:0;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #shiftActiveDetails {background:#fffaf3;padding:14px!important;border:1px solid #eadfd2!important;border-radius:12px;line-height:1.6;color:#796451!important;font-size:13px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #scDrawer {display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #scDrawer .shift-row {display:flex;flex-direction:column;align-items:flex-start;gap:8px;background:#faf8f5;border:1px solid #eadfd2;border-radius:12px;padding:16px!important;font-size:12px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #scDrawer .shift-val {font-size:24px;font-weight:700;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #shiftViewClose > div:last-child {display:grid!important;grid-template-columns:1fr 1.5fr 1fr;gap:10px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #btnCloseShiftSubmit {background:#c65c24!important;color:white!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #parkedModal > .modal {width:min(840px,100%)!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #parkedListContainer {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:14px;background:#fbf6ef!important;min-height:170px;}
+ .cashier-parked-empty {grid-column:1/-1;display:grid;place-content:center;min-height:170px;text-align:center;font-size:15px;color:#8b7868;}
+ .cashier-parked-empty::before {content:'Ⅱ';display:grid;place-items:center;width:48px;height:48px;margin:0 auto 15px;border:1px solid #eadfd2;border-radius:14px;background:#fff0df;color:#c65c24;font-size:24px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-parked-card {margin:0!important;padding:18px!important;border:1px solid #eadfd2!important;border-radius:14px!important;box-shadow:none!important;}
+ .cashier-parked-card-heading {align-items:center;gap:10px;}
+ .cashier-parked-actions {display:grid!important;grid-template-columns:1fr 1.4fr 44px;gap:8px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #endShiftModal > .modal {width:min(1150px,100%)!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-clearance-grid {display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px!important;align-items:start;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-clearance-card {min-width:0!important;max-height:none!important;overflow:visible!important;border-radius:14px!important;padding:16px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-clearance-card h3 {font-size:15px!important;margin:0 0 12px!important;padding:0 0 12px!important;border-width:1px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-clearance-card[data-section="cash"] {background:#faf8f5!important;border-color:#eadfd2!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-clearance-card[data-section="prep"] {background:#fff9eb!important;border-color:#f1dfaa!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-clearance-card[data-section="stock"] {background:#f0f7fb!important;border-color:#cbe1ef!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #denominationTable input {width:64px!important;max-width:100%;text-align:center;border:1px solid #eadfd2;border-radius:9px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #denominationTable td {padding:7px 3px!important;font-size:13px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #dynamicBlindCountList input {width:65px!important;max-width:100%;padding:6px!important;border-radius:8px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #dynamicBlindCountList > div {display:flex!important;flex-direction:column;align-items:stretch!important;gap:8px;padding:10px!important;border:1px solid #cbe1ef!important;border-radius:10px;background:#ffffffb5;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #dynamicBlindCountList > div > div {flex-wrap:wrap;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #expenseModal > .modal {width:min(740px,100%)!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #expenseSourceContainer {flex-shrink:0;background:#fff!important;padding:0 20px!important;max-height:32dvh;overflow:auto;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #expenseSourceContainer > div {background:#fffaf3!important;border:1px solid #eed1b8!important;border-radius:12px!important;padding:14px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #expenseSourceContainer select {width:100%;min-width:0;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-expense-fields {display:grid!important;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;align-items:end;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-expense-fields > div {width:auto!important;flex:initial!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-expense-table {overflow:auto;border-radius:12px!important;border-color:#eadfd2!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-expense-table thead tr {background:#654733!important;color:white!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #btnSubmitExpenseCart {background:#c65c24!important;color:white!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #expenseReceiptPhoto {border:1px dashed #d4b9a0!important;border-radius:10px!important;background:#fffaf3!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #expenseReceiptPhoto::file-selector-button {border:0;border-radius:7px;padding:8px 12px;margin-right:10px;background:#fbe7d2;color:#8b421e;cursor:pointer;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #checkoutModal > .modal {width:min(920px,100%)!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #standardPaymentArea {min-width:0;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .payment-grid {grid-template-columns:repeat(2,minmax(0,1fr))!important;margin:0 0 16px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-payment-card {display:flex;align-items:center;gap:10px;text-align:left;padding:12px!important;min-height:65px!important;color:#584331!important;font-size:14px!important;font-weight:600!important;cursor:pointer;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-payment-card.active {background:#fff0df!important;border:2px solid #c65c24!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-payment-card[data-payment-kind="gcash"].active {background:#eff6ff!important;border-color:#0076ff!important;color:#005cc8!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-payment-card[data-payment-kind="grab"].active {background:#eaf9ef!important;border-color:#00a64b!important;color:#08783b!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-payment-card[data-payment-kind="foodpanda"].active {background:#fff0f6!important;border-color:#d70f64!important;color:#ad1251!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-payment-card:disabled {opacity:1;cursor:default;}
+ .cashier-payment-icon {display:flex;align-items:center;justify-content:center;flex:0 0 42px;width:42px;height:36px;}
+ .cashier-payment-icon svg {width:28px;height:28px;}
+ .cashier-payment-icon img {width:42px;max-height:32px;object-fit:contain;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #splitPaymentContainer {padding:14px;margin-bottom:14px;border:1px solid #ded3ed;border-radius:12px;background:#fbf8ff;}
+ .cashier-split-row {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.8fr);gap:10px;margin-top:10px;}
+ .cashier-split-row label {font-size:12px;color:#796451;}
+ .cashier-split-row input,.cashier-split-row select {display:block;min-width:0;width:100%;min-height:42px;margin-top:5px;padding:8px;border:1px solid #eadfd2;border-radius:8px;background:white;}
+ #splitRemainingAlert {margin-top:10px;font-size:12px;font-weight:600;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .numpad-grid {grid-template-columns:repeat(3,minmax(0,1fr));gap:7px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .num-btn {min-height:43px!important;font-size:15px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #btnSubmitFinal {background:var(--cashier-channel)!important;color:white!important;min-height:50px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls button:focus-visible {outline:3px solid #edb183;outline-offset:2px;}
+}
+@media screen and (max-width:1150px) {
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-clearance-grid {grid-template-columns:repeat(2,minmax(0,1fr));}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-clearance-card[data-section="stock"] {grid-column:1/-1;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #dynamicBlindCountList {display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px!important;}
+}
+@media screen and (min-width:769px) and (max-width:1180px) {
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #view-pos > .tk-pos-shell {grid-template-columns:minmax(0,1fr) 280px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #menuGrid {grid-template-columns:repeat(auto-fill,minmax(115px,1fr))!important;}
+}
+@media screen and (max-width:768px) {
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar,
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.collapsed {width:calc(100% - 24px)!important;min-width:0!important;max-width:none!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.tk-mobile-menu-open .nav-item-text,
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.tk-mobile-menu-open .cashier-tool-label,
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.tk-mobile-menu-open .footer-info .f-text,
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.tk-mobile-menu-open .logout-text {display:inline!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.tk-mobile-menu-open .nav-item {justify-content:flex-start!important;padding:8px 10px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar.tk-mobile-menu-open .cashier-sidebar-action {justify-content:flex-start!important;padding:10px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-sidebar-tools {display:grid;grid-template-columns:1fr 1fr;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #view-pos > .tk-pos-shell {grid-template-columns:minmax(0,1fr)!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #tkCartToggle {margin-left:auto;min-width:0;max-width:55%;background:var(--cashier-channel);}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#parkedModal,#shiftModal,#endShiftModal,#expenseModal,#checkoutModal) {padding:10px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#parkedModal,#shiftModal,#endShiftModal,#expenseModal,#checkoutModal) > .modal {max-height:calc(100dvh - 20px)!important;border-radius:14px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#parkedModal,#shiftModal,#endShiftModal,#expenseModal,#checkoutModal) .modal-head {padding:12px 14px!important;font-size:15px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls :is(#parkedModal,#shiftModal,#endShiftModal,#expenseModal,#checkoutModal) .modal-body {padding:14px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #checkoutModal .modal-body {display:flex!important;flex-direction:column!important;gap:12px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #checkoutModal .checkout-yellow-box,
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #checkoutModal .checkout-grey-box {margin:0!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #standardPaymentArea {order:-1;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #shiftViewClose > div:last-child {grid-template-columns:1fr 1fr;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #btnCloseShiftSubmit {grid-column:1/-1;grid-row:1;}
+}
+@media screen and (max-width:560px) {
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-clearance-grid {grid-template-columns:1fr;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #dynamicBlindCountList {grid-template-columns:1fr;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-expense-fields {grid-template-columns:1fr 1fr;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .cashier-expense-fields > button {grid-column:1/-1;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls #scDrawer {gap:8px;}
+}
+@media (prefers-reduced-motion:reduce) {
+ body.cashier-orange.tk-ui-v2.tk-photo-pos.cashier-tablet-controls .sidebar {transition:none;}
+}
