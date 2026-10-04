@@ -21,7 +21,7 @@ export const MANAGER_PAGES = Object.freeze({
     zreadings: ['Reports', 'Z-Reading Reports', 'Review completed shifts and cashier declarations.'],
     history: ['Reports', 'Sales History', 'Find receipts and review sales across your branches.'],
     expenses: ['Finance', 'Expense & Restock Feed', 'Review spending, purchases, and restock activity.'],
-    sop: ['Operations', 'SOP Manager', 'Maintain procedures and review branch compliance.'],
+    sop: ['Human resources', 'SOP Manager', 'Maintain procedures and review branch compliance.'],
     menu: ['Menu', 'Menu & Recipes', 'Edit prices, recipes, images, and margins in one workspace.'],
     posconfig: ['Configuration', 'POS Config Hub', 'Manage cashier settings and the layout of the POS.'],
     customerapp: ['Configuration', 'Customer App Hub', 'Manage the customer menu and ordering experience.'],
@@ -139,13 +139,22 @@ export function initManagerTheme({ document: d = document, window: w = window, o
         for (const id of ['dashBranchFilter','btnRefreshData','btnExportSales','btnWipeData']) {
             const el = d.getElementById(id); if (el) el.hidden = view !== 'dashboard';
         }
-        const navId = ['payroll','schedule','ledger','inbox'].includes(view) ? 'nav-payroll'
+        const navId = ['payroll','schedule','ledger','inbox','sop'].includes(view) ? 'nav-payroll'
             : view === 'addons' ? 'nav-products' : `nav-${view}`;
         if (d.getElementById(navId)) {
             d.querySelectorAll('.sidebar .nav-item').forEach(el => {
-                const selected = el.id === navId;
+                const selected = el.id === navId || (view === 'sop' && el.id === 'nav-sop');
                 if (el.classList.contains('active') !== selected) el.classList.toggle('active', selected);
             });
+        }
+        if (view === 'sop') {
+            const submenu = d.getElementById('hrSubmenu');
+            submenu?.querySelectorAll('.nav-subitem').forEach(el => el.classList.toggle('active', el.id === 'nav-sop'));
+            if (view !== lastView) {
+                submenu?.classList.add('open');
+                const icon = d.getElementById('hrDropdownIcon');
+                if (icon) icon.textContent = '▲';
+            }
         }
         d.querySelectorAll('.sidebar .nav-item,.sidebar .nav-subitem').forEach(el => {
             if (el.classList.contains('active')) el.setAttribute('aria-current', 'page');

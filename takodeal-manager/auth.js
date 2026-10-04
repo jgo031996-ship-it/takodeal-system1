@@ -8,14 +8,28 @@ window.tempAuthUser = null; window.tempAuthData = null; window.sessionUser = nul
 window.isLoggingIn = false;
 window.applyPermissions = function() {
     if (!window.sessionUser) return;
+    const syncHrGroup = () => {
+        const { isOwner, isFranchisee, permissions = [] } = window.sessionUser;
+        const allHr = isOwner || isFranchisee || permissions.includes('payroll');
+        for (const [id, permission] of [['Feed','payroll'],['Schedule','schedule'],['Ledger','ledger'],['Sanctions','payroll'],['Inbox','inbox']]) {
+            const link = el('subnav-' + id);
+            if (link) link.style.display = allHr || permissions.includes(permission) ? 'flex' : 'none';
+        }
+        const group = el('nav-payroll'), submenu = el('hrSubmenu');
+        const sop = el('nav-sop');
+        if (sop && sop.style.display !== 'none') sop.style.display = 'flex';
+        if (group && submenu) group.style.display = [...submenu.querySelectorAll('.nav-subitem')].some(link => link.style.display !== 'none') ? 'flex' : 'none';
+    };
     if (window.sessionUser.isOwner) {
         document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'block');
+        syncHrGroup();
         return;
     }
     if (window.sessionUser.isFranchisee) {
         document.querySelectorAll('.nav-item').forEach(el => el.style.display = 'none');
         const allowedTabs = ['dashboard', 'accounts', 'financial-flow', 'transfers', 'devices', 'payroll', 'inbox', 'dispatch', 'zreadings', 'history', 'expenses', 'branches', 'sop', 'equipment', 'inventory', 'alerts', 'bulletin', 'franchise-hub'];
         allowedTabs.forEach(tab => { let el = document.getElementById('nav-' + tab); if (el) el.style.display = 'flex'; });
+        syncHrGroup();
         setTimeout(() => {
             document.querySelectorAll('#hubSafeCash').forEach(c => { if(c.parentElement) c.parentElement.style.display = 'none'; });
             let publisherDiv = document.getElementById('announceTitle')?.parentElement;
@@ -28,6 +42,7 @@ window.applyPermissions = function() {
     document.querySelectorAll('.nav-item').forEach(el => { if (el.id !== 'nav-dashboard') el.style.display = 'none'; });
     window.sessionUser.permissions.forEach(tabName => { let el = document.getElementById('nav-' + (tabName==='franchise'?'franchise-hub':tabName)); if (el) el.style.display = 'flex'; });
     let adminEl = document.getElementById('nav-admin'); if (adminEl) adminEl.style.display = 'none'; 
+    syncHrGroup();
 };
 
 window.isBranchAllowed = function(branchName) {
