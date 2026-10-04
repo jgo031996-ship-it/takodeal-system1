@@ -435,6 +435,8 @@
   <meta name="theme-color" content="#173f32">
   <link rel="stylesheet" href="manager-theme.css?v=20261004">
   <link rel="stylesheet" href="manager-workspace.css?v=20261004">
+  <link rel="stylesheet" href="employee-id.css?v=20261004">
+  <link rel="stylesheet" href="payslip.css?v=20261004">
 </head>
 
 <body class="manager-theme">
@@ -4322,83 +4324,46 @@
       </div>
   </div>
 
-  <!-- 🪪 HIDDEN HD ID CARD TEMPLATE (MANAGER APP) -->
-  <div id="idCardTemplate" style="display: none; width: 1012px; height: 638px; background: white; font-family: 'Segoe UI', Tahoma, sans-serif; position: absolute; left: -9999px; box-sizing: border-box; flex-direction: row; border: 2px solid #e2e8f0; overflow: hidden; z-index: -1;">
-      
-      <!-- Left Side (Back of ID) -->
-      <div style="width: 506px; height: 100%; position: relative; padding: 40px; box-sizing: border-box; display: flex; flex-direction: column;">
-          <div style="position: absolute; top: 0; left: 0; width: 100%; height: 25px; background: #ea580c;"></div>
-          
-          <h2 style="color: #ea580c; text-align: center; font-weight: 900; letter-spacing: 1px; margin-top: 20px; font-size: 26px;">IMPORTANT INFORMATION</h2>
-          <p style="font-size: 15px; color: #334155; line-height: 1.6; text-align: justify; margin-top: 20px;">
-              This identification card is the official property of <b>TAKODEÁL</b>. It is non-transferable and must be worn at all times while on duty.<br><br>
-              If found, please drop off at any of our 3 active branches, or contact the administration immediately using the details below.
-          </p>
-
-          <div style="border: 2px solid #cbd5e1; border-radius: 16px; padding: 25px; margin-top: 25px; background: #f8fafc;">
-              <h4 style="text-align: center; margin: 0 0 20px 0; color: #0f172a; font-weight: 900; font-size: 16px;">IN CASE OF EMERGENCY</h4>
-              
-              <!-- Fixed Grid Alignment to prevent text from overlapping underlines! -->
-              <div style="display: grid; grid-template-columns: 80px 1fr; gap: 15px; align-items: end; margin-bottom: 15px;">
-                  <span style="font-weight: 900; color: #0f172a; font-size: 15px;">Notify:</span>
-                  <span id="idBackNotify" style="border-bottom: 2px solid #94a3b8; font-weight: bold; color: #334155; padding-left: 5px; font-size: 16px; padding-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;"></span>
-              </div>
-              <div style="display: grid; grid-template-columns: 80px 1fr; gap: 15px; align-items: end; margin-bottom: 15px;">
-                  <span style="font-weight: 900; color: #0f172a; font-size: 15px;">Number:</span>
-                  <span id="idBackNum" style="border-bottom: 2px solid #94a3b8; font-weight: bold; color: #334155; padding-left: 5px; font-size: 16px; padding-bottom: 2px;"></span>
-              </div>
-              <div style="display: grid; grid-template-columns: 95px 1fr; gap: 15px; align-items: end;">
-                  <span style="font-weight: 900; color: #0f172a; font-size: 15px;">Blood Type:</span>
-                  <span id="idBackBlood" style="border-bottom: 2px solid #94a3b8; font-weight: 900; color: #dc2626; padding-left: 5px; font-size: 16px; padding-bottom: 2px;"></span>
-              </div>
-          </div>
-
-          <div style="margin-top: auto; text-align: center; margin-bottom: 40px;">
-              <div style="font-family: 'Brush Script MT', 'Lucida Handwriting', cursive; font-size: 42px; color: #0f172a; margin-bottom: -10px;">Chery Ann Fonda</div>
-              <div style="border-bottom: 2px solid #0f172a; width: 250px; margin: 0 auto 5px auto;"></div>
-              <strong style="color: #0f172a; font-size: 16px;">CHERY ANN R. FONDA</strong><br>
-              <span style="color: #ea580c; font-size: 13px; font-weight: bold;">OWNER / MANAGEMENT</span>
-          </div>
+  <!-- Employee ID export: back and front retain the existing two-panel print size. -->
+  <div id="idCardTemplate" class="employee-id-sheet" style="display:none" aria-hidden="true">
+    <section class="employee-id-side employee-id-back">
+      <header class="employee-id-brand">
+        <img src="logo.jpg" alt="TAKODEÁL" width="40" height="40">
+        <div><strong>TAKODEÁL</strong><span>EMPLOYEE IDENTIFICATION</span></div>
+      </header>
+      <div class="employee-id-back-content">
+        <p class="employee-id-eyebrow">IN CASE OF EMERGENCY</p>
+        <h2>Emergency contact</h2>
+        <dl class="employee-id-emergency">
+          <div><dt>Contact person</dt><dd id="idBackNotify"></dd></div>
+          <div><dt>Phone number</dt><dd id="idBackNum"></dd></div>
+          <div><dt>Blood type</dt><dd id="idBackBlood"></dd></div>
+        </dl>
+        <p class="employee-id-policy">This card belongs to TAKODEÁL. It is non-transferable and must be worn while on duty.</p>
+        <p class="employee-id-policy">If found, please return it to any TAKODEÁL branch or contact our office.</p>
       </div>
-
-      <!-- Right Side (Front of ID) -->
-      <div style="width: 506px; height: 100%; position: relative; background: white; border-left: 2px dashed #cbd5e1; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; align-items: center;">
-          
-          <!-- Dark Blue & Orange Header Shapes -->
-          <div style="position: absolute; top: -160px; left: -100px; width: 706px; height: 480px; background: #0f172a; border-radius: 50%; z-index: 1;"></div>
-          <div style="position: absolute; top: -145px; left: -100px; width: 706px; height: 480px; background: #ea580c; border-radius: 50%; z-index: 0;"></div>
-
-          <!-- 🔥 NEW: Transparent Logo Box (Requires logo_id.png!) -->
-          <div style="position: relative; z-index: 2; width: 130px; height: 130px; background: transparent; margin-top: 25px; display: flex; justify-content: center; align-items: center;">
-              <img src="logo_id.png" style="width: 130px; height: 130px; object-fit: contain;">
-          </div>
-
-          <div style="position: relative; z-index: 2; color: white; font-weight: 900; letter-spacing: 2.5px; margin-top: 5px; font-size: 18px;">EMPLOYEE ID CARD</div>
-
-          <!-- 🔥 NEW: Profile Picture with crossOrigin security tag -->
-          <img id="idFrontPic" crossorigin="anonymous" src="" style="position: relative; z-index: 2; width: 170px; height: 170px; object-fit: cover; border-radius: 20px; margin-top: 25px; border: 5px solid white; box-shadow: 0 10px 25px rgba(0,0,0,0.15);">
-
-          <!-- Names & Details -->
-          <h1 id="idFrontName" style="position: relative; z-index: 2; color: #0f172a; font-size: 26px; font-weight: 900; margin: 25px 0 5px 0; text-transform: uppercase; text-align: center; width: 90%; line-height: 1.1;">STAFF NAME</h1>
-          <h3 id="idFrontRole" style="position: relative; z-index: 2; color: #ea580c; font-size: 16px; margin: 0 0 25px 0; text-transform: uppercase; font-weight: 900;">STORE CREW</h3>
-
-          <!-- Fixed Grid to prevent wide ID numbers from wrapping to line 2! -->
-          <div style="position: relative; z-index: 2; display: grid; grid-template-columns: 90px 15px 1fr; gap: 10px; font-size: 15px; color: #475569; width: 85%;">
-              <div style="font-weight: 500;">ID No</div><div>:</div><div id="idFrontNo" style="font-weight: 900; color: #0f172a;">TKDL-00000</div>
-              <div style="font-weight: 500;">Branch</div><div>:</div><div id="idFrontBranch" style="font-weight: 900; color: #0f172a;">MAA BRANCH</div>
-              <div style="font-weight: 500;">Hired Date</div><div>:</div><div id="idFrontHired" style="font-weight: 900; color: #0f172a;">01/05/2026</div>
-          </div>
+      <footer class="employee-id-footer"><strong>TAKODEÁL · Davao City</strong><span>09629721305 · youridealtakoyaki@gmail.com</span></footer>
+    </section>
+    <section class="employee-id-side employee-id-front">
+      <header class="employee-id-brand">
+        <img src="logo.jpg" alt="TAKODEÁL" width="40" height="40">
+        <div><strong>TAKODEÁL</strong><span>EMPLOYEE IDENTIFICATION</span></div>
+      </header>
+      <div class="employee-id-person">
+        <div class="employee-id-photo">
+          <img id="idFrontPic" alt="Employee photo" hidden>
+          <span id="idFrontInitials"></span>
+        </div>
+        <h1 id="idFrontName">Staff Member</h1>
+        <p id="idFrontRole">Service Crew</p>
       </div>
-
-      <!-- Unified Footer -->
-      <div style="position: absolute; bottom: 0; left: 0; width: 100%; height: 40px; background: #0f172a; display: flex; z-index: 10;">
-          <div style="width: 506px; height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; letter-spacing: 0.5px; border-right: 1px solid #334155; box-sizing: border-box;">
-              TAKODEAL DAVAO CITY | 09629721305 | youridealtakoyaki@gmail.com
-          </div>
-          <div style="width: 506px; height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-size: 11px; letter-spacing: 0.5px; box-sizing: border-box;">
-              TAKODEAL DAVAO CITY | 09629721305 | youridealtakoyaki@gmail.com
-          </div>
-      </div>
+      <dl class="employee-id-details">
+        <div class="employee-id-number"><dt>Employee ID</dt><dd id="idFrontNo"></dd></div>
+        <div><dt>Branch</dt><dd id="idFrontBranch"></dd></div>
+        <div><dt>Date hired</dt><dd id="idFrontHired"></dd></div>
+      </dl>
+      <footer class="employee-id-footer"><strong>TAKODEÁL · Davao City</strong><span>09629721305 · youridealtakoyaki@gmail.com</span></footer>
+    </section>
   </div>
 
   <!-- 🛵 FLEET & RIDER MANAGEMENT VIEW -->
@@ -5757,7 +5722,7 @@
           <button style="flex: 1; background: #3b82f6; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3);" onclick="window.viewStaffSignedPayslips()">🧾 Signed Payslips</button>
           <button style="flex: 1; background: #10b981; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);" onclick="window.offerOfficialContract()">📄 Issue Contract</button>
           <button style="flex: 1; background: #fff1f2; color: #dc2626; border: 1px solid #fecaca; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s;" onclick="window.processResignation()">📜 Offboard</button>
-          <button style="flex: 1; background: #0f172a; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(15, 23, 42, 0.3);" onclick="window.generateIDCard()">🪪 Print ID Card</button>
+          <button style="flex: 1; background: #0f172a; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(15, 23, 42, 0.3);" onclick="window.generateIDCard()">🪪 Download Employee ID</button>
           <button onclick="window.deleteCurrentStaff()" style="background: #ef4444; color: white; border: none; padding: 14px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3);">🗑️ Delete Staff</button>
           <button id="btnSaveEmpProfile" onclick="window.saveEmployeeProfile()" style="flex: 1.5; padding: 14px; font-weight: 900; border-radius: 8px; font-size: 16px; background: #d97706; color: white; border: none; cursor: pointer; box-shadow: 0 6px 12px rgba(217, 119, 6, 0.3);">💾 Save Data</button>
       </div>
@@ -5942,14 +5907,15 @@
                       <!-- 🔥 FIXED LAYOUT: Forces columns to stay rigid and text to wrap cleanly -->
                       <div style="margin-top: 25px; border-top: 2px dashed black; padding-top: 15px; width: 100%; box-sizing: border-box;">
                           <h4 style="margin: 0 0 10px 0; text-align: center; font-size: 12px; color: #334155; text-transform: uppercase;">Attendance Summary (Current Cutoff)</h4>
-                          <table style="width: 100%; border-collapse: collapse; text-align: center; font-size: 11px; table-layout: fixed;">
+                          <table id="psAttendanceTable" class="payslip-attendance" style="width:100%;border-collapse:collapse;text-align:center;font-size:11px;table-layout:fixed;">
+                              <colgroup><col style="width:11%"><col style="width:15%"><col style="width:15%"><col style="width:11%"><col style="width:48%"></colgroup>
                               <thead style="border-bottom: 1px solid black;">
                                   <tr>
-                                      <th style="padding: 6px 2px; width: 15%;">Date</th>
-                                      <th style="padding: 6px 2px; width: 22%;">Time In</th>
-                                      <th style="padding: 6px 2px; width: 22%;">Time Out</th>
-                                      <th style="padding: 6px 2px; width: 13%;">Hours</th>
-                                      <th style="padding: 6px 2px; width: 28%;">Remarks</th>
+                                      <th style="padding: 6px 2px;">Date</th>
+                                      <th style="padding: 6px 2px;">Time In</th>
+                                      <th style="padding: 6px 2px;">Time Out</th>
+                                      <th style="padding: 6px 2px;">Hours</th>
+                                      <th style="padding: 6px 2px;">Remarks</th>
                                   </tr>
                               </thead>
                               <tbody id="psAttendanceBody">

@@ -1,4 +1,5 @@
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
+import { generateEmployeeID } from './employee-id.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { installMenuBulk } from './menu-bulk.js';
 import { approveRemittanceAtomic } from './cash-settlement.js';
@@ -10954,7 +10955,7 @@ window.loadPayrollGenerator = async function() {
                 if (thisShiftNightBonus > 0) {
                     staffData[name].nightShifts += 1;
                     staffData[name].nightBonusTotal += thisShiftNightBonus;
-                    remark += `<br><span style="color:#d97706; font-weight:bold;">Mid/Night bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
+                    remark += `<br><span style="color:#d97706; font-weight:bold;">${activeShifts[name].matchedShift.shiftType === 'night' ? 'Night' : 'Mid'} bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
                 }
 
                 let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
@@ -12136,7 +12137,7 @@ window.generateAutoPayslips = async function() {
                 if (thisShiftNightBonus > 0) {
                     staffData[name].nightShifts += 1;
                     staffData[name].nightBonusTotal += thisShiftNightBonus;
-                    remark += `<br><span style="color:#d97706; font-weight:bold;">Mid/Night bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
+                    remark += `<br><span style="color:#d97706; font-weight:bold;">${activeShifts[name].matchedShift.shiftType === 'night' ? 'Night' : 'Mid'} bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
                 }
 
                 let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
@@ -21758,6 +21759,8 @@ runManagerDomReady(() => {
     const tableObserver = new MutationObserver(() => {
         // Find every table currently on the screen
         document.querySelectorAll('table').forEach(table => {
+            // Payslips are compact print documents, not wide app data grids.
+            if (table.closest('#printablePayslip')) return;
             // If the table isn't already wrapped, wrap it!
             if (!table.parentElement.classList.contains('mobile-table-wrapper') && !table.closest('.mobile-table-wrapper')) {
                 let wrapper = document.createElement('div');
@@ -24693,137 +24696,8 @@ window.voidAndReplenishTransaction = async function(receiptId, branch, cartEncod
 // ========================================================
 // 🪪 AUTOMATED HD EMPLOYEE ID CARD GENERATOR
 // ========================================================
-window.generateIDCard = async function() { 
-    const getVal = (id) => {
-        let els = document.querySelectorAll(`[id="${id}"]`);
-        let el = els[els.length - 1]; 
-        return el ? el.value : '';
-    };
-
-    let name = getVal('empFullName') || 'Staff Member';
-    let role = getVal('empRole') || 'Service Crew';
-    let branch = getVal('empBranchAssign') || 'Unassigned';
-    let hired = getVal('empDateHired');
-    let empId = getVal('profEmpId');
-    let emergName = getVal('empEmergencyName') || 'N/A';
-    let emergNum = getVal('empEmergencyPhone') || 'N/A';
-    let blood = getVal('profBloodType') || 'N/A';
-
-    if (!empId || empId === 'Pending Generation...' || empId === 'undefined') {
-        return Swal.fire('Save Required', 'Please click "Save Data" first to automatically generate the new Employee ID number before printing the ID Card.', 'warning');
-    }
-
-    let template = document.getElementById('idCardTemplate');
-    template.style.display = 'flex';
-    
-    document.getElementById('idFrontName').innerText = name.toUpperCase();
-    document.getElementById('idFrontRole').innerText = role.toUpperCase();
-    document.getElementById('idFrontNo').innerText = empId;
-    document.getElementById('idFrontBranch').innerText = branch.toUpperCase() + ' BRANCH';
-    
-    let hiredDate = hired ? new Date(hired).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : 'N/A';
-    document.getElementById('idFrontHired').innerText = hiredDate;
-
-    document.getElementById('idBackNotify').innerText = emergName;
-    document.getElementById('idBackNum').innerText = emergNum;
-    document.getElementById('idBackBlood').innerText = blood;
-
-    Swal.fire({title: 'Generating ID Card...', text: 'Downloading secure photo...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-    // 🔥 THE UNBREAKABLE OFF-SCREEN CANVAS PRELOADER 🔥
-    let picSrc = 'logo_id.png'; 
-    let previewImg = document.getElementById('masterProfilePic'); 
-    
-    // Grab the local data straight from the live screen if available
-    if (previewImg && previewImg.src && !previewImg.src.includes('data:image/svg+xml')) {
-        picSrc = previewImg.src;
-    }
-
-    let base64Img = 'logo_id.png'; // Failsafe fallback
-
-    if (picSrc) {
-        if (picSrc.startsWith('data:') || !picSrc.startsWith('http')) {
-            base64Img = picSrc; // Already safe!
-        } else {
-            // Secretly paints the image on an invisible canvas to bypass CORS security!
-            const getBase64 = (url) => new Promise((resolve, reject) => {
-                let img = new Image();
-                img.crossOrigin = "anonymous";
-                img.onload = () => {
-                    let canvas = document.createElement("canvas");
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    let ctx = canvas.getContext("2d");
-                    ctx.drawImage(img, 0, 0);
-                    resolve(canvas.toDataURL("image/png"));
-                };
-                img.onerror = reject;
-                img.src = url;
-            });
-
-            try {
-                // Tier 1: Premium CDN Image Proxy (wsrv.nl) - Extremely Reliable
-                base64Img = await getBase64(`https://wsrv.nl/?url=${encodeURIComponent(picSrc)}`);
-            } catch (e1) {
-                console.warn("Proxy 1 failed, trying Proxy 2...");
-                try {
-                    // Tier 2: AllOrigins Raw Data Proxy
-                    base64Img = await getBase64(`https://api.allorigins.win/raw?url=${encodeURIComponent(picSrc)}`);
-                } catch (e2) {
-                    console.warn("Proxy 2 failed, trying direct fetch...");
-                    try {
-                        // Tier 3: Direct Fetch (Just in case Firebase CORS is open)
-                        base64Img = await getBase64(picSrc);
-                    } catch (e3) {
-                        console.error("All image fetch attempts failed due to strict network security. Falling back to logo.");
-                        base64Img = 'logo_id.png';
-                    }
-                }
-            }
-        }
-    }
-
-    let frontPic = document.getElementById('idFrontPic');
-    frontPic.removeAttribute('crossorigin'); // It is pure text now, so security tags are unnecessary!
-    frontPic.src = base64Img;
-
-    // Ensure it's fully painted before proceeding
-    await new Promise((resolve) => {
-        if (frontPic.complete) resolve();
-        else {
-            frontPic.onload = resolve;
-            frontPic.onerror = resolve; 
-        }
-    });
-
-    await new Promise(r => setTimeout(r, 300));
-
-    // Force allowTaint to false so it completely rejects bad data instead of crashing the browser
-    html2canvas(template, { 
-        scale: 3, 
-        backgroundColor: "#ffffff", 
-        useCORS: true, 
-        allowTaint: false,
-        ignoreElements: (node) => node.nodeName === 'VIDEO' || node.tagName === 'VIDEO' || (node.id && node.id.includes('Chart')) 
-    }).then(canvas => {
-        let link = document.createElement('a');
-        link.download = `ID_Card_${name.replace(/\s+/g, '_')}.png`;
-        link.href = canvas.toDataURL("image/png");
-        link.click();
-        
-        template.style.display = 'none'; 
-        Swal.close();
-        Swal.fire({
-            title: '✅ Downloaded!',
-            text: 'The Employee ID Card has been generated perfectly and saved to your device.',
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl shadow-xl' }
-        });
-    }).catch(err => {
-        console.error("ID Generation Error:", err);
-        template.style.display = 'none';
-        Swal.fire('Error', 'Failed to generate ID image. Please try again.', 'error');
-    });
+window.generateIDCard = async function() {
+    return generateEmployeeID({ document, dialog: Swal, render: html2canvas });
 };
 
 // Auto-inject the Mass Generator button into the HR View

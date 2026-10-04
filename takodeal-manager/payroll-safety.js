@@ -75,7 +75,7 @@ export function resolveScheduledShift(logDate, branch, staffName, schedule, prof
             const startAt = new Date(midnight + start * minute);
             const endAt = end === null ? null : new Date(midnight + (end + (end <= start ? 1440 : 0)) * minute);
             const diff = (actual - startAt) / minute;
-            const result = { shiftId: shift.id, shiftName: shift.name, expectedStartHour: start / 60,
+            const result = { shiftId: shift.id, shiftName: shift.name, shiftType: shiftType(shift), expectedStartHour: start / 60,
                 expectedStartAt: startAt, expectedEndAt: endAt, isNightShift: bonusShift(shift),
                 lateMinutes: Math.max(0, Math.floor(diff)), wasScheduled: false, distance: Math.abs(diff) };
             if (names.has(nameKey(assignments[shift.id])) && diff >= -90 && diff < 18 * 60) {
@@ -86,8 +86,19 @@ export function resolveScheduledShift(logDate, branch, staffName, schedule, prof
         }
     }
     const matches = (assigned.length ? assigned : fallback).sort((a, b) => a.distance - b.distance);
-    // An ambiguous fallback must not attach someone to a different shift arbitrarily.
-    if (!assigned.length && matches[1]?.distance === matches[0]?.distance) return null;
+    // Multiple staff slots may share one rule (e.g. Night 1, 2 and 3).
+    // For older cutoffs with no saved assignment, infer only a common time/category;
+    // never pick an employee slot or resolve genuinely conflicting configurations.
+    if (!assigned.length && matches[1]?.distance === matches[0]?.distance) {
+        const nearest = matches.filter(match => match.distance === matches[0].distance);
+        const first = nearest[0];
+        const sameRule = nearest.every(match => match.expectedStartAt.getTime() === first.expectedStartAt.getTime()
+            && match.expectedEndAt?.getTime() === first.expectedEndAt?.getTime()
+            && match.shiftType === first.shiftType && match.isNightShift === first.isNightShift);
+        if (!sameRule) return null;
+        return { ...first, shiftId: null, matchingShiftIds: nearest.map(match => match.shiftId),
+            shiftName: `${first.shiftType[0].toUpperCase() + first.shiftType.slice(1)} shift` };
+    }
     return matches[0] || null;
 }
 export function calculateLateMinutes(...args) {

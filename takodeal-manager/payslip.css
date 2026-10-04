@@ -1,0 +1,13 @@
+/* Keep all five attendance columns visible in the modal and its exported clone. */
+#printablePayslip .payslip-attendance { width:100%!important; min-width:0!important; max-width:100%; table-layout:fixed; font-variant-numeric:tabular-nums; }
+#printablePayslip .payslip-attendance :is(th,td) { white-space:normal!important; overflow-wrap:anywhere; padding:7px 3px!important; line-height:1.35; }
+#printablePayslip .payslip-attendance th { font-size:10px!important; letter-spacing:0; }
+#printablePayslip .payslip-attendance td { font-size:11px!important; }
+#printablePayslip .payslip-attendance td:last-child { text-align:left!important; }
+#printablePayslip .payslip-attendance :is(td:nth-child(2),td:nth-child(3)) { white-space:nowrap!important; }
+#printablePayslip .payslip-attendance td:last-child span { display:inline; }
+@media(max-width:500px) {
+  #printablePayslip { padding:12px!important; }
+  #printablePayslip .payslip-attendance :is(th,td) { font-size:10px!important; padding:6px 2px!important; }
+  #printablePayslip .payslip-attendance :is(td:nth-child(2),td:nth-child(3)) { white-space:normal!important; }
+}

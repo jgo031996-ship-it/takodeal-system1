@@ -72,7 +72,7 @@ test('a post-midnight time-in matches the previous scheduled business day', () =
 });
 test('early arrival never becomes late and ambiguous fallback does not invent a shift', () => {
     assert.equal(match(schedule(),at('15:00')).lateMinutes,0);
-    const s=schedule(); s.currentSchedule={}; s.branchConfig['Test Branch'].push({...s.branchConfig['Test Branch'][0],id:'mid2'});
+    const s=schedule(); s.currentSchedule={}; s.branchConfig['Test Branch'].push({...s.branchConfig['Test Branch'][0],id:'mid2',endTime:'23:45'});
     assert.equal(match(s),null);
 });
 function decisionFixture() {
@@ -125,15 +125,15 @@ window.${name} = `) + 1;
     assert.ok(start>=0);
     return source.slice(start,source.indexOf('\n};',start)+3);
 }
-function payrollUi({exempt=false,end='23:30',type='mid',frozen=null}={}) {
-    const elements={payrollStart:{value:'2026-10-03'},payrollEnd:{value:'2026-10-03'},payrollGeneratorBody:{innerHTML:''},payrollGrandTotalContainer:{style:{}},payrollGrandTotalAmount:{}};
+function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,scheduleData=null,startDate='2026-10-03',endDate='2026-10-03'}={}) {
+    const elements={payrollStart:{value:startDate},payrollEnd:{value:endDate},payrollGeneratorBody:{innerHTML:''},payrollGrandTotalContainer:{style:{}},payrollGrandTotalAmount:{}};
     const errors=[];
     const stamp=date=>({toDate:()=>date});
     const data={cashiers:[profile],staff_ledger:[],payroll_records:frozen?[{staffName:'Test Staff',frozenData:frozen}]:[],
-        attendance_logs:[{staffName:'Test Staff',branch:'Test Branch',type:'TIME IN',timestamp:stamp(at('15:41')),lateExempted:exempt,reviewedLateMinutes:11},
+        attendance_logs:logs || [{staffName:'Test Staff',branch:'Test Branch',type:'TIME IN',timestamp:stamp(at('15:41')),lateExempted:exempt,reviewedLateMinutes:11},
             {staffName:'Test Staff',branch:'Test Branch',type:'TIME OUT',timestamp:stamp(at(end))}],staff_deductions:[],staff_bonuses:[]};
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),
-        getDoc:async()=>({exists:()=>true,data:()=>schedule(end,type)}),
+        getDoc:async()=>({exists:()=>true,data:()=>scheduleData || schedule(end,type)}),
         getDocs:async q=>{const docs=(data[q.table]||[]).map((row,i)=>({id:String(i),data:()=>row}));return {docs,forEach:fn=>docs.forEach(fn)};}};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true};
     const context=vm.createContext({...api,...payroll,window,Date,document:{getElementById:id=>elements[id]||null},
@@ -171,3 +171,51 @@ test('Manager and Staff serve identical shared math; source links new letters to
     assert.match(staff,/batch.set\(lateRequestRef, pendingLateRequest\)/);assert.match(staff,/batch.set\(attendanceRef, attendance\)/);
     assert.doesNotMatch(source,/if \(outHour >= 0 && outHour <= 4\)/);
 });
+
+
+function repeatedNightSchedule() {
+    return { currentYear:2026,currentMonth:10,currentSchedule:{},branchConfig:{'Test Branch':[
+        {id:'m1',name:'Morning',shiftType:'morning',startTime:'10:00',endTime:'18:30',active:true},
+        {id:'mid',name:'Mid',shiftType:'mid',startTime:'13:00',endTime:'20:30',active:true},
+        ...['n1','n2','n3'].map(id=>({id,name:'Night '+id,shiftType:'night',startTime:'18:30',endTime:'03:00',active:true}))
+    ]}};
+}
+test('identical Night staff slots resolve a common rule without assigning an arbitrary employee slot',()=>{
+    const s=repeatedNightSchedule();
+    const shift=payroll.resolveScheduledShift(new Date('2026-09-17T18:30:00+08:00'),'Test Branch','Test Staff',s,{'Test Staff':profile});
+    assert.ok(shift);assert.equal(shift.shiftId,null);assert.equal(shift.shiftType,'night');
+    assert.deepEqual(shift.matchingShiftIds,['n1','n2','n3']);assert.equal(shift.wasScheduled,false);
+    assert.equal(payroll.earnedNightBonus(profile,shift,new Date('2026-09-18T03:18:00+08:00')),50);
+    assert.equal(payroll.earnedNightBonus(profile,shift,new Date('2026-09-18T02:59:00+08:00')),0);
+});
+test('conflicting staff slots still need an assignment and cannot silently earn a bonus',()=>{
+    for(const change of [{endTime:'04:00'},{shiftType:'mid'},{shiftType:'morning'}]) {
+        const s=repeatedNightSchedule();Object.assign(s.branchConfig['Test Branch'][2],change);
+        assert.equal(payroll.resolveScheduledShift(new Date('2026-09-17T18:30:00+08:00'),'Test Branch','Test Staff',s,{'Test Staff':profile}),null);
+    }
+    const s=repeatedNightSchedule();s.currentMonth=9;s.currentSchedule={17:{'Test Branch':{scheduled:{n1:'TEST'}}}};
+    s.branchConfig['Test Branch'][2].endTime='04:00';
+    const shift=payroll.resolveScheduledShift(new Date('2026-09-17T18:30:00+08:00'),'Test Branch','Test Staff',s,{'Test Staff':profile});
+    assert.equal(shift.shiftId,'n1');assert.equal(shift.wasScheduled,true);
+    assert.equal(payroll.earnedNightBonus(profile,shift,new Date('2026-09-18T03:18:00+08:00')),0);
+});
+for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
+    test(`${name}: prior cutoff with eight Night and four Mid shifts earns all twelve bonuses once`,async()=>{
+        const logs=[],stamp=date=>({toDate:()=>new Date(date)});
+        const punch=(day,start,end,overnight=false)=>{
+            logs.push({staffName:'Test Staff',branch:'Test Branch',type:'TIME IN',timestamp:stamp(`2026-09-${day}T${start}:00+08:00`)});
+            logs.push({staffName:'Test Staff',branch:'Test Branch',type:'TIME OUT',timestamp:stamp(`2026-09-${overnight?day+1:day}T${end}:00+08:00`)});
+        };
+        for(const day of [17,18,19,20,21,22,28,29])punch(day,'18:30','03:18',true);
+        for(const day of [24,25,26,30])punch(day,'13:00','21:30');
+        punch(27,'10:00','18:40');
+        logs.sort((a,b)=>a.timestamp.toDate()-b.timestamp.toDate());
+        const h=payrollUi({logs,scheduleData:repeatedNightSchedule(),startDate:'2026-09-16',endDate:'2026-09-30'});
+        vm.runInContext(extract(name),h.context);await h.window[name]();
+        assert.deepEqual(h.errors,[]);const row=h.window.globalPayrollCache['Test Staff'];
+        assert.equal(row.nightBonus,600);assert.equal(row.basicPay,5850);assert.equal(row.logs.length,13);
+        assert.equal(row.logs.filter(log=>/Night bonus: \+₱50.00/.test(log.remark)).length,8);
+        assert.equal(row.logs.filter(log=>/Mid bonus: \+₱50.00/.test(log.remark)).length,4);
+        assert.equal(h.elements.payrollGrandTotalAmount.innerText,'₱6,450.00');
+    });
+}

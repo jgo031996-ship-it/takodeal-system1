@@ -1,0 +1,34 @@
+/* Fixed export geometry, isolated from the Manager theme and print rules. */
+#idCardTemplate { width:1012px; height:638px; position:absolute; left:-9999px; top:0; z-index:-1; flex-direction:row; background:#fff; color:#243a31; font-family:Arial,Helvetica,sans-serif; overflow:hidden; }
+#idCardTemplate, #idCardTemplate * { box-sizing:border-box; }
+#idCardTemplate .employee-id-side { position:relative; width:506px; height:638px; flex:0 0 506px; padding:34px 36px; border-top:8px solid #173f32; background:#fff; }
+#idCardTemplate .employee-id-front { border-left:1px solid #dce4df; }
+#idCardTemplate .employee-id-brand { display:flex; align-items:center; gap:12px; height:42px; }
+#idCardTemplate .employee-id-brand img { display:block; width:40px; height:40px; object-fit:contain; border-radius:6px; }
+#idCardTemplate .employee-id-brand strong { display:block; color:#173f32; font-size:21px; font-weight:700; letter-spacing:.6px; }
+#idCardTemplate .employee-id-brand span { display:block; margin-top:5px; color:#708279; font-size:9px; letter-spacing:1.6px; font-weight:500; }
+#idCardTemplate .employee-id-person { margin-top:27px; text-align:center; }
+#idCardTemplate .employee-id-photo { width:146px; height:172px; margin:0 auto; border-radius:6px; overflow:hidden; background:#edf3ef; display:flex; align-items:center; justify-content:center; }
+#idCardTemplate .employee-id-photo img { width:146px; height:172px; object-fit:cover; object-position:center; }
+#idCardTemplate .employee-id-photo img[hidden] { display:none; }
+#idCardTemplate #idFrontInitials { color:#547060; font-size:48px; font-weight:500; }
+#idCardTemplate #idFrontName { height:65px; margin:22px 0 0; color:#173f32; font-size:28px; font-weight:700; line-height:1.14; display:flex; align-items:center; justify-content:center; overflow-wrap:anywhere; }
+#idCardTemplate #idFrontRole { margin:7px 0 0; color:#5c7166; font-size:16px; font-weight:400; height:35px; line-height:1.12; overflow-wrap:anywhere; }
+#idCardTemplate .employee-id-details { margin:13px 0 0; padding-top:16px; border-top:1px solid #dce4df; display:grid; grid-template-columns:1fr 1fr; gap:14px 24px; }
+#idCardTemplate dl { padding-bottom:0; }
+#idCardTemplate dl div { min-width:0; }
+#idCardTemplate dt { margin:0 0 5px; font-size:10px; font-weight:400; letter-spacing:.8px; text-transform:uppercase; color:#708279; }
+#idCardTemplate dd { margin:0; color:#243a31; font-size:16px; font-weight:600; line-height:1.2; overflow-wrap:anywhere; }
+#idCardTemplate .employee-id-number { grid-column:1 / -1; }
+#idCardTemplate #idFrontNo { font-size:18px; letter-spacing:.3px; white-space:nowrap; }
+#idCardTemplate #idFrontBranch { height:38px; }
+#idCardTemplate .employee-id-footer { position:absolute; bottom:23px; left:36px; right:36px; padding-top:14px; border-top:1px solid #dce4df; text-align:left; }
+#idCardTemplate .employee-id-footer strong { display:block; font-size:10px; font-weight:600; color:#486154; }
+#idCardTemplate .employee-id-footer span { display:block; margin-top:6px; font-size:10px; font-weight:400; color:#708279; }
+#idCardTemplate .employee-id-back-content { margin-top:46px; }
+#idCardTemplate .employee-id-eyebrow { font-size:10px; font-weight:500; letter-spacing:1.8px; color:#708279; margin:0 0 10px; }
+#idCardTemplate h2 { margin:0; font-size:24px; font-weight:600; color:#173f32; }
+#idCardTemplate .employee-id-emergency { margin:26px 0; display:grid; gap:18px; }
+#idCardTemplate .employee-id-emergency dd { font-size:18px; font-weight:500; }
+#idCardTemplate #idBackNotify { height:43px; }
+#idCardTemplate .employee-id-policy { font-size:14px; font-weight:400; line-height:1.6; color:#65786d; margin:14px 0 0; }
