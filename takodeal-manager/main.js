@@ -8,6 +8,8 @@ import { generateEmployeeID } from './employee-id.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { installMenuBulk } from './menu-bulk.js';
 import { approveRemittanceAtomic } from './cash-settlement.js';
+import { legacyRemittanceDuplicates, rejectLegacyDuplicateAtomic } from './remittance-review.js';
+import { canOpenWorkspacePage } from './workspace-access-model.js';
 import { commitDispatch, transitionDispatch } from './dispatch-safety.js';
 import { initManagerDialogs } from './manager-dialogs.js';
 import { initManagerWorkspace, renderFinancialFlow, escapeHtml } from './manager-workspace.js';
@@ -6918,6 +6920,7 @@ window.loadCashFlowHub = async function() {
 };
 
 window.openBranchTransferHistory = async function(branchName) {
+    if (!canOpenWorkspacePage(window.sessionUser, 'transfers') || !window.isBranchAllowed(branchName)) return window.ManagerUI.notify('This branch is outside your remittance review access.');
     let modal = document.getElementById('branchTransferHistoryModal');
     if (!modal) {
         window.ManagerUI.notify("Modal HTML not found! Make sure Step 2 from the previous prompt was pasted into your index.html.");
@@ -6952,11 +6955,13 @@ window.openBranchTransferHistory = async function(branchName) {
         }
 
         const snap = await getDocs(q);
+        const duplicateCandidates = legacyRemittanceDuplicates(snap.docs.map(row => ({...row.data(), id:row.id})));
         let html = '';
 
         snap.forEach(docSnap => {
             let d = docSnap.data();
             let docId = docSnap.id;
+            const originalTransfer = duplicateCandidates.get(docId);
             let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleString('en-PH', { month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit' }) : 'N/A';
 
             let statusBadge = `<span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">⏳ Pending</span>`;
@@ -6964,7 +6969,9 @@ window.openBranchTransferHistory = async function(branchName) {
             if (d.status === "Rejected") statusBadge = `<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">❌ Rejected</span>`;
 
             let actionHtml = '';
-            if (d.status === "Pending") {
+            if (originalTransfer) {
+                actionHtml = `<button onclick="window.reviewDuplicateRemittance('${encodeURIComponent(docId).replace(/'/g,'%27')}','${encodeURIComponent(originalTransfer.id).replace(/'/g,'%27')}')" style="background:#fff7ed;color:#92400e;border:1px solid #fed7aa;padding:8px 10px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:11px">Review possible duplicate</button>`;
+            } else if (d.status === "Pending") {
                 actionHtml = `
                     <div style="display: flex; gap: 5px; justify-content: center;">
                         <button onclick="window.viewRemittanceAudit('${docId}', '${branchName}', '${d.salesPeriodStart || ''}', '${d.salesPeriodEnd || ''}', ${d.amount}, '${d.channel}')" style="background: #0ea5e9; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">🔍 Audit</button>
@@ -6980,11 +6987,12 @@ window.openBranchTransferHistory = async function(branchName) {
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                     <td style="padding: 15px 20px; font-size: 12px; color: #64748b;">${dateStr}</td>
                     <td style="padding: 15px 20px;">
-                        <div style="font-weight: bold; color: #334155; font-size: 13px;">${d.cashier || d.cashierName || d.staffName || 'Staff'}</div>
+                        <div style="font-weight: bold; color: #334155; font-size: 13px;">${escapeHtml(d.cashier || d.cashierName || d.staffName || 'Staff')}</div>
                     </td>
                     <td style="padding: 15px 20px; font-size: 13px; color: #0f172a;">
-                        <strong>${d.channel || 'Cash'}</strong><br>
-                        <span style="color: #0284c7; font-size: 11px;">Ref: ${d.referenceNumber || d.ref || 'N/A'}</span>
+                        <strong>${escapeHtml(d.channel || 'Cash')}</strong><br>
+                        <span style="color: #0284c7; font-size: 11px;">Ref: ${escapeHtml(d.referenceNumber || d.ref || 'N/A')}</span>
+                        ${originalTransfer ? '<p style="color:#92400e;font-size:11px;margin:5px 0 0">A manual transfer for this amount was recorded shortly before this automatic collection. Review before receiving it.</p>' : ''}
                     </td>
                     <td style="padding: 15px 20px; text-align: center;">${statusBadge}</td>
                     <td style="padding: 15px 20px; text-align: right; font-weight: 900; color: #16a34a; font-size: 14px;">₱${parseFloat(d.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
@@ -6998,6 +7006,33 @@ window.openBranchTransferHistory = async function(branchName) {
         console.error("Modal Fetch Error:", e);
         tbody.innerHTML = '<tr><td colspan="6" class="text-center" style="color: #dc2626; padding: 30px; font-weight: bold;">❌ Error connecting to database. Check console.</td></tr>';
     }
+};
+
+window.reviewDuplicateRemittance = async function(encodedDuplicateId, encodedOriginalId) {
+    if (!canOpenWorkspacePage(window.sessionUser, 'transfers')) return window.ManagerUI.notify('Your account does not have remittance review permission.');
+    const identity = () => JSON.stringify([String(window.sessionUser?.email || '').trim().toLowerCase(), window.sessionUser?.uid || '']);
+    const reviewerIdentity = identity(), reviewer = window.sessionUser?.email;
+    const authorize = branch => {
+        const signedIn = window.auth && JSON.stringify([String(window.auth.currentUser?.email || '').trim().toLowerCase(), window.auth.currentUser?.uid || '']);
+        if (!reviewer || reviewerIdentity !== identity() || signedIn && signedIn !== reviewerIdentity || !canOpenWorkspacePage(window.sessionUser, 'transfers') || !window.isBranchAllowed(branch)) throw Error('Your account or branch access changed. Reopen the remittance review.');
+    };
+    try {
+        const duplicateId = decodeURIComponent(encodedDuplicateId), originalId = decodeURIComponent(encodedOriginalId);
+        const read = window.getDocFromServer || window.getDoc;
+        const [duplicate, original] = await Promise.all([read(window.doc(window.db,'remittances',duplicateId)), read(window.doc(window.db,'remittances',originalId))]);
+        if (!duplicate.exists() || !original.exists()) throw Error('A transfer record is missing. Refresh the history.');
+        const d = duplicate.data(), o = original.data();
+        authorize(d.branch);
+        const fmt = row => row.timestamp?.toDate?.().toLocaleString('en-PH', {timeZone:'Asia/Manila'}) || 'Time not recorded';
+        const result = await Swal.fire({title:'Review possible duplicate',
+            html:`<p>${escapeHtml(d.branch)} · ₱${Number(d.amount).toLocaleString('en-PH',{minimumFractionDigits:2})}</p><p><strong>Keep original transfer</strong><br>${escapeHtml(fmt(o))} · ${escapeHtml(o.cashier || o.cashierName || o.remittedBy)}<br>${escapeHtml(o.salesPeriodStart)} → ${escapeHtml(o.salesPeriodEnd)}</p><p><strong>Review automatic collection</strong><br>${escapeHtml(fmt(d))} · ${escapeHtml(d.channel)}</p><p>Confirm only if these records represent one physical cash handover. The duplicate record will remain in history as rejected. The original transfer, expenses and account balances stay intact.</p>`,
+            showCancelButton:true, confirmButtonText:'One handover — reject duplicate', cancelButtonText:'Keep both for review'});
+        if (!result.isConfirmed) return;
+        authorize(d.branch);
+        await rejectLegacyDuplicateAtomic(window, duplicateId, originalId, reviewer, authorize);
+        await Swal.fire('Duplicate reviewed','The original transfer is retained. The automatic duplicate is rejected with an audit record.','success');
+        window.openBranchTransferHistory(d.branch);window.loadUnremittedCashDashboard?.();window.loadCashFlowHub?.();
+    } catch(error) {Swal.fire('Could not review duplicate',error.message,'error');}
 };
 
 window.rejectRemittance = async function(docId, branchName) {
@@ -27788,4 +27823,3 @@ window.switchView = function(view,...args) {
 installDeviceFleet(window.deviceFleetConnection);
 installFranchiseWorkspace();
 installMonthlyBills();
-
