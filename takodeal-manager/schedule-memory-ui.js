@@ -1,5 +1,11 @@
 import {monthKey, scheduleDateKey, defaultScheduleEffectiveFrom} from './schedule-history.js';
 
+const savedVersionTime = value => {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return 'time unavailable';
+    return new Intl.DateTimeFormat('en-PH', {timeZone:'Asia/Manila', year:'numeric', month:'short', day:'numeric', hour:'numeric', minute:'2-digit'}).format(date) + ' PH';
+};
+
 // Presentation and navigation only. Saved revisions are written by the history store.
 export function installScheduleMemoryUI({document, store, getSnapshot, applySnapshot, setExpectedRevision, setReadOnly}) {
     const month = document.getElementById('monthSelector');
@@ -29,7 +35,7 @@ export function installScheduleMemoryUI({document, store, getSnapshot, applySnap
         try {
             const result = await store.loadMonth(selected); if (token !== generation) return;
             saved = result; setExpectedRevision(result.latestRevisionId || null);
-            versions.replaceChildren(new Option('Current editor', ''), ...result.revisions.slice().reverse().map(revision => new Option('From ' + revision.effectiveFrom + ' · saved ' + revision.savedAt.slice(0,16).replace('T',' '), revision.revisionId)));
+            versions.replaceChildren(new Option('Current editor', ''), ...result.revisions.slice().reverse().map(revision => new Option('From ' + revision.effectiveFrom + ' · saved ' + savedVersionTime(revision.savedAt), revision.revisionId)));
             viewing = false; paint(); return result;
         } catch (error) { if (token === generation) {status.textContent = 'Could not load schedule memory: ' + error.message; setReadOnly(true);} }
     };
