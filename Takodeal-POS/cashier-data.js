@@ -1,5 +1,5 @@
 // Presentation helpers only: no sale, inventory or attendance writes.
-export const CASHIER_RELEASE = 'tablet-printer-remittance-20261005-r7';
+export const CASHIER_RELEASE = 'schedule-memory-20261006-r8';
 export function millis(value) {
   if (value == null) return NaN;
   if (typeof value.toMillis === 'function') return value.toMillis();

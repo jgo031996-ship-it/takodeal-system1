@@ -7,6 +7,8 @@ import {createDeviceConnection,createDeviceRegistration,installStaffRegistration
 import {createFleetReader,fleetRows,installDeviceFleet} from '../takodeal-manager/device-fleet.js';
 import {waitForAppUpdate} from '../takodeal-staff/app-update.js';
 import {installStaffPhone} from '../takodeal-staff/staff-phone.js';
+import * as payroll from '../takodeal-staff/payroll-safety.js';
+import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js';
 
 const zones={Maa:{lat:7.0786417726231425,lng:125.58344120162646}},time=1800000000000;
 const position=(accuracy=12,stamp=time,offset=0)=>({timestamp:stamp,coords:{latitude:zones.Maa.lat+offset,longitude:zones.Maa.lng,accuracy}});
@@ -161,10 +163,10 @@ test('Profile history and contracts render without the removed public payroll fi
 function punchHarness(fixes){
     let writes=0;const records=[],alerts=[],nodes=new Map();
     const window={getAttendanceLocation:async()=>{const next=fixes.shift();if(next instanceof Error)throw next;return next;},loadMyAttendance(){}};
-    const context={window,document:{getElementById:id=>{if(!nodes.has(id))nodes.set(id,{disabled:false,videoWidth:0});return nodes.get(id);}},localStorage:{getItem:key=>key.endsWith('_id')?'staff-id':'Sample Staff'},
+    const context={...payroll,createScheduleHistoryStore,window,document:{getElementById:id=>{if(!nodes.has(id))nodes.set(id,{disabled:false,videoWidth:0});return nodes.get(id);}},localStorage:{getItem:key=>key.endsWith('_id')?'staff-id':'Sample Staff'},
         Swal:{fire:(...args)=>alerts.push(args)},doc:()=>({id:'sample'}),collection:()=>({}),query:()=>({}),where:()=>({}),db:{},getDocs:async()=>({forEach(){}}),getDoc:async()=>({exists:()=>false}),serverTimestamp:()=>null,
         writeBatch:()=>({set:(_,record)=>records.push(record),commit:async()=>writes++}),Date,console:{error(){}}};
-    Object.assign(window,{db:context.db,query:context.query,collection:context.collection,where:context.where,getDocs:context.getDocs});
+    Object.assign(window,{db:context.db,query:context.query,collection:context.collection,where:context.where,getDocs:context.getDocs,doc:context.doc,getDoc:context.getDoc});
     const start=engine.indexOf('window.punchTime = async function'),end=engine.indexOf('// 📥 STAFF REQUESTS & INBOX ENGINE',start);
     vm.runInNewContext(engine.slice(start,end),context);return {window,context,records,alerts,writes:()=>writes};
 }
@@ -173,6 +175,11 @@ test('attendance never writes on GPS failure or a branch change during proof ver
     const failed=punchHarness([Error('Location permission is off')]);await failed.window.punchTime('TIME IN');assert.equal(failed.writes(),0);assert.equal(failed.window.staffPunchBusy,false);
     const moved=punchHarness([fix,{...fix,branch:'Cabantian'}]);await moved.window.punchTime('TIME IN');assert.equal(moved.writes(),0);
     const successful=punchHarness([fix,fix]);await successful.window.punchTime('TIME IN');assert.equal(successful.writes(),1);assert.equal(successful.records[0].locationAccuracyMeters,12);assert.equal(successful.records[0].locationLat,fix.lat);
+    assert.equal(successful.records[0].sourceApp,'staff');assert.equal(successful.records[0].recordedByStaffId,'staff-id');
+    assert.equal(successful.records[0].scheduleSnapshot.needsScheduleReview,true);
+});
+test('an unsupported staff punch type cannot create an attendance record or a manual edit',async()=>{
+    const h=punchHarness([]);await h.window.punchTime('TIME IN (Manual Edit: System Error)');assert.equal(h.writes(),0);assert.equal(h.records.length,0);
 });
 
 const restRecord=(id,status='Pending')=>({name:'projects/example/databases/(default)/documents/pos_devices/'+id,fields:{deviceName:{stringValue:'Sample phone (Staff)'},branch:{stringValue:'Maa'},status:{stringValue:status},registeredAt:{timestampValue:'2026-10-04T10:00:00Z'}}});

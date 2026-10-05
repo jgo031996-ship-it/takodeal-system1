@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { requestHistory, historyTime } from '../takodeal-manager/request-history.js';
 import * as payroll from '../takodeal-manager/payroll-safety.js';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
+import { assembleScheduleHistory, createScheduleRevision, resolveScheduleForDate } from '../takodeal-manager/schedule-history.js';
 
 const profile = { cashierName: 'Test Staff', scheduleNickname: 'TEST', branch: 'Test Branch', hourlyRate: 450, nightDiffRate: 50 };
 test('manual and POS meal labels share one Foods category, excluding other deductions', () => {
@@ -134,7 +135,7 @@ window.${name} = `) + 1;
     assert.ok(start>=0);
     return source.slice(start,source.indexOf('\n};',start)+3);
 }
-function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,scheduleData=null,startDate='2026-10-03',endDate='2026-10-03',deductions=[]}={}) {
+function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,scheduleData=null,historyData=null,startDate='2026-10-03',endDate='2026-10-03',deductions=[]}={}) {
     const elements={payrollStart:{value:startDate},payrollEnd:{value:endDate},payrollGeneratorBody:{innerHTML:''},payrollGrandTotalContainer:{style:{}},payrollGrandTotalAmount:{}};
     const errors=[];
     const stamp=date=>({toDate:()=>date});
@@ -144,8 +145,8 @@ function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,sc
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),
         getDoc:async()=>({exists:()=>true,data:()=>scheduleData || schedule(end,type)}),
         getDocs:async q=>{const docs=(data[q.table]||[]).filter(row=>q.table!=='staff_deductions' || row.status==='Unpaid').map((row,i)=>({id:String(i),data:()=>row}));return {docs,forEach:fn=>docs.forEach(fn)};}};
-    const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true};
-    const context=vm.createContext({...api,...payroll,window,Date,document:{getElementById:id=>elements[id]||null},
+    const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>historyData || assembleScheduleHistory(scheduleData || schedule(end,type))};
+    const context=vm.createContext({...api,...payroll,resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
         alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
     return {context,window,elements,errors};
 }
@@ -375,3 +376,112 @@ test('the real Inbox renders ledger-only POS meals without putting them in pendi
     assert.match(nodes.resolvedRequestsBody.innerHTML,/>Paid<\/span>/);assert.match(nodes.resolvedRequestsBody.innerHTML,/>Unpaid<\/span>/);
     assert.match(nodes.inboxTableBody.innerHTML,/No pending requests/);assert.equal(nodes.inboxBadge.innerText,0);
 });
+
+const preservationCutover = '2026-10-06';
+function preservedHistory(current = schedule(), revisions = []) {
+    const months = new Map();
+    for (const revision of revisions) {
+        if (!months.has(revision.month)) months.set(revision.month,{month:revision.month,revisions:[]});
+        months.get(revision.month).revisions.push(revision);
+    }
+    return assembleScheduleHistory(current,[...months.values()],{enforcedFrom:preservationCutover});
+}
+function savedRevision(data, id, effectiveFrom) {
+    return createScheduleRevision(data,{revisionId:id,effectiveFrom,savedAt:new Date(effectiveFrom+'T10:00:00+08:00'),cutover:preservationCutover});
+}
+const attendance = (timestamp, extra = {}) => ({staffName:'Test Staff',branch:'Test Branch',type:'TIME IN',timestamp:new Date(timestamp),...extra});
+
+test('future clock-in snapshot freezes its expected time, shift category and bonus threshold despite later edits',()=>{
+    const original=schedule(), time=new Date('2026-10-06T15:30:00+08:00');
+    const snapshot=payroll.captureAttendanceSchedule(time,'Test Branch','Test Staff',assembleScheduleHistory(original),{'Test Staff':profile});
+    assert.equal(snapshot.needsScheduleReview,false);assert.equal(snapshot.lateMinutes,0);
+    const edited=schedule('21:30','morning');edited.branchConfig['Test Branch'][0].startTime='13:00';
+    const result=payroll.resolveAttendanceShift(attendance(time,{scheduleSnapshot:snapshot}),preservedHistory(edited),{'Test Staff':profile});
+    assert.equal(result.scheduleSource,'clock-in');assert.equal(result.lateMinutes,0);assert.equal(result.shiftType,'mid');
+    assert.equal(result.needsScheduleReview,false);
+    assert.equal(payroll.earnedNightBonus(profile,result,new Date('2026-10-06T23:29:00+08:00')),0);
+    assert.equal(payroll.earnedNightBonus(profile,result,new Date('2026-10-06T23:30:00+08:00')),50);
+    assert.deepEqual(JSON.parse(JSON.stringify(snapshot)),snapshot,'clock-in snapshot remains a serializable immutable value');
+});
+
+test('clock-in snapshot precedes archives; reviewed lateness precedes the saved minutes and exemptions retain their policy',()=>{
+    const time=new Date('2026-10-06T15:41:00+08:00'), snapshot=payroll.captureAttendanceSchedule(time,'Test Branch','Test Staff',schedule(),{'Test Staff':profile});
+    const edited=schedule();edited.branchConfig['Test Branch'][0].startTime='13:00';
+    const history=preservedHistory(edited,[savedRevision(edited,'edited','2026-10-06')]);
+    const reviewed=payroll.resolveAttendanceShift(attendance(time,{scheduleSnapshot:snapshot,lateMinutes:80,reviewedLateMinutes:11,lateExempted:true}),history,{'Test Staff':profile});
+    assert.equal(reviewed.lateMinutes,11);assert.equal(reviewed.scheduleSource,'clock-in');
+    assert.equal(payroll.latePay(reviewed.lateMinutes,profile,reviewed,true).amount,0);
+    assert.equal(payroll.resolveAttendanceShift(attendance(time,{scheduleSnapshot:snapshot,lateMinutes:80,reviewedLateMinutes:0}),history,{'Test Staff':profile}).lateMinutes,0);
+});
+
+test('a preserved work-date revision prevents a later month or later effective rule from changing future attendance',()=>{
+    const old=schedule(), edited=schedule('21:30');edited.branchConfig['Test Branch'][0].startTime='13:00';
+    const before=savedRevision(old,'oct6','2026-10-06'), after=savedRevision(edited,'oct10','2026-10-10');
+    edited.currentMonth=11;
+    const history=preservedHistory(edited,[before,after]);
+    const actual=payroll.resolveAttendanceShift(attendance('2026-10-06T15:41:00+08:00'),history,{'Test Staff':profile});
+    assert.equal(actual.lateMinutes,11);assert.equal(actual.scheduleRevisionId,'oct6');assert.equal(actual.needsScheduleReview,false);
+    assert.equal(actual.expectedStartAt.toISOString(),'2026-10-06T07:30:00.000Z');
+    const changed=payroll.resolveAttendanceShift(attendance('2026-10-11T13:00:00+08:00'),history,{'Test Staff':profile});
+    assert.equal(changed.lateMinutes,0);assert.equal(changed.scheduleRevisionId,'oct10');
+});
+
+test('post-midnight attendance selects the prior work-day revision across a month boundary',()=>{
+    const october=schedule('03:00','night');october.branchConfig['Test Branch'][0].startTime='23:30';october.currentSchedule={31:{'Test Branch':{scheduled:{mid:'TEST'}}}};
+    const november=schedule('21:30','morning');november.currentMonth=11;november.branchConfig['Test Branch'][0].startTime='13:00';november.currentSchedule={1:{'Test Branch':{scheduled:{mid:'TEST'}}}};
+    const history=preservedHistory(november,[savedRevision(october,'oct-night','2026-10-06'),savedRevision(november,'nov-day','2026-11-01')]);
+    const match=payroll.resolveAttendanceShift(attendance('2026-11-01T00:11:00+08:00'),history,{'Test Staff':profile});
+    assert.equal(match.scheduleRevisionId,'oct-night');assert.equal(match.wasScheduled,true);assert.equal(match.lateMinutes,41);
+    assert.equal(match.expectedStartAt.toISOString(),'2026-10-31T15:30:00.000Z');
+    assert.equal(payroll.earnedNightBonus(profile,match,new Date('2026-11-01T03:00:00+08:00')),50);
+});
+
+test('missing future evidence is marked for review without guessed late minutes or a shift bonus',()=>{
+    const current=schedule();current.branchConfig['Test Branch'][0].startTime='04:30';current.branchConfig['Test Branch'][0].endTime='12:30';
+    const future=payroll.resolveAttendanceShift(attendance('2026-10-06T05:00:00+08:00'),preservedHistory(current),{'Test Staff':profile});
+    assert.equal(future.needsScheduleReview,true);assert.equal(future.scheduleSource,'missing-history');
+    assert.equal(future.lateMinutes,0);assert.equal(future.expectedStartAt,null);assert.equal(future.isNightShift,false);
+    assert.equal(payroll.earnedNightBonus(profile,future,new Date('2026-10-06T13:00:00+08:00')),0);
+    const reviewed=payroll.resolveAttendanceShift(attendance('2026-10-06T05:00:00+08:00',{reviewedLateMinutes:11}),preservedHistory(current),{'Test Staff':profile});
+    assert.equal(reviewed.lateMinutes,11,'explicit manager review remains authoritative even when its schedule needs review');
+});
+
+test('cutover begins at Philippine midnight while unsnapshotted older calculations remain unchanged and visibly unverified',()=>{
+    const old=attendance('2026-09-17T18:30:00+08:00'), history=preservedHistory(repeatedNightSchedule());
+    const legacy=payroll.resolveScheduledShift(old.timestamp,old.branch,old.staffName,repeatedNightSchedule(),{'Test Staff':profile});
+    const preserved=payroll.resolveAttendanceShift(old,history,{'Test Staff':profile});
+    assert.equal(preserved.lateMinutes,legacy.lateMinutes);assert.equal(preserved.isNightShift,legacy.isNightShift);
+    assert.equal(+preserved.expectedEndAt,+legacy.expectedEndAt);assert.equal(preserved.scheduleSource,'legacy-unverified');assert.equal(preserved.needsScheduleReview,true);
+    const earlyFuture=payroll.resolveAttendanceShift(attendance('2026-10-06T01:00:00+08:00'),history,{'Test Staff':profile});
+    assert.equal(earlyFuture.scheduleSource,'missing-history');
+});
+
+test('saved exact expected timestamps remain authoritative for legacy punches; bare wall-clock hours are not historic evidence',()=>{
+    const flat=attendance('2026-09-17T18:30:00+08:00',{expectedStartAt:'2026-09-17T18:30:00+08:00',expectedEndAt:'2026-09-18T03:00:00+08:00',shiftType:'night',isNightShift:true});
+    const result=payroll.resolveAttendanceShift(flat,preservedHistory(schedule()),{'Test Staff':profile});
+    assert.equal(result.scheduleSource,'clock-in');assert.equal(result.lateMinutes,0);assert.equal(result.needsScheduleReview,false);
+    assert.equal(payroll.earnedNightBonus(profile,result,new Date('2026-09-18T03:00:00+08:00')),50);
+    const wallHour=payroll.resolveAttendanceShift(attendance('2026-10-06T15:41:00+08:00',{expectedStartHour:15.5}),preservedHistory(schedule()),{'Test Staff':profile});
+    assert.equal(wallHour.scheduleSource,'missing-history');assert.equal(wallHour.needsScheduleReview,true);
+});
+
+test('invalid, foreign or intentionally unmatched snapshots remain review-required instead of being overwritten by later schedule edits',()=>{
+    const time=new Date('2026-10-06T15:41:00+08:00'), snapshot=payroll.captureAttendanceSchedule(time,'Test Branch','Test Staff',schedule(),{'Test Staff':profile});
+    const history=preservedHistory(schedule(),[savedRevision(schedule(),'good','2026-10-06')]);
+    for(const change of [{branch:'Other Branch'},{staffName:'Other Staff'},{expectedStartAt:'bad'},{expectedEndAt:'bad'},{needsScheduleReview:true}]){
+        const result=payroll.resolveAttendanceShift(attendance(time,{scheduleSnapshot:{...snapshot,...change}}),history,{'Test Staff':profile});
+        assert.equal(result.needsScheduleReview,true);assert.equal(result.scheduleSource,'clock-in');assert.equal(result.isNightShift,false);
+    }
+});
+
+for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
+    test(`${name}: the actual future payroll keeps the punch snapshot after a monthly schedule edit`,async()=>{
+        const time=new Date('2026-10-06T15:30:00+08:00'), captured=payroll.captureAttendanceSchedule(time,'Test Branch','Test Staff',schedule(),{'Test Staff':profile});
+        const edited=schedule('21:30','morning');edited.branchConfig['Test Branch'][0].startTime='13:00';
+        const logs=[{...attendance(time,{scheduleSnapshot:captured}),timestamp:{toDate:()=>time}},{...attendance('2026-10-06T23:30:00+08:00'),type:'TIME OUT',timestamp:{toDate:()=>new Date('2026-10-06T23:30:00+08:00')}}];
+        const h=payrollUi({logs,scheduleData:edited,historyData:preservedHistory(edited),startDate:'2026-10-06',endDate:'2026-10-06'});
+        vm.runInContext(extract(name),h.context);await h.window[name]();
+        assert.deepEqual(h.errors,[]);const row=h.window.globalPayrollCache['Test Staff'];
+        assert.equal(row.basicPay,450);assert.equal(row.lateDeduction,0);assert.equal(row.nightBonus,50);
+    });
+}

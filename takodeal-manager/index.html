@@ -12,6 +12,7 @@
  
   <!-- 🗺️ FREE MAP ENGINE FOR BRANCH PINS -->
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="schedule-memory.css?v=20261006">
   <link rel="stylesheet" href="dashboard.css?v=staff-duty-20261004">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="logo.jpg">
@@ -2723,7 +2724,7 @@
             <div style="display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
                 <div style="display: flex; flex-direction: column;">
                     <label style="font-size: 11px; font-weight: 900; color: #475569; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px;">Select Month</label>
-                    <input type="month" id="monthSelector" onchange="window.generateSchedule()" style="padding: 14px 18px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #0ea5e9; font-size: 15px; outline: none; cursor: pointer; background: #f8fafc; height: 50px; box-sizing: border-box;">
+                    <input type="month" id="monthSelector" onchange="window.selectScheduleMonth()" style="padding: 14px 18px; border-radius: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #0ea5e9; font-size: 15px; outline: none; cursor: pointer; background: #f8fafc; height: 50px; box-sizing: border-box;">
                 </div>
                 <button onclick="window.saveManualSchedule()" style="background: #10b981; color: white; border: none; padding: 0 24px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3); display: flex; align-items: center; gap: 8px; transition: 0.2s; height: 50px; margin-top: 21px;">
                     <span style="font-size: 18px;">💾</span> Save Edits
@@ -3569,13 +3570,13 @@
                   </div>
               </div>
 
-              <label style="font-size: 12px; font-weight: bold; color: #334155;">Exact Date & Time of Log</label>
+              <label style="font-size: 12px; font-weight: bold; color: #334155;">Exact Date & Time of Log (Philippine time)</label>
               <input type="datetime-local" id="manAttDateTime" style="width: 100%; padding: 10px; margin: 5px 0 15px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; font-weight: bold;">
 
               <label style="font-size: 12px; font-weight: bold; color: #334155;">Manager Remarks / Reason</label>
               <input type="text" id="manAttRemarks" placeholder="e.g. Forgot to clock out, battery died" style="width: 100%; padding: 10px; margin: 5px 0 20px; border: 1px solid #cbd5e1; border-radius: 6px; outline: none;">
 
-              <button id="btnSaveManualAtt" onclick="window.submitManualAttendance()" style="width: 100%; background: #f59e0b; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">💾 Save Override Log</button>
+              <button id="btnSaveManualAtt" onclick="window.submitManualAttendance()" style="width: 100%; background: #17654f; color: white; border: none; padding: 14px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px;">Review attendance correction</button>
           </div>
       </div>
   </div>

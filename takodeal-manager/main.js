@@ -4,6 +4,10 @@ import { installFranchiseWorkspace } from './franchise-workspace.js';
 import { installMonthlyBills } from './monthly-bills-ui.js';
 import { requestHistory, historyTime } from './request-history.js';
 import { enhanceScheduleLayout } from './schedule-layout.js';
+import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
+import {installScheduleMemoryUI} from './schedule-memory-ui.js';
+import {validateManualAttendance, saveManualAttendance} from './attendance-audit.js';
+import {installScheduleSwapReview} from './schedule-swap-review.js';
 import { generateEmployeeID } from './employee-id.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { installMenuBulk } from './menu-bulk.js';
@@ -23,7 +27,7 @@ import { recipeProblems, ingredientUses } from './recipe-integrity.js';
 import { createLiveReport } from './live-report.js';
 import { calculateLateMinutes, resolveScheduledShift, scheduledShiftForDate, latePay, nightRate, earnedNightBonus,
     attendanceLateMinutes, isLatenessRequest, requestLateMinutes, legacyAttendanceCandidates,
-    reviewLateRequest, shiftType, shiftTimes, validateShiftConfig, isMealDeduction } from './payroll-safety.js';
+    reviewLateRequest, shiftType, shiftTimes, validateShiftConfig, isMealDeduction, resolveAttendanceShift, captureAttendanceSchedule } from './payroll-safety.js';
 const historyLive = createLiveReport({
     subscribe: (...args) => window.onSnapshot(...args),
     status: text => { const el = document.getElementById('histLiveStatus'); if (el) el.textContent = text; }
@@ -8407,15 +8411,14 @@ window.loadAttendanceLogs = async function () {
 
         let scheduleData = null;
         try {
-            const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
-            if (schedSnap.exists()) scheduleData = schedSnap.data();
+            scheduleData = await window.loadPayrollScheduleHistory(dateFilter,dateFilter);
         } catch(e) { console.warn("No schedule data found."); }
 
         let staffProfiles = {};
         const staffSnap = await getDocs(collection(db, "cashiers"));
         staffSnap.forEach(docSnap => {
             let d = docSnap.data();
-            staffProfiles[d.cashierName] = d.scheduleNickname || d.cashierName; 
+            staffProfiles[d.cashierName] = d;
         });
 
         const parseTimeStr = (timeStr) => {
@@ -8461,7 +8464,7 @@ window.loadAttendanceLogs = async function () {
                 let logDate = data.timestamp ? data.timestamp.toDate() : new Date();
                 
                 // 🔥 THE FIX: Universal Shift Matcher Call
-                let { lateMinutes: calcMins, expectedStartHour, wasScheduled } = window.calculateLateMinutes(logDate, data.branch, data.staffName, scheduleData, staffProfiles, parseTimeStr);
+                let { lateMinutes: calcMins, expectedStartHour, wasScheduled } = resolveAttendanceShift(data, scheduleData, staffProfiles);
                 lateMinutes = attendanceLateMinutes(data, calcMins);
 
                 if (expectedStartHour !== null) {
@@ -8499,7 +8502,9 @@ window.loadAttendanceLogs = async function () {
             actionHtml += `</div>`;
 
             if (data.isManual) {
-                locationText = `📍 ${data.branch} <br><span style="color:#d97706; font-size:11px; font-weight:bold;">⚠️ Manual Edit: ${data.remarks}</span>`;
+                const author = data.actorEmail || data.loggedBy || 'Author not recorded';
+                const recorded = data.recordedAt?.toDate?.();
+                locationText = `📍 ${escapeHtml(data.branch)} <br><span style="color:#b45309; font-size:11px; font-weight:bold;">Manual correction: ${escapeHtml(data.remarks || 'Reason not recorded')}</span><br><span style="font-size:11px;">Recorded by ${escapeHtml(author)}${recorded ? ' · ' + escapeHtml(recorded.toLocaleString('en-PH',{timeZone:'Asia/Manila'})) : ' · saved time not recorded'}</span>`;
                 actionHtml = `
                 <div style="display: flex; gap: 5px; justify-content: center; align-items: center; flex-wrap: wrap;">
                     <span style="font-size: 10px; color: #64748b; font-weight: bold; background: #f1f5f9; padding: 4px 8px; border-radius: 4px; border: 1px dashed #cbd5e1;">Manual</span>
@@ -8581,13 +8586,45 @@ let currentActiveTab = 'Cabantian'; // Your tab memory!
 
 window.scheduleHolidays = {}; // Memory for holidays
 
+// Schedule history keeps each effective version before another month or rule is saved.
+let scheduleMemoryUI = null, scheduleMemoryExpectedRevision = undefined;
+window.getScheduleHistoryStore = () => window.scheduleHistoryStore ||= createScheduleHistoryStore(window);
+window.loadPayrollScheduleHistory = (from, to) => window.getScheduleHistoryStore().loadRange(scheduleDateKey(new Date(+new Date(from+'T00:00:00+08:00')-86400000)), to);
+window.getScheduleMemorySnapshot = () => ({branchConfig, employees, unavailability, currentSchedule, currentYear, currentMonth, holidays:window.scheduleHolidays});
+window.applyScheduleMemorySnapshot = async snapshot => {
+    const data = JSON.parse(JSON.stringify(snapshot));
+    branchConfig=data.branchConfig || {}; employees=data.employees || []; window.employees=employees;
+    unavailability=data.unavailability || {}; currentSchedule=data.currentSchedule || {};
+    currentYear=data.currentYear; currentMonth=data.currentMonth; window.currentYear=currentYear; window.currentMonth=currentMonth;
+    window.scheduleHolidays=data.holidays || {};
+    const selector=document.getElementById('monthSelector'); if(selector)selector.value=monthKey(data);
+    window.renderConfigUI();window.updateHolidayList();window.renderTables();
+};
+window.initScheduleMemory = async () => {
+    scheduleMemoryUI ||= installScheduleMemoryUI({document,store:window.getScheduleHistoryStore(),getSnapshot:window.getScheduleMemorySnapshot,
+        applySnapshot:window.applyScheduleMemorySnapshot,setExpectedRevision:value=>scheduleMemoryExpectedRevision=value,
+        setReadOnly:value=>window.scheduleMemoryReadOnly=value});
+    await scheduleMemoryUI?.refresh();
+    window.scheduleSwapReview ||= installScheduleSwapReview(window,document);
+    await window.scheduleSwapReview?.refresh();
+};
+window.selectScheduleMonth = () => scheduleMemoryUI?.selectMonth();
+
 // 🔥 FIREBASE SAVE/LOAD (Upgraded with Holidays)
 window.saveToCloud = async function() {
     try {
-        const appData = { branchConfig, employees, unavailability, currentSchedule, currentYear, currentMonth, holidays: window.scheduleHolidays };
-        await setDoc(doc(db, "settings", "global_schedule"), appData);
+        if (window.scheduleMemoryReadOnly || !canOpenWorkspacePage(window.sessionUser,'schedule')) throw Error('This schedule version is read-only or outside your access.');
+        const appData = window.getScheduleMemorySnapshot();
+        const result = await window.getScheduleHistoryStore().save(appData,{actor:window.sessionUser.email,
+            effectiveFrom:scheduleMemoryUI?.effectiveFrom(),expectedRevisionId:scheduleMemoryExpectedRevision});
+        scheduleMemoryExpectedRevision = result.latestRevisionId;
+        await scheduleMemoryUI?.refresh();
         return true;
-    } catch(e) { console.error("Cloud Save Error:", e); return false; }
+    } catch(e) {
+        console.error("Cloud Save Error:", e);
+        const status=document.getElementById('scheduleMemoryStatus');if(status)status.textContent='Schedule not saved: '+e.message;
+        return false;
+    }
 };
 
 window.loadFromCloud = async function() {
@@ -8731,8 +8768,8 @@ window.loadFromCloud = async function() {
         window.switchTab(window.currentActiveTab); 
         window.updateHolidayList(); 
         window.renderTables();
-        
-    } catch(e) { 
+        await window.initScheduleMemory();
+    } catch(e) {
         console.error("Cloud Load Error:", e); 
     }
 };
@@ -8937,6 +8974,7 @@ window.renderConfigUI = function() {
 };
 
 window.saveShiftConfigChanges = async function() {
+    if(window.scheduleMemoryReadOnly)return window.ManagerUI.notify('This saved schedule version is read-only.');
     window.captureTempShiftConfig();
     Object.entries(branchConfig).forEach(([branch, shifts]) => {
         if (window.isBranchAllowed(branch)) shifts.forEach(shift => validateShiftConfig(shift));
@@ -9379,6 +9417,7 @@ window.removeUnavailable = async function(date, emp) {
 };
 
 window.generateSchedule = async function() {
+    if(window.scheduleMemoryReadOnly)return window.ManagerUI.notify('Saved historical versions are read-only. Show the latest current or future month to edit.');
     const monthVal = document.getElementById("monthSelector").value;
     if (!monthVal) return Swal.fire('Missing Data', 'Please select a month first.', 'warning');
     
@@ -9457,7 +9496,7 @@ window.generateSchedule = async function() {
     }
     
     window.renderTables(); 
-    window.saveToCloud();
+    if (await window.saveToCloud() === false) return Swal.fire("Schedule not saved", "Reload the selected month and try again. Your existing saved versions remain available.", "error");
     
     Swal.fire({
         title: `Reshuffled ${targetBranch}!`, 
@@ -10354,8 +10393,7 @@ window.updateLateRequestPreview = function() {
     const attendance = context.logs.find(log => log.id === id);
     const target = document.getElementById('replyLateCalculation');
     if (!attendance) { target.textContent = 'Select the correct clock-in before confirming.'; return; }
-    const shift = resolveScheduledShift(attendance.timestamp, attendance.branch, attendance.staffName,
-        context.schedule, { [attendance.staffName]: context.profile });
+    const shift = resolveAttendanceShift(attendance,context.schedule,{[attendance.staffName]:context.profile});
     const late = latePay(context.minutes, context.profile, shift, context.action === 'Approved');
     target.textContent = context.action === 'Approved' ? `${context.minutes} minutes late — exempted from the late deduction.`
         : `${context.minutes} minutes late → ${late.hours} hour(s) × ₱${late.ratePerHour.toFixed(2)} = ₱${late.amount.toFixed(2)}. Applied once through attendance when payroll is generated.`;
@@ -10373,7 +10411,7 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
         if (isLatenessRequest(req)) {
             const [profileSnap, scheduleSnap] = await Promise.all([
                 tkOwnerDocs(window.query(window.collection(window.db, 'cashiers'), window.where('cashierName', '==', staffName))),
-                tkOwnerDoc(window.doc(window.db, 'settings', 'global_schedule'))
+                window.loadPayrollScheduleHistory(scheduleDateKey(req.timestamp?.toDate?.() || req.timestamp),scheduleDateKey(req.timestamp?.toDate?.() || req.timestamp))
             ]);
             if (profileSnap.docs.length !== 1) throw new Error('The staff profile is missing or duplicated. Check Payroll & Rates first.');
             const profile = profileSnap.docs[0].data();
@@ -10395,7 +10433,7 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
             if (!logs.length) throw new Error('No matching clock-in was found for this letter. Check the staff member’s attendance before reviewing it.');
             const minutes = requestLateMinutes(req, logs[0]);
             window.lateRequestContext = { requestId: docId, action, logs, minutes, profile,
-                schedule: scheduleSnap.exists() ? scheduleSnap.data() : null };
+                schedule: scheduleSnap };
         }
     } catch (error) { return Swal.fire('Check request', error.message, 'warning'); }
     const isLateLetter = isLatenessRequest(req);
@@ -10764,8 +10802,7 @@ window.loadPayrollGenerator = async function() {
     };
 
     try {
-        const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_schedule"));
-        let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
+        const scheduleData = await window.loadPayrollScheduleHistory(startDateRaw,endDateRaw);
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
 
         const prQ = window.query(window.collection(window.db, "payroll_records"), window.where("startDate", "==", startDateRaw), window.where("endDate", "==", endDateRaw));
@@ -10867,14 +10904,14 @@ window.loadPayrollGenerator = async function() {
                     let logDate = log.timestamp.toDate();
                     
                     // 🔥 THE FIX: Safe variable aliases (calcMins, expStart) prevent crashes with leftover code!
-                    const matchedShift = resolveScheduledShift(logDate, log.branch, name, scheduleData, staffDict);
+                    const matchedShift = resolveAttendanceShift(log, scheduleData, staffDict, name);
                     let { lateMinutes: calcMins, expectedStartHour: expStart, wasScheduled: wasSched } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
                     calcMins = attendanceLateMinutes(log, calcMins);
                     const late = latePay(calcMins, staffDict[name], matchedShift, log.lateExempted === true);
                     const lateHoursToDeduct = late.hours;
                     const lateAmount = late.amount;
 
-                    activeShifts[name] = { 
+                    activeShifts[name] = {
                         matchedShift,
                         time: logDate, 
                         lateMinutes: calcMins, 
@@ -10952,7 +10989,7 @@ window.loadPayrollGenerator = async function() {
                 }
 
                 let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
-                let hType = holidaysObj[logDateStr];
+                let hType = resolveScheduleForDate(scheduleData,logDateStr)?.holidays?.[logDateStr] ?? holidaysObj[logDateStr];
                 let dailyRate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
                 let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
                 let hBonus = 0;
@@ -10966,6 +11003,11 @@ window.loadPayrollGenerator = async function() {
                     out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
                     hrs: hoursWorked.toFixed(2), 
                     remark: remark,
+                    scheduleSource:activeShifts[name].matchedShift.scheduleSource,
+                    scheduleRevisionId:activeShifts[name].matchedShift.scheduleRevisionId,
+                    expectedStartAt:activeShifts[name].matchedShift.expectedStartAt?.toISOString() || null,
+                    expectedEndAt:activeShifts[name].matchedShift.expectedEndAt?.toISOString() || null,
+                    needsScheduleReview:activeShifts[name].matchedShift.needsScheduleReview,
                     lateMins: (!lExempt && lMins > 0) ? lMins : 0 
                 });
                 staffData[name].totalHours += hoursWorked; staffData[name].shiftsWorked += shiftMultiplier; staffData[name].holidayPayTotal += hBonus;
@@ -11192,6 +11234,14 @@ window.openPayslipModal = async function(staffName) {
     safeSet('psHoliday', data.holidayPayTotal || 0);
     safeSet('psPerfBonus', data.perfBonus || 0); // 🔥 Add this!
     
+    let memoryNotice=document.getElementById('psScheduleMemory');
+    if(!memoryNotice){memoryNotice=document.createElement('div');memoryNotice.id='psScheduleMemory';memoryNotice.className='payslip-schedule-memory';document.getElementById('psAttendanceBody')?.closest('table')?.before(memoryNotice);}
+    if(memoryNotice){
+        const rows=(data.logs || []).filter(row=>row.in && row.in!=='---');
+        const references=rows.filter(row=>['clock-in','history'].includes(row.scheduleSource)).length;
+        const missing=rows.filter(row=>row.needsScheduleReview).length;
+        memoryNotice.textContent=data.isPaid?'Paid payslip · saved payroll record':references?'Schedule memory: '+references+' attendance entry/entries use preserved shift times.'+(missing?' '+missing+' need schedule review.':''):'Legacy attendance · no saved schedule memory for this cutoff. Future clock-ins will retain their schedule reference.';
+    }
     safeSet('psLate', data.lateDeduction || 0); 
     safeSet('psSSS', data.sss || 0);
     safeSet('psPhil', data.philhealth || 0);
@@ -11238,7 +11288,7 @@ window.openPayslipModal = async function(staffName) {
                 <td style="padding: 8px 4px; font-weight: bold; color: ${inColor}; text-align: center; vertical-align: middle; word-wrap: break-word;">${inTimeHtml}</td>
                 <td style="padding: 8px 4px; font-weight: bold; color: ${outColor}; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.out || ''}</td>
                 <td style="padding: 8px 4px; font-weight: bold; text-align: center; vertical-align: middle;">${log.hrs || 0}h</td>
-                <td style="padding: 8px 4px; font-size:11px; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.remark || ''}</td>
+                <td style="padding: 8px 4px; font-size:11px; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.remark || ''}${log.expectedStartAt && log.expectedEndAt ? '<br><span style="color:#557061">Scheduled: '+new Date(log.expectedStartAt).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'})+' → '+new Date(log.expectedEndAt).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'})+'</span>' : ''}</td>
             </tr>`;
         });
     } else {
@@ -11996,8 +12046,7 @@ window.generateAutoPayslips = async function() {
     };
 
     try {
-        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
-        let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
+        const scheduleData = await window.loadPayrollScheduleHistory(startInput,endInput);
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
 
         const prQ = query(collection(db, "payroll_records"), where("startDate", "==", startInput), where("endDate", "==", endInput));
@@ -12058,14 +12107,14 @@ window.generateAutoPayslips = async function() {
                     let logDate = log.timestamp.toDate();
                     
                     // 🔥 UPGRADE: Use the Universal Shift Matcher Engine for Payroll!
-                    const matchedShift = resolveScheduledShift(logDate, log.branch, name, scheduleData, staffDict);
+                    const matchedShift = resolveAttendanceShift(log, scheduleData, staffDict, name);
                     let { lateMinutes: lateMinutes, expectedStartHour: expectedStartHour, wasScheduled: wasScheduled } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
                     lateMinutes = attendanceLateMinutes(log, lateMinutes);
                     const late = latePay(lateMinutes, staffDict[name], matchedShift, log.lateExempted === true);
                     const lateHoursToDeduct = late.hours;
                     const lateAmount = late.amount;
 
-                    activeShifts[name] = { 
+                    activeShifts[name] = {
                         matchedShift,
                         time: logDate, 
                         lateMinutes: lateMinutes, 
@@ -12137,7 +12186,7 @@ window.generateAutoPayslips = async function() {
                 }
 
                 let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
-                let hType = holidaysObj[logDateStr];
+                let hType = resolveScheduleForDate(scheduleData,logDateStr)?.holidays?.[logDateStr] ?? holidaysObj[logDateStr];
                 let dailyRate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
                 let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
                 let hBonus = 0;
@@ -12151,6 +12200,11 @@ window.generateAutoPayslips = async function() {
                     out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
                     hrs: hoursWorked.toFixed(2), 
                     remark: remark,
+                    scheduleSource:activeShifts[name].matchedShift.scheduleSource,
+                    scheduleRevisionId:activeShifts[name].matchedShift.scheduleRevisionId,
+                    expectedStartAt:activeShifts[name].matchedShift.expectedStartAt?.toISOString() || null,
+                    expectedEndAt:activeShifts[name].matchedShift.expectedEndAt?.toISOString() || null,
+                    needsScheduleReview:activeShifts[name].matchedShift.needsScheduleReview,
                     lateMins: (!lExempt && lMins > 0) ? lMins : 0 
                 });
                 staffData[name].totalHours += hoursWorked; staffData[name].shiftsWorked += shiftMultiplier; staffData[name].holidayPayTotal += hBonus;
@@ -13387,13 +13441,15 @@ window.loadProductAnalytics = (start, end, branch) => globalDashboard.historyPro
 // 📝 MANUAL ATTENDANCE OVERRIDE ENGINE
 // ==========================================
 window.openManualAttendanceModal = async function() {
+    if (!canOpenWorkspacePage(window.sessionUser,'payroll')) return window.ManagerUI.notify('Your account does not have attendance correction permission.');
+    window.manualAttendanceOperationId = crypto.randomUUID();
     document.getElementById('manualAttendanceModal').style.display = 'flex';
     let select = document.getElementById('manAttStaff');
     select.innerHTML = '<option value="">Loading Staff...</option>';
     
-    let now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    document.getElementById('manAttDateTime').value = now.toISOString().slice(0,16);
+    const now = new Date();
+    const time = new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(now);
+    document.getElementById('manAttDateTime').value = scheduleDateKey(now)+'T'+time;
     document.getElementById('manAttRemarks').value = '';
 
     try {
@@ -13416,67 +13472,51 @@ window.openManualAttendanceModal = async function() {
     }
 };
 
+let manualAttendanceBusy = false;
 window.submitManualAttendance = async function() {
-    let staffName = document.getElementById('manAttStaff').value;
-    let branch = document.getElementById('manAttBranch').value;
-    let type = document.getElementById('manAttType').value;
-    let dateTimeRaw = document.getElementById('manAttDateTime').value;
-    let remarks = document.getElementById('manAttRemarks').value.trim();
-
-    if (!staffName || !dateTimeRaw || !remarks) {
-        window.ManagerUI.notify("❌ Please fill out Staff Name, Exact Time, and Manager Remarks.");
-        return;
-    }
-
-    let btn = document.getElementById('btnSaveManualAtt');
-    btn.innerText = "⏳ Saving..."; btn.disabled = true;
-
+    if (manualAttendanceBusy) return;
+    manualAttendanceBusy = true;
+    const btn = document.getElementById('btnSaveManualAtt');
+    btn.disabled = true;
+    const user = window.auth?.currentUser;
+    const actor = {uid:user?.uid,email:user?.email,name:window.sessionUser?.cashierName};
+    const authorized = () => window.auth?.currentUser?.uid === actor.uid && window.auth?.currentUser?.email === actor.email && canOpenWorkspacePage(window.sessionUser,'payroll');
     try {
-        // Convert the HTML datetime-local input into a proper Javascript Date object
-        let logDate = new Date(dateTimeRaw);
-        // 📅 GOOGLE CALENDAR WEBHOOK ENGINE (Optional)
-        // To use this, create a Zapier or Make.com Webhook and paste the URL here.
-        const CALENDAR_WEBHOOK_URL = ""; // e.g., "https://hooks.zapier.com/hooks/catch/..."
-        
-        if (CALENDAR_WEBHOOK_URL) {
-            try {
-                fetch(CALENDAR_WEBHOOK_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        staffName: staffName,
-                        branch: branch,
-                        action: type,
-                        time: logDate.toLocaleString('en-US'),
-                        type: "Manual Override"
-                    })
-                }).catch(e => console.warn("Calendar Webhook silent fail (CORS/Network)"));
-            } catch(e) {}
+        const payload = validateManualAttendance({
+            staffName:document.getElementById('manAttStaff').value,
+            branch:document.getElementById('manAttBranch').value,
+            type:document.getElementById('manAttType').value,
+            dateTimeRaw:document.getElementById('manAttDateTime').value,
+            remarks:document.getElementById('manAttRemarks').value.trim()
+        },{actor,allowed:authorized(),branchAllowed:window.isBranchAllowed});
+        const staff = await window.getDocsFromServer(window.query(window.collection(window.db,'cashiers'),window.where('cashierName','==',payload.staffName)));
+        if (staff.docs.length !== 1 || staff.docs[0].data().status === 'Resigned') throw Error('The staff account is missing or duplicated. Check the staff directory before recording attendance.');
+        payload.staffId = staff.docs[0].id;
+        const confirmation = await Swal.fire({title:'Confirm attendance correction',
+            text:`${payload.staffName} · ${payload.branch} · ${payload.type} · ${payload.timestamp.toLocaleString('en-PH',{timeZone:'Asia/Manila'})}. Reason: ${payload.remarks}. This will be recorded under ${actor.email}.`,
+            icon:'question',showCancelButton:true,confirmButtonText:'Save correction'});
+        if (!confirmation.isConfirmed) return;
+        if (!authorized() || !window.isBranchAllowed(payload.branch)) throw Error('Your account access changed. Reopen the correction.');
+        btn.innerText = 'Saving correction…';
+        if (payload.type === 'TIME IN') {
+            const day = scheduleDateKey(payload.timestamp);
+            const history = await window.loadPayrollScheduleHistory(day,day);
+            // A correction is historical: use an archived work-date rule only.
+            const shift = resolveAttendanceShift(payload,history,{[payload.staffName]:staff.docs[0].data()});
+            if (shift.scheduleSource === 'history' && !shift.needsScheduleReview) {
+                payload.scheduleSnapshot = {...captureAttendanceSchedule(payload.timestamp,payload.branch,payload.staffName,history,{[payload.staffName]:staff.docs[0].data()}),source:'manual-correction'};
+            }
         }
-
-        await addDoc(collection(db, "attendance_logs"), {
-            staffName: staffName,
-            branch: branch,
-            type: type,
-            timestamp: logDate, // Saves it at the exact time you selected!
-            isManual: true, // Flags it so the system knows there's no GPS/Selfie
-            remarks: remarks,
-            loggedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager"
-        });
-
-        window.ManagerUI.notify(`✅ Success! Manual ${type} for ${staffName} has been recorded.`);
-        document.getElementById('manualAttendanceModal').style.display = 'none';
-        window.loadAttendanceLogs(); // Refresh the feed
-
-        // If they had the Payroll tab open, this will nudge them to refresh it
-        window.ManagerUI.notify("Reminder: If you are calculating payroll, click 'Generate List' again to apply this new time punch.");
-
-    } catch (error) {
-        console.error("Manual Log Error:", error);
-        window.ManagerUI.notify("❌ Failed to save manual log.");
-    } finally {
-        btn.innerText = "💾 Save Override Log"; btn.disabled = false;
-    }
+        window.manualAttendanceOperationId ||= crypto.randomUUID();
+        await saveManualAttendance(window,payload,{operationId:window.manualAttendanceOperationId,actor,authorize:authorized});
+        window.invalidateCache?.('attendance_logs');
+        document.getElementById('manualAttendanceModal').style.display='none';
+        window.ManagerUI.notify('Attendance correction saved with your account and save time. Refresh payroll to include it.');
+        window.loadAttendanceLogs();
+    } catch(error) {
+        console.error('Manual attendance correction:',error);
+        window.ManagerUI.notify(error.message || 'The attendance correction was not saved.');
+    } finally {manualAttendanceBusy=false;btn.innerText='Save correction';btn.disabled=false;}
 };
 
 window.otCache = { staff: {}, schedule: null };

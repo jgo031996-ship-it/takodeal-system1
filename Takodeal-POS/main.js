@@ -8,6 +8,8 @@ import { receiveDispatch } from './dispatch-safety.js';
 import { MALL_FLOAT, mallOpeningCash, stockRequestDue, autoRequestId, businessClock } from './branch-operations.js';
 import { closeShiftAtomic, readBranchPolicy, readMallOpeningCash } from './cash-settlement.js';
 import { createRemittanceAttemptStore, readRemittanceDrawer, submitRemittanceAtomic, readClosedCashCarry, recordOpeningCashReview } from './remittance-safety.js';
+import {captureAttendanceSchedule} from './payroll-safety.js';
+import {createScheduleHistoryStore} from './schedule-history.js';
 // ========================================================
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
@@ -3054,6 +3056,7 @@ window.closeTimeClock = function() {
 window.isProcessingAttendance = false;
 
 window.submitAttendance = async function(type) {
+    if (!['TIME IN', 'TIME OUT'].includes(type)) return alert('Choose TIME IN or TIME OUT using the attendance buttons. No record was created.');
     // 1. INSTANT LOCAL LOCK (Stops double-tapping instantly)
     if (window.isProcessingAttendance) return;
     window.isProcessingAttendance = true;
@@ -3100,7 +3103,7 @@ window.submitAttendance = async function(type) {
             const staffSnap = await getDocs(staffQ);
             
             if (!staffSnap.empty) {
-                staffProfile = staffSnap.docs[0].data();
+                staffProfile = {...staffSnap.docs[0].data(),id:staffSnap.docs[0].id};
             } else {
                 alert(`❌ Error: ${staffName}'s profile could not be found in the database. Please contact the Manager.`);
                 unlockUI();
@@ -3533,16 +3536,30 @@ window.submitAttendance = async function(type) {
         }
         
         try {
-            await addDoc(collection(db, "attendance_logs"), {
+            const attendanceAt = new Date();
+            const attendance = {
                 staffName: staffName, 
+                staffId:staffProfile.id || '',
                 branch: finalBranch, 
                 type: type, 
-                timestamp: new Date(),
+                sourceApp:'cashier', recordedBy:staffName, recordedByStaffId:staffProfile.id || '',
+                recordedDeviceId:localStorage.getItem('takodeal_device_id') || '', createdAt:serverTimestamp(),
+                timestamp: attendanceAt,
                 locationLat: userLat, 
                 locationLng: userLng, 
                 distanceMeters: Math.round(finalDistance), 
                 photoBase64: photoBase64
-            });
+            };
+            if (type === 'TIME IN') {
+                let schedule = null;
+                try {
+                    schedule = await createScheduleHistoryStore(window).loadRange(new Date(+attendanceAt - 86400000), new Date(+attendanceAt + 86400000));
+                } catch (error) {
+                    console.warn('Schedule evidence unavailable for this clock-in; payroll review will be required.', error);
+                }
+                attendance.scheduleSnapshot = captureAttendanceSchedule(attendanceAt, finalBranch, staffName, schedule, {[staffName]:staffProfile});
+            }
+            await addDoc(collection(db, "attendance_logs"), attendance);
             
             localStorage.setItem(punchCooldownKey, Date.now());
             
