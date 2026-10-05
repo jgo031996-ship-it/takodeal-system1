@@ -33,7 +33,7 @@ test('future records and malformed timestamps do not affect attendance',()=>{
  assert.deepEqual(attendanceRows([punch('Ana','Maa','TIME IN','2026-10-04T15:00:00+08:00'),{staffName:'Ana',timestamp:'broken'}],'2026-10-04','All',now),[]);
 });
 test('all platform carts, operational drafts and active writes block updates',()=>{
- for(const w of [{cart:[{}]},{platformCarts:{Grab:[{}]}},{prepCart:[{}]},{kitchenPrepCart:[{}]},{wasteCart:[{}]},{consumablesCart:[{}]},{expenseCart:[{}]},{isProcessingOrder:true},{isSubmittingOrder:true},{isSubmittingWasteCart:true},{cashierRemitSubmitting:true},{isProcessingAttendance:true},{isBluetoothPrinting:true},{bluetoothPrintQueue:[{}]}])assert.ok(updateBlocker(w),JSON.stringify(w));
+ for(const w of [{cart:[{}]},{platformCarts:{Grab:[{}]}},{prepCart:[{}]},{kitchenPrepCart:[{}]},{wasteCart:[{}]},{consumablesCart:[{}]},{expenseCart:[{}]},{isProcessingOrder:true},{isSubmittingOrder:true},{isSubmittingWasteCart:true},{cashierRemitSubmitting:true},{cashierShiftOpening:true},{isProcessingAttendance:true},{isBluetoothPrinting:true},{bluetoothPrintQueue:[{}]}])assert.ok(updateBlocker(w),JSON.stringify(w));
  assert.equal(updateBlocker({offlineQueue:[{}],cart:[],platformCarts:{Grab:[]}}),'');
 });
 test('consumable photos use legacy and current fields and exact names',()=>{

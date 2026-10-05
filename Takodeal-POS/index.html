@@ -343,9 +343,9 @@
         #loginRankingWidget { transform: scale(0.75); transform-origin: top left; }
     }
   </style>
-<link rel="stylesheet" href="cashier-pos-base.css?v=cashier-reliability-20261004-r4">
-<link rel="stylesheet" href="cashier-theme.css?v=cashier-reliability-20261004-r4">
-<link rel="stylesheet" href="cashier-tablet.css?v=cashier-reliability-20261004-r4">
+<link rel="stylesheet" href="cashier-pos-base.css?v=tablet-printer-remittance-20261005-r7">
+<link rel="stylesheet" href="cashier-theme.css?v=tablet-printer-remittance-20261005-r7">
+<link rel="stylesheet" href="cashier-tablet.css?v=tablet-printer-remittance-20261005-r7">
 </head>
 
 <body class="cashier-orange">
@@ -3750,19 +3750,21 @@ window.printReceipt = async function(type) {
             tReceipt += drawLine();
         });
         tReceipt += "\n\n\n\n\x1D\x56\x41\x10"; 
-        if (typeof window.sendToBluetoothPrinter === 'function') await window.sendToBluetoothPrinter(window.stringToBuffer(tReceipt), false, type);
+        if (typeof window.sendToBluetoothPrinter === 'function') await window.sendToBluetoothPrinter(window.stringToBuffer(tReceipt), false, type === 'food' ? 'kitchen' : 'bar');
         return;
     }
 
     let payloadBuffers = [];
 
-    let initCmd = "\x1B\x40\n";
-    if (localStorage.getItem('takodeal_auto_drawer') !== 'false') initCmd += "\x1B\x70\x00\x19\x96\n";
-    initCmd += "\x1B\x61\x01"; 
-    payloadBuffers.push(window.stringToBuffer(initCmd)); 
+    payloadBuffers.push(window.stringToBuffer("\x1B\x40\n"));
+    if (localStorage.getItem('takodeal_auto_drawer') !== 'false') {
+        // Drawer timings are binary bytes; text sanitization must not remove 0x96.
+        payloadBuffers.push(new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0x96]));
+    }
+    payloadBuffers.push(window.stringToBuffer("\x1B\x61\x01"));
 
     if (logoBase64 && typeof window.encodeImageForPrinter === 'function') {
-        let imageBytes = await window.encodeImageForPrinter(logoBase64, logoW, logoH);
+        let imageBytes = await window.encodeImageForPrinter(logoBase64, logoW, logoH, paperSize);
         if (imageBytes) payloadBuffers.push(imageBytes); 
     }
 
@@ -4508,7 +4510,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=cashier-reliability-20261004-r4"></script>
+    <script type="module" src="main.js?v=tablet-printer-remittance-20261005-r7"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {
@@ -4662,7 +4664,7 @@ window.showMobileOrders = function() {
           </div>
       </div>
   </div>
-<script src="cashier-pos-ui.js?v=cashier-reliability-20261004-r4"></script>
-<script type="module" src="cashier-workspace.js?v=cashier-reliability-20261004-r4"></script>
+<script src="cashier-pos-ui.js?v=tablet-printer-remittance-20261005-r7"></script>
+<script type="module" src="cashier-workspace.js?v=tablet-printer-remittance-20261005-r7"></script>
 </body>
 </html>

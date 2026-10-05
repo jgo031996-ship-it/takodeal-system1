@@ -1,4 +1,5 @@
 import {CASHIER_RELEASE,businessDate,dayWindow,attendanceRows,imageFor,updateBlocker,labelSettings,drinkLabels,parkedOrderDetails} from './cashier-data.js';
+import {installCartLayout} from './cart-layout.js';
 const el = id => document.getElementById(id);
 const money = value => new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(Number(value)||0);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -37,10 +38,10 @@ function installRemittance() {
   // The existing submit routine still verifies the PIN and audits the drawer.
   const submit=window.submitRemittance;
   window.submitRemittance=async function(){const start=el('remitStartDate').value,end=el('remitEndDate').value;
+    if(window.cashierRemitSubmitting)return;
     try {dayWindow(start);dayWindow(end);if(start>end)throw new Error('The sales period end must be on or after its start.');}
     catch(error){window.alert(error.message);return;}
-    window.cashierRemitSubmitting=true;
-    try {await submit();el('remitPinCode').value='';}finally{window.cashierRemitSubmitting=false;}};
+    await submit();el('remitPinCode').value='';};
 }
 async function loadRemittances(reset) {
   if(remitBusy)return; remitBusy=true;
@@ -56,7 +57,7 @@ async function loadRemittances(reset) {
     if(branch!==localStorage.getItem('takodeal_device_branch'))return;
     if(reset || !remitCursor)body.replaceChildren();
     snapshot.forEach(docSnap=>{const d=docSnap.data();if(d.branch!==branch)return;const row=document.createElement('tr');
-      row.innerHTML=`<td>${escape(dateTime(d.timestamp))}</td><td>${escape(d.cashier || d.remittedBy || 'Not recorded')}</td><td class="cashier-money">${money(d.amount)}</td><td>${escape(d.recipient || 'Not recorded')}<small>${escape(d.channel)}</small></td><td>${escape(d.salesPeriodStart || '—')} → ${escape(d.salesPeriodEnd || '—')}<small>${escape(d.referenceNumber || 'No reference')}</small></td><td><span class="cashier-badge">${escape(d.status || 'Pending')}</span></td>`;body.append(row);});
+      row.innerHTML=`<td>${escape(dateTime(d.timestamp))}</td><td>${escape(d.cashier || d.cashierName || d.remittedBy || 'Not recorded')}</td><td class="cashier-money">${money(d.amount)}</td><td>${escape(d.recipient || 'Not recorded')}<small>${escape(d.channel)}</small></td><td>${escape(d.salesPeriodStart || '—')} → ${escape(d.salesPeriodEnd || '—')}<small>${escape(d.referenceNumber || 'No reference')}</small></td><td><span class="cashier-badge">${escape(d.status || 'Pending')}</span></td>`;body.append(row);});
     remitCursor=snapshot.docs.at(-1) || remitCursor;more.hidden=snapshot.docs.length<50;
     if(!body.children.length)tableMessage(body,'No transfers recorded for this branch yet.');
   }catch(error){if(reset)tableMessage(body,'Transfer history could not be loaded. Check your connection and try again.');window.console.error('Remittance history:',error);more.hidden=false;more.textContent='Retry loading history';}
@@ -99,11 +100,14 @@ function paintAttendance(){
 }
 function installPrinterHub(){
   const view=page('printer','Printer hub','Manage receipt and preparation printers, plus a dedicated label workspace for drinks.');
-  const help=document.createElement('p');help.className='cashier-help';help.textContent='Printer pairing is saved on this device. If Bluetooth drops after idle time, we reconnect when you return and before printing. Keep the printer powered on and nearby; if it has an auto-sleep setting, turn that off in the printer’s own settings.';view.append(help);
+  const help=document.createElement('section');help.className='cashier-panel cashier-printer-setup';
+  help.innerHTML='<div><h2>GOOJPRT JP-58H · 58mm receipts</h2><p class="cashier-help">Turn the printer on and load paper. Start with a text-only test. Branch receipt content, logo and paper size come from Access & branch management in the Owner app.</p></div><label for="cashierPrinterMode">Print using<select id="cashierPrinterMode"><option value="ble">Direct Bluetooth</option><option value="rawbt">Android printer app (RawBT)</option></select></label><p id="cashierPrinterModeHelp" class="cashier-help"></p><a id="cashierPrinterBridgeSetup" class="cashier-button" href="https://play.google.com/store/apps/details?id=ru.a402d.rawbtprinter" target="_blank" rel="noopener" hidden>Get RawBT for Android ↗</a>';
+  view.append(help);
+  el('cashierPrinterMode').onchange=()=>{try{window.setPrinterMode(el('cashierPrinterMode').value);refreshPrinters();}catch(error){window.Swal.fire('Printer setup',error.message,'info');refreshPrinters();}};
   const devices=document.createElement('div');devices.className='cashier-printer-grid';view.append(devices);
   [['main','Receipt printer','Customer receipts and cash drawer'],['kitchen','Kitchen printer','Food preparation tickets'],['bar','Bar printer','Drink preparation tickets']].forEach(([role,name,help])=>{
-    const card=document.createElement('section');card.className='cashier-panel cashier-printer-card';card.innerHTML=`<div class="cashier-printer-symbol" aria-hidden="true">▤</div><div class="cashier-panel-heading"><h2>${name}</h2></div><span class="cashier-badge" id="printerState-${role}">Not connected</span><p>${help}</p><div class="cashier-actions"><button class="cashier-button primary">Connect printer</button><button class="cashier-button">Test print</button></div>`;
-    const buttons=card.querySelectorAll('button');buttons[0].onclick=()=>window.connectSpecificPrinter(role);buttons[1].onclick=event=>window.testPrint(role,event);devices.append(card);});
+    const card=document.createElement('section');card.className='cashier-panel cashier-printer-card';card.innerHTML=`<div class="cashier-printer-symbol" aria-hidden="true">🖨️</div><div class="cashier-panel-heading"><h2>${name}</h2></div><span class="cashier-badge" id="printerState-${role}">Not connected</span><p>${help}</p><p id="printerResult-${role}" class="cashier-help" role="status">No test yet. Use Test print to check paper output.</p><details class="cashier-printer-details"><summary>Connection details</summary><p id="printerDetails-${role}"></p></details><div class="cashier-actions"><button class="cashier-button primary">Connect printer</button><button class="cashier-button">Test print</button><button class="cashier-button" id="printerSearch-${role}">Search again</button></div>`;
+    const buttons=card.querySelectorAll('button');buttons[0].onclick=()=>window.connectSpecificPrinter(role);buttons[1].onclick=event=>window.testPrint(role,event);buttons[2].onclick=()=>window.connectSpecificPrinter(role,{replace:true});devices.append(card);});
   const label= document.createElement('section');label.className='cashier-panel cashier-label-panel';
   label.innerHTML='<div class="cashier-panel-heading"><div><h2>Drink labels</h2><p>Clabel CT221B · 203 dpi</p></div><span class="cashier-badge">Dedicated label output</span></div><p class="cashier-help">Pair your CT221B in Clabel trade for Bluetooth printing. Export the label image below and import it into Clabel trade. On a computer with the Clabel driver installed, choose the CT221B in the print dialog. This label output is separate from receipt printers.</p><div class="cashier-label-layout"><div><div class="cashier-filters"><label for="labelWidth">Width (mm)<input id="labelWidth" type="number" min="25" max="54" value="50"></label><label for="labelHeight">Height (mm)<input id="labelHeight" type="number" min="20" max="100" value="30"></label></div><label for="labelDrink">Drink<input id="labelDrink" placeholder="e.g. Spanish Latte"></label><label for="labelCustomer">Customer / order<input id="labelCustomer" placeholder="e.g. Maya · OR 1042"></label><label for="labelDetail">Size / customizations<textarea id="labelDetail" rows="2" placeholder="Large · Less ice"></textarea></label><label for="labelQuantity">Copies<input id="labelQuantity" type="number" min="1" max="30" value="1"></label><div class="cashier-actions"><button id="saveLabelSettings" class="cashier-button">Save label size</button><button id="latestDrinkLabels" class="cashier-button">Use last receipt</button><a class="cashier-button" href="https://global.ctaiot.com/app/" target="_blank" rel="noopener">Clabel setup ↗</a></div></div><div><canvas id="drinkLabelPreview" aria-label="Drink label preview"></canvas><p id="labelPrintStatus" class="cashier-help" role="status">Preview updates as you type.</p><div class="cashier-actions"><button id="downloadDrinkLabel" class="cashier-button primary">Download label image</button><button id="printDrinkLabel" class="cashier-button">Print labels</button></div></div></div>';
   view.append(label);
@@ -116,6 +120,7 @@ function installPrinterHub(){
   window.openPrinterManager=()=>{window.switchView('printer');refreshPrinters();paintLabel();};
   el('nav-printer').onclick=()=>window.openPrinterManager();
   window.setInterval(()=>{if(view.classList.contains('active'))refreshPrinters();},3000);
+  refreshPrinters();
   paintLabel();
 }
 let labelQueue=[];
@@ -148,13 +153,21 @@ function printLabels(){
 }
 function refreshPrinters(){for(const role of ['main','kitchen','bar']){
   const badge=el('printerState-'+role);if(!badge)continue;
-  const state=window.getPrinterState?.(role) || {connected:false,status:'not-connected'};
-  badge.textContent=state.connected?'Connected':({'connecting':'Connecting…','reconnecting':'Reconnecting automatically','saved':'Pairing saved · waiting for printer'})[state.status] || 'Not connected';
+  const state=window.getPrinterDiagnostics?.(role) || window.getPrinterState?.(role) || {connected:false,status:'not-connected',mode:'ble'};
+  const bridge=state.mode==='rawbt';
+  if(el('cashierPrinterMode'))el('cashierPrinterMode').value=bridge?'rawbt':'ble';
+  if(el('cashierPrinterModeHelp'))el('cashierPrinterModeHelp').textContent=bridge?'Pair JP-58H in Android Bluetooth settings, select it in RawBT, and use ESC/POS with 58mm paper. Return here to test. The printer app opens for each print job.':'Direct Bluetooth needs a compatible printer data channel. If JP-58H is missing or sends no paper, choose Android printer app (RawBT) on your tablet.';
+  if(el('cashierPrinterBridgeSetup'))el('cashierPrinterBridgeSetup').hidden=!bridge;
+  badge.textContent=bridge?'Android printer app selected':state.connected?'Data channel ready':({'connecting':'Connecting…','reconnecting':'Reconnecting automatically','saved':'Pairing saved · waiting for printer','error':'Connection needs attention','unsupported':'Connection needs attention'})[state.status] || 'Not connected';
   badge.classList.toggle('is-connected',state.connected);badge.setAttribute('role','status');
   const button=badge.closest('.cashier-printer-card').querySelector('button');
-  button.disabled=state.status==='connecting';button.textContent=state.connected?'Check connection':'Connect printer';
+  button.disabled=state.status==='connecting';button.textContent=bridge?'Setup instructions':state.connected?'Check connection':'Connect printer';
+  if(el('printerSearch-'+role))el('printerSearch-'+role).hidden=bridge;
+  const result=el('printerResult-'+role);if(result){result.textContent=state.error || state.result?.message || 'No test yet. Use Test print to check paper output.';result.dataset.state=state.error?'error':state.result?.status || 'idle';}
+  const details=el('printerDetails-'+role);if(details)details.textContent=[state.name && 'Printer: '+state.name, state.service && 'Service: '+state.service, state.endpoint && 'Data channel: '+state.endpoint, state.result?.bytes && 'Last job: '+state.result.bytes+' bytes', state.error && 'Connection: '+state.error].filter(Boolean).join('\n') || 'No printer selected on this device.';
 }}
 document.addEventListener('cashier-printer-state',refreshPrinters);
+document.addEventListener('cashier-printer-result',refreshPrinters);
 
 function decorateInventory(){
   const catalogue=[...(window.masterPOSData?.items||[]),...Object.values(window.TK_CACHE?.inventoryByBranch||{}).flat()];
@@ -170,7 +183,7 @@ function decorateInventory(){
 function installTheme(){
   document.body.classList.add('cashier-orange');
   document.querySelectorAll('.nav-item').forEach(nav=>{nav.setAttribute('role','button');nav.tabIndex=0;nav.title=nav.querySelector('.nav-item-text')?.textContent.trim()||'';nav.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)){e.preventDefault();nav.click();}});
-    const icon=nav.querySelector('.nav-icon-wrapper > span:first-child') || nav.querySelector(':scope > span');if(icon && !icon.id){icon.textContent=({'nav-pos':'PS','nav-sales':'SL','nav-remit':'RM','nav-staffreq':'RQ','nav-sop':'SP','nav-prep':'KP','nav-consumables':'SU','nav-mobilehub':'MO','nav-stockreq':'ST','nav-waste':'WS','nav-timeclock':'TC','nav-schedule':'SC','nav-grab':'GR','nav-bulletin':'BB','nav-printer':'PR'})[nav.id] || nav.title.slice(0,2).toUpperCase();icon.setAttribute('aria-hidden','true');}
+    const icon=nav.querySelector('.nav-icon-wrapper > span:first-child') || nav.querySelector(':scope > span');if(icon && !icon.id){icon.textContent=({'nav-pos':'🖥️','nav-sales':'🧾','nav-remit':'💸','nav-staffreq':'📝','nav-sop':'📋','nav-prep':'🔪','nav-consumables':'🧹','nav-mobilehub':'📱','nav-stockreq':'📦','nav-waste':'🗑️','nav-timeclock':'📸','nav-schedule':'📅','nav-grab':'🟢','nav-bulletin':'📢','nav-printer':'🖨️','nav-deliveries':'🚚'})[nav.id] || icon.textContent;icon.classList.add('cashier-nav-icon');icon.setAttribute('aria-hidden','true');}
   });
   const banner=el('unverifiedWarningBanner');banner.setAttribute('role','status');banner.classList.add('cashier-payment-notice');
   document.querySelector('.top-bar').after(banner);
@@ -178,8 +191,16 @@ function installTheme(){
   const count=el('unverifiedCountText');count.parentElement.replaceChildren(document.createTextNode('Payment review pending · '),count,document.createTextNode(' payments'));
   banner.querySelector(':scope > div > div:last-child').textContent='A manager must verify these digital payments in HQ before the shift can close.';
   const login=el('loginOverlay'), card=login.querySelector(':scope > div:last-child');card.classList.add('cashier-login-card');
-  card.querySelector('h2').insertAdjacentHTML('afterend','<p class="cashier-login-subtitle">Cashier workspace</p>');
-  login.append(el('ownerAccessBtnContainer'));el('ownerAccessBtnContainer').style.position='static';
+  const brand=document.createElement('header');brand.className='cashier-login-brand';
+  const identity=document.createElement('div');identity.className='cashier-login-identity';
+  const logo=card.firstElementChild, heading=card.querySelector('h2'), branch=el('loginBranchDisplay');
+  brand.append(logo,identity);identity.append(heading);heading.insertAdjacentHTML('afterend','<p class="cashier-login-subtitle">Cashier workspace</p>');identity.append(branch);card.prepend(brand);
+  const update=card.querySelector('[onclick="window.manualHardUpdate()"]');if(update){update.classList.add('cashier-login-update');update.setAttribute('role','button');update.tabIndex=0;update.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();update.click();}});}
+  const loginActions=document.createElement('div');loginActions.className='cashier-login-actions';if(update)loginActions.append(update);loginActions.append(el('ownerAccessBtnContainer'));card.append(loginActions);el('ownerAccessBtnContainer').style.position='static';
+  const ranking=el('loginRankingWidget'), aside=document.createElement('aside'), details=document.createElement('details'), summary=document.createElement('summary');
+  aside.className='cashier-login-ranking';aside.setAttribute('aria-label','Daily branch ranking');summary.textContent="Today's branch ranking";details.append(summary,ranking);aside.append(details);login.append(aside);
+  const rankingMedia=matchMedia('(min-width:850px) and (min-height:520px)');const rankingLayout=()=>{details.open=rankingMedia.matches;};rankingMedia.addEventListener('change',rankingLayout);rankingLayout();
+  const rankingVisibility=()=>{aside.hidden=ranking.style.display==='none';};new MutationObserver(rankingVisibility).observe(ranking,{attributes:true,attributeFilter:['style']});rankingVisibility();
   el('loginPasswordInput').setAttribute('aria-label','Security PIN or password');
   el('btnSubmitPin').textContent='Sign in securely';
   const printerNav=el('nav-printer')?.querySelector('.nav-item-text');if(printerNav)printerNav.textContent='Printer Hub';
@@ -232,12 +253,13 @@ function installUpdates(){
   navigator.serviceWorker?.addEventListener('controllerchange',()=>{if(activateRequested && !updateBlocker(window)){if(window.TARGET_UPDATE_VERSION)localStorage.setItem('takodeal_local_version',String(window.TARGET_UPDATE_VERSION));location.reload();}});
   window.addEventListener('cashier-worker-ready',event=>ready(event.detail));
   window.setInterval(()=>{if(document.visibilityState==='visible' && navigator.onLine)releaseRegistration?.update().catch(()=>{});},15*60*1000);
-  if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){showCashierUpdateNotice('updated','Shift sales updated','Temporary inventory review: missing or duplicate ingredients no longer block sale uploads or shift closure. Skipped quantities are flagged in HQ. Shift Sales now updates live.');localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
+  if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){showCashierUpdateNotice('updated','Cashier workspace updated','Tablet login and order spacing improved. Navigation icons restored. Remittance retries reuse one transfer. Printer Hub now shows connection details and test results. Temporary inventory skips still require HQ review.');localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
 }
 function install(){installTheme();installRemittance();installClock();installPrinterHub();installTabletControls();installParkedOrders();installUpdates();}
 if(document.readyState==='complete')install();else window.addEventListener('load',install,{once:true});
 
 function installTabletControls(){
+  installCartLayout(document,window);
   const sidebar=el('mainSidebar'), top=document.querySelector('.top-bar');
   const toggle=document.createElement('button');toggle.id='cashierSidebarToggle';toggle.type='button';toggle.className='cashier-button';toggle.textContent='☰';toggle.setAttribute('aria-label','Toggle navigation');toggle.setAttribute('aria-controls','mainSidebar');top.prepend(toggle);
   if(matchMedia('(min-width:769px) and (max-width:1180px)').matches)sidebar.classList.add('collapsed');

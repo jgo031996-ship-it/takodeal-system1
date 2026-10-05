@@ -2,11 +2,12 @@ import { imageFor } from './cashier-data.js';
 import { installMealCheckout } from './meal-checkout.js';
 import { createShiftCloseDraftStore, countValue } from './shift-close-draft.js';
 import { ensureShiftSalesUploaded, createShiftSalesFeed } from './shift-sales.js';
-import { createPrinterConnections, createPrinterWriter } from './printer-connection.js';
+import { createPrinterConnections, createPrinterWriter, printerMode, rawBtIntent, receiptLogoDimensions } from './printer-connection.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { receiveDispatch } from './dispatch-safety.js';
 import { MALL_FLOAT, mallOpeningCash, stockRequestDue, autoRequestId, businessClock } from './branch-operations.js';
 import { closeShiftAtomic, readBranchPolicy, readMallOpeningCash } from './cash-settlement.js';
+import { createRemittanceAttemptStore, readRemittanceDrawer, submitRemittanceAtomic, readClosedCashCarry, recordOpeningCashReview } from './remittance-safety.js';
 // ========================================================
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
@@ -2797,12 +2798,12 @@ window.openRemittanceModal = async function() {
     document.getElementById('remitCashier').value = safeCashierName;
     
     let todayObj = new Date();
-    let todayStr = todayObj.toISOString().split('T')[0];
+    let todayStr = businessClock(todayObj).day;
     document.getElementById('remitEndDate').value = todayStr;
     document.getElementById('remitStartDate').value = "Loading..."; 
 
     // 🔥 MONDAY COUNTDOWN ENGINE
-    let dayOfWeek = todayObj.getDay(); // 0 is Sunday, 1 is Monday...
+    let dayOfWeek = businessClock(todayObj).weekday;
     let daysUntilMonday = (1 + 7 - dayOfWeek) % 7;
     if (daysUntilMonday === 0) daysUntilMonday = 7; // If today is Monday, next is 7 days
 
@@ -2815,20 +2816,23 @@ window.openRemittanceModal = async function() {
         alertBox.style.background = "#eff6ff"; alertBox.style.color = "#1d4ed8"; alertBox.style.borderColor = "#3b82f6";
     }
 
+    window.switchRemittanceTab('form');
+    const accountLoad = window.loadHqAccountsForRemittance();
     try {
         let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        // Pull the exact end date of their LAST remittance
-        const q = query(collection(db, "remittances"), where("branch", "==", safeBranch), orderBy("timestamp", "desc"), limit(1));
-        const snap = await getDocs(q);
+        // A legacy automatic collection has no sales period. Use the latest
+        // documented transfer instead of replacing it with the collection date.
+        const q = query(collection(db, "remittances"), where("branch", "==", safeBranch), orderBy("timestamp", "desc"), limit(50));
+        const snap = await getDocsFromServer(q);
+        const latestPeriod = snap.docs.map(row => row.data()).find(row => /^\d{4}-\d{2}-\d{2}$/.test(row.salesPeriodEnd || '') && !['Cancelled','Rejected','Voided'].includes(row.status));
         
-        if (!snap.empty) {
-            let lastData = snap.docs[0].data();
-            let lastEndDateStr = lastData.salesPeriodEnd || lastData.timestamp.toDate().toISOString().split('T')[0];
+        if (latestPeriod) {
+            let lastEndDateStr = latestPeriod.salesPeriodEnd;
             
             // Set Start Date to the day AFTER they last remitted
             let nextStartDate = new Date(lastEndDateStr);
             nextStartDate.setDate(nextStartDate.getDate() + 1);
-            document.getElementById('remitStartDate').value = nextStartDate.toISOString().split('T')[0];
+            document.getElementById('remitStartDate').value = nextStartDate.toISOString().split('T')[0] > todayStr ? todayStr : nextStartDate.toISOString().split('T')[0];
         } else {
             document.getElementById('remitStartDate').value = todayStr; 
         }
@@ -2837,8 +2841,16 @@ window.openRemittanceModal = async function() {
         document.getElementById('remitStartDate').value = todayStr;
     }
     
-    window.switchRemittanceTab('form');
-    window.loadHqAccountsForRemittance();
+    await accountLoad;
+    try {
+        const pending = remittanceAttempts.pending(localStorage.getItem('takodeal_device_branch'));
+        if (pending) {
+            const saved = pending.intent;
+            for (const [field, key] of Object.entries({Amount:'amount',Channel:'channel',Recipient:'recipient',RefNum:'referenceNumber',StartDate:'salesPeriodStart',EndDate:'salesPeriodEnd',Cashier:'cashier'})) document.getElementById('remit'+field).value = saved[key];
+            document.getElementById('remitPinCode').value = '';
+            alertBox.innerText = 'Previous transfer awaiting confirmation. Verify your PIN and retry these saved details; do not send another copy.';
+        }
+    } catch (error) { alertBox.innerText = error.message; }
 };
 
 window.switchRemittanceTab = function(tab) {
@@ -2882,87 +2894,58 @@ window.loadHqAccountsForRemittance = async function() {
     }
 };
 
-window.submitRemittance = async function() {
-    let safeBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-    let safeCashier = localStorage.getItem('cashierName') || 'Unknown';
-    let remitAmount = parseFloat(document.getElementById('remitAmount').value);
-    let channel = document.getElementById('remitChannel').value;
-    let recipient = document.getElementById('remitRecipient').value.trim();
-    let refNum = document.getElementById('remitRefNum').value.trim();
-    let startDate = document.getElementById('remitStartDate').value;
-    let endDate = document.getElementById('remitEndDate').value;
-    
-    if (isNaN(remitAmount) || remitAmount <= 0 || !channel || !recipient) { alert("❌ Fill out Amount, Channel, and Recipient."); return; }
-
-    let btn = document.querySelector("button[onclick='submitRemittance()']");
-    if(btn) { btn.innerText = "⏳ Auditing Drawer..."; btn.disabled = true; }
-
-    try {
-        let userPin = document.getElementById('remitPinCode').value;
-        let identity = await window.verifyPin(userPin);
-        if (!identity) { alert("❌ Incorrect PIN."); if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; } return; }
-
-        // 💸 NEW MATH: Look ONLY at the latest drawer balances!
-        let drawerCash = 0;
-        let shiftIdToLog = "Accumulated_Floating";
-        
-        const activeQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("active", "==", true), limit(1));
-        const activeSnap = await getDocs(activeQ);
-        
-        if (!activeSnap.empty) {
-            let shiftData = activeSnap.docs[0].data();
-            shiftIdToLog = activeSnap.docs[0].id;
-            let start = parseFloat(shiftData.startingCash) || 0;
-            let cashOut = parseFloat(shiftData.cashOut) || 0;
-            
-            let cashSales = 0;
-            let validStartTime = shiftData.startTime.toDate ? shiftData.startTime.toDate() : new Date(shiftData.startTime);
-            const txQ = query(collection(db, "transactions"), where("branch", "==", safeBranch), where("timestamp", ">=", validStartTime));
-            const txSnap = await getDocs(txQ);
-            txSnap.forEach(d => {
-                let tx = d.data();
-                if (tx.status !== 'Voided') {
-                    if (tx.splitDetails) {
-                        let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
-                        if (cashSplit) cashSales += cashSplit.amount;
-                    } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
-                        cashSales += (tx.netTotal || 0);
-                    }
-                }
-            });
-            drawerCash = (start + cashSales) - cashOut;
-        } else {
-            const lastShiftQ = query(collection(db, "shifts"), where("branch", "==", safeBranch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
-            const lastShiftSnap = await getDocs(lastShiftQ);
-            if (!lastShiftSnap.empty) {
-                drawerCash = parseFloat(lastShiftSnap.docs[0].data().declaredCash) || 0;
-            }
+const remittanceAttempts = createRemittanceAttemptStore(localStorage);
+let remittanceSubmitFlight = null;
+window.submitRemittance = function() {
+    if (remittanceSubmitFlight) return remittanceSubmitFlight;
+    // Lock synchronously, including the PIN check and drawer lookup.
+    window.cashierRemitSubmitting = true;
+    const btn = document.querySelector("button[onclick='submitRemittance()']");
+    const originalText = btn?.innerText || 'Submit Remittance to HQ';
+    if (btn) { btn.innerText = 'Verifying transfer…'; btn.disabled = true; }
+    const work = (async () => {
+        const branch = localStorage.getItem('takodeal_device_branch');
+        if (!branch || branch === 'Unknown' || window.sessionUser?.branch && window.sessionUser.branch !== branch) throw new Error('Choose the approved branch before sending cash.');
+        const values = Object.fromEntries(['Amount','Channel','Recipient','RefNum','StartDate','EndDate'].map(key => [key, document.getElementById('remit'+key).value.trim()]));
+        if (!Number.isFinite(Number(values.Amount)) || Number(values.Amount) <= 0 || !values.Channel || !values.Recipient) throw new Error('Fill out the amount, transfer method and recipient.');
+        const identity = await window.verifyPin(document.getElementById('remitPinCode').value);
+        if (!identity || typeof identity !== 'object' || !String(identity.cashierName || '').trim()) throw new Error('The PIN was not verified. Check the approved device and your staff PIN.');
+        if (localStorage.getItem('takodeal_device_branch') !== branch) throw new Error('The branch changed while verifying this transfer.');
+        const pending = remittanceAttempts.pending(branch);
+        const input = { branch, cashier: pending?.intent.cashier || identity.cashierName, amount: Number(values.Amount), channel: values.Channel, recipient: values.Recipient, referenceNumber: values.RefNum, salesPeriodStart: values.StartDate, salesPeriodEnd: values.EndDate };
+        let attempt, result;
+        if (pending) {
+            attempt = remittanceAttempts.prepare({ ...input, sourceShiftId: pending.intent.sourceShiftId });
+            if (btn) btn.innerText = 'Checking the original transfer…';
+            result = await submitRemittanceAtomic(window, attempt, null);
         }
-
-        if (remitAmount > drawerCash + 500) { 
-            alert(`⛔ REMITTANCE BLOCKED\n\nActual Cash in ${safeBranch} Drawer: ₱${drawerCash.toFixed(2)}\nAmount You Entered: ₱${remitAmount.toFixed(2)}\n\nYou cannot remit more physical cash than what is currently in the drawer!`);
-            if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; }
-            return;
+        if (!result || result.status === 'not-submitted') {
+            if (btn) btn.innerText = 'Checking drawer cash…';
+            const drawer = await readRemittanceDrawer(window, branch);
+            if (!attempt && input.amount > drawer.available + 0.005) throw new Error(`Only ₱${drawer.available.toFixed(2)} is recorded in this drawer. Enter an amount within the available cash.`);
+            attempt ||= remittanceAttempts.prepare({ ...input, sourceShiftId: drawer.sourceShiftId });
+            if (localStorage.getItem('takodeal_device_branch') !== branch) throw new Error('The branch changed. Retry this original transfer on its approved branch.');
+            if (btn) btn.innerText = 'Sending one transfer to HQ…';
+            result = await submitRemittanceAtomic(window, attempt, drawer);
         }
-
-        await addDoc(collection(db, "remittances"), {
-            branch: safeBranch, cashier: identity.cashierName, amount: remitAmount,
-            channel: channel, recipient: recipient, referenceNumber: refNum,
-            salesPeriodStart: startDate, salesPeriodEnd: endDate,
-            status: "Pending", timestamp: serverTimestamp()
-        });
-
-        // Log the expense so it removes the physical cash from the building correctly
-        await addDoc(collection(db, "expenses"), {
-            branch: safeBranch, shiftId: shiftIdToLog, cashier: identity.cashierName, amount: remitAmount,
-            description: `[REMITTANCE TO HQ] - ${channel} to ${recipient}`, timestamp: serverTimestamp()
-        });
-
-        alert("✅ Remittance sent to HQ!");
-        document.getElementById('remitAmount').value = ''; document.getElementById('remitRefNum').value = '';
+        remittanceAttempts.complete(branch, attempt.id);
+        document.getElementById('remitAmount').value = '';
+        document.getElementById('remitRefNum').value = '';
+        document.getElementById('remitPinCode').value = '';
+        await Swal.fire({ icon: 'success', title: result.status === 'already-submitted' ? 'Transfer already recorded' : 'Transfer sent to HQ', text: 'One pending transfer and its matching drawer entry are recorded. Keep this reference: '+attempt.id, confirmButtonText: 'View transfer history' });
         window.switchRemittanceTab('history');
-    } catch (e) { console.error(e); alert("❌ Failed to remit."); } 
-    finally { if(btn) { btn.innerText = "Submit Remittance to HQ"; btn.disabled = false; } }
+        return result;
+    })();
+    remittanceSubmitFlight = work.catch(error => {
+        console.error('Remittance:', error);
+        alert(error.message || 'The transfer is awaiting confirmation. Keep the original details and retry; do not send another copy.');
+        return null;
+    }).finally(() => {
+        remittanceSubmitFlight = null;
+        window.cashierRemitSubmitting = false;
+        if (btn) { btn.innerText = originalText; btn.disabled = false; }
+    });
+    return remittanceSubmitFlight;
 };
 
 window.loadRemittanceHistory = async function() {
@@ -6103,7 +6086,7 @@ window.openShiftModal = async function() {
 
         // 🔥 THE BEHAVIORAL WARNING & HANDOVER ENGINE
         const q = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", sessionUser.branch), window.where("status", "==", "Closed"), window.orderBy("endTime", "desc"), window.limit(1));
-        window.getDocs(q).then(snap => {
+        window.getDocs(q).then(async snap => {
             let noteEl = document.getElementById('lastShiftNote');
             if(!noteEl) {
                 noteEl = document.createElement('div');
@@ -6114,8 +6097,8 @@ window.openShiftModal = async function() {
 
             if(!snap.empty) {
                 let lastShift = snap.docs[0].data();
-                window.lastEndingCash = policy.isMallBranch ? mallOpeningCash(lastShift) : Number(lastShift.retainedCash ?? lastShift.declaredCash ?? lastShift.actualCash ?? 0);
-                window.lastShiftDataForDispute = lastShift; // 🔥 Save globally to know who to penalize!
+                window.lastEndingCash = policy.isMallBranch ? mallOpeningCash(lastShift) : await readClosedCashCarry(window, sessionUser.branch, snap.docs[0].id, lastShift);
+                window.lastShiftDataForDispute = { ...lastShift, id: snap.docs[0].id };
 
                 let expected = parseFloat(lastShift.expectedCash) || 0;
                 let diff = Number(lastShift.declaredCash ?? lastShift.actualCash ?? 0) - expected;
@@ -6181,6 +6164,10 @@ window.openShiftModal = async function() {
         inputStart.readOnly = policy.isMallBranch === true;
                 noteEl.style.display = "none";
             }
+        }).catch(error => {
+            console.error('Opening drawer review:', error);
+            const note = document.getElementById('lastShiftNote');
+            if (note) { note.textContent = 'Previous cash could not be checked. Stay connected and retry opening the shift.'; note.style.display = 'block'; }
         });
 
         document.getElementById('shiftModal').style.display = "flex";
@@ -6751,16 +6738,8 @@ window.submitSopChecklist = async function() {
 // 💵 PHYSICAL HARDWARE CASH DRAWER KICK ENGINE
 // ========================================================
 window.kickCashDrawer = function() {
-    // Standard ESC/POS sequence to trigger cash drawer kick on pin 2
-    let drawerPulseCommand = "\x1B\x40\x1B\x70\x00\x19\x96";
-    
-    try {
-        let base64Command = btoa(unescape(encodeURIComponent(drawerPulseCommand)));
-        window.location.href = "intent:base64," + base64Command + "#Intent;scheme=rawbt;package=ru.a402d.rawbtprinter;end;";
-        console.log("⚡ Hardware electrical pulse sent to cash drawer.");
-    } catch(e) {
-        console.error("Hardware control error:", e);
-    }
+    // The selected receipt transport must also carry drawer bytes without UTF-8 conversion.
+    return window.sendToBluetoothPrinter(new Uint8Array([0x1b, 0x40, 0x1b, 0x70, 0x00, 0x19, 0x96]), true, 'main');
 };
 
 // ========================================================
@@ -8651,30 +8630,27 @@ window.openPrinterManager = function() {
     });
 };
 
-window.testPrint = async function(target, event) {
-    let escpos = "\x1B\x40\n";
-    escpos += "\x1B\x61\x01"; // Center Align
-    escpos += "\x1B\x21\x30"; // Double Width & Height
-    escpos += "TEST PRINT\n";
-    escpos += "\x1B\x21\x00"; // Normal Size
-    escpos += "--------------------------------\n";
-    escpos += "Printer is connected successfully!\n";
-    escpos += "Target: " + target.toUpperCase() + "\n";
-    escpos += "Speed: Lightning Mode Active ⚡\n";
-    escpos += "--------------------------------\n\n\n\n";
-    escpos += "\x1D\x56\x41\x10"; // Cut Paper
-    
-    let btn = event.target;
-    let oldText = btn.innerText;
-    btn.innerText = "⏳...";
-    btn.disabled = true;
-
+const printerResults = new Map();
+function recordPrinterResult(role, result) {
+    printerResults.set(role, {time: new Date().toISOString(), ...result});
+    document.dispatchEvent(new CustomEvent('cashier-printer-result', {detail: {role, ...printerResults.get(role)}}));
+}
+window.testPrint = async function(target = 'main', event) {
+    const btn = event?.currentTarget || event?.target;
+    if (btn?.disabled) return;
+    const oldText = btn?.innerText;
+    if (btn) { btn.innerText = 'Sending test…'; btn.disabled = true; }
+    // Plain text isolates the connection from uploaded logos and unsupported cutters.
+    const escpos = '\x1B\x40\x1B\x61\x01TAKODEAL PRINTER TEST\n\x1B\x61\x00' +
+        'GOOJPRT / ESC-POS 58mm\n' + 'Target: ' + target.toUpperCase() + '\n' +
+        '1234567890  ABCDEFGHIJ\n' + 'Paper output needs confirmation.\n\n\n\n';
     try {
-        await window.sendToBluetoothPrinter(escpos, false, target);
-    } catch(e) {}
-    
-    btn.innerText = oldText;
-    btn.disabled = false;
+        const sent = await window.sendToBluetoothPrinter(escpos, false, target, {fallback: false});
+        if (!sent) return false;
+        const answer = await Swal.fire({title: 'Did the test print on paper?', text: 'The data was sent, but a Bluetooth connection does not confirm paper output. Check the printer now.', icon: 'question', showDenyButton: true, confirmButtonText: 'Yes, it printed', denyButtonText: 'Nothing printed'});
+        recordPrinterResult(target, {status: answer.isConfirmed ? 'paper-confirmed' : 'no-paper', message: answer.isConfirmed ? 'Test output confirmed by cashier.' : 'No paper output confirmed. Use Search again or the Android print bridge for a Classic Bluetooth JP-58H.'});
+        return !!answer.isConfirmed;
+    } finally { if (btn) { btn.innerText = oldText; btn.disabled = false; } }
 };
 
 const printerConnections = createPrinterConnections({
@@ -8686,11 +8662,22 @@ const printerConnections = createPrinterConnections({
     }
 });
 const printerWriter = createPrinterWriter(printerConnections);
-window.getPrinterState = role => printerConnections.snapshot(role);
-window.connectSpecificPrinter = async function(target) {
+window.getPrinterState = role => printerMode(localStorage) === 'rawbt' ? {connected: false, status: 'bridge', name: 'Android print bridge'} : printerConnections.snapshot(role);
+window.getPrinterDiagnostics = role => ({mode: printerMode(localStorage), ...window.getPrinterState(role), result: printerResults.get(role) || null});
+window.setPrinterMode = function(mode) {
+    if (mode !== 'ble' && mode !== 'rawbt') throw new Error('Unknown printing mode.');
+    if (mode === 'rawbt' && !/Android/i.test(navigator.userAgent)) throw new Error('Android print bridge is available on Android tablets.');
+    localStorage.setItem('takodeal_printer_mode', mode);
+    printerConnections.pause();
+    document.dispatchEvent(new CustomEvent('cashier-printer-state', {detail: {mode}}));
+    if (mode === 'ble') printerConnections.reconnect();
+};
+window.connectSpecificPrinter = async function(target, {replace = false} = {}) {
+    if (printerMode(localStorage) === 'rawbt') return Swal.fire('Android print bridge', 'Pair JP-58H in the tablet Bluetooth settings, then select it in RawBT. Set ESC/POS and 58mm. Return here and use Test print.', 'info');
     try {
-        await printerConnections.connect(target, {choose: true});
-        Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Printer connected. Pairing remembered on this device.', showConfirmButton: false, timer: 2500});
+        await printerConnections.connect(target, {choose: true, replace});
+        recordPrinterResult(target, {status: 'ready', message: 'Receipt data channel ready. Use Test print to confirm paper output.'});
+        Swal.fire({toast: true, position: 'top-end', icon: 'info', title: 'Data channel ready. Please test paper output.', showConfirmButton: false, timer: 2500});
     } catch (error) {
         if (error.name !== 'NotFoundError') Swal.fire('Printer connection', error.message || 'Power on the printer and keep it nearby, then try again.', 'warning');
     }
@@ -8737,7 +8724,7 @@ window.concatBuffers = function(buffers) {
 // ==========================================
 // 🖼️ ESC/POS BINARY IMAGE PROCESSOR
 // ==========================================
-window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeight) {
+window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeight, paperSize = '58mm') {
     return new Promise((resolve) => {
         let img = new Image();
         
@@ -8746,10 +8733,8 @@ window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeig
                 let canvas = document.createElement('canvas');
                 let ctx = canvas.getContext('2d', { willReadFrequently: true });
                 
-                let baseWidth = 200; 
-                let targetWidth = baseWidth * (scaleWidth || 1);
-                targetWidth = Math.floor(targetWidth / 8) * 8; // Must be multiple of 8
-                let targetHeight = Math.floor((img.height / img.width) * targetWidth);
+                const dimensions = receiptLogoDimensions({width: img.width, height: img.height, scaleWidth, scaleHeight, paperSize});
+                const targetWidth = dimensions.width, targetHeight = dimensions.height;
                 
                 canvas.width = targetWidth; 
                 canvas.height = targetHeight;
@@ -8800,17 +8785,29 @@ window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeig
 // ⚡ DIRECT BLUETOOTH SENDER & QUEUE SYSTEM
 // ==========================================
 let pendingPrinterJobs = 0;
-window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, target = 'main') {
+window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, target = 'main', options = {}) {
+    target = target === 'food' ? 'kitchen' : target === 'drinks' ? 'bar' : target;
     const buffer = data instanceof Uint8Array ? data : window.stringToBuffer(data);
     pendingPrinterJobs++;
     window.isBluetoothPrinting = true;
     try {
-        return await printerWriter.send(buffer, target);
+        if (printerMode(localStorage) === 'rawbt') {
+            if (!/Android/i.test(navigator.userAgent)) throw new Error('Android print bridge is only available on Android. Select direct Bluetooth on this device.');
+            const intent = rawBtIntent(buffer);
+            const answer = await Swal.fire({title: isJustDrawer ? 'Send drawer command?' : 'Send to JP-58H?', text: 'RawBT uses the printer selected in its Android settings. The app cannot confirm paper output; check the printer before reprinting.', showCancelButton: true, confirmButtonText: 'Open Android printing', preConfirm: () => { window.location.href = intent; return true; }});
+            recordPrinterResult(target, {status: answer.isConfirmed ? 'handed-off' : 'cancelled', message: answer.isConfirmed ? 'Sent to Android print bridge. Paper output is not confirmed.' : 'Print handoff cancelled.'});
+            return !!answer.isConfirmed;
+        }
+        const sent = await printerWriter.send(buffer, target, options);
+        recordPrinterResult(target, {status: 'sent', message: 'Data accepted by the printer channel. Paper output is not confirmed.', bytes: buffer.length});
+        return sent;
     } catch (error) {
         console.warn('Printer job did not complete:', error);
-        Swal.fire('Print not completed', error.bytesWritten > 0
-            ? 'The printer disconnected while printing. Check the paper before reprinting this receipt from Shift Sales.'
-            : 'Power on the saved printer and keep it nearby. The app will reconnect automatically. If needed, tap Connect printer in Printer Hub, then reprint from Shift Sales.', 'warning');
+        const message = error.bytesAttempted > 0 || error.bytesWritten > 0
+            ? 'The printer stopped accepting data. Check the paper before reprinting this receipt from Shift Sales. ' + error.message
+            : error.message || 'Power on the printer, then use Search again in Printer Hub. For a Classic Bluetooth JP-58H, use Android print bridge.';
+        recordPrinterResult(target, {status: 'failed', message, bytes: error.bytesWritten || 0});
+        await Swal.fire('Print not completed', message, 'warning');
         return false;
     } finally {
         pendingPrinterJobs--;
@@ -9320,6 +9317,8 @@ window.openNewShift = async function (branch, cashier, startCash) {
 };
 
 window.submitOpenShift = async function() {
+    if (window.cashierShiftOpening) return;
+    window.cashierShiftOpening = true;
     let btn = document.getElementById('btnOpenShiftSubmit');
     let origText = btn ? btn.innerText : "Open Shift";
     if (btn) { btn.innerText = "Opening..."; btn.disabled = true; }
@@ -9336,6 +9335,15 @@ window.submitOpenShift = async function() {
 
         const policy = await readBranchPolicy(window,branch);
         if (policy.isMallBranch) { startCash = await readMallOpeningCash(window,branch); if (startEl) startEl.value = startCash; lastEndingCash = startCash; }
+        else {
+            const previous = await window.getDocsFromServer(window.query(window.collection(window.db, 'shifts'), window.where('branch', '==', branch), window.where('status', '==', 'Closed'), window.orderBy('endTime', 'desc'), window.limit(1)));
+            if (previous.docs[0]) {
+                const row = previous.docs[0];
+                lastEndingCash = await readClosedCashCarry(window, branch, row.id, row.data());
+                window.lastEndingCash = lastEndingCash;
+                window.lastShiftDataForDispute = { ...row.data(), id: row.id };
+            } else { lastEndingCash = 0; window.lastEndingCash = 0; window.lastShiftDataForDispute = null; }
+        }
         // 1. CASH DISPUTE CHECK
         if (startCash !== lastEndingCash && lastEndingCash > 0) {
             let diff = lastEndingCash - startCash;
@@ -9354,14 +9362,13 @@ window.submitOpenShift = async function() {
                     customClass: { popup: 'rounded-2xl' }
                 });
 
-                if (result.isConfirmed) {
-                    window.addDoc(window.collection(window.db, "remittances"), {
-                        branch: branch, cashierName: "Auto-Logged (Shift Start)", amount: diff, type: "Cash Collection", channel: "Owner Collection", timestamp: window.serverTimestamp(), dateStr: new Date().toLocaleDateString('en-CA')
-                    }).catch(e => console.error(e));
-                } else if (result.isDenied) {
-                    window.addDoc(window.collection(window.db, "expenses"), {
-                        branch: branch, amount: diff, category: "Unexplained Shortage", description: `Missing cash between shifts (Expected: ₱${lastEndingCash}, Started With: ₱${startCash})`, loggedBy: shiftName, timestamp: window.serverTimestamp()
-                    }).catch(e => console.error(e));
+                if (result.isConfirmed || result.isDenied) {
+                    await recordOpeningCashReview(window, {
+                        branch, cashier: shiftName, previousShiftId: window.lastShiftDataForDispute?.id,
+                        expectedCash: lastEndingCash, startingCash: startCash,
+                        reason: result.isConfirmed ? 'Owner or manager collection reported by staff' : 'Unexplained starting cash shortage'
+                    });
+                    await Swal.fire({ icon: 'info', title: 'Cash difference sent for owner review', text: 'No extra remittance was created. Check existing transfers in HQ before recording any further cash collection.', confirmButtonText: 'Continue opening shift' });
                 } else {
                     if (btn) { btn.innerText = origText; btn.disabled = false; }
                     return; 
@@ -9460,6 +9467,7 @@ window.submitOpenShift = async function() {
         }
 
         // 3. CREATE SHIFT & INSTANT MEMORY UNLOCK (Bypasses slow cloud download)
+        if (localStorage.getItem('takodeal_device_branch') !== branch) throw new Error('The branch changed during drawer review. Reopen the shift form for the approved branch.');
         let shiftId = await window.openNewShift(branch, shiftName, startCash);
         
         if (shiftId) {
@@ -9495,6 +9503,7 @@ window.submitOpenShift = async function() {
         console.error("Open shift error:", e);
         alert("Error opening shift. Please try again.");
     } finally {
+        window.cashierShiftOpening = false;
         if (btn) { btn.innerText = origText; btn.disabled = false; }
     }
 };

@@ -143,3 +143,136 @@
   #expenseModal .cashier-expense-body > div:first-child > div:last-child {flex-wrap:wrap;}
  }
 }
+
+/* Small tablets: keep the PIN controls first and reserve a readable order workspace. */
+@media screen {
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-nav-icon {display:inline-flex!important;align-items:center;justify-content:center;flex:0 0 25px;width:25px;font-size:21px!important;font-weight:400!important;line-height:1.2;letter-spacing:0!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #loginOverlay {flex-flow:row wrap!important;justify-content:center!important;align-items:center!important;align-content:safe center;gap:24px!important;padding:20px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #loginOverlay .cashier-login-card {order:1;flex:0 1 380px;width:100%!important;max-width:380px!important;margin:0!important;padding:22px!important;max-height:none!important;overflow:visible!important;}
+ .cashier-login-brand {display:flex;align-items:center;gap:14px;text-align:left;margin-bottom:20px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-login-brand > div:first-child {margin:0!important;flex:0 0 auto;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-login-brand img {width:58px!important;height:58px!important;border-radius:14px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-login-brand h2 {font-size:22px!important;letter-spacing:.6px!important;margin:0!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-login-brand .cashier-login-subtitle {margin:3px 0 6px!important;font-size:12px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-login-brand #loginBranchDisplay {font-size:11px!important;margin:0!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-login-card > label {font-size:11px!important;letter-spacing:.6px!important;margin-bottom:8px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #loginPasswordInput {padding:12px!important;min-height:50px;font-size:26px!important;margin-bottom:12px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .login-numpad-container {gap:7px!important;margin-bottom:10px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .login-numpad-container button {padding:9px!important;min-height:46px!important;font-size:21px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #btnSubmitPin {min-height:46px!important;padding:11px!important;margin-top:10px!important;font-size:14px!important;}
+ .cashier-login-actions {display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;margin-top:10px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-login-update {min-height:40px!important;padding:11px!important;margin:0!important;font-size:12px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #ownerAccessBtnContainer {margin:0!important;width:auto;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #ownerAccessBtnContainer button {min-height:40px;font-size:12px!important;white-space:nowrap;}
+ .cashier-login-ranking {order:2;flex:0 1 360px;max-width:380px;width:100%;align-self:center;}
+ .cashier-login-ranking[hidden] {display:none!important;}
+ .cashier-login-ranking details {border:1px solid #eadfd2;border-radius:16px;background:#fffaf3;overflow:hidden;}
+ .cashier-login-ranking summary {padding:14px 18px;font-size:13px;font-weight:650;color:#7d4827;cursor:pointer;min-height:44px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-login-ranking #loginRankingWidget {position:static!important;inset:auto!important;width:100%!important;min-width:0!important;max-width:none!important;margin:0!important;padding:16px 18px!important;border:0!important;border-radius:0!important;transform:none!important;backdrop-filter:none!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #loginRankingList {margin-bottom:12px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #loginRankingQuote {font-size:12px!important;line-height:1.6!important;color:#8a6750!important;opacity:1!important;border-top-color:#eadfd2!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #loginRankingList > div {font-size:13px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList {min-height:0!important;flex:1 1 0!important;overflow-y:auto!important;padding:9px!important;gap:7px!important;overscroll-behavior:contain;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line {flex:0 0 auto;display:grid!important;grid-template-columns:minmax(0,1fr) 38px 78px 36px!important;grid-template-rows:auto auto;gap:4px 8px!important;padding:10px!important;align-items:center;border-radius:9px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line > div:first-child {grid-column:1!important;grid-row:1!important;min-width:0;padding:0!important;line-height:1.3!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line > div:first-child > span {font-size:14px!important;line-height:1.3!important;font-weight:650!important;overflow-wrap:anywhere;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line > div:first-child > div:empty {display:none!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line > div:first-child > div,body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line > div:first-child > div > div {font-size:12px!important;line-height:1.3!important;overflow-wrap:anywhere;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line > div:nth-child(2) {grid-column:1;grid-row:2;font-size:12px!important;line-height:1.3;white-space:nowrap;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .cashier-cart-line-meta > span {display:inline-block;font-size:12px!important;line-height:14px!important;margin-left:5px!important;padding:0 4px!important;vertical-align:baseline!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .cashier-cart-line-details,body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .cashier-cart-line-details > div {font-size:12px!important;line-height:1.3!important;white-space:normal!important;overflow-wrap:anywhere;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line > div:nth-child(3) {grid-column:2;grid-row:1 / 3;font-size:14px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line > div:nth-child(4) {grid-column:3;grid-row:1 / 3;font-size:14px!important;white-space:nowrap;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line > div:nth-child(5) {grid-column:4;grid-row:1 / 3;width:auto!important;margin:0!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line button {width:36px!important;height:36px!important;min-width:36px;min-height:36px;flex-shrink:0;border-radius:8px!important;font-size:12px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList[data-cart-density="compact"] {gap:5px!important;padding:7px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList[data-cart-density="compact"] .tk-cart-line {padding:6px 8px!important;gap:2px 6px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList[data-cart-density="dense"] {gap:3px!important;padding:5px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList[data-cart-density="dense"] .tk-cart-line {padding:4px 7px!important;gap:1px 5px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .tk-cart-shell > div:last-child {padding:10px!important;flex-shrink:0;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .tk-cart-shell > div:last-child > div:nth-child(2) {margin-bottom:8px!important;padding-bottom:8px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .tk-cart-shell > div:last-child > div:nth-child(2) > span:first-child {font-size:16px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .tk-cart-shell > div:last-child > div:nth-child(3) {margin-bottom:8px!important;gap:8px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .tk-cart-shell > div:last-child button {min-height:42px!important;padding:10px!important;font-size:13px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #btnMainPlaceOrder {min-height:44px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #posCartHeader {padding:10px!important;gap:7px!important;flex-shrink:0;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos .tk-order-heading {padding-bottom:3px!important;font-size:16px!important;}
+ @media(min-width:850px) and (min-height:520px) {
+  .cashier-login-ranking {order:0;}
+  .cashier-login-ranking summary {border-bottom:1px solid #eadfd2;}
+ }
+ @media(min-width:769px) {
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #view-pos > .tk-pos-shell {grid-template-columns:minmax(0,1fr) clamp(370px,39vw,500px)!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .tk-cart-shell {min-width:370px!important;}
+ }
+ @media(min-width:769px) and (max-width:1000px) {
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #view-pos > .tk-pos-shell {grid-template-columns:minmax(0,1fr) 370px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #menuGrid {grid-template-columns:repeat(auto-fill,minmax(115px,1fr))!important;gap:8px!important;padding:9px!important;}
+ }
+ @media(max-width:849px) {
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #loginOverlay {flex-direction:column!important;flex-wrap:nowrap!important;justify-content:safe center!important;gap:14px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #loginOverlay .cashier-login-card,.cashier-login-ranking {flex:0 0 auto;}
+ }
+ @media(max-height:640px) {
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #loginOverlay {padding:12px!important;gap:18px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #loginOverlay .cashier-login-card {padding:16px 20px!important;}
+  .cashier-login-brand {margin-bottom:12px;gap:12px;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-login-brand img {width:46px!important;height:46px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-login-brand h2 {font-size:20px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #loginPasswordInput {min-height:44px!important;padding:9px!important;font-size:24px!important;margin-bottom:9px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .login-numpad-container {gap:6px!important;margin-bottom:6px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .login-numpad-container button {min-height:42px!important;padding:7px!important;font-size:20px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #btnSubmitPin {min-height:42px!important;margin-top:6px!important;}
+  .cashier-login-actions {margin-top:8px;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-login-update {min-height:36px!important;padding:8px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #ownerAccessBtnContainer button {min-height:36px!important;}
+ }
+ @media(min-width:769px) and (max-height:720px) {
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .top-bar {height:56px!important;min-height:56px!important;padding:7px 12px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .top-bar-right button {min-height:36px!important;padding:8px 12px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-payment-notice,body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-live-payment-notice {padding:6px 12px!important;gap:9px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-live-payment-notice strong {font-size:12px!important;line-height:1.25!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-live-payment-notice small {font-size:10px!important;line-height:1.25!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #posCartHeader {padding:8px 10px!important;gap:5px 7px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .tk-order-heading {font-size:14px!important;line-height:18px!important;padding-bottom:0!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #posCartHeader select {min-height:36px!important;padding:8px!important;font-size:12px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-footer {display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1.25fr);grid-template-rows:26px 42px;gap:7px!important;align-items:center;padding:8px 10px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-footer > .cashier-cart-subtotal {grid-column:1;grid-row:1;display:flex!important;flex-direction:column;align-items:flex-start!important;justify-content:center;gap:0;margin:0!important;font-size:12px!important;line-height:13px;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-subtotal > span:first-child {font-size:0!important;white-space:nowrap;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-subtotal > span:first-child::after {content:'Subtotal';font-size:12px;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-subtotal > span:last-child {font-size:12px!important;white-space:nowrap;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-footer > .cashier-cart-grand-total {grid-column:2 / -1;grid-row:1;align-items:center!important;border:0!important;padding:0!important;margin:0!important;gap:8px;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-footer > .cashier-cart-grand-total > span:first-child {font-size:14px!important;white-space:nowrap;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-footer #displayGrandTotal {font-size:20px!important;line-height:26px!important;white-space:nowrap;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-footer > .cashier-cart-secondary-actions {display:contents!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-secondary-actions > button:first-child {grid-column:1;grid-row:2;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-secondary-actions > button:last-child {grid-column:2;grid-row:2;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-footer > #btnMainPlaceOrder {grid-column:3;grid-row:2;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos .cashier-cart-footer button {height:42px!important;min-height:42px!important;margin:0!important;padding:9px 6px!important;font-size:13px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line {grid-template-rows:auto auto;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList .tk-cart-line > div:first-child > span {line-height:1.2!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList[data-cart-density="dense"] {gap:2px!important;padding:4px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList[data-cart-density="dense"] .tk-cart-line {padding:1px 6px!important;row-gap:0!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList[data-cart-density="dense"] .tk-cart-line > div:first-child > span {line-height:16px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList[data-cart-density="dense"] .cashier-cart-line-meta {white-space:normal!important;line-height:14px!important;overflow-wrap:anywhere;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList[data-cart-density="dense"] .cashier-cart-line-details {display:contents!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList[data-cart-density="dense"] .cashier-cart-line-details > div {display:inline!important;margin:0!important;line-height:14px!important;font-style:normal!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #cartList[data-cart-density="dense"] .cashier-cart-line-details > div::before {content:' · ';color:#8b7868;font-style:normal;}
+ }
+}
+@media screen {
+ .cashier-printer-setup {padding:18px;display:grid;grid-template-columns:minmax(0,1fr) minmax(210px,280px);gap:12px 24px;margin-bottom:16px;}
+ .cashier-printer-setup h2 {font-size:17px;margin:0 0 7px;color:#68452d;}
+ .cashier-printer-setup label {font-size:12px;font-weight:650;display:flex;flex-direction:column;gap:8px;}
+ .cashier-printer-setup select {min-height:44px;width:100%;border:1px solid #eadfd2;border-radius:9px;background:white;padding:10px;}
+ #cashierPrinterModeHelp {margin:0;line-height:1.6;}
+ #cashierPrinterBridgeSetup[hidden],.cashier-printer-card [hidden] {display:none!important;}
+ .cashier-printer-card .cashier-actions {flex-wrap:wrap;gap:8px;}
+ .cashier-printer-card .cashier-actions button {min-width:100px;min-height:42px;}
+ .cashier-printer-details {font-size:12px;margin-bottom:16px;}
+ .cashier-printer-details summary {padding:8px 0;cursor:pointer;}
+ .cashier-printer-details p {white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;}
+ .cashier-printer-card [id^=printerResult-] {min-height:38px;line-height:1.6;margin-bottom:10px;}
+ .cashier-printer-card [data-state=error],.cashier-printer-card [data-state=not-printed],.cashier-printer-card [data-state=failed],.cashier-printer-card [data-state=no-paper] {color:#b64234;}
+ @media(max-width:700px){.cashier-printer-setup{grid-template-columns:1fr;}}
+}

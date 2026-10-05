@@ -1,5 +1,5 @@
 // Presentation helpers only: no sale, inventory or attendance writes.
-export const CASHIER_RELEASE = 'inventory-review-20261005-r6';
+export const CASHIER_RELEASE = 'tablet-printer-remittance-20261005-r7';
 export function millis(value) {
   if (value == null) return NaN;
   if (typeof value.toMillis === 'function') return value.toMillis();
@@ -63,7 +63,7 @@ export function imageFor(item, catalogue = []) {
 export function updateBlocker(w) {
   const carts = [w.cart, ...Object.values(w.platformCarts || {}),w.prepCart,w.kitchenPrepCart,w.consumablesCart,w.wasteCart,w.expenseCart];
   if (carts.some(cart => Array.isArray(cart) && cart.length)) return 'Finish or park your order and save any stock, prep or waste entries before updating.';
-  if (w.isProcessingOrder || w.isSubmittingOrder || w.isSubmittingWasteCart || w.isProcessingAttendance || w.cashierRemitSubmitting || w.isBluetoothPrinting || w.bluetoothPrintQueue?.length) return 'Please wait for checkout, attendance, remittance or printing to finish before updating.';
+  if (w.isProcessingOrder || w.isSubmittingOrder || w.isSubmittingWasteCart || w.isProcessingAttendance || w.cashierRemitSubmitting || w.cashierShiftOpening || w.isBluetoothPrinting || w.bluetoothPrintQueue?.length) return 'Please wait for checkout, attendance, remittance, shift opening or printing to finish before updating.';
   return '';
 }
 export function labelSettings(input = {}) {
