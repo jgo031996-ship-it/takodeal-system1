@@ -1,5 +1,6 @@
 // Shared attendance math for Manager payroll and the Staff estimate.
 // Times in Schedule Manager are Philippine wall-clock times, independent of device timezone.
+import { resolveScheduleForDate } from './schedule-history.js';
 const minute = 60000;
 const day = 1440 * minute;
 // Both manual and POS-created meal charges belong in the Foods deduction.
@@ -109,6 +110,104 @@ export function resolveScheduledShift(logDate, branch, staffName, schedule, prof
 }
 export function calculateLateMinutes(...args) {
     return resolveScheduledShift(...args) || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
+}
+
+const dateKey = local => `${local.year}-${String(local.month).padStart(2, '0')}-${String(local.date).padStart(2, '0')}`;
+function emptyAttendanceShift(log, source, review = true) {
+    return { shiftId: null, shiftName: '', shiftType: 'other', expectedStartHour: null,
+        expectedStartAt: null, expectedEndAt: null, isNightShift: false, wasScheduled: false,
+        lateMinutes: attendanceLateMinutes(log, 0), needsScheduleReview: review,
+        scheduleSource: source, scheduleRevisionId: '' };
+}
+function closestTrustedShift(logDate, branch, staffName, schedule, profiles = {}, allowCurrent = false) {
+    const actual = asDate(logDate), local = parts(actual);
+    if (!local) return null;
+    const profile = profiles[staffName] || {};
+    const names = new Set([staffName, profile.cashierName, profile.scheduleNickname, profile.nickname].filter(Boolean).map(nameKey));
+    const assigned = [], fallback = [];
+    for (const offset of [-1, 0, 1]) {
+        const midnight = local.midnight + offset * day, workDay = parts(new Date(midnight));
+        const key = dateKey(workDay);
+        const archived = schedule?.historyMonths ? resolveScheduleForDate(schedule, key) : null;
+        // A fresh punch can capture the current month's live rule even before
+        // its first archive exists. Historic re-evaluation never takes this path.
+        const saved = archived || (allowCurrent && +schedule?.currentYear === workDay.year && +schedule?.currentMonth === workDay.month ? schedule : null);
+        if (!saved || +saved.currentYear !== workDay.year || +saved.currentMonth !== workDay.month) continue;
+        const configs = saved.branchConfig?.[branch];
+        if (!Array.isArray(configs)) continue;
+        const assignments = saved.currentSchedule?.[workDay.date]?.[branch]?.scheduled || {};
+        const weekday = new Date(midnight + 8 * 60 * minute).getUTCDay();
+        for (const shift of configs) {
+            const { start, end } = shiftTimes(shift);
+            if (start === null) continue;
+            const startAt = new Date(midnight + start * minute);
+            const endAt = end === null ? null : new Date(midnight + (end + (end <= start ? 1440 : 0)) * minute);
+            const diff = (actual - startAt) / minute;
+            const result = { shiftId: shift.id ?? null, shiftName: shift.name || '', shiftType: shiftType(shift), expectedStartHour: start / 60,
+                expectedStartAt: startAt, expectedEndAt: endAt, isNightShift: bonusShift(shift),
+                lateMinutes: Math.max(0, Math.floor(diff)), wasScheduled: false, distance: Math.abs(diff),
+                needsScheduleReview: end === null, scheduleSource: saved.scheduleSource || 'history', scheduleRevisionId: saved.scheduleRevisionId || saved.revisionId || '' };
+            if (names.has(nameKey(assignments[shift.id])) && diff >= -90 && diff < 18 * 60) assigned.push({ ...result, wasScheduled: true });
+            if (shift.active !== false && (!Array.isArray(shift.days) || shift.days.includes(weekday)) && diff >= -90 && diff < 240) fallback.push(result);
+        }
+    }
+    const candidates = (assigned.length ? assigned : fallback).sort((a, b) => a.distance - b.distance);
+    if (!candidates.length) return null;
+    const nearest = candidates.filter(item => item.distance === candidates[0].distance), first = nearest[0];
+    if (nearest.length > 1) {
+        const same = nearest.every(item => +item.expectedStartAt === +first.expectedStartAt && +item.expectedEndAt === +first.expectedEndAt
+            && item.shiftType === first.shiftType && item.isNightShift === first.isNightShift);
+        if (!same) return null;
+        return { ...first, shiftId: null, matchingShiftIds: nearest.map(item => item.shiftId), shiftName: `${first.shiftType[0].toUpperCase() + first.shiftType.slice(1)} shift` };
+    }
+    return first;
+}
+function clockInSnapshotShift(log, staffName) {
+    const snapshot = log.scheduleSnapshot || (log.expectedStartAt ? log : null);
+    if (!snapshot) return null;
+    const result = emptyAttendanceShift(log, 'clock-in');
+    const actual = asDate(log.timestamp), expected = snapshot.expectedStartAt ? asDate(snapshot.expectedStartAt) : null;
+    const ending = snapshot.expectedEndAt ? asDate(snapshot.expectedEndAt) : null;
+    if (snapshot.needsScheduleReview === true || snapshot.branch && snapshot.branch !== log.branch
+        || snapshot.staffName && nameKey(snapshot.staffName) !== nameKey(staffName)
+        || !expected || !Number.isFinite(+expected) || !Number.isFinite(+actual)) return result;
+    const distance = (actual - expected) / minute;
+    if (distance < -90 || distance >= 18 * 60) return result;
+    const validEnd = ending && Number.isFinite(+ending) && ending > expected && ending - expected <= 18 * 60 * minute;
+    return { ...result, shiftId: snapshot.shiftId ?? null, shiftName: snapshot.shiftName || '', shiftType: snapshot.shiftType || 'other',
+        expectedStartHour: (expected - parts(expected).midnight) / (60 * minute), expectedStartAt: expected,
+        expectedEndAt: validEnd ? ending : null, isNightShift: snapshot.isNightShift === true && Boolean(validEnd),
+        wasScheduled: snapshot.wasScheduled === true, lateMinutes: attendanceLateMinutes(log, Math.max(0, Math.floor(distance))),
+        needsScheduleReview: !validEnd, scheduleRevisionId: snapshot.scheduleRevisionId || '' };
+}
+// Before the preservation rollout, keep the legacy unpaid calculation and label
+// its missing evidence. Future clock-ins use their saved snapshot or the exact
+// work-date revision, never another month's current rules.
+export function resolveAttendanceShift(log, schedule, profiles = {}, staffNameOverride = log?.staffName) {
+    if (!log || !staffNameOverride) return emptyAttendanceShift(log || {}, 'missing-history');
+    const snapshot = clockInSnapshotShift(log, staffNameOverride);
+    if (snapshot) return snapshot;
+    const actual = asDate(log.timestamp), cutoff = schedule?.payrollHistoryEnforcedFrom;
+    const enforced = cutoff ? asDate(typeof cutoff === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(cutoff) ? cutoff + 'T00:00:00+08:00' : cutoff) : null;
+    const strict = enforced && Number.isFinite(+enforced) && Number.isFinite(+actual) && actual >= enforced;
+    const trusted = closestTrustedShift(log.timestamp, log.branch, staffNameOverride, schedule, profiles);
+    if (trusted) return { ...trusted, lateMinutes: attendanceLateMinutes(log, trusted.lateMinutes) };
+    if (strict) return emptyAttendanceShift(log, 'missing-history');
+    const legacy = resolveScheduledShift(log.timestamp, log.branch, staffNameOverride, schedule, profiles);
+    return legacy ? { ...legacy, lateMinutes: attendanceLateMinutes(log, legacy.lateMinutes), needsScheduleReview: true,
+        scheduleSource: 'legacy-unverified', scheduleRevisionId: '' } : emptyAttendanceShift(log, 'legacy-unverified');
+}
+// Capture once when recording TIME IN. The serialized expected timestamps and
+// category keep future schedule edits from changing that attendance's pay math.
+export function captureAttendanceSchedule(logDate, branch, staffName, schedule, profiles = {}) {
+    const actual = asDate(logDate), matched = closestTrustedShift(actual, branch, staffName, schedule, profiles, true);
+    const clockInAt = Number.isFinite(+actual) ? actual.toISOString() : '';
+    return { version: 1, source: 'clock-in', branch: String(branch || ''), staffName: String(staffName || ''), clockInAt,
+        capturedAt: clockInAt, expectedStartAt: matched?.expectedStartAt?.toISOString() || '', expectedEndAt: matched?.expectedEndAt?.toISOString() || '',
+        shiftId: matched?.shiftId ?? null, shiftName: matched?.shiftName || '', shiftType: matched?.shiftType || 'other',
+        isNightShift: matched?.isNightShift === true, wasScheduled: matched?.wasScheduled === true,
+        lateMinutes: matched?.lateMinutes ?? 0, needsScheduleReview: !matched || matched.needsScheduleReview === true,
+        scheduleRevisionId: matched?.scheduleRevisionId || '' };
 }
 export function scheduledShiftForDate(date, branch, staffName, schedule, profiles = {}) {
     const local = parts(date), profile = profiles[staffName] || {};

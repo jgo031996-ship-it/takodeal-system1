@@ -1,0 +1,11 @@
+.schedule-memory-panel {display:grid;grid-template-columns:minmax(220px,1fr) 175px minmax(200px,280px) auto;gap:16px;align-items:center;margin:-10px 0 24px;padding:20px;background:#f4f8f5;border:1px solid #dce7df;border-radius:12px;color:#173f34;font:13px/1.6 Arial,sans-serif;}
+.schedule-memory-panel strong {font-size:16px;}
+.schedule-memory-panel p {margin:5px 0;color:#61796e;}
+.schedule-memory-panel label {font-size:11px;font-weight:600;}
+.schedule-memory-panel input,.schedule-memory-panel select {display:block;width:100%;box-sizing:border-box;min-height:40px;margin-top:5px;padding:8px;border:1px solid #ceded3;border-radius:7px;background:white;color:#224237;}
+.schedule-memory-panel button {min-height:40px;padding:8px 13px;border:1px solid #ceded3;border-radius:7px;background:white;color:#224237;cursor:pointer;}
+#scheduleMemoryStatus {grid-column:1/-1;font-size:12px;margin:0;}
+.schedule-memory-panel[data-read-only=true] {background:#faf8f2;}
+.payslip-schedule-memory {margin:12px 0;padding:10px 12px;border:1px solid #ceded3;background:#f6f9f6;font:12px/1.5 Arial,sans-serif;color:#395b4a;}
+@media(max-width:1050px){.schedule-memory-panel{grid-template-columns:1fr 1fr}.schedule-memory-panel>div{grid-column:1/-1}}
+@media(max-width:550px){.schedule-memory-panel{grid-template-columns:1fr}.schedule-memory-panel>div{grid-column:auto}}

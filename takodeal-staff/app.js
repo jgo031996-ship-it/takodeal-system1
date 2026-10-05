@@ -2,11 +2,12 @@ import { installStaffLocation } from './staff-location.js';
 import { installStaffRegistration } from './staff-registration.js';
 import { installStaffPhone } from './staff-phone.js';
 import { installStaffPortal } from './staff-portal.js';
-import { calculateLateMinutes, resolveScheduledShift, latePay, earnedNightBonus, attendanceLateMinutes, isMealDeduction } from './payroll-safety.js';
+import { calculateLateMinutes, resolveScheduledShift, resolveAttendanceShift, captureAttendanceSchedule, latePay, earnedNightBonus, attendanceLateMinutes, isMealDeduction } from './payroll-safety.js';
+import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 // 🔥 UPGRADE: Imported the Offline Cache Engines!
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDoc, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot, enableNetwork, disableNetwork, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDoc, getDocFromServer, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot, enableNetwork, disableNetwork, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
   
 const firebaseConfig = {
@@ -36,6 +37,8 @@ window.where = where;
 window.collection = collection;
 window.getDocs = getDocs;
 window.getDoc = getDoc;
+window.getDocFromServer = getDocFromServer;
+window.runTransaction = runTransaction;
 window.addDoc = addDoc;
 window.updateDoc = updateDoc;
 window.deleteDoc = deleteDoc;
@@ -1212,6 +1215,7 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
 };
 
 window.punchTime = async function(type) {
+    if (!['TIME IN', 'TIME OUT'].includes(type)) return Swal.fire('Attendance not saved', 'Choose Time In or Time Out using the attendance buttons.', 'warning');
     let staffName = localStorage.getItem('takodeal_staff_name');
     if (!staffName) return Swal.fire('Error', 'Not logged in.', 'error');
     if (window.staffPunchBusy) return;
@@ -1226,7 +1230,7 @@ window.punchTime = async function(type) {
     const attendanceRef = doc(collection(db, 'attendance_logs'));
     const lateRequestRef = doc(collection(db, 'staff_requests'));
     let pendingLateRequest = null;
-    let recordedLateMinutes;
+    let punchScheduleData = null, punchScheduleProfiles = {};
 
     try {
         Swal.fire({title: 'Verifying with HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
@@ -1332,31 +1336,21 @@ window.punchTime = async function(type) {
         // 4. ⏰ THE STRICT LATE DETECTOR & PHOTO INTERCEPTOR
         if (type === "TIME IN") {
             try {
-                let nickname = staffName;
                 let staffProfiles = {}; 
                 const staffDocSnap = await getDoc(doc(db, "cashiers", localStorage.getItem('takodeal_staff_id')));
                 if (staffDocSnap.exists()) {
-                    nickname = staffDocSnap.data().scheduleNickname || staffName;
                     staffProfiles[staffName] = staffDocSnap.data();
                 }
 
-                const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
-                if (schedSnap.exists()) {
-                    let scheduleData = schedSnap.data();
+                const clockDate = new Date();
+                punchScheduleProfiles = staffProfiles;
+                punchScheduleData = await createScheduleHistoryStore(window).loadRange(new Date(+clockDate - 86400000), new Date(+clockDate + 86400000));
+                {
+                    let scheduleData = punchScheduleData;
                     
-                    const parseTimeStrFn = (timeStr) => {
-                        let t = timeStr.toLowerCase().replace(/\s/g, '');
-                        let isPM = t.includes('pm'); let isNN = t.includes('nn');
-                        let parts = t.replace(/(am|pm|nn)/, '').split(':');
-                        let hour = parseInt(parts[0]) || 0; let minute = parts.length > 1 ? parseInt(parts[1]) : 0;
-                        if ((isPM || isNN) && hour < 12) hour += 12;
-                        if (t.includes('am') && hour === 12) hour = 0;
-                        return hour + (minute / 60);
-                    };
-
                     // 🔥 THE UPGRADE: Cross-Branch Universal Matcher Call
-                    let { lateMinutes } = window.calculateLateMinutes(new Date(), closestBranch, staffName, scheduleData, staffProfiles, parseTimeStrFn);
-                    recordedLateMinutes = lateMinutes;
+                    const snapshot = captureAttendanceSchedule(clockDate, closestBranch, staffName, scheduleData, staffProfiles);
+                    let lateMinutes = snapshot.needsScheduleReview ? 0 : resolveAttendanceShift({staffName, branch:closestBranch, timestamp:clockDate, scheduleSnapshot:snapshot}, scheduleData, staffProfiles)?.lateMinutes || 0;
                     
                     // Trigger Interceptor Letter if they are more than 3 minutes late!
                     if (lateMinutes > 3) {
@@ -1445,13 +1439,24 @@ window.punchTime = async function(type) {
         // 6. 💾 SAVE TO FIREBASE
         const attendance = {
             staffName, staffId: localStorage.getItem('takodeal_staff_id'), branch: closestBranch, type, timestamp: serverTimestamp(),
+            sourceApp:'staff', recordedBy:staffName, recordedByStaffId:punchStaffId,
+            recordedDeviceId:localStorage.getItem('takodeal_device_id') || '', createdAt:serverTimestamp(),
             locationLat: punchLocation.lat, locationLng: punchLocation.lng, distanceMeters: Math.round(minDistance),
             locationAccuracyMeters: Math.ceil(punchLocation.accuracy), locationCapturedAt: new Date(punchLocation.timestamp).toISOString(),
             photoBase64
         };
-        if (type === 'TIME IN' && recordedLateMinutes !== undefined) attendance.lateMinutes = recordedLateMinutes;
+        if (type === 'TIME IN') {
+            const clockDate = new Date();
+            attendance.scheduleSnapshot = captureAttendanceSchedule(clockDate, closestBranch, staffName, punchScheduleData, punchScheduleProfiles);
+            const matched = resolveAttendanceShift({...attendance, timestamp:clockDate}, punchScheduleData, punchScheduleProfiles);
+            if (!attendance.scheduleSnapshot.needsScheduleReview && matched) attendance.lateMinutes = matched.lateMinutes;
+        }
         const batch = writeBatch(db);
         if (pendingLateRequest) {
+            if (Number.isFinite(attendance.lateMinutes)) {
+                pendingLateRequest.lateMinutes = attendance.lateMinutes;
+                pendingLateRequest.explanationMessage = pendingLateRequest.explanationMessage.replace(/^Clocked in \d+ minutes late\./, `Clocked in ${attendance.lateMinutes} minutes late.`);
+            }
             attendance.lateReasonRequestId = lateRequestRef.id;
             batch.set(lateRequestRef, pendingLateRequest);
         }
@@ -1999,9 +2004,8 @@ window.loadPayslipVault = async function() {
             return n === baseNameLower || n === nickNameLower || n === strippedNameLower;
         };
 
-        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
+        let scheduleData = await createScheduleHistoryStore(window).loadRange(prevStartStr, endDateStr);
         if (!stillOpen()) return;
-        let scheduleData = schedSnap.exists() ? schedSnap.data() : null;
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
 
         const parseTimeStr = (timeStr) => {
@@ -2054,7 +2058,7 @@ window.loadPayslipVault = async function() {
                 }
             });
 
-            let tShifts = 0; let tLate = 0; let activeShift = null; let sPairs = [];
+            let tShifts = 0; let tLate = 0; let activeShift = null; let sPairs = [], scheduleReviews = 0;
             
             fLogs.forEach(log => {
                 let manualPenalty = parseFloat(log.penaltyAmount) || 0;
@@ -2069,8 +2073,9 @@ window.loadPayslipVault = async function() {
                         sPairs.push({ dateObj: missedIn, in: missedIn, out: "MISSED", hrs: "0.00", remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>`, lateMins: activeShift.lateMinutes || 0 });
                     }
 
-                    const matchedShift = resolveScheduledShift(logDate, log.branch, staffProfile.cashierName || log.staffName,
+                    const matchedShift = resolveAttendanceShift({...log, timestamp:logDate, staffName:staffProfile.cashierName || log.staffName},
                         scheduleData, { [staffProfile.cashierName || log.staffName]: staffProfile });
+                    if (matchedShift?.needsScheduleReview) scheduleReviews++;
                     lateMinutes = attendanceLateMinutes(log, matchedShift?.lateMinutes || 0);
                     wasScheduled = matchedShift?.wasScheduled || false;
                     const late = latePay(lateMinutes, staffProfile, matchedShift, log.lateExempted === true);
@@ -2098,6 +2103,9 @@ window.loadPayslipVault = async function() {
                     if (hoursWorked < 1 && !isAutoClosed) { shiftMultiplier = 0; remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`; } 
                     else if (hoursWorked >= 13.5) { shiftMultiplier = 2; tBonuses += 50; remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty</span>`; } 
                     else if (hoursWorked < 8 && !isAutoClosed) { remark = wasScheduled ? `<span style="color:#ef4444; font-weight:bold;">Short</span>` : `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`; }
+                    if (activeShift.matchedShift?.needsScheduleReview) remark += activeShift.matchedShift.scheduleSource === 'legacy-unverified'
+                        ? '<br><span style="color:#a16207;font-weight:bold">Legacy estimate — schedule history was not saved for this date.</span>'
+                        : '<br><span style="color:#a16207;font-weight:bold">Schedule history missing — review required; no inferred lateness.</span>';
 
                     const thisShiftNightBonus = shiftMultiplier > 0
                         ? earnedNightBonus(staffProfile, activeShift.matchedShift, timeOut) : 0;
@@ -2146,7 +2154,7 @@ window.loadPayslipVault = async function() {
                 }
             });
 
-            return { shiftsWorked: tShifts, totalLatePenalty: tLate, totalBonuses: tBonuses, shiftPairs: sPairs };
+            return { shiftsWorked: tShifts, totalLatePenalty: tLate, totalBonuses: tBonuses, shiftPairs: sPairs, scheduleReviews };
         };
 
         let currentData = analyzeCutoff(new Date(startDateStr + 'T00:00:00'), new Date(endDateStr + 'T23:59:59'));
@@ -2202,6 +2210,14 @@ window.loadPayslipVault = async function() {
         document.getElementById('liveEstLates').innerText = '-₱' + currentData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstVales').innerText = '-₱' + liveUnpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
+        let scheduleNotice = document.getElementById('liveScheduleHistoryNotice');
+        if (!scheduleNotice) {
+            scheduleNotice = document.createElement('p');scheduleNotice.id = 'liveScheduleHistoryNotice';
+            scheduleNotice.style.cssText = 'padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;color:#92400e;font-size:12px;line-height:1.5';
+            document.getElementById('payslipLiveSection').prepend(scheduleNotice);
+        }
+        scheduleNotice.hidden = !currentData.scheduleReviews;
+        scheduleNotice.textContent = `${currentData.scheduleReviews} clock-in(s) lack saved schedule evidence. Review the attendance details before payroll approval.`;
 
         let grossRow = document.getElementById('liveEstGross').parentElement;
         if (!document.getElementById('liveEstOTRow')) {
@@ -2338,6 +2354,7 @@ window.loadPayslipVault = async function() {
                         ${prevLoanStr}
                     </div>
                     
+                    ${prevData.scheduleReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Saved schedule evidence is missing for some clock-ins in this estimate. Review the attendance details before payroll approval.</p>' : ''}
                     <details style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
                         <summary style="font-weight: bold; color: #0f766e; cursor: pointer; outline: none; font-size: 13px; display: flex; align-items: center; gap: 8px;">
                             <span>👀 View Attendance Logs</span>
@@ -2725,6 +2742,16 @@ window.cachedSchedData = null; // Memory to make swaps lightning fast
 window.loadStaffSchedule = async function() {
     let container = document.getElementById('scheduleContainer');
     if (!container) return;
+    const loadToken = window.staffScheduleLoadToken = (window.staffScheduleLoadToken || 0) + 1;
+    const staffId = localStorage.getItem('takodeal_staff_id');
+    const picker = document.getElementById('staffMonthPicker');
+    const requestedMonth = picker?.value || scheduleDateKey(new Date()).slice(0,7);
+    const stillCurrent = () => window.staffScheduleLoadToken === loadToken
+        && localStorage.getItem('takodeal_staff_id') === staffId
+        && (picker?.value || requestedMonth) === requestedMonth;
+    window.cachedSchedData = null;
+    window.cachedSchedProfile = null;
+    window.cachedScheduleDaySnapshots = {};window.cachedScheduleDayRevisions = {};
     
     let staffName = localStorage.getItem('takodeal_staff_name');
     if (!staffName) {
@@ -2735,8 +2762,12 @@ window.loadStaffSchedule = async function() {
     container.innerHTML = '<div style="text-align:center; padding: 40px; color: #0ea5e9; font-weight: bold;">⏳ Downloading your schedule...</div>';
 
     try {
+        const selected = monthKey(requestedMonth);
+        const [year, month] = selected.split('-').map(Number);
+        if (picker) picker.value = selected;
         const staffQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
         const staffSnap = await getDocs(staffQ);
+        if (!stillCurrent()) return;
         
         let nickname = staffName;
         let myBranch = null;
@@ -2745,6 +2776,7 @@ window.loadStaffSchedule = async function() {
             let data = staffSnap.docs[0].data();
             nickname = data.scheduleNickname || staffName;
             myBranch = data.branch;
+            window.cachedSchedProfile = data;
         }
 
         // 🔥 THE FIX: SMART NAME MATCHER! 
@@ -2754,41 +2786,33 @@ window.loadStaffSchedule = async function() {
             let sName = staffName.toLowerCase().trim();
             let nName = nickname.toLowerCase().trim();
             
-            if (aName === sName || aName === nName) return true;
-            if (sName.includes(aName) && aName.length >= 3) return true;
-            return false;
+            return aName === sName || aName === nName;
         };
 
-        // 🔥 ZERO-COST CACHE: Replaces the 'getDoc' query!
-        const schedSnap = await window.fetchCachedSchedule();
-        if (!schedSnap.exists() || !schedSnap.data().currentSchedule) {
-            container.innerHTML = '<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">HQ has not published a schedule yet.</div>';
+        const lastDate = `${selected}-${String(new Date(Date.UTC(year,month,0)).getUTCDate()).padStart(2,'0')}`;
+        const history = await createScheduleHistoryStore(window).loadRange(`${selected}-01`,lastDate);
+        if (!stillCurrent()) return;
+        const archive = history.historyMonths?.[selected], latest = archive?.latestRevision;
+        const selectedSnapshot = latest?.snapshot || (+history.currentYear === year && +history.currentMonth === month ? history : null);
+        if (!selectedSnapshot?.currentSchedule) {
+            const niceMonth = new Date(year,month-1).toLocaleString('en-PH',{month:'long',year:'numeric'});
+            container.innerHTML = `<div style="text-align:center;padding:40px;color:#64748b;font-weight:bold">HQ has not saved a schedule for ${niceMonth} yet.</div>`;
+            window.cachedSchedData = null;
             return;
         }
-
-        let schedData = schedSnap.data();
-        window.cachedSchedData = schedData; // Save to memory for swapping!
-
-        let year = schedData.currentYear;
-        let month = schedData.currentMonth;
-        
-        let picker = document.getElementById('staffMonthPicker');
-        let selectedYear = year;
-        let selectedMonth = month;
-
-        if (picker && picker.value) {
-            let parts = picker.value.split('-');
-            selectedYear = parseInt(parts[0]);
-            selectedMonth = parseInt(parts[1]);
-        } else if (picker) {
-            picker.value = `${year}-${String(month).padStart(2, '0')}`;
+        let schedData = structuredClone(selectedSnapshot);
+        window.cachedScheduleDaySnapshots = {};window.cachedScheduleDayRevisions = {};
+        for (let day=1;day<=new Date(Date.UTC(year,month,0)).getUTCDate();day++) {
+            const workDate = `${selected}-${String(day).padStart(2,'0')}`;
+            const dated = resolveScheduleForDate(history,workDate);
+            if (dated) {
+                schedData.currentSchedule[day] = dated.currentSchedule[day] || {};
+                window.cachedScheduleDaySnapshots[day] = dated;
+                window.cachedScheduleDayRevisions[day] = dated.scheduleRevisionId;
+            }
         }
-
-        if (selectedYear !== year || selectedMonth !== month) {
-            let niceMonth = new Date(selectedYear, selectedMonth - 1).toLocaleString('en-PH', { month: 'long', year: 'numeric' });
-            container.innerHTML = `<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold;">HQ has not published the schedule for ${niceMonth} yet.</div>`;
-            return;
-        }
+        schedData.scheduleRevisionId = latest?.revisionId || selectedSnapshot.scheduleRevisionId || '';
+        window.cachedSchedData = schedData;
 
         let monthName = new Date(year, month - 1).toLocaleString('en-PH', { month: 'long' });
         
@@ -2855,7 +2879,7 @@ window.loadStaffSchedule = async function() {
                 for (let sId of scheduledKeys) {
                     if (isMatch(dayData[b].scheduled[sId])) {
                         if (branchConfig[b]) {
-                            let sConf = branchConfig[b].find(s => s.id === sId);
+                            let sConf = (window.cachedScheduleDaySnapshots?.[day]?.branchConfig?.[b] || branchConfig[b]).find(s => s.id === sId);
                             if (sConf) { shiftFound = sConf; assignedToBranch = b; break; }
                         }
                     }
@@ -2923,6 +2947,7 @@ window.loadStaffSchedule = async function() {
         container.innerHTML = html;
 
     } catch (error) {
+        if (!stillCurrent()) return;
         console.error("Staff Schedule Error:", error);
         container.innerHTML = '<div style="text-align:center; padding: 40px; color: #ef4444; font-weight: bold;">❌ Failed to load schedule. Check connection.</div>';
     }
@@ -2944,10 +2969,10 @@ window.initiateSwapRequest = function(day, dateStr, branch, myShiftId, myShiftNa
     let isMatch = (assignedName) => {
         if (!assignedName || assignedName === "N/A" || assignedName === "UNFILLED") return false;
         let aName = assignedName.toLowerCase().trim();
-        let sName = staffName.toLowerCase().trim();
-        if (aName === sName || sName.includes(aName)) return true;
-        return false;
+        const aliases = [staffName,window.cachedSchedProfile?.cashierName,window.cachedSchedProfile?.scheduleNickname,window.cachedSchedProfile?.nickname].filter(Boolean).map(value=>value.toLowerCase().trim());
+        return aliases.includes(aName);
     };
+    if (!isMatch(dayData.scheduled?.[myShiftId])) return Swal.fire('Refresh schedule','This assignment does not belong to your staff account. Refresh before requesting a swap.','warning');
 
     // 1. Co-workers currently scheduled today
     let optGroupShift = document.createElement('optgroup');
@@ -2956,7 +2981,7 @@ window.initiateSwapRequest = function(day, dateStr, branch, myShiftId, myShiftNa
         let assignee = dayData.scheduled[sId];
         // ONLY show if it's NOT them!
         if(!isMatch(assignee) && assignee !== "N/A" && assignee !== "UNFILLED") {
-            let sConf = schedData.branchConfig[branch].find(s => s.id === sId);
+            let sConf = (window.cachedScheduleDaySnapshots?.[day]?.branchConfig?.[branch] || schedData.branchConfig[branch]).find(s => s.id === sId);
             if (sConf) {
                 optGroupShift.innerHTML += `<option value="${assignee}|${sId}|${sConf.name}">${assignee} (Currently: ${sConf.name})</option>`;
             }
@@ -2981,7 +3006,10 @@ window.initiateSwapRequest = function(day, dateStr, branch, myShiftId, myShiftNa
     }
 
     document.getElementById('swapModalDetails').innerHTML = `You are requesting to trade your <b>${myShiftName}</b> shift on <b style="color: #0f172a;">${dateStr}</b>.`;
-    window.pendingSwapData = { day, dateStr, branch, myShiftId, myShiftName };
+    window.pendingSwapData = { day, dateStr, branch, myShiftId, myShiftName,
+        workDate:scheduleDateKey(`${schedData.currentYear}-${String(schedData.currentMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`),
+        sourceScheduleMonth:monthKey(schedData), sourceRevisionId:window.cachedScheduleDayRevisions?.[day] || schedData.scheduleRevisionId || '',
+        requesterAssignedName:dayData.scheduled[myShiftId] };
     document.getElementById('swapRequestModal').style.display = 'flex';
 };
 
@@ -3002,9 +3030,13 @@ window.submitSwapRequest = async function() {
     let d = window.pendingSwapData;
 
     try {
+        if (!d?.workDate || scheduleDateKey(d.workDate) < scheduleDateKey(new Date())) throw Error('Choose a current or future work date. Past schedules stay unchanged.');
         await addDoc(collection(db, "shift_swaps"), {
             requesterName: requesterName,
             targetName: targetName,
+            requesterStaffId:localStorage.getItem('takodeal_staff_id'),
+            requesterAssignedName:d.requesterAssignedName, targetAssignedName:targetName,
+            workDate:d.workDate, sourceScheduleMonth:d.sourceScheduleMonth, sourceRevisionId:d.sourceRevisionId,
             branch: d.branch,
             dateStr: d.dateStr,
             dayIndex: d.day,
@@ -3051,9 +3083,7 @@ window.listenToIncomingSwaps = async function() {
         let aName = assignedName.toLowerCase().trim();
         let sName = staffName.toLowerCase().trim();
         let nName = nickname.toLowerCase().trim();
-        if (aName === sName || aName === nName) return true;
-        if (sName.includes(aName) && aName.length >= 3) return true;
-        return false;
+        return aName === sName || aName === nName;
     };
 
     onSnapshot(query(collection(db, "shift_swaps"), where("status", "==", "Pending")), (snap) => {
@@ -3117,87 +3147,37 @@ window.listenToIncomingSwaps = async function() {
 };
 
 window.handleIncomingSwap = async function(swapId, action) {
-    if (!confirm(`Are you sure you want to ${action.toUpperCase()} this swap?`)) return;
-
-    Swal.fire({title: 'Processing...', allowOutsideClick: false, didOpen: ()=>Swal.showLoading()});
-
+    if (!['Approved', 'Rejected'].includes(action)) return;
+    if (!confirm(`Are you sure you want to ${action === 'Approved' ? 'accept this swap for HQ review' : 'reject this swap'}?`)) return;
+    const staffId = localStorage.getItem('takodeal_staff_id');
+    if (!staffId) return Swal.fire('Sign in required', 'Sign in to your staff account before responding.', 'warning');
+    Swal.fire({title:'Processing...', allowOutsideClick:false, didOpen:()=>Swal.showLoading()});
     try {
-        if (action === "Rejected") {
-            await updateDoc(doc(db, "shift_swaps", swapId), { status: "Rejected" });
-            Swal.fire({title: 'Rejected', text: 'The request was declined.', icon: 'info', customClass: { popup: 'rounded-2xl' }});
-            return;
-        }
-
-        // 🔥 IF APPROVED: WE DO THE COMPLEX CALENDAR MATH!
-        const swapSnap = await getDoc(doc(db, "shift_swaps", swapId));
-        let sData = swapSnap.data();
-
-        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
-        let globalSched = schedSnap.data();
-
-        let dayData = globalSched.currentSchedule[sData.dayIndex][sData.branch];
-
-        let isMatch = (dbName, reqName) => {
-            if (!dbName || !reqName) return false;
-            let a = dbName.toLowerCase().trim();
-            let b = reqName.toLowerCase().trim();
-            if (a === b) return true;
-            if (a.includes(b) && b.length >= 3) return true;
-            if (b.includes(a) && a.length >= 3) return true;
-            return false;
-        };
-
-        // 1. Safety check: Find the EXACT names currently sitting in the schedule slots
-        let rActual = dayData.scheduled[sData.requesterShiftId];
-        let tActual = sData.targetShiftId === 'STANDBY' ? 
-                      (dayData.rest.find(n => isMatch(n, sData.targetName)) || null) : 
-                      dayData.scheduled[sData.targetShiftId];
-
-        // If either one of them isn't where they said they were, the schedule changed. Abort!
-        if (!isMatch(rActual, sData.requesterName) || !isMatch(tActual, sData.targetName)) {
-            await updateDoc(doc(db, "shift_swaps", swapId), { status: "Failed - Schedule Changed" });
-            return Swal.fire('Error', 'The Master Schedule has changed since this request was made. Swap cancelled.', 'error');
-        }
-
-        // 🔥 THE FIX: Create the paper trail object so the Cashier App knows a trade happened!
-        if (!dayData.swaps) dayData.swaps = {};
-
-        // 2. Perform the Swap mathematically!
-        // A. Give Target's shift to Requester
-        if (sData.targetShiftId === 'STANDBY') {
-            dayData.rest = dayData.rest.filter(n => n !== tActual); // Remove target from rest
-            dayData.rest.push(rActual); // Put requester in rest
-        } else {
-            dayData.scheduled[sData.targetShiftId] = rActual;
-            // Log the trade! (Saved strictly as a text string to fix [object Object] bug)
-            dayData.swaps[sData.targetShiftId] = tActual; 
-        }
-
-        // B. Give Requester's shift to Target
-        dayData.scheduled[sData.requesterShiftId] = tActual;
-        // Log the trade! (Saved strictly as a text string to fix [object Object] bug)
-        dayData.swaps[sData.requesterShiftId] = rActual;
-
-        // 3. Save the new calendar back to Cloud
-        await updateDoc(doc(db, "settings", "global_schedule"), {
-            currentSchedule: globalSched.currentSchedule
+        const result = await runTransaction(db, async transaction => {
+            const requestRef = doc(db,'shift_swaps',swapId), profileRef = doc(db,'cashiers',staffId);
+            const [request, profile] = await Promise.all([transaction.get(requestRef),transaction.get(profileRef)]);
+            if (localStorage.getItem('takodeal_staff_id') !== staffId) throw Error('Your staff account changed. Sign in again.');
+            if (!request.exists() || !profile.exists()) throw Error('This request or staff profile is no longer available.');
+            const data = request.data(), person = profile.data();
+            const key = value => String(value || '').trim().replace(/\s+/g,' ').toLowerCase();
+            const aliases = new Set([person.cashierName, person.scheduleNickname, person.nickname].filter(Boolean).map(key));
+            if (!aliases.has(key(data.targetName)) || person.status === 'Resigned' || person.pin === 'REVOKED') throw Error('This swap is not assigned to your active staff account.');
+            if (data.status === 'Awaiting HQ Approval' && data.acceptedByStaffId === staffId && action === 'Approved') return 'already-accepted';
+            if (data.status !== 'Pending') throw Error('This swap was already processed. Refresh the schedule.');
+            if (action === 'Rejected') {
+                transaction.update(requestRef,{status:'Rejected',rejectedByStaffId:staffId,rejectedBy:person.cashierName,rejectedAt:serverTimestamp()});
+                return 'rejected';
+            }
+            if (!data.workDate || scheduleDateKey(data.workDate) < scheduleDateKey(new Date()) || monthKey(data.workDate) !== data.sourceScheduleMonth) throw Error('This request has no current or future work date. Ask the requester to send it again.');
+            transaction.update(requestRef,{status:'Awaiting HQ Approval',acceptedByStaffId:staffId,acceptedBy:person.cashierName,
+                acceptedAt:serverTimestamp(),acceptanceVersion:1});
+            return 'accepted';
         });
-
-        // 4. Update the Swap Status
-        await updateDoc(doc(db, "shift_swaps", swapId), { status: "Approved" });
-
-        Swal.fire({title: '✅ Swapped!', text: 'Your schedule has been successfully updated.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
-        
-        // Close the modal before reloading so it doesn't get stuck!
-        let swapModal = document.getElementById('swapRequestModal');
-        if (swapModal) swapModal.style.display = 'none';
-
-        window.loadStaffSchedule(); // Visually refresh their screen!
-
-    } catch(e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to process swap.', 'error');
-    }
+        if (result === 'rejected') Swal.fire('Rejected','The swap request was declined.','info');
+        else Swal.fire('Sent to HQ','You accepted the request. HQ must approve it before the dated schedule changes.','success');
+        const swapModal = document.getElementById('swapRequestModal');if(swapModal)swapModal.style.display='none';
+        window.loadStaffSchedule();
+    } catch(error) {console.error(error);Swal.fire('Could not process swap',error.message,'error');}
 };
 
 // ==========================================

@@ -253,7 +253,7 @@ function installUpdates(){
   navigator.serviceWorker?.addEventListener('controllerchange',()=>{if(activateRequested && !updateBlocker(window)){if(window.TARGET_UPDATE_VERSION)localStorage.setItem('takodeal_local_version',String(window.TARGET_UPDATE_VERSION));location.reload();}});
   window.addEventListener('cashier-worker-ready',event=>ready(event.detail));
   window.setInterval(()=>{if(document.visibilityState==='visible' && navigator.onLine)releaseRegistration?.update().catch(()=>{});},15*60*1000);
-  if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){showCashierUpdateNotice('updated','Cashier workspace updated','Tablet login and order spacing improved. Navigation icons restored. Remittance retries reuse one transfer. Printer Hub now shows connection details and test results. Temporary inventory skips still require HQ review.');localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
+  if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){showCashierUpdateNotice('updated','Cashier workspace updated','New clock-ins preserve their scheduled start and end times for later payroll review. Attendance also records its source app and device. Temporary inventory skips still require HQ review.');localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
 }
 function install(){installTheme();installRemittance();installClock();installPrinterHub();installTabletControls();installParkedOrders();installUpdates();}
 if(document.readyState==='complete')install();else window.addEventListener('load',install,{once:true});
