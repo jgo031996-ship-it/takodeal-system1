@@ -1,5 +1,6 @@
 import { resolveAttendanceShift, attendanceLateMinutes, latePay, earnedNightBonus } from './payroll-safety.js';
 import { resolveScheduleForDate } from './schedule-history.js';
+import {isPenaltyDeduction, deductionIsDue} from './sanction-schedule.js';
 
 export const RELEASE = 'franchise-workspace-20261005-r1';
 export const ROUTES = {
@@ -90,7 +91,7 @@ export function ledgerRows(rows) {
 export function attendanceEstimate({logs,profiles,deductions=[],bonuses=[],ledgers=[],schedule={},holidays={},start,end,branch}) {
  const {start:from,end:to}=range(start,end),active=new Map(),people=new Map();
  const profileMap=Object.fromEntries(profiles.map(p=>[p.cashierName,p]));
- const person=name=>{if (!people.has(name)) people.set(name,{name,hours:0,shifts:0,basic:0,bonus:0,late:0,meals:0,advances:0,logs:[],review:0});return people.get(name);};
+ const person=name=>{if (!people.has(name)) people.set(name,{name,hours:0,shifts:0,basic:0,bonus:0,late:0,meals:0,advances:0,scheduledPenaltyReview:0,logs:[],review:0});return people.get(name);};
  for (const log of [...logs].filter(l=>l.branch===branch).sort((a,b)=>ms(a.timestamp)-ms(b.timestamp))) {
   const name=log.staffName;if (!name || !profileMap[name]) continue;
   const type=String(log.type || '').toUpperCase(),at=ms(log.timestamp),p=person(name);
@@ -112,6 +113,7 @@ export function attendanceEstimate({logs,profiles,deductions=[],bonuses=[],ledge
  }
  for (const [name,log] of active) {const p=person(name);p.review++;p.logs.push({in:log.timestamp,out:null,remark:'Missing time out; review required'});}
  for (const d of deductions) {
+  if(profileMap[d.staffName] && (!d.branch || d.branch===branch) && isPenaltyDeduction(d) && d.scheduleVersion===1 && deductionIsDue(d,end)) person(d.staffName).scheduledPenaltyReview+=n(d.amount);
   if (!profileMap[d.staffName] || (d.branch && d.branch!==branch) || d.status!=='Unpaid' || ms(d.dateAdded)>=+to) continue;
   const p=person(d.staffName);if (/meal/i.test(d.type)) p.meals+=n(d.amount);else if (d.type==='Cash Advance') p.advances+=n(d.amount);
  }

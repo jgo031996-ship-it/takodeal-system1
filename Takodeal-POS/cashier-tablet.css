@@ -276,3 +276,38 @@
  .cashier-printer-card [data-state=error],.cashier-printer-card [data-state=not-printed],.cashier-printer-card [data-state=failed],.cashier-printer-card [data-state=no-paper] {color:#b64234;}
  @media(max-width:700px){.cashier-printer-setup{grid-template-columns:1fr;}}
 }
+
+/* Consumables owns its scrolling; the sales menu and order cart keep their layout. */
+@media screen {
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #view-consumables.active {display:flex!important;flex-direction:column!important;height:auto!important;min-height:0!important;overflow:auto!important;box-sizing:border-box;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #view-consumables .cashier-consumables-layout {display:flex!important;flex-direction:row!important;flex:1 1 0!important;min-width:0;min-height:0!important;height:100%!important;padding:0!important;gap:14px!important;align-items:stretch!important;overflow:hidden!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #view-consumables .cashier-consumables-menu {flex:1 1 0!important;min-width:0!important;min-height:0!important;height:100%!important;overflow:hidden!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #view-consumables .cashier-consumables-toolbar {flex:0 0 auto;flex-wrap:wrap;gap:8px;padding:10px 12px!important;min-width:0;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesCategoryHeader {flex:1 1 240px!important;min-width:0;max-width:100%;padding:0!important;gap:8px;overscroll-behavior-x:contain;touch-action:pan-x;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #view-consumables .cashier-consumables-tabs {gap:8px!important;flex:0 0 auto;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #view-consumables .cashier-consumables-toolbar button {min-height:44px;padding:10px 14px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesTabNew,body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesTabHistory {flex:1 1 0!important;min-width:0;min-height:0!important;padding:12px!important;overflow:auto!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-x pan-y;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesItemGrid {grid-template-columns:repeat(auto-fill,minmax(132px,1fr))!important;gap:12px!important;min-width:0;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesTabHistory .data-table {min-width:460px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesCartPanel {flex:0 0 clamp(270px,31vw,350px)!important;width:clamp(270px,31vw,350px)!important;min-width:0!important;max-width:none!important;min-height:0!important;height:100%!important;margin:0!important;overflow:hidden!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesCartPanel > .ticket-header,body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesCartPanel > .table-header,body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesCartPanel > .ticket-footer {flex:0 0 auto;padding:12px!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesCartList {flex:1 1 0!important;min-height:0!important;max-height:none!important;overflow:auto!important;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesCartList .cart-item {padding:12px!important;gap:8px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesCartList .cart-item-desc {min-width:0;overflow-wrap:anywhere;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesCartList .btn-remove {min-width:40px;min-height:40px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #btnSubmitConsumables {min-height:48px;}
+ @media(max-width:900px),(max-height:450px) {
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #view-consumables.active {display:block!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #view-consumables .cashier-consumables-layout {display:flex!important;flex-direction:column!important;flex:none!important;height:auto!important;overflow:visible!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #view-consumables .cashier-consumables-menu {flex:none!important;width:100%!important;height:auto!important;overflow:visible!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesTabNew,body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesTabHistory {flex:none!important;height:auto!important;max-height:none!important;overflow:visible!important;overscroll-behavior:auto;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesTabHistory {overflow-x:auto!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesCartPanel {flex:none!important;width:100%!important;height:auto!important;min-height:240px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesCartList {flex:0 1 auto!important;min-height:90px!important;max-height:min(50dvh,380px)!important;}
+ }
+ @media(max-width:480px) {
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #view-consumables .cashier-consumables-tabs {flex:1 1 100%;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #view-consumables .cashier-consumables-tabs button {flex:1;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #consumablesItemGrid {gap:10px!important;}
+ }
+}

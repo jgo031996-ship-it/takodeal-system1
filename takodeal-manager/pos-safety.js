@@ -23,7 +23,7 @@ export function saleIdentity(payload, cryptoApi = globalThis.crypto) {
 
 export function collectDeductions(payload, bom) {
     if (!Array.isArray(payload.cart) || !payload.cart.length) throw new Error('The sale cart is empty.');
-    if (!Array.isArray(bom) || !bom.length) throw new Error('Recipes are unavailable. Sale remains queued.');
+    if (!Array.isArray(bom) || (!bom.length && payload.recipeSnapshotStatus !== 'unavailable')) throw new Error('Recipes are unavailable. Sale remains queued.');
     const amounts = new Map();
     const add = (name, amount) => {
         if (!name || !Number.isFinite(amount) || amount < 0) throw new Error('Invalid ingredient deduction.');
@@ -59,6 +59,18 @@ export function countBalls(cart = []) {
         if (!pack || !Number.isFinite(qty) || qty <= 0) return sum;
         return sum + Number(pack[1]) * qty;
     }, 0);
+}
+
+// Shift summaries describe the movements captured for that receipt. Today's
+// editable BOM cannot reconstruct a historical sale or its packaging choice.
+export function receiptIngredientBurn(sale) {
+    const totals = {};
+    for (const movement of sale.inventoryMovements || []) {
+        if (movement.ingredientName && Number.isFinite(movement.quantity) && movement.quantity > 0) {
+            totals[movement.ingredientName] = (totals[movement.ingredientName] || 0) + movement.quantity;
+        }
+    }
+    return totals;
 }
 
 // IndexedDB read/write transactions serialize across tabs; array replacement in
@@ -195,6 +207,8 @@ export function createSaleEngine(api) {
             const movements = collectDeductions(payload, payload.recipeSnapshot || bom);
             const resolved = new Map();
             const inventoryIssues = [];
+            const recipeIssues = payload.recipeSnapshotStatus === 'unavailable'
+                ? payload.cart.map(item=>({menuItem:item.name||item.itemName||'Unknown item',quantity:Number(item.qty??1),reason:'original-recipe-unavailable'})) : [];
             const normalizedName = name => String(name ?? '').trim().replace(/\s+/g, ' ');
             let branchInventory;
             async function findIngredient(name) {
@@ -230,8 +244,8 @@ export function createSaleEngine(api) {
                 if (!Number.isFinite(quantity)) throw new Error('Invalid ingredient deduction.');
                 resolved.set(inventoryId, { ingredientName, quantity, inventoryId });
             }
-            return { ...payload, inventoryMovements: [...resolved.values()], inventoryIssues,
-                inventoryReviewRequired: inventoryIssues.length > 0 };
+            return { ...payload, inventoryMovements: [...resolved.values()], inventoryIssues, recipeIssues,
+                inventoryReviewRequired: inventoryIssues.length > 0 || recipeIssues.length > 0 };
         },
         // Used before preparation, so a committed retry can be acknowledged even
         // if recipes or inventory configuration have subsequently changed.
@@ -251,6 +265,11 @@ export function createSaleEngine(api) {
             }
             const movements = payload.inventoryMovements;
             const issues = payload.inventoryIssues || [];
+            const recipeIssues = payload.recipeIssues || [];
+            if (!Array.isArray(recipeIssues) || recipeIssues.some(issue=>!issue.menuItem ||
+                !Number.isFinite(issue.quantity) || issue.quantity<=0 || issue.reason!=='original-recipe-unavailable')) {
+                throw new Error('Invalid recipe review record. Sale remains queued.');
+            }
             if (!Array.isArray(issues) || issues.some(issue => !issue.ingredientName ||
                 !Number.isFinite(issue.quantity) || issue.quantity <= 0 ||
                 !['missing', 'duplicate'].includes(issue.reason) || !Number.isInteger(issue.matches) || issue.matches < 0)) {
@@ -283,18 +302,19 @@ export function createSaleEngine(api) {
                 tx.set(saleRef, {
                     ...sale, timestamp: new Date(payload.localTimestamp),
                     inventoryState: deferred ? 'deferred' : 'applied',
-                    inventoryIssues: issues, inventoryReviewRequired: issues.length > 0,
+                    inventoryIssues: issues, recipeIssues, inventoryReviewRequired: issues.length > 0 || recipeIssues.length > 0,
                     ballsCounted, statsApplied: true
                 });
                 // Retain this marker even when receipt history is archived.
                 tx.set(markerRef(payload.saleId), { saleId: payload.saleId, branch: payload.branch,
                     receiptId: payload.receiptId, fingerprint: saleFingerprint(payload), committedAt: serverTimestamp() });
                 stats(tx, { ...payload, ballsCounted }, 1);
-                if (issues.length) tx.set(ref('manager_alerts', 'inventory-review-' + payload.saleId), {
+                if (issues.length || recipeIssues.length) tx.set(ref('manager_alerts', 'inventory-review-' + payload.saleId), {
                     type: 'INVENTORY_REVIEW', branch: payload.branch, cashier: payload.cashier || 'Unknown',
-                    receiptId: payload.receiptId, saleId: payload.saleId, inventoryIssues: issues, reviewStatus: 'Pending',
+                    receiptId: payload.receiptId, saleId: payload.saleId, inventoryIssues: issues, recipeIssues, reviewStatus: 'Pending',
                     message: `Receipt ${alertText(payload.receiptId)} uploaded. Stock deductions need review: ` +
-                        issues.map(issue => `${alertText(issue.ingredientName)} (${issue.quantity}; ${issue.reason}, ${issue.matches} matches)`).join(', ') +
+                        [...issues.map(issue => `${alertText(issue.ingredientName)} (${issue.quantity}; ${issue.reason}, ${issue.matches} matches)`),
+                        ...recipeIssues.map(issue=>`${alertText(issue.menuItem)} (${issue.quantity} orders; original recipe unavailable)`)].join(', ') +
                         '. These unmatched quantities were not deducted. Sales and payments are recorded.',
                     timestamp: serverTimestamp(), isRead: false
                 });

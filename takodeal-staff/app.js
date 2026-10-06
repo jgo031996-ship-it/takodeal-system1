@@ -3,6 +3,7 @@ import { installStaffRegistration } from './staff-registration.js';
 import { installStaffPhone } from './staff-phone.js';
 import { installStaffPortal } from './staff-portal.js';
 import { calculateLateMinutes, resolveScheduledShift, resolveAttendanceShift, captureAttendanceSchedule, latePay, earnedNightBonus, attendanceLateMinutes, isMealDeduction } from './payroll-safety.js';
+import {phDay, pendingDueNotices, clockInRestriction, startPhilippineDayTimer, noticeIsDue, deductionIsDue, isPenaltyDeduction, acknowledgeSanction} from './sanction-schedule.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
@@ -64,6 +65,8 @@ window.stopStaffLiveListeners = function() {
     }
     if (window.staffSanctionPadTimer) clearTimeout(window.staffSanctionPadTimer);
     window.staffSanctionPadTimer = null;
+    window.staffSanctionDayStop?.(); window.staffSanctionDayStop = null;
+    window.staffSanctionCachedSnapshot = null;
     window.lastUnreadCount = undefined;
     for (const id of ['navReqBadge', 'navSchedBadge', 'incomingSwapsContainer', 'staffAppSanctionModal']) {
         const element = document.getElementById(id);
@@ -2215,7 +2218,7 @@ window.loadPayslipVault = async function() {
         const dedSnap = await getDocs(query(collection(db, "staff_deductions"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10))));
         if (!stillOpen()) return;
         let liveUnpaidVales = 0; let liveActiveDeductions = [];
-        let pendingUnpaidVales = 0; 
+        let pendingUnpaidVales = 0, scheduledPenaltyReview = 0;
         
         let cutoffEndTimestamp = new Date(endDateStr + 'T23:59:59'); 
         let prevCutoffEndTimestamp = new Date(prevEndStr + 'T23:59:59'); 
@@ -2223,6 +2226,7 @@ window.loadPayslipVault = async function() {
         dedSnap.forEach(d => { 
             let data = d.data();
             if (data.status === "Unpaid" && isMatch(data.staffName)) {
+                if (isPenaltyDeduction(data) && data.scheduleVersion===1 && deductionIsDue(data,endDateStr)) scheduledPenaltyReview += Number(data.amount)||0;
                 let dDate = safeDate(data.dateAdded || data.timestamp);
                 if (data.type === "Cash Advance" || isMealDeduction(data.type)) {
                     let val = parseFloat(data.amount) || 0; 
@@ -2259,6 +2263,10 @@ window.loadPayslipVault = async function() {
         document.getElementById('liveEstLates').innerText = '-₱' + currentData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstVales').innerText = '-₱' + liveUnpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
+        let penaltyReview=document.getElementById('liveScheduledPenaltyReview');
+        if(!penaltyReview){penaltyReview=document.createElement('p');penaltyReview.id='liveScheduledPenaltyReview';penaltyReview.style.cssText='padding:10px;background:#fff8ed;font-size:12px;';document.getElementById('payslipLiveSection').prepend(penaltyReview);}
+        penaltyReview.hidden=!scheduledPenaltyReview;
+        penaltyReview.textContent='Scheduled penalties due for ledger review: ₱'+scheduledPenaltyReview.toFixed(2)+'. This amount is separate from the estimated net pay. Contact management to review collection.';
         let scheduleNotice = document.getElementById('liveScheduleHistoryNotice');
         if (!scheduleNotice) {
             scheduleNotice = document.createElement('p');scheduleNotice.id = 'liveScheduleHistoryNotice';
@@ -3472,13 +3480,17 @@ window.renderActiveSanctions = function(snap, staffName) {
     const epoch = window.staffLiveListenerEpoch;
     const modal = document.getElementById('staffAppSanctionModal');
     const active = document.getElementById('activeSanctionId');
-    if (snap.empty) {
+    const entries = snap.docs.filter(entry=>!entry.data().staffId || entry.data().staffId===localStorage.getItem('takodeal_staff_id'));
+    const due = pendingDueNotices(entries.map(entry=>({...entry.data(),id:entry.id})));
+    if (!due.length) {
         modal.style.display = 'none'; active.value = '';
         if (window.staffSanctionPadTimer) clearTimeout(window.staffSanctionPadTimer);
         window.staffSanctionPadTimer = null;
         return false;
     }
-    const entry = snap.docs[0], sanction = entry.data();
+    const entry = entries.find(entry=>entry.id===due[0].id), sanction = entry.data();
+    let close = document.getElementById('staffSanctionCloseNotice');
+    if (!close) {close=document.createElement('button');close.id='staffSanctionCloseNotice';close.type='button';close.textContent='Close notice · Time Out remains available';close.style.cssText='width:100%;margin-top:12px;padding:12px;border:1px solid #d1dcd5;border-radius:8px;background:white;color:#345847;';close.onclick=()=>{modal.style.display='none';};modal.querySelector('div')?.append(close);}
     document.getElementById('sanctionLockType').innerText = sanction.type || 'Violation';
     document.getElementById('sanctionLockSeverity').innerText = sanction.severity || 'Warning';
     document.getElementById('sanctionLockDetails').innerText = sanction.details || 'No details provided.';
@@ -3506,12 +3518,16 @@ window.startSanctionListener = function(staffName) {
     if (window.staffSanctionUnsubscribe) window.staffSanctionUnsubscribe();
     window.staffSanctionListenerKey = key;
     const current = () => epoch === window.staffLiveListenerEpoch && window.staffSanctionListenerKey === key && localStorage.getItem('takodeal_staff_id') === staffId && localStorage.getItem('takodeal_staff_name') === staffName;
-    const q = query(collection(db, 'hr_sanctions'), where('staffName', '==', staffName), where('status', '==', 'Pending Reply'));
+    const q = query(collection(db, 'hr_sanctions'), where('staffName', '==', staffName));
     window.staffSanctionUnsubscribe = onSnapshot(q, snap => {
-        if (current()) window.renderActiveSanctions(snap, staffName);
+        if (!current()) return;
+        window.staffSanctionCachedSnapshot = snap;
+        window.renderActiveSanctions(snap, staffName);
+        if (!window.staffSanctionDayStop) window.staffSanctionDayStop = startPhilippineDayTimer(()=>{if(current() && window.staffSanctionCachedSnapshot)window.renderActiveSanctions(window.staffSanctionCachedSnapshot,staffName);});
     }, error => {
         if (!current()) return;
         window.staffSanctionUnsubscribe = null; window.staffSanctionListenerKey = null;
+        window.staffSanctionDayStop?.(); window.staffSanctionDayStop=null; window.staffSanctionCachedSnapshot=null;
         console.error('Staff sanction listener:', error);
     });
 };
@@ -3520,10 +3536,12 @@ window.checkActiveSanctions = async function(staffName, {requireFresh = false} =
     const staffId = localStorage.getItem('takodeal_staff_id'), epoch = window.staffLiveListenerEpoch;
     try {
         if (!staffId || !staffName || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
-        const q = query(collection(db, 'hr_sanctions'), where('staffName', '==', staffName), where('status', '==', 'Pending Reply'));
+        const q = query(collection(db, 'hr_sanctions'), where('staffName', '==', staffName));
         // Clock-in and explicit acknowledgement checks must see HQ's current state.
         const snap = await getDocsFromServer(q);
         if (epoch !== window.staffLiveListenerEpoch || localStorage.getItem('takodeal_staff_id') !== staffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
+        const restricted = clockInRestriction(snap.docs.map(entry=>({...entry.data(),id:entry.id})).filter(row=>!row.staffId || row.staffId===staffId));
+        if (requireFresh && restricted && !restricted.replyRequired) throw Error(restricted.message);
         return window.renderActiveSanctions(snap, staffName);
     } catch (error) {
         console.error('Error checking sanctions:', error);
@@ -3531,6 +3549,7 @@ window.checkActiveSanctions = async function(staffName, {requireFresh = false} =
         return null;
     }
 };
+document.addEventListener('visibilitychange',()=>{const name=localStorage.getItem('takodeal_staff_name');if(document.visibilityState==='visible' && name && window.staffSanctionCachedSnapshot)window.renderActiveSanctions(window.staffSanctionCachedSnapshot,name);});
 
 window.submitStaffAppSanctionReply = async function() {
     let sanctionId = document.getElementById('activeSanctionId').value;
@@ -3553,16 +3572,11 @@ window.submitStaffAppSanctionReply = async function() {
         const canvas = document.getElementById('staffAppSignatureCanvas');
         const signatureDataUrl = canvas.toDataURL('image/png');
 
-        await updateDoc(doc(db, "hr_sanctions", sanctionId), {
-            staffReply: replyText,
-            signatureBase64: signatureDataUrl, 
-            status: "Replied",
-            repliedAt: serverTimestamp()
-        });
+        await acknowledgeSanction({db,doc,runTransaction,serverTimestamp},{id:sanctionId,staffName:localStorage.getItem('takodeal_staff_name'),reply:replyText,signature:signatureDataUrl},{identity:()=>({staffName:localStorage.getItem('takodeal_staff_name'),staffId:localStorage.getItem('takodeal_staff_id')})});
 
         Swal.fire({
             title: '✅ Notice Acknowledged', 
-            text: 'Your explanation and signature have been securely logged to HQ. Your app is now unlocked.', 
+            text: 'Your explanation and signature have been logged to HQ. A scheduled suspension still follows its effective date until management resolves it.',
             icon: 'success', 
             customClass: { popup: 'rounded-2xl' }
         });
@@ -3571,7 +3585,7 @@ window.submitStaffAppSanctionReply = async function() {
 
     } catch (e) {
         console.error(e);
-        Swal.fire('Error', 'Failed to submit. Check internet connection.', 'error');
+        Swal.fire('Could not submit', e.message || 'Check internet connection.', 'error');
     } finally {
         btn.innerText = "Submit & Unlock App"; btn.disabled = false;
     }
@@ -3624,9 +3638,13 @@ window.loadMySanctionsHistory = async function() {
             let actionBtn = ''; // 🔥 Create an empty variable for the button
             
             if (d.status === 'Pending Reply') {
+                if (!noticeIsDue(d)) {
+                    statusBadge = `<span style="color:#27684d;font-weight:bold;">Scheduled · Effective ${d.effectiveDate}</span>`;
+                } else {
                 statusBadge = `<span style="background: #fef2f2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid #fca5a5;">⚠️ Action Required</span>`;
                 // 🔥 Inject the manual trigger button!
                 actionBtn = `<button onclick="window.checkActiveSanctions('${staffName}')" style="width: 100%; margin-top: 15px; background: #dc2626; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 900; font-size: 14px; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3);">✍️ Click Here to Acknowledge & Sign</button>`;
+                }
             } else if (d.status === 'Resolved') {
                 statusBadge = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid #bbf7d0;">✅ Resolved</span>`;
             } else {
@@ -3648,7 +3666,7 @@ window.loadMySanctionsHistory = async function() {
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
                         <div>
                             <strong style="color: #b91c1c; font-size: 15px; display: block;">${d.type}</strong>
-                            <span style="font-size: 11px; color: #64748b;">Issued: ${dateStr}</span>
+                            <span style="font-size: 11px; color: #64748b;">Issued: ${dateStr}<br>Effective: ${d.effectiveDate || 'Immediate (legacy notice)'}</span>
                         </div>
                         ${statusBadge}
                     </div>

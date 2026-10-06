@@ -1,4 +1,5 @@
 import { imageFor } from './cashier-data.js';
+import { createRecipeFeed } from './recipe-feed.js';
 import { installMealCheckout } from './meal-checkout.js';
 import { createShiftCloseDraftStore, countValue } from './shift-close-draft.js';
 import { ensureShiftSalesUploaded, createShiftSalesFeed, createParkedOrdersFeed, mergeParkedOrders } from './shift-sales.js';
@@ -10,13 +11,14 @@ import { closeShiftAtomic, readBranchPolicy, readMallOpeningCash } from './cash-
 import { createRemittanceAttemptStore, readRemittanceDrawer, submitRemittanceAtomic, readClosedCashCarry, recordOpeningCashReview } from './remittance-safety.js';
 import {captureAttendanceSchedule} from './payroll-safety.js';
 import {createScheduleHistoryStore} from './schedule-history.js';
+import {pendingDueNotices, clockInRestriction, startPhilippineDayTimer, acknowledgeSanction} from './sanction-schedule.js';
 // ========================================================
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer, getDocFromServer, startAfter } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { installSaleSafety } from './pos-checkout.js';
-import { saleIdentity } from './pos-safety.js';
+import { saleIdentity, receiptIngredientBurn } from './pos-safety.js';
 // 🔥 NEW: Import Firebase Storage
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
@@ -444,6 +446,7 @@ window.menuListenerUnsubscribe = null;
 
 window.loadPOSData = async function() {
     window.applySidebarLayout(); 
+    window.recipeFeed?.start();
 
     // ========================================================================
     // 🚀 1. THE LIGHTNING-FAST OFFLINE ENGINE (INSTANT BOOT IN 1ms)
@@ -1260,6 +1263,12 @@ window.updateActiveShiftCashier = async function(newCashierName) {
 // ========================================================
 // 🛒 TRUE OFFLINE CHECKOUT & SYNC ENGINE
 // ========================================================
+window.recipeFeed = createRecipeFeed({db,doc,collection,getDocFromServer,getDocsFromServer,onSnapshot}, {
+    storage:localStorage,online:()=>navigator.onLine!==false,
+    onChange:snapshot=>{window.masterPOSData ||= {}; window.masterPOSData.bom=snapshot.rows;
+        window.masterPOSData.recipeVersion=snapshot.version; window.masterPOSData.recipeRevisionId=snapshot.revisionId;},
+    report:error=>console.warn('Recipe refresh is awaiting connection:',error)
+});
 installSaleSafety({ db, doc, collection, query, where, getDocsFromServer, runTransaction, increment, serverTimestamp, onSnapshot });
 const shiftSalesFeed = createShiftSalesFeed({db, collection, query, where, onSnapshot}, rows => {
     if (document.getElementById('view-sales')?.classList.contains('active') && window.sessionUser && window.currentShift) {
@@ -2062,39 +2071,8 @@ window.submitComprehensiveCloseShift = async function () {
                     unverifiedDigitalCount++;
                 }
 
-                if (tx.cart) {
-                    tx.cart.forEach(item => {
-                        let itemName = item.name || item.itemName;
-                        let qty = parseFloat(item.qty) || 1;
-                        let recipe = (typeof masterPOSData !== 'undefined' && masterPOSData.bom) ? masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
-                        
-                        // 🔥 THE MATH FIX: Prioritize the INDIVIDUAL ITEM's order type!
-                        let itemOrderType = item.orderType || tx.orderType || 'Dine-In';
-
-                        recipe.forEach(r => {
-                            let deductAmount = (parseFloat(r.qty) || 0) * qty;
-                            
-                            let ingName = (r.ingredientName || "").toLowerCase();
-                            if (ingName.includes("box")) {
-                                if (itemOrderType.toLowerCase().includes("dine-in")) {
-                                    deductAmount = deductAmount / 2; // Exact half deduction!
-                                }
-                            }
-
-                            if (!shiftIngredientBurn[r.ingredientName]) shiftIngredientBurn[r.ingredientName] = 0;
-                            shiftIngredientBurn[r.ingredientName] += deductAmount;
-                        });
-
-                        if (item.addons) {
-                            for (let key in item.addons) {
-                                let addon = item.addons[key];
-                                if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
-                                    if (!shiftIngredientBurn[addon.linkedIngredient]) shiftIngredientBurn[addon.linkedIngredient] = 0;
-                                    shiftIngredientBurn[addon.linkedIngredient] += (parseFloat(addon.deductQty) * parseFloat(addon.qty) * qty);
-                                }
-                            }
-                        }
-                    });
+                for (const [name,quantity] of Object.entries(receiptIngredientBurn(tx))) {
+                    shiftIngredientBurn[name]=(shiftIngredientBurn[name]||0)+quantity;
                 }
 
                 if (tx.splitDetails) {
@@ -3193,13 +3171,12 @@ window.submitAttendance = async function(type) {
     // ==========================================
     // 🚨 HR SANCTION & NTE LOCK (TIME CLOCK BLOCKER)
     // ==========================================
-    try {
-        const nteQ = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
-        const nteSnap = await getDocs(nteQ);
-        
-        if (!nteSnap.empty) {
-            let nteData = nteSnap.docs[0].data();
-            let nteId = nteSnap.docs[0].id;
+    if (type === 'TIME IN') try {
+        const nteQ = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName));
+        const nteSnap = await getDocsFromServer(nteQ);
+        const restriction = clockInRestriction(nteSnap.docs.map(entry=>({...entry.data(),id:entry.id})).filter(row=>!row.staffId || row.staffId===staffProfile.id));
+        if (restriction) {
+            let nteData = restriction.notice;
             
             let clockModal = document.getElementById('timeClockModal');
             if (clockModal) clockModal.style.display = 'none';
@@ -3207,10 +3184,7 @@ window.submitAttendance = async function(type) {
             // 🔥 THE FIX: Redirects them to use their personal phone!
             Swal.fire({
                 title: '🚨 TIME CLOCK LOCKED',
-                html: `You have an unresolved <b>Notice to Explain (NTE)</b> regarding:<br><br>
-                       <span style="color:#dc2626; font-weight:bold; font-size:16px;">"${nteData.type}"</span><br><br>
-                       <span style="color:#475569; font-size:14px;">You <b>cannot Time In</b> until you acknowledge and reply to this notice.</span><br><br>
-                       <i>Please open the <b>TAKODEAL STAFF APP</b> on your personal phone to read, explain, and sign your notice. Once submitted, your Time Clock will unlock automatically.</i>`,
+                text: `${nteData.type || 'HR notice'}: ${restriction.message} ${restriction.replyRequired ? 'Open the TAKODEAL STAFF APP to read, explain, and sign your notice.' : 'Contact management to review the effective suspension date.'} Time Out remains available.`,
                 icon: 'error',
                 confirmButtonText: 'Understood, I will check my phone',
                 confirmButtonColor: '#dc2626',
@@ -3224,6 +3198,8 @@ window.submitAttendance = async function(type) {
         }
     } catch(e) {
         console.error("NTE Check Failed:", e);
+        await Swal.fire('Connect to HQ', 'HR notices could not be verified. Reconnect before recording Time In. Time Out remains available.', 'error');
+        unlockUI(); return;
     }
 
     // ==========================================
@@ -6468,30 +6444,46 @@ window.hasSignedNTE = false;
 
 
 
-window.checkActiveSanctions = async function(staffName) {
-    if (!staffName) return;
-    
-    try {
-        const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
-        const snap = await getDocs(q);
-        
-        if (!snap.empty) {
-            let sanction = snap.docs[0].data();
-            let sanctionId = snap.docs[0].id;
-
-            document.getElementById('activeSanctionId').value = sanctionId;
-            document.getElementById('sanctionLockType').innerText = sanction.type || "Violation";
-            document.getElementById('sanctionLockSeverity').innerText = sanction.severity || "Warning";
-            document.getElementById('sanctionLockDetails').innerText = sanction.details || "No details provided.";
-            document.getElementById('sanctionStaffReply').value = ""; 
-
-            document.getElementById('hrSanctionModal').style.display = 'flex';
-            
-            // 🔥 WAKE UP THE SIGNATURE PAD!
-            setTimeout(() => { window.initSignaturePad(); }, 300);
-        }
-    } catch (e) { console.error("Error checking sanctions:", e); }
+window.stopCashierSanctions = function() {
+    window.cashierSanctionEpoch=(window.cashierSanctionEpoch || 0)+1;
+    window.cashierSanctionUnsubscribe?.(); window.cashierSanctionUnsubscribe=null;
+    window.cashierSanctionDayStop?.(); window.cashierSanctionDayStop=null;
+    window.cashierSanctionName=null; window.cashierSanctionRows=[];
+    if(window.cashierSanctionPadTimer)clearTimeout(window.cashierSanctionPadTimer);window.cashierSanctionPadTimer=null;
+    const modal=document.getElementById('hrSanctionModal');if(modal)modal.style.display='none';
 };
+window.renderCashierSanctions = function() {
+    const name=window.cashierSanctionName;
+    if(!name || localStorage.getItem('cashierName')!==name)return;
+    const rows=window.cashierSanctionRows || [],sanction=pendingDueNotices(rows)[0],modal=document.getElementById('hrSanctionModal');
+    if(!modal)return;
+    if(!sanction){modal.style.display='none';return;}
+    const active=document.getElementById('activeSanctionId');
+    document.getElementById('sanctionLockType').innerText=sanction.type || 'Violation';
+    document.getElementById('sanctionLockSeverity').innerText=sanction.severity || 'Warning';
+    document.getElementById('sanctionLockDetails').innerText=sanction.details || 'No details provided.';
+    if(active.value!==sanction.id){active.value=sanction.id;document.getElementById('sanctionStaffReply').value='';window.hasSignedNTE=false;
+        const epoch=window.cashierSanctionEpoch;if(window.cashierSanctionPadTimer)clearTimeout(window.cashierSanctionPadTimer);
+        window.cashierSanctionPadTimer=setTimeout(()=>{if(epoch!==window.cashierSanctionEpoch || localStorage.getItem('cashierName')!==name || active.value!==sanction.id)return;window.initSignaturePad();window.cashierSanctionPadTimer=null;},300);
+    }
+    let close=document.getElementById('cashierSanctionCloseNotice');
+    if(!close){close=document.createElement('button');close.id='cashierSanctionCloseNotice';close.type='button';close.textContent='Close notice · Time Out remains available';close.style.cssText='width:100%;padding:12px;margin-top:12px;border:1px solid #d1dcd5;border-radius:8px;background:white;color:#345847;';close.onclick=()=>{modal.style.display='none';};modal.querySelector('div')?.append(close);}
+    modal.style.display='flex';
+};
+window.checkActiveSanctions = async function(staffName) {
+    if(!staffName)return;
+    if(window.cashierSanctionName===staffName && window.cashierSanctionUnsubscribe)return;
+    window.stopCashierSanctions();window.cashierSanctionName=staffName;
+    const epoch=window.cashierSanctionEpoch,q=query(collection(db,'hr_sanctions'),where('staffName','==',staffName));
+    window.cashierSanctionUnsubscribe=onSnapshot(q,snap=>{
+        if(epoch!==window.cashierSanctionEpoch || window.cashierSanctionName!==staffName)return;
+        window.cashierSanctionRows=snap.docs.map(entry=>({...entry.data(),id:entry.id}));window.renderCashierSanctions();
+        if(!window.cashierSanctionDayStop)window.cashierSanctionDayStop=startPhilippineDayTimer(()=>{if(epoch===window.cashierSanctionEpoch)window.renderCashierSanctions();});
+    },error=>{if(epoch!==window.cashierSanctionEpoch)return;window.stopCashierSanctions();console.error('Cashier notice listener:',error);});
+};
+window.addEventListener('pagehide',()=>window.stopCashierSanctions());
+window.addEventListener('pageshow',()=>window.checkActiveSanctions(localStorage.getItem('cashierName')));
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')window.renderCashierSanctions();});
 
 window.submitSanctionReply = async function() {
     let sanctionId = document.getElementById('activeSanctionId').value;
@@ -6515,19 +6507,14 @@ window.submitSanctionReply = async function() {
         const canvas = document.getElementById('signatureCanvas');
         const signatureDataUrl = canvas.toDataURL('image/png');
 
-        await updateDoc(doc(db, "hr_sanctions", sanctionId), {
-            staffReply: replyText,
-            signatureBase64: signatureDataUrl, // Saves the drawing to the cloud!
-            status: "Replied",
-            repliedAt: serverTimestamp()
-        });
+        await acknowledgeSanction({db,doc,runTransaction,serverTimestamp},{id:sanctionId,staffName:localStorage.getItem('cashierName'),reply:replyText,signature:signatureDataUrl},{identity:()=>({staffName:localStorage.getItem('cashierName'),staffId:window.currentBranchStaffCache?.find(row=>row.cashierName===localStorage.getItem('cashierName'))?.id || ''})});
 
-        Swal.fire('✅ Submitted', 'Your explanation and signature have been securely logged. The POS is now unlocked.', 'success');
+        Swal.fire('Submitted', 'Your explanation and signature have been logged. A scheduled suspension still follows its effective date until management resolves it.', 'success');
         document.getElementById('hrSanctionModal').style.display = 'none';
 
     } catch (e) {
         console.error(e);
-        Swal.fire('Error', 'Failed to submit. Check internet connection.', 'error');
+        Swal.fire('Could not submit', e.message || 'Check internet connection.', 'error');
     } finally {
         btn.innerText = "Submit Explanation & Unlock"; btn.disabled = false;
     }
@@ -7367,25 +7354,8 @@ window.MASTER_CloseShift = async function () {
                     unverifiedDigitalCount++;
                 }
 
-                if (tx.cart) {
-                    tx.cart.forEach(item => {
-                        let itemName = item.name || item.itemName;
-                        let qty = item.qty || 1;
-                        let recipe = (typeof masterPOSData !== 'undefined' && masterPOSData.bom) ? masterPOSData.bom.filter(b => b.menuItem === itemName) : [];
-                        recipe.forEach(r => {
-                            if (!shiftIngredientBurn[r.ingredientName]) shiftIngredientBurn[r.ingredientName] = 0;
-                            shiftIngredientBurn[r.ingredientName] += (r.qty * qty);
-                        });
-                        if (item.addons) {
-                            for (let key in item.addons) {
-                                let addon = item.addons[key];
-                                if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
-                                    if (!shiftIngredientBurn[addon.linkedIngredient]) shiftIngredientBurn[addon.linkedIngredient] = 0;
-                                    shiftIngredientBurn[addon.linkedIngredient] += (addon.deductQty * addon.qty * qty);
-                                }
-                            }
-                        }
-                    });
+                for (const [name,quantity] of Object.entries(receiptIngredientBurn(tx))) {
+                    shiftIngredientBurn[name]=(shiftIngredientBurn[name]||0)+quantity;
                 }
 
                 if (tx.splitDetails) {

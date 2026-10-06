@@ -345,7 +345,7 @@
   </style>
 <link rel="stylesheet" href="cashier-pos-base.css?v=schedule-memory-20261006-r8">
 <link rel="stylesheet" href="cashier-theme.css?v=schedule-memory-20261006-r8">
-<link rel="stylesheet" href="cashier-tablet.css?v=schedule-memory-20261006-r8">
+<link rel="stylesheet" href="cashier-tablet.css?v=transaction-upgrades-20261007-r10">
 </head>
 
 <body class="cashier-orange">
@@ -1183,27 +1183,27 @@
 
     <!-- 🧹 DEDICATED CONSUMABLES & STORE USE VIEW -->
     <div class="view-container" id="view-consumables">
-      <div class="pos-layout">
-        <div class="menu-panel" style="display: flex; flex-direction: column; background: white; border-radius: 12px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
+      <div class="pos-layout cashier-consumables-layout">
+        <div class="menu-panel cashier-consumables-menu" style="display: flex; flex-direction: column; background: white; border-radius: 12px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
           
           <!-- 🔥 NEW: TAB SWITCHER HEADER -->
-          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; background: #f8fafc; padding-right: 20px;">
+          <div class="cashier-consumables-toolbar" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; background: #f8fafc; padding-right: 20px;">
               <div class="category-header" id="consumablesCategoryHeader" style="border-bottom: none; flex: 1; padding: 15px 20px;"></div>
-              <div style="display: flex; gap: 10px; flex-shrink: 0;">
+              <div class="cashier-consumables-tabs" role="group" aria-label="Store use view" style="display: flex; gap: 10px; flex-shrink: 0;">
                   <button id="btnTabConsNew" onclick="window.switchConsumablesTab('New')" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;">➕ New Log</button>
                   <button id="btnTabConsHist" onclick="window.switchConsumablesTab('History')" style="background: white; color: #475569; border: 1px solid #cbd5e1; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;">📜 History</button>
               </div>
           </div>
           
           <!-- Tab 1: Store Items Grid -->
-          <div class="item-grid-container" id="consumablesTabNew" style="display: block; flex: 1; padding: 20px;">
+          <div class="item-grid-container" id="consumablesTabNew" role="region" aria-label="Store supplies" tabindex="0" style="display: block; flex: 1; padding: 20px;">
             <div class="item-grid" id="consumablesItemGrid">
               <div style="grid-column: 1/-1; text-align: center; padding: 40px; color: #64748b; font-weight: bold;">Loading Store Supplies...</div>
             </div>
           </div>
 
           <!-- 🔥 NEW: HISTORY TAB CONTENT -->
-          <div id="consumablesTabHistory" style="display: none; flex: 1; overflow-y: auto; background: white; padding: 20px;">
+          <div id="consumablesTabHistory" role="region" aria-label="Store use history" tabindex="0" style="display: none; flex: 1; overflow-y: auto; background: white; padding: 20px;">
               <table class="data-table" style="width: 100%; border-collapse: collapse; text-align: left; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
                   <thead style="background: #f1f5f9; border-bottom: 2px solid #cbd5e1; position: sticky; top: 0; z-index: 5;">
                       <tr>
@@ -1230,7 +1230,7 @@
             <span class="col-qty">Qty</span>
             <span class="col-sub">Action</span>
           </div>
-          <ul class="order-list" id="consumablesCartList">
+          <ul class="order-list" id="consumablesCartList" aria-label="Supplies selected for store use" tabindex="0">
             <li style="padding: 30px; text-align: center; color: #94a3b8; font-style: italic; font-weight: bold;">Cart is empty.</li>
           </ul>
           <div class="ticket-footer">
@@ -4490,7 +4490,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=read-budget-20261006-r9"></script>
+    <script type="module" src="main.js?v=transaction-upgrades-20261007-r10"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {

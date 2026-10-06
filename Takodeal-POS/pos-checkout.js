@@ -160,8 +160,12 @@ export function installSaleSafety(api, environment = globalThis) {
                 payload.localTimestamp = d.toISOString();
                 payload.saleVersion = SALE_VERSION;
                 payload.auditDeferred = payload.branch === watchedAuditBranch ? w.isAuditModeActive : localAuditMode(payload.branch);
-                const bom = w.masterPOSData?.bom;
-                payload.recipeSnapshot = Array.isArray(bom) && bom.length ? bom.map(r => ({ menuItem: r.menuItem, ingredientName: r.ingredientName, qty: r.qty })) : null;
+                if (w.recipeFeed?.capture) Object.assign(payload,await w.recipeFeed.capture());
+                else {
+                    const bom = w.masterPOSData?.bom;
+                    payload.recipeSnapshot = Array.isArray(bom) ? bom.map(r => ({ menuItem:r.menuItem,ingredientName:r.ingredientName,qty:r.qty })) : [];
+                    payload.recipeSnapshotStatus = Array.isArray(bom) && bom.length ? 'cached' : 'unavailable';
+                }
             }
             // JSON clone also catches unserializable input before local commit.
             saved = await outbox.enqueue(JSON.parse(JSON.stringify(payload)));
@@ -206,12 +210,12 @@ export function installSaleSafety(api, environment = globalThis) {
                 if (!payload) continue;
                 try {
                     if (!await engine.alreadyCommitted(payload)) {
-                        let bom = payload.recipeSnapshot;
-                        if (!bom && !payload.inventoryMovements) {
-                            const snap = await api.getDocsFromServer(api.collection(api.db, 'bom'));
-                            bom = snap.docs.map(d => d.data());
-                        }
-                        const prepared = await engine.prepare(payload, bom);
+                        // A queued sale without its original recipe cannot be
+                        // mapped to today's replacement. Upload the payment
+                        // with an explicit review record, never guessed stock.
+                        const original = !payload.recipeSnapshot && !payload.inventoryMovements
+                            ? {...payload,recipeSnapshot:[],recipeSnapshotStatus:'unavailable',recipeSnapshotReason:'legacy-unrecorded'} : payload;
+                        const prepared = await engine.prepare(original, original.recipeSnapshot);
                         await outbox.saveClaim(prepared, owner);
                         await engine.commit(prepared);
                     }

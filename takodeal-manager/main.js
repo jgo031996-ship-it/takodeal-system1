@@ -8,9 +8,14 @@ import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleFo
 import {installScheduleMemoryUI} from './schedule-memory-ui.js';
 import {validateManualAttendance, saveManualAttendance} from './attendance-audit.js';
 import {installScheduleSwapReview} from './schedule-swap-review.js';
+import {phDay, noticeIsDue, deductionIsDue, isPenaltyDeduction, suspensionDates} from './sanction-schedule.js';
+import {sanctionAuthority, findSanctionStaff, issueScheduledSanction, issueHandoverSanctions, finishSanction} from './sanction-actions.js';
+import {installSanctionScheduling} from './sanction-scheduling-ui.js';
 import { generateEmployeeID } from './employee-id.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { installMenuBulk } from './menu-bulk.js';
+import { installRecipeReplacement } from './recipe-bulk.js';
+import { loadRecipeState, createRecipeBatch, operationFor, recipePlan, saveRecipePlan, readRecipeRevision, recipeOperationApplied, loadInventoryDeletionState, inventoryDeletionPlan } from './recipe-changes.js';
 import { approveRemittanceAtomic } from './cash-settlement.js';
 import { legacyRemittanceDuplicates, rejectLegacyDuplicateAtomic } from './remittance-review.js';
 import { canOpenWorkspacePage } from './workspace-access-model.js';
@@ -5636,6 +5641,8 @@ window.openNewProductModal = async function () {
   if (document.getElementById('btnSaveAdvProd')?.disabled) return;
   window.deletedAdvRecipes = [];
   window.pendingAdvMenuRef = null;
+  window.advRecipeState = null;
+  window.currentAdvRecipe = [];
   document.getElementById('advancedProductModal').style.display = 'flex';
   document.getElementById('advProdId').value = '';
   document.getElementById('advProdName').value = '';
@@ -5652,6 +5659,8 @@ window.openNewProductModal = async function () {
   
   // 🛠️ FIX 2: Load Addon inventory
   await window.preloadInventoryForAddons();
+  window.advRecipeState = await loadRecipeState(window);
+  window.recipeOperations?.delete('advanced-product');
   document.getElementById('addonTableBody').innerHTML = '';
 
   window.currentAdvRecipe = [];
@@ -5832,6 +5841,8 @@ window.openBomEditor = async function (menuItemName, selectedId) {
   if (document.getElementById('btnSaveAdvProd')?.disabled) return;
   window.deletedAdvRecipes = [];
   window.pendingAdvMenuRef = null;
+  window.advRecipeState = null;
+  window.currentAdvRecipe = [];
   document.getElementById('advProdId').value = '';
   document.getElementById('advancedProductModal').style.display = 'flex';
   document.getElementById('advProdName').value = menuItemName;
@@ -5841,9 +5852,10 @@ window.openBomEditor = async function (menuItemName, selectedId) {
   await window.preloadInventoryForAddons(); 
 
   try {
-    const menuQ = query(collection(db, "menu"), where("name", "==", menuItemName));
-    const menuRows = (await window.fetchCachedCollection('menu')).filter(row => selectedId ? row.id === selectedId : row.name === menuItemName);
-    if (menuRows.length !== 1) throw new Error('Select a unique menu item before editing.');
+    window.advRecipeState = await loadRecipeState(window);
+    window.recipeOperations?.delete('advanced-product');
+    const menuRows = Object.entries(window.advRecipeState.documents.menu).map(([id,row])=>({...row,id})).filter(row => selectedId ? row.id === selectedId : row.name === menuItemName);
+    if (menuRows.length !== 1 || menuRows[0].name !== menuItemName || Object.values(window.advRecipeState.documents.menu).filter(row=>row.name===menuItemName).length !== 1) throw new Error('This product changed or its name is duplicated. Refresh before editing.');
     const menuSnap = {empty:false,docs:menuRows.map(row=>({id:row.id,data:()=>row}))};
     if (!menuSnap.empty) {
       let mData = menuSnap.docs[0].data();
@@ -5882,8 +5894,7 @@ window.openBomEditor = async function (menuItemName, selectedId) {
       }
     }
 
-    const bomQ = query(collection(db, "bom"), where("menuItem", "==", menuItemName));
-    const recipeRows = (await window.fetchCachedCollection('bom')).filter(row => row.menuItem === menuItemName);
+    const recipeRows = Object.entries(window.advRecipeState.documents.bom).map(([id,row])=>({...row,id})).filter(row => row.menuItem === menuItemName);
     const bomSnap = {forEach:fn=>recipeRows.forEach(row=>fn({id:row.id,data:()=>({...row})}))};
     window.currentAdvRecipe = [];
     bomSnap.forEach(docSnap => {
@@ -5907,7 +5918,8 @@ window.openBomEditor = async function (menuItemName, selectedId) {
     }
 
   } catch (e) {
-    console.error(e); window.ManagerUI.notify("Failed to load product details.");
+    window.advRecipeState = null;
+    console.error(e); window.ManagerUI.notify('Product was not opened. '+e.message);
   }
 };
 
@@ -6136,6 +6148,7 @@ window.saveAdvancedProduct = async function () {
   }
 
   try {
+    if (!window.advRecipeState) throw new Error('Reload this product before saving its recipe.');
     if (!category || [price, grabPrice, foodpandaPrice].some(n => !Number.isFinite(n) || n < 0)) throw new Error('Enter a category and valid prices.');
     const duplicates = await window.getDocsFromServer(window.query(window.collection(window.db, 'menu'), window.where('name', '==', prodName)));
     if (duplicates.docs.some(row => row.id !== (menuId || window.pendingAdvMenuRef?.id))) throw new Error('Another menu item already uses this name.');
@@ -6167,7 +6180,7 @@ window.saveAdvancedProduct = async function () {
     if (recipeRows.length + deletedRecipes.length + 1 > 400) throw new Error('This recipe is too large to save together. Reduce it to 399 rows.');
     // 🔥 1. INITIALIZE THE BATCH ENGINE
     if(btn) btn.innerText = "⚡ Blasting to Cloud...";
-    const batch = window.writeBatch(window.db);
+    const batch = await createRecipeBatch(window,{operationId:operationFor(window,'advanced-product',{menuId,prodName,category,price,grabPrice,foodpandaPrice,recipe:recipeRows.map(row=>({ingredientName:row.ingredientName,qty:row.qty})),deletedRecipes,addonsArray,mixMatchConfigArray}),revision:window.advRecipeState?.revision,baseline:window.advRecipeState,label:'Product and recipe edit'});
 
     let menuPayload = { 
         name: prodName, category: category, price: price, basePrice: price, grabPrice, foodpandaPrice, 
@@ -6228,75 +6241,8 @@ window.saveAdvancedProduct = async function () {
 // 🔥 BULK CSV RECIPE UPLOADER ENGINE 🔥
 // ========================================================
 window.processRecipeCsvUpload = function (event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = async function (e) {
-    const text = e.target.result;
-
-    function parseCSV(str) {
-      let arr = []; let quote = false; let row = 0; let col = 0;
-      for (let c = 0; c < str.length; c++) {
-        let cc = str[c], nc = str[c + 1];
-        arr[row] = arr[row] || [];
-        arr[row][col] = arr[row][col] || '';
-        if (cc == '"' && quote && nc == '"') { arr[row][col] += cc; ++c; continue; }
-        if (cc == '"') { quote = !quote; continue; }
-        if (cc == ',' && !quote) { ++col; continue; }
-        if (cc == '\r' && nc == '\n' && !quote) { ++row; col = 0; ++c; continue; }
-        if (cc == '\n' && !quote) { ++row; col = 0; continue; }
-        arr[row][col] += cc;
-      }
-      return arr;
-    }
-
-    const rows = parseCSV(text);
-    let successCount = 0; let errorCount = 0;
-    const uploadBtn = document.querySelector('button[onclick*="csvRecipeInput"]');
-    
-    // ✅ THE BULLETPROOF FIX (TOP)
-    if (uploadBtn) {
-        uploadBtn.innerText = "⏳ Uploading Recipes..."; 
-        uploadBtn.disabled = true;
-    }
-
-    try {
-      for (let i = 1; i < rows.length; i++) {
-        let cols = rows[i];
-        if (cols.length === 1 && cols[0].trim() === "") continue;
-        if (cols.length < 3) { errorCount++; continue; }
-
-        let menuItem = cols[0].trim();
-        let ingredientName = cols[1].trim();
-        let qty = parseFloat(cols[2].toString().replace(/[₱, ]/g, ''));
-
-        if (!menuItem || !ingredientName || isNaN(qty)) {
-          errorCount++; continue;
-        }
-
-        await addDoc(collection(db, "bom"), {
-          menuItem: menuItem,
-          ingredientName: ingredientName,
-          qty: qty
-        });
-
-        successCount++;
-      }
-      window.ManagerUI.notify(`✅ Recipes Uploaded!\n\nAdded ${successCount} ingredient links.\nErrors: ${errorCount}`);
-      window.loadMenuCosting();
-    } catch (error) {
-      console.error(error); window.ManagerUI.notify("❌ Fatal Error.");
-    } finally {
-      // ✅ THE BULLETPROOF FIX (BOTTOM)
-      if (uploadBtn) { 
-          uploadBtn.innerText = "📂 Upload CSV Recipes"; 
-          uploadBtn.disabled = false; 
-      }
-      event.target.value = '';
-    }
-  };
-  reader.readAsText(file);
+  installMenuBulk(window);
+  return window.processRecipeCsvUpload(event);
 };
 
 // ========================================================
@@ -6568,6 +6514,7 @@ window.calcEditVariance = function() {
 // ✏️ UPGRADED INVENTORY EDIT ENGINE (DUAL INPUT)
 // ==========================================
 window.saveInventoryEdit = async function() {
+    if (document.getElementById('btnSaveInvEdit')?.disabled) return;
     let docId = document.getElementById('editInvId').value;
     let branch = document.getElementById('editInvBranch').value;
     let category = document.getElementById('editInvCat').value;
@@ -6621,6 +6568,7 @@ window.saveInventoryEdit = async function() {
 
     let photoUrl = undefined;
     let fileInput = document.getElementById('editInvPhoto');
+    try {
     if (fileInput && fileInput.files.length > 0) {
         const file = fileInput.files[0];
         const fileExt = file.name.split('.').pop();
@@ -6630,12 +6578,13 @@ window.saveInventoryEdit = async function() {
         photoUrl = await window.getDownloadURL(snapshot.ref);
     }
 
-    try {
+        const recipeRevision = await readRecipeRevision(window);
         let showPrepVal = document.getElementById('editInvShowPrep') ? document.getElementById('editInvShowPrep').checked : true;
         let allowReqVal = document.getElementById('editInvAllowRequest') ? document.getElementById('editInvAllowRequest').checked : true;
 
         const itemRef = window.doc(window.db, "inventory", docId);
-        const itemSnap = await window.getDoc(itemRef);
+        const itemSnap = await window.getDocFromServer(itemRef);
+        if (!itemSnap.exists()) throw new Error('This stock item no longer exists. Refresh inventory.');
         let oldName = itemSnap.exists() ? itemSnap.data().name : name;
 
         let targetLowBaseForCurrentItem = (branch === "Main Office") ? hqLowBase : branchLowBase;
@@ -6646,17 +6595,45 @@ window.saveInventoryEdit = async function() {
             purchaseCost: purchCost, purchCost: purchCost, cost: purchCost, baseCost: (purchCost / conversion), 
             lowStockAlert: targetLowBaseForCurrentItem, reorderLevel: targetLowBaseForCurrentItem, 
             maintainingStock: finalMaintainBase, // 🔥 Saves the Par Level ONLY for the branch being edited!
-            currentStock: finalQty, showInPrep: showPrepVal, allowRequest: allowReqVal,
+            showInPrep: showPrepVal, allowRequest: allowReqVal,
             restockCycle: assignedRestockCycle
         };
 
         if (photoUrl !== undefined) updatePayload.image = photoUrl;
-
-        const batch = window.writeBatch(window.db);
+        const recipeIntent = {docId,branch,category,name,purchUom,baseUom,purchCost,conversion,branchLowBase,hqLowBase,finalMaintainBase,isAdjusting,finalQty,note,assignedRestockCycle,showPrepVal,allowReqVal,photo:fileInput?.files?.[0]?{name:fileInput.files[0].name,size:fileInput.files[0].size,lastModified:fileInput.files[0].lastModified}:null};
+        const recipeOperation = operationFor(window,'inventory-edit',recipeIntent);
+        if (await recipeOperationApplied(window,{operationId:recipeOperation,intent:recipeIntent,route:'inventory'})) {
+            document.getElementById('editInvModal').style.display = 'none';
+            window.ManagerUI.notify('These changes were already saved.');
+            window.invalidateCache('inventory'); window.invalidateCache('bom');
+            await window.loadInventoryData(); return;
+        }
+        if (isAdjusting) {
+            if (Number(itemSnap.data().currentStock) !== oldQty) throw new Error('Stock changed after this count was opened. Reopen the item before adjusting it.');
+            updatePayload.currentStock = finalQty;
+        }
+        const recipeBaseline = {documents:{inventory:{[docId]:itemSnap.data()}}};
+        const batch = await createRecipeBatch(window,{operationId:recipeOperation,revision:recipeRevision,baseline:recipeBaseline,intent:recipeIntent,route:'inventory',label:'Inventory metadata and recipe links'});
         batch.update(itemRef, updatePayload);
 
         const syncQ = window.query(window.collection(window.db, "inventory"), window.where("name", "==", oldName));
-        const syncSnap = await window.getDocs(syncQ);
+        const syncSnap = await window.getDocsFromServer(syncQ);
+        for (const row of syncSnap.docs) if (row.id !== docId) recipeBaseline.documents.inventory[row.id] = row.data();
+        const resultingBranches = syncSnap.docs.map(row=>row.id===docId?branch:row.data().branch);
+        if (new Set(resultingBranches).size !== resultingBranches.length) throw new Error('This change would create duplicate ingredients in a branch. Review the branch stock records first.');
+        if (oldName !== name || itemSnap.data().branch !== branch) {
+            const destinationSnap = await window.getDocsFromServer(window.query(window.collection(window.db,'inventory'),window.where('name','==',name)));
+            const sourceIds = new Set(syncSnap.docs.map(row=>row.id));
+            if (destinationSnap.docs.some(row=>!sourceIds.has(row.id) && resultingBranches.includes(row.data().branch))) throw new Error('The new ingredient name already exists in an affected branch. Use recipe replacement to merge links instead of creating duplicate stock.');
+        }
+        if (oldName !== name) {
+            const [menuLinks,mixLinks] = await Promise.all([
+                window.getDocsFromServer(window.collection(window.db,'menu')),
+                window.getDocFromServer(window.doc(window.db,'settings','global_mixmatch'))
+            ]);
+            const embedded = ingredientUses(new Set([oldName]),[],menuLinks.docs.map(row=>row.data()),[],mixLinks.exists()?mixLinks.data().mappings || []:[]);
+            if (embedded.length) throw new Error('This name is still used in product add-ons, stored recipes or flavor mappings. Review those links in their editors before renaming stock.\n\n'+embedded.slice(0,10).join('\n'));
+        }
         
         syncSnap.forEach(d => {
             if (d.id === docId) return; 
@@ -6675,14 +6652,17 @@ window.saveInventoryEdit = async function() {
             batch.update(window.doc(window.db, "inventory", d.id), syncPayload);
         });
 
-        if (oldName !== name) {
+        {
             const bomQ = window.query(window.collection(window.db, "bom"), window.where("ingredientName", "==", oldName));
-            const bomSnap = await window.getDocs(bomQ);
-            bomSnap.forEach(b => { batch.update(window.doc(window.db, "bom", b.id), { ingredientName: name }); });
+            const bomSnap = await window.getDocsFromServer(bomQ);
+            recipeBaseline.documents.bom = Object.fromEntries(bomSnap.docs.map(row=>[row.id,row.data()]));
+            if (bomSnap.docs.length && String(itemSnap.data().baseUom || itemSnap.data().uom).trim().toLowerCase() !== baseUom.toLowerCase()) throw new Error('This ingredient is used in recipes. Changing its base unit requires reviewed recipe quantities first.');
+            if (oldName !== name) bomSnap.forEach(b => { batch.update(window.doc(window.db, "bom", b.id), { ingredientName: name }); });
 
             const addonQ = window.query(window.collection(window.db, "global_addons"), window.where("linkedIngredient", "==", oldName));
-            const addonSnap = await window.getDocs(addonQ);
-            addonSnap.forEach(a => { batch.update(window.doc(window.db, "global_addons", a.id), { linkedIngredient: name }); });
+            const addonSnap = await window.getDocsFromServer(addonQ);
+            recipeBaseline.documents.global_addons = Object.fromEntries(addonSnap.docs.map(row=>[row.id,row.data()]));
+            if (oldName !== name) addonSnap.forEach(a => { batch.update(window.doc(window.db, "global_addons", a.id), { linkedIngredient: name }); });
         }
 
         if (isAdjusting && finalQty !== oldQty) {
@@ -6702,6 +6682,8 @@ window.saveInventoryEdit = async function() {
         }
 
         await batch.commit();
+        window.invalidateCache('inventory'); window.invalidateCache('bom'); window.invalidateCache('menu');
+        window.recipeOperations?.delete('inventory-edit');
 
         Swal.fire({ title: '✅ Success!', text: 'Item updated! Other branches will not lose their Par Levels.', icon: 'success', customClass: { popup: 'rounded-2xl' } });
         document.getElementById('editInvModal').style.display = 'none';
@@ -6713,7 +6695,7 @@ window.saveInventoryEdit = async function() {
         if (typeof window.loadMenuCosting === 'function') window.loadMenuCosting();
 
     } catch (e) {
-        console.error(e); window.ManagerUI.notify("Failed to save changes.");
+        console.error(e); window.ManagerUI.notify('Changes were not saved. '+e.message);
     } finally {
         if (btn) { btn.innerText = "💾 Save All Changes"; btn.disabled = false; }
     }
@@ -7856,75 +7838,8 @@ window.downloadRecipeTemplate = async function () {
 
 // --- 2. UPLOAD & SYNC EDITS TO FIREBASE ---
 window.processBulkUpload = function (event) {
-  let file = event.target.files[0];
-  if (!file) return;
-
-  let reader = new FileReader();
-  reader.onload = async function (e) {
-    let text = e.target.result;
-    let rows = text.split("\n");
-
-    if (!(await window.ManagerUI.confirm(`⚠️ WARNING: You are about to mass-update ${rows.length - 2} menu items in your live database. This cannot be undone. Proceed?`))) {
-      event.target.value = ''; // Reset the input if they cancel
-      return;
-    }
-
-    let successCount = 0;
-
-    for (let i = 1; i < rows.length; i++) {
-      let row = rows[i].trim();
-      if (!row) continue;
-
-      let cols = row.split(",");
-      if (cols.length < 6) continue;
-
-      let id = cols[0];
-      let name = cols[1];
-      let cat = cols[2];
-      let price = parseFloat(cols[3]) || 0;
-      let recipeStr = cols[4];
-      let addonStr = cols[5];
-
-      // Decompress the Excel cell back into a Firebase Recipe Array
-      let recipeArray = [];
-      if (recipeStr) {
-        recipeStr.split("|").forEach(item => {
-          let parts = item.split(":");
-          if (parts.length >= 2) recipeArray.push({ item: parts[0], qty: parseFloat(parts[1]) });
-        });
-      }
-
-      // Decompress the Excel cell back into a Firebase Add-on Array
-      let addonArray = [];
-      if (addonStr) {
-        addonStr.split("|").forEach(item => {
-          let parts = item.split(":");
-          if (parts.length >= 4) {
-            addonArray.push({ name: parts[0], price: parseFloat(parts[1]), linkedIngredient: parts[2], deductQty: parseFloat(parts[3]) });
-          }
-        });
-      }
-
-      // Blast the update to Firebase
-      try {
-        await updateDoc(doc(db, "menu", id), {
-          name: name,
-          category: cat,
-          price: price,
-          recipe: recipeArray,
-          addons: addonArray,
-          lastUpdated: serverTimestamp()
-        });
-        successCount++;
-      } catch (err) {
-        console.error("Failed to update ID:", id, err);
-      }
-    }
-
-    window.ManagerUI.notify(`✅ Bulk Upload Complete! Successfully updated ${successCount} menu items.`);
-    location.reload(); // Refresh the page to show the massive update
-  };
-  reader.readAsText(file);
+  installMenuBulk(window);
+  return window.processRecipeCsvUpload(event);
 };
 
 // ========================================================
@@ -8676,65 +8591,19 @@ window.loadFromCloud = async function() {
             currentMonth = safeMonth;
         }
 
-        // 🔥 THE HR SANCTIONS AUTO-SYNC ENGINE 🔥
+        // Suspension dates are derived for review. Loading a calendar must not
+        // rewrite past assignments or publish a new schedule automatically.
         try {
-            const nteQ = window.query(window.collection(window.db, "hr_sanctions"));
-            const nteSnap = await window.getDocs(nteQ);
-            let nteModified = false;
-
-            nteSnap.forEach(doc => {
-                let d = doc.data();
-                if (d.severity && d.severity.includes("Suspension") && d.timestamp) {
-                    let match = d.severity.match(/(\d+)\s+(Day|Week)/i);
-                    if (match) {
-                        let num = parseInt(match[1]);
-                        if (match[2].toLowerCase() === 'week') num *= 7;
-                        
-                        let startDate = d.timestamp.toDate(); 
-                        
-                        for(let i = 0; i < num; i++) {
-                            let targetDate = new Date(startDate);
-                            targetDate.setDate(targetDate.getDate() + i);
-                            let dStr = targetDate.toISOString().split('T')[0];
-                            
-                            if (!unavailability[dStr]) unavailability[dStr] = {};
-                            
-                            // Auto-add suspension if not already logged
-                            let staffNickname = window.findEmployeeProfile(d.staffName)?.scheduleNickname || d.staffName;
-                            if (unavailability[dStr][staffNickname] !== "Suspended (NTE)") {
-                                unavailability[dStr][staffNickname] = "Suspended (NTE)";
-                                nteModified = true;
-                            }
-                        }
-                    }
-                }
+            const nteSnap = await window.getDocs(window.collection(window.db, "hr_sanctions"));
+            window.scheduledSuspensions = nteSnap.docs.flatMap(doc => {
+                const row = {...doc.data(), id:doc.id};
+                if (!window.isBranchAllowed(row.branch)) return [];
+                return suspensionDates(row).filter(date=>date>=phDay()).map(date=>({date,staffName:row.staffName,branch:row.branch,sanctionId:row.id}));
             });
-
-            if (nteModified && currentSchedule[1]) {
-                for (let day in currentSchedule) {
-                    const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                    if (unavailability[dateStr]) {
-                        for (let branch in currentSchedule[day]) {
-                            let bData = currentSchedule[day][branch];
-                            for (let emp in unavailability[dateStr]) {
-                                let status = unavailability[dateStr][emp];
-                                let eObj = window.employees.find(e => e.name === emp);
-                                if (eObj && eObj.branch === branch) {
-                                    for (let sId in bData.scheduled) { 
-                                        if (bData.scheduled[sId] === emp) bData.scheduled[sId] = "UNFILLED"; 
-                                    }
-                                    bData.rest = bData.rest.filter(n => n !== emp);
-                                    if (!bData.unavailable.some(u => u.name === emp)) {
-                                        bData.unavailable.push({ name: emp, status: status });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                window.saveToCloud(); 
-            }
-        } catch(e) { console.error("NTE Sync Error:", e); }
+            let notice=document.getElementById('scheduleSuspensionNotice');
+            if (!notice) {notice=document.createElement('p');notice.id='scheduleSuspensionNotice';notice.style.cssText='padding:12px;background:#fff8ed;border:1px solid #efdfc6;border-radius:8px;font-size:13px;';document.getElementById('scheduleMemoryPanel')?.after(notice);}
+            if (notice) {notice.hidden=!window.scheduledSuspensions.length;notice.textContent=window.scheduledSuspensions.length?'Scheduled suspensions: '+window.scheduledSuspensions.map(row=>row.staffName+' · '+row.branch+' · '+row.date).join('; ')+'. Review staffing before saving a roster. Clock-in follows the notice effective dates.':'';}
+        } catch(error) {console.error('Suspension date review:',error);}
 
         // 🔥 THE INDESTRUCTIBLE BRANCH AUTO-SYNC ENGINE 🔥
         if (window.globalActiveBranches && window.globalActiveBranches.length > 0) {
@@ -8762,7 +8631,8 @@ window.loadFromCloud = async function() {
                     }
                 }
             }
-            if (needsCloudSave && typeof window.saveToCloud === 'function') window.saveToCloud();
+            // Branch changes remain local until an authorized user explicitly saves.
+            if (needsCloudSave) window.scheduleBranchReviewRequired = true;
         }
 
         const mm = String(currentMonth).padStart(2, '0');
@@ -9994,35 +9864,30 @@ window.manageStandbyStaff = async function(day, branch, staffName) {
 
 // Always check current server data. A cached/offline result cannot authorize deletion.
 window.checkInventoryDeletion = async function(ids) {
-    const [inventoryRows, bomSnap, menuSnap, addonsSnap, mixSnap] = await Promise.all([
-        Promise.all(ids.map(id => window.getDocFromServer(window.doc(window.db, 'inventory', id)))),
-        window.getDocsFromServer(window.collection(window.db, 'bom')),
-        window.getDocsFromServer(window.collection(window.db, 'menu')),
-        window.getDocsFromServer(window.collection(window.db, 'global_addons')),
-        window.getDocFromServer(window.doc(window.db, 'settings', 'global_mixmatch'))
-    ]);
-    if (inventoryRows.some(row => !row.exists())) throw new Error('An inventory item has changed. Refresh Live Stocks first.');
-    const names = new Set(inventoryRows.map(row => row.data().name));
-    const rows = snap => snap.docs.map(d => d.data());
-    const mix = mixSnap.exists() ? mixSnap.data().mappings || [] : [];
-    const uses = ingredientUses(names, rows(bomSnap), rows(menuSnap), rows(addonsSnap), mix);
-    if (uses.length) throw new Error('These ingredients are still used. Replace their recipe/add-on links before deleting stock.\n\n' + uses.slice(0, 15).join('\n') + (uses.length > 15 ? '\n…and ' + (uses.length - 15) + ' more links.' : ''));
+    return loadInventoryDeletionState(window,ids);
 };
 
 window.deleteInventoryItem = async function(docId, itemName) {
     // Make sure we have the right ID!
     if (!docId || docId === 'undefined') { window.ManagerUI.notify("❌ Error: Invalid Item ID."); return; }
+    if (window.inventoryDeletionBusy) return;
+    window.inventoryDeletionBusy = true;
     try {
-        await window.checkInventoryDeletion([docId]);
-        if ((await window.ManagerUI.confirm(`⚠️ Are you sure you want to completely delete "${itemName}"? This cannot be undone!`))) {
-            await deleteDoc(doc(db, "inventory", docId)); 
-            window.invalidateCache('inventory');
-            window.ManagerUI.notify(`✅ "${itemName}" has been permanently deleted.`);
-            window.loadInventoryData();
+        const ids=[docId],intent={ids},operationId=operationFor(window,'inventory-delete',intent);
+        if (!await recipeOperationApplied(window,{operationId,intent,route:'inventory'})) {
+            const state=await window.checkInventoryDeletion(ids);
+            if (!(await window.ManagerUI.confirm(`⚠️ Are you sure you want to completely delete "${itemName}"? This cannot be undone!`))) return;
+            await saveRecipePlan(window,inventoryDeletionPlan(state,ids),{operationId,route:'inventory'});
         }
+        window.invalidateCache('inventory'); window.invalidateCache('bom');
+        window.recipeOperations?.delete('inventory-delete');
+        window.ManagerUI.notify(`✅ "${itemName}" has been permanently deleted.`);
+        window.loadInventoryData();
     } catch (error) {
         console.error("Error deleting item:", error);
         window.ManagerUI.notify('Ingredient was not deleted.\n' + error.message);
+    } finally {
+        window.inventoryDeletionBusy = false;
     }
 };
 
@@ -10181,16 +10046,15 @@ window.deleteMenuAndBom = async function(docId, name) {
     if (!(await window.ManagerUI.confirm(`⚠️ Are you absolutely sure you want to delete "${name}"?\n\nThis will remove it from the POS and delete its Recipe/BOM forever.`))) return;
     
     try {
-        // 1. Delete the Menu Item
-        await deleteDoc(doc(db, "menu", docId));
-            window.invalidateCache("menu");
-        
-        // 2. Find and delete all Recipe items attached to it
-        const bomQ = query(collection(db, "bom"), where("menuItem", "==", name));
-        const bomSnap = await getDocs(bomQ);
-        for (let b of bomSnap.docs) { 
-            await deleteDoc(doc(db, "bom", b.id)); 
+        const intent={docId,name},operationId=operationFor(window,'menu-delete',intent);
+        if (!await recipeOperationApplied(window,{operationId,intent})) {
+            const state=await loadRecipeState(window);
+            if (state.documents.menu[docId]?.name !== name || Object.values(state.documents.menu).filter(row=>row.name===name).length !== 1) throw new Error('This product changed or its name is duplicated. Refresh before deleting.');
+            const writes=[{table:'menu',id:docId,mode:'delete'},...Object.entries(state.documents.bom).filter(([,row])=>row.menuItem===name).map(([id])=>({table:'bom',id,mode:'delete'}))];
+            await saveRecipePlan(window,recipePlan(state,writes,{label:'Delete menu product and recipe',intent}),{operationId});
         }
+        window.invalidateCache('menu'); window.invalidateCache('bom');
+        window.recipeOperations?.delete('menu-delete');
 
         window.ManagerUI.notify(`✅ "${name}" has been completely deleted.`);
         
@@ -10200,7 +10064,7 @@ window.deleteMenuAndBom = async function(docId, name) {
         
     } catch(e) { 
         console.error("Delete Error:", e); 
-        window.ManagerUI.notify("❌ Failed to delete item."); 
+        window.ManagerUI.notify('Item was not deleted. '+e.message);
     }
 };
 
@@ -10616,14 +10480,8 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
 
         // 5. PENALTY / SHORTAGE LEDGER ROUTER 
         if (penaltyAmt > 0) {
-            await window.addDoc(window.collection(window.db, "staff_deductions"), {
-                staffName: staffName,
-                type: "Cash/Stock Shortage Penalty",
-                amount: penaltyAmt,
-                dateAdded: originalDate, // 🔥 THE FIX: Logs the penalty on the exact day the shortage happened!
-                status: "Unpaid",
-                remarks: `Linked to Reason Letter (${action}): ${replyMsg}`
-            });
+            const penaltyStaff=await findSanctionStaff(window,staffName,reqData.branch);
+            await issueScheduledSanction(window,{staffId:penaltyStaff.id,staffName,branch:penaltyStaff.branch,type:'Cash/Stock Shortage',severity:'Written Warning & Deduction',details:`Linked to Reason Letter (${action}): ${replyMsg}`,remarks:`Request ${docId}. Incident date ${phDay(originalDate)}. ${replyMsg}`,amount:penaltyAmt,deductionType:'Cash/Stock Shortage Penalty',effectiveDate:phDay()},{id:'request-penalty-'+docId});
         }
 
         Swal.fire({
@@ -11056,8 +10914,8 @@ window.loadPayrollGenerator = async function() {
             let name = resolveStaffName(deduct.staffName); // 🔥 Apply Fuzzy Matcher
             if (!name) return;
 
-            let dDate = deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();
-            if (dDate > trueEndDate) return;
+            if(isPenaltyDeduction(deduct) && deduct.scheduleVersion===1){if(!deductionIsDue(deduct,endDateRaw))return;}
+            else {let dDate=deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();if(dDate>trueEndDate)return;}
             
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
@@ -11066,6 +10924,7 @@ window.loadPayrollGenerator = async function() {
             let amt = parseFloat(deduct.amount) || 0;
             if (isMealDeduction(deduct.type)) staffData[name].foodDeductions += amt;
             else if (deduct.type === "Cash Advance") staffData[name].cashAdvances += amt;
+            else if (isPenaltyDeduction(deduct) && deduct.scheduleVersion===1) {staffData[name].penalties=(staffData[name].penalties || 0)+amt;(staffData[name].penaltyRows ||= []).push({id:docSnap.id,amount:amt,revision:Number(deduct.scheduleRevision)||0,effectiveDate:deduct.effectiveDate || null});}
         });
 
         bonusSnap.forEach(docSnap => {
@@ -11144,7 +11003,7 @@ window.loadPayrollGenerator = async function() {
                     window.globalPayrollCache[name] = {
                         name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
-                        basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0,
+                        basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: staffDict[name] || null, start: startDateRaw, end: endDateRaw,
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
@@ -11174,7 +11033,7 @@ window.loadPayrollGenerator = async function() {
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
                         <td style="padding: 12px; font-weight: bold;">${(d.hours ?? d.totalHours ?? 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel}</td>
-                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
                 `;
@@ -11260,6 +11119,9 @@ window.openPayslipModal = async function(staffName) {
     safeSet('psAdvance', data.advances || 0);
     safeSet('psLoans', data.loans || 0);
     safeSet('psFoods', data.meals || 0);
+    let penaltyLine=document.getElementById('psPenalties');
+    if(!penaltyLine){const wrap=document.createElement('div');wrap.style.cssText='padding:8px;font-size:12px;background:#fff8ed;border:1px solid #efdfc6;';wrap.innerHTML='<span>Scheduled penalties for ledger review: ₱</span><strong id="psPenalties">0.00</strong><br><small>Excluded from calculated net pay. Review and record any collection separately.</small>';document.getElementById('psFoods')?.parentElement?.after(wrap);penaltyLine=document.getElementById('psPenalties');}
+    safeSet('psPenalties', data.penalties || 0);
     
     let dynamicArea = document.getElementById('psDynamicDeductionsArea');
     if (dynamicArea) {
@@ -11648,6 +11510,7 @@ window.downloadPayslipImage = function() {
 // 📘 STAFF LOANS & LEDGER ENGINE (WITH AUTO-DEDUCT)
 // ==========================================
 window.loadLedger = async function() {
+    installSanctionScheduling(window, document);
     const tbody = document.getElementById('ledgerTableBody');
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="8" class="text-center" style="padding: 30px;">⏳ Calculating running balances...</td></tr>';
@@ -12250,8 +12113,8 @@ window.generateAutoPayslips = async function() {
 
         deductSnap.forEach(docSnap => {
             let deduct = docSnap.data(); let name = deduct.staffName;
-            let dDate = deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();
-            if (dDate > trueEndDate) return;
+            if(isPenaltyDeduction(deduct) && deduct.scheduleVersion===1){if(!deductionIsDue(deduct,endInput))return;}
+            else {let dDate=deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();if(dDate>trueEndDate)return;}
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
                 staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
@@ -12259,6 +12122,7 @@ window.generateAutoPayslips = async function() {
             let amt = parseFloat(deduct.amount) || 0;
             if (isMealDeduction(deduct.type)) staffData[name].foodDeductions += amt;
             else if (deduct.type === "Cash Advance") staffData[name].cashAdvances += amt;
+            else if (isPenaltyDeduction(deduct) && deduct.scheduleVersion===1) {staffData[name].penalties=(staffData[name].penalties || 0)+amt;(staffData[name].penaltyRows ||= []).push({id:docSnap.id,amount:amt,revision:Number(deduct.scheduleRevision)||0,effectiveDate:deduct.effectiveDate || null});}
         });
 
         bonusSnap.forEach(docSnap => {
@@ -12324,7 +12188,7 @@ window.generateAutoPayslips = async function() {
                     window.globalPayrollCache[name] = {
                         name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
-                        basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0,
+                        basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: staffDict[name] || null, start: startInput, end: endInput,
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
@@ -12357,7 +12221,7 @@ window.generateAutoPayslips = async function() {
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
                         <td style="padding: 12px; font-weight: bold;">${(d.hours ?? d.totalHours ?? 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel} ${perfLabel}</td>
-                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
                 `;
@@ -15564,24 +15428,23 @@ window.toggleAllInvCheckboxes = function(source) {
 };
 
 window.bulkDeleteInventory = async function() {
+    if (window.inventoryDeletionBusy) return;
     let checkboxes = document.querySelectorAll('.inv-bulk-checkbox:checked');
     if (checkboxes.length === 0) {
         window.ManagerUI.notify("Please select at least one item to delete.");
         return;
     }
 
+    window.inventoryDeletionBusy = true;
     try {
-        const ids = [...checkboxes].map(cb => cb.value);
-        if (ids.length > 500) throw new Error('Select at most 500 items at a time.');
-        await window.checkInventoryDeletion(ids);
-        if (!(await window.ManagerUI.confirm(`⚠️ WARNING: You are about to permanently delete ${ids.length} items from this branch. This cannot be undone. Proceed?`))) return;
-        const batch = window.writeBatch(window.db);
-        for (let cb of checkboxes) {
-            let docId = cb.value;
-            batch.delete(window.doc(window.db, "inventory", docId));
+        const ids = [...checkboxes].map(cb => cb.value).sort(),intent={ids},operationId=operationFor(window,'inventory-delete',intent);
+        if (!await recipeOperationApplied(window,{operationId,intent,route:'inventory'})) {
+            const state=await window.checkInventoryDeletion(ids);
+            if (!(await window.ManagerUI.confirm(`⚠️ WARNING: You are about to permanently delete ${ids.length} items from this branch. This cannot be undone. Proceed?`))) return;
+            await saveRecipePlan(window,inventoryDeletionPlan(state,ids),{operationId,route:'inventory'});
         }
-        await batch.commit();
-        window.invalidateCache('inventory');
+        window.invalidateCache('inventory'); window.invalidateCache('bom');
+        window.recipeOperations?.delete('inventory-delete');
         window.ManagerUI.notify(`✅ Successfully deleted ${checkboxes.length} items!`);
             document.getElementById('selectAllInv').checked = false; // Reset master checkbox
             
@@ -15597,6 +15460,8 @@ window.bulkDeleteInventory = async function() {
     } catch (error) {
         console.error("Bulk Delete Error:", error);
         window.ManagerUI.notify('Items were not deleted.\n' + error.message);
+    } finally {
+        window.inventoryDeletionBusy = false;
     }
 };
 
@@ -15744,7 +15609,7 @@ window.viewLedgerHistory = async function(staffName) {
 
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 12px 10px; font-size: 12px; color: #64748b;">${dateStr}</td>
+                    <td style="padding: 12px 10px; font-size: 12px; color: #64748b;">${dateStr}${isPenaltyDeduction(d) ? '<br>Effective: '+escapeHtml(d.effectiveDate || 'Original issue date')+(window.penaltyDateAction?.(d) || '') : ''}</td>
                     <td style="padding: 12px 10px; font-weight: bold; color: #334155;">${type}</td>
                     <td style="padding: 12px 10px; font-size: 12px; color: #475569;">${remarks}</td>
                     <td style="padding: 12px 10px;">${statusBadge}</td>
@@ -17760,6 +17625,7 @@ runManagerDomReady(() => {
 });
 
 window.loadSanctionsDashboard = async function() {
+    installSanctionScheduling(window, document);
     const tbody = document.getElementById('sanctionsTableBody');
     if (!tbody) return;
     tbody.innerHTML = '<tr><td colspan="6" class="text-center">Loading disciplinary records...</td></tr>';
@@ -17780,13 +17646,14 @@ window.loadSanctionsDashboard = async function() {
             if (!window.isBranchAllowed(d.branch)) return; // 🔥 SECURITY LOCK
             d.id = docSnap.id; // Save ID for the printer
             
-            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown';
+            let dateStr = d.timestamp ? d.timestamp.toDate().toLocaleDateString('en-PH', { timeZone:'Asia/Manila', month: 'short', day: 'numeric', year: 'numeric' }) : 'Unknown';
+            dateStr += `<br><strong>Effective: ${escapeHtml(d.effectiveDate || 'Immediate (legacy notice)')}</strong>`;
             
             let statusBadge = '';
             let printBtn = '';
 
             if (d.status === 'Pending Reply') {
-                statusBadge = `<span style="background: #fef3c7; color: #d97706; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; display: inline-block; margin-bottom: 4px;">⏳ Awaiting Staff Reply</span><br><span style="font-size: 11px; color: #64748b;">(POS is locked for this user)</span>`;
+                statusBadge = noticeIsDue(d) ? '<span style="color:#a65c16;font-weight:bold;">Reply required before Time In</span><br><small>Time Out remains available</small>' : '<span style="color:#27684d;font-weight:bold;">Scheduled</span><br><small>Reply will be required on the effective date</small>';
             } else if (d.status === 'Replied' || d.status === 'Resolved') {
                 
                 // Show the staff's reply and their digital signature!
@@ -17815,7 +17682,7 @@ window.loadSanctionsDashboard = async function() {
             if (d.status === 'Replied') {
                 actionBtn = `<button onclick="window.resolveSanction('${docSnap.id}', '${d.staffName}')" style="background: #16a34a; color: white; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%;">Accept & Resolve</button>`;
             } else if (d.status === 'Resolved') {
-                actionBtn = `<button onclick="window.deleteSanction('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%;">🗑️ Delete Record</button>`;
+                actionBtn = `<button onclick="window.deleteSanction('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%;">Archive Record</button>`;
             } else {
                 actionBtn = `<button onclick="window.deleteSanction('${docSnap.id}')" style="background: white; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%;">🗑️ Cancel Notice</button>`;
             }
@@ -17840,6 +17707,7 @@ window.loadSanctionsDashboard = async function() {
                     <td style="padding: 15px;">
                         <div style="display: flex; flex-direction: column; gap: 5px;">
                             ${actionBtn}
+                            <button type="button" class="action-btn" data-sanction-date="${escapeHtml(docSnap.id)}">Change effective date / audit</button>
                             ${printBtn}
                             ${evidenceBtn}
                         </div>
@@ -17944,6 +17812,7 @@ window.printFormalNTE = function(encodedData) {
             <div class="title">OFFICIAL DISCIPLINARY RECORD / NOTICE TO EXPLAIN</div>
 
             <div class="field-row"><span class="field-label">Date Issued:</span> ${issueDate}</div>
+            <div class="field-row"><span class="field-label">Effective Date (PH):</span> ${escapeHtml(d.effectiveDate || 'Immediate (legacy notice)')}</div>
             <div class="field-row"><span class="field-label">To (Employee):</span> <strong>${d.staffName}</strong></div>
             <div class="field-row"><span class="field-label">From (Manager):</span> ${d.issuedBy || 'Management'}</div>
             <div class="field-row"><span class="field-label">Violation Type:</span> ${d.type}</div>
@@ -17998,6 +17867,12 @@ window.printFormalNTE = function(encodedData) {
 // ⚖️ SMART HR SANCTION ENGINE (AUTO-ESCALATION)
 // ========================================================
 window.openIssueSanctionModal = async function() {
+    try { sanctionAuthority(window); } catch(error) { return Swal.fire('Access required', error.message, 'error'); }
+    installSanctionScheduling(window, document);
+    window.sanctionIssueAttemptId = 'notice-' + crypto.randomUUID();
+    document.getElementById('sanctionEffectiveDate').value = phDay();
+    document.getElementById('sanctionEffectiveDate').min = phDay();
+    document.getElementById('sanctionPenaltyAmount').value = '0';
     document.getElementById('issueSanctionModal').style.display = 'flex';
     document.getElementById('sanctionDetails').value = '';
     
@@ -18122,6 +17997,7 @@ window.submitNewSanction = async function() {
     
     let staffName = selectEl.value;
     let branch = selectEl.options[selectEl.selectedIndex].getAttribute('data-branch');
+    try { sanctionAuthority(window, branch, {money:Number(document.getElementById('sanctionPenaltyAmount').value)>0}); } catch(error) { return Swal.fire('Access required', error.message, 'error'); }
     let type = document.getElementById('sanctionType').value;
     let severity = document.getElementById('sanctionSeverity').value;
     let details = document.getElementById('sanctionDetails').value.trim();
@@ -18145,22 +18021,13 @@ window.submitNewSanction = async function() {
             evidenceUrl = await getDownloadURL(snapshot.ref);
         }
 
-        await addDoc(collection(db, "hr_sanctions"), {
-            staffName: staffName,
-            branch: branch,
-            type: type,
-            severity: severity,
-            details: details,
-            evidencePhoto: evidenceUrl, // Save the photo link!
-            status: "Pending Reply", 
-            issuedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-            timestamp: serverTimestamp()
-        });
+        const staff = await findSanctionStaff(window, staffName, branch);
+        await issueScheduledSanction(window, {staffId:staff.id,staffName,branch,type,severity,details,evidencePhoto:evidenceUrl,effectiveDate:document.getElementById('sanctionEffectiveDate').value,amount:document.getElementById('sanctionPenaltyAmount').value}, {id:window.sanctionIssueAttemptId ||= 'notice-'+crypto.randomUUID()});
 
         // 🔥 UPGRADED SWEETALERT SUCCESS MESSAGE 🔥
         Swal.fire({
             title: '✅ Success!',
-            html: `A Notice to Explain (NTE) has been issued to <b>${staffName}</b>.<br><br>Their Time Clock and POS are now locked until they reply.`,
+            text: `Notice issued to ${staffName}. Effective ${document.getElementById('sanctionEffectiveDate').value} in Philippine time. Staff can end their active shift.`,
             icon: 'success',
             confirmButtonColor: '#16a34a',
             customClass: { popup: 'rounded-2xl shadow-xl' }
@@ -18175,7 +18042,7 @@ window.submitNewSanction = async function() {
 
     } catch (e) {
         console.error("Error issuing sanction:", e);
-        Swal.fire('Error', 'Failed to issue notice. Check your internet connection.', 'error');
+        Swal.fire('Could not issue notice', e.message || 'Check your internet connection.', 'error');
     } finally {
         btn.innerText = "🚀 Issue Digital Notice"; btn.disabled = false;
     }
@@ -18184,17 +18051,17 @@ window.submitNewSanction = async function() {
 window.resolveSanction = async function(docId, staffName) {
     if (!(await window.ManagerUI.confirm(`Mark this issue as resolved for ${staffName}?`))) return;
     try {
-        await updateDoc(doc(db, "hr_sanctions", docId), { status: "Resolved", resolvedAt: serverTimestamp() });
+        await finishSanction(window,docId,{changeId:'resolve-'+crypto.randomUUID()});
         window.loadSanctionsDashboard();
-    } catch (e) { window.ManagerUI.notify("Failed to resolve."); }
+    } catch (e) { window.ManagerUI.notify(e.message || 'Failed to resolve.'); }
 };
 
 window.deleteSanction = async function(docId) {
-    if (!(await window.ManagerUI.confirm(`Are you sure you want to delete this record?`))) return;
+    if (!(await window.ManagerUI.confirm('Cancel or archive this notice? The issue date and audit history stay on record. A linked penalty remains in the ledger for separate review.'))) return;
     try {
-        await deleteDoc(doc(db, "hr_sanctions", docId));
+        await finishSanction(window,docId,{cancel:true,changeId:'cancel-'+crypto.randomUUID()});
         window.loadSanctionsDashboard();
-    } catch (e) { window.ManagerUI.notify("Failed to delete."); }
+    } catch (e) { window.ManagerUI.notify(e.message || 'Failed to cancel notice.'); }
 };
 
 // ========================================================
@@ -24514,76 +24381,14 @@ window.viewHandoverDetails = function(encodedData, cashierName, totalLoss = 0, b
 };
 
 window.issueHandoverPenalty = async function(cashierNames, totalLoss, branch, shiftId) {
-    // Splits the names if multiple staff members closed the shift together
-    let staffArray = cashierNames.split('/').map(s => s.trim());
-    let splitAmount = totalLoss / staffArray.length;
-
-    let confirm = await Swal.fire({
-        title: '🚨 Issue Penalty?',
-        html: `This will automatically deduct <b style="color:#dc2626;">₱${splitAmount.toLocaleString(undefined, {minimumFractionDigits:2})}</b> from the ledger of each staff member below:<br><br><b style="color:#0f172a;">${staffArray.join('<br>')}</b><br><br>It will also instantly blast an alert to the ${branch} POS tablet!`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc2626',
-        cancelButtonColor: '#94a3b8',
-        confirmButtonText: 'Yes, Issue Penalty & Alert!'
-    });
-
-    if (!confirm.isConfirmed) return;
-
-    Swal.fire({title: 'Processing...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
     try {
-        let promises = [];
-        staffArray.forEach(staff => {
-            // 1. Add to Deductions Ledger
-            promises.push(window.addDoc(window.collection(window.db, "staff_deductions"), {
-                staffName: staff,
-                type: "Inventory Shortage Penalty",
-                amount: splitAmount,
-                dateAdded: window.serverTimestamp(),
-                status: "Unpaid",
-                remarks: `Shift Handover Audit Shortage. Shift ID: ${shiftId ? shiftId.slice(0,6).toUpperCase() : 'Unknown'}`
-            }));
-
-            // 2. Issue formal HR Sanction (NTE)
-            promises.push(window.addDoc(window.collection(window.db, "hr_sanctions"), {
-                staffName: staff,
-                branch: branch,
-                type: "Cash/Stock Shortage",
-                severity: "Written Warning & Deduction",
-                details: `Inventory count mismatch resulting in a financial loss of ₱${splitAmount.toLocaleString(undefined, {minimumFractionDigits:2})} per person.`,
-                status: "Pending Reply",
-                issuedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager",
-                timestamp: window.serverTimestamp()
-            }));
-        });
-
-        // 3. Blast the Alert to the Cashier App!
-        promises.push(window.addDoc(window.collection(window.db, "announcements"), {
-            title: `🚨 INVENTORY SHORTAGE DETECTED`,
-            message: `A stock discrepancy was detected during the shift handover by ${cashierNames}.\n\nA penalty of ₱${totalLoss.toLocaleString(undefined, {minimumFractionDigits:2})} has been recorded and divided among the staff on duty.\n\nPlease check your Staff App for the Notice to Explain (NTE).`,
-            branchTarget: branch,
-            active: true,
-            isSchedule: false, 
-            timestamp: window.serverTimestamp(),
-            author: "System Auto-Audit"
-        }));
-
-        // 4. Mark the shift so the button disappears and turns into a badge
-        if (shiftId) {
-            promises.push(window.updateDoc(window.doc(window.db, "shifts", shiftId), { penaltyApplied: true }));
-        }
-
-        await Promise.all(promises);
-
-        Swal.fire('✅ Penalty Issued!', 'The deduction has been applied and the branch tablet is alerting the staff right now.', 'success');
-        
-        if (typeof window.loadShiftHandovers === 'function') window.loadShiftHandovers();
-
-    } catch (e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to issue penalty.', 'error');
-    }
+        sanctionAuthority(window,branch,{money:true});
+        const answer=await Swal.fire({title:'Issue shortage penalty',text:'This creates linked staff notices and unpaid penalties. Select when they become effective in Philippine time.',input:'date',inputValue:phDay(),inputAttributes:{min:phDay()},showCancelButton:true,confirmButtonText:'Issue notice and penalty',preConfirm:value=>{try {if(!value || value<phDay())throw Error('Choose today or a future date.');return value;}catch(error){Swal.showValidationMessage(error.message);}}});
+        if(!answer.isConfirmed)return;
+        const result=await issueHandoverSanctions(window,{staffNames:cashierNames.split('/').map(name=>name.trim()),totalLoss,branch,shiftId,effectiveDate:answer.value});
+        await Swal.fire('Notice and penalty saved',result.alreadySaved?'This shift penalty was already issued.':'Effective '+result.effectiveDate+'. The original issue date and linked ledger records are preserved.','success');
+        window.loadShiftHandovers?.();window.loadSanctionsDashboard?.();
+    } catch(error) {await Swal.fire('Could not issue penalty',error.message,'error');}
 };
 
 // ========================================================
@@ -24917,12 +24722,15 @@ window.openEmployeeProfile = function(docId) {
             let d = dDoc.data();
             let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
             let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
+            installSanctionScheduling(window, document);
+            if (isPenaltyDeduction(d)) dateStr += '<br>Effective: '+escapeHtml(d.effectiveDate || 'Original issue date');
 
             let actionHtml = d.status === 'Unpaid' 
                 ? `<button onclick="window.forceMarkDeductionPaid('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#16a34a; color:white; border:none; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px;">Mark Paid</button>`
                 : `<div style="background:#f0fdf4; color:#15803d; border: 1px solid #bbf7d0; padding:5px 10px; border-radius:6px; font-size:11px; font-weight:bold; width: 85px; text-align: center; box-sizing: border-box;">✔️ Paid</div>`;
                 
             actionHtml += `<button onclick="window.deleteStaffDeduction('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px;">🗑️ Delete</button>`;
+            actionHtml += window.penaltyDateAction?.({...d,id:dDoc.id}) || '';
 
             histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                 <td style="padding:12px 8px; color: #64748b;">${dateStr}</td>
@@ -27855,6 +27663,7 @@ initManagerDialogs();
 initManagerWorkspace();
 
 installMenuBulk();
+installRecipeReplacement();
 
 // Reference dropdowns populate when a recipe is opened, not during app startup.
 for (const name of ['openBomEditor','openNewProductModal']) {

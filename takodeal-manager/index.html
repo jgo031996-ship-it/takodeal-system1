@@ -1405,7 +1405,7 @@
 
     <div id="view-menu" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
       <div style="max-width: 1400px; margin: 0 auto;">
-        <div class="menu-workspace-summary" id="menuWorkspaceSummary"></div><div class="menu-workspace-tools"><input id="menuWorkspaceSearch" placeholder="Search menu items…" aria-label="Search menu items" oninput="window.renderMenuEditorUI()"><button onclick="window.switchView('addons')">Global add-ons</button><button onclick="downloadRecipeTemplate()">Download recipes</button><button onclick="document.getElementById('csvRecipeInput').click()">Upload bulk recipes</button><button onclick="window.invalidateCache('menu');window.invalidateCache('bom');window.invalidateCache('inventory');window.loadMenuEditor()">Refresh data</button></div><div class="card" style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); overflow: hidden; margin-bottom: 30px;">
+        <div class="menu-workspace-summary" id="menuWorkspaceSummary"></div><div class="menu-workspace-tools"><input id="menuWorkspaceSearch" placeholder="Search menu items…" aria-label="Search menu items" oninput="window.renderMenuEditorUI()"><button onclick="window.switchView('addons')">Global add-ons</button><button onclick="window.openRecipeReplacement()">Replace ingredient</button><button onclick="downloadRecipeTemplate()">Download recipes</button><button onclick="document.getElementById('csvRecipeInput').click()">Upload bulk recipes</button><button onclick="window.invalidateCache('menu');window.invalidateCache('bom');window.invalidateCache('inventory');window.loadMenuEditor()">Refresh data</button></div><div class="card" style="background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); overflow: hidden; margin-bottom: 30px;">
           <div class="card-header" style="background: #f8fafc; padding: 25px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
             <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
               <h2 style="margin: 0; color: #1e293b; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">🍔</span> Menu & Recipes</h2>
@@ -6426,10 +6426,15 @@
           </div>
           
           <div style="padding: 20px; flex: 1; overflow-y: auto; text-align: left;">
-              <p style="font-size: 13px; color: #64748b; margin-top: 0;">This notice will lock the cashier's POS screen upon login until they submit a written explanation.</p>
+              <p style="font-size: 13px; color: #64748b; margin-top: 0;">Keep the issue date on record and choose when this notice becomes effective. Staff can end an active shift while a reply is pending.</p>
   
               <label style="font-size: 12px; font-weight: bold; color: #475569;">Select Staff Member:</label>
               <select id="sanctionStaffSelect" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;"></select>
+              <label style="font-size:12px;font-weight:bold;color:#475569;">Effective date (Philippine time)</label>
+              <input type="date" id="sanctionEffectiveDate" class="input-box" style="width:100%;margin-bottom:12px;">
+              <label style="font-size:12px;font-weight:bold;color:#475569;">Linked payroll penalty (₱, optional)</label>
+              <input type="number" id="sanctionPenaltyAmount" min="0" step="0.01" value="0" class="input-box" style="width:100%;margin-bottom:12px;">
+              <p style="font-size:12px;color:#64748b;">A penalty uses the same effective date and appears separately in unpaid payroll estimates. Paid payslips stay as saved.</p>
   
               <label style="font-size: 12px; font-weight: bold; color: #475569;">Incident Type:</label>
               <select id="sanctionType" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;" onchange="window.handleCustomDropdown(this)">
@@ -6596,7 +6601,7 @@
   </style>
 
   <script type="module" src="login-ui.js?v=20261004"></script>
-  <script type="module" src="auth.js?v=manager-login-20261004"></script>
+  <script type="module" src="auth.js?v=transaction-upgrades-20261007"></script>
 
   
 </body>

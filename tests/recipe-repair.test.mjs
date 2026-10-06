@@ -136,6 +136,13 @@ function managerFunction(name, context) {
     const start = main.indexOf('window.' + name + ' =');
     const end = main.indexOf('\n};', start) + 3;
     assert.ok(start >= 0 && end > start);
+    // These DOM tests exercise row staging/retained input; the real revision,
+    // permission and transaction adapter is exercised in recipe-bulk-safety.
+    if(name==='saveAdvancedProduct'){
+        context.window.advRecipeState ||= {revision:{version:0,revisionId:''},documents:{}};
+        context.createRecipeBatch=async api=>api.writeBatch(api.db);
+        context.operationFor=()=> 'test-product-operation';
+    }
     vm.runInNewContext(main.slice(start, end), context);
     return context.window[name];
 }
@@ -165,6 +172,7 @@ test('failed recipe save retains deletions and a new product stays new; retry co
 test('single and bulk deletion never execute a write when dependency checks fail', async () => {
     let writes = 0, confirmed = 0;
     const context = { console: { error() {} }, alert() {}, confirm: () => { confirmed++; return true; },
+        operationFor:()=> 'refused-delete',recipeOperationApplied:async()=>false,
         document: { querySelectorAll: () => [{ value: 'stock-1' }] },
         deleteDoc: async () => writes++, doc() {}, db: {},
         window: { ManagerUI:{notify(){},confirm:()=>{confirmed++;return true;}}, checkInventoryDeletion: async () => { throw new Error('Ingredient used by A'); }, writeBatch: () => { writes++; } } };

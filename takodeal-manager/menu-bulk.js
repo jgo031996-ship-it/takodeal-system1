@@ -1,4 +1,5 @@
 import { recipeProblems } from './recipe-integrity.js';
+import {loadRecipeState, recipePlan, operationFor, saveRecipePlan} from './recipe-changes.js';
 export function parseCsv(text) {
     const rows=[];let row=[],cell='',quoted=false;
     for(let index=0;index<text.length;index++) {
@@ -47,36 +48,35 @@ export function installMenuBulk(api=window) {
         const file=event.target.files[0];if(!file || api.menuBulkSaving)return;api.menuBulkSaving=true;
         try {
             const text=await file.text();
-            const [menu,bom,inventory]=await Promise.all(['menu','bom','inventory'].map(name=>api.getDocsFromServer(api.collection(api.db,name))));
-            const rows=validateMenuCsv(text,new Set(inventory.docs.map(row=>row.data().name))), writes=[],guardRefs=new Map();
+            const state=await loadRecipeState(api),snapshot=table=>({docs:Object.entries(state.documents[table]).map(([id,data])=>({id,ref:api.doc(api.db,table,id),data:()=>data,exists:()=>true}))});
+            const menu=snapshot('menu'),bom=snapshot('bom'),inventory=snapshot('inventory');
+            const rows=validateMenuCsv(text,new Set(inventory.docs.map(row=>row.data().name))), writes=[];
             for(const row of rows) {
                 const existing=menu.docs.find(doc=>doc.id===row.id);
                 if(!existing)throw Error('Unknown product ID: '+row.id+'. Add new products using Add Menu Item.');
                 if(menu.docs.some(doc=>doc.id!==row.id && doc.data().name===row.name))throw Error('Another product uses the name: '+row.name);
-                guardRefs.set(existing.ref.path,existing);
                 const {recipe,...payload}=row;delete payload.id;writes.push({ref:existing.ref,mode:'update',data:payload});
                 const old=bom.docs.filter(doc=>doc.data().menuItem===existing.data().name);
-                for(const doc of old)guardRefs.set(doc.ref.path,doc);
                 for(const ingredient of recipe) {
                     const match=old.find(doc=>doc.data().ingredientName===ingredient.ingredientName);
                     const reference=match?.ref || api.doc(api.db,'bom','recipe-'+encodeURIComponent(row.id)+'-'+encodeURIComponent(ingredient.ingredientName));
-                    if(!match){const snapshot=await api.getDocFromServer(reference);if(snapshot.exists())throw Error('Recipe identity conflict. Refresh the menu.');guardRefs.set(reference.path,snapshot);}
+                    if(!match && state.documents.bom[reference.id])throw Error('Recipe identity conflict. Refresh the menu.');
                     writes.push({ref:reference,mode:'set',data:{menuItem:row.name,ingredientName:ingredient.ingredientName,qty:Number(ingredient.qty)}});
                 }
                 for(const doc of old)if(!writes.some(write=>write.ref.path===doc.ref.path))writes.push({ref:doc.ref,mode:'delete'});
             }
             if(!rows.length)throw Error('The CSV has no menu items.');
-            if(writes.length>400)throw Error('This CSV is too large for one safe update. Import fewer products at a time.');
+            if(writes.length>390)throw Error('This CSV is too large for one safe update. Import fewer products at a time.');
             if(!await api.ManagerUI.confirm(`Update ${rows.length} menu items, their prices, and recipes together? Empty recipe lists clear that item’s recipe. Images and display order are retained.`))return;
-            await api.runTransaction(api.db,async tx=> {
-                for(const old of guardRefs.values()) {
-                    const fresh=await tx.get(old.ref);
-                    if(fresh.exists()!==old.exists() || (fresh.exists() && JSON.stringify(fresh.data())!==JSON.stringify(old.data())))throw Error('A menu item or recipe changed while this import was open. Export fresh data and try again.');
-                }
-                for(const write of writes)if(write.mode==='delete')tx.delete(write.ref);else if(write.mode==='update')tx.update(write.ref,write.data);else tx.set(write.ref,write.data);
-            });
+            const changes=writes.map(write=>({table:write.ref.path.split('/')[0],id:write.ref.id,mode:write.mode,...(write.data?{data:write.data}:{})}));
+            const plan=recipePlan(state,changes,{label:'Menu CSV import',intent:rows});
+            await saveRecipePlan(api,plan,{operationId:operationFor(api,'csv',rows)});
             api.invalidateCache('menu');api.invalidateCache('bom');await api.loadMenuEditor();api.ManagerUI.notify(`${rows.length} menu items and recipes updated.`);
+            api.recipeOperations?.delete('csv');
         }catch(error){Swal.fire('Import was not saved',error.message,'error');}
         finally{api.menuBulkSaving=false;event.target.value='';}
     };
+    // The former uploader wrote menu.recipe one row at a time. Every upload now
+    // uses the exported strict format and updates the real BOM atomically.
+    api.processBulkUpload=api.processRecipeCsvUpload;
 }
