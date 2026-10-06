@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import * as payroll from '../takodeal-staff/payroll-safety.js';
+import * as sanctions from '../Takodeal-POS/sanction-schedule.js';
 import {createScheduleHistoryStore,scheduleDateKey,monthKey,resolveScheduleForDate} from '../takodeal-staff/schedule-history.js';
 
 const staffSource = readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
@@ -58,8 +59,8 @@ function cashierClock(h,clock,{cachedProfile=true}={}) {
     const api={...h.api,getDocs:async q=>{
         if(q.path==='cashiers'){const d={id:'staff-id',data:()=>({...profile,pin:'test-pin'})};return {empty:false,docs:[d],forEach:fn=>fn(d)};}
         return {empty:true,docs:[],forEach(){}};
-    }};Object.assign(window,api);
-    const context={...api,...ui,...payroll,createScheduleHistoryStore,window,Date:dateAt(clock),
+    }};api.getDocsFromServer=api.getDocs;Object.assign(window,api);
+    const context={...api,...ui,...payroll,...sanctions,createScheduleHistoryStore,window,Date:dateAt(clock),
         navigator:{geolocation:{getCurrentPosition:ok=>{gpsDone=ok({coords:{latitude:7,longitude:125}});}}}};
     const start=cashierSource.indexOf('window.submitAttendance = async function');
     vm.runInNewContext(cashierSource.slice(start,cashierSource.indexOf('// 📥 STAFF REQUEST HUB (WITH INBOX)',start)),context);

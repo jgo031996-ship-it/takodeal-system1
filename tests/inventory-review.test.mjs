@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-import { createSaleEngine, SALE_VERSION } from '../Takodeal-POS/pos-safety.js';
+import { createSaleEngine, SALE_VERSION, receiptIngredientBurn } from '../Takodeal-POS/pos-safety.js';
 import { ensureShiftSalesUploaded, createShiftSalesFeed } from '../Takodeal-POS/shift-sales.js';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
 
@@ -147,7 +147,7 @@ async function closeFlow(blocked=false) {
         getDocs:async()=>{throw Error('Cached financial query must not be used');},
         syncOfflineQueue:async()=>{if(blocked)return;for(const row of rows)await engine.commit(await engine.prepare(row));rows=[];}};
     const server=w.getDocsFromServer;w.getDocsFromServer=async q=>{const s=await server(q);return {...s,forEach:fn=>s.docs.forEach(fn)};};
-    const context={window:w,localStorage:storage,console:{error(){}},Date,ensureShiftSalesUploaded,
+    const context={window:w,localStorage:storage,console:{error(){}},Date,ensureShiftSalesUploaded,receiptIngredientBurn,
         document:{querySelector:()=>null,querySelectorAll:()=>[],getElementById:()=>null},
         activeShiftDetails:{logId:'S1',startTime:new Date('2026-10-04T00:00:00Z'),startingCash:0},
         Swal:{fire:async(...args)=>{messages.push(args);return {isConfirmed:true};}},

@@ -5,6 +5,7 @@ import { webcrypto } from 'node:crypto';
 import vm from 'node:vm';
 import { VaultSession, createPinVerifier, verifyPin, validVerifier, validVaultPin, attendanceHistory, belongsToStaff } from '../takodeal-staff/staff-privacy.js';
 import * as payroll from '../takodeal-staff/payroll-safety.js';
+import * as sanctions from '../takodeal-staff/sanction-schedule.js';
 import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js';
 
 test('separate PIN verifier uses unique salts and rejects incorrect, malformed and unsafe input', async () => {
@@ -57,7 +58,7 @@ test('unlocked Staff estimates include the same POS meals in current and pending
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),
         getDoc:async ref=>({exists:()=>true,data:()=>ref.table==='cashiers'?{hourlyRate:450,scheduleNickname:'TEST'}:{}}),
         getDocs:async ref=>snapshot(ref.table==='staff_deductions'?deductions:[])};
-    const context={...api,...payroll,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},
+    const context={...api,...payroll,...sanctions,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},
         window:{...api,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
     const start=engine.indexOf('window.loadPayslipVault = async function() {'),end=engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',start);
     vm.runInNewContext(engine.slice(start,end),context);await context.window.loadPayslipVault();

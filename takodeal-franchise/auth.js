@@ -26,7 +26,7 @@ async function verify(user) {
 const gate=createUnlockGate({verify,verifyOnUnlock:true,load:async({user,data})=>{
  const isFranchisee=String(data.role || '').toLowerCase()==='franchisee',permissions=Array.isArray(data.permissions)?data.permissions:isFranchisee?Object.keys(ROUTES):['dashboard'];
  const branch=data.allowedBranches.includes('Main Office') && user.email.toLowerCase()===MASTER_EMAIL?'Main Office':data.allowedBranches[0];
- window.sessionUser={email:user.email.toLowerCase(),branch,allowedBranches:data.allowedBranches,cashierName:data.fullName || data.name || user.displayName || 'Authorized account',role:data.role,isFranchisee,isOwner:user.email.toLowerCase()===MASTER_EMAIL,permissions};
+ window.sessionUser={uid:user.uid,email:user.email.toLowerCase(),branch,allowedBranches:data.allowedBranches,cashierName:data.fullName || data.name || user.displayName || 'Authorized account',role:data.role,isFranchisee,isOwner:user.email.toLowerCase()===MASTER_EMAIL,permissions};
  try {window.applyPermissions();await window.switchView('dashboard');}catch(error){window.sessionUser=null;throw error;}
 },change:({phase,account,message})=>{
  const open=phase==='open';$('loginOverlay').hidden=open;

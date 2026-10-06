@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { requestHistory, historyTime } from '../takodeal-manager/request-history.js';
 import * as payroll from '../takodeal-manager/payroll-safety.js';
+import * as sanctions from '../takodeal-manager/sanction-schedule.js';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
 import { assembleScheduleHistory, createScheduleRevision, resolveScheduleForDate } from '../takodeal-manager/schedule-history.js';
 
@@ -146,7 +147,7 @@ function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,sc
         getDoc:async()=>({exists:()=>true,data:()=>scheduleData || schedule(end,type)}),
         getDocs:async q=>{const docs=(data[q.table]||[]).filter(row=>q.table!=='staff_deductions' || row.status==='Unpaid').map((row,i)=>({id:String(i),data:()=>row}));return {docs,forEach:fn=>docs.forEach(fn)};}};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>historyData || assembleScheduleHistory(scheduleData || schedule(end,type))};
-    const context=vm.createContext({...api,...payroll,resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
+    const context=vm.createContext({...api,...payroll,...sanctions,resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
         alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
     return {context,window,elements,errors};
 }
