@@ -50,6 +50,7 @@ export function installStaffRegistration(config) {
     const draft=()=>saved(key);
     function message(text){if(el('deviceRegistrationStatus'))el('deviceRegistrationStatus').textContent=text;}
     function pendingScreen(id,title,text,retry=false) {
+        window.stopStaffLiveListeners?.();
         window.lockPayslipVault?.();
         for(const node of ['loginOverlay','appContainer','registerCard','deviceBlockedOverlay'])if(el(node))el(node).style.display='none';
         if(el('deviceAuthOverlay'))el('deviceAuthOverlay').style.display='flex';

@@ -1,5 +1,5 @@
 // Shared promises prevent overlapping views from reading the same collection.
-export function createCollectionCache(read, { now = Date.now, ttl = name => name === 'inventory' ? 60000 : 900000, storage = null, scope = () => '' } = {}) {
+export function createCollectionCache(read, { now = Date.now, ttl = name => ['inventory','branches'].includes(name) ? 60000 : 900000, storage = null, scope = () => '' } = {}) {
     const entries = new Map(), writes = new Map();
     const keyFor = (user, name) => user + '/' + name;
     const queue = (key, action) => {

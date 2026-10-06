@@ -32,6 +32,28 @@ window.currentRider = null;
 window.gpsInterval = null;
 window.activePingId = null;
 window.pingCountdown = null;
+window.riderLiveEpoch = 0;
+window.activeDeliveries = [];
+window.stopRiderLiveServices = function() {
+    window.riderLiveEpoch++;
+    if (window.gpsInterval !== null) clearInterval(window.gpsInterval);
+    window.gpsInterval = null; window.riderGpsListenerKey = null;
+    const stops = [...(window.riderDispatchUnsubscribes || []), window.riderPingUnsubscribe].filter(Boolean);
+    window.riderDispatchUnsubscribes = []; window.riderDispatchListenerKey = null;
+    window.riderPingUnsubscribe = null; window.riderPingListenerKey = null;
+    for (const stop of stops) {try {stop();} catch (error) {console.error('Rider listener cleanup:', error);}}
+    window.activeDeliveries = [];
+    window.closePingModal?.();
+};
+window.addEventListener('pagehide', () => window.stopRiderLiveServices());
+window.addEventListener('pageshow', event => {
+    if (!event.persisted || !window.currentRider) return;
+    window.startLiveGPS(); window.listenForPings(); startDispatchListener();
+});
+window.addEventListener('online', () => {
+    if (!window.currentRider) return;
+    window.startLiveGPS(); window.listenForPings(); startDispatchListener();
+});
 
 // ==========================================
 // 📝 REGISTRATION & LOGIN
@@ -174,6 +196,7 @@ window.loginRider = async function() {
         }
 
         // Login Success
+        if (window.currentRider?.id !== rider.id) window.stopRiderLiveServices();
         window.currentRider = rider;
         localStorage.setItem('takodeal_rider_id', rider.id); // 🔥 REMEMBERS THE RIDER
         document.getElementById('authOverlay').style.display = 'none';
@@ -185,6 +208,7 @@ window.loginRider = async function() {
         Swal.close();
         window.startLiveGPS(); // Start broadcasting location
         window.listenForPings(); // Listen for incoming orders
+        startDispatchListener();
 
     } catch (e) { console.error(e); Swal.fire('Error', 'Login failed.', 'error'); }
 };
@@ -193,21 +217,32 @@ window.loginRider = async function() {
 // 📍 LIVE GPS BROADCASTING
 // ==========================================
 window.startLiveGPS = function() {
+    const riderId = window.currentRider?.id;
+    if (!riderId) return;
+    if (window.riderGpsListenerKey === riderId && window.gpsInterval !== null) return;
+    if (window.gpsInterval !== null) clearInterval(window.gpsInterval);
+    window.gpsInterval = null; window.riderGpsListenerKey = riderId;
+    const epoch = window.riderLiveEpoch;
+    const current = () => epoch === window.riderLiveEpoch && window.currentRider?.id === riderId && window.riderGpsListenerKey === riderId;
     if (!navigator.geolocation) return alert("GPS not supported.");
+    let inFlight = false;
 
     // Update location every 15 seconds
     window.gpsInterval = setInterval(() => {
-        if (document.getElementById('statusToggle').innerText !== "ONLINE") return;
+        if (!current() || inFlight || document.getElementById('statusToggle').innerText !== "ONLINE") return;
+        inFlight = true;
 
         navigator.geolocation.getCurrentPosition(async (pos) => {
             try {
-                await updateDoc(doc(db, "riders", window.currentRider.id), {
+                if (!current() || document.getElementById('statusToggle').innerText !== 'ONLINE') return;
+                await updateDoc(doc(db, "riders", riderId), {
                     lastLat: pos.coords.latitude,
                     lastLng: pos.coords.longitude,
                     lastActive: serverTimestamp()
                 });
             } catch(e) { console.error("GPS Sync Error", e); }
-        }, (err) => console.log(err), { enableHighAccuracy: true });
+            finally {inFlight = false;}
+        }, (err) => {inFlight = false; console.log(err);}, { enableHighAccuracy: true, timeout:20000 });
     }, 15000);
 };
 
@@ -235,17 +270,23 @@ window.toggleRiderStatus = async function() {
 // 📡 LIVE DISPATCH LISTENER
 // ========================================================
 function startDispatchListener() {
-    // For now, we will pull all "ready" orders. Later we can filter by specific branches.
-    const q = query(
-        collection(db, "incoming_orders"), 
-        where("status", "in", ["ready", "out_for_delivery"])
-    );
-
-    onSnapshot(q, (snapshot) => {
-        window.activeDeliveries = [];
-        snapshot.forEach((doc) => {
-            window.activeDeliveries.push({ id: doc.id, ...doc.data() });
+    const riderId = window.currentRider?.id;
+    if (!riderId) return;
+    if (window.riderDispatchListenerKey === riderId && window.riderDispatchUnsubscribes?.length) return;
+    for (const stop of window.riderDispatchUnsubscribes || []) stop();
+    window.riderDispatchUnsubscribes = []; window.riderDispatchListenerKey = riderId;
+    const run = window.riderDispatchListenerRun = (window.riderDispatchListenerRun || 0) + 1;
+    const epoch = window.riderLiveEpoch;
+    const current = () => epoch === window.riderLiveEpoch && run === window.riderDispatchListenerRun && window.currentRider?.id === riderId && window.riderDispatchListenerKey === riderId;
+    const streams = {ready:[], claimed:[]};
+    const render = (kind, snapshot) => {
+        if (!current()) return;
+        streams[kind] = [];
+        snapshot.forEach(entry => {
+            const order = {id:entry.id, ...entry.data()};
+            if (kind === 'ready' ? order.status === 'ready' : order.status === 'out_for_delivery' && order.riderId === riderId) streams[kind].push(order);
         });
+        window.activeDeliveries = [...new Map([...streams.ready, ...streams.claimed].map(order => [order.id, order])).values()];
         
         // Sort: Out for Delivery at the top, newer Ready orders below
         window.activeDeliveries.sort((a, b) => {
@@ -255,8 +296,25 @@ function startDispatchListener() {
         });
 
         renderDispatchBoard();
-    });
+    };
+    const failed = error => {
+        if (!current()) return;
+        const stops = window.riderDispatchUnsubscribes || [];
+        window.riderDispatchUnsubscribes = []; window.riderDispatchListenerKey = null;
+        for (const stop of stops) stop();
+        window.activeDeliveries = [];
+        console.error('Rider dispatch listener:', error);
+        const board = document.getElementById('dispatchBoard'), container = document.getElementById('dispatchBoardContainer'), radar = document.getElementById('radarScreen');
+        if (container) container.style.display = 'flex';
+        if (radar) radar.style.display = 'none';
+        if (board) board.innerHTML = '<div style="text-align:center;padding:24px;color:#e2e8f0;">Delivery updates stopped. Retry, or contact HQ if this continues.<br><button class="btn-action" style="margin-top:12px;" onclick="window.startDispatchListener()">Retry delivery updates</button></div>';
+    };
+    // Retain every available ready job. Claimed jobs use the same exact riderId
+    // ownership that the existing Ongoing tab and claim writers already use.
+    window.riderDispatchUnsubscribes.push(onSnapshot(query(collection(db, 'incoming_orders'), where('status', '==', 'ready')), snap => render('ready', snap), failed));
+    window.riderDispatchUnsubscribes.push(onSnapshot(query(collection(db, 'incoming_orders'), where('status', '==', 'out_for_delivery'), where('riderId', '==', riderId)), snap => render('claimed', snap), failed));
 }
+window.startDispatchListener = startDispatchListener;
 
 // ========================================================
 // 🛵 RENDER DISPATCH BOARD
@@ -442,14 +500,20 @@ window.completeDelivery = async function(orderId) {
 // ==========================================
 window.listenForPings = function() {
     if (!window.currentRider) return;
+    const riderId = window.currentRider.id, epoch = window.riderLiveEpoch;
+    if (window.riderPingListenerKey === riderId && window.riderPingUnsubscribe) return;
+    if (window.riderPingUnsubscribe) window.riderPingUnsubscribe();
+    window.riderPingListenerKey = riderId;
+    const current = () => epoch === window.riderLiveEpoch && window.currentRider?.id === riderId && window.riderPingListenerKey === riderId;
 
     // Listen specifically for orders targeting THIS rider
     const q = query(collection(db, "incoming_orders"), 
-        where("pingedRider", "==", window.currentRider.id), 
+        where("pingedRider", "==", riderId),
         where("status", "==", "looking_for_rider")
     );
 
-    onSnapshot(q, (snapshot) => {
+    window.riderPingUnsubscribe = onSnapshot(q, (snapshot) => {
+        if (!current()) return;
         snapshot.docChanges().forEach((change) => {
             if (change.type === "added" || change.type === "modified") {
                 let order = change.doc.data();
@@ -457,14 +521,19 @@ window.listenForPings = function() {
             }
             if (change.type === "removed") {
                 // If HQ cancels or reassigns it before the timer runs out
-                window.closePingModal();
+                if (window.activePingId === change.doc.id) window.closePingModal();
             }
         });
+    }, error => {
+        if (!current()) return;
+        window.riderPingUnsubscribe = null; window.riderPingListenerKey = null;
+        console.error('Rider ping listener:', error);
     });
 };
 
 window.triggerIncomingPing = function(orderId, orderData) {
     if (window.activePingId === orderId) return; // Prevent duplicate triggers
+    window.closePingModal();
     
     window.activePingId = orderId;
     window.currentPingData = orderData;
@@ -499,6 +568,7 @@ window.closePingModal = function() {
     document.getElementById('incomingOrderPing').style.display = 'none';
     if (window.pingCountdown) clearInterval(window.pingCountdown);
     if (window.pingAudio) window.pingAudio.pause();
+    window.pingCountdown = null; window.pingAudio = null;
     window.activePingId = null;
     window.currentPingData = null;
 };
@@ -576,6 +646,7 @@ window.checkLoginStatus = async function() {
     if (savedId) {
         try {
             const docSnap = await getDoc(doc(db, "riders", savedId));
+            if (localStorage.getItem('takodeal_rider_id') !== savedId) return;
             if (docSnap.exists()) {
                 let rider = { id: docSnap.id, ...docSnap.data() };
                 
@@ -584,6 +655,7 @@ window.checkLoginStatus = async function() {
                     return;
                 }
 
+                if (window.currentRider?.id !== rider.id) window.stopRiderLiveServices();
                 window.currentRider = rider;
                 document.getElementById('authOverlay').style.display = 'none';
                 document.getElementById('mainApp').style.display = 'flex';
@@ -601,6 +673,8 @@ window.checkLoginStatus = async function() {
 
 window.logoutRider = function() {
     if (confirm("Are you sure you want to sign out? You will stop receiving orders.")) {
+        window.stopRiderLiveServices();
+        window.currentRider = null;
         localStorage.removeItem('takodeal_rider_id');
         window.location.reload(); // Wipes memory and returns to login screen
     }

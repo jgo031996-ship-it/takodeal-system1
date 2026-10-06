@@ -44,7 +44,7 @@ function dom() {
 }
 function staffClock(h,clock) {
     const ui=dom(),fix={branch:'Maa',distance:2,accuracy:10,lat:7,lng:125,timestamp:+new Date(clock)};
-    const window={...h.api,getAttendanceLocation:async()=>fix,loadMyAttendance(){}};
+    const window={...h.api,getAttendanceLocation:async()=>fix,checkActiveSanctions:async()=>false,loadMyAttendance(){}};
     const context={...h.api,...ui,...payroll,createScheduleHistoryStore,window,Date:dateAt(clock)};
     const start=staffSource.indexOf('window.punchTime = async function');
     vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('// 📥 STAFF REQUESTS & INBOX ENGINE',start)),context);

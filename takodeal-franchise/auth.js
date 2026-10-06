@@ -39,13 +39,13 @@ const gate=createUnlockGate({verify,verifyOnUnlock:true,load:async({user,data})=
  if(!open && phase!=='opening')window.sessionUser=null;
  if(phase==='pin'){$('managerPinInput').value='';$('managerPinInput').focus();}
 }});
-onAuthStateChanged(window.auth,async user=>{currentUser=user;window.sessionUser=null;await gate.identify(user);});
+onAuthStateChanged(window.auth,async user=>{currentUser=user;window.clearFranchiseReadRequests?.();window.sessionUser=null;await gate.identify(user);});
 window.loginWithGoogle=async()=>{
  $('googleLoginBtn').disabled=true;$('loginStatus').textContent='Connecting to Google…';
  try{window.provider.setCustomParameters({prompt:'select_account'});await signInWithPopup(window.auth,window.provider);}catch(error){$('loginStatus').textContent=error.code==='auth/popup-blocked'?'Allow the sign-in popup, then try again.':error.code==='auth/popup-closed-by-user'?'Sign-in was cancelled.':'Google sign-in could not connect. Check your connection and try again.';}finally{$('googleLoginBtn').disabled=false;}
 };
 window.checkManagerPin=()=>gate.unlock($('managerPinInput').value.trim());
-window.cancelLoginAndSignOut=async()=>{gate.reset();window.sessionUser=null;await signOut(window.auth);};
+window.cancelLoginAndSignOut=async()=>{gate.reset();window.clearFranchiseReadRequests?.();window.sessionUser=null;await signOut(window.auth);};
 window.logoutManager=async()=>{const answer=await Swal.fire({title:'Sign out?',text:'Save any unfinished branch work before leaving.',showCancelButton:true,confirmButtonText:'Sign out'});if(!answer.isConfirmed)return;await window.cancelLoginAndSignOut();window.franchiseState.generation++;window.franchiseState.inventory.clear();window.franchiseState.loaded.clear();window.franchiseState.cart=[];window.franchiseState.schedule=null;for(const route of Object.keys(ROUTES))$('body-'+route).replaceChildren();};
 $('googleLoginBtn').addEventListener('click',window.loginWithGoogle);$('unlockBtn').addEventListener('click',window.checkManagerPin);$('managerPinInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();window.checkManagerPin();}});$('switchAccountBtn').addEventListener('click',window.cancelLoginAndSignOut);$('retryAccountBtn').addEventListener('click',()=>gate.identify(currentUser));$('signOutBtn').addEventListener('click',window.logoutManager);
 for(const key of document.querySelectorAll('[data-pin-key]'))key.addEventListener('click',()=>{const input=$('managerPinInput'),value=key.dataset.pinKey;input.value=value==='clear'?'':value==='back'?input.value.slice(0,-1):(input.value+value).slice(0,64);input.focus();});

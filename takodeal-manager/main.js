@@ -14,6 +14,7 @@ import { installMenuBulk } from './menu-bulk.js';
 import { approveRemittanceAtomic } from './cash-settlement.js';
 import { legacyRemittanceDuplicates, rejectLegacyDuplicateAtomic } from './remittance-review.js';
 import { canOpenWorkspacePage } from './workspace-access-model.js';
+import { createLogisticsFeed } from './logistics-feed.js';
 import { commitDispatch, transitionDispatch } from './dispatch-safety.js';
 import { initManagerDialogs } from './manager-dialogs.js';
 import { initManagerWorkspace, renderFinancialFlow, escapeHtml } from './manager-workspace.js';
@@ -2285,6 +2286,7 @@ window.dispatchCart = [];
 window.dispatchInventoryList = [];
 
 window.loadDispatchDashboard = async function() {
+    window.startPOListener?.();
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
     let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
 
@@ -2848,18 +2850,22 @@ window.submitMultiDispatch = async function () {
 };
 
 window.logisticsState = { activeBranch: 'All', activeTab: 'requests', timeFilter: 'All', requests: [], deliveries: [] };
-window.poUnsubscribe = null;
-
-window.startPOListener = function() {
-    if (window.poUnsubscribe) window.poUnsubscribe(); 
-    let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-    let myBranch = window.sessionUser ? window.sessionUser.branch : "Unknown";
-
+const logisticsFeed = createLogisticsFeed({
+    scope: () => {
+        const user = window.sessionUser;
+        if (!user || !canOpenWorkspacePage(user, 'dispatch')) return '';
+        if (window.auth?.currentUser?.uid && user.uid && window.auth.currentUser.uid !== user.uid) return '';
+        return JSON.stringify([window.auth?.currentUser?.uid, user.uid, user.email, user.isFranchisee,
+            user.branch, user.allowedBranches, user.permissions]);
+    },
+    orders: (next, error) => {
+    const isFranchisee = window.sessionUser.isFranchisee, myBranch = window.sessionUser.branch;
     let q = query(collection(db, "purchase_orders"), where("status", "in", ["Pending", "Delayed", "Drafting"]));
     if (isFranchisee) q = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "in", ["Pending", "Delayed", "Drafting"]));
-
-    let initialLoad = true;
-    window.poUnsubscribe = window.onSnapshot(q, (snapshot) => {
+    return window.onSnapshot(q, next, error);
+    },
+    deliveries: (next, error) => window.onSnapshot(collection(db, "dispatch_logs"), next, error),
+    onOrders: (snapshot, initialLoad) => {
         let pendingCount = 0; let newOrderArrived = false;
         window.logisticsState.requests = [];
         snapshot.forEach(doc => {
@@ -2877,16 +2883,21 @@ window.startPOListener = function() {
             window.playManagerPing();
             Swal.fire({ title: '🔔 New Stock Request!', text: 'A branch just reported an inventory variance or sent a Purchase Order.', icon: 'info', toast: true, position: 'top-end', showConfirmButton: false, timer: 5000 });
         }
-        initialLoad = false;
-    });
-
-    onSnapshot(collection(db, "dispatch_logs"), (snap) => {
+    },
+    onDeliveries: snap => {
         window.logisticsState.deliveries = [];
         snap.forEach(doc => window.logisticsState.deliveries.push({id: doc.id, ...doc.data()}));
         window.logisticsState.deliveries.sort((a,b) => b.timestamp - a.timestamp);
         window.renderLogisticsUI();
-    });
-};
+    },
+    onError: error => console.warn('Logistics updates could not connect. Reopen Dispatch to retry.', error)
+});
+window.startPOListener = () => logisticsFeed.start();
+window.stopPOListener = () => logisticsFeed.stop();
+// Request badges stay live in the background. Brief tab switches reuse both feeds.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'hidden') logisticsFeed.start(); });
+window.addEventListener('pagehide', () => logisticsFeed.stop());
+window.addEventListener('pageshow', () => logisticsFeed.start());
 
 window.switchLogisticsBranch = function(branch) { window.logisticsState.activeBranch = branch; window.renderLogisticsUI(); };
 window.switchLogisticsTab = function(tab) { window.logisticsState.activeTab = tab; window.renderLogisticsUI(); };

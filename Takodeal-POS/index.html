@@ -2603,6 +2603,7 @@
 
 // --- THE DASHBOARD ENGINE ---
 window.loadSalesDashboard = async function (liveTransactions) {
+  if(!document.getElementById('view-sales')?.classList?.contains('active')){window.stopShiftSalesFeed?.();return;}
   const renderGeneration = window.shiftSalesRenderGeneration = (window.shiftSalesRenderGeneration || 0) + 1;
   document.getElementById('tbTransBody').innerHTML = '<tr><td colspan="8" style="text-align:center; padding:30px;">Loading live sales data...</td></tr>';
   
@@ -2618,31 +2619,10 @@ window.loadSalesDashboard = async function (liveTransactions) {
   window.startShiftSalesFeed?.(salesBranch, salesShiftStart, salesShiftId);
   let transactions = Array.isArray(liveTransactions) ? [...liveTransactions] : await window.getSalesDashboardData(salesBranch, salesShiftStart, salesShiftId);
   
-  // 🔥 FETCH PARKED ORDERS AND INJECT THEM INTO SHIFT SALES
+  // One parked-order listener also refreshes Sales when no paid sale changes.
   try {
-      const parkedQ = window.query(window.collection(window.db, "parked_orders"), window.where("branch", "==", salesBranch));
-      const parkedSnap = await window.getDocs(parkedQ);
-      let validStartTime = salesShiftStart instanceof Date ? salesShiftStart : (salesShiftStart && salesShiftStart.toDate ? salesShiftStart.toDate() : new Date(salesShiftStart));
-      
-      parkedSnap.forEach(doc => {
-          let p = doc.data();
-          let pTime = p.timestamp ? (p.timestamp.toDate ? p.timestamp.toDate() : new Date(p.timestamp)) : new Date();
-          if (pTime >= validStartTime) {
-              transactions.push({
-                  id: doc.id,
-                  receiptId: "PARKED-" + doc.id.substring(0,4).toUpperCase(),
-                  customerName: p.name || p.customerName || "Guest",
-                  netTotal: p.total || p.netTotal || 0,
-                  status: "Parked",
-                  paymentMethod: "Unpaid",
-                  cart: p.items || p.cart || [],
-                  timestamp: p.timestamp,
-                  cashier: p.cashier || 'Unknown',
-                  orderType: p.orderType || 'Dine-In',
-                  branch: p.branch
-              });
-          }
-      });
+      const parked=await window.getParkedShiftSales(salesBranch);
+      transactions=window.mergeParkedShiftSales(transactions,parked,salesBranch,salesShiftStart);
   } catch(e) { console.error("Error injecting parked orders:", e); }
 
   // Read the durable outbox as well as preserved legacy sales. A pending sale
@@ -2652,7 +2632,7 @@ window.loadSalesDashboard = async function (liveTransactions) {
       transactions = window.mergePendingSales(transactions, pending, salesBranch, salesShiftStart, salesShiftId);
   } catch(e) { console.error("Offline queue injection error", e); }
 
-  if (renderGeneration !== window.shiftSalesRenderGeneration || window.sessionUser?.branch !== salesBranch || window.currentShift?.shiftId !== salesShiftId) return;
+  if (renderGeneration !== window.shiftSalesRenderGeneration || window.sessionUser?.branch !== salesBranch || window.currentShift?.shiftId !== salesShiftId || !document.getElementById('view-sales')?.classList?.contains('active')) return;
 
   transactions.sort((a, b) => {
       let tA = a.timestamp ? (a.timestamp.toDate ? a.timestamp.toDate().getTime() : (typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime())) : 0;
@@ -4510,7 +4490,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=schedule-memory-20261006-r8"></script>
+    <script type="module" src="main.js?v=read-budget-20261006-r9"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {

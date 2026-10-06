@@ -7,7 +7,7 @@ import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleFo
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 // 🔥 UPGRADE: Imported the Offline Cache Engines!
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDoc, getDocFromServer, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot, enableNetwork, disableNetwork, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDocsFromServer, getDoc, getDocFromServer, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot, enableNetwork, disableNetwork, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
   
 const firebaseConfig = {
@@ -36,6 +36,7 @@ window.query = query;
 window.where = where;
 window.collection = collection;
 window.getDocs = getDocs;
+window.getDocsFromServer = getDocsFromServer;
 window.getDoc = getDoc;
 window.getDocFromServer = getDocFromServer;
 window.runTransaction = runTransaction;
@@ -49,6 +50,35 @@ window.orderBy = orderBy;
 window.onSnapshot = onSnapshot;
 window.enableNetwork = enableNetwork;
 window.disableNetwork = disableNetwork;
+
+// One live subscription per signed-in staff identity. Invalidate queued callbacks
+// before detaching so a previous account cannot update the next account's screen.
+window.staffLiveListenerEpoch = 0;
+window.stopStaffLiveListeners = function() {
+    window.staffLiveListenerEpoch++;
+    for (const kind of ['Inbox', 'Swap', 'Sanction']) {
+        const stop = window['staff' + kind + 'Unsubscribe'];
+        window['staff' + kind + 'Unsubscribe'] = null;
+        window['staff' + kind + 'ListenerKey'] = null;
+        if (stop) { try { stop(); } catch (error) { console.error('Staff listener cleanup:', error); } }
+    }
+    if (window.staffSanctionPadTimer) clearTimeout(window.staffSanctionPadTimer);
+    window.staffSanctionPadTimer = null;
+    window.lastUnreadCount = undefined;
+    for (const id of ['navReqBadge', 'navSchedBadge', 'incomingSwapsContainer', 'staffAppSanctionModal']) {
+        const element = document.getElementById(id);
+        if (element) element.style.display = 'none';
+    }
+    const active = document.getElementById('activeSanctionId');
+    if (active) active.value = '';
+};
+window.addEventListener('pagehide', () => window.stopStaffLiveListeners());
+window.addEventListener('pageshow', event => {
+    if (!event.persisted || !localStorage.getItem('takodeal_staff_id')) return;
+    window.startInboxListener();
+    window.listenToIncomingSwaps();
+    window.startSanctionListener(localStorage.getItem('takodeal_staff_name'));
+});
 // =======================================================
 // 🧠 TAKODEAL GLOBAL CACHE ENGINE (COST SAVER)
 // =======================================================
@@ -163,9 +193,10 @@ window.checkNormalLogin = function() {
         window.listenToIncomingSwaps();
         
         // 🚨 THE GATEKEEPER: Instantly block access if they have a pending NTE!
-        window.checkActiveSanctions(savedName);
+        window.startSanctionListener(savedName);
         
     } else {
+        window.stopStaffLiveListeners();
         // Fallback to normal PIN login if no saved session exists
         document.getElementById('loginOverlay').style.display = 'flex';
         document.getElementById('appContainer').style.display = 'none';
@@ -205,6 +236,7 @@ window.loginStaff = async function() {
         }
 
         if (staffData) {
+            if (localStorage.getItem('takodeal_staff_id') !== docId) window.stopStaffLiveListeners();
             // Re-establish session memory
             localStorage.setItem('takodeal_staff_name', staffData.cashierName);
             localStorage.setItem('takodeal_staff_id', docId);
@@ -225,7 +257,7 @@ window.loginStaff = async function() {
                 document.getElementById('loginOverlay').style.opacity = '1';
                 
                 // 🚨 THE GATEKEEPER: Catch them immediately upon manual login!
-                window.checkActiveSanctions(staffData.cashierName);
+                if (localStorage.getItem('takodeal_staff_id') === docId) window.startSanctionListener(staffData.cashierName);
             }, 300);
             
             if(!window.clockStarted) { window.startLiveClock(); window.clockStarted = true; }
@@ -249,6 +281,7 @@ window.logoutStaff = function() {
         showCancelButton: true, confirmButtonColor: '#0f766e', confirmButtonText: 'Yes, sign out'
     }).then((result) => {
         if (result.isConfirmed) {
+            window.stopStaffLiveListeners();
             localStorage.removeItem('takodeal_staff_name');
             localStorage.removeItem('takodeal_staff_id');
             localStorage.removeItem('takodeal_staff_pic');
@@ -1418,7 +1451,11 @@ window.punchTime = async function(type) {
             }
         }
 
-        // Proof uploads and dialogs can take minutes; check location and identity again.
+        if (type === 'TIME IN' && await window.checkActiveSanctions(staffName, {requireFresh:true})) {
+            throw Error('Reply to your pending HR notice before recording Time In.');
+        }
+
+        // Proof uploads and HR checks can take minutes; check location and identity again.
         const latestLocation = await window.getAttendanceLocation();
         if (latestLocation.branch !== closestBranch) throw Error('Your branch changed during verification. Please record attendance again.');
         if (localStorage.getItem('takodeal_staff_id') !== punchStaffId) throw Error('Your staff session changed. Sign in again before recording attendance.');
@@ -1581,7 +1618,14 @@ window.playNotificationPing = function() {
 
 window.startInboxListener = function() {
     let staffName = localStorage.getItem('takodeal_staff_name');
-    if (!staffName) return;
+    const staffId = localStorage.getItem('takodeal_staff_id');
+    if (!staffName || !staffId) return window.stopStaffLiveListeners();
+    const key = staffId + '|' + staffName, epoch = window.staffLiveListenerEpoch;
+    if (window.staffInboxListenerKey === key && window.staffInboxUnsubscribe) return;
+    if (window.staffInboxUnsubscribe) window.staffInboxUnsubscribe();
+    window.staffInboxListenerKey = key;
+    window.lastUnreadCount = undefined;
+    const current = () => epoch === window.staffLiveListenerEpoch && window.staffInboxListenerKey === key && localStorage.getItem('takodeal_staff_id') === staffId && localStorage.getItem('takodeal_staff_name') === staffName;
 
     // 🔥 OPTIMIZED QUERY: Only fetch requests that have NOT been acknowledged yet!
     const inboxQ = window.query(
@@ -1590,7 +1634,8 @@ window.startInboxListener = function() {
         window.where("staffAcknowledged", "==", false)
     );
 
-    window.onSnapshot(inboxQ, (snapshot) => {
+    window.staffInboxUnsubscribe = window.onSnapshot(inboxQ, (snapshot) => {
+        if (!current()) return;
         let unreadCount = 0;
         snapshot.forEach(doc => { 
             let d = doc.data(); 
@@ -1608,6 +1653,10 @@ window.startInboxListener = function() {
                 window.lastUnreadCount = unreadCount;
             } else { badge.style.display = 'none'; window.lastUnreadCount = 0; }
         }
+    }, error => {
+        if (!current()) return;
+        window.staffInboxUnsubscribe = null; window.staffInboxListenerKey = null;
+        console.error('Staff inbox listener:', error);
     });
 };
 
@@ -3070,13 +3119,21 @@ window.submitSwapRequest = async function() {
 window.listenToIncomingSwaps = async function() {
     let staffName = localStorage.getItem('takodeal_staff_name');
     let staffId = localStorage.getItem('takodeal_staff_id');
-    if (!staffName) return;
+    if (!staffName || !staffId) return window.stopStaffLiveListeners();
+    const key = staffId + '|' + staffName, epoch = window.staffLiveListenerEpoch;
+    // Reserve the identity before fetching its nickname to deduplicate concurrent starts.
+    if (window.staffSwapListenerKey === key) return;
+    if (window.staffSwapUnsubscribe) window.staffSwapUnsubscribe();
+    window.staffSwapUnsubscribe = null;
+    window.staffSwapListenerKey = key;
+    const current = () => epoch === window.staffLiveListenerEpoch && window.staffSwapListenerKey === key && localStorage.getItem('takodeal_staff_id') === staffId && localStorage.getItem('takodeal_staff_name') === staffName;
 
     let nickname = staffName;
     try {
         const docSnap = await getDoc(doc(db, "cashiers", staffId));
         if(docSnap.exists()) nickname = docSnap.data().scheduleNickname || staffName;
     } catch(e) {}
+    if (!current()) return;
 
     let isMatch = (assignedName) => {
         if (!assignedName || assignedName === "N/A" || assignedName === "UNFILLED") return false;
@@ -3086,7 +3143,8 @@ window.listenToIncomingSwaps = async function() {
         return aName === sName || aName === nName;
     };
 
-    onSnapshot(query(collection(db, "shift_swaps"), where("status", "==", "Pending")), (snap) => {
+    window.staffSwapUnsubscribe = onSnapshot(query(collection(db, "shift_swaps"), where("status", "==", "Pending")), (snap) => {
+        if (!current()) return;
         
         // 🔥 DYNAMIC UI INJECTOR: Ensure the container exists and doesn't get wiped!
         let container = document.getElementById('incomingSwapsContainer');
@@ -3143,6 +3201,10 @@ window.listenToIncomingSwaps = async function() {
         
         container.innerHTML = html;
         container.style.display = 'block';
+    }, error => {
+        if (!current()) return;
+        window.staffSwapUnsubscribe = null; window.staffSwapListenerKey = null;
+        console.error('Staff swap listener:', error);
     });
 };
 
@@ -3405,32 +3467,69 @@ window.clearStaffAppSignature = function() {
     }
 };
 
-window.checkActiveSanctions = async function(staffName) {
-    if (!staffName) return;
-    
+window.renderActiveSanctions = function(snap, staffName) {
+    if (localStorage.getItem('takodeal_staff_name') !== staffName) return false;
+    const epoch = window.staffLiveListenerEpoch;
+    const modal = document.getElementById('staffAppSanctionModal');
+    const active = document.getElementById('activeSanctionId');
+    if (snap.empty) {
+        modal.style.display = 'none'; active.value = '';
+        if (window.staffSanctionPadTimer) clearTimeout(window.staffSanctionPadTimer);
+        window.staffSanctionPadTimer = null;
+        return false;
+    }
+    const entry = snap.docs[0], sanction = entry.data();
+    document.getElementById('sanctionLockType').innerText = sanction.type || 'Violation';
+    document.getElementById('sanctionLockSeverity').innerText = sanction.severity || 'Warning';
+    document.getElementById('sanctionLockDetails').innerText = sanction.details || 'No details provided.';
+    // Snapshot updates must not erase an explanation or signature being written.
+    if (active.value !== entry.id) {
+        active.value = entry.id;
+        document.getElementById('sanctionStaffReply').value = '';
+        window.hasSignedStaffNTE = false;
+        if (window.staffSanctionPadTimer) clearTimeout(window.staffSanctionPadTimer);
+        window.staffSanctionPadTimer = setTimeout(() => {
+            if (epoch !== window.staffLiveListenerEpoch || localStorage.getItem('takodeal_staff_name') !== staffName || active.value !== entry.id) return;
+            window.initStaffAppSignaturePad();
+            window.staffSanctionPadTimer = null;
+        }, 300);
+    }
+    modal.style.display = 'flex';
+    return true;
+};
+
+window.startSanctionListener = function(staffName) {
+    const staffId = localStorage.getItem('takodeal_staff_id');
+    if (!staffName || !staffId || localStorage.getItem('takodeal_staff_name') !== staffName) return;
+    const key = staffId + '|' + staffName, epoch = window.staffLiveListenerEpoch;
+    if (window.staffSanctionListenerKey === key && window.staffSanctionUnsubscribe) return;
+    if (window.staffSanctionUnsubscribe) window.staffSanctionUnsubscribe();
+    window.staffSanctionListenerKey = key;
+    const current = () => epoch === window.staffLiveListenerEpoch && window.staffSanctionListenerKey === key && localStorage.getItem('takodeal_staff_id') === staffId && localStorage.getItem('takodeal_staff_name') === staffName;
+    const q = query(collection(db, 'hr_sanctions'), where('staffName', '==', staffName), where('status', '==', 'Pending Reply'));
+    window.staffSanctionUnsubscribe = onSnapshot(q, snap => {
+        if (current()) window.renderActiveSanctions(snap, staffName);
+    }, error => {
+        if (!current()) return;
+        window.staffSanctionUnsubscribe = null; window.staffSanctionListenerKey = null;
+        console.error('Staff sanction listener:', error);
+    });
+};
+
+window.checkActiveSanctions = async function(staffName, {requireFresh = false} = {}) {
+    const staffId = localStorage.getItem('takodeal_staff_id'), epoch = window.staffLiveListenerEpoch;
     try {
-        // Query Firebase for unresolved sanctions for this specific user
-        const q = query(collection(db, "hr_sanctions"), where("staffName", "==", staffName), where("status", "==", "Pending Reply"));
-        const snap = await getDocs(q);
-        
-        if (!snap.empty) {
-            let sanction = snap.docs[0].data();
-            let sanctionId = snap.docs[0].id;
-
-            // Inject the details into the lockdown modal
-            document.getElementById('activeSanctionId').value = sanctionId;
-            document.getElementById('sanctionLockType').innerText = sanction.type || "Violation";
-            document.getElementById('sanctionLockSeverity').innerText = sanction.severity || "Warning";
-            document.getElementById('sanctionLockDetails').innerText = sanction.details || "No details provided.";
-            document.getElementById('sanctionStaffReply').value = ""; 
-
-            // Show the unbreakable overlay
-            document.getElementById('staffAppSanctionModal').style.display = 'flex';
-            
-            // Wake up the signature pad
-            setTimeout(() => { window.initStaffAppSignaturePad(); }, 300);
-        }
-    } catch (e) { console.error("Error checking sanctions:", e); }
+        if (!staffId || !staffName || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
+        const q = query(collection(db, 'hr_sanctions'), where('staffName', '==', staffName), where('status', '==', 'Pending Reply'));
+        // Clock-in and explicit acknowledgement checks must see HQ's current state.
+        const snap = await getDocsFromServer(q);
+        if (epoch !== window.staffLiveListenerEpoch || localStorage.getItem('takodeal_staff_id') !== staffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
+        return window.renderActiveSanctions(snap, staffName);
+    } catch (error) {
+        console.error('Error checking sanctions:', error);
+        if (requireFresh) throw Error(error.message || 'Connect to HQ to verify HR notices before Time In.');
+        return null;
+    }
 };
 
 window.submitStaffAppSanctionReply = async function() {
@@ -3468,7 +3567,7 @@ window.submitStaffAppSanctionReply = async function() {
             customClass: { popup: 'rounded-2xl' }
         });
         
-        document.getElementById('staffAppSanctionModal').style.display = 'none';
+        if (document.getElementById('activeSanctionId').value === sanctionId) document.getElementById('staffAppSanctionModal').style.display = 'none';
 
     } catch (e) {
         console.error(e);
@@ -3479,29 +3578,9 @@ window.submitStaffAppSanctionReply = async function() {
 };
 
 // ========================================================
-// 🚨 STAFF APP: SANCTION WATCHDOG ENGINE
+// 🚨 STAFF APP: SANCTION UPDATES
 // ========================================================
-window.isCheckingSanction = false;
-
-// This watchdog wakes up every 5 seconds and scans the cloud
-setInterval(() => {
-    // 🔥 THE FIX: Now using the correct key "takodeal_staff_name"!
-    let staffName = localStorage.getItem('takodeal_staff_name');
-    let sanctionModal = document.getElementById('staffAppSanctionModal');
-    
-    // If they are logged in, and the modal isn't already showing
-    if (staffName && sanctionModal && sanctionModal.style.display === 'none') {
-        if (!window.isCheckingSanction) {
-            window.isCheckingSanction = true;
-            
-            // Check Firebase for active NTEs
-            window.checkActiveSanctions(staffName).finally(() => {
-                // Unlock the checker after 5 seconds so it can scan again
-                setTimeout(() => { window.isCheckingSanction = false; }, 5000); 
-            });
-        }
-    }
-}, 5000);
+// The signed-in staff listener delivers changes without repeated cloud queries.
 
 // ========================================================
 // ⚖️ STAFF APP: SANCTION HISTORY VIEWER

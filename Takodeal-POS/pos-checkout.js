@@ -1,5 +1,29 @@
 import { SALE_VERSION, saleIdentity, safeId, createOutbox, createSaleEngine } from './pos-safety.js';
 
+// Sale uploads retry frequently. Inventory recovery has its own cadence and
+// scope so an idle tablet does not repeatedly read other branches' receipts.
+export function createAuditRecovery({recover,now=Date.now,online=()=>true,paused=()=>false,intervalMs=5*60*1000}) {
+    const states=new Map();
+    function run(branch,{force=false,allowPaused=false}={}) {
+        if (typeof branch!=='string' || !branch.trim() || !online() || (!allowPaused && paused(branch))) return Promise.resolve({skipped:true});
+        let state=states.get(branch);if(!state){state={lastAttempt:null,flight:null,after:null};states.set(branch,state);}
+        if(state.flight){
+            if((force&&!state.forced)||(allowPaused&&!state.allowPaused)){
+                state.afterAllowPaused ||= allowPaused;
+                state.after ||= state.flight.catch(()=>{}).then(()=>{const reviewPaused=state.afterAllowPaused;state.afterAllowPaused=false;state.after=null;return run(branch,{force:true,allowPaused:reviewPaused});});
+                return state.after;
+            }
+            return state.flight;
+        }
+        const clock=now(),elapsed=clock-state.lastAttempt;
+        if(!force && state.lastAttempt!==null && elapsed>=0 && elapsed<intervalMs) return Promise.resolve({skipped:true});
+        state.lastAttempt=clock;state.forced=force;state.allowPaused=allowPaused;
+        state.flight=Promise.resolve().then(()=>recover(branch)).finally(()=>{state.flight=null;state.forced=false;state.allowPaused=false;});
+        return state.flight;
+    }
+    return {run};
+}
+
 export function mergePendingSales(transactions, queue, branch, shiftStartTime, shiftId) {
     const start = shiftStartTime?.toDate?.() || new Date(shiftStartTime);
     const result = [...transactions];
@@ -34,6 +58,11 @@ export function installSaleSafety(api, environment = globalThis) {
         const saved = ls.getItem('takodeal_audit_mode:' + safeId(branch));
         return saved === 'true' || (saved === null && branch === legacyAuditBranch && ls.getItem('takodeal_audit_mode') === 'true');
     };
+    const auditRecovery=createAuditRecovery({recover:branch=>engine.resumeAudit(branch),paused:localAuditMode,
+        online:()=>environment.navigator?.onLine!==false,now:()=>environment.Date?.now?.() ?? Date.now()});
+    function recoverInBackground(branch,options) {
+        return auditRecovery.run(branch,options).catch(error=>console.warn('Inventory deductions remain pending; recovery will retry:',error));
+    }
     function watchAuditBranch() {
         const branch = ls.getItem('takodeal_device_branch');
         if (!branch || branch === watchedAuditBranch) return;
@@ -41,12 +70,14 @@ export function installSaleSafety(api, environment = globalThis) {
         w.isAuditModeActive = localAuditMode(branch);
         if (api.onSnapshot) stopAuditWatch = api.onSnapshot(api.doc(api.db, 'settings', 'audit_' + safeId(branch)), snapshot => {
             if (!snapshot.exists() || branch !== ls.getItem('takodeal_device_branch')) return;
+            const wasPaused=localAuditMode(branch);
             w.isAuditModeActive = snapshot.data().active === true;
             try {
                 ls.setItem('takodeal_audit_mode:' + safeId(branch), String(w.isAuditModeActive));
                 ls.setItem('takodeal_audit_mode', String(w.isAuditModeActive));
                 updateAuditButton();
             } catch (error) { console.warn('Could not cache audit status:', error); }
+            if(wasPaused&&!w.isAuditModeActive) recoverInBackground(branch,{force:true});
         }, error => console.warn('Audit status is awaiting connection:', error));
     }
 
@@ -166,6 +197,7 @@ export function installSaleSafety(api, environment = globalThis) {
         w.isSyncing = true;
         let syncError;
         let queueChanged = false;
+        const uploadedBranches=new Map();
         const sync = async () => {
             const rows = await outbox.list();
             queueChanged = rows.length > 0;
@@ -185,13 +217,13 @@ export function installSaleSafety(api, environment = globalThis) {
                     }
                     // Deletes only this ID. Concurrent new checkouts survive.
                     await outbox.acknowledge(payload.saleId);
+                    uploadedBranches.set(payload.branch,uploadedBranches.get(payload.branch)||payload.auditDeferred===true);
                 } catch (error) {
                     syncError = error;
                     await outbox.noteError(payload.saleId, owner, error).catch(storageError => console.warn('Could not retain upload diagnostics:', storageError));
                     console.warn('Sale safely queued; synchronization pending:', payload.receiptId, error);
                 } finally { await outbox.release(payload.saleId, owner); }
             }
-            await engine.resumeAvailableAudits(localAuditMode);
         };
         try {
             if (environment.navigator?.locks) await environment.navigator.locks.request('takodeal-sale-sync-v2', sync);
@@ -204,6 +236,7 @@ export function installSaleSafety(api, environment = globalThis) {
             try { await refreshQueue(); updateBadge(syncError); } catch (error) { console.error('Outbox unavailable:', error); }
             // Pending rows become uploaded rows immediately in the visible view.
             if (queueChanged) w.refreshVisibleShiftSales?.();
+            for(const [branch,force] of uploadedBranches) recoverInBackground(branch,{force});
         }
     }
     w.voidTransaction = (receiptId, cashier, branch) => engine.voidSale(receiptId, cashier, branch);
@@ -211,8 +244,10 @@ export function installSaleSafety(api, environment = globalThis) {
     w.processAuditQueue = async function() {
         try {
             if (environment.navigator?.onLine === false) throw new Error('Resume requires a connection. Deductions remain safely pending.');
+            const branch=ls.getItem('takodeal_device_branch');
+            if(!branch)throw new Error('Select a branch before resuming inventory.');
             await w.syncOfflineQueue();
-            const result = await engine.resumeAudit(ls.getItem('takodeal_device_branch'));
+            const result = await auditRecovery.run(branch,{force:true,allowPaused:true});
             if (result.paused) throw new Error('Inventory is still paused for this branch. Another device may have restarted the audit.');
             if (hasLegacyAudit()) {
                 w.Swal.fire('Inventory review required', 'The older audit queue has been preserved. Its previous deductions must be reconciled before applying it. New sale deductions resume safely.', 'warning');
@@ -253,13 +288,15 @@ export function installSaleSafety(api, environment = globalThis) {
         if (event.key === 'takodeal_audit_mode') {
             w.isAuditModeActive = event.newValue === 'true';
             updateAuditButton();
+            if(!w.isAuditModeActive)recoverInBackground(ls.getItem('takodeal_device_branch'),{force:true});
         }
-        if (event.key === 'takodeal_device_branch') watchAuditBranch();
+        if (event.key === 'takodeal_device_branch') {watchAuditBranch();recoverInBackground(ls.getItem('takodeal_device_branch'),{force:true});}
     });
-    w.addEventListener('online', () => { w.isAppOnline = true; w.syncOfflineQueue(); });
+    w.addEventListener('online', () => { w.isAppOnline = true; w.syncOfflineQueue();recoverInBackground(ls.getItem('takodeal_device_branch'),{force:true}); });
     environment.document.addEventListener('DOMContentLoaded', updateAuditButton);
-    environment.setTimeout(() => { updateAuditButton(); w.syncOfflineQueue(); }, 5000);
+    environment.setTimeout(() => { updateAuditButton(); w.syncOfflineQueue();recoverInBackground(ls.getItem('takodeal_device_branch'),{force:true}); }, 5000);
     environment.setInterval(() => w.syncOfflineQueue(), 15000);
+    environment.setInterval(()=>recoverInBackground(ls.getItem('takodeal_device_branch')),5*60*1000);
     refreshQueue().then(() => updateBadge()).catch(error => console.error('Local checkout storage unavailable:', error));
     watchAuditBranch();
 }
