@@ -1,7 +1,7 @@
 import { imageFor } from './cashier-data.js';
 import { installMealCheckout } from './meal-checkout.js';
 import { createShiftCloseDraftStore, countValue } from './shift-close-draft.js';
-import { ensureShiftSalesUploaded, createShiftSalesFeed } from './shift-sales.js';
+import { ensureShiftSalesUploaded, createShiftSalesFeed, createParkedOrdersFeed, mergeParkedOrders } from './shift-sales.js';
 import { createPrinterConnections, createPrinterWriter, printerMode, rawBtIntent, receiptLogoDimensions } from './printer-connection.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { receiveDispatch } from './dispatch-safety.js';
@@ -1266,8 +1266,16 @@ const shiftSalesFeed = createShiftSalesFeed({db, collection, query, where, onSna
         return window.loadSalesDashboard?.(rows);
     }
 });
+const parkedSalesFeed=createParkedOrdersFeed({db,collection,query,where,onSnapshot},()=>{
+    if(document.getElementById('view-sales')?.classList.contains('active')&&window.sessionUser&&window.currentShift){
+        const rows=shiftSalesFeed.rows(window.sessionUser.branch,window.currentShift.startTime,window.currentShift.shiftId);
+        if(rows!==null)return window.loadSalesDashboard?.(rows);
+    }
+});
 window.startShiftSalesFeed = (...args) => shiftSalesFeed.start(...args);
-window.stopShiftSalesFeed = () => shiftSalesFeed.stop();
+window.stopShiftSalesFeed = () => {shiftSalesFeed.stop();parkedSalesFeed.stop();};
+window.getParkedShiftSales = branch => parkedSalesFeed.start(branch);
+window.mergeParkedShiftSales = mergeParkedOrders;
 window.refreshVisibleShiftSales = () => {
     if (document.getElementById('view-sales')?.classList.contains('active')) {
         window.loadSalesDashboard?.().catch(error => console.warn('Sales refresh is awaiting connection:', error));

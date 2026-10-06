@@ -162,7 +162,7 @@ test('Profile history and contracts render without the removed public payroll fi
 });
 function punchHarness(fixes){
     let writes=0;const records=[],alerts=[],nodes=new Map();
-    const window={getAttendanceLocation:async()=>{const next=fixes.shift();if(next instanceof Error)throw next;return next;},loadMyAttendance(){}};
+    const window={getAttendanceLocation:async()=>{const next=fixes.shift();if(next instanceof Error)throw next;return next;},checkActiveSanctions:async()=>false,loadMyAttendance(){}};
     const context={...payroll,createScheduleHistoryStore,window,document:{getElementById:id=>{if(!nodes.has(id))nodes.set(id,{disabled:false,videoWidth:0});return nodes.get(id);}},localStorage:{getItem:key=>key.endsWith('_id')?'staff-id':'Sample Staff'},
         Swal:{fire:(...args)=>alerts.push(args)},doc:()=>({id:'sample'}),collection:()=>({}),query:()=>({}),where:()=>({}),db:{},getDocs:async()=>({forEach(){}}),getDoc:async()=>({exists:()=>false}),serverTimestamp:()=>null,
         writeBatch:()=>({set:(_,record)=>records.push(record),commit:async()=>writes++}),Date,console:{error(){}}};

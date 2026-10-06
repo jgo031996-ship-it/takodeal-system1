@@ -45,5 +45,5 @@ const cache = createCollectionCache(async name => {
 const cacheChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('takodeal-manager-cache') : null;
 cacheChannel?.addEventListener('message', event => cache.invalidate(event.data));
 window.fetchCachedCollection = name => window.sessionUser ? cache.get(name) : Promise.reject(new Error('Unlock the Manager before loading tab data.'));
-window.invalidateCache = name => { cache.invalidate(name); cacheChannel?.postMessage(name); };
+window.invalidateCache = name => { const pending = cache.invalidate(name); cacheChannel?.postMessage(name); return pending; };
 window.clearManagerMemoryCache = () => cache.clearMemory();

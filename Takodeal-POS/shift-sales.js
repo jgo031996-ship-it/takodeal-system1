@@ -25,7 +25,8 @@ export async function ensureShiftSalesUploaded(w, { branch, shiftId, startTime }
 }
 
 export function createShiftSalesFeed(api, onChange, onError = console.warn) {
-    let scope, unsubscribe, generation = 0;
+    let scope, unsubscribe, generation = 0, currentRows=null;
+    const scopeKey=(branch,startTime,shiftId)=>JSON.stringify([branch, +(startTime?.toDate?.() || new Date(startTime)), shiftId]);
     return {
         start(branch, startTime, shiftId) {
             const start = startTime?.toDate?.() || new Date(startTime);
@@ -39,6 +40,7 @@ export function createShiftSalesFeed(api, onChange, onError = console.warn) {
                 if (current !== generation || scope !== key) return;
                 const rows = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).filter(row =>
                     row.branch === branch && (!row.shiftId || row.shiftId === 'UNKNOWN' || row.shiftId === shiftId));
+                currentRows=rows;
                 Promise.resolve(onChange(rows)).catch(onError);
             }, error => {
                 if (current !== generation) return;
@@ -47,6 +49,54 @@ export function createShiftSalesFeed(api, onChange, onError = console.warn) {
                 onError(error);
             });
         },
-        stop() { generation++; unsubscribe?.(); unsubscribe = null; scope = null; }
+        rows(branch,startTime,shiftId) {return scope===scopeKey(branch,startTime,shiftId)&&currentRows!==null?currentRows.map(row=>({...row})):null;},
+        stop() { generation++; unsubscribe?.(); unsubscribe = null; scope = null; currentRows=null; }
     };
+}
+
+// Parked orders change independently of paid sales. One live branch query
+// supplies every Sales render, including orders without a legacy timestamp.
+export function createParkedOrdersFeed(api,onChange,onError=console.warn) {
+    let scope=null,unsubscribe,generation=0,currentRows=null,pending;
+    return {
+        start(branch) {
+            if(!branch){this.stop();return Promise.resolve([]);}
+            if(scope===branch)return currentRows!==null?Promise.resolve(currentRows.map(row=>({...row}))):pending.promise;
+            this.stop();scope=branch;
+            const current=generation;
+            let resolve,reject;
+            const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});
+            // A rejected listener may happen after its first render was done.
+            promise.catch(()=>{});pending={promise,resolve,reject};
+            const q=api.query(api.collection(api.db,'parked_orders'),api.where('branch','==',branch));
+            try{unsubscribe=api.onSnapshot(q,snapshot=>{
+                if(current!==generation||scope!==branch)return;
+                currentRows=snapshot.docs.map(doc=>({id:doc.id,...doc.data()})).filter(row=>row.branch===branch);
+                pending.resolve(currentRows.map(row=>({...row})));
+                Promise.resolve(onChange(currentRows.map(row=>({...row})))).catch(onError);
+            },error=>{
+                if(current!==generation||scope!==branch)return;
+                pending.reject(error);scope=null;onError(error);
+            });}catch(error){pending.reject(error);scope=null;onError(error);}
+            return promise;
+        },
+        rows(branch) {return scope===branch&&currentRows!==null?currentRows.map(row=>({...row})):null;},
+        stop() {generation++;unsubscribe?.();unsubscribe=null;pending?.resolve([]);pending=null;scope=null;currentRows=null;}
+    };
+}
+
+export function mergeParkedOrders(transactions,orders,branch,startTime) {
+    const start=+(startTime?.toDate?.() || new Date(startTime)),result=[...transactions];
+    const existing=new Set(transactions.map(row=>row.id).filter(Boolean));
+    for(const order of orders){
+        if(order.branch!==branch||existing.has(order.id))continue;
+        const timestamp=order.timestamp?.toDate?.() || (Number.isFinite(order.timestamp?.seconds)?new Date(order.timestamp.seconds*1000):order.timestamp?new Date(order.timestamp):null);
+        // Keep undated legacy orders visible; only a known older date excludes one.
+        if(timestamp&&Number.isFinite(+timestamp)&&Number.isFinite(start)&&+timestamp<start)continue;
+        result.push({id:order.id,receiptId:'PARKED-'+order.id.substring(0,4).toUpperCase(),customerName:order.name||order.customerName||'Guest',
+            netTotal:order.total||order.netTotal||0,status:'Parked',paymentMethod:'Unpaid',cart:order.items||order.cart||[],
+            timestamp:timestamp&&Number.isFinite(+timestamp)?timestamp:null,cashier:order.cashier||'Unknown',orderType:order.orderType||'Dine-In',branch:order.branch});
+        existing.add(order.id);
+    }
+    return result;
 }

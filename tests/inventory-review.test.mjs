@@ -182,12 +182,13 @@ test('an in-flight sales render cannot overwrite the closed-register view or rea
     const errors=[],body={innerHTML:''};let release;
     const w={sessionUser:{branch:'Maa'},currentShift:{active:true,shiftId:'S1',startTime:new Date(0)},
         getSalesDashboardData:async()=>[],query:()=>({}),collection:()=>({}),where:()=>({}),db:{},
-        getDocs:async()=>({forEach(){}}),getPendingSales:()=>new Promise(resolve=>{release=resolve;}),
+        getParkedShiftSales:async()=>[],mergeParkedShiftSales:rows=>rows,
+        getPendingSales:()=>new Promise(resolve=>{release=resolve;}),
         mergePendingSales:rows=>rows};
     const source=readFileSync(new URL('../Takodeal-POS/index.html',import.meta.url),'utf8');
     const start=source.indexOf('window.loadSalesDashboard = async function');
     vm.runInNewContext(source.slice(start,source.indexOf('\n};',start)+4),{window:w,Date,
-        document:{getElementById:()=>body},console:{error:(...args)=>errors.push(args)}});
+        document:{getElementById:id=>id==='view-sales'?{classList:{contains:()=>true}}:body},console:{error:(...args)=>errors.push(args)}});
     const old=w.loadSalesDashboard();
     await new Promise(resolve=>setImmediate(resolve));
     assert.ok(release);w.currentShift=null;await w.loadSalesDashboard();release([]);await old;

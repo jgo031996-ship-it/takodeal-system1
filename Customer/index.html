@@ -579,7 +579,42 @@
         };
         // End franchise inquiry workflow.
 
+        window.customerTrackerEpoch = 0;
+        window.stopOrderTracker = function() {
+            window.customerTrackerEpoch++;
+            window.customerProfileEpoch = (window.customerProfileEpoch || 0) + 1;
+            const stop = window.customerOrderUnsubscribe;
+            window.customerOrderUnsubscribe = null;
+            window.customerOrderTrackerKey = null;
+            if (stop) stop();
+            if (window.customerPrepInterval) clearInterval(window.customerPrepInterval);
+            if (window.customerTrackerRevealTimer) clearTimeout(window.customerTrackerRevealTimer);
+            window.customerPrepInterval = null;
+            window.customerTrackerRevealTimer = null;
+            window.activeTrackedOrderId = null;
+            window.lastKnownOrderStatus = null;
+            window.isConfirmingOrderReceived = false;
+            const receive = document.getElementById('btnOrderReceived');
+            if (receive) {
+                receive.disabled = false;
+                if (receive.dataset.receiveLabel) receive.innerText = receive.dataset.receiveLabel;
+            }
+            const tracker = document.getElementById('liveOrderTracker');
+            if (tracker) {tracker.classList.add('translate-y-full');tracker.classList.add('hidden');}
+            if (Swal.getPopup?.()?.dataset.customerOrderReview) Swal.close();
+        };
+
         onAuthStateChanged(auth, (user) => {
+            const previous = window.currentUser;
+            if (!user || previous?.uid !== user.uid || previous?.email !== user.email) {
+                window.stopOrderTracker();
+                for (const id of ['orderHistoryList', 'loyaltyStampsGrid', 'profileUserName', 'profileUserEmail', 'loyaltyPointsTxt']) {
+                    const element = document.getElementById(id);
+                    if (element) element.textContent = '';
+                }
+                const picture = document.getElementById('profileUserPic');
+                if (picture) picture.src = 'customer-logo.jpg';
+            }
             window.currentUser = user;
             if (user) {
                 window.startOrderTracker(user.email); // Start tracker if logged in!
@@ -1491,12 +1526,23 @@
         window.isConfirmingOrderReceived = false;
 
         window.startOrderTracker = function(email) {
-            if (window.customerOrderUnsubscribe) window.customerOrderUnsubscribe();
+            const user = window.currentUser;
+            if (!user || !email || user.email !== email) return window.stopOrderTracker();
+            const key = (user.uid || '') + '|' + email;
+            if (window.customerOrderTrackerKey === key && window.customerOrderUnsubscribe) return;
+            window.stopOrderTracker();
+            window.customerOrderTrackerKey = key;
+            const epoch = window.customerTrackerEpoch;
+            const current = () => epoch === window.customerTrackerEpoch && window.customerOrderTrackerKey === key && window.currentUser?.uid === user.uid && window.currentUser?.email === email;
             const q = query(collection(db, "incoming_orders"), where("customerEmail", "==", email));
             
             window.customerOrderUnsubscribe=onSnapshot(q, (snap) => {
+                if (!current()) return;
                 let tracker = document.getElementById('liveOrderTracker');
-                if (snap.empty) { tracker.classList.add('translate-y-full'); return; }
+                if (window.customerPrepInterval) clearInterval(window.customerPrepInterval);
+                if (window.customerTrackerRevealTimer) clearTimeout(window.customerTrackerRevealTimer);
+                window.customerPrepInterval = null; window.customerTrackerRevealTimer = null;
+                if (snap.empty) { window.activeTrackedOrderId = null; window.lastKnownOrderStatus = null; tracker.classList.add('translate-y-full'); return; }
                 
                 let orders = [];
                 snap.forEach(d => orders.push({ id: d.id, ...d.data() }));
@@ -1507,8 +1553,8 @@
                 window.activeTrackedOrderId = order.id;
                 
                 if (order.status === 'completed' || order.status === 'rejected') {
+                    window.activeTrackedOrderId = null;
                     tracker.classList.add('translate-y-full');
-                    if (window.customerPrepInterval) clearInterval(window.customerPrepInterval);
                     if (order.status === 'completed' && !order.reviewPrompted) {
                         window.promptReview(order.orderCode, order.id);
                     }
@@ -1516,7 +1562,11 @@
                 }
                 
                 tracker.classList.remove('hidden');
-                setTimeout(() => tracker.classList.remove('translate-y-full'), 100); 
+                window.customerTrackerRevealTimer = setTimeout(() => {
+                    if (!current()) return;
+                    tracker.classList.remove('translate-y-full');
+                    window.customerTrackerRevealTimer = null;
+                }, 100);
                 
                 document.getElementById('trackerCode').innerText = `Order: ${order.orderCode || 'Unknown'}`;
                 
@@ -1550,6 +1600,7 @@
                         let targetTime = acceptedTime + (order.prepTime * 60000);
                         
                         const updateTimerUI = () => {
+                            if (!current()) return;
                             let now = Date.now();
                             let diff = targetTime - now;
                             let timeEl = document.getElementById('trackerTime');
@@ -1608,11 +1659,26 @@
                 }
                 document.getElementById('trackerStatus').innerText = statusText;
                 if (timeStr !== "") document.getElementById('trackerTime').innerText = timeStr;
+            }, error => {
+                if (!current()) return;
+                console.error('Customer order tracker:', error);
+                window.stopOrderTracker();
             });
         };
+        window.addEventListener('pagehide', () => window.stopOrderTracker());
+        window.addEventListener('pageshow', event => {
+            if (event.persisted && window.currentUser) {
+                window.startOrderTracker(window.currentUser.email);
+                if (!document.getElementById('profileScreen').classList.contains('hidden')) window.renderUserProfile();
+            }
+        });
 
         window.promptReview = function(orderCode, docId, items, orderType) {
+            const user = window.currentUser, epoch = window.customerTrackerEpoch;
+            const current = () => user && epoch === window.customerTrackerEpoch && window.currentUser?.uid === user.uid && window.currentUser?.email === user.email;
+            if (!current()) return;
             Swal.fire({
+                didOpen: popup => {popup.dataset.customerOrderReview = 'true';},
                 title: 'How was your food? 🐙',
                 html: `
                     <div class="text-sm text-zinc-400 mb-4">We'd love to hear your feedback on order ${orderCode}!</div>
@@ -1626,6 +1692,7 @@
                 background: '#141414', color: '#fff',
                 customClass: { popup: 'border border-zinc-800 rounded-2xl' },
                 preConfirm: () => {
+                    if (!current()) return false;
                     let text = document.getElementById('reviewText').value;
                     if(text) {
                         // 🔥 EXTRACT TOP 2 ITEMS TO SAVE DIRECTLY WITH REVIEW
@@ -1644,15 +1711,15 @@
                             totalItemsCount: items ? items.length : 0,
                             text: text, 
                             timestamp: serverTimestamp(), 
-                            customer: window.currentUser.displayName,
-                            email: window.currentUser.email,
+                            customer: user.displayName,
+                            email: user.email,
                             status: "Pending" 
                         });
                     }
                     updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
                 }
             }).then((res) => {
-                if(res.dismiss === Swal.DismissReason.cancel) {
+                if(current() && res.dismiss === Swal.DismissReason.cancel) {
                     updateDoc(doc(db, "incoming_orders", docId), { reviewPrompted: true });
                 }
             });
@@ -1661,7 +1728,8 @@
         window.activeTrackedOrderId = null;
 
         window.confirmOrderReceived = async function() {
-            if (!window.activeTrackedOrderId || window.isConfirmingOrderReceived) return;
+            if (!window.currentUser || !window.activeTrackedOrderId || window.isConfirmingOrderReceived) return;
+            const orderId = window.activeTrackedOrderId, epoch = window.customerTrackerEpoch;
             let btn = document.getElementById('btnOrderReceived');
             let origText = btn.innerText;
             btn.dataset.receiveLabel = origText;
@@ -1669,17 +1737,20 @@
             btn.innerText = "⏳ Updating..."; btn.disabled = true;
 
             try {
-                await updateDoc(doc(db, "incoming_orders", window.activeTrackedOrderId), {
+                await updateDoc(doc(db, "incoming_orders", orderId), {
                     status: 'completed',
                     completedAt: serverTimestamp()
                 });
                 // The onSnapshot listener will detect 'completed' and trigger the review popup automatically!
             } catch(e) {
+                if (epoch !== window.customerTrackerEpoch) return;
                 console.error(e);
                 Swal.fire('Error', 'Failed to update order.', 'error');
             } finally {
-                window.isConfirmingOrderReceived = false;
-                btn.innerText = origText; btn.disabled = false;
+                if (epoch === window.customerTrackerEpoch) {
+                    window.isConfirmingOrderReceived = false;
+                    btn.innerText = origText; btn.disabled = false;
+                }
             }
         };
 
@@ -1820,6 +1891,8 @@
 
         window.renderUserProfile = async function() {
             if (!window.currentUser) return;
+            const profileUser = window.currentUser, epoch = window.customerProfileEpoch = (window.customerProfileEpoch || 0) + 1;
+            const current = () => epoch === window.customerProfileEpoch && window.currentUser?.uid === profileUser.uid && window.currentUser?.email === profileUser.email;
             
             document.getElementById('profileUserName').innerText = window.currentUser.displayName || 'Guest';
             document.getElementById('profileUserEmail').innerText = window.currentUser.email || '';
@@ -1833,8 +1906,9 @@
 
             try {
                 // 🔥 THE FIX: Removed the Firebase 'orderBy' command to prevent the Index Crash!
-                const q = query(collection(db, "incoming_orders"), where("customerEmail", "==", window.currentUser.email));
+                const q = query(collection(db, "incoming_orders"), where("customerEmail", "==", profileUser.email));
                 const snap = await getDocs(q);
+                if (!current()) return;
                 
                 let orders = [];
                 snap.forEach(d => orders.push({ id: d.id, ...d.data() }));
@@ -1853,8 +1927,9 @@
                 let points = 0;
                 try {
                     // Index-free search to prevent Firebase crashes!
-                    const revQ = query(collection(db, "reviews"), where("email", "==", window.currentUser.email));
+                    const revQ = query(collection(db, "reviews"), where("email", "==", profileUser.email));
                     const revSnap = await getDocs(revQ);
+                    if (!current()) return;
                     let approvedReviewsCount = 0;
                     revSnap.forEach(d => {
                         if (d.data().status === "Approved") approvedReviewsCount++;
@@ -1862,6 +1937,7 @@
                     points = approvedReviewsCount % 10;
                     document.getElementById('loyaltyPointsTxt').innerText = points;
                 } catch(e) { console.error("Loyalty error:", e); }
+                if (!current()) return;
                 
                 let stampsHtml = '';
                 for (let i = 1; i <= 10; i++) {
@@ -1917,6 +1993,7 @@
                 list.innerHTML = html || '<div class="text-zinc-500 py-10 font-medium text-center bg-cardbg rounded-2xl border border-zinc-800">You have no past orders yet.</div>';
 
             } catch(e) {
+                if (!current()) return;
                 console.error("Profile Rendering Error:", e);
                 list.innerHTML = '<div class="text-red-500 py-10 font-medium text-center bg-cardbg rounded-2xl border border-red-900/50">Error fetching history.</div>';
             }
@@ -1924,6 +2001,7 @@
 
         window.logoutCustomer = async function() {
             await signOut(auth);
+            window.stopOrderTracker();
             window.currentUser = null;
             window.switchScreen('orderingScreen');
             Swal.fire({toast: true, position: 'top-end', icon: 'info', title: 'Signed Out', showConfirmButton: false, timer: 2000});

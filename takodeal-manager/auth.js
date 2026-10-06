@@ -41,7 +41,7 @@ const gate = createUnlockGate({
         try {
             await loadManagerLibraries();
             if (window.auth.currentUser?.uid !== user.uid || gate.state().phase !== 'opening') throw new Error('The account changed. Please reload.');
-            await import('./main.js?v=schedule-memory-20261006');
+            await import('./main.js?v=read-budget-20261006');
             runtimeLoaded = true;
             installWorkspaceAccess(window,document);
             prepareManagerTools();
@@ -53,7 +53,7 @@ const gate = createUnlockGate({
             window.applyPermissions(); window.applyFranchiseUIProtections?.();
             // switchView owns the dashboard load; no second subscription pass.
             window.switchView(workspaceLandingPage(window.sessionUser));
-        } catch (error) { window.sessionUser = null; throw error; }
+        } catch (error) { window.stopPOListener?.(); window.sessionUser = null; throw error; }
         finally { workspaceLoading = false; }
     },
     change({phase, account, message}) {
@@ -73,6 +73,7 @@ const gate = createUnlockGate({
             ui.status(''); el('loginOverlay').style.display = 'none';
             window.tempAuthData = null; window.tempAuthUser = null;
         } else {
+            window.stopPOListener?.();
             window.sessionUser = null; window.tempAuthData = null; window.tempAuthUser = null;
             el('managerPinInput').value = ''; ui.show('google');
             ui.status(phase === 'checking' ? 'Verifying your approved account…' : phase === 'signed-out' ? 'Sign in to open your Owner workspace.' : 'Your workspace stays locked until your account is verified.');

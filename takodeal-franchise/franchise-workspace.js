@@ -1,13 +1,16 @@
 import { ROUTES, RELEASE, n, money, esc, ms, calendarDay, businessDay, addDays, range, dateText, stockQty, itemName, lowStock, isPaid, summarizeSales, closedShift, shiftReport, canVisit, ledgerRows, attendanceEstimate } from './franchise-data.js';
 import { logExpense, adjustInventory, reviewRequest, loadBranchSchedule, saveBranchSchedule } from './franchise-actions.js';
 import { receiveDispatch } from './dispatch-safety.js';
-import { bounded } from './unlock-gate.js';
 import { isLatenessRequest, legacyAttendanceCandidates, reviewLateRequest } from './payroll-safety.js';
 import { createScheduleHistoryStore } from './schedule-history.js';
+import { createFranchiseReads } from './franchise-reads.js';
 
 export function installFranchiseWorkspace(api) {
  const $=id=>document.getElementById(id),state={route:'dashboard',generation:0,loaded:new Map(),inventory:new Map(),cart:[],cartBranch:'',pending:0,schedule:null,charts:[]};
  const session=()=>{const s=api.sessionUser;if (!s || !s.allowedBranches?.includes(s.branch)) throw new Error('Sign in and select an assigned branch.');return s;};
+ const accountScope=()=>{const s=session();return JSON.stringify([api.auth?.currentUser?.uid,s.email,s.branch,s.cashierName,s.allowedBranches,s.permissions]);};
+ const reader=createFranchiseReads(api,{scope:accountScope});
+ api.clearFranchiseReadRequests=()=>reader.reset();
  const selectedRange=()=>range($('globalStartDate').value,$('globalEndDate').value);
  const element=(tag,cls,text)=>{const el=document.createElement(tag);el.className=cls || '';if(text!=null)el.textContent=text;return el;};
  function button(text,action,cls='secondary-button') {const el=element('button',cls,text);el.type='button';el.addEventListener('click',()=>Promise.resolve(action()).catch(showActionError));return el;}
@@ -37,35 +40,26 @@ export function installFranchiseWorkspace(api) {
   const url=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'})),a=element('a');a.href=url;a.download=`takodeal-${route}-${session().branch}-${$('globalStartDate').value}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
  async function read(tableName,{branch=session().branch,time=null,start=null,end=null,filters=[]}={}) {
-  const constraints=[api.where('branch','==',branch),...filters];if(time && start)constraints.push(api.where(time,'>=',start));if(time && end)constraints.push(api.where(time,'<',end));
-  // A simple branch query avoids requiring new composite indexes. Timestamp filtering is
-  // applied after every branch record has been read, so older records are never silently lost.
-  const queryConstraints=constraints;
-  let snap;
-  try {snap=await bounded(api.getDocsFromServer(api.query(api.collection(api.db,tableName),...queryConstraints)),20000);}
-  catch(error) {if(error.code!=='failed-precondition')throw error;snap=await bounded(api.getDocsFromServer(api.query(api.collection(api.db,tableName),api.where('branch','==',branch))),20000);}
-  let rows=snap.docs.map(d=>({...d.data(),id:d.id}));
-  if(time)rows=rows.filter(r=>(!start || ms(r[time])>=+start) && (!end || ms(r[time])<+end));
-  return rows.filter(r=>r.branch===branch);
+  return reader.read(tableName,{branch,time,start,end,filters});
  }
- async function globalRead(tableName,...constraints) {const snap=await bounded(api.getDocsFromServer(api.query(api.collection(api.db,tableName),...constraints)),20000);return snap.docs.map(d=>({...d.data(),id:d.id}));}
+ const globalRead=reader.globalRead;
  async function accountsForBranch() {const [modern,legacy]=await Promise.all([read('cash_accounts'),read('franchise_accounts')]);return [...modern.map(a=>({...a,accountName:a.name || a.accountName,table:'cash_accounts'})),...legacy.map(a=>({...a,table:'franchise_accounts'}))];}
  async function budgetsForBranch() {const [modern,legacy]=await Promise.all([read('budgets'),read('franchise_budgets')]);return [...modern.map(a=>({...a,table:'budgets'})),...legacy.map(a=>({...a,table:'franchise_budgets'}))];}
  async function staffRows(tableName,profiles,filters=[]) {
   const names=[...new Set(profiles.map(p=>p.cashierName).filter(Boolean))],rows=[];
-  for(let i=0;i<names.length;i+=30)rows.push(...await globalRead(tableName,api.where('staffName','in',names.slice(i,i+30)),...filters));
+  for(let i=0;i<names.length;i+=30)rows.push(...await globalRead(tableName,['staffName','in',names.slice(i,i+30)],...filters));
   return rows.filter(r=>!r.branch || r.branch===session().branch);
  }
- async function inventory(force=false) {const branch=session().branch,cache=state.inventory.get(branch);if(!force && cache && Date.now()-cache.at<60000)return cache.rows;const rows=await read('inventory',{branch});state.inventory.set(branch,{rows,at:Date.now()});return rows;}
+ async function inventory(force=false) {const branch=session().branch,scope=accountScope(),version=reader.version(),cache=state.inventory.get(branch);if(!force && cache?.scope===scope && Date.now()-cache.at<60000)return cache.rows;const rows=await read('inventory',{branch});if(api.sessionUser && scope===accountScope() && version===reader.version())state.inventory.set(branch,{rows,scope,at:Date.now()});return rows;}
  api.fetchCachedInventory=async branch=>{if(branch!==session().branch)throw new Error('Inventory branch is outside the selected workspace.');return inventory();};
  function root(route) {return $('body-'+route);}
  function errorMessage(error) {if(error.code==='permission-denied')return 'Your account cannot read these records. Ask HQ to review your branch access.';if(!navigator.onLine)return 'You are offline. Reconnect and choose Retry to load current records.';return error.message || 'The records could not load. Check your connection and retry.';}
  async function load(route,loader) {
   if(!canVisit(api.sessionUser,route))throw new Error('This page is outside your assigned access.');
-  const current=++state.generation,branch=session().branch,r=root(route);r.replaceChildren(element('div','loading','Loading current branch records…'));$('syncDataBtn').disabled=true;
+  const current=++state.generation,branch=session().branch,scope=accountScope(),r=root(route);r.replaceChildren(element('div','loading','Loading current branch records…'));$('syncDataBtn').disabled=true;
   const detached=element('div');
-  try {await loader(detached);if(current!==state.generation || branch!==api.sessionUser?.branch)return;r.replaceChildren(...detached.childNodes);r.dataset.loaded='true';$('workspaceMessage').hidden=true;}
-  catch(error) {if(current!==state.generation || branch!==api.sessionUser?.branch)return;r.replaceChildren();const box=element('div','page-error');box.append(element('p','',errorMessage(error)),button('Retry',()=>api.switchView(route)));r.append(box);r.dataset.loaded='error';}
+  try {await loader(detached);if(current!==state.generation || branch!==api.sessionUser?.branch || scope!==accountScope())return;r.replaceChildren(...detached.childNodes);r.dataset.loaded='true';$('workspaceMessage').hidden=true;}
+  catch(error) {if(current!==state.generation || branch!==api.sessionUser?.branch || scope!==accountScope())return;r.replaceChildren();const box=element('div','page-error');box.append(element('p','',errorMessage(error)),button('Retry',()=>api.switchView(route)));r.append(box);r.dataset.loaded='error';}
   finally {if(current===state.generation)$('syncDataBtn').disabled=false;}
  }
  const define=(route,fn)=>{api[ROUTES[route][2]]=()=>load(route,fn);};
@@ -81,13 +75,13 @@ export function installFranchiseWorkspace(api) {
  };
  api.refreshActiveData=async()=>{
   if(state.route==='schedule' && state.schedule?.dirty){const answer=await Swal.fire({title:'Reload schedule?',text:'Reloading will discard your unsaved changes.',showCancelButton:true,confirmButtonText:'Discard and reload'});if(!answer.isConfirmed)return;state.schedule.dirty=false;}
-  state.inventory.clear();await api.switchView(state.route);
+  reader.reset();state.inventory.clear();await api.switchView(state.route);
  };
  api.changeFranchiseBranch=async()=>{
   const next=$('franchiseBranchSelect').value,previous=session().branch;
   if(!session().allowedBranches.includes(next))throw new Error('This branch is outside your assigned access.');
   if(state.cart.length || state.schedule?.dirty) {const answer=await Swal.fire({title:'Switch branch?',text:'Unsaved supply requests and schedule changes belong to the current branch. Save them first, or discard them to switch.',showCancelButton:true,confirmButtonText:'Discard and switch'});if(!answer.isConfirmed){$('franchiseBranchSelect').value=previous;return;}}
-  state.generation++;api.sessionUser.branch=next;state.cart=[];state.cartBranch=next;state.inventory.clear();state.loaded.clear();state.schedule=null;
+  reader.reset();state.generation++;api.sessionUser.branch=next;state.cart=[];state.cartBranch=next;state.inventory.clear();state.loaded.clear();state.schedule=null;
   for(const key of Object.keys(ROUTES))root(key).replaceChildren();
   await api.switchView(state.route);
  };
@@ -189,7 +183,7 @@ export function installFranchiseWorkspace(api) {
   return Swal.fire({titleText:title,html:`<div class="form-grid">${html}</div>`,showCancelButton:true,confirmButtonText:confirm,showLoaderOnConfirm:true,allowOutsideClick:()=>!Swal.isLoading(),didOpen,preConfirm:async()=>{
    if(session().branch!==branch){Swal.showValidationMessage('The branch changed. Reopen the form.');return false;}
    state.pending++;
-   try{return await save(branch);}catch(error){Swal.showValidationMessage(error.message);return false;}finally{state.pending--;}
+   try{const result=await save(branch);reader.reset();return result;}catch(error){Swal.showValidationMessage(error.message);return false;}finally{state.pending--;}
   }});
  }
  const field=(name,label,type='text',value='',extra='')=>`<label>${esc(label)}<input id="form-${name}" type="${type}" value="${esc(value)}" ${extra}></label>`;
@@ -218,7 +212,7 @@ export function installFranchiseWorkspace(api) {
 
  define('b2b',async r=>{
   const branch=session().branch;if(state.cartBranch!==branch){state.cart=[];state.cartBranch=branch;}
-  const [catalog,deliveries,requests]=await Promise.all([globalRead('inventory',api.where('branch','==','Main Office'),api.where('allowRequest','==',true)),globalRead('dispatch_logs',api.where('toBranch','==',branch)),read('purchase_orders')]);
+  const [catalog,deliveries,requests]=await Promise.all([globalRead('inventory',['branch','==','Main Office'],['allowRequest','==',true]),globalRead('dispatch_logs',['toBranch','==',branch]),read('purchase_orders')]);
   api.hqInventoryCache=catalog.filter(i=>i.branch==='Main Office' && i.allowRequest===true);
   const cols=element('div','two-columns');r.append(cols);const order=card(cols,'Request supplies','Only items approved for branch ordering are listed.'),body=element('div','card-body');body.innerHTML=`<div class="form-grid"><label class="full">Item<input id="b2bSearch" list="b2bDatalist" placeholder="Choose an approved HQ item"><datalist id="b2bDatalist">${api.hqInventoryCache.map(i=>`<option value="${esc(itemName(i))}"></option>`).join('')}</datalist></label><label>Quantity<input type="number" min="0.001" step="0.001" id="b2bQty"></label><label>Unit<select id="b2bUom"><option value="base">Choose an item first</option></select></label></div>`;body.append(button('Add to request',()=>api.addB2bToCart(),'primary-button'));const cart=element('div','',null);cart.id='b2bCartList';body.append(cart,button('Send request to HQ',()=>api.submitB2bRequest(),'primary-button'));order.card.append(body);
   const incoming=card(cols,'Incoming deliveries','Confirm actual quantities after the driver marks the delivery arrived.'),deliveryBody=element('div','card-body');deliveryBody.id='b2bDeliveriesContainer';incoming.card.append(deliveryBody);
@@ -229,7 +223,7 @@ export function installFranchiseWorkspace(api) {
  api.updateB2bUom=()=>{const item=api.hqInventoryCache?.find(i=>itemName(i)===$('b2bSearch')?.value.trim()),drop=$('b2bUom');if(!drop)return;drop.replaceChildren();if(!item){drop.append(new Option('Choose an approved item','base'));return;}const base=item.uom || 'units',purchase=item.purchaseUom || item.purchUom,rate=n(item.conversionRate ?? item.convRate) || 1;if(purchase && purchase!==base && rate>1){const option=new Option(purchase,'purch');option.dataset.rate=rate;drop.append(option);}const option=new Option(base,'base');option.dataset.rate='1';drop.append(option);};
  api.addB2bToCart=()=>{const name=$('b2bSearch').value.trim(),item=api.hqInventoryCache.find(i=>itemName(i)===name),qty=Number($('b2bQty').value),option=$('b2bUom').selectedOptions[0];if(!item || !Number.isFinite(qty) || qty<=0)throw new Error('Choose an approved item and enter a positive quantity.');const rate=n(option.dataset.rate) || 1;state.cart.push({itemName:name,name,rawQty:qty,displayQty:qty,displayUom:option.text,qty:qty*rate,convRate:rate,requestType:'Franchise Restock Order'});state.requestId=null;$('b2bSearch').value='';$('b2bQty').value='';api.renderB2bCart();};
  api.renderB2bCart=()=>{const root=$('b2bCartList');if(!root)return;root.replaceChildren();root.className='card-body';for(const [index,item] of state.cart.entries()){const row=element('div','budget-row');row.append(element('p','',`${item.displayQty} ${item.displayUom} · ${item.name}`),button('Remove',()=>{state.cart.splice(index,1);state.requestId=null;api.renderB2bCart();}));root.append(row);}if(!state.cart.length)root.append(element('p','notice','Your request cart is empty.'));};
- api.submitB2bRequest=async()=>{if(!state.cart.length)throw new Error('Add supplies to the request first.');if(state.pending)return;const branch=session().branch,items=structuredClone(state.cart),id=state.requestId ||= uniqueId('franchise-order');const confirmed=await Swal.fire({title:'Send supply request?',text:'HQ will receive '+items.length+' requested items for '+branch+'.',showCancelButton:true,confirmButtonText:'Send request'});if(!confirmed.isConfirmed)return;state.pending++;try {await api.runTransaction(api.db,async tx=>{const ref=api.doc(api.db,'purchase_orders',id),snap=await tx.get(ref);if(snap.exists())return;tx.set(ref,{branch,items,status:'Pending',type:'Franchise Order',requestedBy:session().cashierName,timestamp:api.serverTimestamp()});});state.cart=[];state.requestId=null;await api.loadB2BSupply();}finally{state.pending--;}};
+ api.submitB2bRequest=async()=>{if(!state.cart.length)throw new Error('Add supplies to the request first.');if(state.pending)return;const branch=session().branch,items=structuredClone(state.cart),id=state.requestId ||= uniqueId('franchise-order');const confirmed=await Swal.fire({title:'Send supply request?',text:'HQ will receive '+items.length+' requested items for '+branch+'.',showCancelButton:true,confirmButtonText:'Send request'});if(!confirmed.isConfirmed)return;state.pending++;try {await api.runTransaction(api.db,async tx=>{const ref=api.doc(api.db,'purchase_orders',id),snap=await tx.get(ref);if(snap.exists())return;tx.set(ref,{branch,items,status:'Pending',type:'Franchise Order',requestedBy:session().cashierName,timestamp:api.serverTimestamp()});});reader.reset();state.cart=[];state.requestId=null;await api.loadB2BSupply();}finally{state.pending--;}};
  api.receiveHQDelivery=async(id,items)=>{const branch=session().branch;const html=items.map((i,index)=>field('received-'+index,i.item+' · '+(i.displayUom || i.uom),'number',i.displayQty ?? (n(i.qty)/(n(i.convRate) || 1)),'min="0" step="0.001"')).join('')+field('remarks','Receiving remarks');const result=await form('Verify received stock',html,async b=>{const received=items.map((i,index)=>({id:i.id,actualDisplayQty:Number($('form-received-'+index).value),remarks:$('form-remarks').value}));if(received.some((i,index)=>!$('form-received-'+index).value.trim()))throw new Error('Enter the received quantity for every item.');await receiveDispatch(api,{branch:b,actor:session().cashierName,items:received});state.inventory.delete(b);return true;},{confirm:'Confirm receipt'});if(result.isConfirmed && session().branch===branch)await api.loadB2BSupply();};
 
  define('inbox',async r=>{
@@ -279,10 +273,10 @@ export function installFranchiseWorkspace(api) {
  api.viewSanction=async id=>{
   const ref=api.doc(api.db,'hr_sanctions',id),snap=await api.getDocFromServer(ref);if(!snap.exists() || snap.data().branch!==session().branch)throw new Error('This notice is outside your branch.');const d=snap.data();
   const answer=await Swal.fire({titleText:d.type || 'Staff notice',html:`<dl class="details-list"><div><dt>Staff</dt><dd>${esc(d.staffName)}</dd></div><div><dt>Status</dt><dd>${esc(d.status)}</dd></div></dl><div class="memo-content">${esc(d.details)}\n\nStaff reply:\n${esc(d.staffReply || d.reply || d.response || 'No reply yet.')}</div>`,showCancelButton:true,confirmButtonText:d.status==='Resolved'?'Close':'Mark resolved',cancelButtonText:'Close'});
-  if(answer.isConfirmed && d.status!=='Resolved')await api.runTransaction(api.db,async tx=>{const current=await tx.get(ref);if(!current.exists() || current.data().branch!==session().branch)throw new Error('This notice changed. Reload it.');tx.update(ref,{status:'Resolved',resolvedBy:session().cashierName,resolvedAt:api.serverTimestamp()});});await api.loadSanctionsDashboard();
+  if(answer.isConfirmed && d.status!=='Resolved')await api.runTransaction(api.db,async tx=>{const current=await tx.get(ref);if(!current.exists() || current.data().branch!==session().branch)throw new Error('This notice changed. Reload it.');tx.update(ref,{status:'Resolved',resolvedBy:session().cashierName,resolvedAt:api.serverTimestamp()});});reader.reset();await api.loadSanctionsDashboard();
  };
  define('bulletin',async r=>{
-  const notices=await globalRead('announcements',api.where('active','==',true)),acks=await globalRead('acknowledgments',api.where('staffName','==',session().cashierName)),target=notices.filter(a=>!a.targetType || a.targetType==='All' || a.targetType==='Branch' && a.targetBranch===session().branch || a.targetType==='Individual' && a.targetStaff===session().cashierName).sort((a,b)=>ms(b.timestamp)-ms(a.timestamp)),grid=element('div','announcement-grid');r.append(grid);
+  const notices=await globalRead('announcements',['active','==',true]),acks=await globalRead('acknowledgments',['staffName','==',session().cashierName]),target=notices.filter(a=>!a.targetType || a.targetType==='All' || a.targetType==='Branch' && a.targetBranch===session().branch || a.targetType==='Individual' && a.targetStaff===session().cashierName).sort((a,b)=>ms(b.timestamp)-ms(a.timestamp)),grid=element('div','announcement-grid');r.append(grid);
   for(const notice of target){const ack=acks.find(a=>a.announcementId===notice.id && (!a.branch || a.branch===session().branch)),item=element('div','announcement');item.append(element('h3','',notice.title || 'HQ notice'),element('small','',dateText(notice.timestamp)),element('p','',String(notice.message || '').slice(0,180)));const status=element('span','badge'+(ack?'':' warning'),ack?'Acknowledged':'Signature required');item.append(status,button('Read announcement',()=>api.viewAnnouncement(notice,ack)));grid.append(item);}if(!target.length)grid.append(element('div','empty','No active announcements for this branch.'));
  });
  api.viewAnnouncement=async(notice,ack)=>{
@@ -293,7 +287,7 @@ export function installFranchiseWorkspace(api) {
   },preConfirm:async()=>{
    if(ack)return true;if(api.isSignatureBlank){Swal.showValidationMessage('Draw your signature before saving.');return false;}
    const branch=session().branch,id='ack-'+encodeURIComponent(notice.id+'--'+session().email+'--'+branch),signature=$('sigCanvas').toDataURL('image/png');state.pending++;
-   try{await api.runTransaction(api.db,async tx=>{const noticeRef=api.doc(api.db,'announcements',notice.id),ref=api.doc(api.db,'acknowledgments',id),[fresh,saved]=await Promise.all([tx.get(noticeRef),tx.get(ref)]);if(!fresh.exists() || fresh.data().active!==true)throw new Error('This notice is no longer active.');const a=fresh.data();if(a.targetType==='Branch' && a.targetBranch!==branch || a.targetType==='Individual' && a.targetStaff!==session().cashierName)throw new Error('This announcement is outside your audience.');if(saved.exists())return;tx.set(ref,{announcementId:notice.id,branch,email:session().email,staffName:session().cashierName,signature,timestamp:api.serverTimestamp()});});return true;}catch(error){Swal.showValidationMessage(error.message);return false;}finally{state.pending--;}
+   try{await api.runTransaction(api.db,async tx=>{const noticeRef=api.doc(api.db,'announcements',notice.id),ref=api.doc(api.db,'acknowledgments',id),[fresh,saved]=await Promise.all([tx.get(noticeRef),tx.get(ref)]);if(!fresh.exists() || fresh.data().active!==true)throw new Error('This notice is no longer active.');const a=fresh.data();if(a.targetType==='Branch' && a.targetBranch!==branch || a.targetType==='Individual' && a.targetStaff!==session().cashierName)throw new Error('This announcement is outside your audience.');if(saved.exists())return;tx.set(ref,{announcementId:notice.id,branch,email:session().email,staffName:session().cashierName,signature,timestamp:api.serverTimestamp()});});reader.reset();return true;}catch(error){Swal.showValidationMessage(error.message);return false;}finally{state.pending--;}
   }});if(state.route==='bulletin')await api.loadAnnouncements();
  };
  addEventListener('beforeunload',event=>{if(state.pending || state.schedule?.dirty || state.cart.length){event.preventDefault();event.returnValue='';}});

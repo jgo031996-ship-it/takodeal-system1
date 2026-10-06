@@ -11,6 +11,8 @@ export function createDashboard(w = window, d = document) {
     const rows = snap => snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
     const collection = name => w.collection(w.db, name);
     const doc = name => w.doc(w.db, 'settings', name);
+    const accountScope = () => JSON.stringify([w.auth?.currentUser?.uid, w.sessionUser?.uid, w.sessionUser?.email,
+        w.sessionUser?.permissions, w.sessionUser?.allowedBranches, w.sessionUser?.isFranchisee]);
     const allowed = b => typeof w.isBranchAllowed !== 'function' || w.isBranchAllowed(b);
     function stop() { generation++; stops.splice(0).forEach(off => off()); key = ''; }
     function visible() { return el('view-dashboard')?.classList.contains('active'); }
@@ -44,14 +46,22 @@ export function createDashboard(w = window, d = document) {
         stops.push(() => { clearTimeout(timer); off?.(); });
     }
     async function read(name, force = false) {
-        const entry = cache.get(name);
-        if (!force && entry && Date.now() - entry.at < 60000) return entry.promise;
+        // Reference rows share the same scoped cache as Menu and Inventory. Financial
+        // reports remain live subscriptions; an explicit Refresh invalidates references.
+        const shared = typeof w.fetchCachedCollection === 'function';
+        if (shared && force) await w.invalidateCache?.(name);
+        const cacheKey = accountScope() + '/' + name, entry = cache.get(cacheKey);
+        if (!shared && !force && entry && Date.now() - entry.at < 60000) return entry.promise;
         let timeout;
         const promise = Promise.race([
-            w.getDocs(collection(name)).then(rows),
+            shared ? w.fetchCachedCollection(name) : w.getDocs(collection(name)).then(rows),
             new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error(name + ' could not load. Check your connection and refresh.')), 15000); })
-        ]).finally(() => clearTimeout(timeout)).catch(error => { cache.delete(name); throw error; });
-        cache.set(name, { at: Date.now(), promise }); return promise;
+        ]).finally(() => clearTimeout(timeout)).catch(error => {
+            if (cache.get(cacheKey)?.promise === promise) cache.delete(cacheKey);
+            throw error;
+        });
+        if (!shared) cache.set(cacheKey, { at: Date.now(), promise });
+        return promise;
     }
     async function load({ force = false } = {}) {
         if (!w.db || !w.sessionUser || !visible()) return;
@@ -72,7 +82,7 @@ export function createDashboard(w = window, d = document) {
         let range;
         try { range = dateRange(dates.start, dates.end); }
         catch (error) { text('dashDataMessage', error.message); el('dashDataMessage').hidden = false; return; }
-        const nextKey = JSON.stringify([branch, dates, today, w.sessionUser.email, w.sessionUser.allowedBranches]);
+        const nextKey = JSON.stringify([branch, dates, today, accountScope()]);
         if (key === nextKey && !force) return;
         stop(); key = nextKey; const current = generation;
         state = { branch, dates, range, today, errors: {}, cached: {}, ready: {}, shifts: [], attendance: [], expenses: [], profiles: {} };
