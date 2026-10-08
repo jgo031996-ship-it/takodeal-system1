@@ -6,7 +6,10 @@ import vm from 'node:vm';
 import { VaultSession, createPinVerifier, verifyPin, validVerifier, validVaultPin, attendanceHistory, belongsToStaff } from '../takodeal-staff/staff-privacy.js';
 import * as payroll from '../takodeal-staff/payroll-safety.js';
 import * as sanctions from '../takodeal-staff/sanction-schedule.js';
+import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
+import {planPayrollAttendance} from '../takodeal-staff/payroll-attendance.js';
 import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js';
+import {installStaffRatePrivacy} from '../takodeal-staff/staff-rate-privacy.js';
 
 test('separate PIN verifier uses unique salts and rejects incorrect, malformed and unsafe input', async () => {
     const a = await createPinVerifier('246810', webcrypto), b = await createPinVerifier('246810', webcrypto);
@@ -58,7 +61,7 @@ test('unlocked Staff estimates include the same POS meals in current and pending
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),
         getDoc:async ref=>({exists:()=>true,data:()=>ref.table==='cashiers'?{hourlyRate:450,scheduleNickname:'TEST'}:{}}),
         getDocs:async ref=>snapshot(ref.table==='staff_deductions'?deductions:[])};
-    const context={...api,...payroll,...sanctions,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},
+    const context={...api,...payroll,...sanctions,...reconciliation,planPayrollAttendance,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},
         window:{...api,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
     const start=engine.indexOf('window.loadPayslipVault = async function() {'),end=engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',start);
     vm.runInNewContext(engine.slice(start,end),context);await context.window.loadPayslipVault();
@@ -111,12 +114,13 @@ function portalHarness(initialPin) {
         return nodes.get(id);
     };
     let staff={pin:'1111',cashierName:'Demo Staff',payslipPin:initialPin}, writes=0, loads=0;
-    const context={VaultSession,createPinVerifier,verifyPin,validVerifier,validVaultPin,attendanceHistory,escapeHtml:x=>x,Date,console,crypto:webcrypto,
+    const context={VaultSession,createPinVerifier,verifyPin,validVerifier,validVaultPin,attendanceHistory,...reconciliation,installStaffRatePrivacy,escapeHtml:x=>x,Date,console,crypto:webcrypto,
         setInterval:()=>0,navigator:{},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
         document:{hidden:false,getElementById:node,querySelectorAll:()=>[],querySelector:()=>({scrollTop:0}),addEventListener:(event,fn)=>listeners.set(event,fn)}};
     context.window={db:{},doc:()=>null,getDoc:async()=>({exists:()=>true,data:()=>({...staff})}),updateDoc:async(ref,data)=>{writes++;Object.assign(staff,data);},
         switchView(){},checkNormalLogin(){},loginStaff:async()=>{},logoutStaff(){},openProfile(){},loadPayslipVault(){loads++;},addEventListener:(event,fn)=>listeners.set(event,fn),Swal:{close(){}}};
-    const source=readFileSync(new URL('../takodeal-staff/staff-portal.js',import.meta.url),'utf8').replace(/^import[^\n]+\n/,'').replace('export function','function');
+    context.window.getDocFromServer=context.window.getDoc;
+    const source=readFileSync(new URL('../takodeal-staff/staff-portal.js',import.meta.url),'utf8').replace(/^import[^\n]+\n/gm,'').replace('export function','function');
     vm.runInNewContext(source+'\ninstallStaffPortal();',context);
     return {context,node,listeners,writes:()=>writes,loads:()=>loads,staff:()=>staff};
 }
@@ -157,4 +161,54 @@ test('five failed attempts trigger a local cooldown before another profile read 
     for(let i=0;i<5;i++)await h.context.window.submitVaultPin();
     h.node('vaultCurrentPin').value='246810';await h.context.window.submitVaultPin();
     assert.equal(h.loads(),0);assert.match(h.node('vaultError').textContent,/Wait one minute/);
+});
+
+function staffLinkedEstimate(logs,{profileName='Test Staff',clock='2026-10-08T12:00:00+08:00'}={}){
+    const nodes=new Map(),errors=[],queries=[];
+    const node=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'',innerText:'',textContent:'',style:{},parentElement:{insertAdjacentHTML(){},querySelector(){return null;}},appendChild(){},prepend(){}});return nodes.get(id);};
+    const snapshot=rows=>({docs:rows.map((row,index)=>({id:row.id||String(index),data:()=>row})),forEach:fn=>rows.forEach((row,index)=>fn({id:row.id||String(index),data:()=>row}))});
+    class FixedDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}}
+    const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:(ref,...filters)=>({...ref,filters}),where:(key,op,value)=>({key,op,value}),orderBy:()=>({}),
+        getDoc:async ref=>({exists:()=>true,data:()=>ref.table==='cashiers'?{hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST'}:{}}),getDocs:async ref=>{queries.push(ref);return snapshot(ref.table==='attendance_logs'?logs.filter(row=>ref.filters.every(filter=>filter.op==='in'?filter.value.includes(row[filter.key]):row[filter.key]===filter.value)):[]);}};
+    const context={...api,...payroll,...sanctions,...reconciliation,planPayrollAttendance,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},window:{...api,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
+    const at=engine.indexOf('window.loadPayslipVault = async function() {');vm.runInNewContext(engine.slice(at,engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',at)),context);return {node,errors,queries,window:context.window};
+}
+test('actual unlocked Staff estimate holds overlapping linked punches without inferred pay or lateness',async()=>{
+    const base={staffId:'sample',staffName:'Test Staff',branch:'Maa'},stamp=value=>({toDate:()=>new Date(value)}),logs=[{...base,id:'old',type:'TIME IN',lateMinutes:200,penaltyAmount:500,timestamp:stamp('2026-10-06T22:00:00+08:00')},{...base,id:'new',type:'TIME IN',timestamp:stamp('2026-10-07T02:00:00+08:00')},{...base,id:'out',type:'TIME OUT',timeInLogId:'old',timestamp:stamp('2026-10-07T06:00:00+08:00')}];
+    const h=staffLinkedEstimate(logs);await h.window.loadPayslipVault();assert.deepEqual(h.errors,[]);assert.equal(h.node('liveEstNetPay').innerText,'Held for HR review');assert.equal(h.node('liveEstGross').innerText,'Held for HR review');assert.equal(h.node('liveEstLates').innerText,'-₱0.00');assert.match(h.node('liveCutoffDetailedLogs').innerHTML,/overlap/);
+});
+test('actual Staff estimate finds renamed ID-bearing linked punches through its scoped ID query',async()=>{
+    const base={staffId:'sample',staffName:'Previous Name',branch:'Maa'},stamp=value=>({toDate:()=>new Date(value)}),logs=[{...base,id:'in',type:'TIME IN',lateExempted:true,timestamp:stamp('2026-10-06T09:00:00+08:00')},{...base,id:'out',type:'TIME OUT',timeInLogId:'in',timestamp:stamp('2026-10-06T17:00:00+08:00')}];
+    const h=staffLinkedEstimate(logs,{profileName:'Current Name'});await h.window.loadPayslipVault();assert.deepEqual(h.errors,[]);assert.equal(h.node('liveEstGross').innerText,'₱450.00');assert.equal(h.node('liveEstLates').innerText,'-₱0.00');
+    assert.ok(h.queries.some(query=>query.table==='attendance_logs'&&query.filters.some(filter=>filter.key==='staffId'&&filter.value==='sample')));
+});
+test('a known linked closure from the previous Staff cutoff does not hold the current estimate or charge it twice',async()=>{
+    const base={staffId:'sample',staffName:'Test Staff',branch:'Maa'},stamp=value=>({toDate:()=>new Date(value)}),logs=[{...base,id:'old',type:'TIME IN',lateExempted:true,timestamp:stamp('2026-09-30T22:00:00+08:00')},{...base,id:'old-out',type:'TIME OUT',timeInLogId:'old',timestamp:stamp('2026-10-01T06:00:00+08:00')}];
+    const h=staffLinkedEstimate(logs);await h.window.loadPayslipVault();assert.deepEqual(h.errors,[]);assert.equal(h.node('liveEstGross').innerText,'₱0.00');assert.equal(h.node('liveEstNetPay').innerText,'₱0.00');assert.match(h.node('payslipPendingList').innerHTML,/₱450\.00/);
+});
+test('actual Staff estimate retains both adjacent explicit shifts despite an IN-before-OUT equal timestamp',async()=>{
+    const stamp=value=>({toDate:()=>new Date('2026-10-07T'+value+':00+08:00')}),base={staffId:'sample',staffName:'Test Staff',branch:'Maa',lateExempted:true},logs=[{...base,id:'a',type:'TIME IN',timestamp:stamp('09:00')},{...base,id:'b',type:'TIME IN',timestamp:stamp('12:00')},{...base,id:'oa',type:'TIME OUT',timeInLogId:'a',timestamp:stamp('12:00')},{...base,id:'ob',type:'TIME OUT',timeInLogId:'b',timestamp:stamp('20:00')}];
+    const h=staffLinkedEstimate(logs);await h.window.loadPayslipVault();assert.deepEqual(h.errors,[]);assert.equal(h.node('liveEstGross').innerText,'₱900.00');assert.equal(h.node('liveEstLates').innerText,'-₱0.00');assert.doesNotMatch(h.node('liveCutoffDetailedLogs').innerHTML,/Missed Time Out|HR REVIEW|INVALID/);assert.match(h.node('liveCutoffDetailedLogs').innerHTML,/3\.00/);assert.match(h.node('liveCutoffDetailedLogs').innerHTML,/8\.00/);
+});
+
+test('actual attendance portal loads renamed employee punches by ID and renders explicit overnight closure and unknown-date review',async()=>{
+    const h=portalHarness(),api=h.context.window,records=[
+        {id:'in',staffId:'demo',staffName:'Previous Name',branch:'Maa',type:'TIME IN',timestamp:new Date('2026-10-06T22:00:00+08:00')},
+        {id:'out',staffId:'demo',staffName:'Previous Name',branch:'Maa',type:'TIME OUT',timeInLogId:'in',timestamp:new Date('2026-10-07T06:00:00+08:00')},
+        {id:'unknown',staffId:'demo',staffName:'Demo Staff',branch:'Maa',type:'TIME IN',timestamp:null},
+        {id:'other',staffId:'other-id',staffName:'Demo Staff',branch:'Cabantian',type:'TIME IN',timestamp:new Date('2026-10-06T09:00:00+08:00')}
+    ];let reads=0;
+    Object.assign(api,{collection:(_db,table)=>({table}),query:(ref,...filters)=>({...ref,filters}),where:(key,op,value)=>({key,value}),getDocsFromServer:async q=>{reads++;return {docs:records.filter(row=>q.filters.every(f=>row[f.key]===f.value)).map(row=>({id:row.id,data:()=>row}))};}});
+    h.node('attendanceMonth').value='2026-10';await api.loadMyAttendance(true);
+    assert.equal(reads,2);assert.match(h.node('myAttendanceList').innerHTML,/Complete/);assert.match(h.node('myAttendanceList').innerHTML,/8\.00/);
+    assert.match(h.node('myAttendanceList').innerHTML,/Date needs HQ review/);assert.match(h.node('myAttendanceList').innerHTML,/Review timestamp/);assert.doesNotMatch(h.node('myAttendanceList').innerHTML,/Cabantian/);
+    assert.equal(h.node('attendanceCount').textContent,'2 shifts');
+});
+test('a slow attendance refresh cannot display the previous employee after account switch',async()=>{
+    const h=portalHarness(),api=h.context.window,finish=[];
+    Object.assign(api,{collection:(_db,table)=>({table}),query:(ref,...filters)=>({...ref,filters}),where:(key,op,value)=>({key,value}),getDocsFromServer:()=>new Promise(resolve=>finish.push(resolve))});
+    const reading=api.loadMyAttendance(true);await new Promise(setImmediate);
+    h.context.localStorage.setItem('takodeal_staff_id','another');h.node('myAttendanceList').innerHTML='new employee screen';
+    finish.forEach(resolve=>resolve({docs:[{id:'old',data:()=>({staffId:'demo',staffName:'Demo Staff',branch:'Maa',type:'TIME IN',timestamp:new Date()})}]}));
+    await reading;assert.equal(h.node('myAttendanceList').innerHTML,'new employee screen');
 });

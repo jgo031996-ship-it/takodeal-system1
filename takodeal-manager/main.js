@@ -1,5 +1,6 @@
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
 import { installDeviceFleet } from './device-fleet.js';
+import {installMasterEmployeeDocuments} from './staff-document-hq.js';
 import { installFranchiseWorkspace } from './franchise-workspace.js';
 import { installMonthlyBills } from './monthly-bills-ui.js';
 import { requestHistory, historyTime } from './request-history.js';
@@ -7,18 +8,21 @@ import { enhanceScheduleLayout } from './schedule-layout.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
 import {installScheduleMemoryUI} from './schedule-memory-ui.js';
 import {validateManualAttendance, saveManualAttendance} from './attendance-audit.js';
+import {planPayrollAttendance} from './payroll-attendance.js';
+import {attendanceMillis} from './attendance-reconcile.js';
 import {installScheduleSwapReview} from './schedule-swap-review.js';
 import {phDay, noticeIsDue, deductionIsDue, isPenaltyDeduction, suspensionDates} from './sanction-schedule.js';
 import {sanctionAuthority, findSanctionStaff, issueScheduledSanction, issueHandoverSanctions, finishSanction} from './sanction-actions.js';
 import {installSanctionScheduling} from './sanction-scheduling-ui.js';
 import { generateEmployeeID } from './employee-id.js';
+import {dailyStaffRate,staffProfileOperation,saveStaffProfileAtomic,installStaffRateHistory} from './staff-rate-changes.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { installMenuBulk } from './menu-bulk.js';
 import { installRecipeReplacement } from './recipe-bulk.js';
 import { loadRecipeState, createRecipeBatch, operationFor, recipePlan, saveRecipePlan, readRecipeRevision, recipeOperationApplied, loadInventoryDeletionState, inventoryDeletionPlan } from './recipe-changes.js';
 import { approveRemittanceAtomic } from './cash-settlement.js';
 import { legacyRemittanceDuplicates, rejectLegacyDuplicateAtomic } from './remittance-review.js';
-import { canOpenWorkspacePage } from './workspace-access-model.js';
+import { canOpenWorkspacePage,configuredPermissions } from './workspace-access-model.js';
 import { createLogisticsFeed } from './logistics-feed.js';
 import { commitDispatch, transitionDispatch } from './dispatch-safety.js';
 import { initManagerDialogs } from './manager-dialogs.js';
@@ -10678,16 +10682,19 @@ window.loadPayrollGenerator = async function() {
         const prSnap = await window.getDocs(prQ);
         let paidRecords = {};
         prSnap.forEach(docSnap => { paidRecords[docSnap.data().staffName] = docSnap.data().frozenData; });
+        window.paidPayrollSnapshots ||= new WeakSet();
+        Object.values(paidRecords).forEach(snapshot=>{if(snapshot&&typeof snapshot==='object')window.paidPayrollSnapshots.add(snapshot);});
 
         const staffSnap = await window.getDocs(window.collection(window.db, "cashiers"));
         const ledgerSnap = await window.getDocs(window.collection(window.db, "staff_ledger"));
-        let staffDict = {}; 
+        let staffDict = {}, staffNameById = {};
         let activeStaffNames = []; // Used for mapping typos
         
         staffSnap.forEach(d => { 
             let data = d.data();
             let masterName = data.cashierName;
             staffDict[masterName] = data; 
+            staffNameById[d.id] = masterName;
             
             // Only active staff can absorb typo logs!
             if (data.status !== 'Resigned' && data.pin !== 'REVOKED') {
@@ -10748,9 +10755,11 @@ window.loadPayrollGenerator = async function() {
             return hour + (minute / 60);
         };
 
-        attSnap.forEach(docSnap => {
-            let log = docSnap.data();
-            let name = resolveStaffName(log.staffName); // 🔥 Apply Fuzzy Matcher immediately
+        const attendanceRecords=[];
+        attSnap.forEach(docSnap=>attendanceRecords.push({...docSnap.data(),id:docSnap.id}));
+        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>staffNameById[log.staffId]||resolveStaffName(log.staffName),frozenNames:Object.keys(paidRecords)});
+        payrollPlan.logs.forEach(log => {
+            let name = log.payrollStaffName;
             if (!name) return;
             
             if (!staffData[name]) {
@@ -10895,6 +10904,14 @@ window.loadPayrollGenerator = async function() {
             }
         });
 
+        for (const review of payrollPlan.reviews) {
+            const name=review.name;
+            const row=staffData[name] ||= {branch:staffDict[name]?.branch||review.records[0]?.branch||'Unknown',totalHours:0,shiftsWorked:0,nightShifts:0,nightBonusTotal:0,holidayPayTotal:0,foodDeductions:0,cashAdvances:0,loans:0,ledgerId:null,sss:0,pagibig:0,philhealth:0,lateDeduction:0,logs:[]};
+            row.attendanceReviewRequired=true;row.attendanceReviewReasons=[review.reason];
+            const at=review.records.map(log=>attendanceMillis(log.timestamp)).find(Number.isFinite);
+            row.logs.push({date:Number.isFinite(at)?new Date(at).toLocaleDateString('en-PH',{month:'short',day:'numeric'}):'Date unavailable',in:'HR REVIEW',out:'HELD',hrs:'0.00',remark:'<span style="color:#b45309;font-weight:bold">'+escapeHtml(review.reason)+'</span>',lateMins:0,needsAttendanceReview:true,attendanceLogIds:review.recordIds});
+        }
+
         for (let pendingName in activeShifts) {
             let missedIn = activeShifts[pendingName].time;
             if (staffData[pendingName] && missedIn >= trueStartDate) {
@@ -11005,6 +11022,7 @@ window.loadPayrollGenerator = async function() {
                         straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: staffDict[name] || null, start: startDateRaw, end: endDateRaw,
+                        attendanceReviewRequired:!!d.attendanceReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
                     d = window.globalPayrollCache[name];
@@ -11013,7 +11031,7 @@ window.loadPayrollGenerator = async function() {
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
                 let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0);
                 let estNet = estGross - totalDeduct;
-                if (estNet > 0) masterPayrollTotal += estNet;
+                if (estNet > 0 && !d.attendanceReviewRequired) masterPayrollTotal += estNet;
                 
                 const displayedNightBonus = d.nightBonus ?? d.nightBonusTotal ?? 0;
                 let bonusLabel = displayedNightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${displayedNightBonus} Mid/Night Bonus</span>` : '';
@@ -11032,7 +11050,7 @@ window.loadPayrollGenerator = async function() {
                     <tr style="border-bottom: 1px dashed #e2e8f0; ${isPaid ? "background: #f8fafc; opacity: 0.85;" : ""}">
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
-                        <td style="padding: 12px; font-weight: bold;">${(d.hours ?? d.totalHours ?? 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">${d.attendanceReviewRequired ? 'Held for HR review' : (d.hours ?? d.totalHours ?? 0).toFixed(2)+' hrs'} ${bonusLabel} ${straightLabel} ${holLabel}</td>
                         <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
@@ -11064,11 +11082,16 @@ window.openPayslipModal = async function(staffName) {
     
     let finalizeBtn = document.getElementById('btnFinalizePayslip');
     if (finalizeBtn) {
-        if (data.isPaid) {
+        if (data.isPaid || window.paidPayrollSnapshots?.has(data)) {
             finalizeBtn.innerText = "✅ Paid & Done!";
             finalizeBtn.disabled = true;
             finalizeBtn.style.background = "#16a34a"; 
             finalizeBtn.style.cursor = "not-allowed";
+        } else if (data.attendanceReviewRequired) {
+            finalizeBtn.innerText = 'Attendance review required';
+            finalizeBtn.disabled = true;
+            finalizeBtn.style.background = '#b45309';
+            finalizeBtn.style.cursor = 'not-allowed';
         } else {
             finalizeBtn.innerText = "✅ Mark Paid & Auto-Deduct";
             finalizeBtn.disabled = false;
@@ -11222,6 +11245,11 @@ window.recalcPayslip = function() {
 window.finalizePayslip = async function() {
     let data = window.currentPayslipData;
     if (!data) return;
+    if (data.isPaid || window.paidPayrollSnapshots?.has(data)) return Swal.fire('Payslip already paid','This saved payslip is complete. Its frozen figures have not changed.','info');
+    if (data.attendanceReviewRequired) {
+        Swal.fire('Payroll held for HR review','Confirm the linked attendance records in Human Resources, then regenerate this unpaid preview before payment.','warning');
+        return;
+    }
     
     let netPayStr = document.getElementById('psNetPay').innerText.replace(/,/g, '');
     let finalNetPay = parseFloat(netPayStr) || 0;
@@ -11927,16 +11955,19 @@ window.generateAutoPayslips = async function() {
         const prSnap = await getDocs(prQ);
         let paidRecords = {};
         prSnap.forEach(docSnap => { paidRecords[docSnap.data().staffName] = docSnap.data().frozenData; });
+        window.paidPayrollSnapshots ||= new WeakSet();
+        Object.values(paidRecords).forEach(snapshot=>{if(snapshot&&typeof snapshot==='object')window.paidPayrollSnapshots.add(snapshot);});
 
         const staffSnap = await getDocs(collection(db, "cashiers"));
         const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
-        let staffDict = {}; 
+        let staffDict = {}, staffNameById = {};
         let nameMap = {}; 
         
         staffSnap.forEach(d => { 
             let data = d.data();
             let masterName = data.cashierName;
             staffDict[masterName] = data; 
+            staffNameById[d.id] = masterName;
             
             nameMap[masterName.toLowerCase()] = masterName;
             let stripped = masterName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim().toLowerCase();
@@ -11956,14 +11987,16 @@ window.generateAutoPayslips = async function() {
         let staffData = {}; 
         let activeShifts = {}; 
 
-        attSnap.forEach(docSnap => {
-            let log = docSnap.data();
+        const attendanceRecords=[];
+        attSnap.forEach(docSnap=>attendanceRecords.push({...docSnap.data(),id:docSnap.id}));
+        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>staffNameById[log.staffId]||nameMap[String(log.staffName||'').toLowerCase()]||nameMap[String(log.staffName||'').toLowerCase().replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi,'').trim()]||log.staffName,frozenNames:Object.keys(paidRecords)});
+        payrollPlan.logs.forEach(log => {
             let rawName = log.staffName;
             if (!rawName) return;
 
             let lowerName = rawName.toLowerCase();
             let strippedName = lowerName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim();
-            let name = nameMap[lowerName] || nameMap[strippedName] || rawName;
+            let name = log.payrollStaffName || nameMap[lowerName] || nameMap[strippedName] || rawName;
             
             if (!staffData[name]) {
                 staffData[name] = { branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
@@ -12097,6 +12130,14 @@ window.generateAutoPayslips = async function() {
             }
         });
 
+        for (const review of payrollPlan.reviews) {
+            const name=review.name;
+            const row=staffData[name] ||= {branch:staffDict[name]?.branch||review.records[0]?.branch||'Unknown',totalHours:0,shiftsWorked:0,nightShifts:0,nightBonusTotal:0,holidayPayTotal:0,foodDeductions:0,cashAdvances:0,loans:0,ledgerId:null,sss:0,pagibig:0,philhealth:0,lateDeduction:0,logs:[]};
+            row.attendanceReviewRequired=true;row.attendanceReviewReasons=[review.reason];
+            const at=review.records.map(log=>attendanceMillis(log.timestamp)).find(Number.isFinite);
+            row.logs.push({date:Number.isFinite(at)?new Date(at).toLocaleDateString('en-PH',{month:'short',day:'numeric'}):'Date unavailable',in:'HR REVIEW',out:'HELD',hrs:'0.00',remark:'<span style="color:#b45309;font-weight:bold">'+escapeHtml(review.reason)+'</span>',lateMins:0,needsAttendanceReview:true,attendanceLogIds:review.recordIds});
+        }
+
         for (let pendingName in activeShifts) {
             let missedIn = activeShifts[pendingName].time;
             if (staffData[pendingName]) {
@@ -12190,6 +12231,7 @@ window.generateAutoPayslips = async function() {
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: staffDict[name] || null, start: startInput, end: endInput,
+                        attendanceReviewRequired:!!d.attendanceReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
                     d = window.globalPayrollCache[name]; 
@@ -12198,7 +12240,7 @@ window.generateAutoPayslips = async function() {
                 let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
                 let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0) + (d.perfBonus || 0);
                 let estNet = estGross - totalDeduct;
-                if (estNet > 0) masterPayrollTotal += estNet;
+                if (estNet > 0 && !d.attendanceReviewRequired) masterPayrollTotal += estNet;
                 
                 const displayedNightBonus = d.nightBonus ?? d.nightBonusTotal ?? 0;
                 let bonusLabel = displayedNightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${displayedNightBonus} Mid/Night Bonus</span>` : '';
@@ -12220,7 +12262,7 @@ window.generateAutoPayslips = async function() {
                     <tr style="border-bottom: 1px dashed #e2e8f0; ${isPaid ? "background: #f8fafc; opacity: 0.85;" : ""}">
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
-                        <td style="padding: 12px; font-weight: bold;">${(d.hours ?? d.totalHours ?? 0).toFixed(2)} hrs ${bonusLabel} ${straightLabel} ${holLabel} ${perfLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">${d.attendanceReviewRequired ? 'Held for HR review' : (d.hours ?? d.totalHours ?? 0).toFixed(2)+' hrs'} ${bonusLabel} ${straightLabel} ${holLabel} ${perfLabel}</td>
                         <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
@@ -20971,8 +21013,7 @@ setInterval(() => {
 // 🖨️ UNIVERSAL HR PDF CONTRACT GENERATOR (WITH SIGNATURE & IDs)
 // ========================================================
 window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) {
-    let dailySalary = parseFloat((data.hourlyRate || 0) * 8).toFixed(2);
-    if (dailySalary === "0.00" && data.dailyRate) dailySalary = parseFloat(data.dailyRate).toFixed(2);
+    let dailySalary = dailyStaffRate(data) == null ? 'Rate not set' : dailyStaffRate(data).toFixed(2);
 
     let branchAddress = "Davao City, Philippines";
     if (data.branch === 'Cabantian') branchAddress = "Blk 14, Lot 6, Deca Homes Subdivision, Barangay Cabantian, Davao City";
@@ -24582,6 +24623,9 @@ runManagerDomReady(() => {
 // ========================================================
 
 window.addNewStaff = function() {
+    window.staffProfileFormGeneration=(window.staffProfileFormGeneration || 0)+1;window.staffProfileSaveOwner=null;
+    const saveButton=document.getElementById('btnSaveEmpProfile');if(saveButton){saveButton.disabled=false;saveButton.innerText='💾 Save Data';}
+    window.staffProfileBaseline={id:'',exists:false,rate:null};window.pendingEmployeeProfileRef=null;
     const setVal = (id, val) => { let el = document.getElementById(id); if(el) el.value = val; };
     const setCheck = (id, val) => { let el = document.getElementById(id); if(el) el.checked = val; };
 
@@ -24625,6 +24669,9 @@ window.addNewStaff = function() {
 window.openEmployeeProfile = function(docId) {
     let data = window.globalStaffData[docId];
     if (!data) return;
+    window.staffProfileFormGeneration=(window.staffProfileFormGeneration || 0)+1;window.staffProfileSaveOwner=null;
+    const saveButton=document.getElementById('btnSaveEmpProfile');if(saveButton){saveButton.disabled=false;saveButton.innerText='💾 Save Data';}
+    window.staffProfileBaseline={id:docId,exists:true,rate:dailyStaffRate(data)};window.pendingEmployeeProfileRef=null;
 
     const setVal = (id, val) => { let el = document.getElementById(id); if(el) el.value = val; };
     const setHtml = (id, val) => { let el = document.getElementById(id); if(el) el.innerHTML = val; };
@@ -24714,9 +24761,12 @@ window.openEmployeeProfile = function(docId) {
     // Render History
     let tbody = document.getElementById('empProfileHistoryBody');
     if (tbody) tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; padding: 15px;">Loading...</td></tr>';
+    const profileGeneration=window.staffProfileFormGeneration,profileActorUid=window.auth?.currentUser?.uid,profileActorEmail=window.auth?.currentUser?.email;
+    const currentProfile=()=>window.staffProfileFormGeneration===profileGeneration && window.auth?.currentUser?.uid===profileActorUid && window.auth?.currentUser?.email===profileActorEmail && document.getElementById('empProfileId').value===docId && document.getElementById('employeeProfileModal').style.display!=='none';
 
     window.getDocs(window.query(window.collection(window.db, "staff_deductions"), window.where("staffName", "==", data.cashierName), window.orderBy("dateAdded", "desc"), window.limit(30)))
     .then(snap => {
+        if(!currentProfile())return;
         let histHtml = '';
         snap.forEach(dDoc => {
             let d = dDoc.data();
@@ -24746,62 +24796,41 @@ window.openEmployeeProfile = function(docId) {
         if (tbody) tbody.innerHTML = histHtml || '<tr><td colspan="5" style="text-align: center; padding: 15px; color: #94a3b8;">No deduction history.</td></tr>';
     }).catch(e => {
         console.error(e);
-        if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>';
+        if (currentProfile() && tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>';
     });
 };
 
 window.saveEmployeeProfile = async function() {
+    if(document.getElementById('btnSaveEmpProfile')?.disabled)return;
     let bAssignEl = document.getElementById('empBranchAssign');
     if (window.sessionUser && window.sessionUser.isFranchisee && bAssignEl) bAssignEl.disabled = false;
 
     let docId = document.getElementById('empProfileId').value;
     let name = document.getElementById('empFullName').value.trim();
     let branch = document.getElementById('empBranchAssign').value;
-    let rate = parseFloat(document.getElementById('empHourlyRate').value);
+    let rate = Number(document.getElementById('empHourlyRate').value);
     let newRole = document.getElementById('empRole').value.trim();
     let isWorkingStudent = document.getElementById('staffWorkingStudent').checked;
     let pin = document.getElementById('empPin').value.trim();
     let nightRate = parseFloat(document.getElementById('empNightDiffRate').value) || 0;
 
-    if (!name || isNaN(rate) || !pin || pin.length < 4) {
-        window.ManagerUI.notify("❌ Error: Name, Hourly Rate, and a Password (minimum 4 characters) are strictly required!");
+    if (!name || document.getElementById('empHourlyRate').value.trim()==='' || !Number.isFinite(rate) || rate<0 || !pin || pin.length < 4) {
+        window.ManagerUI.notify('Staff name, valid Daily Rate and a PIN of at least 4 characters are required.');
         if (window.sessionUser && window.sessionUser.isFranchisee && bAssignEl) bAssignEl.disabled = true;
         return;
     }
 
     let btn = document.getElementById('btnSaveEmpProfile');
+    const formGeneration=window.staffProfileFormGeneration || 0,saveOwner={},actorUid=window.auth?.currentUser?.uid,actorEmail=window.auth?.currentUser?.email;
+    let formSelection=docId;window.staffProfileSaveOwner=saveOwner;
+    const sameActor=()=>window.auth?.currentUser?.uid===actorUid && window.auth?.currentUser?.email===actorEmail;
+    const ownsForm=()=>sameActor() && window.staffProfileSaveOwner===saveOwner && (window.staffProfileFormGeneration || 0)===formGeneration && document.getElementById('empProfileId').value===formSelection;
     if (btn) { btn.innerText = "⏳ Generating ID & Saving..."; btn.disabled = true; }
+    try {
+    const baseline=window.staffProfileBaseline?{...window.staffProfileBaseline}:null;
+    if(!baseline || baseline.id!==docId)throw Error('Reopen this staff profile before saving.');
 
     let empId = document.getElementById('profEmpId').value;
-    if (!empId || empId === 'Pending Generation...' || empId === 'undefined') {
-        // 🔥 Updated Branch Codes based on Opening Dates
-        let bCode = branch === 'Cabantian' ? '033025' : (branch === 'Citygate' ? '071424' : (branch === 'Maa' ? '022226' : '101010'));
-        let dHired = document.getElementById('empDateHired').value;
-        let dObj = dHired ? new Date(dHired) : new Date();
-        let mStr = String(dObj.getMonth() + 1).padStart(2, '0');
-        let dStr = String(dObj.getDate()).padStart(2, '0');
-        let yStr = dObj.getFullYear();
-        let dhStr = `${mStr}${dStr}${yStr}`;
-        
-        const q = window.query(window.collection(window.db, "cashiers"), window.where("branch", "==", branch));
-        const snap = await window.getDocs(q);
-        let staffInBranch = [];
-        snap.forEach(d => staffInBranch.push({id: d.id, ...d.data()}));
-        
-        staffInBranch.sort((a, b) => {
-            let dA = a.dateHired ? new Date(a.dateHired).getTime() : new Date('2099-01-01').getTime();
-            let dB = b.dateHired ? new Date(b.dateHired).getTime() : new Date('2099-01-01').getTime();
-            return dA - dB;
-        });
-        
-        let myIndex = staffInBranch.findIndex(s => s.id === docId);
-        let count = (myIndex !== -1) ? (myIndex + 1) : (staffInBranch.length + 1);
-        empId = `${bCode}-${dhStr}-${String(count).padStart(4, '0')}`;
-        document.getElementById('profEmpId').value = empId;
-    }
-
-    if (window.sessionUser && window.sessionUser.isFranchisee && bAssignEl) bAssignEl.disabled = true;
-
     let customDeductionsArray = [];
     document.querySelectorAll('.custom-deduct-row').forEach(row => {
         let n = row.querySelector('.cd-name').value.trim();
@@ -24809,8 +24838,8 @@ window.saveEmployeeProfile = async function() {
         if (n && a > 0) customDeductionsArray.push({ name: n, amount: a });
     });
 
-    let oldData = docId ? window.globalStaffData[docId] : null;
-    let currentHistory = (oldData && oldData.roleHistory) ? oldData.roleHistory : [];
+    let oldData = docId ? {...window.globalStaffData[docId]} : null;
+    let currentHistory = (oldData && oldData.roleHistory) ? [...oldData.roleHistory] : [];
     if (!oldData || oldData.role !== newRole) {
         let dObj = new Date();
         currentHistory.push({ role: newRole, date: dObj.toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) });
@@ -24853,18 +24882,51 @@ window.saveEmployeeProfile = async function() {
         payload.signedContracts = {};
     }
 
-    try {
-        if (docId) {
-            await window.updateDoc(window.doc(window.db, "cashiers", docId), payload);
-            Swal.fire({ toast: true, position: 'top', icon: 'success', title: `✅ Profile updated!`, showConfirmButton: false, timer: 3000, customClass: { popup: 'rounded-xl' }});
-        } else {
-            let newDocRef = await window.addDoc(window.collection(window.db, "cashiers"), payload);
-            docId = newDocRef.id;
-            document.getElementById('empProfileId').value = docId; 
-            Swal.fire({ toast: true, position: 'top', icon: 'success', title: `✅ Added to database!`, showConfirmButton: false, timer: 3000, customClass: { popup: 'rounded-xl' }});
+    const wasNew=!docId,reference=docId?window.doc(window.db,'cashiers',docId):(window.pendingEmployeeProfileRef ||= window.doc(window.collection(window.db,'cashiers')));
+    if (!empId || empId === 'Pending Generation...' || empId === 'undefined') {
+        // 🔥 Updated Branch Codes based on Opening Dates
+        let bCode = branch === 'Cabantian' ? '033025' : (branch === 'Citygate' ? '071424' : (branch === 'Maa' ? '022226' : '101010'));
+        let dHired = payload.dateHired;
+        let dObj = dHired ? new Date(dHired) : new Date();
+        let mStr = String(dObj.getMonth() + 1).padStart(2, '0');
+        let dStr = String(dObj.getDate()).padStart(2, '0');
+        let yStr = dObj.getFullYear();
+        let dhStr = `${mStr}${dStr}${yStr}`;
+
+        const q = window.query(window.collection(window.db, "cashiers"), window.where("branch", "==", branch));
+        const snap = await window.getDocs(q);
+        let staffInBranch = [];
+        snap.forEach(d => staffInBranch.push({id: d.id, ...d.data()}));
+
+        staffInBranch.sort((a, b) => {
+            let dA = a.dateHired ? new Date(a.dateHired).getTime() : new Date('2099-01-01').getTime();
+            let dB = b.dateHired ? new Date(b.dateHired).getTime() : new Date('2099-01-01').getTime();
+            return dA - dB;
+        });
+
+        let myIndex = staffInBranch.findIndex(s => s.id === docId);
+        let count = (myIndex !== -1) ? (myIndex + 1) : (staffInBranch.length + 1);
+        empId = `${bCode}-${dhStr}-${String(count).padStart(4, '0')}`;
+        if(ownsForm())document.getElementById('profEmpId').value = empId;
+    }
+
+    if (ownsForm() && window.sessionUser?.isFranchisee && bAssignEl) bAssignEl.disabled = true;
+    payload.empId=empId;
+    if(!sameActor())throw Error('The Google account changed before this staff save. Reopen the profile.');
+    const operationId=staffProfileOperation(window,payload,reference.id);
+        const saved=await saveStaffProfileAtomic(window,reference.id,payload,{operationId,expectedExists:baseline.exists,expectedRate:baseline.rate});
+        docId=reference.id;
+        if(ownsForm()){
+            document.getElementById('empProfileId').value=docId;formSelection=docId;
+            if(window.pendingEmployeeProfileRef===reference)window.pendingEmployeeProfileRef=null;
+            window.staffProfileBaseline={id:docId,exists:true,rate};
+            Swal.fire({toast:true,position:'top',icon:'success',title:wasNew?'Staff profile added':'Staff profile updated',showConfirmButton:false,timer:3000});
         }
-        
-        window.globalStaffData[docId] = payload;
+        if(!sameActor())return;
+        // Retire only this confirmed attempt; another form's pending save and retry stay intact.
+        for(const [key,pending] of window.staffProfilePending || [])if(pending===operationId)window.staffProfilePending.delete(key);
+
+        window.globalStaffData[docId] = saved.profile;
         window.loadHRModule(); 
 
         // 🔥 THE MEMORY BRIDGE: Instantly sync the profile changes to the Schedule Calendar!
@@ -24901,9 +24963,13 @@ window.saveEmployeeProfile = async function() {
         }
 
     } catch (e) {
-        console.error(e); Swal.fire('Error', 'Failed to save data.', 'error');
+        console.error(e); if(ownsForm())Swal.fire('Profile was not saved',e.message,'error');
     } finally {
-        if(btn) { btn.innerText = "💾 Save Data"; btn.disabled = false; }
+        if(ownsForm()){
+            if(btn) { btn.innerText = "💾 Save Data"; btn.disabled = false; }
+            if(window.sessionUser?.isFranchisee && bAssignEl)bAssignEl.disabled=true;
+            window.staffProfileSaveOwner=null;
+        }
     }
 };
 
@@ -27377,14 +27443,18 @@ function tkReconcileSale(record, targetShift, inventory, effects, owner, note) {
   }
   async function grantMonitorAccess(managerId) {
     if (!owner()) throw new Error('Only the owner can grant monitor access');
-    const snap = await window.getDoc(window.doc(window.db, 'hq_managers', managerId));
+    const actorUid=window.auth.currentUser.uid;
+    if(!actorUid)throw new Error('A verified Owner account is required.');
+    const snap = await window.getDocFromServer(window.doc(window.db, 'hq_managers', managerId));
     if (!snap.exists()) throw new Error('Manager not found');
-    const data = snap.data(), email = String(data.email || '').trim();
+    if(!owner() || window.auth.currentUser.uid!==actorUid)throw new Error('The verified Owner account changed. Review this access again.');
+    const data = snap.data(), email = String(data.email || '').trim().toLowerCase(),permissions=configuredPermissions(data);
     if (!email || email.includes('/')) throw new Error('Invalid Manager email');
-    const branches = data.role !== 'Franchisee' && data.permissions?.includes('all') ? ['All'] :
-      String(data.assignedBranch || '').split(',').map(value => value.trim()).filter(Boolean);
-    if (!branches.length) throw new Error('Assign this Manager a branch first');
-    await window.setDoc(window.doc(window.db, 'hq_email_access', email), { active: true, allowedBranches: branches });
+    const franchise=['franchisee','franchise owner'].includes(String(data.role || '').trim().toLowerCase());
+    const branches = !franchise && permissions.includes('all') ? ['All'] : [...new Set((Array.isArray(data.assignedBranch)?data.assignedBranch:String(data.assignedBranch || '').split(',')).map(value=>String(value).trim()).filter(Boolean))];
+    const active=data.active!==false && data.blocked!==true && !['blocked','disabled','inactive','revoked'].includes(String(data.status || '').trim().toLowerCase());
+    if (active && (!branches.length || franchise && branches.includes('All'))) throw new Error('Assign this account to its permitted branches first');
+    await window.setDoc(window.doc(window.db, 'hq_email_access', email), { active, allowedBranches: branches,permissions,updatedAt:window.serverTimestamp(),updatedByUid:actorUid });
   }
   window.TKCashierStatus = { start, render, status, approveEnrollment, grantMonitorAccess };
 
@@ -27683,3 +27753,5 @@ window.switchView = function(view,...args) {
 installDeviceFleet(window.deviceFleetConnection);
 installFranchiseWorkspace();
 installMonthlyBills();
+installStaffRateHistory(window,document);
+installMasterEmployeeDocuments(window,{d:document});

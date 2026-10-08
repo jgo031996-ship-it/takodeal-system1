@@ -1,4 +1,6 @@
 import { imageFor } from './cashier-data.js';
+import { installAttendanceCamera, createAttendanceStreamSession } from './attendance-camera.js';
+import {readStaffRecords, latestAttendance, attendanceMillis, attendanceKind, closeAttendanceShift} from './attendance-reconcile.js';
 import { createRecipeFeed } from './recipe-feed.js';
 import { installMealCheckout } from './meal-checkout.js';
 import { createShiftCloseDraftStore, countValue } from './shift-close-draft.js';
@@ -16,7 +18,7 @@ import {pendingDueNotices, clockInRestriction, startPhilippineDayTimer, acknowle
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer, getDocFromServer, startAfter } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer, getDocFromServer, startAfter, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { installSaleSafety } from './pos-checkout.js';
 import { saleIdentity, receiptIngredientBurn } from './pos-safety.js';
 // 🔥 NEW: Import Firebase Storage
@@ -2975,33 +2977,17 @@ let cameraStream = null;
 let currentBranchStaffCache = []; // DECLARED ONLY ONCE HERE!
 
 // ==========================================
-// 🤖 FACE RECOGNITION AI ENGINE
+// Camera photo quality. Identity continues to require the staff PIN.
 // ==========================================
-window.isFaceAiReady = false;
-
-window.initFaceAI = async function() {
-    let statusEl = document.getElementById('faceAiStatus');
-    if (window.isFaceAiReady) {
-        if(statusEl) statusEl.innerHTML = "🤖 Face AI Ready. Look at the camera.";
-        return;
-    }
-    try {
-        if(statusEl) statusEl.innerHTML = "🤖 Downloading AI Models... Please wait.";
-        // We pull the raw models from the developer's public CDN
-        const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
-        await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
-        
-        window.isFaceAiReady = true;
-        if(statusEl) statusEl.innerHTML = "🤖 Face AI Ready. Select your name.";
-    } catch(e) {
-        console.error("Face AI Error:", e);
-        if(statusEl) statusEl.innerHTML = "⚠️ Face AI failed to load. Use PIN.";
-    }
-};
+installAttendanceCamera(window, document);
+const attendanceCamera = createAttendanceStreamSession({mediaDevices:navigator.mediaDevices,
+    onStream:stream=>{window.invalidateAttendanceCamera();cameraStream=stream;const video=document.getElementById('clockVideo');if(video){video.srcObject=stream;if(stream)video.play?.().catch(()=>{});}},
+    onStatus:(message,ready)=>{const node=document.getElementById('faceAiStatus');if(node){node.textContent=message;node.dataset.state=ready?'ready':'error';}}
+});
+let attendanceModalEpoch = 0;
 
 window.openTimeClockModal = async function() {
+    const modalEpoch = ++attendanceModalEpoch;
     document.getElementById('timeClockModal').style.display = 'flex';
     document.getElementById('clockStaffPin').value = ''; 
     let select = document.getElementById('clockStaffName');
@@ -3016,28 +3002,29 @@ window.openTimeClockModal = async function() {
         let html = '<option value="">-- Select Your Name --</option>';
         
         snap.forEach(docSnap => {
-            let data = docSnap.data();
+            let data = {...docSnap.data(),id:docSnap.id};
             currentBranchStaffCache.push(data); 
             html += `<option value="${data.cashierName}">${data.cashierName}</option>`;
         });
+        if (modalEpoch !== attendanceModalEpoch) return;
+        window.currentBranchStaffCache = currentBranchStaffCache;
         select.innerHTML = html;
-        
-        cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
-        document.getElementById('clockVideo').srcObject = cameraStream;
-        
-        // 🤖 Start downloading the AI Brain in the background
-        window.initFaceAI();
+        window.prepareAttendanceCamera().catch(()=>{});
+        await attendanceCamera.start();
         
     } catch (e) { 
         console.error(e); 
-        alert("⚠️ Error loading Time Clock. Check Camera permissions."); 
+        alert("The staff list could not load. Check the connection and reopen Time Clock.");
     }
 };
 
 window.closeTimeClock = function() {
-    if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+    attendanceModalEpoch++;
+    attendanceCamera.stop();
     document.getElementById('timeClockModal').style.display = 'none';
 };
+document.addEventListener('visibilitychange',()=>{if(document.hidden)attendanceCamera.stop();else if(document.getElementById('timeClockModal')?.style.display==='flex'){attendanceCamera.start();window.prepareAttendanceCamera().catch(()=>{});}});
+window.addEventListener('pagehide',()=>attendanceCamera.stop());
 
 window.isProcessingAttendance = false;
 
@@ -3081,14 +3068,15 @@ window.submitAttendance = async function(type) {
         return;
     }
 
-    let staffProfile = window.currentBranchStaffCache ? window.currentBranchStaffCache.find(s => s.cashierName === staffName) : null;
+    const cachedMatches = type === 'TIME OUT' ? (window.currentBranchStaffCache || []).filter(row=>row.cashierName===staffName && row.id) : [];
+    let staffProfile = cachedMatches.length === 1 ? cachedMatches[0] : null;
     
     if (!staffProfile) {
         try {
             const staffQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
-            const staffSnap = await getDocs(staffQ);
+            const staffSnap = type === 'TIME IN' ? await getDocsFromServer(staffQ) : await getDocs(staffQ);
             
-            if (!staffSnap.empty) {
+            if (staffSnap.docs.length === 1) {
                 staffProfile = {...staffSnap.docs[0].data(),id:staffSnap.docs[0].id};
             } else {
                 alert(`❌ Error: ${staffName}'s profile could not be found in the database. Please contact the Manager.`);
@@ -3103,69 +3091,11 @@ window.submitAttendance = async function(type) {
         }
     }
     
-    // ==========================================
-    // 🤖 FACE AI VERIFICATION & REGISTRATION
-    // ==========================================
-    let faceVerified = false;
-
-    if (window.isFaceAiReady) {
-        let statusEl = document.getElementById('faceAiStatus');
-        statusEl.innerHTML = "🤖 Scanning facial geometry... Hold still.";
-        const videoEl = document.getElementById('clockVideo');
-        
-        try {
-            const detection = await faceapi.detectSingleFace(videoEl).withFaceLandmarks().withFaceDescriptor();
-
-            if (detection) {
-                if (staffProfile.faceDescriptor && staffProfile.faceDescriptor.length > 0) {
-                    const savedDescriptor = new Float32Array(staffProfile.faceDescriptor);
-                    const distance = faceapi.euclideanDistance(detection.descriptor, savedDescriptor);
-                    
-                    if (distance < 0.55) {
-                        faceVerified = true;
-                        statusEl.innerHTML = "✅ Identity Verified!";
-                    } else {
-                        alert(`❌ AI Face Mismatch! (Security Distance: ${distance.toFixed(2)})\n\nYou do not match the registered face for ${staffName}.\nIf you are ${staffName}, please enter your PIN to bypass.`);
-                        statusEl.innerHTML = "🤖 Face AI Ready.";
-                    }
-                } else {
-                    if (inputPin && staffProfile.pin === inputPin) {
-                        const cashierQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
-                        const cashierSnap = await getDocs(cashierQ);
-                        if (!cashierSnap.empty) {
-                            await updateDoc(cashierSnap.docs[0].ref, {
-                                faceDescriptor: Array.from(detection.descriptor)
-                            });
-                            alert("✅ Face ID Successfully Registered!\n\nFor your next shift, you can leave the PIN blank and just look at the camera.");
-                            faceVerified = true;
-                        }
-                    } else {
-                        alert("🤖 Face Registration Required!\n\nYou do not have a Face ID saved yet. Please enter your 4-Digit PIN to register your face securely.");
-                        statusEl.innerHTML = "🤖 Enter PIN to register face.";
-                        unlockUI();
-                        return;
-                    }
-                }
-            } else {
-                if (!confirm("❌ AI could not detect a face clearly. Please ensure you are in a well-lit area and looking at the camera.\n\nClick OK to bypass the AI and use your manual PIN.")) {
-                    statusEl.innerHTML = "🤖 Ready. Look at camera.";
-                    unlockUI();
-                    return;
-                }
-            }
-        } catch(e) { console.error("AI processing error:", e); }
-    }
-
-    // ==========================================
-    // 🔒 FALLBACK: MANUAL PIN VERIFICATION
-    // ==========================================
-    if (!faceVerified) {
-        if (!inputPin || staffProfile.pin !== inputPin) {
-            alert("❌ INTRUDER ALERT: Incorrect PIN for " + staffName);
-            document.getElementById('clockStaffPin').value = ''; 
-            unlockUI();
-            return;
-        }
+    // PIN verifies identity; the Time In photo check never replaces it.
+    if (!inputPin || String(staffProfile.pin || '') !== inputPin) {
+        alert('Incorrect PIN for ' + staffName + '. Enter your own staff PIN.');
+        document.getElementById('clockStaffPin').value = '';
+        unlockUI(); return;
     }
 
     // ==========================================
@@ -3290,35 +3220,14 @@ window.submitAttendance = async function(type) {
     // ==========================================
     // 🛡️ ANTI-DOUBLE PUNCH, PENALTIES & HR LOCKS
     // ==========================================
+    const pendingAttendanceRecords = [];
+    let activeTimeIn = null;
     let userLogs = [];
     try {
-        // Try the optimal indexed query first
-        const q = query(collection(db, "attendance_logs"), 
-            where("staffName", "==", staffName), 
-            orderBy("timestamp", "desc"), 
-            limit(1)
-        );
-        const lastLogSnap = await getDocs(q);
-        lastLogSnap.forEach(docSnap => userLogs.push(docSnap.data()));
-    } catch(e) {
-        console.warn("Firebase Index missing. Falling back to unbreakable index-free scan...");
-        // 🔥 THE INDEX-FREE FALLBACK: Grabs the last 3 days and sorts mathematically!
-        let lookBack = new Date();
-        lookBack.setHours(lookBack.getHours() - 72); 
-        
-        const fallbackQ = query(collection(db, "attendance_logs"), where("timestamp", ">=", lookBack));
-        const fallbackSnap = await getDocs(fallbackQ);
-        
-        fallbackSnap.forEach(docSnap => {
-            let data = docSnap.data();
-            if (data.staffName === staffName) {
-                userLogs.push(data);
-            }
-        });
-        
-        // Sort newest first
-        userLogs.sort((a, b) => b.timestamp.toDate().getTime() - a.timestamp.toDate().getTime());
-    }
+        const records = await readStaffRecords({db,collection,query,where,getDocs,getDocsFromServer},staffProfile.id,staffName);
+        const latest = latestAttendance(records,staffProfile.id,staffName);
+        if(latest)userLogs=[latest];
+    } catch(error) { alert(error.message); unlockUI(); return; }
 
     try {
         let lastType = "";
@@ -3328,8 +3237,8 @@ window.submitAttendance = async function(type) {
         if (userLogs.length > 0) {
             let lastLog = userLogs[0]; // The absolute most recent log
             // 🔥 FIX: Make case-insensitive so it perfectly matches the Staff App!
-            lastType = lastLog.type ? lastLog.type.toUpperCase() : ""; 
-            lastTime = lastLog.timestamp.toDate();
+            lastType = attendanceKind(lastLog);
+            lastTime = new Date(attendanceMillis(lastLog.timestamp));
             let now = new Date();
             hoursSinceLastLog = (now - lastTime) / (1000 * 60 * 60);
         }
@@ -3354,8 +3263,9 @@ window.submitAttendance = async function(type) {
 
                     let autoOutTime = new Date(lastTime.getTime() + (9 * 60 * 60 * 1000));
                     
-                    await addDoc(collection(db, "attendance_logs"), {
+                    pendingAttendanceRecords.push({ref:doc(collection(db, 'attendance_logs')),data:{
                         staffName: staffName, 
+                        staffId: staffProfile.id,
                         branch: userLogs[0].branch, 
                         type: "AUTO TIME OUT (Penalty)", 
                         timestamp: autoOutTime, 
@@ -3365,13 +3275,13 @@ window.submitAttendance = async function(type) {
                         photoBase64: "", 
                         penaltyApplied: true,
                         notes: "Forced Auto-Out. Paid next cut-off."
-                    });
+                    }});
 
-                    await addDoc(collection(db, "manager_alerts"), {
+                    pendingAttendanceRecords.push({ref:doc(collection(db, 'manager_alerts')),data:{
                         type: "ATTENDANCE_PENALTY", branch: localStorage.getItem('takodeal_device_branch') || 'Unknown', cashier: staffName,
                         message: `HR PENALTY: ${staffName} forgot to Time Out yesterday. System auto-closed their shift at 9 hours and applied the 'Paid Next Cut-Off' penalty.`,
                         timestamp: new Date(), isRead: false
-                    });
+                    }});
                 } else {
                     alert(`❌ You are already Timed In!\n\nYou must TIME OUT of your current shift before starting a new one.`);
                     document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
@@ -3390,14 +3300,15 @@ window.submitAttendance = async function(type) {
                 alert(`❌ You just Timed In a few minutes ago!\n\nTo prevent double-shifts and payroll errors, you must wait at least 15 minutes before Timing Out.`);
                 document.getElementById('clockStaffPin').value = ''; unlockUI(); return; 
             }
+            activeTimeIn = userLogs[0];
 
             if (hoursSinceLastLog > 14) {
-                await addDoc(collection(db, "manager_alerts"), {
+                pendingAttendanceRecords.push({ref:doc(collection(db, 'manager_alerts')),data:{
                     type: "ATTENDANCE_ALERT", branch: localStorage.getItem('takodeal_device_branch') || 'Unknown', cashier: staffName,
                     message: `URGENT HR ALERT: ${staffName} just timed out after ${hoursSinceLastLog.toFixed(1)} hours. Straight Duties MUST be logged as two separate shifts.`,
                     timestamp: new Date(), isRead: false
-                });
-                alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit. The Manager has been notified to review this time punch.`);
+                }});
+                alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit. A notice will be saved with your Time Out for HQ review.`);
             }
 
             let isWorkingStudent = staffProfile.isWorkingStudent === true;
@@ -3420,42 +3331,30 @@ window.submitAttendance = async function(type) {
                 }
 
                 let finalBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-                await addDoc(collection(db, "staff_requests"), {
+                pendingAttendanceRecords.push({ref:doc(collection(db, 'staff_requests')),data:{
                     type: "Reason Letter",
                     staffName: staffName,
                     branch: finalBranch,
                     status: "Pending",
                     explanationCause: "Undertime",
                     explanationMessage: `Clocked out early after ${hoursSinceLastLog.toFixed(1)} hours. Reason: ${reason}`,
-                    timestamp: new Date() 
-                });
+                    timestamp: new Date()
+                }});
                 
-                Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Undertime Letter Sent!', showConfirmButton: false, timer: 3000});
+                Swal.fire({toast: true, position: 'top-end', icon: 'info', title: 'Undertime reason ready to save with Time Out', showConfirmButton: false, timer: 3000});
             }
         }
     } catch(e) {
         console.error("Lock Engine Processing Error:", e);
+        alert(e.message || 'Attendance could not be verified. Refresh and try again.');unlockUI();return;
     }
 
     // ==========================================
     // 🌍 GPS GEOFENCING & AUTO-ROUTING
     // ==========================================
-    const video = document.getElementById('clockVideo');
-    const canvas = document.getElementById('clockCanvas');
-    let photoBase64 = "";
-    
-    if (video && canvas && video.videoWidth > 0) {
-        // 🔥 THE COMPRESSOR: Shrink the massive camera feed down to 400px!
-        let targetWidth = 400;
-        let scale = targetWidth / video.videoWidth;
-        let targetHeight = video.videoHeight * scale;
-
-        canvas.width = targetWidth; 
-        canvas.height = targetHeight;
-        canvas.getContext('2d').drawImage(video, 0, 0, targetWidth, targetHeight);
-        
-        // Compress the tiny image into a 50% quality JPEG string
-        photoBase64 = canvas.toDataURL('image/jpeg', 0.5); 
+    if (type === 'TIME IN') {
+        try { await window.prepareAttendanceCamera(); }
+        catch (error) { alert(error.message); unlockUI(); return; }
     }
 
     if (!navigator.geolocation) { 
@@ -3464,6 +3363,7 @@ window.submitAttendance = async function(type) {
     }
 
     navigator.geolocation.getCurrentPosition(async (position) => {
+        const gpsReceivedAt = Date.now();
         const userLat = position.coords.latitude; 
         const userLng = position.coords.longitude;
         
@@ -3520,6 +3420,18 @@ window.submitAttendance = async function(type) {
         }
         
         try {
+            let schedule = null, faceResult = null;
+            if (type === 'TIME OUT' && (!activeTimeIn || activeTimeIn.branch !== finalBranch)) throw Error(`Your active shift is at ${activeTimeIn?.branch||'another branch'}. Record Time Out from that branch or ask HQ to review the location.`);
+            if (type === 'TIME IN') {
+                const scheduleAt = new Date();
+                try { schedule = await createScheduleHistoryStore(window).loadRange(new Date(+scheduleAt - 86400000), new Date(+scheduleAt + 86400000)); }
+                catch (error) { console.warn('Schedule evidence unavailable for this clock-in; payroll review will be required.', error); }
+                faceResult = await window.verifyAttendanceFace();
+                window.assertAttendanceFaceFresh(faceResult);
+                if (Date.now() - gpsReceivedAt > 15000) throw Error('Location verification expired during the camera check. Keep Clock open and try Time In again.');
+            }
+            if (document.getElementById('clockStaffName').value !== staffName || document.getElementById('clockStaffPin').value.trim() !== inputPin || (localStorage.getItem('takodeal_device_branch') || 'Unknown') !== deviceBranch || document.getElementById('timeClockModal').style.display !== 'flex') throw Error('The Time Clock or selected account changed. Open Clock and record attendance again.');
+            const photoBase64 = faceResult ? faceResult.photoBase64 : (window.captureOptionalAttendancePhoto?.() || '');
             const attendanceAt = new Date();
             const attendance = {
                 staffName: staffName, 
@@ -3535,15 +3447,17 @@ window.submitAttendance = async function(type) {
                 photoBase64: photoBase64
             };
             if (type === 'TIME IN') {
-                let schedule = null;
-                try {
-                    schedule = await createScheduleHistoryStore(window).loadRange(new Date(+attendanceAt - 86400000), new Date(+attendanceAt + 86400000));
-                } catch (error) {
-                    console.warn('Schedule evidence unavailable for this clock-in; payroll review will be required.', error);
-                }
+                attendance.faceCheck = faceResult.faceCheck;
                 attendance.scheduleSnapshot = captureAttendanceSchedule(attendanceAt, finalBranch, staffName, schedule, {[staffName]:staffProfile});
             }
-            await addDoc(collection(db, "attendance_logs"), attendance);
+            if (type === 'TIME OUT') {
+                await closeAttendanceShift({db,doc,runTransaction},{start:activeTimeIn,attendance,records:pendingAttendanceRecords,assertCurrent:()=>{if(document.getElementById('clockStaffName').value!==staffName || document.getElementById('clockStaffPin').value.trim()!==inputPin || document.getElementById('timeClockModal').style.display!=='flex' || localStorage.getItem('takodeal_device_branch')!==deviceBranch)throw Error('The Time Clock account changed. Record attendance again.');}});
+            } else if (pendingAttendanceRecords.length) {
+                const batch=writeBatch(db);
+                pendingAttendanceRecords.forEach(row=>batch.set(row.ref,row.data));
+                batch.set(doc(collection(db, 'attendance_logs')),attendance);
+                await batch.commit();
+            } else await addDoc(collection(db, "attendance_logs"), attendance);
             
             localStorage.setItem(punchCooldownKey, Date.now());
             
@@ -3558,7 +3472,7 @@ window.submitAttendance = async function(type) {
 
             if (typeof window.closeTimeClock === 'function') window.closeTimeClock();
         } catch (error) { 
-            console.error(error); alert("❌ Failed to log attendance."); 
+            console.error(error); alert(error.message || 'Attendance could not be saved. Check the connection and try again.');
         } 
         finally { unlockUI(); }
     }, (error) => { 
@@ -4725,7 +4639,7 @@ window.openDeliveryHistoryModal = async function() {
             grouped[key].items.push(item);
         });
 
-        let html = `<div style="max-height: 65vh; overflow-y: auto; text-align: left; padding-right: 5px;">`;
+        let html = `<div class="cashier-stock-delivery-list" role="region" aria-label="Delivery history" style="text-align: left; padding-right: 5px;">`;
 
         if (Object.keys(grouped).length === 0) {
             html += `<div style="text-align:center; padding: 40px; color: #64748b; font-weight: bold; font-size: 15px;">No past deliveries found.</div>`;
@@ -4802,7 +4716,7 @@ window.openDeliveryHistoryModal = async function() {
             width: 850,
             showCloseButton: true,
             showConfirmButton: false,
-            customClass: { popup: 'rounded-2xl shadow-2xl' }
+            customClass: { popup: 'rounded-2xl shadow-2xl cashier-stock-delivery-popup' }
         });
 
     } catch (e) {
@@ -9284,13 +9198,13 @@ document.addEventListener("DOMContentLoaded", () => {
 // ========================================================
 // ⚡ EMERGENCY RESTORE: LIGHTNING SHIFT OPEN ENGINE
 // ========================================================
-window.openNewShift = async function (branch, cashier, startCash) {
+window.openNewShift = async function (branch, cashier, startCash, {isCurrent=()=>true}={}) {
   try {
     const policy = await readBranchPolicy(window,branch);
     if (policy.isMallBranch) startCash = await readMallOpeningCash(window,branch);
     if (!Number.isFinite(startCash) || startCash < 0) throw new Error('Enter a valid starting cash amount.');
-    let safeCashier = localStorage.getItem('cashierName') || localStorage.getItem('activeCashier') || cashier || 'Unknown';
-    
+    let safeCashier = cashier || localStorage.getItem('cashierName') || localStorage.getItem('activeCashier') || 'Unknown';
+    if (!isCurrent()) throw new Error('The cashier or branch changed. Reopen the shift form.');
     // Save to Firebase
     const docRef = await window.addDoc(window.collection(window.db, "shifts"), {
       branch: branch,
@@ -9324,11 +9238,21 @@ window.submitOpenShift = async function() {
             : (localStorage.getItem('cashierName') || 'Unknown');
 
         let startEl = document.getElementById('inputStartingCash');
-        let startCash = (startEl && parseFloat(startEl.value)) ? parseFloat(startEl.value) : 0;
+        let startCash = Number(startEl?.value);
         let lastEndingCash = window.lastEndingCash || 0;
         let branch = localStorage.getItem('takodeal_device_branch') || (window.sessionUser ? window.sessionUser.branch : 'Unknown');
+        const isCurrent = () => localStorage.getItem('takodeal_device_branch') === branch && window.sessionUser?.branch === branch &&
+            (window.sessionUser?.cashierName || localStorage.getItem('cashierName') || 'Unknown') === shiftName;
+        const assertCurrent = () => { if (!isCurrent()) throw new Error('The cashier or branch changed. Reopen the shift form.'); };
+        assertCurrent();
+        if (window.currentShift?.active) {
+            window.updateShiftUI?.(window.currentShift);
+            window.closeModal?.('shiftModal');
+            return;
+        }
 
         const policy = await readBranchPolicy(window,branch);
+        assertCurrent();
         if (policy.isMallBranch) { startCash = await readMallOpeningCash(window,branch); if (startEl) startEl.value = startCash; lastEndingCash = startCash; }
         else {
             const previous = await window.getDocsFromServer(window.query(window.collection(window.db, 'shifts'), window.where('branch', '==', branch), window.where('status', '==', 'Closed'), window.orderBy('endTime', 'desc'), window.limit(1)));
@@ -9339,6 +9263,9 @@ window.submitOpenShift = async function() {
                 window.lastShiftDataForDispute = { ...row.data(), id: row.id };
             } else { lastEndingCash = 0; window.lastEndingCash = 0; window.lastShiftDataForDispute = null; }
         }
+        assertCurrent();
+        if (!Number.isFinite(startCash) || startCash < 0 || (!policy.isMallBranch && !String(startEl?.value ?? '').trim()))
+            throw new Error('Enter the physical starting cash amount. Use 0 only if the drawer is empty.');
         // 1. CASH DISPUTE CHECK
         if (startCash !== lastEndingCash && lastEndingCash > 0) {
             let diff = lastEndingCash - startCash;
@@ -9358,6 +9285,7 @@ window.submitOpenShift = async function() {
                 });
 
                 if (result.isConfirmed || result.isDenied) {
+                    assertCurrent();
                     await recordOpeningCashReview(window, {
                         branch, cashier: shiftName, previousShiftId: window.lastShiftDataForDispute?.id,
                         expectedCash: lastEndingCash, startingCash: startCash,
@@ -9429,6 +9357,7 @@ window.submitOpenShift = async function() {
                 if (btn) { btn.innerText = origText; btn.disabled = false; }
                 return;
             }
+            assertCurrent();
 
             // Sync stock disputes in background so UI doesn't hang!
             Promise.all(stockDisputes.map(async (d) => {
@@ -9462,8 +9391,9 @@ window.submitOpenShift = async function() {
         }
 
         // 3. CREATE SHIFT & INSTANT MEMORY UNLOCK (Bypasses slow cloud download)
-        if (localStorage.getItem('takodeal_device_branch') !== branch) throw new Error('The branch changed during drawer review. Reopen the shift form for the approved branch.');
-        let shiftId = await window.openNewShift(branch, shiftName, startCash);
+        assertCurrent();
+        let shiftId = await window.openNewShift(branch, shiftName, startCash, {isCurrent});
+        assertCurrent();
         
         if (shiftId) {
             let newShiftObj = {
@@ -9477,16 +9407,20 @@ window.submitOpenShift = async function() {
             // Immediate local memory assignment
             window.currentShift = newShiftObj;
             window.activeShiftDetails = newShiftObj;
-            localStorage.setItem('currentShiftId', shiftId);
+            window.shiftStatusGeneration = (window.shiftStatusGeneration || 0) + 1;
+            try { localStorage.setItem('currentShiftId', shiftId); }
+            catch (error) { console.warn('Shift is open; its local ID could not be cached:', error); }
 
             // Instant UI switch (no cloud roundtrips)
-            let topBtn = document.getElementById('btnTopShift');
-            let lock = document.getElementById('shiftLockout');
-            let placeBtn = document.getElementById('btnMainPlaceOrder');
-            
-            if (topBtn) topBtn.innerText = "🟢 Active Shift";
-            if (lock) lock.style.display = "none";
-            if (placeBtn) placeBtn.disabled = false;
+            if (typeof window.updateShiftUI === 'function') window.updateShiftUI(newShiftObj);
+            else {
+                let topBtn = document.getElementById('btnTopShift');
+                let lock = document.getElementById('globalShiftLockout');
+                let placeBtn = document.getElementById('btnMainPlaceOrder');
+                if (topBtn) topBtn.innerText = "🟢 Active Shift";
+                if (lock) lock.style.display = "none";
+                if (placeBtn) placeBtn.disabled = false;
+            }
 
             if (typeof closeModal === 'function') closeModal('shiftModal');
             else if (typeof window.closeModal === 'function') window.closeModal('shiftModal');
@@ -9496,7 +9430,7 @@ window.submitOpenShift = async function() {
 
     } catch (e) {
         console.error("Open shift error:", e);
-        alert("Error opening shift. Please try again.");
+        alert(e.message || "Error opening shift. Please try again.");
     } finally {
         window.cashierShiftOpening = false;
         if (btn) { btn.innerText = origText; btn.disabled = false; }
@@ -9642,7 +9576,7 @@ window.loadStockRequestUI = async function() {
                         ${cycle} ITEMS
                     </h2>
                     <!-- 🔥 THE CSS GRID THAT CREATES THE 2-COLUMN PAPER LOOK -->
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(48%, 1fr)); gap: 20px; align-items: start;">
+                    <div class="manual-count-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(48%, 1fr)); gap: 20px; align-items: start;">
             `;
 
             Object.keys(groupedData[cycle]).sort().forEach(cat => {

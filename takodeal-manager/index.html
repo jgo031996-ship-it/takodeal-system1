@@ -439,6 +439,7 @@
   <link rel="stylesheet" href="employee-id.css?v=20261004">
   <link rel="stylesheet" href="payslip.css?v=20261004">
   <link rel="stylesheet" href="schedule-layout.css?v=20261004">
+  <link rel="stylesheet" href="staff-documents.css?v=staff-pos-repair-20261008-r12">
 </head>
 
 <body class="manager-theme">
@@ -5604,6 +5605,8 @@
             </div>
         </div>
 
+        <section class="staff-documents-panel"><h3>Daily rate changes</h3><div id="masterRateHistory">Open an employee to view their rate history.</div><p class="document-meta">Actual rate increases send a private congratulations message to the Staff profile. Saved payroll records keep their original amounts.</p></section>
+        <section id="masterStaffDocumentsPanel" class="staff-documents-panel"><div class="document-section-heading"><div><span class="document-eyebrow">EMPLOYEE RECORDS</span><h3>Required staff documents</h3></div><button id="masterStaffDocumentRefresh" type="button">Refresh</button></div><p id="masterStaffDocumentStatus" role="status">Open an employee to check their documents.</p><div id="masterStaffDocumentRequests"></div><div id="masterStaffDocumentCards" class="staff-document-grid"></div></section>
         <!-- Section 3: Contact & Disbursement -->
         <div style="background: white; border-radius: 12px; padding: 25px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
             <h3 style="margin-top: 0; color: #0284c7; font-size: 18px; border-bottom: 2px solid #bae6fd; padding-bottom: 8px; margin-bottom: 20px;">📱 Contact & Disbursement</h3>
@@ -6601,8 +6604,9 @@
   </style>
 
   <script type="module" src="login-ui.js?v=20261004"></script>
-  <script type="module" src="auth.js?v=transaction-upgrades-20261007"></script>
+  <script type="module" src="auth.js?v=staff-pos-repair-20261008-r12"></script>
 
   
+  <dialog id="masterStaffDocumentPreview" class="staff-document-preview"><div class="document-section-heading"><h3 id="masterStaffDocumentPreviewTitle">Document photo</h3><button type="button" id="masterStaffDocumentPreviewClose">Close</button></div><img id="masterStaffDocumentPreviewImage" alt="Private employee document"></dialog>
 </body>
 </html>

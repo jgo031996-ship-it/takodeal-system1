@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 import * as payroll from '../takodeal-staff/payroll-safety.js';
 import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js';
 import * as sanctions from '../takodeal-staff/sanction-schedule.js';
+import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
 
 const staff = readFileSync(new URL('../takodeal-staff/app.js', import.meta.url), 'utf8').replace(/\r\n/g,'\n');
 const customer = readFileSync(new URL('../Customer/index.html', import.meta.url), 'utf8');
@@ -15,7 +16,7 @@ const section = (source, start, end) => {const at=source.indexOf(start);assert.o
 const snapshot = rows => ({empty:!rows.length, docs:rows.map(row=>({id:row.id, data:()=>row})), forEach(fn){this.docs.forEach(fn);}});
 
 function harness() {
-    const nodes=new Map(),storage=new Map(),subscriptions=[],intervals=new Map(),timeouts=new Map(),events=new Map(),writes=[],gps=[];
+    const nodes=new Map(),storage=new Map(),subscriptions=[],intervals=new Map(),timeouts=new Map(),events=new Map(),writes=[],gps=[],records=new Map();
     let sequence=0,profileReads=0,serverReads=0;
     const node=id=>{
         if (!nodes.has(id)) {const classes=new Set(['hidden']);nodes.set(id,{id,value:'',dataset:{},style:{display:'none'},innerHTML:'',innerText:'',textContent:'',disabled:false,videoWidth:0,
@@ -27,14 +28,15 @@ function harness() {
     const api={db:{},collection:(_db,table)=>({table}),doc:(ref,table,id)=>id===undefined?{table:ref.table,id:'auto-'+(++sequence)}:{table,id},
         query:(ref,...filters)=>({...ref,filters}),where:(field,op,value)=>({field,op,value}),orderBy:()=>({}),
         getDoc:async ref=>{if(ref.table==='cashiers'){profileReads++;return {exists:()=>true,data:()=>({cashierName:storage.get('takodeal_staff_name'),scheduleNickname:'Alias'})};}return {exists:()=>false};},
-        getDocs:async()=>snapshot([]),getDocsFromServer:async q=>{serverReads++;if(h.serverError)throw h.serverError;return h.serverSnapshot || snapshot([]);},
+        getDocs:async()=>snapshot([]),getDocsFromServer:async q=>{if(['attendance_logs','sop_logs','cashiers'].includes(q.table))return h.window.getDocs(q);serverReads++;if(h.serverError)throw h.serverError;return h.serverSnapshot || snapshot([]);},
         onSnapshot:(q,options,next,error)=>{if(typeof options==='function'){error=next;next=options;}const sub={q,next,error,active:true,stops:0};subscriptions.push(sub);return ()=>{sub.active=false;sub.stops++;};},
         serverTimestamp:()=>new Date(),updateDoc:async(ref,data)=>writes.push({ref,data}),
-        writeBatch(){const changes=[];return {set:(ref,data)=>changes.push({ref,data}),async commit(){writes.push(...changes);}};}};
+        writeBatch(){const changes=[];return {set:(ref,data)=>changes.push({ref,data}),async commit(){writes.push(...changes);}};},
+        runTransaction:async(_db,callback)=>{const changes=[];const result=await callback({get:async ref=>({exists:()=>records.has(ref.table+'/'+ref.id),data:()=>records.get(ref.table+'/'+ref.id)}),set:(ref,data)=>changes.push({ref,data})});for(const change of changes)records.set(change.ref.table+'/'+change.ref.id,change.data);writes.push(...changes);return result;}};
     const addEventListener=(name,callback)=>{if(!events.has(name))events.set(name,[]);events.get(name).push(callback);};
     const window={...api,addEventListener,location:{reload(){}},initStaffAppSignaturePad(){},playNotificationPing(){},loadMyAttendance(){},
-        getAttendanceLocation:async()=>({branch:'Maa',distance:1,accuracy:10,lat:7,lng:125,timestamp:Date.now()})};
-    const context={...api,...payroll,...sanctions,createScheduleHistoryStore,window,localStorage,document:{getElementById:node,addEventListener,querySelector:()=>null,querySelectorAll:()=>[]},
+        getAttendanceLocation:async()=>({branch:'Maa',distance:1,accuracy:10,lat:7,lng:125,timestamp:Date.now()}),verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1}}),assertAttendanceFaceFresh(){}};
+    const context={...api,...payroll,...sanctions,...reconciliation,createScheduleHistoryStore,window,localStorage,document:{getElementById:node,addEventListener,querySelector:()=>null,querySelectorAll:()=>[]},
         console:{error(){},warn(){},log(){}},Date,
         setInterval:(fn,delay)=>{const id=++sequence;intervals.set(id,{fn,delay});return id;},clearInterval:id=>intervals.delete(id),
         setTimeout:(fn,delay)=>{const id=++sequence;timeouts.set(id,{fn,delay});return id;},clearTimeout:id=>timeouts.delete(id),
@@ -43,7 +45,7 @@ function harness() {
         Audio:class {play(){return Promise.resolve();}pause(){this.paused=true;}}};
     const sandbox=vm.createContext(context);
     context.startPhilippineDayTimer=changed=>sanctions.startPhilippineDayTimer(changed,{schedule:context.setTimeout,cancel:context.clearTimeout});
-    const h={window,context,sandbox,node,storage,subscriptions,intervals,timeouts,events,writes,gps,api,
+    const h={window,context,sandbox,node,storage,subscriptions,intervals,timeouts,events,writes,gps,api,records,
         run:source=>vm.runInContext(source,sandbox),emit:(sub,rows)=>sub.next(snapshot(rows.map(row=>sub.q.table==='hr_sanctions'&&!Object.hasOwn(row,'status')?{...row,status:'Pending Reply'}:row))),
         event:(name,data={})=>events.get(name)?.forEach(fn=>fn(data)),get profileReads(){return profileReads;},get serverReads(){return serverReads;}};
     return h;
@@ -119,15 +121,17 @@ test('Staff Time In checks the server despite an empty live cache and denies wri
 test('Staff waits for a slow HR read before reacquiring final GPS and constructing the saved punch',async()=>{
     const h=staffApp(),order=[];let finish;
     h.window.getAttendanceLocation=async()=>{order.push('GPS');return {branch:'Maa',distance:1,accuracy:10,lat:7,lng:125,timestamp:Date.now()};};
+    h.window.verifyAttendanceFace=async()=>{order.push('Camera');return {photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1}};};
     h.context.getDocsFromServer=()=>{order.push('HR pending');return new Promise(resolve=>{finish=()=>{order.push('HR completed');resolve(snapshot([]));};});};
     h.run(section(staff,'window.punchTime = async function','// 📥 STAFF REQUESTS & INBOX ENGINE'));
     const punching=h.window.punchTime('TIME IN');await new Promise(setImmediate);
     assert.deepEqual(order,['GPS','HR pending']);assert.equal(h.writes.length,0);
-    finish();await punching;assert.deepEqual(order,['GPS','HR pending','HR completed','GPS']);assert.equal(h.writes.filter(w=>w.ref.table==='attendance_logs').length,1);
+    finish();await punching;assert.deepEqual(order,['GPS','HR pending','HR completed','GPS','Camera','GPS']);assert.equal(h.writes.filter(w=>w.ref.table==='attendance_logs').length,1);
 });
 test('Staff can record Time Out without reading or requiring a reply to its due HR notice',async()=>{
     const h=staffApp();h.window.startSanctionListener('Staff A');h.emit(h.subscriptions[0],[{id:'due',status:'Pending Reply'}]);
-    const history=async q=>snapshot(q.table==='attendance_logs'?[{id:'in',staffName:'Staff A',type:'TIME IN',timestamp:new Date(Date.now()-8*3600000)}]:q.table==='sop_logs'?[{id:'sop',staffName:'Staff A',timestamp:{toDate:()=>new Date()}}]:[]);h.window.getDocs=history;h.context.getDocs=history;
+    const start={id:'in',staffId:'a',staffName:'Staff A',branch:'Maa',type:'TIME IN',timestamp:new Date(Date.now()-8*3600000)};h.records.set('attendance_logs/in',start);
+    const history=async q=>snapshot(q.table==='attendance_logs'?[start]:q.table==='sop_logs'?[{id:'sop',staffId:'a',staffName:'Staff A',branch:'Maa',timestamp:{toDate:()=>new Date()}}]:[]);h.window.getDocs=history;h.context.getDocs=history;
     h.serverError=Error('HR should not be fetched for Time Out');h.run(section(staff,'window.punchTime = async function','// 📥 STAFF REQUESTS & INBOX ENGINE'));
     await h.window.punchTime('TIME OUT');assert.equal(h.serverReads,0);assert.equal(h.writes.filter(w=>w.ref.table==='attendance_logs').length,1);assert.equal(h.writes.find(w=>w.ref.table==='attendance_logs').data.type,'TIME OUT');
 });

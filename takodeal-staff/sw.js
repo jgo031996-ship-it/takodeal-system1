@@ -1,6 +1,9 @@
-const CACHE_NAME = 'takodeal-staff-v12-sanction-dates';
+const CACHE_NAME = 'takodeal-staff-v14-staff-pos-repair-20261008-r12';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./sanction-schedule.js');
+SHELL.push('./attendance-reconcile.js');
+SHELL.push('./payroll-attendance.js');
+SHELL.push('./staff-rate-privacy.js','./staff-documents.js','./staff-documents.css','./staff-document-model.js','./staff-document-store.js','./staff-document-firebase.js','./attendance-camera.js','./vendor/face-api.min.js','./vendor/face-models/tiny_face_detector_model-weights_manifest.json','./vendor/face-models/tiny_face_detector_model-shard1','./vendor/face-models/face_landmark_68_tiny_model-weights_manifest.json','./vendor/face-models/face_landmark_68_tiny_model-shard1');
 self.addEventListener('install', event => {
     event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });

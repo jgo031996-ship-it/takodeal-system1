@@ -5,7 +5,11 @@ async function bounded(promise){let timer;try{return await Promise.race([promise
 export async function findMealIdentity(api,pin,level) {
     if(String(pin).length<4)throw Error('Enter at least 4 characters for the PIN.');
     const queries=[];
-    for(const source of ['cashiers','hq_managers'])for(const field of source==='hq_managers'?['pin','securityPin']:['pin']){
+    // Staff-only levels use the public operational Staff profiles. A PIN-only
+    // Cashier is not authorized to read the protected HQ directory, and that
+    // unrelated lookup must not block an otherwise valid Staff meal.
+    const sources=level.roles.some(role=>role!=='staff')?['cashiers','hq_managers']:['cashiers'];
+    for(const source of sources)for(const field of source==='hq_managers'?['pin','securityPin']:['pin']){
         queries.push(api.read(source,field,pin).then(rows=>rows.map(row=>({...row,source}))));
         if(/^\d+$/.test(pin)&&String(Number(pin))===pin)queries.push(api.read(source,field,Number(pin)).then(rows=>rows.map(row=>({...row,source}))));
     }
@@ -24,9 +28,10 @@ export async function findMealIdentity(api,pin,level) {
         if(!identities.has(key)||record.source==='hq_managers')identities.set(key,{id,source:record.source,role,cashierName:name,email:data.email||''});
     }
     if(!identities.size)throw Error('This PIN was not found. Ask the main owner to check the saved PIN.');
-    if(identities.size>1)throw Error('This PIN belongs to more than one person. Ask the main owner to set a unique PIN.');
-    const identity=[...identities.values()][0];
-    if(!level.roles.includes(identity.role))throw Error('This PIN is not allowed to use the selected meal level.');
+    const eligible=[...identities.values()].filter(identity=>level.roles.includes(identity.role));
+    if(!eligible.length)throw Error('This PIN is not allowed to use the selected meal level.');
+    if(eligible.length>1)throw Error('This PIN belongs to more than one person. Ask the main owner to set a unique PIN.');
+    const identity=eligible[0];
     return identity;
 }
 export function installMealCheckout({window:w=window,document:d=document}={}) {

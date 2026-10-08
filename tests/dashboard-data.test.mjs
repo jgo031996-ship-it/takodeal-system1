@@ -204,6 +204,24 @@ test('overdue attendance review stays distinct from lateness, and a schedule fai
     assert.equal(f.nodes.get('dashDutyCount').textContent,'0 staff on duty');
     f.controller.stop();
 });
+test('live dashboard follows explicit older-shift closures and shows uncertain time review without inventing overdue hours', async () => {
+    const f=fixture();await f.controller.load();
+    const at=Date.now(),first={staffId:'alex',staffName:'Alex',branch:'Maa',type:'TIME IN',timestamp:new Date(at-6*3600000).toISOString()};
+    const newer={...first,timestamp:new Date(at-4*3600000).toISOString()};
+    const olderOut={...first,type:'TIME OUT',timeInLogId:'0',timestamp:new Date(at-3600000).toISOString()};
+    f.emit('attendance_logs',[first,newer,olderOut]);
+    assert.equal(f.nodes.get('dashDutyCount').textContent,'1 staff on duty');
+    assert.match(f.nodes.get('branchTableBody').innerHTML,new RegExp(newer.timestamp));
+    f.emit('attendance_logs',[first,newer,olderOut,{...olderOut,timeInLogId:'1',timestamp:new Date(at-2*3600000).toISOString()}]);
+    assert.equal(f.nodes.get('dashDutyCount').textContent,'0 staff on duty');
+    assert.doesNotMatch(f.nodes.get('branchTableBody').innerHTML,/dash-staff-name">Alex/);
+    f.emit('attendance_logs',[first,newer,{...olderOut,timestamp:null}]);
+    assert.equal(f.nodes.get('dashDutyCount').textContent,'0 staff on duty');
+    assert.match(f.nodes.get('branchTableBody').innerHTML,/Attendance time needs HQ review/);
+    assert.doesNotMatch(f.nodes.get('branchTableBody').innerHTML,/over 16h/);
+    f.controller.stop();
+});
+
 test('franchise All sums only permitted branches and never displays the global counter or target', async () => {
     const f=fixture();f.w.sessionUser={email:'franchise',isFranchisee:true,allowedBranches:['Maa']};f.w.isBranchAllowed=b=>b==='Maa';
     await f.controller.load();

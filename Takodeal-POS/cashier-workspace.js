@@ -1,5 +1,6 @@
 import {CASHIER_RELEASE,businessDate,dayWindow,attendanceRows,imageFor,updateBlocker,labelSettings,drinkLabels,parkedOrderDetails} from './cashier-data.js';
 import {installCartLayout} from './cart-layout.js';
+import {installSalesActions} from './sales-actions.js';
 const el = id => document.getElementById(id);
 const money = value => new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(Number(value)||0);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -255,7 +256,7 @@ function installUpdates(){
   window.setInterval(()=>{if(document.visibilityState==='visible' && navigator.onLine)releaseRegistration?.update().catch(()=>{});},15*60*1000);
   if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){showCashierUpdateNotice('updated','Cashier workspace updated','New clock-ins preserve their scheduled start and end times for later payroll review. Attendance also records its source app and device. Temporary inventory skips still require HQ review.');localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
 }
-function install(){installTheme();installRemittance();installClock();installPrinterHub();installTabletControls();installParkedOrders();installUpdates();}
+function install(){installTheme();installRemittance();installClock();installPrinterHub();installTabletControls();installParkedOrders();installUpdates();installSalesActions();}
 if(document.readyState==='complete')install();else window.addEventListener('load',install,{once:true});
 
 function installTabletControls(){

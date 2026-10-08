@@ -4,6 +4,8 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { requestHistory, historyTime } from '../takodeal-manager/request-history.js';
 import * as payroll from '../takodeal-manager/payroll-safety.js';
+import {planPayrollAttendance} from '../takodeal-manager/payroll-attendance.js';
+import {attendanceMillis} from '../takodeal-manager/attendance-reconcile.js';
 import * as sanctions from '../takodeal-manager/sanction-schedule.js';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
 import { assembleScheduleHistory, createScheduleRevision, resolveScheduleForDate } from '../takodeal-manager/schedule-history.js';
@@ -136,22 +138,54 @@ window.${name} = `) + 1;
     assert.ok(start>=0);
     return source.slice(start,source.indexOf('\n};',start)+3);
 }
-function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,scheduleData=null,historyData=null,startDate='2026-10-03',endDate='2026-10-03',deductions=[]}={}) {
+function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,scheduleData=null,historyData=null,startDate='2026-10-03',endDate='2026-10-03',deductions=[],profiles=[profile]}={}) {
     const elements={payrollStart:{value:startDate},payrollEnd:{value:endDate},payrollGeneratorBody:{innerHTML:''},payrollGrandTotalContainer:{style:{}},payrollGrandTotalAmount:{}};
     const errors=[];
     const stamp=date=>({toDate:()=>date});
-    const data={cashiers:[profile],staff_ledger:[],payroll_records:frozen?[{staffName:'Test Staff',frozenData:frozen}]:[],
+    const data={cashiers:profiles,staff_ledger:[],payroll_records:frozen?[{staffName:'Test Staff',frozenData:frozen}]:[],
         attendance_logs:logs || [{staffName:'Test Staff',branch:'Test Branch',type:'TIME IN',timestamp:stamp(at('15:41')),lateExempted:exempt,reviewedLateMinutes:11},
             {staffName:'Test Staff',branch:'Test Branch',type:'TIME OUT',timestamp:stamp(at(end))}],staff_deductions:deductions,staff_bonuses:[]};
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),
         getDoc:async()=>({exists:()=>true,data:()=>scheduleData || schedule(end,type)}),
-        getDocs:async q=>{const docs=(data[q.table]||[]).filter(row=>q.table!=='staff_deductions' || row.status==='Unpaid').map((row,i)=>({id:String(i),data:()=>row}));return {docs,forEach:fn=>docs.forEach(fn)};}};
+        getDocs:async q=>{const docs=(data[q.table]||[]).filter(row=>q.table!=='staff_deductions' || row.status==='Unpaid').map((row,i)=>({id:row.id||String(i),data:()=>row}));return {docs,forEach:fn=>docs.forEach(fn)};}};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>historyData || assembleScheduleHistory(scheduleData || schedule(end,type))};
-    const context=vm.createContext({...api,...payroll,...sanctions,resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
+    const context=vm.createContext({...api,...payroll,...sanctions,planPayrollAttendance,attendanceMillis,escapeHtml:value=>String(value).replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])),resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
         alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
     return {context,window,elements,errors};
 }
 for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
+    test(`${name}: adjacent explicit shifts at one shared boundary retain the two exact source durations`,async()=>{
+        const stamp=value=>({toDate:()=>new Date('2026-10-06T'+value+':00+08:00')}),base={staffId:'one',staffName:'Test Staff',branch:'Test Branch',lateExempted:true};
+        const logs=[{...base,id:'a',type:'TIME IN',timestamp:stamp('09:00')},{...base,id:'b',type:'TIME IN',timestamp:stamp('12:00')},{...base,id:'oa',type:'TIME OUT',timeInLogId:'a',timestamp:stamp('12:00')},{...base,id:'ob',type:'TIME OUT',timeInLogId:'b',timestamp:stamp('20:00')}];
+        const h=payrollUi({logs,startDate:'2026-10-06',endDate:'2026-10-06'});vm.runInContext(extract(name),h.context);await h.window[name]();assert.deepEqual(h.errors,[]);const row=h.window.globalPayrollCache['Test Staff'];
+        assert.equal(row.attendanceReviewRequired,false);assert.equal(row.hours,11);assert.equal(row.basicPay,900);assert.equal(row.lateDeduction,0);assert.deepEqual(Array.from(row.logs,log=>log.hrs),['3.00','8.00']);
+    });
+    test(`${name}: unlinked renamed or case-changed ID punches cannot duplicate an original-name paid cutoff`,async()=>{
+        for(const currentName of ['Renamed Staff','TEST STAFF','Test, Staff']){
+            const base={staffId:'one',staffName:currentName==='TEST STAFF'?currentName:'Test Staff',branch:'Test Branch',lateExempted:true},logs=[{...base,id:'in',type:'TIME IN',timestamp:{toDate:()=>new Date('2026-10-06T09:00:00+08:00')}},{...base,id:'out',type:'TIME OUT',timestamp:{toDate:()=>new Date('2026-10-06T17:00:00+08:00')}}],frozen={name:'Test Staff',basicPay:450,hours:8,logs:[]};
+            const h=payrollUi({logs,frozen,profiles:[{...profile,id:'one',cashierName:currentName}],startDate:'2026-10-06',endDate:'2026-10-06'});vm.runInContext(extract(name),h.context);await h.window[name]();assert.deepEqual(h.errors,[]);assert.deepEqual(h.window.globalPayrollCache['Test Staff'],frozen);assert.equal(h.window.globalPayrollCache[currentName].attendanceReviewRequired,true);assert.equal(h.window.globalPayrollCache[currentName].basicPay,0);
+        }
+    });
+    test(`${name}: one payroll name with two employee IDs is held rather than mixing identity or deductions`,async()=>{
+        const stamp=value=>({toDate:()=>new Date(value)}),logs=[{id:'one-in',staffId:'one',staffName:'Test Staff',branch:'Test Branch',type:'TIME IN',timestamp:stamp('2026-10-06T09:00:00+08:00')},{id:'two-in',staffId:'two',staffName:'Test Staff',branch:'Test Branch',type:'TIME IN',timestamp:stamp('2026-10-06T10:00:00+08:00')}];
+        const h=payrollUi({logs,profiles:[{...profile,id:'one'},{...profile,id:'two'}],startDate:'2026-10-06',endDate:'2026-10-06'});vm.runInContext(extract(name),h.context);await h.window[name]();assert.deepEqual(h.errors,[]);const row=h.window.globalPayrollCache['Test Staff'];assert.equal(row.attendanceReviewRequired,true);assert.equal(row.basicPay,0);assert.equal(row.lateDeduction,0);assert.match(row.attendanceReviewReasons[0],/multiple employee IDs/);
+    });
+    test(`${name}: a renamed linked employee with an original-name frozen record cannot create a second payable preview`,async()=>{
+        const stamp=value=>({toDate:()=>new Date(value)}),base={staffId:'one',staffName:'Test Staff',branch:'Test Branch'},logs=[{...base,id:'in',type:'TIME IN',timestamp:stamp('2026-10-06T09:00:00+08:00')},{...base,id:'out',type:'TIME OUT',timeInLogId:'in',timestamp:stamp('2026-10-06T17:00:00+08:00')}],frozen={name:'Test Staff',basicPay:450,hours:8,logs:[]};
+        const h=payrollUi({logs,frozen,profiles:[{...profile,id:'one',cashierName:'Renamed Staff'}],startDate:'2026-10-06',endDate:'2026-10-06'});vm.runInContext(extract(name),h.context);await h.window[name]();assert.deepEqual(h.errors,[]);assert.deepEqual(h.window.globalPayrollCache['Test Staff'],frozen);assert.equal(h.window.globalPayrollCache['Renamed Staff'].attendanceReviewRequired,true);assert.equal(h.window.globalPayrollCache['Renamed Staff'].basicPay,0);
+    });
+    test(`${name}: overlapping explicit closures hold unpaid payroll without inventing hours or late/manual penalties`,async()=>{
+        const stamp=time=>({toDate:()=>new Date(time)}),base={staffId:'one',staffName:'Test Staff',branch:'Test Branch'};
+        const logs=[{...base,id:'old',type:'TIME IN',penaltyAmount:200,timestamp:stamp('2026-10-06T22:00:00+08:00')},{...base,id:'new',type:'TIME IN',timestamp:stamp('2026-10-07T02:00:00+08:00')},{...base,id:'old-out',type:'TIME OUT',timeInLogId:'old',penaltyAmount:999,timestamp:stamp('2026-10-07T06:00:00+08:00')}];
+        const h=payrollUi({logs,startDate:'2026-10-06',endDate:'2026-10-07'});vm.runInContext(extract(name),h.context);await h.window[name]();assert.deepEqual(h.errors,[]);
+        const row=h.window.globalPayrollCache['Test Staff'];assert.equal(row.attendanceReviewRequired,true);assert.equal(row.hours,0);assert.equal(row.basicPay,0);assert.equal(row.lateDeduction,0);assert.match(row.attendanceReviewReasons[0],/overlap/);assert.match(h.elements.payrollGeneratorBody.innerHTML,/Held for HR review/);
+        const frozen={name:'Test Staff',branch:'Test Branch',hours:8,basicPay:450,lateDeduction:123,logs:[{remark:'Saved original payroll'}]},paid=payrollUi({logs,frozen,startDate:'2026-10-06',endDate:'2026-10-07'});vm.runInContext(extract(name),paid.context);await paid.window[name]();assert.deepEqual(paid.errors,[]);assert.deepEqual(paid.window.globalPayrollCache['Test Staff'],frozen);assert.equal(paid.window.paidPayrollSnapshots.has(frozen),true);
+    });
+    test(`${name}: an ordinary explicit linked shift keeps its source hours and saved late exemption`,async()=>{
+        const base={staffId:'one',staffName:'Test Staff',branch:'Test Branch'},logs=[{...base,id:'in',type:'TIME IN',lateExempted:true,timestamp:{toDate:()=>new Date('2026-10-06T09:00:00+08:00')}},{...base,id:'out',type:'TIME OUT',timeInLogId:'in',timestamp:{toDate:()=>new Date('2026-10-06T17:00:00+08:00')}}];
+        const h=payrollUi({logs,startDate:'2026-10-06',endDate:'2026-10-06'});vm.runInContext(extract(name),h.context);await h.window[name]();assert.deepEqual(h.errors,[]);
+        const row=h.window.globalPayrollCache['Test Staff'];assert.equal(row.attendanceReviewRequired,false);assert.equal(row.hours,8);assert.equal(row.basicPay,450);assert.equal(row.lateDeduction,0);
+    });
     test(`${name}: POS meals of 224 and 106.25 reach Foods and reduce net pay once`,async()=>{
         const deduct=(amount,day,type='Staff Meal (POS Auto)',status='Unpaid')=>({staffName:'Test Staff',type,amount,status,dateAdded:{toDate:()=>new Date(`2026-${day}T12:00:00+08:00`)}});
         const deductions=[deduct(224,'09-23'),deduct(106.25,'09-28'),deduct(0,'09-18','Staff Meal'),
@@ -235,6 +269,13 @@ test('an edited partial Foods amount leaves only its undeducted balance for the 
     const h=paymentFixture(250);await h.window.finalizePayslip();assert.deepEqual(h.errors,[]);
     assert.equal(h.rows.find(r=>r.id==='pos-1').status,'Paid');
     assert.equal(h.rows.find(r=>r.id==='pos-2').status,'Unpaid');assert.equal(h.rows.find(r=>r.id==='pos-2').amount,80.25);
+});
+
+test('payroll payment stops before account or ledger writes for an HR-held preview or an immutable paid snapshot',async()=>{
+    for(const state of ['held','paid']){
+        const h=paymentFixture();if(state==='held')h.window.currentPayslipData.attendanceReviewRequired=true;else h.window.paidPayrollSnapshots=new WeakSet([h.window.currentPayslipData]);
+        const before=structuredClone(h.window.currentPayslipData);await h.window.finalizePayslip();assert.equal(h.changes.length,0);assert.equal(h.records.length,0);assert.deepEqual(h.window.currentPayslipData,before);
+    }
 });
 test('Manager and Staff serve identical shared math; source links new letters to attendance atomically',()=>{
     assert.equal(readFileSync(new URL('../takodeal-staff/payroll-safety.js',import.meta.url),'utf8'),readFileSync(new URL('../takodeal-manager/payroll-safety.js',import.meta.url),'utf8'));
