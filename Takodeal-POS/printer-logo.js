@@ -16,11 +16,29 @@ export function printerLogoDimensions({width,height,scaleWidth=1,scaleHeight=1,p
     const selected=logoModeForPaper(mode,paperSize);
     if(selected==='none')return {width:0,height:0};
     if(!Number.isFinite(width) || !Number.isFinite(height) || width<=0 || height<=0)throw Error('The receipt logo has no usable image dimensions.');
-    const wide=paper80(paperSize),maxWidth=wide?576:192,maxHeight=wide?480:240,normalWidth=wide?320:160;
     const scale=value=>Math.max(.25,Math.min(3,Number(value)||1));
-    let targetWidth=Math.max(8,Math.floor(Math.min(maxWidth,normalWidth*scale(scaleWidth))/8)*8);
-    let targetHeight=Math.max(1,Math.round(height/width*targetWidth*scale(scaleHeight)));
-    if(targetHeight>maxHeight){targetWidth=Math.max(8,Math.floor(targetWidth*maxHeight/targetHeight/8)*8);targetHeight=Math.max(1,Math.min(maxHeight,Math.round(height/width*targetWidth*scale(scaleHeight))));}
+    const widthScale=scale(scaleWidth),heightScale=scale(scaleHeight),wide=paper80(paperSize);
+    const expanded=selected==='esc-star24' && (widthScale>1 || heightScale>1);
+    const maxWidth=wide?576:expanded?320:192,maxHeight=wide?480:expanded?384:240,normalWidth=wide?320:160;
+    // Both controls scale the original base image. Applying height to an
+    // already width-scaled image made equal scales distort and shrink logos.
+    const requestedWidth=normalWidth*widthScale,requestedHeight=height/width*normalWidth*heightScale;
+    // Height is an integer pixel count: fractional height below the next
+    // rounding boundary still fits. This avoids a width jump at a full cap.
+    const fit=Math.min(1,maxWidth/requestedWidth,(maxHeight+.5-1e-9)/requestedHeight);
+    let targetWidth=Math.max(8,Math.floor(requestedWidth*fit/8)*8);
+    if(widthScale===heightScale && widthScale<=1){
+        // Released defaults rounded height before fitting. Preserve that exact
+        // default envelope for unchanged or equally reduced settings; larger
+        // equal scales can then grow without a rounding discontinuity at 1x.
+        const defaultHeight=Math.max(1,Math.round(height/width*normalWidth));
+        const defaultLimit=wide?480:240;
+        const defaultWidth=defaultHeight>defaultLimit?Math.max(8,Math.floor(normalWidth*defaultLimit/defaultHeight/8)*8):normalWidth;
+        targetWidth=Math.min(targetWidth,defaultWidth);
+    }
+    // Reuse the requested aspect after byte-width quantization. An extremely
+    // narrow image cannot preserve its aspect below the minimum eight dots.
+    const targetHeight=Math.max(1,Math.min(maxHeight,Math.round(requestedHeight/requestedWidth*targetWidth)));
     return {width:targetWidth,height:targetHeight};
 }
 
@@ -42,8 +60,9 @@ function imageInput({width,height,pixels,threshold}) {
 function packet(parts,pauses) {
     const bytes=new Uint8Array(parts.reduce((total,part)=>total+part.length,0));let offset=0;
     for(const part of parts){bytes.set(part,offset);offset+=part.length;}
-    // Only explicit command ends are pacing boundaries. Raster bytes can look
-    // like control sequences, so transport must never scan their contents.
+    // Explicit image progress offsets let transport pace large bodies without
+    // inserting commands. Compatible offsets end full bands; raster offsets
+    // end complete rows inside its one command. Never scan pixel bytes.
     Object.defineProperty(bytes,'pauseAfterBytes',{value:Object.freeze([...pauses]),enumerable:false,writable:false});
     return bytes;
 }
@@ -66,16 +85,16 @@ export function encodePrinterLogo({width,height,pixels,mode='esc-star24',thresho
             band[band.length-1]=0x0a;append(band);pauses.push(size);
         }
     }else{
-        const rowBytes=Math.ceil(width/8);
-        for(let top=0;top<height;top+=16){
-            const rows=Math.min(16,height-top),band=new Uint8Array(8+rowBytes*rows);
-            band.set([GS,0x76,0x30,0,rowBytes&255,rowBytes>>8,rows&255,rows>>8],0);
-            for(let y=0;y<rows;y++)for(let byte=0;byte<rowBytes;byte++){
-                let bits=0;for(let bit=0;bit<8;bit++)if(black(byte*8+bit,top+y))bits|=1<<(7-bit);
-                band[8+y*rowBytes+byte]=bits;
+        const rowBytes=Math.ceil(width/8),image=new Uint8Array(8+rowBytes*height),bodyStart=size+8;
+        image.set([GS,0x76,0x30,0,rowBytes&255,rowBytes>>8,height&255,height>>8],0);
+        for(let y=0;y<height;y++){
+            for(let byte=0;byte<rowBytes;byte++){
+                let bits=0;for(let bit=0;bit<8;bit++)if(black(byte*8+bit,y))bits|=1<<(7-bit);
+                image[8+y*rowBytes+byte]=bits;
             }
-            append(band);pauses.push(size);
+            if((y+1)%16===0 || y===height-1)pauses.push(bodyStart+(y+1)*rowBytes);
         }
+        append(image);
     }
     append(Uint8Array.from([ESC,0x32,ESC,0x61,0]));
     return packet(parts,pauses);

@@ -24,6 +24,11 @@ test('Only the explicit logo button requests a main-printer test and preserves t
  assert.equal(h.node('printerLogoTest-main').onclick(event),'logo-request');assert.equal(h.calls.length,1);assert.equal(h.calls[0].role,'main');assert.equal(h.calls[0].event,event);
  delete h.window.testPrinterLogo;h.node('printerLogoTest-main').onclick(event);assert.equal(h.calls.filter(call=>call.role).length,1);assert.match(h.calls.at(-1).warning[1],/unavailable/);
 });
+test('Logo help explains Owner sizing and the compatible alternative to a thin raster line without starting a test',()=>{
+ const h=harness(),help=h.node('cashierReceiptLogoHelp');
+ assert.match(help.textContent,/Owner app’s Width Scale and Height Scale/);assert.match(help.textContent,/matching 1\.5× or 2× values to keep its shape/);assert.match(help.textContent,/Larger logos take longer to print/);
+ h.node('cashierReceiptLogoMode').value='raster';h.node('cashierReceiptLogoMode').onchange();assert.equal(h.saved,'raster');assert.match(help.textContent,/one complete raster image/);assert.match(help.textContent,/Run Test logo first/);assert.match(help.textContent,/If only a line prints, use Compatible logo/);assert.equal(h.calls.length,0);
+});
 test('Text results cannot erase the last logo result or turn a sent job into confirmed paper output',()=>{
  const h=harness();assert.match(h.node('printerLogoResult-main').textContent,/not confirmed/);assert.equal(h.node('cashierReceiptLogoMode').value,'compatible');assert.match(h.node('cashierReceiptLogoHelp').textContent,/Recommended for 58mm/);
  h.states.main.logoResult={status:'sent',message:'Logo data sent. Paper output is not confirmed.'};h.listeners.get('cashier-printer-result')();assert.equal(h.node('printerLogoResult-main').dataset.state,'sent');assert.match(h.node('printerLogoResult-main').textContent,/not confirmed/);
