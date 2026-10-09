@@ -118,9 +118,10 @@ export function installStaffLocation() {
         if (hint) hint.textContent = state.hint || (state.state === 'verified' ? `Accuracy ±${accuracy} m. Location is checked again before attendance is saved.` : state.state === 'outside' ? `Clock in or out within ${window.ALLOWED_RADIUS_METERS} m of the branch. Refresh when you arrive.` : `Your phone has a location, but it is too approximate for attendance. Try near a window. Required accuracy: ${window.ALLOWED_RADIUS_METERS} m or better.`);
     };
     const gps = createLocationSession({geolocation:navigator.geolocation,zones:window.BRANCH_ZONES,radius:window.ALLOWED_RADIUS_METERS,onState:show});
-    const camera = createClockCamera({mediaDevices:navigator.mediaDevices,onStream:stream => {window.invalidateAttendanceCamera?.();window.cameraStream = stream; if (el('clockVideo')) {el('clockVideo').srcObject = stream;if(stream)el('clockVideo').play?.().catch(()=>{});}},onStatus:(text,ready) => {const node=el('cameraStatus');if(node){node.textContent=text;node.style.background=ready?'#23744f':'#677a70';}}});
+    const camera = createClockCamera({mediaDevices:navigator.mediaDevices,onStream:stream => {window.invalidateAttendanceCamera?.();window.cameraStream = stream; if (el('clockVideo')) {el('clockVideo').srcObject = stream;if(stream)el('clockVideo').play?.()?.catch?.(()=>{});}},onStatus:(text,ready) => {const node=el('cameraStatus');if(node){node.textContent=text;node.style.background=ready?'#23744f':'#677a70';}}});
     window.refreshGPS = () => gps.acquire({force:true});
     window.startCameraAndGPS = () => { if (!clockVisible()) return; window.refreshGPS(); window.prepareAttendanceCamera?.().catch(()=>{}); return camera.start(); };
+    window.restartAttendanceCamera = () => { if (!clockVisible()) return; camera.stop(); return camera.start(); };
     window.stopCamera = () => { camera.stop(); gps.stop(); window.currentLat = window.currentLng = window.staffLocationFix = null; };
     window.getAttendanceLocation = async () => {
         if (!clockVisible()) throw Error('Open Clock and keep the app visible while recording attendance.');

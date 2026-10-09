@@ -130,8 +130,11 @@ test('Staff waits for a slow HR read before reacquiring final GPS and constructi
 });
 test('Staff can record Time Out without reading or requiring a reply to its due HR notice',async()=>{
     const h=staffApp();h.window.startSanctionListener('Staff A');h.emit(h.subscriptions[0],[{id:'due',status:'Pending Reply'}]);
-    const start={id:'in',staffId:'a',staffName:'Staff A',branch:'Maa',type:'TIME IN',timestamp:new Date(Date.now()-8*3600000)};h.records.set('attendance_logs/in',start);
-    const history=async q=>snapshot(q.table==='attendance_logs'?[start]:q.table==='sop_logs'?[{id:'sop',staffId:'a',staffName:'Staff A',branch:'Maa',timestamp:{toDate:()=>new Date()}}]:[]);h.window.getDocs=history;h.context.getDocs=history;
+    const fixtureNow=Date.now(),sopRecordedAt=new Date(fixtureNow-5*60000);
+    const start={id:'in',staffId:'a',staffName:'Staff A',branch:'Maa',type:'TIME IN',timestamp:new Date(fixtureNow-8*3600000)};h.records.set('attendance_logs/in',start);
+    // A saved Firestore timestamp is immutable. Generating a new Date in toDate()
+    // can put the SOP just ahead of the validator's already-captured clock in CI.
+    const history=async q=>snapshot(q.table==='attendance_logs'?[start]:q.table==='sop_logs'?[{id:'sop',staffId:'a',staffName:'Staff A',branch:'Maa',timestamp:{toDate:()=>sopRecordedAt}}]:[]);h.window.getDocs=history;h.context.getDocs=history;
     h.serverError=Error('HR should not be fetched for Time Out');h.run(section(staff,'window.punchTime = async function','// 📥 STAFF REQUESTS & INBOX ENGINE'));
     await h.window.punchTime('TIME OUT');assert.equal(h.serverReads,0);assert.equal(h.writes.filter(w=>w.ref.table==='attendance_logs').length,1);assert.equal(h.writes.find(w=>w.ref.table==='attendance_logs').data.type,'TIME OUT');
 });

@@ -261,12 +261,15 @@ if(document.readyState==='complete')install();else window.addEventListener('load
 
 function installTabletControls(){
   installCartLayout(document,window);
+  installCashierViewport(document,window);
   const sidebar=el('mainSidebar'), top=document.querySelector('.top-bar');
   const toggle=document.createElement('button');toggle.id='cashierSidebarToggle';toggle.type='button';toggle.className='cashier-button';toggle.textContent='☰';toggle.setAttribute('aria-label','Toggle navigation');toggle.setAttribute('aria-controls','mainSidebar');top.prepend(toggle);
   if(matchMedia('(min-width:769px) and (max-width:1180px)').matches)sidebar.classList.add('collapsed');
   const reflect=()=>{const expanded=matchMedia('(max-width:768px)').matches?sidebar.classList.contains('tk-mobile-menu-open'):!sidebar.classList.contains('collapsed');if(sidebar.classList.contains('cashier-sidebar-expanded')!==expanded)sidebar.classList.toggle('cashier-sidebar-expanded',expanded);toggle.setAttribute('aria-expanded',String(expanded));};
   toggle.onclick=()=>{if(matchMedia('(max-width:768px)').matches)sidebar.classList.toggle('tk-mobile-menu-open');else sidebar.classList.toggle('collapsed');reflect();};
   new MutationObserver(reflect).observe(sidebar,{attributes:true,attributeFilter:['class']});reflect();
+  window.addEventListener('resize',reflect);
+  sidebar.addEventListener('keydown',event=>{if(event.key==='Escape'&&sidebar.classList.contains('tk-mobile-menu-open')){sidebar.classList.remove('tk-mobile-menu-open');reflect();toggle.focus();}});
   const platform=el('posPlatformSelect');const tint=()=>{document.body.dataset.cashierPlatform=platform.value;};platform.addEventListener('change',tint);
   const switchPlatform=window.switchPosPlatform;
   if(typeof switchPlatform==='function')window.switchPosPlatform=function(...args){const result=switchPlatform.apply(this,args);tint();return result;};tint();
@@ -291,6 +294,77 @@ function installTabletControls(){
   for(const id of ['expSearchInput','expQtyInput','expAmtInput','expUomSelect','expenseReceiptPhoto']){
     const input=el(id),label=input.previousElementSibling?.tagName==='LABEL'?input.previousElementSibling:input.parentElement.querySelector(':scope > label');if(label)label.htmlFor=id;
   }
+}
+
+// The keyboard can cover a fixed app shell without resizing its layout viewport.
+// Bound only the stock scroller and navigation; never resize or rerender the POS.
+export function installCashierViewport(doc=document,win=window){
+  const stock=doc.getElementById('view-stockreq'),sidebar=doc.getElementById('mainSidebar');
+  const viewport=win.visualViewport,controls=stock?.querySelector('.cashier-stock-controls');
+  let frame=null,disposed=false;
+  const listeners=[];
+  const stockClass=(name,enabled)=>{if(stock&&stock.classList.contains(name)!==enabled)stock.classList.toggle(name,enabled);};
+  const listen=(target,type,handler)=>{if(target?.addEventListener){target.addEventListener(type,handler);listeners.push(()=>target.removeEventListener(type,handler));}};
+  const clearStock=()=>{stock?.style.removeProperty('--cashier-stock-visible-height');stockClass('cashier-stock-viewport',false);stockClass('cashier-stock-compact-input',false);};
+  const refresh=()=>{
+    if(disposed)return;
+    const height=Number(viewport?.height||win.innerHeight),offset=Math.max(0,Number(viewport?.offsetTop||0));
+    if(!Number.isFinite(height)||height<=0)return;
+    // Pinch zoom is deliberate navigation. Do not counteract its pan or scale.
+    if(viewport&&Math.abs(Number(viewport.scale||1)-1)>.05){clearStock();return;}
+    const bottom=offset+height;
+    if(sidebar){
+      const narrow=win.matchMedia('(max-width:768px)').matches;
+      const topBar=doc.querySelector('.top-bar');
+      let top=narrow?Math.max(offset+10,topBar?.getBoundingClientRect().bottom+8||offset+10):sidebar.getBoundingClientRect().top;
+      if(narrow&&bottom-top<160)top=offset+10;
+      sidebar.style.setProperty('--cashier-sidebar-top',top+'px');
+      sidebar.style.setProperty('--cashier-sidebar-height',Math.max(0,bottom-top-(narrow?10:0))+'px');
+    }
+    if(!stock?.classList.contains('active')){clearStock();return;}
+    const input=doc.activeElement;
+    const editing=stock.contains(input)&&input?.matches('input:not([type="button"]):not([type="submit"]):not([type="checkbox"]):not([type="radio"]),textarea')&&!input.disabled&&!input.readOnly;
+    const top=stock.getBoundingClientRect().top,available=Math.max(0,bottom-top);
+    if(viewport){stock.style.setProperty('--cashier-stock-visible-height',available+'px');stockClass('cashier-stock-viewport',true);}
+    else {stock.style.removeProperty('--cashier-stock-visible-height');stockClass('cashier-stock-viewport',false);}
+    const quantity=editing&&/^count(?:Base|Purch)_/.test(input.id);
+    const covered=bottom<Number(doc.documentElement?.clientHeight||win.innerHeight)-60;
+    // On a short keyboard viewport the sticky controls would cover the count row.
+    stockClass('cashier-stock-compact-input',Boolean(quantity&&(covered||available<280)));
+    if(!editing)return;
+    const bounds=stock.getBoundingClientRect(),field=input.getBoundingClientRect();
+    let visibleTop=Math.max(offset,bounds.top)+10;
+    const visibleBottom=Math.min(bottom,bounds.bottom)-12;
+    if(controls&&!controls.contains(input)&&win.getComputedStyle(controls).position==='sticky')visibleTop=Math.max(visibleTop,controls.getBoundingClientRect().bottom+8);
+    if(visibleBottom<=visibleTop)return;
+    let delta=field.bottom>visibleBottom?field.bottom-visibleBottom:field.top<visibleTop?field.top-visibleTop:0;
+    if(delta){
+      const maximum=Math.max(0,stock.scrollHeight-stock.clientHeight);
+      stock.scrollTop=Math.max(0,Math.min(maximum,stock.scrollTop+delta));
+    }
+  };
+  const schedule=()=>{if(disposed||frame!==null)return;frame=win.requestAnimationFrame(()=>{frame=null;refresh();});};
+  const describeFooter=()=>{
+    const logout=sidebar?.querySelector('.logout-btn');
+    if(logout){logout.setAttribute('aria-label','Sign out of Cashier workspace');logout.title='Sign Out';}
+    for(const id of ['displayCashierContainer','displayBranchContainer']){
+      const row=doc.getElementById(id),text=row?.querySelector('.f-text')?.textContent.trim();
+      if(row&&text){row.title=text;row.setAttribute('aria-label',text);}
+    }
+    schedule();
+  };
+  if(sidebar){sidebar.setAttribute('role','navigation');sidebar.setAttribute('aria-label','Cashier navigation');describeFooter();}
+  const observer=new win.MutationObserver(schedule);
+  if(stock)observer.observe(stock,{attributes:true,attributeFilter:['class']});
+  // Classes changed by this helper can schedule one extra frame; unchanged class
+  // state is not rewritten, so observers settle without a polling loop.
+  const footerObserver=new win.MutationObserver(describeFooter);
+  const footer=sidebar?.querySelector('.sidebar-footer');
+  if(footer)footerObserver.observe(footer,{childList:true,subtree:true,characterData:true});
+  listen(doc,'focusin',schedule);listen(doc,'focusout',schedule);
+  listen(win,'resize',schedule);listen(viewport,'resize',schedule);listen(viewport,'scroll',schedule);
+  refresh();
+  return {refresh,dispose(){disposed=true;if(frame!==null)win.cancelAnimationFrame(frame);listeners.forEach(remove=>remove());observer.disconnect();footerObserver.disconnect();clearStock();sidebar?.style.removeProperty('--cashier-sidebar-height');sidebar?.style.removeProperty('--cashier-sidebar-top');}};
 }
 function installParkedOrders(){
   const root=el('parkedModal'),list=el('parkedListContainer');let generation=0;

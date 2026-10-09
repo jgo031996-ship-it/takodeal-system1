@@ -12,6 +12,7 @@ import { MALL_FLOAT, mallOpeningCash, stockRequestDue, autoRequestId, businessCl
 import { closeShiftAtomic, readBranchPolicy, readMallOpeningCash } from './cash-settlement.js';
 import { createRemittanceAttemptStore, readRemittanceDrawer, submitRemittanceAtomic, readClosedCashCarry, recordOpeningCashReview } from './remittance-safety.js';
 import {captureAttendanceSchedule} from './payroll-safety.js';
+import {createCountSnapshot, stockReportQuantities} from './stock-report-units.js';
 import {createScheduleHistoryStore} from './schedule-history.js';
 import {pendingDueNotices, clockInRestriction, startPhilippineDayTimer, acknowledgeSanction} from './sanction-schedule.js';
 // ========================================================
@@ -2981,9 +2982,14 @@ let currentBranchStaffCache = []; // DECLARED ONLY ONCE HERE!
 // ==========================================
 installAttendanceCamera(window, document);
 const attendanceCamera = createAttendanceStreamSession({mediaDevices:navigator.mediaDevices,
-    onStream:stream=>{window.invalidateAttendanceCamera();cameraStream=stream;const video=document.getElementById('clockVideo');if(video){video.srcObject=stream;if(stream)video.play?.().catch(()=>{});}},
+    onStream:stream=>{window.invalidateAttendanceCamera();cameraStream=stream;const video=document.getElementById('clockVideo');if(video){video.srcObject=stream;if(stream)video.play?.()?.catch?.(()=>{});}},
     onStatus:(message,ready)=>{const node=document.getElementById('faceAiStatus');if(node){node.textContent=message;node.dataset.state=ready?'ready':'error';}}
 });
+window.restartAttendanceCamera = () => {
+    if (document.hidden || document.getElementById('timeClockModal')?.style.display !== 'flex') return;
+    attendanceCamera.stop();
+    return attendanceCamera.start();
+};
 let attendanceModalEpoch = 0;
 
 window.openTimeClockModal = async function() {
@@ -5435,7 +5441,7 @@ window.submitAllManualCounts = async function() {
     let btn = document.getElementById('btnSubmitAllCounts');
     let itemsToProcess = [];
 
-    window.currentStockChecklist.forEach(item => {
+    try { window.currentStockChecklist.forEach(item => {
         let memPurch = window.stockCountMemory[`${item.id}_purch`];
         let memBase = window.stockCountMemory[`${item.id}_base`];
         
@@ -5448,14 +5454,22 @@ window.submitAllManualCounts = async function() {
         let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
 
         let physicalTotalBase = (pVal * convRate) + bVal;
+        const countSnapshot=createCountSnapshot({
+            baseUom:item.baseUom || item.uom || 'units',
+            purchaseUom:item.purchaseUom || item.purchUom || item.uom || 'units',
+            conversionRate:convRate,purchaseCount:pVal,baseCount:bVal,totalBaseQty:physicalTotalBase
+        });
 
         itemsToProcess.push({
             item: item,
             pVal: pVal,
             bVal: bVal,
-            physicalTotalBase: physicalTotalBase
+            physicalTotalBase: physicalTotalBase,
+            countSnapshot
         });
-    });
+    }); } catch(error) {
+        return Swal.fire('Check Stock Count',error.message,'warning');
+    }
 
     if (itemsToProcess.length === 0) {
         return Swal.fire('Blank Form', 'You have not entered any counts. Please enter your quantities before submitting.', 'warning');
@@ -5481,9 +5495,7 @@ window.submitAllManualCounts = async function() {
             let currentSystemStock = parseFloat(item.currentStock) || 0;
             let parLevelBase = parseFloat(item.maintainingStock) || 0;
             
-            let pUom = item.purchaseUom || item.purchUom || item.uom || 'units';
-            let bUom = item.baseUom || item.uom || 'units';
-            let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
+            const {purchaseUom:pUom,baseUom:bUom,conversionRate:convRate}=data.countSnapshot;
 
             // A. Update live stock count directly
             const invRef = fDoc(fDB, "inventory", item.id);
@@ -5504,6 +5516,7 @@ window.submitAllManualCounts = async function() {
                 variance: data.physicalTotalBase - currentSystemStock,
                 type: "Staff Physical Count",
                 note: noteText,
+                countSnapshot:data.countSnapshot,
                 user: cashier,
                 timestamp: fTime()
             });
@@ -5521,6 +5534,11 @@ window.submitAllManualCounts = async function() {
                     uom: bUom,
                     purchaseUom: pUom,
                     displayUom: pUom,
+                    displayQty:requestPurchQty,
+                    baseUom:bUom,
+                    convRate:convRate,
+                    conversionRate:convRate,
+                    countSnapshot:data.countSnapshot,
                     requestType: "Maintaining Stock (Auto-Fill)",
                     physicalStock: data.physicalTotalBase,
                     systemStock: currentSystemStock
@@ -5839,6 +5857,7 @@ window.loadStockRequestHistory = async function() {
 window.viewStockRequestItems = function(encodedOrder) {
     let order = JSON.parse(decodeURIComponent(encodedOrder));
     let items = order.items || [];
+    const escape=value=>String(value ?? '').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
     
     // 🔥 UPGRADED MODAL HEADER & TABLE STRUCTURE
     let html = `
@@ -5853,13 +5872,19 @@ window.viewStockRequestItems = function(encodedOrder) {
                 <thead style="background: #f8fafc; position: sticky; top: 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); z-index: 10;">
                     <tr>
                         <th style="padding: 15px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900; border-bottom: 2px solid #cbd5e1; letter-spacing: 0.5px;">Item Description</th>
-                        <th style="padding: 15px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900; border-bottom: 2px solid #cbd5e1; text-align: center; letter-spacing: 0.5px;">Actual Count</th>
+                        <th style="padding: 15px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900; border-bottom: 2px solid #cbd5e1; text-align: center; letter-spacing: 0.5px;">Reported Count / Restock</th>
                         <th style="padding: 15px; color: #475569; font-size: 11px; text-transform: uppercase; font-weight: 900; border-bottom: 2px solid #cbd5e1; text-align: center; letter-spacing: 0.5px;">HQ Status</th>
                     </tr>
                 </thead>
                 <tbody>`;
 
     items.forEach(i => {
+        const quantities=stockReportQuantities(i);
+        const actualHtml=quantities.reported
+            ? `<div><span style="font-size:10px; color:#64748b;">Reported:</span> ${escape(quantities.reported.text)}</div>${quantities.reported.text!==quantities.reported.baseText?`<div style="font-size:11px; color:#64748b; font-weight:normal;">Equivalent stock: ${escape(quantities.reported.baseText)}</div>`:''}`
+            : '<div style="font-size:11px; color:#64748b; font-weight:normal;">Physical count not recorded</div>';
+        const requestHtml=quantities.requested?`<div style="font-size:12px; margin-top:5px; color:#475569;">Restock requested: ${escape(quantities.requested.text)}</div>`:'';
+        const warnings=quantities.warnings.map(message=>`<div style="font-size:10px; color:#92400e; margin-top:4px; font-weight:normal;">${escape(message)}</div>`).join('');
         let itemStatus = 'Pending';
         if (order.status === 'Completed' || order.status === 'Dispatch on the way 🚚' || order.status === 'Partially Dispatched') itemStatus = 'Processed';
         else if (order.status === 'Delayed (Out of Stock)' || order.status === 'Delayed') itemStatus = 'Out of Stock';
@@ -5872,9 +5897,9 @@ window.viewStockRequestItems = function(encodedOrder) {
 
         html += `
             <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='transparent'">
-                <td style="padding: 15px; font-weight: 900; color: #1e293b; font-size: 14px;">${i.itemName || i.name}</td>
+                <td style="padding: 15px; font-weight: 900; color: #1e293b; font-size: 14px;">${escape(i.itemName || i.name)}</td>
                 <td style="padding: 15px; text-align: center; font-weight: 900; color: #0284c7; font-size: 15px;">
-                    ${i.displayQty !== undefined ? i.displayQty : i.qty} <span style="font-size: 11px; color: #64748b; font-weight: bold;">${i.displayUom || i.uom || ''}</span>
+                    ${actualHtml}${requestHtml}${warnings}
                 </td>
                 <td style="padding: 15px; text-align: center;">${statusBadge}</td>
             </tr>`;

@@ -1,4 +1,29 @@
 /* Tablet layout and operational dialogs. Screen only; receipt print styles stay intact. */
+/* Keep navigation inside the screen, including when the virtual keyboard opens. */
+@media screen {
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar {height:var(--cashier-sidebar-height,100%)!important;max-height:var(--cashier-sidebar-height,100%)!important;min-height:0!important;box-sizing:border-box;overflow:auto!important;align-self:flex-start;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar > .sidebar-header {flex:0 0 auto!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar .nav-menu {flex:1 1 auto!important;min-height:44px!important;min-width:0;overflow-y:auto!important;overscroll-behavior-y:auto;-webkit-overflow-scrolling:touch;padding-bottom:10px!important;box-sizing:border-box;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar .sidebar-footer {display:block!important;flex:0 0 auto!important;min-width:0;box-sizing:border-box;padding:10px!important;padding-bottom:max(10px,env(safe-area-inset-bottom))!important;overflow:visible!important;white-space:normal!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar .footer-info {gap:6px;min-width:0;margin-bottom:6px!important;line-height:1.4;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar .footer-info .f-icon {flex:0 0 20px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar .logout-btn {min-height:44px!important;padding:9px!important;box-sizing:border-box;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar.cashier-sidebar-expanded .footer-info {justify-content:flex-start!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar.cashier-sidebar-expanded .footer-info .f-text {display:block!important;min-width:0;font-size:12px;white-space:normal!important;overflow-wrap:anywhere;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar.cashier-sidebar-expanded .logout-text {display:inline!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #view-stockreq.active.cashier-stock-viewport {max-height:var(--cashier-stock-visible-height)!important;scroll-behavior:auto!important;scroll-padding-block:12px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #view-stockreq.cashier-stock-compact-input .cashier-stock-controls {position:static!important;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #view-stockreq :is(input,select) {scroll-margin-block:12px;}
+ body.cashier-orange.tk-ui-v2.tk-photo-pos #view-stockreq :is(input[id^="countBase_"],input[id^="countPurch_"],#manualCountSearch) {font-size:16px!important;min-height:44px;min-width:0;box-sizing:border-box;}
+ @media(max-height:600px) {
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar .sidebar-header {height:56px!important;min-height:56px!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar .sidebar-header .sidebar-header {padding:8px!important;}
+ }
+ @media(max-width:768px) {
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar.tk-mobile-menu-open {top:var(--cashier-sidebar-top,70px)!important;bottom:auto!important;height:var(--cashier-sidebar-height,calc(100dvh - 82px))!important;max-height:var(--cashier-sidebar-height,calc(100dvh - 82px))!important;}
+  body.cashier-orange.tk-ui-v2.tk-photo-pos #mainSidebar .nav-menu {align-content:start;grid-auto-rows:min-content;}
+ }
+}
 @media screen {
  body.cashier-orange.tk-ui-v2.tk-photo-pos #menuCategoryDropdown {display:none!important;}
  body.cashier-orange.tk-ui-v2.tk-photo-pos .tk-menu-toolbar {display:flex!important;align-items:center;flex-wrap:nowrap!important;margin:0!important;min-height:44px;gap:12px!important;}
