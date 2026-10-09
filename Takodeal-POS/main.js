@@ -5,7 +5,8 @@ import { createRecipeFeed } from './recipe-feed.js';
 import { installMealCheckout } from './meal-checkout.js';
 import { createShiftCloseDraftStore, countValue } from './shift-close-draft.js';
 import { ensureShiftSalesUploaded, createShiftSalesFeed, createParkedOrdersFeed, mergeParkedOrders } from './shift-sales.js';
-import { createPrinterConnections, createPrinterWriter, printerMode, rawBtIntent, receiptLogoDimensions } from './printer-connection.js';
+import { createPrinterConnections, createPrinterWriter, printerMode, rawBtIntent } from './printer-connection.js';
+import {loadPrinterLogo} from './printer-logo.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { receiveDispatch } from './dispatch-safety.js';
 import { MALL_FLOAT, mallOpeningCash, stockRequestDue, autoRequestId, businessClock } from './branch-operations.js';
@@ -8569,6 +8570,65 @@ function recordPrinterResult(role, result) {
     printerResults.set(role, {time: new Date().toISOString(), ...result});
     document.dispatchEvent(new CustomEvent('cashier-printer-result', {detail: {role, ...printerResults.get(role)}}));
 }
+const printerLogoResults = new Map();
+let receiptPaperForLogo = '58mm';
+window.getReceiptLogoMode = function(paperSize = receiptPaperForLogo) {
+    let saved;
+    try { saved = localStorage.getItem('takodeal_receipt_logo_mode'); } catch {}
+    return ['compatible','raster','none'].includes(saved) ? saved : paperSize === '80mm' ? 'raster' : 'compatible';
+};
+window.setReceiptLogoMode = function(mode) {
+    if (!['compatible','raster','none'].includes(mode)) throw new Error('Choose a supported receipt logo option.');
+    localStorage.setItem('takodeal_receipt_logo_mode',mode);
+    document.dispatchEvent(new CustomEvent('cashier-printer-state',{detail:{role:'main',logoMode:mode}}));
+};
+function recordPrinterLogoResult(result) {
+    printerLogoResults.set('main',{time:new Date().toISOString(),...result});
+    document.dispatchEvent(new CustomEvent('cashier-printer-result',{detail:{role:'main',logoResult:printerLogoResults.get('main')}}));
+}
+window.confirmPrintWithoutLogo = async function(error) {
+    recordPrinterLogoResult({status:'preparation-failed',message:error?.message || 'The receipt logo could not be prepared.'});
+    const answer = await Swal.fire({titleText:'Receipt logo needs attention',text:(error?.message || 'The logo could not be prepared.')+' No print data has been sent. You can print this receipt without its logo.',icon:'warning',showCancelButton:true,confirmButtonText:'Print text only',cancelButtonText:'Cancel printing'});
+    return !!answer.isConfirmed;
+};
+let printerLogoTestBusy = false;
+window.testPrinterLogo = async function(target = 'main',event) {
+    if (target !== 'main') return false;
+    const button=event?.currentTarget || event?.target;
+    if (printerLogoTestBusy || button?.disabled) return false;
+    if (window.getReceiptLogoMode() === 'none') {
+        await Swal.fire({titleText:'Text-only printing selected',text:'Choose Small compatible logo or Raster logo before testing the receipt logo.',icon:'info'});
+        return false;
+    }
+    printerLogoTestBusy=true;
+    const oldText=button?.innerText;
+    if(button){button.disabled=true;button.innerText='Preparing logo…';}
+    try {
+        const branch=localStorage.getItem('takodeal_device_branch') || 'Main Office';
+        const snapshot=await window.getDocs(window.query(window.collection(window.db,'branches'),window.where('name','==',branch)));
+        const settings=snapshot.empty ? {} : snapshot.docs[0].data();
+        if(!settings.receiptLogoBase64) throw new Error('No receipt logo is saved for this branch. Add it in the Owner app’s branch receipt settings, then try again.');
+        const paper=settings.printerSize === '80mm' ? '80mm' : '58mm';
+        const mode=window.getReceiptLogoMode(paper);
+        const logo=await window.encodeImageForPrinter(settings.receiptLogoBase64,settings.logoWidthScale || 1,settings.logoHeightScale || 1,paper);
+        if(!logo?.length) throw new Error('The receipt logo is disabled. Choose a logo option, then test again.');
+        const payload=window.concatBuffers([window.stringToBuffer('\x1b\x40\n'),logo,window.stringToBuffer('\nTAKODEAL LOGO TEST\n'+(mode==='compatible'?'Small compatible logo':'Raster logo')+'\nThis is a printer test only.\nNo sale or cash drawer command.\n\n\n')]);
+        if(button)button.innerText='Sending logo…';
+        const sent=await window.sendToBluetoothPrinter(payload,false,'main',{fallback:false});
+        if(!sent){recordPrinterLogoResult({status:'not-completed',message:'Logo test did not complete. Check the paper before retrying; the app will not replay it automatically.'});return false;}
+        const answer=await Swal.fire({titleText:'Did the logo and test text print?',text:'Check the paper. Accepted data alone cannot confirm output. If the printer is ticking or stuck, choose Text only before printing another receipt.',icon:'question',showDenyButton:true,confirmButtonText:'Yes, both printed',denyButtonText:'No, it stopped'});
+        recordPrinterLogoResult({status:answer.isConfirmed?'paper-confirmed':'no-paper',message:answer.isConfirmed?'Logo and test text confirmed on paper.':'Logo output was not confirmed. Use Text only for receipts, then check the printer before another logo test.',bytes:payload.length,mode});
+        return !!answer.isConfirmed;
+    } catch(error) {
+        recordPrinterLogoResult({status:'preparation-failed',message:error?.message || 'The logo test could not be prepared.'});
+        await Swal.fire({titleText:'Logo test needs attention',text:error?.message || 'The logo test could not be prepared.',icon:'warning'});
+        return false;
+    } finally {
+        printerLogoTestBusy=false;
+        if(button){button.disabled=false;button.innerText=oldText;}
+    }
+};
+
 window.testPrint = async function(target = 'main', event) {
     const btn = event?.currentTarget || event?.target;
     if (btn?.disabled) return;
@@ -8597,7 +8657,7 @@ const printerConnections = createPrinterConnections({
 });
 const printerWriter = createPrinterWriter(printerConnections);
 window.getPrinterState = role => printerMode(localStorage) === 'rawbt' ? {connected: false, status: 'bridge', name: 'Android print bridge'} : printerConnections.snapshot(role);
-window.getPrinterDiagnostics = role => ({mode: printerMode(localStorage), ...window.getPrinterState(role), result: printerResults.get(role) || null});
+window.getPrinterDiagnostics = role => ({mode: printerMode(localStorage), ...window.getPrinterState(role), result: printerResults.get(role) || null,logoMode:window.getReceiptLogoMode(),logoResult:role==='main'?printerLogoResults.get('main') || null:null});
 window.setPrinterMode = function(mode) {
     if (mode !== 'ble' && mode !== 'rawbt') throw new Error('Unknown printing mode.');
     if (mode === 'rawbt' && !/Android/i.test(navigator.userAgent)) throw new Error('Android print bridge is available on Android tablets.');
@@ -8645,74 +8705,24 @@ window.stringToBuffer = function(str) {
 };
 
 window.concatBuffers = function(buffers) {
-    let totalLength = buffers.reduce((acc, b) => acc + b.length, 0);
-    let result = new Uint8Array(totalLength);
-    let offset = 0;
-    for (let b of buffers) {
-        result.set(b, offset);
-        offset += b.length;
+    const totalLength = buffers.reduce((total,bytes)=>total+bytes.length,0);
+    const result = new Uint8Array(totalLength), pauseAfterBytes=[];
+    let offset=0;
+    for(const bytes of buffers){
+        result.set(bytes,offset);
+        for(const boundary of bytes.pauseAfterBytes || []) pauseAfterBytes.push(offset+boundary);
+        offset+=bytes.length;
     }
+    if(pauseAfterBytes.length) Object.defineProperty(result,'pauseAfterBytes',{value:Object.freeze(pauseAfterBytes)});
     return result;
 };
 
 // ==========================================
 // 🖼️ ESC/POS BINARY IMAGE PROCESSOR
 // ==========================================
-window.encodeImageForPrinter = async function(base64Image, scaleWidth, scaleHeight, paperSize = '58mm') {
-    return new Promise((resolve) => {
-        let img = new Image();
-        
-        img.onload = function() {
-            try {
-                let canvas = document.createElement('canvas');
-                let ctx = canvas.getContext('2d', { willReadFrequently: true });
-                
-                const dimensions = receiptLogoDimensions({width: img.width, height: img.height, scaleWidth, scaleHeight, paperSize});
-                const targetWidth = dimensions.width, targetHeight = dimensions.height;
-                
-                canvas.width = targetWidth; 
-                canvas.height = targetHeight;
-                
-                ctx.fillStyle = 'white';
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                
-                let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-                let bytesWidth = canvas.width / 8;
-                let bytesHeight = canvas.height;
-                
-                let buffer = new Uint8Array(8 + (bytesWidth * bytesHeight));
-                buffer.set([0x1D, 0x76, 0x30, 0x00, bytesWidth & 0xFF, (bytesWidth >> 8) & 0xFF, bytesHeight & 0xFF, (bytesHeight >> 8) & 0xFF], 0);
-                
-                let offset = 8;
-                for (let y = 0; y < canvas.height; y++) {
-                    for (let x = 0; x < bytesWidth; x++) {
-                        let byte = 0;
-                        for (let bit = 0; bit < 8; bit++) {
-                            let px = (y * canvas.width + (x * 8 + bit)) * 4;
-                            let r = imgData[px], g = imgData[px+1], b = imgData[px+2], a = imgData[px+3];
-                            if (a < 128) { r = 255; g = 255; b = 255; } 
-                            let luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b);
-                            if (luminance < 128) byte |= (1 << (7 - bit));
-                        }
-                        buffer[offset++] = byte;
-                    }
-                }
-                
-                let finalBuffer = new Uint8Array(buffer.length + 6);
-                finalBuffer.set([0x1B, 0x61, 0x01], 0); // Center Align
-                finalBuffer.set(buffer, 3);
-                finalBuffer.set([0x1B, 0x61, 0x00], 3 + buffer.length); // Left Align
-                
-                resolve(finalBuffer);
-            } catch (e) {
-                console.warn("Logo processing failed, skipping logo...", e);
-                resolve(null); 
-            }
-        };
-        img.onerror = function() { console.warn("Logo failed to load."); resolve(null); };
-        img.src = base64Image;
-    });
+window.encodeImageForPrinter = async function(base64Image,scaleWidth,scaleHeight,paperSize = '58mm') {
+    receiptPaperForLogo = paperSize === '80mm' ? '80mm' : '58mm';
+    return loadPrinterLogo(base64Image,{paperSize:receiptPaperForLogo,scaleWidth,scaleHeight,mode:window.getReceiptLogoMode(receiptPaperForLogo)});
 };
 
 // ==========================================
@@ -8732,7 +8742,8 @@ window.sendToBluetoothPrinter = async function(data, isJustDrawer = false, targe
             recordPrinterResult(target, {status: answer.isConfirmed ? 'handed-off' : 'cancelled', message: answer.isConfirmed ? 'Sent to Android print bridge. Paper output is not confirmed.' : 'Print handoff cancelled.'});
             return !!answer.isConfirmed;
         }
-        const sent = await printerWriter.send(buffer, target, options);
+        const writeOptions = buffer.pauseAfterBytes?.length ? {...options,pauseAfterBytes:buffer.pauseAfterBytes,bandDelay:120} : options;
+        const sent = await printerWriter.send(buffer, target, writeOptions);
         recordPrinterResult(target, {status: 'sent', message: 'Data accepted by the printer channel. Paper output is not confirmed.', bytes: buffer.length});
         return sent;
     } catch (error) {
