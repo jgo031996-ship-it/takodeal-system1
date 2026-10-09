@@ -6,7 +6,7 @@
     <title>TAKODEÁL | Order fresh takoyaki</title>
     <meta name="theme-color" content="#173f35">
     <meta name="description" content="Choose a TAKODEÁL branch, browse its menu, and order takoyaki, drinks and more for pickup or delivery.">
-    <link rel="stylesheet" href="customer-theme.css?v=customer-repair-20261004">
+    <link rel="stylesheet" href="customer-theme.css?v=branch-availability-20261009">
     <link rel="stylesheet" href="customer-browser-help.css?v=online-orders-20261008-r1">
     <script type="module" src="customer-browser-help.js?v=online-orders-20261008-r1"></script>
     
@@ -641,17 +641,42 @@
         window.phantomVariants = {}; 
         window.isStoreAcceptingOrders = true;
 
+        window.confirmCustomerBranchAvailable = async function(branchName) {
+            const branch=window.customerBranchData.get(branchName);
+            if (!branch || !withinBranchHours(branch.operatingHours)) return false;
+            try {
+                const status=await tkCustomerGetServerDoc(doc(db,'settings','status_'+branchName));
+                const accepting=await window.TKCustomerGate.inspect(branchName,status);
+                const currentBranch=window.customerBranchData.get(branchName);
+                return Boolean(accepting && currentBranch) && withinBranchHours(currentBranch.operatingHours);
+            } catch {return false;}
+        };
+        window.showCustomerBranchUnavailable = async function() {
+            await Swal.fire({title:'Orders unavailable',text:'This branch is not accepting orders right now. Please choose another branch or refresh availability.',icon:'info'});
+            await window.loadBranchLocator();
+        };
         window.syncBranchSelection = async function(branchName) {
+            if (!await window.confirmCustomerBranchAvailable(branchName)) {
+                await window.showCustomerBranchUnavailable(); return false;
+            }
             const before=window.customerSelectedBranch;
+            let clearCart=false;
             if (window.cart.length && window.customerCartBranch!==branchName) {
                 const answer=await Swal.fire({title:'Start a cart for this branch?',text:`Your current cart${window.customerCartBranch?' is for '+window.customerCartBranch:''}. Changing branch will clear those items so you can order from ${branchName}.`,icon:'question',showCancelButton:true,confirmButtonText:'Change branch',cancelButtonText:'Keep my cart'});
                 if (!answer.isConfirmed) return false;
-                window.cart=[]; window.updateCartUI();
+                if (!await window.confirmCustomerBranchAvailable(branchName)) {
+                    await window.showCustomerBranchUnavailable(); return false;
+                }
+                clearCart=true;
             }
+            const branch=window.customerBranchData.get(branchName);
+            if (!branch || !withinBranchHours(branch.operatingHours)) {
+                await window.showCustomerBranchUnavailable(); return false;
+            }
+            if (clearCart) {window.cart=[]; window.updateCartUI();}
             window.customerSelectedBranch=branchName;
             window.customerCartBranch=branchName;
             window.isStoreAcceptingOrders=false;
-            const branch=window.customerBranchData.get(branchName) || {name:branchName};
             for (const id of ['homeBranchSelect','selectedBranch']) {
                 const select=document.getElementById(id); select.replaceChildren();
                 const option=document.createElement('option');option.value=branchName;option.textContent=branchName;select.appendChild(option);
@@ -689,7 +714,7 @@
                 snap.forEach(entry=>{const data=entry.data();if (typeof data.name==='string' && data.name!=='Main Office') branches.push(data);});
                 window.customerBranchData=new Map(branches.map(b=>[b.name,b]));
                 const entries=await Promise.all(branches.map(async branch=>{
-                    const status=await getDoc(doc(db,'settings','status_'+branch.name)).catch(()=>null);
+                    const status=await tkCustomerGetServerDoc(doc(db,'settings','status_'+branch.name)).catch(()=>null);
                     const accepting=await window.TKCustomerGate.inspect(branch.name,status);
                     const inHours=withinBranchHours(branch.operatingHours);
                     return {...branch,accepting:accepting && inHours,statusText:!inHours?'Closed':accepting?'Accepting orders':'Orders paused'};
@@ -699,13 +724,21 @@
                 grid.innerHTML=entries.map(b=>{
                     const name=escapeHTML(b.name), phone=String(b.publicContact || b.contact || '').replace(/[^+0-9]/g,'');
                     const hours=(!b.operatingHours || b.operatingHours==='N/A')?'Hours not listed':b.operatingHours;
-                    return `<article class="customer-branch-card"><div class="customer-branch-photo"><img src="${escapeHTML(b.storefrontImage || 'customer-mobile-logo.jpg')}" alt="${name} branch" loading="lazy" onerror="this.onerror=null;this.src='customer-mobile-logo.jpg'"><span class="customer-status ${b.accepting?'open':'waiting'}">${escapeHTML(b.statusText)}</span></div><div class="customer-branch-card-body"><h2>${name}</h2><p class="customer-branch-location">${escapeHTML(b.publicAddress || b.address || 'Davao City')}</p><p class="customer-branch-hours">${escapeHTML(hours)}</p><div class="customer-branch-card-bottom">${phone.length>=10?`<a href="tel:${escapeHTML(phone)}">Call branch ↗</a>`:'<span>Pickup & delivery</span>'}<button class="customer-primary-button" onclick="window.selectBranchAndEnter(decodeURIComponent('${encodeURIComponent(b.name).replace(/'/g,'%27')}'))">View menu →</button></div></div></article>`;
+                    const action=b.accepting
+                        ? `<button type="button" class="customer-primary-button" onclick="window.selectBranchAndEnter(decodeURIComponent('${encodeURIComponent(b.name).replace(/'/g,'%27')}'))">View menu →</button>`
+                        : `<button type="button" class="customer-primary-button" disabled aria-disabled="true" aria-label="${name} is unavailable for orders">Unavailable</button>`;
+                    return `<article class="customer-branch-card ${b.accepting?'':'customer-branch-unavailable'}"><div class="customer-branch-photo"><img src="${escapeHTML(b.storefrontImage || 'customer-mobile-logo.jpg')}" alt="${name} branch" loading="lazy" onerror="this.onerror=null;this.src='customer-mobile-logo.jpg'"><span class="customer-status ${b.accepting?'open':'waiting'}">${escapeHTML(b.statusText)}</span></div><div class="customer-branch-card-body"><h2>${name}</h2><p class="customer-branch-location">${escapeHTML(b.publicAddress || b.address || 'Davao City')}</p><p class="customer-branch-hours">${escapeHTML(hours)}</p><div class="customer-branch-card-bottom">${phone.length>=10?`<a href="tel:${escapeHTML(phone)}">Call branch ↗</a>`:'<span>Pickup & delivery</span>'}${action}</div></div></article>`;
                 }).join('') || '<div class="customer-empty">No branches are listed yet. Please check back shortly.</div>';
             } catch(error) {grid.innerHTML='<div class="customer-empty">Branches could not load. Check your connection and use Refresh availability to try again.</div>';}
             finally {window.customerBranchesLoading=false;}
         };
         window.selectBranchAndEnter = async function(branchName) {
-            if (await window.syncBranchSelection(branchName)) window.switchScreen('orderingScreen');
+            if (window.customerBranchSelecting) return false;
+            window.customerBranchSelecting=true;
+            try {
+                if (!await window.syncBranchSelection(branchName)) return false;
+                window.switchScreen('orderingScreen'); return true;
+            } finally {window.customerBranchSelecting=false;}
         };
 
         window.currentGrabLink = "";
