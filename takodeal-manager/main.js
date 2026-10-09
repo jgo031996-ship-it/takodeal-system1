@@ -20,6 +20,8 @@ import { confirmMallDailyClose } from './shift-close-ui.js';
 import { installMenuBulk } from './menu-bulk.js';
 import { installRecipeReplacement } from './recipe-bulk.js';
 import { installCustomerHubSettings } from './customer-hub-settings.js';
+import {installRiderManagementSafety} from './rider-management.js';
+import {installRiderManagementViews} from './rider-management-view.js';
 import { loadRecipeState, createRecipeBatch, operationFor, recipePlan, saveRecipePlan, readRecipeRevision, recipeOperationApplied, loadInventoryDeletionState, inventoryDeletionPlan } from './recipe-changes.js';
 import { approveRemittanceAtomic } from './cash-settlement.js';
 import { legacyRemittanceDuplicates, rejectLegacyDuplicateAtomic } from './remittance-review.js';
@@ -27639,3 +27641,6 @@ installMonthlyBills();
 installStaffRateHistory(window,document);
 installMasterEmployeeDocuments(window,{d:document});
 installCustomerHubSettings(window,document);
+
+installRiderManagementSafety(window);
+installRiderManagementViews(window,document);

@@ -1,172 +1,55 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#0f172a">
-    <link rel="icon" type="image/jpeg" href="Delivery.jpg">
-    <link rel="apple-touch-icon" href="Delivery.jpg">
-    <link rel="manifest" href="manifest.json">
-    <title>TAKODEÁL Fleet</title>
-    <style>
-        :root {
-            --bg-dark: #0f172a; --card-bg: #1e293b;
-            --primary: #0ea5e9; --success: #10b981; --danger: #ef4444;
-            --text-main: #f8fafc; --text-muted: #94a3b8;
-        }
-
-        @keyframes radarPing {
-            0% { transform: scale(0.8); opacity: 0.8; }
-            100% { transform: scale(1.5); opacity: 0; }
-        }
-        
-        body { font-family: 'Segoe UI', sans-serif; margin: 0; background: var(--bg-dark); color: var(--text-main); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
-            
-        /* 🔐 LOGIN & REGISTRATION OVERLAY */
-        #authOverlay { 
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-            background: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.95)), url('Delivery.jpg') center/cover no-repeat;
-            z-index: 100; display: flex; flex-direction: column; justify-content: center; align-items: center; 
-            padding: 20px; box-sizing: border-box; overflow-y: auto; backdrop-filter: blur(6px); 
-        }
-        .auth-card { background: var(--card-bg); width: 100%; max-width: 400px; padding: 30px; border-radius: 16px; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.5); box-sizing: border-box; }
-        .input-box { width: 100%; padding: 15px; margin-bottom: 15px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: white; outline: none; font-size: 16px; box-sizing: border-box; }
-        .btn-main { width: 100%; background: var(--primary); color: white; border: none; padding: 15px; border-radius: 8px; font-weight: 900; font-size: 16px; cursor: pointer; margin-bottom: 10px; }
-        .file-upload { border: 2px dashed #475569; padding: 20px; text-align: center; border-radius: 8px; margin-bottom: 15px; color: var(--text-muted); cursor: pointer; }
-
-        /* 🛵 MAIN DISPATCH UI */
-        #mainApp { display: none; flex-direction: column; height: 100%; }
-        .top-bar { background: var(--card-bg); padding: 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
-        
-        /* 🚨 INCOMING PING MODAL */
-        #incomingOrderPing { display: none; position: fixed; bottom: 0; left: 0; width: 100%; background: #1e293b; border-top: 3px solid var(--primary); padding: 20px; box-sizing: border-box; z-index: 200; box-shadow: 0 -10px 25px rgba(0,0,0,0.5); animation: slideUp 0.3s ease-out; }
-        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-        
-        .ping-distance { font-size: 32px; font-weight: 900; color: #facc15; margin: 10px 0; }
-        .action-row { display: flex; gap: 10px; margin-top: 20px; }
-        .btn-accept { flex: 2; background: var(--success); color: white; border: none; padding: 20px; border-radius: 12px; font-size: 18px; font-weight: 900; }
-        .btn-reject { flex: 1; background: #334155; color: white; border: none; padding: 20px; border-radius: 12px; font-size: 16px; font-weight: 900; }
-    </style>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="theme-color" content="#0f172a">
+<meta name="description" content="Join the TAKODEÁL rider fleet, track your application, and manage your deliveries.">
+<link rel="icon" type="image/jpeg" href="Delivery.jpg"><link rel="apple-touch-icon" href="Delivery.jpg"><link rel="manifest" href="manifest.json"><link rel="stylesheet" href="rider-mobile.css?v=rider-mobile-20261009">
+<title>TAKODEÁL Rider</title>
 </head>
 <body>
-
-    <!-- 🔐 AUTHENTICATION SCREEN -->
-    <div id="authOverlay">
-        <div class="auth-card" id="loginView">
-            <!-- Added Logo Image Here -->
-            <div style="text-align: center; margin-bottom: 15px;">
-                <img src="Delivery.jpg" alt="TAKODEÁL" style="width: 80px; height: 80px; border-radius: 20px; object-fit: cover; border: 3px solid var(--primary); box-shadow: 0 6px 15px rgba(14, 165, 233, 0.2);">
-            </div>
-            
-            <h2 style="margin-top:0; color:var(--primary); text-align: center;">Rider Login</h2>
-            <input type="text" id="loginPhone" class="input-box" placeholder="Phone Number (e.g. 09123456789)">
-            <input type="password" id="loginPin" class="input-box" placeholder="4-Digit PIN">
-            <button class="btn-main" onclick="window.loginRider()">Sign In</button>
-            <div style="text-align: center; margin-top: 15px;">
-                <span style="color: var(--text-muted); font-size: 14px;">Want to join the fleet?</span>
-                <span style="color: var(--primary); cursor: pointer; font-weight: bold; margin-left: 5px;" onclick="document.getElementById('loginView').style.display='none'; document.getElementById('registerView').style.display='block';">Register Here</span>
-            </div>
-        </div>
-
-        <div class="auth-card" id="registerView" style="display: none; max-height: 85vh; overflow-y: auto;">
-            <h2 style="margin-top:0; color:var(--success);">Join the Fleet</h2>
-            <input type="text" id="regName" class="input-box" placeholder="Full Name">
-            <input type="text" id="regPhone" class="input-box" placeholder="Phone Number">
-            <input type="text" id="regVehicle" class="input-box" placeholder="Motorcycle Make & Model">
-            <input type="text" id="regPlate" class="input-box" placeholder="Plate Number">
-            <input type="password" id="regPin" class="input-box" placeholder="Create a 4-Digit PIN">
-            
-            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">Upload Driver's License</div>
-            <input type="file" id="regLicense" class="input-box" style="padding: 10px;" accept="image/*">
-
-            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">Upload Motorcycle OR/CR</div>
-            <input type="file" id="regORCR" class="input-box" style="padding: 10px;" accept="image/*">
-            
-            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 5px;">Upload Selfie (For Customer App)</div>
-            <input type="file" id="regSelfie" class="input-box" style="padding: 10px;" accept="image/*">
-
-            <button class="btn-main" style="background: var(--success);" onclick="window.registerRider()">Submit Application</button>
-            <div style="text-align: center; margin-top: 15px;">
-                <span style="color: var(--text-muted); cursor: pointer; font-size: 14px;" onclick="document.getElementById('registerView').style.display='none'; document.getElementById('loginView').style.display='block';">Back to Login</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- 🛵 MAIN APP INTERFACE -->
-    <div id="mainApp">
-        <div class="top-bar">
-            <div>
-                <div style="font-weight: 900; font-size: 18px;" id="profileName">Loading...</div>
-                <div style="font-size: 12px; color: #facc15;">⭐ <span id="profileRating">5.0</span> | Wallet: ₱<span id="profileWallet">0.00</span></div>
-            </div>
-            <div style="display: flex; gap: 10px;">
-                <button onclick="window.requestTopUp()" style="background: #3b82f6; color: white; border: none; padding: 10px; border-radius: 8px; font-weight: bold; cursor: pointer;">➕ Top-Up</button>
-                <button id="statusToggle" onclick="window.toggleRiderStatus()" style="background: var(--success); color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer;">ONLINE</button>
-                <!-- 🔥 NEW SIGN OUT BUTTON -->
-                <button onclick="window.logoutRider()" style="background: #ef4444; color: white; border: none; padding: 10px; border-radius: 8px; font-weight: bold; cursor: pointer;" title="Sign Out">🚪</button>
-            </div>
-        </div>
-        
-        <!-- IDLE STATE: RADAR SCREEN -->
-        <div id="radarScreen" style="flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 20px; text-align: center;">
-            <div style="position: relative; display: inline-block; margin-bottom: 25px;">
-                <div style="position: absolute; top: -10px; left: -10px; right: -10px; bottom: -10px; border-radius: 50%; border: 3px solid var(--primary); opacity: 0.5; animation: radarPing 2s infinite;"></div>
-                <img src="Delivery.jpg" alt="Fleet Radar" style="width: 110px; height: 110px; border-radius: 50%; object-fit: cover; border: 4px solid var(--card-bg); box-shadow: 0 0 25px rgba(14, 165, 233, 0.4); z-index: 2; position: relative;">
-            </div>
-            <h3 style="margin: 0; color: var(--text-main); font-size: 24px;">Radar Active</h3>
-            <p style="color: #94a3b8; font-size: 15px; margin-top: 8px; margin-bottom: 30px; max-width: 250px;">Waiting for HQ to dispatch orders near your location...</p>
-            <button onclick="window.location.reload()" style="background: transparent; color: var(--primary); border: 1px solid var(--primary); padding: 12px 25px; border-radius: 25px; font-weight: bold; font-size: 15px; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.2s;">
-                <span style="font-size: 18px;">🔄</span> Refresh App
-            </button>
-        </div>
-
-        <!-- ACTIVE STATE: DISPATCH BOARD WITH TABS -->
-        <div id="dispatchBoardContainer" style="display: none; flex: 1; flex-direction: column; overflow: hidden;">
-            
-            <div style="display: flex; background: var(--card-bg); padding: 15px; border-bottom: 1px solid #334155; gap: 10px;">
-                <button id="tabPending" onclick="window.switchRiderTab('Pending')" style="flex: 1; padding: 12px; border-radius: 8px; font-weight: 900; background: var(--primary); color: white; border: none; cursor: pointer; font-size: 14px; transition: 0.2s;">📍 Open Orders</button>
-                <button id="tabOngoing" onclick="window.switchRiderTab('Ongoing')" style="flex: 1; padding: 12px; border-radius: 8px; font-weight: 900; background: #334155; color: #94a3b8; border: none; cursor: pointer; font-size: 14px; transition: 0.2s;">🛵 My Deliveries</button>
-            </div>
-            
-            <div id="dispatchBoard" style="display: none; flex: 1; overflow-y: auto; padding: 15px; flex-direction: column; gap: 15px;">
-                <!-- Orders will inject here! -->
-            </div>
-        </div>
-    </div>
-
-    <!-- 🚨 INCOMING ORDER MODAL (THE PING) -->
-    <div id="incomingOrderPing">
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-            <div style="font-size: 12px; color: var(--text-muted); font-weight: bold; text-transform: uppercase;">New Delivery Request</div>
-            <div id="pingTimer" style="color: var(--danger); font-weight: 900; font-size: 18px;">15s</div>
-        </div>
-        
-        <div class="ping-distance" id="pingDistance">2.4 km total</div>
-        
-        <div style="font-size: 14px; color: #cbd5e1; margin-bottom: 8px;">📍 Pickup: <strong style="color: white;" id="pingStore">Maa Branch</strong></div>
-        <div style="font-size: 14px; color: #cbd5e1;">📍 Dropoff: <strong style="color: white;" id="pingAddress">Loading...</strong></div>
-        
-        <div class="action-row">
-            <button class="btn-reject" onclick="window.rejectPing()">Pass</button>
-            <button class="btn-accept" id="btnAcceptPing" onclick="window.acceptPing()">Accept</button>
-        </div>
-    </div>
-
-    <script type="module" src="main.js?v=read-budget-20261006"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <!-- 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('sw.js')
-            .then(registration => {
-              console.log('✅ Rider App securely installed.', registration.scope);
-            })
-            .catch(err => {
-              console.error('❌ Installation failed: ', err);
-            });
-        });
-      }
-    </script>
+<div class="rider-shell">
+<div id="riderConnectionStatus" class="rider-notice" role="status" aria-live="polite">Connecting…</div>
+<div id="riderUpdateNotice" class="rider-notice" role="status" hidden></div>
+<section id="authOverlay" class="rider-auth" aria-label="Rider sign in and registration">
+ <div class="rider-auth-brand"><img src="Delivery.jpg" alt="TAKODEÁL Rider" width="80" height="80"><p class="rider-eyebrow">TAKODEÁL · RIDER FLEET</p><h1>Your next delivery starts here.</h1><p>Register once. Check your application here while Manager reviews it.</p></div>
+ <div class="rider-auth-card auth-card" id="loginView">
+  <h2>Welcome back</h2><p>Use your registered phone number and PIN. New accounts use a four-digit PIN.</p>
+  <form class="rider-form" onsubmit="event.preventDefault(); window.loginRider()">
+   <label class="rider-field" for="loginPhone">Phone number<input type="tel" id="loginPhone" class="input-box" autocomplete="tel" inputmode="tel" placeholder="09XX XXX XXXX" required maxlength="20"></label>
+   <label class="rider-field" for="loginPin">Rider PIN<input type="password" id="loginPin" class="input-box" autocomplete="off" maxlength="64" placeholder="Enter your PIN" required></label>
+   <button id="btnLoginRider" type="submit" class="rider-button btn-main">Sign in</button>
+  </form><button type="button" class="rider-button secondary" onclick="window.showRiderAuthView('register')">New rider? Register</button>
+ </div>
+ <div class="rider-auth-card auth-card" id="registerView" style="display:none">
+  <h2>Join the fleet</h2><p>These details and photos go to Manager for review. Approval is required before you can take deliveries.</p>
+  <form class="rider-form" onsubmit="event.preventDefault(); window.registerRider()">
+   <label class="rider-field" for="regName">Full name<input id="regName" class="input-box" autocomplete="name" maxlength="100" required></label>
+   <label class="rider-field" for="regPhone">Phone number<input type="tel" id="regPhone" class="input-box" autocomplete="tel" inputmode="tel" placeholder="09XX XXX XXXX" maxlength="20" required></label>
+   <label class="rider-field" for="regVehicle">Motorcycle make and model<input id="regVehicle" class="input-box" maxlength="100" placeholder="e.g. Honda Click 125" required></label>
+   <label class="rider-field" for="regPlate">Plate number<input id="regPlate" class="input-box" autocomplete="off" maxlength="30" autocapitalize="characters" required></label>
+   <div class="rider-form-pair"><label class="rider-field" for="regPin">Create PIN<input type="password" id="regPin" class="input-box" inputmode="numeric" autocomplete="off" pattern="[0-9]{4}" maxlength="4" required></label><label class="rider-field" for="regPinConfirm">Confirm PIN<input type="password" id="regPinConfirm" class="input-box" inputmode="numeric" autocomplete="off" pattern="[0-9]{4}" maxlength="4" required></label></div>
+   <fieldset class="rider-documents"><legend>Application photos</legend><p>Choose a clear JPG, PNG or WebP photo for each item, up to 8 MB each.</p>
+    <label class="rider-field" for="regLicense">Driver’s license<input type="file" id="regLicense" class="input-box" accept="image/jpeg,image/png,image/webp" required></label>
+    <label class="rider-field" for="regORCR">Motorcycle OR/CR<input type="file" id="regORCR" class="input-box" accept="image/jpeg,image/png,image/webp" required></label>
+    <label class="rider-field" for="regSelfie">Rider photo<input type="file" id="regSelfie" class="input-box" accept="image/jpeg,image/png,image/webp" required><small>Your rider photo may be shown to the customer on an assigned delivery.</small></label>
+   </fieldset><p id="registrationStatus" class="rider-status" role="status" aria-live="polite"></p>
+   <button id="btnRegisterRider" type="submit" class="rider-button btn-main">Submit for Manager approval</button>
+  </form><button type="button" class="rider-button secondary" onclick="window.showRiderAuthView('login')">Back to sign in</button>
+ </div><p id="riderAuthStatus" class="rider-status" role="status" aria-live="polite"></p>
+</section>
+<section id="accountStatusScreen" class="rider-account" style="display:none" aria-labelledby="applicationStatus">
+ <div class="rider-auth-card"><img src="Delivery.jpg" alt="TAKODEÁL Rider" width="64" height="64"><p class="rider-eyebrow">YOUR RIDER APPLICATION</p><h1 id="applicationStatus">Application status</h1><h2 id="applicationName"></h2><p id="applicationPhone"></p><p id="applicationMessage" role="status" aria-live="polite"></p><p id="applicationSubmittedAt"></p><div class="rider-account-steps"><p>1. Application submitted</p><p>2. Manager reviews your details</p><p>3. Once approved, turn on availability to receive deliveries</p></div><button id="btnRefreshApproval" type="button" class="rider-button" onclick="window.refreshRiderApproval()">Check approval status</button><button id="btnApprovalSignOut" type="button" class="rider-button secondary" onclick="window.logoutRider()">Sign out</button></div>
+</section>
+<main id="mainApp" style="display:none" aria-label="Rider deliveries">
+ <header class="rider-header top-bar"><div class="rider-profile"><p class="rider-eyebrow">TAKODEÁL RIDER</p><h1 id="profileName">Rider</h1><div class="rider-summary"><span>Wallet <strong>₱<span id="profileWallet">0.00</span></strong></span><span>Rating <strong id="profileRating">5.0</strong></span></div></div><div class="rider-header-actions"><button type="button" id="riderTopUpButton" class="rider-button secondary" onclick="window.requestTopUp()">Top up</button><button type="button" id="statusToggle" class="rider-button" aria-pressed="false" onclick="window.toggleRiderStatus()">Go online</button><button type="button" class="rider-button secondary rider-signout" onclick="window.logoutRider()">Sign out</button></div></header>
+ <p id="riderOperationStatus" class="rider-status" role="status" aria-live="polite"></p><p id="riderLocationStatus" class="rider-status" role="status" aria-live="polite">Location updates start when you go online.</p>
+ <nav class="rider-tabs" aria-label="Delivery lists"><button type="button" id="tabPending" aria-pressed="true" onclick="window.switchRiderTab('Pending')">Open orders <span id="riderOpenCount">0</span></button><button type="button" id="tabOngoing" aria-pressed="false" onclick="window.switchRiderTab('Ongoing')">My deliveries <span id="riderOngoingCount">0</span></button></nav>
+ <div class="rider-content"><section id="radarScreen" class="rider-empty"><img src="Delivery.jpg" alt="" width="96" height="96"><h2 id="riderEmptyTitle">You’re offline</h2><p id="riderEmptyMessage">Go online when you’re ready to receive delivery requests.</p><button type="button" class="rider-button secondary" onclick="window.refreshRiderDeliveries()">Refresh deliveries</button></section><section id="dispatchBoardContainer" style="display:none" aria-label="Delivery orders"><div id="dispatchBoard" aria-live="polite"></div></section></div>
+</main>
+<button type="button" id="riderInstallButton" class="rider-button rider-install" hidden>Install Rider app</button>
+</div>
+<section id="incomingOrderPing" class="rider-ping" style="display:none" role="dialog" aria-modal="true" aria-labelledby="riderPingTitle"><div class="rider-ping-heading"><h2 id="riderPingTitle">New delivery request</h2><span id="pingTimer">15s</span></div><p class="ping-distance" id="pingDistance"></p><p>Pickup: <strong id="pingStore"></strong></p><p>Drop-off: <strong id="pingAddress"></strong></p><div class="rider-order-actions"><button type="button" class="rider-button secondary btn-reject" onclick="window.rejectPing()">Pass</button><button type="button" class="rider-button btn-accept" id="btnAcceptPing" onclick="window.acceptPing()">Accept delivery</button></div></section>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script><script type="module" src="main.js?v=rider-mobile-20261009"></script>
+<script>if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('sw.js').then(registration=>window.dispatchEvent(new CustomEvent('rider-worker-ready',{detail:registration}))).catch(()=>{document.getElementById('riderConnectionStatus').textContent='App installation is unavailable. You can still use the browser online.';});});}</script>
 </body>
 </html>
