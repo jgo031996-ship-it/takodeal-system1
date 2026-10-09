@@ -1,5 +1,6 @@
 // Local photo quality only. PIN/session identity remains separate; no biometric enrollment.
-export const ATTENDANCE_CAMERA_POLICY = 'frontal-photo-v1';
+export const ATTENDANCE_CAMERA_POLICY = 'attendance-photo-v2';
+export const ATTENDANCE_PHOTO_MAX_AGE = 15000;
 export const FACE_MODEL_VERSION = 'face-api.js-0.22.2-tiny';
 const mean = points => ({x:points.reduce((s,p)=>s+p.x,0)/points.length,y:points.reduce((s,p)=>s+p.y,0)/points.length});
 const distance = (a,b) => Math.hypot(a.x-b.x,a.y-b.y);
@@ -51,91 +52,94 @@ export function assessFacePixels(image) {
     return {ok:true,brightness:Math.round(average),sharpness:Math.round(sharpness)};
 }
 
+// Attendance uses a current camera photo, not mandatory face recognition.
+// The optional geometry utilities above do not authorize or block a punch.
 function cameraProblem(video,document,active=true) {
+    if(!active || document.hidden) return Error('Keep Clock open while recording attendance.');
     const tracks=video?.srcObject?.getVideoTracks?.() || [];
-    if (!active || document.hidden || !video || video.paused || video.ended || video.readyState<2 || video.videoWidth<160 || video.videoHeight<120 || tracks.length!==1 || tracks[0].readyState!=='live' || tracks[0].enabled===false || tracks[0].muted) return Error('A live camera is required for Time In. Allow camera access, keep Clock open, and try again.');
+    if(!video || !video.srcObject || video.ended || !tracks.some(track=>track.readyState==='live' && track.enabled!==false)) return Error('Camera unavailable. Allow camera access or choose Restart camera before Time In.');
     return null;
 }
-export function waitForCameraFrame(video,{timeout=1800,schedule=setTimeout,cancel=clearTimeout}={}) {
+function decodedFrame(video) {
+    return Boolean(video && !video.paused && !video.ended && video.readyState>=2 && Number.isFinite(video.videoWidth) && Number.isFinite(video.videoHeight) && video.videoWidth>0 && video.videoHeight>0);
+}
+export function waitForCameraFrame(video,{timeout=2500,schedule=setTimeout,cancel=clearTimeout}={}) {
+    if(decodedFrame(video))return Promise.resolve();
     return new Promise((resolve,reject)=>{
-        let frameId=null,timer=null,poll=null,done=false;const start=Number(video.currentTime);
-        const finish=(error)=>{
+        let frameId=null,timer=null,poll=null,done=false;
+        const finish=error=>{
             if(done)return;done=true;
-            // Cleanup is best-effort: a browser cancellation error must not strand the check.
             try{cancel(timer);}catch{}
             try{cancel(poll);}catch{}
             try{if(frameId!==null)video.cancelVideoFrameCallback?.(frameId);}catch{}
             error?reject(error):resolve();
         };
-        timer=schedule(()=>finish(Error('The camera image stopped updating. Restart the camera and try again.')),timeout);
-        if(typeof video.requestVideoFrameCallback==='function') {
-            const next=(_time,metadata)=>{if(done)return;if(Number(video.currentTime)>start+0.001 || Number(metadata?.mediaTime)>start+0.001)finish();else frameId=video.requestVideoFrameCallback(next);};
-            frameId=video.requestVideoFrameCallback(next);
+        const check=()=>{
+            if(done)return;
+            if(decodedFrame(video)){finish();return;}
+            poll=schedule(check,80);
+        };
+        timer=schedule(()=>finish(Error('Camera preview is not ready. Choose Restart camera and try again.')),timeout);
+        if(typeof video?.requestVideoFrameCallback==='function'){
+            try{frameId=video.requestVideoFrameCallback(()=>{if(!done && decodedFrame(video))finish();});}catch{}
         }
-        else {
-            const next=()=>{if(Number.isFinite(Number(video.currentTime)) && Number(video.currentTime)>start+0.01)finish();else poll=schedule(next,80);};
-            poll=schedule(next,80);
+        poll=schedule(check,80);
+        // play() can resolve late or reject under tablet autoplay restrictions.
+        // Readiness polling has its own bound; never wait indefinitely on play().
+        if(video?.paused && typeof video.play==='function'){
+            try{Promise.resolve(video.play()).then(()=>{if(!done && decodedFrame(video))finish();},()=>{});}catch{}
         }
     });
 }
-const bounded = (promise,ms,message,schedule,cancel) => new Promise((resolve,reject)=>{
-    const timer=schedule(()=>reject(Error(message)),ms);Promise.resolve(promise).then(value=>{cancel(timer);resolve(value);},error=>{cancel(timer);reject(error);});
-});
-
-export function installAttendanceCamera(api,document,{now=Date.now,schedule=setTimeout,cancel=clearTimeout,modelPath='./vendor/face-models',isActive=()=>{
+function capturePhoto(video,document,max=640,quality=0.75) {
+    if(!decodedFrame(video))throw Error('Camera preview is not ready. Choose Restart camera and try again.');
+    const scale=Math.min(1,max/video.videoWidth,max/video.videoHeight),canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(video.videoWidth*scale));canvas.height=Math.max(1,Math.round(video.videoHeight*scale));
+    const context=canvas.getContext('2d');if(!context)throw Error('The camera photo could not be saved. Restart the camera and try again.');
+    // Mirroring is preview-only. Save the original camera image for attendance.
+    context.drawImage(video,0,0,canvas.width,canvas.height);
+    const photo=canvas.toDataURL('image/jpeg',quality);
+    if(typeof photo!=='string' || !photo.startsWith('data:image/jpeg;base64,') || photo.length<='data:image/jpeg;base64,'.length)throw Error('The camera photo is empty. Restart the camera and try again.');
+    return {photo,width:canvas.width,height:canvas.height};
+}
+export function installAttendanceCamera(api,document,{now=Date.now,schedule=setTimeout,cancel=clearTimeout,isActive=()=>{
     const modal=document.getElementById('timeClockModal');if(modal)return modal.style.display==='flex';
     const view=document.getElementById('view-timeclock');return view?view.classList?.contains('active') && document.getElementById('profileModal')?.style.display!=='flex':true;
 }}={}) {
-    let epoch=0,pendingModels=null,pendingCheck=null,modelEngine=null;
+    let epoch=0,pendingCheck=null;
     const status=(message,state='ready')=>{const node=document.getElementById('attendanceFaceStatus') || document.getElementById('faceAiStatus');if(node){node.textContent=message;if(node.dataset)node.dataset.state=state;}};
-    const prepare=async()=>{
-        const face=api.faceapi;
-        if(!face?.nets?.tinyFaceDetector || !face?.nets?.faceLandmark68TinyNet || !face.TinyFaceDetectorOptions || !face.detectAllFaces) throw Error('The camera check is unavailable. Refresh this app while online to install the camera files. Time Out remains available.');
-        if(modelEngine!==face){modelEngine=face;pendingModels=null;}
-        if(!pendingModels){
-            pendingModels=Promise.all([face.nets.tinyFaceDetector.isLoaded?null:face.nets.tinyFaceDetector.loadFromUri(modelPath),face.nets.faceLandmark68TinyNet.isLoaded?null:face.nets.faceLandmark68TinyNet.loadFromUri(modelPath)]).catch(error=>{if(modelEngine===face)pendingModels=null;throw Error('Camera files could not load. Refresh while online and try again. Time Out remains available.',{cause:error});});
-        }
-        status('Preparing the camera check…','loading');
-        await bounded(pendingModels,15000,'Camera files could not load. Refresh while online and try again. Time Out remains available.',schedule,cancel);
-        status('Time In checks one clear, centered face. Your PIN still verifies your identity.');return true;
-    };
-    api.prepareAttendanceCamera=()=>prepare().catch(error=>{status(error.message,'error');throw error;});
-    api.invalidateAttendanceCamera=()=>{epoch++;status('Camera check will run when you choose Time In.');};
+    const mirror=()=>{const video=document.getElementById('clockVideo');if(video?.style)video.style.transform='scaleX(-1)';};
+    api.prepareAttendanceCamera=async()=>{mirror();status('Position yourself in the preview. Time In saves a current photo; your PIN and location verify attendance.');return true;};
+    api.invalidateAttendanceCamera=()=>{epoch++;pendingCheck=null;status('Camera photo will be captured when you choose Time In.');};
     api.assertAttendanceFaceFresh=result=>{
-        const video=document.getElementById('clockVideo');const problem=cameraProblem(video,document,isActive());
-        if(problem)throw problem;
+        const video=document.getElementById('clockVideo'),problem=cameraProblem(video,document,isActive());if(problem)throw problem;
         const capturedAt=Date.parse(result?.faceCheck?.capturedAt);
-        if(!result || !Number.isFinite(capturedAt) || result.cameraEpoch!==epoch || result.cameraStream!==video.srcObject || now()-capturedAt>5000 || now()<capturedAt) throw Error('The camera check expired. Keep Clock open and record Time In again.');
+        if(!result || result.faceCheck?.policyVersion!==ATTENDANCE_CAMERA_POLICY || !Number.isFinite(capturedAt) || result.cameraEpoch!==epoch || result.cameraStream!==video.srcObject || now()-capturedAt>ATTENDANCE_PHOTO_MAX_AGE || now()<capturedAt)throw Error('The camera photo expired. Keep Clock open and record Time In again.');
         return true;
     };
     api.captureOptionalAttendancePhoto=()=>{
-        try{const video=document.getElementById('clockVideo');if(cameraProblem(video,document,isActive()))return '';const canvas=document.createElement('canvas');canvas.width=Math.min(480,video.videoWidth);canvas.height=Math.round(video.videoHeight*canvas.width/video.videoWidth);canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);return canvas.toDataURL('image/jpeg',0.7);}catch{return '';}
+        try{const video=document.getElementById('clockVideo');if(cameraProblem(video,document,isActive()))return '';return capturePhoto(video,document,480,0.7).photo;}catch{return '';}
     };
     api.verifyAttendanceFace=()=>{
         if(pendingCheck)return pendingCheck;
         const token=epoch;
-        pendingCheck=(async()=>{
+        const check=(async()=>{
             try{
                 await api.prepareAttendanceCamera();
-                const video=document.getElementById('clockVideo');const problem=cameraProblem(video,document,isActive());if(problem)throw problem;
-                const stream=video.srcObject;
+                const video=document.getElementById('clockVideo'),problem=cameraProblem(video,document,isActive());if(problem)throw problem;
+                const stream=video.srcObject;status('Preparing your camera photo…','checking');
                 await waitForCameraFrame(video,{schedule,cancel});
-                if(token!==epoch || stream!==video.srcObject)throw Error('The camera changed. Open Clock and try again.');
-                if(cameraProblem(video,document,isActive()))throw cameraProblem(video,document,isActive());
-                status('Checking your face and photo clarity…','checking');
-                const canvas=document.createElement('canvas');canvas.width=Math.min(640,video.videoWidth);canvas.height=Math.round(video.videoHeight*canvas.width/video.videoWidth);
-                const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(video,0,0,canvas.width,canvas.height);const capturedAt=now();
-                const face=api.faceapi;
-                const results=await bounded(face.detectAllFaces(canvas,new face.TinyFaceDetectorOptions({inputSize:416,scoreThreshold:0.5})).withFaceLandmarks(true),8000,'The camera check is taking too long. Improve the light, restart the camera, and try again.',schedule,cancel);
-                const geometry=assessFaceGeometry(results,canvas.width,canvas.height);if(!geometry.ok)throw Error(geometry.message);
-                const b=geometry.box,pixels=assessFacePixels(ctx.getImageData(Math.floor(b.x),Math.floor(b.y),Math.floor(b.width),Math.floor(b.height)));if(!pixels.ok)throw Error(pixels.message);
-                const result={photoBase64:canvas.toDataURL('image/jpeg',0.75),cameraEpoch:token,cameraStream:stream,faceCheck:{policyVersion:ATTENDANCE_CAMERA_POLICY,modelVersion:FACE_MODEL_VERSION,capturedAt:new Date(capturedAt).toISOString(),faceCount:1,confidence:Number(geometry.score.toFixed(3)),brightness:pixels.brightness,sharpness:pixels.sharpness}};
-                api.assertAttendanceFaceFresh(result);
-                status('Clear frontal photo confirmed. Saving your Time In…','passed');return result;
-            }catch(error){status(error.message,'error');throw error;}
-            finally{pendingCheck=null;}
-        })();return pendingCheck;
+                if(token!==epoch || stream!==video.srcObject)throw Error('The camera changed. Keep Clock open and choose Time In again.');
+                const changed=cameraProblem(video,document,isActive());if(changed)throw changed;
+                const photo=capturePhoto(video,document),capturedAt=now();
+                const result={photoBase64:photo.photo,cameraEpoch:token,cameraStream:stream,faceCheck:{policyVersion:ATTENDANCE_CAMERA_POLICY,captureMode:'camera-photo',capturedAt:new Date(capturedAt).toISOString(),faceDetectionRequired:false,previewMirrored:true,photoMirrored:false,width:photo.width,height:photo.height}};
+                api.assertAttendanceFaceFresh(result);status('Photo captured. Saving your Time In…','passed');return result;
+            }catch(error){if(token===epoch)status(error.message,'error');throw error;}
+        })();
+        const owned=check.finally(()=>{if(pendingCheck===owned)pendingCheck=null;});
+        pendingCheck=owned;return owned;
     };
+    mirror();
     document.addEventListener?.('visibilitychange',()=>{if(document.hidden)api.invalidateAttendanceCamera();});
     api.addEventListener?.('pagehide',()=>api.invalidateAttendanceCamera());
     return {prepare:api.prepareAttendanceCamera,verify:api.verifyAttendanceFace,invalidate:api.invalidateAttendanceCamera};

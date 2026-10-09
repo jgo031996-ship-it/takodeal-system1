@@ -4,7 +4,7 @@ The Cashier app uses white cards, cream surfaces and warm orange actions. The up
 
 Cash remittance and Time Clock are full workspace pages. Remittance history queries the registered branch and loads 50 records at a time, with older transfers available on demand. Each record includes its recorded cashier, timestamp, amount, recipient, channel, sales period, reference and status. Submitting a remittance still uses the existing PIN verification and drawer audit.
 
-The attendance page reads Philippine-local daily punches across branches. It pairs overnight shifts, keeps staff and branches separate, flags unmatched punches, excludes future records and avoids advertising stale clock-ins as on duty. Leaving the tab stops the live subscription and camera. Face identification, GPS checks and attendance submission remain in the existing engine.
+The attendance page reads Philippine-local daily punches across branches. It pairs overnight shifts, keeps staff and branches separate, flags unmatched punches, excludes future records and avoids advertising stale clock-ins as on duty. Leaving the tab stops the live subscription and camera. Time In captures a current camera photo with a mirrored preview; face-detection scores do not block attendance. PIN, GPS checks and attendance submission remain in the existing engine.
 
 Consumables recognize legacy image fields and matching catalogue images. Missing photos use initials. Kitchen Prep's default category comparison now uses the same lower-case normalization as inventory categories.
 

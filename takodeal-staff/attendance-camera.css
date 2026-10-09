@@ -1,0 +1,8 @@
+/* Selfie mirroring is display-only; canvas attendance photos keep natural orientation. */
+#clockVideo { transform:scaleX(-1); }
+.attendance-face-guide { display:none !important; }
+.attendance-face-status[data-state="checking"] { background:#fff4de;color:#795a21; }
+.attendance-face-status[data-state="passed"] { background:#e5f4e8;color:#267443; }
+.attendance-camera-panel { min-width:0; }
+.attendance-camera-retry { min-height:44px;padding:9px 14px;margin:6px 0 12px;border:1px solid #cbdccc;border-radius:8px;background:#f3f7f2;color:#24573e;font:inherit;font-weight:600;cursor:pointer; }
+.attendance-camera-retry:disabled { opacity:.5;cursor:default; }

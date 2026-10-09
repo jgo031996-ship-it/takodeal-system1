@@ -31,9 +31,24 @@ test('sanction date decisions are identical across apps',()=>{
 });
 test('upgrade keeps paid receipts, photos and the offline sale ledger through Cashier update',()=>{
     const worker=source('Takodeal-POS/sw.js');
-    assert.match(worker,/staff-pos-repair-20261008-r12/);
+    assert.match(worker,/tablet-attendance-stock-20261009-r1/);
     assert.match(worker,/const PHOTOS = 'takodeal-pos-photos-offline02'/);
     assert.doesNotMatch(worker,/deleteDatabase|localStorage\.clear/);
-    assert.match(source('Takodeal-POS/index.html'),/cashier-tablet\.css\?v=staff-pos-repair-20261008-r12/);
+    assert.match(source('Takodeal-POS/index.html'),/cashier-tablet\.css\?v=tablet-attendance-stock-20261009-r1/);
     assert.match(source('takodeal-manager/auth.js'),/main\.js\?v=staff-pos-repair-20261008-r12/);
+});
+
+test('photo-only attendance and stock report units install offline without requiring face models',()=>{
+    for(const [app,name,required] of [
+        ['Takodeal-POS','required',['attendance-camera.js','attendance-camera.css','stock-report-units.js']],
+        ['takodeal-staff','SHELL',['attendance-camera.js','attendance-camera.css','staff-document-broker.js']]
+    ]){
+        const cached=assets(app,name);
+        for(const file of required)assert.ok(cached.includes(file),app+'/'+file+' is cached');
+        assert.ok(!cached.some(file=>file.startsWith('vendor/face-')),'optional models cannot block '+app+' installation');
+        const page=source(app+'/index.html');
+        assert.match(page,/attendance-camera\.css\?v=tablet-attendance-stock-20261009-r1/);
+        assert.match(page,/onclick="window\.restartAttendanceCamera\(\)"/);
+        assert.doesNotMatch(page,/Time In requires one clear, forward-facing/);
+    }
 });
