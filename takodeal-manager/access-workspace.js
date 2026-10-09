@@ -52,7 +52,7 @@ export function initAccessWorkspace({document:d = document, window:w = window, p
     const badge = (label,tone = '') => `<span class="acw-badge ${tone}">${esc(label)}</span>`;
     function accountControls(record) {
         if (!writable()) return '<small>Owner controls</small>';
-        return `<div class="acw-actions">${actionButton('profile',record.id,'Profile & PIN')}${!record.owner ? actionButton('permissions',record.id,'Edit permissions') : ''}</div>`;
+        return `<div class="acw-actions">${actionButton('profile',record.id,'Profile & PIN')}${!record.owner ? actionButton('permissions',record.id,'Edit permissions')+actionButton('sync-access',record.id,'Sync saved access') : ''}</div>`;
     }
     function permissionText(record) { const labels = permissionLabels(record,pages); return labels.length ? labels.join(' · ') : 'No tabs assigned'; }
     function renderAccounts() {
@@ -230,6 +230,7 @@ export function initAccessWorkspace({document:d = document, window:w = window, p
             if (action === 'refresh-branches') { await loadBranches(); return; }
             if (action === 'filter-duplicates') { byId('acwAccountFilter').value = 'duplicates'; byId('acwAccountSearch').value = ''; renderAccounts(); return; }
             if (action === 'review') { review(id); return; }
+            if (action === 'sync-access') { if(!writable() || !accountReady)throw Error('Refresh accounts as the main Owner before synchronizing access.');await runExisting('syncSavedHQAccess',[id]);return; }
             if (['profile','permissions','revoke'].includes(action)) {
                 if (!accountReady) throw Error('Refresh accounts before changing access.');
                 const record = accountAction(records,id,action,user());
