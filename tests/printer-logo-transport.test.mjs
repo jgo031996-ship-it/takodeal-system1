@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createPrinterWriter} from '../Takodeal-POS/printer-connection.js';
+import {encodePrinterLogo} from '../Takodeal-POS/printer-logo.js';
 
 const turn = () => new Promise(resolve => setImmediate(resolve));
 function deferred() {
@@ -194,4 +195,45 @@ test('accepted logo bytes preserve the existing channel-only result without inve
     assert.equal(typeof result, 'boolean');
     assert.equal('paperConfirmed' in app.character, false);
     assert.deepEqual(app.events.filter(event => event.kind === 'wait').map(event => event.milliseconds), [5, 120, 120]);
+});
+
+function fullRasterFixture(){
+    const rowValues=Array.from({length:40},(_,index)=>[27,42,33,10,29,118,48,0][index%8]);
+    const pixels=new Uint8ClampedArray(8*40*4).fill(255);
+    rowValues.forEach((value,y)=>{for(let bit=0;bit<8;bit++)if(value&(128>>bit)){
+        const at=(y*8+bit)*4;pixels[at]=pixels[at+1]=pixels[at+2]=0;
+    }});
+    const logo=encodePrinterLogo({width:8,height:40,pixels,mode:'raster'});
+    assert.deepEqual([...logo.slice(0,11)],[27,97,1,29,118,48,0,1,0,40,0]);
+    assert.deepEqual([...logo.slice(11,51)],rowValues);
+    assert.deepEqual([...logo.slice(51)],[27,50,27,97,0]);
+    assert.deepEqual(logo.pauseAfterBytes,[27,43,51]);
+    return logo;
+}
+
+test('one full raster image stays byte-identical through acknowledged and non-acknowledged writes with body-progress pauses',async()=>{
+    const logo=fullRasterFixture();
+    for(const ack of [true,false]){
+        const app=hardware({ack});
+        await app.writer.send(logo,'main',{pauseAfterBytes:logo.pauseAfterBytes,bandDelay:120});
+        assert.deepEqual(app.chunks.flat(),[...logo]);
+        assert.deepEqual(app.chunks.map(chunk=>chunk.length),[20,7,16,8,5]);
+        assert.deepEqual(app.events.filter(event=>event.kind==='wait'&&event.milliseconds===120).map(event=>event.offset),[27,43,51,56]);
+        assert.deepEqual(app.connects,['main']);
+        assert.ok(app.chunks.every(chunk=>chunk.length<=20));
+    }
+});
+
+test('a failure after a raster body-progress pause never restarts its header or sends an automatic alternate format',async()=>{
+    const logo=fullRasterFixture();
+    const app=hardware({write:(_chunk,count)=>{if(count===3)throw Error('Synthetic raster link failure');}});
+    await assert.rejects(app.writer.send(logo,'main',{pauseAfterBytes:logo.pauseAfterBytes}),error=>error.bytesWritten===27&&error.bytesAttempted===43);
+    assert.deepEqual(app.chunks.flat(),[...logo.slice(0,43)]);
+    assert.deepEqual(app.events.filter(event=>event.kind==='wait'&&event.milliseconds===120).map(event=>event.offset),[27]);
+    assert.deepEqual(app.connects,['main']);assert.deepEqual(app.invalidations,[{role:'main',disconnect:false}]);
+    await turn();
+    assert.equal(app.chunks.length,3);
+    // Only a separate explicit subsequent job may use the queue again.
+    await app.writer.send([9]);assert.deepEqual(app.chunks.at(-1),[9]);
+    assert.deepEqual(app.chunks.slice(0,-1).flat(),[...logo.slice(0,43)]);
 });

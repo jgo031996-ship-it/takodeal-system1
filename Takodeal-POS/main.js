@@ -8597,7 +8597,7 @@ window.testPrinterLogo = async function(target = 'main',event) {
     const button=event?.currentTarget || event?.target;
     if (printerLogoTestBusy || button?.disabled) return false;
     if (window.getReceiptLogoMode() === 'none') {
-        await Swal.fire({titleText:'Text-only printing selected',text:'Choose Small compatible logo or Raster logo before testing the receipt logo.',icon:'info'});
+        await Swal.fire({titleText:'Text-only printing selected',text:'Choose Compatible logo or Raster logo before testing the receipt logo.',icon:'info'});
         return false;
     }
     printerLogoTestBusy=true;
@@ -8612,7 +8612,7 @@ window.testPrinterLogo = async function(target = 'main',event) {
         const mode=window.getReceiptLogoMode(paper);
         const logo=await window.encodeImageForPrinter(settings.receiptLogoBase64,settings.logoWidthScale || 1,settings.logoHeightScale || 1,paper);
         if(!logo?.length) throw new Error('The receipt logo is disabled. Choose a logo option, then test again.');
-        const payload=window.concatBuffers([window.stringToBuffer('\x1b\x40\n'),logo,window.stringToBuffer('\nTAKODEAL LOGO TEST\n'+(mode==='compatible'?'Small compatible logo':'Raster logo')+'\nThis is a printer test only.\nNo sale or cash drawer command.\n\n\n')]);
+        const payload=window.concatBuffers([window.stringToBuffer('\x1b\x40\n'),logo,window.stringToBuffer('\nTAKODEAL LOGO TEST\n'+(mode==='compatible'?'Compatible logo':'Raster logo')+'\nThis is a printer test only.\nNo sale or cash drawer command.\n\n\n')]);
         if(button)button.innerText='Sending logo…';
         const sent=await window.sendToBluetoothPrinter(payload,false,'main',{fallback:false});
         if(!sent){recordPrinterLogoResult({status:'not-completed',message:'Logo test did not complete. Check the paper before retrying; the app will not replay it automatically.'});return false;}

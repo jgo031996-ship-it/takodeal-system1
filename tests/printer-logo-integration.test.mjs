@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {loadPrinterLogo,printerLogoDimensions} from '../Takodeal-POS/printer-logo.js';
-import {printerMode,rawBtIntent} from '../Takodeal-POS/printer-connection.js';
+import {createPrinterWriter,printerMode,rawBtIntent} from '../Takodeal-POS/printer-connection.js';
 
 const main=fs.readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8').replaceAll('\r\n','\n');
 const html=fs.readFileSync(new URL('../Takodeal-POS/index.html',import.meta.url),'utf8').replaceAll('\r\n','\n');
@@ -16,30 +16,42 @@ function contains(bytes,sequence){
     return bytes.some((_,at)=>sequence.every((value,index)=>bytes[at+index]===value));
 }
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
+function rasterHeader(logo){
+    assert.deepEqual([...logo.slice(0,7)],[27,97,1,29,118,48,0]);
+    const rowBytes=logo[7]+logo[8]*256,height=logo[9]+logo[10]*256,bodyEnd=11+rowBytes*height;
+    // The declared body ends directly at the restore commands: no second image
+    // header is allowed between pixel rows, even when progress pauses are used.
+    assert.equal(logo.length,bodyEnd+5);
+    assert.deepEqual([...logo.slice(bodyEnd)],[27,50,27,97,0]);
+    return {rowBytes,height,bodyEnd,body:logo.slice(11,bodyEnd)};
+}
 
 function runtime({paper='58mm',mode,scaleWidth=1,scaleHeight=1,brokenImage=false,canvasError=false,
-    textFallback=false,paperConfirmed=false,writeError=null,settingsGate=null,imageGate=null,drawer=true}={}){
+    textFallback=false,paperConfirmed=false,writeError=null,settingsGate=null,imageGate=null,drawer=true,
+    sourceWidth=160,sourceHeight=80,wire=false}={}){
     const values=new Map([['takodeal_device_branch','Agdao'],['takodeal_printer_mode','ble']]);
     if(mode!==undefined)values.set('takodeal_receipt_logo_mode',mode);
     if(!drawer)values.set('takodeal_auto_drawer','false');
-    const state={dialogs:[],sent:[],events:[],loads:[],imageCount:0,canvasCount:0,readCount:0,businessWrites:0,encoded:[]};
+    const state={dialogs:[],sent:[],events:[],loads:[],imageCount:0,canvasCount:0,readCount:0,businessWrites:0,encoded:[],chunks:[],waits:[]};
     const forbidden=()=>{state.businessWrites++;throw Error('Printer tests must not write business records.');};
     const app={db:{},location:{href:''},addEventListener(){},setDoc:forbidden,updateDoc:forbidden,addDoc:forbidden,deleteDoc:forbidden,runTransaction:forbidden,
         collection(_db,name){assert.equal(name,'branches');return name;},query(...args){return args;},where(...args){return args;},
         async getDocs(){state.readCount++;if(settingsGate)await settingsGate.promise;return {empty:false,docs:[{data:()=>({printerSize:paper,receiptLogoBase64:'data:image/png;base64,synthetic-only',logoWidthScale:scaleWidth,logoHeightScale:scaleHeight,headerName:'TAKODEAL',address:'Synthetic receipt test',footerMessage:'Thank you!'})}]};},
         lastTransactionData:{cart:[{name:'Synthetic item',qty:2,price:100,category:'Food'}],netTotal:175,globalDiscountAmount:25,globalDiscountReason:'Synthetic discount',amountReceived:200,paymentMethod:'Cash',cashierName:'Test Cashier',receiptId:'LOCAL-TEST',orderType:'DINE-IN'}};
-    const connections={connect:async()=>{},pause(){},reconnect(){},snapshot(){return {status:'connected',connected:true,service:'mock-service',endpoint:'mock-write'};}};
+    const character={properties:{write:true},async writeValueWithResponse(bytes){state.chunks.push([...bytes]);if(writeError)throw writeError;}};
+    const connections={connect:async()=>character,ready:()=>character,invalidate(){},pause(){},reconnect(){},snapshot(){return {status:'connected',connected:true,service:'mock-service',endpoint:'mock-write'};}};
+    const realWriter=createPrinterWriter(connections,{wait:async milliseconds=>state.waits.push({milliseconds,offset:state.chunks.reduce((total,chunk)=>total+chunk.length,0)})});
     const context={window:app,Uint8Array,console:{warn(){}},navigator:{userAgent:'Android'},localStorage:{getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)},
         document:{hidden:false,addEventListener(){},dispatchEvent:event=>state.events.push(event),getElementById(){return {value:'DINE-IN'};}},
         CustomEvent:class{constructor(type,{detail}){this.type=type;this.detail=detail;}},setInterval(){},
-        createPrinterConnections:()=>connections,createPrinterWriter:()=>({async send(data,role,options){state.sent.push({data,role,options});if(writeError)throw writeError;return true;}}),printerMode,rawBtIntent,
+        createPrinterConnections:()=>connections,createPrinterWriter:()=>({async send(data,role,options){state.sent.push({data,role,options});if(wire)return realWriter.send(data,role,options);if(writeError)throw writeError;return true;}}),printerMode,rawBtIntent,
         Swal:{async fire(...args){state.dialogs.push(args);const config=args[0];if(config?.confirmButtonText==='Print text only')return {isConfirmed:textFallback};if(config?.confirmButtonText==='Yes, both printed')return {isConfirmed:paperConfirmed,isDenied:!paperConfirmed};return {isConfirmed:false};}},
         async loadPrinterLogo(source,options){
             state.loads.push({source,options:{...options}});
             const bytes=await loadPrinterLogo(source,{...options,
                 imageFactory(){
                     state.imageCount++;
-                    const image={naturalWidth:160,naturalHeight:80,onload:null,onerror:null};
+                    const image={naturalWidth:sourceWidth,naturalHeight:sourceHeight,onload:null,onerror:null};
                     Object.defineProperty(image,'src',{set(value){assert.match(value,/^data:image\/png/);Promise.resolve(imageGate?.promise).then(()=>{if(brokenImage)image.onerror?.();else image.onload?.();});}});
                     return image;
                 },
@@ -77,7 +89,9 @@ for(const config of [
         assert.deepEqual([...logo.slice(firstHeader,firstHeader+5)],[27,42,33,dimensions.width&255,dimensions.width>>8]);
         assert.equal(logo.pauseAfterBytes.length,Math.ceil(dimensions.height/24));
     }else{
-        assert.deepEqual([...logo.slice(firstHeader,firstHeader+8)],[29,118,48,0,Math.ceil(dimensions.width/8)&255,Math.ceil(dimensions.width/8)>>8,16,0]);
+        assert.deepEqual([...logo.slice(firstHeader,firstHeader+8)],[29,118,48,0,Math.ceil(dimensions.width/8)&255,Math.ceil(dimensions.width/8)>>8,dimensions.height&255,dimensions.height>>8]);
+        const raster=rasterHeader(logo);assert.equal(raster.rowBytes,Math.ceil(dimensions.width/8));assert.equal(raster.height,dimensions.height);
+        assert.equal(raster.body[0],128);assert.ok(raster.body.slice(1).every(value=>value===0));
         assert.equal(logo.pauseAfterBytes.length,Math.ceil(dimensions.height/16));
     }
     assert.equal(state.sent.length,1);const {data,role,options}=state.sent[0];
@@ -85,6 +99,34 @@ for(const config of [
     assert.deepEqual([...data.pauseAfterBytes],logo.pauseAfterBytes.map(offset=>11+offset));
     assert.deepEqual([...options.pauseAfterBytes],[...data.pauseAfterBytes]);assert.equal(options.bandDelay,120);
     assert.equal(state.businessWrites,0);
+});
+
+for(const scale of [1,1.5,2])test(`actual Owner ${scale}/${scale} scales produce a ${160*scale}-dot square compatible logo and preserve receipt fields`,async()=>{
+    const {app,state}=runtime({scaleWidth:scale,scaleHeight:scale,sourceWidth:100,sourceHeight:100,wire:true});
+    await app.printReceipt('receipt');
+    assert.deepEqual(state.loads[0].options,{paperSize:'58mm',scaleWidth:scale,scaleHeight:scale,mode:'compatible'});
+    const logo=state.encoded[0],expected=160*scale,bandLength=5+expected*3+1;
+    assert.deepEqual([...logo.slice(6,11)],[27,42,33,expected&255,expected>>8]);
+    assert.equal(logo.pauseAfterBytes.length,Math.ceil(expected/24));
+    assert.equal(logo.length,6+bandLength*Math.ceil(expected/24)+5);
+    const job=state.sent[0],text=Buffer.from(job.data).toString('latin1');
+    assert.deepEqual(state.chunks.flat(),[...job.data]);assert.ok(state.chunks.every(chunk=>chunk.length<=20));
+    assert.deepEqual(state.waits.filter(wait=>wait.milliseconds===120).map(wait=>wait.offset),[...logo.pauseAfterBytes.map(offset=>11+offset),job.data.length]);
+    assert.match(text,/TOTAL DUE\n\x1b!0175\.00/);assert.match(text,/Change Amount:\s+25\.00/);
+    assert.deepEqual([...job.data.slice(3,8)],[27,112,0,25,150]);assert.equal(state.businessWrites,0);
+});
+
+test('actual Raster receipt declares one full-height image and passes exact pixel-progress pauses through the BLE writer',async()=>{
+    const {app,state}=runtime({mode:'raster',scaleWidth:1.5,scaleHeight:1.5,sourceWidth:100,sourceHeight:100,wire:true});
+    await app.printReceipt('receipt');
+    const logo=state.encoded[0],raster=rasterHeader(logo),job=state.sent[0];
+    assert.equal(raster.rowBytes,24);assert.equal(raster.height,192);
+    assert.deepEqual([...logo.pauseAfterBytes],Array.from({length:12},(_,index)=>11+24*16*(index+1)));
+    assert.deepEqual([...job.data.pauseAfterBytes],logo.pauseAfterBytes.map(offset=>offset+11));
+    assert.deepEqual(state.chunks.flat(),[...job.data]);
+    assert.deepEqual(state.waits.filter(wait=>wait.milliseconds===120).map(wait=>wait.offset),[...job.data.pauseAfterBytes,job.data.length]);
+    assert.equal(raster.body[0],128);assert.ok(raster.body.slice(1).every(value=>value===0));
+    assert.equal(state.sent.length,1);assert.equal(state.businessWrites,0);
 });
 
 test('actual concatenation preserves binary data and shifts every explicit band boundary',async()=>{
@@ -170,7 +212,7 @@ test('a profile change during delayed decoding cannot relabel the captured logo 
         app.setReceiptLogoMode(next);imageGate.resolve();assert.equal(await pending,true);
         const logo=state.encoded[0],text=Buffer.from(state.sent[0].data).toString('latin1');
         if(chosen==='compatible'){
-            assert.deepEqual([...logo.slice(3,6)],[27,51,24]);assert.match(text,/TAKODEAL LOGO TEST\nSmall compatible logo\n/);
+            assert.deepEqual([...logo.slice(3,6)],[27,51,24]);assert.match(text,/TAKODEAL LOGO TEST\nCompatible logo\n/);
         }else{
             assert.deepEqual([...logo.slice(3,7)],[29,118,48,0]);assert.match(text,/TAKODEAL LOGO TEST\nRaster logo\n/);
         }

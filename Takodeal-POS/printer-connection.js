@@ -187,7 +187,7 @@ export function createPrinterWriter(connections, {wait = milliseconds => new Pro
     }
     function send(data, role = 'main', {fallback = true, pauseAfterBytes = [], bandDelay = 120} = {}) {
         const buffer = new Uint8Array(data);
-        // These are encoder-supplied packet ends, not command bytes inferred from image data.
+        // These are encoder-supplied image progress offsets, never inferred from pixel bytes.
         // Copy them when enqueuing so another job cannot change the pending receipt's pacing.
         const boundaries = Array.isArray(pauseAfterBytes) && pauseAfterBytes.length <= 256 ? Array.from(pauseAfterBytes) : null;
         if (!boundaries
