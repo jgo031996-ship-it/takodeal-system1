@@ -14,8 +14,10 @@ const tools = resolve(process.env.STAFF_DOCUMENT_TEST_TOOLS || resolve(root, '..
 const requireTools = createRequire(resolve(tools, 'package.json'));
 const {initializeTestEnvironment, assertSucceeds, assertFails} = requireTools('@firebase/rules-unit-testing');
 const {doc, collection, query, where, getDoc, getDocs, getDocFromServer, getDocsFromServer, runTransaction, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, Timestamp} = requireTools('firebase/firestore');
-const {ref, uploadBytes, getBytes, getMetadata, deleteObject, updateMetadata, listAll} = requireTools('firebase/storage');
+const {ref, uploadBytes, getBytes, getMetadata, getDownloadURL, deleteObject, updateMetadata, listAll} = requireTools('firebase/storage');
 const projectId = 'demo-staff-document-vault';
+const brokerEndpoint = 'https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker';
+const vaultConfig = (enabled = true) => ({enabled, policyVersion: 2, brokerEndpoint});
 const uid = 'approved-device', staffId = 'employee-1', branch = 'Maa';
 const bytes = Uint8Array.from([255, 216, 255, 224, 1]);
 const sha = 'a'.repeat(64);
@@ -77,7 +79,7 @@ beforeEach(async () => {
     await env.withSecurityRulesDisabled(async ctx => {
         const db = ctx.firestore();
         await Promise.all([
-            setDoc(doc(db, 'staff_document_config/current'), {enabled: true, policyVersion: 1}),
+            setDoc(doc(db, 'staff_document_config/current'), vaultConfig()),
             setDoc(doc(db, `staff_document_devices/${uid}`), bindingData()),
             setDoc(doc(db, 'staff_document_devices/other-employee'), bindingData('other-employee', 'employee-2')),
             setDoc(doc(db, 'staff_document_devices/revoked-device'), bindingData('revoked-device', staffId, false)),
@@ -117,10 +119,12 @@ test('forged public PIN, owner role and branch fields cannot authorize the priva
     await assertFails(getBytes(ref(ctx.storage(), objectPath())));
     await assertFails(setDoc(doc(ctx.firestore(), 'staff_document_devices/unapproved-forger'), {uid: 'unapproved-forger', staffId, branch, active: true}));
 });
-test('the approved Staff binding, verified Owner and scoped saved HQ can read files', async () => {
+test('approved Staff, verified Owner and scoped HQ read protected metadata but cannot directly read private bytes or mint links', async () => {
     for (const ctx of [anonymous(uid), owner(), hqAll(), hqBranch()]) {
         await assertSucceeds(getDoc(doc(ctx.firestore(), currentPath())));
-        assert.equal((await assertSucceeds(getBytes(ref(ctx.storage(), objectPath())))).byteLength, bytes.length);
+        await assertFails(getBytes(ref(ctx.storage(), objectPath())));
+        await assertFails(getMetadata(ref(ctx.storage(), objectPath())));
+        await assertFails(getDownloadURL(ref(ctx.storage(), objectPath())));
     }
 });
 test('HQ with another branch, absent permissions or unrelated permissions cannot read private documents', async () => {
@@ -136,13 +140,40 @@ test('approved Staff and scoped HQ can get missing file kinds using the protecte
     }
     await assertFails(getDoc(doc(otherHQ().firestore(), currentPath('health_card'))));
 });
-test('configuration exposes only the current flag; Staff cannot enable, list or expand it', async () => {
+test('configuration exposes only the current broker policy; Staff cannot enable, list or expand it', async () => {
     const ctx = env.unauthenticatedContext();
     await assertSucceeds(getDoc(doc(ctx.firestore(), 'staff_document_config/current')));
     await assertFails(getDoc(doc(ctx.firestore(), 'staff_document_config/secret')));
     await assertFails(getDocs(collection(ctx.firestore(), 'staff_document_config')));
-    await assertFails(setDoc(doc(anonymous(uid).firestore(), 'staff_document_config/current'), {enabled: true, policyVersion: 1}));
-    await assertFails(setDoc(doc(owner().firestore(), 'staff_document_config/current'), {enabled: true, policyVersion: 1, secret: 'private'}));
+    await assertFails(setDoc(doc(anonymous(uid).firestore(), 'staff_document_config/current'), vaultConfig()));
+    await assertFails(setDoc(doc(owner().firestore(), 'staff_document_config/current'), {...vaultConfig(), secret: 'private'}));
+});
+test('Owner can enable only the exact v2 broker endpoint and cannot retarget credentials or downgrade the policy', async () => {
+    const target = doc(owner().firestore(), 'staff_document_config/current');
+    await assertSucceeds(setDoc(target, vaultConfig(false)));
+    await assertSucceeds(setDoc(target, vaultConfig()));
+    for (const invalid of [
+        {enabled: true, policyVersion: 1},
+        {enabled: true, policyVersion: 2},
+        {...vaultConfig(), policyVersion: 1},
+        {...vaultConfig(), enabled: 'true'},
+        {...vaultConfig(), brokerEndpoint: 'https://unexpected.example.test/staffDocumentBroker'},
+        {...vaultConfig(), brokerEndpoint: brokerEndpoint + '?next=https://unexpected.example.test'},
+        {...vaultConfig(), brokerEndpoint: brokerEndpoint + '/'},
+        {...vaultConfig(), brokerEndpoint: brokerEndpoint.replace('https:', 'http:')}
+    ]) await assertFails(setDoc(target, invalid));
+});
+test('stale or incomplete broker configuration cannot authorize new document metadata or approval requests', async () => {
+    for (const config of [
+        {enabled: true, policyVersion: 1},
+        {enabled: true, policyVersion: 2},
+        {...vaultConfig(), brokerEndpoint: 'https://unexpected.example.test/staffDocumentBroker'}
+    ]) {
+        await adminSet('staff_document_config/current', config);
+        await assertFails(atomicUpload(anonymous(uid), nextOp(), {version: 2}));
+        const requestUid = nextOp(), db = anonymous(requestUid).firestore();
+        await assertFails(setDoc(doc(db, `staff_document_requests/${requestUid}`), {uid: requestUid, staffId, deviceId: 'phone', deviceName: 'Phone', status: 'pending', requestedAt: serverTimestamp()}));
+    }
 });
 test('unapproved Staff may request approval only for its own UID and remains unable to access files', async () => {
     const ctx = anonymous('new-request'), db = ctx.firestore();
@@ -181,7 +212,8 @@ test('Owner revocation appends an exact audit and immediately removes Staff acce
         'audit.revoke-1': {active: false, actorUid: 'owner-uid', recordedAt: stamp}}));
     await assertFails(getDoc(doc(anonymous(uid).firestore(), currentPath())));
     await assertFails(getBytes(ref(anonymous(uid).storage(), objectPath())));
-    await assertSucceeds(getBytes(ref(owner().storage(), objectPath())));
+    await assertSucceeds(getDoc(doc(owner().firestore(), currentPath())));
+    await assertFails(getBytes(ref(owner().storage(), objectPath())));
 });
 test('even Owner cannot create a private binding without its matching pending approval request', async () => {
     const device = 'unlinked-device', stamp = serverTimestamp();
@@ -238,20 +270,21 @@ test('private metadata/history cannot be deleted or its original upload replaced
     }
     await assertFails(updateDoc(doc(anonymous(uid).firestore(), versionPath('seed-upload')), {size: 1}));
 });
-test('Storage accepts only new exact-bound JPEGs with bounded matching metadata', async () => {
-    const ctx = anonymous(uid), op = nextOp(), path = objectPath(op);
-    await assertSucceeds(uploadBytes(ref(ctx.storage(), path), bytes, storageMetadata(op)));
-    assert.equal((await getMetadata(ref(ctx.storage(), path))).size, bytes.length);
-    await assertFails(uploadBytes(ref(ctx.storage(), path), bytes, storageMetadata(op)));
-    await assertFails(updateMetadata(ref(ctx.storage(), path), {customMetadata: {staffId: 'someone-else'}}));
-    await assertFails(deleteObject(ref(ctx.storage(), path)));
+test('private Storage denies every direct SDK write even for approved Staff, Owner and branch-authorized HQ', async () => {
+    for (const ctx of [anonymous(uid), owner(), hqAll(), hqBranch(), env.unauthenticatedContext()]) {
+        const op = nextOp();
+        await assertFails(uploadBytes(ref(ctx.storage(), objectPath(op)), bytes, storageMetadata(op)));
+        await assertFails(uploadBytes(ref(ctx.storage(), objectPath()), bytes, storageMetadata('seed-upload')));
+        await assertFails(updateMetadata(ref(ctx.storage(), objectPath()), {customMetadata: {staffId: 'someone-else'}}));
+        await assertFails(deleteObject(ref(ctx.storage(), objectPath())));
+    }
 });
 test('unapproved, revoked or wrong-employee UID cannot upload private bytes', async () => {
     for (const device of ['new-device', 'revoked-device', 'other-employee']) {
         const op = nextOp(); await assertFails(uploadBytes(ref(anonymous(device).storage(), objectPath(op, device)), bytes, storageMetadata(op)));
     }
 });
-test('private byte uploads reject MIME, size, filename, metadata spoofing and arbitrary extra fields', async () => {
+test('private Storage deny-all also covers malformed MIME, size, filename and spoofed metadata', async () => {
     const ctx = anonymous(uid);
     const attempts = [
         {label: 'PNG MIME', metadata: {contentType: 'image/png'}},
@@ -274,28 +307,46 @@ test('private byte uploads reject MIME, size, filename, metadata spoofing and ar
         }
     }
 });
-test('reserved download-token metadata is filtered and a client-chosen token grants no public read', async () => {
+test('client-supplied reserved token metadata cannot create a private object or obtain a link', async () => {
     const ctx = anonymous(uid), op = nextOp(), path = objectPath(op), metadata = storageMetadata(op);
     metadata.customMetadata.firebaseStorageDownloadTokens = 'public-token';
-    // Firebase's reserved metadata handling drops this key before rules-visible
-    // custom metadata. Do not misreport the accepted, filtered upload as a denial.
-    await assertSucceeds(uploadBytes(ref(ctx.storage(), path), bytes, metadata));
-    const saved = await getMetadata(ref(ctx.storage(), path));
-    assert.deepEqual(saved.customMetadata, storageMetadata(op).customMetadata);
-    assert.equal(Object.hasOwn(saved.customMetadata, 'firebaseStorageDownloadTokens'), false);
+    await assertFails(uploadBytes(ref(ctx.storage(), path), bytes, metadata));
+    await assertFails(getMetadata(ref(ctx.storage(), path)));
+    await assertFails(getDownloadURL(ref(ctx.storage(), objectPath())));
     await assertFails(getBytes(ref(env.unauthenticatedContext().storage(), path)));
-    const url = `http://127.0.0.1:9797/v0/b/${projectId}.appspot.com/o/${encodeURIComponent(path)}?alt=media&token=public-token`;
-    const response = await fetch(url);
-    assert.equal(response.status, 403);
 });
-test('private prefix remains denied for unknown paths, lists and unbound employee IDs', async () => {
-    const ctx = anonymous(uid);
-    await assertFails(uploadBytes(ref(ctx.storage(), 'staff_private_documents/anything.jpg'), bytes, {contentType: 'image/jpeg'}));
-    await assertFails(uploadBytes(ref(ctx.storage(), objectPath(nextOp(), uid, 'employee-2')), bytes, storageMetadata('wrong')));
-    await assertFails(listAll(ref(ctx.storage(), `staff_private_documents/${uid}/${staffId}`)));
+test('deny-all cannot revoke pre-existing bearer links; removing a legacy synthetic object closes its token route', async () => {
+    // LOCAL emulator fixture only. Direct-Rules denial is not token revocation.
+    // withSecurityRulesDisabled returns Promise<void>; capture the SDK result
+    // inside its callback rather than treating the helper as a value wrapper.
+    let url;
+    await env.withSecurityRulesDisabled(async ctx => {url = await getDownloadURL(ref(ctx.storage(), objectPath()));});
+    assert.equal(typeof url, 'string');
+    const parsed = new URL(url);
+    assert.equal(parsed.hostname, '127.0.0.1'); assert.equal(parsed.port, '9797');
+    const accessible = await fetch(url);
+    assert.equal(accessible.status, 200);
+    assert.deepEqual(new Uint8Array(await accessible.arrayBuffer()), bytes);
+    await assertFails(getDownloadURL(ref(owner().storage(), objectPath())));
+    await env.withSecurityRulesDisabled(ctx => deleteObject(ref(ctx.storage(), objectPath())));
+    const refused = await fetch(url);
+    assert.ok([401, 403, 404].includes(refused.status), `Old token route must be refused, received ${refused.status}`);
+    assert.notEqual(refused.headers.get('content-type')?.split(';')[0].trim().toLowerCase(), 'image/jpeg');
+    const refusedBytes = new Uint8Array(await refused.arrayBuffer());
+    assert.equal(refusedBytes[0] === 255 && refusedBytes[1] === 216, false, 'Closed token route must not return JPEG bytes');
+});
+test('entire private prefix remains denied for unknown paths, nested paths, lists and unbound employee IDs', async () => {
+    for (const ctx of [anonymous(uid), owner(), hqAll(), env.unauthenticatedContext()]) {
+        for (const path of ['staff_private_documents/anything.jpg', 'staff_private_documents/arbitrary/nested/path.jpg', objectPath(nextOp(), uid, 'employee-2')]) {
+            await assertFails(uploadBytes(ref(ctx.storage(), path), bytes, {contentType: 'image/jpeg'}));
+            await assertFails(getMetadata(ref(ctx.storage(), path)));
+        }
+        await assertFails(listAll(ref(ctx.storage(), 'staff_private_documents')));
+        await assertFails(listAll(ref(ctx.storage(), `staff_private_documents/${uid}/${staffId}`)));
+    }
 });
 test('disabling the policy prevents new requests, pending metadata and private-byte uploads', async () => {
-    await adminSet('staff_document_config/current', {enabled: false, policyVersion: 1});
+    await adminSet('staff_document_config/current', vaultConfig(false));
     const ctx = anonymous(uid), op = nextOp();
     await assertFails(atomicUpload(ctx, op, {version: 2}));
     await assertFails(uploadBytes(ref(ctx.storage(), objectPath(op)), bytes, storageMetadata(op)));
@@ -336,7 +387,7 @@ test('actual Owner rate transaction writes private audit and amount-free marker,
 });
 
 test('actual verified branch-payroll HQ transaction succeeds independently of document-vault enablement', async () => {
-    await rateSetup();await adminSet('staff_document_config/current',{enabled:false,policyVersion:1});
+    await rateSetup();await adminSet('staff_document_config/current',vaultConfig(false));
     const ctx=google('rate-maa','rate-maa@example.test'),api=rateApi(ctx,'rate-maa','rate-maa@example.test');
     const result=await assertSucceeds(rateSave(api,'hq-payroll-raise'));assert.equal(result.eventType,'increase');
     const events=await assertSucceeds(getDocs(query(collection(ctx.firestore(),'staff_rate_changes'),where('staffId','==',staffId),where('branch','==',branch))));assert.equal(events.size,1);

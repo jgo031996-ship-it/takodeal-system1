@@ -1,0 +1,7 @@
+{
+  "functions": [{
+    "source": "functions/staff-document-broker",
+    "codebase": "staff-documents",
+    "ignore": ["node_modules", ".git", "*-debug.log", "*.local"]
+  }]
+}

@@ -1,28 +1,33 @@
 // Private document operations. The operational Staff PIN is never authorization.
 import {validateDocumentDraft, validateDocumentRecord} from './staff-document-model.js';
-export const DOCUMENT_POLICY_VERSION = 1;
+import {createDocumentBroker,trustedDocumentBroker,DOCUMENT_POLICY_VERSION} from './staff-document-broker.js';
+export {DOCUMENT_POLICY_VERSION} from './staff-document-broker.js';
 const safeId = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 export function documentFilePath(uid, staffId, kind, operationId) {
     if (![uid, staffId, operationId].every(safeId) || !['valid_id','health_card','clearance'].includes(kind)) throw Error('Invalid document identity.');
     return `staff_private_documents/${uid}/${staffId}/${kind}/${operationId}.jpg`;
 }
-export function createDocumentStore({sdk, db, storage, auth, identity, isHQ=false, uuid=()=>crypto.randomUUID(),now=()=>Date.now()}) {
+export function createDocumentStore({sdk, db, auth, identity, isHQ=false, broker=createDocumentBroker({auth,identity}), uuid=()=>crypto.randomUUID(),now=()=>Date.now()}) {
     const documentRef = (id, kind) => sdk.doc(db, 'staff_private_documents', id, 'files', kind);
     const me = () => { const user=auth.currentUser; if(!user?.uid) throw Error('Private document access is not ready.'); return user; };
     const currentId = () => { const id=identity(); if(!safeId(id)) throw Error('Choose the employee again.'); return id; };
     const assertSame = (id, uid) => { if(identity()!==id || auth.currentUser?.uid!==uid) throw Error('Your account changed. Open the profile again.'); };
     let config;const verifiedFiles=new Map();
-    async function ready() {
+    async function ready({refresh=false}={}) {
         // A closed or not-yet-configured vault must be recoverable with Refresh
         // after HQ enables it. Cache only a successfully enabled policy.
-        if(config?.enabled!==true || config.policyVersion!==DOCUMENT_POLICY_VERSION) { const snap=await sdk.getDocFromServer(sdk.doc(db,'staff_document_config','current')); config=snap.exists()?snap.data():{}; }
-        if(config.enabled!==true || config.policyVersion!==DOCUMENT_POLICY_VERSION) throw Error('Private uploads are being prepared. Ask HQ to enable the document vault.');
+        if(refresh || config?.enabled!==true || config.policyVersion!==DOCUMENT_POLICY_VERSION) {
+            config=null;
+            const snap=await sdk.getDocFromServer(sdk.doc(db,'staff_document_config','current')),loaded=snap.exists()?snap.data():{};
+            trustedDocumentBroker(loaded);config=loaded;
+        }
+        trustedDocumentBroker(config);return config;
     }
     async function binding() {
         const uid=me().uid, id=currentId();
         const snap=await sdk.getDocFromServer(sdk.doc(db,'staff_document_devices',uid)); assertSame(id,uid);
         const data=snap.exists()?snap.data():null;
-        if(!data?.active || data.staffId!==id) throw Error('Ask HQ to approve this device for your private documents.');
+        if(data?.active!==true || data.uid!==uid || data.staffId!==id || typeof data.branch!=='string' || !data.branch) throw Error('Ask HQ to approve this device for your private documents.');
         return {...data, uid};
     }
     async function records() {
@@ -52,7 +57,7 @@ export function createDocumentStore({sdk, db, storage, auth, identity, isHQ=fals
     }
     async function upload(kind, blob, draft, expectedVersion=0, operationId=uuid()) {
         if(!Number.isSafeInteger(expectedVersion) || expectedVersion<0)throw Error('Refresh the profile before uploading.');
-        const id=currentId(), uid=me().uid; await ready(); assertSame(id,uid);
+        const id=currentId(), uid=me().uid; const transferConfig=await ready({refresh:true}); assertSame(id,uid);
         const access=await binding();assertSame(id,uid);
         if(isHQ)throw Error('Upload documents using the employee’s Staff app.');
         if(blob.type!=='image/jpeg' || !(blob.size>0) || blob.size>2*1024*1024)throw Error('Choose a clear photo under 2 MB after processing.');
@@ -60,16 +65,15 @@ export function createDocumentStore({sdk, db, storage, auth, identity, isHQ=fals
         if(!checked.valid)throw Error(checked.errors.join(' '));
         const bytes=await blob.arrayBuffer();assertSame(id,uid);
         const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),byte=>byte.toString(16).padStart(2,'0')).join('');assertSame(id,uid);
-        const path=documentFilePath(uid,id,kind,operationId), reference=sdk.ref(storage,path);
+        const path=documentFilePath(uid,id,kind,operationId);
         const existingVersion=await sdk.getDocFromServer(sdk.doc(db,'staff_private_documents',id,'versions',operationId));
         assertSame(id,uid);
         if(existingVersion.exists() && (existingVersion.data().group!==kind || existingVersion.data().sha256!==sha256 || existingVersion.data().uploadedByUid!==uid || (existingVersion.data().clearanceType||'')!==(checked.clearanceType||'') || (existingVersion.data().expiresOn||'')!==(checked.expiresOn||'')))throw Error('This upload retry does not match the original photo and details. Choose the photo again.');
-        // A repeated upload keeps the same path; a committed file is immutable.
-        let existingFile;
-        try { existingFile=await sdk.getMetadata(reference); } catch(error) { if(error.code!=='storage/object-not-found')throw error; }
-        assertSame(id,uid);
-        if(!existingFile)await sdk.uploadBytes(reference,blob,{contentType:'image/jpeg',cacheControl:'private, no-store',customMetadata:{staffId:id,documentGroup:kind,uploadId:operationId,sha256}});
-        else if(existingFile.size!==blob.size || existingFile.contentType!=='image/jpeg' || existingFile.customMetadata?.sha256!==sha256)throw Error('This upload could not be safely resumed. Choose the photo again.');
+        // The trusted broker creates immutable GCS bytes without Firebase download
+        // tokens. It verifies retries against the original bytes and intent.
+        const transferred=await broker.upload(transferConfig,{staffId:id,group:kind,uploadId:operationId,expectedVersion,sha256,clearanceType:checked.clearanceType||'',expiresOn:checked.expiresOn||'',bytes:new Uint8Array(bytes)});
+        if(transferred?.storagePath!==path || transferred.contentType!=='image/jpeg' || transferred.size!==blob.size
+            || transferred.sha256!==sha256 || typeof transferred.alreadyExists!=='boolean')throw Error('This upload could not be safely resumed. Choose the photo again.');
         assertSame(id,uid);
         return sdk.runTransaction(db,async tx=> {
             assertSame(id,uid);
@@ -92,16 +96,22 @@ export function createDocumentStore({sdk, db, storage, auth, identity, isHQ=fals
         });
     }
     async function file(record,{validatePhoto}={}) {
-        const id=currentId(),uid=me().uid; await ready();assertSame(id,uid);
+        const id=currentId(),uid=me().uid;const transferConfig=await ready({refresh:true});assertSame(id,uid);
         if(!validateDocumentRecord(record?.group,record).valid || record?.staffId!==id || record.storagePath!==documentFilePath(record.uploadedByUid,id,record.group,record.uploadId))throw Error('The document link is invalid.');
         const live=await sdk.getDocFromServer(documentRef(id,record.group)); assertSame(id,uid);
-        if(!live.exists() || live.data().uploadId!==record.uploadId)throw Error('This document was replaced. Refresh the profile.');
-        const blob=await sdk.getBlob(sdk.ref(storage,record.storagePath),2*1024*1024); assertSame(id,uid);
+        const matching=value=>value?.staffId===id && value.group===record.group && value.uploadId===record.uploadId
+            && value.version===record.version && value.sha256===record.sha256 && value.size===record.size
+            && value.contentType===record.contentType && value.storagePath===record.storagePath;
+        if(!live.exists() || !matching(live.data()))throw Error('This document was replaced. Refresh the profile.');
+        const blob=await broker.download(transferConfig,{staffId:id,group:record.group,uploadId:record.uploadId,version:record.version,sha256:record.sha256});assertSame(id,uid);
+        if(blob.type!=='image/jpeg' || blob.size>2*1024*1024)throw Error('The private photo format is invalid. Refresh the profile.');
         const bytes=await blob.arrayBuffer();assertSame(id,uid);
         const sha256=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),byte=>byte.toString(16).padStart(2,'0')).join('');
         if(blob.size!==record.size || sha256!==record.sha256)throw Error('The photo does not match its saved record. Ask the employee to upload it again.');
         assertSame(id,uid);
         if(isHQ) {if(typeof validatePhoto!=='function')throw Error('Open the photo before marking it reviewed.');await validatePhoto(blob);assertSame(id,uid);}
+        const confirmed=await sdk.getDocFromServer(documentRef(id,record.group));assertSame(id,uid);
+        if(!confirmed.exists() || !matching(confirmed.data()))throw Error('This document changed while opening. Refresh the profile.');
         verifiedFiles.set(record.group,{staffId:id,actorUid:uid,uploadId:record.uploadId,version:record.version,sha256,at:now()});return blob;
     }
     async function review(kind, expectedVersion, status, note='') {

@@ -13,6 +13,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Install locked private document runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/staff-document-broker
+      - name: Verify real private document SDK without cloud access
+        run: node tools/private-broker-sdk-check.mjs
       - name: Check workspace scripts
         run: |
           for script in takodeal-manager/*.js Takodeal-POS/*.js Customer/*.js takodeal-staff/*.js takodeal-franchise/*.js takodeal-delivery/*.js; do node --check "$script"; done

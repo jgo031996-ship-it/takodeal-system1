@@ -1,66 +1,19 @@
-// CANDIDATE ONLY: compile and test before publishing. Based on the live policy
-// inspected by the Owner on 2026-10-07, which allowed read/write on all paths.
-// The legacy fallback below excludes the entire new private prefix. Appending
-// a private allow rule alongside the old public wildcard would NOT protect it.
-// Enable Storage-to-default-Firestore rules access and configure authorized
-// browser GET CORS before turning staff_document_config/current.enabled on.
+// CANDIDATE: publish with the private document broker after local Rules tests.
+// The Firebase download-token route bypasses signed-in Storage Rules. Private
+// files must therefore be created/read only by the trusted, token-free broker.
+// This is a full replacement; an overlapping public wildcard is unsafe.
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
-    function signedIn() { return request.auth != null; }
-    function owner() {
-      return signedIn() && 'email_verified' in request.auth.token && request.auth.token.email_verified == true
-        && 'email' in request.auth.token && request.auth.token.email == 'jgo031996@gmail.com';
-    }
-    function anonymous() {
-      return signedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous';
-    }
-    function safeId(value) { return value.matches('^[A-Za-z0-9_-]{1,128}$'); }
-    function kind(value) { return value in ['valid_id', 'health_card', 'clearance']; }
-    function ownEmployee(staffId) {
-      let uid = signedIn() ? request.auth.uid : '__unauthenticated__';
-      let path = /databases/(default)/documents/staff_document_devices/$(uid);
-      return anonymous() && firestore.exists(path) && firestore.get(path).data.uid == request.auth.uid
-        && firestore.get(path).data.active == true && firestore.get(path).data.staffId == staffId;
-    }
-    function enabled() {
-      let path = /databases/(default)/documents/staff_document_config/current;
-      return firestore.exists(path) && firestore.get(path).data.enabled == true
-        && firestore.get(path).data.policyVersion == 1;
-    }
-    function hqForUploader(uid, staffId) {
-      let email = signedIn() && 'email' in request.auth.token ? request.auth.token.email : '__no_email__';
-      let access = /databases/(default)/documents/hq_email_access/$(email);
-      let binding = /databases/(default)/documents/staff_document_devices/$(uid);
-      return signedIn() && 'email_verified' in request.auth.token && request.auth.token.email_verified == true
-        && email != '__no_email__' && firestore.exists(access) && firestore.get(access).data.active == true
-        && 'permissions' in firestore.get(access).data && firestore.get(access).data.permissions is list
-        && ('all' in firestore.get(access).data.permissions || 'branches' in firestore.get(access).data.permissions)
-        && 'allowedBranches' in firestore.get(access).data && firestore.get(access).data.allowedBranches is list
-        && firestore.exists(binding) && firestore.get(binding).data.uid == uid
-        && firestore.get(binding).data.staffId == staffId
-        && ('All' in firestore.get(access).data.allowedBranches || firestore.get(binding).data.branch in firestore.get(access).data.allowedBranches);
-    }
     match /{topLevel}/{rest=**} {
-      // Preserve the existing public policy for prior files only.
+      // Preserve the existing legacy policy outside the reserved private prefix.
       allow read, write: if topLevel != 'staff_private_documents';
     }
-    match /staff_private_documents/{uid}/{staffId}/{documentGroup}/{filename} {
-      allow get: if safeId(uid) && safeId(staffId) && kind(documentGroup)
-        && filename.matches('^[A-Za-z0-9_-]{1,128}\\.jpg$')
-        && (owner() || ownEmployee(staffId) || hqForUploader(uid, staffId));
-      allow list, update, delete: if false;
-      allow create: if resource == null && anonymous() && request.auth.uid == uid && safeId(uid) && safeId(staffId)
-        && kind(documentGroup) && filename.matches('^[A-Za-z0-9_-]{1,128}\\.jpg$')
-        && enabled() && ownEmployee(staffId)
-        && request.resource.contentType == 'image/jpeg'
-        && request.resource.size > 0 && request.resource.size <= 2097152
-        && request.resource.metadata.size() == 4
-        && request.resource.metadata.keys().hasAll(['staffId', 'documentGroup', 'uploadId', 'sha256'])
-        && request.resource.metadata.staffId == staffId && request.resource.metadata.documentGroup == documentGroup
-        && safeId(request.resource.metadata.uploadId) && filename == request.resource.metadata.uploadId + '.jpg'
-        && request.resource.metadata.sha256.matches('^[a-f0-9]{64}$');
+    match /staff_private_documents/{rest=**} {
+      // No direct SDK uploads, metadata, token regeneration, downloads or lists,
+      // even for the Owner. The broker verifies current Firebase identity,
+      // protected access, immutable records and exact bytes on every request.
+      allow read, write: if false;
     }
-    // Every other path under staff_private_documents is denied by default.
   }
 }
