@@ -1,9 +1,16 @@
-const CACHE_NAME = 'rider-app-v2-read-budget';
+const CACHE_NAME = 'rider-app-v3-mobile-approval-20261009';
 const urlsToCache = [
   './',
   './index.html',
   './main.js',
-  './Delivery.jpg'
+  './Delivery.jpg',
+  './manifest.json',
+  './rider-mobile.css',
+  './rider-layout.js',
+  './rider-account-model.js',
+  './rider-account.js',
+  './rider-dispatch-view.js',
+  './rider-delivery-safety.js'
 ];
 
 // Install the service worker and cache the files
@@ -39,3 +46,5 @@ self.addEventListener('fetch', event => {
     }
   })());
 });
+
+self.addEventListener('message',event=>{if(event.data?.type==='SKIP_WAITING')event.waitUntil(self.skipWaiting());});

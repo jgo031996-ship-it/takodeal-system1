@@ -1,684 +1,141 @@
-// ========================================================
-// 🔥 FIREBASE ENGINE
-// ========================================================
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, query, where, doc, updateDoc, onSnapshot, serverTimestamp, getDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-
-// 🔥 NEW: Import the Auth module for Silent Login
-import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-
-const firebaseConfig = {
-    apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
-    authDomain: "takodeal-pos.firebaseapp.com",
-    projectId: "takodeal-pos",
-    storageBucket: "takodeal-pos.firebasestorage.app",
-    messagingSenderId: "248826111383",
-    appId: "1:248826111383:web:48bf1e2c172298079bd0d2"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const storage = getStorage(app);
-const auth = getAuth(app);
-
-// 🔥 SILENT AUTHENTICATION: This satisfies Firebase Security Rules 
-// so riders can upload their license and selfie without Google Sign-In!
-signInAnonymously(auth).catch((error) => {
-    console.error("Silent Auth Failed:", error.message);
-});
-
-window.currentRider = null;
-window.gpsInterval = null;
-window.activePingId = null;
-window.pingCountdown = null;
-window.riderLiveEpoch = 0;
-window.activeDeliveries = [];
-window.stopRiderLiveServices = function() {
-    window.riderLiveEpoch++;
-    if (window.gpsInterval !== null) clearInterval(window.gpsInterval);
-    window.gpsInterval = null; window.riderGpsListenerKey = null;
-    const stops = [...(window.riderDispatchUnsubscribes || []), window.riderPingUnsubscribe].filter(Boolean);
-    window.riderDispatchUnsubscribes = []; window.riderDispatchListenerKey = null;
-    window.riderPingUnsubscribe = null; window.riderPingListenerKey = null;
-    for (const stop of stops) {try {stop();} catch (error) {console.error('Rider listener cleanup:', error);}}
-    window.activeDeliveries = [];
-    window.closePingModal?.();
-};
-window.addEventListener('pagehide', () => window.stopRiderLiveServices());
-window.addEventListener('pageshow', event => {
-    if (!event.persisted || !window.currentRider) return;
-    window.startLiveGPS(); window.listenForPings(); startDispatchListener();
-});
-window.addEventListener('online', () => {
-    if (!window.currentRider) return;
-    window.startLiveGPS(); window.listenForPings(); startDispatchListener();
-});
-
-// ==========================================
-// 📝 REGISTRATION & LOGIN
-// ==========================================
-window.registerRider = async function() {
-    let name = document.getElementById('regName').value.trim();
-    let phone = document.getElementById('regPhone').value.replace(/[^0-9]/g, '');
-    let vehicle = document.getElementById('regVehicle').value.trim();
-    let plate = document.getElementById('regPlate').value.trim();
-    let pin = document.getElementById('regPin').value.trim();
-    let licenseFile = document.getElementById('regLicense').files[0];
-    let orcrFile = document.getElementById('regORCR').files[0];
-    let selfieFile = document.getElementById('regSelfie').files[0];
-
-    if (!name || !phone || !vehicle || !plate || !pin || !licenseFile || !orcrFile || !selfieFile) {
-        return Swal.fire('Incomplete', 'Please fill all fields and upload all required documents.', 'warning');
-    }
-
-    Swal.fire({title: 'Uploading Documents...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-    try {
-        const licSnap = await uploadBytes(ref(storage, `riders/licenses/${phone}_${Date.now()}`), licenseFile);
-        const licUrl = await getDownloadURL(licSnap.ref);
-
-        const orcrSnap = await uploadBytes(ref(storage, `riders/orcr/${phone}_${Date.now()}`), orcrFile);
-        const orcrUrl = await getDownloadURL(orcrSnap.ref);
-
-        const selfSnap = await uploadBytes(ref(storage, `riders/selfies/${phone}_${Date.now()}`), selfieFile);
-        const selfUrl = await getDownloadURL(selfSnap.ref);
-
-        await addDoc(collection(db, "riders"), {
-            name: name, phone: phone, vehicle: vehicle, plateNumber: plate.toUpperCase(), pin: pin,
-            licenseUrl: licUrl, orcrUrl: orcrUrl, selfieUrl: selfUrl,
-            status: "pending_approval", walletBalance: 0, rating: 5.0, totalDeliveries: 0, joinedAt: serverTimestamp(), fleetType: "Main Office",
-            franchiseAccess: true
-        });
-
-        Swal.fire('Application Sent!', 'HQ is reviewing your documents. You will be able to log in once approved.', 'success').then(() => {
-            document.getElementById('registerView').style.display = 'none';
-            document.getElementById('loginView').style.display = 'block';
-        });
-    } catch (e) { console.error(e); Swal.fire('Error', 'Registration failed.', 'error'); }
-};
-
-window.requestTopUp = async function() {
-    const { value: formValues } = await Swal.fire({
-        title: 'Wallet Top-Up',
-        html: `
-            <div style="font-size: 14px; color: #475569; margin-bottom: 20px; line-height: 1.4;">
-                Send your GCash payment to HQ, then enter the Reference Number and upload the screenshot below.
-            </div>
-            <div style="text-align: left;">
-                <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">GCash Ref No. (Required)</label>
-                <input type="text" id="topupRef" class="swal2-input" placeholder="e.g. 123456789" style="width: 100%; box-sizing: border-box; margin: 5px 0 15px 0;">
-                
-                <label style="font-size: 12px; font-weight: bold; color: #0ea5e9;">Upload Screenshot (Required)</label>
-                <input type="file" id="topupProof" class="swal2-file" accept="image/*" style="width: 100%; box-sizing: border-box; margin: 5px 0 0 0; display: block; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: white;">
-            </div>
-        `,
-        showCancelButton: true,
-        confirmButtonText: 'Submit Proof',
-        confirmButtonColor: '#0ea5e9',
-        customClass: { popup: 'rounded-2xl shadow-xl' },
-        preConfirm: () => {
-            // Grab the values right before the user submits
-            let refInput = document.getElementById('topupRef').value.trim();
-            let fileInput = document.getElementById('topupProof').files[0];
-            
-            if (!refInput) {
-                Swal.showValidationMessage('Please enter the GCash Reference Number.');
-                return false;
-            }
-            if (!fileInput) {
-                Swal.showValidationMessage('Please upload the GCash screenshot.');
-                return false;
-            }
-            
-            return { reference: refInput, file: fileInput };
-        }
-    });
-
-    // If the user successfully filled out the form and clicked Submit
-    if (formValues) {
-        Swal.fire({title: 'Uploading Proof...', text: 'Please wait...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-        
-        try {
-            // 1. Upload the image to Firebase Storage securely
-            let file = formValues.file;
-            let fileExt = file.name.split('.').pop();
-            const storageRef = ref(storage, `riders/topups/${window.currentRider.phone}_${Date.now()}.${fileExt}`);
-            const snapshot = await uploadBytes(storageRef, file);
-            const photoUrl = await getDownloadURL(snapshot.ref);
-
-            // 2. Save the request to the database with the photo URL
-            await addDoc(collection(db, "rider_topups"), {
-                riderId: window.currentRider.id,
-                riderName: window.currentRider.name,
-                reference: formValues.reference,
-                proofUrl: photoUrl,
-                status: "pending",
-                timestamp: serverTimestamp()
-            });
-
-            Swal.fire({
-                title: 'Sent!', 
-                text: 'HQ will verify the screenshot and credit your wallet shortly.', 
-                icon: 'success', 
-                customClass: { popup: 'rounded-2xl' }
-            });
-        } catch (error) {
-            console.error("Top-Up Error:", error);
-            Swal.fire('Error', 'Failed to submit top-up request. Please check your connection.', 'error');
-        }
-    }
-};
-
-window.loginRider = async function() {
-    let phone = document.getElementById('loginPhone').value.replace(/[^0-9]/g, '');
-    let pin = document.getElementById('loginPin').value.trim();
-
-    if (!phone || !pin) return Swal.fire('Error', 'Enter phone and PIN.', 'error');
-    Swal.fire({title: 'Authenticating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-    try {
-        const q = query(collection(db, "riders"), where("phone", "==", phone), where("pin", "==", pin));
-        const snap = await getDocs(q);
-
-        if (snap.empty) {
-            return Swal.fire('Access Denied', 'Incorrect phone number or PIN.', 'error');
-        }
-
-        let rider = { id: snap.docs[0].id, ...snap.docs[0].data() };
-
-        if (rider.status === "pending_approval") {
-            return Swal.fire('Account Pending', 'Your account is still being reviewed by HQ.', 'info');
-        }
-
-        if (rider.status === "banned") {
-            return Swal.fire('Account Suspended', 'Please contact management.', 'error');
-        }
-
-        // Login Success
-        if (window.currentRider?.id !== rider.id) window.stopRiderLiveServices();
-        window.currentRider = rider;
-        localStorage.setItem('takodeal_rider_id', rider.id); // 🔥 REMEMBERS THE RIDER
-        document.getElementById('authOverlay').style.display = 'none';
-        document.getElementById('mainApp').style.display = 'flex';
-        
-        document.getElementById('profileName').innerText = rider.name;
-        document.getElementById('profileWallet').innerText = (rider.walletBalance || 0).toFixed(2);
-        
-        Swal.close();
-        window.startLiveGPS(); // Start broadcasting location
-        window.listenForPings(); // Listen for incoming orders
-        startDispatchListener();
-
-    } catch (e) { console.error(e); Swal.fire('Error', 'Login failed.', 'error'); }
-};
-
-// ==========================================
-// 📍 LIVE GPS BROADCASTING
-// ==========================================
-window.startLiveGPS = function() {
-    const riderId = window.currentRider?.id;
-    if (!riderId) return;
-    if (window.riderGpsListenerKey === riderId && window.gpsInterval !== null) return;
-    if (window.gpsInterval !== null) clearInterval(window.gpsInterval);
-    window.gpsInterval = null; window.riderGpsListenerKey = riderId;
-    const epoch = window.riderLiveEpoch;
-    const current = () => epoch === window.riderLiveEpoch && window.currentRider?.id === riderId && window.riderGpsListenerKey === riderId;
-    if (!navigator.geolocation) return alert("GPS not supported.");
-    let inFlight = false;
-
-    // Update location every 15 seconds
-    window.gpsInterval = setInterval(() => {
-        if (!current() || inFlight || document.getElementById('statusToggle').innerText !== "ONLINE") return;
-        inFlight = true;
-
-        navigator.geolocation.getCurrentPosition(async (pos) => {
-            try {
-                if (!current() || document.getElementById('statusToggle').innerText !== 'ONLINE') return;
-                await updateDoc(doc(db, "riders", riderId), {
-                    lastLat: pos.coords.latitude,
-                    lastLng: pos.coords.longitude,
-                    lastActive: serverTimestamp()
-                });
-            } catch(e) { console.error("GPS Sync Error", e); }
-            finally {inFlight = false;}
-        }, (err) => {inFlight = false; console.log(err);}, { enableHighAccuracy: true, timeout:20000 });
-    }, 15000);
-};
-
-window.toggleRiderStatus = async function() {
-    let btn = document.getElementById('statusToggle');
-    let isOnline = btn.innerText === "ONLINE";
-    
-    if (isOnline) {
-        btn.innerText = "OFFLINE";
-        btn.style.background = "#ef4444";
-    } else {
-        btn.innerText = "ONLINE";
-        btn.style.background = "#10b981";
-    }
-
-    try {
-        await updateDoc(doc(db, "riders", window.currentRider.id), {
-            isAcceptingOrders: !isOnline,
-            fleetType: window.currentRider.fleetType || "Main Office" // broadcasts their global status
-        });
-    } catch(e) {}
-};
-
-// ========================================================
-// 📡 LIVE DISPATCH LISTENER
-// ========================================================
-function startDispatchListener() {
-    const riderId = window.currentRider?.id;
-    if (!riderId) return;
-    if (window.riderDispatchListenerKey === riderId && window.riderDispatchUnsubscribes?.length) return;
-    for (const stop of window.riderDispatchUnsubscribes || []) stop();
-    window.riderDispatchUnsubscribes = []; window.riderDispatchListenerKey = riderId;
-    const run = window.riderDispatchListenerRun = (window.riderDispatchListenerRun || 0) + 1;
-    const epoch = window.riderLiveEpoch;
-    const current = () => epoch === window.riderLiveEpoch && run === window.riderDispatchListenerRun && window.currentRider?.id === riderId && window.riderDispatchListenerKey === riderId;
-    const streams = {ready:[], claimed:[]};
-    const render = (kind, snapshot) => {
-        if (!current()) return;
-        streams[kind] = [];
-        snapshot.forEach(entry => {
-            const order = {id:entry.id, ...entry.data()};
-            if (kind === 'ready' ? order.status === 'ready' : order.status === 'out_for_delivery' && order.riderId === riderId) streams[kind].push(order);
-        });
-        window.activeDeliveries = [...new Map([...streams.ready, ...streams.claimed].map(order => [order.id, order])).values()];
-        
-        // Sort: Out for Delivery at the top, newer Ready orders below
-        window.activeDeliveries.sort((a, b) => {
-            if (a.status === "out_for_delivery" && b.status !== "out_for_delivery") return -1;
-            if (a.status !== "out_for_delivery" && b.status === "out_for_delivery") return 1;
-            return 0;
-        });
-
-        renderDispatchBoard();
-    };
-    const failed = error => {
-        if (!current()) return;
-        const stops = window.riderDispatchUnsubscribes || [];
-        window.riderDispatchUnsubscribes = []; window.riderDispatchListenerKey = null;
-        for (const stop of stops) stop();
-        window.activeDeliveries = [];
-        console.error('Rider dispatch listener:', error);
-        const board = document.getElementById('dispatchBoard'), container = document.getElementById('dispatchBoardContainer'), radar = document.getElementById('radarScreen');
-        if (container) container.style.display = 'flex';
-        if (radar) radar.style.display = 'none';
-        if (board) board.innerHTML = '<div style="text-align:center;padding:24px;color:#e2e8f0;">Delivery updates stopped. Retry, or contact HQ if this continues.<br><button class="btn-action" style="margin-top:12px;" onclick="window.startDispatchListener()">Retry delivery updates</button></div>';
-    };
-    // Retain every available ready job. Claimed jobs use the same exact riderId
-    // ownership that the existing Ongoing tab and claim writers already use.
-    window.riderDispatchUnsubscribes.push(onSnapshot(query(collection(db, 'incoming_orders'), where('status', '==', 'ready')), snap => render('ready', snap), failed));
-    window.riderDispatchUnsubscribes.push(onSnapshot(query(collection(db, 'incoming_orders'), where('status', '==', 'out_for_delivery'), where('riderId', '==', riderId)), snap => render('claimed', snap), failed));
+import {initializeApp} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js';
+import {getFirestore,collection,getDocs,getDocsFromServer,query,where,doc,updateDoc,onSnapshot,serverTimestamp,getDoc,getDocFromServer,runTransaction,arrayUnion} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
+import {getStorage,ref,uploadBytes,getDownloadURL} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js';
+import {getAuth,signInAnonymously,onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
+import {installRiderAccount} from './rider-account.js';
+import {installRiderLayout} from './rider-layout.js';
+import {renderRiderDispatch,riderMoney,escapeRiderText} from './rider-dispatch-view.js';
+import {claimDeliveryAtomic,acceptPingAtomic,completeDeliveryAtomic,rejectPingAtomic,requestRiderTopUpAtomic,setRiderAvailabilityAtomic} from './rider-delivery-safety.js';
+const firebaseConfig={apiKey:'AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4',authDomain:'takodeal-pos.firebaseapp.com',projectId:'takodeal-pos',storageBucket:'takodeal-pos.firebasestorage.app',messagingSenderId:'248826111383',appId:'1:248826111383:web:48bf1e2c172298079bd0d2'};
+const app=initializeApp(firebaseConfig),db=getFirestore(app),storage=getStorage(app),auth=getAuth(app);
+let authReady=null;
+async function ensureAuth(){
+ if(auth.currentUser)return auth.currentUser;
+ if(!authReady)authReady=signInAnonymously(auth).then(value=>value.user).finally(()=>{authReady=null;});
+ return authReady;
 }
-window.startDispatchListener = startDispatchListener;
-
-// ========================================================
-// 🛵 RENDER DISPATCH BOARD
-// ========================================================
-function renderDispatchBoard() {
-    const container = document.getElementById('dispatchBoardContainer');
-    const board = document.getElementById('dispatchBoard');
-    const radar = document.getElementById('radarScreen');
-    
-    if (!board || !radar || !container) return;
-
-    // 🔥 FILTER THE BOARD BASED ON THE ACTIVE TAB
-    let displayOrders = window.activeDeliveries;
-    
-    if (window.currentRiderTab === 'Pending') {
-        // Show only orders waiting to be claimed
-        displayOrders = window.activeDeliveries.filter(o => o.status === "ready");
-    } else {
-        // Show only orders claimed by THIS specific rider
-        displayOrders = window.activeDeliveries.filter(o => o.status === "out_for_delivery" && o.riderId === window.currentRider.id);
-    }
-
-    if (window.activeDeliveries.length === 0) {
-        container.style.display = 'none';
-        radar.style.display = 'flex';
-        return;
-    }
-
-    radar.style.display = 'none';
-    container.style.display = 'flex';
-
-    if (displayOrders.length === 0) {
-        board.innerHTML = `<div style="text-align: center; color: #94a3b8; padding: 40px; font-weight: bold;">No ${window.currentRiderTab.toLowerCase()} deliveries.</div>`;
-        return;
-    }
-
-    let html = '';
-    displayOrders.forEach(order => {
-        let orderCode = order.orderCode || order.id;
-        let customerName = (order.customerName || 'Guest').split('(')[0].trim();
-        let address = order.deliveryAddress || "Address not provided";
-        
-        let mapLinkHtml = '';
-        if (order.mapLink) {
-            mapLinkHtml = `<a href="${order.mapLink}" target="_blank" style="text-decoration: none;">
-                <button class="btn-map" style="background: #10b981; width: 100%; border: none; padding: 12px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 10px; cursor: pointer;">📍 Open Exact Pinned Location</button>
-            </a>`;
-        } else {
-            let mapQuery = encodeURIComponent(address);
-            mapLinkHtml = `<a href="https://www.google.com/maps/search/?api=1&query=${mapQuery}" target="_blank" style="text-decoration: none;">
-                <button class="btn-map" style="background: #3b82f6; width: 100%; border: none; padding: 12px; border-radius: 8px; color: white; font-weight: bold; margin-bottom: 10px; cursor: pointer;">🗺️ Search Address in Maps</button>
-            </a>`;
-        }
-        
-        let actionBtn = '';
-        if (order.status === "ready") {
-            actionBtn = `<button class="btn-action" style="background: #f59e0b; width: 100%; border: none; padding: 15px; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; cursor: pointer;" onclick="window.claimDelivery('${order.id}')">Claim Delivery & Deduct ₱${(order.totalAmount || 0).toFixed(2)}</button>`;
-        } else if (order.status === "out_for_delivery") {
-            actionBtn = `<button class="btn-action" style="background: #10b981; width: 100%; border: none; padding: 15px; border-radius: 8px; color: white; font-weight: bold; font-size: 16px; cursor: pointer;" onclick="window.completeDelivery('${order.id}')">✅ Mark Delivered & Capture Proof</button>`;
-        }
-
-        html += `
-            <div class="order-card" style="background: #1e293b; border-radius: 12px; padding: 15px; border: 1px solid #334155;">
-                <div class="order-header" style="display: flex; justify-content: space-between; border-bottom: 1px solid #334155; padding-bottom: 10px; margin-bottom: 10px;">
-                    <span class="order-id" style="font-weight: 900; color: white; font-size: 16px;">${orderCode}</span>
-                    <span class="order-total" style="color: #facc15; font-weight: bold; font-size: 16px;">₱${(order.totalAmount || 0).toFixed(2)}</span>
-                </div>
-                <div class="customer-info" style="margin-bottom: 15px;">
-                    <span class="customer-name" style="color: white; font-weight: bold; font-size: 15px;">👤 ${customerName}</span>
-                    <div style="color: #94a3b8; margin-top: 5px; font-size: 14px;"><a href="tel:${order.contactNumber}" style="color: #3b82f6; text-decoration: none;">📞 ${order.contactNumber || 'No number'}</a></div>
-                    <div style="margin-top: 10px; color: #e2e8f0; font-size: 13px; background: #0f172a; padding: 10px; border-radius: 6px;">📍 ${address}</div>
-                </div>
-                ${mapLinkHtml}
-                <div style="margin-top: 5px;">${actionBtn}</div>
-            </div>
-        `;
-    });
-
-    board.innerHTML = html;
+Object.assign(window,{db,storage,auth,ensureAuth,onAuthStateChanged,collection,getDocs,getDocsFromServer,query,where,doc,updateDoc,onSnapshot,serverTimestamp,getDoc,getDocFromServer,runTransaction,arrayUnion,ref,uploadBytes,getDownloadURL});
+let riderAccountController=null;
+window.currentRider=null;window.gpsInterval=null;window.activePingId=null;window.pingCountdown=null;window.riderLiveEpoch=0;window.activeDeliveries=[];window.currentRiderTab='Pending';window.riderActionBusy=false;
+window.isRiderApproved=rider=>['active','approved'].includes(String(rider?.status||'').trim().toLowerCase()) && riderAccountController?.isActive()===true;
+function riderStatus(message){const node=document.getElementById('riderOperationStatus');if(node)node.textContent=message;}
+function liveApproved(){return window.isRiderApproved(window.currentRider) && navigator.onLine!==false;}
+function visibleWallet(){const rider=window.currentRider;if(!rider)return;document.getElementById('profileName').textContent=rider.name||'Rider';document.getElementById('profileWallet').textContent=riderMoney(rider.walletBalance??0).replace(/^₱/,'');document.getElementById('profileRating').textContent=Number.isFinite(Number(rider.rating))?Number(rider.rating).toFixed(1):'—';const online=rider.isAcceptingOrders===true;const button=document.getElementById('statusToggle');button.textContent=online?'Online · Go offline':'Go online';button.setAttribute('aria-pressed',String(online));}
+window.stopRiderLiveServices=function(){
+ window.riderLiveEpoch++;
+ if(window.gpsInterval!==null)clearInterval(window.gpsInterval);
+ window.gpsInterval=null;window.riderGpsListenerKey=null;
+ const stops=[...(window.riderDispatchUnsubscribes||[]),window.riderPingUnsubscribe].filter(Boolean);
+ window.riderDispatchUnsubscribes=[];window.riderDispatchListenerKey=null;window.riderPingUnsubscribe=null;window.riderPingListenerKey=null;
+ for(const stop of stops){try{stop();}catch{}}
+ window.activeDeliveries=[];window.closePingModal?.();renderDispatchBoard();
+};
+function startActiveServices(){if(!liveApproved())return;window.startLiveGPS();window.listenForPings();startDispatchListener();}
+window.showRiderAuthView=function(view){if(window.isRiderOperationBusy?.())return;document.getElementById('loginView').style.display=view==='register'?'none':'block';document.getElementById('registerView').style.display=view==='register'?'block':'none';document.getElementById(view==='register'?'regName':'loginPhone').focus();};
+function requireOnline(){if(navigator.onLine===false)throw Error('Reconnect to the internet before saving or accepting a delivery.');}
+function actorNow(){requireOnline();if(!window.isRiderApproved(window.currentRider))throw Error('Manager approval is required before delivery actions.');const actor=window.captureRiderActor();window.assertRiderActor(actor,{active:true});return actor;}
+function guardActor(actor){window.assertRiderActor(actor,{active:true});requireOnline();}
+window.startLiveGPS=function(){
+ const rider=window.currentRider,riderId=rider?.id;
+ if(!liveApproved() || rider.isAcceptingOrders!==true)return;
+ if(window.riderGpsListenerKey===riderId && window.gpsInterval!==null)return;
+ if(window.gpsInterval!==null)clearInterval(window.gpsInterval);
+ window.gpsInterval=null;window.riderGpsListenerKey=riderId;
+ const epoch=window.riderLiveEpoch,current=()=>epoch===window.riderLiveEpoch && window.currentRider?.id===riderId && liveApproved() && window.currentRider.isAcceptingOrders===true;
+ const locationStatus=document.getElementById('riderLocationStatus');
+ if(!navigator.geolocation){if(locationStatus)locationStatus.textContent='This device cannot provide GPS. Contact Manager for dispatch help.';return;}
+ let inFlight=false,last=null,lastWrite=0;
+ const tick=()=>{
+  if(!current() || inFlight || document.visibilityState==='hidden')return;
+  let actor;try{actor=actorNow();}catch{return;}
+  inFlight=true;
+  navigator.geolocation.getCurrentPosition(async position=>{
+   try{
+    if(!current())return;guardActor(actor);
+    const lat=position.coords.latitude,lng=position.coords.longitude;
+    if(!Number.isFinite(lat)||!Number.isFinite(lng))throw Error('GPS returned an invalid location.');
+    const now=Date.now(),moved=!last || Math.hypot((lat-last.lat)*111000,(lng-last.lng)*110000)>=20;
+    if(moved || now-lastWrite>=60000){await runTransaction(db,async tx=>{const riderRef=doc(db,'riders',riderId),snapshot=await tx.get(riderRef);guardActor(actor);if(!snapshot.exists() || !window.isRiderApproved(snapshot.data()) || snapshot.data().isAcceptingOrders!==true)throw Error('Go online with an approved account to share location.');tx.update(riderRef,{lastLat:lat,lastLng:lng,lastActive:serverTimestamp()});});if(!current())return;last={lat,lng};lastWrite=now;}
+    if(locationStatus)locationStatus.textContent='Location updates are on while you’re available.';
+   }catch(error){if(current() && locationStatus)locationStatus.textContent=error.message||'Location update failed. Try again when connected.';}
+   finally{inFlight=false;}
+  },error=>{inFlight=false;if(current() && locationStatus)locationStatus.textContent=error.code===1?'Location access is blocked. Allow it in your browser settings, then go offline and online again.':'Waiting for GPS. Keep location enabled and try outdoors.';},{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
+ };
+ window.gpsInterval=setInterval(tick,30000);tick();
+};
+function renderDispatchBoard(){renderRiderDispatch(window,document);}
+window.renderDispatchBoard=renderDispatchBoard;
+function startDispatchListener(){
+ const riderId=window.currentRider?.id;if(!liveApproved())return;
+ if(window.riderDispatchListenerKey===riderId && window.riderDispatchUnsubscribes?.length)return;
+ for(const stop of window.riderDispatchUnsubscribes||[])stop();window.riderDispatchUnsubscribes=[];window.riderDispatchListenerKey=riderId;
+ const run=window.riderDispatchListenerRun=(window.riderDispatchListenerRun||0)+1,epoch=window.riderLiveEpoch;
+ const current=()=>epoch===window.riderLiveEpoch && run===window.riderDispatchListenerRun && window.currentRider?.id===riderId && liveApproved() && window.riderDispatchListenerKey===riderId;
+ const streams={ready:[],claimed:[]};
+ const render=(kind,snapshot)=>{if(!current())return;streams[kind]=[];snapshot.forEach(entry=>{const order={...entry.data(),id:entry.id},type=String(order.orderType||'').trim().toLowerCase(),delivery=type?type.includes('delivery'):Boolean(order.deliveryAddress||order.id.startsWith('delivery-')),scoped=!Object.hasOwn(window.currentRider,'allowedBranches') || Array.isArray(window.currentRider.allowedBranches) && (window.currentRider.allowedBranches.includes('All')||window.currentRider.allowedBranches.includes(order.branch));if(kind==='ready'?order.status==='ready'&&delivery&&scoped:order.status==='out_for_delivery' && order.riderId===riderId)streams[kind].push(order);});window.activeDeliveries=[...new Map([...streams.claimed,...streams.ready].map(order=>[order.id,order])).values()];renderDispatchBoard();};
+ const failed=error=>{if(!current())return;const stops=window.riderDispatchUnsubscribes||[];window.riderDispatchUnsubscribes=[];window.riderDispatchListenerKey=null;for(const stop of stops)stop();window.activeDeliveries=[];console.error('Rider delivery updates stopped:',error.code||'unavailable');document.getElementById('dispatchBoardContainer').style.display='block';document.getElementById('radarScreen').style.display='none';const board=document.getElementById('dispatchBoard');board.style.display='flex';board.innerHTML='<div class="rider-empty"><h2>Delivery updates stopped</h2><p>Check your connection and try again. Contact Manager if this continues.</p><button class="rider-button" onclick="window.refreshRiderDeliveries()">Retry delivery updates</button></div>';};
+ window.riderDispatchUnsubscribes.push(onSnapshot(query(collection(db,'incoming_orders'),where('status','==','ready')),snapshot=>render('ready',snapshot),failed));
+ window.riderDispatchUnsubscribes.push(onSnapshot(query(collection(db,'incoming_orders'),where('status','==','out_for_delivery'),where('riderId','==',riderId)),snapshot=>render('claimed',snapshot),failed));
 }
-
-window.claimDelivery = async function(orderId) {
-    let order = window.activeDeliveries.find(o => o.id === orderId);
-    if (!order) return;
-
-    // 🔥 WALLET DEDUCTION ENGINE
-    let orderTotal = order.totalAmount || 0;
-    let currentBalance = window.currentRider.walletBalance || 0;
-
-    // Security Check: Do they have enough to cover the food?
-    if (currentBalance < orderTotal) {
-        return Swal.fire('Insufficient Funds', `You need at least ₱${orderTotal.toFixed(2)} in your wallet to cover the cost of this food. Please Top-Up!`, 'error');
-    }
-
-    let newBalance = currentBalance - orderTotal;
-
-    try {
-        // 1. Update the Order
-        await updateDoc(doc(db, "incoming_orders", orderId), {
-            status: "out_for_delivery",
-            riderClaimedAt: serverTimestamp(),
-            riderId: window.currentRider.id,
-            riderName: window.currentRider.name 
-        });
-
-        // 2. Deduct from the Rider's Wallet in Firebase
-        await updateDoc(doc(db, "riders", window.currentRider.id), {
-            walletBalance: newBalance
-        });
-
-        // 3. Update the local UI immediately
-        window.currentRider.walletBalance = newBalance;
-        document.getElementById('profileWallet').innerText = newBalance.toFixed(2);
-
-        Swal.fire({toast: true, position: 'top', icon: 'success', title: `Delivery Claimed! ₱${orderTotal.toFixed(2)} deducted.`, showConfirmButton: false, timer: 2000});
-        
-        // Auto-switch to their "Ongoing" tab!
-        window.switchRiderTab('Ongoing');
-
-    } catch(e) { console.error("Error claiming:", e); }
+window.startDispatchListener=startDispatchListener;
+window.refreshRiderDeliveries=async()=>{if(window.riderActionBusy)return;try{requireOnline();await window.refreshRiderApproval();if(!liveApproved())return;window.stopRiderLiveServices();startActiveServices();riderStatus('Delivery updates refreshed.');}catch(error){riderStatus(error.message);}};
+window.switchRiderTab=tab=>{window.currentRiderTab=tab==='Ongoing'?'Ongoing':'Pending';renderDispatchBoard();};
+async function riderAction(task,{success}={}){
+ if(window.riderActionBusy)return false;window.riderActionBusy=true;
+ let actor;
+ try{actor=actorNow();const result=await task(actor);guardActor(actor);if(success)riderStatus(success);return result;}
+ catch(error){try{if(actor)window.assertRiderActor(actor,{active:true});riderStatus(error.message||'The save could not be confirmed. Reconnect and refresh before retrying.');await Swal.fire({title:'Please check this action',text:error.message||'Check your connection and try again.',icon:'warning'});}catch{}return false;}
+ finally{window.riderActionBusy=false;}
+}
+window.toggleRiderStatus=()=>riderAction(async actor=>{const value=window.currentRider.isAcceptingOrders!==true;const result=await setRiderAvailabilityAtomic(window,{actor,isAcceptingOrders:value});guardActor(actor);window.currentRider={...window.currentRider,...result.rider,isAcceptingOrders:value};window.stopRiderLiveServices();visibleWallet();startActiveServices();return result;},{success:'Availability saved.'});
+const deliveryAttempts=new Map();
+function attemptFor(kind,id){const key=kind+':'+window.currentRider.id+':'+id;let attempt=deliveryAttempts.get(key);if(!attempt){attempt={id:kind+'-'+crypto.randomUUID()};deliveryAttempts.set(key,attempt);}return attempt;}
+window.claimDelivery=orderId=>riderAction(async actor=>{if(window.currentRider.isAcceptingOrders!==true)throw Error('Go online before accepting a new delivery.');const attempt=attemptFor('claim',orderId);const result=await claimDeliveryAtomic(window,{orderId,operationId:attempt.id,actor});guardActor(actor);if(result.rider)window.currentRider={...window.currentRider,...result.rider};if(result.walletBalance!=null)window.currentRider.walletBalance=result.walletBalance;visibleWallet();window.switchRiderTab('Ongoing');await window.refreshRiderApproval();return result;},{success:'Delivery accepted. Open My deliveries for directions and completion.'});
+function validatePhoto(file){if(!file || !['image/jpeg','image/png','image/webp'].includes(file.type) || !(file.size>0) || file.size>8*1024*1024)throw Error('Choose a JPG, PNG or WebP photo up to 8 MB.');return file;}
+async function riderPhotoHash(file){const hash=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());return [...new Uint8Array(hash)].map(value=>value.toString(16).padStart(2,'0')).join('');}
+window.completeDelivery=orderId=>riderAction(async actor=>{
+ const mine=window.activeDeliveries.find(order=>order.id===orderId && order.status==='out_for_delivery' && order.riderId===actor.riderId);if(!mine)throw Error('Refresh My deliveries. This delivery is not currently assigned to you.');
+ const answer=await Swal.fire({title:'Proof of delivery',text:'Choose a clear photo of the delivered order or drop-off location.',input:'file',inputAttributes:{accept:'image/jpeg,image/png,image/webp',capture:'environment'},showCancelButton:true,confirmButtonText:'Save delivery proof',inputValidator:file=>{try{validatePhoto(file);}catch(error){return error.message;}}});
+ if(!answer.value)return {cancelled:true};guardActor(actor);const file=validatePhoto(answer.value),attempt=attemptFor('complete',orderId),signature=await riderPhotoHash(file);guardActor(actor);
+ if(attempt.photoSignature!==signature){attempt.photoSignature=signature;attempt.proofUrl=null;}
+ if(!attempt.proofUrl){const uploaded=await uploadBytes(ref(storage,'deliveries/proofs/'+orderId+'_'+attempt.id+'/'+signature+'.'+({ 'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[file.type])),file);guardActor(actor);attempt.proofUrl=await getDownloadURL(uploaded.ref);guardActor(actor);}
+ const result=await completeDeliveryAtomic(window,{orderId,operationId:attempt.id,proofUrl:attempt.proofUrl,actor});guardActor(actor);riderStatus('Delivery completed. Your proof was saved.');return result;
+});
+const topupAttempts=new Map();
+window.requestTopUp=()=>riderAction(async actor=>{
+ const answer=await Swal.fire({title:'Request a wallet top-up',html:'<p>Send your GCash payment to Manager using the confirmed payment details, then submit its reference and proof. Manager credits the wallet after review.</p><label for="topupRef">GCash reference number</label><input id="topupRef" class="swal2-input" inputmode="numeric" maxlength="60" autocomplete="off"><label for="topupProof">Payment screenshot</label><input type="file" id="topupProof" class="swal2-file" accept="image/jpeg,image/png,image/webp">',showCancelButton:true,confirmButtonText:'Submit for review',preConfirm:()=>{try{const entered=document.getElementById('topupRef').value.trim(),reference=entered.replace(/[ -]/g,''),file=validatePhoto(document.getElementById('topupProof').files?.[0]);if(!/^[0-9 -]{3,60}$/.test(entered) || !/^\d{3,60}$/.test(reference))throw Error('Enter the reference number shown on your GCash payment.');return {reference,file};}catch(error){Swal.showValidationMessage(error.message);return false;}}});
+ if(!answer.value)return {cancelled:true};guardActor(actor);const file=answer.value.file,reference=answer.value.reference.replace(/[ -]/g,''),key=actor.riderId+':'+reference;
+ let attempt=topupAttempts.get(key);if(!attempt){const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(key));guardActor(actor);attempt={id:'topup-'+[...new Uint8Array(bytes)].map(b=>b.toString(16).padStart(2,'0')).join(''),operationId:'topup-'+crypto.randomUUID()};topupAttempts.set(key,attempt);}
+ const previous=await getDocFromServer(doc(db,'rider_topups',attempt.id));guardActor(actor);if(previous.exists()){const record=previous.data();if(record.riderId!==actor.riderId || String(record.reference||'').replace(/[ -]/g,'')!==reference)throw Error('This reference has conflicting saved details. Contact Manager before retrying.');const status=['pending','approved','rejected'].includes(record.status)?record.status:'needs Manager review';riderStatus('This top-up request is already '+status+'. No additional request was created.');return {alreadySaved:true,status,topupId:attempt.id};}
+ if(!attempt.proofUrl){const photoHash=await riderPhotoHash(file);guardActor(actor);const uploaded=await uploadBytes(ref(storage,'riders/topups/'+attempt.id+'/'+photoHash+'_'+attempt.operationId+'.'+({'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[file.type])),file);guardActor(actor);attempt.proofUrl=await getDownloadURL(uploaded.ref);guardActor(actor);}
+ const result=await requestRiderTopUpAtomic(window,{topupId:attempt.id,reference,proofUrl:attempt.proofUrl,operationId:attempt.operationId,actor});guardActor(actor);riderStatus('Top-up request submitted for Manager review.');return result;
+});
+window.listenForPings=function(){
+ if(!liveApproved() || window.currentRider.isAcceptingOrders!==true)return;
+ const riderId=window.currentRider.id,epoch=window.riderLiveEpoch;
+ if(window.riderPingListenerKey===riderId && window.riderPingUnsubscribe)return;
+ window.riderPingUnsubscribe?.();window.riderPingListenerKey=riderId;
+ const current=()=>epoch===window.riderLiveEpoch && window.currentRider?.id===riderId && liveApproved() && window.currentRider.isAcceptingOrders===true && window.riderPingListenerKey===riderId;
+ window.riderPingUnsubscribe=onSnapshot(query(collection(db,'incoming_orders'),where('pingedRider','==',riderId),where('status','==','looking_for_rider')),snapshot=>{if(!current())return;for(const change of snapshot.docChanges()){if(change.type==='removed'){if(window.activePingId===change.doc.id && !window.riderActionBusy)window.closePingModal();}else window.triggerIncomingPing(change.doc.id,change.doc.data());}},error=>{if(!current())return;window.riderPingUnsubscribe=null;window.riderPingListenerKey=null;window.closePingModal();riderStatus('Delivery alerts stopped. Refresh deliveries to reconnect.');console.error('Rider alerts stopped:',error.code||'unavailable');});
 };
-
-window.currentRiderTab = 'Pending'; 
-
-window.switchRiderTab = function(tab) {
-    window.currentRiderTab = tab;
-    let tabP = document.getElementById('tabPending');
-    let tabO = document.getElementById('tabOngoing');
-    
-    if (tab === 'Pending') {
-        tabP.style.background = 'var(--primary)'; tabP.style.color = 'white';
-        tabO.style.background = '#334155'; tabO.style.color = '#94a3b8';
-    } else {
-        tabO.style.background = 'var(--primary)'; tabO.style.color = 'white';
-        tabP.style.background = '#334155'; tabP.style.color = '#94a3b8';
-    }
-    renderDispatchBoard(); 
+window.triggerIncomingPing=function(orderId,orderData){
+ if(!liveApproved() || window.currentRider.isAcceptingOrders!==true || window.riderActionBusy || window.activePingId===orderId)return;
+ window.closePingModal();window.activePingId=orderId;window.currentPingData=orderData;
+ document.getElementById('pingDistance').textContent=orderData.deliveryFee==null?'Delivery fee not listed':riderMoney(orderData.deliveryFee)+' delivery fee';document.getElementById('pingStore').textContent=orderData.branch||'Confirm pickup with Manager';document.getElementById('pingAddress').textContent=orderData.deliveryAddress||'Confirm drop-off with Manager';document.getElementById('btnAcceptPing').textContent='Accept delivery';document.getElementById('btnAcceptPing').disabled=false;document.getElementById('incomingOrderPing').style.display='block';
+ try{const audio=new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');audio.loop=true;audio.play().catch(()=>{});window.pingAudio=audio;}catch{}
+ let time=15;document.getElementById('pingTimer').textContent=time+'s';window.pingCountdown=setInterval(()=>{document.getElementById('pingTimer').textContent=--time+'s';if(time<=0 && !window.riderActionBusy)window.rejectPing();},1000);
 };
-
-window.completeDelivery = async function(orderId) {
-    // 📸 Trigger SweetAlert to ask for the photo
-    const { value: file } = await Swal.fire({
-        title: 'Proof of Delivery',
-        text: 'Please snap a photo of the delivered item or the drop-off location.',
-        input: 'file',
-        inputAttributes: {
-            'accept': 'image/*',
-            'capture': 'environment' // 🔥 This forces mobile devices to open the rear camera!
-        },
-        showCancelButton: true,
-        confirmButtonText: 'Upload & Complete',
-        confirmButtonColor: '#10b981',
-        customClass: { popup: 'rounded-2xl shadow-xl' }
-    });
-
-    if (file) {
-        Swal.fire({title: 'Uploading Proof...', text: 'Please wait...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-        
-        try {
-            // 1. Upload the image to Firebase Storage
-            let fileExt = file.name.split('.').pop();
-            const storageRef = ref(storage, `deliveries/proofs/${orderId}_${Date.now()}.${fileExt}`);
-            const snapshot = await uploadBytes(storageRef, file);
-            const photoUrl = await getDownloadURL(snapshot.ref);
-
-            // 2. Update the order with the photo link and complete status
-            await updateDoc(doc(db, "incoming_orders", orderId), {
-                status: "completed",
-                deliveredAt: serverTimestamp(),
-                proofOfDeliveryUrl: photoUrl
-            });
-            
-            Swal.fire('Delivered!', 'Great job. The order has been marked complete and your proof is saved.', 'success');
-        } catch(e) { 
-            console.error("Error completing:", e); 
-            Swal.fire('Error', 'Failed to upload proof. Check your connection.', 'error');
-        }
-    }
-};
-
-// ==========================================
-// 🚨 THE 15-SECOND PING ENGINE
-// ==========================================
-window.listenForPings = function() {
-    if (!window.currentRider) return;
-    const riderId = window.currentRider.id, epoch = window.riderLiveEpoch;
-    if (window.riderPingListenerKey === riderId && window.riderPingUnsubscribe) return;
-    if (window.riderPingUnsubscribe) window.riderPingUnsubscribe();
-    window.riderPingListenerKey = riderId;
-    const current = () => epoch === window.riderLiveEpoch && window.currentRider?.id === riderId && window.riderPingListenerKey === riderId;
-
-    // Listen specifically for orders targeting THIS rider
-    const q = query(collection(db, "incoming_orders"), 
-        where("pingedRider", "==", riderId),
-        where("status", "==", "looking_for_rider")
-    );
-
-    window.riderPingUnsubscribe = onSnapshot(q, (snapshot) => {
-        if (!current()) return;
-        snapshot.docChanges().forEach((change) => {
-            if (change.type === "added" || change.type === "modified") {
-                let order = change.doc.data();
-                window.triggerIncomingPing(change.doc.id, order);
-            }
-            if (change.type === "removed") {
-                // If HQ cancels or reassigns it before the timer runs out
-                if (window.activePingId === change.doc.id) window.closePingModal();
-            }
-        });
-    }, error => {
-        if (!current()) return;
-        window.riderPingUnsubscribe = null; window.riderPingListenerKey = null;
-        console.error('Rider ping listener:', error);
-    });
-};
-
-window.triggerIncomingPing = function(orderId, orderData) {
-    if (window.activePingId === orderId) return; // Prevent duplicate triggers
-    window.closePingModal();
-    
-    window.activePingId = orderId;
-    window.currentPingData = orderData;
-    
-    let modal = document.getElementById('incomingOrderPing');
-    document.getElementById('pingDistance').innerText = `₱${(orderData.deliveryFee || 50).toFixed(2)} Fee`;
-    document.getElementById('pingStore').innerText = orderData.branch;
-    document.getElementById('pingAddress').innerText = orderData.deliveryAddress;
-    
-    modal.style.display = 'block';
-    
-    // Play a loud ringing sound!
-    let audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-    audio.loop = true; audio.play().catch(e => console.log(e));
-    window.pingAudio = audio;
-
-    // Start 15 Second Countdown
-    let timeLeft = 15;
-    let timerEl = document.getElementById('pingTimer');
-    timerEl.innerText = `${timeLeft}s`;
-
-    window.pingCountdown = setInterval(() => {
-        timeLeft--;
-        timerEl.innerText = `${timeLeft}s`;
-        if (timeLeft <= 0) {
-            window.rejectPing(); // Auto-reject if they ignore it
-        }
-    }, 1000);
-};
-
-window.closePingModal = function() {
-    document.getElementById('incomingOrderPing').style.display = 'none';
-    if (window.pingCountdown) clearInterval(window.pingCountdown);
-    if (window.pingAudio) window.pingAudio.pause();
-    window.pingCountdown = null; window.pingAudio = null;
-    window.activePingId = null;
-    window.currentPingData = null;
-};
-
-// ==========================================
-// 📥 ACCEPT OR REJECT
-// ==========================================
-window.acceptPing = async function() {
-    let orderId = window.activePingId;
-    let order = window.currentPingData;
-    if (!orderId || !order) return;
-
-    // 🛡️ ANTI-THEFT WALLET CHECK
-    // If the customer is paying in Cash, the rider MUST have enough in their wallet to cover the food cost!
-    let requiresWalletDeduction = (order.paymentMethod || 'Cash').toLowerCase() === 'cash';
-    let foodTotal = order.totalAmount || 0;
-
-    if (requiresWalletDeduction && (window.currentRider.walletBalance < foodTotal)) {
-        Swal.fire('Insufficient Funds', `Customer is paying cash. You need at least ₱${foodTotal.toFixed(2)} in your digital wallet to accept this. Please Top-Up!`, 'error');
-        window.rejectPing(); // Auto-pass to the next rider
-        return;
-    }
-
-    clearInterval(window.pingCountdown);
-    document.getElementById('btnAcceptPing').innerText = "Processing...";
-
-    try {
-        let updates = {
-            status: "out_for_delivery",
-            riderId: window.currentRider.id,
-            riderName: window.currentRider.name,
-            riderPhone: window.currentRider.phone,
-            riderPlate: window.currentRider.plateNumber,
-            riderSelfie: window.currentRider.selfieUrl || "",
-            acceptedAt: serverTimestamp()
-        };
-
-        await updateDoc(doc(db, "incoming_orders", orderId), updates);
-
-        // Deduct Wallet
-        if (requiresWalletDeduction) {
-            let newBalance = window.currentRider.walletBalance - foodTotal;
-            await updateDoc(doc(db, "riders", window.currentRider.id), { walletBalance: newBalance });
-            window.currentRider.walletBalance = newBalance;
-            document.getElementById('profileWallet').innerText = newBalance.toFixed(2);
-        }
-
-        window.closePingModal();
-        Swal.fire({toast: true, position: 'top', icon: 'success', title: 'Order Secured!', showConfirmButton: false, timer: 1500});
-        
-    } catch(e) { console.error(e); }
-};
-
-window.rejectPing = async function() {
-    let orderId = window.activePingId;
-    window.closePingModal();
-
-    if (orderId) {
-        try {
-            // Push this rider into the declinedBy array and clear the pingedRider so the POS knows to find the next guy!
-            const orderRef = doc(db, "incoming_orders", orderId);
-            await updateDoc(orderRef, {
-                pingedRider: null,
-                declinedBy: window.firebase ? window.firebase.firestore.FieldValue.arrayUnion(window.currentRider.id) : [], // If using modular SDK, ensure arrayUnion is imported
-            });
-        } catch(e) { console.error(e); }
-    }
-};
-
-// ==========================================
-// 🔒 PERMANENT SESSION & SIGN OUT
-// ==========================================
-window.checkLoginStatus = async function() {
-    let savedId = localStorage.getItem('takodeal_rider_id');
-    if (savedId) {
-        try {
-            const docSnap = await getDoc(doc(db, "riders", savedId));
-            if (localStorage.getItem('takodeal_rider_id') !== savedId) return;
-            if (docSnap.exists()) {
-                let rider = { id: docSnap.id, ...docSnap.data() };
-                
-                if (rider.status === "banned") {
-                    localStorage.removeItem('takodeal_rider_id');
-                    return;
-                }
-
-                if (window.currentRider?.id !== rider.id) window.stopRiderLiveServices();
-                window.currentRider = rider;
-                document.getElementById('authOverlay').style.display = 'none';
-                document.getElementById('mainApp').style.display = 'flex';
-                
-                document.getElementById('profileName').innerText = rider.name;
-                document.getElementById('profileWallet').innerText = (rider.walletBalance || 0).toFixed(2);
-                
-                window.startLiveGPS(); 
-                window.listenForPings(); 
-                startDispatchListener(); // 🔥 Forces the board to load immediately!
-            }
-        } catch(e) { console.error("Auto-login failed:", e); }
-    }
-};
-
-window.logoutRider = function() {
-    if (confirm("Are you sure you want to sign out? You will stop receiving orders.")) {
-        window.stopRiderLiveServices();
-        window.currentRider = null;
-        localStorage.removeItem('takodeal_rider_id');
-        window.location.reload(); // Wipes memory and returns to login screen
-    }
-};
-
-// Run this the moment the app opens!
-window.checkLoginStatus();
+window.closePingModal=function(){document.getElementById('incomingOrderPing').style.display='none';if(window.pingCountdown)clearInterval(window.pingCountdown);window.pingAudio?.pause();window.pingCountdown=null;window.pingAudio=null;window.activePingId=null;window.currentPingData=null;document.getElementById('btnAcceptPing').disabled=false;document.getElementById('btnAcceptPing').textContent='Accept delivery';};
+window.acceptPing=()=>riderAction(async actor=>{const orderId=window.activePingId;if(!orderId)throw Error('This delivery alert has expired.');const attempt=attemptFor('ping',orderId);if(window.pingCountdown)clearInterval(window.pingCountdown);window.pingCountdown=null;document.getElementById('btnAcceptPing').disabled=true;let result;try{result=await acceptPingAtomic(window,{orderId,operationId:attempt.id,actor});}finally{if(window.activePingId===orderId)window.closePingModal();}guardActor(actor);if(result.walletBalance!=null)window.currentRider.walletBalance=result.walletBalance;visibleWallet();window.switchRiderTab('Ongoing');await window.refreshRiderApproval();return result;},{success:'Delivery accepted.'});
+window.rejectPing=()=>riderAction(async actor=>{const orderId=window.activePingId;if(!orderId)return {cancelled:true};const attempt=attemptFor('pass',orderId);window.closePingModal();return rejectPingAtomic(window,{orderId,operationId:attempt.id,actor});});
+const account=installRiderAccount(window,document,{onActive:rider=>{const changed=window.currentRider?.id!==rider.id || !window.isRiderApproved(window.currentRider);if(changed)window.stopRiderLiveServices();window.currentRider=rider;document.getElementById('authOverlay').style.display='none';document.getElementById('accountStatusScreen').style.display='none';document.getElementById('mainApp').style.display='flex';visibleWallet();renderDispatchBoard();startActiveServices();},onRestricted:state=>{window.currentRider=state.rider;window.stopRiderLiveServices();document.getElementById('authOverlay').style.display='none';document.getElementById('mainApp').style.display='none';document.getElementById('accountStatusScreen').style.display='flex';},onSignedOut:()=>{window.currentRider=null;window.stopRiderLiveServices();document.getElementById('authOverlay').style.display='flex';document.getElementById('accountStatusScreen').style.display='none';document.getElementById('mainApp').style.display='none';},onStatusError:state=>{window.currentRider=state.rider;window.stopRiderLiveServices();document.getElementById('authOverlay').style.display='none';document.getElementById('mainApp').style.display='none';document.getElementById('accountStatusScreen').style.display='flex';riderStatus('Approval status could not be verified. Check approval status before continuing.');}});
+riderAccountController=account;
+window.captureRiderActor=()=>account.captureActor();window.assertRiderActor=(actor,options)=>account.assertActor(actor,options);
+window.loginRider=()=>account.login();window.registerRider=()=>account.register();window.refreshRiderApproval=()=>account.refresh();window.checkLoginStatus=()=>account.refresh();
+window.isRiderOperationBusy=()=>window.riderActionBusy || account.isBusy();
+window.logoutRider=()=>{if(window.isRiderOperationBusy()){riderStatus('Wait for the current action to finish before signing out.');return;}account.logout();};
+window.addEventListener('pagehide',()=>window.stopRiderLiveServices());
+window.addEventListener('pageshow',event=>{if(event.persisted && window.currentRider)account.refresh();});
+window.addEventListener('offline',()=>{window.stopRiderLiveServices();riderStatus('You’re offline. Reconnect to check deliveries and approval.');});
+window.addEventListener('online',()=>{if(window.currentRider)account.refresh();});
+installRiderLayout(document,window,{isBusy:()=>window.isRiderOperationBusy()});

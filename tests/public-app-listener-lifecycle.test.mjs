@@ -6,10 +6,10 @@ import * as payroll from '../takodeal-staff/payroll-safety.js';
 import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js';
 import * as sanctions from '../takodeal-staff/sanction-schedule.js';
 import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
+import {riderRuntime} from './helpers/rider-runtime-harness.mjs';
 
 const staff = readFileSync(new URL('../takodeal-staff/app.js', import.meta.url), 'utf8').replace(/\r\n/g,'\n');
 const customer = readFileSync(new URL('../Customer/index.html', import.meta.url), 'utf8');
-const rider = readFileSync(new URL('../takodeal-delivery/main.js', import.meta.url), 'utf8');
 const cashier = readFileSync(new URL('../Takodeal-POS/main.js', import.meta.url), 'utf8');
 const registration = readFileSync(new URL('../takodeal-staff/staff-registration.js', import.meta.url), 'utf8');
 const section = (source, start, end) => {const at=source.indexOf(start);assert.ok(at>=0,start);const until=source.indexOf(end,at);assert.ok(until>at,end);return source.slice(at,until);};
@@ -213,57 +213,90 @@ test('Customer back navigation restores one tracker instead of leaving a detache
     assert.equal(h.subscriptions.length,2);assert.equal(h.subscriptions.filter(s=>s.active).length,1);
 });
 
-function riderApp() {const h=harness();h.run(rider.slice(rider.indexOf('window.currentRider = null;')));h.window.currentRider={id:'rider-a',name:'Rider A',walletBalance:100};return h;}
+async function riderApp() {const h=riderRuntime();assert.equal(await h.login(),true);return h;}
 function startRider(h) {h.window.startLiveGPS();h.window.listenForPings();h.run('startDispatchListener();');}
-test('Rider repeated initialization starts one GPS timer, one ping listener and two correctly scoped dispatch streams',()=>{
-    const h=riderApp();startRider(h);startRider(h);startRider(h);
-    assert.equal(h.intervals.size,1);assert.equal(h.subscriptions.length,3);
-    const claimed=h.subscriptions.find(s=>s.q.filters.some(f=>f.field==='riderId'));
+test('Rider repeated initialization starts one GPS timer, one ping listener and two correctly scoped dispatch streams',async()=>{
+    const h=await riderApp();startRider(h);startRider(h);startRider(h);
+    assert.equal(h.intervals.size,1);assert.equal(h.businessSubscriptions().length,3);assert.equal(h.accountSubscriptions().length,1);
+    const claimed=h.businessSubscriptions().find(s=>s.q.filters.some(f=>f.field==='riderId'));
     assert.deepEqual(claimed.q.filters,[{field:'status',op:'==',value:'out_for_delivery'},{field:'riderId',op:'==',value:'rider-a'}]);
-    const ready=h.subscriptions.find(s=>s.q.filters.some(f=>f.value==='ready'));
-    h.emit(ready,[{id:'any-branch',status:'ready',branch:'Cabantian'}]);
+    const ready=h.businessSubscriptions().find(s=>s.q.filters.some(f=>f.value==='ready'));
+    h.emit(ready,[{id:'any-branch',status:'ready',branch:'Cabantian',orderType:'Delivery',deliveryAddress:'Synthetic address'},
+        {id:'store-pos',status:'ready',branch:'Cabantian',orderType:'Take-Out'}]);
     h.emit(claimed,[{id:'mine',status:'out_for_delivery',riderId:'rider-a'},{id:'other',status:'out_for_delivery',riderId:'rider-b'}]);
     assert.deepEqual([...h.window.activeDeliveries].map(o=>o.id),['mine','any-branch']);
+    assert.match(h.node('dispatchBoard').innerHTML,/any-branch/);assert.equal(h.node('dispatchBoard').innerHTML.includes('store-pos'),false);
 });
 
 test('Rider manual login starts its dispatch board and logout releases every live service',async()=>{
-    const h=riderApp();h.window.currentRider=null;h.node('loginPhone').value='09000000000';h.node('loginPin').value='fixture';
-    h.context.getDocs=async()=>snapshot([{id:'manual',name:'Manual Rider',walletBalance:100,status:'approved'}]);
-    await h.window.loginRider();assert.equal(h.window.currentRider.id,'manual');assert.equal(h.subscriptions.filter(s=>s.active).length,3);assert.equal(h.intervals.size,1);
+    const h=riderRuntime();h.put('manual',{name:'Manual Rider',status:'approved',phone:'09000000000',pin:'1234',isAcceptingOrders:true});
+    assert.equal(await h.login('manual'),true);assert.equal(h.window.currentRider.id,'manual');assert.equal(h.subscriptions.filter(s=>s.active).length,4);assert.equal(h.intervals.size,1);
+    assert.equal(h.node('mainApp').style.display,'flex');assert.equal(h.node('accountStatusScreen').style.display,'none');
     h.window.logoutRider();assert.equal(h.window.currentRider,null);assert.equal(h.subscriptions.filter(s=>s.active).length,0);assert.equal(h.intervals.size,0);
 });
 
-test('Rider dispatch error stops both feeds, offers retry and old callbacks cannot contaminate the restarted board',()=>{
-    const h=riderApp();startRider(h);const old=h.subscriptions.filter(s=>!s.q.filters.some(f=>f.field==='pingedRider'));
+test('Rider dispatch error stops both feeds, offers retry and old callbacks cannot contaminate the restarted board',async()=>{
+    const h=await riderApp();const old=h.businessSubscriptions().filter(s=>!s.q.filters.some(f=>f.field==='pingedRider'));
     old.find(s=>s.q.filters.some(f=>f.field==='riderId')).error(Error('Temporary query failure'));
     assert.equal(old.every(s=>s.stops===1),true);assert.equal(h.window.riderDispatchListenerKey,null);assert.match(h.node('dispatchBoard').innerHTML,/Retry delivery updates/);
-    h.window.startDispatchListener();assert.equal(h.subscriptions.filter(s=>s.active).length,3);assert.equal(h.intervals.size,1);
-    const fresh=h.subscriptions.findLast(s=>s.q.filters.some(f=>f.field==='riderId'));
+    await h.window.refreshRiderDeliveries();assert.equal(h.subscriptions.filter(s=>s.active).length,4);assert.equal(h.intervals.size,1);
+    const fresh=h.businessSubscriptions().findLast(s=>s.q.filters.some(f=>f.field==='riderId'));
     h.emit(fresh,[{id:'current-job',status:'out_for_delivery',riderId:'rider-a'}]);
-    old.forEach(s=>h.emit(s,[{id:'old-job',status:'ready'}]));assert.deepEqual([...h.window.activeDeliveries].map(o=>o.id),['current-job']);
-    h.event('online');assert.equal(h.subscriptions.filter(s=>s.active).length,3);assert.equal(h.subscriptions.length,5);
+    old.forEach(s=>h.emit(s,[{id:'old-job',status:'ready',orderType:'Delivery'}]));assert.deepEqual([...h.window.activeDeliveries].map(o=>o.id),['current-job']);
+    const count=h.subscriptions.length;await h.event('online');assert.equal(h.subscriptions.filter(s=>s.active).length,4);assert.equal(h.subscriptions.length,count);
 });
 
 test('Rider GPS does not overlap requests or write another account after a late location callback',async()=>{
-    const h=riderApp();startRider(h);h.node('statusToggle').innerText='ONLINE';const tick=[...h.intervals.values()][0].fn;
+    const h=await riderApp();const tick=[...h.intervals.values()][0].fn;
     tick();tick();assert.equal(h.gps.length,1);
-    h.window.stopRiderLiveServices();h.window.currentRider={id:'rider-b'};startRider(h);
+    h.window.logoutRider();assert.equal(await h.login('rider-b'),true);
     await h.gps[0].ok({coords:{latitude:7,longitude:125}});assert.equal(h.writes.length,0);
-    assert.equal(h.subscriptions.filter(s=>s.active).length,3);assert.equal(h.intervals.size,1);
+    assert.equal(h.subscriptions.filter(s=>s.active).length,4);assert.equal(h.intervals.size,1);
+    await h.gps[1].ok({coords:{latitude:7.1,longitude:125.1}});
+    assert.equal(h.writes.length,1);assert.equal(h.writes[0].ref.id,'rider-b');assert.equal(h.backend.get('riders/rider-a').lastLat,undefined);
 });
 
-test('Rider stream callbacks from the previous identity cannot repopulate jobs or ring after cleanup',()=>{
-    const h=riderApp();startRider(h);const old=[...h.subscriptions];h.window.stopRiderLiveServices();h.window.currentRider={id:'rider-b'};startRider(h);
-    const ping=old.find(s=>s.q.filters.some(f=>f.field==='pingedRider'));
+test('Rider stream callbacks from the previous identity cannot repopulate jobs or ring after cleanup',async()=>{
+    const h=await riderApp();const old=[...h.subscriptions];h.window.logoutRider();assert.equal(await h.login('rider-b'),true);
+    const ping=old.find(s=>s.q.filters?.some(f=>f.field==='pingedRider'));
     ping.next({docChanges:()=>[{type:'added',doc:{id:'old-ping',data:()=>({})}}]});
-    old.filter(s=>s!==ping).forEach(s=>h.emit(s,[{id:'old-job',status:'ready'}]));
+    old.filter(s=>s!==ping && s.q.table==='incoming_orders').forEach(s=>h.emit(s,[{id:'old-job',status:'ready',orderType:'Delivery'}]));
+    h.emitAccount(old.find(s=>s.q.path),'ignored',{cache:true});
     assert.equal(h.window.activePingId,null);assert.equal(h.window.activeDeliveries.length,0);assert.equal(old.every(s=>s.stops===1),true);
+    assert.equal(h.window.currentRider.id,'rider-b');assert.equal(h.node('mainApp').style.display,'flex');
 });
 
-test('Rider ping updates do not duplicate timers and removing another ping does not close the active one',()=>{
-    const h=riderApp();startRider(h);const ping=h.subscriptions.find(s=>s.q.filters.some(f=>f.field==='pingedRider'));
+test('Rider ping updates do not duplicate timers and removing another ping does not close the active one',async()=>{
+    const h=await riderApp();const ping=h.businessSubscriptions().find(s=>s.q.filters.some(f=>f.field==='pingedRider'));
     const emit=(type,id)=>ping.next({docChanges:()=>[{type,doc:{id,data:()=>({branch:'Maa',deliveryAddress:'Test'})}}]});
     emit('added','first');emit('modified','first');assert.equal(h.intervals.size,2);
     emit('added','second');assert.equal(h.intervals.size,2);emit('removed','first');assert.equal(h.window.activePingId,'second');
     h.window.stopRiderLiveServices();assert.equal(h.intervals.size,0);assert.equal(h.window.activePingId,null);
+});
+
+test('Rider runtime keeps pending, rejected and suspended logins on the account screen without business feeds or GPS',async()=>{
+    for(const status of ['pending_approval','rejected','banned']){
+        const h=riderRuntime();h.put('rider-a',{status,isAcceptingOrders:true});assert.equal(await h.login(),true);
+        assert.equal(h.node('accountStatusScreen').style.display,'flex');assert.equal(h.node('mainApp').style.display,'none');
+        assert.equal(h.businessSubscriptions().length,0);assert.equal(h.gps.length,0);assert.equal(h.intervals.size,0);
+        assert.equal(h.window.isRiderApproved(h.window.currentRider),false);await h.window.claimDelivery('synthetic');assert.equal(h.writes.length,0);
+    }
+});
+
+test('Rider runtime revocation stops active feeds, GPS and ringing, and later old messages cannot reactivate it',async()=>{
+    const h=await riderApp(),old=h.businessSubscriptions(),account=h.accountSubscriptions()[0];
+    h.window.triggerIncomingPing('synthetic-ping',{branch:'Maa',deliveryAddress:'Synthetic address'});assert.equal(h.intervals.size,2);
+    const row={...h.backend.get('riders/rider-a'),status:'banned',statusReason:'Synthetic suspension'};h.backend.put('riders/rider-a',row);h.emitAccount(account,row);
+    assert.equal(h.node('accountStatusScreen').style.display,'flex');assert.equal(h.node('mainApp').style.display,'none');
+    assert.equal(old.every(sub=>sub.stops===1),true);assert.equal(h.intervals.size,0);assert.equal(h.window.activePingId,null);
+    old.filter(sub=>sub.q.filters.some(f=>f.field==='status'&&f.value==='ready')).forEach(sub=>h.emit(sub,[{id:'late',status:'ready',orderType:'Delivery'}]));
+    await h.gps[0].ok({coords:{latitude:7,longitude:125}});assert.equal(h.writes.length,0);assert.equal(h.window.activeDeliveries.length,0);
+    await h.window.refreshRiderApproval();assert.equal(h.businessSubscriptions().filter(sub=>sub.active).length,0);assert.equal(h.window.isRiderApproved(h.window.currentRider),false);
+});
+
+test('Rider reload refuses a saved document ID without a PIN and never reads or starts business services',async()=>{
+    const h=riderRuntime({savedId:'rider-a'});h.put('rider-a');await h.window.checkLoginStatus();await h.event('pageshow',{persisted:true});
+    assert.equal(h.window.currentRider,null);assert.equal(h.saved.has('takodeal_rider_id'),false);assert.equal(h.reads.length,0);
+    assert.equal(h.subscriptions.length,0);assert.equal(h.gps.length,0);assert.equal(h.node('mainApp').style.display,'none');
+    assert.equal(h.node('authOverlay').style.display,'flex');
 });
