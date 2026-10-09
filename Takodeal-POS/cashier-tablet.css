@@ -293,7 +293,16 @@
  #cashierPrinterModeHelp {margin:0;line-height:1.6;}
  #cashierPrinterBridgeSetup[hidden],.cashier-printer-card [hidden] {display:none!important;}
  .cashier-printer-card .cashier-actions {flex-wrap:wrap;gap:8px;}
- .cashier-printer-card .cashier-actions button {min-width:100px;min-height:42px;}
+ .cashier-printer-card .cashier-actions button {min-width:100px;min-height:44px;font-size:13px;}
+ .cashier-printer-card .cashier-printer-logo {width:100%;min-width:0;padding:14px;border:1px solid #eadfd2;border-radius:10px;background:#fffcf7;}
+ .cashier-printer-logo label {display:block;margin:0 0 8px;font-size:13px;font-weight:650;color:#68452d;}
+ .cashier-printer-logo select {width:100%;max-width:100%;min-width:0;min-height:46px;margin-top:8px;padding:10px;font-size:16px;border:1px solid #dfd1c3;border-radius:8px;background:#fff;color:#68452d;}
+ .cashier-printer-logo .cashier-help {margin:8px 0 0;line-height:1.6;font-size:12px;overflow-wrap:anywhere;}
+ .cashier-printer-card #printerLogoResult-main {margin-top:12px;padding-top:10px;border-top:1px solid #eadfd2;color:#795a43;}
+ .cashier-printer-card #printerLogoResult-main[data-state=failed],.cashier-printer-card #printerLogoResult-main[data-state=no-paper] {color:#b64234;}
+ .cashier-printer-card #printerLogoResult-main[data-state=paper-confirmed] {color:#28694f;}
+ .cashier-printer-card #printerLogoTest-main {min-height:44px;}
+ @media(max-width:480px){.cashier-printer-card .cashier-actions button{flex:1 1 calc(50% - 8px);min-height:46px;}.cashier-printer-card .cashier-printer-logo{padding:12px;}}
  .cashier-printer-details {font-size:12px;margin-bottom:16px;}
  .cashier-printer-details summary {padding:8px 0;cursor:pointer;}
  .cashier-printer-details p {white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.7;}

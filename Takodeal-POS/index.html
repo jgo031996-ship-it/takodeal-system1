@@ -3752,8 +3752,12 @@ window.printReceipt = async function(type) {
     payloadBuffers.push(window.stringToBuffer("\x1B\x61\x01"));
 
     if (logoBase64 && typeof window.encodeImageForPrinter === 'function') {
-        let imageBytes = await window.encodeImageForPrinter(logoBase64, logoW, logoH, paperSize);
-        if (imageBytes) payloadBuffers.push(imageBytes); 
+        try {
+            const imageBytes = await window.encodeImageForPrinter(logoBase64,logoW,logoH,paperSize);
+            if(imageBytes?.length) payloadBuffers.push(imageBytes);
+        } catch(error) {
+            if(typeof window.confirmPrintWithoutLogo !== 'function' || !await window.confirmPrintWithoutLogo(error)) return false;
+        }
     }
 
     let receiptTop = "\n\x1B\x61\x01"; 

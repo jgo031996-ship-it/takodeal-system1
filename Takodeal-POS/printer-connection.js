@@ -185,8 +185,19 @@ export function createPrinterWriter(connections, {wait = milliseconds => new Pro
             Promise.resolve(promise).then(resolve, reject).finally(() => cancel(timer));
         });
     }
-    function send(data, role = 'main', {fallback = true} = {}) {
+    function send(data, role = 'main', {fallback = true, pauseAfterBytes = [], bandDelay = 120} = {}) {
         const buffer = new Uint8Array(data);
+        // These are encoder-supplied packet ends, not command bytes inferred from image data.
+        // Copy them when enqueuing so another job cannot change the pending receipt's pacing.
+        const boundaries = Array.isArray(pauseAfterBytes) && pauseAfterBytes.length <= 256 ? Array.from(pauseAfterBytes) : null;
+        if (!boundaries
+            || !Number.isSafeInteger(bandDelay) || bandDelay < 0 || bandDelay > 500
+            || boundaries.some((offset, index) => !Number.isSafeInteger(offset) || offset <= 0
+                || offset > buffer.length || (index > 0 && offset <= boundaries[index - 1]))) {
+            const error = new Error('The receipt logo pacing settings are invalid. No printer data was sent.');
+            error.code = 'printer-pacing-invalid';
+            return Promise.reject(error);
+        }
         const job = queue.then(async () => {
             let character;
             try { character = await connections.connect(role); }
@@ -195,11 +206,13 @@ export function createPrinterWriter(connections, {wait = milliseconds => new Pro
                 character = await connections.connect('main');
                 role = 'main';
             }
-            let bytesWritten = 0, bytesAttempted = 0;
+            let bytesWritten = 0, bytesAttempted = 0, boundaryIndex = 0;
             try {
-                for (let offset = 0; offset < buffer.length; offset += 20) {
+                for (let offset = 0; offset < buffer.length;) {
                     if (!connections.ready(role)) throw new Error('The printer disconnected while printing.');
-                    const chunk = buffer.slice(offset, offset + 20);
+                    const nextBoundary = boundaries[boundaryIndex];
+                    const end = Math.min(offset + 20, nextBoundary ?? buffer.length, buffer.length);
+                    const chunk = buffer.slice(offset, end);
                     bytesAttempted += chunk.length;
                     // Prefer acknowledged writes where the endpoint supports them.
                     const method = character.properties.write && typeof character.writeValueWithResponse === 'function'
@@ -207,7 +220,12 @@ export function createPrinterWriter(connections, {wait = milliseconds => new Pro
                             ? 'writeValue' : 'writeValueWithoutResponse';
                     await boundedWrite(character[method](chunk));
                     bytesWritten += chunk.length;
+                    offset = end;
                     await wait(method === 'writeValueWithoutResponse' ? 25 : 5);
+                    if (offset === nextBoundary) {
+                        boundaryIndex++;
+                        if (bandDelay > 0) await wait(bandDelay);
+                    }
                 }
                 await wait(120);
                 return true;
