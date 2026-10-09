@@ -1,0 +1,3 @@
+.cashier-sales-actions.action-dropdown.show {display:flex;position:fixed!important;right:auto!important;bottom:auto!important;margin:0!important;overflow-y:auto!important;overscroll-behavior:contain;touch-action:pan-y;z-index:100500!important;border:1px solid #eadfd2!important;border-radius:12px!important;background:#fff!important;box-shadow:0 12px 36px #49372b30!important;color:#49372b;min-width:0!important;}
+.cashier-sales-actions .action-item {cursor:pointer;min-height:44px;box-sizing:border-box;display:flex;align-items:center;font-size:13px;}
+.cashier-sales-actions .action-item:focus-visible,.cashier-sales-actions .action-item:hover {outline:2px solid #c65c24;outline-offset:-2px;background:#fff4e8;}

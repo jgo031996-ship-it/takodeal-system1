@@ -1,6 +1,7 @@
-const CACHE='takodeal-franchise-workspace-20261007-r4-sanction-dates';
+const CACHE='takodeal-franchise-workspace-staff-pos-repair-20261008-r12';
 const CORE=['./','index.html','style.css','main_franchise.js','auth.js','franchise-data.js','franchise-actions.js','franchise-workspace.js','payroll-safety.js','schedule-history.js','dispatch-safety.js','unlock-gate.js','hq-account-model.js','manifest.json','logo.jpg','icon-192.png','icon-512.png'];
 CORE.push('franchise-reads.js');
+CORE.push('attendance-reconcile.js','payroll-attendance.js');
 CORE.push('sanction-schedule.js');
 CORE.push('sanction-actions.js','sanction-scheduling-ui.js','workspace-access-model.js');
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(CORE))));

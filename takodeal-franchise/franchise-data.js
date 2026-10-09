@@ -1,6 +1,7 @@
 import { resolveAttendanceShift, attendanceLateMinutes, latePay, earnedNightBonus } from './payroll-safety.js';
 import { resolveScheduleForDate } from './schedule-history.js';
 import {isPenaltyDeduction, deductionIsDue} from './sanction-schedule.js';
+import {planPayrollAttendance} from './payroll-attendance.js';
 
 export const RELEASE = 'franchise-workspace-20261005-r1';
 export const ROUTES = {
@@ -91,9 +92,16 @@ export function ledgerRows(rows) {
 export function attendanceEstimate({logs,profiles,deductions=[],bonuses=[],ledgers=[],schedule={},holidays={},start,end,branch}) {
  const {start:from,end:to}=range(start,end),active=new Map(),people=new Map();
  const profileMap=Object.fromEntries(profiles.map(p=>[p.cashierName,p]));
+ const profileIds=new Map(profiles.filter(p=>p.id).map(p=>[p.id,p]));
+ const plan=planPayrollAttendance(logs.filter(log=>log.branch===branch),{resolveName:log=>profileIds.get(log.staffId)?.cashierName || log.staffName});
  const person=name=>{if (!people.has(name)) people.set(name,{name,hours:0,shifts:0,basic:0,bonus:0,late:0,meals:0,advances:0,scheduledPenaltyReview:0,logs:[],review:0});return people.get(name);};
- for (const log of [...logs].filter(l=>l.branch===branch).sort((a,b)=>ms(a.timestamp)-ms(b.timestamp))) {
-  const name=log.staffName;if (!name || !profileMap[name]) continue;
+ for(const review of plan.reviews) {
+  if(!profileMap[review.name])continue;
+  const p=person(review.name);p.attendanceHeld=true;p.attendanceReviewRequired=true;p.attendanceReviewReasons=[review.reason];p.review++;
+  p.logs.push({in:review.records.find(row=>String(row.type).toUpperCase()==='TIME IN')?.timestamp || review.records[0]?.timestamp,out:null,remark:'HR review required: '+review.reason});
+ }
+ for (const log of [...plan.logs].sort((a,b)=>ms(a.timestamp)-ms(b.timestamp))) {
+  const name=log.payrollStaffName;if (!name || !profileMap[name]) continue;
   const type=String(log.type || '').toUpperCase(),at=ms(log.timestamp),p=person(name);
   if (type==='TIME IN' && at>=+from && at<+to) {
    if (active.has(name)) { p.review++;p.logs.push({in:active.get(name).timestamp,out:null,remark:'Missing time out; review required'}); }
@@ -123,6 +131,6 @@ export function attendanceEstimate({logs,profiles,deductions=[],bonuses=[],ledge
   const loan=ledger?Math.max(0,Math.min(n(ledger.cutoffDeduction),n(ledger.totalLoaned)-n(ledger.totalPaid))):0;
   const fixed=n(profile.sssAmount)+n(profile.pagibigAmount)+n(profile.philHealthAmount)+(profile.customDeductions || []).reduce((sum,d)=>sum+n(d.amount),0);
   const totalDeductions=p.late+p.meals+p.advances+loan+fixed;
-  return {...p,loan,fixed,totalDeductions,gross:p.basic+p.bonus,net:p.basic+p.bonus-totalDeductions};
+  return {...p,loan,fixed,totalDeductions,gross:p.attendanceHeld?null:p.basic+p.bonus,net:p.attendanceHeld?null:p.basic+p.bonus-totalDeductions};
  });
 }

@@ -322,7 +322,95 @@ service cloud.firestore {
     }
     match /parked_orders/{orderId} { allow read, write: if true; }
     match /pos_devices/{deviceId} { allow read, create, update: if true; allow delete: if isHQUser(); }
-    match /cashiers/{cashierId} { allow read, update: if true; allow create, delete: if isHQUser(); }
+    // Daily-rate audit is private and immutable. Public legacy profile fields
+    // remain compatible, but cannot issue or replace an audited raise marker.
+    function staffRateHQAny() {
+      let email = isSignedIn() ? request.auth.token.get('email', '') : '';
+      let path = /databases/$(database)/documents/hq_email_access/$(email);
+      return offlineOwner() || (isSignedIn()
+        && request.auth.token.get('email_verified', false) == true && email != ''
+        && exists(path) && get(path).data.get('active', false) == true
+        && get(path).data.get('permissions', []) is list
+        && get(path).data.get('permissions', []).hasAny(['all', 'payroll', 'feed'])
+        && get(path).data.get('allowedBranches', []) is list
+        && get(path).data.allowedBranches.size() > 0);
+    }
+    function staffRateHQ(branch) {
+      let email = isSignedIn() ? request.auth.token.get('email', '') : '';
+      let path = /databases/$(database)/documents/hq_email_access/$(email);
+      return offlineOwner() || (branch is string && staffRateHQAny()
+        && get(path).data.allowedBranches.hasAny(['All', branch]));
+    }
+    function staffRateValue(profile) {
+      let value = profile.get('hourlyRate', null) != null ? profile.hourlyRate : profile.get('dailyRate', null);
+      return value == null || (value is string && value.trim() == '') ? null
+        : value is number ? value
+        : value is string && value.trim().matches('^[+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$') ? float(value.trim()) : -1;
+    }
+    function staffRateValid(value) {
+      return value == null || (value is number && value >= 0 && value - value == 0);
+    }
+    function staffRateEvent(before, after) {
+      return before == null || before == 0 ? 'baseline'
+        : after > before ? 'increase' : after < before ? 'decrease' : 'unchanged';
+    }
+    function staffRateMarker(before, event, id) {
+      return event == 'increase' ? {'eventId': id, 'version': 1}
+        : event == 'unchanged' ? before.get('latestRateRaise', null) : null;
+    }
+    function staffRateAuditCreate(data, id) {
+      let profile = /databases/$(database)/documents/cashiers/$(data.staffId);
+      let before = exists(profile) ? get(profile).data : {};
+      let after = getAfter(profile).data;
+      let oldRate = staffRateValue(before);
+      let newRate = staffRateValue(after);
+      return data.keys().hasOnly(['version', 'staffId', 'staffName', 'branch', 'previousBranch', 'eventType',
+          'fromDailyRate', 'toDailyRate', 'inputHash', 'actorUid', 'actorEmail', 'actorName', 'recordedAt'])
+        && data.keys().hasAll(['version', 'staffId', 'staffName', 'branch', 'previousBranch', 'eventType',
+          'fromDailyRate', 'toDailyRate', 'inputHash', 'actorUid', 'actorEmail', 'actorName', 'recordedAt'])
+        && id.matches('^[A-Za-z0-9_-]{1,128}$') && data.version == 1
+        && data.staffId is string && data.staffId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && staffRateHQ(data.branch) && (!exists(profile) || staffRateHQ(before.get('branch', '')))
+        && data.staffName == after.cashierName && data.branch == after.branch
+        && data.previousBranch == before.get('branch', '')
+        && staffRateValid(oldRate) && staffRateValid(newRate) && newRate != null
+        && data.fromDailyRate == oldRate && data.toDailyRate == newRate
+        && data.eventType == staffRateEvent(oldRate, newRate)
+        && after.get('staffRateAuditId', '') == id
+        && after.get('latestRateRaise', null) == staffRateMarker(before, data.eventType, id)
+        && data.actorUid == request.auth.uid
+        && data.actorEmail == request.auth.token.get('email', '').lower()
+        && data.actorName is string && data.actorName.size() > 0 && data.actorName.size() <= 256
+        && data.inputHash is string && data.inputHash.matches('^[a-f0-9]{64}$')
+        && data.recordedAt == request.time;
+    }
+    function staffRateProfileLink(id, before, after) {
+      let auditId = after.get('staffRateAuditId', '');
+      let path = /databases/$(database)/documents/staff_rate_changes/$(auditId);
+      let audit = getAfter(path).data;
+      return auditId is string && auditId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && !exists(path) && staffRateHQ(after.get('branch', ''))
+        && (!before.keys().hasAny(['branch']) || staffRateHQ(before.branch))
+        && audit.staffId == id && audit.branch == after.branch
+        && audit.actorUid == request.auth.uid && audit.recordedAt == request.time
+        && after.get('latestRateRaise', null) == staffRateMarker(before, audit.eventType, auditId);
+    }
+    match /staff_rate_changes/{auditId} {
+      allow get: if (resource == null && staffRateHQAny()) || (resource != null && staffRateHQ(resource.data.branch));
+      allow list: if staffRateHQ(resource.data.branch);
+      allow create: if staffRateAuditCreate(request.resource.data, auditId);
+      allow update, delete: if false;
+    }
+    match /cashiers/{cashierId} {
+      allow read: if true;
+      allow create: if isHQUser() && !request.resource.data.keys().hasAny(['rateHistory'])
+        && (!request.resource.data.keys().hasAny(['latestRateRaise', 'staffRateAuditId'])
+          || staffRateProfileLink(cashierId, {}, request.resource.data));
+      allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['rateHistory'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['latestRateRaise', 'staffRateAuditId'])
+          || staffRateProfileLink(cashierId, resource.data, request.resource.data));
+      allow delete: if isHQUser();
+    }
     match /staff_requests/{reqId} { allow read, create, update: if true; allow delete: if isHQUser(); }
     match /hr_sanctions/{sanctionId} { allow read, create, update: if true; allow delete: if isHQUser(); }
     match /acknowledgments/{ackId} { allow read, create, update: if true; allow delete: if isHQUser(); }
@@ -346,5 +434,214 @@ service cloud.firestore {
     match /franchise_budgets/{document=**} { allow read, write: if isHQUser(); }
     match /riders/{riderId} { allow read, write: if isHQUser(); }
     match /rider_topups/{topupId} { allow read, write: if isHQUser(); }
+
+    // Private Staff document vault. These new collections never use the legacy
+    // isHQUser() helper or public cashiers/branches/settings as authority.
+    function docVaultOwner() { return offlineOwner(); }
+    function docVaultAnonymous() {
+      return isSignedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+    function docVaultId(value) {
+      return value is string && value.matches('^[A-Za-z0-9_-]{1,128}$');
+    }
+    function docVaultKind(value) { return value in ['valid_id', 'health_card', 'clearance']; }
+    function docVaultEnabled() {
+      return exists(/databases/$(database)/documents/staff_document_config/current)
+        && get(/databases/$(database)/documents/staff_document_config/current).data.enabled == true
+        && get(/databases/$(database)/documents/staff_document_config/current).data.policyVersion == 1;
+    }
+    function docVaultHQ(branch) {
+      let email = isSignedIn() ? request.auth.token.get('email', '') : '';
+      let path = /databases/$(database)/documents/hq_email_access/$(email);
+      return docVaultOwner() || (isSignedIn()
+        && request.auth.token.get('email_verified', false) == true && email != ''
+        && exists(path) && get(path).data.get('active', false) == true
+        && get(path).data.get('permissions', []) is list
+        && get(path).data.get('permissions', []).hasAny(['all', 'branches'])
+        && get(path).data.get('allowedBranches', []) is list
+        && get(path).data.get('allowedBranches', []).hasAny(['All', branch]));
+    }
+    function docVaultHQAll() {
+      let email = isSignedIn() ? request.auth.token.get('email', '') : '';
+      let path = /databases/$(database)/documents/hq_email_access/$(email);
+      return docVaultOwner() || (isSignedIn()
+        && request.auth.token.get('email_verified', false) == true && email != ''
+        && exists(path) && get(path).data.get('active', false) == true
+        && get(path).data.get('permissions', []) is list
+        && 'all' in get(path).data.get('permissions', [])
+        && get(path).data.get('allowedBranches', []) is list
+        && 'All' in get(path).data.get('allowedBranches', []));
+    }
+    function docVaultOwn(staffId) {
+      let uid = isSignedIn() ? request.auth.uid : '__unauthenticated__';
+      let path = /databases/$(database)/documents/staff_document_devices/$(uid);
+      return docVaultAnonymous() && exists(path)
+        && get(path).data.uid == request.auth.uid
+        && get(path).data.active == true && get(path).data.staffId == staffId;
+    }
+    function docVaultScope(staffId) {
+      let path = /databases/$(database)/documents/staff_private_documents/$(staffId);
+      return docVaultHQAll() || (exists(path) && get(path).data.staffId == staffId
+        && docVaultHQ(get(path).data.branch));
+    }
+    function docVaultRequest(uid, data) {
+      let path = /databases/$(database)/documents/staff_document_devices/$(uid);
+      return docVaultEnabled() && docVaultAnonymous() && request.auth.uid == uid
+        && data.keys().hasOnly(['uid', 'staffId', 'deviceId', 'deviceName', 'status', 'requestedAt'])
+        && data.keys().hasAll(['uid', 'staffId', 'deviceId', 'deviceName', 'status', 'requestedAt'])
+        && data.uid == uid && docVaultId(data.staffId)
+        && data.deviceId is string && data.deviceId.size() <= 128
+        && data.deviceName is string && data.deviceName.size() > 0 && data.deviceName.size() <= 80
+        && data.status == 'pending' && data.requestedAt == request.time
+        && (!exists(path) || (get(path).data.staffId == data.staffId && get(path).data.active == false));
+    }
+    function docVaultBinding(uid, data) {
+      return docVaultId(uid) && data.keys().hasOnly(['uid', 'staffId', 'branch', 'active',
+          'deviceId', 'deviceName', 'approvedAt', 'approvedByUid', 'updatedAt', 'updatedByUid', 'audit'])
+        && data.keys().hasAll(['uid', 'staffId', 'branch', 'active', 'approvedAt',
+          'approvedByUid', 'updatedAt', 'updatedByUid', 'audit'])
+        && data.uid == uid && docVaultId(data.staffId)
+        && data.branch is string && data.branch.size() > 0 && data.branch.size() <= 128
+        && data.active is bool && data.approvedAt is timestamp && data.approvedByUid is string
+        && data.updatedAt == request.time && data.updatedByUid == request.auth.uid
+        && data.get('deviceId', '') is string && data.get('deviceId', '').size() <= 128
+        && data.get('deviceName', '') is string && data.get('deviceName', '').size() <= 80
+        && data.audit is map && data.audit.size() > 0 && data.audit.size() <= 100
+        && data.audit.values().hasAny([{'active': data.active, 'actorUid': request.auth.uid, 'recordedAt': request.time}]);
+    }
+    function docVaultUpload(staffId, kind, data) {
+      return docVaultEnabled() && docVaultOwn(staffId) && docVaultKind(kind)
+        && data.keys().hasOnly(['staffId', 'branch', 'group', 'uploadId', 'uploadedByUid',
+          'storagePath', 'contentType', 'size', 'sha256', 'clearanceType', 'expiresOn', 'status',
+          'reviewNote', 'version', 'uploadedAt', 'updatedAt'])
+        && data.keys().hasAll(['staffId', 'branch', 'group', 'uploadId', 'uploadedByUid',
+          'storagePath', 'contentType', 'size', 'sha256', 'clearanceType', 'expiresOn', 'status',
+          'reviewNote', 'version', 'uploadedAt', 'updatedAt'])
+        && data.staffId == staffId
+        && data.branch == get(/databases/$(database)/documents/staff_document_devices/$(request.auth.uid)).data.branch && data.group == kind
+        && docVaultId(data.uploadId) && data.uploadedByUid == request.auth.uid
+        && data.storagePath == 'staff_private_documents/' + request.auth.uid + '/' + staffId + '/' + kind + '/' + data.uploadId + '.jpg'
+        && data.contentType == 'image/jpeg' && data.size is int && data.size > 0 && data.size <= 2097152
+        && data.sha256 is string && data.sha256.matches('^[a-f0-9]{64}$')
+        && data.clearanceType is string
+        && ((kind == 'clearance' && data.clearanceType in ['NBI', 'POLICE'])
+          || (kind != 'clearance' && data.clearanceType == ''))
+        && data.expiresOn is string && (data.expiresOn == '' || data.expiresOn.matches('^\\d{4}-\\d{2}-\\d{2}$'))
+        && data.status == 'pending_review' && data.reviewNote == ''
+        && data.version is int && data.version > 0
+        && data.uploadedAt == request.time && data.updatedAt == request.time;
+    }
+    function docVaultReview(staffId, kind, before, after) {
+      let audit = getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/reviews/$(after.reviewId)).data;
+      return docVaultHQ(before.branch) && docVaultKind(kind)
+        && before.staffId == staffId && before.group == kind
+        && after.diff(before).affectedKeys().hasOnly(['status', 'reviewId', 'reviewNote',
+          'reviewedByUid', 'reviewedAt', 'updatedAt', 'version'])
+        && after.status in ['approved', 'rejected'] && docVaultId(after.reviewId)
+        && after.reviewNote is string && after.reviewNote.size() <= 300
+        && (after.status != 'rejected' || after.reviewNote.size() >= 3)
+        && after.reviewedByUid == request.auth.uid && after.reviewedAt == request.time
+        && after.updatedAt == request.time && after.version == before.version + 1
+        && audit.staffId == staffId && audit.branch == before.branch && audit.group == kind
+        && audit.uploadId == before.uploadId && audit.recordVersion == after.version
+        && audit.status == after.status && audit.note == after.reviewNote
+        && audit.actorUid == request.auth.uid && audit.recordedAt == request.time;
+    }
+    match /staff_document_config/{id} {
+      allow get: if id == 'current';
+      allow list, delete: if false;
+      allow create, update: if id == 'current' && docVaultOwner()
+        && request.resource.data.keys().hasOnly(['enabled', 'policyVersion'])
+        && request.resource.data.keys().hasAll(['enabled', 'policyVersion'])
+        && request.resource.data.enabled is bool && request.resource.data.policyVersion == 1;
+    }
+    match /staff_document_requests/{uid} {
+      allow get: if (isSignedIn() && request.auth.uid == uid) || docVaultHQAll();
+      allow list: if docVaultHQAll();
+      allow create: if docVaultRequest(uid, request.resource.data);
+      allow update: if (docVaultRequest(uid, request.resource.data)
+          && resource.data.uid == uid && request.resource.data.staffId == resource.data.staffId)
+        || (docVaultHQAll()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'reviewedAt', 'reviewedByUid', 'reviewNote'])
+          && request.resource.data.status in ['approved', 'rejected']
+          && request.resource.data.reviewedAt == request.time && request.resource.data.reviewedByUid == request.auth.uid
+          && request.resource.data.reviewNote is string && request.resource.data.reviewNote.size() <= 300
+          && (request.resource.data.status != 'approved'
+            || (getAfter(/databases/$(database)/documents/staff_document_devices/$(uid)).data.active == true
+              && getAfter(/databases/$(database)/documents/staff_document_devices/$(uid)).data.staffId == resource.data.staffId)));
+      allow delete: if false;
+    }
+    match /staff_document_devices/{uid} {
+      allow get: if (isSignedIn() && request.auth.uid == uid) || docVaultHQAll();
+      allow list: if docVaultHQAll();
+      allow create: if docVaultHQAll() && docVaultBinding(uid, request.resource.data)
+        && request.resource.data.active == true && request.resource.data.approvedAt == request.time
+        && request.resource.data.audit.size() == 1
+        && request.resource.data.approvedByUid == request.auth.uid
+        && get(/databases/$(database)/documents/staff_document_requests/$(uid)).data.status == 'pending'
+        && get(/databases/$(database)/documents/staff_document_requests/$(uid)).data.staffId == request.resource.data.staffId
+        && getAfter(/databases/$(database)/documents/staff_document_requests/$(uid)).data.status == 'approved'
+        && getAfter(/databases/$(database)/documents/staff_private_documents/$(request.resource.data.staffId)).data.branch == request.resource.data.branch;
+      allow update: if docVaultHQAll() && docVaultBinding(uid, request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active', 'updatedAt', 'updatedByUid', 'audit'])
+        && request.resource.data.audit.diff(resource.data.audit).changedKeys().size() == 0
+        && request.resource.data.audit.diff(resource.data.audit).removedKeys().size() == 0
+        && request.resource.data.audit.diff(resource.data.audit).addedKeys().size() == 1;
+      allow delete: if false;
+    }
+    match /staff_private_documents/{staffId} {
+      allow get: if docVaultOwn(staffId) || docVaultScope(staffId);
+      allow list: if docVaultHQAll();
+      allow create, update: if docVaultHQAll()
+        && request.resource.data.keys().hasOnly(['staffId', 'branch', 'version', 'updatedAt', 'updatedByUid'])
+        && request.resource.data.keys().hasAll(['staffId', 'branch', 'version', 'updatedAt', 'updatedByUid'])
+        && request.resource.data.staffId == staffId && docVaultId(staffId)
+        && request.resource.data.branch is string && request.resource.data.branch.size() > 0 && request.resource.data.branch.size() <= 128
+        && request.resource.data.version == 1 && request.resource.data.updatedAt == request.time
+        && request.resource.data.updatedByUid == request.auth.uid
+        && (resource == null || (request.resource.data.staffId == resource.data.staffId && request.resource.data.branch == resource.data.branch));
+      allow delete: if false;
+      match /files/{kind} {
+        allow get: if docVaultOwn(staffId) || docVaultScope(staffId);
+        allow list: if docVaultOwn(staffId) || docVaultScope(staffId);
+        allow create: if docVaultUpload(staffId, kind, request.resource.data)
+          && request.resource.data.version == 1
+          && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/versions/$(request.resource.data.uploadId)).data == request.resource.data;
+        allow update: if (docVaultUpload(staffId, kind, request.resource.data)
+            && request.resource.data.version == resource.data.version + 1 && request.resource.data.uploadId != resource.data.uploadId
+            && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/versions/$(request.resource.data.uploadId)).data == request.resource.data)
+          || (docVaultReview(staffId, kind, resource.data, request.resource.data)
+            && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/versions/$(resource.data.uploadId)).data == request.resource.data);
+        allow delete: if false;
+      }
+      match /versions/{uploadId} {
+        allow get: if docVaultOwn(staffId) || (resource != null && docVaultHQ(resource.data.branch));
+        allow list: if docVaultOwn(staffId) || docVaultHQ(resource.data.branch);
+        allow create: if docVaultUpload(staffId, request.resource.data.group, request.resource.data)
+          && uploadId == request.resource.data.uploadId
+          && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/files/$(request.resource.data.group)).data == request.resource.data;
+        allow update: if docVaultReview(staffId, resource.data.group, resource.data, request.resource.data)
+          && uploadId == resource.data.uploadId
+          && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/files/$(resource.data.group)).data == request.resource.data;
+        allow delete: if false;
+      }
+      match /reviews/{reviewId} {
+        allow get: if docVaultOwn(staffId) || (resource != null && docVaultHQ(resource.data.branch));
+        allow list: if docVaultOwn(staffId) || docVaultHQ(resource.data.branch);
+        allow create: if docVaultId(reviewId)
+          && request.resource.data.keys().hasOnly(['staffId', 'branch', 'recordVersion', 'group', 'uploadId', 'status', 'note', 'actorUid', 'recordedAt'])
+          && request.resource.data.keys().hasAll(['staffId', 'branch', 'recordVersion', 'group', 'uploadId', 'status', 'note', 'actorUid', 'recordedAt'])
+          && request.resource.data.staffId == staffId && docVaultHQ(request.resource.data.branch)
+          && docVaultKind(request.resource.data.group) && docVaultId(request.resource.data.uploadId)
+          && request.resource.data.status in ['approved', 'rejected']
+          && request.resource.data.note is string && request.resource.data.note.size() <= 300
+          && request.resource.data.actorUid == request.auth.uid && request.resource.data.recordedAt == request.time
+          && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/files/$(request.resource.data.group)).data.reviewId == reviewId
+          && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/files/$(request.resource.data.group)).data.version == request.resource.data.recordVersion
+          && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/files/$(request.resource.data.group)).data.branch == request.resource.data.branch
+          && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/files/$(request.resource.data.group)).data.uploadId == request.resource.data.uploadId;
+        allow update, delete: if false;
+      }
+    }
   }
 }

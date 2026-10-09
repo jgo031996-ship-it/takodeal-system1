@@ -58,6 +58,32 @@ test('PIN collisions and obsolete duplicate credentials cannot select a wrong pe
  await assert.rejects(findMealIdentity(identityAPI(rows),'5678',co),/not found/);
  rows[1].data={...rows[0].data,email:'other@example.test'};await assert.rejects(findMealIdentity(identityAPI(rows),'5678',co),/more than one/);
 });
+test('Staff-only meal verification does not read the protected HQ directory on a PIN-only Cashier',async()=>{
+ const calls=[],staff={source:'cashiers',id:'staff-one',data:{cashierName:'Sample Staff',pin:'5678',role:'Staff'}};
+ const api={read:async(source,field,value)=>{calls.push(source);if(source==='hq_managers')throw Object.assign(Error('Missing or insufficient permissions.'),{code:'permission-denied'});return field==='pin'&&value==='5678'?[staff]:[];}};
+ const identity=await findMealIdentity(api,'5678',mealLevels()[0]);
+ assert.equal(identity.id,'staff-one');assert.equal(identity.role,'staff');assert.deepEqual(calls,['cashiers','cashiers']);
+ await assert.rejects(findMealIdentity(api,'5678',mealLevels()[1]),/permissions/);
+});
+test('Staff and custom levels reject ambiguous eligible PINs while excluding a disallowed role',async()=>{
+ const rows=[{source:'cashiers',id:'a',data:{cashierName:'Staff A',pin:'5678',role:'Staff'}},{source:'cashiers',id:'b',data:{cashierName:'Manager B',pin:'5678',role:'Manager'}}];
+ assert.equal((await findMealIdentity(identityAPI(rows),'5678',mealLevels()[0])).id,'a');
+ rows.push({source:'cashiers',id:'c',data:{cashierName:'Staff C',pin:'5678',role:'Crew'}});
+ await assert.rejects(findMealIdentity(identityAPI(rows),'5678',mealLevels()[0]),/more than one/);
+ const mixed={...co,roles:['staff','manager']};
+ await assert.rejects(findMealIdentity(identityAPI(rows.slice(0,2)),'5678',mixed),/more than one/);
+});
+test('actual Staff meal authorization keeps fresh settings, daily-limit and outbox checks without an HQ read',async()=>{
+ const calls=[],store=new Map(),w={masterPOSData:{settings:{}},db:{},localStorage:{getItem:()=>null},saleOutbox:{list:async()=>[]},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),where:(key,op,value)=>({key,op,value}),query:(collection,...filters)=>({...collection,filters}),getDocFromServer:async()=>({exists:()=>true,data:()=>({staffMealTakoPct:30})}),getDocsFromServer:async query=>{
+  calls.push(query.table);if(query.table==='hq_managers')throw Error('Missing or insufficient permissions.');
+  if(query.table==='staff_requests')return {docs:store.get('claimed')?[{data:()=>({status:'Approved',type:'Staff Meal'})}]:[]};
+  return {docs:query.filters.some(filter=>filter.key==='pin'&&filter.value==='5678')?[{id:'staff-one',data:()=>({cashierName:'Sample Staff',pin:'5678',role:'Staff'})}]:[]};
+ }};
+ installMealCheckout({window:w,document:{}});const allowed=await w.authorizeMealPin('5678','staff_meal',{refresh:true});
+ assert.equal(allowed.level.takoyakiPct,30);assert.equal(allowed.id,'staff-one');assert.equal(calls.includes('hq_managers'),false);assert.ok(calls.includes('staff_requests'));
+ store.set('claimed',true);await assert.rejects(w.authorizeMealPin('5678','staff_meal'),/already claimed/);
+ store.delete('claimed');w.saleOutbox.list=async()=>[{payload:{mealStaffName:'Sample Staff',mealRole:'staff',localTimestamp:new Date().toISOString()}}];await assert.rejects(w.authorizeMealPin('5678','staff_meal'),/awaiting synchronization/);
+});
 test('custom meal metadata and dropdowns survive sale retry exactly once, without PINs',async()=>{
  const h=firestoreHarness(),engine=createSaleEngine(h.api);
  const payload={saleId:'custom-meal',saleVersion:SALE_VERSION,receiptId:'SAMPLE-001',branch:'Maa',cashier:'Sample',netTotal:50,cart:[{name:'Coffee',qty:1,lineTotalFinal:100}],localTimestamp:new Date().toISOString(),inventoryMovements:[],globalDiscountType:co.id,mealLevelName:co.name,mealRole:'co_owner',mealStaffName:'Sample Co-Owner',customCheckoutSelections:[{id:'checkout_source',label:'Order source',value:'Walk-in'}]};

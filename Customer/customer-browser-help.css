@@ -1,0 +1,7 @@
+.customer-browser-help {position:relative;z-index:40;max-width:1200px;margin:12px auto;padding:12px 16px;background:#fff6df;border:1px solid #ead5a2;border-radius:12px;color:#173f35;font-size:13px;line-height:1.5;}
+.customer-browser-help>div {display:flex;justify-content:space-between;align-items:center;gap:12px;}
+.customer-browser-help button {border:1px solid #c6d6cf;border-radius:8px;padding:8px 12px;background:#fff;color:#173f35;cursor:pointer;min-height:40px;}
+.customer-browser-help summary {cursor:pointer;padding:8px 0;text-decoration:underline;}
+.customer-browser-help input {display:block;width:100%;max-width:500px;box-sizing:border-box;background:#fff;color:#173f35;border:1px solid #c6d6cf;border-radius:8px;padding:10px;margin:10px 0;}
+.customer-browser-help p {margin:8px 0;}
+@media(max-width:600px){.customer-browser-help {margin:8px;padding:10px 12px;}}

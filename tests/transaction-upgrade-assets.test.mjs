@@ -31,9 +31,9 @@ test('sanction date decisions are identical across apps',()=>{
 });
 test('upgrade keeps paid receipts, photos and the offline sale ledger through Cashier update',()=>{
     const worker=source('Takodeal-POS/sw.js');
-    assert.match(worker,/transaction-upgrades-20261007-r10/);
+    assert.match(worker,/staff-pos-repair-20261008-r12/);
     assert.match(worker,/const PHOTOS = 'takodeal-pos-photos-offline02'/);
     assert.doesNotMatch(worker,/deleteDatabase|localStorage\.clear/);
-    assert.match(source('Takodeal-POS/index.html'),/cashier-tablet\.css\?v=transaction-upgrades-20261007-r10/);
-    assert.match(source('takodeal-manager/auth.js'),/main\.js\?v=transaction-upgrades-20261007/);
+    assert.match(source('Takodeal-POS/index.html'),/cashier-tablet\.css\?v=staff-pos-repair-20261008-r12/);
+    assert.match(source('takodeal-manager/auth.js'),/main\.js\?v=staff-pos-repair-20261008-r12/);
 });

@@ -1,5 +1,6 @@
 // Presentation helpers only: no sale, inventory or attendance writes.
-export const CASHIER_RELEASE = 'schedule-memory-20261006-r8';
+import {linkedAttendanceHistory,attendanceKind} from './attendance-reconcile.js';
+export const CASHIER_RELEASE = 'staff-pos-repair-20261008-r12';
 export function millis(value) {
   if (value == null) return NaN;
   if (typeof value.toMillis === 'function') return value.toMillis();
@@ -17,14 +18,28 @@ export function dayWindow(day) {
   return {start, end:start + 86400000};
 }
 export function attendanceRows(logs, day, branch = 'All', now = Date.now()) {
-  const {start,end} = dayWindow(day), groups = new Map(), rows = [];
+  const {start,end} = dayWindow(day), groups = new Map(), rows = [], eligible = [];
   for (const log of logs || []) {
     const time = millis(log.timestamp), name = String(log.staffName || '').trim();
     const location = String(log.branch || 'Unlisted');
     if (!name || !Number.isFinite(time) || time < start - 86400000 || time >= end + 20*3600000 || time > now) continue;
-    const key = JSON.stringify([name,location]);
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push({...log, name, branch:location, time});
+    eligible.push({...log, name, branch:location, time});
+  }
+  const idsByName = new Map(), idsByStart = new Map(), starts = new Map(eligible.filter(log=>attendanceKind(log)==='TIME IN' && log.id).map(log=>[log.id,log]));
+  const addIdentity = (map,key,id) => {if(!id)return;if(!map.has(key))map.set(key,new Set());map.get(key).add(id);};
+  for(const log of eligible) {
+    addIdentity(idsByName,JSON.stringify([log.name,log.branch]),log.staffId);
+    const source=starts.get(log.timeInLogId);
+    if(source && !source.staffId && source.name===log.name && source.branch===log.branch)addIdentity(idsByStart,source.id,log.staffId);
+  }
+  const soleIdentity = values => values?.size===1 ? [...values][0] : '';
+  for(const log of eligible) {
+    // Projection only: an exact link or a sole name/branch identity keeps old
+    // name-only punches together. Ambiguous names never borrow an employee ID.
+    const staffId=log.staffId || soleIdentity(idsByStart.get(log.id)) || soleIdentity(idsByName.get(JSON.stringify([log.name,log.branch])));
+    const key=JSON.stringify([staffId || log.name,log.branch]);
+    if(!groups.has(key))groups.set(key,{staffId,name:log.name,logs:[]});
+    groups.get(key).logs.push(staffId && !log.staffId ? {...log,staffId} : log);
   }
   const add = (input,output,status) => {
     const event = input || output;
@@ -35,20 +50,15 @@ export function attendanceRows(logs, day, branch = 'All', now = Date.now()) {
     rows.push({name:event.name, branch:event.branch, in:begin ?? null, out:finish ?? null,
       status, carryIn:begin < start, hours:input && output ? (finish-begin)/3600000 : null});
   };
-  for (const entries of groups.values()) {
-    entries.sort((a,b) => a.time-b.time || (a.type === 'TIME IN' ? -1 : 1));
-    let open = null;
-    for (const log of entries) {
-      if (log.type === 'TIME IN') {
-        if (open) add(open,null,'Missing time out');
-        open = log;
-      } else if (log.type === 'TIME OUT') {
-        if (open && log.time-open.time <= 20*3600000) add(open,log,'Completed');
-        else { if (open) add(open,null,'Missing time out'); add(null,log,'Missing time in'); }
-        open = null;
-      }
+  for (const group of groups.values()) {
+    for(const shift of linkedAttendanceHistory(group.logs,group.staffId,group.name,new Date(now))) {
+      if(shift.in && shift.out) {
+        if(shift.hours<=20)add(shift.in,shift.out,'Completed');
+        else {add(shift.in,null,'Missing time out');add(null,shift.out,'Missing time in');}
+      } else if(shift.in) {
+        add(shift.in,null,shift.status==='On duty' && day===businessDate(new Date(now)) && now-shift.in.time<=20*3600000 ? 'On duty':'Missing time out');
+      } else if(shift.out)add(null,shift.out,'Missing time in');
     }
-    if (open) add(open,null,day === businessDate(new Date(now)) && now-open.time <= 20*3600000 ? 'On duty' : 'Missing time out');
   }
   return rows.sort((a,b) => (b.status === 'On duty')-(a.status === 'On duty') || a.branch.localeCompare(b.branch) || a.name.localeCompare(b.name));
 }

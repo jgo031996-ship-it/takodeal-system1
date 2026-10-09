@@ -1,15 +1,18 @@
 import { VaultSession, createPinVerifier, verifyPin, validVaultPin, validVerifier, attendanceHistory, escapeHtml } from './staff-privacy.js';
+import {installStaffRatePrivacy} from './staff-rate-privacy.js';
+import {readStaffRecords,linkedAttendanceHistory} from './attendance-reconcile.js';
 
 export function installStaffPortal() {
     const $ = id => document.getElementById(id);
     const identity = () => ({ id: localStorage.getItem('takodeal_staff_id'), name: localStorage.getItem('takodeal_staff_name') });
     const session = new VaultSession();
+    const rate = installStaffRatePrivacy(window,document,localStorage,{setIntervalFn:setInterval});
     window.staffVaultSession = session;
-    let modalMode = 'unlock', modalEpoch = 0, busy = false, attendanceEpoch = 0, attendanceCache = null;
+    let modalMode = 'unlock', modalTarget = 'payslip', modalEpoch = 0, busy = false, attendanceEpoch = 0, attendanceCache = null;
     const payTemplate = $('vaultContent').innerHTML;
     let profileEpoch = 0;
     const profile = async id => {
-        const snap = await window.getDoc(window.doc(window.db, 'cashiers', id));
+        const snap = await window.getDocFromServer(window.doc(window.db, 'cashiers', id));
         if (!snap.exists()) throw new Error('Your staff profile could not be found. Please contact HQ.');
         return snap.data();
     };
@@ -23,7 +26,8 @@ export function installStaffPortal() {
         $('vaultLockButton').hidden = !open;
         $('vaultState').textContent = open ? 'Unlocked · locks after 2 minutes idle' : 'Private · PIN required';
     }
-    window.lockPayslipVault = function() {
+    window.lockPayslipVault = function({preserveRateRequest=false}={}) {
+        rate.lock({preserveRequest:preserveRateRequest});
         session.lock(); modalEpoch++; busy = false; wipeInputs();
         $('vaultPinModal').style.display = 'none';
         // Remove values and encoded payroll actions rather than merely covering them.
@@ -32,10 +36,11 @@ export function installStaffPortal() {
         if (document.getElementById('printableStaffPayslip') || document.getElementById('payslipSignatureCanvas')) window.Swal?.close();
         refreshVault();
     };
-    window.closeVaultPin = function() { modalEpoch++; busy = false; wipeInputs(); $('vaultPinModal').style.display = 'none'; };
-    window.openVaultPin = async function(mode = 'unlock') {
+    window.closeVaultPin = function(accepted=false) { if(!accepted)rate.lock();modalEpoch++; busy = false; wipeInputs(); $('vaultPinModal').style.display = 'none'; };
+    window.openProfileRatePin = function() { return window.openVaultPin('unlock','rate'); };
+    window.openVaultPin = async function(mode = 'unlock',target='payslip') {
         const { id } = identity(); if (!id) return;
-        window.lockPayslipVault();
+        window.lockPayslipVault({preserveRateRequest:target==='rate'});modalTarget=target;
         const token = { id, epoch: modalEpoch };
         $('vaultPinModal').style.display = 'flex'; $('vaultPinForm').hidden = true;
         $('vaultError').hidden = true; $('vaultPinIntro').textContent = 'Checking your PIN settings…';
@@ -50,8 +55,8 @@ export function installStaffPortal() {
             if (data.payslipPin && !validVerifier(data.payslipPin)) throw new Error('Your PIN settings need a review by HQ.');
             modalMode = data.payslipPin ? mode : 'setup';
             const editing = modalMode !== 'unlock';
-            $('vaultPinTitle').textContent = modalMode === 'setup' ? 'Create your Payslip PIN' : editing ? 'Change your Payslip PIN' : 'Unlock Payslip Vault';
-            $('vaultPinIntro').textContent = modalMode === 'setup' ? 'Verify your staff login PIN, then choose a separate 6–8 digit PIN for your pay.' : editing ? 'Enter your current Payslip PIN and choose a new one.' : 'Enter your separate Payslip PIN to see your earnings and records.';
+            $('vaultPinTitle').textContent = modalMode === 'setup' ? 'Create your Payslip PIN' : editing ? 'Change your Payslip PIN' : target==='rate'?'Unlock daily rate':'Unlock Payslip Vault';
+            $('vaultPinIntro').textContent = modalMode === 'setup' ? 'Verify your staff login PIN, then choose a separate 6–8 digit PIN for your pay.' : editing ? 'Enter your current Payslip PIN and choose a new one.' : target==='rate'?'Enter your separate Payslip PIN to view your daily rate for two minutes.':'Enter your separate Payslip PIN to see your earnings and records.';
             $('vaultCurrentLabel').textContent = modalMode === 'setup' ? 'Staff login PIN' : 'Payslip PIN';
             $('vaultNewFields').hidden = !editing;
             $('vaultSubmit').textContent = editing ? 'Save Payslip PIN' : 'Unlock vault';
@@ -86,7 +91,9 @@ export function installStaffPortal() {
                 if (!current(token)) return;
             }
             localStorage.removeItem(attemptKey);
-            window.closeVaultPin(); session.unlock(id); refreshVault();
+            window.closeVaultPin(true);
+            if(modalTarget==='rate'){rate.reveal(id,data);return;}
+            session.unlock(id); refreshVault();
             // PIN editing from Profile does not reveal pay behind another screen.
             if (!$('view-payslip').classList.contains('active')) { window.lockPayslipVault(); return; }
             window.loadPayslipVault();
@@ -105,6 +112,7 @@ export function installStaffPortal() {
     window.checkNormalLogin = function() {
         const previousId = session.staffId;
         oldLogin(); if (previousId && previousId !== identity().id) window.lockPayslipVault();
+        if(rate.session.staffId && !rate.session.allows(identity().id))rate.lock();
         window.refreshStaffHeader();
     };
     const oldManualLogin = window.loginStaff;
@@ -112,7 +120,9 @@ export function installStaffPortal() {
     const oldLogout = window.logoutStaff;
     window.logoutStaff = function() { window.lockPayslipVault(); attendanceEpoch++; profileEpoch++; attendanceCache = null; oldLogout(); };
     const oldProfile = window.openProfile;
-    window.openProfile = function() { window.lockPayslipVault(); return oldProfile(); };
+    window.openProfile = async function() { window.lockPayslipVault();const id=identity().id;await oldProfile();if(identity().id===id && !document.hidden)await rate.open(); };
+    const oldCloseProfile=window.closeStaffProfile;
+    window.closeStaffProfile=function(){rate.lock();if(oldCloseProfile)return oldCloseProfile();$('profileModal').style.display='none';};
     window.refreshStaffHeader = async function() {
         const { id } = identity(), epoch = ++profileEpoch; if (!id) return;
         try {
@@ -130,22 +140,21 @@ export function installStaffPortal() {
             let records;
             if (!force && attendanceCache?.id === id && attendanceCache.name === name && Date.now() - attendanceCache.saved < 60000) records = attendanceCache.records;
             else {
-                const snapshot = await window.getDocs(window.query(window.collection(window.db, 'attendance_logs'), window.where('staffName', '==', name)));
-                records = snapshot.docs.map(d => d.data());
+                records = await readStaffRecords(window,id,name,{fresh:force});
             }
             if (epoch !== attendanceEpoch || identity().id !== id) return;
             attendanceCache = { id, name, records, saved:Date.now() };
-            const shifts = attendanceHistory(records, id, name);
+            const shifts = linkedAttendanceHistory(records, id, name);
             const month = $('attendanceMonth').value;
-            const rows = shifts.filter(row => { const d = (row.in || row.out).date; return !month || `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` === month; });
+            const rows = shifts.filter(row => { const d = (row.in || row.out).date; return !d || !month || `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` === month; });
             $('attendanceCount').textContent = rows.length + (rows.length === 1 ? ' shift' : ' shifts');
             const time = d => d ? d.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' }) : '—';
             box.innerHTML = rows.length ? rows.map(row => {
                 const log = row.in || row.out, savedLate = row.in?.reviewedLateMinutes ?? row.in?.lateMinutes, late = Number(savedLate) || 0;
                 const label = row.in?.lateExempted === true ? 'Late · exempted by HQ' : late > 3 ? `Late · ${late} min` : savedLate == null ? 'Late status not recorded' : 'On time';
-                return `<article class="attendance-row"><div><strong>${escapeHtml(log.date.toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}))}</strong><span>${escapeHtml(log.branch || 'Branch not recorded')}</span></div><div class="attendance-times"><span>Time in<strong>${time(row.in?.date)}</strong></span><span>Time out<strong>${time(row.out?.date)}${row.out && row.in && row.out.date.toDateString() !== row.in.date.toDateString() ? '<small>Next day</small>' : ''}</strong></span><span>Hours<strong>${row.hours == null ? '—' : row.hours.toFixed(2)}</strong></span></div><div class="attendance-status"><span class="status-pill ${row.status.includes('Missing') ? 'warning' : ''}">${row.status}</span>${row.in ? `<span class="status-pill ${late > 3 && !row.in.lateExempted ? 'danger' : ''}">${label}</span>` : ''}</div></article>`;
+                return `<article class="attendance-row"><div><strong>${escapeHtml(log.date?.toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) || 'Date needs HQ review')}</strong><span>${escapeHtml(log.branch || 'Branch not recorded')}</span></div><div class="attendance-times"><span>Time in<strong>${time(row.in?.date)}</strong></span><span>Time out<strong>${time(row.out?.date)}${row.out?.date && row.in?.date && row.out.date.toDateString() !== row.in.date.toDateString() ? '<small>Next day</small>' : ''}</strong></span><span>Hours<strong>${row.hours == null ? '—' : row.hours.toFixed(2)}</strong></span></div><div class="attendance-status"><span class="status-pill ${row.status.includes('Missing') || row.status.includes('Review') ? 'warning' : ''}">${row.status}</span>${row.in ? `<span class="status-pill ${late > 3 && !row.in.lateExempted ? 'danger' : ''}">${label}</span>` : ''}</div></article>`;
             }).join('') : '<p class="empty-state">No attendance recorded for this month.</p>';
-        } catch { if (epoch === attendanceEpoch) box.innerHTML = '<p class="empty-state">Your attendance could not load. Check your connection, then select Refresh.</p>'; }
+        } catch(error) { if (epoch === attendanceEpoch && identity().id === id) box.innerHTML = `<p class="empty-state">${escapeHtml(error.message||'Your attendance could not load. Check your connection, then select Refresh.')}</p>`; }
     };
     const month = new Date(); $('attendanceMonth').value = `${month.getFullYear()}-${String(month.getMonth()+1).padStart(2,'0')}`;
     document.addEventListener('visibilitychange', () => { if (document.hidden) window.lockPayslipVault(); });

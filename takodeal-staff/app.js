@@ -1,7 +1,13 @@
 import { installStaffLocation } from './staff-location.js';
+import { installAttendanceCamera } from './attendance-camera.js';
+import {readStaffRecords, latestAttendance, attendanceMillis, attendanceKind, sopCoversShift, closeAttendanceShift} from './attendance-reconcile.js';
+import {planPayrollAttendance} from './payroll-attendance.js';
 import { installStaffRegistration } from './staff-registration.js';
 import { installStaffPhone } from './staff-phone.js';
 import { installStaffPortal } from './staff-portal.js';
+import {installStaffDocuments} from './staff-documents.js';
+import {createStaffDocumentFirebase} from './staff-document-firebase.js';
+import {profileDailyRate} from './staff-rate-privacy.js';
 import { calculateLateMinutes, resolveScheduledShift, resolveAttendanceShift, captureAttendanceSchedule, latePay, earnedNightBonus, attendanceLateMinutes, isMealDeduction } from './payroll-safety.js';
 import {phDay, pendingDueNotices, clockInRestriction, startPhilippineDayTimer, noticeIsDue, deductionIsDue, isPenaltyDeduction, acknowledgeSanction} from './sanction-schedule.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
@@ -360,7 +366,7 @@ window.openProfile = async function() {
             // 🔥 LOAD SIGNED CONTRACTS VAULT
             let contractsHtml = "";
             if (d.signedContracts && Object.keys(d.signedContracts).length > 0) {
-                let safeData = encodeURIComponent(JSON.stringify(d));
+                let safeData = encodeURIComponent(staffId);
                 if (d.signedContracts.initial) {
                     contractsHtml += `<button type="button" onclick="window.reprintContract('Initial', '${safeData}', '${d.signedContracts.initial}')" style="background:#f8fafc; color:#0f172a; border:1px solid #cbd5e1; padding:12px; border-radius:6px; cursor:pointer; font-weight:bold; text-align: left; display: flex; justify-content: space-between; align-items: center;"><span>📄 Initial Employment Contract</span> <span style="color: #16a34a; font-size: 11px;">Signed: ${d.signedContracts.initial}</span></button>`;
                 }
@@ -546,9 +552,7 @@ window.checkContractLifecycle = async function(staffId) {
 // 📄 UNIFIED DOLE CONTRACT CONTENT GENERATOR
 // ========================================================
 window.getUnifiedContractContent = function(data, signDate, type) {
-    let dailySalary = parseFloat((data.hourlyRate || 0) * 8).toFixed(2);
-    if (dailySalary === "0.00" && data.dailyRate) dailySalary = parseFloat(data.dailyRate).toFixed(2);
-    if (dailySalary === "0.00") dailySalary = "400.00"; // Fallback to template standard
+    let dailySalary = profileDailyRate(data) == null ? 'Rate not set' : profileDailyRate(data).toFixed(2);
 
     let content = "";
     if (type === 'Initial') {
@@ -834,9 +838,14 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
     });
 };
 
-window.reprintContract = function(type, encodedData, signDate) {
-    let data = JSON.parse(decodeURIComponent(encodedData));
+window.reprintContract = async function(type, encodedData, signDate) {
+    const staffId=decodeURIComponent(encodedData);
+    if(staffId!==localStorage.getItem('takodeal_staff_id') || !await window.ensureStaffRateUnlocked())return;
+    const snap=await getDocFromServer(doc(db,'cashiers',staffId));
+    if(staffId!==localStorage.getItem('takodeal_staff_id') || !window.staffRateSession?.allows(staffId) || !snap.exists())return;
+    let data = snap.data();
     let printWin = window.open('', '', 'width=850,height=900');
+    if(!printWin)return Swal.fire('Allow document window','Allow the document window, then select the contract again.','info');
     printWin.document.write(window.getContractPrintHTML(type, data, signDate));
 };
 
@@ -1250,6 +1259,7 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
     return R * c; 
 };
 
+installAttendanceCamera(window, document);
 window.punchTime = async function(type) {
     if (!['TIME IN', 'TIME OUT'].includes(type)) return Swal.fire('Attendance not saved', 'Choose Time In or Time Out using the attendance buttons.', 'warning');
     let staffName = localStorage.getItem('takodeal_staff_name');
@@ -1267,84 +1277,31 @@ window.punchTime = async function(type) {
     const lateRequestRef = doc(collection(db, 'staff_requests'));
     let pendingLateRequest = null;
     let punchScheduleData = null, punchScheduleProfiles = {};
+    let activeTimeIn = null;
 
     try {
         Swal.fire({title: 'Verifying with HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
-        // 1. ☁️ LIVE CLOUD DOUBLE-PUNCH SHIELD
-        const q = window.query(window.collection(window.db, "attendance_logs"), window.where("staffName", "==", staffName));
-        const snap = await window.getDocs(q);
-
-        let userLogs = [];
-        snap.forEach(doc => {
-            let d = doc.data();
-            userLogs.push(d);
-        });
-
-        // 🛡️ Bulletproof Sorting (Handles both live cloud timestamps and pending offline writes)
-        const getMs = (fbTime) => {
-            if (!fbTime) return Date.now(); // If offline and pending, it happened just now
-            if (fbTime.toMillis) return fbTime.toMillis();
-            if (fbTime.toDate) return fbTime.toDate().getTime();
-            return new Date(fbTime).getTime();
-        };
-
-        userLogs.sort((a,b) => getMs(b.timestamp) - getMs(a.timestamp));
-
-        if (userLogs.length > 0) {
-            let lastLog = userLogs[0];
-            let lastType = (lastLog.type || "").toUpperCase();
-            let lastTimeMs = getMs(lastLog.timestamp);
-            let hoursSince = (Date.now() - lastTimeMs) / (1000 * 60 * 60);
-
-            if (type === "TIME OUT") {
-                // ERROR 1: They already timed out.
-                if (lastType.includes("OUT")) {
-                    Swal.fire('Already Timed Out', 'Your last recorded punch was a TIME OUT. You must TIME IN to start a new shift.', 'error');
-                    return;
-                }
-                // ERROR 2: They are trying to time out of a shift that started over 16 hours ago!
-                // This means they forgot to time out yesterday, and clicked Time Out today by mistake!
-                if (lastType.includes("IN") && hoursSince > 16) {
-                    Swal.fire('Shift Expired', 'You cannot Time Out of a shift that started over 16 hours ago. Please click TIME IN to start your shift for today.', 'error');
-                    return;
-                }
-                // ERROR 3: Accidental double tap (Timed in less than 3 minutes ago)
-                if (lastType.includes("IN") && hoursSince < 0.05) {
-                    Swal.fire('Too Soon', 'You just timed in! Please wait a few minutes before timing out to avoid errors.', 'warning');
-                    return;
-                }
-            } 
-            else if (type === "TIME IN") {
-                // ERROR 4: They are already timed in and the shift is still fresh.
-                if (lastType.includes("IN") && hoursSince < 16) {
-                    Swal.fire('Already Timed In', 'You are currently clocked in. Please TIME OUT of your active shift first.', 'error');
-                    return;
-                }
+        // Read the same employee ID across Cashier and Staff, including exact legacy names.
+        const userLogs = await readStaffRecords(window, punchStaffId, staffName);
+        const lastLog = latestAttendance(userLogs, punchStaffId, staffName);
+        const lastType = attendanceKind(lastLog);
+        const hoursSince = lastLog ? (Date.now() - attendanceMillis(lastLog.timestamp)) / 3600000 : 0;
+        if (type === 'TIME OUT') {
+            if (lastType !== 'TIME IN') {
+                Swal.fire(lastType === 'TIME OUT' ? 'Already Timed Out' : 'No Active Shift', 'Refresh attendance after your Cashier Time In has synced to HQ. No Time Out was created.', 'warning'); return;
             }
-        } else {
-            // User has ZERO logs in the entire system
-            if (type === "TIME OUT") {
-                Swal.fire('No Active Shift', 'You have no active shift to clock out of. Please click TIME IN first.', 'error');
-                return;
-            }
+            if (hoursSince > 16) { Swal.fire('Shift Expired', 'This Time In is more than 16 hours old. Ask HQ to review the missing Time Out.', 'error'); return; }
+            if (hoursSince < 0.05) { Swal.fire('Too Soon', 'Wait at least three minutes after Time In before recording Time Out.', 'warning'); return; }
+            activeTimeIn = lastLog;
+        } else if (lastType === 'TIME IN' && hoursSince < 16) {
+            Swal.fire('Already Timed In', 'You are currently clocked in. Please TIME OUT of your active shift first.', 'error'); return;
         }
 
         // 2. 📋 THE DAILY SOP COMPLIANCE BLOCKER (ONLY ON TIME OUT)
         if (type === "TIME OUT") {
-            let startOfDay = new Date();
-            startOfDay.setHours(0,0,0,0);
-            
-            const sopQ = query(collection(db, "sop_logs"), where("staffName", "==", staffName));
-            const sopSnap = await getDocs(sopQ);
-            
-            let hasSopToday = false;
-            sopSnap.forEach(doc => {
-                let d = doc.data();
-                if (d.timestamp && d.timestamp.toDate() >= startOfDay) {
-                    hasSopToday = true;
-                }
-            });
+            const sopRecords = await readStaffRecords(window,punchStaffId,staffName,{table:'sop_logs',names:[activeTimeIn.staffName]});
+            const hasSopToday = sopCoversShift(sopRecords,activeTimeIn,punchStaffId,staffName);
             
             if (!hasSopToday) {
                 Swal.fire({
@@ -1368,6 +1325,7 @@ window.punchTime = async function(type) {
         // Confirm a fresh, accurate location without changing the branch radius.
         let punchLocation = await window.getAttendanceLocation();
         let closestBranch = punchLocation.branch, minDistance = punchLocation.distance;
+        if (type === 'TIME OUT' && activeTimeIn.branch !== closestBranch) throw Error(`Your active shift is at ${activeTimeIn.branch||'an unrecorded branch'}. Record Time Out from that branch or ask HQ to review the location.`);
 
         // 4. ⏰ THE STRICT LATE DETECTOR & PHOTO INTERCEPTOR
         if (type === "TIME IN") {
@@ -1464,17 +1422,18 @@ window.punchTime = async function(type) {
         if (localStorage.getItem('takodeal_staff_id') !== punchStaffId) throw Error('Your staff session changed. Sign in again before recording attendance.');
         punchLocation = latestLocation; minDistance = latestLocation.distance;
 
-        // 5. 📸 PHOTO CAPTURE
-        let photoBase64 = "";
-        const video = document.getElementById('clockVideo');
-        const canvas = document.getElementById('clockCanvas');
-        if (video && canvas && video.videoWidth > 0) {
-            canvas.width = Math.min(480, video.videoWidth); canvas.height = Math.round(video.videoHeight * canvas.width / video.videoWidth);
-            const ctx = canvas.getContext('2d');
-            ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            photoBase64 = canvas.toDataURL('image/jpeg', 0.6); 
+        // Check the exact photo being saved, after slow proof and HR requests.
+        let faceResult = null;
+        if (type === 'TIME IN') {
+            if (typeof window.verifyAttendanceFace !== 'function') throw Error('The camera check is unavailable. Refresh while online before Time In.');
+            faceResult = await window.verifyAttendanceFace();
+            const finalLocation = await window.getAttendanceLocation();
+            if (finalLocation.branch !== closestBranch) throw Error('Your branch changed. Please record attendance again.');
+            if (localStorage.getItem('takodeal_staff_id') !== punchStaffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
+            window.assertAttendanceFaceFresh(faceResult);
+            punchLocation = finalLocation; minDistance = finalLocation.distance;
         }
+        const photoBase64 = faceResult ? faceResult.photoBase64 : (window.captureOptionalAttendancePhoto?.() || '');
 
         // 6. 💾 SAVE TO FIREBASE
         const attendance = {
@@ -1486,11 +1445,15 @@ window.punchTime = async function(type) {
             photoBase64
         };
         if (type === 'TIME IN') {
+            attendance.faceCheck = faceResult.faceCheck;
             const clockDate = new Date();
             attendance.scheduleSnapshot = captureAttendanceSchedule(clockDate, closestBranch, staffName, punchScheduleData, punchScheduleProfiles);
             const matched = resolveAttendanceShift({...attendance, timestamp:clockDate}, punchScheduleData, punchScheduleProfiles);
             if (!attendance.scheduleSnapshot.needsScheduleReview && matched) attendance.lateMinutes = matched.lateMinutes;
         }
+        if (type === 'TIME OUT') {
+            await closeAttendanceShift(window,{start:activeTimeIn,attendance,assertCurrent:()=>{if(localStorage.getItem('takodeal_staff_id')!==punchStaffId || localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff session changed. Sign in again.');}});
+        } else {
         const batch = writeBatch(db);
         if (pendingLateRequest) {
             if (Number.isFinite(attendance.lateMinutes)) {
@@ -1502,6 +1465,7 @@ window.punchTime = async function(type) {
         }
         batch.set(attendanceRef, attendance);
         await batch.commit();
+        }
 
         
         window.loadMyAttendance?.(true);
@@ -1732,61 +1696,29 @@ window.switchView = function(viewId, btnElement) {
 };
 
 window.initSopModule = async function() {
-    let branchSelect = document.getElementById('sopBranchSelect');
-    let gpsBadge = document.getElementById('sopGpsBadge');
-    let staffName = localStorage.getItem('takodeal_staff_name');
-
-    let targetBranch = window.getClosestBranch() || "Cabantian"; // Initial fallback
-
-    if (gpsBadge) {
-        gpsBadge.innerText = "⏳ Syncing with Active Shift...";
-        gpsBadge.style.background = "#fffbeb";
-        gpsBadge.style.color = "#d97706";
-    }
-
+    const branchSelect = document.getElementById('sopBranchSelect'), gpsBadge = document.getElementById('sopGpsBadge');
+    const staffName = localStorage.getItem('takodeal_staff_name'), staffId = localStorage.getItem('takodeal_staff_id');
+    const epoch = window.sopShiftEpoch = (window.sopShiftEpoch || 0) + 1;
+    if (gpsBadge) { gpsBadge.innerText = 'Syncing with your active shift…'; gpsBadge.style.background = '#fffbeb'; gpsBadge.style.color = '#d97706'; }
     try {
-        // 🔥 SMART CLOUD SYNC: Find out exactly where they timed in!
-        if (staffName) {
-            // We use the same index-free query we used for the Time Clock so it never crashes!
-            const q = query(collection(db, "attendance_logs"), where("staffName", "==", staffName));
-            const snap = await getDocs(q);
-            
-            let userLogs = [];
-            snap.forEach(doc => {
-                let d = doc.data();
-                if (d.timestamp) userLogs.push(d);
-            });
-            
-            // Sort locally (Newest first)
-            userLogs.sort((a,b) => b.timestamp.toDate() - a.timestamp.toDate());
-
-            // Check their very last punch
-            if (userLogs.length > 0) {
-                let lastLog = userLogs[0];
-                // If their last action was a TIME IN, lock the SOP to that exact branch!
-                if (lastLog.type.includes("TIME IN")) {
-                    targetBranch = lastLog.branch || targetBranch;
-                }
-            }
-        }
-    } catch(e) {
-        console.error("Error fetching shift branch:", e);
+        const logs = await readStaffRecords(window,staffId,staffName);
+        if (window.sopShiftEpoch !== epoch || localStorage.getItem('takodeal_staff_id') !== staffId || localStorage.getItem('takodeal_staff_name') !== staffName) return;
+        const latest = latestAttendance(logs,staffId,staffName);
+        const active = attendanceKind(latest) === 'TIME IN' ? latest : null;
+        const targetBranch = active?.branch || window.getClosestBranch();
+        if (!targetBranch) throw Error('Your shift branch could not be confirmed. Check your location or ask HQ to review attendance.');
+        window.sopActiveTimeIn = active;
+        if (branchSelect) { branchSelect.value = targetBranch; branchSelect.disabled = !!active; }
+        if (gpsBadge) { gpsBadge.innerText = 'Shift location: ' + targetBranch; gpsBadge.style.background = '#dcfce7'; gpsBadge.style.color = '#16a34a'; }
+        await window.onSopBranchChange();
+    } catch(error) {
+        if (window.sopShiftEpoch !== epoch || localStorage.getItem('takodeal_staff_id') !== staffId) return;
+        window.sopActiveTimeIn = null;
+        if (branchSelect) { branchSelect.value = ''; branchSelect.disabled = false; }
+        if (gpsBadge) { gpsBadge.innerText = error.message || 'Refresh to confirm your shift branch.'; gpsBadge.style.background = '#fffbeb'; gpsBadge.style.color = '#b45309'; }
+        document.getElementById('sopTasksContainer').style.display = 'none';
+        document.getElementById('sopEmptyState').style.display = 'block';
     }
-
-    // Apply the branch to the dropdown
-    if (branchSelect) {
-        branchSelect.value = targetBranch;
-    }
-
-    // Update the visual badge so they know it worked
-    if (gpsBadge) {
-        gpsBadge.innerText = `📍 Synced to Shift Location: ${targetBranch}`;
-        gpsBadge.style.background = "#dcfce7";
-        gpsBadge.style.color = "#16a34a";
-    }
-
-    // Trigger the role loader automatically!
-    await window.onSopBranchChange();
 };
 
 window.onSopBranchChange = async function() {
@@ -1909,6 +1841,8 @@ window.submitSopChecklist = async function() {
     let branch = document.getElementById('sopBranchSelect').value;
     let roleName = document.getElementById('sopRoleSelect').value;
     let staffName = localStorage.getItem('takodeal_staff_name') || 'Staff';
+    const staffId = localStorage.getItem('takodeal_staff_id');
+    if (!staffId) return Swal.fire('Sign in required', 'Sign in to your staff account before submitting SOP.', 'warning');
 
     if (!roleName) return Swal.fire('Required', 'Please select your role first.', 'warning');
 
@@ -1938,9 +1872,15 @@ window.submitSopChecklist = async function() {
     btn.innerText = "⏳ Submitting to HQ..."; btn.disabled = true;
 
     try {
+        const latest = latestAttendance(await readStaffRecords(window,staffId,staffName),staffId,staffName);
+        const active = attendanceKind(latest) === 'TIME IN' ? latest : null;
+        if (localStorage.getItem('takodeal_staff_id') !== staffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
+        if (active && active.branch !== branch) throw Error('Submit SOP for your active shift at ' + (active.branch || 'the branch confirmed by HQ') + '.');
         await addDoc(collection(db, "sop_logs"), {
             branch: branch,
             staffName: staffName,
+            staffId,
+            ...(active ? {timeInLogId:active.id,shiftStartedAt:new Date(attendanceMillis(active.timestamp)).toISOString()} : {}),
             roleName: roleName,
             scorePercentage: scorePercentage,
             tasks: completedTasks,
@@ -1965,7 +1905,7 @@ window.submitSopChecklist = async function() {
 
     } catch (e) {
         console.error("SOP Submit Error:", e);
-        Swal.fire('Error', 'Failed to submit checklist. Check connection.', 'error');
+        Swal.fire('SOP not saved', e.message || 'Failed to submit checklist. Check connection.', 'warning');
     } finally {
         btn.innerText = "🚀 Submit Completed Checklist"; btn.disabled = false;
     }
@@ -2072,7 +2012,10 @@ window.loadPayslipVault = async function() {
 
         let fetchStart = new Date(prevStartStr + 'T00:00:00');
         const attQ = query(collection(db, "attendance_logs"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10)));
-        const attSnap = await getDocs(attQ);
+        const attendanceSources = await Promise.all([getDocs(attQ),getDocs(query(collection(db,"attendance_logs"),where("staffId","==",staffId)))]);
+        const attendanceRecords = new Map();
+        attendanceSources.forEach(snap=>snap.forEach(row=>{const data=row.data();if(data.staffId?data.staffId===staffId:isMatch(data.staffName))attendanceRecords.set(row.id,{...data,id:row.id});}));
+        const attSnap = {forEach:fn=>attendanceRecords.forEach(log=>fn({id:log.id,data:()=>log}))};
         if (!stillOpen()) return;
         
         const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10)));
@@ -2086,7 +2029,7 @@ window.loadPayslipVault = async function() {
 
             attSnap.forEach(docSnap => {
                 let log = docSnap.data();
-                if (log.timestamp && isMatch(log.staffName)) {
+                if (log.timestamp && (log.staffId ? log.staffId===staffId : isMatch(log.staffName))) {
                     let t = safeDate(log.timestamp);
                     let logType = typeof log.type === 'string' ? log.type.toUpperCase() : "UNKNOWN";
                     
@@ -2100,6 +2043,8 @@ window.loadPayslipVault = async function() {
                 }
             });
             fLogs.sort((a, b) => safeDate(a.timestamp).getTime() - safeDate(b.timestamp).getTime());
+            const payrollPlan=planPayrollAttendance(fLogs,{resolveName:()=>staffProfile.cashierName||staffName,referenceRecords:[...attendanceRecords.values()]});
+            fLogs=payrollPlan.logs;
 
             let tBonuses = 0; let fBonuses = [];
             bonusSnap.forEach(docSnap => {
@@ -2111,6 +2056,10 @@ window.loadPayslipVault = async function() {
             });
 
             let tShifts = 0; let tLate = 0; let activeShift = null; let sPairs = [], scheduleReviews = 0;
+            for(const review of payrollPlan.reviews){
+                const at=review.records.map(log=>attendanceMillis(log.timestamp)).find(Number.isFinite);
+                sPairs.push({dateObj:Number.isFinite(at)?new Date(at):startT,in:null,out:'HR REVIEW',hrs:0,remark:'<span style="color:#b45309;font-weight:bold">'+review.reason+'</span>',lateMins:0,needsAttendanceReview:true});
+            }
             
             fLogs.forEach(log => {
                 let manualPenalty = parseFloat(log.penaltyAmount) || 0;
@@ -2206,7 +2155,7 @@ window.loadPayslipVault = async function() {
                 }
             });
 
-            return { shiftsWorked: tShifts, totalLatePenalty: tLate, totalBonuses: tBonuses, shiftPairs: sPairs, scheduleReviews };
+            return { shiftsWorked: tShifts, totalLatePenalty: tLate, totalBonuses: tBonuses, shiftPairs: sPairs, scheduleReviews,attendanceHeld:payrollPlan.reviews.length>0 };
         };
 
         let currentData = analyzeCutoff(new Date(startDateStr + 'T00:00:00'), new Date(endDateStr + 'T23:59:59'));
@@ -2259,10 +2208,10 @@ window.loadPayslipVault = async function() {
 
         let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - liveUnpaidVales - cutoffLoanDeduction;
 
-        document.getElementById('liveEstGross').innerText = '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('liveEstGross').innerText = currentData.attendanceHeld ? 'Held for HR review' : '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstLates').innerText = '-₱' + currentData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstVales').innerText = '-₱' + liveUnpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
-        document.getElementById('liveEstNetPay').innerText = '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('liveEstNetPay').innerText = currentData.attendanceHeld ? 'Held for HR review' : '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
         let penaltyReview=document.getElementById('liveScheduledPenaltyReview');
         if(!penaltyReview){penaltyReview=document.createElement('p');penaltyReview.id='liveScheduledPenaltyReview';penaltyReview.style.cssText='padding:10px;background:#fff8ed;font-size:12px;';document.getElementById('payslipLiveSection').prepend(penaltyReview);}
         penaltyReview.hidden=!scheduledPenaltyReview;
@@ -2273,8 +2222,8 @@ window.loadPayslipVault = async function() {
             scheduleNotice.style.cssText = 'padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;color:#92400e;font-size:12px;line-height:1.5';
             document.getElementById('payslipLiveSection').prepend(scheduleNotice);
         }
-        scheduleNotice.hidden = !currentData.scheduleReviews;
-        scheduleNotice.textContent = `${currentData.scheduleReviews} clock-in(s) lack saved schedule evidence. Review the attendance details before payroll approval.`;
+        scheduleNotice.hidden = !currentData.scheduleReviews && !currentData.attendanceHeld;
+        scheduleNotice.textContent = currentData.attendanceHeld ? 'This attendance estimate is held for HR review because linked punches conflict or overlap. No payable hours or lateness penalty have been inferred.' : `${currentData.scheduleReviews} clock-in(s) lack saved schedule evidence. Review the attendance details before payroll approval.`;
 
         let grossRow = document.getElementById('liveEstGross').parentElement;
         if (!document.getElementById('liveEstOTRow')) {
@@ -2399,7 +2348,7 @@ window.loadPayslipVault = async function() {
                         </div>
                         <div style="text-align: right; background: white; padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1;">
                             <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold;">Est. Net Pay</div>
-                            <div style="font-size: 18px; font-weight: 900; color: #0f172a;">₱${Math.max(0, prevEstNet).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                            <div style="font-size: 18px; font-weight: 900; color: #0f172a;">${prevData.attendanceHeld ? 'Held for HR review' : '₱'+Math.max(0, prevEstNet).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
                         </div>
                     </div>
                     
@@ -2411,7 +2360,7 @@ window.loadPayslipVault = async function() {
                         ${prevLoanStr}
                     </div>
                     
-                    ${prevData.scheduleReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Saved schedule evidence is missing for some clock-ins in this estimate. Review the attendance details before payroll approval.</p>' : ''}
+                    ${prevData.attendanceHeld ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Linked punches conflict or overlap. The attendance estimate is held for HR review; no payable hours or lateness penalty have been inferred.</p>' : prevData.scheduleReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Saved schedule evidence is missing for some clock-ins in this estimate. Review the attendance details before payroll approval.</p>' : ''}
                     <details style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
                         <summary style="font-weight: bold; color: #0f766e; cursor: pointer; outline: none; font-size: 13px; display: flex; align-items: center; gap: 8px;">
                             <span>👀 View Attendance Logs</span>
@@ -4142,3 +4091,4 @@ installStaffPortal();
 installStaffLocation();
 installStaffRegistration({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey});
 installStaffPhone();
+installStaffDocuments(window,{createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});

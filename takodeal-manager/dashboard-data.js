@@ -1,5 +1,6 @@
 // Read-only dashboard calculations. Dates use the existing 08:30 Philippine business-day cutoff.
 import { resolveScheduledShift, attendanceLateMinutes } from './payroll-safety.js';
+import { attendanceKind, latestAttendance } from './attendance-reconcile.js';
 export const money = n => '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 export const number = value => Number.isFinite(Number(value)) ? Number(value) : 0;
@@ -43,13 +44,47 @@ export function salesSummary(txs) {
     return { net, orders: txs.length, average: txs.length ? net / txs.length : 0, payments };
 }
 export function onDuty(logs, branches, now = Date.now()) {
-    const latest = new Map();
-    for (const log of [...logs].sort((a,b) => milliseconds(a.timestamp) - milliseconds(b.timestamp) || String(a.id).localeCompare(String(b.id)))) {
-        const key = log.staffName || log.staffId;
-        if (key) latest.set(key, log);
+    const ordered = [...logs].sort((a,b) => milliseconds(a.timestamp) - milliseconds(b.timestamp) || String(a.id).localeCompare(String(b.id)));
+    const idsByName = new Map(), groups = new Map();
+    for (const log of ordered) {
+        if (log.staffName && log.staffId) {
+            if (!idsByName.has(log.staffName)) idsByName.set(log.staffName, new Set());
+            idsByName.get(log.staffName).add(log.staffId);
+        }
     }
-    return [...latest.values()].filter(log => branches.includes(log.branch) && String(log.type || log.action || '').toUpperCase() === 'TIME IN')
-        .map(log => ({ ...log, needsReview: now - milliseconds(log.timestamp) > 16 * 3600000 }));
+    for (const log of ordered) {
+        const namedIds = idsByName.get(log.staffName);
+        const id = log.staffId || (namedIds?.size === 1 ? [...namedIds][0] : null);
+        const key = id ? 'id:' + id : log.staffName ? 'name:' + log.staffName : null;
+        if (!key) continue;
+        if (!groups.has(key)) groups.set(key, { id, logs: [] });
+        groups.get(key).logs.push(log);
+    }
+    const duty = [];
+    for (const group of groups.values()) {
+        let selected = group.logs.at(-1), review = false;
+        const linked = group.logs.some(log => log.timeInLogId);
+        if (linked) {
+            const originals = new Map();
+            const records = group.logs.map(log => {
+                // An exact, uniquely observed name can attach a legacy row to its ID for this read only.
+                const row = { ...log, type: log.type || log.action, staffId: log.staffId || group.id || undefined };
+                originals.set(row, log); return row;
+            });
+            try { selected = latestAttendance(records, group.id || '', selected.staffName, now); }
+            catch {
+                // Unconfirmed timestamps must not break other branches or count as verified on duty.
+                selected = records.filter(log => attendanceKind(log) === 'TIME IN').at(-1); review = true;
+            }
+            selected = originals.get(selected) || selected;
+        }
+        const isIn = linked ? attendanceKind({ ...selected, type: selected?.type || selected?.action }) === 'TIME IN'
+            : String(selected?.type || selected?.action || '').toUpperCase() === 'TIME IN';
+        if (selected && branches.includes(selected.branch) && isIn)
+            duty.push({ ...selected, needsReview: review || now - milliseconds(selected.timestamp) > 16 * 3600000,
+                ...(review ? { reviewReason:'Attendance time needs HQ review' } : {}) });
+    }
+    return duty;
 }
 export function dutyAttendance(log, schedule, profiles = {}) {
     const at = milliseconds(log.timestamp);
