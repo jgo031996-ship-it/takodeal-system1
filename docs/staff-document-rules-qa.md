@@ -22,57 +22,43 @@ its original Firebase instance; the document vault uses a separate named instanc
   change only its status/review fields together with the latest matching record.
 - `reviews/{reviewId}`: immutable scoped audit. Metadata, version and audit must
   change atomically, with matching version, actor, upload, status and timestamps.
-- `staff_document_config/current`: public GET of exactly `enabled` and
-  `policyVersion:1`; only verified Owner can write. No public list or secret fields.
+- `staff_document_config/current`: public GET of exactly `enabled`,
+  `policyVersion:2` and the fixed approved `brokerEndpoint`; only verified Owner
+  can write. No public list, secret fields or arbitrary upload destination.
 
 HQ authority comes from Owner-protected `hq_email_access/{verifiedEmail}` with
 `active:true`, saved `permissions` containing `all` or `branches`, and an exact
 allowed branch (or `All`). The existing legacy `isHQUser()` helper is deliberately
 unused. Older access records without the protected permissions field are denied.
 
-## Storage candidate and release conditions
+## Token-free broker and release conditions
 
-`staff-document-storage.rules.snippet` is a full **candidate**, not a deployed
-policy. The preceding live bucket rule was inspected on 2026-10-07: it
-allowed all reads/writes. The candidate preserves that preceding policy outside
-`staff_private_documents`, excluding the entire private prefix from that fallback.
-Unknown paths and list requests under the private prefix are denied.
+The production synthetic test on 2026-10-09 confirmed that an SDK upload creates
+a Firebase download token and that its exact anonymous token URL returns the
+JPEG even when signed-in Rules protect the object. A check of only a caller's
+forged token does not prove that the automatically generated token is private.
+The vault was disabled before real employee documents or real bindings were used.
 
-Private objects use
-`staff_private_documents/{uid}/{staffId}/{kind}/{uploadId}.jpg`.
-Only the approved active matching UID can create a new JPEG up to 2 MiB, with
-exact bounded employee/group/upload/hash metadata. `resource == null` explicitly
-prevents overwrites; no private updates or deletes are allowed. Staff can read
-its bound employee's files; verified Owner and protected scoped HQ can read them.
-Authorized flows access at most two distinct Firestore documents per Storage
-rules evaluation, as required by Firebase.
+The replacement `staff-document-storage.rules.snippet` denies **all** direct
+client operations beneath `staff_private_documents`, including Owner byte reads,
+metadata and download-link creation. The legacy fallback excludes that prefix.
+Never append a public overlapping allow rule or call a Firebase Storage SDK to
+read private bytes. Existing download tokens must be removed separately; a Rules
+change alone does not revoke a bearer URL.
 
-The Storage emulator filters the reserved `firebaseStorageDownloadTokens` key
-out of a caller's custom metadata. Its accepted filtered upload must not be
-reported as a rejected request. The authorization test verifies the resulting
-exact four custom keys and confirms that the caller's chosen token receives HTTP
-403. Arbitrary extra custom keys are rejected. The app never calls
-`getDownloadURL`; it reads private bytes through authenticated `getBlob`.
+Private objects still use
+`staff_private_documents/{uid}/{staffId}/{kind}/{uploadId}.jpg`, but a trusted
+HTTPS broker verifies current Firebase identity, approved immutable binding or
+protected HQ permissions and branch scope. It writes token-free, create-only
+GCS objects and returns authenticated JPEG bytes only for the exact committed
+current/history metadata. The client preserves atomic Firestore uploads and
+reviews. See [the exact runtime, IAM and enablement conditions](private-document-broker.md).
 
-The actual candidate must compile and pass the local authorization suite before
-publication. Back up the complete preceding live policy; do not append a private
-rule alongside its public wildcard. Enable Storage-to-Firestore rules integration
-and verify browser GET CORS for the app origins before enabling uploads.
-
-The published Firestore rule was read again on 2026-10-08 and compared with base
-commit `0edca9b4d67b051d4d3c1d3a3bf493b0e5f9bd7d`: it matches after newline
-normalization. The new document rules are additive; existing transaction and
-operational authority is preserved. The loopback authorization run passed all
-31 cases, including six protected rate-audit cases. This does not establish production Storage integration, bucket IAM,
-browser CORS or anonymous-auth setup. Keep the vault disabled until those checks
-and the Owner-approved policy publication have completed.
-
-On 2026-10-09, the Owner's Firebase console showed the existing Anonymous sign-in
-provider as enabled. The complete nine-line published Storage policy was backed
-up from the editor; it still grants unrestricted reads and writes. These
-read-only observations do not prove the new named client, Storage-to-Firestore
-service permissions or browser CORS work in production. Publish the reviewed
-Firestore rate-audit policy before deploying the new Owner profile-save code.
+The current local Rules suite passed **34/34** isolated cases on 2026-10-09.
+Existing operational and transaction authority is preserved. Local Rules and
+fake-server tests do not establish deployed IAM, token-free GCS creation or
+real authenticated end-to-end broker behavior; those are prerequisites for
+enabling the version-2 configuration. Keep uploads disabled until they pass.
 
 For a rollback, disable the document vault configuration and keep the private
 Storage prefix protected. Once private files exist, restoring the preceding
@@ -133,13 +119,15 @@ silently skip missing dependencies. It seeds fake records/bytes only in emulator
 Coverage includes unauthorized/unapproved/revoked/other-employee denial, public
 profile spoofing, protected HQ permissions and branch scope, missing-file reads,
 device approval/revocation audit, atomic upload/version/review writes, wrong
-paths/MIME/size/metadata, byte immutability, private lists, disable behavior, and
-preceding legacy transaction/image behavior. Rate checks cover actual atomic
+paths/MIME/size/metadata, direct private Storage denial even for the Owner,
+getDownloadURL denial, old-token capability and cleanup, private lists, disable
+behavior, exact broker endpoint configuration, and preceding legacy
+transaction/image behavior. Rate checks cover actual atomic
 Owner/HQ profile saves, branch and permission denial, immutable private audits,
 numeric-string rates, spoofed markers/public histories, initial setup/decreases,
 and unrelated preceding profile updates. Structural checks are explicitly
 not a Rules interpreter; record actual emulator results separately.
 
 References: [Firebase emulator Rules testing](https://firebase.google.com/docs/rules/unit-tests),
-[Storage cross-Firestore rules and the two-document limit](https://firebase.google.com/docs/storage/security/rules-conditions#enhance_with_firestore),
-[authenticated browser downloads and CORS](https://firebase.google.com/docs/storage/web/download-files).
+[GCS integration and server authorization](https://firebase.google.com/docs/storage/gcp-integration),
+[authenticated HTTP functions](https://firebase.google.com/docs/functions/http-events).

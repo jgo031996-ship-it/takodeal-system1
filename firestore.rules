@@ -448,7 +448,8 @@ service cloud.firestore {
     function docVaultEnabled() {
       return exists(/databases/$(database)/documents/staff_document_config/current)
         && get(/databases/$(database)/documents/staff_document_config/current).data.enabled == true
-        && get(/databases/$(database)/documents/staff_document_config/current).data.policyVersion == 1;
+        && get(/databases/$(database)/documents/staff_document_config/current).data.policyVersion == 2
+        && get(/databases/$(database)/documents/staff_document_config/current).data.brokerEndpoint == 'https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker';
     }
     function docVaultHQ(branch) {
       let email = isSignedIn() ? request.auth.token.get('email', '') : '';
@@ -551,9 +552,10 @@ service cloud.firestore {
       allow get: if id == 'current';
       allow list, delete: if false;
       allow create, update: if id == 'current' && docVaultOwner()
-        && request.resource.data.keys().hasOnly(['enabled', 'policyVersion'])
-        && request.resource.data.keys().hasAll(['enabled', 'policyVersion'])
-        && request.resource.data.enabled is bool && request.resource.data.policyVersion == 1;
+        && request.resource.data.keys().hasOnly(['enabled', 'policyVersion', 'brokerEndpoint'])
+        && request.resource.data.keys().hasAll(['enabled', 'policyVersion', 'brokerEndpoint'])
+        && request.resource.data.enabled is bool && request.resource.data.policyVersion == 2
+        && request.resource.data.brokerEndpoint == 'https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker';
     }
     match /staff_document_requests/{uid} {
       allow get: if (isSignedIn() && request.auth.uid == uid) || docVaultHQAll();

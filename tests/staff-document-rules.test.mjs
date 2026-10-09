@@ -67,13 +67,17 @@ test('HQ authority requires verified email and protected active permissions plus
     assert.match(fn('docVaultOwn'), /staffId == staffId/);
 });
 
-test('configuration is publicly get-only, bounded to the enable flag, and owner-write-only', () => {
+test('configuration is publicly get-only and pins the v2 broker destination for Owner writes', () => {
     const config = rule('/staff_document_config/{id}');
     assert.match(config, /allow get: if id == 'current'/);
     assert.match(config, /allow list, delete: if false/);
     assert.match(config, /docVaultOwner\(\)/);
-    assert.match(config, /hasOnly\(\['enabled', 'policyVersion'\]\)/);
-    assert.match(config, /policyVersion == 1/);
+    assert.match(config, /hasOnly\(\['enabled', 'policyVersion', 'brokerEndpoint'\]\)/);
+    assert.match(config, /hasAll\(\['enabled', 'policyVersion', 'brokerEndpoint'\]\)/);
+    for (const policy of [config, fn('docVaultEnabled')]) {
+        assert.match(policy, /policyVersion == 2/);
+        assert.match(policy, /brokerEndpoint == 'https:\/\/asia-southeast1-takodeal-pos\.cloudfunctions\.net\/staffDocumentBroker'/);
+    }
 });
 
 test('pending requests have no private grant and cannot retarget an existing identity', () => {
@@ -127,23 +131,13 @@ test('Storage candidate excludes every private-prefix path from the legacy publi
     const fallback = body(storage, 'match /{topLevel}/{rest=**}');
     assert.match(fallback, /allow read, write: if topLevel != 'staff_private_documents'/);
     assert.equal(/match \/\{allPaths=\*\*\}/.test(storage), false);
-    const privateFiles = body(storage, 'match /staff_private_documents/{uid}/{staffId}/{documentGroup}/{filename}');
-    assert.match(privateFiles, /allow get:/); assert.match(privateFiles, /owner\(\) \|\| ownEmployee\(staffId\) \|\| hqForUploader\(uid, staffId\)/);
-    assert.match(privateFiles, /allow list, update, delete: if false/);
-    assert.match(privateFiles, /allow create: if resource == null && anonymous\(\) && request.auth.uid == uid/);
-    assert.match(privateFiles, /enabled\(\) && ownEmployee\(staffId\)/);
-    assert.match(privateFiles, /size <= 2097152/); assert.match(privateFiles, /contentType == 'image\/jpeg'/);
-    assert.match(privateFiles, /metadata.size\(\) == 4/);
-    assert.match(privateFiles, /metadata.keys\(\).hasAll\(\['staffId', 'documentGroup', 'uploadId', 'sha256'\]\)/);
-    assert.equal(/allow write:/.test(privateFiles), false);
+    const privateFiles = body(storage, 'match /staff_private_documents/{rest=**}').replace(/\/\/[^\n]*/g, '').trim();
+    assert.equal(privateFiles, 'allow read, write: if false;');
 });
 
-test('Storage cross-service lookups are confined to two distinct documents per authorized flow', () => {
-    const own = body(storage, 'function ownEmployee('), enabled = body(storage, 'function enabled('), hq = body(storage, 'function hqForUploader(');
-    assert.match(own, /staff_document_devices\/\$\(uid\)/);
-    assert.match(enabled, /staff_document_config\/current/);
-    assert.match(hq, /hq_email_access\/\$\(email\)/); assert.match(hq, /staff_document_devices\/\$\(uid\)/);
-    for (const text of [own, enabled, hq]) assert.equal(/cashiers|settings|staff_private_documents/.test(text), false);
-    assert.equal((hq.match(/let .* = \/databases\//g) || []).length, 2);
-    assert.equal(/getDownloadURL|tokenURL|firebaseStorageDownloadTokens/.test(storage), false);
+test('Storage has no signed-in, cross-service or token-generation exception for private bytes', () => {
+    const policy = storage.replace(/\/\/[^\n]*/g, '');
+    assert.doesNotMatch(policy, /request\.auth|firestore\.(?:get|exists)|function\s/);
+    assert.equal((policy.match(/allow\s/g) || []).length, 2);
+    assert.doesNotMatch(policy, /getDownloadURL|firebaseStorageDownloadTokens/);
 });
