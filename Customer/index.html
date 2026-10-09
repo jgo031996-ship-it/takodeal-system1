@@ -6,7 +6,7 @@
     <title>TAKODEÁL | Order fresh takoyaki</title>
     <meta name="theme-color" content="#173f35">
     <meta name="description" content="Choose a TAKODEÁL branch, browse its menu, and order takoyaki, drinks and more for pickup or delivery.">
-    <link rel="stylesheet" href="customer-theme.css?v=branch-availability-20261009">
+    <link rel="stylesheet" href="customer-theme.css?v=customer-hub-20261009">
     <link rel="stylesheet" href="customer-browser-help.css?v=online-orders-20261008-r1">
     <script type="module" src="customer-browser-help.js?v=online-orders-20261008-r1"></script>
     
@@ -202,7 +202,8 @@
         <div id="branchCardsGrid" class="customer-branch-grid" aria-live="polite"><div class="customer-empty">Loading branches…</div></div>
         <p class="customer-locator-note">Order availability is confirmed with the branch. Pickup and delivery options are shown at checkout.</p>
         <section class="customer-partner-invite"><div><span class="customer-eyebrow">GROW WITH TAKODEÁL</span><h2>Your favorite takoyaki. Your own neighborhood business.</h2><p>Explore franchising and start a conversation with our team.</p></div><button class="customer-outline-button" onclick="window.switchScreen('partnersScreen')">Explore franchising →</button></section>
-        <footer class="customer-locator-footer">TAKODEÁL · Davao City <a href="https://www.facebook.com/Takodeal" target="_blank" rel="noopener">Need help?</a></footer>
+        <section class="customer-about" aria-labelledby="customerAboutTitle"><span class="customer-eyebrow">OUR STORY</span><h2 id="customerAboutTitle">About TAKODEÁL</h2><p id="customerAboutMeta" class="customer-about-meta">TAKODEÁL · Davao City · Since 2023</p><p id="customerAboutText" hidden></p></section>
+        <footer class="customer-locator-footer"><span data-customer-site-footer>TAKODEÁL · Davao City · Since 2023</span><a href="https://www.facebook.com/Takodeal" target="_blank" rel="noopener">Need help?</a></footer>
     </main>
 
     <!-- ========================================== -->
@@ -221,7 +222,7 @@
         <div id="customerMenuMessage" class="customer-empty hidden" role="status"></div>
         <div id="liveMenuContainer" class="customer-menu-content" aria-live="polite"><div class="customer-empty">Loading menu…</div></div>
         <div id="customerNoResults" class="customer-empty hidden">No matching items. Try another search or category.</div>
-        <footer class="customer-menu-footer"><span>TAKODEÁL · Your ideal takoyaki</span><div><button class="customer-text-button" onclick="window.switchScreen('partnersScreen')">Franchise with us</button><button class="customer-text-button" onclick="window.switchScreen('reviewsScreen')">Customer reviews</button><a href="https://www.facebook.com/Takodeal" target="_blank" rel="noopener">Contact us ↗</a></div></footer>
+        <footer class="customer-menu-footer"><span data-customer-site-footer>TAKODEÁL · Davao City · Since 2023</span><div><button class="customer-text-button" onclick="window.switchScreen('partnersScreen')">Franchise with us</button><button class="customer-text-button" onclick="window.switchScreen('reviewsScreen')">Customer reviews</button><a href="https://www.facebook.com/Takodeal" target="_blank" rel="noopener">Contact us ↗</a></div></footer>
     </main>
     <button id="customerMobileCart" class="customer-mobile-cart hidden" onclick="window.openCheckoutModal()"><span>View cart <b id="customerMobileCount">0</b></span><strong id="customerMobileTotal">₱0.00</strong></button>
 
@@ -249,7 +250,7 @@
             </div><label class="customer-franchise-consent" for="leadConsent"><input id="leadConsent" type="checkbox" required><span>I agree that TAKODEÁL may contact me about this franchise inquiry.</span></label><p id="customerLeadMessage" role="status" aria-live="polite" class="customer-lead-message" hidden></p><button id="btnSubmitLead" type="submit" class="customer-primary-button">Send my franchise inquiry →</button><small class="customer-franchise-privacy">Your details go to the TAKODEÁL management team for this inquiry.</small></form>
         </section>
         <section class="customer-franchise-section customer-franchise-faq" aria-labelledby="franchiseFAQTitle"><div class="customer-franchise-section-heading"><span class="customer-eyebrow">BEFORE YOU BEGIN</span><h2 id="franchiseFAQTitle">A few helpful answers.</h2></div><div><details><summary>How much is the investment?</summary><p>Ask for the current franchise prospectus. Pricing, inclusions, and any ongoing fees depend on the package and are confirmed by our team.</p></details><details><summary>Can I suggest a location?</summary><p>Yes. Include your preferred city or proposed site in the inquiry so the team can discuss its suitability and requirements with you.</p></details><details><summary>Can you help me choose a format?</summary><p>Choose “Help me choose a format” in the form. Tell us about your space so we can discuss the available options.</p></details><details><summary>What happens after I send an inquiry?</summary><p>The TAKODEÁL team will receive your details and contact you to discuss the prospectus and next steps.</p></details></div></section>
-        <footer class="customer-menu-footer"><span>TAKODEÁL · Your ideal takoyaki</span><button class="customer-text-button" onclick="window.openCustomerMenu()">Back to the menu →</button></footer>
+        <footer class="customer-menu-footer"><span data-customer-site-footer>TAKODEÁL · Davao City · Since 2023</span><button class="customer-text-button" onclick="window.openCustomerMenu()">Back to the menu →</button></footer>
     </main>
 
     <!-- ========================================== -->
@@ -466,7 +467,7 @@
                 </div>
 
                 <div id="native-online-div" class="hidden text-center bg-darkbg p-4 rounded-xl border border-zinc-800">
-                    <img src="QR.jpg" class="w-40 mx-auto mb-2 rounded-lg border border-zinc-700">
+                    <img src="QR.jpg" alt="TAKODEÁL InstaPay payment QR" width="456" height="458" class="w-40 mx-auto mb-2 rounded-lg border border-zinc-700">
                     <p class="text-[11px] text-zinc-400 mb-3 font-bold">Scan to pay via Instapay</p>
                     <input type="text" id="native-ref" placeholder="Reference Number (Optional)" class="w-full p-3 rounded-xl border border-zinc-700 bg-black text-white outline-none focus:border-brandred font-bold text-center">
                 </div>
@@ -501,6 +502,8 @@
 
         import { buildMenu, escapeHTML, encodeItem, withinBranchHours, readMenuCache, writeMenuCache, readCart, validateCart, MENU_TTL } from './customer-menu.js?v=customer-repair-20261004';
         import {franchiseInquiry} from './customer-franchise.js?v=customer-repair-20261004';
+        import {CUSTOMER_SITE_PROFILE_DOC, branchOpeningNotice} from './customer-site-settings.js?v=customer-hub-20261009';
+        import {renderCustomerSiteProfile} from './customer-site-view.js?v=customer-hub-20261009';
         const customerStorage=(()=>{try{return localStorage;}catch{return {getItem:()=>null,setItem:()=>{},removeItem:()=>{}};}})();
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -643,12 +646,12 @@
 
         window.confirmCustomerBranchAvailable = async function(branchName) {
             const branch=window.customerBranchData.get(branchName);
-            if (!branch || !withinBranchHours(branch.operatingHours)) return false;
+            if (!branch || branchOpeningNotice(branch).soonToOpen || !withinBranchHours(branch.operatingHours)) return false;
             try {
                 const status=await tkCustomerGetServerDoc(doc(db,'settings','status_'+branchName));
                 const accepting=await window.TKCustomerGate.inspect(branchName,status);
                 const currentBranch=window.customerBranchData.get(branchName);
-                return Boolean(accepting && currentBranch) && withinBranchHours(currentBranch.operatingHours);
+                return Boolean(accepting && currentBranch) && !branchOpeningNotice(currentBranch).soonToOpen && withinBranchHours(currentBranch.operatingHours);
             } catch {return false;}
         };
         window.showCustomerBranchUnavailable = async function() {
@@ -670,7 +673,7 @@
                 clearCart=true;
             }
             const branch=window.customerBranchData.get(branchName);
-            if (!branch || !withinBranchHours(branch.operatingHours)) {
+            if (!branch || branchOpeningNotice(branch).soonToOpen || !withinBranchHours(branch.operatingHours)) {
                 await window.showCustomerBranchUnavailable(); return false;
             }
             if (clearCart) {window.cart=[]; window.updateCartUI();}
@@ -705,10 +708,22 @@
                 document.getElementById('liveMenuContainer').replaceChildren();
             }
         };
+        window.loadCustomerSiteProfile = async function() {
+            if (window.customerSiteProfileLoading) return window.customerSiteProfileLoading;
+            window.customerSiteProfileLoading=(async()=>{
+                try {
+                    const snapshot=await getDoc(doc(db,'settings',CUSTOMER_SITE_PROFILE_DOC));
+                    window.customerSiteProfile=snapshot.exists()?snapshot.data():{};
+                    renderCustomerSiteProfile(document,window.customerSiteProfile);
+                } catch {renderCustomerSiteProfile(document,window.customerSiteProfile || {});}
+            })();
+            try {await window.customerSiteProfileLoading;} finally {window.customerSiteProfileLoading=null;}
+        };
         window.loadBranchLocator = async function() {
             const grid=document.getElementById('branchCardsGrid');
             if (!grid || window.customerBranchesLoading) return;
             window.customerBranchesLoading=true;
+            window.loadCustomerSiteProfile();
             try {
                 const snap=await getDocs(query(collection(db,'branches'))), branches=[];
                 snap.forEach(entry=>{const data=entry.data();if (typeof data.name==='string' && data.name!=='Main Office') branches.push(data);});
@@ -717,7 +732,8 @@
                     const status=await tkCustomerGetServerDoc(doc(db,'settings','status_'+branch.name)).catch(()=>null);
                     const accepting=await window.TKCustomerGate.inspect(branch.name,status);
                     const inHours=withinBranchHours(branch.operatingHours);
-                    return {...branch,accepting:accepting && inHours,statusText:!inHours?'Closed':accepting?'Accepting orders':'Orders paused'};
+                    const notice=branchOpeningNotice(branch);
+                    return {...branch,accepting:accepting && inHours && !notice.soonToOpen,openingNotice:notice,statusText:notice.soonToOpen?notice.label:!inHours?'Closed':accepting?'Accepting orders':'Orders paused'};
                 }));
                 entries.sort((a,b)=>Number(b.accepting)-Number(a.accepting) || a.name.localeCompare(b.name));
                 document.getElementById('branchCountText').textContent=`${entries.length} branches · ${entries.filter(b=>b.accepting).length} accepting orders`;
@@ -727,7 +743,8 @@
                     const action=b.accepting
                         ? `<button type="button" class="customer-primary-button" onclick="window.selectBranchAndEnter(decodeURIComponent('${encodeURIComponent(b.name).replace(/'/g,'%27')}'))">View menu →</button>`
                         : `<button type="button" class="customer-primary-button" disabled aria-disabled="true" aria-label="${name} is unavailable for orders">Unavailable</button>`;
-                    return `<article class="customer-branch-card ${b.accepting?'':'customer-branch-unavailable'}"><div class="customer-branch-photo"><img src="${escapeHTML(b.storefrontImage || 'customer-mobile-logo.jpg')}" alt="${name} branch" loading="lazy" onerror="this.onerror=null;this.src='customer-mobile-logo.jpg'"><span class="customer-status ${b.accepting?'open':'waiting'}">${escapeHTML(b.statusText)}</span></div><div class="customer-branch-card-body"><h2>${name}</h2><p class="customer-branch-location">${escapeHTML(b.publicAddress || b.address || 'Davao City')}</p><p class="customer-branch-hours">${escapeHTML(hours)}</p><div class="customer-branch-card-bottom">${phone.length>=10?`<a href="tel:${escapeHTML(phone)}">Call branch ↗</a>`:'<span>Pickup & delivery</span>'}${action}</div></div></article>`;
+                    const watermark=b.openingNotice.soonToOpen?`<span class="customer-opening-watermark" aria-hidden="true">${escapeHTML(b.openingNotice.label)}</span>`:'';
+                    return `<article class="customer-branch-card ${b.accepting?'':'customer-branch-unavailable'}"><div class="customer-branch-photo"><img src="${escapeHTML(b.storefrontImage || 'customer-mobile-logo.jpg')}" alt="${name} branch" loading="lazy" onerror="this.onerror=null;this.src='customer-mobile-logo.jpg'"><span class="customer-status ${b.accepting?'open':'waiting'}">${escapeHTML(b.statusText)}</span>${watermark}</div><div class="customer-branch-card-body"><h2>${name}</h2><p class="customer-branch-location">${escapeHTML(b.publicAddress || b.address || 'Davao City')}</p><p class="customer-branch-hours">${escapeHTML(hours)}</p><div class="customer-branch-card-bottom">${phone.length>=10?`<a href="tel:${escapeHTML(phone)}">Call branch ↗</a>`:'<span>Pickup & delivery</span>'}${action}</div></div></article>`;
                 }).join('') || '<div class="customer-empty">No branches are listed yet. Please check back shortly.</div>';
             } catch(error) {grid.innerHTML='<div class="customer-empty">Branches could not load. Check your connection and use Refresh availability to try again.</div>';}
             finally {window.customerBranchesLoading=false;}
@@ -1345,12 +1362,17 @@
 
             let isDelivery = type.includes('Delivery');
             
-            document.getElementById('native-time-div').style.display = type.includes('Advance') ? 'block' : 'none';
-            document.getElementById('native-delivery-div').style.display = isDelivery ? 'block' : 'none';
-            document.getElementById('native-online-div').style.display = pay === 'Online' ? 'block' : 'none';
-            document.getElementById('native-cash-div').style.display = pay === 'Cash' ? 'block' : 'none';
-            document.getElementById('native-pickup-note').style.display = (!isDelivery && pay === 'Cash') ? 'block' : 'none';
-            document.getElementById('native-cod-div').style.display = (isDelivery && pay === 'Cash') ? 'block' : 'none';
+            const showSection = (id, visible) => {
+                const section = document.getElementById(id);
+                section.classList.toggle('hidden', !visible);
+                section.style.removeProperty('display');
+            };
+            showSection('native-time-div', type.includes('Advance'));
+            showSection('native-delivery-div', isDelivery);
+            showSection('native-online-div', pay === 'Online');
+            showSection('native-cash-div', pay === 'Cash');
+            showSection('native-pickup-note', !isDelivery && pay === 'Cash');
+            showSection('native-cod-div', isDelivery && pay === 'Cash');
 
             let deliveryFeeRow = document.getElementById('deliveryFeeRow');
             let totalDisplay = document.getElementById('checkoutModalTotal');
@@ -2248,7 +2270,7 @@ function takodealBranchAvailable(data, now = Date.now(), policy, lease) {
     const selected = document.getElementById('selectedBranch')?.value;
     if (!observedStatus || observedBranch !== selected) return;
     const branch=window.customerBranchData.get(observedBranch);
-    const accepting = api.available(observedStatus, observedBranch) && withinBranchHours(branch?.operatingHours);
+    const accepting = api.available(observedStatus, observedBranch) && !branchOpeningNotice(branch).soonToOpen && withinBranchHours(branch?.operatingHours);
     window.isStoreAcceptingOrders = accepting;
     if (shown === accepting) return;
     shown = accepting;
@@ -2340,6 +2362,9 @@ function takodealBranchAvailable(data, now = Date.now(), policy, lease) {
         }
         // A committed retry returns its original receipt before checking today's menu.
         // New orders must still use current branch categories, prices and add-ons.
+        const currentBranch=await tx.get(branchSnap.docs[0].ref);
+        if (!currentBranch.exists() || branchOpeningNotice(currentBranch.data()).soonToOpen)
+            throw new Error('This branch is opening soon and is not accepting orders yet. Please choose another branch.');
         if (!withinBranchHours(branch.operatingHours)) throw new Error('This branch has closed. Please choose another branch.');
         const subtotal=validateCart(payload.items,freshMenu,branch);
         if (!Number.isFinite(payload.totalAmount) || payload.totalAmount<subtotal || (!payload.orderType?.includes('Delivery') && Math.abs(payload.totalAmount-subtotal)>0.005)) throw new Error('Please review the order total before continuing.');
