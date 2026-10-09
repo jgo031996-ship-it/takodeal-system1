@@ -22,6 +22,8 @@ import { installRecipeReplacement } from './recipe-bulk.js';
 import { installCustomerHubSettings } from './customer-hub-settings.js';
 import {installRiderManagementSafety} from './rider-management.js';
 import {installRiderManagementViews} from './rider-management-view.js';
+import {renderStockRequestReview} from './stock-request-review.js';
+import {loadStockRequestDraft} from './dispatch-request-draft.js';
 import { loadRecipeState, createRecipeBatch, operationFor, recipePlan, saveRecipePlan, readRecipeRevision, recipeOperationApplied, loadInventoryDeletionState, inventoryDeletionPlan } from './recipe-changes.js';
 import { approveRemittanceAtomic } from './cash-settlement.js';
 import { legacyRemittanceDuplicates, rejectLegacyDuplicateAtomic } from './remittance-review.js';
@@ -1837,229 +1839,43 @@ window.reviewPurchaseOrder = async function(poId) {
         if (!snap.exists()) return Swal.fire('Error', 'This request could not be found.', 'error');
         
         let po = snap.data();
-        let dateStr = po.timestamp ? (po.timestamp.toDate ? po.timestamp.toDate() : new Date(po.timestamp)).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
         
         const hqSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", "Main Office")));
-        let hqStock = {};
-        let hqDetails = {}; 
+        let hqStock = Object.create(null);
+        let hqDetails = Object.create(null); 
         hqSnap.forEach(d => {
-            hqStock[d.data().name] = parseFloat(d.data().currentStock || 0);
+            hqStock[d.data().name] = d.data().currentStock;
             hqDetails[d.data().name] = d.data(); 
         });
 
-        let html = `
-            <div style="margin-bottom: 15px;">
-                <button onclick="window.deleteStockRequest('${poId}')" style="width: 100%; padding: 14px; background: #fef2f2; border: 2px solid #fca5a5; color: #b91c1c; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.15); text-transform: uppercase;">
-                    🗑️ Permanently Delete Request
-                </button>
-            </div>
-
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: left;">
-                <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Requested By</div>
-                <div style="font-size: 15px; color: #0f172a; font-weight: 900; margin-bottom: 10px;">👤 ${po.requestedBy || 'Staff'}</div>
-                <div style="font-size: 11px; color: #64748b; font-weight: bold; text-transform: uppercase;">Date Submitted</div>
-                <div style="font-size: 14px; color: #334155; font-weight: bold;">📅 ${dateStr}</div>
-            </div>
-
-            <!-- 🔥 THE FIX: table-layout: fixed and centered columns pull everything together perfectly! -->
-            <div style="max-height: 40vh; overflow-y: auto; overflow-x: hidden; text-align: left; border: 1px solid #cbd5e1; border-radius: 8px; border-bottom: none;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed;">
-                <thead style="background: #0f172a; color: white; position: sticky; top: 0; z-index: 10;">
-                    <tr>
-                        <th style="padding: 12px 15px; text-align: left; width: 50%;">Item Description</th>
-                        <th style="padding: 12px 15px; text-align: center; width: 25%;">Count / Request</th>
-                        <th style="padding: 12px 15px; text-align: center; width: 25%;">Status</th>
-                    </tr>
-                </thead>
-                <tbody>`;
-        
-        if (po.items && po.items.length > 0) {
-            po.items.forEach(item => {
-                let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.physicalStock !== undefined);
-                let badgeText = item.requestType || 'Request';
-                
-                if (badgeText === 'Delayed / Backlogged' && isAudit) {
-                    let phys = item.physicalStock !== undefined ? item.physicalStock : (item.displayQty || item.qty || 0);
-                    badgeText = (phys <= 0) ? 'Out of Stock' : 'Low Stock';
-                }
-
-                let alertColor = badgeText === 'Out of Stock' ? '#dc2626' : (badgeText === 'Low Stock' ? '#d97706' : (badgeText === 'Lost in Transit' ? '#b91c1c' : '#0284c7'));
-                
-                // 🧠 AI Color & Label Logic
-                let isAI = badgeText.includes('AI') || badgeText.includes('Maintaining') || badgeText.includes('Restock') || badgeText.includes('Par Fill');
-                if (isAI) alertColor = '#0ea5e9';
-
-                let alertStyle = badgeText === 'Lost in Transit' ? `color: white; background: ${alertColor}; border: 1px solid #7f1d1d;` : `color: ${alertColor}; background: white; border: 1px solid ${alertColor}50;`;
-                let rowBg = badgeText === 'Lost in Transit' ? '#fff1f2' : 'white';
-
-                let itemName = item.itemName || item.name;
-                let hqData = hqDetails[itemName] || {};
-                
-                let masterCRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(item.convRate) || parseFloat(item.conversionRate) || 1;
-                
-                let printUom = hqData.purchaseUom || hqData.purchUom || item.purchaseUom || item.displayUom || item.uom;
-                let baseUom = hqData.uom || hqData.baseUom || item.uom || item.baseUom;
-
-                let formatNum = (num) => (num % 1 === 0 ? num : parseFloat(num).toFixed(2));
-
-                let qtyDisplay = '';
-                if (isAudit) {
-                    let physBase = item.physicalStock !== undefined ? parseFloat(item.physicalStock) : (parseFloat(item.qty) || 0);
-                    let sysBase = item.systemStock !== undefined ? parseFloat(item.systemStock) : '---';
-
-                    let physCount = item.displayQty !== undefined ? parseFloat(item.displayQty) : (physBase / masterCRate);
-                    let sysCount = sysBase !== '---' ? (sysBase / masterCRate) : '---';
-                    
-                    printUom = item.displayUom || printUom;
-
-                    let topLabel = isAI ? 'Qty Need' : 'Phys';
-                    let topColor = isAI ? '#0ea5e9' : '#b91c1c';
-
-                    // Center aligned text pulls it right into the middle of the box!
-                    qtyDisplay = `
-                        <div style="font-size: 13px; color: ${topColor}; font-weight: 900; text-align: center; white-space: nowrap;">${topLabel}: ${formatNum(physCount)} <span style="font-size:10px;">${printUom}</span></div>
-                        <div style="font-size: 11px; color: #64748b; font-weight: bold; text-align: center; white-space: nowrap;">Sys: ${sysCount !== '---' ? formatNum(sysCount) : '---'} <span style="font-size:10px;">${printUom}</span></div>
-                    `;
-                } else {
-                    let reqBase = parseFloat(item.qty) || 0;
-                    let reqCount = reqBase / masterCRate;
-                    qtyDisplay = `<div style="font-weight: 900; color: #0ea5e9; font-size: 14px; text-align: center; white-space: nowrap;">Req: ${formatNum(reqCount)} <span style="font-size: 10px; color: #64748b;">${printUom}</span></div>`;
-                }
-
-                html += `
-                    <tr style="border-bottom: 1px solid #e2e8f0; background: ${rowBg};">
-                        <td style="padding: 12px 15px; font-weight: bold; color: #334155; vertical-align: middle; word-wrap: break-word;">
-                            ${itemName}<br>
-                            <span style="font-size:10px; color:#64748b; font-weight:normal;">HQ Stock: ${formatNum(hqStock[itemName] || 0)} ${baseUom}</span>
-                        </td>
-                        <td style="padding: 12px 15px; text-align: center; vertical-align: middle;">${qtyDisplay}</td>
-                        <td style="padding: 12px 15px; text-align: center; vertical-align: middle;">
-                            <span style="${alertStyle} padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 11px; white-space: normal; display: inline-block; line-height: 1.2;">${badgeText}</span>
-                        </td>
-                    </tr>
-                `;
-            });
-        }
-        html += `</tbody></table></div>`;
-        
-        html += `
-            <div style="margin-top: 15px;">
-                <button type="button" onclick="window.processRejectRequest('${poId}')" style="width: 100%; background: #dc2626; color: white; border: none; padding: 12px 15px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.2); transition: 0.2s;">
-                    🛑 Reject Request & Notify Branch
-                </button>
-            </div>
-        `;
-        
-        let titleTxt = po.type === 'Internal Request' ? `📢 Issue Report: ${po.branch}` : `📦 Request from ${po.branch}`;
-        
-        let actionResult = await Swal.fire({
-            title: titleTxt, 
-            html: html, 
+        const review = renderStockRequestReview(po,{poId,hqStock,hqDetails});
+        const actionResult = await Swal.fire({
+            titleText: review.titleText,
+            html: review.html,
             showCancelButton: true, showDenyButton: true,
-            confirmButtonColor: '#16a34a', cancelButtonColor: '#64748b', denyButtonColor: '#d97706',
-            confirmButtonText: '🛒 Load to Dispatch Cart', denyButtonText: '⏸️ Postpone / Set Aside', cancelButtonText: 'Close Window',
-            width: '800px', // Adjusted to keep it perfectly proportioned
-            customClass: { popup: 'rounded-2xl shadow-xl' }
+            showConfirmButton: Array.isArray(po.items) && po.items.length > 0,
+            showCloseButton: true, closeButtonAriaLabel: 'Close request review',
+            confirmButtonText: 'Add to dispatch draft',
+            denyButtonText: 'Postpone request', cancelButtonText: 'Close',
+            confirmButtonColor: '#12644f', cancelButtonColor: '#eef3ec', denyButtonColor: '#b46e13',
+            focusConfirm: false, focusCancel: true, reverseButtons: true,
+            width: '1040px',
+            customClass: {popup: 'stock-request-review-popup', htmlContainer: 'stock-request-review-html', actions: 'stock-request-review-buttons'}
         });
 
         if (actionResult.isConfirmed) {
-            if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
-            
-            let storedDest = localStorage.getItem('takodeal_dispatch_to');
-            if (window.dispatchCart.length > 0 && storedDest && storedDest !== po.branch) {
-                await window.clearDispatchCart(); 
-                Swal.fire({
-                    toast: true, position: 'top-end', icon: 'info',
-                    title: `Previous cart set aside. Loading ${po.branch}...`,
-                    showConfirmButton: false, timer: 3000
-                });
+            Swal.fire({titleText:'Preparing dispatch draft',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+            const draftResult = await loadStockRequestDraft(window,{poId,po,hqDetails},{storage:localStorage,document});
+            if (draftResult.blockedDestination) {
+                return Swal.fire({titleText:'Finish the current dispatch draft first',text:'Your draft is for '+draftResult.destination+'. Send or set aside that draft before adding a request for '+draftResult.branch+'.',icon:'info'});
             }
-
-            if (window.dispatchCart.length === 0) {
-                Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
-            }
-
-            let totalPenaltiesIssued = 0;
-
-            for (let reqItem of po.items) {
-                let itemName = reqItem.itemName || reqItem.name;
-                let hqData = hqDetails[itemName] || {}; 
-
-                let pUom = hqData.purchaseUom || hqData.purchUom || reqItem.purchaseUom || reqItem.uom || 'units';
-                let bUom = hqData.uom || hqData.baseUom || reqItem.uom || reqItem.baseUom || 'units';
-                let cRate = parseFloat(hqData.conversionRate) || parseFloat(hqData.conversion) || parseFloat(reqItem.convRate) || parseFloat(reqItem.conversionRate) || 1;
-
-                let originalBaseQty = parseFloat(reqItem.qty) || 0;
-                let originalDisplayQty = originalBaseQty / cRate; 
-                
-                let physStockToPass = reqItem.physicalStock !== undefined ? reqItem.physicalStock : originalBaseQty;
-                let sysStockToPass = reqItem.systemStock !== undefined ? reqItem.systemStock : 0;
-                
-                let isAudit = (reqItem.requestType === 'Low Stock' || reqItem.requestType === 'Out of Stock' || reqItem.physicalStock !== undefined);
-                let badgeText = reqItem.requestType || 'Request';
-                if (badgeText === 'Delayed / Backlogged' && isAudit) {
-                    badgeText = (physStockToPass <= 0) ? 'Out of Stock' : 'Low Stock';
-                }
-                
-                let rawReqQty = isAudit ? 0 : originalDisplayQty;
-                let baseReqQty = isAudit ? 0 : originalBaseQty;
-
-                let mappedItem = {
-                    ...reqItem, 
-                    rawQty: rawReqQty,
-                    qty: baseReqQty,
-                    origRawQty: rawReqQty, 
-                    origBaseQty: baseReqQty,
-                    purchaseUom: pUom,
-                    baseUom: bUom,
-                    conversionRate: cRate,
-                    selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
-                    hqStock: parseFloat(hqData.currentStock) || 0,
-                    requestType: badgeText,
-                    physicalStock: physStockToPass, 
-                    systemStock: sysStockToPass
-                };
-
-                mappedItem.convRate = (mappedItem.selectedUom === 'purch') ? cRate : 1;
-                mappedItem.friendlyUom = (mappedItem.selectedUom === 'purch') ? pUom : bUom;
-
-                let existing = window.dispatchCart.find(i => (i.itemName || i.name) === itemName);
-                
-                if (existing) {
-                    existing.rawQty = (parseFloat(existing.rawQty) || 0) + rawReqQty;
-                    existing.qty = (parseFloat(existing.qty) || 0) + baseReqQty;
-                    existing.origRawQty = existing.rawQty;
-                    existing.origBaseQty = existing.qty;
-                    existing.requestType = badgeText;
-                    existing.physicalStock = physStockToPass;
-                    existing.systemStock = sysStockToPass;
-                    existing.purchaseUom = mappedItem.purchaseUom;
-                    existing.baseUom = mappedItem.baseUom;
-                    existing.conversionRate = mappedItem.conversionRate;
-                    existing.hqStock = mappedItem.hqStock;
-                } else {
-                    window.dispatchCart.push(mappedItem);
-                }
-            }
-
-            document.getElementById('dispFrom').value = "Main Office"; 
-            document.getElementById('dispTo').value = po.branch;
-            
-            let activePos = localStorage.getItem('takodeal_active_po') || "";
-            let poArray = activePos ? activePos.split(',') : [];
-            if (!poArray.includes(poId)) poArray.push(poId);
-            
-            localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-            localStorage.setItem('takodeal_dispatch_to', po.branch);
-            localStorage.setItem('takodeal_active_po', poArray.join(','));
-            
-            await window.updateDoc(docRef, { status: "Drafting", managerMessage: 'Approved. Inventory synced and loaded into Dispatch Cart.', processedAt: window.serverTimestamp() });
-            
-            window.renderDispatchCart(); 
+            window.renderDispatchCart();
             window.loadDispatchLogs();
-            
-            Swal.fire({title: 'Loaded to Cart! 🛒', text: `Items moved to Dispatch for ${po.branch}.`, icon: 'success', timer: 2000, showConfirmButton: false});
-            
+            if (draftResult.alreadyLoaded) {
+                return Swal.fire({titleText:'Already in your dispatch draft',text:'This request is already loaded. Your edited quantities were kept.',icon:'info'});
+            }
+            Swal.fire({titleText:'Request added to dispatch draft',text:'Review the quantities for '+draftResult.branch+', then confirm dispatch when ready.',icon:'success'});
+
         } else if (actionResult.isDenied) {
             const { value: rejectReason } = await Swal.fire({
                 title: 'Postpone Request',
@@ -2079,7 +1895,7 @@ window.reviewPurchaseOrder = async function(poId) {
                 window.loadDispatchLogs(); 
             }
         }
-    } catch(e) { console.error(e); Swal.fire('Error', 'Failed to load details.', 'error'); }
+    } catch(e) { console.error(e); Swal.fire({titleText:'Request needs attention',text:e.message || 'The request could not be loaded. Please try again.',icon:'error'}); }
 };
 
 // ==========================================
@@ -21721,7 +21537,7 @@ runManagerDomReady(() => {
         // Find every table currently on the screen
         document.querySelectorAll('table').forEach(table => {
             // Payslips are compact print documents, not wide app data grids.
-            if (table.closest('#printablePayslip')) return;
+            if (table.closest('#printablePayslip,.stock-request-review-popup')) return;
             // If the table isn't already wrapped, wrap it!
             if (!table.parentElement.classList.contains('mobile-table-wrapper') && !table.closest('.mobile-table-wrapper')) {
                 let wrapper = document.createElement('div');
