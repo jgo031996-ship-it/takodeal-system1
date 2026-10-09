@@ -6,6 +6,7 @@ import {randomUUID} from 'node:crypto';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {buildMenu,withinBranchHours,readCart,readMenuCache,writeMenuCache,validateCart,escapeHTML,encodeItem,MENU_TTL,MENU_CACHE_KEY} from '../Customer/customer-menu.js';
 import {franchiseInquiry} from '../Customer/customer-franchise.js';
+import {branchOpeningNotice} from '../Customer/customer-site-settings.js';
 const item=(name,category='Takoyaki',price=80,other={})=>({id:name,name,category,price,...other});
 const branch={name:'Cabantian',allowedCategories:['Takoyaki','Coffee']};
 const storage=()=>{const data=new Map();return {getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v),removeItem:k=>data.delete(k)};};
@@ -93,7 +94,7 @@ function gateFixture() {
  const html=readFileSync(new URL('../Customer/index.html',import.meta.url),'utf8'),start=html.indexOf('function takodealBranchAvailable'),end=html.indexOf('</script>',start);
  const snapshot=ref=>({exists:()=>h.get(ref.path)!==undefined,data:()=>h.get(ref.path)});
  const state={currentUser:{email:'customer@example.test'},customerCartBranch:'Cabantian',customerBranchData:new Map(),fetchCachedMenu:async()=>state.menu};state.menu=raw;
- const context=vm.createContext({window:state,navigator:{onLine:true},sessionStorage:storage(),crypto:{randomUUID},setInterval:()=>{},withinBranchHours,validateCart,Date,db:h.api.db,doc:h.api.doc,collection:h.api.collection,query:h.api.query,where:h.api.where,tkCustomerTransaction:h.api.runTransaction,tkCustomerGetServerDoc:async ref=>snapshot(ref),getDocsFromServer:async q=>{const result=await h.api.getDocsFromServer(q);return {...result,size:result.docs.length};}});
+ const context=vm.createContext({window:state,navigator:{onLine:true},sessionStorage:storage(),crypto:{randomUUID},setInterval:()=>{},withinBranchHours,branchOpeningNotice,validateCart,Date,db:h.api.db,doc:h.api.doc,collection:h.api.collection,query:h.api.query,where:h.api.where,tkCustomerTransaction:h.api.runTransaction,tkCustomerGetServerDoc:async ref=>snapshot(ref),getDocsFromServer:async q=>{const result=await h.api.getDocsFromServer(q);return {...result,size:result.docs.length};}});
  vm.runInContext(html.slice(start,end),context);const payload={orderCode:'TEST-001',branch:'Cabantian',customerEmail:state.currentUser.email,orderType:'Takeout',items:[cartLine()],totalAmount:190};return {h,state,gate:state.TKCustomerGate,payload};
 }
 test('actual submission preserves one order through repeated retries and lost acknowledgements',async()=>{
@@ -106,6 +107,17 @@ test('actual submission validates fresh server menu and authentication before wr
 test('actual transaction refuses paused branches and stale cashier leases without leaving an offline write',async()=>{
  const {h,gate,payload}=gateFixture();h.put('settings/status_Cabantian',{mobileOrdersActive:false});await assert.rejects(gate.saveOrder(payload),/unavailable/);
  h.put('settings/status_Cabantian',{mobileOrdersActive:true});h.put('offline_policy/Cabantian',{requireCashierForCustomerOrders:true});h.put('cashier_leases/Cabantian',{seenAt:{seconds:0}});await assert.rejects(gate.saveOrder(payload),/unavailable/);assert.equal([...h.docs.keys()].filter(k=>k.startsWith('incoming_orders/')).length,0);
+});
+test('opening-soon branches reject new orders even when their order switch is active',async()=>{
+ const {h,gate,payload}=gateFixture();h.put('branches/Cabantian',{...branch,customerSoonToOpen:true,customerOpeningLabel:'Opening this December'});
+ await assert.rejects(gate.saveOrder(payload),/opening soon/);
+ assert.equal([...h.docs.keys()].filter(k=>k.startsWith('incoming_orders/')).length,0);
+});
+test('a committed order retry still returns its original receipt after a branch is marked opening soon',async()=>{
+ const {h,gate,payload}=gateFixture();h.loseNextAck();await assert.rejects(gate.saveOrder(payload),/Connection lost/);
+ h.put('branches/Cabantian',{...branch,customerSoonToOpen:true});
+ assert.equal(await gate.saveOrder(payload),'TEST-001');
+ assert.equal([...h.docs.keys()].filter(k=>k.startsWith('incoming_orders/')).length,1);
 });
 
 test('legacy empty branch categories can submit a valid order while internal items remain hidden',async()=>{

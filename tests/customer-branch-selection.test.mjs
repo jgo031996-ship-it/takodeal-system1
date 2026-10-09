@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {withinBranchHours,escapeHTML,validateCart} from '../Customer/customer-menu.js';
+import {branchOpeningNotice} from '../Customer/customer-site-settings.js';
 
 const html=readFileSync(new URL('../Customer/index.html',import.meta.url),'utf8');
 function section(start,end) {
@@ -41,6 +42,7 @@ function harness() {
         isStoreAcceptingOrders:true,currentDeliveryFee:100,customerSelectedCategory:'Takoyaki',nativeMap:{remove(){h.mapRemovals++;}},nativeMarker:{id:'keep marker'},
         closeItemModal(){h.closedItems++;},closeCheckoutModal(){h.closedCheckout++;},
         async renderMenuForBranch(name){renders.push(name);if(h.renderWait)await h.renderWait.promise;},listenToStoreStatus(){h.statusSubscriptions++;},
+        loadCustomerSiteProfile(){},
         updateCartUI(){cartUpdates.push(window.cart);},switchScreen:name=>screens.push(name)};
     class ClockDate extends Date {constructor(...args){super(...(args.length?args:[now.value]));}static now(){return now.value;}}
     const read=async(ref,server)=>{
@@ -49,7 +51,7 @@ function harness() {
         if(server && h.statusWait && ref.path==='settings/status_Maa')await h.statusWait.promise;
         return snap(documents.get(ref.path));
     };
-    const context=vm.createContext({window,Date:ClockDate,withinBranchHours:hours=>withinBranchHours(hours,new Date(now.value)),escapeHTML,validateCart,
+    const context=vm.createContext({window,Date:ClockDate,withinBranchHours:hours=>withinBranchHours(hours,new Date(now.value)),escapeHTML,validateCart,branchOpeningNotice,
         document:{getElementById:node,createElement:()=>({value:'',textContent:''}),querySelectorAll:()=>[]},
         Swal:{async fire(options){dialogs.push(options);return options?.showCancelButton?h.answer(options):{isConfirmed:true};}},
         db:{},doc:(_db,table,id)=>({path:table+'/'+id}),collection:(_db,table)=>({table}),query:ref=>ref,
@@ -164,4 +166,35 @@ test('actual locator cards disable closed/paused/lease-blocked branches without 
     h.documents.set('cashier_leases/Maa',leaseAt(h.now.value-5000));await h.window.loadBranchLocator();
     const reopened=h.node('branchCardsGrid').innerHTML.match(/<article[\s\S]*?<\/article>/g)||[];assert.match(reopened[0],/<h2>Maa<\/h2>/);assert.match(reopened[0],/onclick="window.selectBranchAndEnter/);assert.match(reopened[0],/>View menu →<\/button>/);
     assert.equal(h.node('branchCountText').textContent,'3 branches · 1 accepting orders');assert.equal(h.window.customerBranchesLoading,false);assertKept(h);
+});
+
+test('an opening-soon branch with active ordering status cannot be selected or clear an existing cart',async()=>{
+    const h=harness();h.branches[0].customerSoonToOpen=true;
+    assert.equal(await h.window.confirmCustomerBranchAvailable('Maa'),false);assert.equal(h.reads.length,0);
+    assert.equal(await h.window.selectBranchAndEnter('Maa'),false);assertKept(h);
+    assert.equal(h.dialogs.some(dialog=>dialog?.showCancelButton),false);assert.equal(h.dialogs[0].title,'Orders unavailable');assert.equal(h.locatorReads,1);
+});
+test('the actual locator disables an active upcoming branch and escapes its custom watermark',async()=>{
+    const h=harness();h.branches[0].customerSoonToOpen=true;h.branches[0].customerOpeningLabel='Opening <sample> & "soon"';
+    await h.window.loadBranchLocator();const cards=h.node('branchCardsGrid').innerHTML.match(/<article[\s\S]*?<\/article>/g)||[];
+    const maa=cards.find(card=>card.includes('<h2>Maa</h2>'));
+    assert.ok(maa);assert.match(maa,/customer-opening-watermark[^>]*>Opening &lt;sample&gt; &amp; &quot;soon&quot;<\/span>/);
+    assert.match(maa,/<button[^>]+disabled aria-disabled="true"[^>]*>Unavailable<\/button>/);assert.doesNotMatch(maa,/onclick="window.selectBranchAndEnter/);assert.doesNotMatch(maa,/<sample>/);
+    assert.equal(h.node('branchCountText').textContent,'3 branches · 1 accepting orders');assertKept(h);
+});
+test('a branch marked upcoming while the fresh status check waits invalidates captured availability',async()=>{
+    const h=harness();h.statusWait=deferred();const pending=h.window.confirmCustomerBranchAvailable('Maa');assert.equal(h.reads.length,1);
+    const refreshed=new Map(h.window.customerBranchData);refreshed.set('Maa',{...refreshed.get('Maa'),customerSoonToOpen:true});h.window.customerBranchData=refreshed;
+    h.statusWait.resolve();assert.equal(await pending,false);assertKept(h);
+});
+test('marking a branch upcoming during cart confirmation keeps the original cart and delivery draft',async()=>{
+    const h=harness();h.answer=async()=>{h.branches[0].customerSoonToOpen=true;return {isConfirmed:true};};
+    assert.equal(await h.window.selectBranchAndEnter('Maa'),false);assertKept(h);
+    assert.equal(h.dialogs.filter(dialog=>dialog?.showCancelButton).length,1);assert.equal(h.dialogs.at(-1).title,'Orders unavailable');
+    assert.equal(h.window.customerBranchSelecting,false);
+});
+test('clearing the saved upcoming flag and refreshing restores selection only after availability confirmation',async()=>{
+    const h=harness();h.branches[0].customerSoonToOpen=true;await h.window.loadBranchLocator();assert.equal(await h.window.confirmCustomerBranchAvailable('Maa'),false);
+    h.branches[0].customerSoonToOpen=false;await h.window.loadBranchLocator();const card=(h.node('branchCardsGrid').innerHTML.match(/<article[\s\S]*?<\/article>/g)||[]).find(value=>value.includes('<h2>Maa</h2>'));
+    assert.match(card,/onclick="window.selectBranchAndEnter/);assert.doesNotMatch(card,/customer-opening-watermark/);assert.equal(await h.window.confirmCustomerBranchAvailable('Maa'),true);assertKept(h);
 });

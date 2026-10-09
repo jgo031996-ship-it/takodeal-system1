@@ -13,6 +13,7 @@
   <!-- 🗺️ FREE MAP ENGINE FOR BRANCH PINS -->
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="schedule-memory.css?v=20261006">
+  <link rel="stylesheet" href="customer-hub-settings.css?v=20261009">
   <link rel="stylesheet" href="dashboard.css?v=staff-duty-20261004">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="logo.jpg">
@@ -1682,11 +1683,12 @@
           </div>
 
           <!-- SUB-TABS NAVIGATION -->
-          <div style="display: flex; background: white; border-bottom: 2px solid #e2e8f0; border-radius: 12px 12px 0 0; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
+          <div class="customer-hub-tabs" style="display: flex; background: white; border-bottom: 2px solid #e2e8f0; border-radius: 12px 12px 0 0; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
               <button id="tabCustReviews" onclick="window.switchCustomerAppTab('Reviews')" style="flex: 1; padding: 16px; border: none; border-bottom: 3px solid #0284c7; background: #f0f9ff; font-weight: 900; color: #0284c7; cursor: pointer; font-size: 14px; text-transform: uppercase;">⭐ Customer Reviews & Moderation</button>
               <button id="tabCustLoyalty" onclick="window.switchCustomerAppTab('Loyalty')" style="flex: 1; padding: 16px; border: none; border-bottom: 3px solid transparent; background: transparent; font-weight: 900; color: #64748b; cursor: pointer; font-size: 14px; text-transform: uppercase; border-left: 1px solid #e2e8f0;">👑 Loyal Customer CRM (VIPs)</button>
               <button id="tabCustSync" onclick="window.switchCustomerAppTab('Sync')" style="flex: 1; padding: 16px; border: none; border-bottom: 3px solid transparent; background: transparent; font-weight: 900; color: #64748b; cursor: pointer; font-size: 14px; text-transform: uppercase; border-left: 1px solid #e2e8f0;">🍔 POS Menu Sync</button>
               <button id="tabCustProfiles" onclick="window.switchCustomerAppTab('Profiles')" style="flex: 1; padding: 16px; border: none; border-bottom: 3px solid transparent; background: transparent; font-weight: 900; color: #64748b; cursor: pointer; font-size: 14px; text-transform: uppercase; border-left: 1px solid #e2e8f0;">🏪 Storefront Profiles</button>
+              <button id="tabCustAbout" onclick="window.switchCustomerAppTab('About')" style="flex: 1; padding: 16px; border: none; border-bottom: 3px solid transparent; background: transparent; font-weight: 900; color: #64748b; cursor: pointer; font-size: 14px; border-left: 1px solid #e2e8f0;">About TAKODEÁL</button>
           </div>
 
           <!-- SECTION 1: REVIEWS & MODERATION -->
@@ -1778,6 +1780,28 @@
               </div>
           </div>
 
+          <div id="custSecAbout" style="display: none;">
+              <section class="customer-hub-settings-card">
+                  <h3>About TAKODEÁL</h3>
+                  <p>Manage the business information customers see below the menu.</p>
+                  <div class="customer-hub-settings-grid">
+                      <label>Business name<input id="customerSiteBusinessName" maxlength="80" value="TAKODEÁL"></label>
+                      <label>Location<input id="customerSiteLocation" maxlength="80" value="Davao City"></label>
+                      <label>Since year<input id="customerSiteSinceYear" type="number" min="1900" step="1" value="2023"></label>
+                      <label class="customer-hub-settings-description">About description<textarea id="customerSiteAboutText" maxlength="1200" placeholder="Tell customers about TAKODEÁL."></textarea></label>
+                  </div>
+                  <div class="customer-hub-footer-preview" aria-label="Customer footer preview">
+                      <strong>Customer footer preview</strong>
+                      <p id="customerSiteFooterPreview">TAKODEÁL · Davao City · Since 2023</p>
+                      <p id="customerSiteAboutPreview"></p>
+                  </div>
+                  <div class="customer-hub-actions">
+                      <button type="button" class="customer-hub-button" id="btnSaveCustomerSiteProfile" onclick="window.saveCustomerSiteProfile()">Save customer information</button>
+                      <button type="button" class="customer-hub-button secondary" id="btnReloadCustomerSiteProfile" onclick="window.loadCustomerSiteProfile()">Reload saved information</button>
+                  </div>
+                  <p id="customerSiteSettingsStatus" role="status" aria-live="polite">Open this tab to load saved information.</p>
+              </section>
+          </div>
       </div>
     </div>
 
