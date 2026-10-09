@@ -12,8 +12,10 @@ window.isLoggingIn = false;
 window.applyPermissions = function() { applyWorkspacePermissions(window, document); };
 
 window.isBranchAllowed = function(branchName) {
-    if (!window.sessionUser || window.sessionUser.isOwner || !window.sessionUser.isFranchisee) return true;
-    return window.sessionUser.allowedBranches.includes(branchName);
+    const session=window.sessionUser;
+    if(!session)return false;
+    if(String(session.email || '').trim().toLowerCase()===MASTER_EMAIL)return true;
+    return Array.isArray(session.allowedBranches) && (session.allowedBranches.includes('All') || session.allowedBranches.includes(branchName));
 };
 
 

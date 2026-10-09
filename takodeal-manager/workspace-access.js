@@ -1,4 +1,6 @@
 import {WORKSPACE_ROUTES,HR_TABS,INVENTORY_TABS,OWNER_EMAIL,canonicalRoute,configuredPermissions,inventoryPermission,canOpenWorkspacePage,canOpenHrTab,canOpenInventoryTab,workspaceLandingPage} from './workspace-access-model.js';
+import {readHQAccessState,planHQAccessChange,saveHQAccessChange,accessOperation,installHQAccessSync} from './hq-access-sync.js';
+import {resolveHQAccount} from './hq-account-model.js';
 const esc=value=>String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function applyWorkspacePermissions(w=window,d=document) {
  const user=w.sessionUser,show=(node,allowed)=>{if(node)node.style.display=allowed?'flex':'none';};
@@ -13,6 +15,7 @@ export function applyWorkspacePermissions(w=window,d=document) {
 export function installWorkspaceAccess(w=window,d=document) {
  if(w.workspaceAccessInstalled)return;
  w.workspaceAccessInstalled=true;
+ installHQAccessSync(w);
  const user=()=>w.sessionUser;let lastDenied=0;
  const denied=()=>{if(Date.now()-lastDenied>1000){lastDenied=Date.now();w.ManagerUI?.notify?.('This tab is outside your saved account permissions.');}return false;};
  const wrap=(name,check)=>{const original=w[name];if(typeof original!=='function')return;w[name]=function(...args){if(!check(...args))return denied();return original.apply(this,args);};};
@@ -51,9 +54,9 @@ function installPermissionEditor(w,d) {
  w.editManagerPermissions=async(id)=>{
   const guard=()=>{if(String(w.auth?.currentUser?.email || '').trim().toLowerCase()!==OWNER_EMAIL)throw Error('Only the main owner can change account permissions.');};
   try{
-   guard();const ref=w.doc(w.db,'hq_managers',id),snapshot=await w.getDocFromServer(ref);guard();
-   if(!snapshot.exists())throw Error('This access record no longer exists. Refresh accounts.');
-   const saved=snapshot.data();if(String(saved.email).trim().toLowerCase()===OWNER_EMAIL)throw Error('The system owner account is protected.');
+   guard();const state=await readHQAccessState(w,{id});guard();
+   const record=state.rows.find(row=>row.id===id);if(!record)throw Error('This access record no longer exists. Refresh accounts.');
+   const saved=record.data;if(String(saved.email).trim().toLowerCase()===OWNER_EMAIL)throw Error('The system owner account is protected.');
    const catalogue=new Map();
    for(const node of d.querySelectorAll('.sidebar [id^="nav-"],.sidebar .nav-subitem')){
     const id=node.id.replace(/^nav-|^subnav-/,''),key=HR_TABS[id] || (INVENTORY_TABS.includes(id)?inventoryPermission(id):id==='alerts'?'security-alerts':id);
@@ -61,12 +64,13 @@ function installPermissionEditor(w,d) {
     if(!catalogue.has(key))catalogue.set(key,(node.querySelector('.nav-text')?.textContent?.trim() || node.textContent.replace(/[0-9▼▲⌄]/g,'').trim()).replace(/\p{Extended_Pictographic}|\uFE0F|\u200D/gu,'').trim());
    }
    catalogue.set('payroll','Human Resources · all HR tabs');catalogue.set('inventory','Live Inventory · all inventory tabs');catalogue.set('franchise','Franchise HQ Hub · Simulator');
-   const originalPermissions=configuredPermissions(saved),permissions=originalPermissions.flatMap(permission=>permission==='alerts'?['security-alerts','low-stock-alerts']:[permission]);
+   const originalPermissions=configuredPermissions(resolveHQAccount(state.rows)),permissions=originalPermissions.flatMap(permission=>permission==='alerts'?['security-alerts','low-stock-alerts']:[permission]);
    for(const permission of permissions)if(permission!=='all' && !catalogue.has(permission))catalogue.set(permission,permission+' (saved permission)');
    const all=permissions.includes('all');
    const answer=await w.Swal.fire({title:'Account permissions',html:`<p>${esc(saved.email)}</p><p>Select the tabs this Google account may open. Changing its role or sharing a PIN does not change these permissions.</p><label style="display:flex;gap:10px;align-items:center;text-align:left;margin:16px 0"><input id="workspaceAllPermission" type="checkbox" ${all?'checked':''}>All workspace tabs</label><div class="workspace-permission-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;text-align:left;max-height:320px;overflow:auto">${[...catalogue].map(([key,label])=>`<label style="display:flex;gap:8px;align-items:start"><input type="checkbox" class="workspace-permission" value="${esc(key)}" ${permissions.includes(key)?'checked':''}>${esc(label)}</label>`).join('')}</div>`,width:760,showCancelButton:true,confirmButtonText:'Save permissions',showLoaderOnConfirm:true,allowOutsideClick:()=>!w.Swal.isLoading(),preConfirm:async()=>{
     try{guard();const values=d.getElementById('workspaceAllPermission').checked?['all']:[...d.querySelectorAll('.workspace-permission:checked')].map(node=>node.value);
-     await w.runTransaction(w.db,async tx=>{const current=await tx.get(ref);guard();if(!current.exists() || current.data().email!==saved.email || JSON.stringify(configuredPermissions(current.data()).sort())!==JSON.stringify([...originalPermissions].sort()))throw Error('This account changed. Refresh before saving.');tx.update(ref,{permissions:values,permissionsUpdatedAt:w.serverTimestamp()});});return true;
+     const plan={...planHQAccessChange(state,{type:'update',id,patch:{permissions:values}}),actor:state.actor};
+     await saveHQAccessChange(w,plan,{operationId:accessOperation(w,plan)});return true;
     }catch(error){w.Swal.showValidationMessage(error.message);return false;}
    }});
    if(answer.isConfirmed){await w.loadAdminDashboard?.();await w.Swal.fire({title:'Permissions saved',text:'This account will use these permissions the next time it unlocks or reloads its workspace.',icon:'success'});}
