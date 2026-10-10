@@ -36,9 +36,11 @@ test('another saved or currently selected source cannot be silently merged into 
     }
 });
 
-test('linked source provenance survives removal of all cart rows and blocks a different source',async()=>{
-    const f=fixture({initial:{takodeal_active_po:'previous',takodeal_dispatch_to:'Maa',takodeal_dispatch_from:'Main Office',takodeal_dispatch_cart:'[]'}}),before=copy(f.data);
-    assert.equal((await f.load()).blockedSource,true);assert.deepEqual(f.data,before);assert.deepEqual(f.api.dispatchCart,[]);assert.equal(f.h.get('purchase_orders/po').status,'Pending');
+test('an empty cart unlinks old source provenance without changing or completing the older request',async()=>{
+    const f=fixture({initial:{takodeal_active_po:'previous',takodeal_dispatch_to:'Maa',takodeal_dispatch_from:'Main Office',takodeal_dispatch_cart:'[]'}});
+    const previous={branch:'Maa',sourceBranch:'Main Office',status:'Drafting',items:[copy(row)]};f.h.put('purchase_orders/previous',previous);
+    assert.equal((await f.load()).loaded,true);assert.equal(f.data.takodeal_active_po,'po');assert.equal(f.data.takodeal_dispatch_from,'Cabantian');
+    assert.equal(f.nodes.dispFrom.value,'Cabantian');assert.equal(f.api.dispatchCart[0].qty,2000);assert.deepEqual(f.h.get('purchase_orders/previous'),previous);assert.equal(f.h.get('purchase_orders/po').status,'Drafting');
 });
 
 test('source and destination metadata participate in the transaction request fingerprint',async()=>{
