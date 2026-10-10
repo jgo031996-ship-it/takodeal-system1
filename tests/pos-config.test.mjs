@@ -76,7 +76,7 @@ test('Staff and custom levels reject ambiguous eligible PINs while excluding a d
 test('actual Staff meal authorization keeps fresh settings, daily-limit and outbox checks without an HQ read',async()=>{
  const calls=[],store=new Map(),w={masterPOSData:{settings:{}},db:{},localStorage:{getItem:()=>null},saleOutbox:{list:async()=>[]},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),where:(key,op,value)=>({key,op,value}),query:(collection,...filters)=>({...collection,filters}),getDocFromServer:async()=>({exists:()=>true,data:()=>({staffMealTakoPct:30})}),getDocsFromServer:async query=>{
   calls.push(query.table);if(query.table==='hq_managers')throw Error('Missing or insufficient permissions.');
-  if(query.table==='staff_requests')return {docs:store.get('claimed')?[{data:()=>({status:'Approved',type:'Staff Meal'})}]:[]};
+  if(query.table==='staff_requests')return {docs:store.get('claimed')?[{data:()=>({staffName:'Sample Staff',timestamp:new Date(),status:'Approved',type:'Staff Meal'})}]:[]};
   return {docs:query.filters.some(filter=>filter.key==='pin'&&filter.value==='5678')?[{id:'staff-one',data:()=>({cashierName:'Sample Staff',pin:'5678',role:'Staff'})}]:[]};
  }};
  installMealCheckout({window:w,document:{}});const allowed=await w.authorizeMealPin('5678','staff_meal',{refresh:true});
