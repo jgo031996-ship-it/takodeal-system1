@@ -3,7 +3,7 @@
  
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Welcome · TAKODEÁL Owner</title>
   <meta name="theme-color" content="#173f32">
   <link rel="stylesheet" href="login.css?v=20261004">
@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="schedule-memory.css?v=20261006">
   <link rel="stylesheet" href="customer-hub-settings.css?v=20261009">
   <link rel="stylesheet" href="stock-request-review.css?v=20261009">
+  <link rel="stylesheet" href="audit-modal.css?v=20261010">
   <link rel="stylesheet" href="dashboard.css?v=staff-duty-20261004">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="logo.jpg">
@@ -442,20 +443,22 @@
   <link rel="stylesheet" href="payslip.css?v=20261004">
   <link rel="stylesheet" href="schedule-layout.css?v=20261004">
   <link rel="stylesheet" href="staff-documents.css?v=staff-pos-repair-20261008-r12">
+  <link rel="stylesheet" href="manager-mobile.css?v=20261010-r1">
 </head>
 
 <body class="manager-theme">
   <nav class="sidebar" id="sidebar">
     
     <div class="sidebar-header" style="display: flex; align-items: center; justify-content: space-between; padding: 15px; border-bottom: 1px solid rgba(255,255,255,0.1); width: 100%; box-sizing: border-box;">
-      <div style="display: flex; align-items: center; gap: 10px; overflow: hidden; cursor: pointer;" onclick="document.getElementById('sidebar').classList.toggle('collapsed')">
+      <div style="display: flex; align-items: center; gap: 10px; overflow: hidden; cursor: pointer;" onclick="if(window.innerWidth > 768) document.getElementById('sidebar').classList.toggle('collapsed')">
           <img src="logo.jpg" alt="Logo" style="width: 35px; height: 35px; border-radius: 8px; object-fit: cover; border: 2px solid var(--primary); flex-shrink: 0;">
           <div class="logo-text" style="display: flex; flex-direction: column; white-space: nowrap;">
               <span style="font-weight: 900; font-size: 14px; letter-spacing: 1px; line-height: 1;">TAKODEÁL</span>
               <span id="sidebarLogoBranchText" style="font-size: 10px; color: var(--primary); font-weight: bold;">MAIN OFFICE</span>
           </div>
       </div>
-      <span class="hamburger-icon" onclick="document.getElementById('sidebar').classList.toggle('collapsed')" style="cursor: pointer; font-size: 20px; color: #94a3b8; flex-shrink: 0;">☰</span>
+      <span class="hamburger-icon" onclick="if(window.innerWidth > 768) document.getElementById('sidebar').classList.toggle('collapsed')" style="cursor: pointer; font-size: 20px; color: #94a3b8; flex-shrink: 0;">☰</span>
+      <button type="button" class="manager-mobile-sidebar-close" aria-label="Close navigation" onclick="window.toggleManagerSidebar()">×</button>
     </div>
 
     <div class="nav-menu">
@@ -560,7 +563,7 @@
   <main class="main-content">
     <header class="topbar">
       <div class="manager-page-heading">
-        <button class="mobile-menu-btn" aria-label="Open navigation" onclick="window.toggleManagerSidebar()">☰</button>
+        <button type="button" class="mobile-menu-btn" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar" onclick="window.toggleManagerSidebar()">☰</button>
         <div class="manager-page-copy">
           <div class="manager-breadcrumb"><span>TAKODEÁL OWNER</span><i aria-hidden="true">/</i><span id="managerPageSection">Overview</span></div>
           <h1 id="pageTitle">Global Dashboard</h1>
@@ -3009,12 +3012,12 @@
           </div>
         </div>
 
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 25px;">
+        <div class="manager-dispatch-columns" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 25px;">
           
           <!-- SEND STOCK CARD (LEFT) -->
-          <div style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden; display: flex; flex-direction: column;">
+          <div class="manager-dispatch-card" style="background: white; border-radius: 16px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden; display: flex; flex-direction: column;">
             
-            <div style="background: #f8fafc; padding: 25px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+            <div class="manager-dispatch-header" style="background: #f8fafc; padding: 25px 30px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
               <div>
                 <h2 style="margin: 0; color: #1e293b; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 8px;">
                   <span style="font-size: 24px;">🚚</span> Send Stock to Branch
@@ -3026,8 +3029,8 @@
               </button>
             </div>
 
-            <div style="padding: 30px;">
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+            <div class="manager-dispatch-form" style="padding: 30px;">
+              <div class="manager-dispatch-route" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
                 <div>
                   <label style="font-size: 12px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 6px;">From (Source)</label>
                   <select id="dispFrom" style="width: 100%; padding: 12px 15px; border: 1px solid #cbd5e1; border-radius: 8px; font-weight: bold; outline: none; cursor: pointer; font-size: 14px; background: #f8fafc;" onchange="window.loadDispatchInventory()">
@@ -3043,7 +3046,7 @@
               </div>
 
               <!-- 📦 UPGRADED RESPONSIVE DISPATCH INPUTS -->
-              <div style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px dashed #cbd5e1; margin-bottom: 20px;">
+              <div class="manager-dispatch-inputs" style="background: #f8fafc; padding: 20px; border-radius: 12px; border: 1px dashed #cbd5e1; margin-bottom: 20px;">
                   <div style="margin-bottom: 15px;">
                       <label style="font-size: 11px; font-weight: 900; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;">Item to Send</label>
                       <select id="dispItem" onchange="window.updateDispatchUomLabel()" style="width: 100%; padding: 14px 15px; border: 1px solid #cbd5e1; border-radius: 8px; outline: none; font-weight: bold; box-sizing: border-box; cursor: pointer; background: white; font-size: 14px; color: #0f172a;">
@@ -3051,7 +3054,7 @@
                       </select>
                   </div>
                   
-                  <div style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
+                  <div class="manager-dispatch-quantity-row" style="display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap;">
                       <div style="flex: 1; min-width: 120px;">
                           <label style="font-size: 11px; font-weight: 900; color: #0ea5e9; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 8px;">Quantity</label>
                           <input type="number" id="dispQty" placeholder="0" style="width: 100%; padding: 14px 15px; border: 2px solid #bae6fd; border-radius: 8px; outline: none; font-weight: 900; box-sizing: border-box; font-size: 16px; color: #0284c7; background: #f0f9ff; transition: 0.2s;">
@@ -3073,7 +3076,7 @@
               <!-- 🤖 AI TRACKER SECURE CONTAINER -->
               <div id="dispAiTracker" style="width: 100%; margin-bottom: 20px;"></div>
 
-              <div class="table-responsive" style="border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 25px;">
+              <div class="table-responsive manager-dispatch-cart" style="border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 25px;">
                 <table class="data-table" style="background: white; width: 100%; border-collapse: collapse; text-align: left;">
                   <thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
                     <tr>
@@ -6226,59 +6229,19 @@
       </div>
     </div>
 
-    <div id="generalAuditModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);">
-      <div style="background: white; width: 850px; max-width: 95%; height: 85vh; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
-          <div style="background: #ea580c; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
-              <h2 style="margin: 0; font-size: 18px;">📝 Master General Audit</h2>
-              <span onclick="document.getElementById('generalAuditModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
-          </div>
-          
-          <div style="padding: 20px; background: #fffbeb; border-bottom: 1px solid #fcd34d; display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
-              <div style="flex: 1; min-width: 150px;">
-                  <label style="font-size: 11px; font-weight: bold; color: #b45309; text-transform: uppercase;">1. Select Location to Audit</label>
-                  <select id="auditModalBranch" onchange="window.loadAuditModalItems()" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #fcd34d; font-weight: bold; color: #92400e; outline: none; margin-top: 5px;">
-                      <option value="">-- Choose Branch --</option>
-                      <option value="Main Office">Main Office</option>
-                      <option value="Cabantian">Cabantian</option>
-                      <option value="Citygate">Citygate</option>
-                      <option value="Maa">Maa</option>
-                  </select>
+    <div id="generalAuditModal" class="overlay general-audit-modal" style="display:none">
+      <section class="general-audit-dialog" role="dialog" aria-modal="true" aria-labelledby="generalAuditTitle" aria-describedby="generalAuditHelp">
+          <header class="general-audit-header"><div><p>INVENTORY CONTROL</p><h2 id="generalAuditTitle">General stock audit</h2></div><button type="button" class="general-audit-close" aria-label="Close general stock audit" onclick="document.getElementById('generalAuditModal').style.display='none'">&times;</button></header>
+          <div class="general-audit-scroll">
+              <div class="general-audit-controls">
+                  <label class="general-audit-field" for="auditModalBranch"><span>Branch to audit</span><select id="auditModalBranch" onchange="window.loadAuditModalItems()"><option value="">-- Choose Branch --</option><option value="Main Office">Main Office</option><option value="Cabantian">Cabantian</option><option value="Citygate">Citygate</option><option value="Maa">Maa</option></select></label>
+                  <label class="general-audit-field" for="auditModalSearch"><span>Find an item or category</span><input type="text" id="auditModalSearch" oninput="window.filterAuditTable()" placeholder="Type item name or category…"></label>
+                  <button type="button" class="general-audit-add" onclick="window.openAddInventoryModal()">Add missing item</button>
               </div>
-              <div style="flex: 2; min-width: 200px;">
-                  <label style="font-size: 11px; font-weight: bold; color: #b45309; text-transform: uppercase;">2. Quick Search Item</label>
-                  <div style="display: flex; gap: 10px; align-items: center; margin-top: 5px;">
-                      <input type="text" id="auditModalSearch" onkeyup="window.filterAuditTable()" placeholder="Type item name or category..." style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #fcd34d; box-sizing: border-box; outline: none;">
-                      <button onclick="window.openAddInventoryModal()" style="padding: 10px 15px; background: #0f766e; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; white-space: nowrap; box-shadow: 0 2px 4px rgba(15,118,110,0.2);">➕ Add Missing Item</button>
-                  </div>
-              </div>
+              <div id="auditModalBody" class="general-audit-body"><div class="general-audit-empty" role="status">Select a branch above to begin the audit.</div></div>
           </div>
-
-          <div style="flex: 1; overflow-y: auto;">
-              <table class="data-table" style="width: 100%; border-collapse: collapse;">
-                  <thead style="background: #f8fafc; position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">
-                      <tr>
-                          <th style="padding: 12px; text-align: left; color: #475569;">Item Description</th>
-                          <th style="padding: 12px; text-align: center; color: #475569;">Category</th>
-                          <th style="padding: 12px; text-align: center; color: #475569;">System Qty</th>
-                          <th style="padding: 12px; text-align: center; color: #ea580c; border-left: 2px dashed #e2e8f0;">Actual Physical Count</th>
-                      </tr>
-                  </thead>
-                  <!-- Inside generalAuditModal -->
-                  <div style="flex: 1; overflow-y: auto; background: #e2e8f0; padding: 25px;" id="auditModalBody">
-                      <div class="text-center" style="padding: 40px; color: #94a3b8; font-weight: bold;">Select a branch above to begin the audit...</div>
-                  </div>
-                  <!-- End of Audit Modal Body Replacement -->
-              </table>
-          </div>
-
-          <div style="padding: 15px 25px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-              <span style="font-size: 12px; color: #dc2626; font-weight: bold;">Blank inputs are ignored. Only items with entered values will be audited.</span>
-              <div style="display: flex; gap: 10px;">
-                  <button onclick="document.getElementById('generalAuditModal').style.display='none'" style="padding: 12px 20px; border-radius: 6px; border: 1px solid #cbd5e1; background: white; font-weight: bold; cursor: pointer; color: #475569;">Cancel</button>
-                  <button id="btnSubmitGeneralAudit" onclick="window.submitGeneralAudit()" style="padding: 12px 24px; border-radius: 6px; border: none; background: #ea580c; color: white; font-weight: bold; cursor: pointer; font-size: 15px; box-shadow: 0 4px 6px rgba(234, 88, 12, 0.3);">💾 Sync & Finalize Audit</button>
-              </div>
-          </div>
-      </div>
+          <footer class="general-audit-footer"><p id="generalAuditHelp">Blank fields are ignored. Only items with entered counts are included when you finalize.</p><div class="general-audit-footer-actions"><button type="button" class="general-audit-cancel" onclick="document.getElementById('generalAuditModal').style.display='none'">Cancel</button><button type="button" id="btnSubmitGeneralAudit" class="general-audit-submit" onclick="window.submitGeneralAudit()">Sync &amp; finalize audit</button></div></footer>
+      </section>
   </div>
 
   <div id="addBranchModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);">
@@ -6631,6 +6594,10 @@
   </style>
 
   <script type="module" src="login-ui.js?v=20261004"></script>
+  <script type="module">
+    import {installAuditModalLayout} from './audit-modal-layout.js?v=20261010';
+    installAuditModalLayout();
+  </script>
   <script type="module" src="auth.js?v=staff-pos-repair-20261008-r12"></script>
 
   

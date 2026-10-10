@@ -1,5 +1,6 @@
 import { installStaffLocation } from './staff-location.js';
 import { installAttendanceCamera } from './attendance-camera.js';
+import { installAttendanceProofUploader } from './attendance-proof.js';
 import {readStaffRecords, latestAttendance, attendanceMillis, attendanceKind, sopCoversShift, closeAttendanceShift} from './attendance-reconcile.js';
 import {planPayrollAttendance} from './payroll-attendance.js';
 import { installStaffRegistration } from './staff-registration.js';
@@ -15,7 +16,7 @@ import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleFo
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 // 🔥 UPGRADE: Imported the Offline Cache Engines!
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDocsFromServer, getDoc, getDocFromServer, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot, enableNetwork, disableNetwork, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
   
 const firebaseConfig = {
     apiKey: "AIzaSyAmAWBbW7tTnIQkm2kTcJ-MLrjKHNGKcp4",
@@ -285,6 +286,7 @@ window.loginStaff = async function() {
 };
 
 window.logoutStaff = function() {
+    window.staffLateProofDraft = null;
     Swal.fire({
         title: 'Sign Out?', text: "You will need your PIN to access your portal again.", icon: 'question',
         showCancelButton: true, confirmButtonColor: '#0f766e', confirmButtonText: 'Yes, sign out'
@@ -1260,6 +1262,7 @@ window.getDistanceInMeters = function(lat1, lon1, lat2, lon2) {
 };
 
 installAttendanceCamera(window, document);
+installAttendanceProofUploader(window, document, {uploadBytesResumable, getDownloadURL, ref, getStorage});
 window.punchTime = async function(type) {
     if (!['TIME IN', 'TIME OUT'].includes(type)) return Swal.fire('Attendance not saved', 'Choose Time In or Time Out using the attendance buttons.', 'warning');
     let staffName = localStorage.getItem('takodeal_staff_name');
@@ -1350,6 +1353,9 @@ window.punchTime = async function(type) {
                     if (lateMinutes > 3) {
                         Swal.close(); 
 
+                        const savedProof = window.staffLateProofDraft;
+                        const lateDraft = savedProof?.staffId === punchStaffId && savedProof.branch === closestBranch && Date.now() - savedProof.savedAt < 30 * 60000 ? savedProof : null;
+                        if (!lateDraft) window.staffLateProofDraft = null;
                         const { value: lateForm, isConfirmed } = await Swal.fire({
                             title: '⏰ You are Late!',
                             html: `
@@ -1359,7 +1365,9 @@ window.punchTime = async function(type) {
                                 </div>
                                 <textarea id="lateReason" placeholder="Enter your valid reason here..." style="width: 100%; padding: 12px; border: 2px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; font-family: inherit; resize: none; outline: none; font-weight: bold; box-sizing: border-box;"></textarea>
                                 <label style="font-size: 12px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 5px; text-align: left;">Upload Screenshot Proof 📸 *</label>
-                                <input type="file" id="lateProof" accept="image/*" style="width: 100%; padding: 10px; border: 2px dashed #fca5a5; border-radius: 8px; box-sizing: border-box; background: #fef2f2; color: #b91c1c; font-weight: bold; outline: none;">
+                                <p id="lateProofKept" style="font-size:13px;color:#0f766e"></p>
+                                <p style="font-size:13px;color:#64748b">Choose a JPG, PNG or WebP screenshot. The app reduces its size for slow connections.</p>
+                                <input type="file" id="lateProof" accept="image/jpeg,image/png,image/webp" style="width: 100%; padding: 10px; border: 2px dashed #fca5a5; border-radius: 8px; box-sizing: border-box; background: #fef2f2; color: #b91c1c; font-weight: bold; outline: none;">
                             `,
                             showCancelButton: true,
                             confirmButtonText: 'Submit & Time In',
@@ -1368,9 +1376,12 @@ window.punchTime = async function(type) {
                             cancelButtonColor: '#64748b',
                             allowOutsideClick: false,
                             customClass: { popup: 'rounded-2xl shadow-xl border border-red-100' },
+                            didOpen: () => {
+                                if (lateDraft) {document.getElementById('lateReason').value = lateDraft.reason;document.getElementById('lateProofKept').textContent = 'Selected screenshot kept: ' + (lateDraft.file.name || 'Screenshot') + '. Choose another image to replace it.';}
+                            },
                             preConfirm: () => {
                                 let reason = document.getElementById('lateReason').value.trim();
-                                let file = document.getElementById('lateProof').files[0];
+                                let file = document.getElementById('lateProof').files[0] || lateDraft?.file;
                                 if (!reason || !file) {
                                     Swal.showValidationMessage("Both a reason and a screenshot proof are strictly required to time in.");
                                     return false;
@@ -1381,14 +1392,14 @@ window.punchTime = async function(type) {
 
                         if (!isConfirmed) return; 
 
-                        Swal.fire({title: 'Uploading Proof...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-                        let proofUrl = "";
-                        const fileExt = lateForm.file.name.split('.').pop();
-                        const fileName = `staff_requests/late_${staffName.replace(/\s+/g, '_')}_${Date.now()}.${fileExt}`;
-                        const storageRef = ref(window.storage || getStorage(db.app), fileName);
-                        const snapshot = await uploadBytes(storageRef, lateForm.file);
-                        proofUrl = await getDownloadURL(snapshot.ref);
+                        window.staffLateProofDraft = {staffId:punchStaffId, branch:closestBranch, reason:lateForm.reason, file:lateForm.file, savedAt:Date.now()};
+                        const proof = await window.uploadAttendanceProof({
+                            file:lateForm.file, path:`staff_requests/late_${attendanceRef.id}.jpg`,
+                            assertCurrent:()=>{
+                                if (localStorage.getItem('takodeal_staff_id') !== punchStaffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again before uploading or recording attendance.');
+                            }
+                        });
+                        const proofUrl = proof.url;
 
                         pendingLateRequest = {
                             attendanceLogId: attendanceRef.id,
@@ -1435,6 +1446,8 @@ window.punchTime = async function(type) {
         }
         const photoBase64 = faceResult ? faceResult.photoBase64 : (window.captureOptionalAttendancePhoto?.() || '');
 
+        Swal.fire({title: 'Saving attendance…', text: 'Keep this screen open until HQ confirms your attendance.', allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false, didOpen: () => Swal.showLoading()});
+
         // 6. 💾 SAVE TO FIREBASE
         const attendance = {
             staffName, staffId: localStorage.getItem('takodeal_staff_id'), branch: closestBranch, type, timestamp: serverTimestamp(),
@@ -1468,6 +1481,7 @@ window.punchTime = async function(type) {
         }
 
         
+        window.staffLateProofDraft = null;
         window.loadMyAttendance?.(true);
         Swal.fire('✅ Success', `${type} logged securely at ${closestBranch}!`, 'success');
 

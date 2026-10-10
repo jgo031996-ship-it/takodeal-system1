@@ -11,9 +11,9 @@ function assets(app,name){
 }
 test('installed shells contain all new recipe and scheduling dependencies',()=>{
     for(const [app,name,required] of [
-        ['takodeal-manager','CORE_ASSETS',['recipe-bulk-model.js','recipe-bulk.js','recipe-changes.js','sanction-actions.js','sanction-schedule.js','sanction-scheduling-ui.js']],
+        ['takodeal-manager','CORE_ASSETS',['recipe-bulk-model.js','recipe-bulk.js','recipe-changes.js','sanction-actions.js','sanction-schedule.js','sanction-scheduling-ui.js','audit-modal.css','audit-modal-layout.js']],
         ['Takodeal-POS','required',['recipe-feed.js','sanction-schedule.js']],
-        ['takodeal-staff','SHELL',['sanction-schedule.js']],
+        ['takodeal-staff','SHELL',['sanction-schedule.js','attendance-proof.js']],
         ['takodeal-franchise','CORE',['sanction-schedule.js','sanction-actions.js','sanction-scheduling-ui.js','workspace-access-model.js']]
     ]){
         const cached=assets(app,name);
@@ -31,7 +31,9 @@ test('sanction date decisions are identical across apps',()=>{
 });
 test('upgrade keeps paid receipts, photos and the offline sale ledger through Cashier update',()=>{
     const worker=source('Takodeal-POS/sw.js');
-    assert.match(worker,/logo-sizing-20261009-r2/);
+    assert.match(worker,/dispatch-restock-older-devices-20261010-r1/);
+    assert.match(worker,/dispatch-restock-model\.js/);
+    assert.match(worker,/workspace-access-model\.js/);
     assert.ok(assets('Takodeal-POS','required').includes('printer-logo.js'),'new logo encoder is available offline');
     assert.match(worker,/const PHOTOS = 'takodeal-pos-photos-offline02'/);
     assert.doesNotMatch(worker,/deleteDatabase|localStorage\.clear/);
