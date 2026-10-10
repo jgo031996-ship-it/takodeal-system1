@@ -31,7 +31,7 @@ test('sanction date decisions are identical across apps',()=>{
 });
 test('upgrade keeps paid receipts, photos and the offline sale ledger through Cashier update',()=>{
     const worker=source('Takodeal-POS/sw.js');
-    assert.match(worker,/dispatch-request-links-20261010-r1/);
+    assert.match(worker,/staff-meal-index-20261010-r1/);
     assert.match(worker,/dispatch-restock-model\.js/);
     assert.match(worker,/workspace-access-model\.js/);
     assert.ok(assets('Takodeal-POS','required').includes('printer-logo.js'),'new logo encoder is available offline');
