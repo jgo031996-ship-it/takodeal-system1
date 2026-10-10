@@ -100,7 +100,7 @@ test('unrecoverable paused/undecoded preview times out visibly and releases the 
     for(const scenario of ['paused','undecoded']){
         const h=cameraHarness(),timers=new Map();let n=0;if(scenario==='paused'){h.video.paused=true;h.video.play=()=>Promise.reject(Error('autoplay failed'));}else h.video.readyState=1;
         installAttendanceCamera(h.api,h.document,{schedule:(fn,ms)=>{const id=++n;timers.set(id,{fn,ms});return id;},cancel:id=>timers.delete(id)});
-        const pending=h.api.verifyAttendanceFace();while(!timers.size)await new Promise(resolve=>setImmediate(resolve));[...timers.values()].find(t=>t.ms===2500).fn();
+        const pending=h.api.verifyAttendanceFace();while(!timers.size)await new Promise(resolve=>setImmediate(resolve));[...timers.values()].find(t=>t.ms===5000).fn();
         await assert.rejects(pending,/Restart camera/);assert.equal(timers.size,0);assert.equal(h.frames.length,0);assert.equal(h.status.dataset.state,'error');
         h.video.paused=false;h.video.readyState=4;assert.match((await h.api.verifyAttendanceFace()).photoBase64,/^data:image/);
     }
@@ -132,12 +132,29 @@ test('already decoded frame needs no currentTime advancement; delayed decoding i
     const old={readyState:1,videoWidth:320,videoHeight:240,currentTime:1,paused:false,ended:false},pending=waitForCameraFrame(old,{schedule,cancel});old.readyState=2;
     [...timers.values()].find(t=>t.ms===80).fn();await pending;assert.equal(timers.size,0);
 });
+
+test('a slow older camera can decode after 3.5 seconds while photo freshness and the five-second deadline stay intact',async()=>{
+    const h=cameraHarness(),timers=new Map(),start=Date.parse('2026-10-07T09:00:00+08:00');let clock=0,next=0;
+    const schedule=(fn,ms)=>{const id=++next;timers.set(id,{fn,at:clock+ms});return id;},cancel=id=>timers.delete(id);
+    const advance=to=>{while(true){const due=[...timers].filter(([,timer])=>timer.at<=to).sort((a,b)=>a[1].at-b[1].at||a[0]-b[0])[0];if(!due)break;timers.delete(due[0]);clock=due[1].at;due[1].fn();}clock=to;};
+    h.video.readyState=1;h.video.requestVideoFrameCallback=undefined;
+    installAttendanceCamera(h.api,h.document,{now:()=>start+clock,schedule,cancel});
+    const pending=h.api.verifyAttendanceFace();while(!timers.size)await new Promise(resolve=>setImmediate(resolve));
+    assert.ok([...timers.values()].some(timer=>timer.at===5000));
+    schedule(()=>{h.video.readyState=2;},3500);
+    advance(3000);assert.equal(h.frames.length,0);assert.equal(h.status.dataset.state,'checking');
+    advance(3520);const result=await pending;
+    assert.match(result.photoBase64,/^data:image\/jpeg;base64,/);assert.equal(h.frames.length,1);assert.equal(timers.size,0);
+    assert.equal(result.faceCheck.capturedAt,new Date(start+3520).toISOString());assert.equal(result.cameraStream,h.stream);
+    assert.equal(h.api.assertAttendanceFaceFresh(result),true);
+    advance(3520+ATTENDANCE_PHOTO_MAX_AGE+1);assert.throws(()=>h.api.assertAttendanceFaceFresh(result),/expired/);
+});
 test('native receiver-sensitive cancellation failures cannot strand decoded-frame completion or timeout',async()=>{
     for(const ready of [true,false]){
         const timers=new Map();let n=0,callback,cancellations=0;const schedule=(fn,ms)=>{const id=++n;timers.set(id,{fn,ms});return id;};
         const video={readyState:1,videoWidth:640,videoHeight:480,paused:false,ended:false,currentTime:1,requestVideoFrameCallback:fn=>{callback=fn;return 4;},cancelVideoFrameCallback(id){assert.equal(this,video);assert.equal(id,4);cancellations++;throw new TypeError('Illegal invocation');}};
         const pending=waitForCameraFrame(video,{schedule,cancel:()=>{throw new TypeError('Illegal invocation');}});
-        if(ready){video.readyState=2;assert.doesNotThrow(()=>callback(0,{mediaTime:1}));await pending;}else{assert.doesNotThrow(()=>[...timers.values()].find(t=>t.ms===2500).fn());await assert.rejects(pending,/not ready/);}
+        if(ready){video.readyState=2;assert.doesNotThrow(()=>callback(0,{mediaTime:1}));await pending;}else{assert.doesNotThrow(()=>[...timers.values()].find(t=>t.ms===5000).fn());await assert.rejects(pending,/not ready/);}
         assert.equal(cancellations,1);assert.doesNotThrow(()=>callback(0,{mediaTime:1}));assert.equal(cancellations,1);
     }
 });

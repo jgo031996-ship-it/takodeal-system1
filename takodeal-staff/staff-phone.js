@@ -1,4 +1,57 @@
 import {waitForAppUpdate} from './app-update.js';
+const updateHandlerKey=Symbol.for('takodeal.staff.appUpdate');
+
+async function updateRegistration(serviceWorker) {
+    let timer,finished=false;
+    const deadline=new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('The app update check took too long. Check your connection and try again.')),15000);});
+    const lookup=async()=>{
+        let registration=await serviceWorker.getRegistration();
+        if(finished)return null;
+        if(!registration){
+            if(typeof serviceWorker.register!=='function')throw Error('App files are not ready yet. Reload the Staff app online and try again.');
+            registration=await serviceWorker.register('./sw.js',{updateViaCache:'none'});
+            if(finished)return null;
+            if(registration && !registration.active && !registration.installing && !registration.waiting && serviceWorker.ready)registration=await serviceWorker.ready;
+        }
+        if(!registration || typeof registration.update!=='function')throw Error('App files are not ready yet. Reload the Staff app online and try again.');
+        return registration;
+    };
+    try{return await Promise.race([lookup(),deadline]);}
+    finally{finished=true;clearTimeout(timer);}
+}
+
+// This small installer can run on the login page without Firebase or staff data.
+// A shared page key also retains the lock if two module URLs install it later.
+export function installStaffAppUpdate(w=window,d=document,nav=navigator) {
+    if(w[updateHandlerKey]){w.forceUpdateApp=w[updateHandlerKey];return w.forceUpdateApp;}
+    let updating=false;
+    const status=text=>{for(const node of d.querySelectorAll?.('[data-staff-update-status]') || []){node.textContent=text;node.hidden=!text;}};
+    const explain=async(title,text,icon='warning')=>{status(text);try{if(w.Swal?.fire)await w.Swal.fire(title,text,icon);}catch{/* The inline status remains usable if the dialog library fails. */}return false;};
+    const protectedWork=()=>w.staffPunchBusy?['Attendance is saving','Wait for your attendance to finish before updating.']:w.staffDeviceRegistrationBusy?['Request is sending','Wait for your device request to finish before updating.']:null;
+    const check=async()=>{
+        if(updating)return false;
+        const blocked=protectedWork();if(blocked)return explain(...blocked,'info');
+        if(!nav.onLine)return explain('Connection needed','Connect to the internet to check for app updates.','info');
+        if(typeof nav.serviceWorker?.getRegistration!=='function')return explain('Update check unavailable','This browser cannot check app updates. Reload the Staff app while online.');
+        updating=true;
+        const buttons=[...(d.querySelectorAll?.('[data-staff-update]') || [])],previous=buttons.map(button=>({button,disabled:button.disabled,text:button.textContent}));
+        for(const button of buttons){button.disabled=true;button.textContent='Checking for app updates…';button.setAttribute?.('aria-busy','true');}
+        status('Checking app files. Your device registration and saved data will stay here.');
+        try {
+            const registration=await updateRegistration(nav.serviceWorker);
+            await waitForAppUpdate(registration);
+            // Work may have started while the update was downloading.
+            const pendingWork=protectedWork();if(pendingWork)return await explain(...pendingWork,'info');
+            if(!nav.onLine)return await explain('Connection needed','The connection was lost. Reconnect and check for app updates again.','info');
+            status('Reloading the Staff app…');
+            // Reload only the shell; never reset auth, PINs, registration or saved attendance.
+            w.location.reload();return true;
+        } catch(error){return await explain('Update check unavailable',error?.message || 'Check your connection and try again.');}
+        finally{updating=false;for(const {button,disabled,text} of previous){button.disabled=disabled;button.textContent=text;button.removeAttribute?.('aria-busy');}}
+    };
+    Object.defineProperty(w,updateHandlerKey,{value:check,configurable:true});w.forceUpdateApp=check;return check;
+}
+
 // Heavy download libraries are only needed when staff export a document.
 export function installStaffPhone() {
     const loading = new Map();
@@ -24,15 +77,5 @@ export function installStaffPhone() {
             catch(e){window.Swal.fire('Download unavailable',e.message,'warning');}
         };
     }
-    window.forceUpdateApp=async()=>{
-        if(window.staffPunchBusy)return window.Swal.fire('Attendance is saving','Wait for your attendance to finish before updating.','info');
-        if(window.staffDeviceRegistrationBusy)return window.Swal.fire('Request is sending','Wait for your device request to finish before updating.','info');
-        if(!navigator.onLine)return window.Swal.fire('Connection needed','Connect to the internet to check for app updates.','info');
-        try {
-            const registration=await navigator.serviceWorker?.getRegistration();
-            await waitForAppUpdate(registration);
-            // Reload the shell only; keep device registration, PIN cooldowns and offline attendance.
-            window.location.reload();
-        } catch {window.Swal.fire('Update check unavailable','Check your connection and try again.','warning');}
-    };
+    installStaffAppUpdate();
 }

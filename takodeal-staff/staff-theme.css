@@ -200,3 +200,10 @@ button:disabled { opacity:.6; cursor:wait; }
  .clock-card h1 { font-size:32px; }
  .staff-location-card { padding:14px; }
 }
+
+/* App maintenance stays in the device/login cards, away from employee edits. */
+.staff-login-update {margin-top:20px;padding-top:16px;border-top:1px solid #dbe5dd;text-align:center;min-width:0;}
+.staff-login-update .staff-update-button {width:100%;min-height:44px;padding:12px 14px;font-size:14px;line-height:1.4;white-space:normal;touch-action:manipulation;}
+.staff-login-update .staff-update-help,.staff-login-update [data-staff-update-status] {margin:8px 0 0;font-size:12px;line-height:1.5;color:#56685d;overflow-wrap:anywhere;}
+.staff-login-update [data-staff-update-status][hidden] {display:none;}
+.staff-login-update .staff-update-button:focus-visible {outline:3px solid #d5a74c;outline-offset:3px;}

@@ -1,10 +1,10 @@
 import {canOpenWorkspacePage} from './workspace-access-model.js';
 
-const attempts=new Map(),keys=['takodeal_dispatch_cart','takodeal_dispatch_to','takodeal_active_po'];
+const attempts=new Map(),keys=['takodeal_dispatch_cart','takodeal_dispatch_from','takodeal_dispatch_to','takodeal_active_po'];
 const clone=value=>JSON.parse(JSON.stringify(value));
 const canonical=value=>Array.isArray(value)?value.map(canonical):value && typeof value==='object'?Object.fromEntries(Object.keys(value).sort().filter(key=>value[key]!==undefined).map(key=>[key,canonical(value[key])])):value;
 const stringify=value=>JSON.stringify(canonical(value));
-const requestFields=po=>({branch:po.branch,type:po.type ?? null,requestedBy:po.requestedBy ?? null,items:po.items});
+const requestFields=po=>({branch:po.branch,sourceBranch:po.sourceBranch ?? null,destinationBranch:po.destinationBranch ?? null,type:po.type ?? null,requestedBy:po.requestedBy ?? null,items:po.items});
 const activeIds=storage=>[...new Set(String(storage.getItem('takodeal_active_po') || '').split(',').map(value=>value.trim()).filter(Boolean))];
 const close=(a,b)=>Math.abs(a-b)<=Math.max(1,Math.abs(a),Math.abs(b))*1e-9;
 const unit=value=>String(value || '').trim().toLowerCase();
@@ -14,10 +14,13 @@ function capture(api){
         throw Error('Unlock Dispatch with your approved Google account before loading a request.');
     return {uid:user.uid,email,session};
 }
-function assertCurrent(api,actor,branch){
+function assertCurrent(api,actor,branch,source){
     const current=capture(api);
     if(current.uid!==actor.uid || current.email!==actor.email || current.session!==actor.session)throw Error('Your account changed. Reopen this request.');
     if(typeof api.isBranchAllowed!=='function' || !api.isBranchAllowed(branch))throw Error('This branch is outside your Dispatch permissions.');
+    // Existing branch-scoped request loading uses canonical HQ as its supply
+    // source. This prepares a request/cart; it does not authorize a stock send.
+    if(source && source!=='Main Office' && !api.isBranchAllowed(source))throw Error('The request source is outside your Dispatch permissions.');
 }
 function stageCart(before,po,hqDetails){
     const cart=clone(before);
@@ -55,9 +58,9 @@ function storageSnapshot(storage){
     return new Map(selected.map(key=>[key,storage.getItem(key)]));
 }
 function restore(storage,snapshot){for(const [key,value] of snapshot){try{if(value===null)storage.removeItem(key);else storage.setItem(key,value);}catch{}}}
-function sameDraft(api,storage,cart,snapshot){
+function sameDraft(api,storage,cart,snapshot,controls=[]){
     if(stringify(api.dispatchCart || [])!==stringify(cart))return false;
-    return [...snapshot].every(([key,value])=>storage.getItem(key)===value);
+    return [...snapshot].every(([key,value])=>storage.getItem(key)===value) && controls.every(([control,value])=>control.value===value);
 }
 // Only prepares a local dispatch draft and request status. Posting actual stock
 // remains the existing atomic Send delivery operation, never this review action.
@@ -65,37 +68,45 @@ export async function loadStockRequestDraft(api,{poId,po,hqDetails={}},{storage=
     if(typeof poId!=='string' || !poId || poId.length>150 || poId.includes('/') || !po || typeof po.branch!=='string' || !po.branch || !Array.isArray(po.items) || !po.items.length)
         throw Error('Reload a valid stock request before preparing its dispatch draft.');
     po=clone(po);
-    const actor=capture(api);assertCurrent(api,actor,po.branch);
+    const source=po.sourceBranch ?? 'Main Office';
+    if(typeof source!=='string' || !source.trim() || source!==source.trim() || /^(unknown\s*branch|unknown|all)$/i.test(source) || po.destinationBranch!=null && po.destinationBranch!==po.branch)
+        throw Error('The request has invalid Source or Destination information. Refresh it before loading the draft.');
+    const sourceControl=document?.getElementById('dispFrom');
+    if(sourceControl?.options && !Array.from(sourceControl.options).some(option=>option.value===source))throw Error('The request source is unavailable. Refresh Branch Management before loading this draft.');
+    const actor=capture(api);assertCurrent(api,actor,po.branch,source);
     const ids=activeIds(storage);if(ids.includes(poId))return {alreadyLoaded:true,branch:po.branch};
     const before=clone(api.dispatchCart || []),savedDestination=storage.getItem('takodeal_dispatch_to') || '',destination=savedDestination || (ids.length?'':document?.getElementById('dispTo')?.value || '');
     if((before.length || ids.length) && destination!==po.branch)return {blockedDestination:true,destination:destination || 'an unconfirmed branch',branch:po.branch};
+    const savedSource=storage.getItem('takodeal_dispatch_from') || sourceControl?.value || '';
+    if((before.length || ids.length) && savedSource!==source)return {blockedSource:true,source:savedSource || 'an unconfirmed branch',requestedSource:source,branch:po.branch};
+    const controls=[sourceControl,document?.getElementById('dispTo')].filter(Boolean).map(control=>[control,control.value]);
     const snapshot=storageSnapshot(storage),staged=stageCart(before,po,hqDetails),request=stringify(requestFields(po)),intent=await hash(api,stringify({poId,request:requestFields(po),before,staged}));
-    assertCurrent(api,actor,po.branch);if(activeIds(storage).includes(poId))return {alreadyLoaded:true,branch:po.branch};
-    if(!sameDraft(api,storage,before,snapshot))throw Error('Your dispatch draft changed while this request was loading. Review it again.');
+    assertCurrent(api,actor,po.branch,source);if(activeIds(storage).includes(poId))return {alreadyLoaded:true,branch:po.branch};
+    if(!sameDraft(api,storage,before,snapshot,controls))throw Error('Your dispatch draft changed while this request was loading. Review it again.');
     const key=actor.uid+':'+poId+':'+intent;if(!attempts.has(key))attempts.set(key,'request-draft-'+(api.crypto || globalThis.crypto).randomUUID());const operationId=attempts.get(key);
     const ref=api.doc(api.db,'purchase_orders',poId);
     try{await api.runTransaction(api.db,async tx=>{
-        const saved=await tx.get(ref);assertCurrent(api,actor,po.branch);
-        if(!sameDraft(api,storage,before,snapshot))throw Error('Your dispatch draft changed while this request was loading. Review it again.');
+        const saved=await tx.get(ref);assertCurrent(api,actor,po.branch,source);
+        if(!sameDraft(api,storage,before,snapshot,controls))throw Error('Your dispatch draft changed while this request was loading. Review it again.');
         if(!saved.exists())throw Error('This request was removed. Refresh the request list.');const current=saved.data();
         if(!['Pending','Drafting','Delayed'].includes(current.status) || stringify(requestFields(current))!==request)throw Error('This request changed or was already processed. Refresh it before loading the cart.');
         const marker=current.dispatchDraftOperation;
         if(marker?.intent===intent && marker.actorUid===actor.uid && current.status==='Drafting')return;
         if(current.status!==po.status)throw Error('Another account changed the request status. Refresh it before loading the cart.');
-        assertCurrent(api,actor,po.branch);
+        assertCurrent(api,actor,po.branch,source);
         tx.update(ref,{status:'Drafting',managerMessage:'Reviewed and loaded into the editable Dispatch Cart. Stock has not been dispatched.',processedAt:api.serverTimestamp(),
             dispatchDraftOperation:{version:1,operationId,intent,actorUid:actor.uid,actorEmail:actor.email,loadedAt:api.serverTimestamp()}});
-    });}catch(error){assertCurrent(api,actor,po.branch);if(activeIds(storage).includes(poId))return {alreadyLoaded:true,branch:po.branch};throw error;}
-    assertCurrent(api,actor,po.branch);
+    });}catch(error){assertCurrent(api,actor,po.branch,source);if(activeIds(storage).includes(poId))return {alreadyLoaded:true,branch:po.branch};throw error;}
+    assertCurrent(api,actor,po.branch,source);
     if(activeIds(storage).includes(poId))return {alreadyLoaded:true,branch:po.branch};
-    if(!sameDraft(api,storage,before,snapshot))throw Error('The request draft status was recorded, but your local cart changed. Refresh before loading it again. Nothing was dispatched.');
+    if(!sameDraft(api,storage,before,snapshot,controls))throw Error('The request draft status was recorded, but your local cart or branch selection changed. Refresh before loading it again. Nothing was dispatched.');
     try{
-        storage.setItem('takodeal_dispatch_cart',JSON.stringify(staged));storage.setItem('takodeal_dispatch_to',po.branch);storage.setItem('takodeal_active_po',[...ids,poId].join(','));
+        storage.setItem('takodeal_dispatch_cart',JSON.stringify(staged));storage.setItem('takodeal_dispatch_from',source);storage.setItem('takodeal_dispatch_to',po.branch);storage.setItem('takodeal_active_po',[...ids,poId].join(','));
         if(!before.length)for(const key of snapshot.keys())if(key.startsWith('takodeal_draft_qty_'))storage.removeItem(key);
     }catch{
         restore(storage,snapshot);throw Error('The request status was recorded, but this device could not save the draft. Reopen the request and retry; nothing was dispatched.');
     }
     api.dispatchCart=staged;
-    const from=document?.getElementById('dispFrom'),to=document?.getElementById('dispTo');if(from)from.value='Main Office';if(to)to.value=po.branch;
-    return {loaded:true,branch:po.branch};
+    const from=document?.getElementById('dispFrom'),to=document?.getElementById('dispTo');if(from)from.value=source;if(to)to.value=po.branch;
+    return {loaded:true,branch:po.branch,source};
 }

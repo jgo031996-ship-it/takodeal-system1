@@ -30,6 +30,10 @@ import { legacyRemittanceDuplicates, rejectLegacyDuplicateAtomic } from './remit
 import { canOpenWorkspacePage,configuredPermissions } from './workspace-access-model.js';
 import { createLogisticsFeed } from './logistics-feed.js';
 import { commitDispatch, transitionDispatch } from './dispatch-safety.js';
+import {installDispatchRestockUI,renderAutoRestockInvoiceRow} from './dispatch-restock-ui.js';
+import {installDispatchDestinationRepair} from './dispatch-destination-repair.js';
+import {isDispatchAutoRestock} from './dispatch-restock-model.js';
+import {collectDispatchRestockEstimates} from './dispatch-restock-finance.js';
 import { initManagerDialogs } from './manager-dialogs.js';
 import { initManagerWorkspace, renderFinancialFlow, escapeHtml } from './manager-workspace.js';
 import { archiveableShift, businessClock, money, mallCashPlan } from './branch-operations.js';
@@ -1227,9 +1231,11 @@ window.updateLifetimeRestockCost = async function() {
     try {
         const snap = await getDocs(collection(db, "hq_restocks"));
         let totalCost = 0;
-        snap.forEach(doc => { totalCost += (parseFloat(doc.data().totalCost) || 0); });
+        const restockRows = [];
+        snap.forEach(doc => {const row={...doc.data(),id:doc.id};restockRows.push(row);if(!isDispatchAutoRestock(row))totalCost += (parseFloat(row.totalCost) || 0);});
+        const estimates=collectDispatchRestockEstimates(restockRows,{branch:"Main Office"});
         
-        let formattedCost = '₱' + totalCost.toLocaleString(undefined, {minimumFractionDigits: 2});
+        let formattedCost = '₱' + totalCost.toLocaleString(undefined, {minimumFractionDigits: 2}) + ' recorded · ₱' + estimates.knownEstimatedTotal.toLocaleString(undefined,{minimumFractionDigits:2}) + ' estimated' + (estimates.hasUnknownCosts?' + prices needing review':'');
         
         // Update both possible locations
         let costEl = document.getElementById('lifetimeRestockCost');
@@ -1257,6 +1263,7 @@ window.loadGroupedRestocks = async function() {
         } else {
             snap.forEach(docSnap => {
                 let d = docSnap.data();
+                if (isDispatchAutoRestock(d)) { html += renderAutoRestockInvoiceRow(d,docSnap.id); return; }
                 let dateStr = d.timestamp?.toDate ? d.timestamp.toDate().toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
                 
                 let cost = parseFloat(d.totalCost) || 0;
@@ -1321,6 +1328,10 @@ window.revertAndEditRestock = async function(encodedData) {
     Swal.fire({title: 'Reverting Stock...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
     try {
+        const freshInvoice = await window.getDocFromServer(window.doc(window.db,"hq_restocks",invoice.id));
+        if (!freshInvoice.exists()) throw Error("This restock record is missing. Refresh the invoices.");
+        if (isDispatchAutoRestock(freshInvoice.data())) throw Error("This restock is linked to a delivery and cannot use Revert & Edit.");
+        invoice = {...freshInvoice.data(),id:invoice.id};
         for (let item of invoice.items) {
             
             // 🛡️ THE FALLBACK FIX: Hunt down the item even if it's missing its ID!
@@ -1839,8 +1850,8 @@ window.reviewPurchaseOrder = async function(poId) {
         if (!snap.exists()) return Swal.fire('Error', 'This request could not be found.', 'error');
         
         let po = snap.data();
-        
-        const hqSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", "Main Office")));
+        const requestSource = po.sourceBranch || 'Main Office';
+        const hqSnap = await window.getDocs(window.query(window.collection(window.db, "inventory"), window.where("branch", "==", requestSource)));
         let hqStock = Object.create(null);
         let hqDetails = Object.create(null); 
         hqSnap.forEach(d => {
@@ -1866,6 +1877,9 @@ window.reviewPurchaseOrder = async function(poId) {
         if (actionResult.isConfirmed) {
             Swal.fire({titleText:'Preparing dispatch draft',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
             const draftResult = await loadStockRequestDraft(window,{poId,po,hqDetails},{storage:localStorage,document});
+            if (draftResult.blockedSource) {
+                return Swal.fire({titleText:'Finish the current dispatch draft first',text:'Your draft uses '+draftResult.source+'. Send or set aside it before loading stock from '+draftResult.requestedSource+'.',icon:'info'});
+            }
             if (draftResult.blockedDestination) {
                 return Swal.fire({titleText:'Finish the current dispatch draft first',text:'Your draft is for '+draftResult.destination+'. Send or set aside that draft before adding a request for '+draftResult.branch+'.',icon:'info'});
             }
@@ -2145,7 +2159,9 @@ window.loadDispatchDashboard = async function() {
     if (savedCart && !isFranchisee) {
         try { window.dispatchCart = JSON.parse(savedCart); } catch(e) { window.dispatchCart = []; }
         let savedTo = localStorage.getItem('takodeal_dispatch_to');
-        if (savedTo) setTimeout(() => { document.getElementById('dispTo').value = savedTo; }, 100);
+        if (savedTo) document.getElementById('dispTo').value = savedTo;
+        const savedFrom = localStorage.getItem('takodeal_dispatch_from');
+        if (savedFrom) document.getElementById('dispFrom').value = savedFrom;
     } else {
         window.dispatchCart = [];
     }
@@ -14690,10 +14706,12 @@ window.toggleManagerSidebar = function() {
         sidebar.classList.remove('show-mobile');
         if (overlay) overlay.style.display = 'none';
     } else {
-        // Open it
+        // A phone drawer needs full labels even after desktop collapse.
+        if (window.innerWidth <= 768) sidebar.classList.remove('collapsed');
         sidebar.classList.add('show-mobile');
         if (overlay) overlay.style.display = 'block';
     }
+    document.querySelector('.mobile-menu-btn')?.setAttribute('aria-expanded', String(sidebar.classList.contains('show-mobile')));
 };
 
 // ==========================================
@@ -15970,7 +15988,7 @@ window.openGeneralAuditModal = function() {
     document.getElementById('generalAuditModal').style.display = 'flex';
     document.getElementById('auditModalBranch').value = '';
     document.getElementById('auditModalSearch').value = '';
-    document.getElementById('auditModalBody').innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; color:#94a3b8; font-weight: bold;">Select a branch above to begin the audit...</td></tr>';
+    document.getElementById('auditModalBody').innerHTML = '<div class="general-audit-empty" role="status">Select a branch above to begin the audit.</div>';
 };
 
 window.loadAuditModalItems = async function() {
@@ -15978,11 +15996,11 @@ window.loadAuditModalItems = async function() {
     let tbody = document.getElementById('auditModalBody');
     
     if (!branch) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="padding: 40px; color:#94a3b8; font-weight: bold;">Select a branch above to begin the audit...</td></tr>';
+        tbody.innerHTML = '<div class="general-audit-empty" role="status">Select a branch above to begin the audit.</div>';
         return;
     }
 
-    tbody.innerHTML = `<tr><td colspan="4" class="text-center" style="padding: 40px; color: #ea580c; font-weight: bold;">⏳ Loading inventory for ${branch}...</td></tr>`;
+    tbody.innerHTML = '<div class="general-audit-empty" role="status">Loading inventory for the selected branch…</div>';
     window.globalAuditItems = [];
 
     try {
@@ -16012,7 +16030,7 @@ window.loadAuditModalItems = async function() {
 
     } catch (e) {
         console.error("Audit Modal Load Error:", e);
-        tbody.innerHTML = '<tr><td colspan="4" class="text-center" style="color:red; padding: 40px;">Failed to fetch inventory from cloud.</td></tr>';
+        tbody.innerHTML = '<div class="general-audit-empty is-error" role="status">Inventory could not load. Check your connection and select the branch again.</div>';
     }
 };
 
@@ -16032,6 +16050,7 @@ window.renderAuditModalItems = function() {
     let search = document.getElementById('auditModalSearch').value.toLowerCase();
     let container = document.getElementById('auditModalBody');
     let html = '';
+    const safe = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 
     // Group items by Category
     let groupedData = {};
@@ -16044,26 +16063,17 @@ window.renderAuditModalItems = function() {
     });
 
     if (Object.keys(groupedData).length === 0) {
-        container.innerHTML = '<div style="text-align: center; padding: 40px; color:#94a3b8; font-weight: bold;">No items match your search.</div>';
+        container.innerHTML = '<div class="general-audit-empty" role="status">No items match your search.</div>';
         return;
     }
 
-    html += `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(48%, 1fr)); gap: 20px; align-items: start;">`;
+    html += '<div class="general-audit-groups">';
 
-    Object.keys(groupedData).sort().forEach(cat => {
+    Object.keys(groupedData).sort().forEach((cat, categoryIndex) => {
         html += `
-            <div style="background: white; border: 2px solid #cbd5e1; border-radius: 8px; overflow: hidden; box-shadow: 0 6px 12px rgba(0,0,0,0.08);">
-                <div style="background: #e2e8f0; border-bottom: 2px solid #cbd5e1; padding: 12px; text-align: center; font-weight: 900; color: #0f172a; letter-spacing: 1px; font-size: 15px;">
-                    ${cat}
-                </div>
-                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-                    <thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
-                        <tr>
-                            <th style="padding: 10px; border-right: 1px solid #e2e8f0; text-align: left; width: 40%; color: #334155;">Item Name</th>
-                            <th style="padding: 10px; text-align: center; width: 60%; color: #334155;">Actual Count</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+            <section class="general-audit-category" aria-labelledby="auditCategory_${categoryIndex}">
+                <header class="general-audit-category-heading"><h3 id="auditCategory_${categoryIndex}">${safe(cat)}</h3><span>${groupedData[cat].length} items</span></header>
+                <div class="general-audit-category-items" role="list">
         `;
 
         groupedData[cat].sort((a,b) => a.item.name.localeCompare(b.item.name)).forEach(dataObj => {
@@ -16094,36 +16104,35 @@ window.renderAuditModalItems = function() {
             let inputHtml = '';
             if (conv > 1 && pUom.toLowerCase() !== bUom.toLowerCase()) {
                 inputHtml = `
-                    <div style="display: flex; gap: 4px; align-items: center; justify-content: center;">
-                        <div style="display: flex; align-items: center; border: 1px solid #bae6fd; border-radius: 4px; background: #f0f9ff; overflow: hidden; width: 75px;">
-                            <input type="number" id="auditInputPurch_${index}" value="${savedPurch}" oninput="window.saveAuditTempCount(${index}, 'purch', this.value)" placeholder="${expWholePurch}" style="width: 100%; padding: 6px; border: none; outline: none; text-align: center; font-weight: 900; color: #0284c7; font-size: 13px; background: transparent;">
-                            <span style="font-size: 9px; font-weight: 800; color: #0ea5e9; padding-right: 4px; text-transform: uppercase;">${pUom.substring(0,4)}</span>
-                        </div>
-                        <span style="font-weight: 900; color: #cbd5e1; font-size: 10px;">+</span>
-                        <div style="display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; overflow: hidden; width: 75px;">
-                            <input type="number" id="auditInputBase_${index}" value="${savedBase}" oninput="window.saveAuditTempCount(${index}, 'base', this.value)" placeholder="${expRemainderBase.toLocaleString(undefined, {maximumFractionDigits: 1})}" style="width: 100%; padding: 6px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 13px; background: transparent;">
-                            <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 4px; text-transform: uppercase;">${bUom.substring(0,4)}</span>
-                        </div>
-                    </div>
+                    <div class="general-audit-count-fields">
+                        <label class="general-audit-count-field" for="auditInputPurch_${index}"><span>Purchase units · ${safe(pUom)}</span>
+                            <input type="number" inputmode="decimal" step="any" id="auditInputPurch_${index}" value="${safe(savedPurch)}" oninput="window.saveAuditTempCount(${index}, 'purch', this.value)" placeholder="${expWholePurch}" aria-describedby="auditExpected_${index} auditConversion_${index}">
+                        </label>
+                        <label class="general-audit-count-field" for="auditInputBase_${index}"><span>Loose base units · ${safe(bUom)}</span>
+                            <input type="number" inputmode="decimal" step="any" id="auditInputBase_${index}" value="${safe(savedBase)}" oninput="window.saveAuditTempCount(${index}, 'base', this.value)" placeholder="${expRemainderBase.toLocaleString(undefined, {maximumFractionDigits: 1})}" aria-describedby="auditExpected_${index} auditConversion_${index}">
+                        </label>
+                    </div><p class="general-audit-conversion" id="auditConversion_${index}">1 ${safe(pUom)} = ${conv.toLocaleString()} ${safe(bUom)}. Purchase units and loose base units are added together.</p>
                 `;
             } else {
                 inputHtml = `
-                    <div style="display: flex; align-items: center; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; overflow: hidden; max-width: 100px; margin: 0 auto;">
-                        <input type="number" id="auditInputBase_${index}" value="${savedBase}" oninput="window.saveAuditTempCount(${index}, 'base', this.value)" placeholder="${item.systemQty.toFixed(1)}" style="width: 100%; padding: 6px; border: none; outline: none; text-align: center; font-weight: 900; color: #334155; font-size: 13px; background: transparent;">
-                        <span style="font-size: 9px; font-weight: 800; color: #64748b; padding-right: 4px; text-transform: uppercase;">${bUom.substring(0,4)}</span>
+                    <div class="general-audit-count-fields is-single">
+                        <label class="general-audit-count-field" for="auditInputBase_${index}"><span>Base units · ${safe(bUom)}</span>
+                            <input type="number" inputmode="decimal" step="any" id="auditInputBase_${index}" value="${safe(savedBase)}" oninput="window.saveAuditTempCount(${index}, 'base', this.value)" placeholder="${item.systemQty.toFixed(1)}" aria-describedby="auditExpected_${index}">
+                        </label>
                         <input type="hidden" id="auditInputPurch_${index}">
                     </div>
                 `;
             }
 
             html += `
-                <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                    <td style="padding: 10px; border-right: 1px dashed #e2e8f0; font-weight: bold; color: #1e293b; font-size: 13px;">${item.name}</td>
-                    <td style="padding: 10px; text-align: center;">${inputHtml}</td>
-                </tr>
+                <article class="general-audit-item" role="listitem" aria-labelledby="auditItem_${index}">
+                    <h4 id="auditItem_${index}">${safe(item.name)}</h4>
+                    <p class="general-audit-expected" id="auditExpected_${index}"><span>Recorded stock</span><strong>${item.systemQty.toLocaleString(undefined, {maximumFractionDigits: 2})} ${safe(bUom)}</strong></p>
+                    <fieldset class="general-audit-counts"><legend>Actual physical count</legend>${inputHtml}</fieldset>
+                </article>
             `;
         });
-        html += `</tbody></table></div>`;
+        html += '</div></section>';
     });
 
     html += `</div>`;
@@ -21459,75 +21468,7 @@ runManagerDomReady(() => {
                 box-sizing: border-box !important;
             }
 
-            /* 📱 TRIGGER MOBILE MODE ON PHONES & SMALL TABLETS */
-            @media (max-width: 850px) {
-                /* Force side-by-side grids to stack vertically */
-                div[style*="grid-template-columns"] {
-                    grid-template-columns: 1fr !important;
-                    gap: 15px !important;
-                }
-
-                /* Force Flex containers to wrap their contents so buttons don't hide */
-                div[style*="display: flex"] {
-                    flex-wrap: wrap !important;
-                }
-
-                /* Exclude flex-wrap from certain structural elements so they don't break */
-                .sidebar-header, .brand-container, td > div[style*="display: flex"], .swal2-title, .swal2-header {
-                    flex-wrap: nowrap !important;
-                }
-
-                /* Make standard inputs and dropdowns full width */
-                input[type="text"], input[type="number"], input[type="date"], input[type="month"], select, textarea {
-                    width: 100% !important;
-                    min-width: 100% !important;
-                    box-sizing: border-box !important;
-                }
-
-                /* Make action buttons stretch to full width so they are easy to tap */
-                button {
-                    flex: 1 1 100% !important;
-                    width: 100% !important;
-                    margin-bottom: 5px !important;
-                    white-space: normal !important;
-                    height: auto !important;
-                }
-
-                /* Prevent table cells from squishing */
-                table th, table td {
-                    white-space: nowrap !important;
-                }
-
-                /* Make SweetAlert Modals fit the phone screen perfectly */
-                .swal2-popup {
-                    width: 95% !important;
-                    max-width: 95% !important;
-                    padding: 20px 15px !important;
-                    margin: 10px auto !important;
-                    box-sizing: border-box !important;
-                }
-                
-                /* Reduce padding on the main view container to maximize screen space */
-                .view-container {
-                    padding: 10px !important;
-                }
-
-                /* 🔥 THE NEW MODAL ALIGNMENT FIX: Stop native modals from overflowing the screen! */
-                div[id$="Modal"] > div {
-                    width: 95% !important;
-                    max-width: 95% !important;
-                    margin: 0 auto !important;
-                }
-                
-                /* 🔥 THE MODAL BODY SCROLL FIX: Force the inside of the modal to fit perfectly */
-                div[id$="Modal"] > div > div:nth-child(2) {
-                    padding: 15px !important;
-                    overflow-x: hidden !important; /* Stops the box from stretching */
-                    overflow-y: auto !important;
-                    width: 100% !important;
-                    box-sizing: border-box !important;
-                }
-            }
+            /* Phone layouts are scoped in manager-mobile.css. */
         `;
         document.head.appendChild(mobileStyle);
     }
@@ -27460,3 +27401,6 @@ installCustomerHubSettings(window,document);
 
 installRiderManagementSafety(window);
 installRiderManagementViews(window,document);
+
+installDispatchRestockUI(window);
+installDispatchDestinationRepair(window,{document,dialogs:Swal});

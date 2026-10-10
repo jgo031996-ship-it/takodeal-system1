@@ -63,7 +63,7 @@ function cameraProblem(video,document,active=true) {
 function decodedFrame(video) {
     return Boolean(video && !video.paused && !video.ended && video.readyState>=2 && Number.isFinite(video.videoWidth) && Number.isFinite(video.videoHeight) && video.videoWidth>0 && video.videoHeight>0);
 }
-export function waitForCameraFrame(video,{timeout=2500,schedule=setTimeout,cancel=clearTimeout}={}) {
+export function waitForCameraFrame(video,{timeout=5000,schedule=setTimeout,cancel=clearTimeout}={}) {
     if(decodedFrame(video))return Promise.resolve();
     return new Promise((resolve,reject)=>{
         let frameId=null,timer=null,poll=null,done=false;

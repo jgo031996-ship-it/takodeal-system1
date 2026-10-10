@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="manifest" href="manifest.json?v=staff-device-fleet-20261004-r3">
-    <meta name="takodeal-release" content="tablet-attendance-stock-20261009-r1">
+    <meta name="takodeal-release" content="staff-proof-older-phones-20261010-r1">
     <meta name="theme-color" content="#173f35">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="TAKODEÁL Staff">
@@ -49,7 +49,7 @@
             <button class="btn-primary" onclick="window.requestDeviceAccess()">Request access</button><p id="deviceRegistrationStatus" class="device-registration-status" role="status" aria-live="polite"></p>
 
             <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM REGISTRATION -->
-            <button type="button" onclick="window.forceUpdateApp()" style="margin-top: 25px; background: transparent; color: #64748b; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 12px; transition: 0.2s;">Check for app updates</button>
+            <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-registration">Check for app updates</button><p id="staffUpdateHelp-registration" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
         </div>
 
         <div class="login-card" id="pendingCard" style="display:none;">
@@ -57,7 +57,7 @@
             <p id="devicePendingText" role="status" aria-live="polite">Connecting to HQ.</p>
             <p id="devicePendingId" class="device-registration-id"></p>
             <button class="btn-primary" id="deviceRetryButton" onclick="window.retryDeviceRegistration()" hidden>Check again</button>
-            <button class="btn-outline" onclick="window.forceUpdateApp()">Check for app updates</button>
+            <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-pending">Check for app updates</button><p id="staffUpdateHelp-pending" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
         </div>
     </div>
 
@@ -74,7 +74,7 @@
             <div id="loginError" style="color: #dc2626; margin-top: 15px; font-size: 13px; font-weight: bold; display: none;">❌ Incorrect PIN. Please try again.</div>
             
             <!-- 🔥 NEW: FORCE UPDATE ACCESSIBLE FROM LOGIN -->
-            <button type="button" onclick="window.forceUpdateApp()" style="margin-top: 25px; background: transparent; color: #64748b; border: 1px dashed #cbd5e1; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 12px; transition: 0.2s;">Check for app updates</button>
+            <section class="staff-login-update" aria-label="App updates"><button type="button" class="btn-outline staff-update-button" data-staff-update onclick="window.forceUpdateApp()" aria-describedby="staffUpdateHelp-login">Check for app updates</button><p id="staffUpdateHelp-login" class="staff-update-help">Get the latest Staff app before signing in.</p><p data-staff-update-status role="status" aria-live="polite" hidden></p></section>
         </div>
     </div>
 
@@ -187,12 +187,6 @@
                 <div class="form-group">
                     <label>Change Login PIN</label>
                     <input type="password" inputmode="numeric" id="profPin" placeholder="Enter new PIN (Leave blank to keep current PIN)" style="border-color: #86efac; background: #f0fdf4;">
-                </div>
-                
-                <!-- 🔥 NEW FORCE UPDATE BUTTON -->
-                <div style="margin-top: 15px; background: #f8fafc; padding: 15px; border-radius: 8px; border: 1px dashed #cbd5e1; text-align: center;">
-                    <label style="font-size: 11px; font-weight: bold; color: #475569; display: block; margin-bottom: 8px;">Experiencing bugs or missing features?</label>
-                    <button type="button" onclick="window.forceUpdateApp()" style="background: #0f172a; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; width: 100%; font-size: 13px; box-shadow: 0 4px 6px rgba(15, 23, 42, 0.3);">Check for app updates</button>
                 </div>
 
 
@@ -653,6 +647,10 @@
   </div>
 
     <dialog id="staffDocumentPreview" class="staff-document-preview"><div class="document-section-heading"><h3 id="staffDocumentPreviewTitle">Document photo</h3><button type="button" id="staffDocumentPreviewClose">Close</button></div><img id="staffDocumentPreviewImage" alt="Private document photo"></dialog>
+      <script type="module">
+        import {installStaffAppUpdate} from "./staff-phone.js";
+        installStaffAppUpdate();
+      </script>
       <script type="module" src="app.js?v=tablet-attendance-stock-20261009-r1"></script>
 </body>
 </html>
