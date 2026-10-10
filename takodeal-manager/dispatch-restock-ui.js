@@ -1,4 +1,4 @@
-import {captureDispatchAuthority,prepareDispatchRestock,commitDispatch} from './dispatch-safety.js';
+import {captureDispatchAuthority,prepareDispatchRestock,commitDispatch,assertDispatchRequestAvailable} from './dispatch-safety.js';
 import {commitSetAside} from './dispatch-set-aside.js';
 import {canonicalDispatchIntent,isDispatchAutoRestock} from './dispatch-restock-model.js';
 import {collectDispatchRestockEstimates,renderDispatchRestockEstimates} from './dispatch-restock-finance.js';
@@ -30,6 +30,17 @@ export function renderAutoRestockInvoiceRow(row,id){
 }
 export function installDispatchRestockUI(api,{document:d=globalThis.document,storage=globalThis.localStorage,dialogs=api.Swal||globalThis.Swal}={}){
  let busy=false,flowRevision=0;
+ const previousDialog=dialogs.fire;
+ dialogs.fire=function(options,...args){
+  // SweetAlert opens asynchronously. A fast cached request can replace its
+  // loading popup before didOpen runs; the stale callback must not hide the
+  // review's confirmation button or show a spinner on the next dialog.
+  if(options&&typeof options==='object'&&['Loading Request...','Preparing dispatch draft'].includes(options.titleText||options.title)&&typeof options.didOpen==='function'){
+   const opened=options.didOpen;
+   options={...options,didOpen:popup=>{if(typeof dialogs.getPopup==='function'&&dialogs.getPopup()!==popup)return;opened(popup);}};
+  }
+  return previousDialog.call(this,options,...args);
+ };
  const context={document:d,storage},collect=()=>collectDispatchDraft(api,context);
  function baseline(draft){
   const identity=captureDispatchAuthority(api,draft),cart=api.dispatchCart,serialized=canonicalDispatchIntent(draft);
@@ -42,6 +53,76 @@ export function installDispatchRestockUI(api,{document:d=globalThis.document,sto
   for(const name of Object.keys(storage))if(name.startsWith('takodeal_draft_qty_'))storage.removeItem(name);
   api.renderDispatchCart?.();return true;
  }
+ async function requestLinks(draft,check){
+  const issues=[];
+  for(const id of draft.purchaseOrderIds){
+   if(id.length>150||id.includes('/')){issues.push({id,branch:'Unknown branch',status:'Invalid link',reason:'has an invalid request link'});continue;}
+   const saved=await api.getDocFromServer(api.doc(api.db,'purchase_orders',id));check();
+   try{assertDispatchRequestAvailable(saved.exists()?saved.data():null,{id,source:draft.source,destination:draft.destination});}
+   catch(error){if(error.code!=='DISPATCH_REQUEST_LINK')throw error;issues.push(...error.issues);}
+  }
+  check();
+  if(issues.length){const error=Error(issues.map(row=>row.branch+' · '+row.status+': request '+row.id+' '+row.reason+'.').join('\n'));error.code='DISPATCH_REQUEST_LINK';error.issues=issues;throw error;}
+ }
+ async function assertNoSavedAttempt(check){
+  for(const [key,table,prefix] of [['takodeal_dispatch_attempt','settings','dispatch_commit_'],['takodeal_set_aside_attempt','purchase_orders','']]){
+   const pending=savedAttempt(storage,key);if(!pending)continue;
+   if(typeof pending.id!=='string'||!pending.id||pending.id.length>150||pending.id.includes('/'))throw Error('A previous save attempt needs review before refreshing this draft. Keep the draft and reopen Dispatch.');
+   const saved=await api.getDocFromServer(api.doc(api.db,table,prefix+pending.id));check();
+   if(saved.exists())throw Error(key==='takodeal_dispatch_attempt'?'A delivery from this draft was already saved. Keep this draft and retry the unchanged delivery to confirm it, or review the delivery feed.':'A set-aside copy of this draft was already saved. Keep this draft and retry Set Aside to confirm it, or review the request list.');
+  }
+ }
+ function draftCopy(copy){
+  return '<div style="text-align:left;font-size:14px;overflow-wrap:anywhere"><p>'+esc(copy.source)+' → '+esc(copy.destination)+'</p><p>This is a reference copy of your entered quantities. Review the open request again before sending.</p><div style="max-height:40vh;overflow:auto">'+copy.items.map(row=>'<p style="padding:8px;border-bottom:1px solid #dbe5df"><strong>'+esc(row.itemName||row.name)+'</strong><br>'+esc(quantity(row.rawQty)+' '+(row.friendlyUom||row.baseUom||row.uom||'units'))+'</p>').join('')+'</div></div>';
+ }
+ api.showDispatchDraftBackup=async()=>{
+  try{
+   const uid=api.auth?.currentUser?.uid,copy=uid&&savedAttempt(storage,'takodeal_dispatch_recovery_'+uid);
+   if(!copy||copy.actorUid!==uid)return dialogs.fire('No saved draft copy','A reference copy is saved when you refresh broken request links.','info');
+   captureDispatchAuthority(api,{source:copy.source,destination:copy.destination});
+   return dialogs.fire({titleText:'Saved quantity reference',html:draftCopy(copy),confirmButtonText:'Close',width:'620px'});
+  }catch(error){return dialogs.fire('Draft copy needs attention',error.message,'warning');}
+ };
+ async function resetLinks(error,draft,check){
+  const identity=captureDispatchAuthority(api,draft);
+  const answer=await dialogs.fire({titleText:'Refresh the linked stock requests',icon:'warning',text:error.message+' Your entered quantities will be copied on this device before the draft is cleared. Then reopen the correct request. No delivery will be sent.',showCancelButton:true,confirmButtonText:'Save copy and refresh draft',cancelButtonText:'Keep my draft',confirmButtonColor:'#176552',focusConfirm:false});
+  if(!answer.isConfirmed)return false;check();
+  await assertNoSavedAttempt(check);check();
+  // Keep the original editable quantities, not just the last persisted cart.
+  // A failed backup write must leave the entire draft and its links intact.
+  const copy={version:1,actorUid:identity.uid,savedAt:new Date().toISOString(),source:draft.source,destination:draft.destination,items:draft.allItems,purchaseOrderIds:draft.purchaseOrderIds,
+   attempts:{dispatch:storage.getItem('takodeal_dispatch_attempt'),setAside:storage.getItem('takodeal_set_aside_attempt')}};
+  storage.setItem('takodeal_dispatch_recovery_'+identity.uid,JSON.stringify(copy));check();
+  const keys=['takodeal_dispatch_cart','takodeal_dispatch_from','takodeal_dispatch_to','takodeal_active_po','takodeal_dispatch_attempt','takodeal_set_aside_attempt',...Object.keys(storage).filter(key=>key.startsWith('takodeal_draft_qty_'))];
+  const previous=new Map(keys.map(key=>[key,storage.getItem(key)]));
+  try{for(const key of keys)storage.removeItem(key);}catch(error){for(const [key,value]of previous)try{if(value!==null)storage.setItem(key,value);}catch{}throw error;}
+  api.dispatchCart=[];api.renderDispatchCart?.();await api.loadDispatchDashboard?.();
+  await dialogs.fire({titleText:'Draft refreshed · quantities copied',html:draftCopy(copy),confirmButtonText:'Review stock requests',confirmButtonColor:'#176552',width:'620px'});return true;
+ }
+ api.resetDispatchDraftLinks=async()=>{
+  if(busy)return false;let button=d.getElementById('btnSubmitDispatch');
+  try{
+   const draft=collect(),check=baseline(draft);busy=true;if(button)button.disabled=true;
+   try{await requestLinks(draft,check);await dialogs.fire('Request links are current','This draft has no broken request links. Your quantities were kept.','info');return false;}
+   catch(error){if(error.code!=='DISPATCH_REQUEST_LINK')throw error;return await resetLinks(error,draft,check);}
+  }catch(error){await dialogs.fire('Draft was kept',error.message,'warning');return false;}
+  finally{busy=false;if(button)button.disabled=false;}
+ };
+ // Older Approve shortcuts must use the same reviewed, validated cart loader.
+ api.approvePurchaseOrder=(...args)=>api.reviewPurchaseOrder(...args);
+ const previousRender=api.renderDispatchCart;
+ api.renderDispatchCart=function(...args){
+  const result=previousRender?.apply(this,args),button=d.getElementById('btnSubmitDispatch');
+  if(!button?.parentNode||typeof d.createElement!=='function')return result;
+  d.getElementById('dispatchDraftRecoveryActions')?.remove();
+  const uid=api.auth?.currentUser?.uid,hasCopy=uid&&storage.getItem('takodeal_dispatch_recovery_'+uid);
+  if(!hasCopy&&(!api.dispatchCart?.length||!ids(storage).length))return result;
+  const actions=d.createElement('div');actions.id='dispatchDraftRecoveryActions';actions.style.cssText='display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;';
+  for(const [label,action,visible] of [['Refresh request links',api.resetDispatchDraftLinks,api.dispatchCart?.length&&ids(storage).length],['View saved quantity reference',api.showDispatchDraftBackup,hasCopy]]){
+   if(!visible)continue;const control=d.createElement('button');control.type='button';control.textContent=label;control.style.cssText='min-height:44px;padding:10px 14px;border:1px solid #cad8d1;border-radius:8px;background:#f7faf6;color:#176552;cursor:pointer;';control.onclick=action;actions.appendChild(control);
+  }
+  button.parentNode.insertBefore(actions,button.nextSibling);return result;
+ };
  const previousSubmit=api.submitMultiDispatch;
  api.submitMultiDispatch=async()=>{
   if(busy)return;let button=d.getElementById('btnSubmitDispatch'),draft,check,committed=false;
@@ -59,6 +140,9 @@ export function installDispatchRestockUI(api,{document:d=globalThis.document,sto
     if(saved.exists())throw Error('Your previous delivery was already saved. Review the delivery feed before sending this changed draft.');
     storage.removeItem('takodeal_dispatch_attempt');pending=null;
    }
+   // A same-ID retry may already be committed. Let commitDispatch acknowledge
+   // it before inspecting the now-Completed requests, without another send.
+   if(!pending)await requestLinks(draft,check);
    let plan=pending?.payload?.autoRestock??await prepareDispatchRestock(api,draft);check();
    const answer=await dialogs.fire({title:pending?'Retry saved delivery':'Send delivery to '+draft.destination,html:preview(plan),input:'text',inputLabel:'Driver / person delivering',inputValue:pending?.payload?.driver||'',inputPlaceholder:'Enter the driver’s name',showCancelButton:true,confirmButtonText:pending?'Retry same delivery':'Send delivery',confirmButtonColor:'#176552',inputValidator:value=>!String(value||'').trim()?'Enter the driver’s name.':undefined});
    if(!answer.isConfirmed)return;check();
@@ -72,7 +156,10 @@ export function installDispatchRestockUI(api,{document:d=globalThis.document,sto
    api.invalidateCache?.('inventory');api.invalidateCache?.('hq_restocks');
    if(cleared)await api.loadDispatchDashboard?.();else api.loadDispatchLogs?.();
    api.ManagerUI?.notify(cleared?'Delivery saved. The cashier confirms receipt at the destination.':'Delivery saved. Your newer draft was kept. Review the delivery feed.');
-  }catch(error){await dialogs.fire(committed?'Delivery saved':'Delivery was not sent',committed?'The delivery and its restock were saved. Refresh the delivery feed to see them.':error.message,committed?'info':'error');}
+  }catch(error){
+   if(!committed&&error.code==='DISPATCH_REQUEST_LINK'&&draft&&check){try{check();await resetLinks(error,draft,check);}catch(recovery){await dialogs.fire('Draft was kept',recovery.message,'warning');}}
+   else await dialogs.fire(committed?'Delivery saved':'Delivery was not sent',committed?'The delivery and its restock were saved. Refresh the delivery feed to see them.':error.message,committed?'info':'error');
+  }
   finally{busy=false;if(button){button.disabled=false;button.textContent=api.sessionUser?.isFranchisee?'Request stock from HQ':'Send delivery';}}
  };
  api.clearDispatchCart=async()=>{

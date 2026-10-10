@@ -1,6 +1,26 @@
 import {planDispatchRestock,assertDispatchRestockCurrent,canonicalDispatchIntent} from './dispatch-restock-model.js';
 import {canOpenWorkspacePage} from './workspace-access-model.js';
 
+// Approved was used by the older cart loader. It means reviewed, not sent.
+// Completed/merged requests and explicit delivery links must never be reopened.
+export function assertDispatchRequestAvailable(data,{id,source,destination}={}) {
+    let reason='';
+    if(!data)reason='is no longer available';
+    else if(data.dispatchBatchId)reason='is already linked to a saved delivery';
+    else if(data.completedAt)reason='was already completed';
+    else if(data.mergedInto)reason='was merged into another request';
+    else if(data.status==='Completed')reason='was already processed (status Completed)';
+    else if(!['Pending','Drafting','Delayed','Approved'].includes(data.status))reason='has status '+String(data.status || 'Unknown');
+    else if(data.branch!==destination || data.destinationBranch!=null&&data.destinationBranch!==destination)reason='belongs to a different destination';
+    else if(data.sourceBranch&&data.sourceBranch!==source)reason='belongs to a different source';
+    if(reason){
+        const issue={id,branch:data?.branch || 'Unknown branch',status:data?.status || 'Missing',sourceBranch:data?.sourceBranch || 'Main Office',reason};
+        const error=Error('Linked request '+String(id || '')+' ('+issue.branch+', '+issue.status+') '+reason+'. Review the linked requests before sending.');
+        error.name='DispatchRequestLinkError';error.code='DISPATCH_REQUEST_LINK';error.issues=[issue];throw error;
+    }
+    return data;
+}
+
 export function captureDispatchAuthority(api,{source,destination,restock=false}={}) {
     const user=api.auth?.currentUser,session=api.sessionUser,email=String(user?.email||'').trim().toLowerCase();
     if(!user?.uid||!email||user.emailVerified!==true||!session||session.uid!==user.uid||String(session.email||'').toLowerCase()!==email||!canOpenWorkspacePage(session,'dispatch')) throw Error('Unlock Dispatch with your approved Google account before saving.');
@@ -60,7 +80,7 @@ export async function commitDispatch(api, { id, source, destination, driver, act
         const orders=[];
         for (const orderId of new Set(purchaseOrderIds.filter(Boolean))) {
             const orderRef=reference('purchase_orders',orderId), order=await tx.get(orderRef);
-            if (!order.exists() || order.data().branch!==destination || order.data().sourceBranch&&order.data().sourceBranch!==source || !['Pending','Drafting','Delayed'].includes(order.data().status)) throw new Error('This stock request was already processed or changed. Reload the request.');
+            assertDispatchRequestAvailable(order.exists()?order.data():null,{id:orderId,source,destination});
             orders.push(orderRef);
         }
         for (const item of resolved) stocks.get(item.reference.id).quantity+=item.quantity;

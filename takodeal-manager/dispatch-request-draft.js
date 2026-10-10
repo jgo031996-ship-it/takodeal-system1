@@ -1,4 +1,5 @@
 import {canOpenWorkspacePage} from './workspace-access-model.js';
+import {assertDispatchRequestAvailable} from './dispatch-safety.js';
 
 const attempts=new Map(),keys=['takodeal_dispatch_cart','takodeal_dispatch_from','takodeal_dispatch_to','takodeal_active_po'];
 const clone=value=>JSON.parse(JSON.stringify(value));
@@ -74,32 +75,58 @@ export async function loadStockRequestDraft(api,{poId,po,hqDetails={}},{storage=
     const sourceControl=document?.getElementById('dispFrom');
     if(sourceControl?.options && !Array.from(sourceControl.options).some(option=>option.value===source))throw Error('The request source is unavailable. Refresh Branch Management before loading this draft.');
     const actor=capture(api);assertCurrent(api,actor,po.branch,source);
-    const ids=activeIds(storage);if(ids.includes(poId))return {alreadyLoaded:true,branch:po.branch};
-    const before=clone(api.dispatchCart || []),savedDestination=storage.getItem('takodeal_dispatch_to') || '',destination=savedDestination || (ids.length?'':document?.getElementById('dispTo')?.value || '');
+    const before=clone(api.dispatchCart || []),previousIds=activeIds(storage),ids=before.length?previousIds:[],alreadyLoaded=ids.includes(poId);
+    // An empty cart has no goods from its older request links. Retaining even
+    // an open old ID would complete unseen goods when the new request is sent.
+    // Clear those local links only after the new request is validated/saved.
+    const savedDestination=storage.getItem('takodeal_dispatch_to') || '',destination=savedDestination || (ids.length?'':document?.getElementById('dispTo')?.value || '');
     if((before.length || ids.length) && destination!==po.branch)return {blockedDestination:true,destination:destination || 'an unconfirmed branch',branch:po.branch};
     const savedSource=storage.getItem('takodeal_dispatch_from') || sourceControl?.value || '';
     if((before.length || ids.length) && savedSource!==source)return {blockedSource:true,source:savedSource || 'an unconfirmed branch',requestedSource:source,branch:po.branch};
     const controls=[sourceControl,document?.getElementById('dispTo')].filter(Boolean).map(control=>[control,control.value]);
-    const snapshot=storageSnapshot(storage),staged=stageCart(before,po,hqDetails),request=stringify(requestFields(po)),intent=await hash(api,stringify({poId,request:requestFields(po),before,staged}));
-    assertCurrent(api,actor,po.branch,source);if(activeIds(storage).includes(poId))return {alreadyLoaded:true,branch:po.branch};
-    if(!sameDraft(api,storage,before,snapshot,controls))throw Error('Your dispatch draft changed while this request was loading. Review it again.');
-    const key=actor.uid+':'+poId+':'+intent;if(!attempts.has(key))attempts.set(key,'request-draft-'+(api.crypto || globalThis.crypto).randomUUID());const operationId=attempts.get(key);
-    const ref=api.doc(api.db,'purchase_orders',poId);
-    try{await api.runTransaction(api.db,async tx=>{
-        const saved=await tx.get(ref);assertCurrent(api,actor,po.branch,source);
+    const snapshot=storageSnapshot(storage),request=stringify(requestFields(po)),ref=api.doc(api.db,'purchase_orders',poId);
+    for(const id of ids)if(id.length>150 || id.includes('/'))assertDispatchRequestAvailable(null,{id,source,destination:po.branch});
+    let result;
+    try{result=await api.runTransaction(api.db,async tx=>{
+        // Freshly check every linked request, including an already-loaded
+        // request, before any request-status write or local cart publication.
+        const references=[...new Set([poId,...ids])].map(id=>api.doc(api.db,'purchase_orders',id));
+        const snapshots=await Promise.all(references.map(reference=>tx.get(reference)));
+        const records=new Map(snapshots.map(saved=>[saved.id,saved]));
+        const saved=records.get(poId);assertCurrent(api,actor,po.branch,source);
         if(!sameDraft(api,storage,before,snapshot,controls))throw Error('Your dispatch draft changed while this request was loading. Review it again.');
-        if(!saved.exists())throw Error('This request was removed. Refresh the request list.');const current=saved.data();
-        if(!['Pending','Drafting','Delayed'].includes(current.status) || stringify(requestFields(current))!==request)throw Error('This request changed or was already processed. Refresh it before loading the cart.');
+        const current=saved.exists()?saved.data():null;
+        try{assertDispatchRequestAvailable(current,{id:poId,source,destination:po.branch});}
+        catch(error){error.message=(current?'This request changed or was already processed. ':'This request was removed. ')+error.message;throw error;}
+        if(stringify(requestFields(current))!==request)throw Error('This request changed or was already processed. Refresh it before loading the cart.');
+        for(const id of ids){const linked=records.get(id);assertDispatchRequestAvailable(linked.exists()?linked.data():null,{id,source,destination:po.branch});}
+        if(alreadyLoaded)return {alreadyLoaded:true};
+        const staged=stageCart(before,po,hqDetails),intent=await hash(api,stringify({poId,request:requestFields(po),before,staged}));
+        assertCurrent(api,actor,po.branch,source);
+        if(!sameDraft(api,storage,before,snapshot,controls))throw Error('Your dispatch draft changed while this request was loading. Review it again.');
+        const key=actor.uid+':'+poId+':'+intent;if(!attempts.has(key))attempts.set(key,'request-draft-'+(api.crypto || globalThis.crypto).randomUUID());const operationId=attempts.get(key);
         const marker=current.dispatchDraftOperation;
-        if(marker?.intent===intent && marker.actorUid===actor.uid && current.status==='Drafting')return;
+        if(marker?.intent===intent && marker.actorUid===actor.uid && current.status==='Drafting')return {staged};
         if(current.status!==po.status)throw Error('Another account changed the request status. Refresh it before loading the cart.');
         assertCurrent(api,actor,po.branch,source);
         tx.update(ref,{status:'Drafting',managerMessage:'Reviewed and loaded into the editable Dispatch Cart. Stock has not been dispatched.',processedAt:api.serverTimestamp(),
             dispatchDraftOperation:{version:1,operationId,intent,actorUid:actor.uid,actorEmail:actor.email,loadedAt:api.serverTimestamp()}});
-    });}catch(error){assertCurrent(api,actor,po.branch,source);if(activeIds(storage).includes(poId))return {alreadyLoaded:true,branch:po.branch};throw error;}
+        return {staged};
+    });}catch(error){
+        assertCurrent(api,actor,po.branch,source);
+        // A concurrent successful load can publish this ID while our callback
+        // waits. Re-read its fresh request/links; never turn a processed-request
+        // error into an unchecked "already loaded" result.
+        if(!alreadyLoaded && api.dispatchCart?.length && activeIds(storage).includes(poId) && !sameDraft(api,storage,before,snapshot,controls))
+            return loadStockRequestDraft(api,{poId,po,hqDetails},{storage,document});
+        throw error;
+    }
     assertCurrent(api,actor,po.branch,source);
-    if(activeIds(storage).includes(poId))return {alreadyLoaded:true,branch:po.branch};
+    if(result.alreadyLoaded)return {alreadyLoaded:true,branch:po.branch};
+    if(api.dispatchCart?.length && activeIds(storage).includes(poId) && !sameDraft(api,storage,before,snapshot,controls))
+        return loadStockRequestDraft(api,{poId,po,hqDetails},{storage,document});
     if(!sameDraft(api,storage,before,snapshot,controls))throw Error('The request draft status was recorded, but your local cart or branch selection changed. Refresh before loading it again. Nothing was dispatched.');
+    const staged=result.staged;
     try{
         storage.setItem('takodeal_dispatch_cart',JSON.stringify(staged));storage.setItem('takodeal_dispatch_from',source);storage.setItem('takodeal_dispatch_to',po.branch);storage.setItem('takodeal_active_po',[...ids,poId].join(','));
         if(!before.length)for(const key of snapshot.keys())if(key.startsWith('takodeal_draft_qty_'))storage.removeItem(key);

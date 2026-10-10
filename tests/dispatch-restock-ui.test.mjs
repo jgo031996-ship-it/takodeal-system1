@@ -53,6 +53,24 @@ const records=(f,table)=>[...f.h.docs].filter(([path])=>path.startsWith(table+'/
 const snapshot=f=>copy([...f.h.docs]);
 const storageSnapshot=f=>Object.fromEntries(Object.keys(f.storage).map(key=>[key,f.storage.getItem(key)]));
 const messages=f=>f.calls.dialogs.filter(call=>typeof call[0]==='string').map(call=>call.join(' ')).join('\n');
+test('a delayed request-loading callback cannot hide the newer review or success dialog',async()=>{
+    const f=environment();let popup={id:'loader'},loading=0;f.dialogs.getPopup=()=>popup;
+    const first=popup;
+    await f.dialogs.fire({title:'Loading Request...',didOpen:()=>loading++});
+    const loader=f.calls.dialogs.at(-1)[0];popup={id:'review'};loader.didOpen(first);assert.equal(loading,0);
+    const active=popup;await f.dialogs.fire({titleText:'Preparing dispatch draft',didOpen:()=>loading++});
+    const preparing=f.calls.dialogs.at(-1)[0];preparing.didOpen(active);assert.equal(loading,1,'the current loading popup still runs its callback');
+    popup={id:'success'};preparing.didOpen(active);assert.equal(loading,1,'a replaced loading popup cannot affect success');
+});
+test('the old Approve shortcut delegates to the current review including a later-installed destination repair',async()=>{
+    const f=environment(),before=snapshot(f),calls=[];
+    f.api.reviewPurchaseOrder=async id=>{calls.push(['review',id]);return 'reviewed';};
+    assert.equal(await f.api.approvePurchaseOrder('legacy-unknown'),'reviewed');
+    f.api.reviewPurchaseOrder=async id=>{calls.push(['destination-repair',id]);return 'repaired';};
+    assert.equal(await f.api.approvePurchaseOrder('legacy-unknown'),'repaired');
+    assert.deepEqual(calls,[['review','legacy-unknown'],['destination-repair','legacy-unknown']]);assert.deepEqual(snapshot(f),before);
+    assert.equal(f.storage.getItem('takodeal_active_po'),null);assert.equal(f.api.dispatchCart.length,1);
+});
 function linked(f,id,changes={}){
     const row={branch:f.elements.dispTo.value,sourceBranch:f.elements.dispFrom.value,status:'Drafting',requestedBy:'Synthetic Requester',type:'Manual Count',items:[copy(item)],managerMessage:'Original request note',...changes};
     f.h.put('purchase_orders/'+id,row);return copy(row);
