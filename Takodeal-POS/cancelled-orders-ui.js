@@ -1,5 +1,4 @@
-import {createCancelledOrderEngine,CANCELLATION_REASONS,cancelledPlatform} from './cancelled-orders.js';
-import {findMealIdentity} from './meal-checkout.js';
+import {createCancelledOrderEngine,CANCELLATION_REASONS,cancelledPlatform,findCancelledFoodBuyer} from './cancelled-orders.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function installCancelledOrders(api,{window:w=window,document:d=document}={}){
     let busy=false;
@@ -21,14 +20,13 @@ export function installCancelledOrders(api,{window:w=window,document:d=document}
         try{
             if(!valid(input))throw Error('Sign in on an approved Cashier device and open a shift first.');
             await device();const quote=await engine.quote(input);
-            const result=await w.Swal.fire({title:'Staff purchase of prepared food',html:`<div class="cancelled-food-form"><p>Original ${esc(quote.platform)} receipt <strong>${esc(quote.sourceReceiptId)}</strong></p><p>The whole prepared order will be assigned once. This does not use the regular daily staff meal allowance.</p><dl><div><dt>Food price</dt><dd>₱${quote.baseAmount.toFixed(2)}</dd></div><div><dt>Manager discount (${quote.discountPct}%)</dt><dd>−₱${quote.discountAmount.toFixed(2)}</dd></div><div><dt>Foods payslip deduction</dt><dd><strong>₱${quote.amount.toFixed(2)}</strong></dd></div></dl><label for="cancelledFoodPin">Staff PIN<input id="cancelledFoodPin" type="password" inputmode="numeric" autocomplete="off" minlength="4"></label><label class="cancelled-food-consent"><input id="cancelledFoodConsent" type="checkbox">The staff member agrees to this Foods salary deduction.</label></div>`,showCancelButton:true,confirmButtonText:'Confirm staff purchase',cancelButtonText:'Keep food unassigned',allowOutsideClick:()=>!w.Swal.isLoading(),showLoaderOnConfirm:true,customClass:{popup:'cancelled-food-dialog'},preConfirm:async()=>{
+            const result=await w.Swal.fire({title:'Staff purchase of prepared food',html:`<div class="cancelled-food-form"><p>Original ${esc(quote.platform)} receipt <strong>${esc(quote.sourceReceiptId)}</strong></p><p>The whole prepared order will be assigned once. This does not use the regular daily staff meal allowance.</p><dl><div><dt>Food price</dt><dd>₱${quote.baseAmount.toFixed(2)}</dd></div><div><dt>Cancelled-order discount (${quote.discountPct}%)</dt><dd>−₱${quote.discountAmount.toFixed(2)}</dd></div><div><dt>Foods payslip deduction</dt><dd><strong>₱${quote.amount.toFixed(2)}</strong></dd></div></dl><label for="cancelledFoodPin">Employee login PIN<input id="cancelledFoodPin" type="password" inputmode="numeric" autocomplete="off" minlength="4" aria-describedby="cancelledFoodPinHelp"></label><p id="cancelledFoodPinHelp">Use the registered login PIN for an active crew member or manager. The private Pay PIN is different.</p><label class="cancelled-food-consent"><input id="cancelledFoodConsent" type="checkbox">The staff member agrees to this Foods salary deduction.</label></div>`,showCancelButton:true,confirmButtonText:'Confirm staff purchase',cancelButtonText:'Keep food unassigned',allowOutsideClick:()=>!w.Swal.isLoading(),showLoaderOnConfirm:true,customClass:{popup:'cancelled-food-dialog'},preConfirm:async()=>{
                 const pin=d.getElementById('cancelledFoodPin'),consent=d.getElementById('cancelledFoodConsent');
                 try{
                     if(!consent?.checked)throw Error('Confirm that the staff member agrees to the displayed deduction.');
                     if(!valid(input))throw Error('Your branch or shift changed. Reopen the receipt.');
-                    await device();const profiles=new Map(),identity=await findMealIdentity({read:async(...args)=>{const rows=await read(...args);for(const row of rows)profiles.set(row.id,row.data);return rows;}},String(pin?.value||''),{roles:['staff']});
-                    const profile=profiles.get(identity.id),staffName=profile?.cashierName||profile?.fullName||profile?.name;
-                    return await engine.purchase({...input,staffId:identity.id,staffName,pin:String(pin.value),quote});
+                    await device();const identity=await findCancelledFoodBuyer({read},String(pin?.value||''));
+                    return await engine.purchase({...input,staffId:identity.id,staffName:identity.staffName,pin:String(pin.value),quote});
                 }catch(error){w.Swal.showValidationMessage(esc(error.message));return false;}
                 finally{if(pin)pin.value='';}
             }});

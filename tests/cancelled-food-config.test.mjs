@@ -57,7 +57,7 @@ function control(tag,attrs){return {tag,attrs,dataset:Object.fromEntries(Object.
 class Controls {
     constructor(html='',attrs={}){this.dataset=control('',attrs).dataset;this.innerHTML=html;}
     set innerHTML(html){
-        this.html=html;this.nodes=[...html.matchAll(/<(input|button|textarea|p)\b([^>]*)>/g)].map(match=>control(match[1],attributes(match[2])));
+        this.html=html;this.nodes=[...html.matchAll(/<(input|button|textarea|select|p)\b([^>]*)>/g)].map(match=>control(match[1],attributes(match[2])));
         this.rows=[...html.matchAll(/<tr\b([^>]*\bdata-level="[^"]*"[^>]*)>([\s\S]*?)<\/tr>/g)].map(match=>new Controls(match[2],attributes(match[1])));
     }
     get innerHTML(){return this.html;}
@@ -72,15 +72,31 @@ class Controls {
     }
     querySelector(selector){return this.querySelectorAll(selector)[0]??null;}
 }
-function workspace(settings={}){
+function workspace(settings={},separate=false){
     const h=firestoreHarness(),host=new Controls(),w={...h.api,auth:{currentUser:{uid:'synthetic-hq'}},sessionUser:{permissions:['posconfig'],cashierName:'Synthetic HQ'}};
     h.put('settings/global_pos_config',structuredClone(settings));let transactions=0;
     const run=w.runTransaction;w.runTransaction=(...args)=>{transactions++;return run(...args);};
     w.getDocFromServer=async ref=>({exists:()=>h.docs.has(ref.path),data:()=>structuredClone(h.get(ref.path))});
-    const installed=initPosConfigWorkspace({window:w,document:{getElementById:id=>id==='section-master'?host:null}});
-    return {h,w,host,load:installed.load,save:()=>host.querySelector('[data-save-config]').onclick(),get transactions(){return transactions;},
-        enabled:()=>host.querySelector('[data-cancelled-food-enabled]'),discount:()=>host.querySelector('[data-cancelled-food-discount]'),status:()=>host.querySelector('[data-pc-status]')};
+    const purchaseHost=separate?new Controls():host;
+    const installed=initPosConfigWorkspace({window:w,document:{getElementById:id=>id==='section-master'?host:id==='section-purchasedCancelledOrders'&&separate?purchaseHost:null}});
+    return {h,w,host,purchaseHost,load:installed.load,save:()=>host.querySelector('[data-save-config]').onclick(),savePurchase:()=>purchaseHost.querySelector('[data-save-config]').onclick(),get transactions(){return transactions;},
+        enabled:()=>purchaseHost.querySelector('[data-cancelled-food-enabled]'),discount:()=>purchaseHost.querySelector('[data-cancelled-food-discount]'),status:()=>purchaseHost.querySelector('[data-pc-status]')};
 }
+
+test('dedicated cancelled-order Save ignores an unfinished Master draft and preserves ordinary meal settings',async()=>{
+    const f=workspace({staffMealTakoPct:30,cancelledFoodDiscountPct:20},true);await f.load();
+    f.host.querySelectorAll('[data-level]')[0].querySelector('[data-name]').value='';f.discount().value='35';await f.savePurchase();
+    const saved=f.h.get('settings/global_pos_config');assert.equal(saved.cancelledFoodDiscountPct,35);assert.equal(saved.staffMealTakoPct,30);assert.equal(saved.mealDiscountLevels,undefined);assert.equal(f.host.querySelectorAll('[data-level]')[0].querySelector('[data-name]').value,'');
+    assert.match(f.host.className,/pos-config-section/);assert.match(f.purchaseHost.className,/pos-config-section/);
+});
+test('Master Save leaves an unsaved invalid cancelled-order percentage intact without changing that policy',async()=>{
+    const f=workspace({staffMealTakoPct:30,cancelledFoodDiscountPct:20},true);await f.load();f.discount().value='101';await f.save();
+    assert.equal(f.h.get('settings/global_pos_config').cancelledFoodDiscountPct,20);assert.equal(f.h.get('settings/global_pos_config').configEditorRevision,1);assert.equal(f.discount().value,'101');
+});
+test('a failed reload clears stale purchase controls and exposes a retry in both sections',async()=>{
+    const f=workspace({},true);await f.load();f.w.getDocFromServer=()=>Promise.reject(Error('Synthetic network failure'));await f.load();
+    assert.equal(f.enabled(),null);assert.ok(f.purchaseHost.querySelector('[data-retry]'));assert.ok(f.host.querySelector('[data-retry]'));assert.equal(f.transactions,0);
+});
 test('opening the real config editor shows defaults and makes no persistence call until Save',async()=>{
     const f=workspace({unrelatedSavedValue:'keep'});await f.load();
     assert.equal(f.enabled().checked,true);assert.equal(f.discount().value,'20');assert.equal(f.transactions,0);

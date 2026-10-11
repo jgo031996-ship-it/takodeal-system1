@@ -1,6 +1,7 @@
-const CACHE_NAME = 'takodeal-staff-v19-cancelled-food-20261011-r1';
+const CACHE_NAME = 'takodeal-staff-v20-owner-refund-review-20261011-r1';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./sanction-schedule.js');
+SHELL.push('./online-refund-pay.js');
 SHELL.push('./attendance-reconcile.js','./attendance-proof.js');
 SHELL.push('./staff-document-broker.js');
 SHELL.push('./payroll-attendance.js');

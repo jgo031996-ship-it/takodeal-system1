@@ -1,4 +1,5 @@
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
+import {installOnlineRefunds} from './online-refunds-ui.js';
 import { installDeviceFleet } from './device-fleet.js';
 import {installMasterEmployeeDocuments} from './staff-document-hq.js';
 import { installFranchiseWorkspace } from './franchise-workspace.js';
@@ -10990,6 +10991,9 @@ window.openPayslipModal = async function(staffName) {
     safeSet('psAdvance', data.advances || 0);
     safeSet('psLoans', data.loans || 0);
     safeSet('psFoods', data.meals || 0);
+    let onlineRefundBox=document.getElementById('psOnlineRefunds');
+    if(!onlineRefundBox){const box=document.createElement('div');box.style.cssText='padding:10px;border:1px solid #dce6df;border-radius:8px;margin-top:8px;font-size:12px;';box.innerHTML='<span>ONLINE REFUND ORDERS</span><strong id="psOnlineRefunds" style="float:right">0.00</strong><p style="font-size:11px;margin:6px 0 0;color:#64756d">Incidents are pending Owner review. No charge is included in net pay.</p>';document.getElementById('psFoods')?.parentElement?.after(box);onlineRefundBox=document.getElementById('psOnlineRefunds');}
+    onlineRefundBox.textContent=Number(data.onlineRefunds||0).toFixed(2);
     let penaltyLine=document.getElementById('psPenalties');
     if(!penaltyLine){const wrap=document.createElement('div');wrap.style.cssText='padding:8px;font-size:12px;background:#fff8ed;border:1px solid #efdfc6;';wrap.innerHTML='<span>Scheduled penalties for ledger review: ₱</span><strong id="psPenalties">0.00</strong><br><small>Excluded from calculated net pay. Review and record any collection separately.</small>';document.getElementById('psFoods')?.parentElement?.after(wrap);penaltyLine=document.getElementById('psPenalties');}
     safeSet('psPenalties', data.penalties || 0);
@@ -13682,6 +13686,7 @@ window.loadSalesHistoryTab = async function() {
 
         // 3. 🔥 THE MAGIC ROUTER: COMBINE TRANSACTIONS based on Data Source
         let allTxArray = [];
+        window.onlineHistoryRows = [];
 
         if (dataSource === "LIVE") {
             // Transactions arrive from the bounded live listener.
@@ -13791,6 +13796,7 @@ window.loadSalesHistoryTab = async function() {
                 return; 
             }
 
+            window.onlineHistoryRows.push({...tx});
             let isVoid = tx.status === "Voided";
             const isPreparedCancellation = isVoid && tx.preparedCancellation?.prepared === true;
             const preparedCancellationLabel = isPreparedCancellation ? String(tx.preparedCancellation.label || (tx.preparedCancellation.reason === 'customer' ? 'Prepared but customer cancelled' : tx.preparedCancellation.reason === 'rider' ? 'Prepared but rider cancelled' : 'Prepared platform cancellation')) : '';
@@ -24545,8 +24551,13 @@ window.openEmployeeProfile = function(docId) {
     const profileGeneration=window.staffProfileFormGeneration,profileActorUid=window.auth?.currentUser?.uid,profileActorEmail=window.auth?.currentUser?.email;
     const currentProfile=()=>window.staffProfileFormGeneration===profileGeneration && window.auth?.currentUser?.uid===profileActorUid && window.auth?.currentUser?.email===profileActorEmail && document.getElementById('empProfileId').value===docId && document.getElementById('employeeProfileModal').style.display!=='none';
 
-    window.getDocs(window.query(window.collection(window.db, "staff_deductions"), window.where("staffName", "==", data.cashierName), window.orderBy("dateAdded", "desc"), window.limit(30)))
-    .then(snap => {
+    Promise.all([
+        window.getDocsFromServer(window.query(window.collection(window.db,'staff_deductions'),window.where('staffId','==',docId))),
+        window.getDocsFromServer(window.query(window.collection(window.db,'staff_deductions'),window.where('staffName','==',String(data.cashierName||data.fullName||data.name||''))))
+    ]).then(results=>{
+        const rows=[...new Map(results.flatMap(snap=>snap.docs).map(row=>[row.id,row])).values()].filter(row=>!row.data().staffId||row.data().staffId===docId);
+        rows.sort((a,b)=>{const date=row=>row.data().dateAdded?.toDate?.()?.getTime()||new Date(row.data().dateAdded||0).getTime()||0;return date(b)-date(a);});
+        const snap={forEach:callback=>rows.slice(0,50).forEach(callback)};
         if(!currentProfile())return;
         let histHtml = '';
         snap.forEach(dDoc => {
@@ -24562,10 +24573,11 @@ window.openEmployeeProfile = function(docId) {
                 
             actionHtml += `<button onclick="window.deleteStaffDeduction('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px;">🗑️ Delete</button>`;
             actionHtml += window.penaltyDateAction?.({...d,id:dDoc.id}) || '';
+            if(d.type==='Online Order Refund')actionHtml=`<button onclick="window.reviewOnlineRefundIncident('${dDoc.id}')" style="min-height:44px;padding:8px 12px;">Review incident</button>`;
 
             histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                 <td style="padding:12px 8px; color: #64748b;">${dateStr}</td>
-                <td style="padding:12px 8px; font-weight: bold; color: #334155;">${d.type}</td>
+                <td style="padding:12px 8px; font-weight: bold; color: #334155;">${escapeHtml(d.type)}${d.type==='Online Order Refund' ? `<br><small>${escapeHtml(d.sourcePlatform)} · ${escapeHtml(d.sourceReceiptId)} · Refund reported: ₱${Number(d.proposedAmount||0).toFixed(2)}</small>` : ''}</td>
                 <td style="padding:12px 8px; font-weight:900; color:#ea580c;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
                 <td style="padding:12px 8px; color:${color}; font-weight:bold;">${d.status}</td>
                 <td style="padding:12px 8px;">
@@ -27425,5 +27437,6 @@ installCustomerHubSettings(window,document);
 installRiderManagementSafety(window);
 installRiderManagementViews(window,document);
 
+installOnlineRefunds(window,document);
 installDispatchRestockUI(window);
 installDispatchDestinationRepair(window,{document,dialogs:Swal});

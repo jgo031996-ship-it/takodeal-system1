@@ -1,3 +1,4 @@
+import {onlineRefundReviewHTML} from './online-refund-pay.js';
 import { installStaffLocation } from './staff-location.js';
 import { installAttendanceCamera } from './attendance-camera.js';
 import { installAttendanceProofUploader } from './attendance-proof.js';
@@ -2181,6 +2182,10 @@ window.loadPayslipVault = async function() {
         const dedSnap = await getDocs(query(collection(db, "staff_deductions"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10))));
         if (!stillOpen()) return;
         let liveUnpaidVales = 0; let liveActiveDeductions = [];
+        const onlineStaffId=localStorage.getItem('takodeal_staff_id');
+        const onlineSnap=await getDocs(query(collection(db,'staff_deductions'),where('staffId','==',onlineStaffId)));
+        if(!stillOpen())return;
+        const onlineRows=onlineSnap.docs.map(row=>({id:row.id,...row.data()})).filter(row=>row.type==='Online Order Refund'&&row.staffId===onlineStaffId);
         let pendingUnpaidVales = 0, scheduledPenaltyReview = 0;
         
         let cutoffEndTimestamp = new Date(endDateStr + 'T23:59:59'); 
@@ -2327,6 +2332,7 @@ window.loadPayslipVault = async function() {
             detailsHtml += `<div style="padding: 15px; text-align: center; color: #94a3b8; font-size: 12px;">No short-term vales or meals.</div>`;
         }
         detailsHtml += `</div></div>`;
+        detailsHtml+=onlineRefundReviewHTML(onlineRows,onlineStaffId);
         logsContainer.innerHTML = detailsHtml;
 
         const prSnap = await getDocs(query(collection(db, "payroll_records"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10))));
@@ -2642,6 +2648,7 @@ window.viewPastPayslip = function(encodedData) {
                                 </div>
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
                                     <span>Foods / Penalties</span> <span>${(parseFloat(meals) + parseFloat(customDeducts)).toFixed(2)}</span>
+                                </div><div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span>ONLINE REFUND ORDERS</span><span>${Number(d.onlineRefunds||0).toFixed(2)}</span>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; padding: 8px; font-weight: bold; background: #f1f5f9; border-top: 1px solid black;">
                                     <span>TOTAL DEDUCTIONS</span> <span>${totalDeduct}</span>
