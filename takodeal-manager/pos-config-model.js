@@ -60,10 +60,19 @@ export function checkoutSelections(fields, values) {
         return value ? [{id:field.id,label:field.name,value}] : [];
     });
 }
-export function configurationPatch(levels, fields) {
+export function cancelledFoodPolicy(settings = {}) {
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) throw Error('Load valid cancelled-food settings before continuing.');
+    const enabled = settings.cancelledFoodPurchaseEnabled === undefined ? true : settings.cancelledFoodPurchaseEnabled;
+    if (typeof enabled !== 'boolean') throw Error('Choose whether cancelled-food staff purchases are enabled.');
+    const value = settings.cancelledFoodDiscountPct === undefined ? 20 : settings.cancelledFoodDiscountPct;
+    if (!['number','string'].includes(typeof value)) throw Error('Enter a cancelled-food discount between 0 and 100.');
+    return {cancelledFoodPurchaseEnabled:enabled,cancelledFoodDiscountPct:percent(value)};
+}
+export function configurationPatch(levels, fields, cancelledFood) {
     const mealDiscountLevels = validateLevels(levels), customCheckoutFields = validateCheckoutFields(fields);
     const staff = mealDiscountLevels.find(row => row.id === 'staff_meal'), manager = mealDiscountLevels.find(row => row.id === 'manager_meal');
     return {mealDiscountLevels,customCheckoutFields,
         ...(staff ? {staffMealTakoPct:staff.takoyakiPct,staffMealOtherPct:staff.otherPct} : {}),
-        ...(manager ? {managerMealTakoPct:manager.takoyakiPct,managerMealOtherPct:manager.otherPct} : {})};
+        ...(manager ? {managerMealTakoPct:manager.takoyakiPct,managerMealOtherPct:manager.otherPct} : {}),
+        ...(cancelledFood === undefined ? {} : cancelledFoodPolicy(cancelledFood))};
 }

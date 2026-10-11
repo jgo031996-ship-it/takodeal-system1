@@ -1,4 +1,4 @@
-const CACHE='takodeal-franchise-workspace-staff-pos-repair-20261008-r12';
+const CACHE='takodeal-franchise-workspace-cancelled-food-20261011-r1';
 const CORE=['./','index.html','style.css','main_franchise.js','auth.js','franchise-data.js','franchise-actions.js','franchise-workspace.js','payroll-safety.js','schedule-history.js','dispatch-safety.js','unlock-gate.js','hq-account-model.js','manifest.json','logo.jpg','icon-192.png','icon-512.png'];
 CORE.push('franchise-reads.js');
 CORE.push('attendance-reconcile.js','payroll-attendance.js');
