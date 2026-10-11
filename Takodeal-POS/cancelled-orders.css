@@ -1,0 +1,12 @@
+.cancelled-food-dialog{width:min(560px,calc(100vw - 24px))!important;max-width:calc(100vw - 24px)!important;box-sizing:border-box}
+.cancelled-food-form{text-align:left;font-size:15px;overflow-wrap:anywhere}
+.cancelled-food-form p{line-height:1.5}
+.cancelled-food-form dl{padding:12px;background:#f3f7f4;border-radius:12px}
+.cancelled-food-form dl>div{display:flex;justify-content:space-between;gap:12px;padding:6px 0}
+.cancelled-food-form dd{margin:0;white-space:nowrap}
+.cancelled-food-form label{display:block;margin:14px 0}
+.cancelled-food-form input[type=password]{box-sizing:border-box;display:block;width:100%;min-width:0;min-height:48px;font-size:16px;margin-top:8px;border:1px solid #bccdc3;border-radius:8px;padding:10px}
+.cancelled-food-consent{display:flex!important;align-items:flex-start;gap:10px}
+.cancelled-food-consent input{width:22px;height:22px;flex-shrink:0}
+.cancelled-food-dialog .swal2-actions{flex-wrap:wrap;gap:8px}.cancelled-food-dialog button{min-height:44px}
+@media(max-width:480px){.cancelled-food-dialog{padding:18px 12px!important}.cancelled-food-dialog .swal2-title{font-size:22px}.cancelled-food-dialog .swal2-html-container{margin:14px 4px}.cancelled-food-dialog .swal2-actions{display:flex;flex-direction:column;width:100%;margin:18px 0 0}.cancelled-food-dialog .swal2-actions>button{width:100%;margin:0}.cancelled-food-form dl>div{flex-wrap:wrap}}

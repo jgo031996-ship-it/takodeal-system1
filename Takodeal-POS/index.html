@@ -348,6 +348,7 @@
 <link rel="stylesheet" href="cashier-theme.css?v=tablet-attendance-stock-20261009-r1">
 <link rel="stylesheet" href="cashier-tablet.css?v=tablet-attendance-stock-20261009-r1">
   <link rel="stylesheet" href="attendance-camera.css?v=tablet-attendance-stock-20261009-r1">
+<link rel="stylesheet" href="cancelled-orders.css">
 </head>
 
 <body class="cashier-orange">
@@ -2657,14 +2658,17 @@ window.loadSalesDashboard = async function (liveTransactions) {
   } else {
     transactions.forEach((tx, idx) => {
       let statusBadge = '';
-      if (tx.status === 'Voided') statusBadge = '<span class="status-badge status-out">Voided</span>';
+      if (tx.preparedCancellation) statusBadge = '<span class="status-badge status-out">Cancelled · prepared</span>';
+      else if (tx.status === 'Voided') statusBadge = '<span class="status-badge status-out">Voided</span>';
       else if (tx.status === 'Parked') statusBadge = '<span class="status-badge" style="background:#fef3c7; color:#d97706; border:1px solid #fcd34d;">Parked</span>';
       else if (tx.isPendingSync) statusBadge = '<span class="status-badge" style="background:#fef9c3; color:#ca8a04; border:1px solid #fde047; animation: pulse 2s infinite;">⏳ Pending Sync</span>';
       else statusBadge = '<span class="status-badge status-good">Paid</span>';
       if (tx.needsReconciliation) statusBadge = '<span class="status-badge" style="background:#fff1f2;color:#be123c;">Review Required</span>';
       const escapeSyncText = value => String(value || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
       if (tx.isPendingSync && tx.syncError?.message) statusBadge += `<br><small style="color:#b45309;white-space:normal;">${escapeSyncText(tx.syncError.message)}</small>`;
-      if (!tx.isPendingSync && tx.status !== 'Voided' && tx.inventoryReviewRequired) statusBadge += '<br><small style="color:#b45309;">Stock review in HQ</small>';
+      if (!tx.isPendingSync && (tx.status !== 'Voided' || tx.preparedCancellation) && tx.inventoryReviewRequired) statusBadge += '<br><small style="color:#b45309;">Stock review in HQ</small>';
+      if (tx.preparedCancellation) statusBadge += `<br><small style="white-space:normal;">${escapeSyncText(tx.preparedCancellation.label)}</small>`;
+      if (tx.cancelledFoodSourceId) statusBadge += '<br><small>Foods payslip deduction</small>';
 
       let txDate = "Today"; let txTime = "--:--";
       if (tx.timestamp) { 
@@ -2701,7 +2705,7 @@ window.loadSalesDashboard = async function (liveTransactions) {
       let kdsBadge = '';
       if (window.isKdsEnabled) {
           let pmCheck = (tx.paymentMethod || '').toLowerCase();
-          if (!pmCheck.includes('grab') && !pmCheck.includes('foodpanda') && !pmCheck.includes('panda') && tx.status !== 'Voided' && tx.status !== 'Parked') {
+          if (!tx.cancelledFoodSourceId && !pmCheck.includes('grab') && !pmCheck.includes('foodpanda') && !pmCheck.includes('panda') && tx.status !== 'Voided' && tx.status !== 'Parked') {
               if (tx.kdsStatus === 'Preparing') kdsBadge = `<br><span style="color: #d97706; font-size: 10px; font-weight: bold; background: #fef3c7; padding: 2px 6px; border-radius: 4px; border: 1px solid #fcd34d;">👨‍🍳 Preparing</span>`;
               else if (tx.kdsStatus === 'Completed') kdsBadge = `<br><span style="color: #16a34a; font-size: 10px; font-weight: bold; background: #dcfce7; padding: 2px 6px; border-radius: 4px; border: 1px solid #bbf7d0;">✅ Ready</span>`;
               else kdsBadge = `<br><span style="color: #64748b; font-size: 10px; font-weight: bold; background: #f1f5f9; padding: 2px 6px; border-radius: 4px; border: 1px solid #cbd5e1;">⏳ Queue</span>`;
@@ -2729,7 +2733,8 @@ window.loadSalesDashboard = async function (liveTransactions) {
                 <div class="action-dropdown" id="txMenu-${idx}" style="right: 0; top: 100%; margin-top: 5px; text-align: left; width: 160px; font-weight: bold; cursor: default; z-index: 100;">
                     <div class="action-item" onclick="window.viewReceiptDetails('${tx.receiptId}')" style="border-bottom: 1px solid #f1f5f9; padding: 10px 15px;">🔍 View Details</div>
                     <div class="action-item" onclick="reprintDashboardReceipt('${tx.receiptId}')" style="border-bottom: 1px solid #f1f5f9; padding: 10px 15px;">🖨️ Print Receipt</div>
-                    <div class="action-item danger" onclick="voidTx('${tx.receiptId}')" style="color: #dc2626; padding: 10px 15px;">🗑️ Void Transaction</div>
+                    ${window.preparedCancellationActions?.(tx) || ''}
+                    ${tx.preparedCancellation || tx.cancelledFoodSourceId ? '' : `<div class="action-item danger" onclick="voidTx('${tx.receiptId}')" style="color: #dc2626; padding: 10px 15px;">🗑️ Void Transaction</div>`}
                 </div>
             </div>`}
         </td>

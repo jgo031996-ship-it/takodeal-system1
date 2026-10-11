@@ -13,7 +13,7 @@ export async function closeShiftAtomic(api, input) {
     const {shiftId,branch,cashier,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance} = input;
     const policy = await readBranchPolicy(api,branch);
     const accounts = await api.getDocs(api.query(api.collection(api.db,'cash_accounts'),api.where('branch','==','Main Office')));
-    const accountPlans = Object.entries(digitalBreakdown).filter(([method,value])=>method.toLowerCase() !== 'gcash' && money(value)>0).map(([name,value]) => {
+    const accountPlans = Object.entries(digitalBreakdown).filter(([method,value])=>!['gcash','salary deduction'].includes(method.trim().toLowerCase()) && money(value)>0).map(([name,value]) => {
         const matches = accounts.docs.filter(row=>row.data().name===name);
         if (matches.length>1) throw new Error('Duplicate HQ cash account: '+name);
         return {name,amount:money(value),reference:matches[0]?.ref || ref(api,'cash_accounts','platform-'+encodeURIComponent(name))};
@@ -25,6 +25,7 @@ export async function closeShiftAtomic(api, input) {
         if (shift.data().active === false && shift.data().status === 'Closed') return 'already-closed';
         const currentPolicy = await tx.get(ref(api,'branches',policy.id));
         if (!currentPolicy.exists()) throw new Error('Branch settings were removed.');
+        if (input.expectedSalesRevision !== undefined && Number(shift.data().salesRevision || 0) !== input.expectedSalesRevision) throw new Error('Sales changed during shift close. Reload the closing review before settling.');
         const stored = shift.data(), isMall = stored.isMallBranch ?? currentPolicy.data().isMallBranch === true;
         const isFinalShiftOfDay = isMall && input.isFinalShiftOfDay === true;
         const plan = isFinalShiftOfDay ? mallCashPlan(declaredCash) : null;

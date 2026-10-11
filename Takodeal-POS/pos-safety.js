@@ -365,7 +365,7 @@ export function createSaleEngine(api) {
                     if (data.branch !== branch || data.inventoryState !== 'deferred') return;
                     const audit = await tx.get(ref('settings', 'audit_' + safeId(branch)));
                     if (audit.exists() && audit.data().active === true) return 'paused';
-                    if (data.status === 'Voided') {
+                    if (data.status === 'Voided' && !data.preparedCancellation?.prepared) {
                         tx.update(sale.ref, { inventoryState: 'cancelled' });
                         return;
                     }
@@ -388,6 +388,7 @@ export function createSaleEngine(api) {
                 if (!sale.exists()) throw new Error('Receipt not found.');
                 const data = sale.data();
                 if (data.branch !== branch) throw new Error('Receipt belongs to another branch.');
+                if (data.cancelledFoodSourceId) throw new Error('This staff purchase has a Foods deduction. Ask HQ to reconcile the linked deduction before any reversal.');
                 if (data.status === 'Voided') return false;
                 if (data.saleVersion !== SALE_VERSION || !Array.isArray(data.inventoryMovements) ||
                     !['applied', 'deferred'].includes(data.inventoryState)) {

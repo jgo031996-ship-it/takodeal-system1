@@ -3657,7 +3657,20 @@ window.openBranchDetails = async function (branch) {
 
       if (tx.status === "Voided") {
         voidCount++;
-        transHtml += `<tr style="opacity: 0.5;"><td>${timeStr}</td><td>${tx.receiptId}</td><td>${safeCustomer}</td><td>-</td><td><span class="badge badge-closed"><span class="status-dot red"></span> VOID</span></td><td style="text-decoration: line-through;">${formatMoney(tx.netTotal)}</td><td></td></tr>`;
+        const prepared = tx.preparedCancellation?.prepared === true;
+        if (prepared && Array.isArray(tx.cart)) tx.cart.forEach(item => {
+          const qty = item.qty || 1, itemName = item.name || item.itemName;
+          const cat = menuCategories[itemName] || item.category || 'Uncategorized';
+          if (!categories[cat]) categories[cat] = { qty: 0, sales: 0, cogs: 0 };
+          let consumedCost = (recipeCosts[itemName] || 0) * qty;
+          for (const addon of Object.values(item.addons || {})) {
+            if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) consumedCost += (inventoryCosts[addon.linkedIngredient] || 0) * addon.deductQty * addon.qty * qty;
+          }
+          categories[cat].cogs += consumedCost;
+        });
+        const cancellationLabel = String(tx.preparedCancellation?.label || (tx.preparedCancellation?.reason === 'customer' ? 'Prepared but customer cancelled' : tx.preparedCancellation?.reason === 'rider' ? 'Prepared but rider cancelled' : 'Prepared platform cancellation'));
+        const voidLabel = prepared ? `Cancelled · prepared<br><small>${escapeHtml(cancellationLabel)}</small>` : 'VOID';
+        transHtml += `<tr style="opacity: 0.5;"><td>${timeStr}</td><td>${tx.receiptId}</td><td>${safeCustomer}</td><td>-</td><td><span class="badge badge-closed"><span class="status-dot red"></span> ${voidLabel}</span></td><td style="text-decoration: line-through;">${formatMoney(tx.netTotal)}</td><td></td></tr>`;
       } else {
         transCount++;
         netSales += (tx.netTotal || 0);
@@ -3685,11 +3698,11 @@ window.openBranchDetails = async function (branch) {
             categories[cat].sales += lineRevenue;
 
             // Calculate Base Recipe COGS
-            let baseCogs = (recipeCosts[itemName] || 0) * qty;
+            let baseCogs = tx.cancelledFoodSourceId ? 0 : (recipeCosts[itemName] || 0) * qty;
             let addonCogs = 0;
 
             // Calculate Add-on COGS
-            if (item.addons) {
+            if (!tx.cancelledFoodSourceId && item.addons) {
                 for (let key in item.addons) {
                     let addon = item.addons[key];
                     if (addon.qty > 0 && addon.linkedIngredient && addon.deductQty > 0) {
@@ -3723,7 +3736,7 @@ window.openBranchDetails = async function (branch) {
         let statusDisplay = '';
         if (tx.status === "Parked") {
             statusDisplay = `<span style="background: #fef3c7; color: #d97706; border: 1px solid #fcd34d; padding: 4px 8px; border-radius: 6px; font-weight: bold; font-size: 11px;">⏸️ PARKED (Unpaid)</span>`;
-        } else if (minutesElapsed < 10) {
+        } else if (!tx.cancelledFoodSourceId && minutesElapsed < 10) {
             let timeLeft = 10 - minutesElapsed;
             statusDisplay = `<span class="live-prep-timer" data-time="${txTimeMs}" style="background: #fef08a; color: #b45309; border: 1px solid #fde047; padding: 4px 8px; border-radius: 6px; font-weight: 900; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; box-shadow: 0 0 8px rgba(250, 204, 21, 0.6); animation: pulse 1.5s infinite;">🍳 COOKING (${timeLeft}m)</span>`;
         } else {
@@ -13779,6 +13792,8 @@ window.loadSalesHistoryTab = async function() {
             }
 
             let isVoid = tx.status === "Voided";
+            const isPreparedCancellation = isVoid && tx.preparedCancellation?.prepared === true;
+            const preparedCancellationLabel = isPreparedCancellation ? String(tx.preparedCancellation.label || (tx.preparedCancellation.reason === 'customer' ? 'Prepared but customer cancelled' : tx.preparedCancellation.reason === 'rider' ? 'Prepared but rider cancelled' : 'Prepared platform cancellation')) : '';
             
             // 🔥 TALLY THE PARKED OUTCOMES
             if (tx.wasParked) {
@@ -13803,7 +13818,7 @@ window.loadSalesHistoryTab = async function() {
             let monthlyKey = `${tx.branch}_${monthStr}`;
 
             let txCogs = 0;
-            if (tx.cart && Array.isArray(tx.cart)) {
+            if (!tx.cancelledFoodSourceId && tx.cart && Array.isArray(tx.cart)) {
                 tx.cart.forEach(item => {
                     let qty = item.qty || 1;
                     let itemName = item.name || item.itemName;
@@ -13834,7 +13849,7 @@ window.loadSalesHistoryTab = async function() {
             
             shiftRef.transactions.push({
                 time: timeStr, receiptId: tx.receiptId, customer: safeCustomer, status: tx.status || "Paid",
-                netTotal: txNet, cogs: txCogs, paymentMethod: tx.paymentMethod || 'Unknown', cartEncoded: safeCart, isVoid: isVoid
+                netTotal: txNet, cogs: txCogs, paymentMethod: tx.paymentMethod || 'Unknown', cartEncoded: safeCart, isVoid: isVoid, preparedCancellation: isPreparedCancellation, preparedCancellationLabel
             });
 
             if (!isVoid) {
@@ -13854,14 +13869,17 @@ window.loadSalesHistoryTab = async function() {
                 distPayment[pMeth].sales += txNet; distPayment[pMeth].count++;
             } else {
                 shiftRef.voids += txNet;
+                // Cooked cancellations retain consumed-food cost at the original
+                // receipt date. Their linked resale adds revenue, not more cost.
+                if (isPreparedCancellation) { tCogs += txCogs; shiftRef.cogs += txCogs; }
             }
 
             if (!dailyAggregates[dailyKey]) dailyAggregates[dailyKey] = { branch: tx.branch, date: dateStr, sales: 0, cogs: 0, txCount: 0, voids: 0 };
-            if (isVoid) { dailyAggregates[dailyKey].voids += txNet; } 
+            if (isVoid) { dailyAggregates[dailyKey].voids += txNet; if (isPreparedCancellation) dailyAggregates[dailyKey].cogs += txCogs; }
             else { dailyAggregates[dailyKey].sales += txNet; dailyAggregates[dailyKey].cogs += txCogs; dailyAggregates[dailyKey].txCount += 1; }
 
             if (!monthlyAggregates[monthlyKey]) monthlyAggregates[monthlyKey] = { branch: tx.branch, month: monthStr, sales: 0, cogs: 0, txCount: 0, voids: 0, dateObj: new Date(dDate.getFullYear(), dDate.getMonth(), 1) };
-            if (isVoid) { monthlyAggregates[monthlyKey].voids += txNet; }
+            if (isVoid) { monthlyAggregates[monthlyKey].voids += txNet; if (isPreparedCancellation) monthlyAggregates[monthlyKey].cogs += txCogs; }
             else { monthlyAggregates[monthlyKey].sales += txNet; monthlyAggregates[monthlyKey].cogs += txCogs; monthlyAggregates[monthlyKey].txCount += 1; }
 
             let statusStyle = isVoid ? "opacity: 0.5; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: var(--primary);";
@@ -13869,8 +13887,10 @@ window.loadSalesHistoryTab = async function() {
             let minutesElapsed = Math.floor((Date.now() - txTimeMs) / 60000);
             
             let statusBadge = '';
-            if (isVoid) statusBadge = `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>`;
+            if (isPreparedCancellation) statusBadge = `<span style="background:#fff7ed; color:#b45309; padding:2px 8px; border-radius:12px; font-size:11px;">Cancelled · prepared</span><br><small>${escapeHtml(preparedCancellationLabel)}</small>`;
+            else if (isVoid) statusBadge = `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>`;
             else if (tx.status === "Parked") statusBadge = `<span style="background:#fef3c7; color:#d97706; padding:2px 8px; border-radius:12px; font-size:11px;">Parked (Unpaid)</span>`;
+            else if (tx.cancelledFoodSourceId) statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid · Foods</span>`;
             else if (minutesElapsed < 10) statusBadge = `<span class="live-prep-timer" data-time="${txTimeMs}" style="background: #fef08a; color: #b45309; border: 1px solid #fde047; padding: 4px 8px; border-radius: 12px; font-weight: 900; font-size: 11px; box-shadow: 0 0 8px rgba(250, 204, 21, 0.6); animation: pulse 1.5s infinite;">🍳 COOKING (${10 - minutesElapsed}m)</span>`;
             else statusBadge = `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
 
@@ -14045,12 +14065,13 @@ window.viewShiftReportModal = function(shiftId) {
         s.transactions.sort((a, b) => new Date('1970/01/01 ' + b.time) - new Date('1970/01/01 ' + a.time));
         
         s.transactions.forEach(tx => {
-            let statusBadge = tx.isVoid ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
+            let statusBadge = tx.preparedCancellation ? `<span style="background:#fff7ed; color:#b45309; padding:2px 8px; border-radius:12px; font-size:11px;">Cancelled · prepared</span><br><small>${escapeHtml(tx.preparedCancellationLabel || '')}</small>` : tx.isVoid ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 8px; border-radius:12px; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; padding:2px 8px; border-radius:12px; font-size:11px;">Paid</span>`;
             let rowStyle = tx.isVoid ? "opacity: 0.6; text-decoration: line-through; color: #ef4444;" : "font-weight: bold; color: #16a34a;";
 
-            // If it's voided, COGS and Margin are zeroed out for visual clarity
-            let cogsDisplay = tx.isVoid ? '₱0.00' : `₱${(tx.cogs || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-            let marginDisplay = tx.isVoid ? '₱0.00' : `₱${((tx.netTotal || 0) - (tx.cogs || 0)).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+            // A conventional void returns stock; prepared cancellations retain
+            // food cost while their original platform revenue stays excluded.
+            let cogsDisplay = tx.isVoid && !tx.preparedCancellation ? '₱0.00' : `₱${(tx.cogs || 0).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+            let marginDisplay = tx.isVoid && !tx.preparedCancellation ? '₱0.00' : `₱${((tx.isVoid ? 0 : tx.netTotal || 0) - (tx.cogs || 0)).toLocaleString(undefined, {minimumFractionDigits: 2})}`;
 
             txHtml += `
                 <tr style="border-bottom: 1px solid #f1f5f9;">
@@ -15733,12 +15754,12 @@ window.generateAIReport = async function() {
 
         txSnap.forEach(doc => {
             let tx = doc.data();
-            if (tx.branch !== branch || tx.status === "Voided") return;
+            if (tx.branch !== branch || (tx.status === "Voided" && !tx.preparedCancellation?.prepared)) return;
             
             let cSales = tx.totalCashSales !== undefined ? tx.totalCashSales : (tx.netTotal || 0);
-            totalSales += cSales;
+            if (tx.status !== 'Voided') totalSales += cSales;
 
-            if (tx.cart && Array.isArray(tx.cart)) {
+            if (!tx.cancelledFoodSourceId && tx.cart && Array.isArray(tx.cart)) {
                 tx.cart.forEach(item => {
                     let qtySold = item.qty || 1;
                     let recipe = recipes[item.name || item.itemName] || [];
@@ -21908,12 +21929,12 @@ window.loadFinancialFlow = async function() {
 
         txSnap.forEach(doc => {
             let tx = doc.data();
-            if (tx.status === "Voided") return;
+            if (tx.status === "Voided" && tx.preparedCancellation?.prepared !== true) return;
             if (branch !== "All" && tx.branch !== branch) return; // 🔥 Javascript Branch Filter!
 
-            totalRevenue += (parseFloat(tx.netTotal) || 0);
+            if (tx.status !== 'Voided') totalRevenue += (parseFloat(tx.netTotal) || 0);
 
-            if (tx.cart && Array.isArray(tx.cart)) {
+            if (!tx.cancelledFoodSourceId && tx.cart && Array.isArray(tx.cart)) {
                 tx.cart.forEach(item => {
                     let itemName = item.name || item.itemName;
                     let qtySold = parseFloat(item.qty) || 1;
@@ -27177,7 +27198,9 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
     guard(shifts);
     for (const report of reports) guard(report);
     for (const receipt of sales.docs) {
-      const sale = receipt.data(); guard(receipt); if (sale.status === 'Voided') continue;
+      const sale = receipt.data(); guard(receipt);
+      if (sale.preparedCancellation?.prepared && ['audit_pending','deferred'].includes(sale.inventoryState)) throw new Error('Finish the prepared cancelled order stock audit before settlement');
+      if (sale.status === 'Voided') continue;
       if (sale.inventoryState === 'audit_pending' || sale.inventoryState === 'deferred') throw new Error('Finish paused stock audits before settlement');
       for (const payment of sale.splitDetails || [{ method: sale.paymentMethod || 'Cash', amount: sale.netTotal }]) {
         if (payment.method === 'Cash') cash += Number(payment.amount) || 0;
@@ -27205,7 +27228,7 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
         accountId: path.split('/')[1], accountName: name, branch: accountBranch, action: 'Owner-reviewed Shift Settlement',
         amount: value, user: window.auth.currentUser.email, timestamp: new Date(), shiftId: id, operationId: row.id }) });
     }
-    for (const [method, value] of Object.entries(digital)) if (method.toLowerCase() !== 'gcash') await deposit('Main Office', method, value);
+    for (const [method, value] of Object.entries(digital)) if (!['gcash', 'salary deduction'].includes(method.trim().toLowerCase())) await deposit('Main Office', method, value);
     if (shifts.data().isMallBranch ?? branchConfig.isMallBranch === true) {
       const dailyClose = await confirmMallDailyClose(window,{branch:targetBranch,started:shifts.data().startTime,declaredCash:Number(row.evidence.declaredCash)});
       if (!dailyClose) return;

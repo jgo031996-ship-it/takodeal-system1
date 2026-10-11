@@ -3,6 +3,7 @@ import { installAttendanceCamera, createAttendanceStreamSession } from './attend
 import {readStaffRecords, latestAttendance, attendanceMillis, attendanceKind, closeAttendanceShift} from './attendance-reconcile.js';
 import { createRecipeFeed } from './recipe-feed.js';
 import { installMealCheckout } from './meal-checkout.js';
+import { installCancelledOrders } from './cancelled-orders-ui.js';
 import { createShiftCloseDraftStore, countValue } from './shift-close-draft.js';
 import { ensureShiftSalesUploaded, createShiftSalesFeed, createParkedOrdersFeed, mergeParkedOrders } from './shift-sales.js';
 import { createPrinterConnections, createPrinterWriter, printerMode, rawBtIntent } from './printer-connection.js';
@@ -1295,6 +1296,7 @@ window.refreshVisibleShiftSales = () => {
     }
 };
 installMealCheckout();
+installCancelledOrders({db,doc,collection,query,where,getDocsFromServer,runTransaction,increment,serverTimestamp,auth});
 
 // --- THE DASHBOARD ENGINE ---
 window.getSalesDashboardData = async function (branch, shiftStartTime, shiftId) {
@@ -1636,7 +1638,7 @@ window.viewReceiptDetails = async function (receiptId) {
 
     let timeStr = tx.timestamp ? (tx.timestamp.toDate ? tx.timestamp.toDate() : new Date(tx.timestamp)).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
     let safeCustomer = tx.customerName ? tx.customerName.replace(/'/g, "\\'") : 'Guest';
-    let statusBadge = tx.status === 'Voided' ? `<span style="background:#fef2f2; color:#dc2626; border: 1px solid #fca5a5; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; border: 1px solid #bbf7d0; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Paid</span>`;
+    let statusBadge = tx.preparedCancellation ? '<span style="color:#b45309;font-weight:bold">Cancelled · prepared</span>' : tx.status === 'Voided' ? `<span style="background:#fef2f2; color:#dc2626; border: 1px solid #fca5a5; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Voided</span>` : `<span style="background:#dcfce7; color:#16a34a; border: 1px solid #bbf7d0; padding:4px 8px; border-radius:6px; font-weight:bold; font-size:11px;">Paid</span>`;
 
     let oldModal = document.getElementById('dynamicReceiptModal');
     if (oldModal) oldModal.remove();
@@ -7280,12 +7282,18 @@ window.MASTER_CloseShift = async function () {
         let digitalBreakdown = {}; let shiftIngredientBurn = {};
 
         const txQ = window.query(window.collection(window.db, "transactions"), window.where("branch", "==", branchName), window.where("shiftId", "==", shiftId));
+        const shiftRevisionSnapshot = await window.getDocFromServer(window.doc(window.db, "shifts", shiftId));
+        const expectedSalesRevision = Number(shiftRevisionSnapshot.data()?.salesRevision || 0);
         const txSnap = await window.getDocsFromServer(txQ);
 
         let unverifiedDigitalCount = 0, inventoryReviewCount = 0;
 
         txSnap.forEach(docSnap => {
             let tx = docSnap.data();
+            if (tx.preparedCancellation?.prepared) {
+                for (const [name,quantity] of Object.entries(receiptIngredientBurn(tx))) shiftIngredientBurn[name]=(shiftIngredientBurn[name]||0)+quantity;
+                if (tx.inventoryReviewRequired) inventoryReviewCount++;
+            }
             if (tx.status !== 'Voided') {
                 if (tx.inventoryReviewRequired) inventoryReviewCount++;
                 
@@ -7389,7 +7397,7 @@ window.MASTER_CloseShift = async function () {
             if (!dailyClose) { if (confirmBtn) { confirmBtn.innerHTML=origText; confirmBtn.disabled=false; } return; }
         }
         if (confirmBtn) confirmBtn.innerHTML = "⏳ Lightning Syncing to Cloud...";
-        await closeShiftAtomic(window, {shiftId,branch:branchName,cashier:cashierName,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance,cashOut,...dailyClose,closing:{cashBreakdown,physicalStockCount}});
+        await closeShiftAtomic(window, {expectedSalesRevision,shiftId,branch:branchName,cashier:cashierName,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance,cashOut,...dailyClose,closing:{cashBreakdown,physicalStockCount}});
 
         // Clear the draft only after the atomic close succeeds.
         clearCurrentShiftCloseDraft({branch: branchName, shiftId});
