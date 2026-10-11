@@ -444,6 +444,7 @@
   <link rel="stylesheet" href="schedule-layout.css?v=20261004">
   <link rel="stylesheet" href="staff-documents.css?v=staff-pos-repair-20261008-r12">
   <link rel="stylesheet" href="manager-mobile.css?v=20261010-r1">
+    <link rel="stylesheet" href="./online-refunds.css">
 </head>
 
 <body class="manager-theme">
@@ -1451,6 +1452,7 @@
                 <div>
                     <select id="posConfigSectionSelect" onchange="window.switchPosConfigSection(this.value)" style="padding: 14px 20px; border-radius: 10px; border: 2px solid #bae6fd; outline: none; font-weight: 900; color: #0284c7; font-size: 15px; background: #f0f9ff; cursor: pointer; min-width: 320px; box-shadow: 0 4px 6px rgba(2, 132, 199, 0.1);">
                         <option value="master">⚙️ Master POS Configuration</option>
+                        <option value="purchasedCancelledOrders">Purchased Cancelled Orders</option>
                         <option value="menuArrangement">🍔 POS Menu Tab Arrangement</option>
                         <option value="sidebarArrangement">📱 Sidebar Tab Arrangement</option>
                         <option value="menuFilter">🏢 Branch Menu Filter (Mall Mode)</option>
@@ -1463,6 +1465,7 @@
             <div style="padding: 30px; background: #f8fafc; flex: 1; overflow-y: auto;">
 
                 <!-- 1. MASTER POS CONFIGURATION -->
+                <div id="section-purchasedCancelledOrders" class="pos-config-section pos-config-workspace" style="display:none;"></div>
                 <div id="section-master" class="pos-config-section" style="display: block;">
                     <div style="background: white; padding: 25px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">

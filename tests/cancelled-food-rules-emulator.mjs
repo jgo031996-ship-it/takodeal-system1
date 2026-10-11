@@ -9,6 +9,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {createConnection} from 'node:net';
 import {createCancelledOrderEngine} from '../Takodeal-POS/cancelled-orders.js';
+import {createOnlineRefundEngine} from '../takodeal-manager/online-refunds.js';
 import {createSaleEngine,SALE_VERSION,saleFingerprint} from '../Takodeal-POS/pos-safety.js';
 
 // Standalone, real full-rule test. Not a *.test.mjs CI test: Java/local tools
@@ -40,6 +41,35 @@ before(async()=>{
     env=await initializeTestEnvironment({projectId,firestore:{host,port,rules:readFileSync(resolve(root,'firestore.rules'),'utf8')}});
 },{timeout:40000});
 after(async()=>{await env?.cleanup();if(child && child.exitCode===null){child.kill();await Promise.race([once(child,'exit'),pause(3000)]);}});
+
+test('active crew or manager assigned to another branch can purchase without a permission failure',async()=>{
+    await adminUpdate('cashiers/'+staffId,{branch:'Cabantian',role:'Manager'});const f=await cancelled();await assertSucceeds(f.e.purchase(purchaser(f.quote)));assert.equal((await read('staff_deductions/'+purchaseId)).staffId,staffId);
+});
+test('legacy unbound anonymous Cashier can commit the validated pair while protected branches still deny it',async()=>{
+    await adminUpdate('offline_policy/'+branch,{protectSalesV2:false});const f=await cancelled(anon('legacy-cashier'));await assertSucceeds(f.e.purchase(purchaser(f.quote)));assert.equal((await read('staff_deductions/'+purchaseId)).amount,192);
+});
+test('legacy compatibility refuses a revoked binding, another-branch binding and verified customer identity',async()=>{
+    await adminUpdate('offline_policy/'+branch,{protectSalesV2:false});const writes=await packet();for(const db of [anon('revoked-pos'),anon('other-branch-pos'),google('sample-customer','customer@example.invalid')])await assertFails(commitPacket(db,writes));
+});
+test('a customer-order gate still requires approval even with sales protection disabled',async()=>{
+    await adminUpdate('offline_policy/'+branch,{protectSalesV2:false,requireCashierForCustomerOrders:true});const writes=await packet();await assertFails(commitPacket(anon('legacy-cashier'),writes));
+});
+function refundInput(){return {sourceSaleId,staffId,reason:'wrong_food',details:'SAMPLE wrong filling',evidence:'SAMPLE platform reference',refundConfirmed:true,refundAmount:80};}
+function refundEngine(db=google('synthetic-owner','jgo031996@gmail.com')){return createOnlineRefundEngine({...api(db),auth:{currentUser:{email:'jgo031996@gmail.com'}}},{ownerCheck:()=>true});}
+test('verified Owner can record a pending incident and zero-charge ledger atomically, then keep review pending and dismiss',async()=>{
+    const e=refundEngine(),before=await read('transactions/'+sourceSaleId),id='online-refund-'+sourceSaleId;await assertSucceeds(e.record(refundInput()));assert.deepEqual(await read('transactions/'+sourceSaleId),before);const ledger=await read('staff_deductions/'+id);assert.equal(ledger.amount,0);assert.equal(ledger.proposedAmount,80);assert.equal(ledger.status,'Pending Review');await assertSucceeds(e.review({id,revision:0,response:'SAMPLE staff response',reviewNote:'SAMPLE awaiting evidence'}));await assertSucceeds(e.review({id,revision:1,response:'SAMPLE staff response',reviewNote:'SAMPLE no responsibility established',dismiss:true}));assert.equal((await read('staff_deductions/'+id)).status,'Dismissed');
+});
+for(const dbName of ['anonymous','hq','customer'])test(dbName+' cannot record or approve an online refund salary charge',async()=>{
+    const db=dbName==='anonymous'?anon('approved-pos'):google('not-owner',dbName+'@example.invalid');await assertFails(refundEngine(db).record(refundInput()));assert.equal(await read('staff_deductions/online-refund-'+sourceSaleId),undefined);
+});
+test('the pending-only release denies direct salary amounts, paid statuses, unpaired incidents and ledger deletion even to Owner',async()=>{
+    const db=google('synthetic-owner','jgo031996@gmail.com'),e=refundEngine(db),id='online-refund-'+sourceSaleId;await e.record(refundInput());
+    for(const change of [{amount:80},{status:'Unpaid'},{status:'Paid'},{proposedAmount:100},{staffId:'other-person'}])await assertFails(updateDoc(doc(db,'staff_deductions/'+id),change));
+    await assertFails(sdk.deleteDoc(doc(db,'staff_deductions/'+id)));await assertFails(updateDoc(doc(db,'online_order_incidents/'+id),{status:'Dismissed'}));
+});
+test('an unpaired pending ledger cannot be created by Owner',async()=>{
+    const db=google('synthetic-owner','jgo031996@gmail.com');await assertFails(setDoc(doc(db,'staff_deductions/online-refund-orphan'),{type:'Online Order Refund',category:'Online Order Refunds',status:'Pending Review',amount:0,staffId,staffName,sourceSaleId,sourceReceiptId:'EMULATOR-ORIGINAL',incidentId:'online-refund-orphan',proposedAmount:80,dateAdded:serverTimestamp(),loggedBy:'jgo031996@gmail.com'}));
+});
 
 const branch='Maa',shiftId='emulator-source-shift',sourceSaleId='emulator-source-sale',staffId='emulator-staff',staffName='Synthetic Rules Staff',pin='5678';
 const purchaseId='cancelled-food-'+sourceSaleId;
@@ -121,7 +151,7 @@ for(const uid of ['unapproved-pos','revoked-pos','other-branch-pos'])test(`${uid
 for(const platform of ['grab',' GRAB ','foodpanda',' panda '])test(`normalized saved platform ${JSON.stringify(platform)} works in the actual app and full rules`,async()=>{
     await adminUpdate('transactions/'+sourceSaleId,{paymentMethod:platform});const f=await cancelled();await assertSucceeds(f.e.purchase(purchaser(f.quote)));
 });
-for(const role of ['STAFF',' staff crew ','Cashier','Crew'])test(`normalized Staff role ${JSON.stringify(role)} is accepted without expanding to management`,async()=>{
+for(const role of ['STAFF',' staff crew ','Cashier','Crew','Manager',' manager '])test(`active registered buyer role ${JSON.stringify(role)} is accepted`,async()=>{
     await adminUpdate('cashiers/'+staffId,{role});const f=await cancelled();await assertSucceeds(f.e.purchase(purchaser(f.quote)));
 });
 for(const gross of [171,199.95,199.99,90.25,0.03])test(`cent rounding for gross ${gross} passes the exact actual purchase payload`,async()=>{
@@ -183,7 +213,7 @@ test('a missing paired deduction or source-link write rejects the entire receipt
     const writes=await packet();for(const omitted of ['staff_deductions/'+purchaseId,'transactions/'+sourceSaleId])await assertFails(commitPacket(anon('approved-pos'),writes.filter(write=>write.path!==omitted)));assert.equal(await read('transactions/'+purchaseId),undefined);
 });
 test('direct unpaired Foods charge is denied for approved anonymous POS',async()=>{await assertFails(setDoc(doc(anon('approved-pos'),'staff_deductions/forged'),{type:'Cancelled Food Purchase',purchaseId:'forged',branch,staffId,staffName,amount:100,status:'Unpaid',category:'Foods',dateAdded:serverTimestamp()}));});
-for(const changes of [{role:'Manager'},{role:'Owner'},{role:''},{role:'Mystery Role'},{status:'resigned'},{status:' INACTIVE '},{active:false},{archived:true},{branch:'Cabantian'},{pin:'REVOKED'},{pin:'',securityPin:'REVOKED'}])test(`raw saved profile ${JSON.stringify(changes)} is denied by rules even after the app prepared an earlier valid packet`,async()=>{
+for(const changes of [{role:'Owner'},{role:''},{role:'Mystery Role'},{status:'resigned'},{status:' INACTIVE '},{active:false},{archived:true},{pin:'REVOKED'},{pin:'',securityPin:'REVOKED'}])test(`raw saved profile ${JSON.stringify(changes)} is denied by rules even after the app prepared an earlier valid packet`,async()=>{
     const writes=await packet();await adminUpdate('cashiers/'+staffId,changes);await assertFails(commitPacket(anon('approved-pos'),writes));assert.equal(await read('staff_deductions/'+purchaseId),undefined);
 });
 test('typing literal REVOKED cannot turn a revoked saved PIN into a valid new salary purchase',async()=>{

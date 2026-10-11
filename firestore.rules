@@ -43,6 +43,15 @@ service cloud.firestore {
         && request.auth.token.firebase.sign_in_provider == 'anonymous'
         && approvedUID(request.auth.uid, branch);
     }
+    // Retain the staged policy for existing PIN-based Cashier devices. Locked
+    // branches still require the same Owner-approved UID; revoked bindings are
+    // never admitted through the compatibility route.
+    function cancelledFoodWriter(branch) {
+      return isSignedIn() && (request.auth.token.firebase.sign_in_provider == 'anonymous'
+        ? (exists(/databases/$(database)/documents/pos_bindings/$(request.auth.uid))
+          ? approvedUID(request.auth.uid, branch) : !protectedSales(branch) && !offlineGate(branch))
+        : verifiedHQ(branch));
+    }
     function ownTrustedDevice() {
       return isSignedIn() && request.auth.token.firebase.sign_in_provider == 'anonymous'
         && exists(/databases/$(database)/documents/pos_bindings/$(request.auth.uid))
@@ -178,8 +187,7 @@ service cloud.firestore {
         && staff.get('active', true) != false && staff.get('archived', false) != true
         && !string(staff.get('status', '')).lower().matches('.*(blocked|inactive|terminated|archived|resigned|deleted).*')
         && staff.get('role', 'Staff') is string
-        && staff.get('role', 'Staff').trim().lower() in ['staff','staff crew','crew','cashier']
-        && staff.get('branch', data.branch) in [data.branch,'All']
+        && staff.get('role', 'Staff').trim().lower() in ['staff','staff crew','crew','cashier','manager']
         && staff.get('cashierName', staff.get('fullName', staff.get('name', ''))) == data.customerName
         && charge.purchaseId == id && charge.staffId == data.cancelledFoodStaffId && charge.staffName == data.customerName
         && charge.branch == data.branch && charge.sourceSaleId == data.cancelledFoodSourceId
@@ -416,7 +424,7 @@ service cloud.firestore {
     match /transactions/{txId} {
       allow read: if true;
       allow create: if request.resource.data.get('cancelledFoodSourceId', '') != ''
-        ? ((trustedPOS(request.resource.data.branch) || verifiedHQ(request.resource.data.branch))
+        ? (cancelledFoodWriter(request.resource.data.branch)
           && cancelledFoodPurchase(request.resource.data, txId) && safetySale(request.resource.data, txId))
         : (!protectedSales(request.resource.data.get('branch', ''))
         || verifiedHQ(request.resource.data.get('branch', ''))
@@ -551,14 +559,78 @@ service cloud.firestore {
     match /acknowledgments/{ackId} { allow read, create, update: if true; allow delete: if isHQUser(); }
     match /payroll_records/{recordId} { allow read, update: if true; allow create, delete: if isHQUser(); }
     match /staff_ledger/{ledgerId} { allow read: if true; allow write: if isHQUser(); }
+    function onlineIncidentCreate(data, id) {
+      let sale = get(/databases/$(database)/documents/transactions/$(data.sourceSaleId)).data;
+      let staff = get(/databases/$(database)/documents/cashiers/$(data.staffId)).data;
+      let charge = getAfter(/databases/$(database)/documents/staff_deductions/$(id)).data;
+      return offlineOwner() && data.version == 1 && data.id == id
+        && id == 'online-refund-' + data.sourceSaleId
+        && data.sourceReceiptId == sale.receiptId && data.branch == sale.branch
+        && sale.paymentMethod.lower() in ['grab','foodpanda','panda']
+        && sale.get('cancelledFoodSourceId', '') == '' && !sale.keys().hasAny(['preparedCancellation'])
+        && !(sale.get('status', '') in ['Voided','Parked','mobile_queue'])
+        && data.staffName == staff.get('cashierName', staff.get('fullName', staff.get('name', '')))
+        && staff.get('active', true) == true && staff.get('archived', false) == false
+        && data.type == 'Online Order Refund' && data.category == 'Online Order Refunds'
+        && data.status == 'Pending Review' && data.amount == 0 && data.reviewRevision == 0
+        && data.refundAmount is number && data.refundAmount >= 0 && data.refundAmount <= sale.netTotal
+        && data.orderAmount == sale.netTotal && data.refundConfirmed is bool
+        && (data.refundConfirmed || data.refundAmount == 0)
+        && data.createdBy == request.auth.token.email && data.createdAt == request.time
+        && data.evidence is string && data.evidence.size() > 0 && data.evidence.size() <= 1000
+        && data.details is string && data.details.size() > 0 && data.details.size() <= 1500
+        && data.reason in ['wrong_food','wrong_instructions','missing_item','other']
+        && charge.incidentId == id && charge.sourceSaleId == data.sourceSaleId
+        && charge.staffId == data.staffId && charge.staffName == data.staffName
+        && charge.proposedAmount == data.refundAmount && charge.status == data.status && charge.amount == 0;
+    }
+    function onlineIncidentReview(before, after, id) {
+      let charge = getAfter(/databases/$(database)/documents/staff_deductions/$(id)).data;
+      return offlineOwner() && before.status == 'Pending Review' && before.amount == 0
+        && after.diff(before).affectedKeys().hasOnly(['status','staffResponse','reviewNote','reviewedAt','reviewedBy','reviewRevision'])
+        && after.status in ['Pending Review','Dismissed'] && after.reviewRevision == before.reviewRevision + 1
+        && after.staffResponse is string && after.staffResponse.size() > 0 && after.staffResponse.size() <= 1500
+        && after.reviewNote is string && after.reviewNote.size() > 0 && after.reviewNote.size() <= 1500
+        && after.reviewedAt == request.time && after.reviewedBy == request.auth.token.email
+        && charge.status == after.status && charge.amount == 0
+        && charge.responseRecorded == true && charge.reviewedAt == request.time;
+    }
+    function onlineIncidentCharge(data, id) {
+      let row = getAfter(/databases/$(database)/documents/online_order_incidents/$(id)).data;
+      return offlineOwner() && data.type == 'Online Order Refund' && data.amount == 0
+        && data.category == 'Online Order Refunds' && data.status == 'Pending Review'
+        && data.incidentId == id && row.id == id && row.status == data.status
+        && data.staffId == row.staffId && data.staffName == row.staffName
+        && data.sourceSaleId == row.sourceSaleId && data.sourceReceiptId == row.sourceReceiptId
+        && data.sourcePlatform == row.sourcePlatform && data.proposedAmount == row.refundAmount
+        && data.dateAdded == request.time && data.loggedBy == request.auth.token.email;
+    }
+    match /online_order_incidents/{id} {
+      allow get, list: if offlineOwner();
+      allow create: if onlineIncidentCreate(request.resource.data, id);
+      allow update: if onlineIncidentReview(resource.data, request.resource.data, id);
+      allow delete: if false;
+    }
     match /staff_deductions/{deductId} {
       allow read: if true;
-      allow create: if request.resource.data.get('type', '') == 'Cancelled Food Purchase'
-        ? ((trustedPOS(request.resource.data.branch) || verifiedHQ(request.resource.data.branch))
+      allow create: if request.resource.data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
+        ? onlineIncidentCharge(request.resource.data, deductId)
+        : request.resource.data.get('type', '') == 'Cancelled Food Purchase'
+        ? (cancelledFoodWriter(request.resource.data.branch)
           && cancelledFoodChargeLink(request.resource.data, deductId))
         : isHQUser();
-      allow update, delete: if resource.data.get('type', '') == 'Cancelled Food Purchase'
+      allow update: if resource.data.get('type', '') == 'Online Order Refund' || request.resource.data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
+        ? (offlineOwner() && resource.data.type == 'Online Order Refund' && request.resource.data.amount == 0
+          && resource.data.status == 'Pending Review'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','responseRecorded','reviewedAt','reviewedBy'])
+          && request.resource.data.responseRecorded == true
+          && request.resource.data.status in ['Pending Review','Dismissed']
+          && request.resource.data.status == getAfter(/databases/$(database)/documents/online_order_incidents/$(deductId)).data.status
+          && request.resource.data.reviewedAt == request.time && request.resource.data.reviewedBy == request.auth.token.email)
+        : resource.data.get('type', '') == 'Cancelled Food Purchase'
         ? verifiedHQ(resource.data.branch) : isHQUser();
+      allow delete: if resource.data.get('type', '') != 'Online Order Refund'
+        && (resource.data.get('type', '') == 'Cancelled Food Purchase' ? verifiedHQ(resource.data.branch) : isHQUser());
     }
     match /staff_bonuses/{bonusId} { allow read: if true; allow write: if isHQUser(); }
     match /budgets/{budgetId} { allow read, write: if isHQUser(); }

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import {dailyStaffRate, staffProfileOperation} from '../takodeal-manager/staff-rate-changes.js';
+import {escapeHTML as escapeHtml} from '../takodeal-manager/access-workspace-model.js';
 
 const main = fs.readFileSync(new URL('../takodeal-manager/main.js', import.meta.url), 'utf8');
 function actualFunction(name) {
@@ -38,7 +39,7 @@ function fixture({missingId = false, deferredHistory = false} = {}) {
         }
         return nodes.get(id);
     };
-    const empty = {forEach() {}};
+    const empty = {docs:[],forEach() {}};
     const api = {
         db:{}, sessionUser:{}, globalStaffData:profiles, crypto,
         auth:{currentUser:{uid:'owner', email:'owner@example.test', emailVerified:true}},
@@ -47,10 +48,10 @@ function fixture({missingId = false, deferredHistory = false} = {}) {
         query:(collection, ...clauses) => ({...collection, clauses}),
         where:(field, op, value) => ({field, op, value}), orderBy:() => ({}), limit:() => ({}),
         doc:(...args) => args.length === 1 ? {id:`new-${++nextId}`, table:args[0].table} : {id:args[2], table:args[1]},
-        getDocs:q => q.table === 'cashiers' ? new Promise(resolve => queries.push(() => resolve(empty))) : deferredHistory && q.table === 'staff_deductions' ? new Promise((resolve, reject) => {
+        getDocs:q => q.table === 'cashiers' ? new Promise(resolve => queries.push(() => resolve(empty))) : deferredHistory && q.table === 'staff_deductions' && q.clauses.some(clause=>clause.field==='staffName') ? new Promise((resolve, reject) => {
             histories.push({
                 name:q.clauses.find(clause => clause.field === 'staffName')?.value,
-                finish:type => resolve({forEach:visit => visit({id:type, data:() => ({type, status:'Unpaid', amount:10, dateAdded:'2026-10-08'})})}),
+                finish:type => {const row={id:type,data:()=>({type,status:'Unpaid',amount:10,dateAdded:'2026-10-08'})};resolve({docs:[row],forEach:visit=>visit(row)});},
                 fail:() => reject(Error('Simulated history read failure'))
             });
         }) : Promise.resolve(empty),
@@ -61,11 +62,12 @@ function fixture({missingId = false, deferredHistory = false} = {}) {
             finish:() => resolve({profile:{...profiles[id], ...payload}}), fail:() => reject(Error('Simulated old save failure'))});
     });
     const context = {
-        window:api, document:{getElementById:node, querySelectorAll:() => deductions},
+        window:api, document:{getElementById:node, querySelectorAll:() => deductions},escapeHtml,
         dailyStaffRate, staffProfileOperation, saveStaffProfileAtomic:atomic,
         Swal:{fire:(...args) => notices.push(args)}, installSanctionScheduling() {},
         isPenaltyDeduction:() => false, console:{error() {}}, Date, crypto, structuredClone
     };
+    api.getDocsFromServer=api.getDocs;
     vm.runInNewContext(['addNewStaff', 'openEmployeeProfile', 'saveEmployeeProfile'].map(actualFunction).join('\n'), context);
     return {api, node, saves, queries, notices, histories, async waitForSave(count = 1) {
         for(let i = 0; i < 10 && saves.length < count; i++) await tick();

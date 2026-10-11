@@ -3,6 +3,20 @@ import {cancelledFoodPolicy} from './pos-config-model.js';
 import {mealRole,savedPin} from './hq-account-model.js';
 export const CANCELLATION_REASONS=Object.freeze({customer:'Prepared but customer cancelled',rider:'Prepared but rider cancelled'});
 export const cancelledPlatform=sale=>{const value=String(sale.paymentMethod||'').trim().toLowerCase();return value==='grab'?'Grab':['foodpanda','panda'].includes(value)?'Foodpanda':null;};
+export function eligibleCancelledFoodBuyer(profile){
+    return Boolean(profile && ['staff','manager'].includes(mealRole(profile,'cashiers')) && ['staff','staff crew','crew','cashier','manager'].includes(String(profile.role??'Staff').trim().toLowerCase()) && profile.active!==false && profile.archived!==true && !/blocked|inactive|terminated|archived|resigned|deleted/i.test(String(profile.status||'')) && savedPin(profile).trim().toUpperCase()!=='REVOKED');
+}
+export async function findCancelledFoodBuyer(api,pin){
+    pin=String(pin||'');if(pin.length<4)throw Error('Enter the employee’s registered login PIN (not their private Pay PIN).');
+    const values=[pin];if(/^\d+$/.test(pin)&&String(Number(pin))===pin)values.push(Number(pin));
+    const matches=(await Promise.all(['pin','securityPin'].flatMap(field=>values.map(value=>api.read('cashiers',field,value))))).flat();
+    const profiles=[...new Map(matches.map(row=>[row.id,row])).values()].filter(row=>eligibleCancelledFoodBuyer(row.data)&&savedPin(row.data)===pin);
+    if(!profiles.length)throw Error('No active crew or manager matches this login PIN. Check the employee’s registered login PIN in Owner → Master Employee Profile.');
+    if(profiles.length!==1)throw Error('This login PIN belongs to multiple employees. Ask the Owner to assign unique PINs.');
+    const row=profiles[0],name=row.data.cashierName||row.data.fullName||row.data.name;
+    if(!name)throw Error('The employee profile needs a saved name.');
+    return {id:row.id,staffName:name};
+}
 const cents=value=>{if(typeof value!=='number'||!Number.isFinite(value)||value<0)throw Error('This receipt has an invalid amount. Ask HQ to review it.');return Math.round(value*100);};
 const text=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function createCancelledOrderEngine(api,{sessionCheck=()=>true}={}){
@@ -20,7 +34,7 @@ export function createCancelledOrderEngine(api,{sessionCheck=()=>true}={}){
     }
     async function openShift(tx,input){const shift=await tx.get(ref('shifts',input.shiftId));if(!shift.exists()||shift.data().branch!==input.branch||shift.data().active!==true||shift.data().status==='Closed')throw Error('This shift is already closed. Ask HQ to reconcile the order; saved settlements are unchanged.');}
     function quote(sale,input,settings){
-        const policy=cancelledFoodPolicy(settings);if(!policy.cancelledFoodPurchaseEnabled)throw Error('Staff purchases of cancelled food are disabled in Manager POS Config.');
+        const policy=cancelledFoodPolicy(settings);if(!policy.cancelledFoodPurchaseEnabled)throw Error('Staff purchases of cancelled food are disabled in Owner POS Config → Purchased Cancelled Orders.');
         const base=cents(sale.subTotalBeforeDiscount??sale.netTotal),discount=Math.round(base*policy.cancelledFoodDiscountPct/100);
         return {sourceSaleId:input.sourceSaleId,branch:input.branch,shiftId:input.shiftId,sourceReceiptId:sale.receiptId,platform:cancelledPlatform(sale),baseAmount:base/100,discountPct:policy.cancelledFoodDiscountPct,discountAmount:discount/100,amount:(base-discount)/100,fingerprint:saleFingerprint(sale)};
     }
@@ -82,8 +96,7 @@ export function createCancelledOrderEngine(api,{sessionCheck=()=>true}={}){
                 const config=await tx.get(ref('settings','global_pos_config')),currentQuote=quote(sale,input,config.exists()?config.data():{});
                 if(!same(currentQuote,input.quote))throw Error('The discount or order changed. Review the current quote before confirming the deduction.');
                 const staff=await tx.get(ref('cashiers',input.staffId));
-                if(!staff.exists()||mealRole(staff.data(),'cashiers')!=='staff'||!['staff','staff crew','crew','cashier'].includes(String(staff.data().role??'Staff').trim().toLowerCase())||String(staff.data().cashierName||staff.data().fullName||staff.data().name)!==input.staffName||savedPin(staff.data()).trim().toUpperCase()==='REVOKED'||savedPin(staff.data())!==String(input.pin)||staff.data().active===false||staff.data().archived===true||/blocked|inactive|terminated|archived|resigned|deleted/i.test(String(staff.data().status||'')))throw Error('Staff PIN or access changed. Verify the staff member and their Staff role again.');
-                if(staff.data().branch&&staff.data().branch!==input.branch&&staff.data().branch!=='All')throw Error('This staff member belongs to another branch.');
+                if(!staff.exists()||!eligibleCancelledFoodBuyer(staff.data())||String(staff.data().cashierName||staff.data().fullName||staff.data().name)!==input.staffName||savedPin(staff.data())!==String(input.pin))throw Error('The employee login PIN or access changed. Verify their active crew or manager profile again.');
                 guard(input);
                 const cart=sale.cart.map(item=>({...item})),receiptId='CF-'+sale.receiptId,payload={saleVersion:SALE_VERSION,saleId:id,receiptId,branch:input.branch,shiftId:input.shiftId,cashier:input.cashier,cart,orderType:'Take-Out',status:'Paid',customerName:input.staffName,paymentMethod:'Salary Deduction',paymentVerified:true,subTotalBeforeDiscount:currentQuote.baseAmount,globalDiscountType:'cancelled_food',globalDiscountValue:currentQuote.discountPct,globalDiscountAmount:currentQuote.discountAmount,globalDiscountReason:'Prepared platform cancellation — staff purchase',netTotal:currentQuote.amount,amountReceived:0,inventoryMovements:[],inventoryState:'applied',inventoryReviewRequired:false,ballsCounted:countBalls(cart),statsApplied:true,cancelledFoodSourceId:input.sourceSaleId,cancelledFoodSourceReceiptId:sale.receiptId,cancelledFoodStaffId:input.staffId,cancelledFoodQuote:currentQuote,timestamp:api.serverTimestamp()};
                 tx.set(purchaseRef,payload);
