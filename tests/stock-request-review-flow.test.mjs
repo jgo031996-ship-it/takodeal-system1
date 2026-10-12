@@ -22,7 +22,7 @@ function fixture({po=defaultPO,cart=[],storage={},hq=hqDetails}={}){
     h.put('purchase_orders/po',copy(po));h.put('inventory/hq',copy(hq['Chicken Powder']));
     const writes=[],dialogs=[],nodes={dispFrom:{value:'Main Office'},dispTo:{value:'Maa'}},memory=localStorageFixture(storage);let renders=0,refreshes=0,clears=0;
     const api={...h.api,auth:{currentUser:user},sessionUser:createWorkspaceSession(user,saved),crypto:globalThis.crypto,dispatchCart:copy(cart),isBranchAllowed:branch=>['Maa','Cabantian'].includes(branch),
-        getDoc:async ref=>({exists:()=>h.docs.has(ref.path),data:()=>copy(h.get(ref.path))}),getDocs:async query=>{const result=await h.api.getDocsFromServer(query);return {...result,forEach:fn=>result.docs.forEach(fn)};},
+        getDoc:async ref=>({exists:()=>h.docs.has(ref.path),data:()=>copy(h.get(ref.path))}),getDocs:async query=>{const result=await h.api.getDocsFromServer(query);return {...result,forEach:fn=>result.docs.forEach(fn)};},getDocsFromServer:async query=>{const result=await h.api.getDocsFromServer(query);return {...result,forEach:fn=>result.docs.forEach(fn)};},
         updateDoc:async(ref,data)=>{writes.push({path:ref.path,data:copy(data)});h.put(ref.path,{...h.get(ref.path),...data});},
         renderDispatchCart:()=>{renders++;},loadDispatchLogs:()=>{refreshes++;},clearDispatchCart:async()=>{clears++;throw Error('Consolidation failed');}};
     const document={getElementById:id=>nodes[id] || null};const f={h,api,po:copy(po),hq,document,storage:memory,writes,dialogs,nodes,get renders(){return renders;},get refreshes(){return refreshes;},get clears(){return clears;},answer:()=>({})};
@@ -89,7 +89,7 @@ test('storage save failure rolls back related keys, never reports loaded and lea
 test('actual review Close performs no cloud writes, local persistence or cart changes',async()=>{
     const f=fixture({po:{...defaultPO,items:[counted]},cart:[{name:'Existing draft',qty:1}],storage:{takodeal_active_po:'old',takodeal_dispatch_to:'Maa'}}),cart=copy(f.api.dispatchCart),stored=storageData(f.storage),original=copy(f.h.get('purchase_orders/po'));
     f.answer=options=>options?.showDenyButton?{isDismissed:true}:{};await f.runReview();assert.equal(f.writes.length,0);assert.deepEqual(f.api.dispatchCart,cart);assert.deepEqual(storageData(f.storage),stored);assert.deepEqual(f.h.get('purchase_orders/po'),original);assert.equal(f.renders,0);
-    const dialog=f.dialogs.find(([options])=>options?.showDenyButton)[0];assert.equal(dialog.customClass.popup,'stock-request-review-popup');assert.match(dialog.html,/Status \/ reason/);assert.match(dialog.html,/Reported count/);assert.match(dialog.html,/1 Pack \+ 250 Gram/);assert.match(dialog.html,/Restock requested/);assert.match(dialog.html,/2 Pack/);
+    const dialog=f.dialogs.find(([options])=>options?.showDenyButton)[0];assert.equal(dialog.customClass.popup,'stock-request-review-popup');assert.match(dialog.html,/Status \/ reason/);assert.match(dialog.html,/Branch reported count/);assert.match(dialog.html,/1.25 Pack/);assert.match(dialog.html,/Saved dispatch suggestion/);assert.match(dialog.html,/2 Pack/);
 });
 test('actual Postpone sets existing Delayed/reason semantics once and never modifies draft or stock',async()=>{
     const f=fixture({cart:[{name:'Existing draft',qty:1}],storage:{takodeal_active_po:'old',takodeal_dispatch_to:'Maa'}}),cart=copy(f.api.dispatchCart),stored=storageData(f.storage);
