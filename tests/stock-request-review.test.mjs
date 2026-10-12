@@ -13,8 +13,8 @@ test('manual auto-fill shows the real package plus loose count separately from i
     const po=freeze({...base,items:[structuredClone(manual)]}),before=structuredClone(po);
     const result=renderStockRequestReview(po,{poId:'manual-one',hqStock:freeze({Flour:9000}),hqDetails:freeze({Flour:{uom:'g',purchaseUom:'Pack',conversionRate:2000}})}),row=result.rows[0];
     assert.equal(row.reported.text,'1 Pack + 400 g');assert.equal(row.requested.text,'3 Pack');assert.equal(row.reported.baseQuantity,1400);
-    assert.equal(row.requested.baseQuantity,3000);assert.equal(row.hqText,'9,000 g');assert.equal(row.system.text,'1.5 Pack');
-    assert.match(result.html,/Reported count/);assert.match(result.html,/Restock requested/);assert.match(result.html,/1 Pack \+ 400 g/);
+    assert.equal(row.requested.baseQuantity,3000);assert.equal(row.hqText,'4.5 Pack');assert.equal(row.system.text,'1.5 Pack');
+    assert.match(result.html,/Branch reported count/);assert.match(result.html,/Stock needed to reach target/);assert.match(result.html,/1.4 Pack/);
     assert.deepEqual(po,before);assert.equal(result.summary.itemCount,1);
 });
 
@@ -36,13 +36,13 @@ test('emergency zero requests retain the actual reported base stock without rela
 test('forecast restock is requested quantity and recorded branch stock, never an invented physical count',()=>{
     const result=renderStockRequestReview({...base,isForecast:true,items:[{itemName:'Tea',qty:3000,rawQty:3,uom:'g',baseUom:'g',purchaseUom:'Pack',displayUom:'Pack',isForecast:true,systemStock:1400,requestType:'Weekly Restock (AI Forecast)'}]});
     const row=result.rows[0];assert.equal(row.hasReported,false);assert.equal(row.reported,null);assert.equal(row.requested.text,'3 Pack');assert.equal(row.system.text,'1.4 Pack');
-    assert.match(result.html,/Forecast request/);assert.match(result.html,/Recorded branch stock/);assert.equal(/<span[^>]*>Reported count<\/span>/.test(result.html),false);
+    assert.match(result.html,/Forecast request/);assert.match(result.html,/System expected branch stock/);assert.equal(/<span[^>]*>Reported count<\/span>/.test(result.html),false);
     assert.equal(row.status,'Weekly Restock (AI Forecast)');
 });
 
 test('ordinary saved base requests remain explicit and numerical payloads are untouched',()=>{
     const po=freeze({...base,items:[{name:'Coffee',qty:1500,uom:'g',requestType:'Request'}]}),result=renderStockRequestReview(po,{hqStock:{Coffee:6250},hqDetails:{Coffee:{uom:'g',purchaseUom:'Bag',conversionRate:500}}});
-    assert.equal(result.rows[0].requested.text,'1,500 g');assert.equal(result.rows[0].hqText,'6,250 g');assert.match(result.html,/>Requested</);
+    assert.equal(result.rows[0].requested.text,'1,500 g');assert.equal(result.rows[0].hqText,'12.5 Bag');assert.match(result.html,/>Requested quantity</);
     assert.equal(po.items[0].qty,1500);assert.equal(po.items[0].rawQty,undefined);
 });
 
@@ -53,16 +53,16 @@ test('backlogged physical zero remains out of stock, while positive physical sto
     assert.deepEqual(rows.map(row=>row.status),['Out of Stock','Low Stock','Delayed / Backlogged']);assert.equal(rows[0].reported.text,'0 g');
 });
 
-test('negative HQ stock stays negative and clearly needs review without changing the request reason',()=>{
+test('negative HQ source stays traceable while availability displays zero without changing the request reason',()=>{
     const result=renderStockRequestReview({...base,items:[{name:'Lids',qty:12,uom:'pcs',requestType:'Lost in Transit'}]},{hqStock:{Lids:-5},hqDetails:{Lids:{uom:'pcs'}}});
-    const row=result.rows[0];assert.equal(row.hqQuantity,-5);assert.equal(row.hqText,'-5 pcs');assert.equal(row.status,'Lost in Transit');assert.equal(row.tone,'lost');
-    assert.match(result.html,/Needs review/);assert.match(result.html,/HQ stock is negative and needs review/);
+    const row=result.rows[0];assert.equal(row.hqQuantity,-5);assert.equal(row.hqText,'0 pcs');assert.equal(row.status,'Lost in Transit');assert.equal(row.tone,'lost');
+    assert.match(result.html,/Needs review/);assert.match(result.html,/negative Main Office balance is shown as zero available/);
 });
 
 test('negative recorded branch stock remains its saved base amount despite changed HQ units',()=>{
     const item={...manual,systemStock:-1500},result=renderStockRequestReview({...base,items:[item]},{hqStock:{Flour:1200},hqDetails:{Flour:{uom:'kg',purchaseUom:'Bag',conversionRate:5000}}});
-    assert.equal(result.rows[0].system.baseQuantity,-1500);assert.equal(result.rows[0].system.text,'-1,500 g');assert.equal(result.rows[0].hqText,'1,200 kg');
-    assert.match(result.html,/Recorded branch stock is negative and needs review/);assert.match(result.html,/Recorded branch stock/);assert.match(result.html,/-1,500 g/);
+    assert.equal(result.rows[0].system.baseQuantity,-1500);assert.equal(result.rows[0].system.text,'-1,500 g');assert.equal(result.rows[0].hqText,'0.24 Bag');
+    assert.match(result.html,/Recorded branch stock is negative and needs review/);assert.match(result.html,/System expected branch stock/);assert.match(result.html,/-1,500 g/);
 });
 
 test('missing, invalid and inherited HQ quantities are unknown rather than a fictional zero',()=>{

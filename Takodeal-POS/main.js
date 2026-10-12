@@ -1,3 +1,4 @@
+import {installCycleCounts} from './stock-count-ui.js';
 import { imageFor } from './cashier-data.js';
 import { installAttendanceCamera, createAttendanceStreamSession } from './attendance-camera.js';
 import {readStaffRecords, latestAttendance, attendanceMillis, attendanceKind, closeAttendanceShift} from './attendance-reconcile.js';
@@ -9797,3 +9798,5 @@ window.compressImage = function(file, maxWidth = 800, maxHeight = 800, quality =
 
 // Keep legacy close controls on the same atomic settlement path.
 window.submitComprehensiveCloseShift = (...args) => window.MASTER_CloseShift(...args);
+
+installCycleCounts(window,document);

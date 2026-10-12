@@ -349,6 +349,7 @@
 <link rel="stylesheet" href="cashier-tablet.css?v=tablet-attendance-stock-20261009-r1">
   <link rel="stylesheet" href="attendance-camera.css?v=tablet-attendance-stock-20261009-r1">
 <link rel="stylesheet" href="cancelled-orders.css">
+<link rel="stylesheet" href="stock-count-ui.css">
 </head>
 
 <body class="cashier-orange">
@@ -922,7 +923,7 @@
         <div class="cashier-stock-heading" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding: 20px 30px; background: #ffffff; flex-wrap: wrap; gap: 15px;">
           <div>
             <h2 style="margin: 0; color: #0f172a; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 24px;">📋</span> Stock Counts & History</h2>
-            <p style="color: #64748b; font-size: 12px; margin: 4px 0 0 0;">Enter physical counts to trigger silent AI restocks, or view history.</p>
+            <p style="color: #64748b; font-size: 12px; margin: 4px 0 0 0;">Count physical stock by restock cycle. Variances are saved in Owner Audits.</p>
           </div>
           <div class="cashier-stock-tabs" style="display: flex; gap: 10px; flex-wrap: wrap;">
              <button onclick="window.openDeliveryHistoryModal()" style="background: #f0f9ff; color: #0ea5e9; border: 1px solid #bae6fd; padding: 10px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;">🚚 Delivery History</button>
@@ -944,6 +945,7 @@
                         <option value="Weekly">📅 Weekly Restock</option>
                         <option value="Monthly">📅 Monthly Restock</option>
                         <option value="Daily">📅 Daily Restock</option>
+                        <option value="As Needed">As Needed Restock</option>
                     </select>
                     
                     <div class="cashier-stock-search" style="position: relative; flex: 1; max-width: 300px;">

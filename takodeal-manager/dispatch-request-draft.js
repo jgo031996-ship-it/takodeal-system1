@@ -1,3 +1,4 @@
+import {stockTarget} from './stock-cycle.js';
 import {canOpenWorkspacePage} from './workspace-access-model.js';
 import {assertDispatchRequestAvailable} from './dispatch-safety.js';
 
@@ -23,9 +24,10 @@ function assertCurrent(api,actor,branch,source){
     // source. This prepares a request/cart; it does not authorize a stock send.
     if(source && source!=='Main Office' && !api.isBranchAllowed(source))throw Error('The request source is outside your Dispatch permissions.');
 }
-function stageCart(before,po,hqDetails){
+function stageCart(before,po,hqDetails,branchDetails={}){
     const cart=clone(before);
-    for(const req of po.items){
+    for(const originalRequest of po.items){
+        const req=clone(originalRequest);const branchItem=branchDetails[req.itemName||req.name];if(!req.targetSnapshot&&branchItem){const target=stockTarget(branchItem);req.targetSnapshot={baseUom:target.baseUom,purchaseUom:target.purchaseUom,conversionRate:target.conversionRate,targetBaseQty:target.target,cycle:target.cycle};}
         const name=req.itemName || req.name;if(typeof name!=='string' || !name.trim())throw Error('An item name is missing. Review this request before loading it.');
         const hq=Object.hasOwn(hqDetails,name)?hqDetails[name]:{},purchase=hq.purchaseUom || hq.purchUom || req.purchaseUom || req.uom || 'units',base=hq.uom || hq.baseUom || req.uom || req.baseUom || 'units';
         const conversion=parseFloat(hq.conversionRate) || parseFloat(hq.conversion) || parseFloat(req.convRate) || parseFloat(req.conversionRate) || 1;
@@ -45,7 +47,7 @@ function stageCart(before,po,hqDetails){
                !Number.isFinite(oldRaw) || !Number.isFinite(oldBase) || oldRaw<0 || oldBase<0 || !close(oldRaw*oldRate,oldBase))
                 throw Error(`Your existing ${name} draft uses different units or a different package conversion. Finish or set aside that draft before loading this request.`);
             existing.rawQty=oldRaw+raw;existing.qty=oldBase+quantity;existing.origRawQty=existing.rawQty;existing.origBaseQty=existing.qty;
-            Object.assign(existing,{requestType:badge,physicalStock:physical,systemStock:system,purchaseUom:mapped.purchaseUom,baseUom:mapped.baseUom,conversionRate:mapped.conversionRate,hqStock:mapped.hqStock});
+            Object.assign(existing,{...(req.countSnapshot?{countSnapshot:clone(req.countSnapshot)}:{}),...(req.targetSnapshot?{targetSnapshot:clone(req.targetSnapshot)}:{}),...(req.countReportVersion?{countReportVersion:req.countReportVersion}:{}),requestType:badge,physicalStock:physical,systemStock:system,purchaseUom:mapped.purchaseUom,baseUom:mapped.baseUom,conversionRate:mapped.conversionRate,hqStock:mapped.hqStock});
         }else cart.push(mapped);
     }
     return cart;
@@ -65,7 +67,7 @@ function sameDraft(api,storage,cart,snapshot,controls=[]){
 }
 // Only prepares a local dispatch draft and request status. Posting actual stock
 // remains the existing atomic Send delivery operation, never this review action.
-export async function loadStockRequestDraft(api,{poId,po,hqDetails={}},{storage=globalThis.localStorage,document=globalThis.document}={}){
+export async function loadStockRequestDraft(api,{poId,po,hqDetails={},branchDetails={}},{storage=globalThis.localStorage,document=globalThis.document}={}){
     if(typeof poId!=='string' || !poId || poId.length>150 || poId.includes('/') || !po || typeof po.branch!=='string' || !po.branch || !Array.isArray(po.items) || !po.items.length)
         throw Error('Reload a valid stock request before preparing its dispatch draft.');
     po=clone(po);
@@ -101,7 +103,7 @@ export async function loadStockRequestDraft(api,{poId,po,hqDetails={}},{storage=
         if(stringify(requestFields(current))!==request)throw Error('This request changed or was already processed. Refresh it before loading the cart.');
         for(const id of ids){const linked=records.get(id);assertDispatchRequestAvailable(linked.exists()?linked.data():null,{id,source,destination:po.branch});}
         if(alreadyLoaded)return {alreadyLoaded:true};
-        const staged=stageCart(before,po,hqDetails),intent=await hash(api,stringify({poId,request:requestFields(po),before,staged}));
+        const staged=stageCart(before,po,hqDetails,branchDetails),intent=await hash(api,stringify({poId,request:requestFields(po),before,staged}));
         assertCurrent(api,actor,po.branch,source);
         if(!sameDraft(api,storage,before,snapshot,controls))throw Error('Your dispatch draft changed while this request was loading. Review it again.');
         const key=actor.uid+':'+poId+':'+intent;if(!attempts.has(key))attempts.set(key,'request-draft-'+(api.crypto || globalThis.crypto).randomUUID());const operationId=attempts.get(key);

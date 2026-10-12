@@ -557,7 +557,10 @@ service cloud.firestore {
     match /staff_requests/{reqId} { allow read, create, update: if true; allow delete: if isHQUser(); }
     match /hr_sanctions/{sanctionId} { allow read, create, update: if true; allow delete: if isHQUser(); }
     match /acknowledgments/{ackId} { allow read, create, update: if true; allow delete: if isHQUser(); }
-    match /payroll_records/{recordId} { allow read, update: if true; allow create, delete: if isHQUser(); }
+    match /payroll_records/{recordId} { allow read: if true;
+      allow create: if recordId.matches('refund-payroll-.*') ? (offlineOwner() && request.resource.data.frozenData.isPaid == true && request.resource.data.processedAt == request.time && request.resource.data.processedBy == request.auth.token.email && request.resource.data.refundSettlements is map && request.resource.data.finalNetPay is number && request.resource.data.finalNetPay >= 0) : isHQUser();
+      allow update: if !recordId.matches('refund-payroll-.*') || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged']) && request.resource.data.acknowledged == true);
+      allow delete: if !recordId.matches('refund-payroll-.*') && isHQUser(); }
     match /staff_ledger/{ledgerId} { allow read: if true; allow write: if isHQUser(); }
     function onlineIncidentCreate(data, id) {
       let sale = get(/databases/$(database)/documents/transactions/$(data.sourceSaleId)).data;
@@ -605,16 +608,113 @@ service cloud.firestore {
         && data.sourcePlatform == row.sourcePlatform && data.proposedAmount == row.refundAmount
         && data.dateAdded == request.time && data.loggedBy == request.auth.token.email;
     }
+    // Owner-confirmed charges under the reviewed policy. Staff can respond only
+    // through their existing approved private device; ledger amounts are immutable to Staff.
+    function directIncidentCreate(data, id) {
+      let sale = get(/databases/$(database)/documents/transactions/$(data.sourceSaleId)).data;
+      let staff = get(/databases/$(database)/documents/cashiers/$(data.staffId)).data;
+      let charge = getAfter(/databases/$(database)/documents/staff_deductions/$(id)).data;
+      let notice = getAfter(/databases/$(database)/documents/staff_deduction_notices/$(id)).data;
+      return offlineOwner() && data.version == 2 && data.id == id && id == 'online-refund-' + data.sourceSaleId
+        && data.sourceReceiptId == sale.receiptId && data.branch == sale.branch && data.orderAmount == sale.netTotal
+        && sale.paymentMethod.lower() in ['grab','foodpanda','panda'] && sale.get('cancelledFoodSourceId','') == ''
+        && !sale.keys().hasAny(['preparedCancellation']) && !(sale.get('status','') in ['Voided','Parked','mobile_queue'])
+        && data.sourcePlatform == (sale.paymentMethod.lower() == 'grab' ? 'Grab' : 'Foodpanda')
+        && data.staffName == staff.get('cashierName',staff.get('fullName',staff.get('name','')))
+        && staff.get('active',true) == true && staff.get('archived',false) == false
+        && !(staff.get('status','') in ['Blocked','Inactive','Terminated','Archived','Resigned','Deleted'])
+        && data.type == 'Online Order Refund' && data.category == 'Online Order Refunds' && data.policyReviewed == true
+        && data.refundAmount is number && data.refundAmount >= 0 && data.refundAmount <= sale.netTotal
+        && data.refundConfirmed is bool && (data.refundConfirmed || data.refundAmount == 0)
+        && data.amount == data.refundAmount && data.authorizedAmount == data.amount
+        && data.status == (data.amount > 0 ? 'Unpaid' : 'No Charge') && data.reviewRevision == 0
+        && data.createdAt == request.time && data.createdBy == request.auth.token.email
+        && data.reason in ['wrong_food','wrong_instructions','missing_item','other']
+        && data.details is string && data.details.size() > 0 && data.details.size() <= 1500
+        && data.evidence is string && data.evidence.size() > 0 && data.evidence.size() <= 1000
+        && data.reviewNote is string && data.reviewNote.size() > 0 && data.reviewNote.size() <= 1500
+        && charge.incidentId == id && charge.staffId == data.staffId && charge.staffName == data.staffName
+        && charge.sourceSaleId == data.sourceSaleId && charge.sourceReceiptId == data.sourceReceiptId
+        && charge.amount == data.amount && charge.status == data.status && charge.authorizedAmount == data.amount
+        && notice.id == id && notice.incidentId == id && notice.staffId == data.staffId && notice.amount == data.amount && notice.status == data.status;
+    }
+    function directIncidentCharge(data,id) {
+      let row = getAfter(/databases/$(database)/documents/online_order_incidents/$(id)).data;
+      return offlineOwner() && row.version == 2 && data.type == 'Online Order Refund' && data.category == 'Online Order Refunds'
+        && data.incidentId == id && data.staffId == row.staffId && data.staffName == row.staffName
+        && data.branch == row.staffBranch && data.sourceBranch == row.branch && data.sourceSaleId == row.sourceSaleId
+        && data.sourceReceiptId == row.sourceReceiptId && data.sourcePlatform == row.sourcePlatform
+        && data.status == row.status && data.amount == row.amount && data.authorizedAmount == row.amount
+        && data.proposedAmount == row.refundAmount && data.noticeRevision == 1 && data.dateAdded == request.time && data.loggedBy == request.auth.token.email;
+    }
+    function directIncidentReview(before,after,id) {
+      let charge = getAfter(/databases/$(database)/documents/staff_deductions/$(id)).data;
+      let notice = getAfter(/databases/$(database)/documents/staff_deduction_notices/$(id)).data;
+      return offlineOwner() && before.status in ['Pending Review','Unpaid']
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','policyReviewed','staffResponse','reviewNote','reviewedAt','reviewedBy','reviewRevision'])
+        && after.status in ['Unpaid','No Charge','Dismissed'] && after.reviewRevision == before.reviewRevision + 1
+        && after.amount == (after.status == 'Dismissed' ? 0 : before.refundAmount) && after.authorizedAmount == after.amount
+        && (after.status == 'Dismissed' || (after.policyReviewed == true && (before.refundConfirmed || before.refundAmount == 0)))
+        && after.staffResponse is string && after.staffResponse.size() > 0 && after.staffResponse.size() <= 1500
+        && after.reviewNote is string && after.reviewNote.size() > 0 && after.reviewNote.size() <= 1500
+        && after.reviewedAt == request.time && after.reviewedBy == request.auth.token.email
+        && charge.amount == after.amount && charge.authorizedAmount == after.amount && charge.status == after.status
+        && charge.responseRecorded == true && notice.incidentId == id && notice.staffId == after.staffId
+        && notice.amount == after.amount && notice.status == after.status;
+    }
+    function directChargeReview(before,after,id) {
+      let row = getAfter(/databases/$(database)/documents/online_order_incidents/$(id)).data;
+      return offlineOwner() && before.type == 'Online Order Refund' && before.status in ['Pending Review','Unpaid']
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','noticeRevision','responseRecorded','reviewedAt','reviewedBy'])
+        && after.status == row.status && after.amount == row.amount && after.authorizedAmount == row.amount
+        && after.noticeRevision == before.get('noticeRevision',0) + 1 && row.reviewedAt == request.time && after.reviewedAt == request.time && after.reviewedBy == request.auth.token.email && after.responseRecorded == true;
+    }
+    function refundPaid(before,after,id) {
+      let payroll = getAfter(/databases/$(database)/documents/payroll_records/$(after.payrollRecordId)).data;
+      return offlineOwner() && before.status == 'Unpaid' && after.status == 'Paid' && before.amount > 0
+        && after.diff(before).affectedKeys().hasOnly(['status','paidAt','payrollRecordId']) && after.paidAt == request.time
+        && after.payrollRecordId.matches('refund-payroll-.*') && payroll.staffId == before.staffId
+        && payroll.refundSettlements[id] == before.amount && payroll.frozenData.isPaid == true;
+    }
+    function refundNoticeCreate(data,id) {
+      let row = getAfter(/databases/$(database)/documents/online_order_incidents/$(id)).data;
+      return offlineOwner() && data.version == 1 && data.id == id && data.incidentId == id && data.staffId == row.staffId
+        && data.staffName == row.staffName && data.sourceReceiptId == row.sourceReceiptId && data.sourcePlatform == row.sourcePlatform
+        && data.type == 'Online Order Refund' && data.reasonLabel == row.reasonLabel && data.details == row.details && data.evidence == row.evidence
+        && data.amount == row.amount && data.status == row.status && data.noticeRevision == 1 && data.readRevision == 0 && data.replyRevision == 0
+        && data.createdAt == request.time && data.updatedAt == request.time;
+    }
+    function refundNoticeOwnerUpdate(before,after,id) {
+      let row = getAfter(/databases/$(database)/documents/online_order_incidents/$(id)).data;
+      return offlineOwner() && after.diff(before).affectedKeys().hasOnly(['status','amount','ownerReply','noticeRevision','updatedAt'])
+        && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == request.time
+        && after.status == row.status && after.amount == row.amount && after.ownerReply == row.reviewNote && row.reviewedAt == request.time;
+    }
+    function refundNoticeStaffUpdate(before,after) {
+      return docVaultOwn(before.staffId) && (
+        (after.diff(before).affectedKeys().hasOnly(['readRevision','readAt']) && after.readRevision == before.noticeRevision && after.readAt == request.time)
+        || (after.diff(before).affectedKeys().hasOnly(['staffReply','replyRevision','repliedAt','repliedByUid'])
+          && after.staffReply is string && after.staffReply.size() > 0 && after.staffReply.size() <= 1500
+          && after.replyRevision == before.replyRevision + 1 && after.repliedAt == request.time && after.repliedByUid == request.auth.uid));
+    }
+    match /staff_deduction_notices/{id} {
+      allow get, list: if offlineOwner() || docVaultOwn(resource.data.staffId);
+      allow create: if refundNoticeCreate(request.resource.data,id);
+      allow update: if refundNoticeStaffUpdate(resource.data,request.resource.data)
+        || refundNoticeOwnerUpdate(resource.data,request.resource.data,id) || refundPaid(resource.data,request.resource.data,id);
+      allow delete: if false;
+    }
+
     match /online_order_incidents/{id} {
       allow get, list: if offlineOwner();
-      allow create: if onlineIncidentCreate(request.resource.data, id);
-      allow update: if onlineIncidentReview(resource.data, request.resource.data, id);
+      allow create: if onlineIncidentCreate(request.resource.data, id) || directIncidentCreate(request.resource.data,id);
+      allow update: if onlineIncidentReview(resource.data, request.resource.data, id) || directIncidentReview(resource.data,request.resource.data,id) || refundPaid(resource.data,request.resource.data,id);
       allow delete: if false;
     }
     match /staff_deductions/{deductId} {
       allow read: if true;
       allow create: if request.resource.data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
-        ? onlineIncidentCharge(request.resource.data, deductId)
+        ? (onlineIncidentCharge(request.resource.data, deductId) || directIncidentCharge(request.resource.data,deductId))
         : request.resource.data.get('type', '') == 'Cancelled Food Purchase'
         ? (cancelledFoodWriter(request.resource.data.branch)
           && cancelledFoodChargeLink(request.resource.data, deductId))
@@ -626,7 +726,7 @@ service cloud.firestore {
           && request.resource.data.responseRecorded == true
           && request.resource.data.status in ['Pending Review','Dismissed']
           && request.resource.data.status == getAfter(/databases/$(database)/documents/online_order_incidents/$(deductId)).data.status
-          && request.resource.data.reviewedAt == request.time && request.resource.data.reviewedBy == request.auth.token.email)
+          && request.resource.data.reviewedAt == request.time && request.resource.data.reviewedBy == request.auth.token.email) || (resource.data.get('type','') == 'Online Order Refund' && (directChargeReview(resource.data,request.resource.data,deductId) || refundPaid(resource.data,request.resource.data,deductId)))
         : resource.data.get('type', '') == 'Cancelled Food Purchase'
         ? verifiedHQ(resource.data.branch) : isHQUser();
       allow delete: if resource.data.get('type', '') != 'Online Order Refund'

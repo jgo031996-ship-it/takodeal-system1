@@ -1,4 +1,6 @@
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
+import {finalizeRefundPayroll} from './refund-payroll.js';
+import {reportDetailsHTML,purchaseQuantity,escapeStock} from './stock-cycle.js';
 import {installOnlineRefunds} from './online-refunds-ui.js';
 import { installDeviceFleet } from './device-fleet.js';
 import {installMasterEmployeeDocuments} from './staff-document-hq.js';
@@ -1860,7 +1862,13 @@ window.reviewPurchaseOrder = async function(poId) {
             hqDetails[d.data().name] = d.data(); 
         });
 
-        const review = renderStockRequestReview(po,{poId,hqStock,hqDetails});
+        let branchDetails=Object.create(null);
+        if(po.branch && po.branch!=='Unknown Branch'){
+            const branchSnap=await window.getDocsFromServer(window.query(window.collection(window.db,'inventory'),window.where('branch','==',po.branch)));
+            const duplicates=new Set();branchSnap.forEach(row=>{const item=row.data();if(Object.hasOwn(branchDetails,item.name))duplicates.add(item.name);branchDetails[item.name]=item;});
+            for(const name of duplicates)delete branchDetails[name];
+        }
+        const review = renderStockRequestReview(po,{poId,hqStock,hqDetails,branchDetails});
         const actionResult = await Swal.fire({
             titleText: review.titleText,
             html: review.html,
@@ -1877,7 +1885,7 @@ window.reviewPurchaseOrder = async function(poId) {
 
         if (actionResult.isConfirmed) {
             Swal.fire({titleText:'Preparing dispatch draft',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
-            const draftResult = await loadStockRequestDraft(window,{poId,po,hqDetails},{storage:localStorage,document});
+            const draftResult = await loadStockRequestDraft(window,{poId,po,hqDetails,branchDetails},{storage:localStorage,document});
             if (draftResult.blockedSource) {
                 return Swal.fire({titleText:'Finish the current dispatch draft first',text:'Your draft uses '+draftResult.source+'. Send or set aside it before loading stock from '+draftResult.requestedSource+'.',icon:'info'});
             }
@@ -2387,7 +2395,7 @@ window.renderDispatchCart = function() {
         let bUom = item.baseUom || item.uom || 'units';
         let rawQty = parseFloat(item.rawQty) || 0;
         let baseQty = parseFloat(item.qty) || 0;
-        let hqStock = parseFloat(item.hqStock || 0);
+        let hqStock = Math.max(0, Number(item.hqStock) || 0);
         
         let uomOptions = '';
         if (pUom.toLowerCase() !== bUom.toLowerCase()) uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${pUom}</option>`;
@@ -2400,7 +2408,7 @@ window.renderDispatchCart = function() {
 
         // Detect if this was a physical stock count alert to show the extra badge
         let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.physicalStock !== undefined);
-        let branchReportBadge = isAudit ? `<span style="font-size: 11px; color: #d97706; background: #fffbeb; border: 1px dashed #fcd34d; padding: 2px 4px; border-radius: 4px; display: inline-block; margin-top: 4px;">Branch Report (Phys: ${item.physicalStock || 0} | Sys: ${item.systemStock || 0})</span><br>` : '';
+        let branchReportBadge = isAudit ? reportDetailsHTML(item) : '';
 
         // 🔥 THE ALIGNMENT FIX: Strict fixed widths (80px and 100px) force them into a perfect grid!
         let controlsHtml = `
@@ -2423,7 +2431,7 @@ window.renderDispatchCart = function() {
                         <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
                         ${branchReportBadge}
                         <span style="font-size: 11px; color: ${hqColor}; background: ${hqBgColor}; border: 1px dashed ${hqBorderColor}; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; font-weight: bold;">
-                            🏢 HQ Avail: ${hqStock.toFixed(2)} ${bUom} (${hqWarningText})
+                            Main Office available stock: ${escapeStock(purchaseQuantity(hqStock,item))} (${hqWarningText})
                         </span><br>
                         <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
                     </td>
@@ -2443,7 +2451,7 @@ window.renderDispatchCart = function() {
                     <div>
                         <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
                         ${branchReportBadge}
-                        <span style="font-size: 11px; color: ${hqColor}; font-weight: bold;">🏢 HQ Avail: ${hqStock.toFixed(2)} ${bUom} (${hqWarningText})</span><br>
+                        <span style="font-size: 11px; color: ${hqColor}; font-weight: bold;">Main Office available stock: ${escapeStock(purchaseQuantity(hqStock,item))} (${hqWarningText})</span><br>
                         <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
                     </div>
                     <div>${controlsHtml}</div>
@@ -10542,7 +10550,7 @@ window.loadPayrollGenerator = async function() {
         staffSnap.forEach(d => { 
             let data = d.data();
             let masterName = data.cashierName;
-            staffDict[masterName] = data; 
+            staffDict[masterName] = {...data,staffId:d.id}; 
             staffNameById[d.id] = masterName;
             
             // Only active staff can absorb typo logs!
@@ -10777,7 +10785,7 @@ window.loadPayrollGenerator = async function() {
 
         deductSnap.forEach(docSnap => {
             let deduct = docSnap.data(); 
-            let name = resolveStaffName(deduct.staffName); // 🔥 Apply Fuzzy Matcher
+            let name = deduct.type==='Online Order Refund' ? staffNameById[deduct.staffId] : resolveStaffName(deduct.staffName); // Refunds always use the saved employee ID.
             if (!name) return;
 
             if(isPenaltyDeduction(deduct) && deduct.scheduleVersion===1){if(!deductionIsDue(deduct,endDateRaw))return;}
@@ -10788,7 +10796,12 @@ window.loadPayrollGenerator = async function() {
                 staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
             let amt = parseFloat(deduct.amount) || 0;
-            if (isMealDeduction(deduct.type)) staffData[name].foodDeductions += amt;
+            if(deduct.type==='Online Order Refund'){
+                if(staffDict[name]?.staffId!==deduct.staffId || deduct.staffName!==name)throw Error('An online refund belongs to an ambiguous employee name. Resolve the directory before payroll.');
+                staffData[name].onlineRefunds=(staffData[name].onlineRefunds||0)+amt;
+                (staffData[name].onlineRefundRows ||= []).push({id:docSnap.id,amount:amt});
+            }
+            else if (isMealDeduction(deduct.type)) staffData[name].foodDeductions += amt;
             else if (deduct.type === "Cash Advance") staffData[name].cashAdvances += amt;
             else if (isPenaltyDeduction(deduct) && deduct.scheduleVersion===1) {staffData[name].penalties=(staffData[name].penalties || 0)+amt;(staffData[name].penaltyRows ||= []).push({id:docSnap.id,amount:amt,revision:Number(deduct.scheduleRevision)||0,effectiveDate:deduct.effectiveDate || null});}
         });
@@ -10867,7 +10880,7 @@ window.loadPayrollGenerator = async function() {
                     
                     // (Around line 1928) Update globalPayrollCache to include the perfBonus
                     window.globalPayrollCache[name] = {
-                        name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
+                        name: name, staffId:profile.staffId, onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: staffDict[name] || null, start: startDateRaw, end: endDateRaw,
@@ -10877,7 +10890,7 @@ window.loadPayrollGenerator = async function() {
                     d = window.globalPayrollCache[name];
                 }
 
-                let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
+                let totalDeduct = (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
                 let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0 && !d.attendanceReviewRequired) masterPayrollTotal += estNet;
@@ -10992,7 +11005,7 @@ window.openPayslipModal = async function(staffName) {
     safeSet('psLoans', data.loans || 0);
     safeSet('psFoods', data.meals || 0);
     let onlineRefundBox=document.getElementById('psOnlineRefunds');
-    if(!onlineRefundBox){const box=document.createElement('div');box.style.cssText='padding:10px;border:1px solid #dce6df;border-radius:8px;margin-top:8px;font-size:12px;';box.innerHTML='<span>ONLINE REFUND ORDERS</span><strong id="psOnlineRefunds" style="float:right">0.00</strong><p style="font-size:11px;margin:6px 0 0;color:#64756d">Incidents are pending Owner review. No charge is included in net pay.</p>';document.getElementById('psFoods')?.parentElement?.after(box);onlineRefundBox=document.getElementById('psOnlineRefunds');}
+    if(!onlineRefundBox){const box=document.createElement('div');box.style.cssText='padding:10px;border:1px solid #dce6df;border-radius:8px;margin-top:8px;font-size:12px;';box.innerHTML='<span>ONLINE REFUND ORDERS</span><strong id="psOnlineRefunds" style="float:right">0.00</strong><p style="font-size:11px;margin:6px 0 0;color:#64756d">Confirmed charges are included in net pay. Staff can respond through My Inbox.</p>';document.getElementById('psFoods')?.parentElement?.after(box);onlineRefundBox=document.getElementById('psOnlineRefunds');}
     onlineRefundBox.textContent=Number(data.onlineRefunds||0).toFixed(2);
     let penaltyLine=document.getElementById('psPenalties');
     if(!penaltyLine){const wrap=document.createElement('div');wrap.style.cssText='padding:8px;font-size:12px;background:#fff8ed;border:1px solid #efdfc6;';wrap.innerHTML='<span>Scheduled penalties for ledger review: ₱</span><strong id="psPenalties">0.00</strong><br><small>Excluded from calculated net pay. Review and record any collection separately.</small>';document.getElementById('psFoods')?.parentElement?.after(wrap);penaltyLine=document.getElementById('psPenalties');}
@@ -11083,7 +11096,7 @@ window.recalcPayslip = function() {
     });
 
     let gross = basic + overtime + straightBonus + holiday + perfBonus;
-    let deductions = late + sss + phil + pagibig + advance + loans + foods + customDeductionsSum;
+    let deductions = late + sss + phil + pagibig + advance + loans + foods + getVal('psOnlineRefunds') + customDeductionsSum;
     let net = gross - deductions;
 
     safeSetText('psGross', gross.toLocaleString(undefined, {minimumFractionDigits: 2}));
@@ -11182,6 +11195,14 @@ window.finalizePayslip = async function() {
     btn.innerText = "⏳ Processing..."; btn.disabled = true;
     
     try {
+        if((data.onlineRefundRows||[]).length){
+            const snapshot={...data,loans:actualLoanDeducted,advances:actualValeDeducted,meals:actualFoodDeducted,lateDeduction:getFieldVal('psLate'),sss:getFieldVal('psSSS'),philhealth:getFieldVal('psPhil'),pagibig:getFieldVal('psPagibig'),straightBonus:getFieldVal('psStraightBonus'),perfBonus:getFieldVal('psPerfBonus'),basicPay:getFieldVal('psBasicPay'),nightBonus:getFieldVal('psOvertime')};
+            await finalizeRefundPayroll(window,{data:snapshot,accountId:selAcc.id,finalNetPay});
+            Object.assign(data,snapshot,{isPaid:true,finalNetPay});
+            if(btn){btn.innerText='Paid & saved';btn.disabled=true;}
+            await Swal.fire('Payroll saved','The payment, refund deductions and payslip were saved together.','success');
+            window.downloadPayslipImage();window.generateAutoPayslips?.();window.loadAccountsAndBudget?.();return;
+        }
         await updateDoc(doc(db, "cash_accounts", selAcc.id), { balance: selAcc.balance - finalNetPay });
 
         await addDoc(collection(db, "expenses"), {
@@ -11818,7 +11839,7 @@ window.generateAutoPayslips = async function() {
         staffSnap.forEach(d => { 
             let data = d.data();
             let masterName = data.cashierName;
-            staffDict[masterName] = data; 
+            staffDict[masterName] = {...data,staffId:d.id}; 
             staffNameById[d.id] = masterName;
             
             nameMap[masterName.toLowerCase()] = masterName;
@@ -12005,7 +12026,7 @@ window.generateAutoPayslips = async function() {
         }
 
         deductSnap.forEach(docSnap => {
-            let deduct = docSnap.data(); let name = deduct.staffName;
+            let deduct = docSnap.data(); let name = deduct.type==='Online Order Refund' ? staffNameById[deduct.staffId] : deduct.staffName;
             if(isPenaltyDeduction(deduct) && deduct.scheduleVersion===1){if(!deductionIsDue(deduct,endInput))return;}
             else {let dDate=deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();if(dDate>trueEndDate)return;}
             if (!staffData[name]) {
@@ -12013,7 +12034,12 @@ window.generateAutoPayslips = async function() {
                 staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
             let amt = parseFloat(deduct.amount) || 0;
-            if (isMealDeduction(deduct.type)) staffData[name].foodDeductions += amt;
+            if(deduct.type==='Online Order Refund'){
+                if(staffDict[name]?.staffId!==deduct.staffId || deduct.staffName!==name)throw Error('An online refund belongs to an ambiguous employee name. Resolve the directory before payroll.');
+                staffData[name].onlineRefunds=(staffData[name].onlineRefunds||0)+amt;
+                (staffData[name].onlineRefundRows ||= []).push({id:docSnap.id,amount:amt});
+            }
+            else if (isMealDeduction(deduct.type)) staffData[name].foodDeductions += amt;
             else if (deduct.type === "Cash Advance") staffData[name].cashAdvances += amt;
             else if (isPenaltyDeduction(deduct) && deduct.scheduleVersion===1) {staffData[name].penalties=(staffData[name].penalties || 0)+amt;(staffData[name].penaltyRows ||= []).push({id:docSnap.id,amount:amt,revision:Number(deduct.scheduleRevision)||0,effectiveDate:deduct.effectiveDate || null});}
         });
@@ -12079,7 +12105,7 @@ window.generateAutoPayslips = async function() {
                     let customDeductSum = 0; profileCustomDeducts.forEach(c => customDeductSum += c.amount);
                     
                     window.globalPayrollCache[name] = {
-                        name: name, branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
+                        name: name, staffId:profile.staffId, onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: staffDict[name] || null, start: startInput, end: endInput,
@@ -12089,7 +12115,7 @@ window.generateAutoPayslips = async function() {
                     d = window.globalPayrollCache[name]; 
                 }
 
-                let totalDeduct = (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
+                let totalDeduct = (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
                 let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0) + (d.perfBonus || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0 && !d.attendanceReviewRequired) masterPayrollTotal += estNet;
@@ -15148,7 +15174,7 @@ window.loadInventoryAudits = async function() {
             let rowPerfect = 0;
 
             counts.forEach(c => {
-                let cost = invDb[`${data.branch}_${c.name}`] || 0;
+                let cost = c.cost!=null && Number.isFinite(Number(c.cost)) ? Number(c.cost) : (invDb[`${data.branch}_${c.name}`] || 0);
                 
                 // 🔥 SMART RECALCULATOR: Fixes corrupted historical data
                 let physQty = parseFloat(c.physicalQty !== undefined ? c.physicalQty : c.actualQty) || 0;
@@ -15270,7 +15296,7 @@ window.viewAuditDetails = async function(dateStr, branch, cashier, countsEncoded
             let physQty = parseFloat(countObj.physicalQty !== undefined ? countObj.physicalQty : countObj.actualQty) || 0;
             let dbItem = liveStockDb[name] || { cost: 0, uom: '' };
             let uom = countObj.uom || dbItem.uom;
-            let cost = parseFloat(countObj.cost || dbItem.cost);
+            let cost = countObj.cost!=null && Number.isFinite(Number(countObj.cost)) ? Number(countObj.cost) : (Number(dbItem.cost)||0);
 
             // 🔥 SMART HISTORICAL RECOVERY: 
             // Look for the saved System Qty. If missing, look for saved Variance and work backward!

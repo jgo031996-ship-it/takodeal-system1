@@ -1,6 +1,6 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-owner-refund-review-20261011-r1';
+const CORE = 'takodeal-pos-core-inbox-stock-cycle-20261012-r1';
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
 const required = ['./', './index.html', './meal-checkout.js','./meal-checkout.css','./pos-config-model.js','./hq-account-model.js','./main.js', './branch-operations.js','./cash-settlement.js','./shift-close-ui.js', './shift-close-draft.js', './shift-sales.js', './printer-connection.js', './dispatch-safety.js','./dispatch-restock-model.js','./workspace-access-model.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json','./cashier-pos-base.css','./cashier-theme.css','./cashier-tablet.css','./cashier-pos-ui.js','./cashier-workspace.js','./cashier-data.js'];
@@ -43,6 +43,7 @@ async function prepareApp() {
   for (const path of ['./logo.jpg', './logo.png', './style.css'])
     await fetchRequired(cache, new URL(path, ROOT).href).catch(() => {});
 }
+required.push('./stock-cycle.js','./stock-count-engine.js','./stock-count-ui.js','./stock-count-ui.css');
 self.addEventListener('install', event => {
   // A failed dependency download leaves the preceding worker in use.
   event.waitUntil(prepareApp());

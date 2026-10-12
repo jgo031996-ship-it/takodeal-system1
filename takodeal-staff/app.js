@@ -1,3 +1,4 @@
+import {installDeductionInbox} from './deduction-inbox.js';
 import {onlineRefundReviewHTML} from './online-refund-pay.js';
 import { installStaffLocation } from './staff-location.js';
 import { installAttendanceCamera } from './attendance-camera.js';
@@ -1646,11 +1647,15 @@ window.startInboxListener = function() {
 // 📥 STAFF INBOX (WITH DETAILED EXTRACTOR)
 // ==========================================
 window.loadInbox = async function() {
-    let listEl = document.getElementById('reqInboxList');
+    const inboxStaffId=localStorage.getItem('takodeal_staff_id'),inboxStaffName=localStorage.getItem('takodeal_staff_name');
+    const inboxRoot=document.getElementById('reqInboxList');
+    let listEl=document.getElementById('requestInboxPanel');
+    if(!listEl){listEl=document.createElement('div');listEl.id='requestInboxPanel';inboxRoot.append(listEl);}
     listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#94a3b8;">Loading...</div>';
 
     try {
         const snap = await getDocs(query(collection(db, "staff_requests"), where("staffName", "==", localStorage.getItem('takodeal_staff_name'))));
+        if(localStorage.getItem('takodeal_staff_id')!==inboxStaffId||localStorage.getItem('takodeal_staff_name')!==inboxStaffName)return;
         let docsArray = []; snap.forEach(docSnap => docsArray.push({id: docSnap.id, ...docSnap.data()}));
         docsArray.sort((a,b) => b.timestamp - a.timestamp); 
 
@@ -2225,7 +2230,10 @@ window.loadPayslipVault = async function() {
             }
         }
 
-        let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - liveUnpaidVales - cutoffLoanDeduction;
+        const onlineDue=onlineRows.filter(row=>row.status==='Unpaid'&&(row.dateAdded?.toDate?.()||new Date(row.dateAdded))<=cutoffEndTimestamp);
+        const onlineDueAmount=onlineDue.reduce((sum,row)=>sum+(Number(row.amount)||0),0);
+        let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - liveUnpaidVales - cutoffLoanDeduction - onlineDueAmount;
+        let refundEstimate=document.getElementById('liveOnlineRefundEstimate');if(!refundEstimate){refundEstimate=document.createElement('p');refundEstimate.id='liveOnlineRefundEstimate';document.getElementById('payslipLiveSection').prepend(refundEstimate);}refundEstimate.textContent='ONLINE REFUND ORDERS: −₱'+onlineDueAmount.toFixed(2);refundEstimate.hidden=!onlineDueAmount;
 
         document.getElementById('liveEstGross').innerText = currentData.attendanceHeld ? 'Held for HR review' : '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstLates').innerText = '-₱' + currentData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
@@ -2354,7 +2362,8 @@ window.loadPayslipVault = async function() {
             pendingCount++;
             
             let prevEstGross = prevData.shiftsWorked * dailyRate;
-            let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - pendingUnpaidVales - cutoffLoanDeduction;
+            const prevOnlineAmount=onlineRows.filter(row=>row.status==='Unpaid'&&(row.dateAdded?.toDate?.()||new Date(row.dateAdded))<=prevCutoffEndTimestamp).reduce((sum,row)=>sum+(Number(row.amount)||0),0);
+            let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - pendingUnpaidVales - cutoffLoanDeduction - prevOnlineAmount;
 
             let prevLoanStr = (cutoffLoanDeduction > 0) ? `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Company Loan:</span> <strong style="color:#ef4444;">-₱${cutoffLoanDeduction.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>` : '';
 
@@ -4113,3 +4122,5 @@ installStaffLocation();
 installStaffRegistration({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey});
 installStaffPhone();
 installStaffDocuments(window,{createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
+
+installDeductionInbox(window,{createClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
