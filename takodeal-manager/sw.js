@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v48-inbox-stock-cycle-20261012-r1';
+const CACHE_NAME = 'takodeal-manager-core-v49-owner-update-20261013-r1';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = ['./', './index.html', './main.js', './franchise-workspace.js', './monthly-bills.js', './monthly-bills-ui.js', './device-fleet.js', './app-update.js', './employee-id.js', './employee-id.css', './payslip.css', './schedule-layout.js', './request-history.js', './schedule-layout.css', './login.css', './login-ui.js', './unlock-gate.js', './device-store.js', './manager-libraries.js', './branch-operations.js', './cash-settlement.js', './shift-close-ui.js', './collection-cache.js', './manager-dialogs.js', './manager-workspace.js', './manager-workspace.css', './dispatch-safety.js', './menu-bulk.js', './pos-safety.js', './recipe-integrity.js', './live-report.js', './payroll-safety.js', './dashboard.js', './dashboard-data.js', './dashboard.css', './manager-theme.css', './manager-theme.js', './manager-scroll.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
@@ -30,7 +30,9 @@ CORE_ASSETS.push('./stock-cycle.js','./refund-payroll.js');
 self.addEventListener('install', event => {
     event.waitUntil((async () => {
         const cache = await caches.open(CACHE_NAME);
-        await cache.addAll(CORE_ASSETS);
+        // Overlapping feature lists can name the same file. Cache.addAll rejects
+        // duplicate requests and would leave the previous app generation active.
+        await cache.addAll([...new Set(CORE_ASSETS)]);
         await Promise.all(['./logo.jpg', './payslip%20logo.jpg'].map(asset => cache.add(asset).catch(() => {})));
         const vendors = await caches.open(VENDOR_CACHE);
         await Promise.all(VENDORS.map(async asset => {
