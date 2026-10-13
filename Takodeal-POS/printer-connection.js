@@ -42,7 +42,7 @@ export function receiptLogoDimensions({width, height, scaleWidth = 1, scaleHeigh
 
 export function createPrinterConnections({bluetooth, storage, onState = () => {}, visible = () => true, schedule = setTimeout, cancel = clearTimeout, connectionTimeout = 16000}) {
     const devices = new Map(), characters = new Map(), pending = new Map(), listeners = new WeakSet();
-    const states = new Map(), failures = new Map(), generations = new Map(), rolePending = new Map();
+    const states = new Map(), failures = new Map(), generations = new Map(), rolePending = new Map(), interactiveRoles = new Set();
     let retryTimer = null, stopped = false;
     const savedId = role => { try { return storage.getItem(`takodeal_printer_${role}_id`); } catch { return null; } };
     const enabled = () => !stopped && printerMode(storage) === 'ble';
@@ -106,9 +106,20 @@ export function createPrinterConnections({bluetooth, storage, onState = () => {}
     }
     function unsupported(message) { const error = new Error(message); error.code = 'printer-unsupported'; return error; }
     async function establish(role, device, generation) {
+        if (generations.get(role) !== generation) throw new Error('The printer connection changed while connecting. Try again.');
         devices.set(role, device);
         listen(device);
         if (ready(role)) return ready(role);
+        // Receipt and kitchen slots may use the same physical printer. Reuse its
+        // live endpoint so background discovery cannot overlap a receipt write.
+        const shared = ROLES.map(ready).find(character => character?.service?.device === device);
+        if (shared) {
+            characters.set(role, shared);
+            failures.set(role, 0);
+            try { storage.setItem(`takodeal_printer_${role}_id`, device.id); } catch { /* Keep session permission. */ }
+            state(role, 'connected');
+            return shared;
+        }
         state(role, 'connecting');
         let link = pending.get(device);
         if (!link) {
@@ -127,32 +138,37 @@ export function createPrinterConnections({bluetooth, storage, onState = () => {}
     }
     function connect(role, {choose = false, replace = false} = {}) {
         if (!ROLES.includes(role)) return Promise.reject(new Error('Unknown printer role.'));
-        if (rolePending.has(role)) return rolePending.get(role);
+        // A button gesture may repair missing permissions while background recall is
+        // still pending. Repeated manual clicks continue to share a single chooser.
+        if (rolePending.has(role) && (!choose || interactiveRoles.has(role))) return rolePending.get(role);
         const generation = (generations.get(role) || 0) + 1;
         generations.set(role, generation);
         const attempt = (async () => {
             if (!enabled()) throw new Error('Direct Bluetooth printing is not enabled.');
             if (!bluetooth) throw unsupported('This browser does not support direct Bluetooth. On Android, select Android print bridge in Printer Hub.');
             if (!replace && ready(role)) return ready(role);
-            let device = replace ? null : devices.get(role);
-            // Explicit replacement opens the chooser immediately in the button gesture.
-            if (replace && choose && bluetooth.requestDevice) device = await bluetooth.requestDevice({acceptAllDevices: true, optionalServices: SERVICES});
-            if (!device && !replace && savedId(role) && bluetooth.getDevices) {
+            // Older Android browsers cannot recall permissions after reopening.
+            // Reuse only the exact saved device already authorized in another slot.
+            let device = replace ? null : devices.get(role) || [...devices.values()].find(candidate => candidate.id === savedId(role));
+            // Open the chooser inside the button gesture, before any async recall.
+            if (!device && choose && bluetooth.requestDevice) device = await bluetooth.requestDevice({acceptAllDevices: true, optionalServices: SERVICES});
+            if (!device && !choose && !replace && savedId(role) && bluetooth.getDevices) {
                 const allowed = await bounded(bluetooth.getDevices(), 'Reading the saved printer timed out. Use Search again.');
                 device = allowed.find(candidate => candidate.id === savedId(role));
             }
-            // Background recovery never opens the browser's pairing chooser.
-            if (!device && choose && bluetooth.requestDevice) device = await bluetooth.requestDevice({acceptAllDevices: true, optionalServices: SERVICES});
             if (!device) throw new Error(savedId(role) ? 'Tap Search again to restore permission for the saved printer.' : 'Connect this printer once in Printer Hub.');
             return await establish(role, device, generation);
         })().catch(error => {
+            // A replaced background attempt cannot clear a newer ready connection.
+            if (generations.get(role) !== generation) throw error;
             characters.delete(role);
             failures.set(role, (failures.get(role) || 0) + 1);
             state(role, error.code === 'printer-unsupported' ? 'unsupported' : savedId(role) || devices.has(role) ? 'reconnecting' : 'not-connected', error.message);
             retry();
             throw error;
-        }).finally(() => rolePending.delete(role));
+        }).finally(() => { if (rolePending.get(role) === attempt) { rolePending.delete(role); interactiveRoles.delete(role); } });
         rolePending.set(role, attempt);
+        if (choose) interactiveRoles.add(role);
         return attempt;
     }
     async function reconnect() {
@@ -230,7 +246,9 @@ export function createPrinterWriter(connections, {wait = milliseconds => new Pro
                 await wait(120);
                 return true;
             } catch (error) {
-                connections.invalidate(role, {disconnect: error.code === 'printer-write-timeout'});
+                // A rejected GATT write can leave connected=true on a stale link.
+                // Reset it for the next job, without replaying this uncertain job.
+                connections.invalidate(role, {disconnect: true});
                 error.bytesWritten = bytesWritten;
                 error.bytesAttempted = bytesAttempted;
                 // A timed-out write may have reached the printer even without acknowledgement.

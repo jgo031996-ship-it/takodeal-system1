@@ -144,7 +144,7 @@ test('a failed band stops the receipt without reconnecting, replaying or falling
     await assert.rejects(app.writer.send(new Uint8Array(60), 'kitchen', {pauseAfterBytes: [17, 44]}), error => error.bytesWritten === 17 && error.bytesAttempted === 37);
     assert.deepEqual(app.connects, ['kitchen']);
     assert.deepEqual(app.chunks.map(chunk => chunk.length), [17, 20]);
-    assert.deepEqual(app.invalidations, [{role: 'kitchen', disconnect: false}]);
+    assert.deepEqual(app.invalidations, [{role: 'kitchen', disconnect: true}]);
     assert.deepEqual(app.events.filter(event => event.kind === 'wait' && event.milliseconds === 120).map(event => event.offset), [17]);
     await app.writer.send([9]);
     assert.deepEqual(app.chunks.at(-1), [9]);
@@ -230,7 +230,7 @@ test('a failure after a raster body-progress pause never restarts its header or 
     await assert.rejects(app.writer.send(logo,'main',{pauseAfterBytes:logo.pauseAfterBytes}),error=>error.bytesWritten===27&&error.bytesAttempted===43);
     assert.deepEqual(app.chunks.flat(),[...logo.slice(0,43)]);
     assert.deepEqual(app.events.filter(event=>event.kind==='wait'&&event.milliseconds===120).map(event=>event.offset),[27]);
-    assert.deepEqual(app.connects,['main']);assert.deepEqual(app.invalidations,[{role:'main',disconnect:false}]);
+    assert.deepEqual(app.connects,['main']);assert.deepEqual(app.invalidations,[{role:'main',disconnect:true}]);
     await turn();
     assert.equal(app.chunks.length,3);
     // Only a separate explicit subsequent job may use the queue again.

@@ -44,6 +44,62 @@ test('manual pairing survives idle disconnect even when getDevices is unavailabl
 test('background recovery never scans for an unpaired printer',async()=>{
     const app=setup({remembered:false});await app.connections.reconnect();assert.equal(app.choosers,0);assert.equal(app.connects,0);
 });
+test('a printer authorized in another slot is reused only for the exact saved device on older browsers',async()=>{
+    const app=setup({canRecall:false});await app.connections.connect('kitchen',{choose:true});
+    const writer=createPrinterWriter(app.connections,{wait:async()=>{}});await writer.send([7,8],'main',{fallback:false});
+    assert.equal(app.choosers,1);assert.deepEqual(app.chunks,[[7,8]]);assert.equal(app.connections.snapshot('main').connected,true);
+});
+
+test('a shared printer slot reuses the live data endpoint while a receipt write is in progress',async()=>{
+    const app=setup();app.values.set('takodeal_printer_kitchen_id','printer-1');
+    await app.connections.connect('main');let started,finish;
+    const writing=new Promise(resolve=>{started=resolve;});
+    app.character.writeValueWithoutResponse=()=>{started();return new Promise(resolve=>{finish=resolve;});};
+    app.device.gatt.getPrimaryServices=async()=>{throw Error('GATT operation in progress');};
+    const job=createPrinterWriter(app.connections,{wait:async()=>{}}).send([1,2]);await writing;
+    try {
+        assert.equal(await app.connections.connect('kitchen'),app.character);
+        assert.equal(app.discovery,1);assert.equal(app.connections.snapshot('main').connected,true);
+    } finally {finish();await job;app.connections.stop();}
+});
+
+test('an uncertain GATT write resets the physical link for the next manual job without replaying any bytes',async()=>{
+    const app=setup();let disconnects=0,attempts=0;
+    app.device.gatt.disconnect=()=>{disconnects++;app.device.gatt.connected=false;};
+    app.character.writeValueWithoutResponse=async chunk=>{
+        attempts++;if(app.connects===1)throw Object.assign(Error('GATT operation failed for unknown reason.'),{name:'NetworkError'});
+        app.chunks.push([...chunk]);
+    };
+    const writer=createPrinterWriter(app.connections,{wait:async()=>{}});
+    await assert.rejects(writer.send([27,112,0]),error=>error.bytesWritten===0&&error.bytesAttempted===3);
+    assert.equal(disconnects,1);assert.equal(attempts,1);assert.deepEqual(app.chunks,[]);
+    await writer.send([9,8]);assert.equal(app.connects,2);assert.deepEqual(app.chunks,[[9,8]]);
+    assert.equal(app.values.get('takodeal_printer_main_id'),'printer-1');app.connections.stop();
+});
+test('interactive Search again supersedes pending background permission recovery without losing the new connection',async()=>{
+    const app=setup();let recall;const states=[];
+    const bluetooth={getDevices:()=>new Promise(resolve=>{recall=resolve;}),requestDevice:async()=>app.device};
+    const connections=createPrinterConnections({bluetooth,storage:{getItem:key=>app.values.get(key)||null,setItem:(key,value)=>app.values.set(key,value)},onState:(role,state)=>states.push({role,...state})});
+    const background=connections.connect('main');const rejected=assert.rejects(background,/restore permission/);
+    try {
+        const interactive=connections.connect('main',{choose:true,replace:true});assert.notEqual(interactive,background);
+        await interactive;assert.equal(connections.ready('main'),app.character);
+        recall([]);await rejected;assert.equal(connections.ready('main'),app.character);assert.equal(states.at(-1).status,'connected');
+    } finally {recall([]);await rejected;connections.stop();}
+});
+test('manual permission repair opens the chooser before a saved-device lookup can consume the button gesture',async()=>{
+    const app=setup();let recalls=0,choices=0;
+    const bluetooth={getDevices:async()=>{recalls++;return [];},requestDevice:()=>{choices++;return Promise.resolve(app.device);}};
+    const connections=createPrinterConnections({bluetooth,storage:{getItem:key=>app.values.get(key)||null,setItem:(key,value)=>app.values.set(key,value)}});
+    const first=connections.connect('main',{choose:true});assert.equal(choices,1);assert.equal(recalls,0);
+    const second=connections.connect('main',{choose:true});assert.equal(first,second);await first;assert.equal(choices,1);connections.stop();
+});
+test('different saved receipt device is never replaced by a connected kitchen printer',async()=>{
+    const app=setup({canRecall:false});app.values.set('takodeal_printer_main_id','different-receipt-printer');
+    await app.connections.connect('kitchen',{choose:true});
+    await assert.rejects(app.connections.connect('main'),/restore permission/);assert.equal(app.connections.ready('main'),null);
+    assert.equal(app.connections.ready('kitchen'),app.character);assert.equal(app.chunks.length,0);app.connections.stop();
+});
 test('before printing, a disconnected printer is recovered and only one receipt is sent',async()=>{
     const app=setup(),writer=createPrinterWriter(app.connections,{wait:async()=>{}});await app.connections.connect('main');await app.disconnect();
     await writer.send(new Uint8Array(250));assert.equal(app.connects,2);assert.deepEqual(app.chunks.map(chunk=>chunk.length),[...Array(12).fill(20),10]);

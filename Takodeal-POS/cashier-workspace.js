@@ -74,10 +74,12 @@ function installClock() {
   layout.append(clockSection);el('cashierAttendanceDay').value=businessDate();
   el('cashierAttendanceDay').onchange=startAttendance;el('clockRefresh').onclick=startAttendance;el('cashierAttendanceBranch').onchange=paintAttendance;
   const open=window.openTimeClockModal;
-  window.openTimeClockModal=async function(){window.switchView('timeclock');el('timeClockModal').style.display='block';startAttendance();await open();if(el('view-timeclock').classList.contains('active'))el('timeClockModal').style.display='block';else close();};
+  // Attendance capture, restart and transaction guards share the legacy open marker.
+  // The inline layout remains block through cashier-theme.css.
+  window.openTimeClockModal=async function(){window.switchView('timeclock');el('timeClockModal').style.display='flex';startAttendance();await open();if(el('view-timeclock').classList.contains('active'))el('timeClockModal').style.display='flex';else close();};
   // After a successful punch the original close stops the camera; the daily log stays visible.
   const close=window.closeTimeClock;
-  window.closeTimeClock=function(){close();if(el('view-timeclock').classList.contains('active')){el('timeClockModal').style.display='block';el('clockVideo').srcObject=null;el('faceAiStatus').textContent='Camera paused. Restart it before your next clock-in.';}};
+  window.closeTimeClock=function(){close();if(el('view-timeclock').classList.contains('active')){el('timeClockModal').style.display='flex';el('clockVideo').srcObject=null;el('faceAiStatus').textContent='Camera paused. Restart it before your next clock-in.';}};
   const restart=document.createElement('button');restart.className='cashier-button';restart.textContent='Start camera';restart.onclick=()=>window.openTimeClockModal();el('faceAiStatus').after(restart);
 }
 function stopAttendance(){attendanceGeneration++;attendanceStop?.();attendanceStop=null;}
