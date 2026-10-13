@@ -1,0 +1,19 @@
+.customer-install-card{display:flex;gap:18px;align-items:flex-start;background:#edf4ed;border:1px solid #d3e2d5;border-radius:16px;padding:22px;margin:4px 0 28px;color:#173f35}
+.customer-install-card>img{width:56px;height:56px;border-radius:14px;flex-shrink:0}
+.customer-install-copy{flex:1;min-width:0}
+.customer-install-eyebrow{display:block;font-size:9px;font-weight:800;letter-spacing:1.4px;color:#587465;margin-bottom:7px}
+.customer-install-card h2{font-size:21px;font-weight:800;line-height:1.25;letter-spacing:-.5px;margin:0 0 8px}
+.customer-install-card p{font-size:12px;line-height:1.7;margin:0;color:#587064}
+.customer-install-actions{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-top:15px}
+.customer-install-primary,.customer-install-steps button{border:0;background:#173f35;color:#fff;padding:12px 17px;border-radius:9px;font-size:12px;font-weight:700;min-height:44px}
+.customer-install-later,.customer-install-reopen{border:0;background:transparent;color:#173f35;padding:10px 0;font-size:12px;font-weight:700;min-height:44px;text-decoration:underline;text-underline-offset:3px}
+.customer-install-reopen{margin:0 0 20px}
+.customer-install-steps{margin-top:18px;padding-top:15px;border-top:1px solid #cfdfd0;font-size:12px;line-height:1.75}
+.customer-install-steps ol{list-style:decimal;padding-left:20px;margin:0}
+.customer-install-steps li{padding:3px 0}
+.customer-install-steps label{display:block;font-weight:700;margin-top:14px}
+.customer-install-steps input{display:block;width:100%;max-width:480px;box-sizing:border-box;border:1px solid #bfcfc4;background:white;color:#173f35;border-radius:8px;padding:10px;font:inherit;font-size:12px;margin:7px 0}
+.customer-install-card .customer-install-status:empty{display:none}
+.customer-install-card .customer-install-status{margin-top:12px}
+@media(max-width:600px){.customer-install-card{padding:17px;gap:12px;margin-bottom:22px}.customer-install-card>img{width:42px;height:42px;border-radius:11px}.customer-install-card h2{font-size:18px}.customer-install-actions{gap:12px}.customer-install-primary{padding:12px 14px}.customer-install-eyebrow{font-size:8px;letter-spacing:1px}}
+@media(display-mode:standalone),(display-mode:fullscreen){#customerInstallSlot{display:none}}

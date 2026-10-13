@@ -9,8 +9,13 @@
     <link rel="stylesheet" href="customer-theme.css?v=customer-hub-20261009">
     <link rel="stylesheet" href="customer-browser-help.css?v=online-orders-20261008-r1">
     <script type="module" src="customer-browser-help.js?v=online-orders-20261008-r1"></script>
+    <link rel="stylesheet" href="customer-install.css?v=customer-install-20261013-r1">
+    <script type="module" src="customer-install.js?v=customer-install-20261013-r1"></script>
     
     <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="app-icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="TAKODEÁL">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 
     
@@ -198,6 +203,7 @@
     <main id="branchLocatorScreen" class="app-screen customer-locator">
         <div class="customer-locator-brand"><img src="customer-logo.jpg" alt=""><span>TAKODEÁL</span><div class="customer-locator-actions"><small>YOUR IDEAL TAKOYAKI</small><button class="customer-outline-button" onclick="window.switchScreen('partnersScreen')">Partners ↗</button></div></div>
         <div class="customer-locator-intro"><span class="customer-eyebrow">GOOD FOOD, CLOSE TO YOU</span><h1>Which branch is near you?</h1><p>Choose a branch to see its menu. Sign in when you’re ready to order.</p></div>
+        <div id="customerInstallSlot"></div>
         <div class="customer-locator-toolbar"><span id="branchCountText">Finding your local branches…</span><button class="customer-text-button" onclick="window.loadBranchLocator()">Refresh availability ↻</button></div>
         <div id="branchCardsGrid" class="customer-branch-grid" aria-live="polite"><div class="customer-empty">Loading branches…</div></div>
         <p class="customer-locator-note">Order availability is confirmed with the branch. Pickup and delivery options are shown at checkout.</p>
