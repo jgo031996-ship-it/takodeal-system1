@@ -1,16 +1,25 @@
 {
   "name": "TAKODEÁL · Order & Pickup",
   "short_name": "TAKODEÁL",
+  "id": "/",
+  "description": "Order TAKODEÁL takoyaki, drinks and more for pickup or delivery from your nearest branch.",
   "start_url": ".",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#f7f8f4",
   "theme_color": "#173f35",
   "icons": [
     {
-      "src": "customer-logo.jpg",
-      "sizes": "192x192 512x512",
-      "type": "image/jpeg",
-      "purpose": "any maskable"
+      "src": "app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

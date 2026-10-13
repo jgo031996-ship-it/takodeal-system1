@@ -10,7 +10,7 @@ export function publicOrderingUrl(href) {
     return url.origin+'/';
 }
 export function installBrowserHelp(w=window,d=document) {
-    const context=embeddedBrowser(w.navigator);if(!context.embedded || d.getElementById('customerBrowserHelp'))return;
+    const context=embeddedBrowser(w.navigator);if(!context.embedded || d.getElementById('customerBrowserHelp') || d.getElementById('customerInstallCard'))return;
     try {if(w.sessionStorage.getItem('tk_browser_help_dismissed')==='1')return;}catch{}
     const box=d.createElement('aside');box.id='customerBrowserHelp';box.className='customer-browser-help';box.setAttribute('aria-label','Open the ordering website in your browser');
     const head=d.createElement('div'),title=d.createElement('strong'),close=d.createElement('button');
