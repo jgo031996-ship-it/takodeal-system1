@@ -1,3 +1,4 @@
+import './financial-flow-ui.js';
 export const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function reconcileOrder(saved, available) { return [...new Set([...saved, ...available])].filter(id => available.includes(id)); }
 export function renderFinancialFlow({ totalRevenue, totalCOGS, totalPayroll, totalOpEx, netProfit, expenseBreakdown }) {
