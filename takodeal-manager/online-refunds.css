@@ -1,2 +1,84 @@
-.online-orders-dialog{box-sizing:border-box;width:min(700px,calc(100vw - 24px));max-height:90vh;max-height:90dvh;padding:0;border:1px solid #d8e4dc;border-radius:16px;color:#173f32;font:14px system-ui;background:#fff}.online-orders-dialog *{box-sizing:border-box}.online-orders-dialog::backdrop{background:#12291e99}.online-orders-dialog header{padding:20px;display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #d8e4dc}.online-orders-dialog h2{margin:6px 0 0;font-size:21px}.online-orders-dialog small{font-size:10px;letter-spacing:1px;color:#65766b}.online-orders-dialog [data-online-body]{padding:20px;overflow:auto}.online-orders-dialog label{display:block;margin:14px 0 8px;font-weight:650}.online-orders-dialog input:not([type=checkbox]),.online-orders-dialog textarea,.online-orders-dialog select{display:block;width:100%;min-height:46px;margin-top:8px;padding:11px;border:1px solid #cad9cf;border-radius:8px;background:#fff;font:16px system-ui;color:#173f32}.online-orders-dialog textarea{min-height:84px;resize:vertical}.online-orders-dialog button,.online-primary{min-height:44px;border:1px solid #cad9cf;border-radius:8px;padding:10px 14px;font:650 13px system-ui;cursor:pointer;margin:4px;background:#f8faf8;color:#174c37}.online-primary{background:#146349!important;border-color:#146349!important;color:#fff!important}.online-orders-dialog button:disabled{opacity:.5;cursor:default}.online-order-row{display:flex;justify-content:space-between;gap:14px;align-items:center;padding:14px 0;border-bottom:1px solid #e0e8e2;overflow-wrap:anywhere}.online-order-row span{display:block;color:#64756d;font-size:12px;margin-top:4px}.online-notice{padding:14px;background:#fff8e8;border:1px solid #e9d7aa;border-radius:8px;line-height:1.6}.online-hint{color:#65766b;line-height:1.5}.online-total{display:flex;justify-content:space-between;font-size:18px}.online-check{display:flex!important;gap:10px;align-items:center}.online-check input{width:22px;height:22px}.online-orders-dialog [data-online-error]{color:#a32d2d;line-height:1.5;overflow-wrap:anywhere}@media(max-width:420px){.online-orders-dialog header,.online-orders-dialog [data-online-body]{padding:15px}.online-order-row{align-items:flex-start}.online-orders-dialog h2{font-size:19px}}
+/* Own placement because the Owner app resets every element's margin to zero. */
+.online-orders-dialog,body.manager-theme dialog.online-orders-dialog {
+    position:fixed;inset:0;margin:auto;width:760px;max-width:calc(100vw - 48px);
+    height:fit-content;max-height:calc(100vh - 48px);max-height:min(860px,calc(100dvh - 48px));
+    padding:0;overflow:hidden;border:1px solid #d6e2da;border-radius:18px;
+    background:#fff;color:#20392e;font-size:14px;line-height:1.6;box-shadow:0 24px 80px #102d2440;
+}
+.online-orders-dialog[open]{display:flex;flex-direction:column}
+.online-orders-dialog *{box-sizing:border-box}
+.online-orders-dialog::backdrop{background:#102d2499}
+.online-orders-dialog header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:23px 28px;background:#173f32;color:#fff;border-bottom:3px solid #dca550}
+.online-orders-dialog header>div{min-width:0}
+.online-orders-dialog h2{margin:5px 0 0;font-size:24px;line-height:1.3;font-weight:750;letter-spacing:-.5px;color:#fff}
+.online-orders-dialog header small{display:block;font-size:9px;font-weight:650;letter-spacing:1.5px;color:#b9d0c3}
+.online-orders-dialog [data-online-body]{min-height:0;overflow:auto;overscroll-behavior:contain;padding:24px 28px;scrollbar-gutter:stable}
+.online-orders-dialog [data-online-body]>p{margin:0 0 18px}
+.online-orders-dialog label{display:block;margin:18px 0 8px;font-size:12px;font-weight:650}
+.online-orders-dialog input:not([type=checkbox]),.online-orders-dialog textarea,.online-orders-dialog select{display:block;width:100%;min-height:46px;margin-top:8px;padding:11px 13px;border:1px solid #d3dfd5;border-radius:9px;background:#fff;font:inherit;font-size:16px;color:#20392e}
+.online-orders-dialog textarea{min-height:84px;resize:vertical}
+.online-orders-dialog button,.online-primary{min-height:44px;border:1px solid #ceddd2;border-radius:9px;padding:10px 16px;font-family:inherit;font-size:12px;font-weight:650;line-height:1.5;cursor:pointer;background:#f7faf6;color:#174c37}
+.online-orders-dialog button{margin:0}
+.online-orders-dialog button:hover{background:#edf4ec;border-color:#91b29d}
+.online-orders-dialog :is(button,input,textarea,select):focus-visible{outline:3px solid #dca550;outline-offset:3px}
+.online-orders-dialog button[data-close]{flex:0 0 44px;width:44px;padding:0;border-color:#ffffff40;background:#ffffff10;color:#fff;font-size:25px;font-weight:400;line-height:1}
+.online-orders-dialog button[data-close]:hover{background:#ffffff20;border-color:#ffffff80}
+.online-primary{background:#12644f!important;border-color:#12644f!important;color:#fff!important}
+.online-orders-dialog .online-primary:hover{background:#0b4d3c!important}
+.online-orders-dialog button:disabled{opacity:.5;cursor:not-allowed}
+.online-orders-dialog [data-online-error]{color:#a32d2d;font-size:13px;line-height:1.6;overflow-wrap:anywhere;margin:12px 0}
+.online-orders-dialog [data-online-error]:empty{display:none}
+.online-orders-dialog [data-screen=orders]{display:flex;flex-direction:column;overflow:hidden;padding:0}
+.online-orders-toolbar{flex:0 0 auto;padding:22px 28px 18px;background:#f8faf6;border-bottom:1px solid #e0e8e1}
+.online-orders-toolbar p{margin:0;color:#718177;font-size:12px;line-height:1.7}
+.online-orders-toolbar label{margin-top:14px}
+.online-orders-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:17px 0 0;color:#6f8175;font-size:11px}
+.online-platform-label{display:inline-flex;align-items:center;padding:4px 10px;border:1px solid #d5e3d7;border-radius:6px;background:#edf4ed;color:#326144;font-size:10px;font-weight:700;letter-spacing:.4px}
+.online-platform-label[data-platform=Grab]{background:#fff6e5;border-color:#ead7b2;color:#9b601c}
+.online-platform-label[data-platform=Foodpanda]{background:#fff1f5;border-color:#efd4df;color:#9e355d}
+.online-orders-dialog [data-online-orders]{min-height:0;overflow:auto;overscroll-behavior:contain;padding:4px 28px 18px;scrollbar-gutter:stable}
+.online-order-row{display:flex;justify-content:space-between;gap:18px;align-items:center;padding:18px 0;border-bottom:1px solid #e5ece5;overflow-wrap:anywhere}
+.online-order-row:last-child{border-bottom:0}
+.online-order-copy{min-width:0;flex:1}
+.online-order-copy>strong{display:block;font-size:13px;letter-spacing:.1px;color:#20392e}
+.online-order-copy>span{display:block;color:#718177;font-size:11px;margin-top:5px}
+.online-order-actions{display:flex;align-items:center;gap:18px;flex:0 0 auto}
+.online-order-amount{font-size:14px;font-weight:750;white-space:nowrap;font-variant-numeric:tabular-nums}
+.online-status{display:inline-flex;padding:3px 8px;border-radius:5px;background:#eef5ed;color:#326b45;font-size:10px;line-height:1.6;font-weight:650}
+.online-status-cancelled{background:#fff3e8;color:#99612b}
+.online-orders-empty{padding:28px 0;color:#718177;font-size:13px;line-height:1.7}
+.online-receipt-summary{padding:17px 20px;background:#f8faf6;border:1px solid #e0e8df;border-radius:10px;margin-bottom:22px}
+.online-receipt-summary>small{display:block;color:#718177;font-size:9px;letter-spacing:1px;font-weight:650;text-transform:uppercase}
+.online-receipt-summary>strong{display:block;margin:5px 0 12px;font-size:15px;overflow-wrap:anywhere}
+.online-receipt-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:#718177;font-size:12px}
+.online-section-label{margin-bottom:2px;color:#718177;font-size:9px;font-weight:650;letter-spacing:1px;text-transform:uppercase}
+.online-receipt-item{align-items:flex-start;padding:15px 0;font-size:13px}
+.online-receipt-item>span{min-width:0;flex:1;color:#486052;line-height:1.7}
+.online-receipt-item>strong{flex-shrink:0;font-size:13px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.online-total{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:20px 0 0!important;padding:17px 20px;border:1px solid #d6e4d8;border-radius:10px;background:#edf4ed;color:#173f32;font-size:13px;font-weight:650}
+.online-total strong{font-size:23px;line-height:1.3;letter-spacing:-.5px;font-variant-numeric:tabular-nums}
+.online-receipt-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px;padding-top:20px;border-top:1px solid #e0e8e1}
+.online-notice{padding:16px;background:#fff8e8;border:1px solid #e9d7aa;border-radius:10px;font-size:12px;line-height:1.7}
+.online-hint{color:#718177;line-height:1.7;font-size:12px}
+.online-check{display:flex!important;gap:10px;align-items:flex-start;font-weight:500!important;line-height:1.7}
+.online-check input{flex:0 0 20px;width:20px;height:20px;margin-top:1px;accent-color:#12644f}
+@media(max-width:600px){
+    .online-orders-dialog,body.manager-theme dialog.online-orders-dialog{max-width:calc(100vw - 24px);max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);border-radius:14px}
+    .online-orders-dialog header{padding:18px;gap:12px}
+    .online-orders-dialog h2{font-size:21px}
+    .online-orders-dialog [data-online-body]{padding:18px}
+    .online-orders-dialog [data-screen=orders]{padding:0}
+    .online-orders-toolbar{padding:17px 18px 15px}
+    .online-orders-dialog [data-online-orders]{padding:0 18px 12px}
+    .online-order-row{gap:12px;padding:16px 0;align-items:flex-start}
+    .online-order-copy>strong{font-size:12px}
+    .online-order-actions{flex-direction:column;align-items:flex-end;gap:8px}
+    .online-order-actions button{min-height:44px;padding:9px 14px}
+    .online-order-amount{font-size:13px}
+    .online-receipt-summary{padding:14px}
+    .online-total{padding:15px}
+    .online-total strong{font-size:21px}
+    .online-receipt-actions{flex-direction:column}
+    .online-receipt-actions button{width:100%}
+}
 .online-platform-card{min-width:0;white-space:normal;touch-action:manipulation}.online-platform-card:focus-visible{outline:3px solid #168e72;outline-offset:3px}.online-platform-card:hover{box-shadow:0 8px 22px #173f3220!important}@media(max-width:600px){.online-platform-card{padding:16px!important;gap:10px;flex-wrap:wrap}.online-platform-card :is(#histSumGrab,#histSumFoodpanda){font-size:clamp(22px,6vw,28px)!important;overflow-wrap:anywhere}.online-platform-card :is(#histCountGrab,#histCountFoodpanda){font-size:12px!important;white-space:normal}}
