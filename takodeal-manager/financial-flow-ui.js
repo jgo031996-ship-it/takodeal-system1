@@ -117,6 +117,12 @@ export function createFinancialFlow(w=window,d=document){
  }
  return {load,install,getReport:()=>report};
 }
-if(typeof window!=='undefined'&&typeof document!=='undefined'){
- const flow=createFinancialFlow();if(document.readyState==='complete')flow.install();else window.addEventListener('load',()=>flow.install(),{once:true});
+export function scheduleFinancialFlow(w=window,d=document,defer=callback=>w.setTimeout(callback,0)){
+ const flow=createFinancialFlow(w,d),afterRuntime=()=>defer(()=>flow.install());
+ // Owner imports main.js only after PIN unlock. This dependency must finish
+ // evaluating before main.js defines legacy loaders and the access wrappers.
+ // Attach on the next task so those startup definitions cannot replace ours.
+ if(d.readyState==='complete')afterRuntime();else w.addEventListener('load',afterRuntime,{once:true});
+ return flow;
 }
+if(typeof window!=='undefined'&&typeof document!=='undefined')scheduleFinancialFlow();
