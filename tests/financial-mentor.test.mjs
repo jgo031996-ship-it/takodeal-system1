@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {financialPeriod,expenseKind,buildFinancialReport,mentorFindings,payrollBranch} from '../takodeal-manager/financial-flow-model.js';
-import {createFinancialFlow,renderFinancialReview,renderMentor} from '../takodeal-manager/financial-flow-ui.js';
+import {createFinancialFlow,renderFinancialReview,renderMentor,scheduleFinancialFlow} from '../takodeal-manager/financial-flow-ui.js';
 const at=date=>new Date(date+'T12:00:00+08:00');
 const period=()=>financialPeriod({month:'2026-10',now:at('2026-10-14')});
 const sale=(extra={})=>({id:'one',branch:'Cabantian',timestamp:at('2026-10-03'),netTotal:100,status:'Paid',cart:[{name:'Food',qty:2}],...extra});
@@ -106,4 +106,12 @@ test('A read failure clears analysis rather than leaving old profit advice on th
 test('Only the Owner finance shell loads the upgrade; no external AI endpoint or business-write API is added',()=>{
  const workspace=readFileSync(new URL('../takodeal-manager/manager-workspace.js',import.meta.url),'utf8'),worker=readFileSync(new URL('../takodeal-manager/sw.js',import.meta.url),'utf8'),ui=readFileSync(new URL('../takodeal-manager/financial-flow-ui.js',import.meta.url),'utf8');
  assert.match(workspace,/import '\.\/financial-flow-ui.js'/);assert.match(ui,/link.href='\.\/financial-flow.css'/);for(const file of ['financial-flow-model.js','financial-flow-ui.js','financial-flow.css'])assert.ok(worker.includes(file));assert.doesNotMatch(ui,/addDoc|updateDoc|runTransaction|api\.openai|generativelanguage/);
+});
+test('Deferred post-PIN installation runs after main defines its legacy loader and keeps report authorization',async()=>{
+ const f=fixture(),scheduled=[],listeners=[],view=f.node('view-financial-flow');view.dataset={};view.classList={contains:()=>false};view.addEventListener=(...args)=>listeners.push(args);
+ const d={readyState:'complete',getElementById:id=>id==='financialFlowStyles'?{}:id==='view-financial-flow'?view:id==='flowSpendChart'||id==='flowBudgetChart'||id==='financialAiMentorContent'?null:f.node(id)};
+ const before=async()=>{},legacyAfterDependency=async()=>{};f.w.loadFinancialFlow=before;
+ const flow=scheduleFinancialFlow(f.w,d,callback=>scheduled.push(callback));assert.equal(f.w.loadFinancialFlow,before);
+ f.w.loadFinancialFlow=legacyAfterDependency;scheduled[0]();assert.equal(f.w.loadFinancialFlow,flow.load);assert.equal(view.dataset.financialReviewInstalled,'true');
+ f.w.sessionUser.permissions=['history'];await f.w.loadFinancialFlow();assert.equal(f.reads.length,0);
 });
