@@ -67,7 +67,7 @@ function packet(parts,pauses) {
     return bytes;
 }
 
-export function encodePrinterLogo({width,height,pixels,mode='esc-star24',threshold=128}={}) {
+export function encodePrinterLogo({width,height,pixels,mode='esc-star24',threshold=128,omitBlankBands=false}={}) {
     const selected=logoModeForPaper(mode);
     if(selected==='none')return packet([],[]);
     const black=imageInput({width,height,pixels,threshold}),parts=[],pauses=[];let size=0;
@@ -82,7 +82,11 @@ export function encodePrinterLogo({width,height,pixels,mode='esc-star24',thresho
                 let bits=0;for(let bit=0;bit<8;bit++)if(black(x,top+group*8+bit))bits|=1<<(7-bit);
                 band[5+x*3+group]=bits;
             }
-            band[band.length-1]=0x0a;append(band);pauses.push(size);
+            band[band.length-1]=0x0a;
+            // With 24-dot line spacing already selected, an empty band needs
+            // only its existing LF. Keep the same paper advance and ink position.
+            if(omitBlankBands&&band.subarray(5,band.length-1).every(byte=>byte===0)){append(Uint8Array.of(0x0a));continue;}
+            append(band);pauses.push(size);
         }
     }else{
         const rowBytes=Math.ceil(width/8),image=new Uint8Array(8+rowBytes*height),bodyStart=size+8;
@@ -100,7 +104,7 @@ export function encodePrinterLogo({width,height,pixels,mode='esc-star24',thresho
     return packet(parts,pauses);
 }
 
-export function loadPrinterLogo(source,{paperSize='58mm',scaleWidth=1,scaleHeight=1,mode,threshold=128,timeoutMs=8000,
+function preparePrinterLogo(source,{paperSize='58mm',scaleWidth=1,scaleHeight=1,mode,threshold=128,timeoutMs=8000,
     imageFactory=()=>new Image(),canvasFactory=()=>document.createElement('canvas'),
     schedule=(fn,delay)=>globalThis.setTimeout(fn,delay),cancel=id=>globalThis.clearTimeout(id)}={}) {
     let selected;
@@ -129,7 +133,7 @@ export function loadPrinterLogo(source,{paperSize='58mm',scaleWidth=1,scaleHeigh
                     const context=canvas.getContext('2d',{willReadFrequently:true});if(!context)throw Error('This browser cannot prepare the receipt logo.');
                     context.fillStyle='#ffffff';context.fillRect(0,0,canvas.width,canvas.height);context.drawImage(image,0,0,canvas.width,canvas.height);
                     const pixels=context.getImageData(0,0,canvas.width,canvas.height).data;
-                    finish(null,encodePrinterLogo({...dimensions,pixels,mode:selected,threshold}));
+                    finish(null,encodePrinterLogo({...dimensions,pixels,mode:selected,threshold,omitBlankBands:true}));
                 }catch(error){finish(Error('The receipt logo could not be prepared. Use Text only or replace the image. '+(error?.message || '')));}
             };
             image.onerror=()=>finish(Error('The receipt logo image could not be loaded. Use Text only or replace it.'));
@@ -139,4 +143,26 @@ export function loadPrinterLogo(source,{paperSize='58mm',scaleWidth=1,scaleHeigh
             image.src=source;
         }catch(error){finish(error instanceof Error?error:Error('The receipt logo could not be loaded.'));}
     });
+}
+
+// Keep two prepared logos in memory only. A source, size, paper or mode change
+// is a new entry; failed loads are retried, and each caller gets its own bytes.
+export function createCachedPrinterLogoLoader(prepare=preparePrinterLogo){
+    const entries=[];
+    return function(source,options={}){
+        const captured={...options},settings=JSON.stringify([captured.paperSize??'58mm',captured.scaleWidth??1,captured.scaleHeight??1,captured.mode??'auto',captured.threshold??128,captured.timeoutMs??8000]);
+        let entry=entries.find(row=>row.source===source&&row.settings===settings);
+        if(entry){entries.splice(entries.indexOf(entry),1);entries.push(entry);}
+        else{
+            entry={source,settings};entries.push(entry);if(entries.length>2)entries.shift();
+            entry.pending=Promise.resolve().then(()=>prepare(source,captured)).catch(error=>{const at=entries.indexOf(entry);if(at>=0)entries.splice(at,1);throw error;});
+        }
+        return entry.pending.then(bytes=>packet([bytes],bytes.pauseAfterBytes||[]));
+    };
+}
+const cachedLogoLoader=createCachedPrinterLogoLoader();
+export function loadPrinterLogo(source,options={}){
+    // Injectable browser fixtures must retain their isolated canvas and timer.
+    if(['imageFactory','canvasFactory','schedule','cancel'].some(name=>Object.prototype.hasOwnProperty.call(options,name)))return preparePrinterLogo(source,options);
+    return cachedLogoLoader(source,options);
 }

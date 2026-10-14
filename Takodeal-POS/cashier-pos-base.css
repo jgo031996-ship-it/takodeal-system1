@@ -408,6 +408,7 @@ button, select, .nav-item, .item-card { -webkit-tap-highlight-color: transparent
 .payment-grid { gap: 8px !important; }
 .pay-btn { min-height: 48px !important; border-radius: 10px !important; border: 1px solid var(--tk-line) !important; background: #fff !important; box-shadow: none !important; font-weight: 850 !important; }
 .pay-btn.active { border-color: var(--tk-gold) !important; background: var(--tk-gold-soft) !important; color: #6f4706 !important; }
+#checkoutModal .payment-grid .split-btn:not(.active) { color:#795337!important; }
 .btn-place { background: linear-gradient(135deg, var(--tk-gold), var(--tk-gold-2)) !important; color: #2b1c0f !important; border-radius: 10px !important; box-shadow: none !important; }
 
 @media (min-width: 980px) {
