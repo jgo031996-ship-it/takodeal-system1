@@ -14,6 +14,7 @@ function decodeCompatible(bytes){
     assert.deepEqual([...bytes.slice(0,6)],[27,97,1,27,51,24]);
     const black=new Set(),ends=[];let at=6,top=0;
     while(at<bytes.length-5){
+        if(bytes[at]===10){at++;top+=24;continue;}
         assert.deepEqual([...bytes.slice(at,at+3)],[27,42,33]);const width=bytes[at+3]+bytes[at+4]*256;at+=5;
         for(let x=0;x<width;x++)for(let group=0;group<3;group++){
             const value=bytes[at++];for(let bit=0;bit<8;bit++)if(value&(128>>bit))black.add(`${x},${top+group*8+bit}`);

@@ -1,4 +1,5 @@
 import { SALE_VERSION, saleIdentity, safeId, createOutbox, createSaleEngine } from './pos-safety.js';
+import {installCheckoutControls,resetCheckoutForNextOrder} from './checkout-controls.js';
 
 // Sale uploads retry frequently. Inventory recovery has its own cadence and
 // scope so an idle tablet does not repeatedly read other branches' receipts.
@@ -43,6 +44,7 @@ export function mergePendingSales(transactions, queue, branch, shiftStartTime, s
 
 export function installSaleSafety(api, environment = globalThis) {
     const w = environment.window || environment;
+    installCheckoutControls(w,environment.document);
     const ls = environment.localStorage;
     const outbox = createOutbox(environment.indexedDB || null);
     const engine = createSaleEngine(api);
@@ -178,6 +180,7 @@ export function installSaleSafety(api, environment = globalThis) {
         // Once locally committed, optional UI/background work cannot turn a
         // safely queued sale into a failure and invite a second checkout.
         try {
+            resetCheckoutForNextOrder(w,environment.document);
             const split = environment.document.getElementById('splitPaymentContainer');
             if (split) split.style.display = 'none';
             await refreshQueue();

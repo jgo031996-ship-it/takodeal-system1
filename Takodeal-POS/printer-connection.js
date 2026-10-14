@@ -237,7 +237,10 @@ export function createPrinterWriter(connections, {wait = milliseconds => new Pro
                     await boundedWrite(character[method](chunk));
                     bytesWritten += chunk.length;
                     offset = end;
-                    await wait(method === 'writeValueWithoutResponse' ? 25 : 5);
+                    // Acknowledged writes already serialize on the device's
+                    // response. Preserve pacing for unacknowledged endpoints.
+                    if(method==='writeValueWithoutResponse')await wait(25);
+                    else if(!boundaries.length)await wait(5);
                     if (offset === nextBoundary) {
                         boundaryIndex++;
                         if (bandDelay > 0) await wait(bandDelay);

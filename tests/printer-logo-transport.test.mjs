@@ -81,7 +81,7 @@ test('neither the next chunk nor a band pause begins before the endpoint accepts
         gate.resolve();
         await job;
         assert.deepEqual(app.chunks.map(chunk => chunk.length), [7, 16]);
-        assert.deepEqual(app.events.filter(event => event.kind === 'wait').map(event => event.milliseconds), [ack ? 5 : 25, 120, ack ? 5 : 25, 120]);
+        assert.deepEqual(app.events.filter(event => event.kind === 'wait').map(event => event.milliseconds), ack ? [120,120] : [25,120,25,120]);
     }
 });
 
@@ -135,7 +135,7 @@ test('band delays are bounded integer milliseconds, and zero adds no extra wait'
     for (const bandDelay of [0, 500]) {
         const app = hardware();
         await app.writer.send([1, 2], 'main', {pauseAfterBytes: [1], bandDelay});
-        assert.deepEqual(app.events.filter(event => event.kind === 'wait').map(event => event.milliseconds), bandDelay === 0 ? [5, 5, 120] : [5, 500, 5, 120]);
+        assert.deepEqual(app.events.filter(event => event.kind === 'wait').map(event => event.milliseconds), bandDelay === 0 ? [120] : [500,120]);
     }
 });
 
@@ -194,7 +194,7 @@ test('accepted logo bytes preserve the existing channel-only result without inve
     assert.equal(result, true);
     assert.equal(typeof result, 'boolean');
     assert.equal('paperConfirmed' in app.character, false);
-    assert.deepEqual(app.events.filter(event => event.kind === 'wait').map(event => event.milliseconds), [5, 120, 120]);
+    assert.deepEqual(app.events.filter(event => event.kind === 'wait').map(event => event.milliseconds), [120,120]);
 });
 
 function fullRasterFixture(){

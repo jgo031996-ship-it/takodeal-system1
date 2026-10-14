@@ -87,7 +87,9 @@ for(const config of [
     const logo=state.encoded[0],firstHeader=config.expectedMode==='compatible'?6:3;
     if(config.expectedMode==='compatible'){
         assert.deepEqual([...logo.slice(firstHeader,firstHeader+5)],[27,42,33,dimensions.width&255,dimensions.width>>8]);
-        assert.equal(logo.pauseAfterBytes.length,Math.ceil(dimensions.height/24));
+        assert.equal(logo.pauseAfterBytes.length,1); // The fixture has ink in its first band only.
+        const blankFeeds=logo.slice(6+5+dimensions.width*3+1,-5);
+        assert.equal(blankFeeds.length,Math.ceil(dimensions.height/24)-1);assert.ok(blankFeeds.every(byte=>byte===10));
     }else{
         assert.deepEqual([...logo.slice(firstHeader,firstHeader+8)],[29,118,48,0,Math.ceil(dimensions.width/8)&255,Math.ceil(dimensions.width/8)>>8,dimensions.height&255,dimensions.height>>8]);
         const raster=rasterHeader(logo);assert.equal(raster.rowBytes,Math.ceil(dimensions.width/8));assert.equal(raster.height,dimensions.height);
@@ -107,8 +109,9 @@ for(const scale of [1,1.5,2])test(`actual Owner ${scale}/${scale} scales produce
     assert.deepEqual(state.loads[0].options,{paperSize:'58mm',scaleWidth:scale,scaleHeight:scale,mode:'compatible'});
     const logo=state.encoded[0],expected=160*scale,bandLength=5+expected*3+1;
     assert.deepEqual([...logo.slice(6,11)],[27,42,33,expected&255,expected>>8]);
-    assert.equal(logo.pauseAfterBytes.length,Math.ceil(expected/24));
-    assert.equal(logo.length,6+bandLength*Math.ceil(expected/24)+5);
+    assert.equal(logo.pauseAfterBytes.length,1);
+    assert.equal(logo.length,6+bandLength+(Math.ceil(expected/24)-1)+5);
+    assert.ok(logo.slice(6+bandLength,-5).every(byte=>byte===10));
     const job=state.sent[0],text=Buffer.from(job.data).toString('latin1');
     assert.deepEqual(state.chunks.flat(),[...job.data]);assert.ok(state.chunks.every(chunk=>chunk.length<=20));
     assert.deepEqual(state.waits.filter(wait=>wait.milliseconds===120).map(wait=>wait.offset),[...logo.pauseAfterBytes.map(offset=>11+offset),job.data.length]);
