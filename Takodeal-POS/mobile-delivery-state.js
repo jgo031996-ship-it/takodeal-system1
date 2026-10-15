@@ -1,0 +1,2 @@
+export function mobileDeliveryFee(state){const value=state.activeMobileDelivery;return state.isActiveOrderMobile&&state.cart?.length&&value?.orderId===state.activeMobileOrderId&&value.branch===state.sessionUser?.branch&&typeof value.fee==='number'&&Number.isFinite(value.fee)&&value.fee>=0?value.fee:0;}
+export function clearMobileOrder(state){state.activeMobileOrderId=null;state.activeMobileOrderCode=null;state.isActiveOrderMobile=false;state.activeMobileDelivery=null;}

@@ -17,9 +17,9 @@ function scheduleHarness(month=10) {
  h.base={currentYear:2026,currentMonth:month,branchConfig:{[branch]:[{id:'m',name:'Morning',startTime:'09:00',endTime:'17:00',active:true}],Other:[{id:'m',name:'Morning',startTime:'10:00',endTime:'18:00',active:true}]},currentSchedule:{1:{[branch]:{scheduled:{m:'OLD'}},Other:{scheduled:{m:'OTHER'}}},6:{[branch]:{scheduled:{m:'OLD'}},Other:{scheduled:{m:'OTHER'}}}}};h.put('settings/global_schedule',h.base);return h;
 }
 const scheduleSave=(h,changes={})=>saveBranchSchedule(h.api,{branch,year:2026,month:10,days:{6:{scheduled:{m:'NEW'}}},original:scheduleBranch(h.base,branch,2026,10),actor,now:scheduleNow,store:h.store,...changes});
-test('all 18 sidebar routes have exactly one page and loading engine',()=>{
+test('all 19 sidebar routes have exactly one page and loading engine',()=>{
  const html=readFileSync(new URL('../takodeal-franchise/index.html',import.meta.url),'utf8'),script=readFileSync(new URL('../takodeal-franchise/main_franchise.js',import.meta.url),'utf8');
- assert.equal(Object.keys(data.ROUTES).length,18);
+ assert.equal(Object.keys(data.ROUTES).length,19);
  for(const route of Object.keys(data.ROUTES)){assert.equal(html.split(`id="view-${route}"`).length-1,1,route);assert.equal(html.split(`data-route="${route}"`).length-1,1,route);assert.equal(html.split(`id="body-${route}"`).length-1,1,route);}
  assert.doesNotMatch(script,/origFranchiseeSwitchView|window\.switchView\s*=/);
 });

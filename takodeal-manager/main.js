@@ -9990,7 +9990,7 @@ window.loadInbox = async function() {
         history.forEach(d => {
             const docSnap = { id: d.id };
             const time = historyTime(d.timestamp);
-            let dateStr = time ? new Date(time).toLocaleDateString() : 'Unknown';
+            let dateStr = time ? new Date(time).toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',...(/^\d{4}-\d{2}-\d{2}$/.test(d.timestamp)?{}:{timeStyle:'short'})})+(/^\d{4}-\d{2}-\d{2}$/.test(d.timestamp)?' · time not recorded':' (PH)') : 'Submission time not recorded';
             const staffKey = String(d.staffName || 'Unknown');
             let safeName = d.staffName ? d.staffName.replace(/'/g, "\\'") : 'Unknown';
 

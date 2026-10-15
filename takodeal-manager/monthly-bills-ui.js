@@ -12,7 +12,7 @@ export function installMonthlyBills() {
     const el=id=>document.getElementById(id),originalLoad=window.loadAccountsAndBudget,originalView=window.switchView;
     let bills=[],loading=null,lastRefresh=0,alarmKey='',audio=null,sound=false,scope='';
     const api={db:window.db,doc:window.doc,collection:window.collection,runTransaction:window.runTransaction,serverTimestamp:window.serverTimestamp};
-    const notify=message=>window.ManagerUI.notify(message);
+    const notify=(message,options)=>window.ManagerUI.notify(message,options);
     // Keep the existing modal and add a month selector next to its amount.
     const amountInput=el('editBudgetLimit'),amountLabel=amountInput?.previousElementSibling;
     if(amountInput && !el('editBudgetMonth')) {
@@ -142,9 +142,13 @@ export function installMonthlyBills() {
         const btn=el('btnSubmitLogExpense');if(btn.disabled || !canManage())return;
         btn.disabled=true;
         try {
+            const required=[['logExpBudgetSelect','Choose the bill to pay.'],['logExpBillMonth','Choose an unpaid billing month.'],['logExpAccSelect','Choose the cash account to deduct from.'],['logExpAmount','Enter the payment amount.'],['logExpDate','Choose the actual payment date.']];
+            for(const [id]of required)window.ManagerUI.clearFieldError?.(id);
+            for(const [id,message]of required)if(!el(id)?.value){notify(message,{type:'error',field:id});return;}
+            if(!window.auth.currentUser?.uid){notify('Sign in again before logging a payment.',{type:'error'});return;}
             await recordBillPayment(api,{billId:el('logExpBudgetSelect').value,month:el('logExpBillMonth').value,accountId:el('logExpAccSelect').value,amount:el('logExpAmount').value,paymentDate:el('logExpDate').value,note:el('logExpNote').value,actor:window.auth.currentUser?.uid,allowedBranch:window.isBranchAllowed});
             el('logExpenseModal').style.display='none';await window.loadAccountsAndBudget();notify('Payment logged once and linked to Financial Flow.');
-        } catch(error){notify(error.message);}finally{btn.disabled=false;}
+        } catch(error){const message=String(error.message),field=/account|funds/i.test(message)?'logExpAccSelect':/amount/i.test(message)?'logExpAmount':/date/i.test(message)?'logExpDate':/month|schedule|paid/i.test(message)?'logExpBillMonth':null;notify(message,{type:'error',field});}finally{btn.disabled=false;}
     };
     el('logExpBudgetSelect')?.addEventListener('change',()=>updatePaymentOptions());
     el('logExpBillMonth')?.addEventListener('change',()=>{

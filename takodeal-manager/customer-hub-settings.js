@@ -1,10 +1,11 @@
 import {CUSTOMER_SITE_PROFILE_DOC,customerSiteProfile,validateCustomerSiteProfile,customerSiteFooter,branchOpeningNotice,validateBranchOpeningNotice} from './customer-site-settings.js';
 import {canOpenWorkspacePage,createWorkspaceSession,OWNER_EMAIL} from './workspace-access-model.js';
 import {resolveHQAccount} from './hq-account-model.js';
+import {businessInboxUrl,validateDeliveryRates} from './operations-model.js';
 
 const esc=value=>String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
-const fields={site:['businessName','location','sinceYear','aboutText'],branch:['operatingHours','publicContact','publicAddress','grabLink','foodpandaLink','customerSoonToOpen','customerOpeningLabel']};
+const fields={site:['businessName','location','sinceYear','aboutText'],branch:['operatingHours','publicContact','publicAddress','grabLink','foodpandaLink','customerSoonToOpen','customerOpeningLabel','businessSuiteInboxUrl','deliveryFeeConfig']};
 const project=(data,keys)=>Object.fromEntries(keys.map(key=>[key,data?.[key] ?? null]));
 const fingerprint=data=>JSON.stringify(Object.fromEntries(Object.keys(data).sort().map(key=>[key,data[key]])));
 function currentActor(api) {
@@ -44,7 +45,12 @@ export async function saveCustomerHubState(api,state,patch,{operationId}={}) {
     const allowed=fields[state.kind];
     if(Object.keys(patch).some(key=>!allowed.includes(key) && !(state.kind==='branch' && key==='storefrontImage')))throw Error('This save contains an unsupported profile field.');
     if(state.kind==='site')patch=validateCustomerSiteProfile(patch);
-    else patch={...patch,...validateBranchOpeningNotice(patch)};
+    else {
+        patch={...patch};
+        if(Object.hasOwn(patch,'customerSoonToOpen') || Object.hasOwn(patch,'customerOpeningLabel'))Object.assign(patch,validateBranchOpeningNotice({...state.data,...patch}));
+        if(Object.hasOwn(patch,'businessSuiteInboxUrl'))patch.businessSuiteInboxUrl=businessInboxUrl(patch.businessSuiteInboxUrl);
+        if(Object.hasOwn(patch,'deliveryFeeConfig'))patch.deliveryFeeConfig=validateDeliveryRates(patch.deliveryFeeConfig);
+    }
     const actor=currentActor(api);if(!same(actor,state.actor))throw Error('Your account changed. Reload saved settings.');
     const records=await access(api,actor,state.branch),hash=fingerprint(patch);
     return api.runTransaction(api.db,async tx=>{

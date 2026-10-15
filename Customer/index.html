@@ -66,6 +66,7 @@
         details > summary { list-style: none; }
         details > summary::-webkit-details-marker { display: none; }
     </style>
+<script type="module">import {deliveryQuote,LEGACY_DELIVERY_RATES} from './operations-model.js';window.customerDeliveryQuote=input=>deliveryQuote({...input,rates:input.rates||LEGACY_DELIVERY_RATES});</script>
 </head>
 
 <body class="pb-24" data-screen="branchLocatorScreen">
@@ -695,7 +696,7 @@
             document.getElementById('customerBranchStatus').textContent='Checking availability';
             document.getElementById('customerBranchStatus').className='customer-status waiting';
             if (before!==branchName) {
-                window.currentDeliveryFee=0;window.nativeMap?.remove();window.nativeMap=null;window.nativeMarker=null;
+                window.currentDeliveryFee=0;window.currentDeliveryQuote=null;window.deliveryQuoteError='';window.nativeMap?.remove();window.nativeMap=null;window.nativeMarker=null;
                 document.getElementById('native-lat').value='';document.getElementById('native-lng').value='';
                 document.getElementById('checkoutDetailsModal').classList.add('hidden');
                 window.customerSelectedCategory=''; document.getElementById('searchInput').value=''; window.closeItemModal();window.closeCheckoutModal();}
@@ -1303,20 +1304,15 @@
             const savedBranch=window.customerBranchData.get(branch);
             let branchGeo = savedBranch && savedBranch.lat!=null && savedBranch.lng!=null && Number.isFinite(Number(savedBranch.lat)) && Number.isFinite(Number(savedBranch.lng)) && savedBranch.lat!=='' && savedBranch.lng!=='' ? {lat:Number(savedBranch.lat),lng:Number(savedBranch.lng)} : BRANCH_COORDS[branch];
             
-            if (!branchGeo) {window.currentDeliveryFee=0;document.getElementById('native-map-status').textContent='Delivery is not configured for this branch. Please choose pickup.';return;}
+            if (!branchGeo) {window.currentDeliveryQuote=null;window.currentDeliveryFee=0;document.getElementById('native-map-status').textContent='Delivery is not configured for this branch. Please choose pickup.';return;}
 
-            let distanceKM = window.calculateDistanceKM(branchGeo.lat, branchGeo.lng, userLat, userLng);
-            
-            // 🔥 THE COMPETITIVE PRICING ALGORITHM 🔥
-            // Base ₱39 for the first 3km. +₱10 per succeeding kilometer.
-            let fee = 39; 
-            if (distanceKM > 3) {
-                fee += Math.ceil(distanceKM - 3) * 10;
-            }
-            
-            window.currentDeliveryFee = fee;
-            document.getElementById('native-map-status').innerHTML = `✅ Location Pinned! Distance: <b>${distanceKM.toFixed(1)} km</b> | Delivery Fee: <b style="color:white;">₱${fee.toFixed(2)}</b>`;
-            window.updateNativeUI(); // Instantly update the cart total!
+            try {
+                const quote=window.customerDeliveryQuote({branch,origin:branchGeo,destination:{lat:userLat,lng:userLng},rates:savedBranch?.deliveryFeeConfig});
+                window.currentDeliveryQuote=quote;window.currentDeliveryFee=quote.fee;window.deliveryQuoteError='';
+            } catch(error) {window.currentDeliveryQuote=null;window.currentDeliveryFee=0;window.deliveryQuoteError=error.message;}
+            window.updateNativeUI();
+            return window.currentDeliveryQuote;
+
         };
 
         window.initNativeMap = function() {
@@ -1394,7 +1390,8 @@
                 `;
                 
                 totalDisplay.innerText = '₱' + (grandTotal + window.currentDeliveryFee).toFixed(2);
-                document.getElementById('native-map-status').textContent='Use Locate me to calculate your delivery fee.'; 
+                const quote=window.currentDeliveryQuote;
+                document.getElementById('native-map-status').textContent=quote?.branch===branch?'Pinned · '+quote.distanceKm.toFixed(1)+' km straight-line estimate · '+quote.fee.toFixed(2)+' PHP':window.deliveryQuoteError||'Use Locate me to calculate your delivery fee.';
             } else {
                 deliveryFeeRow.classList.add('hidden');
                 totalDisplay.innerText = '₱' + grandTotal.toFixed(2);
@@ -1446,7 +1443,7 @@
 
             // Strict Validation
             if (!window.currentUser || !window.cart.length || !window.isStoreAcceptingOrders) return Swal.fire({title:'Review your order',text:'Please check your cart and branch availability before continuing.',icon:'info'});
-            if (type.includes('Delivery') && (!window.isGlobalDeliveryActive || !lat || !lng || window.currentDeliveryFee<=0)) return Swal.fire({title:'Delivery location needed',text:'Please use Locate me to confirm the delivery fee, or choose pickup.',icon:'info'});
+            if (type.includes('Delivery') && (!window.isGlobalDeliveryActive || !lat || !lng || !window.calculateDynamicDeliveryFee(Number(lat),Number(lng)))) return Swal.fire({title:'Delivery location needed',text:'Please use Locate me to confirm the delivery fee, or choose pickup.',icon:'info'});
             if (!phone) return Swal.fire({title: 'Required', text:'Contact number is required', icon: 'warning', background: '#141414', color: '#fff'});
             if (type.includes('Delivery') && !address) return Swal.fire({title: 'Required', text:'Delivery address is required', icon: 'warning', background: '#141414', color: '#fff'});
             if (type.includes('Advance') && !time) return Swal.fire({title: 'Required', text:'Please select an Advance Time', icon: 'warning', background: '#141414', color: '#fff'});
@@ -1498,7 +1495,7 @@
 
                 // 🔥 THE FIX: Inject the delivery fee safely AFTER the payload is built!
                 if (type.includes('Delivery')) {
-                    orderPayload.deliveryFee = window.currentDeliveryFee; 
+                    orderPayload.deliveryFee = window.currentDeliveryFee; orderPayload.deliveryQuote=window.currentDeliveryQuote;
                 }
 
                 orderCode = await window.TKCustomerGate.saveOrder(orderPayload);
@@ -1517,7 +1514,7 @@
                     rItemsHtml += `<div style="display:flex; justify-content:space-between; margin-bottom:3px;"><span>${i.quantity}x ${i.name}</span><span>${i.lineTotalFinal.toFixed(2)}</span></div>`;
                 });
                 if (type.includes('Delivery')) {
-                    rItemsHtml += `<div style="display:flex; justify-content:space-between; margin-bottom:3px; margin-top:5px; border-top:1px dashed #ccc; padding-top:5px;"><span>Delivery Fee</span><span>50.00</span></div>`;
+                    rItemsHtml += `<div style="display:flex; justify-content:space-between; margin-bottom:3px; margin-top:5px; border-top:1px dashed #ccc; padding-top:5px;"><span>Delivery Fee</span><span>${window.currentDeliveryFee.toFixed(2)}</span></div>`;
                 }
                 document.getElementById('receiptItems').innerHTML = rItemsHtml;
                 

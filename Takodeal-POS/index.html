@@ -3111,6 +3111,7 @@ window.confirmAddOrUpdateToCart = function() {
 window.renderCart = function() {
     const list = document.getElementById('cartList'); let grandTotal = 0; list.innerHTML = '';
     if (!window.cart || window.cart.length === 0) { 
+        window.activeMobileOrderId=null;window.activeMobileOrderCode=null;window.isActiveOrderMobile=false;window.activeMobileDelivery=null;
         list.innerHTML = '<li style="padding: 30px; text-align: center; color: #aaa; font-style: italic;">Menu is empty.</li>'; 
         document.getElementById('displaySubTotal').innerText = '₱0.00'; 
         document.getElementById('displayGrandTotal').innerText = '₱0.00'; 
@@ -3164,9 +3165,11 @@ window.renderCart = function() {
             `;
         });
         
-        window.currentGrandTotal = grandTotal; 
+        const mobileFee=window.mobileDeliveryFeeForCart?.()||0;
+        window.currentGrandTotal = grandTotal+mobileFee;
+        if(mobileFee>0){const row=document.createElement('li');row.className='mobile-hub-note';row.textContent='Store delivery fee · ₱'+mobileFee.toFixed(2);list.append(row);}
         document.getElementById('displaySubTotal').innerText = '₱ ' + grandTotal.toFixed(2); 
-        document.getElementById('displayGrandTotal').innerText = '₱ ' + grandTotal.toFixed(2);
+        document.getElementById('displayGrandTotal').innerText = '₱ ' + window.currentGrandTotal.toFixed(2);
     }
 };
 
@@ -3177,7 +3180,7 @@ window.clearCart = function() {
         window.isResumedParkedOrder = false; 
         
         // 🔥 WIPE MOBILE FLAGS
-        window.activeMobileOrderId = null;
+        window.activeMobileOrderId = null; window.activeMobileDelivery=null;
         window.activeMobileOrderCode = null;
         window.isActiveOrderMobile = false;
         
@@ -3611,6 +3614,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         isMobileOrder: window.isActiveOrderMobile || false,
         mobileOrderCode: window.activeMobileOrderCode || null,
         mobileOrderId: window.activeMobileOrderId || null,
+        deliveryFee: window.mobileDeliveryFeeForCart?.()||0,
         mealStaffName: staffIdentity ? staffIdentity.cashierName : null,
         mealLevelId: staffIdentity ? staffIdentity.level.id : null,
         mealLevelName: staffIdentity ? staffIdentity.level.name : null,
@@ -3630,7 +3634,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         Object.assign(payload, checkout.payload);
         const pinBox = document.getElementById('checkoutStaffPin');
         if (pinBox) pinBox.value = '';
-        window.activeMobileOrderId = null;
+        window.activeMobileOrderId = null; window.activeMobileDelivery=null;
         window.activeMobileOrderCode = null;
         window.isActiveOrderMobile = false;
 
@@ -3867,6 +3871,7 @@ window.printReceipt = async function(type) {
     }
     
     receiptTop += formatLine("Subtotal:", parseFloat(subtotalVal));
+    if(Number(d.deliveryFee)>0)receiptTop += formatLine("Delivery fee:",Number(d.deliveryFee));
     if (totalDiscount > 0.01) receiptTop += formatLine("Item Discounts:", -parseFloat(totalDiscount));
     if (parseFloat(d.globalDiscountAmount) > 0.01) {
         receiptTop += formatLine("Order Discount:", -parseFloat(d.globalDiscountAmount));
@@ -3944,7 +3949,10 @@ window.parkOrder = async function() {
         platform: window.posPlatform || 'Standard',
         isMobileOrder: window.isActiveOrderMobile || false,
         mobileOrderCode: window.activeMobileOrderCode || null,
-        mobileOrderId: window.activeMobileOrderId || null
+        mobileOrderId: window.activeMobileOrderId || null,
+        deliveryFee: window.mobileDeliveryFeeForCart?.()||0,
+        deliveryAddress: document.getElementById('finalDeliveryAddress')?.value||'',
+        contactNumber: document.getElementById('finalContactNumber')?.value||''
     };
 
     let parkedId = await window.parkOrderToDB(payload);
@@ -3961,7 +3969,7 @@ window.parkOrder = async function() {
         let otSelect = document.getElementById('mainOrderType');
         if (otSelect && window.posPlatform === 'Standard') otSelect.value = '';
 
-        window.activeMobileOrderId = null;
+        window.activeMobileOrderId = null; window.activeMobileDelivery=null;
         window.activeMobileOrderCode = null;
         window.isActiveOrderMobile = false;
 
@@ -4026,6 +4034,9 @@ window.resumeOrder = async function(docId) {
     window.isActiveOrderMobile = order.isMobileOrder || false;
     window.activeMobileOrderCode = order.mobileOrderCode || null;
     window.activeMobileOrderId = order.mobileOrderId || null;
+    window.activeMobileDelivery=order.isMobileOrder?{orderId:order.mobileOrderId,branch:order.branch,fee:Number(order.deliveryFee)||0}:null;
+    if(document.getElementById('finalDeliveryAddress'))document.getElementById('finalDeliveryAddress').value=order.deliveryAddress||'';
+    if(document.getElementById('finalContactNumber'))document.getElementById('finalContactNumber').value=order.contactNumber||'';
  
     let otSelect = document.getElementById('mainOrderType');
     if (otSelect && order.orderType) otSelect.value = order.orderType.replace(" (PARKED)", "").trim();
