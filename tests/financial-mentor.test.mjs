@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {financialPeriod,expenseKind,buildFinancialReport,mentorFindings,payrollBranch} from '../takodeal-manager/financial-flow-model.js';
-import {createFinancialFlow,renderFinancialReview,renderMentor,scheduleFinancialFlow} from '../takodeal-manager/financial-flow-ui.js';
+import {createFinancialFlow,createFinancialPeriodReader,renderFinancialReview,renderMentor,scheduleFinancialFlow} from '../takodeal-manager/financial-flow-ui.js';
 const at=date=>new Date(date+'T12:00:00+08:00');
 const period=()=>financialPeriod({month:'2026-10',now:at('2026-10-14')});
 const sale=(extra={})=>({id:'one',branch:'Cabantian',timestamp:at('2026-10-03'),netTotal:100,status:'Paid',cart:[{name:'Food',qty:2}],...extra});
@@ -93,15 +93,45 @@ test('Actual report controller reads selected records, renders both charts and i
 });
 test('Changing the filter during a delayed read cannot render the old branch over the new report',async()=>{
  let release,once=true;const f=fixture({delay:async ref=>{if(once&&ref.table==='transactions'){once=false;await new Promise(resolve=>release=resolve);}}});
- const first=f.flow.load();f.node('flowBranchFilter').value='Maa';await f.flow.load();release();await first;assert.equal(f.flow.getReport().branch,'Maa');assert.equal(f.flow.getReport().revenue,0);
+ const first=f.flow.load();await Promise.resolve();f.node('flowBranchFilter').value='Maa';const second=f.flow.load();release();await Promise.all([first,second]);assert.equal(f.flow.getReport().branch,'Maa');assert.equal(f.flow.getReport().revenue,0);
 });
 test('Revoking report access or switching identity during an in-flight read prevents financial data rendering',async()=>{
  let release,once=true;const f=fixture({delay:async ref=>{if(once&&ref.table==='transactions'){once=false;await new Promise(resolve=>release=resolve);}}});
- const pending=f.flow.load();f.w.auth.currentUser.uid='different';release();await pending;assert.equal(f.flow.getReport(),null);assert.ok(!f.node('financialFlowchartContainer').innerHTML.includes('Recorded net sales'));
+ const pending=f.flow.load();await Promise.resolve();f.w.auth.currentUser.uid='different';release();await pending;assert.equal(f.flow.getReport(),null);assert.ok(!f.node('financialFlowchartContainer').innerHTML.includes('Recorded net sales'));
  const denied=fixture({permissions:['history']});await denied.flow.load();assert.equal(denied.reads.length,0);
 });
 test('A read failure clears analysis rather than leaving old profit advice on the screen',async()=>{
- const f=fixture();await f.flow.load();f.w.getDocsFromServer=async()=>{throw Error('Missing connection');};await f.flow.load();assert.equal(f.flow.getReport(),null);assert.match(f.node('financialAiMentorContent').textContent,/unavailable/);assert.match(f.node('financialFlowchartContainer').innerHTML,/Missing connection/);
+ const f=fixture();await f.flow.load();f.w.getDocsFromServer=async()=>{throw Error('Missing connection');};await f.flow.load({refresh:true});assert.equal(f.flow.getReport(),null);assert.match(f.node('financialAiMentorContent').textContent,/unavailable/);assert.match(f.node('financialFlowchartContainer').innerHTML,/Missing connection/);
+});
+
+test('Period reads coalesce slow requests, expire promptly and refresh explicitly',async()=>{
+ let now=100,reads=0,release;const read=createFinancialPeriodReader({now:()=>now}),fetch=async()=>{reads++;return new Promise(resolve=>release=resolve);};
+ const first=read('owner/October',fetch),retry=read('owner/October',fetch,true);assert.equal(first,retry);await Promise.resolve();release(['October']);assert.deepEqual(await first,{data:['October'],loadedAt:100});assert.equal(reads,1);
+ now=101;assert.deepEqual(await read('owner/October',()=>{throw Error('must reuse');}),{data:['October'],loadedAt:100});
+ assert.deepEqual((await read('owner/October',async()=>{reads++;return ['fresh'];},true)).data,['fresh']);assert.equal(reads,2);
+ now=60101;assert.deepEqual((await read('owner/October',async()=>['expired'])).data,['expired']);
+});
+
+test('Period snapshots never cross identity or period keys and failed reads remain retryable',async()=>{
+ const read=createFinancialPeriodReader();await read('owner/October',async()=>['private']);
+ await assert.rejects(read('staff/October',async()=>{throw Error('denied');}),/denied/);
+ assert.deepEqual((await read('staff/October',async()=>['staff scope'])).data,['staff scope']);
+ assert.deepEqual((await read('staff/September',async()=>['September'])).data,['September']);
+});
+
+test('Owner branch changes reuse the authorized period while an explicit refresh fetches it again',async()=>{
+ const f=fixture();await f.flow.load();const count=()=>f.reads.filter(r=>r.table==='transactions').length;assert.equal(count(),1);
+ f.node('flowBranchFilter').value='Maa';await f.flow.load();assert.equal(count(),1);assert.equal(f.flow.getReport().branch,'Maa');assert.equal(f.flow.getReport().revenue,0);
+ f.node('flowBranchFilter').value='Cabantian';await f.flow.load();assert.equal(count(),1);assert.equal(f.flow.getReport().revenue,100);
+ await f.flow.load({refresh:true});assert.equal(count(),2);assert.match(f.node('financialFlowchartContainer').innerHTML,/Refresh report requests fresh records/);
+});
+
+test('A slow report gives loading feedback and its retry joins the original read after timeout',async()=>{
+ let release;const f=fixture({delay:async ref=>{if(ref.table==='transactions')await new Promise(resolve=>release=resolve);}}),timers=new Map();
+ f.w.setTimeout=(callback,ms)=>{timers.set(ms,callback);return ms;};f.w.clearTimeout=ms=>timers.delete(ms);
+ const first=f.flow.load();await Promise.resolve();timers.get(15000)();assert.match(f.node('financialFlowchartContainer').innerHTML,/Still loading/);timers.get(60000)();await first;
+ assert.equal(f.flow.getReport(),null);assert.match(f.node('financialAiMentorContent').textContent,/unavailable/);
+ const retry=f.flow.load({refresh:true});release();await retry;assert.equal(f.reads.filter(r=>r.table==='transactions').length,1);assert.equal(f.flow.getReport().revenue,100);
 });
 test('Only the Owner finance shell loads the upgrade; no external AI endpoint or business-write API is added',()=>{
  const workspace=readFileSync(new URL('../takodeal-manager/manager-workspace.js',import.meta.url),'utf8'),worker=readFileSync(new URL('../takodeal-manager/sw.js',import.meta.url),'utf8'),ui=readFileSync(new URL('../takodeal-manager/financial-flow-ui.js',import.meta.url),'utf8');
