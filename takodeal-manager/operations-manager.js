@@ -1,6 +1,8 @@
 import {esc,amount,phDay,dateRange,timestampLabel,mobileTiming,mobileBranchSummary,wasteRows,readOperationPeriod} from './operations-model.js';
 import {installFranchiseSupplyPricing} from './franchise-supply-pricing.js';
 import {installMobileDeliverySettings} from './mobile-delivery-settings.js';
+import {installInventoryEditor} from './inventory-editor.js';
+import {installInventoryOverview} from './inventory-overview.js';
 import {canOpenWorkspacePage,OWNER_EMAIL} from './workspace-access-model.js';
 const snapshotRows=snap=>snap.docs.map(row=>({...row.data(),id:row.id}));
 const sessionKey=w=>JSON.stringify([w.auth?.currentUser?.uid,w.sessionUser?.email,w.sessionUser?.permissions,w.sessionUser?.allowedBranches]);
@@ -10,7 +12,7 @@ function deadline(w,promise){let timer;return Promise.race([promise,new Promise(
 async function branchDirectory(w){const rows=typeof w.fetchCachedCollection==='function'?await w.fetchCachedCollection('branches'):snapshotRows(await (w.getDocsFromServer||w.getDocs)(w.collection(w.db,'branches')));return [...new Map(rows.filter(row=>row.name&&w.isBranchAllowed?.(row.name)).map(row=>[row.name,row])).values()].sort((a,b)=>a.name.localeCompare(b.name));}
 async function periodRows(w,table,period,branch,branches){const all=w.sessionUser?.email?.toLowerCase()===OWNER_EMAIL||w.sessionUser?.allowedBranches?.includes('All'),scopes=branch!=='All'?[branch]:all?[null]:branches;const result=await Promise.all(scopes.map(name=>readOperationPeriod(w,{table,branch:name,...period})));return [...new Map(result.flat().filter(row=>w.isBranchAllowed?.(row.branch)).map(row=>[row.id,row])).values()];}
 export function installOperationsManager(w=window,d=document){
- if(w.operationsManagerInstalled)return;w.operationsManagerInstalled=true;installMobileDeliverySettings(w,d);installFranchiseSupplyPricing(w,d);
+ if(w.operationsManagerInstalled)return;w.operationsManagerInstalled=true;installMobileDeliverySettings(w,d);installInventoryEditor(w,d);installInventoryOverview(w,d);installFranchiseSupplyPricing(w,d);
  const css=d.createElement('link');css.rel='stylesheet';css.href='./operations-upgrade.css';d.head.append(css);
  const el=id=>d.getElementById(id),allowedInventory=()=>can(w,'inventory');let wasteEpoch=0,wasteData=[],wasteDirectory=[],wasteTake=200;
  const waste=el('invSectionWaste'),body=el('wasteTabBody');
