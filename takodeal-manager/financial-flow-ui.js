@@ -5,6 +5,20 @@ const percent=n=>n===null?'—':n.toFixed(1)+'%';
 const rows=snapshot=>snapshot.docs?snapshot.docs.map(r=>({...r.data(),id:r.id})):(()=>{const result=[];snapshot.forEach(r=>result.push({...r.data(),id:r.id}));return result;})();
 const sorted=values=>[...values].sort((a,b)=>Number(b.timestamp?.toMillis?.()||new Date(b.timestamp))-Number(a.timestamp?.toMillis?.()||new Date(a.timestamp)));
 const routes={menu:'Review recipes',expenses:'Review payments',accounts:'Review bills & budgets',transfers:'Review HQ transfers',history:'Review sales',payroll:'Review payroll'};
+// Keep only one authorized period in tab memory. Filters can reuse the same
+// snapshots; retries join an unfinished read instead of downloading it again.
+export function createFinancialPeriodReader({now=Date.now,ttl=60000}={}){
+ let entry=null;
+ return (key,read,refresh=false)=>{
+  if(entry?.key===key){
+   if(entry.pending)return entry.pending;
+   if(!refresh&&entry.data&&now()-entry.at<ttl)return Promise.resolve({data:entry.data,loadedAt:entry.at});
+  }
+  const next={key,data:null,at:0,pending:null};entry=next;
+  next.pending=Promise.resolve().then(read).then(data=>{next.data=data;next.at=now();return {data,loadedAt:next.at};}).catch(error=>{if(entry===next)entry=null;throw error;}).finally(()=>{next.pending=null;});
+  return next.pending;
+ };
+}
 export function renderFinancialReview(r){
  const action=(label,group)=>`<button type="button" data-financial-trace="${esc(group)}">${label} →</button>`;
  const metric=(label,value,detail,group)=>`<article class="finance-metric"><span>${label}</span><strong>${cash(value)}</strong><small>${detail}</small>${group?action('View records',group):''}</article>`;
@@ -25,7 +39,7 @@ export function renderMentor(r,targets={},allowed=()=>true){
  <details class="finance-targets"><summary>Your planning targets (optional)</summary><p>Use your own targets. A percentage alone does not establish waste, excess staffing or the cause of a cost increase. Saved only in this browser for this signed-in account.</p><div>${[['food','Recipe cost %'],['payroll','Payroll paid %'],['operating','Operating cost %']].map(([id,label])=>`<label>${label}<input type="number" min="0" max="100" step="0.1" data-financial-target="${id}" value="${esc(targets[id]??'')}" placeholder="No target"></label>`).join('')}</div><p id="financialTargetStatus" role="status"></p></details></section>`;
 }
 export function createFinancialFlow(w=window,d=document){
- let revision=0,report=null,identity='',targets={};const el=id=>d.getElementById(id),allowed=b=>typeof w.isBranchAllowed==='function'?w.isBranchAllowed(b):!!w.sessionUser?.isOwner;
+ let revision=0,report=null,identity='',targets={};const periodReader=createFinancialPeriodReader(),el=id=>d.getElementById(id),allowed=b=>typeof w.isBranchAllowed==='function'?w.isBranchAllowed(b):!!w.sessionUser?.isOwner;
  const sessionKey=()=>JSON.stringify([w.auth?.currentUser?.uid,w.sessionUser?.email,w.sessionUser?.permissions,w.sessionUser?.allowedBranches,w.sessionUser?.isFranchisee]);
  const controlsKey=()=>JSON.stringify(['flowBranchFilter','flowTimeFilter','flowMonthPicker','flowYearPicker'].map(id=>el(id)?.value));
  const can=route=>canOpenWorkspacePage(w.sessionUser,route);
@@ -64,7 +78,7 @@ export function createFinancialFlow(w=window,d=document){
   if(captured!==report)return;
   await w.Swal.fire({title,html,width:900,showCloseButton:true,confirmButtonText:'Close',customClass:{popup:'finance-trace-popup'}});
  }
- async function load(){
+ async function load({refresh=false}={}){
   const container=el('financialFlowchartContainer'),mentorContent=el('financialAiMentorContent'),view=el('view-financial-flow');
   if(!container||!w.sessionUser||!w.auth?.currentUser?.uid||!can('financial-flow')){report=null;return;}
   const generation=++revision,account=sessionKey();readTargets();report=null;
@@ -78,13 +92,16 @@ export function createFinancialFlow(w=window,d=document){
   try{
    period=financialPeriod({type:el('flowTimeFilter').value,month:el('flowMonthPicker').value,year:el('flowYearPicker').value});
    const reference=async name=>typeof w.fetchCachedCollection==='function'?w.fetchCachedCollection(name):rows(await read(collection(name)));
-   let timer;const timeout=new Promise((_,reject)=>{timer=w.setTimeout(()=>reject(Error('The report took too long to load. Check your connection and refresh.')),20000);});
-   const data=await Promise.race([Promise.all([read(range('transactions',period.priorStart,period.end,branch)),read(range('expenses',period.start,period.end,branch)),reference('inventory'),reference('bom'),read(collection('budgets'))]),timeout]).finally(()=>w.clearTimeout(timer));
+   const key=JSON.stringify([account,+period.priorStart,+period.start,+period.end,w.sessionUser.isFranchisee?branch:'accessible-branches']);
+   let timer;const slow=w.setTimeout(()=>{if(current())container.innerHTML='<p role="status">Still loading the selected period. Larger reports can take up to a minute; keep this tab open.</p>';},15000);
+   const timeout=new Promise((_,reject)=>{timer=w.setTimeout(()=>reject(Error('The report took too long to load. Check your connection and try again.')),60000);});
+   const {data,loadedAt}=await Promise.race([periodReader(key,()=>Promise.all([read(range('transactions',period.priorStart,period.end,branch)),read(range('expenses',period.start,period.end,branch)),reference('inventory'),reference('bom'),read(collection('budgets'))]),refresh),timeout]).finally(()=>{w.clearTimeout(timer);w.clearTimeout(slow);});
    if(!current())return;
    const referenceAllowed=values=>values.filter(row=>allowed(row.branch));
    report=buildFinancialReport({transactions:rows(data[0]),expenses:rows(data[1]),inventory:referenceAllowed(data[2]),bom:data[3],budgets:referenceAllowed(rows(data[4])),branch,period,allowedBranch:allowed});
    w.tempCogsBreakdown=report.costs.breakdown;w.tempOpExBreakdown=report.trace;
-   container.innerHTML=renderFinancialReview(report)+(w.renderBillForecast?.(rows(data[4]).filter(row=>allowed(row.branch)),branch,period.start,new Date(+period.end-1))||'');mentor();charts(report);
+   container.innerHTML=renderFinancialReview(report)+(w.renderBillForecast?.(rows(data[4]).filter(row=>allowed(row.branch)),branch,period.start,new Date(+period.end-1))||'');
+   container.insertAdjacentHTML('afterbegin',`<p class="finance-footer" role="status">Records loaded ${new Date(loadedAt).toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'})}. Branch changes reuse this period for up to one minute. Refresh report requests fresh records.</p>`);mentor();charts(report);
    if(data[0].metadata?.fromCache||data[1].metadata?.fromCache)container.insertAdjacentHTML('afterbegin','<p class="finance-notice" role="status">Cached sales or payments · reconnect and refresh before relying on these totals.</p>');
    if(!w.sessionUser.isFranchisee){
     try{const restocks=await read(w.query(collection('hq_restocks'),w.where('timestamp','>=',period.start),w.where('timestamp','<',period.end)));if(current())container.insertAdjacentHTML('beforeend',renderDispatchRestockEstimates(collectDispatchRestockEstimates(rows(restocks).filter(row=>!row.toBranch||allowed(row.toBranch)),{start:period.start,end:new Date(+period.end-1),branch})));}
@@ -102,7 +119,7 @@ export function createFinancialFlow(w=window,d=document){
   w.loadFinancialFlow=load;
   view.addEventListener('click',event=>{
    const node=event.target.closest?.('button');if(!node)return;
-   if(node.hasAttribute('data-financial-refresh'))return void load();
+   if(node.hasAttribute('data-financial-refresh'))return void load({refresh:true});
    if(node.dataset.financialTrace)return void trace(node.dataset.financialTrace);
    if(node.dataset.financialCategory)return void trace('operating',node.dataset.financialCategory);
    if(node.dataset.financialRoute&&can(node.dataset.financialRoute))w.switchView(node.dataset.financialRoute);
