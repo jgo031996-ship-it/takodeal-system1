@@ -1,6 +1,6 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-checkout-logo-20261014-r1';
+const CORE = 'takodeal-pos-core-operations-20261015-r1';
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
 const required = ['./', './index.html', './meal-checkout.js','./meal-checkout.css','./pos-config-model.js','./hq-account-model.js','./main.js', './branch-operations.js','./cash-settlement.js','./shift-close-ui.js', './shift-close-draft.js', './shift-sales.js', './printer-connection.js', './dispatch-safety.js','./dispatch-restock-model.js','./workspace-access-model.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json','./cashier-pos-base.css','./cashier-theme.css','./cashier-tablet.css','./cashier-pos-ui.js','./cashier-workspace.js','./cashier-data.js'];
@@ -119,7 +119,7 @@ self.addEventListener('fetch', event => {
     return;
   }
   const localAsset = url.origin === ROOT.origin && url.pathname.startsWith(ROOT.pathname) &&
-    (request.mode === 'navigate' || url.pathname.startsWith(new URL('./vendor/face-models/',ROOT).pathname) || /\.(html|js|css|json|jpg|png|svg|woff2?)(?:$)/i.test(url.pathname));
+    (request.mode === 'navigate' || url.pathname.startsWith(new URL('./vendor/face-models/',ROOT).pathname) || /\.(html|js|css|json|jpg|png|svg|wav|woff2?)(?:$)/i.test(url.pathname));
   if (!localAsset && !trustedLibrary(url.href)) return;
   event.respondWith((async () => {
     const cache = await caches.open(CORE);
@@ -132,3 +132,7 @@ self.addEventListener('fetch', event => {
     return response;
   })());
 });
+
+required.push("./operations-model.js","./mobile-order-actions.js","./mobile-hub-upgrade.js","./mobile-hub-upgrade.css","./tako-tako.wav");
+
+required.push('./mobile-delivery-state.js');

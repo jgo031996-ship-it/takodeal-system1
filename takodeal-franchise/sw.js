@@ -1,4 +1,4 @@
-const CACHE='takodeal-franchise-workspace-cancelled-food-20261011-r1';
+const CACHE = 'takodeal-franchise-workspace-operations-20261015-r1';
 const CORE=['./','index.html','style.css','main_franchise.js','auth.js','franchise-data.js','franchise-actions.js','franchise-workspace.js','payroll-safety.js','schedule-history.js','dispatch-safety.js','unlock-gate.js','hq-account-model.js','manifest.json','logo.jpg','icon-192.png','icon-512.png'];
 CORE.push('franchise-reads.js');
 CORE.push('attendance-reconcile.js','payroll-attendance.js');
@@ -14,3 +14,5 @@ self.addEventListener('fetch',event=>{
  const file=url.pathname.split('/').pop() || './';if(!CORE.includes(file))return;
  event.respondWith(fetch(event.request).then(response=>{if(response.ok){const copy=response.clone();event.waitUntil(caches.open(CACHE).then(cache=>cache.put(event.request,copy)));}return response;}).catch(async()=>await caches.match(event.request,{ignoreSearch:true}) || Response.error()));
 });
+
+CORE.push("operations-model.js","franchise-cost-model.js","franchise-supply-actions.js","franchise-staff-actions.js","staff-rate-changes.js");

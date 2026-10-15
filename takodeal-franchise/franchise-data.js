@@ -8,6 +8,7 @@ export const ROUTES = {
  dashboard: ['Store Dashboard','Sales, expenses and staff activity for your branch.','loadDashboard',true],
  accounts: ['Cash & Budget','Manage branch cash accounts and monthly spending.','loadAccountsView',false],
  'hq-billing': ['HQ Billing & Royalties','Review charges, payments and your balance with Main Office.','loadHQBilling',false],
+ staff: ['Branch Staff','Add and review staff assigned to your franchise branch.','loadBranchStaff',false,'hr'],
  payroll: ['Payroll & Time Feed','Review attendance and payroll estimates for the selected dates.','loadPayrollGenerator',true,'hr'],
  schedule: ['Schedule Manager','Plan and save staff assignments for your branch.','loadScheduleFromCloud',false,'hr'],
  inbox: ['Request Inbox','Review pending staff requests and past decisions.','loadInbox',false,'hr'],
@@ -78,6 +79,8 @@ export function branchScope(data,email,registered=[],masterEmail='jgo031996@gmai
 export function canVisit(session,route) {
  if (!session || !ROUTES[route] || !session.allowedBranches?.includes(session.branch)) return false;
  if (session.isOwner || session.permissions?.includes('all')) return true;
+ if(route==='staff')return session.permissions?.some(p=>['staff','payroll','feed'].includes(p))||false;
+ if(route==='b2b'&&session.permissions?.includes('dispatch'))return true;
  const permission=ROUTES[route][4] || route;
  return route==='dashboard' || session.permissions?.includes(route) || session.permissions?.includes(permission) || (route==='expenses' && session.permissions?.includes('accounts'));
 }

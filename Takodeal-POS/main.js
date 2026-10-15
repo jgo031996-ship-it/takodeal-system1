@@ -45,6 +45,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+window.mobileOrderFirebaseUid = () => auth.currentUser?.uid || '';
 const provider = new GoogleAuthProvider();
 // ========================================================
 // 🌍 GLOBAL GPS GEOFENCING CONFIGURATION
