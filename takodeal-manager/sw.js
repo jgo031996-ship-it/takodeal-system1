@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v53-operations-20261015-r1';
+const CACHE_NAME = 'takodeal-manager-core-v54-live-stocks-20261015-r1';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = ['./', './index.html', './main.js', './franchise-workspace.js', './monthly-bills.js', './monthly-bills-ui.js', './device-fleet.js', './app-update.js', './employee-id.js', './employee-id.css', './payslip.css', './schedule-layout.js', './request-history.js', './schedule-layout.css', './login.css', './login-ui.js', './unlock-gate.js', './device-store.js', './manager-libraries.js', './branch-operations.js', './cash-settlement.js', './shift-close-ui.js', './collection-cache.js', './manager-dialogs.js', './manager-workspace.js', './manager-workspace.css', './dispatch-safety.js', './menu-bulk.js', './pos-safety.js', './recipe-integrity.js', './live-report.js', './payroll-safety.js', './dashboard.js', './dashboard-data.js', './dashboard.css', './manager-theme.css', './manager-theme.js', './manager-scroll.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
@@ -28,6 +28,7 @@ CORE_ASSETS.push('./online-refunds.js','./online-refunds-ui.js','./online-refund
 CORE_ASSETS.push('./customer-site-settings.js','./customer-hub-settings.js','./customer-hub-settings.css');
 CORE_ASSETS.push('./stock-cycle.js','./refund-payroll.js');
 CORE_ASSETS.push('./financial-flow-model.js','./financial-flow-ui.js','./financial-flow.css');
+CORE_ASSETS.push('./inventory-editor.js','./inventory-editor-actions.js','./inventory-item-edit-model.js','./inventory-overview.js','./inventory-editor.css');
 self.addEventListener('install', event => {
     event.waitUntil((async () => {
         const cache = await caches.open(CACHE_NAME);
