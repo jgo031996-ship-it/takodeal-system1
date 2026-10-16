@@ -6,6 +6,7 @@ import {createInventoryIntelligenceReader} from './inventory-intelligence-reader
 const money=value=>'₱'+Number(value).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const SOURCE_NAMES={inventory:'Stock records',transactions:'Receipts',stock_logs:'Stock movements',inventory_logs:'Legacy movements',shifts:'Shifts'};
 export function installInventoryIntelligence(w=window,d=document){
+ if(!d.getElementById('inventoryIntelligenceStyle')){const link=d.createElement('link');link.id='inventoryIntelligenceStyle';link.rel='stylesheet';link.href='./inventory-intelligence.css';d.head.append(link);}
  if(w.inventoryIntelligenceInstalled)return w.inventoryIntelligenceInstalled;
  const reader=createInventoryIntelligenceReader(),panels={},el=id=>d.getElementById(id),identity=()=>JSON.stringify([w.auth?.currentUser?.uid,w.sessionUser?.uid,w.sessionUser?.email,w.sessionUser?.permissions,w.sessionUser?.allowedBranches]);
  const allowed=branch=>!!w.sessionUser&&(w.sessionUser.email?.toLowerCase()===OWNER_EMAIL||w.sessionUser.allowedBranches?.some(value=>value==='All'||value===branch));
