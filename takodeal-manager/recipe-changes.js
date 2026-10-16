@@ -87,7 +87,7 @@ export async function recipeOperationApplied(api,{operationId,intent,route='menu
 export async function saveRecipePlan(api,plan,{operationId,route='menu'}={}) {
     if(!operationId || !plan?.writes?.length || plan.writes.length>390)throw Error('Choose 1–390 document changes for one safe save.');
     if(!['menu','inventory'].includes(route))throw Error('This recipe operation uses an invalid permission scope.');
-    const allowedTables=route==='inventory'?['inventory','bom','global_addons','stock_logs']:['menu','bom'];
+    const allowedTables=route==='inventory'?['inventory','bom','global_addons','stock_logs','hq_restocks','yield_logs']:['menu','bom'];
     const paths=plan.writes.map(write=>write.table+'/'+write.id);
     if(new Set(paths).size!==paths.length || plan.writes.some(write=>!write.id || !allowedTables.includes(write.table) || !['set','update','delete'].includes(write.mode)) || paths.some(path=>!plan.expected?.some(old=>old.table+'/'+old.id===path)))throw Error('The recipe plan contains duplicate, unguarded or invalid writes for its permission scope.');
     const actor=actorNow(api),records=await accessRecords(api,actor);permitted(api,actor,records,route);

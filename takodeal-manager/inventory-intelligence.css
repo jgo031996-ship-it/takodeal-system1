@@ -1,0 +1,23 @@
+.inventory-intelligence{min-width:0;max-width:100%;color:#173f35;background:#fff;border:1px solid #dbe5dc;border-radius:16px;padding:24px;box-sizing:border-box}
+.inventory-intelligence .inventory-workspace-header h2{margin:0 0 8px;color:#173f35;font-size:24px}
+.inventory-intelligence .inventory-workspace-header p,.inventory-intelligence .inventory-workspace-help{color:#65786e;line-height:1.5}
+.inventory-intelligence .inventory-workspace-controls{display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin:18px 0;min-width:0}
+.inventory-intelligence .inventory-workspace-field{display:flex;flex-direction:column;gap:6px;flex:1 1 160px;min-width:0;color:#53675d;font-size:12px;font-weight:700}
+.inventory-intelligence .inventory-workspace-field input,.inventory-intelligence .inventory-workspace-field select{min-width:0;width:100%;box-sizing:border-box;border:1px solid #cddccf;background:#fbfcf9;border-radius:8px;padding:11px 12px;font:inherit;color:#173f35}
+.inventory-intelligence .inventory-workspace-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:18px 0}
+.inventory-intelligence .inventory-workspace-kpi{border:1px solid #dbe5dc;background:#f7faf5;border-radius:12px;padding:16px;min-width:0}
+.inventory-intelligence .inventory-workspace-kpi span,.inventory-intelligence .inventory-workspace-kpi strong,.inventory-intelligence .inventory-workspace-kpi small{display:block;overflow-wrap:anywhere}
+.inventory-intelligence .inventory-workspace-kpi span{font-size:12px;color:#65786e}.inventory-intelligence .inventory-workspace-kpi strong{font-size:23px;margin:7px 0}.inventory-intelligence .inventory-workspace-kpi small{font-size:11px;color:#65786e;line-height:1.5}
+.inventory-intelligence-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:14px;margin:18px 0}
+.inventory-intelligence .inventory-workspace-card{border:1px solid #dbe5dc;background:#fff;border-radius:12px;padding:18px;box-sizing:border-box;min-width:0;overflow-wrap:anywhere}
+.inventory-intelligence-item h3{margin:0 0 5px;font-size:16px;color:#173f35}.inventory-intelligence-item>small{color:#65786e;font-size:11px}
+.inventory-intelligence-item dl{display:grid;grid-template-columns:minmax(95px,.8fr) minmax(0,1.2fr);gap:9px 12px;margin:16px 0;font-size:12px;line-height:1.5}
+.inventory-intelligence-item dt{color:#65786e}.inventory-intelligence-item dd{margin:0;text-align:right;font-weight:650;overflow-wrap:anywhere}
+.inventory-intelligence .inventory-workspace-status{background:#f2f7f0;border:1px solid #d7e6d1;border-radius:8px;padding:12px;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.inventory-intelligence .inventory-workspace-status-error{background:#fff5f2;border-color:#edc7bc;color:#9d3d2a}
+.inventory-intelligence .inventory-workspace-button{border:1px solid #185746;background:#185746;color:#fff;border-radius:8px;font:inherit;font-size:12px;font-weight:700;padding:11px 15px;cursor:pointer;max-width:100%;white-space:normal}
+.inventory-intelligence .inventory-workspace-button-secondary{background:#fff;color:#185746;border-color:#c9dace}.inventory-intelligence .inventory-workspace-button:disabled{opacity:.5;cursor:default}
+.inventory-intelligence-item .inventory-workspace-button{margin:3px 6px 0 0}
+.inventory-intelligence-coverage{border-top:1px solid #dbe5dc;margin-top:20px;padding:16px 0 0;color:#65786e;font-size:12px;line-height:1.6;overflow-wrap:anywhere}.inventory-intelligence summary{cursor:pointer;font-weight:700;color:#173f35}.inventory-intelligence ul{padding-left:20px;line-height:1.7}
+.inventory-intelligence .inventory-workspace-empty{padding:20px;color:#65786e;line-height:1.6}
+@media(max-width:600px){.inventory-intelligence{padding:16px;border-radius:12px}.inventory-intelligence .inventory-workspace-header h2{font-size:21px}.inventory-intelligence .inventory-workspace-controls{gap:10px}.inventory-intelligence .inventory-workspace-field{flex-basis:calc(50% - 10px)}.inventory-intelligence .inventory-workspace-kpis{grid-template-columns:1fr 1fr;gap:8px}.inventory-intelligence .inventory-workspace-kpi{padding:12px}.inventory-intelligence .inventory-workspace-kpi strong{font-size:19px}.inventory-intelligence-cards{grid-template-columns:1fr}.inventory-intelligence .inventory-workspace-card{padding:14px}.inventory-intelligence .inventory-workspace-controls>.inventory-workspace-button{width:100%}}
