@@ -1,0 +1,43 @@
+/* Owner inventory workspaces. Local selectors keep Cashier and receipt styles separate. */
+.inventory-workspace{--iw-ink:#203c31;--iw-green:#17634d;--iw-muted:#748479;--iw-line:#dce5dc;--iw-cream:#f8f9f3;color:var(--iw-ink);min-width:0;max-width:1400px;margin:0 auto;font-size:13px;line-height:1.5}
+.inventory-workspace *{box-sizing:border-box}
+.inventory-workspace-panel{background:#fff;border:1px solid var(--iw-line);border-radius:16px;overflow:hidden;margin-bottom:22px;box-shadow:0 5px 20px #173d2d04;min-width:0}
+.inventory-workspace-heading{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:24px 26px;background:#fbfcf8;border-bottom:1px solid var(--iw-line)}
+.inventory-workspace h2,.inventory-workspace h3,.inventory-workspace h4{margin:0;color:var(--iw-ink);line-height:1.25;font-weight:750;letter-spacing:-.35px}
+.inventory-workspace h2{font-size:24px}.inventory-workspace h3{font-size:19px}
+.inventory-workspace-heading p{margin:8px 0 0;color:var(--iw-muted);font-size:13px}
+.inventory-workspace-eyebrow{display:block;font-size:9px;letter-spacing:1.4px;color:var(--iw-muted);font-weight:750;margin-bottom:8px}
+.inventory-workspace-body{padding:24px 26px;min-width:0}
+.inventory-workspace-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:18px;align-items:end;margin:18px 0}
+.inventory-workspace label,.inventory-workspace-label{display:block;color:#4d6255;font-size:12px;font-weight:650}
+.inventory-workspace input:not([type=checkbox]),.inventory-workspace select,.inventory-workspace textarea{display:block;width:100%;min-width:0;margin-top:7px;border:1px solid #ced9ce;border-radius:8px;background:#fff;color:#203c31;font:inherit;font-size:14px;line-height:1.4;padding:11px 12px;min-height:44px;box-shadow:none}
+.inventory-workspace input::placeholder,.inventory-workspace textarea::placeholder{font-weight:400;color:#8b978f}
+.inventory-workspace input:focus-visible,.inventory-workspace select:focus-visible,.inventory-workspace textarea:focus-visible,.inventory-workspace button:focus-visible{outline:2px solid #327e62;outline-offset:3px}
+.inventory-workspace [aria-invalid=true]{border-color:#bd4946!important;background:#fff7f6!important}
+.inventory-workspace input:disabled,.inventory-workspace select:disabled,.inventory-workspace button:disabled{opacity:.6;cursor:wait}
+.inventory-workspace-button{display:inline-flex;justify-content:center;align-items:center;gap:8px;border:1px solid #17634d;border-radius:8px;padding:11px 18px;min-height:44px;background:#17634d;color:#fff;font:inherit;font-weight:700;font-size:13px;line-height:1.35;cursor:pointer;text-decoration:none;white-space:normal;text-align:center;box-shadow:none}
+.inventory-workspace-button.secondary{background:#fff;color:#27533e;border-color:#cddbcf}
+.inventory-workspace-button.danger{background:#fff7f5;color:#a3443e;border-color:#dfb8b0}
+.inventory-workspace-hint{color:var(--iw-muted);font-size:12px;line-height:1.6;margin:10px 0}
+.inventory-workspace-status{font-size:13px;margin:14px 0;white-space:pre-line;overflow-wrap:anywhere}
+.inventory-workspace-status:empty{display:none}.inventory-workspace-status.error{color:#a53e37;background:#fff4f2;border:1px solid #e8c3bc;border-radius:8px;padding:12px}
+.inventory-workspace-result{padding:18px 20px;border:1px solid #d9e2d5;border-radius:10px;background:#f6f9ef;color:#26513a;font-size:18px;font-weight:700;line-height:1.5;margin:22px 0;overflow-wrap:anywhere}
+.inventory-workspace-details{border:1px solid var(--iw-line);border-radius:10px;padding:14px 18px;margin:18px 0;background:#fff}
+.inventory-workspace-details summary{cursor:pointer;font-weight:700;color:#294c38;min-height:25px}
+.inventory-workspace-details p{font-size:12px;color:#718174}
+.inventory-workspace-check{display:flex!important;gap:10px;align-items:flex-start;font-size:13px!important;font-weight:500!important;line-height:1.5}
+.inventory-workspace-check input{flex:0 0 auto;accent-color:#17634d;width:18px;height:18px;margin-top:2px}
+.inventory-workspace-records{display:grid;gap:12px}
+.inventory-workspace-record{background:#fff;border:1px solid var(--iw-line);border-radius:11px;padding:18px 20px;min-width:0;overflow-wrap:anywhere}
+.inventory-workspace-record header{display:flex;justify-content:space-between;gap:16px;align-items:baseline;flex-wrap:wrap}
+.inventory-workspace-record header strong{font-size:14px}.inventory-workspace-record header span,.inventory-workspace-record small{font-size:11px;color:#77867b}
+.inventory-workspace-record p{color:#4c6555;font-size:13px;margin:12px 0}
+.inventory-workspace-record-values{display:flex;gap:28px;flex-wrap:wrap;font-size:11px;color:#758279;margin:12px 0}
+.inventory-workspace-record-values strong{display:block;font-size:15px;font-weight:750;color:#264a37;margin-top:3px}
+.swal2-popup.inventory-workspace-dialog{border:1px solid #d9e4d8;border-radius:16px;padding:26px;color:#203c31;font-family:inherit;max-width:calc(100vw - 24px)}
+.swal2-popup.inventory-workspace-dialog .swal2-title{font-size:23px;color:#203c31}
+.swal2-popup.inventory-workspace-dialog .swal2-html-container{font-size:14px;line-height:1.65;color:#5b6c5f;overflow-wrap:anywhere}
+.swal2-popup.inventory-workspace-dialog .swal2-confirm{background:#17634d!important;border-radius:8px!important;box-shadow:none!important}
+.swal2-popup.inventory-workspace-dialog .swal2-cancel{background:#eef2e8!important;color:#375641!important;border-radius:8px!important;box-shadow:none!important}
+@media(max-width:700px){.inventory-workspace-heading{align-items:flex-start;flex-direction:column;padding:20px}.inventory-workspace-heading>.inventory-workspace-button{width:100%}.inventory-workspace-body{padding:18px}.inventory-workspace h2{font-size:21px}.inventory-workspace-form{grid-template-columns:1fr;gap:14px}.inventory-workspace-record{padding:16px}.inventory-workspace-record header{flex-direction:column;gap:5px}.inventory-workspace-result{font-size:16px;padding:15px}.inventory-workspace-body>.inventory-workspace-button{width:100%}.inventory-workspace input:not([type=checkbox]),.inventory-workspace select,.inventory-workspace textarea{font-size:16px}.inventory-workspace-record-values{gap:15px}}
+@media(prefers-reduced-motion:reduce){.inventory-workspace *{scroll-behavior:auto!important;transition:none!important;animation:none!important}}

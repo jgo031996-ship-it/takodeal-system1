@@ -3,6 +3,10 @@ import {installFranchiseSupplyPricing} from './franchise-supply-pricing.js';
 import {installMobileDeliverySettings} from './mobile-delivery-settings.js';
 import {installInventoryEditor} from './inventory-editor.js';
 import {installInventoryOverview} from './inventory-overview.js';
+import {installInventoryStockForms} from './inventory-stock-forms.js';
+import {installInventoryYield} from './inventory-yield.js';
+import {installInventoryIntelligence} from './inventory-intelligence.js';
+import {installInventoryHistoryWorkspace} from './inventory-history-workspace.js';
 import {canOpenWorkspacePage,OWNER_EMAIL} from './workspace-access-model.js';
 const snapshotRows=snap=>snap.docs.map(row=>({...row.data(),id:row.id}));
 const sessionKey=w=>JSON.stringify([w.auth?.currentUser?.uid,w.sessionUser?.email,w.sessionUser?.permissions,w.sessionUser?.allowedBranches]);
@@ -41,5 +45,7 @@ export function installOperationsManager(w=window,d=document){
   }});
  };
  for(const id of ['view-history','view-customerapp']){const root=el(id);if(!root)continue;const button=d.createElement('button');button.type='button';button.className='operations-button';button.style.marginBottom='16px';button.textContent='Mobile Hub · order response history';button.onclick=w.openMobileOrderHistory;root.prepend(button);}
+ const inventoryCss=d.createElement('link');inventoryCss.rel='stylesheet';inventoryCss.href='./inventory-workspace.css';d.head.append(inventoryCss);
+ installInventoryStockForms(w,d);installInventoryYield(w,d);installInventoryIntelligence(w,d);installInventoryHistoryWorkspace(w,d);
 }
 if(typeof window!=='undefined'&&typeof document!=='undefined'){const install=()=>window.setTimeout(()=>installOperationsManager(),0);if(document.readyState==='complete')install();else window.addEventListener('load',install,{once:true});}
