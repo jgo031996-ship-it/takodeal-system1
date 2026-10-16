@@ -1,3 +1,4 @@
+import { installFranchiseHQUI } from './franchise-hq-ui.js';
 const tabs=[['Performance','Perf'],['Ledger','Ledger'],['Chat','Chat'],['Leads','Leads'],['Simulator','Simulator']];
 
 // Keep the former management and planning permissions when sharing one workspace.
@@ -10,10 +11,11 @@ export function allowedFranchiseTabs(user) {
 }
 
 export function installFranchiseWorkspace() {
+    const hq = installFranchiseHQUI(window,document);
     let selected=null;
     const el=id=>document.getElementById(id);
     const previousTab=window.switchFranTab,previousView=window.switchView;
-    const stopChat=()=>{window.franChatUnsubscribe?.();window.franChatUnsubscribe=null;};
+    const stopChat=()=>{window.franChatUnsubscribe?.();window.franChatUnsubscribe=null;hq?.stopChat();};
     function permissions() {
         const allowed=allowedFranchiseTabs(window.sessionUser);
         for(const [name,suffix] of tabs) {

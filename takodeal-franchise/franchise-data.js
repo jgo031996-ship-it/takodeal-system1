@@ -2,12 +2,14 @@ import { resolveAttendanceShift, attendanceLateMinutes, latePay, earnedNightBonu
 import { resolveScheduleForDate } from './schedule-history.js';
 import {isPenaltyDeduction, deductionIsDue} from './sanction-schedule.js';
 import {planPayrollAttendance} from './payroll-attendance.js';
+import {configuredPermissions,canOpenHrTab,canOpenInventoryTab,workspaceRole} from './workspace-access-model.js';
 
 export const RELEASE = 'franchise-workspace-20261005-r1';
 export const ROUTES = {
  dashboard: ['Store Dashboard','Sales, expenses and staff activity for your branch.','loadDashboard',true],
  accounts: ['Cash & Budget','Manage branch cash accounts and monthly spending.','loadAccountsView',false],
  'hq-billing': ['HQ Billing & Royalties','Review charges, payments and your balance with Main Office.','loadHQBilling',false],
+ 'hq-conversations': ['HQ Conversations','Discuss branch questions and updates with HQ.','loadHQConversations',false],
  staff: ['Branch Staff','Add and review staff assigned to your franchise branch.','loadBranchStaff',false,'hr'],
  payroll: ['Payroll & Time Feed','Review attendance and payroll estimates for the selected dates.','loadPayrollGenerator',true,'hr'],
  schedule: ['Schedule Manager','Plan and save staff assignments for your branch.','loadScheduleFromCloud',false,'hr'],
@@ -70,19 +72,28 @@ export function shiftReport(row) {
  return {...row,expected,declared,variance:Math.round((declared-expected)*100)/100,cash,digital,net:n(row.netSales ?? row.netTotal ?? (cash+digital)),closedAt:row.endTime || row.timestamp || row.startTime};
 }
 export function branchScope(data,email,registered=[],masterEmail='jgo031996@gmail.com') {
- const role=String(data.role || '').toLowerCase(),master=email.toLowerCase()===masterEmail;
+ const role=workspaceRole(email,data.role),master=email.toLowerCase()===masterEmail;
  const assigned=Array.isArray(data.assignedBranch) ? data.assignedBranch : String(data.assignedBranch || '').split(',');
  const branches=[...new Set(assigned.map(s=>String(s).trim()).filter(s=>s && s.toLowerCase()!=='all'))];
- if (master || (role!=='franchisee' && data.permissions?.includes('all') && assigned.some(s=>String(s).trim().toLowerCase()==='all'))) return [...new Set(registered.filter(Boolean))];
+ if (master || (role!=='Franchise owner' && data.permissions?.includes('all') && assigned.some(s=>String(s).trim().toLowerCase()==='all'))) return [...new Set(registered.filter(Boolean))];
  return branches;
 }
 export function canVisit(session,route) {
  if (!session || !ROUTES[route] || !session.allowedBranches?.includes(session.branch)) return false;
- if (session.isOwner || session.permissions?.includes('all')) return true;
- if(route==='staff')return session.permissions?.some(p=>['staff','payroll','feed'].includes(p))||false;
- if(route==='b2b'&&session.permissions?.includes('dispatch'))return true;
- const permission=ROUTES[route][4] || route;
- return route==='dashboard' || session.permissions?.includes(route) || session.permissions?.includes(permission) || (route==='expenses' && session.permissions?.includes('accounts'));
+ const permissions=configuredPermissions(session);
+ if (session.isOwner || permissions.includes('all')) return true;
+ if(route==='staff')return permissions.some(p=>['staff','payroll','feed'].includes(p));
+ if(route==='b2b')return permissions.includes('b2b')||permissions.includes('dispatch');
+ // Use the same saved child permissions as Owner Access Control. A standalone
+ // sanctions grant cannot open the separate payroll/attendance page here.
+ const hr={payroll:'Feed',schedule:'Schedule',inbox:'Inbox',sanctions:'Sanctions'};
+ if(hr[route])return canOpenHrTab(session,hr[route]);
+ const inventory={'inv-overview':'Overview','inv-audits':'Audits','inv-waste':'Waste','inv-prep':'Prep','inv-logs':'StockLogs','inv-alerts':'Alerts'};
+ if(inventory[route])return permissions.includes(route)||canOpenInventoryTab(session,inventory[route]);
+ // The former `franchise` permission opens only Owner's simulator. It must
+ // never implicitly reveal HQ financial records or branch conversations.
+ if(route==='hq-billing'||route==='hq-conversations')return permissions.includes(route)||permissions.includes('franchise-hub');
+ return route==='dashboard'||permissions.includes(route)||(route==='expenses'&&permissions.includes('accounts'));
 }
 export function ledgerRows(rows) {
  let balance=0;

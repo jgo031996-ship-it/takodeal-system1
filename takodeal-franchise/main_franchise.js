@@ -32,5 +32,5 @@ window.disableNetwork = disableNetwork;
 
 
 import { installFranchiseWorkspace } from './franchise-workspace.js';
-Object.assign(window,{setDoc,getDocsFromServer,getDocFromServer,runTransaction,increment,startAfter});
+Object.assign(window,{setDoc,getDocsFromServer,getDocFromServer,runTransaction,increment,startAfter,onSnapshot});
 installFranchiseWorkspace(window);
