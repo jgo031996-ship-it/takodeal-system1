@@ -22,9 +22,11 @@
 #editInvModal .inventory-editor-panel>summary>small{grid-column:1;color:#7c8b7d;font-size:11px}
 #editInvModal .inventory-editor-panel[open]>summary{border-bottom:1px solid #e5ebe3;background:#fafbf7}
 #editInvModal .inventory-editor-panel-body{padding:18px}
-#editInvModal .inventory-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:14px;align-items:start}
+#editInvModal .inventory-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:14px;align-items:end}
 #editInvModal label{display:flex;flex-direction:column;gap:6px;font-weight:650;font-size:12px;line-height:1.4;color:#3d5947;min-width:0}
 #editInvModal label>small{font-size:10px;font-weight:400;color:#7d8c7c}
+#editInvModal .inventory-editor-field-label{display:flex;align-items:baseline;gap:4px;flex-wrap:wrap;min-width:0}
+#editInvModal .inventory-editor-field-label>small{font-size:10px;font-weight:400;color:#7d8c7c;overflow-wrap:anywhere}
 #editInvModal input:not([type=hidden]):not([type=checkbox]),#editInvModal select,#editInvModal textarea{width:100%;min-width:0;min-height:42px;border:1px solid #d5dfd4;border-radius:7px;padding:10px 11px;background:#fff;color:#213d2f;font:inherit;font-size:13px;line-height:1.4;box-shadow:none;outline:none}
 #editInvModal input:focus,#editInvModal select:focus,#editInvModal textarea:focus{border-color:#6a9679;box-shadow:0 0 0 3px #12644f13}
 #editInvModal input[aria-invalid=true],#editInvModal textarea[aria-invalid=true],#editInvModal select[aria-invalid=true]{border-color:#b83e3b;background:#fff8f6}
