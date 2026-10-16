@@ -3,6 +3,7 @@ import { logExpense, adjustInventory, reviewRequest, loadBranchSchedule, saveBra
 import { receiveDispatch } from './dispatch-safety.js';
 import { isLatenessRequest, legacyAttendanceCandidates, reviewLateRequest } from './payroll-safety.js';
 import { createScheduleHistoryStore } from './schedule-history.js';
+import {installScheduleViewSync} from './schedule-view-sync.js';
 import { createFranchiseReads } from './franchise-reads.js';
 import {phDay, noticeIsDue} from './sanction-schedule.js';
 import {issueScheduledSanction, sanctionAuthority, finishSanction} from './sanction-actions.js';
@@ -268,9 +269,10 @@ export function installFranchiseWorkspace(api) {
   });
  });
  define('schedule',async r=>{
+  const scheduleViewToken=api.franchiseScheduleSync?.token();
   const branch=session().branch,identity=session().email,month=calendarDay().slice(0,7),c=card(r,'Branch staff schedule','Saved work dates retain their own shift times. Changes update only your branch.'),control=element('div','button-row'),input=element('input'),effective=element('input'),save=button('Save schedule',()=>api.saveScheduleToCloud(),'primary-button');input.type='month';input.id='scheduleMonthSelector';input.value=state.schedule?.branch===branch?state.schedule.month:month;effective.type='date';effective.id='scheduleEffectiveFrom';effective.setAttribute('aria-label','Changes apply from');const dateLabel=element('label','','Changes apply from');dateLabel.append(effective);control.append(input,dateLabel,save);c.head.append(control);
   const [year,monthNumber]=input.value.split('-').map(Number),authorize=b=>session().branch===b && session().email===identity && canVisit(session(),'schedule');
-  const [editor,profiles]=await Promise.all([loadBranchSchedule(api,{branch,year,month:monthNumber,authorize}),read('cashiers',{branch})]);if(!authorize(branch))throw new Error('Your branch access changed. Reload the schedule.');
+  const [editor,profiles]=await Promise.all([loadBranchSchedule(api,{branch,year,month:monthNumber,authorize}),read('cashiers',{branch})]);if(!authorize(branch))throw new Error('Your branch access changed. Reload the schedule.');if(api.franchiseScheduleSync && !api.franchiseScheduleSync.current(scheduleViewToken))return;
   const {days,shifts}=editor,employees=profiles.filter(p=>!['Resigned','Inactive'].includes(p.status)).map(p=>({name:p.scheduleNickname || p.cashierName,fullName:p.cashierName}));
   state.schedule={...editor,employees,identity,dirty:false,saving:false,saveId:null};effective.value=editor.effectiveFrom;effective.min=editor.effectiveFrom;effective.max=input.value+'-'+String(new Date(year,monthNumber,0).getDate()).padStart(2,'0');effective.disabled=editor.readOnly;save.disabled=editor.readOnly;
   if(editor.readOnly)c.card.append(element('p','notice','Historical month — read only. Viewing this month does not change attendance or payroll.'));
@@ -312,6 +314,13 @@ export function installFranchiseWorkspace(api) {
  };
  addEventListener('beforeunload',event=>{if(state.pending || state.schedule?.dirty || state.cart.length){event.preventDefault();event.returnValue='';}});
  api.franchiseState=state;
+ api.franchiseScheduleSync=installScheduleViewSync(api,{window:globalThis.window,document,
+  scope:()=>state.route==='schedule' && api.sessionUser && canVisit(api.sessionUser,'schedule') && $('view-schedule')?.classList.contains('active')
+   ? {identity:accountScope(),branch:api.sessionUser.branch,month:state.schedule?.branch===api.sessionUser.branch?state.schedule.month:calendarDay().slice(0,7)}:null,
+  refresh:()=>api.loadScheduleFromCloud(),dirty:()=>Boolean(state.schedule?.dirty || state.schedule?.saving),
+  pending:()=>{let notice=$('scheduleSavedUpdateNotice');if(!notice){notice=element('p','notice','A saved schedule update is available. Your unsaved changes are kept. Save them or use Sync to reload.');notice.id='scheduleSavedUpdateNotice';notice.setAttribute('role','status');$('body-schedule')?.prepend(notice);}}
+ });
+ api.loadScheduleFromCloud=api.franchiseScheduleSync.wrap(api.loadScheduleFromCloud);
  installAppUpdates(state);
 }
 

@@ -6,6 +6,8 @@
 .schedule-memory-panel button {min-height:40px;padding:8px 13px;border:1px solid #ceded3;border-radius:7px;background:white;color:#224237;cursor:pointer;}
 #scheduleMemoryStatus {grid-column:1/-1;font-size:12px;margin:0;}
 .schedule-memory-panel[data-read-only=true] {background:#faf8f2;}
+.owner-schedule-sync-tools{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:14px;border-top:1px solid #dce7df;padding-top:13px}.owner-schedule-sync-tools p{margin:0;font-size:12px}.owner-schedule-sync-tools p.is-error{color:#9e382a}.owner-schedule-sync-tools button{flex-shrink:0;font-weight:600}.owner-schedule-sync-tools button:disabled{opacity:.5;cursor:wait}
+@media(max-width:550px){.owner-schedule-sync-tools{flex-direction:column;align-items:stretch}.owner-schedule-sync-tools button{width:100%}}
 .payslip-schedule-memory {margin:12px 0;padding:10px 12px;border:1px solid #ceded3;background:#f6f9f6;font:12px/1.5 Arial,sans-serif;color:#395b4a;}
 @media(max-width:1050px){.schedule-memory-panel{grid-template-columns:1fr 1fr}.schedule-memory-panel>div{grid-column:1/-1}}
 @media(max-width:550px){.schedule-memory-panel{grid-template-columns:1fr}.schedule-memory-panel>div{grid-column:auto}}

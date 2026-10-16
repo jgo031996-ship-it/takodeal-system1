@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v20-inbox-stock-cycle-20261012-r1';
+const CACHE_NAME = 'takodeal-staff-v21-schedule-sync-20261016-r1';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./sanction-schedule.js');
 SHELL.push('./online-refund-pay.js');
@@ -7,6 +7,7 @@ SHELL.push('./staff-document-broker.js');
 SHELL.push('./payroll-attendance.js');
 SHELL.push('./staff-rate-privacy.js','./staff-documents.js','./staff-documents.css','./staff-document-model.js','./staff-document-store.js','./staff-document-firebase.js','./attendance-camera.js','./attendance-camera.css');
 SHELL.push('./deduction-inbox.js','./deduction-inbox.css');
+SHELL.push('./schedule-sync.js','./schedule-view-sync.js');
 self.addEventListener('install', event => {
     event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });

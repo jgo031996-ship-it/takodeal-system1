@@ -10,6 +10,8 @@ import { requestHistory, historyTime } from './request-history.js';
 import { enhanceScheduleLayout } from './schedule-layout.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
 import {installScheduleMemoryUI} from './schedule-memory-ui.js';
+import {loadScheduleMonthView} from './schedule-sync.js';
+import {installOwnerScheduleSync} from './owner-schedule-sync.js';
 import {validateManualAttendance, saveManualAttendance} from './attendance-audit.js';
 import {planPayrollAttendance} from './payroll-attendance.js';
 import {attendanceMillis} from './attendance-reconcile.js';
@@ -8380,140 +8382,71 @@ window.loadPayrollScheduleHistory = (from, to) => window.getScheduleHistoryStore
 window.getScheduleMemorySnapshot = () => ({branchConfig, employees, unavailability, currentSchedule, currentYear, currentMonth, holidays:window.scheduleHolidays});
 window.applyScheduleMemorySnapshot = async snapshot => {
     const data = JSON.parse(JSON.stringify(snapshot));
-    branchConfig=data.branchConfig || {}; employees=data.employees || []; window.employees=employees;
+    branchConfig=data.branchConfig || {}; employees=window.scheduleDirectoryProfiles || data.employees || []; window.employees=employees;
     unavailability=data.unavailability || {}; currentSchedule=data.currentSchedule || {};
+    window.branchConfig=branchConfig;window.currentSchedule=currentSchedule;window.unavailability=unavailability;
     currentYear=data.currentYear; currentMonth=data.currentMonth; window.currentYear=currentYear; window.currentMonth=currentMonth;
     window.scheduleHolidays=data.holidays || {};
     const selector=document.getElementById('monthSelector'); if(selector)selector.value=monthKey(data);
-    window.renderConfigUI();window.updateHolidayList();window.renderTables();
+    const allowed=Object.keys(branchConfig).filter(branch=>branch!=="Main Office"&&window.isBranchAllowed(branch));
+    if(!allowed.includes(currentActiveTab))currentActiveTab=allowed[0]||"";window.currentActiveTab=currentActiveTab;
+    window.renderConfigUI();window.updateHolidayList();window.renderTables();window.switchTab(currentActiveTab);
+    window.updateStaffDisplay();window.updateAvailDropdown();window.updateUnavailabilityList();
 };
 window.initScheduleMemory = async () => {
     scheduleMemoryUI ||= installScheduleMemoryUI({document,store:window.getScheduleHistoryStore(),getSnapshot:window.getScheduleMemorySnapshot,
         applySnapshot:window.applyScheduleMemorySnapshot,setExpectedRevision:value=>scheduleMemoryExpectedRevision=value,
-        setReadOnly:value=>window.scheduleMemoryReadOnly=value});
-    await scheduleMemoryUI?.refresh();
+        setReadOnly:value=>{window.scheduleMemoryReadOnly=value;document.querySelectorAll('#shiftConfigGrid input,#shiftConfigGrid select').forEach(node=>node.disabled=value);},
+        requestMonth:async month=>{const result=await window.getOwnerScheduleSync().load({month,manual:true,reason:'month'});if(!result&&window.ownerScheduleSync?.baseline())document.getElementById('monthSelector').value=window.ownerScheduleSync.baseline().month;return result;},
+        onHistory:value=>window.ownerScheduleSync?.setHistory(value),
+        confirmVersionChange:async()=>!window.ownerScheduleSync?.isDirty()||await window.ManagerUI.confirm('View this saved version and discard unsaved edits in this editor?')});
     window.scheduleSwapReview ||= installScheduleSwapReview(window,document);
-    await window.scheduleSwapReview?.refresh();
 };
 window.selectScheduleMonth = () => scheduleMemoryUI?.selectMonth();
-
-// 🔥 FIREBASE SAVE/LOAD (Upgraded with Holidays)
-window.saveToCloud = async function() {
-    try {
-        if (window.scheduleMemoryReadOnly || !canOpenWorkspacePage(window.sessionUser,'schedule')) throw Error('This schedule version is read-only or outside your access.');
-        const appData = window.getScheduleMemorySnapshot();
-        const result = await window.getScheduleHistoryStore().save(appData,{actor:window.sessionUser.email,
-            effectiveFrom:scheduleMemoryUI?.effectiveFrom(),expectedRevisionId:scheduleMemoryExpectedRevision});
-        scheduleMemoryExpectedRevision = result.latestRevisionId;
-        await scheduleMemoryUI?.refresh();
-        return true;
-    } catch(e) {
-        console.error("Cloud Save Error:", e);
-        const status=document.getElementById('scheduleMemoryStatus');if(status)status.textContent='Schedule not saved: '+e.message;
-        return false;
-    }
+window.getOwnerScheduleSync = function() {
+    if(window.ownerScheduleSync)return window.ownerScheduleSync;
+    const actor=()=>({uid:window.auth?.currentUser?.uid,email:window.auth?.currentUser?.email,sessionUid:window.sessionUser?.uid,sessionEmail:window.sessionUser?.email,permissions:window.sessionUser?.permissions,branches:window.sessionUser?.allowedBranches,branch:window.sessionUser?.branch,assignedBranch:window.sessionUser?.assignedBranch,isOwner:window.sessionUser?.isOwner,isFranchisee:window.sessionUser?.isFranchisee,role:window.sessionUser?.role});
+    const authorized=()=>!!window.auth?.currentUser?.uid&&window.auth.currentUser.email?.toLowerCase()===window.sessionUser?.email?.toLowerCase()&&(!window.sessionUser?.uid||window.sessionUser.uid===window.auth.currentUser.uid)&&canOpenWorkspacePage(window.sessionUser,'schedule');
+    window.ownerScheduleSync=installOwnerScheduleSync(window,document,{
+        getIdentity:actor,authorize:authorized,getSnapshot:window.getScheduleMemorySnapshot,
+        getMonth:()=>document.getElementById('monthSelector')?.value || (currentYear&&currentMonth?monthKey({currentYear,currentMonth}):scheduleDateKey(new Date()).slice(0,7)),
+        getExpectedRevision:()=>scheduleMemoryExpectedRevision,setExpectedRevision:value=>scheduleMemoryExpectedRevision=value,
+        getEffectiveFrom:()=>scheduleMemoryUI?.effectiveFrom(),
+        readView:async month=>{
+            const [saved,staff]=await Promise.allSettled([loadScheduleMonthView(window,{month,store:window.getScheduleHistoryStore()}),window.getDocsFromServer(window.collection(window.db,'cashiers'))]);
+            if(saved.status==='rejected')throw saved.reason;
+            const directory=staff.status==='fulfilled'?staff.value.docs.map(doc=>({...doc.data(),staffId:doc.id})).filter(data=>data.status!=='Resigned'&&data.pin!=='REVOKED').map(data=>({staffId:data.staffId,name:data.scheduleNickname||data.cashierName,fullName:data.cashierName,cashierName:data.cashierName,scheduleNickname:data.scheduleNickname||'',branch:data.branch||'Unassigned'})):null;
+            return {...saved.value,directory};
+        },
+        applyView:async view=>{window.scheduleDirectoryProfiles=view.directory;await window.applyScheduleMemorySnapshot(view.editorSnapshot);scheduleMemoryUI?.bindView(view);},
+        saveSnapshot:(snapshot,options)=>{if(window.scheduleMemoryReadOnly)throw Error('This saved schedule version is read-only.');return window.getScheduleHistoryStore().save(snapshot,{...options,actor:window.sessionUser.email});},
+        onSaved:async result=>{scheduleMemoryUI?.recordSaved(result);window.renderTables();}
+    });
+    return window.ownerScheduleSync;
 };
-
+window.saveToCloud = async function() {
+    if(window.scheduleMemoryReadOnly || !canOpenWorkspacePage(window.sessionUser,'schedule')){const status=document.getElementById('ownerScheduleSyncStatus');if(status)status.textContent='This schedule version is read-only or outside your access.';return false;}
+    return window.getOwnerScheduleSync().save();
+};
 window.loadFromCloud = async function() {
-    try {
-        const staffSnap = await window.getDocs(window.collection(window.db, "cashiers"));
-        let fetchedEmployees = [];
-        
-        staffSnap.forEach(docSnap => {
-            let d = docSnap.data();
-            if (d.status !== 'Resigned' && d.pin !== 'REVOKED') {
-                fetchedEmployees.push({
-                    name: d.scheduleNickname || d.cashierName,
-                    fullName: d.cashierName,
-                    scheduleNickname: d.scheduleNickname || "",
-                    branch: d.branch || "Unassigned"
-                });
-            }
-        });
-        
-        window.employees = fetchedEmployees; 
-        employees = fetchedEmployees; 
-
-        const snap = await window.getDoc(window.doc(window.db, "settings", "global_schedule"));
-        const today = new Date();
-        let safeYear = today.getFullYear();
-        let safeMonth = today.getMonth() + 1;
-
-        if (snap.exists()) {
-            const appData = snap.data();
-            branchConfig = appData.branchConfig || JSON.parse(JSON.stringify(defaultSchedConfig));
-            unavailability = appData.unavailability || {};
-            currentSchedule = appData.currentSchedule || {};
-            currentYear = appData.currentYear || safeYear;
-            currentMonth = appData.currentMonth || safeMonth;
-            window.scheduleHolidays = appData.holidays || {}; 
-        } else {
-            currentYear = safeYear;
-            currentMonth = safeMonth;
-        }
-
-        // Suspension dates are derived for review. Loading a calendar must not
-        // rewrite past assignments or publish a new schedule automatically.
-        try {
-            const nteSnap = await window.getDocs(window.collection(window.db, "hr_sanctions"));
-            window.scheduledSuspensions = nteSnap.docs.flatMap(doc => {
-                const row = {...doc.data(), id:doc.id};
-                if (!window.isBranchAllowed(row.branch)) return [];
-                return suspensionDates(row).filter(date=>date>=phDay()).map(date=>({date,staffName:row.staffName,branch:row.branch,sanctionId:row.id}));
-            });
-            let notice=document.getElementById('scheduleSuspensionNotice');
-            if (!notice) {notice=document.createElement('p');notice.id='scheduleSuspensionNotice';notice.style.cssText='padding:12px;background:#fff8ed;border:1px solid #efdfc6;border-radius:8px;font-size:13px;';document.getElementById('scheduleMemoryPanel')?.after(notice);}
-            if (notice) {notice.hidden=!window.scheduledSuspensions.length;notice.textContent=window.scheduledSuspensions.length?'Scheduled suspensions: '+window.scheduledSuspensions.map(row=>row.staffName+' · '+row.branch+' · '+row.date).join('; ')+'. Review staffing before saving a roster. Clock-in follows the notice effective dates.':'';}
-        } catch(error) {console.error('Suspension date review:',error);}
-
-        // 🔥 THE INDESTRUCTIBLE BRANCH AUTO-SYNC ENGINE 🔥
-        if (window.globalActiveBranches && window.globalActiveBranches.length > 0) {
-            let validBranches = window.globalActiveBranches.filter(b => b !== "Main Office");
-            let needsCloudSave = false;
-
-            for (let b in branchConfig) {
-                if (!validBranches.includes(b)) { delete branchConfig[b]; needsCloudSave = true; }
-            }
-            
-            validBranches.forEach(b => {
-                if (!branchConfig[b]) {
-                    branchConfig[b] = JSON.parse(JSON.stringify(defaultSchedConfig["Cabantian"] || []));
-                    needsCloudSave = true;
-                }
-            });
-
-            if (currentSchedule) {
-                for (let day in currentSchedule) {
-                    for (let b in currentSchedule[day]) {
-                        if (!validBranches.includes(b)) {
-                            delete currentSchedule[day][b];
-                            needsCloudSave = true;
-                        }
-                    }
-                }
-            }
-            // Branch changes remain local until an authorized user explicitly saves.
-            if (needsCloudSave) window.scheduleBranchReviewRequired = true;
-        }
-
-        const mm = String(currentMonth).padStart(2, '0');
-        const monthInput = document.getElementById("monthSelector");
-        if (monthInput) monthInput.value = `${currentYear}-${mm}`;
-
-        if(!window.currentActiveTab || window.currentActiveTab === "Main Office" || (window.globalActiveBranches && !window.globalActiveBranches.includes(window.currentActiveTab))) {
-            let validBranches = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : ['Cabantian'];
-            window.currentActiveTab = validBranches.length > 0 ? validBranches[0] : 'Cabantian';
-        }
-        try { currentActiveTab = window.currentActiveTab; } catch(e) {} 
-
-        window.renderConfigUI(); 
-        window.switchTab(window.currentActiveTab); 
-        window.updateHolidayList(); 
-        window.renderTables();
-        await window.initScheduleMemory();
-    } catch(e) {
-        console.error("Cloud Load Error:", e); 
-    }
+    await window.initScheduleMemory();
+    const loaded=await window.getOwnerScheduleSync().load();
+    if(loaded){void window.scheduleSwapReview?.refresh();void window.refreshScheduleSuspensionNotice();}
+    return loaded;
+};
+let scheduleSuspensionRead=null;
+window.refreshScheduleSuspensionNotice = function() {
+    if(scheduleSuspensionRead)return scheduleSuspensionRead;
+    const actor=window.auth?.currentUser?.uid;
+    scheduleSuspensionRead=(async()=>{try{
+        const rows=await window.getDocsFromServer(window.collection(window.db,'hr_sanctions'));
+        if(actor!==window.auth?.currentUser?.uid||!canOpenWorkspacePage(window.sessionUser,'schedule'))return;
+        window.scheduledSuspensions=rows.docs.flatMap(doc=>{const row={...doc.data(),id:doc.id};return window.isBranchAllowed(row.branch)?suspensionDates(row).filter(date=>date>=phDay()).map(date=>({date,staffName:row.staffName,branch:row.branch,sanctionId:row.id})):[];});
+        let notice=document.getElementById('scheduleSuspensionNotice');
+        if(!notice){notice=document.createElement('p');notice.id='scheduleSuspensionNotice';notice.style.cssText='padding:12px;background:#fff8ed;border:1px solid #efdfc6;border-radius:8px;font-size:13px;';document.getElementById('scheduleMemoryPanel')?.after(notice);}
+        notice.hidden=!window.scheduledSuspensions.length;notice.textContent=window.scheduledSuspensions.length?'Scheduled suspensions: '+window.scheduledSuspensions.map(row=>row.staffName+' · '+row.branch+' · '+row.date).join('; ')+'. Review staffing before saving a roster. Clock-in follows the notice effective dates.':'';
+    }catch(error){console.error('Suspension date review:',error);}})().finally(()=>scheduleSuspensionRead=null);
+    return scheduleSuspensionRead;
 };
 
 // Data loads when this tab is opened.
@@ -8554,9 +8487,9 @@ window.updateHolidayList = function() {
 
 // 🔥 NEW: Captures what you typed so it doesn't get erased when you move/add shifts
 window.captureTempShiftConfig = function() {
-    let branchesToRender = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : Object.keys(branchConfig);
+    let branchesToRender = [...new Set([...Object.keys(branchConfig),...(window.globalActiveBranches || [])])].filter(b=>b!=="Main Office");
     branchesToRender.forEach(branch => {
-        if (!branchConfig[branch]) return;
+        if (!branchConfig[branch] || !window.isBranchAllowed(branch)) return;
         branchConfig[branch].forEach((shift, index) => {
             let chk = document.getElementById(`chk_${branch}_${index}`);
             let inp = document.getElementById(`inp_${branch}_${index}`);
@@ -8627,7 +8560,7 @@ window.renderConfigUI = function() {
     let html = '';
     
     // THE ORDERING FIX: Use globalActiveBranches so they NEVER jump around!
-    let branchesToRender = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : Object.keys(branchConfig);
+    let branchesToRender = [...new Set([...Object.keys(branchConfig),...(window.globalActiveBranches || [])])].filter(b=>b!=="Main Office");
 
     branchesToRender.forEach(branch => {
         if (!branchConfig[branch]) return;
@@ -8752,18 +8685,17 @@ window.saveShiftConfigChanges = async function() {
 };
 
 window.saveManualSchedule = async function() {
-    Swal.fire({title: 'Saving Schedule...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
     try {
-        if (await window.saveToCloud() === false) throw new Error('Schedule was not saved.');
-        Swal.fire({
-            title: '✅ Saved!', 
-            text: 'Your manual schedule edits have been safely locked in.', 
-            icon: 'success', 
-            customClass: { popup: 'rounded-2xl' }
-        });
-    } catch(e) {
-        console.error(e);
-        Swal.fire('Error', 'Failed to save schedule.', 'error');
+        if(window.scheduleMemoryReadOnly)throw Error('This saved schedule version is read-only.');
+        window.captureTempShiftConfig();
+        Object.entries(window.getScheduleMemorySnapshot().branchConfig).forEach(([branch,shifts])=>{if(window.isBranchAllowed(branch))shifts.forEach(shift=>validateShiftConfig(shift));});
+        Swal.fire({title:'Saving schedule…',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+        if(await window.saveToCloud()===false)throw Error(document.getElementById('ownerScheduleSyncStatus')?.textContent || 'Schedule was not saved.');
+        await Swal.fire({title:'Schedule saved',text:'Your edits were saved to HQ. Phone schedules can now load this saved version.',icon:'success',customClass:{popup:'rounded-2xl'}});
+        return true;
+    } catch(error) {
+        await Swal.fire({title:'Schedule not saved',text:error.message || 'Check the connection and try again.',icon:'error'});
+        return false;
     }
 };
 
@@ -8809,7 +8741,7 @@ window.findEmployeeProfile = function(searchName) {
     if (!window.employees || !searchName) return null;
     let s = String(searchName).toLowerCase().trim();
     
-    let exactMatch = window.employees.find(e => String(e.name || e.cashierName || "").toLowerCase().trim() === s);
+    let exactMatch = window.employees.find(e => [e.name,e.cashierName,e.fullName,e.scheduleNickname,e.scheduleName].some(value=>String(value||"").toLowerCase().trim()===s));
     if (exactMatch) return exactMatch;
     
     let nickMatch = window.employees.find(e => String(e.scheduleNickname || e.scheduleName || "").toLowerCase().trim() === s);
@@ -9500,7 +9432,7 @@ window.renderTables = function() {
     const contentWrap = document.createElement("div");
     container.appendChild(tabBox); container.appendChild(contentWrap);
 
-    let branchesToRender = window.globalActiveBranches ? window.globalActiveBranches.filter(b => b !== "Main Office") : Object.keys(branchConfig);
+    let branchesToRender = [...new Set([...Object.keys(branchConfig),...(window.globalActiveBranches || [])])].filter(b=>b!=="Main Office");
     
     branchesToRender.forEach(branch => {
         let bConfig = typeof branchConfig !== 'undefined' ? branchConfig : window.branchConfig;
@@ -9532,24 +9464,7 @@ window.renderTables = function() {
 
             let dayData = schedObj[day][branch] || { scheduled: {}, rest: [], unavailable: [], swaps: {} };
 
-            // 🧹 GHOST SCRUBBER ENGINE 🧹
-            // Auto-deletes staff who resigned or had their PIN revoked so they don't break the calendar!
-            for (let sId in dayData.scheduled) {
-                let staff = dayData.scheduled[sId];
-                if (staff !== "N/A" && staff !== "UNFILLED") {
-                    if (!window.findEmployeeProfile(staff)) dayData.scheduled[sId] = "UNFILLED";
-                }
-            }
-            if (dayData.rest) dayData.rest = dayData.rest.filter(n => window.findEmployeeProfile(n) !== null);
-            if (dayData.unavailable) dayData.unavailable = dayData.unavailable.filter(u => window.findEmployeeProfile(u.name) !== null);
-            if (dayData.swaps) {
-                for (let sId in dayData.swaps) {
-                    let originalStaff = dayData.swaps[sId];
-                    if (originalStaff !== "N/A" && originalStaff !== "UNFILLED" && !window.findEmployeeProfile(originalStaff)) {
-                        delete dayData.swaps[sId];
-                    }
-                }
-            }
+            // Rendering is read-only. Historical/unknown assigned names stay visible for review.
 
             activeShifts.forEach(s => {
                 const val = dayData.scheduled[s.id];
@@ -19605,7 +19520,8 @@ setTimeout(() => {
             // Run your original save function so the database updates properly
             if (typeof originalSaveShiftRules === 'function') {
                 let result = originalSaveShiftRules();
-                if (result instanceof Promise) await result;
+                if (result instanceof Promise) result = await result;
+                if(result===false)throw Error("Shift rules were not saved.");
             }
 
             // Display a success message letting you know the staff were protected
@@ -19618,32 +19534,7 @@ setTimeout(() => {
                 customClass: { popup: 'rounded-2xl' }
             });
             
-            // 3. THE MAGIC: Soft-refresh the calendar visually without wiping the data!
-            let container = document.getElementById('scheduleContainer');
-            if (container) {
-                container.innerHTML = '<div style="text-align:center; padding: 40px; color:#3b82f6; font-weight:bold; font-size:16px;">🔄 Applying new rules to calendar...</div>';
-                
-                setTimeout(async () => {
-                    try {
-                        // 🔥 THE FIX: Removed "window." from getDoc, doc, and db so it uses your local imports properly!
-                        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
-                        if (schedSnap.exists()) {
-                            let data = schedSnap.data();
-                            
-                            // Load the protected memory variables
-                            window.currentSchedule = data.currentSchedule || {};
-                            window.branchConfig = data.branchConfig || {};
-                            
-                            // Redraw the visual calendar seamlessly using your specific render function!
-                            if (typeof window.renderTables === 'function') {
-                                window.renderTables();
-                            }
-                        }
-                    } catch(e) { 
-                        console.error("Soft Refresh Error:", e); 
-                    }
-                }, 1000);
-            }
+            window.renderTables();
         } catch (error) {
             console.error(error);
             Swal.fire('Check shift rules', error.message || 'Shift rules were not saved. Check the connection.', 'warning');

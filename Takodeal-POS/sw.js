@@ -1,6 +1,6 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-operations-20261015-r1';
+const CORE = 'takodeal-pos-core-schedule-sync-20261016-r1';
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
 const required = ['./', './index.html', './meal-checkout.js','./meal-checkout.css','./pos-config-model.js','./hq-account-model.js','./main.js', './branch-operations.js','./cash-settlement.js','./shift-close-ui.js', './shift-close-draft.js', './shift-sales.js', './printer-connection.js', './dispatch-safety.js','./dispatch-restock-model.js','./workspace-access-model.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json','./cashier-pos-base.css','./cashier-theme.css','./cashier-tablet.css','./cashier-pos-ui.js','./cashier-workspace.js','./cashier-data.js'];
@@ -12,6 +12,7 @@ required.push('./attendance-reconcile.js');
 required.push('./printer-logo.js');
 required.push('./checkout-controls.js');
 required.push('./attendance-camera.js','./attendance-camera.css','./stock-report-units.js');
+required.push('./schedule-sync.js','./schedule-view-sync.js');
 const libraries = [sdk + 'firebase-app.js', sdk + 'firebase-firestore.js', sdk + 'firebase-auth.js', sdk + 'firebase-storage.js',
   'https://cdn.jsdelivr.net/npm/sweetalert2@11'];
 const trustedLibrary = url => url.startsWith(sdk) || url.startsWith('https://cdn.jsdelivr.net/');
