@@ -20,6 +20,9 @@ export function installInventoryIntelligence(w=window,d=document){
  const empty=(panel,message)=>panel.results.replaceChildren(create('p',message,'inventory-workspace-empty'));
  const options=(select,values,all=false)=>{const current=select.value,nodes=[];if(all){const option=create('option','All permitted branches');option.value='All Branches';nodes.push(option);}for(const value of values){const option=create('option',value);option.value=value;nodes.push(option);}select.replaceChildren(...nodes);select.value=values.includes(current)||all&&current==='All Branches'?current:all?'All Branches':values[0]||'';};
  const metric=(label,value,note='')=>{const node=create('article','','inventory-workspace-kpi');node.append(create('span',label),create('strong',value));if(note)node.append(create('small',note));return node;};
+ const currentReport=panel=>!panel.loading&&!!panel.model&&!!panel.report&&permitted(panel.kind)&&panel.reportIdentity===identity()
+  &&panel.report.branch===panel.branch.value&&(panel.kind==='alerts'||panel.report.period.from===panel.from.value&&panel.report.period.to===panel.to.value);
+ const holdStaleReport=panel=>{if(panel.kind==='forecast'){w.globalForecasterData=[];panel.generate.disabled=true;}if(!panel.loading){empty(panel,'The selection or account changed. Refresh this report before using its results.');status(panel,'Refresh to load evidence for the current selection.');}};
  const coverage=(report)=>{const details=create('details','','inventory-intelligence-coverage');details.append(create('summary',report.complete?'Data coverage · bounded sources complete':'Data coverage · partial or unavailable'));const list=create('ul');for(const source of report.coverage){const state=source.error?source.message:source.partial?source.basis+' · '+source.readCount+' records read, limit '+source.limit+'; totals may be incomplete':source.readCount+' records · complete within query limits';list.append(create('li',(SOURCE_NAMES[source.table]||source.table)+(source.branch?' · '+source.branch:'')+': '+state));}details.append(list,create('p','Loaded '+timestampLabel(report.loadedAt)+'. A limit reached or shared dated sample is never treated as a complete forecast.'));return details;};
  const card=(row,forecast)=>{
   const node=create('article','','inventory-workspace-card inventory-intelligence-item');node.append(create('h3',row.name),create('small',row.branch+' · '+row.category));
@@ -35,7 +38,7 @@ export function installInventoryIntelligence(w=window,d=document){
  };
  const filters=panel=>{const search=panel.search?.value.trim().toLowerCase()||'',category=panel.category?.value||'All';return panel.model.rows.filter(row=>(!search||row.name.toLowerCase().includes(search))&&(category==='All'||row.category===category));};
  function drawForecast(panel){
-  if(!panel.model||!panel.report)return;panel.results.replaceChildren();
+  if(!currentReport(panel)){holdStaleReport(panel);return;}panel.results.replaceChildren();
   const report=panel.report,rows=filters(panel),summary=create('div','','inventory-workspace-kpis');summary.append(metric('Stock records',panel.model.rows.length),metric('Held for review',panel.model.blockedCount),metric('Usage coverage',panel.model.usage.complete?'Available':'Incomplete',report.period.from+' to '+report.period.to+' · PH calendar dates'));panel.results.append(summary);
   if(!report.complete)panel.results.append(create('p','This is a partial scan. Run-out predictions and stock-request generation are unavailable. Narrow the period or resolve the source error, then retry.','inventory-workspace-status inventory-workspace-status-error'));
   if(panel.model.usage.legacyReceipts||panel.model.usage.reviewReceipts)panel.results.append(create('p',panel.model.usage.legacyReceipts+' receipts have no saved ingredient movements; '+panel.model.usage.reviewReceipts+' receipts need stock review. Today’s recipes are not used to reconstruct them.','inventory-workspace-status'));
@@ -46,6 +49,7 @@ export function installInventoryIntelligence(w=window,d=document){
   w.globalForecasterData=panel.model.rows.filter(row=>row.actionable).map(row=>({...row,currentStock:row.stock,conversionRate:row.conversion,conversion:row.conversion,dailyBurn:row.dailyUse||0,maintainingStock:row.maintainingStock||0}));
  }
  function drawBrief(panel){
+  if(!currentReport(panel)){holdStaleReport(panel);return;}
   const report=panel.report,model=panel.model;panel.results.replaceChildren();const summary=create('div','','inventory-workspace-kpis');
   const completeSource=table=>report.coverage.some(source=>source.table===table&&source.complete===true);
   const sales=inventoryAmountEvidence({records:model.salesCount,knownRecords:model.validSalesCount,total:model.salesTotal,complete:completeSource('transactions')});
@@ -61,6 +65,7 @@ export function installInventoryIntelligence(w=window,d=document){
   observations.append(create('p','Audit differences are review evidence. This report does not assign fault or apply deductions.','inventory-workspace-help'));panel.results.append(observations,coverage(report));
  }
  function drawAlerts(panel){
+  if(!currentReport(panel)){holdStaleReport(panel);return;}
   const report=panel.report;panel.results.replaceChildren();const rows=filters(panel).filter(row=>row.blockedReason||row.stock===0||row.threshold!==null&&row.stock<=row.threshold||row.targetGap!==null&&row.targetGap>0);
   const summary=create('div','','inventory-workspace-kpis');summary.append(metric('Records needing attention',rows.length),metric('Audit or settings review',rows.filter(row=>row.blockedReason).length),metric('Scope',panel.branch.value==='All Branches'?'All permitted branches':panel.branch.value));panel.results.append(summary);
   if(!report.complete)panel.results.append(create('p','Partial stock coverage. More alerts may exist; select one branch or refresh after resolving the read limit.','inventory-workspace-status inventory-workspace-status-error'));
@@ -68,7 +73,9 @@ export function installInventoryIntelligence(w=window,d=document){
  }
  async function run(kind,{force=false}={}){
   const panel=panels[kind];if(!panel)return;const token=++panel.revision,user=identity();
-  if(!permitted(kind)){empty(panel,'This inventory report is outside your saved access.');return;}
+  panel.loading=true;panel.model=null;panel.report=null;panel.reportIdentity=null;
+  if(kind==='forecast'){w.globalForecasterData=[];panel.generate.disabled=true;}
+  if(!permitted(kind)){panel.loading=false;panel.run.disabled=false;if(kind==='forecast')w.isForecasterLoading=false;empty(panel,'This inventory report is outside your saved access.');status(panel,'This report is outside your saved access.',true);return;}
   panel.run.disabled=true;status(panel,'Loading a bounded stock report…');empty(panel,'Loading…');if(kind==='forecast'){w.globalForecasterData=[];w.isForecasterLoading=true;panel.generate.disabled=true;}
   try{
    const period=kind==='alerts'?defaultInventoryAnalysisPeriod():inventoryAnalysisPeriod(panel.from.value,panel.to.value);
@@ -89,31 +96,32 @@ export function installInventoryIntelligence(w=window,d=document){
    }else report=await reader.report(w,{branch,period,kind,force});
    if(token!==panel.revision||user!==identity()||selection!==JSON.stringify([panel.branch.value,panel.from?.value,panel.to?.value])||!permitted(kind))return;
    if(!directory.complete){report.complete=false;report.coverage.unshift({table:'branches',complete:false,error:'partial-directory',message:'Branch directory reached its read limit.'});}
-   panel.report=report;const values={inventory:report.data.inventory||[],transactions:report.data.transactions||[],stockLogs:report.data.stock_logs||[],inventoryLogs:report.data.inventory_logs||[],shifts:report.data.shifts||[],period,complete:report.complete};
+   panel.report=report;panel.reportIdentity=user;const values={inventory:report.data.inventory||[],transactions:report.data.transactions||[],stockLogs:report.data.stock_logs||[],inventoryLogs:report.data.inventory_logs||[],shifts:report.data.shifts||[],period,complete:report.complete};
    panel.model=kind==='brief'?buildInventoryBrief(values):buildInventoryForecast(values);
+   panel.loading=false;
    if(panel.category){const categories=[...new Set(panel.model.rows.map(row=>row.category))].sort(),current=panel.category.value;options(panel.category,categories);const all=create('option','All categories');all.value='All';panel.category.prepend(all);panel.category.value=categories.includes(current)?current:'All';}
    if(kind==='brief')drawBrief(panel);else if(kind==='forecast')drawForecast(panel);else{w.globalInventoryList=values.inventory;drawAlerts(panel);}
    status(panel,(report.complete?'Report ready':'Partial report')+' · '+timestampLabel(report.loadedAt)+'. Refresh is manual; reopening shares recent results.');
   }catch(error){if(token!==panel.revision||user!==identity())return;panel.model=null;panel.report=null;empty(panel,error.message||'The report could not load.');status(panel,'Scan stopped. Use Retry / refresh when ready.',true);if(kind==='forecast')w.globalForecasterData=[];}
-  finally{if(token===panel.revision){panel.run.disabled=false;if(kind==='forecast')w.isForecasterLoading=false;}}
+  finally{if(token===panel.revision){panel.loading=false;panel.run.disabled=false;if(kind==='forecast')w.isForecasterLoading=false;}}
  }
  function mount(kind,id,title,branchId){
   const matching=[...d.querySelectorAll('#'+id)],section=matching.shift();if(!section)return;for(const extra of matching)extra.remove();
   const display=section.style.display;section.removeAttribute('style');section.style.display=display||'none';section.className='inventory-workspace-panel inventory-intelligence';section.replaceChildren();
   const heading=create('header','','inventory-workspace-header');heading.append(create('h2',title),create('p',kind==='brief'?'Evidence from your saved sales, waste and audit records. No external AI service.':kind==='forecast'?'Review saved targets and recorded use before creating a stock request.':'Current counts, saved maintaining targets and audit exceptions.'));
   const controls=create('div','','inventory-workspace-controls'),branch=create('select');branch.id=branchId;const fallback=[...new Set([...(w.globalActiveBranches||[]),...(w.sessionUser?.allowedBranches||[])].filter(name=>name&&name!=='All'&&allowed(name)))];options(branch,fallback,kind==='alerts');controls.append(field('Branch',branch));
-  const panel={kind,section,branch,revision:0,model:null,report:null};
+  const panel={kind,section,branch,revision:0,loading:false,model:null,report:null,reportIdentity:null};
   if(kind!=='alerts'){const period=defaultInventoryAnalysisPeriod();panel.from=input('inventory'+kind+'From','date',period.from);panel.to=input('inventory'+kind+'To','date',period.to);controls.append(field('From · PH',panel.from),field('To · PH',panel.to));panel.from.addEventListener('change',()=>run(kind));panel.to.addEventListener('change',()=>run(kind));}
   panel.run=button('Retry / refresh',()=>run(kind,{force:true}));controls.append(panel.run);branch.addEventListener('change',()=>run(kind));
   panel.status=create('p','','inventory-workspace-status');panel.status.setAttribute('role','status');panel.status.setAttribute('aria-live','polite');panel.results=create('div','','inventory-intelligence-results');section.append(heading,controls,panel.status);
   if(kind!=='brief'){
    const search=create('div','','inventory-workspace-controls');panel.search=input(kind==='forecast'?'fcSearch':'alertSearchInput','search');panel.search.placeholder='Search item';panel.category=create('select');panel.category.id=kind==='forecast'?'fcCategory':'intelligenceAlertCategory';options(panel.category,[]);search.append(field('Search item',panel.search),field('Category',panel.category));
-   const filter=()=>{if(panel.model)kind==='forecast'?drawForecast(panel):drawAlerts(panel);};panel.search.addEventListener('input',filter);panel.category.addEventListener('change',filter);section.append(search);
+   const filter=()=>{if(!panel.loading&&panel.model)kind==='forecast'?drawForecast(panel):drawAlerts(panel);};panel.search.addEventListener('input',filter);panel.category.addEventListener('change',filter);section.append(search);
   }
   if(kind==='forecast'){
    const actions=create('details','','inventory-workspace-card');actions.append(create('summary','Plan a delivery request'));
    const fields=create('div','','inventory-workspace-controls'),target=input('fcTargetDate','date',phDay(Date.now()+86400000)),buffer=input('fcBuffer','number','2');buffer.min='0';buffer.max='31';fields.append(field('Next delivery date',target),field('Buffer days',buffer));
-   panel.generate=button('Create stock request',async()=>{if(panel.actionBusy||!permitted('forecast')||!panel.report?.complete||!panel.model)return;const days=(Date.parse(target.value+'T00:00:00+08:00')-Date.parse(phDay()+'T00:00:00+08:00'))/86400000,bufferDays=Number(buffer.value);if(!Number.isInteger(days)||days<0||days>31||!Number.isInteger(bufferDays)||bufferDays<0||bufferDays>31){status(panel,'Choose a delivery date within the next 31 days and buffer days from 0 to 31.',true);return;}drawForecast(panel);if(panel.generate.disabled)return;panel.actionBusy=true;panel.generate.disabled=true;try{await w.generateAiDispatchList?.();}catch(error){status(panel,error.message,true);}finally{panel.actionBusy=false;panel.generate.disabled=!panel.report?.complete||!panel.model?.rows.some(row=>row.actionable);}});panel.generate.disabled=true;
+   panel.generate=button('Create stock request',async()=>{if(panel.actionBusy||!currentReport(panel)||!panel.report.complete)return;const days=(Date.parse(target.value+'T00:00:00+08:00')-Date.parse(phDay()+'T00:00:00+08:00'))/86400000,bufferDays=Number(buffer.value);if(!Number.isInteger(days)||days<0||days>31||!Number.isInteger(bufferDays)||bufferDays<0||bufferDays>31){status(panel,'Choose a delivery date within the next 31 days and buffer days from 0 to 31.',true);return;}drawForecast(panel);if(panel.generate.disabled)return;panel.actionBusy=true;panel.generate.disabled=true;try{await w.generateAiDispatchList?.();}catch(error){status(panel,error.message,true);}finally{panel.actionBusy=false;panel.generate.disabled=!currentReport(panel)||!panel.model.rows.some(row=>row.actionable);}});panel.generate.disabled=true;
    const mayBroadcast=()=>w.sessionUser?.email?.toLowerCase()===OWNER_EMAIL||w.sessionUser?.allowedBranches?.includes('All');
    const alert=button('Alert all branches',()=>{if(permitted('forecast')&&mayBroadcast())w.broadcastDeliveryDate?.();},true);alert.id='btnBroadcastDate';alert.disabled=!mayBroadcast();fields.append(panel.generate,alert);actions.append(fields,create('p','Stock requests use the selected branch. The delivery-date alert updates the existing schedule for all branches. Review the date first.','inventory-workspace-help'));section.append(actions);
   }
@@ -122,7 +130,7 @@ export function installInventoryIntelligence(w=window,d=document){
  mount('brief','invSectionAIBrief','Chief Executive Brief','aiBranchSelect');
  mount('forecast','invSectionForecaster','Stock Forecaster','forecasterBranchSelect');
  mount('alerts','invSectionAlerts','Low Stock Alerts','branchAlertFilter');
- const invalidate=w.invalidateCache;if(typeof invalidate==='function')w.invalidateCache=function(table,...args){if(['inventory','branches','transactions','stock_logs','inventory_logs','shifts'].includes(table)){reader.invalidate();for(const panel of Object.values(panels)){++panel.revision;panel.model=null;panel.report=null;panel.run.disabled=false;if(panel.generate)panel.generate.disabled=true;empty(panel,'Records changed. Refresh to load the latest evidence.');status(panel,'Records changed. Refresh this report to load the latest evidence.');}w.globalForecasterData=[];w.isForecasterLoading=false;}return invalidate.call(this,table,...args);};
+ const invalidate=w.invalidateCache;if(typeof invalidate==='function')w.invalidateCache=function(table,...args){if(['inventory','branches','transactions','stock_logs','inventory_logs','shifts'].includes(table)){reader.invalidate();for(const panel of Object.values(panels)){++panel.revision;panel.loading=false;panel.model=null;panel.report=null;panel.reportIdentity=null;panel.run.disabled=false;if(panel.generate)panel.generate.disabled=true;empty(panel,'Records changed. Refresh to load the latest evidence.');status(panel,'Records changed. Refresh this report to load the latest evidence.');}w.globalForecasterData=[];w.isForecasterLoading=false;}return invalidate.call(this,table,...args);};
  w.generateAIReport=options=>run('brief',{force:options?.refresh===true});w.loadForecasterEngine=options=>run('forecast',{force:options?.refresh===true});
  w.loadPurchasesAndAlerts=options=>{
   // The old purchases route has no standalone view in this Owner entry file.
@@ -135,6 +143,6 @@ export function installInventoryIntelligence(w=window,d=document){
   }
   return run('alerts',{force:options?.refresh===true});
  };w.loadAlerts=w.loadPurchasesAndAlerts;
- w.filterForecaster=()=>{if(panels.forecast?.model)drawForecast(panels.forecast);};w.filterAlertsTable=()=>{if(panels.alerts?.model)drawAlerts(panels.alerts);};
+ w.filterForecaster=()=>{if(panels.forecast?.model&&!panels.forecast.loading)drawForecast(panels.forecast);};w.filterAlertsTable=()=>{if(panels.alerts?.model&&!panels.alerts.loading)drawAlerts(panels.alerts);};
  return w.inventoryIntelligenceInstalled={reader,panels,run};
 }
