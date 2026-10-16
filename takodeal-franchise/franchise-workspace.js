@@ -10,12 +10,14 @@ import {issueScheduledSanction, sanctionAuthority, finishSanction} from './sanct
 import {previewSupplyRequest,submitSupplyRequest} from './franchise-supply-actions.js';
 import {addFranchiseStaff} from './franchise-staff-actions.js';
 import {installSanctionScheduling} from './sanction-scheduling-ui.js';
+import {installFranchiseHQUI} from './franchise-hq-ui.js';
 
 export function installFranchiseWorkspace(api) {
  const $=id=>document.getElementById(id),state={route:'dashboard',generation:0,loaded:new Map(),inventory:new Map(),cart:[],cartBranch:'',pending:0,schedule:null,charts:[]};
  const session=()=>{const s=api.sessionUser;if (!s || !s.allowedBranches?.includes(s.branch)) throw new Error('Sign in and select an assigned branch.');return s;};
  const accountScope=()=>{const s=session();return JSON.stringify([api.auth?.currentUser?.uid,s.email,s.branch,s.cashierName,s.allowedBranches,s.permissions]);};
  const reader=createFranchiseReads(api,{scope:accountScope});
+ const hq=installFranchiseHQUI(api,{document,session,getRoute:()=>state.route,read:(...args)=>read(...args),refresh:route=>api.switchView(route),onError:showActionError});api.franchiseHQ=hq;
  api.clearFranchiseReadRequests=()=>reader.reset();
  const selectedRange=()=>range($('globalStartDate').value,$('globalEndDate').value);
  const element=(tag,cls,text)=>{const el=document.createElement(tag);el.className=cls || '';if(text!=null)el.textContent=text;return el;};
@@ -72,12 +74,12 @@ export function installFranchiseWorkspace(api) {
  api.switchView=async route=>{
   if(!ROUTES[route])throw new Error('This page is unavailable.');if(!canVisit(api.sessionUser,route))throw new Error('This page is outside your assigned access.');
   if(state.schedule?.dirty && route!=='schedule' && state.route==='schedule') {const answer=await Swal.fire({title:'Keep unsaved schedule?',text:'Stay here to save your changes, or leave without saving.',showCancelButton:true,confirmButtonText:'Stay and save',cancelButtonText:'Leave without saving'});if(answer.isConfirmed)return;state.schedule=null;}
-  state.route=route;
+  if(state.route!==route)hq.stop();state.route=route;
   for(const [key,meta] of Object.entries(ROUTES)){$('view-'+key).classList.toggle('active',key===route);const nav=$('nav-'+key);nav.classList.toggle('active',key===route);nav.setAttribute('aria-current',key===route?'page':'false');}
   for(const group of ['hr','inventory']) {const active=ROUTES[route][4]===group;$('nav-'+group).classList.toggle('active',active);if(active){$('sidebar').classList.remove('collapsed');$(group+'Submenu').classList.add('open');$('nav-'+group).setAttribute('aria-expanded','true');}}
   $('pageTitle').textContent=ROUTES[route][0];$('pageDescription').textContent=ROUTES[route][1];$('headingBranch').textContent='/ '+session().branch;$('globalDateControls').hidden=!ROUTES[route][3];
   $('sidebar').classList.remove('show-mobile');$('drawerBackdrop').hidden=true;
-  await api[ROUTES[route][2]]();
+  await api[ROUTES[route][2]]();hq.start();
  };
  api.refreshActiveData=async()=>{
   if(state.route==='schedule' && state.schedule?.dirty){const answer=await Swal.fire({title:'Reload schedule?',text:'Reloading will discard your unsaved changes.',showCancelButton:true,confirmButtonText:'Discard and reload'});if(!answer.isConfirmed)return;state.schedule.dirty=false;}
@@ -86,7 +88,8 @@ export function installFranchiseWorkspace(api) {
  api.changeFranchiseBranch=async()=>{
   const next=$('franchiseBranchSelect').value,previous=session().branch;
   if(!session().allowedBranches.includes(next))throw new Error('This branch is outside your assigned access.');
-  if(state.cart.length || state.schedule?.dirty) {const answer=await Swal.fire({title:'Switch branch?',text:'Unsaved supply requests and schedule changes belong to the current branch. Save them first, or discard them to switch.',showCancelButton:true,confirmButtonText:'Discard and switch'});if(!answer.isConfirmed){$('franchiseBranchSelect').value=previous;return;}}
+  if(state.cart.length || state.schedule?.dirty || hq.hasDraft() || hq.isPending()) {if(hq.isPending())throw Error('An HQ message is still sending. Wait for it to finish before changing branches.');const answer=await Swal.fire({title:'Switch branch?',text:'Unsaved supply requests, schedule changes and HQ message drafts belong to the current branch. Save them first, or discard them to switch.',showCancelButton:true,confirmButtonText:'Discard and switch'});if(!answer.isConfirmed){$('franchiseBranchSelect').value=previous;return;}hq.clearDrafts();}
+  hq.stop();
   reader.reset();state.generation++;api.sessionUser.branch=next;state.cart=[];state.cartBranch=next;state.inventory.clear();state.loaded.clear();state.schedule=null;
   for(const key of Object.keys(ROUTES))root(key).replaceChildren();
   await api.switchView(state.route);
@@ -107,7 +110,9 @@ export function installFranchiseWorkspace(api) {
  addEventListener('online',connection);addEventListener('offline',connection);connection();
 
  define('dashboard',async r=>{
-  const quick=element('div','button-row');if(canVisit(session(),'b2b'))quick.append(button('Request stock from HQ',()=>api.switchView('b2b'),'primary-button'));if(canVisit(session(),'staff'))quick.append(button('Branch staff',()=>api.switchView('staff')));r.append(quick);
+  const access=card(r,'Branch tools'),quick=element('div','card-body button-row');
+  for(const [route,title]of [['b2b','Request stock from HQ'],['staff','Branch staff'],['schedule','Schedule manager'],['hq-billing','HQ billing'],['hq-conversations','HQ conversations']])quick.append(canVisit(session(),route)?button(title,()=>api.switchView(route)):element('span','badge warning',title+' · Owner approval needed'));
+  access.card.append(quick,element('p','notice','If a feature is missing, the Owner can review Access Control → Edit permissions. HQ billing and conversations use Franchise HQ Hub; Simulator is separate. Sign in again after permissions are saved.'));
   const dates=selectedRange(),endDay=$('globalEndDate').value,trendStart=range(addDays(endDay,-6),endDay).start;
   const [transactions,expenses,attendance]=await Promise.all([read('transactions',{time:'timestamp',start:new Date(Math.min(+dates.start,+trendStart)),end:dates.end}),read('expenses',{time:'timestamp',...dates}),read('attendance_logs')]);
   const selected=transactions.filter(t=>ms(t.timestamp)>=+dates.start && ms(t.timestamp)<+dates.end),summary=summarizeSales(selected),expenseTotal=expenses.filter(e=>e.type!=='Manager_Fund').reduce((s,e)=>s+n(e.amount),0);
@@ -160,10 +165,8 @@ export function installFranchiseWorkspace(api) {
   const b=card(columns,'Monthly budget',month+' · Calendar month spending'),body=element('div','card-body'),actions=element('div','button-row');actions.append(button('Add budget',()=>api.openAddBudgetModal()),button('Log expense',()=>api.openLogExpenseModal(),'primary-button'));b.head.append(actions);
   for(const budget of budgets){const spent=expenses.filter(e=>e.category===budget.category && e.type!=='Manager_Fund').reduce((s,e)=>s+n(e.amount),0),row=element('div','budget-row');row.innerHTML=`<div><strong>${esc(budget.category)}</strong><span>${money(spent)} / ${money(budget.limit)}</span></div><progress max="${Math.max(n(budget.limit),1)}" value="${Math.max(spent,0)}"></progress>`;row.append(button('Edit budget',()=>api.openAddBudgetModal(budget)));body.append(row);}if(!budgets.length)body.append(element('div','empty','No monthly budgets yet.'));b.card.append(body);
  });
- define('hq-billing',async r=>{
-  const rows=ledgerRows(await read('franchise_ledger')),balance=rows.at(-1)?.balance || 0,hero=element('div','hero');hero.innerHTML=`<div><div class="eyebrow">STATEMENT OF ACCOUNT</div><h2>${money(balance)}</h2><p>${balance>0?'Outstanding balance owed to HQ':balance<0?'Credit balance with HQ':'No outstanding balance'}</p></div><div><small>All recorded charges and payments</small></div>`;r.append(hero);
-  const c=table(r,'HQ ledger',['Date','Category','Description','Charge','Payment','Balance']);tools(c,'hq-billing',[...rows].reverse(),e=>'<tr>'+cell(esc(dateText(e.timestamp)))+cell(esc(e.category || e.type))+cell(esc(e.description))+number(e.charge)+number(e.payment)+number(e.balance)+'</tr>');
- });
+ define('hq-billing',hq.loadBilling);
+ define('hq-conversations',hq.loadConversations);
  define('inv-overview',async r=>{
   const rows=(await inventory()).sort((a,b)=>itemName(a).localeCompare(itemName(b))),c=table(r,'Live stock levels',['Item','Category','Current stock','Status']);
   tools(c,'inv-overview',rows,i=>'<tr>'+cell(`<strong>${esc(itemName(i))}</strong>`)+cell(esc(i.category || 'Uncategorized'))+cell(`<strong class="${stockQty(i)<0?'negative':''}">${stockQty(i).toLocaleString('en-PH',{maximumFractionDigits:3})}</strong> ${esc(i.uom || 'units')}`)+cell(badge(lowStock(i)?'Low stock':'In stock',lowStock(i)?'warning':''))+'</tr>',{category:true});
@@ -312,7 +315,7 @@ export function installFranchiseWorkspace(api) {
    try{await api.runTransaction(api.db,async tx=>{const noticeRef=api.doc(api.db,'announcements',notice.id),ref=api.doc(api.db,'acknowledgments',id),[fresh,saved]=await Promise.all([tx.get(noticeRef),tx.get(ref)]);if(!fresh.exists() || fresh.data().active!==true)throw new Error('This notice is no longer active.');const a=fresh.data();if(a.targetType==='Branch' && a.targetBranch!==branch || a.targetType==='Individual' && a.targetStaff!==session().cashierName)throw new Error('This announcement is outside your audience.');if(saved.exists())return;tx.set(ref,{announcementId:notice.id,branch,email:session().email,staffName:session().cashierName,signature,timestamp:api.serverTimestamp()});});reader.reset();return true;}catch(error){Swal.showValidationMessage(error.message);return false;}finally{state.pending--;}
   }});if(state.route==='bulletin')await api.loadAnnouncements();
  };
- addEventListener('beforeunload',event=>{if(state.pending || state.schedule?.dirty || state.cart.length){event.preventDefault();event.returnValue='';}});
+ addEventListener('beforeunload',event=>{if(state.pending || state.schedule?.dirty || state.cart.length || hq.hasDraft() || hq.isPending()){event.preventDefault();event.returnValue='';}});
  api.franchiseState=state;
  api.franchiseScheduleSync=installScheduleViewSync(api,{window:globalThis.window,document,
   scope:()=>state.route==='schedule' && api.sessionUser && canVisit(api.sessionUser,'schedule') && $('view-schedule')?.classList.contains('active')
@@ -321,16 +324,16 @@ export function installFranchiseWorkspace(api) {
   pending:()=>{let notice=$('scheduleSavedUpdateNotice');if(!notice){notice=element('p','notice','A saved schedule update is available. Your unsaved changes are kept. Save them or use Sync to reload.');notice.id='scheduleSavedUpdateNotice';notice.setAttribute('role','status');$('body-schedule')?.prepend(notice);}}
  });
  api.loadScheduleFromCloud=api.franchiseScheduleSync.wrap(api.loadScheduleFromCloud);
- installAppUpdates(state);
+ installAppUpdates(state,hq);
 }
 
-function installAppUpdates(state) {
+function installAppUpdates(state,hq) {
  const $=id=>document.getElementById(id);let registration,reloading=false,requestedUpdate=false;
  const show=()=>{if(registration?.waiting)$('appUpdateCard').hidden=false;};
  async function check() {if(!('serviceWorker' in navigator))return;registration ||= await navigator.serviceWorker.register('sw.js',{updateViaCache:'none'});await registration.update();show();}
  $('checkAppUpdates').addEventListener('click',async()=>{try{await check();if(!registration?.waiting && globalThis.Swal)await Swal.fire({title:'App checked',text:'This device has the latest available Franchisee workspace.',icon:'success'});}catch(error){$('loginStatus').textContent='The update check could not connect. Check your connection and retry.';}});
  $('dismissUpdate').addEventListener('click',()=>$('appUpdateCard').hidden=true);
- $('applyAppUpdate').addEventListener('click',async()=>{if(state.pending || state.schedule?.dirty || state.cart.length){if(globalThis.Swal)await Swal.fire({title:'Save your work first',text:'Save the schedule and send or clear your supply request before updating.',icon:'info'});return;}requestedUpdate=true;registration?.waiting?.postMessage({type:'SKIP_WAITING'});});
+ $('applyAppUpdate').addEventListener('click',async()=>{if(state.pending || state.schedule?.dirty || state.cart.length || hq.hasDraft() || hq.isPending()){if(globalThis.Swal)await Swal.fire({title:'Save your work first',text:'Save the schedule and send or clear your supply request and HQ message drafts before updating.',icon:'info'});return;}requestedUpdate=true;registration?.waiting?.postMessage({type:'SKIP_WAITING'});});
  if(!('serviceWorker' in navigator))return;
  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloading || !requestedUpdate)return;reloading=true;location.reload();});
  check().then(()=>{registration.addEventListener('updatefound',()=>{const worker=registration.installing;worker?.addEventListener('statechange',()=>{if(worker.state==='installed' && navigator.serviceWorker.controller)show();});});}).catch(()=>{});

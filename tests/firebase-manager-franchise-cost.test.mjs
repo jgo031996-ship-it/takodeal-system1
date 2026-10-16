@@ -189,7 +189,7 @@ function workspaceFixture() {
     const descriptors=new Map(),names=['document','navigator','addEventListener','innerWidth','Option','requestAnimationFrame'];
     names.forEach(name=>descriptors.set(name,Object.getOwnPropertyDescriptor(globalThis,name)));
     const nodes=new Map([...readFileSync(new URL('../takodeal-franchise/index.html',import.meta.url),'utf8').matchAll(/id="([^"]+)"/g)].map(m=>[m[1],fakeNode()]));
-    const globals={document:{getElementById:id=>nodes.get(id),createElement:tag=>fakeNode(tag)},navigator:{onLine:true},addEventListener(){},innerWidth:1024,
+    const globals={document:{getElementById:id=>nodes.get(id),createElement:tag=>fakeNode(tag),addEventListener(){}},navigator:{onLine:true},addEventListener(){},innerWidth:1024,
         Option:function(label,value){const n=fakeNode('option');n.textContent=label;n.value=value;return n;},requestAnimationFrame(){}};
     for(const [name,value] of Object.entries(globals))Object.defineProperty(globalThis,name,{configurable:true,writable:true,value});
     const calls=[],api={sessionUser:{email:'owner@test',cashierName:'Owner',branch:'Maa',allowedBranches:['Maa','Other'],permissions:['all']},

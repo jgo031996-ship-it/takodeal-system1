@@ -3,6 +3,7 @@ import { signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstati
 import { createUnlockGate, bounded } from './unlock-gate.js';
 import { MASTER_EMAIL, resolveHQAccount } from './hq-account-model.js';
 import { ROUTES, branchScope } from './franchise-data.js';
+import { workspaceRole } from './workspace-access-model.js';
 
 const $=id=>document.getElementById(id);
 let currentUser=null;
@@ -15,7 +16,7 @@ async function verify(user) {
  if(!data || data.active===false || data.blocked===true || ['Revoked','Blocked','Inactive'].includes(data.status))throw new Error('Your account does not have active workspace access. Ask HQ to review HQ Access Control.');
  const allAssigned=(Array.isArray(data.assignedBranch)?data.assignedBranch:String(data.assignedBranch || '').split(',')).some(b=>String(b).trim().toLowerCase()==='all');
  let registered=[];
- if(email===MASTER_EMAIL || String(data.role).toLowerCase()!=='franchisee' && data.permissions?.includes('all') && allAssigned) {
+ if(email===MASTER_EMAIL || workspaceRole(email,data.role)!=='Franchise owner' && data.permissions?.includes('all') && allAssigned) {
   const branches=await bounded(window.getDocsFromServer(window.collection(window.db,'branches')));
   registered=branches.docs.filter(d=>d.data().active!==false && d.data().status!=='Inactive').map(d=>d.data().name || d.data().branchName).filter(Boolean);
  }
@@ -24,7 +25,7 @@ async function verify(user) {
  return {...data,allowedBranches};
 }
 const gate=createUnlockGate({verify,verifyOnUnlock:true,load:async({user,data})=>{
- const isFranchisee=String(data.role || '').toLowerCase()==='franchisee',permissions=Array.isArray(data.permissions)?data.permissions:isFranchisee?Object.keys(ROUTES):['dashboard'];
+ const isFranchisee=workspaceRole(user.email,data.role)==='Franchise owner',permissions=Array.isArray(data.permissions)?data.permissions:isFranchisee?Object.keys(ROUTES).filter(route=>route!=='hq-conversations'):['dashboard'];
  const branch=data.allowedBranches.includes('Main Office') && user.email.toLowerCase()===MASTER_EMAIL?'Main Office':data.allowedBranches[0];
  window.sessionUser={uid:user.uid,email:user.email.toLowerCase(),branch,allowedBranches:data.allowedBranches,cashierName:data.fullName || data.name || user.displayName || 'Authorized account',role:data.role,isFranchisee,isOwner:user.email.toLowerCase()===MASTER_EMAIL,permissions};
  try {window.applyPermissions();await window.switchView('dashboard');}catch(error){window.sessionUser=null;throw error;}
@@ -39,13 +40,13 @@ const gate=createUnlockGate({verify,verifyOnUnlock:true,load:async({user,data})=
  if(!open && phase!=='opening')window.sessionUser=null;
  if(phase==='pin'){$('managerPinInput').value='';$('managerPinInput').focus();}
 }});
-onAuthStateChanged(window.auth,async user=>{currentUser=user;window.clearFranchiseReadRequests?.();window.sessionUser=null;await gate.identify(user);});
+onAuthStateChanged(window.auth,async user=>{currentUser=user;window.franchiseHQ?.stop();window.clearFranchiseReadRequests?.();window.sessionUser=null;await gate.identify(user);});
 window.loginWithGoogle=async()=>{
  $('googleLoginBtn').disabled=true;$('loginStatus').textContent='Connecting to Google…';
  try{window.provider.setCustomParameters({prompt:'select_account'});await signInWithPopup(window.auth,window.provider);}catch(error){$('loginStatus').textContent=error.code==='auth/popup-blocked'?'Allow the sign-in popup, then try again.':error.code==='auth/popup-closed-by-user'?'Sign-in was cancelled.':'Google sign-in could not connect. Check your connection and try again.';}finally{$('googleLoginBtn').disabled=false;}
 };
 window.checkManagerPin=()=>gate.unlock($('managerPinInput').value.trim());
-window.cancelLoginAndSignOut=async()=>{gate.reset();window.clearFranchiseReadRequests?.();window.sessionUser=null;await signOut(window.auth);};
-window.logoutManager=async()=>{const answer=await Swal.fire({title:'Sign out?',text:'Save any unfinished branch work before leaving.',showCancelButton:true,confirmButtonText:'Sign out'});if(!answer.isConfirmed)return;await window.cancelLoginAndSignOut();window.franchiseState.generation++;window.franchiseState.inventory.clear();window.franchiseState.loaded.clear();window.franchiseState.cart=[];window.franchiseState.schedule=null;for(const route of Object.keys(ROUTES))$('body-'+route).replaceChildren();};
+window.cancelLoginAndSignOut=async()=>{gate.reset();window.franchiseHQ?.stop();window.clearFranchiseReadRequests?.();window.sessionUser=null;await signOut(window.auth);};
+window.logoutManager=async()=>{if(window.franchiseHQ?.isPending())return Swal.fire({title:'Message is sending',text:'Wait for the current message to finish before signing out.',icon:'info'});const answer=await Swal.fire({title:'Sign out?',text:'Save any unfinished branch work before leaving. Unsaved HQ message drafts will be cleared.',showCancelButton:true,confirmButtonText:'Sign out'});if(!answer.isConfirmed)return;window.franchiseHQ?.stop();window.franchiseHQ?.clearDrafts();await window.cancelLoginAndSignOut();window.franchiseState.generation++;window.franchiseState.inventory.clear();window.franchiseState.loaded.clear();window.franchiseState.cart=[];window.franchiseState.schedule=null;for(const route of Object.keys(ROUTES))$('body-'+route).replaceChildren();};
 $('googleLoginBtn').addEventListener('click',window.loginWithGoogle);$('unlockBtn').addEventListener('click',window.checkManagerPin);$('managerPinInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();window.checkManagerPin();}});$('switchAccountBtn').addEventListener('click',window.cancelLoginAndSignOut);$('retryAccountBtn').addEventListener('click',()=>gate.identify(currentUser));$('signOutBtn').addEventListener('click',window.logoutManager);
 for(const key of document.querySelectorAll('[data-pin-key]'))key.addEventListener('click',()=>{const input=$('managerPinInput'),value=key.dataset.pinKey;input.value=value==='clear'?'':value==='back'?input.value.slice(0,-1):(input.value+value).slice(0,64);input.focus();});
