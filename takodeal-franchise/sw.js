@@ -1,9 +1,10 @@
-const CACHE = 'takodeal-franchise-workspace-operations-20261015-r1';
+const CACHE = 'takodeal-franchise-workspace-schedule-sync-20261016-r1';
 const CORE=['./','index.html','style.css','main_franchise.js','auth.js','franchise-data.js','franchise-actions.js','franchise-workspace.js','payroll-safety.js','schedule-history.js','dispatch-safety.js','unlock-gate.js','hq-account-model.js','manifest.json','logo.jpg','icon-192.png','icon-512.png'];
 CORE.push('franchise-reads.js');
 CORE.push('attendance-reconcile.js','payroll-attendance.js');
 CORE.push('sanction-schedule.js');
 CORE.push('sanction-actions.js','sanction-scheduling-ui.js','workspace-access-model.js');
+CORE.push('schedule-sync.js','schedule-view-sync.js');
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(CORE))));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('takodeal-franchise-') && key!==CACHE).map(key=>caches.delete(key))))));
 self.addEventListener('message',event=>{if(event.data?.type==='SKIP_WAITING')self.skipWaiting();});

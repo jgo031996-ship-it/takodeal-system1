@@ -14,6 +14,8 @@ import {profileDailyRate} from './staff-rate-privacy.js';
 import { calculateLateMinutes, resolveScheduledShift, resolveAttendanceShift, captureAttendanceSchedule, latePay, earnedNightBonus, attendanceLateMinutes, isMealDeduction } from './payroll-safety.js';
 import {phDay, pendingDueNotices, clockInRestriction, startPhilippineDayTimer, noticeIsDue, deductionIsDue, isPenaltyDeduction, acknowledgeSanction} from './sanction-schedule.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
+import {loadScheduleMonthView} from './schedule-sync.js';
+import {installScheduleViewSync} from './schedule-view-sync.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 // 🔥 UPGRADE: Imported the Offline Cache Engines!
@@ -2780,10 +2782,14 @@ window.loadStaffSchedule = async function() {
     if (!container) return;
     const loadToken = window.staffScheduleLoadToken = (window.staffScheduleLoadToken || 0) + 1;
     const staffId = localStorage.getItem('takodeal_staff_id');
+    const scheduleViewToken = window.staffScheduleSync?.token();
+    const scheduleStaffName = localStorage.getItem('takodeal_staff_name');
     const picker = document.getElementById('staffMonthPicker');
     const requestedMonth = picker?.value || scheduleDateKey(new Date()).slice(0,7);
     const stillCurrent = () => window.staffScheduleLoadToken === loadToken
         && localStorage.getItem('takodeal_staff_id') === staffId
+        && localStorage.getItem('takodeal_staff_name') === scheduleStaffName
+        && (!window.staffScheduleSync || window.staffScheduleSync.current(scheduleViewToken))
         && (picker?.value || requestedMonth) === requestedMonth;
     window.cachedSchedData = null;
     window.cachedSchedProfile = null;
@@ -2801,53 +2807,39 @@ window.loadStaffSchedule = async function() {
         const selected = monthKey(requestedMonth);
         const [year, month] = selected.split('-').map(Number);
         if (picker) picker.value = selected;
-        const staffQ = query(collection(db, "cashiers"), where("cashierName", "==", staffName));
-        const staffSnap = await getDocs(staffQ);
+        const staffSnap = await window.getDocFromServer(window.doc(window.db, 'cashiers', staffId));
         if (!stillCurrent()) return;
         
         let nickname = staffName;
         let myBranch = null;
         
-        if (!staffSnap.empty) {
-            let data = staffSnap.docs[0].data();
+        if (staffSnap.exists()) {
+            let data = staffSnap.data();
             nickname = data.scheduleNickname || staffName;
             myBranch = data.branch;
             window.cachedSchedProfile = data;
-        }
+        } else throw new Error('Your staff profile is unavailable. Sign in again or ask HQ to check your account.');
 
         // 🔥 THE FIX: SMART NAME MATCHER! 
         let isMatch = (assignedName) => {
             if (!assignedName || assignedName === "N/A" || assignedName === "UNFILLED") return false;
             let aName = assignedName.toLowerCase().trim();
-            let sName = staffName.toLowerCase().trim();
-            let nName = nickname.toLowerCase().trim();
-            
-            return aName === sName || aName === nName;
+            const aliases = [staffName, nickname, window.cachedSchedProfile?.cashierName, window.cachedSchedProfile?.nickname]
+                .filter(Boolean).map(value => value.toLowerCase().trim());
+            return aliases.includes(aName);
         };
 
-        const lastDate = `${selected}-${String(new Date(Date.UTC(year,month,0)).getUTCDate()).padStart(2,'0')}`;
-        const history = await createScheduleHistoryStore(window).loadRange(`${selected}-01`,lastDate);
+        const monthView = await loadScheduleMonthView(window, {month:selected});
         if (!stillCurrent()) return;
-        const archive = history.historyMonths?.[selected], latest = archive?.latestRevision;
-        const selectedSnapshot = latest?.snapshot || (+history.currentYear === year && +history.currentMonth === month ? history : null);
-        if (!selectedSnapshot?.currentSchedule) {
+        if (!monthView.hasSavedSchedule) {
             const niceMonth = new Date(year,month-1).toLocaleString('en-PH',{month:'long',year:'numeric'});
             container.innerHTML = `<div style="text-align:center;padding:40px;color:#64748b;font-weight:bold">HQ has not saved a schedule for ${niceMonth} yet.</div>`;
             window.cachedSchedData = null;
             return;
         }
-        let schedData = structuredClone(selectedSnapshot);
-        window.cachedScheduleDaySnapshots = {};window.cachedScheduleDayRevisions = {};
-        for (let day=1;day<=new Date(Date.UTC(year,month,0)).getUTCDate();day++) {
-            const workDate = `${selected}-${String(day).padStart(2,'0')}`;
-            const dated = resolveScheduleForDate(history,workDate);
-            if (dated) {
-                schedData.currentSchedule[day] = dated.currentSchedule[day] || {};
-                window.cachedScheduleDaySnapshots[day] = dated;
-                window.cachedScheduleDayRevisions[day] = dated.scheduleRevisionId;
-            }
-        }
-        schedData.scheduleRevisionId = latest?.revisionId || selectedSnapshot.scheduleRevisionId || '';
+        let schedData = structuredClone(monthView.snapshot);
+        window.cachedScheduleDaySnapshots = monthView.daySnapshots;
+        window.cachedScheduleDayRevisions = monthView.dayRevisions;
         window.cachedSchedData = schedData;
 
         let monthName = new Date(year, month - 1).toLocaleString('en-PH', { month: 'long' });
@@ -2876,15 +2868,14 @@ window.loadStaffSchedule = async function() {
         let daysInMonth = new Date(year, month, 0).getDate();
         let hasShifts = false;
 
-        let todayObj = new Date();
-        todayObj.setHours(0,0,0,0);
+        const todayKey = scheduleDateKey(new Date());
 
         for (let day = 1; day <= daysInMonth; day++) {
             let dStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             let dateObj = new Date(year, month - 1, day);
             let displayDate = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
             
-            let isFutureOrToday = dateObj >= todayObj;
+            let isFutureOrToday = dStr >= todayKey;
 
             let dayData = schedule[day];
             if (!dayData) continue;
@@ -2914,7 +2905,7 @@ window.loadStaffSchedule = async function() {
                 let scheduledKeys = Object.keys(dayData[b].scheduled || {});
                 for (let sId of scheduledKeys) {
                     if (isMatch(dayData[b].scheduled[sId])) {
-                        if (branchConfig[b]) {
+                        if (window.cachedScheduleDaySnapshots?.[day]?.branchConfig?.[b] || branchConfig[b]) {
                             let sConf = (window.cachedScheduleDaySnapshots?.[day]?.branchConfig?.[b] || branchConfig[b]).find(s => s.id === sId);
                             if (sConf) { shiftFound = sConf; assignedToBranch = b; break; }
                         }
@@ -2923,7 +2914,7 @@ window.loadStaffSchedule = async function() {
                 if (shiftFound) break; // Stop scanning once we find them working!
             }
 
-            let holType = holidays[dStr];
+            let holType = window.cachedScheduleDaySnapshots?.[day]?.holidays?.[dStr] ?? holidays[dStr];
             let holBadge = holType ? `<div style="font-size: 10px; color: #ea580c; font-weight: bold; margin-top: 4px;">🎉 ${holType} Holiday</div>` : '';
 
             let rowBg = "white";
@@ -2965,7 +2956,7 @@ window.loadStaffSchedule = async function() {
                 hasShifts = true;
             }
 
-            let isToday = (dStr === todayObj.toISOString().split('T')[0]);
+            let isToday = dStr === todayKey;
             let todayBorder = isToday ? 'border-left: 4px solid #0ea5e9;' : '';
             let todayBadge = isToday ? '<br><span style="background: #0ea5e9; color: white; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: bold; display: inline-block; margin-top: 4px;">TODAY</span>' : '';
 
@@ -4124,3 +4115,13 @@ installStaffPhone();
 installStaffDocuments(window,{createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
 
 installDeductionInbox(window,{createClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
+window.staffScheduleSync = installScheduleViewSync(window, {window, document,
+    scope: () => document.getElementById('view-schedule')?.classList.contains('active')
+        && localStorage.getItem('takodeal_staff_id') && localStorage.getItem('takodeal_staff_name')
+        && document.getElementById('appContainer')?.style.display !== 'none'
+        ? {identity:localStorage.getItem('takodeal_staff_id'), name:localStorage.getItem('takodeal_staff_name'),
+            month:document.getElementById('staffMonthPicker')?.value || scheduleDateKey(new Date()).slice(0,7)} : null,
+    refresh: () => window.loadStaffSchedule(),
+    error: () => { const box=document.getElementById('scheduleContainer');if(box)box.setAttribute('aria-label','Schedule connection interrupted. Reopen Schedule to refresh.'); }
+});
+window.loadStaffSchedule = window.staffScheduleSync.wrap(window.loadStaffSchedule);

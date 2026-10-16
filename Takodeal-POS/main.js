@@ -17,6 +17,9 @@ import { createRemittanceAttemptStore, readRemittanceDrawer, submitRemittanceAto
 import {captureAttendanceSchedule} from './payroll-safety.js';
 import {createCountSnapshot, stockReportQuantities} from './stock-report-units.js';
 import {createScheduleHistoryStore} from './schedule-history.js';
+import {scheduleDateKey} from './schedule-history.js';
+import {loadScheduleMonthView} from './schedule-sync.js';
+import {installScheduleViewSync} from './schedule-view-sync.js';
 import {pendingDueNotices, clockInRestriction, startPhilippineDayTimer, acknowledgeSanction} from './sanction-schedule.js';
 // ========================================================
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
@@ -5022,8 +5025,17 @@ window.loadWasteHistory = async function() {
 window.loadBranchSchedule = async function() {
     const container = document.getElementById('cashierScheduleContainer');
     if (!container) return;
+    const loadToken = window.cashierScheduleLoadToken = (window.cashierScheduleLoadToken || 0) + 1;
+    const viewToken = window.cashierScheduleSync?.token();
+    const identity = localStorage.getItem('cashierName');
+    const requestedMonth = scheduleDateKey(new Date()).slice(0,7);
     
     let deviceBranch = localStorage.getItem('takodeal_device_branch');
+    const stillCurrent = () => window.cashierScheduleLoadToken === loadToken
+        && localStorage.getItem('cashierName') === identity
+        && localStorage.getItem('takodeal_device_branch') === deviceBranch
+        && scheduleDateKey(new Date()).slice(0,7) === requestedMonth
+        && (!window.cashierScheduleSync || window.cashierScheduleSync.current(viewToken));
     if (!deviceBranch) {
         container.innerHTML = '<div style="text-align:center; padding: 40px; color:#dc2626; font-weight:bold;">❌ Please lock this device to a branch first in the setup screen.</div>';
         return;
@@ -5032,14 +5044,14 @@ window.loadBranchSchedule = async function() {
     container.innerHTML = `<div style="text-align:center; padding: 40px; color:#64748b; font-size: 16px;">⏳ Fetching ${deviceBranch} schedule from HQ...</div>`;
 
     try {
-        // Download the giant Global Schedule
-        const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_schedule"));
-        if (!schedSnap.exists()) {
+        const monthView = await loadScheduleMonthView(window, {month:requestedMonth, branch:deviceBranch});
+        if (!stillCurrent()) return;
+        if (!monthView.hasSavedSchedule) {
             container.innerHTML = '<div style="text-align:center; padding: 40px; color:#64748b;">No schedule has been published by HQ yet.</div>';
             return;
         }
 
-        const schedData = schedSnap.data();
+        const schedData = monthView.snapshot;
         const branchConfig = schedData.branchConfig || {};
         const schedule = schedData.currentSchedule || {};
         const year = schedData.currentYear;
@@ -5047,7 +5059,7 @@ window.loadBranchSchedule = async function() {
         const holidays = schedData.holidays || {};
 
         // 🔥 THE FIX: Beautiful fallback for test branches without shifts!
-        if (!branchConfig[deviceBranch]) {
+        if (!branchConfig[deviceBranch] && !Object.values(monthView.daySnapshots).some(day => day.branchConfig?.[deviceBranch])) {
             container.innerHTML = `
                 <div style="background: #f8fafc; padding: 40px; border-radius: 12px; border: 2px dashed #cbd5e1; text-align: center; margin-top: 20px;">
                     <span style="font-size: 45px; display: block; margin-bottom: 15px;">🏢</span>
@@ -5063,8 +5075,7 @@ window.loadBranchSchedule = async function() {
         }
 
         const monthName = new Date(year, month - 1).toLocaleString('en-US', { month: 'long', year: 'numeric' });
-        let todayDay = new Date().getDate();
-        let currentMonth = new Date().getMonth() + 1;
+        const todayKey = scheduleDateKey(new Date());
 
         let html = `
             <div style="background: #f8fafc; padding: 20px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
@@ -5080,16 +5091,17 @@ window.loadBranchSchedule = async function() {
             <div style="display: flex; flex-direction: column; gap: 15px;">
         `;
 
-        let activeShifts = branchConfig[deviceBranch].filter(s => s.active);
-
         // Loop through all days in the month
-        for (let day = 1; day <= 31; day++) {
+        for (let day = 1; day <= new Date(Date.UTC(year,month,0)).getUTCDate(); day++) {
             if (!schedule[day] || !schedule[day][deviceBranch]) continue;
             
             let bData = schedule[day][deviceBranch];
-            let dateObj = new Date(year, month - 1, day);
-            let dateStr = dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-            let isToday = (day === todayDay && month === currentMonth);
+            const fullDateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            let dateObj = new Date(fullDateKey+'T12:00:00+08:00');
+            let dateStr = dateObj.toLocaleDateString('en-US', {timeZone:'Asia/Manila', weekday: 'long', month: 'short', day: 'numeric' });
+            let isToday = fullDateKey === todayKey;
+            const dated = monthView.daySnapshots[day];
+            const activeShifts = (dated?.branchConfig?.[deviceBranch] || branchConfig[deviceBranch] || []).filter(s => s.active !== false);
             
             // Highlight card if it's today
             let cardBg = isToday ? '#f0fdf4' : 'white';
@@ -5097,8 +5109,7 @@ window.loadBranchSchedule = async function() {
             let headerBg = isToday ? '#16a34a' : '#f8fafc';
             let headerText = isToday ? 'white' : '#1e293b';
 
-            let fullDateKey = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            let holidayType = holidays[fullDateKey];
+            let holidayType = dated?.holidays?.[fullDateKey] ?? holidays[fullDateKey];
             let holBadge = holidayType ? `<span style="background: ${holidayType === 'Regular' ? '#fee2e2' : '#fef3c7'}; color: ${holidayType === 'Regular' ? '#dc2626' : '#ea580c'}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 10px;">⭐ ${holidayType} Holiday</span>` : '';
 
             html += `
@@ -5111,7 +5122,7 @@ window.loadBranchSchedule = async function() {
 
             // Print the Active Shifts
             activeShifts.forEach(shift => {
-                let assignedStaff = bData.scheduled[shift.id];
+                let assignedStaff = bData.scheduled?.[shift.id];
                 
                 // SWAP LOGIC HOOK
                 let isSwapped = bData.swaps && bData.swaps[shift.id]; 
@@ -5137,7 +5148,7 @@ window.loadBranchSchedule = async function() {
             });
 
             // Print Standby and Off staff for awareness
-            let restText = bData.rest.length > 0 ? bData.rest.join(', ') : 'None';
+            let restText = bData.rest?.length > 0 ? bData.rest.join(', ') : 'None';
             html += `
                 <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #e2e8f0; padding: 8px 0; font-size: 13px; margin-top: 5px;">
                     <span style="color: #64748b; font-weight: bold;">☕ Standby / Reliever:</span>
@@ -5145,7 +5156,7 @@ window.loadBranchSchedule = async function() {
                 </div>
             `;
 
-            let offText = bData.unavailable.length > 0 ? bData.unavailable.map(u => `${u.name} (${u.status})`).join(', ') : 'None';
+            let offText = bData.unavailable?.length > 0 ? bData.unavailable.map(u => `${u.name} (${u.status})`).join(', ') : 'None';
             html += `
                 <div style="display: flex; justify-content: space-between; padding: 8px 0; font-size: 13px;">
                     <span style="color: #64748b; font-weight: bold;">🏖️ Off / Leave:</span>
@@ -5160,6 +5171,7 @@ window.loadBranchSchedule = async function() {
 
         // Auto-scroll to today's schedule if it exists!
         setTimeout(() => {
+            if (!stillCurrent()) return;
             let todayCard = document.getElementById('todayScheduleCard');
             if (todayCard) {
                 todayCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -5167,6 +5179,7 @@ window.loadBranchSchedule = async function() {
         }, 500);
 
     } catch (e) {
+        if (!stillCurrent()) return;
         console.error("Error loading branch schedule:", e);
         container.innerHTML = '<div style="text-align:center; padding: 40px; color:red; font-weight: bold;">❌ Failed to load schedule. Please check your internet connection.</div>';
     }
@@ -9801,3 +9814,11 @@ window.compressImage = function(file, maxWidth = 800, maxHeight = 800, quality =
 window.submitComprehensiveCloseShift = (...args) => window.MASTER_CloseShift(...args);
 
 installCycleCounts(window,document);
+window.cashierScheduleSync = installScheduleViewSync(window, {window, document,
+    scope: () => document.getElementById('view-schedule')?.classList.contains('active')
+        && localStorage.getItem('cashierName') && localStorage.getItem('takodeal_device_branch')
+        ? {identity:localStorage.getItem('cashierName'), branch:localStorage.getItem('takodeal_device_branch'),
+            month:scheduleDateKey(new Date()).slice(0,7)} : null,
+    refresh: () => window.loadBranchSchedule()
+});
+window.loadBranchSchedule = window.cashierScheduleSync.wrap(window.loadBranchSchedule);

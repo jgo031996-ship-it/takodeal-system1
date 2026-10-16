@@ -6,6 +6,7 @@ import * as payroll from '../takodeal-staff/payroll-safety.js';
 import * as sanctions from '../Takodeal-POS/sanction-schedule.js';
 import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
 import {createScheduleHistoryStore,scheduleDateKey,monthKey,resolveScheduleForDate} from '../takodeal-staff/schedule-history.js';
+import {loadScheduleMonthView} from '../takodeal-staff/schedule-sync.js';
 
 const staffSource = readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
 const cashierSource = readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8');
@@ -204,7 +205,7 @@ test('actual Staff SOP screen follows an ID-matched Cashier shift instead of a G
 
 function scheduleView(h,selected='2026-11') {
     const ui=dom();ui.node('staffMonthPicker').value=selected;
-    const window={...h.api};const context={...h.api,...ui,window,createScheduleHistoryStore,scheduleDateKey,monthKey,resolveScheduleForDate,structuredClone,Date:dateAt(now)};
+    const window={...h.api};const context={...h.api,...ui,window,createScheduleHistoryStore,loadScheduleMonthView,scheduleDateKey,monthKey,resolveScheduleForDate,structuredClone,Date:dateAt(now)};
     const start=staffSource.indexOf('window.loadStaffSchedule = async function');
     vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('window.initiateSwapRequest = function',start)),context);
     return {...ui,window,context};
