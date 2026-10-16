@@ -23,6 +23,25 @@ export function inventoryOverviewRow(item) {
     }
     if (baseCost !== null && (baseCost < 0 || !Number.isFinite(baseCost))) baseCost = null;
     if (baseCost === null) costBasis = 'Cost needs review';
+    const savedPurchaseUnit = text(firstPresent(item.purchaseUom, item.purchUom));
+    const savedBaseUnit = text(firstPresent(item.baseUom, item.uom));
+    const purchaseUnit = savedPurchaseUnit || savedBaseUnit || 'unit';
+    const sameUnit = savedPurchaseUnit && savedBaseUnit && savedPurchaseUnit.toLocaleLowerCase('en-PH') === savedBaseUnit.toLocaleLowerCase('en-PH');
+    const purchaseUnitKnown = !!savedPurchaseUnit || conversion === 1 && !!savedBaseUnit;
+    const purchaseConversionKnown = validConversion && (rawConversion !== undefined || sameUnit || !savedPurchaseUnit && !!savedBaseUnit);
+    // Match the item's saved purchase-cost field. Derive a missing purchase cost
+    // from the recorded base cost without repairing or changing either value.
+    const rawPurchaseCost = firstPresent(item.purchaseCost, item.purchCost, item.cost);
+    const recordedPurchaseCost = numeric(rawPurchaseCost);
+    const derivedPurchaseCost = baseCost !== null && purchaseConversionKnown ? baseCost * conversion : null;
+    const calculatedPurchaseCost = rawPurchaseCost === undefined ? derivedPurchaseCost : recordedPurchaseCost;
+    const purchaseUnitCost = purchaseUnitKnown && calculatedPurchaseCost !== null && calculatedPurchaseCost >= 0 && Number.isFinite(calculatedPurchaseCost) ? calculatedPurchaseCost : null;
+    const purchaseCostIssue = !purchaseUnitKnown ? 'Purchase unit not set'
+        : rawPurchaseCost !== undefined ? purchaseUnitCost === null ? 'Cost needs review' : ''
+        : !purchaseConversionKnown ? 'Conversion needs review' : baseCost === null ? 'Cost not set' : purchaseUnitCost === null ? 'Cost needs review' : '';
+    const purchaseCostBasis = rawPurchaseCost === undefined ? 'Derived from recorded base cost' : 'Recorded purchase-unit cost';
+    const purchaseCostDiffers = purchaseUnitCost !== null && derivedPurchaseCost !== null && Number.isFinite(derivedPurchaseCost)
+        && Math.abs(purchaseUnitCost-derivedPurchaseCost) > Math.max(1e-9, Math.abs(derivedPurchaseCost)*1e-9);
     const rawThreshold = firstPresent(item.reorderLevel, item.lowStockAlert);
     const storedReorder = firstPresent(item.reorderLevel), storedAlert = firstPresent(item.lowStockAlert);
     const thresholdConflict = storedReorder !== undefined && storedAlert !== undefined
@@ -38,8 +57,8 @@ export function inventoryOverviewRow(item) {
     const value = calculatedValue !== null && Number.isFinite(calculatedValue) ? calculatedValue : null;
     return {...item, id:text(item.id), name:text(item.name) || 'Unnamed item', branch:text(item.branch) || 'Branch not recorded',
         category:text(item.category) || 'Uncategorized', stock, conversion:validConversion ? conversion : null,
-        baseCost, costBasis, value, threshold, thresholdConflict, status, statusKind,
-        purchaseUnit:text(item.purchaseUom || item.purchUom || item.baseUom || item.uom) || 'unit',
+        baseCost, costBasis, purchaseUnitCost, purchaseCostIssue, purchaseCostBasis, purchaseCostDiffers, value, threshold, thresholdConflict, status, statusKind,
+        purchaseUnit,
         baseUnit:text(item.baseUom || item.uom) || 'unit'};
 }
 
@@ -77,6 +96,8 @@ export function latestHqInventoryAudit(rows) {
 export function installInventoryOverview(w=window, d=document) {
     if (w.inventoryOverviewInstalled) return w.inventoryOverviewInstalled;
     const el = id => d.getElementById(id);
+    const costHeading = el('inventoryTableBody')?.parentElement?.tHead?.rows?.[0]?.cells?.[6];
+    if (costHeading) costHeading.textContent = 'Cost / purchase unit';
     const allowed = branch => !!w.sessionUser
         && (text(w.sessionUser.email).toLowerCase() === OWNER_EMAIL || w.sessionUser.allowedBranches?.some(name=>name==='All' || name===branch))
         && (typeof w.isBranchAllowed !== 'function' || w.isBranchAllowed(branch) === true);
@@ -127,8 +148,10 @@ export function installInventoryOverview(w=window, d=document) {
             if(item.stock!==null && item.conversion && item.conversion!==1 && item.purchaseUnit.toLowerCase()!==item.baseUnit.toLowerCase())stockCell.append(create('small',quantity(item.stock/item.conversion)+' '+item.purchaseUnit,'inventory-overview-pack'));
             row.append(stockCell);const statusCell=create('td'),badge=create('span',item.status,'inventory-stock-status inventory-stock-'+item.statusKind);statusCell.append(badge);
             if(item.threshold===null && item.stock>0)statusCell.append(create('small','Low-stock alert not set','inventory-overview-note'));
-            row.append(statusCell);const costCell=create('td',item.baseCost===null?'Cost not set':money(item.baseCost),'inventory-overview-cost');costCell.title=item.costBasis+' / '+item.baseUnit;
-            if(item.costBasis==='Derived from purchase cost')costCell.append(create('small','From purchase cost','inventory-overview-note'));
+            row.append(statusCell);const costCell=create('td',item.purchaseUnitCost===null?item.purchaseCostIssue:money(item.purchaseUnitCost)+' / '+item.purchaseUnit,'inventory-overview-cost');
+            costCell.title=item.purchaseUnitCost===null?item.purchaseCostIssue:item.purchaseCostBasis+' / '+item.purchaseUnit
+                +(item.purchaseCostDiffers?'. Stock value uses a different recorded base-unit cost.':'');
+            costCell.setAttribute('data-label','Cost / purchase unit');
             row.append(costCell,create('td',item.value===null?'Not valued':money(item.value),'inventory-overview-value'));
             const actionCell=create('td','','inventory-overview-actions'),action=create('button','Actions','inventory-row-action action-menu-btn');action.type='button';action.setAttribute('aria-label','Actions for '+item.name+' · '+item.branch);
             action.addEventListener('click',()=>{if(permitted() && allowed(item.branch))w.showInventoryActions?.(item.id,item.name,item.stock,item.baseUnit,item.baseCost,item.branch);});actionCell.append(action);row.append(actionCell);fragment.append(row);

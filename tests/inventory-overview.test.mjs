@@ -24,6 +24,35 @@ test('unit costs keep a real zero and honestly label conversion-derived or unava
     assert.equal(inventoryOverviewRow(item({baseCost:undefined,cost:undefined})).baseCost,null);
 });
 
+test('purchase-unit display follows the item editor saved-cost aliases and preserves base valuation',()=>{
+    const weighted=inventoryOverviewRow(item({baseCost:63.39/50,purchaseUom:'Pack',conversionRate:50,purchaseCost:999,purchCost:888,cost:777}));
+    assert.equal(weighted.purchaseUnitCost,999);assert.equal(weighted.purchaseUnit,'Pack');assert.equal(weighted.purchaseCostDiffers,true);
+    assert.equal(weighted.baseCost,63.39/50);assert.equal(weighted.value,10*(63.39/50));
+    const zero=inventoryOverviewRow(item({baseCost:2,purchaseCost:0,purchCost:999}));assert.equal(zero.purchaseUnitCost,0);assert.equal(zero.value,20);
+    const legacy=inventoryOverviewRow(item({baseCost:undefined,purchaseUom:undefined,purchUom:'Sack',conversionRate:undefined,conversion:50,purchCost:63.39}));
+    assert.equal(legacy.purchaseUnitCost,63.39);assert.equal(legacy.purchaseUnit,'Sack');assert.equal(legacy.baseCost,63.39/50);
+    assert.equal(inventoryOverviewRow(item({purchaseCost:'',purchCost:25,cost:30})).purchaseUnitCost,25);
+    assert.equal(inventoryOverviewRow(item({purchaseCost:undefined,purchCost:undefined,cost:30})).purchaseUnitCost,30);
+    assert.equal(inventoryOverviewRow(item({purchaseCost:undefined,purchCost:undefined,cost:undefined})).purchaseUnitCost,200);
+    for(const purchaseCost of [-1,Infinity,'invalid',true]){
+        const invalid=inventoryOverviewRow(item({purchaseCost,purchCost:25}));assert.equal(invalid.purchaseUnitCost,null);assert.equal(invalid.purchaseCostIssue,'Cost needs review');assert.equal(invalid.value,20);
+    }
+});
+
+test('purchase-unit display does not invent a conversion or unit while existing base valuation stays unchanged',()=>{
+    for(const conversionRate of [0,-1,'bad',Infinity]){
+        const row=inventoryOverviewRow(item({conversionRate}));assert.equal(row.purchaseUnitCost,null);assert.equal(row.purchaseCostIssue,'Conversion needs review');assert.equal(row.value,20);
+        assert.equal(inventoryOverviewRow(item({conversionRate,purchaseCost:12})).purchaseUnitCost,12,'a saved purchase cost does not need conversion arithmetic');
+    }
+    const missing=inventoryOverviewRow(item({conversionRate:undefined}));
+    assert.equal(missing.purchaseUnitCost,null);assert.equal(missing.purchaseCostIssue,'Conversion needs review');assert.equal(missing.baseCost,2);assert.equal(missing.value,20);
+    const unlabeled=inventoryOverviewRow(item({purchaseUom:undefined}));assert.equal(unlabeled.purchaseUnitCost,null);assert.equal(unlabeled.purchaseCostIssue,'Purchase unit not set');
+    const single=inventoryOverviewRow(item({purchaseUom:undefined,baseUom:'piece',conversionRate:undefined}));assert.equal(single.purchaseUnitCost,2);assert.equal(single.purchaseUnit,'piece');
+    const same=inventoryOverviewRow(item({purchaseUom:'Gram',baseUom:'gram',conversionRate:undefined}));assert.equal(same.purchaseUnitCost,2);
+    for(const baseCost of [-1,Infinity,'invalid',true])assert.equal(inventoryOverviewRow(item({baseCost})).purchaseUnitCost,null);
+    const huge=inventoryOverviewRow(item({baseCost:Number.MAX_VALUE,conversionRate:1000,currentStock:0}));assert.equal(huge.purchaseUnitCost,null);assert.equal(huge.purchaseCostIssue,'Cost needs review');assert.equal(huge.value,0);
+});
+
 test('conflicting saved alert aliases require review rather than choosing one threshold',()=>{
     const conflicting=inventoryOverviewRow(item({currentStock:10,reorderLevel:0,lowStockAlert:20}));
     assert.equal(conflicting.thresholdConflict,true);assert.equal(conflicting.status,'Settings need review');
@@ -73,12 +102,13 @@ class FakeNode {
     setAttribute(name,value){this.attributes[name]=String(value);}
     addEventListener(name,listener){this.listeners.set(name,listener);}
 }
-function fixture({inventory=[item()],branches=[{name:'Main Office'},{name:'Maa'},{name:'Agdao'}],audit=[]}={}){
+function fixture({inventory=[item()],branches=[{name:'Main Office'},{name:'Maa'},{name:'Agdao'}],audit=[],withHeading=false}={}){
     const d={nodes:new Map(),createElement(tag){return new FakeNode(tag,this);},createDocumentFragment(){return new FakeNode('#fragment',this);},getElementById(id){return this.nodes.get(id)||null;}};
     const root=d.createElement('main'),create=(tag,id,parent=root)=>{const node=d.createElement(tag);node.id=id;parent.append(node);return node;};
     for(const id of ['invBranchFilter','invCategoryFilter'])create('select',id).value='All';
     create('input','liveInvSearch');create('input','selectAllInv');create('button','inventoryRefreshStocks');create('p','inventoryOverviewStatus');
     const table=create('table','inventoryTable'),body=create('tbody','inventoryTableBody',table);
+    if(withHeading)table.tHead={rows:[{cells:Array.from({length:9},()=>d.createElement('th'))}]};
     for(const id of ['invTotalItems','invTotalValue','kpiLastAudit']){const card=create('article',id+'Card');create('div',id+'Label',card);create('div',id,card);}
     const calls=[],w={sessionUser:{uid:'owner',email:'jgo031996@gmail.com',permissions:['all'],allowedBranches:['All']},auth:{currentUser:{uid:'owner'}},
         isBranchAllowed:()=>true,fetchCachedCollection:async table=>table==='inventory'?inventory:branches,
@@ -153,6 +183,17 @@ test('untrusted names are rendered as text and action callbacks keep the exact r
     const action=f.body.children[0].children[8].children[0];assert.equal(action.attributes.onclick,undefined);action.listeners.get('click')();
     assert.deepEqual(f.calls.find(call=>call[0]==='actions').slice(1),['exact-id',name,10,'gram',2,'Main Office']);
     assert.equal(f.body.children[0].children[0].children[0].dataset.name,name);
+});
+
+test('rendered cost heading and cells identify purchase units while action costs and stock values stay in base units',async()=>{
+    const original=item({id:'pack',baseCost:63.39/50,purchaseUom:'Pack',conversionRate:50,purchaseCost:63.39}),before=structuredClone(original),f=fixture({inventory:[original],withHeading:true});
+    assert.equal(f.body.parentElement.tHead.rows[0].cells[6].textContent,'Cost / purchase unit');
+    assert.ok(fixture().w.inventoryOverviewInstalled,'the installer also accepts a table without a heading');
+    await f.w.loadInventoryData();const row=f.body.children[0],cost=row.children[6];
+    assert.equal(cost.textContent,'₱63.39 / Pack');assert.equal(cost.attributes['data-label'],'Cost / purchase unit');
+    assert.match(cost.title,/Recorded purchase-unit cost \/ Pack/);assert.equal(row.children[7].textContent,'₱12.68');
+    assert.equal(f.el('invTotalValue').textContent,'₱12.68');row.children[8].children[0].listeners.get('click')();
+    assert.equal(f.calls.find(call=>call[0]==='actions')[5],63.39/50);assert.deepEqual(original,before);
 });
 
 test('restricted branch data never enters rows, summaries, selectors or an HQ audit read',async()=>{
