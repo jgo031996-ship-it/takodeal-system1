@@ -97,7 +97,7 @@ test('dashboard and Franchise preview share corrected values, while manual decis
  const held=attendanceEstimate({logs:[{...entry,reviewedLateMinutes:35},out],profiles:[{...profiles['Sample Two'],id:profiles['Sample Two'].staffId}],schedule:h.history,start:'2026-10-16',end:'2026-10-16',branch});assert.equal(held[0].attendanceHeld,true);assert.equal(held[0].net,null);assert.equal(held[0].late,62.5);
 });
 test('all four apps ship identical shared correction math',()=>{
- const expected=readFileSync(new URL('../takodeal-manager/payroll-safety.js',import.meta.url));for(const app of ['takodeal-pos','takodeal-staff','takodeal-franchise'])assert.deepEqual(readFileSync(new URL('../'+app+'/payroll-safety.js',import.meta.url)),expected);
+ const expected=readFileSync(new URL('../takodeal-manager/payroll-safety.js',import.meta.url));for(const app of ['Takodeal-POS','takodeal-staff','takodeal-franchise'])assert.deepEqual(readFileSync(new URL('../'+app+'/payroll-safety.js',import.meta.url)),expected);
 });
 function dashboardFixture(readHistory) {
  const ids=[...readFileSync(new URL('../takodeal-manager/index.html',import.meta.url),'utf8').matchAll(/id="([^"]+)"/g)].map(match=>match[1]);
