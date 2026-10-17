@@ -1,4 +1,8 @@
 import {installDeductionInbox} from './deduction-inbox.js';
+import {installStaffLeaveUI} from './staff-leave-ui.js';
+import {leaveToday} from './leave-model.js';
+window.getStaffLeaveUI=()=>window.staffLeaveUI||installStaffLeaveUI(window,document);
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>window.getStaffLeaveUI(),{once:true});else queueMicrotask(()=>window.getStaffLeaveUI());
 import {onlineRefundReviewHTML} from './online-refund-pay.js';
 import { installStaffLocation } from './staff-location.js';
 import { installAttendanceCamera } from './attendance-camera.js';
@@ -1511,9 +1515,12 @@ window.openReqForm = function(type) {
     document.getElementById('reqModalTitle').innerText = type + " Request";
 
     if (type === 'Leave') {
-        formHtml = `<div class="form-group"><label>Start Date</label><input type="date" id="reqStart"></div>
-            <div class="form-group"><label>End Date</label><input type="date" id="reqEnd"></div>
-            <div class="form-group"><label>Reason</label><textarea id="reqReason" rows="3"></textarea></div>`;
+        const today=leaveToday();
+        formHtml = `<p class="leave-note">Management confirms leave before it changes your saved schedule. Choose today or future dates.</p>
+            <div class="form-group"><label>Leave type</label><select id="reqLeaveType"><option>Leave</option><option>Vacation Leave</option><option>Sick Leave</option><option>Emergency Leave</option></select></div>
+            <div class="form-group"><label>Start date</label><input type="date" id="reqStart" min="${today}" required></div>
+            <div class="form-group"><label>End date</label><input type="date" id="reqEnd" min="${today}" required></div>
+            <div class="form-group"><label>Reason</label><textarea id="reqReason" rows="3" maxlength="1500" required></textarea></div>`;
     } else if (type === 'Cash Advance') {
         formHtml = `<div class="form-group"><label>Amount (₱)</label><input type="number" id="reqAmount" placeholder="0.00"></div>
             <div class="form-group"><label>Reason / Purpose</label><textarea id="reqReason" rows="2"></textarea></div>`;
@@ -1533,15 +1540,11 @@ window.openReqForm = function(type) {
 };
 
 window.submitStaffRequest = async function() {
+    if(window.currentReqType==='Leave')return window.getStaffLeaveUI().submitFromForm();
     let payload = { type: window.currentReqType, staffName: localStorage.getItem('takodeal_staff_name'), status: "Pending", staffAcknowledged: false, timestamp: window.serverTimestamp() };
     let fileToUpload = null;
 
-    if (payload.type === 'Leave') {
-        payload.startDate = document.getElementById('reqStart') ? document.getElementById('reqStart').value : ''; 
-        payload.endDate = document.getElementById('reqEnd') ? document.getElementById('reqEnd').value : ''; 
-        payload.reason = document.getElementById('reqReason') ? document.getElementById('reqReason').value.trim() : '';
-        if (!payload.startDate || !payload.reason) return Swal.fire('Incomplete', 'Fill all required fields.', 'warning');
-    } else if (payload.type === 'Cash Advance') {
+    if (payload.type === 'Cash Advance') {
         payload.amount = parseFloat(document.getElementById('reqAmount').value); 
         payload.reason = document.getElementById('reqReason') ? document.getElementById('reqReason').value.trim() : '';
         if (!payload.amount || !payload.reason) return Swal.fire('Incomplete', 'Fill all required fields.', 'warning');
@@ -1656,10 +1659,14 @@ window.loadInbox = async function() {
     listEl.innerHTML = '<div style="text-align:center; padding:20px; color:#94a3b8;">Loading...</div>';
 
     try {
-        const snap = await getDocs(query(collection(db, "staff_requests"), where("staffName", "==", localStorage.getItem('takodeal_staff_name'))));
+        const [snap,leaveRows] = await Promise.all([
+            getDocs(query(collection(db, "staff_requests"), where("staffName", "==", localStorage.getItem('takodeal_staff_name')))),
+            window.getStaffLeaveUI().list()
+        ]);
         if(localStorage.getItem('takodeal_staff_id')!==inboxStaffId||localStorage.getItem('takodeal_staff_name')!==inboxStaffName)return;
-        let docsArray = []; snap.forEach(docSnap => docsArray.push({id: docSnap.id, ...docSnap.data()}));
-        docsArray.sort((a,b) => b.timestamp - a.timestamp); 
+        let docsArray = [...leaveRows]; snap.forEach(docSnap => {const row=docSnap.data();if(row.type!=='Leave'&&row.type!=='Leave Change')docsArray.push({...row,id:docSnap.id});});
+        const requestMillis=row=>{const value=row.timestamp?.toDate?.()||row.timestamp;const at=new Date(value);return Number.isFinite(+at)?+at:0;};
+        docsArray.sort((a,b) => requestMillis(b)-requestMillis(a));
 
         let html = '';
         docsArray.forEach(d => {
@@ -1671,9 +1678,9 @@ window.loadInbox = async function() {
 
             // 🔥 THE FIX: EXPLICITLY EXTRACT THE REQUEST DETAILS!
             let detailText = "";
-            if (d.type === "Leave") detailText = `📅 ${d.startDate} to ${d.endDate} (${d.leaveType})<br><span style="color:#64748b; font-size:12px;">Reason: ${d.reason}</span>`;
+            if (d.type === "Leave" || d.type === "Leave Change") detailText = window.getStaffLeaveUI().details(d)+window.getStaffLeaveUI().actions(d);
             else if (d.type === "Cash Advance") detailText = `💸 ₱${(parseFloat(d.amount)||0).toFixed(2)}<br><span style="color:#64748b; font-size:12px;">Reason: ${d.reason}</span>`;
-            else if (d.type.includes("Staff Meal") || d.type.includes("Manager Meal")) {
+            else if (String(d.type||'').includes("Staff Meal") || String(d.type||'').includes("Manager Meal")) {
                 let ackBtn = !d.staffAcknowledged 
                     ? `<button onclick="window.acknowledgeMeal('${d.id}')" style="margin-top:8px; background:#10b981; color:white; padding:8px 12px; border-radius:6px; font-weight:bold; border:none; width:100%; box-shadow:0 2px 4px rgba(0,0,0,0.2); cursor:pointer;">👍 I Confirm this POS Meal</button>` 
                     : `<div style="margin-top:8px; color:#16a34a; font-size:11px; font-weight:bold;">✅ You confirmed this meal.</div>`;
@@ -1692,14 +1699,14 @@ window.loadInbox = async function() {
                     <div style="font-size:13px; color:#334155; margin-bottom: 10px; font-weight: 500; line-height: 1.4;">
                         ${detailText}
                     </div>
-                    <div style="font-size:11px; color:#94a3b8;">📅 Submitted: ${d.timestamp ? d.timestamp.toDate().toLocaleDateString() : 'Recent'}</div>
+                    <div style="font-size:11px; color:#94a3b8;">Submitted: ${requestMillis(d)?new Date(requestMillis(d)).toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'})+' (PH)':'Time not recorded'}</div>
                     ${proofHtml}${replyHtml}
                 </div>
             `;
             if ((d.status === 'Approved' || d.status === 'Rejected') && !d.staffAcknowledged) updateDoc(doc(db, "staff_requests", d.id), { staffAcknowledged: true });
         });
         listEl.innerHTML = html || '<div style="color:#64748b; font-size:13px; text-align:center;">No requests found.</div>';
-    } catch(e) { console.error(e); listEl.innerHTML = 'Error loading inbox.'; }
+    } catch(e) { if(localStorage.getItem('takodeal_staff_id')!==inboxStaffId||localStorage.getItem('takodeal_staff_name')!==inboxStaffName)return;listEl.textContent = e.message || 'Connect to HQ and refresh your inbox.'; }
 };
 
 // ==========================================

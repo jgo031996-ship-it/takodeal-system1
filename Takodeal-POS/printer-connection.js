@@ -105,7 +105,8 @@ export function createPrinterConnections({bluetooth, storage, onState = () => {}
         throw unsupported('No supported receipt data channel was found. Use Search again, or Android print bridge for a Classic Bluetooth JP-58H.');
     }
     function unsupported(message) { const error = new Error(message); error.code = 'printer-unsupported'; return error; }
-    async function establish(role, device, generation) {
+    async function establish(role, device, generation, assertCurrent = () => {}) {
+        assertCurrent();
         if (generations.get(role) !== generation) throw new Error('The printer connection changed while connecting. Try again.');
         devices.set(role, device);
         listen(device);
@@ -128,6 +129,7 @@ export function createPrinterConnections({bluetooth, storage, onState = () => {}
         }
         try {
             const character = await link;
+            assertCurrent();
             if (generations.get(role) !== generation || devices.get(role) !== device || !device.gatt.connected) throw new Error('The printer connection changed while connecting. Try again.');
             characters.set(role, character);
             failures.set(role, 0);
@@ -136,14 +138,16 @@ export function createPrinterConnections({bluetooth, storage, onState = () => {}
             return character;
         } finally { if (pending.get(device) === link) pending.delete(device); }
     }
-    function connect(role, {choose = false, replace = false} = {}) {
+    function connect(role, {choose = false, replace = false, assertCurrent = () => {}} = {}) {
         if (!ROLES.includes(role)) return Promise.reject(new Error('Unknown printer role.'));
         // A button gesture may repair missing permissions while background recall is
         // still pending. Repeated manual clicks continue to share a single chooser.
         if (rolePending.has(role) && (!choose || interactiveRoles.has(role))) return rolePending.get(role);
         const generation = (generations.get(role) || 0) + 1;
+        const previousDevice=devices.get(role),previousCharacter=characters.get(role);
         generations.set(role, generation);
         const attempt = (async () => {
+            assertCurrent();
             if (!enabled()) throw new Error('Direct Bluetooth printing is not enabled.');
             if (!bluetooth) throw unsupported('This browser does not support direct Bluetooth. On Android, select Android print bridge in Printer Hub.');
             if (!replace && ready(role)) return ready(role);
@@ -157,10 +161,17 @@ export function createPrinterConnections({bluetooth, storage, onState = () => {}
                 device = allowed.find(candidate => candidate.id === savedId(role));
             }
             if (!device) throw new Error(savedId(role) ? 'Tap Search again to restore permission for the saved printer.' : 'Connect this printer once in Printer Hub.');
-            return await establish(role, device, generation);
+            assertCurrent();
+            return await establish(role, device, generation, assertCurrent);
         })().catch(error => {
             // A replaced background attempt cannot clear a newer ready connection.
             if (generations.get(role) !== generation) throw error;
+            if(error.code==='pos-settings-access-changed'){
+                if(previousDevice)devices.set(role,previousDevice);else devices.delete(role);
+                if(previousCharacter)characters.set(role,previousCharacter);else characters.delete(role);
+                state(role,ready(role)?'connected':'not-connected','Settings access changed. Refresh access before connecting again.');
+                throw error;
+            }
             characters.delete(role);
             failures.set(role, (failures.get(role) || 0) + 1);
             state(role, error.code === 'printer-unsupported' ? 'unsupported' : savedId(role) || devices.has(role) ? 'reconnecting' : 'not-connected', error.message);

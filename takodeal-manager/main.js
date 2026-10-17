@@ -2,6 +2,18 @@ const runManagerDomReady = fn => document.readyState === "loading" ? document.ad
 import {finalizeRefundPayroll} from './refund-payroll.js';
 import {payrollScheduleStamp,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
 import {createPayrollPreviewGuard,readPayrollSnapshot} from './payroll-preview-guard.js';
+import {installManagerLeaveUI,leaveRequestSummaryHTML} from './manager-leave-ui.js';
+import {leaveStatus,leaveUnavailable,ownedScheduleLeave,scheduleUnavailable,leaveToday} from './leave-model.js';
+window.getManagerLeaveUI = () => window.managerLeaveUI || installManagerLeaveUI(window,document);
+runManagerDomReady(() => window.getManagerLeaveUI());
+window.reviewOwnedScheduleLeave = function(date,name) {
+    const marker=ownedScheduleLeave({unavailability,currentSchedule,currentYear,currentMonth},date,name)||scheduleUnavailable(unavailability[date],name,employees);
+    if(!marker?.leaveRequestId)return false;
+    if(!marker)return false;
+    if(date<leaveToday())window.ManagerUI.notify('Earlier approved leave stays in schedule history. Review current or future dates in Request Inbox.');
+    else void window.getManagerLeaveUI().change(marker.leaveRequestId,'Cancel',{date});
+    return true;
+};
 import {reportDetailsHTML,purchaseQuantity,escapeStock} from './stock-cycle.js';
 import {installOnlineRefunds} from './online-refunds-ui.js';
 import { installDeviceFleet } from './device-fleet.js';
@@ -8713,8 +8725,9 @@ window.addEmployee = function() {
     if (currentSchedule[1]) {
         for (let day in currentSchedule) {
             const dateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            if (unavailability[dateStr] && unavailability[dateStr][name]) {
-                currentSchedule[day][branch].unavailable.push({ name, status: unavailability[dateStr][name] });
+            const unavailable=scheduleUnavailable(unavailability[dateStr],name,employees);
+            if (unavailable) {
+                currentSchedule[day][branch].unavailable.push(leaveUnavailable(name,unavailable));
             } else {
                 currentSchedule[day][branch].rest.push(name);
             }
@@ -8732,11 +8745,11 @@ window.removeEmployee = async function(name) {
                 let bData = currentSchedule[day][branch];
                 for (let sId in bData.scheduled) { if (bData.scheduled[sId] === name) bData.scheduled[sId] = "UNFILLED"; }
                 bData.rest = bData.rest.filter(n => n !== name);
-                bData.unavailable = bData.unavailable.filter(u => u.name !== name);
+                bData.unavailable = bData.unavailable.filter(u => u.name !== name || u.leaveRequestId);
             }
         }
     }
-    for (let date in unavailability) { if (unavailability[date][name]) delete unavailability[date][name]; if (Object.keys(unavailability[date]).length === 0) delete unavailability[date]; }
+    for (let date in unavailability) { if (unavailability[date][name] && !unavailability[date][name]?.leaveRequestId) delete unavailability[date][name]; if (Object.keys(unavailability[date]).length === 0) delete unavailability[date]; }
     window.updateStaffDisplay(); window.updateAvailDropdown(); window.updateUnavailabilityList(); window.renderTables(); window.saveToCloud();
 };
 
@@ -8909,7 +8922,7 @@ window.updateUnavailabilityList = function() {
                 div.innerHTML = `
                     <span style="font-size: 13px; color: #334155;">
                         <strong style="color:#0ea5e9;">${date}</strong>: <b>${displayName}</b>${reliefTag}
-                        <span style="color:#dc2626; font-weight: bold; font-size: 11px; background: #fee2e2; padding: 2px 6px; border-radius: 4px; margin-left: 5px;">${unavailability[date][emp]}</span>
+                        <span style="color:#dc2626; font-weight: bold; font-size: 11px; background: #fee2e2; padding: 2px 6px; border-radius: 4px; margin-left: 5px;">${escapeHtml(leaveStatus(unavailability[date][emp]))}</span>
                     </span>
                     <button style="background: white; color:#ef4444; border: 1px solid #fecaca; padding: 4px 8px; border-radius: 4px; cursor:pointer; font-weight:bold; font-size: 12px; transition: 0.2s;" onclick="removeUnavailable('${date}', '${emp}')">✖</button>
                 `;
@@ -9015,6 +9028,7 @@ window.markUnavailable = function() {
     
     // Split the comma-separated string back into an array
     let datesArray = datesRaw.split(',').map(d => d.trim());
+    for(const date of datesArray)if(window.reviewOwnedScheduleLeave(date,emp))return;
     
     // 🧠 THE LOOP: Apply the status to EVERY selected date instantly!
     datesArray.forEach(date => {
@@ -9053,6 +9067,7 @@ window.markUnavailable = function() {
 };
 
 window.removeUnavailable = async function(date, emp) {
+    if(window.reviewOwnedScheduleLeave(date,emp))return;
     let confirm = await Swal.fire({
         title: `Remove ${emp}?`,
         html: `Remove <b>${emp}</b> from the Off/Leave/Suspended list for <b>${date}</b>?<br><br><span style="font-size: 12px; color: #64748b;">This will place them back on Standby for this day.</span>`,
@@ -9066,6 +9081,7 @@ window.removeUnavailable = async function(date, emp) {
 
     if (!confirm.isConfirmed) return;
 
+    if(window.reviewOwnedScheduleLeave(date,emp))return;
     if (unavailability[date] && unavailability[date][emp]) {
         delete unavailability[date][emp];
         if (Object.keys(unavailability[date]).length === 0) delete unavailability[date];
@@ -9135,6 +9151,7 @@ window.generateSchedule = async function() {
         const dStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const dOfWeek = new Date(currentYear, currentMonth - 1, day).getDay();
         
+        currentSchedule[day] ||= {};
         if (!currentSchedule[day][targetBranch]) {
             currentSchedule[day][targetBranch] = { scheduled: {}, rest: [], unavailable: [], swaps: {} };
         }
@@ -9145,11 +9162,13 @@ window.generateSchedule = async function() {
         let pool = employees.filter(e => e.branch === targetBranch).map(e => e.name);
         let available = [];
         
-        currentSchedule[day][targetBranch].unavailable = [];
+        currentSchedule[day][targetBranch].unavailable = (currentSchedule[day][targetBranch].unavailable||[]).filter(row=>row.leaveRequestId&&row.staffId);
         
         pool.forEach(name => {
-            if (unavailability[dStr] && unavailability[dStr][name]) {
-                currentSchedule[day][targetBranch].unavailable.push({ name, status: unavailability[dStr][name] });
+            const unavailable=scheduleUnavailable(unavailability[dStr],name,employees);
+            if (unavailable) {
+                const row=leaveUnavailable(name,unavailable);
+                if(!currentSchedule[day][targetBranch].unavailable.some(saved=>row.leaveRequestId?saved.leaveRequestId===row.leaveRequestId&&saved.staffId===row.staffId:saved.name===name))currentSchedule[day][targetBranch].unavailable.push(row);
             } else {
                 available.push(name);
             }
@@ -9267,7 +9286,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
                 if (realProfile.status === 'Resigned' || realProfile.pin === 'REVOKED') continue;
                 
                 let displayName = realProfile.scheduleNickname || realProfile.cashierName || offStaff;
-                let offStatus = todaysLeaves[offStaff];
+                let offStatus = leaveStatus(todaysLeaves[offStaff]);
                 optionsHtml += `<option value="unavail_${offStaff}">${displayName} (Currently: ${offStatus})</option>`;
             }
         }
@@ -9323,6 +9342,9 @@ window.executeSwap = async function(target, markAsSwap) {
     const { day, branch, shiftId, curStaff } = targetSwapData; 
     let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
     let newStaff = null;
+    const targetDate=`${currentYear}-${String(currentMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    const targetPerson=target.startsWith('unavail_')?target.slice(8):target.startsWith('global_')?target.slice(7):target.startsWith('rest_')?schedObj[day][branch].rest[Number(target.slice(5))]:target.startsWith('shift_')?schedObj[day][branch].scheduled[target.slice(6)]:null;
+    if(targetPerson&&window.reviewOwnedScheduleLeave(targetDate,targetPerson))return;
 
     if (!schedObj[day][branch].swaps) schedObj[day][branch].swaps = {};
 
@@ -9534,6 +9556,8 @@ window.renderTables = function() {
 // 🖱️ MANAGE STANDBY STAFF ENGINE
 // ==========================================
 window.manageStandbyStaff = async function(day, branch, staffName) {
+    const managedDate=`${currentYear}-${String(currentMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    if(window.reviewOwnedScheduleLeave(managedDate,staffName))return;
     let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
     let dayData = schedObj[day][branch];
     
@@ -9599,6 +9623,7 @@ window.manageStandbyStaff = async function(day, branch, staffName) {
     });
 
     if (formValues) {
+        if(window.reviewOwnedScheduleLeave(managedDate,staffName))return;
         // Action 1: Assign to Shift
         if (formValues.shiftId) {
             let oldStaff = dayData.scheduled[formValues.shiftId];
@@ -9917,8 +9942,8 @@ window.loadInbox = async function() {
                 detailsStr = `<strong style="color:#0f766e;">${escapeHtml(d.item || 'POS meal deduction')}</strong>
                     <br><span style="color:var(--danger);font-weight:bold;">Deduct: ₱${(Number(d.amount) || 0).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2})}</span>
                     <br><small style="color:#64748b;">Recorded automatically by POS${d.receiptId ? ' · Receipt ' + escapeHtml(d.receiptId) : ''}</small>`;
-            } else if (d.type === "Leave") {
-                detailsStr = `<strong style="color: #1e293b;">${d.leaveType || 'Leave'}</strong><br><span style="font-size:11px; font-weight:bold; color:var(--primary);">${d.startDate || '?'} to ${d.endDate || '?'}</span><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.reason || 'No reason provided'}"</span>`;
+            } else if (d.type === "Leave" || d.type === "Leave Change") {
+                detailsStr = leaveRequestSummaryHTML(d);
             } else if (d.type === "Cash Advance") {
                 detailsStr = `<strong style="color:var(--danger); font-size:15px;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</strong><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.reason || 'No reason provided'}"</span>`;
             } else if (d.type === "Reason Letter") {
@@ -10058,6 +10083,7 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
         const snap = await tkOwnerDoc(window.doc(window.db, 'staff_requests', docId));
         if (!snap.exists()) throw new Error('This request no longer exists. Refresh the inbox.');
         req = snap.data();
+        if(req.type==='Leave'||req.type==='Leave Change')return window.getManagerLeaveUI().review(docId,action);
         if (req.status !== 'Pending') throw new Error('This request was already reviewed. Refresh the inbox.');
         if (!window.isBranchAllowed(req.branch)) throw new Error('This branch is outside your access.');
         type = req.type; amount = Number(req.amount) || 0; staffName = req.staffName;
@@ -10157,6 +10183,10 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
     try {
         const originalRequest = await tkOwnerDoc(window.doc(window.db, 'staff_requests', docId));
         if (!originalRequest.exists()) throw new Error('This request no longer exists. Refresh the inbox.');
+        if(originalRequest.data().type==='Leave'||originalRequest.data().type==='Leave Change'){
+            document.getElementById('dynamicReplyModal')?.remove();
+            return window.getManagerLeaveUI().review(docId,action);
+        }
         if (!window.isBranchAllowed(originalRequest.data().branch)) throw new Error('This branch is outside your access.');
         const context = window.lateRequestContext;
         if (isLatenessRequest(originalRequest.data())) {
@@ -10833,7 +10863,7 @@ window.loadPayrollGenerator = async function() {
         if (allStaffNames.size === 0) {
             html = `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No shifts or deductions found for this cutoff.</td></tr>`;
         } else {
-            for (let name of allStaffNames) {
+            for (let name of [...allStaffNames].sort((a,b)=>a.localeCompare(b,'en',{sensitivity:'base',numeric:true})||a.localeCompare(b))) {
                 if (name.toLowerCase().startsWith("team ")) continue;
 
                 let d; let isPaid = false;
@@ -12095,7 +12125,7 @@ window.generateAutoPayslips = async function() {
         if (allStaffNames.size === 0) {
             html = `<tr><td colspan="5" style="text-align:center; padding: 20px; color: #64748b;">No shifts or deductions found for this cutoff.</td></tr>`;
         } else {
-            for (let name of allStaffNames) {
+            for (let name of [...allStaffNames].sort((a,b)=>a.localeCompare(b,'en',{sensitivity:'base',numeric:true})||a.localeCompare(b))) {
                 if (name.toLowerCase().startsWith("team ")) continue;
 
                 let d; let isPaid = false;

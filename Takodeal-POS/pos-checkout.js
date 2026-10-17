@@ -152,6 +152,7 @@ export function installSaleSafety(api, environment = globalThis) {
                 payload.splitDetails = [{ method: m1, amount: a1 }, { method: m2, amount: a2 }];
             }
             payload.paymentVerified = String(payload.paymentMethod || 'Cash').toLowerCase() === 'cash';
+            await w.parkedRecovery?.prepareCheckout(payload);
             if (!payload.saleId) {
                 payload.saleId = saleIdentity(payload, environment.crypto);
                 const d = new Date();
@@ -170,7 +171,9 @@ export function installSaleSafety(api, environment = globalThis) {
                 }
             }
             // JSON clone also catches unserializable input before local commit.
+            w.parkedRecovery?.linkCheckout(payload);
             saved = await outbox.enqueue(JSON.parse(JSON.stringify(payload)));
+            w.parkedRecovery?.acknowledgeCheckout(saved);
         } catch (error) {
             console.error('Checkout was not saved:', error);
             return { status: 'failed', error: error.message };
@@ -247,7 +250,7 @@ export function installSaleSafety(api, environment = globalThis) {
         }
     }
     w.voidTransaction = (receiptId, cashier, branch) => engine.voidSale(receiptId, cashier, branch);
-    w.discardParkedOrder = (id, cashier, branch, shiftId) => engine.discardParked(id, cashier, branch, shiftId);
+    w.discardParkedOrder = (id, cashier, branch, shiftId, assertCurrent) => engine.discardParked(id, cashier, branch, shiftId, assertCurrent);
     w.processAuditQueue = async function() {
         try {
             if (environment.navigator?.onLine === false) throw new Error('Resume requires a connection. Deductions remain safely pending.');
@@ -263,7 +266,7 @@ export function installSaleSafety(api, environment = globalThis) {
             }
         } catch (error) { w.Swal.fire('Deductions pending', error.message, 'error'); }
     };
-    w.toggleAuditMode = async function() {
+    w.toggleAuditMode = async function(settingsPermit) {
         if (w.isTogglingAudit) return;
         w.isTogglingAudit = true;
         const dropdown = environment.document.getElementById('posSettingsDropdown');
@@ -272,7 +275,9 @@ export function installSaleSafety(api, environment = globalThis) {
             const branch = ls.getItem('takodeal_device_branch');
             if (!branch) throw new Error('Select a branch first.');
             const active = !w.isAuditModeActive;
-            await engine.setAuditMode(branch, active, ls.getItem('cashierName') || 'Staff');
+            settingsPermit?.assertCurrent();
+            await engine.setAuditMode(branch, active, ls.getItem('cashierName') || 'Staff',settingsPermit?.assertCurrent);
+            settingsPermit?.assertCurrent();
             w.isAuditModeActive = active;
             updateAuditButton();
             try {

@@ -340,8 +340,10 @@ export function createSaleEngine(api) {
                 return 'committed';
             });
         },
-        async setAuditMode(branch, active, cashier) {
+        async setAuditMode(branch, active, cashier, assertCurrent = () => {}) {
+            assertCurrent();
             await runTransaction(db, async tx => {
+                assertCurrent();
                 tx.set(ref('settings', 'audit_' + safeId(branch)), { active, branch, updatedBy: cashier, updatedAt: serverTimestamp() });
             });
         },
@@ -419,11 +421,13 @@ export function createSaleEngine(api) {
                 return true;
             });
         },
-        async discardParked(parkedId, cashier, branch, shiftId) {
+        async discardParked(parkedId, cashier, branch, shiftId, assertCurrent = () => {}) {
+            assertCurrent();
             const parkedRef = ref('parked_orders', parkedId);
             const id = 'parked-delete-' + safeId(parkedId);
             return runTransaction(db, async tx => {
                 const parked = await tx.get(parkedRef);
+                assertCurrent();
                 if (!parked.exists()) return false;
                 const order = parked.data();
                 if (order.branch !== branch) throw new Error('Parked order belongs to another branch.');

@@ -41,6 +41,16 @@ test('manual pairing survives idle disconnect even when getDevices is unavailabl
     const app=setup({remembered:false,canRecall:false});await app.connections.connect('main',{choose:true});await app.disconnect();await app.tick();
     assert.equal(app.choosers,1);assert.equal(app.connects,2);
 });
+test('a Settings access change during manual discovery never saves or silently retries that pairing',async()=>{
+    const app=setup({remembered:false});let current=true,finish,started;
+    const discovering=new Promise(resolve=>{started=resolve;});
+    app.service.getCharacteristics=()=>{started();return new Promise(resolve=>{finish=resolve;});};
+    const assertCurrent=()=>{if(!current)throw Object.assign(Error('Settings access changed'),{code:'pos-settings-access-changed'});};
+    const connecting=app.connections.connect('main',{choose:true,assertCurrent});await discovering;
+    current=false;finish([app.character]);await assert.rejects(connecting,error=>error.code==='pos-settings-access-changed');
+    assert.equal(app.values.has('takodeal_printer_main_id'),false);assert.equal(app.connections.snapshot('main').connected,false);assert.equal(app.timers.size,0);
+    await app.connections.reconnect();assert.equal(app.values.has('takodeal_printer_main_id'),false);assert.equal(app.choosers,1);app.connections.stop();
+});
 test('background recovery never scans for an unpaired printer',async()=>{
     const app=setup({remembered:false});await app.connections.reconnect();assert.equal(app.choosers,0);assert.equal(app.connects,0);
 });

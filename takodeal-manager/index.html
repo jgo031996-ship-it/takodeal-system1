@@ -438,6 +438,8 @@
 </style>
   <meta name="theme-color" content="#173f32">
   <link rel="stylesheet" href="manager-theme.css?v=20261004">
+  <link rel="stylesheet" href="pos-settings-policy.css?v=20261018">
+  <link rel="stylesheet" href="leave-ui.css?v=20261018">
   <link rel="stylesheet" href="manager-workspace.css?v=20261004">
   <link rel="stylesheet" href="employee-id.css?v=20261004">
   <link rel="stylesheet" href="payslip.css?v=20261004">
@@ -1452,6 +1454,7 @@
                 <div>
                     <select id="posConfigSectionSelect" onchange="window.switchPosConfigSection(this.value)" style="padding: 14px 20px; border-radius: 10px; border: 2px solid #bae6fd; outline: none; font-weight: 900; color: #0284c7; font-size: 15px; background: #f0f9ff; cursor: pointer; min-width: 320px; box-shadow: 0 4px 6px rgba(2, 132, 199, 0.1);">
                         <option value="master">⚙️ Master POS Configuration</option>
+                        <option value="posSettingsAccess">POS Settings · Role access</option>
                         <option value="purchasedCancelledOrders">Purchased Cancelled Orders</option>
                         <option value="menuArrangement">🍔 POS Menu Tab Arrangement</option>
                         <option value="sidebarArrangement">📱 Sidebar Tab Arrangement</option>
@@ -1466,6 +1469,7 @@
 
                 <!-- 1. MASTER POS CONFIGURATION -->
                 <div id="section-purchasedCancelledOrders" class="pos-config-section pos-config-workspace" style="display:none;"></div>
+                <div id="section-posSettingsAccess" class="pos-config-section" style="display:none;"><div id="posSettingsAccessHost"></div></div>
                 <div id="section-master" class="pos-config-section" style="display: block;">
                     <div style="background: white; padding: 25px; border-radius: 12px; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px rgba(0,0,0,0.02);">
                         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
@@ -6603,6 +6607,7 @@
     installAuditModalLayout();
   </script>
   <script type="module" src="auth.js?v=staff-pos-repair-20261008-r12"></script>
+  <script type="module" src="owner-pos-settings-access.js?v=20261018"></script>
 
   
   <dialog id="masterStaffDocumentPreview" class="staff-document-preview"><div class="document-section-heading"><h3 id="masterStaffDocumentPreviewTitle">Document photo</h3><button type="button" id="masterStaffDocumentPreviewClose">Close</button></div><img id="masterStaffDocumentPreviewImage" alt="Private employee document"></dialog>

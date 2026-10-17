@@ -6,7 +6,7 @@ const el = id => document.getElementById(id);
 const money = value => new Intl.NumberFormat('en-PH',{style:'currency',currency:'PHP'}).format(Number(value)||0);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const dateTime = value => { const date = value?.toDate?.() || new Date(value); return Number.isFinite(+date) ? date.toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'}) : 'Awaiting sync'; };
-const titles = {pos:'Point of Sale',sales:'Shift Sales',mobilehub:'Mobile Hub',stockreq:'Stock Reports',prep:'Kitchen Prep',consumables:'Consumables',waste:'Log Waste',schedule:'Branch Schedule',bulletin:'Bulletin Board',remit:'Cash Remittance',printer:'Printer Hub',timeclock:'Time Clock',sop:'Daily SOPs'};
+const titles = {pos:'Point of Sale',sales:'Shift Sales',mobilehub:'Mobile Hub',stockreq:'Stock Reports',prep:'Kitchen Prep',consumables:'Consumables',waste:'Log Waste',schedule:'Branch Schedule',bulletin:'Bulletin Board',remit:'Cash Remittance',printer:'Printer Hub',settings:'POS Settings',timeclock:'Time Clock',sop:'Daily SOPs'};
 let attendanceStop = null, attendanceLogs = [], attendanceGeneration = 0, remitCursor = null, remitBranch = '', remitBusy = false;
 let releaseRegistration, activateRequested = false;
 
@@ -270,7 +270,7 @@ function installUpdates(){
   window.setInterval(()=>{if(document.visibilityState==='visible' && navigator.onLine)releaseRegistration?.update().catch(()=>{});},15*60*1000);
   if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){showCashierUpdateNotice('updated','Cashier checkout and receipt logo updated','Each new Store POS order starts with Select Type and Cash. Payment buttons follow the saved choice. Receipt logos reuse preparation and send less blank image data. Use Test logo to check paper output on your printer.');localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
 }
-function install(){installTheme();installRemittance();installClock();installPrinterHub();installTabletControls();installParkedOrders();installUpdates();installSalesActions();}
+function install(){installTheme();installRemittance();installClock();installPrinterHub();installTabletControls();installParkedOrders();installUpdates();installSalesActions();window.installPOSSettings?.();}
 if(document.readyState==='complete')install();else window.addEventListener('load',install,{once:true});
 
 function installTabletControls(){

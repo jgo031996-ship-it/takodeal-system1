@@ -346,6 +346,7 @@
   </style>
 <link rel="stylesheet" href="cashier-pos-base.css?v=tablet-attendance-stock-20261009-r1">
 <link rel="stylesheet" href="cashier-theme.css?v=tablet-attendance-stock-20261009-r1">
+<link rel="stylesheet" href="pos-settings.css">
 <link rel="stylesheet" href="cashier-tablet.css?v=tablet-attendance-stock-20261009-r1">
   <link rel="stylesheet" href="attendance-camera.css?v=tablet-attendance-stock-20261009-r1">
 <link rel="stylesheet" href="cancelled-orders.css">
@@ -731,9 +732,9 @@
 
             <!-- ⚙️ POS SETTINGS -->
             <div style="position: relative;">
-                <button onclick="let d = document.getElementById('posSettingsDropdown'); d.style.display = (d.style.display === 'none' || d.style.display === '') ? 'flex' : 'none';" 
+                <button id="posSettingsButton" onclick="window.openPOSSettings()"
                     style="background: white; color: #334155; border: 1px solid #cbd5e1; border-radius: 12px; padding: 10px 18px; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 2px 6px rgba(0,0,0,0.05); transition: 0.2s;" onmouseover="this.style.background='#f8fafc'; this.style.borderColor='#94a3b8';" onmouseout="this.style.background='white'; this.style.borderColor='#cbd5e1';">
-                    ⚙️ Settings ▼
+                    Settings
                 </button>
                 
                 <div id="posSettingsDropdown" style="display: none; position: absolute; top: 50px; right: 0; min-width: 240px; padding: 15px; gap: 12px; background: white; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 15px 35px rgba(0,0,0,0.15); z-index: 1000; flex-direction: column;">
@@ -755,7 +756,7 @@
 
                     <div style="border-top: 2px dashed #e2e8f0; margin-top: 4px; padding-top: 15px; display: flex; flex-direction: column; gap: 10px;">
                         <label style="font-size: 13px; font-weight: 900; color: #475569; cursor: pointer; display: flex; align-items: center; gap: 10px; justify-content: center; background: #f1f5f9; padding: 10px; border-radius: 8px;">
-                            <input type="checkbox" id="autoDrawerToggle" onchange="localStorage.setItem('takodeal_auto_drawer', this.checked)" style="transform: scale(1.3); accent-color: #0ea5e9;" checked>
+                            <input type="checkbox" id="autoDrawerToggle" onchange="window.setAutoDrawer(this.checked)" style="transform: scale(1.3); accent-color: #0ea5e9;" checked>
                             Auto-Open Drawer
                         </label>
                         <button onclick="window.kickCashDrawer(); document.getElementById('posSettingsDropdown').style.display='none';" style="width: 100%; background: #f59e0b; color: white; border: none; border-radius: 10px; padding: 12px; cursor: pointer; font-size: 14px; font-weight: 900; box-shadow: 0 4px 6px rgba(245, 158, 11, 0.3); transition: 0.2s;">💵 Kick Drawer</button>
@@ -2174,7 +2175,7 @@
 
       // 🔥 ENFORCE GLOBAL SHIFT LOCKOUT 🔥
       let lock = document.getElementById('globalShiftLockout');
-      let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'sales', 'remit'];
+      let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'settings', 'sales', 'remit'];
       if (lock) {
           if (!currentShift && !exemptViews.includes(viewName)) {
               lock.style.display = 'flex';
@@ -2502,7 +2503,7 @@
 
           let currentView = document.querySelector('.view-container.active');
           let viewId = currentView ? currentView.id.replace('view-', '') : 'pos';
-          let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'sales', 'remit'];
+          let exemptViews = ['timeclock', 'schedule', 'bulletin', 'printer', 'settings', 'sales', 'remit'];
           
           if (lock && !exemptViews.includes(viewId)) {
               lock.style.display = "flex"; 
@@ -3610,6 +3611,7 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         customerName: custName,
         amountReceived: window.isMealDiscount(dType) ? (window.finalCheckoutAmount ?? window.currentGrandTotal) : window.amountReceivedStr,
         cart: window.cart,
+        resumeRecoveryId: window.parkedRecovery?.activeId() || null,
         wasParked: window.isResumedParkedOrder || false,
         isMobileOrder: window.isActiveOrderMobile || false,
         mobileOrderCode: window.activeMobileOrderCode || null,
@@ -3918,7 +3920,7 @@ window.printReceipt = async function(type) {
 // ==========================================
 window.currentParkedOrdersList = []; 
 
-window.parkOrder = async function() {
+window.parkOrder = async function(settingsPermit) {
     if (typeof cart === 'undefined' || cart.length === 0) return;
     let currentOrderType = document.getElementById('mainOrderType') ? document.getElementById('mainOrderType').value : '';
     if (!currentOrderType) return Swal.fire('Order Type Required', 'Please select an Order Type before parking.', 'warning');
@@ -3934,10 +3936,12 @@ window.parkOrder = async function() {
     } else if (customerName === "") {
         customerName = "Mobile Order"; // Fallback just in case
     }
+    settingsPermit?.assertCurrent();
     
     let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
     let cashier = localStorage.getItem('cashierName') || 'Unknown';
     let grandTotal = typeof window.currentGrandTotal !== 'undefined' ? window.currentGrandTotal : 0;
+    const parkedSession=window.parkedRecovery?.session();
 
     let payload = { 
         branch: branch, 
@@ -3956,6 +3960,8 @@ window.parkOrder = async function() {
     };
 
     let parkedId = await window.parkOrderToDB(payload);
+    if(parkedSession&&parkedSession!==window.parkedRecovery.session())return;
+    settingsPermit?.assertCurrent();
     
     if (parkedId) { 
         let newOrder = { id: parkedId, ...payload };
@@ -3991,12 +3997,13 @@ window.updateParkedBadge = async function() {
     }
 };
 
-window.showParkedOrders = async function() {
+window.showParkedOrders = async function(settingsPermit) {
       document.getElementById('parkedModal').style.display = 'flex'; 
       document.getElementById('parkedListContainer').innerHTML = '<div style="text-align:center; padding: 20px; color: #777;">Fetching parked orders...</div>';
       
       let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
       let orders = await window.getParkedOrders(branch);
+      settingsPermit?.assertCurrent();
       window.currentParkedOrdersList = orders; 
 
       let html = '';
@@ -4018,46 +4025,38 @@ window.showParkedOrders = async function() {
         });
       }
       document.getElementById('parkedListContainer').innerHTML = html;
+      await window.parkedRecovery?.render(settingsPermit);
 };
 
-window.resumeOrder = async function(docId) {
+window.resumeOrder = async function(docId, settingsPermit) {
     if (typeof cart !== 'undefined' && cart.length > 0) { 
         if (!confirm("You have active items in your current cart. Overwrite them with this parked order?")) return; 
     }
-    let order = window.currentParkedOrdersList.find(o => o.id === docId); 
+    settingsPermit?.assertCurrent();
+    let order = settingsPermit?.parkedOrder || window.currentParkedOrdersList.find(o => o.id === docId);
     if (!order) return;
+    if (!window.parkedRecovery) throw Error('Reload POS Settings before resuming this order.');
+    const recovery = window.parkedRecovery.capture(order, settingsPermit);
+    const removed = await window.deleteParkedOrder(docId);
+    if (removed !== true) throw Error('This parked order could not be resumed. Its recovery remains on this device for review.');
+    window.parkedRecovery.acknowledgeResume(recovery.id);
+    settingsPermit?.assertCurrent();
     
-    cart = order.items; 
-    window.isResumedParkedOrder = true; // 🔥 THE NEW TRACKER FLAG
-
-    // 🔥 RESTORE MOBILE FLAGS IF APPLICABLE
-    window.isActiveOrderMobile = order.isMobileOrder || false;
-    window.activeMobileOrderCode = order.mobileOrderCode || null;
-    window.activeMobileOrderId = order.mobileOrderId || null;
-    window.activeMobileDelivery=order.isMobileOrder?{orderId:order.mobileOrderId,branch:order.branch,fee:Number(order.deliveryFee)||0}:null;
-    if(document.getElementById('finalDeliveryAddress'))document.getElementById('finalDeliveryAddress').value=order.deliveryAddress||'';
-    if(document.getElementById('finalContactNumber'))document.getElementById('finalContactNumber').value=order.contactNumber||'';
- 
-    let otSelect = document.getElementById('mainOrderType');
-    if (otSelect && order.orderType) otSelect.value = order.orderType.replace(" (PARKED)", "").trim();
-    let custName = document.getElementById('finalCustomerName');
-    if (custName) custName.value = order.name || order.customerName || '';
-
-    if (typeof renderCart === 'function') renderCart(); 
-    if (typeof closeModal === 'function') closeModal('parkedModal'); 
-    await window.deleteParkedOrder(docId); 
-    window.updateParkedBadge();
+    return window.parkedRecovery.activate(recovery.id, settingsPermit);
 };
 
 window.isDeletingParkedOrder = false; // 🔥 1. Add the global safety lock
 
-window.deleteParkedOrderManually = async function(docId) {
+window.deleteParkedOrderManually = async function(docId, settingsPermit) {
     if (window.isDeletingParkedOrder) return;
     if (!confirm('Delete this unpaid parked order? It will be logged as Voided. Inventory will stay unchanged.')) return;
+    settingsPermit?.assertCurrent();
     window.isDeletingParkedOrder = true;
     try {
         const shiftId = window.currentShift?.shiftId || 'UNKNOWN';
-        await window.discardParkedOrder(docId, localStorage.getItem('cashierName') || 'Staff', window.sessionUser.branch, shiftId);
+        const removed = await window.discardParkedOrder(docId, localStorage.getItem('cashierName') || 'Staff', window.sessionUser.branch, shiftId);
+        if (removed === false) throw Error('This parked order was not removed. Refresh Settings and try again.');
+        settingsPermit?.assertCurrent();
         window.showParkedOrders();
         window.updateParkedBadge();
         if (typeof window.loadSalesDashboard === 'function') window.loadSalesDashboard();
@@ -4069,7 +4068,8 @@ window.deleteParkedOrderManually = async function(docId) {
 // ==========================================
 // 🕒 ULTIMATE PARKED ORDERS & PRINTER ENGINE
 // ==========================================
-window.printParkedReceipt = async function(docId) {
+window.printParkedReceipt = async function(docId, settingsPermit) {
+    settingsPermit?.assertCurrent();
     let order = window.currentParkedOrdersList.find(o => o.id === docId); 
     if (!order) { alert("Order data missing! Please refresh."); return; }
     
