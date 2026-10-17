@@ -8207,7 +8207,7 @@ window.loadAttendanceLogs = async function () {
         let staffProfiles = {};
         const staffSnap = await getDocs(collection(db, "cashiers"));
         staffSnap.forEach(docSnap => {
-            let d = docSnap.data();
+            let d = {...docSnap.data(),staffId:docSnap.id};
             staffProfiles[d.cashierName] = d;
         });
 
