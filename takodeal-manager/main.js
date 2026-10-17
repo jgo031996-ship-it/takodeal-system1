@@ -1,6 +1,7 @@
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
 import {finalizeRefundPayroll} from './refund-payroll.js';
 import {payrollScheduleStamp,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
+import {createPayrollPreviewGuard,readPayrollSnapshot} from './payroll-preview-guard.js';
 import {reportDetailsHTML,purchaseQuantity,escapeStock} from './stock-cycle.js';
 import {installOnlineRefunds} from './online-refunds-ui.js';
 import { installDeviceFleet } from './device-fleet.js';
@@ -10408,9 +10409,63 @@ runManagerDomReady(() => {
 // ==========================================
 // 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH NIGHT SHIFT PENALTY SYNC)
 // ==========================================
+window.getPayrollPreviewGuard = function() {
+    if (window.payrollPreviewGuard) return window.payrollPreviewGuard;
+    const sessions = new WeakMap(); let nextSession = 0;
+    window.payrollPreviewGuard = createPayrollPreviewGuard({
+        getContext: () => {
+            const actor = window.auth?.currentUser, session = window.sessionUser;
+            let accountKey = '';
+            if (actor?.uid && actor.email && session?.uid === actor.uid
+                && String(session.email || '').toLowerCase() === actor.email.toLowerCase()
+                && session.isFranchisee !== true && canOpenWorkspacePage(session, 'payroll')) {
+                if (!sessions.has(session)) sessions.set(session, ++nextSession);
+                accountKey = JSON.stringify([actor.uid,actor.email.toLowerCase(),sessions.get(session),session.role,session.permissions,session.allowedBranches,session.branch,session.isOwner]);
+            }
+            return {accountKey,start:document.getElementById('payrollStart')?.value || '',end:document.getElementById('payrollEnd')?.value || ''};
+        },
+        onState: state => {
+            const notice = document.getElementById('payrollPreviewStatus');
+            if (notice) notice.textContent = state.message;
+            if (state.status === 'ready') return;
+            window.globalPayrollCache = {};
+            window.currentPayslipData = null;
+            const total = document.getElementById('payrollGrandTotalContainer');
+            if (total) total.style.display = 'none';
+            const amount = document.getElementById('payrollGrandTotalAmount');
+            if (amount) amount.innerText = '—';
+            const finalize = document.getElementById('btnFinalizePayslip');
+            if (finalize) finalize.disabled = true;
+            const modal = document.getElementById('payslipModal');
+            if (modal) modal.style.display = 'none';
+            const body = document.getElementById('payrollGeneratorBody');
+            if (body) body.innerHTML = '<tr><td colspan="5" style="padding:20px;text-align:center">'+escapeHtml(state.message)+'</td></tr>';
+        }
+    });
+    for (const id of ['payrollStart','payrollEnd']) {
+        const input = document.getElementById(id);
+        for (const event of ['input','change']) input?.addEventListener?.(event, () => window.payrollPreviewGuard.invalidate('Cutoff changed. Generate the list again to confirm it with HQ.'));
+    }
+    return window.payrollPreviewGuard;
+};
+window.requirePayrollPreview = function(data) {
+    const token = window.getPayrollPreviewGuard().requireReady();
+    if (!data || !Object.values(window.globalPayrollCache || {}).includes(data)) throw Error('Generate the payroll list again and reopen this payslip before payment.');
+    return token;
+};
+runManagerDomReady(() => window.getPayrollPreviewGuard());
+
 window.loadPayrollGenerator = async function() {
     const tbody = document.getElementById('payrollGeneratorBody');
     if (!tbody) return;
+    const previewGuard = window.getPayrollPreviewGuard(); let previewToken;
+    try { previewToken = previewGuard.begin(); }
+    catch(error) { window.ManagerUI?.notify?.(error.message); return; }
+    const assertPreview = () => previewGuard.assertCurrent(previewToken);
+    const readPreview = async reference => {
+        assertPreview(); const snapshot = await readPayrollSnapshot(window,reference); assertPreview(); return snapshot;
+    };
+    const previewCache = {};
 
     let startDateRaw = document.getElementById('payrollStart').value;
     let endDateRaw = document.getElementById('payrollEnd').value;
@@ -10450,17 +10505,18 @@ window.loadPayrollGenerator = async function() {
 
     try {
         const scheduleData = await window.loadPayrollScheduleHistory(startDateRaw,endDateRaw);
+        assertPreview();
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
 
         const prQ = window.query(window.collection(window.db, "payroll_records"), window.where("startDate", "==", startDateRaw), window.where("endDate", "==", endDateRaw));
-        const prSnap = await window.getDocs(prQ);
+        const prSnap = await readPreview(prQ);
         let paidRecords = {};
         prSnap.forEach(docSnap => { paidRecords[docSnap.data().staffName] = docSnap.data().frozenData; });
         window.paidPayrollSnapshots ||= new WeakSet();
         Object.values(paidRecords).forEach(snapshot=>{if(snapshot&&typeof snapshot==='object')window.paidPayrollSnapshots.add(snapshot);});
 
-        const staffSnap = await window.getDocs(window.collection(window.db, "cashiers"));
-        const ledgerSnap = await window.getDocs(window.collection(window.db, "staff_ledger"));
+        const staffSnap = await readPreview(window.collection(window.db, "cashiers"));
+        const ledgerSnap = await readPreview(window.collection(window.db, "staff_ledger"));
         let staffDict = {}, staffNameById = {};
         let activeStaffNames = []; // Used for mapping typos
         
@@ -10509,12 +10565,12 @@ window.loadPayrollGenerator = async function() {
         };
 
         const attQ = window.query(window.collection(window.db, "attendance_logs"), window.where("timestamp", ">=", fetchStartDate), window.where("timestamp", "<=", fetchEndDate), window.orderBy("timestamp", "asc"));
-        const attSnap = await window.getDocs(attQ);
+        const attSnap = await readPreview(attQ);
 
         const deductQ = window.query(window.collection(window.db, "staff_deductions"), window.where("status", "==", "Unpaid"));
-        const deductSnap = await window.getDocs(deductQ);
+        const deductSnap = await readPreview(deductQ);
         const bonusQ = window.query(window.collection(window.db, "staff_bonuses"), window.where("dateAdded", ">=", trueStartDate), window.where("dateAdded", "<=", fetchEndDate));
-        const bonusSnap = await window.getDocs(bonusQ);
+        const bonusSnap = await readPreview(bonusQ);
 
         let staffData = {}; 
         let activeShifts = {}; 
@@ -10782,7 +10838,7 @@ window.loadPayrollGenerator = async function() {
 
                 let d; let isPaid = false;
                 if (paidRecords[name]) {
-                    d = paidRecords[name]; isPaid = true; window.globalPayrollCache[name] = d; 
+                    d = paidRecords[name]; isPaid = true; previewCache[name] = d;
                 } else {
                     d = staffData[name]; let profile = staffDict[name] || {}; let dailyRate = profile.hourlyRate || 0; 
                     d.basicPay = d.shiftsWorked * dailyRate;
@@ -10801,7 +10857,7 @@ window.loadPayrollGenerator = async function() {
                     let customDeductSum = 0; profileCustomDeducts.forEach(c => customDeductSum += c.amount);
                     
                     // (Around line 1928) Update globalPayrollCache to include the perfBonus
-                    window.globalPayrollCache[name] = {
+                    previewCache[name] = {
                         name: name, staffId:profile.staffId, onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
@@ -10810,7 +10866,7 @@ window.loadPayrollGenerator = async function() {
                         scheduleEvidenceStamp:payrollScheduleStamp(scheduleData),
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
-                    d = window.globalPayrollCache[name];
+                    d = previewCache[name];
                 }
 
                 let totalDeduct = (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
@@ -10842,7 +10898,12 @@ window.loadPayrollGenerator = async function() {
                 `;
             }
         }
+        previewGuard.complete(previewToken);
+        window.globalPayrollCache = previewCache;
         tbody.innerHTML = html;
+        const heldCount = Object.values(previewCache).filter(row => row.attendanceReviewRequired).length;
+        const status = document.getElementById('payrollPreviewStatus');
+        if (status) status.textContent = allStaffNames.size ? 'HQ confirmed · ' + allStaffNames.size + ' staff record(s).' + (heldCount ? ' ' + heldCount + ' held for HR review and excluded from the estimate.' : '') : 'HQ confirmed · No payroll records found for this cutoff.';
 
         let grandTotalContainer = document.getElementById('payrollGrandTotalContainer');
         if (grandTotalContainer && allStaffNames.size > 0) {
@@ -10851,8 +10912,7 @@ window.loadPayrollGenerator = async function() {
         }
 
     } catch (error) {
-        console.error("Payroll Engine Error:", error);
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red; padding: 20px;">Failed to calculate payroll. Check Developer Console (F12).</td></tr>`;
+        previewGuard.fail(previewToken,error);
     }
 };
 
@@ -10861,7 +10921,8 @@ window.loadPayrollGenerator = async function() {
 // ========================================================
 window.openPayslipModal = async function(staffName) {
     let data = window.globalPayrollCache ? window.globalPayrollCache[staffName] : null;
-    if (!data) return;
+    try { window.requirePayrollPreview(data); }
+    catch(error) { window.ManagerUI?.notify?.(error.message); return; }
 
     window.currentPayslipData = data; 
     
@@ -11034,7 +11095,13 @@ window.finalizePayslip = async function() {
     let data = window.currentPayslipData;
     if (!data) return;
     if (data.isPaid || window.paidPayrollSnapshots?.has(data)) return Swal.fire('Payslip already paid','This saved payslip is complete. Its frozen figures have not changed.','info');
-    try { await assertPayrollScheduleFresh(window,data); }
+    let previewToken;
+    try {
+        previewToken = window.requirePayrollPreview(data);
+        await assertPayrollScheduleFresh(window,data);
+        window.getPayrollPreviewGuard().assertCurrent(previewToken);
+        window.requirePayrollPreview(data);
+    }
     catch(error) { return Swal.fire('Refresh unpaid payslip',error.message,'warning'); }
     if (data.attendanceReviewRequired) {
         Swal.fire('Payroll held for HR review','Confirm the linked attendance records in Human Resources, then regenerate this unpaid preview before payment.','warning');
@@ -11120,7 +11187,11 @@ window.finalizePayslip = async function() {
     btn.innerText = "⏳ Processing..."; btn.disabled = true;
     
     try {
+        window.getPayrollPreviewGuard().assertCurrent(previewToken);
+        window.requirePayrollPreview(data);
         await assertPayrollScheduleFresh(window,data);
+        window.getPayrollPreviewGuard().assertCurrent(previewToken);
+        window.requirePayrollPreview(data);
         if((data.onlineRefundRows||[]).length){
             const snapshot={...data,loans:actualLoanDeducted,advances:actualValeDeducted,meals:actualFoodDeducted,lateDeduction:getFieldVal('psLate'),sss:getFieldVal('psSSS'),philhealth:getFieldVal('psPhil'),pagibig:getFieldVal('psPagibig'),straightBonus:getFieldVal('psStraightBonus'),perfBonus:getFieldVal('psPerfBonus'),basicPay:getFieldVal('psBasicPay'),nightBonus:getFieldVal('psOvertime')};
             await finalizeRefundPayroll(window,{data:snapshot,accountId:selAcc.id,finalNetPay});
@@ -11266,7 +11337,10 @@ window.finalizePayslip = async function() {
 
     } catch (e) {
         console.error(e); window.ManagerUI.notify("❌ Failed to finalize payslip.");
-        if (btn) { btn.innerText = "✅ Mark Paid & Auto-Deduct"; btn.disabled = false; }
+        if (btn) {
+            try { window.requirePayrollPreview(data); btn.innerText = "✅ Mark Paid & Auto-Deduct"; btn.disabled = false; }
+            catch { btn.innerText = 'Regenerate payroll list'; btn.disabled = true; }
+        }
     } 
 };
 
@@ -11726,6 +11800,14 @@ window.generateAutoPayslips = async function() {
     let tableBody = document.getElementById('payrollGeneratorBody'); 
 
     if (!tableBody) return;
+    const previewGuard = window.getPayrollPreviewGuard(); let previewToken;
+    try { previewToken = previewGuard.begin(); }
+    catch(error) { window.ManagerUI?.notify?.(error.message); return; }
+    const assertPreview = () => previewGuard.assertCurrent(previewToken);
+    const readPreview = async reference => {
+        assertPreview(); const snapshot = await readPayrollSnapshot(window,reference); assertPreview(); return snapshot;
+    };
+    const previewCache = {};
     if (!startInput || !endInput) { window.ManagerUI.notify("Please select both Cutoff Start and End dates."); return; }
 
     tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding: 20px; font-weight:bold; color: #d97706;">⚙️ Crunching Strict HR Metrics...</td></tr>`;
@@ -11748,17 +11830,18 @@ window.generateAutoPayslips = async function() {
 
     try {
         const scheduleData = await window.loadPayrollScheduleHistory(startInput,endInput);
+        assertPreview();
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
 
         const prQ = query(collection(db, "payroll_records"), where("startDate", "==", startInput), where("endDate", "==", endInput));
-        const prSnap = await getDocs(prQ);
+        const prSnap = await readPreview(prQ);
         let paidRecords = {};
         prSnap.forEach(docSnap => { paidRecords[docSnap.data().staffName] = docSnap.data().frozenData; });
         window.paidPayrollSnapshots ||= new WeakSet();
         Object.values(paidRecords).forEach(snapshot=>{if(snapshot&&typeof snapshot==='object')window.paidPayrollSnapshots.add(snapshot);});
 
-        const staffSnap = await getDocs(collection(db, "cashiers"));
-        const ledgerSnap = await getDocs(collection(db, "staff_ledger"));
+        const staffSnap = await readPreview(collection(db, "cashiers"));
+        const ledgerSnap = await readPreview(collection(db, "staff_ledger"));
         let staffDict = {}, staffNameById = {};
         let nameMap = {}; 
         
@@ -11776,12 +11859,12 @@ window.generateAutoPayslips = async function() {
         let ledgerDict = {}; ledgerSnap.forEach(d => { ledgerDict[d.data().staffName] = { id: d.id, ...d.data() }; });
 
         const attQ = query(collection(db, "attendance_logs"), where("timestamp", ">=", trueStartDate), where("timestamp", "<=", fetchEndDate), orderBy("timestamp", "asc"));
-        const attSnap = await getDocs(attQ);
+        const attSnap = await readPreview(attQ);
 
         const deductQ = query(collection(db, "staff_deductions"), where("status", "==", "Unpaid"));
-        const deductSnap = await getDocs(deductQ);
+        const deductSnap = await readPreview(deductQ);
         const bonusQ = query(collection(db, "staff_bonuses"), where("dateAdded", ">=", trueStartDate), where("dateAdded", "<=", fetchEndDate));
-        const bonusSnap = await getDocs(bonusQ);
+        const bonusSnap = await readPreview(bonusQ);
 
         let staffData = {}; 
         let activeShifts = {}; 
@@ -12017,7 +12100,7 @@ window.generateAutoPayslips = async function() {
 
                 let d; let isPaid = false;
                 if (paidRecords[name]) {
-                    d = paidRecords[name]; isPaid = true; window.globalPayrollCache[name] = d; 
+                    d = paidRecords[name]; isPaid = true; previewCache[name] = d;
                 } else {
                     d = staffData[name]; let profile = staffDict[name] || {}; let dailyRate = profile.hourlyRate || 0; 
                     d.basicPay = d.shiftsWorked * dailyRate;
@@ -12035,7 +12118,7 @@ window.generateAutoPayslips = async function() {
                     let profileCustomDeducts = profile.customDeductions || [];
                     let customDeductSum = 0; profileCustomDeducts.forEach(c => customDeductSum += c.amount);
                     
-                    window.globalPayrollCache[name] = {
+                    previewCache[name] = {
                         name: name, staffId:profile.staffId, onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
@@ -12044,7 +12127,7 @@ window.generateAutoPayslips = async function() {
                         scheduleEvidenceStamp:payrollScheduleStamp(scheduleData),
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
-                    d = window.globalPayrollCache[name]; 
+                    d = previewCache[name];
                 }
 
                 let totalDeduct = (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
@@ -12079,7 +12162,12 @@ window.generateAutoPayslips = async function() {
                 `;
             }
         }
+        previewGuard.complete(previewToken);
+        window.globalPayrollCache = previewCache;
         tableBody.innerHTML = html;
+        const heldCount = Object.values(previewCache).filter(row => row.attendanceReviewRequired).length;
+        const status = document.getElementById('payrollPreviewStatus');
+        if (status) status.textContent = allStaffNames.size ? 'HQ confirmed · ' + allStaffNames.size + ' staff record(s).' + (heldCount ? ' ' + heldCount + ' held for HR review and excluded from the estimate.' : '') : 'HQ confirmed · No payroll records found for this cutoff.';
 
         let grandTotalContainer = document.getElementById('payrollGrandTotalContainer');
         if (grandTotalContainer && allStaffNames.size > 0) {
@@ -12088,8 +12176,7 @@ window.generateAutoPayslips = async function() {
         }
 
     } catch (error) {
-        console.error("Payroll Engine Error:", error);
-        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red; padding: 20px;">Failed to calculate payroll. Check Developer Console (F12).</td></tr>`;
+        previewGuard.fail(previewToken,error);
     }
 };
 

@@ -1,4 +1,6 @@
 import * as scheduleFreshness from '../takodeal-manager/payroll-schedule-freshness.js';
+import * as previewFreshness from '../takodeal-manager/payroll-preview-guard.js';
+import {canOpenWorkspacePage} from '../takodeal-manager/workspace-access-model.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -149,9 +151,14 @@ function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,sc
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),
         getDoc:async()=>({exists:()=>true,data:()=>scheduleData || schedule(end,type)}),
         getDocs:async q=>{const docs=(data[q.table]||[]).filter(row=>q.table!=='staff_deductions' || row.status==='Unpaid').map((row,i)=>({id:row.id||String(i),data:()=>row}));return {docs,forEach:fn=>docs.forEach(fn)};}};
+    api.getDocsFromServer=api.getDocs;
+    api.getDocs=async()=>{throw Error('Payroll preview must read confirmed server records.');};
+    api.auth={currentUser:{uid:'sample-payroll-owner',email:'owner@example.test'}};
+    api.sessionUser={uid:'sample-payroll-owner',email:'owner@example.test',isOwner:true,permissions:['payroll'],allowedBranches:['All']};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>historyData || assembleScheduleHistory(scheduleData || schedule(end,type))};
-    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...sanctions,planPayrollAttendance,attendanceMillis,escapeHtml:value=>String(value).replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])),resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
+    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,escapeHtml:value=>String(value).replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])),resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
         alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
+    vm.runInContext(extract('getPayrollPreviewGuard')+'\n'+extract('requirePayrollPreview'),context);
     return {context,window,elements,errors};
 }
 for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
@@ -249,6 +256,7 @@ function paymentFixture(food=330.25) {
     const changes=[],records=[],errors=[];
     const elements=new Map();const node=id=>{if(!elements.has(id))elements.set(id,{tagName:'INPUT',value:'0',innerText:'',style:{}});return elements.get(id);};
     node('psFoods').value=String(food);node('psNetPay').innerText='500.00';
+    node('payrollStart').value='2026-09-16';node('payrollEnd').value='2026-09-30';
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),
         serverTimestamp:()=>stamp('10-04'),getDocs:async()=>({forEach:fn=>rows.forEach(row=>fn({id:row.id,data:()=>({...row})}))}),
         updateDoc:async(ref,change)=>{changes.push({ref,change});const row=rows.find(r=>ref.table==='staff_deductions'&&r.id===ref.id);if(row)Object.assign(row,change);},
@@ -258,8 +266,10 @@ function paymentFixture(food=330.25) {
     const window={...api,loadPayrollScheduleHistory:async()=>paymentHistory,currentPayslipData:{name:'Test Staff',branch:'Test',start:'2026-09-16',end:'2026-09-30'},
         liveAccounts:[{id:'sample-account',name:'Sample account',balance:5000}],downloadPayslipImage(){},ManagerUI:{notify:text=>errors.push(text)}};
     window.currentPayslipData.scheduleEvidenceStamp=scheduleFreshness.payrollScheduleStamp(paymentHistory);
-    const context={...api,...payroll,...scheduleFreshness,window,document:{getElementById:node},Date,Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:e=>errors.push(e)}};
-    vm.runInNewContext(extract('finalizePayslip'),context);
+    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,canOpenWorkspacePage,escapeHtml:String,window,document:{getElementById:node},Date,Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:e=>errors.push(e)}});
+    vm.runInContext(extract('getPayrollPreviewGuard')+'\n'+extract('requirePayrollPreview')+'\n'+extract('finalizePayslip'),context);
+    const preview=window.currentPayslipData,guard=window.getPayrollPreviewGuard(),token=guard.begin();
+    window.globalPayrollCache={[preview.name]:preview};window.currentPayslipData=preview;guard.complete(token);
     return {window,rows,changes,records,errors};
 }
 test('payroll clears POS meals already deducted, leaving paid and future-cutoff meals untouched',async()=>{
