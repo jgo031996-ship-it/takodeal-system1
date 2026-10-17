@@ -1,5 +1,6 @@
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
 import {finalizeRefundPayroll} from './refund-payroll.js';
+import {payrollScheduleStamp,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
 import {reportDetailsHTML,purchaseQuantity,escapeStock} from './stock-cycle.js';
 import {installOnlineRefunds} from './online-refunds-ui.js';
 import { installDeviceFleet } from './device-fleet.js';
@@ -8253,8 +8254,9 @@ window.loadAttendanceLogs = async function () {
                 let logDate = data.timestamp ? data.timestamp.toDate() : new Date();
                 
                 // 🔥 THE FIX: Universal Shift Matcher Call
-                let { lateMinutes: calcMins, expectedStartHour, wasScheduled } = resolveAttendanceShift(data, scheduleData, staffProfiles);
-                lateMinutes = attendanceLateMinutes(data, calcMins);
+                const matchedShift = resolveAttendanceShift(data, scheduleData, staffProfiles);
+                let { lateMinutes: calcMins, expectedStartHour, wasScheduled } = matchedShift;
+                lateMinutes = attendanceLateMinutes(data, matchedShift);
 
                 if (expectedStartHour !== null) {
                     if (lateMinutes > 0) {
@@ -10555,8 +10557,9 @@ window.loadPayrollGenerator = async function() {
                     
                     // 🔥 THE FIX: Safe variable aliases (calcMins, expStart) prevent crashes with leftover code!
                     const matchedShift = resolveAttendanceShift(log, scheduleData, staffDict, name);
+                    if(matchedShift?.amendmentNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'A shift-time correction conflicts with a reviewed attendance record. HR must confirm it.'];}
                     let { lateMinutes: calcMins, expectedStartHour: expStart, wasScheduled: wasSched } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
-                    calcMins = attendanceLateMinutes(log, calcMins);
+                    calcMins = attendanceLateMinutes(log, matchedShift);
                     const late = latePay(calcMins, staffDict[name], matchedShift, log.lateExempted === true);
                     const lateHoursToDeduct = late.hours;
                     const lateAmount = late.amount;
@@ -10655,6 +10658,10 @@ window.loadPayrollGenerator = async function() {
                     remark: remark,
                     scheduleSource:activeShifts[name].matchedShift.scheduleSource,
                     scheduleRevisionId:activeShifts[name].matchedShift.scheduleRevisionId,
+                    scheduleAmendmentIds:activeShifts[name].matchedShift.scheduleAmendmentIds || [],
+                    assignmentReconciled:activeShifts[name].matchedShift.assignmentReconciled === true,
+                    originalShiftId:activeShifts[name].matchedShift.originalShiftId || null,
+                    targetShiftId:activeShifts[name].matchedShift.targetShiftId || null,
                     expectedStartAt:activeShifts[name].matchedShift.expectedStartAt?.toISOString() || null,
                     expectedEndAt:activeShifts[name].matchedShift.expectedEndAt?.toISOString() || null,
                     needsScheduleReview:activeShifts[name].matchedShift.needsScheduleReview,
@@ -10800,6 +10807,7 @@ window.loadPayrollGenerator = async function() {
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: staffDict[name] || null, start: startDateRaw, end: endDateRaw,
                         attendanceReviewRequired:!!d.attendanceReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],
+                        scheduleEvidenceStamp:payrollScheduleStamp(scheduleData),
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
                     d = window.globalPayrollCache[name];
@@ -10908,9 +10916,9 @@ window.openPayslipModal = async function(staffName) {
     if(!memoryNotice){memoryNotice=document.createElement('div');memoryNotice.id='psScheduleMemory';memoryNotice.className='payslip-schedule-memory';document.getElementById('psAttendanceBody')?.closest('table')?.before(memoryNotice);}
     if(memoryNotice){
         const rows=(data.logs || []).filter(row=>row.in && row.in!=='---');
-        const references=rows.filter(row=>['clock-in','history'].includes(row.scheduleSource)).length;
+        const references=rows.filter(row=>['clock-in','history','shift-amendment'].includes(row.scheduleSource)).length;
         const missing=rows.filter(row=>row.needsScheduleReview).length;
-        memoryNotice.textContent=data.isPaid?'Paid payslip · saved payroll record':references?'Schedule memory: '+references+' attendance entry/entries use preserved shift times.'+(missing?' '+missing+' need schedule review.':''):'Legacy attendance · no saved schedule memory for this cutoff. Future clock-ins will retain their schedule reference.';
+        memoryNotice.textContent=data.isPaid?'Paid payslip · saved payroll record':references?'Schedule memory: '+references+' attendance entry/entries use preserved or explicitly corrected shift times.'+(missing?' '+missing+' need schedule review.':''):'Legacy attendance · no saved schedule memory for this cutoff. Future clock-ins will retain their schedule reference.';
     }
     safeSet('psLate', data.lateDeduction || 0); 
     safeSet('psSSS', data.sss || 0);
@@ -11026,6 +11034,8 @@ window.finalizePayslip = async function() {
     let data = window.currentPayslipData;
     if (!data) return;
     if (data.isPaid || window.paidPayrollSnapshots?.has(data)) return Swal.fire('Payslip already paid','This saved payslip is complete. Its frozen figures have not changed.','info');
+    try { await assertPayrollScheduleFresh(window,data); }
+    catch(error) { return Swal.fire('Refresh unpaid payslip',error.message,'warning'); }
     if (data.attendanceReviewRequired) {
         Swal.fire('Payroll held for HR review','Confirm the linked attendance records in Human Resources, then regenerate this unpaid preview before payment.','warning');
         return;
@@ -11110,6 +11120,7 @@ window.finalizePayslip = async function() {
     btn.innerText = "⏳ Processing..."; btn.disabled = true;
     
     try {
+        await assertPayrollScheduleFresh(window,data);
         if((data.onlineRefundRows||[]).length){
             const snapshot={...data,loans:actualLoanDeducted,advances:actualValeDeducted,meals:actualFoodDeducted,lateDeduction:getFieldVal('psLate'),sss:getFieldVal('psSSS'),philhealth:getFieldVal('psPhil'),pagibig:getFieldVal('psPagibig'),straightBonus:getFieldVal('psStraightBonus'),perfBonus:getFieldVal('psPerfBonus'),basicPay:getFieldVal('psBasicPay'),nightBonus:getFieldVal('psOvertime')};
             await finalizeRefundPayroll(window,{data:snapshot,accountId:selAcc.id,finalNetPay});
@@ -11803,8 +11814,9 @@ window.generateAutoPayslips = async function() {
                     
                     // 🔥 UPGRADE: Use the Universal Shift Matcher Engine for Payroll!
                     const matchedShift = resolveAttendanceShift(log, scheduleData, staffDict, name);
+                    if(matchedShift?.amendmentNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'A shift-time correction conflicts with a reviewed attendance record. HR must confirm it.'];}
                     let { lateMinutes: lateMinutes, expectedStartHour: expectedStartHour, wasScheduled: wasScheduled } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
-                    lateMinutes = attendanceLateMinutes(log, lateMinutes);
+                    lateMinutes = attendanceLateMinutes(log, matchedShift);
                     const late = latePay(lateMinutes, staffDict[name], matchedShift, log.lateExempted === true);
                     const lateHoursToDeduct = late.hours;
                     const lateAmount = late.amount;
@@ -11897,6 +11909,10 @@ window.generateAutoPayslips = async function() {
                     remark: remark,
                     scheduleSource:activeShifts[name].matchedShift.scheduleSource,
                     scheduleRevisionId:activeShifts[name].matchedShift.scheduleRevisionId,
+                    scheduleAmendmentIds:activeShifts[name].matchedShift.scheduleAmendmentIds || [],
+                    assignmentReconciled:activeShifts[name].matchedShift.assignmentReconciled === true,
+                    originalShiftId:activeShifts[name].matchedShift.originalShiftId || null,
+                    targetShiftId:activeShifts[name].matchedShift.targetShiftId || null,
                     expectedStartAt:activeShifts[name].matchedShift.expectedStartAt?.toISOString() || null,
                     expectedEndAt:activeShifts[name].matchedShift.expectedEndAt?.toISOString() || null,
                     needsScheduleReview:activeShifts[name].matchedShift.needsScheduleReview,
@@ -12025,6 +12041,7 @@ window.generateAutoPayslips = async function() {
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: staffDict[name] || null, start: startInput, end: endInput,
                         attendanceReviewRequired:!!d.attendanceReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],
+                        scheduleEvidenceStamp:payrollScheduleStamp(scheduleData),
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
                     d = window.globalPayrollCache[name]; 

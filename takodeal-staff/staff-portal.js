@@ -1,6 +1,8 @@
 import { VaultSession, createPinVerifier, verifyPin, validVaultPin, validVerifier, attendanceHistory, escapeHtml } from './staff-privacy.js';
 import {installStaffRatePrivacy} from './staff-rate-privacy.js';
 import {readStaffRecords,linkedAttendanceHistory} from './attendance-reconcile.js';
+import {createScheduleHistoryStore,scheduleDateKey} from './schedule-history.js';
+import {resolveAttendanceShift,attendanceLateMinutes} from './payroll-safety.js';
 
 export function installStaffPortal() {
     const $ = id => document.getElementById(id);
@@ -146,13 +148,23 @@ export function installStaffPortal() {
             attendanceCache = { id, name, records, saved:Date.now() };
             const shifts = linkedAttendanceHistory(records, id, name);
             const month = $('attendanceMonth').value;
-            const rows = shifts.filter(row => { const d = (row.in || row.out).date; return !d || !month || `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}` === month; });
+            const rows = shifts.filter(row => { const d = (row.in || row.out).date; return !d || !month || scheduleDateKey(d).slice(0,7) === month; });
+            let schedule=null,staffProfile=null,scheduleFailed=false;
+            const times=rows.map(row=>(row.in||row.out).date).filter(value=>value&&Number.isFinite(+value)).map(Number);
+            if(times.length) {
+                const results=await Promise.allSettled([profile(id),createScheduleHistoryStore(window).loadRange(new Date(Math.min(...times)-86400000),new Date(Math.max(...times)))]);
+                if(epoch!==attendanceEpoch||identity().id!==id||identity().name!==name||$('attendanceMonth').value!==month)return;
+                if(results.every(result=>result.status==='fulfilled')){staffProfile={...results[0].value,staffId:id};schedule=results[1].value;}
+                else scheduleFailed=true;
+            }
             $('attendanceCount').textContent = rows.length + (rows.length === 1 ? ' shift' : ' shifts');
-            const time = d => d ? d.toLocaleTimeString('en-PH', { hour: 'numeric', minute: '2-digit' }) : '—';
+            const time = d => d ? d.toLocaleTimeString('en-PH', { timeZone:'Asia/Manila',hour: 'numeric', minute: '2-digit' }) : '—';
             box.innerHTML = rows.length ? rows.map(row => {
-                const log = row.in || row.out, savedLate = row.in?.reviewedLateMinutes ?? row.in?.lateMinutes, late = Number(savedLate) || 0;
-                const label = row.in?.lateExempted === true ? 'Late · exempted by HQ' : late > 3 ? `Late · ${late} min` : savedLate == null ? 'Late status not recorded' : 'On time';
-                return `<article class="attendance-row"><div><strong>${escapeHtml(log.date?.toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) || 'Date needs HQ review')}</strong><span>${escapeHtml(log.branch || 'Branch not recorded')}</span></div><div class="attendance-times"><span>Time in<strong>${time(row.in?.date)}</strong></span><span>Time out<strong>${time(row.out?.date)}${row.out?.date && row.in?.date && row.out.date.toDateString() !== row.in.date.toDateString() ? '<small>Next day</small>' : ''}</strong></span><span>Hours<strong>${row.hours == null ? '—' : row.hours.toFixed(2)}</strong></span></div><div class="attendance-status"><span class="status-pill ${row.status.includes('Missing') || row.status.includes('Review') ? 'warning' : ''}">${row.status}</span>${row.in ? `<span class="status-pill ${late > 3 && !row.in.lateExempted ? 'danger' : ''}">${label}</span>` : ''}</div></article>`;
+                const log = row.in || row.out, savedLate = row.in?.reviewedLateMinutes ?? row.in?.lateMinutes;
+                const matched=row.in&&schedule&&staffProfile?resolveAttendanceShift(row.in,schedule,{[name]:staffProfile},name):null;
+                const late=attendanceLateMinutes(row.in||{},matched),known=savedLate!=null||!!matched?.expectedStartAt;
+                const label = scheduleFailed?'Late status unavailable · refresh after reconnecting':matched?.amendmentNeedsReview?'Shift correction · HQ review required':row.in?.lateExempted === true ? 'Late · exempted by HQ' : late > 0 ? `Late · ${late} min` : !known ? 'Late status not recorded' : 'On time';
+                return `<article class="attendance-row"><div><strong>${escapeHtml(log.date?.toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric'}) || 'Date needs HQ review')}</strong><span>${escapeHtml(log.branch || 'Branch not recorded')}</span></div><div class="attendance-times"><span>Time in<strong>${time(row.in?.date)}</strong></span><span>Time out<strong>${time(row.out?.date)}${row.out?.date && row.in?.date && scheduleDateKey(row.out.date)!==scheduleDateKey(row.in.date) ? '<small>Next day</small>' : ''}</strong></span><span>Hours<strong>${row.hours == null ? '—' : row.hours.toFixed(2)}</strong></span></div><div class="attendance-status"><span class="status-pill ${row.status.includes('Missing') || row.status.includes('Review') ? 'warning' : ''}">${row.status}</span>${row.in ? `<span class="status-pill ${!scheduleFailed&&late>0&&!row.in.lateExempted&&!matched?.amendmentNeedsReview?'danger':scheduleFailed||matched?.amendmentNeedsReview?'warning':''}">${label}</span>` : ''}</div></article>`;
             }).join('') : '<p class="empty-state">No attendance recorded for this month.</p>';
         } catch(error) { if (epoch === attendanceEpoch && identity().id === id) box.innerHTML = `<p class="empty-state">${escapeHtml(error.message||'Your attendance could not load. Check your connection, then select Refresh.')}</p>`; }
     };

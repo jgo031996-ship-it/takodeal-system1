@@ -2003,7 +2003,7 @@ window.loadPayslipVault = async function() {
     try {
         const staffRef = await getDoc(doc(db, "cashiers", staffId));
         if (!stillOpen()) return;
-        let staffProfile = staffRef.exists() ? staffRef.data() : {};
+        let staffProfile = staffRef.exists() ? {...staffRef.data(),staffId} : {};
         let dailyRate = parseFloat(staffProfile.hourlyRate) || 0;
         let ratePerHour = dailyRate / 8;
         let nickname = staffProfile.scheduleNickname || staffName;
@@ -2077,7 +2077,7 @@ window.loadPayslipVault = async function() {
                 }
             });
 
-            let tShifts = 0; let tLate = 0; let activeShift = null; let sPairs = [], scheduleReviews = 0;
+            let tShifts = 0; let tLate = 0; let activeShift = null; let sPairs = [], scheduleReviews = 0,amendmentReviews=0;
             for(const review of payrollPlan.reviews){
                 const at=review.records.map(log=>attendanceMillis(log.timestamp)).find(Number.isFinite);
                 sPairs.push({dateObj:Number.isFinite(at)?new Date(at):startT,in:null,out:'HR REVIEW',hrs:0,remark:'<span style="color:#b45309;font-weight:bold">'+review.reason+'</span>',lateMins:0,needsAttendanceReview:true});
@@ -2099,7 +2099,8 @@ window.loadPayslipVault = async function() {
                     const matchedShift = resolveAttendanceShift({...log, timestamp:logDate, staffName:staffProfile.cashierName || log.staffName},
                         scheduleData, { [staffProfile.cashierName || log.staffName]: staffProfile });
                     if (matchedShift?.needsScheduleReview) scheduleReviews++;
-                    lateMinutes = attendanceLateMinutes(log, matchedShift?.lateMinutes || 0);
+                    if (matchedShift?.amendmentNeedsReview) amendmentReviews++;
+                    lateMinutes = attendanceLateMinutes(log, matchedShift);
                     wasScheduled = matchedShift?.wasScheduled || false;
                     const late = latePay(lateMinutes, staffProfile, matchedShift, log.lateExempted === true);
                     activeShift = { time: logDate, lateMinutes, lateAmount: late.amount, lateExempted: log.lateExempted === true,
@@ -2126,7 +2127,8 @@ window.loadPayslipVault = async function() {
                     if (hoursWorked < 1 && !isAutoClosed) { shiftMultiplier = 0; remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`; } 
                     else if (hoursWorked >= 13.5) { shiftMultiplier = 2; tBonuses += 50; remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty</span>`; } 
                     else if (hoursWorked < 8 && !isAutoClosed) { remark = wasScheduled ? `<span style="color:#ef4444; font-weight:bold;">Short</span>` : `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`; }
-                    if (activeShift.matchedShift?.needsScheduleReview) remark += activeShift.matchedShift.scheduleSource === 'legacy-unverified'
+                    if(activeShift.matchedShift?.amendmentNeedsReview)remark+='<br><span style="color:#a16207;font-weight:bold">Shift correction — HQ must review the saved lateness decision.</span>';
+                    else if (activeShift.matchedShift?.needsScheduleReview) remark += activeShift.matchedShift.scheduleSource === 'legacy-unverified'
                         ? '<br><span style="color:#a16207;font-weight:bold">Legacy estimate — schedule history was not saved for this date.</span>'
                         : '<br><span style="color:#a16207;font-weight:bold">Schedule history missing — review required; no inferred lateness.</span>';
 
@@ -2177,7 +2179,7 @@ window.loadPayslipVault = async function() {
                 }
             });
 
-            return { shiftsWorked: tShifts, totalLatePenalty: tLate, totalBonuses: tBonuses, shiftPairs: sPairs, scheduleReviews,attendanceHeld:payrollPlan.reviews.length>0 };
+            return { shiftsWorked: tShifts, totalLatePenalty: tLate, totalBonuses: tBonuses, shiftPairs: sPairs, scheduleReviews,amendmentReviews,attendanceHeld:payrollPlan.reviews.length>0||amendmentReviews>0 };
         };
 
         let currentData = analyzeCutoff(new Date(startDateStr + 'T00:00:00'), new Date(endDateStr + 'T23:59:59'));
@@ -2252,7 +2254,7 @@ window.loadPayslipVault = async function() {
             document.getElementById('payslipLiveSection').prepend(scheduleNotice);
         }
         scheduleNotice.hidden = !currentData.scheduleReviews && !currentData.attendanceHeld;
-        scheduleNotice.textContent = currentData.attendanceHeld ? 'This attendance estimate is held for HR review because linked punches conflict or overlap. No payable hours or lateness penalty have been inferred.' : `${currentData.scheduleReviews} clock-in(s) lack saved schedule evidence. Review the attendance details before payroll approval.`;
+        scheduleNotice.textContent = currentData.amendmentReviews ? 'A dated shift correction needs HQ review of a saved lateness decision. This attendance estimate is held until that review is complete.' : currentData.attendanceHeld ? 'This attendance estimate is held for HR review because linked punches conflict or overlap. No payable hours or lateness penalty have been inferred.' : `${currentData.scheduleReviews} clock-in(s) lack saved schedule evidence. Review the attendance details before payroll approval.`;
 
         let grossRow = document.getElementById('liveEstGross').parentElement;
         if (!document.getElementById('liveEstOTRow')) {
@@ -2391,7 +2393,7 @@ window.loadPayslipVault = async function() {
                         ${prevLoanStr}
                     </div>
                     
-                    ${prevData.attendanceHeld ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Linked punches conflict or overlap. The attendance estimate is held for HR review; no payable hours or lateness penalty have been inferred.</p>' : prevData.scheduleReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Saved schedule evidence is missing for some clock-ins in this estimate. Review the attendance details before payroll approval.</p>' : ''}
+                    ${prevData.amendmentReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">A dated shift correction needs HQ review of a saved lateness decision. This attendance estimate is held until that review is complete.</p>' : prevData.attendanceHeld ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Linked punches conflict or overlap. The attendance estimate is held for HR review; no payable hours or lateness penalty have been inferred.</p>' : prevData.scheduleReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Saved schedule evidence is missing for some clock-ins in this estimate. Review the attendance details before payroll approval.</p>' : ''}
                     <details style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
                         <summary style="font-weight: bold; color: #0f766e; cursor: pointer; outline: none; font-size: 13px; display: flex; align-items: center; gap: 8px;">
                             <span>👀 View Attendance Logs</span>

@@ -1,6 +1,6 @@
 // Shared attendance math for Manager payroll and the Staff estimate.
 // Times in Schedule Manager are Philippine wall-clock times, independent of device timezone.
-import { resolveScheduleForDate } from './schedule-history.js';
+import { resolveScheduleForDate, amendmentsForDate } from './schedule-history.js';
 const minute = 60000;
 const day = 1440 * minute;
 // Meals and cancelled-food purchases belong in the Foods deduction.
@@ -119,7 +119,7 @@ function emptyAttendanceShift(log, source, review = true) {
         lateMinutes: attendanceLateMinutes(log, 0), needsScheduleReview: review,
         scheduleSource: source, scheduleRevisionId: '' };
 }
-function closestTrustedShift(logDate, branch, staffName, schedule, profiles = {}, allowCurrent = false) {
+function closestTrustedShift(logDate, branch, staffName, schedule, profiles = {}, allowCurrent = false, amendments = true) {
     const actual = asDate(logDate), local = parts(actual);
     if (!local) return null;
     const profile = profiles[staffName] || {};
@@ -128,7 +128,7 @@ function closestTrustedShift(logDate, branch, staffName, schedule, profiles = {}
     for (const offset of [-1, 0, 1]) {
         const midnight = local.midnight + offset * day, workDay = parts(new Date(midnight));
         const key = dateKey(workDay);
-        const archived = schedule?.historyMonths ? resolveScheduleForDate(schedule, key) : null;
+        const archived = schedule?.historyMonths ? resolveScheduleForDate(schedule, key, {amendments}) : null;
         // A fresh punch can capture the current month's live rule even before
         // its first archive exists. Historic re-evaluation never takes this path.
         const saved = archived || (allowCurrent && +schedule?.currentYear === workDay.year && +schedule?.currentMonth === workDay.month ? schedule : null);
@@ -180,11 +180,100 @@ function clockInSnapshotShift(log, staffName) {
         wasScheduled: snapshot.wasScheduled === true, lateMinutes: attendanceLateMinutes(log, Math.max(0, Math.floor(distance))),
         needsScheduleReview: !validEnd, scheduleRevisionId: snapshot.scheduleRevisionId || '' };
 }
+// A saved amendment is a separate, dated correction. It never rewrites the
+// original punch snapshot, assignment, or a manager's lateness review.
+export function resolveAttendanceAmendment(log, schedule, profiles = {}, staffName = log?.staffName) {
+    if (!log || !staffName || log.type && String(log.type).toUpperCase() !== 'TIME IN') return null;
+    const snapshot = clockInSnapshotShift(log, staffName);
+    const original = snapshot || closestTrustedShift(log.timestamp, log.branch, staffName, schedule, profiles, false, false);
+    if (!original || original.needsScheduleReview || !original.shiftId || !original.expectedStartAt || !original.expectedEndAt) return null;
+    const work = parts(original.expectedStartAt), workDate = work && dateKey(work), archive = workDate && schedule?.historyMonths?.[workDate.slice(0,7)];
+    const events = archive?.shiftAmendments;
+    if (!Array.isArray(events) || !events.length) return null;
+    const dated = resolveScheduleForDate(schedule, workDate, {amendments:false});
+    const configs = dated?.branchConfig?.[log.branch], profile = profiles[staffName];
+    if (!dated || !Array.isArray(configs) || !profile?.cashierName) return null;
+    const names = new Set([staffName,profile.cashierName,profile.scheduleNickname,profile.nickname].filter(Boolean).map(nameKey));
+    if (!names.has(nameKey(log.staffName))) return null;
+    const profileId = profile.staffId || profile.id;
+    if (log.staffId && (!profileId || String(log.staffId) !== String(profileId))) return null;
+    const assignments = dated.currentSchedule?.[work.date]?.[log.branch]?.scheduled || {};
+    const slots = configs.filter(shift => names.has(nameKey(assignments[shift.id])));
+    if (slots.length !== 1) return null;
+    const target=slots[0],targetShiftId=target.id,reconcile=original.wasScheduled!==true||targetShiftId!==original.shiftId;
+    if(reconcile&&!snapshot)return null;
+    const revisions = Array.isArray(archive) ? archive : archive.revisions || [], applied = [];
+    let ordered;try{ordered=amendmentsForDate(schedule,workDate);}catch{return null;}
+    const applicable = ordered.filter(event => event?.id && event.branch === log.branch && /^\d{4}-\d{2}-\d{2}$/.test(event.effectiveFrom||'') && /^\d{4}-\d{2}-\d{2}$/.test(event.effectiveTo||'')
+        && event.effectiveFrom.slice(0,7) === workDate.slice(0,7) && event.effectiveTo.slice(0,7) === workDate.slice(0,7)
+        && event.effectiveFrom <= workDate && event.effectiveTo >= workDate && revisions.some(revision => revision.revisionId === event.sourceRevisionId && revision.month === workDate.slice(0,7)));
+    // Canonical amendment revisions link back to their immutable dated source.
+    // A later ordinary schedule revision is outside this ancestry and stays authoritative.
+    const basis = new Set([dated.scheduleRevisionId]);
+    const sourceId = event => event.sourceDates?.[workDate] || event.sourceRevisionId;
+    for (let pass=0;pass<=applicable.length;pass++)for(const event of applicable) {
+        const source=sourceId(event),canonical=event.canonicalRevisionId;
+        if(basis.has(source)||canonical&&basis.has(canonical)){basis.add(source);if(canonical)basis.add(canonical);}
+    }
+    const active = applicable.filter(event=>basis.has(sourceId(event))||event.canonicalRevisionId&&basis.has(event.canonicalRevisionId));
+    let reconciler=null;
+    if(reconcile) {
+        const evidence=active.filter(event=>{
+            const changes=event.changes||[],old=changes.filter(change=>change.shiftId===original.shiftId),assigned=changes.filter(change=>change.shiftId===targetShiftId);
+            if(old.length!==1||assigned.length!==1)return false;
+            const start=timeMinutes(old[0].beforeStart),end=timeMinutes(old[0].beforeEnd);
+            if(start===null||end===null||+original.expectedStartAt!==work.midnight+start*minute||+original.expectedEndAt!==work.midnight+(end+(end<=start?1440:0))*minute)return false;
+            const source=revisions.find(revision=>revision.revisionId===sourceId(event)),day=source?.daySnapshots?.[workDate];
+            const oldRules=source?.snapshot?.branchConfig?.[log.branch]?.filter(rule=>rule.id===original.shiftId)||[],savedAssignments=day?.daySchedule?.[log.branch]?.scheduled;
+            const assignedRules=source?.snapshot?.branchConfig?.[log.branch]?.filter(rule=>names.has(nameKey(savedAssignments?.[rule.id])))||[];
+            const times=oldRules.length===1?shiftTimes(oldRules[0]):{};
+            return day?.configRevisionId===source?.revisionId&&assignedRules.length===1&&assignedRules[0].id===targetShiftId&&times.start===start&&times.end===end;
+        });
+        reconciler=evidence.find(event=>event.reconcileSavedAssignments===true);
+        if(!reconciler)return evidence.length?{...original,amendmentNeedsReview:true,needsScheduleReview:true,assignmentReconciliationRequired:true,attendanceCorrectionVerified:false,originalShiftId:original.shiftId,targetShiftId,workDate,scheduleSource:'shift-amendment-review'}:null;
+    }
+    let start=null,end=null,snapshotMatched=!snapshot||reconcile;
+    for (const event of reconcile?active.slice(active.indexOf(reconciler)):active) {
+        const revision = revisions.find(row=>row.revisionId===sourceId(event)), savedDay=revision?.daySnapshots?.[workDate];
+        const sourceConfigs=revision?.snapshot?.branchConfig?.[log.branch],sourceAssignments=savedDay?.configRevisionId===revision?.revisionId?savedDay.daySchedule?.[log.branch]?.scheduled:null;
+        const own = Array.isArray(sourceConfigs)&&sourceAssignments?sourceConfigs.filter(shift=>names.has(nameKey(sourceAssignments[shift.id]))):[];
+        if(own.length!==1||own[0].id!==targetShiftId)continue;
+        const before=shiftTimes(own[0]);
+        if(before.start===null||before.end===null)continue;
+        if(start===null) {
+            start=before.start;end=before.end;
+        }
+        const changes = (Array.isArray(event.changes)?event.changes:[]).filter(change => change.shiftId === targetShiftId);
+        if (changes.length !== 1) continue;
+        const change = changes[0], beforeStart = timeMinutes(change.beforeStart), beforeEnd = timeMinutes(change.beforeEnd), nextStart = timeMinutes(change.startTime), nextEnd = timeMinutes(change.endTime);
+        const duration = nextStart === null || nextEnd === null ? 0 : (nextEnd-nextStart+1440)%1440;
+        if (beforeStart !== start || beforeEnd !== end || nextStart === null || nextEnd === null || duration < 60 || duration > 18*60) continue;
+        if(snapshot&&!snapshotMatched&&+original.expectedStartAt===work.midnight+start*minute&&+original.expectedEndAt===work.midnight+(end+(end<=start?1440:0))*minute)snapshotMatched=true;
+        start = nextStart; end = nextEnd;if(snapshotMatched)applied.push(event.id);
+    }
+    if (!applied.length) return null;
+    const expectedStartAt = new Date(work.midnight + start * minute), expectedEndAt = new Date(work.midnight + (end + (end <= start ? 1440 : 0)) * minute);
+    const distance = (asDate(log.timestamp) - expectedStartAt) / minute;
+    if (!Number.isFinite(distance) || distance < -90 || distance >= 18*60) return null;
+    const correctedLateMinutes = Math.max(0,Math.floor(distance));
+    const manual = manualLatenessReview(log);
+    return {...original,shiftId:targetShiftId,shiftName:reconcile?target.name||original.shiftName:original.shiftName,shiftType:reconcile?shiftType(target):original.shiftType,isNightShift:reconcile?bonusShift(target):original.isNightShift,wasScheduled:true,expectedStartAt,expectedEndAt,expectedStartHour:start/60,correctedLateMinutes,
+        lateMinutes:manual?attendanceLateMinutes(log,original.lateMinutes):correctedLateMinutes,
+        attendanceCorrectionVerified:true,amendmentNeedsReview:manual,needsScheduleReview:manual,
+        scheduleSource:'shift-amendment',scheduleAmendmentId:applied.at(-1),scheduleAmendmentIds:applied,workDate,
+        originalShiftId:original.shiftId,targetShiftId,assignmentReconciled:reconcile,amendmentReason:reconciler?.reason||active.find(event=>event.id===applied.at(-1))?.reason||'',
+        originalExpectedStartAt:original.expectedStartAt,originalExpectedEndAt:original.expectedEndAt};
+}
+function manualLatenessReview(log) {
+    return log.reviewedLateMinutes != null || log.lateExempted === true || !!(log.lateReviewRequestId || log.lateDecision || log.lateReviewedAt || log.lateReviewedBy);
+}
 // Before the preservation rollout, keep the legacy unpaid calculation and label
 // its missing evidence. Future clock-ins use their saved snapshot or the exact
 // work-date revision, never another month's current rules.
 export function resolveAttendanceShift(log, schedule, profiles = {}, staffNameOverride = log?.staffName) {
     if (!log || !staffNameOverride) return emptyAttendanceShift(log || {}, 'missing-history');
+    const amended = resolveAttendanceAmendment(log, schedule, profiles, staffNameOverride);
+    if (amended) return amended;
     const snapshot = clockInSnapshotShift(log, staffNameOverride);
     if (snapshot) return snapshot;
     const actual = asDate(log.timestamp), cutoff = schedule?.payrollHistoryEnforcedFrom;
@@ -235,6 +324,11 @@ export function earnedNightBonus(profile, shift, timeOut) {
     return shift?.isNightShift && shift.expectedEndAt && asDate(timeOut) >= shift.expectedEndAt ? nightRate(profile) : 0;
 }
 export function attendanceLateMinutes(log, calculated = 0) {
+    if (calculated && typeof calculated === 'object') {
+        if (calculated.attendanceCorrectionVerified === true && !calculated.amendmentNeedsReview
+            && !manualLatenessReview(log)) return Math.max(0,Number(calculated.correctedLateMinutes)||0);
+        calculated = calculated.lateMinutes ?? 0;
+    }
     const saved = log.reviewedLateMinutes ?? log.lateMinutes;
     return Math.max(0, Number(saved ?? calculated) || 0);
 }

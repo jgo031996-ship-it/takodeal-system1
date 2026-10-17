@@ -1,3 +1,4 @@
+import * as scheduleFreshness from '../takodeal-manager/payroll-schedule-freshness.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -55,7 +56,7 @@ function payrollFixture({deductions=[],frozen=null}={}) {
         getDocs:async q=>{const docs=(data[q.table]||[]).filter(row=>q.table!=='staff_deductions'||row.status==='Unpaid').map((row,i)=>({id:row.id||String(i),data:()=>row}));return {docs,forEach:fn=>docs.forEach(fn)};},
         setDoc:async()=>{writes.push('set');throw Error('Preview must not write');},updateDoc:async()=>{writes.push('update');throw Error('Preview must not write');},addDoc:async()=>{writes.push('add');throw Error('Preview must not write');}};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>assembleScheduleHistory(schedule),ManagerUI:{notify:message=>errors.push(message)}};
-    const context=vm.createContext({...api,...payroll,...sanctions,planPayrollAttendance,attendanceMillis,resolveScheduleForDate,window,Date,
+    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...sanctions,planPayrollAttendance,attendanceMillis,resolveScheduleForDate,window,Date,
         escapeHtml:value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])),
         document:{getElementById:id=>elements[id]||null},alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
     return {window,context,elements,errors,writes};
@@ -103,9 +104,12 @@ function paymentFixture(food) {
         serverTimestamp:()=>stamp(16),getDocs:async()=>({forEach:fn=>rows.forEach(row=>fn({id:row.id,data:()=>({...row})}))}),
         updateDoc:async(ref,change)=>{changes.push({ref,change});const row=rows.find(row=>ref.table==='staff_deductions'&&row.id===ref.id);if(row)Object.assign(row,change);},
         addDoc:async(ref,row)=>{records.push({table:ref.table,...row});return {id:'sample'};}};
-    const window={...api,currentPayslipData:{name:'Sample Staff',branch:'Maa',start:'2026-10-01',end:'2026-10-15'},
+    const paymentHistory={historyMonths:{}};
+    api.auth={currentUser:{uid:'sample-payroll-owner',email:'owner@example.test'}};api.sessionUser={uid:'sample-payroll-owner',email:'owner@example.test',isOwner:true,permissions:['payroll']};
+    const window={...api,loadPayrollScheduleHistory:async()=>paymentHistory,currentPayslipData:{name:'Sample Staff',branch:'Maa',start:'2026-10-01',end:'2026-10-15'},
         liveAccounts:[{id:'sample-account',name:'Sample account',balance:5000}],downloadPayslipImage(){},ManagerUI:{notify:text=>errors.push(text)}};
-    vm.runInNewContext(extract('finalizePayslip'),{...api,...payroll,window,document:{getElementById:node},Date,
+    window.currentPayslipData.scheduleEvidenceStamp=scheduleFreshness.payrollScheduleStamp(paymentHistory);
+    vm.runInNewContext(extract('finalizePayslip'),{...api,...payroll,...scheduleFreshness,window,document:{getElementById:node},Date,
         Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:error=>errors.push(error)}});
     return {window,rows,changes,records,errors};
 }

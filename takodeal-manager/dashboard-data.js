@@ -1,5 +1,5 @@
 // Read-only dashboard calculations. Dates use the existing 08:30 Philippine business-day cutoff.
-import { resolveScheduledShift, attendanceLateMinutes } from './payroll-safety.js';
+import { resolveScheduledShift, resolveAttendanceShift, attendanceLateMinutes } from './payroll-safety.js';
 import { attendanceKind, latestAttendance } from './attendance-reconcile.js';
 export const money = n => '₱' + Number(n || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 export const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
@@ -89,17 +89,19 @@ export function onDuty(logs, branches, now = Date.now()) {
 export function dutyAttendance(log, schedule, profiles = {}) {
     const at = milliseconds(log.timestamp);
     const validTime = Number.isFinite(at) && at > 0;
-    const shift = validTime ? resolveScheduledShift(new Date(at), log.branch, log.staffName, schedule, profiles) : null;
+    const shift = validTime ? schedule?.historyMonths || log.scheduleSnapshot ? resolveAttendanceShift(log,schedule,profiles)
+        : resolveScheduledShift(new Date(at), log.branch, log.staffName, schedule, profiles) : null;
     const recorded = log.reviewedLateMinutes ?? log.lateMinutes;
     const hasRecorded = recorded != null && recorded !== '' && Number.isFinite(Number(recorded)) && Number(recorded) >= 0;
-    const minutes = hasRecorded ? attendanceLateMinutes(log) : shift?.lateMinutes ?? null;
+    const minutes = hasRecorded || shift?.expectedStartAt ? attendanceLateMinutes(log,shift) : null;
     return {
         clockIn: validTime ? new Date(at).toLocaleTimeString('en-PH', { timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit', hour12:true }) : 'Time unavailable',
         dateTime: validTime ? new Date(at).toISOString() : null,
         date: validTime ? new Date(at).toLocaleDateString('en-PH', { timeZone:'Asia/Manila', month:'short', day:'numeric', year:'numeric' }) : '',
         lateMinutes: minutes,
         lateExempted: log.lateExempted === true,
-        scheduledStart: shift?.expectedStartAt.toLocaleTimeString('en-PH', { timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit', hour12:true }) || ''
+        amendmentNeedsReview: shift?.amendmentNeedsReview === true,
+        scheduledStart: shift?.expectedStartAt?.toLocaleTimeString('en-PH', { timeZone:'Asia/Manila', hour:'2-digit', minute:'2-digit', hour12:true }) || ''
     };
 }
 export function branchPerformance(branch, shifts, txs, expenses, today, now = Date.now()) {
