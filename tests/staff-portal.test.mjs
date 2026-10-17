@@ -8,7 +8,7 @@ import * as payroll from '../takodeal-staff/payroll-safety.js';
 import * as sanctions from '../takodeal-staff/sanction-schedule.js';
 import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
 import {planPayrollAttendance} from '../takodeal-staff/payroll-attendance.js';
-import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js';
+import {createScheduleHistoryStore,scheduleDateKey,createScheduleRevision,assembleScheduleHistory} from '../takodeal-staff/schedule-history.js';
 import {installStaffRatePrivacy} from '../takodeal-staff/staff-rate-privacy.js';
 import {onlineRefundReviewHTML} from '../takodeal-staff/online-refund-pay.js';
 
@@ -60,7 +60,7 @@ test('unlocked Staff estimates include the same POS meals in current and pending
     const deductions=[meal(224,'09-23'),meal(106.25,'09-28'),meal(136,'09-09','Paid'),meal(50,'10-16'),meal(99,'09-23','Unpaid','Other Staff')];
     const snapshot=rows=>({docs:rows.map((row,i)=>({id:String(i),data:()=>row})),forEach:fn=>rows.forEach((row,i)=>fn({id:String(i),data:()=>row}))});
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),
-        getDoc:async ref=>({exists:()=>true,data:()=>ref.table==='cashiers'?{hourlyRate:450,scheduleNickname:'TEST'}:{}}),
+        getDoc:async ref=>({exists:()=>ref.table==='cashiers',data:()=>ref.table==='cashiers'?{hourlyRate:450,scheduleNickname:'TEST'}:{}}),
         getDocs:async ref=>snapshot(ref.table==='staff_deductions'?deductions:[])};
     const context={...api,...payroll,...sanctions,...reconciliation,planPayrollAttendance,onlineRefundReviewHTML,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},
         window:{...api,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
@@ -115,7 +115,7 @@ function portalHarness(initialPin) {
         return nodes.get(id);
     };
     let staff={pin:'1111',cashierName:'Demo Staff',payslipPin:initialPin}, writes=0, loads=0;
-    const context={VaultSession,createPinVerifier,verifyPin,validVerifier,validVaultPin,attendanceHistory,...reconciliation,installStaffRatePrivacy,escapeHtml:x=>x,Date,console,crypto:webcrypto,
+    const context={VaultSession,createPinVerifier,verifyPin,validVerifier,validVaultPin,attendanceHistory,...reconciliation,...payroll,createScheduleHistoryStore,scheduleDateKey,installStaffRatePrivacy,escapeHtml:x=>x,Date,console,crypto:webcrypto,
         setInterval:()=>0,navigator:{},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)},
         document:{hidden:false,getElementById:node,querySelectorAll:()=>[],querySelector:()=>({scrollTop:0}),addEventListener:(event,fn)=>listeners.set(event,fn)}};
     context.window={db:{},doc:()=>null,getDoc:async()=>({exists:()=>true,data:()=>({...staff})}),updateDoc:async(ref,data)=>{writes++;Object.assign(staff,data);},
@@ -170,7 +170,7 @@ function staffLinkedEstimate(logs,{profileName='Test Staff',clock='2026-10-08T12
     const snapshot=rows=>({docs:rows.map((row,index)=>({id:row.id||String(index),data:()=>row})),forEach:fn=>rows.forEach((row,index)=>fn({id:row.id||String(index),data:()=>row}))});
     class FixedDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}}
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:(ref,...filters)=>({...ref,filters}),where:(key,op,value)=>({key,op,value}),orderBy:()=>({}),
-        getDoc:async ref=>({exists:()=>true,data:()=>ref.table==='cashiers'?{hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST'}:{}}),getDocs:async ref=>{queries.push(ref);return snapshot(ref.table==='attendance_logs'?logs.filter(row=>ref.filters.every(filter=>filter.op==='in'?filter.value.includes(row[filter.key]):row[filter.key]===filter.value)):[]);}};
+        getDoc:async ref=>({exists:()=>ref.table==='cashiers',data:()=>ref.table==='cashiers'?{hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST'}:{}}),getDocs:async ref=>{queries.push(ref);return snapshot(ref.table==='attendance_logs'?logs.filter(row=>ref.filters.every(filter=>filter.op==='in'?filter.value.includes(row[filter.key]):row[filter.key]===filter.value)):[]);}};
     const context={...api,...payroll,...sanctions,...reconciliation,planPayrollAttendance,onlineRefundReviewHTML,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},window:{...api,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
     const at=engine.indexOf('window.loadPayslipVault = async function() {');vm.runInNewContext(engine.slice(at,engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',at)),context);return {node,errors,queries,window:context.window};
 }
@@ -212,4 +212,18 @@ test('a slow attendance refresh cannot display the previous employee after accou
     h.context.localStorage.setItem('takodeal_staff_id','another');h.node('myAttendanceList').innerHTML='new employee screen';
     finish.forEach(resolve=>resolve({docs:[{id:'old',data:()=>({staffId:'demo',staffName:'Demo Staff',branch:'Maa',type:'TIME IN',timestamp:new Date()})}]}));
     await reading;assert.equal(h.node('myAttendanceList').innerHTML,'new employee screen');
+});
+test('actual Staff attendance history applies the dated correction and preserves manual reviews without rewriting punches',async()=>{
+    const h=portalHarness(),api=h.context.window,branch='Sample Branch',name='Demo Staff',at=new Date('2026-10-16T13:59:00+08:00');
+    const raw={currentYear:2026,currentMonth:10,branchConfig:{[branch]:[{id:'mid',name:'Mid',startTime:'13:00',endTime:'22:00',shiftType:'mid',active:true}]},currentSchedule:{16:{[branch]:{scheduled:{mid:name}}}}};
+    const source=createScheduleRevision(raw,{revisionId:'source',effectiveFrom:'2026-10-06',savedAt:new Date('2026-10-06T08:00:00+08:00')});
+    const after=structuredClone(raw);after.branchConfig[branch][0].startTime='14:00';
+    const canonical=createScheduleRevision(after,{revisionId:'canonical',effectiveFrom:'2026-10-17',savedAt:new Date('2026-10-17T09:00:00+08:00'),source:'owner-shift-time-amendment'});
+    const amendment={id:'correct_mid',branch,effectiveFrom:'2026-10-16',effectiveTo:'2026-10-31',sourceRevisionId:'source',sourceRevisionIds:['source'],sourceDates:Object.fromEntries(Array.from({length:16},(_,index)=>['2026-10-'+(index+16),'source'])),canonicalRevisionId:'canonical',recordedAt:'2026-10-17T01:00:00.000Z',reason:'Correct the saved shift start time',changes:[{shiftId:'mid',beforeStart:'13:00',beforeEnd:'22:00',startTime:'14:00',endTime:'22:00'}]};
+    const profile={...h.staff(),branch,staffId:'demo'},schedule=assembleScheduleHistory(raw,[{month:'2026-10',revisions:[source]}]);
+    const records=[{id:'in',staffId:'demo',staffName:name,branch,type:'TIME IN',timestamp:at,lateMinutes:59,scheduleSnapshot:payroll.captureAttendanceSchedule(at,branch,name,schedule,{[name]:profile})},{id:'out',staffId:'demo',staffName:name,branch,type:'TIME OUT',timeInLogId:'in',timestamp:new Date('2026-10-16T22:00:00+08:00')}];
+    const saved=structuredClone(records),settings={global_schedule:after,schedule_history_policy:{payrollHistoryEnforcedFrom:'2026-10-06'},schedule_month_2026_10:{month:'2026-10',revisionIds:['source','canonical'],latestRevisionId:'canonical',shiftAmendments:[amendment]},schedule_shift_amendments_2026_10:{schemaVersion:1,kind:'schedule-shift-amendments',month:'2026-10',shiftAmendments:[amendment]},schedule_revision_source:source,schedule_revision_canonical:canonical};
+    Object.assign(api,{doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:(ref,...filters)=>({...ref,filters}),where:(key,op,value)=>({key,value}),getDocFromServer:async ref=>{const data=ref.table==='cashiers'?profile:settings[ref.id];return {exists:()=>data!=null,data:()=>data};},getDocsFromServer:async q=>({docs:records.filter(row=>q.filters.every(filter=>row[filter.key]===filter.value)).map(row=>({id:row.id,data:()=>row}))})});
+    h.node('attendanceMonth').value='2026-10';await api.loadMyAttendance(true);assert.match(h.node('myAttendanceList').innerHTML,/On time/);assert.doesNotMatch(h.node('myAttendanceList').innerHTML,/Late · 59/);assert.deepEqual(records,saved);
+    records[0].reviewedLateMinutes=59;await api.loadMyAttendance(true);assert.match(h.node('myAttendanceList').innerHTML,/Shift correction · HQ review required/);assert.equal(records[0].reviewedLateMinutes,59);
 });

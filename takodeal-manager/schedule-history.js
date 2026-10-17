@@ -1,8 +1,11 @@
+import {normalizeShiftAmendment,shiftAmendmentFingerprint,shiftAmendmentRuleTimes,amendmentsForDate,applyShiftAmendments} from './shift-amendments.js';
+export {shiftAmendmentFingerprint,amendmentsForDate,applyShiftAmendments} from './shift-amendments.js';
 // Schedule history is keyed by the Philippine work date, not the month currently open in the editor.
 const SNAPSHOT_KEYS = ['branchConfig', 'employees', 'unavailability', 'currentSchedule', 'currentYear', 'currentMonth', 'holidays'];
 const clone = value => JSON.parse(JSON.stringify(value));
 const pad = value => String(value).padStart(2, '0');
 const monthId = month => `schedule_month_${month.replace('-', '_')}`;
+const amendmentsDocId=month=>`schedule_shift_amendments_${month.replace('-','_')}`;
 const revisionDocId = id => `schedule_revision_${id}`;
 function signature(value) {
     if (Array.isArray(value)) return '[' + value.map(signature).join(',') + ']';
@@ -94,7 +97,7 @@ export function createScheduleRevision(input, {revisionId, effectiveFrom, effect
     if (new TextEncoder().encode(JSON.stringify(revision)).length > 950000) throw new Error('This schedule month is too large to archive safely. Reduce the schedule size before saving.');
     return revision;
 }
-export function resolveScheduleForDate(history, value) {
+export function resolveScheduleForDate(history, value, {amendments=true} = {}) {
     let date;
     try { date = scheduleDateKey(value); } catch { return null; }
     const month = date.slice(0, 7), archive = history?.historyMonths?.[month];
@@ -104,9 +107,10 @@ export function resolveScheduleForDate(history, value) {
     if (!matching.length) return null;
     const revision = matching[0], result = clone(revision.snapshot), day = String(Number(date.slice(-2))), selected = revision.daySnapshots[date];
     result.branchConfig = clone(revision.snapshot.branchConfig); result.currentSchedule = {[day]: clone(selected.daySchedule)};
-    return {...result, snapshotDate: date, scheduleRevisionId: revision.revisionId, scheduleSource: revision.source,
+    const saved = {...result, snapshotDate: date, scheduleRevisionId: revision.revisionId, scheduleSource: revision.source,
         scheduleEffectiveFrom: revision.effectiveFrom, scheduleEffectiveTo: revision.effectiveTo,
         payrollHistoryEnforcedFrom: history?.payrollHistoryEnforcedFrom || revision.payrollHistoryEnforcedFrom};
+    return amendments ? applyShiftAmendments(saved,amendmentsForDate(history,date),date) : saved;
 }
 export function assembleScheduleHistory(current, archives = [], {enforcedFrom} = {}) {
     const result = clone(current || {}), months = {}, cutovers = [];
@@ -119,8 +123,13 @@ export function assembleScheduleHistory(current, archives = [], {enforcedFrom} =
     return {...result, historyMonths: clone(months), ...(cutover ? {payrollHistoryEnforcedFrom: scheduleDateKey(cutover)} : {})};
 }
 function snapData(snapshot) { return snapshot?.exists?.() ? snapshot.data() : null; }
+function savedAmendments(index,durable,month){
+    const inline=index?.shiftAmendments||[],events=durable?.shiftAmendments??inline;
+    if(!Array.isArray(inline)||!Array.isArray(events)||durable&&(!Array.isArray(durable.shiftAmendments)||durable.month!==month)||durable&&inline.some((event,i)=>shiftAmendmentFingerprint(event)!==shiftAmendmentFingerprint(events[i])))throw Error('The saved shift correction history is inconsistent. Reload for an HQ review.');
+    amendmentsForDate({month,shiftAmendments:events},month+'-01');return clone(events);
+}
 function addRevision(index, revision) {
-    return {schemaVersion: 1, kind: 'schedule-month', month: revision.month,
+    return {...clone(index || {}),schemaVersion: 1, kind: 'schedule-month', month: revision.month,
         revisionIds: [...new Set([...(index?.revisionIds || []), revision.revisionId])], latestRevisionId: revision.revisionId,
         updatedAt: revision.savedAt, payrollHistoryEnforcedFrom: index?.payrollHistoryEnforcedFrom || revision.payrollHistoryEnforcedFrom};
 }
@@ -129,12 +138,22 @@ export function createScheduleHistoryStore(api, {now = () => new Date(), makeId 
     const ref = id => api.doc(api.db, 'settings', id), read = api.getDocFromServer || api.getDoc;
     if (typeof read !== 'function') throw new Error('Schedule history needs a server read API.');
     async function loadMonth(value) {
-        const month = monthKey(value), index = snapData(await read(ref(monthId(month))));
+        const month = monthKey(value),[index,durable]=await Promise.all([read(ref(monthId(month))).then(snapData),read(ref(amendmentsDocId(month))).then(snapData)]);
+        if(index?.revisionIds != null && !Array.isArray(index.revisionIds))throw Error('The saved schedule version index is incomplete.');
         const ids = [...new Set(index?.revisionIds || [])];
-        const revisions = (await Promise.all(ids.map(async id => snapData(await read(ref(revisionDocId(id))))))).filter(revision => revision?.month === month);
+        const revisions = await Promise.all(ids.map(async id => {if(typeof id!=='string'||!id||id.length>100||id.includes('/'))throw Error('The saved schedule version index is incomplete.');const revision=snapData(await read(ref(revisionDocId(id))));if(!revision||revision.revisionId!==id||revision.month!==month||!revision.snapshot||monthKey(revision.snapshot)!==month)throw Error('The saved schedule version is incomplete.');return revision;}));
+        if(index?.latestRevisionId&&!ids.includes(index.latestRevisionId))throw Error('The latest saved schedule version is incomplete.');
+        const shiftAmendments=savedAmendments(index,durable,month);
+        for(const event of shiftAmendments){
+            if(!ids.includes(event.sourceRevisionId)||!event.canonicalRevisionId||!ids.includes(event.canonicalRevisionId)||!Array.isArray(event.sourceRevisionIds)||!event.sourceRevisionIds.length||event.sourceRevisionIds.some(id=>!ids.includes(id))||!event.sourceDates||Array.isArray(event.sourceDates)||!Object.keys(event.sourceDates).length)throw Error('The saved shift correction source is incomplete.');
+            for(const [date,id]of Object.entries(event.sourceDates)){
+                const source=revisions.find(row=>row.revisionId===id);
+                if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||date<event.effectiveFrom||date>event.effectiveTo||!event.sourceRevisionIds.includes(id)||!source||source.daySnapshots?.[date]?.configRevisionId!==id||source.effectiveFrom>date||source.effectiveTo<date)throw Error('The dated shift correction source is incomplete.');
+            }
+        }
         revisions.sort((a, b) => (Number(a.sequence) || 0) - (Number(b.sequence) || 0) || a.savedAt.localeCompare(b.savedAt) || a.revisionId.localeCompare(b.revisionId));
         return {month, latestRevisionId: index?.latestRevisionId || null, revisions, latestRevision: revisions.find(revision => revision.revisionId === index?.latestRevisionId) || null,
-            payrollHistoryEnforcedFrom: index?.payrollHistoryEnforcedFrom || null};
+            payrollHistoryEnforcedFrom: index?.payrollHistoryEnforcedFrom || null,shiftAmendments,indexFingerprint:shiftAmendmentFingerprint({index,durable})};
     }
     async function loadRange(from, to) {
         const start = monthKey(from), end = monthKey(to);
@@ -147,6 +166,61 @@ export function createScheduleHistoryStore(api, {now = () => new Date(), makeId 
         const [current, policy, archives] = await Promise.all([read(ref('global_schedule')).then(snapData), read(ref('schedule_history_policy')).then(snapData), Promise.all(months.map(loadMonth))]);
         return assembleScheduleHistory(current, archives, {enforcedFrom: policy?.payrollHistoryEnforcedFrom});
     }
+    async function amendShiftTimes(input,{expectedRevisionId,expectedHeadFingerprint,expectedIndexFingerprint,actor,authorize}={}) {
+        const payload=normalizeShiftAmendment(input),recordedAt=instant(now()).toISOString(),today=scheduleDateKey(recordedAt),canonicalRevisionId=payload.id+'-current';
+        const reviewer={uid:String(actor?.uid||'').trim(),email:String(actor?.email||'').trim().toLowerCase()};
+        const sessionIdentity=()=>shiftAmendmentFingerprint([api.auth?.currentUser?.uid,api.auth?.currentUser?.email,api.sessionUser?.uid,api.sessionUser?.email,api.sessionUser?.isOwner,api.sessionUser?.isFranchisee,api.sessionUser?.role,api.sessionUser?.permissions,api.sessionUser?.allowedBranches]);
+        const capturedIdentity=sessionIdentity();
+        const guard=()=>{const user=api.auth?.currentUser,session=api.sessionUser,role=String(session?.role||'').trim().toLowerCase();
+            if(!reviewer.uid||!reviewer.email||!user?.uid||user.uid!==reviewer.uid||String(user.email||'').trim().toLowerCase()!==reviewer.email||session?.uid!==reviewer.uid||String(session.email||'').trim().toLowerCase()!==reviewer.email||session.isOwner!==true||session.isFranchisee===true||['franchisee','franchise owner'].includes(role)||sessionIdentity()!==capturedIdentity||typeof authorize!=='function'||authorize(payload.branch,payload)!==true)throw Error('Only the signed-in Owner can confirm this shift-time correction.');};
+        guard();
+        if(expectedRevisionId===undefined||typeof expectedHeadFingerprint!=='string'||typeof expectedIndexFingerprint!=='string')throw Error('Load a fresh schedule preview before confirming a correction.');
+        if(payload.month!==today.slice(0,7)||payload.effectiveFrom>today||payload.effectiveTo!==monthEnd(payload.month))throw Error('This correction must start on or before today and continue through the current month end. Use normal schedule planning for other dates.');
+        const intentFingerprint=shiftAmendmentFingerprint({...payload,actor:reviewer});
+        return api.runTransaction(api.db,async tx=>{
+            guard();const [index,current,policy,durable]=await Promise.all([tx.get(ref(monthId(payload.month))).then(snapData),tx.get(ref('global_schedule')).then(snapData),tx.get(ref('schedule_history_policy')).then(snapData),tx.get(ref(amendmentsDocId(payload.month))).then(snapData)]);guard();
+            if(!index||!Array.isArray(index.revisionIds)||!Array.isArray(index.shiftAmendments||[])||!current||monthKey(current)!==payload.month)throw Error('This saved month or its current head is incomplete. Reload before correcting shift times.');
+            const previous=savedAmendments(index,durable,payload.month),saved=previous.find(row=>row.id===payload.id);
+            if(saved){
+                if(saved.intentFingerprint!==intentFingerprint)throw Error('This correction reference was already used with different details.');
+                if(!saved.canonicalRevisionId||!index.revisionIds.includes(saved.canonicalRevisionId))throw Error('The saved correction revision is incomplete. Reload for an HQ history review.');
+                const proof=snapData(await tx.get(ref(revisionDocId(saved.canonicalRevisionId))));guard();
+                if(!proof||proof.revisionId!==saved.canonicalRevisionId||proof.month!==payload.month||!proof.snapshot)throw Error('The saved correction revision is incomplete. Reload for an HQ history review.');
+                return {amendment:clone(saved),month:payload.month,latestRevisionId:index.latestRevisionId||null,alreadySaved:true};
+            }
+            if((index.latestRevisionId||null)!==expectedRevisionId||shiftAmendmentFingerprint({index,durable})!==expectedIndexFingerprint||shiftAmendmentFingerprint(current)!==expectedHeadFingerprint)throw Error('The saved schedule changed after this preview. Reload before confirming the correction.');
+            const ids=[...new Set(index.revisionIds)];if(!ids.length||!ids.includes(index.latestRevisionId)||!ids.includes(payload.sourceRevisionId)||!ids.includes(current.scheduleRevisionId)||previous.length>=100)throw Error('The saved shift correction source is incomplete or needs an HQ history review.');
+            const revisions=await Promise.all(ids.map(async id=>{if(typeof id!=='string'||!id||id.length>100||id.includes('/'))throw Error('The saved schedule source is incomplete.');const revision=snapData(await tx.get(ref(revisionDocId(id))));if(!revision||revision.revisionId!==id||revision.month!==payload.month||!revision.snapshot||monthKey(revision.snapshot)!==payload.month)throw Error('The saved schedule source is incomplete.');return revision;}));
+            const collision=snapData(await tx.get(ref(revisionDocId(canonicalRevisionId))));if(collision)throw Error('The correction revision reference already exists. Reload before trying again.');guard();
+            const source=revisions.find(row=>row.revisionId===payload.sourceRevisionId),head=revisions.find(row=>row.revisionId===current.scheduleRevisionId);
+            if(signature(head.snapshot)!==signature(snapshotData(current,{legacy:true})))throw Error('The current schedule head has unarchived edits. Save and reload them before correcting historical shift times.');
+            const archive={month:payload.month,revisions,latestRevisionId:index.latestRevisionId,latestRevision:revisions.find(row=>row.revisionId===index.latestRevisionId),shiftAmendments:previous},history=assembleScheduleHistory(current,[archive]);
+            amendmentsForDate(history,today);
+            const sourceNow=applyShiftAmendments({...clone(source.snapshot),scheduleRevisionId:source.revisionId},amendmentsForDate(history,today),today);
+            const checkedShift=(snapshot,change)=>{const matches=snapshot.branchConfig?.[payload.branch]?.filter(shift=>shift.id===change.shiftId)||[];if(matches.length!==1)throw Error('A selected shift ID is missing or duplicated in the saved source.');return matches[0];};
+            for(const change of payload.changes){for(const snapshot of [sourceNow,current]){const times=shiftAmendmentRuleTimes(checkedShift(snapshot,change));if(times.startTime!==change.beforeStart||times.endTime!==change.beforeEnd)throw Error('A selected shift time changed after this preview. Reload its exact saved Time In and Time Out.');}}
+            const sourceDates={},sourceRevisionIds=new Set(),canonicalSnapshot=snapshotData(current,{legacy:true});
+            for(let date=payload.effectiveFrom;date<=payload.effectiveTo;date=nextDate(date)){
+                const original=resolveScheduleForDate(history,date,{amendments:false});if(!original)throw Error('Dated schedule evidence is missing for '+date+'. No shift times were changed.');
+                const originalRevision=revisions.find(row=>row.revisionId===original.scheduleRevisionId),dated=applyShiftAmendments(original,amendmentsForDate(history,date),date);
+                // Existing future plans keep their deliberate rule choices. A later
+                // normal save also has a different revision ID and is never overlaid.
+                if(originalRevision.effectiveFrom<=today){
+                    for(const change of payload.changes){const times=shiftAmendmentRuleTimes(checkedShift(dated,change)),before=times.startTime===change.beforeStart&&times.endTime===change.beforeEnd,after=times.startTime===change.startTime&&times.endTime===change.endTime;if(!before&&!after)throw Error('The selected shift has different dated rules on '+date+'. Review that date before correcting it.');}
+                    sourceDates[date]=original.scheduleRevisionId;sourceRevisionIds.add(original.scheduleRevisionId);
+                }
+                if(date>=today)canonicalSnapshot.currentSchedule[Number(date.slice(-2))]=clone(original.currentSchedule[Number(date.slice(-2))]||{});
+            }
+            if(!sourceRevisionIds.size)throw Error('No confirmed dated shift source matches this correction.');
+            for(const change of payload.changes){const shift=checkedShift(canonicalSnapshot,change);shift.startTime=change.startTime;shift.endTime=change.endTime;}
+            const event={...payload,schemaVersion:1,kind:'shift-time-amendment',source:'owner-shift-time-correction',sequence:previous.length+1,recordedAt,actor:reviewer,canonicalRevisionId,canonicalSourceRevisionId:current.scheduleRevisionId,sourceRevisionIds:[...sourceRevisionIds],sourceDates,intentFingerprint,
+                sourceHeadFingerprint:shiftAmendmentFingerprint({revisionId:current.scheduleRevisionId,branch:payload.branch,rules:payload.changes.map(change=>({shiftId:change.shiftId,...shiftAmendmentRuleTimes(checkedShift(current,change))}))}),sourceIndexFingerprint:shiftAmendmentFingerprint({month:payload.month,latestRevisionId:index.latestRevisionId,revisionIds:ids,amendmentIds:previous.map(row=>row.id)})};
+            const revision=createScheduleRevision(canonicalSnapshot,{revisionId:canonicalRevisionId,effectiveFrom:today,effectiveTo:payload.effectiveTo,savedAt:recordedAt,actor:reviewer.email,source:'owner-shift-time-amendment',cutover:policy?.payrollHistoryEnforcedFrom||current.payrollHistoryEnforcedFrom||today});revision.sequence=ids.length+1;
+            const next={...addRevision(index,revision),shiftAmendments:[...clone(previous),event]};if(new TextEncoder().encode(JSON.stringify(next)).length>950000)throw Error('This month’s correction history is too large to save safely.');guard();
+            tx.set(ref(revisionDocId(canonicalRevisionId)),revision);tx.set(ref(monthId(payload.month)),next);tx.set(ref(amendmentsDocId(payload.month)),{schemaVersion:1,kind:'schedule-shift-amendments',month:payload.month,shiftAmendments:next.shiftAmendments,updatedAt:recordedAt});tx.set(ref('global_schedule'),{...revision.snapshot,scheduleRevisionId:revision.revisionId,scheduleEffectiveFrom:revision.effectiveFrom,payrollHistoryEnforcedFrom:revision.payrollHistoryEnforcedFrom});
+            return {amendment:clone(event),month:payload.month,latestRevisionId:revision.revisionId,alreadySaved:false};
+        });
+    }
     async function commit(input, options = {}, captureOnly = false) {
         if (typeof api.runTransaction !== 'function') throw new Error('Schedule history needs an atomic save API.');
         const savedAt = now(), today = scheduleDateKey(savedAt), id = options.revisionId || makeId(), baselineId = makeId();
@@ -158,8 +232,12 @@ export function createScheduleHistoryStore(api, {now = () => new Date(), makeId 
             const month = input ? monthKey(input) : current ? monthKey(current) : null;
             if (!month) return {revision: null, latestRevisionId: null, publishedCurrent: false};
             const currentMonth = current ? monthKey(current) : null;
-            const index = await get(monthId(month));
-            const currentIndex = currentMonth ? await get(monthId(currentMonth)) : null;
+            let index = await get(monthId(month));
+            let currentIndex = currentMonth ? await get(monthId(currentMonth)) : null;
+            const selectedDurable=await get(amendmentsDocId(month)),currentDurable=currentMonth?await get(amendmentsDocId(currentMonth)):null;
+            const selectedEvents=savedAmendments(index,selectedDurable,month),currentEvents=currentMonth?savedAmendments(currentIndex,currentDurable,currentMonth):[];
+            if(selectedEvents.length)index={...index,shiftAmendments:selectedEvents};
+            if(currentEvents.length)currentIndex={...currentIndex,shiftAmendments:currentEvents};
             const currentRevision = current?.scheduleRevisionId ? await get(revisionDocId(current.scheduleRevisionId)) : null;
             let baseline = null;
             // If an old app modified the head without its archived revision, preserve what is on the server from today only.
@@ -194,5 +272,5 @@ export function createScheduleHistoryStore(api, {now = () => new Date(), makeId 
             return {revision: revision || baseline, latestRevisionId: revision?.revisionId || baseline?.revisionId || current?.scheduleRevisionId || index?.latestRevisionId || null, publishedCurrent};
         });
     }
-    return {loadMonth, loadRange, save: (snapshot, options) => commit(snapshot, options), captureCurrent: options => commit(null, options, true)};
+    return {loadMonth, loadRange,amendShiftTimes, save: (snapshot, options) => commit(snapshot, options), captureCurrent: options => commit(null, options, true)};
 }

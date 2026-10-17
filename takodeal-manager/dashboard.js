@@ -1,11 +1,13 @@
 import { money, number, escapeHTML as esc, milliseconds, businessDay, calendarDay, dayStart, addDays,
     dateRange, scopedSales, salesSummary, paymentParts, onDuty, dutyAttendance, branchPerformance, productReport, ballAudit } from './dashboard-data.js';
 import { countBalls } from './pos-safety.js';
+import {createScheduleHistoryStore} from './schedule-history.js';
 
 // One dashboard owns its subscriptions. No payroll, stock, sale, or counter writes occur here.
 export function createDashboard(w = window, d = document) {
     let generation = 0, stops = [], key = '', state = {}, reportGeneration = 0;
     const cache = new Map();
+    const pendingHistory = new Map();
     const el = id => d.getElementById(id);
     const text = (id, value) => { if (el(id)) el(id).textContent = value; };
     const rows = snap => snap.docs.map(doc => ({ ...doc.data(), id: doc.id }));
@@ -14,6 +16,29 @@ export function createDashboard(w = window, d = document) {
     const accountScope = () => JSON.stringify([w.auth?.currentUser?.uid, w.sessionUser?.uid, w.sessionUser?.email,
         w.sessionUser?.permissions, w.sessionUser?.allowedBranches, w.sessionUser?.isFranchisee]);
     const allowed = b => typeof w.isBranchAllowed !== 'function' || w.isBranchAllowed(b);
+    const historyAvailable = () => typeof w.loadPayrollScheduleHistory === 'function' || typeof w.getDocFromServer === 'function';
+    function requestDutyHistory(current) {
+        if(!historyAvailable())return;
+        const scope=accountScope(),from=addDays(state.today,-4),to=calendarDay(),historyKey=JSON.stringify([scope,from,to]);
+        const valid=()=>current===generation&&scope===accountScope()&&visible();
+        if(!valid())return;
+        state.historyLoading=true;state.historyUnavailable=false;state.ready.schedule=false;
+        const existing=pendingHistory.get(historyKey);
+        if(existing){existing.next={current,scope};return;}
+        const job={next:null};pendingHistory.set(historyKey,job);
+        const timer=setTimeout(()=>{if(valid()){state.historyLoading=false;state.historyUnavailable=true;state.errors['Schedule history']='Schedule history is taking longer than expected. Refresh after reconnecting.';message();renderOperations();}},15000);
+        job.physical=Promise.resolve().then(()=>{
+            if(!valid())throw Error('The dashboard account or branch changed.');
+            return typeof w.loadPayrollScheduleHistory==='function'?w.loadPayrollScheduleHistory(from,to):createScheduleHistoryStore(w).loadRange(from,to);
+        });
+        job.physical.then(history=>{
+            if(!valid()||job.next)return;
+            state.schedule=history;state.ready.schedule=true;state.historyLoading=false;state.historyUnavailable=false;delete state.errors['Schedule history'];message();renderOperations();
+        },error=>{if(valid()&&!job.next){state.historyLoading=false;state.historyUnavailable=true;state.errors['Schedule history']=error.message;message();renderOperations();}}).finally(()=>{
+            clearTimeout(timer);if(pendingHistory.get(historyKey)===job)pendingHistory.delete(historyKey);
+            if(job.next?.current===generation&&job.next.scope===accountScope()&&visible())requestDutyHistory(job.next.current);
+        });
+    }
     function stop() { generation++; stops.splice(0).forEach(off => off()); key = ''; }
     function visible() { return el('view-dashboard')?.classList.contains('active'); }
     function message() {
@@ -117,7 +142,16 @@ export function createDashboard(w = window, d = document) {
             }, current);
             watch('Shifts', w.query(collection('shifts'), w.where('startTime', '>=', lookback)), snap => { state.shifts = rows(snap); state.ready.shifts = true; renderOperations(); }, current);
             watch('Attendance', w.query(collection('attendance_logs'), w.where('timestamp', '>=', lookback)), snap => { state.attendance = rows(snap); state.ready.attendance = true; renderOperations(); }, current);
-            watch('Schedule', doc('global_schedule'), snap => { state.schedule = snap.exists() ? snap.data() : null; state.ready.schedule = true; renderOperations(); }, current);
+            watch('Schedule', doc('global_schedule'), snap => {
+                if(historyAvailable())requestDutyHistory(current);
+                else {state.schedule=snap.exists()?snap.data():null;state.ready.schedule=true;}
+                renderOperations();
+            }, current);
+            if(historyAvailable()) {
+                const first=addDays(today,-4).slice(0,7),last=calendarDay().slice(0,7);
+                for(const month of [...new Set([first,last])])watch('Schedule history '+month,doc('schedule_month_'+month.replace('-','_')),snap=>{if(!snap.metadata?.fromCache)requestDutyHistory(current);},current);
+                requestDutyHistory(current);
+            }
             watch('Staff profiles', collection('cashiers'), snap => {
                 state.profiles = Object.fromEntries(rows(snap).filter(p => p.cashierName).map(p => [p.cashierName, p]));
                 state.ready.profiles = true; renderOperations();
@@ -158,13 +192,14 @@ export function createDashboard(w = window, d = document) {
             const known = state.sales && state.ready.shifts && state.ready.expenses && !state.errors.Sales && !state.errors.Shifts && !state.errors.Expenses;
             const staffHTML = team.map(s => {
                 const detail = dutyAttendance(s, state.ready.profiles ? state.schedule : null, state.profiles);
+                if(state.historyLoading||state.historyUnavailable)detail.lateMinutes=null;
                 const late = detail.lateMinutes > 0 && !detail.lateExempted;
                 const status = detail.lateExempted ? '<span class="dash-staff-status exempt">Late exempted</span>'
                     : late ? `<span class="dash-staff-status late">Late · ${esc(detail.lateMinutes)} min</span>`
-                    : detail.lateMinutes == null && (state.errors.Schedule || state.errors['Staff profiles']) ? '<span class="dash-staff-status review">Late status unavailable</span>'
+                    : detail.lateMinutes == null && (state.historyUnavailable || state.errors.Schedule || state.errors['Staff profiles']) ? '<span class="dash-staff-status review">Late status unavailable</span>'
                     : detail.lateMinutes == null && (!state.ready.schedule || !state.ready.profiles) ? '<span class="dash-muted">Checking schedule…</span>' : '';
                 const clock = detail.dateTime ? `<time datetime="${esc(detail.dateTime)}" title="${esc(detail.date + (detail.scheduledStart ? ' · Scheduled ' + detail.scheduledStart : ''))}">${esc(detail.clockIn)}</time>` : esc(detail.clockIn);
-                return `<div class="dash-staff ${late ? 'late' : s.needsReview ? 'review' : ''}"><span class="dash-staff-name">${esc(s.staffName || s.staffId)}</span><div class="dash-staff-detail"><span class="dash-staff-clock">In · ${clock}</span>${status}${s.needsReview ? `<span class="dash-staff-status review">${esc(s.reviewReason || 'Check time out · over 16h')}</span>` : ''}</div></div>`;
+                return `<div class="dash-staff ${late ? 'late' : s.needsReview ? 'review' : ''}"><span class="dash-staff-name">${esc(s.staffName || s.staffId)}</span><div class="dash-staff-detail"><span class="dash-staff-clock">In · ${clock}</span>${status}${detail.amendmentNeedsReview?'<span class="dash-staff-status review">Shift correction · review saved decision</span>':''}${s.needsReview ? `<span class="dash-staff-status review">${esc(s.reviewReason || 'Check time out · over 16h')}</span>` : ''}</div></div>`;
             }).join('') || '<span class="dash-muted">No active time punches</span>';
             return `<tr><td><button type="button" class="dash-branch" data-branch="${esc(branch)}">${esc(branch)} <span>↗</span></button><small>${esc(p.shift?.cashier?.split('/').pop().trim() || 'No cashier assigned')}</small></td>
                 <td><span class="dash-badge ${p.state === 'Active' ? 'live' : ''}">${p.state}</span>${p.stale ? '<small>Earlier shift · review</small>' : ''}</td>

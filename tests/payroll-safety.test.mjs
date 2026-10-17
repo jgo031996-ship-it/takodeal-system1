@@ -1,3 +1,4 @@
+import * as scheduleFreshness from '../takodeal-manager/payroll-schedule-freshness.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -149,7 +150,7 @@ function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,sc
         getDoc:async()=>({exists:()=>true,data:()=>scheduleData || schedule(end,type)}),
         getDocs:async q=>{const docs=(data[q.table]||[]).filter(row=>q.table!=='staff_deductions' || row.status==='Unpaid').map((row,i)=>({id:row.id||String(i),data:()=>row}));return {docs,forEach:fn=>docs.forEach(fn)};}};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>historyData || assembleScheduleHistory(scheduleData || schedule(end,type))};
-    const context=vm.createContext({...api,...payroll,...sanctions,planPayrollAttendance,attendanceMillis,escapeHtml:value=>String(value).replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])),resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
+    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...sanctions,planPayrollAttendance,attendanceMillis,escapeHtml:value=>String(value).replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])),resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
         alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
     return {context,window,elements,errors};
 }
@@ -252,9 +253,12 @@ function paymentFixture(food=330.25) {
         serverTimestamp:()=>stamp('10-04'),getDocs:async()=>({forEach:fn=>rows.forEach(row=>fn({id:row.id,data:()=>({...row})}))}),
         updateDoc:async(ref,change)=>{changes.push({ref,change});const row=rows.find(r=>ref.table==='staff_deductions'&&r.id===ref.id);if(row)Object.assign(row,change);},
         addDoc:async(ref,row)=>{records.push({table:ref.table,...row});return {id:'sample'};}};
-    const window={...api,currentPayslipData:{name:'Test Staff',branch:'Test',start:'2026-09-16',end:'2026-09-30'},
+    const paymentHistory={historyMonths:{}};
+    api.auth={currentUser:{uid:'sample-payroll-owner',email:'owner@example.test'}};api.sessionUser={uid:'sample-payroll-owner',email:'owner@example.test',isOwner:true,permissions:['payroll']};
+    const window={...api,loadPayrollScheduleHistory:async()=>paymentHistory,currentPayslipData:{name:'Test Staff',branch:'Test',start:'2026-09-16',end:'2026-09-30'},
         liveAccounts:[{id:'sample-account',name:'Sample account',balance:5000}],downloadPayslipImage(){},ManagerUI:{notify:text=>errors.push(text)}};
-    const context={...api,...payroll,window,document:{getElementById:node},Date,Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:e=>errors.push(e)}};
+    window.currentPayslipData.scheduleEvidenceStamp=scheduleFreshness.payrollScheduleStamp(paymentHistory);
+    const context={...api,...payroll,...scheduleFreshness,window,document:{getElementById:node},Date,Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:e=>errors.push(e)}};
     vm.runInNewContext(extract('finalizePayslip'),context);
     return {window,rows,changes,records,errors};
 }
@@ -527,3 +531,44 @@ for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
         assert.equal(row.basicPay,450);assert.equal(row.lateDeduction,0);assert.equal(row.nightBonus,50);
     });
 }
+
+
+test('actual payslip finalization holds an unpaid preview after a shift amendment arrives',async()=>{
+    const h=paymentFixture(),before=structuredClone(h.window.currentPayslipData);
+    h.window.loadPayrollScheduleHistory=async()=>({historyMonths:{'2026-09':{revisions:[],shiftAmendments:[{id:'sample-amendment',recordedAt:'2026-09-30T12:00:00Z'}]}}});
+    await h.window.finalizePayslip();
+    assert.equal(h.changes.length,0);assert.equal(h.records.length,0);assert.deepEqual(h.window.currentPayslipData,before);
+});
+
+
+for(const generator of ['loadPayrollGenerator','generateAutoPayslips']) for(const rule of [
+    {old:'13:00',start:'14:00',oldEnd:'20:30',end:'21:30',arrival:'13:59',oldLate:59,type:'mid'},
+    {old:'18:30',start:'19:30',oldEnd:'03:00',end:'04:00',arrival:'19:05',oldLate:35,type:'night'},
+    {old:'18:30',start:'19:30',oldEnd:'03:00',end:'04:00',arrival:'19:03',oldLate:33,type:'night'},
+    {old:'18:30',start:'19:30',oldEnd:'03:00',end:'04:00',arrival:'19:41',oldLate:71,type:'night'}
+]) test(generator+': dated amendment recomputes a saved '+rule.oldLate+' minute clock-in without rewriting its evidence',async()=>{
+    const original=schedule(rule.oldEnd,rule.type);original.currentSchedule={17:{'Test Branch':{scheduled:{mid:'TEST'}}}};original.branchConfig['Test Branch'][0].startTime=rule.old;
+    const revision=savedRevision(original,'sample-original-16','2026-10-16');const history=preservedHistory(original,[revision]);
+    const time=new Date('2026-10-17T'+rule.arrival+':00+08:00'),snapshot=payroll.captureAttendanceSchedule(time,'Test Branch','Test Staff',history,{'Test Staff':profile});
+    const event={id:'sample-shift-amendment',branch:'Test Branch',effectiveFrom:'2026-10-16',effectiveTo:'2026-10-31',sourceRevisionId:revision.revisionId,sourceDates:{'2026-10-17':revision.revisionId},sequence:1,recordedAt:'2026-10-17T12:00:00Z',reason:'Correct saved shift fields from their confirmed effective date',changes:[{shiftId:'mid',beforeStart:rule.old,beforeEnd:rule.oldEnd,startTime:rule.start,endTime:rule.end}]};
+    history.historyMonths['2026-10'].shiftAmendments=[event];
+    const endDay=rule.type==='night'?'18':'17';const out=new Date('2026-10-'+endDay+'T'+rule.end+':00+08:00');
+    const logs=[{...attendance(time,{scheduleSnapshot:snapshot,lateMinutes:rule.oldLate,lateExempted:false}),timestamp:{toDate:()=>time}},{...attendance(out),type:'TIME OUT',timestamp:{toDate:()=>out}}];
+    const raw=JSON.stringify(logs.map(row=>({...row,timestamp:row.timestamp.toDate().toISOString()})));
+    const h=payrollUi({logs,scheduleData:original,historyData:history,startDate:'2026-10-17',endDate:'2026-10-17'});vm.runInContext(extract(generator),h.context);await h.window[generator]();
+    assert.deepEqual(h.errors,[]);const row=h.window.globalPayrollCache['Test Staff'];
+    assert.equal(row.lateDeduction,rule.oldLate===71?62.5:0);assert.equal(row.attendanceReviewRequired,false);
+    assert.equal(JSON.stringify(logs.map(row=>({...row,timestamp:row.timestamp.toDate().toISOString()}))),raw);
+});
+
+
+for(const generator of ['loadPayrollGenerator','generateAutoPayslips']) test(generator+': explicit saved-assignment reconciliation repairs an old fallback slot without changing the punch',async()=>{
+    const original=schedule('20:30','mid');original.branchConfig['Test Branch']=[{id:'mid-cash',name:'Mid cashier',shiftType:'mid',startTime:'13:00',endTime:'20:30',active:true},{id:'mid-kitchen',name:'Mid kitchen',shiftType:'mid',startTime:'18:30',endTime:'03:00',active:true}];
+    original.currentSchedule={16:{'Test Branch':{scheduled:{'mid-cash':'OTHER','mid-kitchen':'TEST'}}}};
+    const revision=savedRevision(original,'sample-assigned-16','2026-10-16'),history=preservedHistory(original,[revision]),time=new Date('2026-10-16T16:57:00+08:00'),snapshot=payroll.captureAttendanceSchedule(time,'Test Branch','Test Staff',history,{'Test Staff':profile});
+    assert.equal(snapshot.shiftId,'mid-cash');assert.equal(snapshot.wasScheduled,false);
+    history.historyMonths['2026-10'].shiftAmendments=[{id:'sample-roster-reconciliation',branch:'Test Branch',effectiveFrom:'2026-10-16',effectiveTo:'2026-10-31',sourceRevisionId:revision.revisionId,sourceDates:{'2026-10-16':revision.revisionId},reconcileSavedAssignments:true,sequence:1,recordedAt:'2026-10-17T12:00:00Z',reason:'Correct shift times and reconcile the exact saved work-date assignment',changes:[{shiftId:'mid-cash',beforeStart:'13:00',beforeEnd:'20:30',startTime:'14:00',endTime:'21:30'},{shiftId:'mid-kitchen',beforeStart:'18:30',beforeEnd:'03:00',startTime:'17:00',endTime:'01:30'}]}];
+    const out=new Date('2026-10-17T01:30:00+08:00'),logs=[{...attendance(time,{scheduleSnapshot:snapshot,lateMinutes:237,lateExempted:false}),timestamp:{toDate:()=>time}},{...attendance(out),type:'TIME OUT',timestamp:{toDate:()=>out}}],raw=JSON.stringify(snapshot);
+    const h=payrollUi({logs,scheduleData:original,historyData:history,startDate:'2026-10-16',endDate:'2026-10-16'});vm.runInContext(extract(generator),h.context);await h.window[generator]();
+    assert.deepEqual(h.errors,[]);const row=h.window.globalPayrollCache['Test Staff'];assert.equal(row.lateDeduction,0);assert.equal(row.attendanceReviewRequired,false);assert.equal(JSON.stringify(snapshot),raw);
+});

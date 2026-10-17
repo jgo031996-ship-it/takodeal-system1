@@ -1,4 +1,4 @@
-import {assembleScheduleHistory, createScheduleHistoryStore, monthKey, resolveScheduleForDate, scheduleDateKey} from './schedule-history.js';
+import {assembleScheduleHistory, createScheduleHistoryStore, monthKey, resolveScheduleForDate, scheduleDateKey,shiftAmendmentFingerprint,amendmentsForDate,applyShiftAmendments} from './schedule-history.js';
 
 const copy = value => JSON.parse(JSON.stringify(value));
 const snapshotKeys = ['branchConfig','employees','unavailability','currentSchedule','currentYear','currentMonth','holidays'];
@@ -17,6 +17,7 @@ function scopeSnapshot(value, allowed) {
     result.currentSchedule = Object.fromEntries(Object.entries(result.currentSchedule || {}).map(([day, branches]) => [day,
         Object.fromEntries(Object.entries(branches || {}).filter(([branch]) => allowed(branch)))]));
     if (Array.isArray(result.employees)) result.employees = result.employees.filter(employee => allowed(employee.branch));
+    if(Array.isArray(result.scheduleAmendments))result.scheduleAmendments=result.scheduleAmendments.filter(event=>allowed(event.branch));
     return result;
 }
 
@@ -43,10 +44,14 @@ export function projectScheduleMonth({month, current = null, archive = null, now
     const base = useUnarchivedHead ? current : latest?.snapshot || (sameHeadMonth ? current : null);
     const empty = {...copy(current || {}), currentYear:year, currentMonth:monthNumber, currentSchedule:{}, holidays:{}, unavailability:{}};
     delete empty.scheduleRevisionId; delete empty.scheduleEffectiveFrom;
-    const editorSnapshot = copy(base || empty);
+    let editorSnapshot = copy(base || empty);
     editorSnapshot.currentYear = year; editorSnapshot.currentMonth = monthNumber;
     editorSnapshot.currentSchedule ||= {};
-    const history = assembleScheduleHistory(current, [{month:selected, revisions}]);
+    const history = assembleScheduleHistory(current, [{...archive,month:selected, revisions}]);
+    const monthEnd=selected+'-'+String(new Date(Date.UTC(year,monthNumber,0)).getUTCDate()).padStart(2,'0');
+    const editorDate=selected===today.slice(0,7)?[today,latest?.effectiveFrom||''].sort().at(-1):selected<today.slice(0,7)?monthEnd:latest?.effectiveFrom||selected+'-01';
+    const editorAmendments=amendmentsForDate(history,editorDate);
+    if(base&&editorAmendments.length)editorSnapshot=applyShiftAmendments({...editorSnapshot,scheduleRevisionId:useUnarchivedHead?'':latest?.revisionId||current?.scheduleRevisionId||''},editorAmendments,editorDate);
     const snapshot = copy(editorSnapshot), daySnapshots = {}, dayRevisions = {}, unverifiedDays = [];
     snapshot.currentSchedule = {};
     if (base) {
@@ -72,7 +77,7 @@ export function projectScheduleMonth({month, current = null, archive = null, now
     }
     return {month:selected, year, monthNumber, editorSnapshot, snapshot:scopeSnapshot(snapshot,visible), daySnapshots,
         dayRevisions, expectedRevisionId:archive?.latestRevisionId || null, source, hasSavedSchedule:Boolean(base),
-        unverifiedDays, archive:archive ? copy(archive) : {month:selected,revisions:[],latestRevision:null,latestRevisionId:null}};
+        unverifiedDays,headFingerprint:shiftAmendmentFingerprint(current), archive:archive ? copy(archive) : {month:selected,revisions:[],latestRevision:null,latestRevisionId:null,shiftAmendments:[],indexFingerprint:shiftAmendmentFingerprint(null)}};
 }
 
 const readers = new WeakMap();
