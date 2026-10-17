@@ -1,4 +1,6 @@
 import {installCycleCounts} from './stock-count-ui.js';
+import {installPOSSettingsHub} from './pos-settings-hub.js';
+import {installPOSLeaveRequests} from './leave-request-ui.js';
 import { imageFor } from './cashier-data.js';
 import { installAttendanceCamera, createAttendanceStreamSession } from './attendance-camera.js';
 import {readStaffRecords, latestAttendance, attendanceMillis, attendanceKind, closeAttendanceShift} from './attendance-reconcile.js';
@@ -50,6 +52,21 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 window.mobileOrderFirebaseUid = () => auth.currentUser?.uid || '';
 const provider = new GoogleAuthProvider();
+// Approving branch controls uses a separate account; the POS device UID stays signed in.
+let posControlAuth, posControlDB;
+window.installPOSSettings = () => {
+    window.posLeaveRequests ||= installPOSLeaveRequests(window,document,{primaryAuth:auth});
+    return installPOSSettingsHub(window,document,{
+    primaryAuth:auth,
+    approveHQ:async()=>{
+        if(!posControlAuth){const controlApp=initializeApp(firebaseConfig,'pos-control-approval');posControlAuth=getAuth(controlApp);posControlDB=initializeFirestore(controlApp,{});}
+        const controlProvider=new GoogleAuthProvider();controlProvider.setCustomParameters({prompt:'select_account'});
+        await signInWithPopup(posControlAuth,controlProvider);
+    },
+    getApprovalUser:()=>posControlAuth?.currentUser || null,
+    getApprovalAPI:()=>({db:posControlDB,collection,query,where,doc,getDocsFromServer,getDocFromServer})
+    });
+};
 // ========================================================
 // 🌍 GLOBAL GPS GEOFENCING CONFIGURATION
 // ========================================================
@@ -338,7 +355,7 @@ setTimeout(async () => {
     try {
         const snap = await getDocs(collection(db, "cashiers"));
         let cashiers = [];
-        snap.forEach(d => cashiers.push(d.data()));
+        snap.forEach(d => cashiers.push({...d.data(),staffId:d.id}));
         if(cashiers.length > 0) localStorage.setItem('takodeal_cashier_cache', JSON.stringify(cashiers));
     } catch(e) {}
 }, 5000);
@@ -391,13 +408,13 @@ window.verifyPin = async function (pin) {
     const snapStr = await window.getDocs(qStr);
 
     if (!snapStr.empty) {
-        staffData = snapStr.docs[0].data();
+        staffData = {...snapStr.docs[0].data(),staffId:snapStr.docs[0].id};
     } else {
         let pinNum = parseInt(pin);
         if (!isNaN(pinNum)) {
             const qNum = window.query(window.collection(window.db, "cashiers"), window.where("pin", "==", pinNum));
             const snapNum = await window.getDocs(qNum);
-            if (!snapNum.empty) staffData = snapNum.docs[0].data();
+            if (!snapNum.empty) staffData = {...snapNum.docs[0].data(),staffId:snapNum.docs[0].id};
         }
     }
 
@@ -1528,8 +1545,18 @@ window.submitInventoryCheck = async function () {
 };
 
 // --- PARKED ORDERS ENGINE ---
-window.parkOrderToDB = async function (payload) {
+window.parkOrderToDB = async function (payload, assertCurrent = () => {}) {
   try {
+    assertCurrent();
+    const recovery=await window.parkedRecovery?.preparePark(payload);
+    assertCurrent();
+    if(recovery){
+        recovery.assertCurrent();
+        await runTransaction(db,async tx=>{const reference=doc(db,'parked_orders',recovery.id),saved=await tx.get(reference);recovery.assertCurrent();assertCurrent();
+            if(saved.exists()){if(!recovery.matchesSaved(saved.data()))throw Error('This parked recovery has different saved details.');return;}
+            tx.set(reference,{...payload,timestamp:serverTimestamp()});});
+        window.parkedRecovery.acknowledgePark(recovery.id);return recovery.id;
+    }
     const docRef = await addDoc(collection(db, "parked_orders"), { ...payload, timestamp: serverTimestamp() });
     return docRef.id;
   } catch (e) { console.error(e); return null; }
@@ -1556,10 +1583,18 @@ window.getParkedOrders = async function (branch) {
   }
 };
 
-window.deleteParkedOrder = async function (docId) {
+window.deleteParkedOrder = async function (docId, assertCurrent = () => {}) {
   try {
-    await deleteDoc(doc(db, "parked_orders", docId));
-    return true;
+    assertCurrent();
+    const recovery=window.parkedRecovery?.pendingResume(docId);
+    const removed=await runTransaction(db,async tx=>{
+        const reference=doc(db,'parked_orders',docId),snapshot=await tx.get(reference);assertCurrent();
+        if(!snapshot.exists())return false;
+        if(snapshot.data().branch!==(window.sessionUser?.branch||localStorage.getItem('takodeal_device_branch')))throw Error('This parked order belongs to another branch.');
+        tx.delete(reference);return true;
+    });
+    if(removed)recovery?.acknowledge();
+    return removed;
   } catch (e) { console.error(e); return false; }
 };
 
@@ -8689,10 +8724,12 @@ window.setPrinterMode = function(mode) {
     document.dispatchEvent(new CustomEvent('cashier-printer-state', {detail: {mode}}));
     if (mode === 'ble') printerConnections.reconnect();
 };
-window.connectSpecificPrinter = async function(target, {replace = false} = {}) {
+window.connectSpecificPrinter = async function(target, {replace = false, assertCurrent = () => {}} = {}) {
     if (printerMode(localStorage) === 'rawbt') return Swal.fire('Android print bridge', 'Pair JP-58H in the tablet Bluetooth settings, then select it in RawBT. Set ESC/POS and 58mm. Return here and use Test print.', 'info');
     try {
-        await printerConnections.connect(target, {choose: true, replace});
+        assertCurrent();
+        await printerConnections.connect(target, {choose: true, replace, assertCurrent});
+        assertCurrent();
         recordPrinterResult(target, {status: 'ready', message: 'Receipt data channel ready. Use Test print to confirm paper output.'});
         Swal.fire({toast: true, position: 'top-end', icon: 'info', title: 'Data channel ready. Please test paper output.', showConfirmButton: false, timer: 2500});
     } catch (error) {
