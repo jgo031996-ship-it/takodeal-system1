@@ -437,6 +437,28 @@ function savedRevision(data, id, effectiveFrom) {
 }
 const attendance = (timestamp, extra = {}) => ({staffName:'Test Staff',branch:'Test Branch',type:'TIME IN',timestamp:new Date(timestamp),...extra});
 
+test('actual Owner Time Feed supplies the authoritative profile ID for corrections and preserves genuine lateness',async()=>{
+    const old=schedule();old.branchConfig['Test Branch'][0].startTime='13:00';old.currentSchedule={16:{'Test Branch':{scheduled:{mid:'TEST'}}}};
+    const updated=structuredClone(old);updated.branchConfig['Test Branch'][0].startTime='14:00';
+    const before=savedRevision(old,'feed-before','2026-10-06'),canonical=savedRevision(updated,'feed-canonical','2026-10-17');
+    const event={id:'feed-amendment',branch:'Test Branch',effectiveFrom:'2026-10-16',effectiveTo:'2026-10-31',sourceRevisionId:before.revisionId,sourceRevisionIds:[before.revisionId],sourceDates:{'2026-10-16':before.revisionId},canonicalRevisionId:canonical.revisionId,recordedAt:'2026-10-17T01:00:00.000Z',reason:'Correct the saved shift time',changes:[{shiftId:'mid',beforeStart:'13:00',beforeEnd:'23:30',startTime:'14:00',endTime:'23:30'}]};
+    const original=assembleScheduleHistory(old,[{month:'2026-10',revisions:[before]}]),history=assembleScheduleHistory(updated,[{month:'2026-10',revisions:[before,canonical],shiftAmendments:[event]}]);
+    async function feed(time,documentId='trusted-person') {
+        const at=new Date('2026-10-16T'+time+':00+08:00'),snapshot=payroll.captureAttendanceSchedule(at,'Test Branch','Test Staff',original,{'Test Staff':profile});
+        const punch={staffName:'Test Staff',staffId:'trusted-person',branch:'Test Branch',type:'TIME IN',timestamp:{toDate:()=>at},scheduleSnapshot:snapshot,lateMinutes:snapshot.lateMinutes};
+        // Stored ID aliases cannot replace the trusted Firestore document ID.
+        const savedProfile={...profile,staffId:documentId==='trusted-person'?'stale-stored-id':'trusted-person',id:'stale-stored-id'};
+        const nodes={attendanceTableBody:{innerHTML:''},attendanceDateFilter:{value:'2026-10-16'},attendanceSort:{value:'time'}},errors=[];
+        const api={db:{},collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),getDocs:async ref=>{const row=ref.table==='attendance_logs'?punch:savedProfile,id=ref.table==='attendance_logs'?'punch':documentId;return {forEach:fn=>fn({id,data:()=>row})};}};
+        const window={...api,isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>history};
+        const context=vm.createContext({...api,...payroll,window,document:{getElementById:id=>nodes[id]},Date,console:{error:(...args)=>errors.push(args),warn:(...args)=>errors.push(args)}});
+        vm.runInContext(extract('loadAttendanceLogs'),context);await window.loadAttendanceLogs();assert.deepEqual(errors,[]);return nodes.attendanceTableBody.innerHTML;
+    }
+    assert.doesNotMatch(await feed('13:59'),/LATE \(59 mins\)/);
+    assert.match(await feed('14:11'),/LATE \(11 mins\)/);
+    assert.match(await feed('13:59','different-person'),/LATE \(59 mins\)/,'a same-name profile with another real ID must not authorize a correction');
+});
+
 test('future clock-in snapshot freezes its expected time, shift category and bonus threshold despite later edits',()=>{
     const original=schedule(), time=new Date('2026-10-06T15:30:00+08:00');
     const snapshot=payroll.captureAttendanceSchedule(time,'Test Branch','Test Staff',assembleScheduleHistory(original),{'Test Staff':profile});
