@@ -52,20 +52,9 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 window.mobileOrderFirebaseUid = () => auth.currentUser?.uid || '';
 const provider = new GoogleAuthProvider();
-// Approving branch controls uses a separate account; the POS device UID stays signed in.
-let posControlAuth, posControlDB;
 window.installPOSSettings = () => {
     window.posLeaveRequests ||= installPOSLeaveRequests(window,document,{primaryAuth:auth});
-    return installPOSSettingsHub(window,document,{
-    primaryAuth:auth,
-    approveHQ:async()=>{
-        if(!posControlAuth){const controlApp=initializeApp(firebaseConfig,'pos-control-approval');posControlAuth=getAuth(controlApp);posControlDB=initializeFirestore(controlApp,{});}
-        const controlProvider=new GoogleAuthProvider();controlProvider.setCustomParameters({prompt:'select_account'});
-        await signInWithPopup(posControlAuth,controlProvider);
-    },
-    getApprovalUser:()=>posControlAuth?.currentUser || null,
-    getApprovalAPI:()=>({db:posControlDB,collection,query,where,doc,getDocsFromServer,getDocFromServer})
-    });
+    return installPOSSettingsHub(window,document,{primaryAuth:auth});
 };
 // ========================================================
 // 🌍 GLOBAL GPS GEOFENCING CONFIGURATION

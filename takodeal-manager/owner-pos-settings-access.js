@@ -1,20 +1,12 @@
-import {installPOSSettingsPolicy} from './pos-settings-policy.js';
+// Preserve the section route for installed Owner shells. POS tools no longer
+// use an approval policy; saved policy documents remain untouched.
 export function installOwnerPOSSettingsAccess(w,d) {
-    const view=d.getElementById('view-posconfig'),section=d.getElementById('section-posSettingsAccess'),host=d.getElementById('posSettingsAccessHost');
-    if(!view||!section||!host)return null;
-    const policy=installPOSSettingsPolicy(w,d,host);
-    let visible=false;
-    const check=()=>{
-        if(w.sidebarTabNames?.['nav-printer'])w.sidebarTabNames['nav-printer']={...w.sidebarTabNames['nav-printer'],name:'POS Settings'};
-        const next=view.classList.contains('active')&&section.style.display!=='none'&&!d.hidden;
-        if(next&&!visible)void policy.load();
-        visible=next;
-    };
-    const observer=new w.MutationObserver(check);
-    for(const target of [view,section])observer.observe(target,{attributes:true,attributeFilter:['class','style']});
-    d.addEventListener('visibilitychange',check);
-    w.addEventListener('pageshow',check);
-    check();return {policy,stop(){observer.disconnect();d.removeEventListener('visibilitychange',check);w.removeEventListener('pageshow',check);}};
+    const host=d.getElementById('posSettingsAccessHost');
+    if(!host)return null;
+    if(w.sidebarTabNames?.['nav-printer'])w.sidebarTabNames['nav-printer']={...w.sidebarTabNames['nav-printer'],name:'POS Settings'};
+    host.classList.add('pos-settings-policy');
+    host.innerHTML='<h3>POS Settings</h3><p>Signed-in staff can use printers, receipts and branch tools directly from Settings in the Cashier app. No extra Owner approval, Google sign-in or HQ PIN is required.</p><p>Receipt content, branch configuration and device registration are still managed in their existing Owner pages.</p><a href="https://takodeal-cashier.vercel.app/" target="_blank" rel="noopener">Open Cashier app</a>';
+    return {directSettings:true};
 }
 const boot=()=>installOwnerPOSSettingsAccess(window,document);
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();

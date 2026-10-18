@@ -1,5 +1,5 @@
-// Settings permissions are read from saved HQ grants, never from a cashier's role label.
-import {eligibleCancelledFoodBuyer} from './cancelled-orders.js';
+// Legacy policy helpers remain for saved-policy compatibility. The direct POS
+// Settings page does not use them; fresh staff validation serves leave actions.
 import {savedPin} from './hq-account-model.js';
 export const POS_SETTINGS_POLICY_ID = 'pos_settings_global';
 export const POS_SETTINGS_ACTIONS = ['audit','kds','autoDrawer','manualDrawer'];
@@ -43,7 +43,8 @@ export function canUsePOSSetting(action,{policy=POS_SETTINGS_DEFAULTS,staff=null
         && (hq.permissions.includes('all') || (grants[action]||[]).some(key=>hq.permissions.includes(key)));
 }
 export function activePOSStaff(profile,session) {
-    if(!session || !eligibleCancelledFoodBuyer(profile) || profile.cashierName!==session.cashierName
+    if(!session || !profile || profile.active===false || profile.archived===true || profile.isArchived===true || profile.blocked===true
+        || profile.enabled===false || /blocked|disabled|inactive|revoked|terminated|archived|resigned|deleted|suspended/i.test(text(profile.status)) || profile.cashierName!==session.cashierName
         || !savedPin(profile).trim() || ['BLOCKED','REVOKED'].includes(savedPin(profile).trim().toUpperCase()))return null;
     if(session.staffId && profile.staffId!==session.staffId)return null;
     return {staffId:profile.staffId,name:profile.cashierName};
