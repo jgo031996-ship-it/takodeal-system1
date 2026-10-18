@@ -1,6 +1,6 @@
 // Presentation helpers only: no sale, inventory or attendance writes.
 import {linkedAttendanceHistory,attendanceKind} from './attendance-reconcile.js';
-export const CASHIER_RELEASE = 'checkout-logo-20261014-r1';
+export const CASHIER_RELEASE = 'direct-settings-20261018-r1';
 export function millis(value) {
   if (value == null) return NaN;
   if (typeof value.toMillis === 'function') return value.toMillis();

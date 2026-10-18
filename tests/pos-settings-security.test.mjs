@@ -4,7 +4,6 @@ import {readFileSync} from 'node:fs';
 import {webcrypto} from 'node:crypto';
 import vm from 'node:vm';
 import {installPOSSettingsHub} from '../Takodeal-POS/pos-settings-hub.js';
-import {hqPOSAccess,canUsePOSSetting,posSettingsPolicy} from '../Takodeal-POS/pos-settings-model.js';
 import {createSaleEngine,safeId} from '../Takodeal-POS/pos-safety.js';
 
 const branch='Sample Branch',name='Sample Cashier',staffId='sample-crew';
@@ -13,7 +12,7 @@ const source=path=>readFileSync(new URL(path,import.meta.url),'utf8').replaceAll
 function segment(text,start,end){const from=text.indexOf(start),to=text.indexOf(end,from);assert.ok(from>=0&&to>from,'The actual runtime handler is available');return text.slice(from,to);}
 
 // Minimal DOM for the actual hub installer. It records elements parsed from its
-// real markup; permission decisions and callbacks remain production code.
+// real markup; session checks and callbacks remain production code.
 function documentFixture(){
     const elements=new Map(),all=[];
     class Node {
@@ -35,7 +34,7 @@ function fixture({anonymous=true,legacy=false,timeoutMs=25000}={}){
     const docs=new Map(),calls=[],reads=[],dialogs=[],hardware=[];
     const storage=new Map([['takodeal_device_branch',branch],['takodeal_device_id','sample-device'],['takodeal_device_name','Sample Tablet']]);
     const primaryAuth={currentUser:anonymous?{uid:'primary-device'}:null};
-    let time=1000,approvalUser={uid:'approved-hq',email:'manager@example.test',emailVerified:true},gate=null;
+    let time=1000,gate=null;const approvalUser={uid:'approved-hq',email:'manager@example.test',emailVerified:true};
     const profile={email:approvalUser.email,fullName:'Sample Manager',role:'Manager',permissions:['posconfig','audits'],assignedBranch:branch,pin:'6234',active:true};
     const grant={active:true,allowedBranches:[branch],permissions:['posconfig','audits']};
     docs.set('cashiers/'+staffId,{cashierName:name,branch,pin:'0420',role:'Staff',active:true});
@@ -55,75 +54,91 @@ function fixture({anonymous=true,legacy=false,timeoutMs=25000}={}){
     for(const handler of ['toggleAuditMode','toggleKDS','kickCashDrawer','showParkedOrders','resumeOrder','printParkedReceipt','deleteParkedOrderManually','discardParkedOrder','deleteParkedOrder','openPrinterManager','setPrinterMode','setReceiptLogoMode','testPrint','testPrinterLogo'])w[handler]=(...args)=>{calls.push({handler,args});return true;};
     const originals={cart:w.cart,shift:w.currentShift,session:w.sessionUser,user:primaryAuth.currentUser};
     let hub;
-    const install=()=>hub=installPOSSettingsHub(w,d,{primaryAuth,approveHQ:async()=>{},getApprovalUser:()=>approvalUser,getApprovalAPI:()=>api,now:()=>time,timeoutMs});
-    return {w,d,docs,profile,grant,primaryAuth,reads,calls,hardware,dialogs,storage,originals,install,get hub(){return hub;},setGate(value){gate=value;},setTime(value){time=value;},setHQ(value){approvalUser=value;},async unlock(){await hub.unlock();},async refresh(){await hub.refresh();},switchBranch(){storage.set('takodeal_device_branch','Another Branch');w.sessionUser={...w.sessionUser,branch:'Another Branch'};}};
+    const install=()=>hub=installPOSSettingsHub(w,d,{primaryAuth,now:()=>time,timeoutMs});
+    return {w,d,docs,profile,grant,primaryAuth,reads,calls,hardware,dialogs,storage,originals,install,get hub(){return hub;},setGate(value){gate=value;},setTime(value){time=value;},async refresh(){await hub.refresh();},switchBranch(){storage.set('takodeal_device_branch','Another Branch');w.sessionUser={...w.sessionUser,branch:'Another Branch'};}};
 }
 
-test('a revoked protected grant cannot retain sensitive access through an allowed HQ profile',()=>{
-    const user={uid:'hq',email:'manager@example.test',emailVerified:true},profile={email:user.email,role:'Manager',permissions:['all'],assignedBranch:branch,pin:'6234'};
-    for(const permissions of [undefined,[],['history']]){const hq=hqPOSAccess(user,profile,{active:true,allowedBranches:[branch],...(permissions?{permissions}:{})},branch);for(const action of ['audit','kds','manualDrawer','autoDrawer'])assert.equal(canUsePOSSetting(action,{hq}),false);}
-    const hq=hqPOSAccess(user,{...profile,permissions:['posconfig']},{active:true,allowedBranches:[branch],permissions:['all']},branch);assert.equal(canUsePOSSetting('kds',{hq}),true);assert.equal(canUsePOSSetting('audit',{hq}),false);
+test('signed-in cashiers use routine settings directly without approval reads, another PIN or cart/auth changes',async()=>{
+    const h=fixture();h.install();await h.w.showParkedOrders();await h.w.setPrinterMode('ble');await h.w.toggleAuditMode();await h.w.toggleKDS();await h.w.kickCashDrawer();await h.w.setAutoDrawer(false);
+    assert.deepEqual(h.calls.map(row=>row.handler),['showParkedOrders','setPrinterMode','toggleAuditMode','toggleKDS','kickCashDrawer']);assert.equal(h.storage.get('takodeal_auto_drawer'),'false');assert.equal(h.reads.length,0);assert.equal(h.dialogs.length,0);
+    assert.equal(h.w.cart,h.originals.cart);assert.equal(h.w.currentShift,h.originals.shift);assert.equal(h.w.sessionUser,h.originals.session);assert.equal(h.primaryAuth.currentUser,h.originals.user);
 });
 
-test('an existing PIN-only approved tablet keeps basic tools without gaining HQ or touching its cart/auth',async()=>{
-    const h=fixture({anonymous:false,legacy:true});h.install();await h.refresh();await h.w.showParkedOrders();await h.w.setPrinterMode('ble');await h.w.toggleAuditMode();await h.w.toggleKDS();await h.w.kickCashDrawer();
-    assert.deepEqual(h.calls.map(row=>row.handler),['showParkedOrders','setPrinterMode']);assert.equal(h.primaryAuth.currentUser,null);assert.equal(h.w.cart,h.originals.cart);assert.equal(h.w.currentShift,h.originals.shift);assert.equal(h.w.sessionUser,h.originals.session);assert.ok(h.reads.every(row=>row.table!=='hq_managers'&&row.table!=='hq_email_access'));
+test('an existing PIN-only signed-in tablet needs no added device or HQ approval for routine tools',async()=>{
+    const h=fixture({anonymous:false,legacy:true});h.docs.clear();h.install();await h.w.setPrinterMode('ble');await h.w.toggleAuditMode();await h.w.toggleKDS();await h.w.kickCashDrawer();
+    assert.deepEqual(h.calls.map(row=>row.handler),['setPrinterMode','toggleAuditMode','toggleKDS','kickCashDrawer']);assert.equal(h.primaryAuth.currentUser,null);assert.equal(h.reads.length,0);assert.equal(h.dialogs.length,0);assert.equal(h.w.cart,h.originals.cart);
 });
 
-test('a revoked UID binding cannot fall back to an otherwise active legacy device record',async()=>{
-    const h=fixture();h.docs.get('pos_bindings/primary-device').status='Revoked';h.install();await h.refresh();await h.w.showParkedOrders();await h.w.connectSpecificPrinter('main');assert.equal(h.calls.length,0);assert.equal(h.hardware.length,0);assert.equal(h.primaryAuth.currentUser,h.originals.user);
+test('old saved policy and missing or revoked extra approval records cannot disable direct settings',async()=>{
+    const h=fixture();h.docs.set('offline_policy/pos_settings_global',{posSettings:{staff:{parkedOrders:false,printerTools:false},manager:{audit:false,kds:false,manualDrawer:false,autoDrawer:false}}});h.docs.get('pos_bindings/primary-device').status='Revoked';h.docs.delete('pos_devices/legacy-device');h.grant.active=false;h.profile.active=false;h.install();
+    await h.w.setPrinterMode('rawbt');await h.w.toggleAuditMode();await h.w.toggleKDS();await h.w.kickCashDrawer();assert.deepEqual(h.calls.map(row=>row.handler),['setPrinterMode','toggleAuditMode','toggleKDS','kickCashDrawer']);assert.equal(h.reads.length,0);assert.equal(h.dialogs.length,0);
 });
 
-test('direct operational callbacks require the protected grant each time after HQ unlock',async()=>{
-    const h=fixture();h.install();await h.unlock();await h.w.toggleKDS();assert.equal(h.calls.filter(row=>row.handler==='toggleKDS').length,1);
-    h.docs.get('hq_email_access/manager@example.test').permissions=[];for(const method of ['toggleKDS','toggleAuditMode','kickCashDrawer','setAutoDrawer'])await h.w[method](false);
-    assert.equal(h.calls.length,1);assert.equal(h.storage.has('takodeal_auto_drawer'),false);assert.equal(h.w.cart,h.originals.cart);assert.equal(h.primaryAuth.currentUser,h.originals.user);
+test('freeform staff job titles use settings without creating cross-staff recovery authority',async()=>{
+    for(const role of ['Kitchen Lead','Officer in Charge','Owner']){const h=fixture();h.w.sessionUser.role=role;h.docs.get('cashiers/'+staffId).role=role;h.install();await h.w.toggleKDS();await h.w.kickCashDrawer();assert.deepEqual(h.calls.map(row=>row.handler),['toggleKDS','kickCashDrawer']);const permit=await h.hub.authorize('parkedOrders');assert.notEqual(permit.manageRecovery,true);assert.equal(h.reads.length,0);}
 });
 
-test('PIN, role, status and Google account changes invalidate a previously unlocked HQ approval',async()=>{
-    for(const change of [{pin:'8246'},{pin:'',securityPin:'BLOCKED'},{status:'Blocked'},{active:false},{role:'Staff'},{archived:true},'account']){
-        const h=fixture();h.install();await h.unlock();if(change==='account')h.setHQ({uid:'another-hq',email:'other@example.test',emailVerified:true});else Object.assign(h.docs.get('hq_managers/sample-manager'),change);
-        await h.w.toggleAuditMode();await h.w.kickCashDrawer();assert.equal(h.calls.length,0,JSON.stringify(change));assert.equal(h.hardware.length,0);assert.equal(h.w.cart,h.originals.cart);assert.equal(h.primaryAuth.currentUser,h.originals.user);
-    }
+test('a missing cashier session or a mismatched selected branch cannot dispatch tools or the chooser',async()=>{
+    for(const change of ['logout','branch']){const h=fixture();h.install();if(change==='logout')h.w.sessionUser=null;else h.storage.set('takodeal_device_branch','Another Branch');await h.w.setPrinterMode('ble');await h.w.toggleAuditMode();await h.w.kickCashDrawer();assert.equal(h.w.connectSpecificPrinter('main'),false);assert.equal(h.calls.length,0);assert.equal(h.hardware.length,0);assert.equal(h.reads.length,0);assert.equal(h.w.cart,h.originals.cart);}
 });
 
-test('expired HQ approval blocks direct drawer and audit calls while staff tools stay available',async()=>{
-    const h=fixture();h.install();await h.unlock();h.setTime(601001);await h.w.toggleAuditMode();await h.w.kickCashDrawer();await h.w.showParkedOrders();assert.deepEqual(h.calls.map(row=>row.handler),['showParkedOrders']);assert.equal(h.hardware.length,0);
+test('local settings work immediately offline and do not expire after a minute or ten minutes',async()=>{
+    const h=fixture();h.setGate(()=>{throw Error('Synthetic offline server');});h.install();h.setTime(86400000);await h.w.setPrinterMode('ble');await h.w.setReceiptLogoMode('none');await h.w.toggleKDS();await h.w.kickCashDrawer();assert.equal(h.w.connectSpecificPrinter('main'),'chooser-dispatched');assert.equal(h.calls.length,4);assert.equal(h.reads.length,0);assert.equal(h.hardware.length,1);assert.equal(h.dialogs.length,0);
 });
 
-test('a branch switch during a held fresh grant read cannot invoke the old operational callback',async()=>{
-    const h=fixture();h.install();await h.unlock();const gate=deferred(),entered=deferred();h.setGate((ref)=>{if(ref.table==='hq_email_access'){entered.resolve();return gate.promise;}});const work=h.w.toggleKDS();await entered.promise;h.switchBranch();gate.resolve();await work;assert.equal(h.calls.length,0);assert.equal(h.storage.has('takodeal_auto_drawer'),false);
+test('the first printer click preserves synchronous Bluetooth activation without a settings refresh',()=>{
+    let inGesture=true,called=false,chooserGuard;
+    const h=fixture();h.w.connectSpecificPrinter=(role,options)=>{assert.equal(inGesture,true);called=true;chooserGuard=options.assertCurrent;h.hardware.push(role);return 'chooser';};h.setGate(()=>{throw Error('No server should be needed for the chooser');});h.install();
+    const result=h.w.connectSpecificPrinter('main');inGesture=false;assert.equal(called,true);assert.equal(result,'chooser');assert.equal(h.reads.length,0);h.setTime(86400000);assert.doesNotThrow(chooserGuard);
+    h.w.sessionUser={...h.w.sessionUser};assert.throws(chooserGuard,/changed|sign.in|cashier|session/i);
 });
 
-test('only the newest preference selection is applied while access reads are still pending',async()=>{
-    const h=fixture();h.install();await h.refresh();const first=deferred(),entered=deferred();let held=false;h.setGate(ref=>{if(ref.table==='offline_policy'&&!held){held=true;entered.resolve();return first.promise;}});
-    const older=h.w.setReceiptLogoMode('raster');await entered.promise;const newer=h.w.setReceiptLogoMode('none');first.resolve();await Promise.all([older,newer]);assert.deepEqual(h.calls.filter(row=>row.handler==='setReceiptLogoMode').map(row=>row.args),[['none']]);
+test('a chooser result held across logout or a branch switch is rejected before it can save a connection',()=>{
+    for(const change of ['logout','branch']){const h=fixture();let guard;h.w.connectSpecificPrinter=(_role,options)=>{guard=options.assertCurrent;return 'chooser';};h.install();assert.equal(h.w.connectSpecificPrinter('main'),'chooser');if(change==='logout')h.w.sessionUser=null;else h.switchBranch();assert.throws(guard,/changed|sign.in|cashier|session|branch/i);assert.equal(h.w.cart,h.originals.cart);}
 });
 
-test('confirmed printer access preserves the synchronous Bluetooth click gesture and performs no new read',async()=>{
-    let inGesture=true,called=false;
-    const g=fixture();g.w.connectSpecificPrinter=role=>{assert.equal(inGesture,true);called=true;g.hardware.push(role);return 'chooser';};g.install();await g.refresh();const reads=g.reads.length;
-    const result=g.w.connectSpecificPrinter('main');inGesture=false;assert.equal(called,true);assert.equal(result,'chooser');assert.equal(g.reads.length,reads);
+test('a branch change during a held parked-order read cannot invoke the old callback',async()=>{
+    const h=fixture();h.install();const gate=deferred(),entered=deferred();h.setGate(ref=>{if(ref.table==='parked_orders'){entered.resolve();return gate.promise;}});const work=h.w.printParkedReceipt('sample-order');await entered.promise;h.switchBranch();gate.resolve();await work;assert.equal(h.calls.length,0);assert.equal(h.w.cart,h.originals.cart);
 });
 
-test('expired printer confirmation and a changed branch refuse chooser dispatch',async()=>{
-    for(const change of ['expiry','branch','device']){const h=fixture();h.install();await h.refresh();if(change==='expiry')h.setTime(61001);else if(change==='device')h.storage.set('takodeal_device_id','another-device');else h.switchBranch();assert.equal(h.w.connectSpecificPrinter('main'),false);assert.equal(h.hardware.length,0);}
+test('a wrong-branch parked order remains inaccessible while local printer tools stay direct',async()=>{
+    const h=fixture();h.docs.get('parked_orders/sample-order').branch='Another Branch';h.install();await h.w.resumeOrder('sample-order');await h.w.printParkedReceipt('sample-order');await h.w.deleteParkedOrder('sample-order');await h.w.setPrinterMode('ble');assert.deepEqual(h.calls.map(row=>row.handler),['setPrinterMode']);assert.ok(h.docs.has('parked_orders/sample-order'));assert.equal(h.w.cart,h.originals.cart);
 });
 
-test('automatic receipt drawer bytes remain independent of the blocked manual-drawer callback',async()=>{
+test('sequential preference changes apply the most recent value without added access reads',async()=>{
+    const h=fixture();h.install();await h.w.setReceiptLogoMode('raster');await h.w.setReceiptLogoMode('none');assert.deepEqual(h.calls.filter(row=>row.handler==='setReceiptLogoMode').map(row=>row.args),[['raster'],['none']]);assert.equal(h.reads.length,0);
+});
+
+test('a superseded preference call cannot apply after the newer selection in the same click sequence',async()=>{
+    const h=fixture();h.install();const older=h.w.setReceiptLogoMode('raster'),newer=h.w.setReceiptLogoMode('none');await Promise.all([older,newer]);assert.deepEqual(h.calls.filter(row=>row.handler==='setReceiptLogoMode').map(row=>row.args),[['none']]);assert.equal(h.reads.length,0);
+});
+
+test('leave confirmation still reads the exact active staff identity without inferring a role or requiring a home-branch match',async()=>{
+    const h=fixture({anonymous:false,legacy:true});h.docs.get('cashiers/'+staffId).branch='Home Branch';h.docs.get('cashiers/'+staffId).role='Kitchen Lead';h.install();const staff=await h.w.confirmPOSStaffSession();assert.deepEqual(staff,{staffId,name});assert.deepEqual(h.reads.map(row=>row.path),['cashiers/'+staffId]);assert.equal(h.primaryAuth.currentUser,null);assert.equal(h.w.sessionUser,h.originals.session);
+    for(const update of [{active:false},{pin:'BLOCKED'},{pin:'REVOKED'},{cashierName:'Different Staff'},{status:'Archived'}]){const h=fixture();Object.assign(h.docs.get('cashiers/'+staffId),update);h.install();await assert.rejects(h.w.confirmPOSStaffSession(),/saved staff account|sign.in/i);}
+});
+
+test('a legacy name-only leave confirmation requires a unique saved identity',async()=>{
+    const h=fixture();delete h.w.sessionUser.staffId;h.docs.set('cashiers/duplicate',{...h.docs.get('cashiers/'+staffId)});h.install();await assert.rejects(h.w.confirmPOSStaffSession(),/saved staff account|sign.in/i);assert.equal(h.reads.length,1);assert.equal(h.reads[0].table,'cashiers');assert.equal(h.reads[0].collection,true);
+});
+
+test('a saved leave-profile read held across a cashier switch cannot return another session identity',async()=>{
+    const h=fixture(),gate=deferred(),entered=deferred();h.install();h.setGate(ref=>{if(ref.table==='cashiers'){entered.resolve();return gate.promise;}});const work=h.w.confirmPOSStaffSession();await entered.promise;h.w.sessionUser={...h.w.sessionUser,staffId:'another-staff',cashierName:'Another Staff'};gate.resolve();await assert.rejects(work,/changed|cashier|session/i);assert.equal(h.w.cart,h.originals.cart);assert.equal(h.primaryAuth.currentUser,h.originals.user);
+});
+
+test('automatic receipt drawer bytes keep their existing receipt pipeline',async()=>{
     const h=fixture();h.w.stringToBuffer=text=>Uint8Array.from(Buffer.from(text,'latin1'));h.w.concatBuffers=parts=>Uint8Array.from(parts.flatMap(part=>[...part]));h.w.lastTransactionData={cart:[{name:'Sample Item',qty:1,price:50,category:'Food'}],netTotal:50,amountReceived:50,paymentMethod:'Cash',receiptId:'SAMPLE-RECEIPT',cashierName:name,orderType:'Dine-In'};h.w.getDocs=async()=>({empty:true,docs:[]});
-    vm.runInNewContext(segment(source('../Takodeal-POS/index.html'),'window.printReceipt = async function(type)','window.currentParkedOrdersList = []'),{window:h.w,localStorage:h.w.localStorage,document:h.d,Uint8Array,console});h.install();await h.w.kickCashDrawer();assert.equal(h.calls.length,0);
-    await h.w.printReceipt('receipt');assert.equal(h.hardware.length,1);assert.deepEqual(h.hardware[0].bytes.slice(3,8),[27,112,0,25,150]);assert.equal(h.primaryAuth.currentUser,h.originals.user);assert.equal(h.w.cart,h.originals.cart);
+    vm.runInNewContext(segment(source('../Takodeal-POS/index.html'),'window.printReceipt = async function(type)','window.currentParkedOrdersList = []'),{window:h.w,localStorage:h.w.localStorage,document:h.d,Uint8Array,console});h.install();await h.w.printReceipt('receipt');assert.equal(h.hardware.length,1);assert.deepEqual(h.hardware[0].bytes.slice(3,8),[27,112,0,25,150]);assert.equal(h.calls.filter(row=>row.handler==='kickCashDrawer').length,0);assert.equal(h.primaryAuth.currentUser,h.originals.user);assert.equal(h.w.cart,h.originals.cart);
 });
 
-test('the actual manual drawer handler sends its exact bytes only after authorized dispatch',async()=>{
-    const h=fixture();vm.runInNewContext(segment(source('../Takodeal-POS/main.js'),'window.kickCashDrawer = function()', '// ========================================================\n// 📱 SIDEBAR'),{window:h.w,Uint8Array});h.install();await h.w.kickCashDrawer();assert.equal(h.hardware.length,0);await h.unlock();await h.w.kickCashDrawer();assert.equal(h.hardware.length,1);assert.deepEqual(h.hardware[0].bytes,[27,64,27,112,0,25,150]);assert.deepEqual(h.hardware[0].options,[true,'main']);
+test('the actual manual drawer handler sends its exact bytes directly for the current cashier',async()=>{
+    const h=fixture();vm.runInNewContext(segment(source('../Takodeal-POS/main.js'),'window.kickCashDrawer = function()', '// ========================================================\n// 📱 SIDEBAR'),{window:h.w,Uint8Array});h.install();await h.w.kickCashDrawer();assert.equal(h.hardware.length,1);assert.deepEqual(h.hardware[0].bytes,[27,64,27,112,0,25,150]);assert.deepEqual(h.hardware[0].options,[true,'main']);assert.equal(h.reads.length,0);
 });
 
-test('blocked staff credentials and inactive profiles cannot use the basic-tool compatibility path',async()=>{
-    for(const change of [{pin:'BLOCKED'},{pin:'',securityPin:'BLOCKED'},{pin:'REVOKED'},{status:'Blocked'},{archived:true},{role:'Owner'},{active:false}]){
-        const h=fixture({anonymous:false,legacy:true});Object.assign(h.docs.get('cashiers/'+staffId),change);h.install();await h.refresh();await h.w.showParkedOrders();assert.equal(h.calls.length,0,JSON.stringify(change));assert.equal(h.primaryAuth.currentUser,null);
-    }
+test('the actual settings page and Owner guide install no approval tab, account unlock or policy editor',()=>{
+    const h=fixture();h.install();const view=h.d.getElementById('view-settings');assert.ok(view);assert.equal(view.querySelectorAll('[data-pos-tab]').some(node=>node.dataset.posTab==='access'),false);assert.equal(h.d.getElementById('posSettingsUnlock'),null);assert.equal(h.d.getElementById('posSettingsLock'),null);
+    const host=h.d.createElement('div');host.id='posSettingsAccessHost';const w={sidebarTabNames:{'nav-printer':{name:'Old name'}},installPolicy(){throw Error('The old access editor must not be installed');},getDocFromServer(){throw Error('The guide must not read saved policy');},setDoc(){throw Error('The guide must not save policy');}};
+    const script=source('../takodeal-manager/owner-pos-settings-access.js').split('const boot=')[0].replace('export function','function');const context={w,d:h.d};vm.runInNewContext(script+'\nresult=installOwnerPOSSettingsAccess(w,d);',context);assert.equal(context.result.directSettings,true);assert.equal(host.querySelectorAll('button,input,select').length,0);assert.match(host.innerHTML,/No extra Owner approval/);assert.equal(w.sidebarTabNames['nav-printer'].name,'POS Settings');
 });
 
 test('the actual audit handler checks its original permit again before a delayed transaction write',async()=>{
@@ -131,7 +146,7 @@ test('the actual audit handler checks its original permit again before a delayed
     const api={...h.w,serverTimestamp:()=>({seconds:1}),runTransaction:async(_db,callback)=>{entered.resolve();await gate.promise;return callback({set:(reference,value)=>writes.push({reference,value})});}};
     const engine=createSaleEngine(api),context={w:h.w,ls:h.w.localStorage,engine,environment:{document:h.d},safeId,console,updateAuditButton(){}};
     vm.runInNewContext(segment(source('../Takodeal-POS/pos-checkout.js'),'w.toggleAuditMode = async function(', 'function updateAuditButton()'),context);
-    h.install();await h.unlock();const work=h.w.toggleAuditMode();await entered.promise;h.switchBranch();gate.resolve();await work;
+    h.install();const work=h.w.toggleAuditMode();await entered.promise;h.switchBranch();gate.resolve();await work;
     assert.equal(writes.length,0);assert.equal(h.storage.has('takodeal_audit_mode'),false);assert.equal(h.w.isAuditModeActive,undefined);assert.equal(h.w.isTogglingAudit,false);
 });
 
@@ -188,8 +203,8 @@ test('a linked checkout retry cannot silently overwrite changed amount, split de
     }
 });
 
-test('a timed-out access read never dispatches a preference or piles up retries before its physical read settles',async()=>{
-    const h=fixture({timeoutMs:10}),gate=deferred();h.install();let policyReads=0;h.setGate(ref=>{if(ref.table==='offline_policy'){policyReads++;return gate.promise;}});
-    await h.w.setPrinterMode('ble');assert.equal(h.calls.length,0);await h.w.setPrinterMode('rawbt');assert.equal(h.calls.length,0);assert.equal(policyReads,1);
-    gate.resolve();await new Promise(resolve=>setImmediate(resolve));assert.equal(h.calls.length,0);h.setGate(null);await h.w.setPrinterMode('ble');assert.deepEqual(h.calls.map(row=>row.handler),['setPrinterMode']);
+test('a timed-out parked read never dispatches or piles up retries while local printer tools remain usable',async()=>{
+    const h=fixture({timeoutMs:10}),gate=deferred();h.install();let parkedReads=0;h.setGate(ref=>{if(ref.table==='parked_orders'){parkedReads++;return gate.promise;}});
+    await h.w.printParkedReceipt('sample-order');assert.equal(h.calls.length,0);await h.w.printParkedReceipt('sample-order');assert.equal(h.calls.length,0);assert.equal(parkedReads,1);assert.equal(h.w.connectSpecificPrinter('main'),'chooser-dispatched');await h.w.setPrinterMode('ble');assert.deepEqual(h.calls.map(row=>row.handler),['setPrinterMode']);
+    gate.resolve();await new Promise(resolve=>setImmediate(resolve));assert.equal(h.calls.filter(row=>row.handler==='printParkedReceipt').length,0);h.setGate(null);await h.w.printParkedReceipt('sample-order');assert.equal(h.calls.filter(row=>row.handler==='printParkedReceipt').length,1);
 });

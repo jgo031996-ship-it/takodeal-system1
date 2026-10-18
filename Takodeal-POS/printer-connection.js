@@ -169,7 +169,7 @@ export function createPrinterConnections({bluetooth, storage, onState = () => {}
             if(error.code==='pos-settings-access-changed'){
                 if(previousDevice)devices.set(role,previousDevice);else devices.delete(role);
                 if(previousCharacter)characters.set(role,previousCharacter);else characters.delete(role);
-                state(role,ready(role)?'connected':'not-connected','Settings access changed. Refresh access before connecting again.');
+                state(role,ready(role)?'connected':'not-connected','The cashier or branch changed. Reopen Settings before connecting again.');
                 throw error;
             }
             characters.delete(role);
