@@ -8,6 +8,7 @@ import { installStaffLocation } from './staff-location.js';
 import { installAttendanceCamera } from './attendance-camera.js';
 import { installAttendanceProofUploader } from './attendance-proof.js';
 import {readStaffRecords, latestAttendance, attendanceMillis, attendanceKind, sopCoversShift, closeAttendanceShift} from './attendance-reconcile.js';
+import {prepareEarlyTimeOut} from './early-time-out-ui.js';
 import {planPayrollAttendance} from './payroll-attendance.js';
 import { installStaffRegistration } from './staff-registration.js';
 import { installStaffPhone } from './staff-phone.js';
@@ -15,6 +16,7 @@ import { installStaffPortal } from './staff-portal.js';
 import {installStaffDocuments} from './staff-documents.js';
 import {createStaffDocumentFirebase} from './staff-document-firebase.js';
 import {profileDailyRate} from './staff-rate-privacy.js';
+import {loadStaffSalaryTimeline,staffRateForDate,staffProfileForWork,staffRateWorkDate} from './staff-rate-model.js';
 import { calculateLateMinutes, resolveScheduledShift, resolveAttendanceShift, captureAttendanceSchedule, latePay, earnedNightBonus, attendanceLateMinutes, isMealDeduction } from './payroll-safety.js';
 import {phDay, pendingDueNotices, clockInRestriction, startPhilippineDayTimer, noticeIsDue, deductionIsDue, isPenaltyDeduction, acknowledgeSanction} from './sanction-schedule.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
@@ -1452,6 +1454,13 @@ window.punchTime = async function(type) {
             window.assertAttendanceFaceFresh(faceResult);
             punchLocation = finalLocation; minDistance = finalLocation.distance;
         }
+        const assertClockCurrent=()=>{if(localStorage.getItem('takodeal_staff_id')!==punchStaffId || localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff session changed. Sign in again.');};
+        let earlyClockOut=null;
+        if(type==='TIME OUT'){
+            earlyClockOut=await prepareEarlyTimeOut(window,{start:activeTimeIn,staffId:punchStaffId,staffName,assertCurrent:assertClockCurrent});
+            if(!earlyClockOut.proceed)return;
+            assertClockCurrent();if(Date.now()-punchLocation.timestamp>60000)throw Error('Location verification expired. Tap Time Out again to refresh your location.');
+        }
         const photoBase64 = faceResult ? faceResult.photoBase64 : (window.captureOptionalAttendancePhoto?.() || '');
 
         Swal.fire({title: 'Saving attendance…', text: 'Keep this screen open until HQ confirms your attendance.', allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false, didOpen: () => Swal.showLoading()});
@@ -1473,7 +1482,8 @@ window.punchTime = async function(type) {
             if (!attendance.scheduleSnapshot.needsScheduleReview && matched) attendance.lateMinutes = matched.lateMinutes;
         }
         if (type === 'TIME OUT') {
-            await closeAttendanceShift(window,{start:activeTimeIn,attendance,assertCurrent:()=>{if(localStorage.getItem('takodeal_staff_id')!==punchStaffId || localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff session changed. Sign in again.');}});
+            await earlyClockOut.service.close({start:activeTimeIn,staffId:punchStaffId,staffName,attendance,assertCurrent:assertClockCurrent});
+            assertClockCurrent();
         } else {
         const batch = writeBatch(db);
         if (pendingLateRequest) {
@@ -2008,10 +2018,16 @@ window.loadPayslipVault = async function() {
     document.getElementById('liveCutoffDates').innerText = `Cutoff Period: ${startDateStr} to ${endDateStr}`;
 
     try {
-        const staffRef = await getDoc(doc(db, "cashiers", staffId));
+        let staffProfile={staffId,cashierName:staffName},salaryHistoryUnavailable=false;
+        try {
+            const staffRef = await getDocFromServer(doc(db, "cashiers", staffId));
+            if(!staffRef.exists()||staffRef.metadata?.fromCache||staffRef.metadata?.hasPendingWrites)throw Error('Salary profile is not confirmed.');
+            staffProfile={...staffRef.data(),staffId};
+        } catch {salaryHistoryUnavailable=true;}
         if (!stillOpen()) return;
-        let staffProfile = staffRef.exists() ? {...staffRef.data(),staffId} : {};
-        let dailyRate = parseFloat(staffProfile.hourlyRate) || 0;
+        if(staffProfile.salaryRateVersion===1){try{staffProfile=await loadStaffSalaryTimeline(window,staffProfile);}catch{salaryHistoryUnavailable=true;}}
+        if(!stillOpen())return;
+        let dailyRate = salaryHistoryUnavailable?0:staffRateForDate(staffProfile) ?? 0;
         let ratePerHour = dailyRate / 8;
         let nickname = staffProfile.scheduleNickname || staffName;
         
@@ -2052,6 +2068,7 @@ window.loadPayslipVault = async function() {
         if (!stillOpen()) return;
 
         const analyzeCutoff = (startT, endT) => {
+            if(salaryHistoryUnavailable)return {shiftsWorked:0,basicPay:0,totalLatePenalty:0,totalBonuses:0,shiftPairs:[],scheduleReviews:0,amendmentReviews:0,attendanceHeld:true,salaryHistoryUnavailable:true};
             let fLogs = [];
             let bufferEnd = new Date(endT);
             bufferEnd.setHours(bufferEnd.getHours() + 18);
@@ -2084,7 +2101,7 @@ window.loadPayslipVault = async function() {
                 }
             });
 
-            let tShifts = 0; let tLate = 0; let activeShift = null; let sPairs = [], scheduleReviews = 0,amendmentReviews=0;
+            let tShifts = 0; let tBasic = 0; let tLate = 0; let activeShift = null; let sPairs = [], scheduleReviews = 0,amendmentReviews=0;
             for(const review of payrollPlan.reviews){
                 const at=review.records.map(log=>attendanceMillis(log.timestamp)).find(Number.isFinite);
                 sPairs.push({dateObj:Number.isFinite(at)?new Date(at):startT,in:null,out:'HR REVIEW',hrs:0,remark:'<span style="color:#b45309;font-weight:bold">'+review.reason+'</span>',lateMins:0,needsAttendanceReview:true});
@@ -2109,9 +2126,10 @@ window.loadPayslipVault = async function() {
                     if (matchedShift?.amendmentNeedsReview) amendmentReviews++;
                     lateMinutes = attendanceLateMinutes(log, matchedShift);
                     wasScheduled = matchedShift?.wasScheduled || false;
-                    const late = latePay(lateMinutes, staffProfile, matchedShift, log.lateExempted === true);
+                    const rateProfile=staffProfileForWork(staffProfile,log,matchedShift);
+                    const late = latePay(lateMinutes, rateProfile, matchedShift, log.lateExempted === true);
                     activeShift = { time: logDate, lateMinutes, lateAmount: late.amount, lateExempted: log.lateExempted === true,
-                        manualPenalty, wasScheduled, matchedShift };
+                        manualPenalty, wasScheduled, matchedShift,rateProfile };
 
                 } else if (logType.includes("TIME OUT") && activeShift) {
                     let timeIn = activeShift.time; let lMins = activeShift.lateMinutes;
@@ -2143,9 +2161,11 @@ window.loadPayslipVault = async function() {
                         ? earnedNightBonus(staffProfile, activeShift.matchedShift, timeOut) : 0;
                     tBonuses += thisShiftNightBonus;
 
-                    let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
+                    let logDateStr = staffRateWorkDate({timestamp:timeIn},activeShift.matchedShift);
                     let hType = holidaysObj[logDateStr];
-                    let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
+                    const appliedDailyRate=activeShift.rateProfile.hourlyRate;
+                    tBasic+=appliedDailyRate*shiftMultiplier;
+                    let baseForHoliday = (appliedDailyRate * shiftMultiplier) + thisShiftNightBonus;
                     let hBonus = 0;
 
                     if (hType === 'Regular') { hBonus = baseForHoliday * 0.50; tBonuses += hBonus; remark += ` <br><span style="color:#ea580c; font-weight:bold;">(Reg Hol: +₱${hBonus.toFixed(2)})</span>`; } 
@@ -2155,7 +2175,7 @@ window.loadPayslipVault = async function() {
                     if (totalManualPenaltyForShift > 0) { remark += `<br><span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${totalManualPenaltyForShift.toFixed(2)} Manual Penalty</span>`; tLate += totalManualPenaltyForShift; }
 
                     tShifts += shiftMultiplier;
-                    sPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: remark, lateMins: (!lExempt && lMins > 0) ? lMins : 0 });
+                    sPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: remark, dailyRate:appliedDailyRate,rateWorkDate:logDateStr,lateMins: (!lExempt && lMins > 0) ? lMins : 0 });
                     activeShift = null;
                 } else if (manualPenalty > 0) {
                     tLate += manualPenalty;
@@ -2186,14 +2206,14 @@ window.loadPayslipVault = async function() {
                 }
             });
 
-            return { shiftsWorked: tShifts, totalLatePenalty: tLate, totalBonuses: tBonuses, shiftPairs: sPairs, scheduleReviews,amendmentReviews,attendanceHeld:payrollPlan.reviews.length>0||amendmentReviews>0 };
+            return { shiftsWorked: tShifts, basicPay:tBasic,totalLatePenalty: tLate, totalBonuses: tBonuses, shiftPairs: sPairs, scheduleReviews,amendmentReviews,attendanceHeld:payrollPlan.reviews.length>0||amendmentReviews>0 };
         };
 
         let currentData = analyzeCutoff(new Date(startDateStr + 'T00:00:00'), new Date(endDateStr + 'T23:59:59'));
         let prevData = analyzeCutoff(new Date(prevStartStr + 'T00:00:00'), new Date(prevEndStr + 'T23:59:59'));
 
-        let estGross = currentData.shiftsWorked * dailyRate;
-        let prevEstGross = prevData.shiftsWorked * dailyRate;
+        let estGross = currentData.basicPay;
+        let prevEstGross = prevData.basicPay;
 
         const dedSnap = await getDocs(query(collection(db, "staff_deductions"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10))));
         if (!stillOpen()) return;
@@ -2246,10 +2266,10 @@ window.loadPayslipVault = async function() {
         let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - liveUnpaidVales - cutoffLoanDeduction - onlineDueAmount;
         let refundEstimate=document.getElementById('liveOnlineRefundEstimate');if(!refundEstimate){refundEstimate=document.createElement('p');refundEstimate.id='liveOnlineRefundEstimate';document.getElementById('payslipLiveSection').prepend(refundEstimate);}refundEstimate.textContent='ONLINE REFUND ORDERS: −₱'+onlineDueAmount.toFixed(2);refundEstimate.hidden=!onlineDueAmount;
 
-        document.getElementById('liveEstGross').innerText = currentData.attendanceHeld ? 'Held for HR review' : '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('liveEstGross').innerText = currentData.salaryHistoryUnavailable?'Confirm salary on approved phone':currentData.attendanceHeld ? 'Held for HR review' : '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstLates').innerText = '-₱' + currentData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstVales').innerText = '-₱' + liveUnpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
-        document.getElementById('liveEstNetPay').innerText = currentData.attendanceHeld ? 'Held for HR review' : '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('liveEstNetPay').innerText = currentData.salaryHistoryUnavailable?'Confirm salary on approved phone':currentData.attendanceHeld ? 'Held for HR review' : '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
         let penaltyReview=document.getElementById('liveScheduledPenaltyReview');
         if(!penaltyReview){penaltyReview=document.createElement('p');penaltyReview.id='liveScheduledPenaltyReview';penaltyReview.style.cssText='padding:10px;background:#fff8ed;font-size:12px;';document.getElementById('payslipLiveSection').prepend(penaltyReview);}
         penaltyReview.hidden=!scheduledPenaltyReview;
@@ -2261,7 +2281,7 @@ window.loadPayslipVault = async function() {
             document.getElementById('payslipLiveSection').prepend(scheduleNotice);
         }
         scheduleNotice.hidden = !currentData.scheduleReviews && !currentData.attendanceHeld;
-        scheduleNotice.textContent = currentData.amendmentReviews ? 'A dated shift correction needs HQ review of a saved lateness decision. This attendance estimate is held until that review is complete.' : currentData.attendanceHeld ? 'This attendance estimate is held for HR review because linked punches conflict or overlap. No payable hours or lateness penalty have been inferred.' : `${currentData.scheduleReviews} clock-in(s) lack saved schedule evidence. Review the attendance details before payroll approval.`;
+        scheduleNotice.textContent = currentData.salaryHistoryUnavailable?'Salary details could not be confirmed. Use the approved Staff phone and reconnect to confirm the rate for each work date. Saved paid payslips below remain available.':currentData.amendmentReviews ? 'A dated shift correction needs HQ review of a saved lateness decision. This attendance estimate is held until that review is complete.' : currentData.attendanceHeld ? 'This attendance estimate is held for HR review because linked punches conflict or overlap. No payable hours or lateness penalty have been inferred.' : `${currentData.scheduleReviews} clock-in(s) lack saved schedule evidence. Review the attendance details before payroll approval.`;
 
         let grossRow = document.getElementById('liveEstGross').parentElement;
         if (!document.getElementById('liveEstOTRow')) {
@@ -2372,7 +2392,7 @@ window.loadPayslipVault = async function() {
         if (!hasPrevCutoffRecord) {
             pendingCount++;
             
-            let prevEstGross = prevData.shiftsWorked * dailyRate;
+            let prevEstGross = prevData.basicPay;
             const prevOnlineAmount=onlineRows.filter(row=>row.status==='Unpaid'&&(row.dateAdded?.toDate?.()||new Date(row.dateAdded))<=prevCutoffEndTimestamp).reduce((sum,row)=>sum+(Number(row.amount)||0),0);
             let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - pendingUnpaidVales - cutoffLoanDeduction - prevOnlineAmount;
 
@@ -2388,7 +2408,7 @@ window.loadPayslipVault = async function() {
                         </div>
                         <div style="text-align: right; background: white; padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1;">
                             <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold;">Est. Net Pay</div>
-                            <div style="font-size: 18px; font-weight: 900; color: #0f172a;">${prevData.attendanceHeld ? 'Held for HR review' : '₱'+Math.max(0, prevEstNet).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                            <div style="font-size: 18px; font-weight: 900; color: #0f172a;">${prevData.salaryHistoryUnavailable?'Confirm salary on approved phone':prevData.attendanceHeld ? 'Held for HR review' : '₱'+Math.max(0, prevEstNet).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
                         </div>
                     </div>
                     
@@ -2400,7 +2420,7 @@ window.loadPayslipVault = async function() {
                         ${prevLoanStr}
                     </div>
                     
-                    ${prevData.amendmentReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">A dated shift correction needs HQ review of a saved lateness decision. This attendance estimate is held until that review is complete.</p>' : prevData.attendanceHeld ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Linked punches conflict or overlap. The attendance estimate is held for HR review; no payable hours or lateness penalty have been inferred.</p>' : prevData.scheduleReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Saved schedule evidence is missing for some clock-ins in this estimate. Review the attendance details before payroll approval.</p>' : ''}
+                    ${prevData.salaryHistoryUnavailable?'<p style="font-size:12px;color:#92400e;line-height:1.5">Use your approved Staff phone and reconnect to confirm the daily wage for each work date.</p>':prevData.amendmentReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">A dated shift correction needs HQ review of a saved lateness decision. This attendance estimate is held until that review is complete.</p>' : prevData.attendanceHeld ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Linked punches conflict or overlap. The attendance estimate is held for HR review; no payable hours or lateness penalty have been inferred.</p>' : prevData.scheduleReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Saved schedule evidence is missing for some clock-ins in this estimate. Review the attendance details before payroll approval.</p>' : ''}
                     <details style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
                         <summary style="font-weight: bold; color: #0f766e; cursor: pointer; outline: none; font-size: 13px; display: flex; align-items: center; gap: 8px;">
                             <span>👀 View Attendance Logs</span>

@@ -94,7 +94,7 @@ export function installStaffPortal() {
             }
             localStorage.removeItem(attemptKey);
             window.closeVaultPin(true);
-            if(modalTarget==='rate'){rate.reveal(id,data);return;}
+            if(modalTarget==='rate'){await rate.reveal(id,data);return;}
             session.unlock(id); refreshVault();
             // PIN editing from Profile does not reveal pay behind another screen.
             if (!$('view-payslip').classList.contains('active')) { window.lockPayslipVault(); return; }

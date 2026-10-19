@@ -5,6 +5,8 @@ import {createRequire} from 'node:module';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {saveStaffProfileAtomic} from '../takodeal-manager/staff-rate-changes.js';
+import {staffRateDate, staffRateForDate} from '../takodeal-manager/staff-rate-model.js';
+import {createEarlyTimeOutService} from '../takodeal-manager/early-time-out-actions.js';
 
 // These tests use real local Firebase Rules runtimes. They must not be silently
 // skipped when the runtime is missing, and cannot connect to production.
@@ -443,4 +445,301 @@ test('actual decrease clears congratulations with its own audit and first profil
     await assertSucceeds(saveStaffProfileAtomic(api,'new-rate-staff',ratePayload(450),{operationId:'new-baseline',expectedRate:null,expectedExists:false}));
     assert.equal((await getDoc(doc(api.db,'cashiers/new-rate-staff'))).data().latestRateRaise,null);
     assert.equal((await getDoc(doc(api.db,'staff_rate_changes/new-baseline'))).data().eventType,'baseline');
+});
+
+// These cases execute the dated salary writer and early Time Out service against
+// the real local Rules runtime. Admin seeding is limited to synthetic fixtures.
+const dateOffset = (date, days) => new Date(Date.parse(date + 'T12:00:00Z') + days * 86400000).toISOString().slice(0, 10);
+const datedSave = (api, operation, rate, effectiveDate, extra = {}) => saveStaffProfileAtomic(api, staffId, ratePayload(rate), {
+    operationId: operation, expectedExists: true, expectedRate: 450, effectiveDate, ...extra
+});
+async function salarySnapshot(ctx = owner()) {
+    const db = ctx.firestore(), profile = (await getDoc(doc(db, `cashiers/${staffId}`))).data();
+    return {...profile, salaryRateTimeline: (await getDoc(doc(db, `staff_salary_rates/${staffId}`))).data()};
+}
+
+test('dated future salary preserves the current public wage, earlier cutoff and frozen paid payroll', async () => {
+    await rateSetup();
+    const ctx = owner(), api = rateApi(ctx), today = staffRateDate(), future = dateOffset(today, 2);
+    const saved = await assertSucceeds(datedSave(api, 'dated-future', 500, future));
+    assert.equal(saved.scheduled, true);
+    const profile = await salarySnapshot(ctx), audit = (await getDoc(doc(api.db, 'staff_rate_changes/dated-future'))).data();
+    assert.equal(profile.hourlyRate, 450);
+    assert.equal(profile.salaryRateTimeline.baselineDailyRate, 450);
+    assert.equal(staffRateForDate(profile, dateOffset(today, -15)), 450);
+    assert.equal(staffRateForDate(profile, today), 450);
+    assert.equal(staffRateForDate(profile, future), 500);
+    assert.equal(audit.version, 2); assert.equal(audit.effectiveDate, future); assert.equal(audit.rateChange, true);
+    assert.equal(audit.projectionDailyRate, 450); assert.equal(audit.fromDailyRate, 450);
+    const publicProfile = (await getDoc(doc(env.unauthenticatedContext().firestore(), `cashiers/${staffId}`))).data();
+    for (const field of ['rates', 'baselineDailyRate', 'salaryRateTimeline', 'rateHistory']) assert.equal(Object.hasOwn(publicProfile, field), false);
+    assert.deepEqual((await getDoc(doc(api.db, 'payroll_records/rate-frozen'))).data().frozenData, {dailyRate: 450, netPay: 4500});
+});
+
+test('same-date salary revisions are ordered and a stale private revision cannot overwrite a future change', async () => {
+    await rateSetup();
+    const ctx = owner(), api = rateApi(ctx), future = dateOffset(staffRateDate(), 2);
+    await datedSave(api, 'dated-first', 500, future);
+    await assertSucceeds(datedSave(api, 'dated-second', 600, future, {expectedRateRevision: 'dated-first'}));
+    const profile = await salarySnapshot(ctx);
+    assert.equal(staffRateForDate(profile, future), 600);
+    assert.equal(profile.hourlyRate, 450); assert.equal(profile.salaryRateTimeline.revision, 2);
+    assert.deepEqual(profile.salaryRateTimeline.rates['dated-second'], {effectiveDate: future, dailyRate: 600, sequence: 2});
+    await assert.rejects(datedSave(api, 'dated-stale', 700, future, {expectedRateRevision: 'dated-first'}), /changed after/);
+    assert.equal((await getDoc(doc(api.db, 'staff_rate_changes/dated-stale'))).exists(), false);
+    assert.equal((await salarySnapshot(ctx)).salaryRateTimeline.revision, 2);
+});
+
+test('dated salary lost-ack retry reuses one immutable event and refuses a changed effective-date intent', async () => {
+    await rateSetup();
+    const ctx = owner(), api = rateApi(ctx), future = dateOffset(staffRateDate(), 3), run = api.runTransaction;
+    let lose = true;
+    api.runTransaction = async (...args) => {const result = await run(...args); if (lose) {lose = false; throw Error('Synthetic dated salary lost acknowledgement');} return result;};
+    await assert.rejects(datedSave(api, 'dated-lost-ack', 510, future), /lost acknowledgement/);
+    assert.equal((await datedSave(api, 'dated-lost-ack', 510, future)).alreadySaved, true);
+    await assert.rejects(datedSave(api, 'dated-lost-ack', 510, dateOffset(future, 1)), /different staff edits/);
+    const timeline = (await salarySnapshot(ctx)).salaryRateTimeline;
+    assert.equal(timeline.revision, 1); assert.deepEqual(Object.keys(timeline.rates), ['dated-lost-ack']);
+    assert.equal((await getDocs(query(collection(api.db, 'staff_rate_changes'), where('staffId', '==', staffId), where('branch', '==', branch)))).size, 1);
+});
+
+test('dated salary is private to approved own Staff devices and scoped verified payroll HQ', async () => {
+    await rateSetup();
+    const path = `staff_salary_rates/${staffId}`;
+    await datedSave(rateApi(owner()), 'salary-read-scope', 500, dateOffset(staffRateDate(), 1));
+    await assertSucceeds(getDoc(doc(anonymous(uid).firestore(), path)));
+    const payrollHQ = google('rate-maa', 'rate-maa@example.test');
+    await assertSucceeds(getDocs(query(collection(payrollHQ.firestore(), 'staff_salary_rates'), where('branch', '==', branch))));
+    for (const ctx of [env.unauthenticatedContext(), anonymous('new-phone'), anonymous('other-employee'), anonymous('revoked-device'), otherHQ(), google('unverified-owner', 'jgo031996@gmail.com', false)]) {
+        await assertFails(getDoc(doc(ctx.firestore(), path)));
+        await assertFails(setDoc(doc(ctx.firestore(), path), {version: 1, staffId, branch, baselineDailyRate: 900}));
+    }
+    await assertFails(getDocs(collection(anonymous(uid).firestore(), 'staff_salary_rates')));
+    await assertFails(getDocs(collection(payrollHQ.firestore(), 'staff_salary_rates')));
+    await adminSet('hq_email_access/rate-maa@example.test', {active: false, permissions: ['payroll'], allowedBranches: [branch]});
+    await assertFails(getDoc(doc(payrollHQ.firestore(), path)));
+});
+
+test('timeline, v2 audit and protected public projection must commit together; baseline and prior events are immutable', async () => {
+    await rateSetup();
+    const ctx = owner(), db = ctx.firestore(), api = rateApi(ctx), future = dateOffset(staffRateDate(), 2);
+    await datedSave(api, 'salary-batch-first', 500, future);
+    const profile = await salarySnapshot(ctx), prior = profile.salaryRateTimeline;
+    const oldAudit = (await getDoc(doc(db, 'staff_rate_changes/salary-batch-first'))).data();
+    async function batchSave(operation, {omit, baseline, changeOld, actor} = {}) {
+        const batch = writeBatch(db), rates = {...prior.rates, [operation]: {effectiveDate: future, dailyRate: 600, sequence: 2}};
+        if (changeOld) rates['salary-batch-first'] = {...rates['salary-batch-first'], dailyRate: 999};
+        if (omit !== 'profile') batch.update(doc(db, `cashiers/${staffId}`), {staffRateAuditId: operation, salaryRateRevision: operation});
+        if (omit !== 'timeline') batch.set(doc(db, `staff_salary_rates/${staffId}`), {...prior, baselineDailyRate: baseline ?? prior.baselineDailyRate, rates, revision: 2, revisionId: operation, updatedAt: serverTimestamp()});
+        if (omit !== 'audit') batch.set(doc(db, `staff_rate_changes/${operation}`), {...oldAudit, fromDailyRate: 500, toDailyRate: 600, rateRevision: 2, actorUid: actor ?? 'owner-uid', recordedAt: serverTimestamp()});
+        return batch.commit();
+    }
+    for (const omit of ['profile', 'timeline', 'audit']) await assertFails(batchSave('salary-missing-' + omit, {omit}));
+    await assertFails(batchSave('salary-change-baseline', {baseline: 1}));
+    await assertFails(batchSave('salary-rewrite-old', {changeOld: true}));
+    await assertFails(batchSave('salary-spoof-actor', {actor: 'other-uid'}));
+    await assertFails(updateDoc(doc(db, `cashiers/${staffId}`), {hourlyRate: 800}));
+    await assertFails(updateDoc(doc(env.unauthenticatedContext().firestore(), `cashiers/${staffId}`), {branch: 'Citygate'}));
+    await assertFails(deleteDoc(doc(db, `staff_salary_rates/${staffId}`)));
+    await assertSucceeds(batchSave('salary-complete-atomic'));
+    assert.equal(staffRateForDate(await salarySnapshot(ctx), future), 600);
+    assert.deepEqual((await getDoc(doc(db, 'staff_rate_changes/salary-batch-first'))).data(), oldAudit);
+});
+
+test('dated numeric-string baselines, future decrease and first employment date do not invent earlier wages', async () => {
+    await rateSetup();
+    await adminSet(`cashiers/${staffId}`, {...ratePayload(' 450.50 '), active: true});
+    const api = rateApi(owner()), today = staffRateDate(), future = dateOffset(today, 2);
+    await assertSucceeds(datedSave(api, 'salary-numeric-baseline', 0, future, {expectedRate: 450.50}));
+    const existing = await salarySnapshot();
+    assert.equal(existing.salaryRateTimeline.baselineDailyRate, 450.50);
+    assert.equal(staffRateForDate(existing, today), 450.50); assert.equal(staffRateForDate(existing, future), 0);
+    assert.equal((await getDoc(doc(api.db, 'staff_rate_changes/salary-numeric-baseline'))).data().eventType, 'decrease');
+    await assertSucceeds(saveStaffProfileAtomic(api, 'new-dated-staff', ratePayload(450), {operationId: 'salary-first-date', expectedExists: false, expectedRate: null, effectiveDate: future}));
+    const newProfile = (await getDoc(doc(api.db, 'cashiers/new-dated-staff'))).data();
+    newProfile.salaryRateTimeline = (await getDoc(doc(api.db, 'staff_salary_rates/new-dated-staff'))).data();
+    assert.equal(staffRateForDate(newProfile, today), null); assert.equal(staffRateForDate(newProfile, future), 450);
+    await assert.rejects(datedSave(api, 'salary-invalid-calendar', 500, '2026-02-30'), /valid salary effective date/);
+    assert.equal((await getDoc(doc(api.db, 'staff_rate_changes/salary-invalid-calendar'))).exists(), false);
+});
+
+test('branch payroll HQ may save dated wages while the document vault is disabled, but not for another branch', async () => {
+    await rateSetup(); await adminSet('staff_document_config/current', vaultConfig(false));
+    const ctx = google('rate-maa', 'rate-maa@example.test'), api = rateApi(ctx, 'rate-maa', 'rate-maa@example.test');
+    await assertSucceeds(datedSave(api, 'salary-hq-dated', 500, dateOffset(staffRateDate(), 1)));
+    await assert.rejects(saveStaffProfileAtomic(api, staffId, ratePayload(600, 'Citygate'), {operationId: 'salary-cross-branch', effectiveDate: dateOffset(staffRateDate(), 1)}), /branch|access|assigned/i);
+    assert.equal((await getDoc(doc(owner().firestore(), 'staff_rate_changes/salary-cross-branch'))).exists(), false);
+});
+
+test('the first dated salary audit must bind its normalized source wage and include the current-projection flag', async () => {
+    await rateSetup();
+    const db = owner().firestore(), today = staffRateDate(), future = dateOffset(today, 2);
+    async function firstSalary(operation, fromDailyRate, omitAppliesNow = false) {
+        const batch = writeBatch(db), audit = {version: 2, staffId, staffName: 'Sample Staff', branch, previousBranch: branch,
+            eventType: fromDailyRate == null || fromDailyRate === 0 ? 'baseline' : 'increase', fromDailyRate, toDailyRate: 500,
+            effectiveDate: future, rateChange: true, appliesNow: false, rateRevision: 1, projectionDate: today, projectionDailyRate: 450,
+            inputHash: sha, actorUid: 'owner-uid', actorEmail: 'jgo031996@gmail.com', actorName: 'Sample HQ', recordedAt: serverTimestamp()};
+        if (omitAppliesNow) delete audit.appliesNow;
+        batch.update(doc(db, `cashiers/${staffId}`), {hourlyRate: 450, latestRateRaise: null, salaryRateVersion: 1, salaryRateRevision: operation, staffRateAuditId: operation});
+        batch.set(doc(db, `staff_salary_rates/${staffId}`), {version: 1, staffId, branch, baselineDailyRate: 450,
+            rates: {[operation]: {effectiveDate: future, dailyRate: 500, sequence: 1}}, revision: 1, revisionId: operation, updatedAt: serverTimestamp(), updatedByUid: 'owner-uid'});
+        batch.set(doc(db, 'staff_rate_changes/' + operation), audit);
+        return batch.commit();
+    }
+    for (const [index, forged] of [null, 0, 1, 449].entries()) await assertFails(firstSalary('first-forged-source-' + index, forged));
+    await assertFails(firstSalary('first-missing-projection', 450, true));
+    await assertSucceeds(firstSalary('first-bound-source', 450));
+    assert.equal((await getDoc(doc(db, 'staff_rate_changes/first-bound-source'))).data().fromDailyRate, 450);
+});
+
+async function earlyFixture() {
+    await rateSetup();
+    const clock = new Date(), startAt = new Date(+clock - 4 * 3600000), endAt = new Date(+clock + 2 * 3600000);
+    const start = {id: 'early-original-in', staffId, staffName: 'Sample Staff', branch, type: 'TIME IN', timestamp: Timestamp.fromDate(startAt),
+        scheduleSnapshot: {version: 1, source: 'clock-in', branch, staffName: 'Sample Staff', clockInAt: startAt.toISOString(), expectedStartAt: startAt.toISOString(), expectedEndAt: endAt.toISOString(), shiftId: 'early-saved-slot', wasScheduled: true, needsScheduleReview: false, scheduleRevisionId: 'early-original-schedule'}};
+    const {id, ...source} = start;
+    await adminSet('attendance_logs/' + id, source);
+    const staffApi = rateApi(env.unauthenticatedContext()); delete staffApi.auth; delete staffApi.sessionUser;
+    let activeClock = null, token = 0;
+    const options = {now: () => activeClock ? new Date(activeClock) : new Date(), makeToken: () => `early-synthetic-token-${++token}`};
+    const staffService = createEarlyTimeOutService(staffApi, options), hqApi = rateApi(owner()), hqService = createEarlyTimeOutService(hqApi, options);
+    const input = {start, staffId, staffName: 'Sample Staff', pin: '1111', assertCurrent() {}};
+    const attendance = {staffId, staffName: 'Sample Staff', branch, type: 'TIME OUT', sourceApp: 'emulator-synthetic-only'};
+    return {get clock() {return activeClock ? new Date(activeClock) : new Date();}, start, input, attendance, staffApi, staffService, hqService, hqApi,
+        setClock: value => {activeClock = new Date(value);},
+        request: () => staffService.request({...input, reason: 'Synthetic family appointment'}),
+        review: (requestId, decision = 'Approved', extra = {}) => hqService.review({requestId, decision, reviewer: {uid: 'owner-uid', email: 'jgo031996@gmail.com'}, assertReviewAccess: candidate => {assert.equal(candidate, branch); return true;}, ...extra})};
+}
+async function approvalBatch(ctx, requestId, {approval = {}, requestPatch = {}, omitRequest = false, omitApproval = false} = {}) {
+    const db = ctx.firestore(), pending = (await getDoc(doc(db, 'staff_requests/' + requestId))).data();
+    const data = {schemaVersion: 1, requestId, requestVersion: pending.requestVersion, requestToken: pending.requestToken, decision: 'Approved',
+        staffId: pending.staffId, staffName: pending.staffName, branch: pending.branch, timeInLogId: pending.timeInLogId, timeInAt: pending.timeInAt,
+        scheduledEndAt: pending.scheduledEndAt, scheduleFingerprint: pending.scheduleFingerprint, requestedDepartureAt: pending.requestedDepartureAt,
+        reviewedByUid: 'owner-uid', reviewedByEmail: 'jgo031996@gmail.com', reviewedAt: serverTimestamp(), validUntil: Timestamp.fromMillis(Date.now() + 5 * 60000), reviewNote: 'Synthetic review', ...approval};
+    const batch = writeBatch(db);
+    if (!omitApproval) batch.set(doc(db, 'attendance_time_out_approvals/' + requestId), data);
+    if (!omitRequest) batch.update(doc(db, 'staff_requests/' + requestId), {status: data.decision, processedAt: serverTimestamp(), processedBy: data.reviewedByEmail, managerReply: data.reviewNote, staffAcknowledged: false, ...requestPatch});
+    return batch.commit();
+}
+
+test('actual protected early approval closes one linked Time Out and preserves the original punch and paid payroll', async () => {
+    const f = await earlyFixture(), request = await f.request();
+    const original = (await getDoc(doc(f.hqApi.db, 'attendance_logs/' + f.start.id))).data();
+    await assertSucceeds(f.review(request.id));
+    const beforeClose = Date.now(), result = await assertSucceeds(f.staffService.close({...f.input, attendance: f.attendance}));
+    const retry = await assertSucceeds(f.staffService.close({...f.input, attendance: f.attendance}));
+    assert.equal(result.saved, true); assert.equal(retry.alreadySaved, true); assert.equal(retry.id, result.id);
+    const out = (await getDoc(doc(f.hqApi.db, 'attendance_logs/' + result.id))).data();
+    assert.equal(out.timeInLogId, f.start.id); assert.equal(out.earlyTimeOut.requestId, request.id);
+    assert.ok(out.timestamp.toMillis() >= beforeClose && out.timestamp.toMillis() <= Date.now());
+    assert.equal((await getDoc(doc(f.hqApi.db, 'staff_requests/' + request.id))).data().status, 'Consumed');
+    assert.deepEqual((await getDoc(doc(f.hqApi.db, 'attendance_logs/' + f.start.id))).data(), original);
+    assert.deepEqual((await getDoc(doc(f.hqApi.db, 'payroll_records/rate-frozen'))).data().frozenData, {dailyRate: 450, netPay: 4500});
+    assert.equal((await getDocs(query(collection(f.hqApi.db, 'attendance_logs'), where('type', '==', 'TIME OUT')))).size, 1);
+});
+
+test('a small reviewer clock lead remains within the server expiry cap while larger skew fails closed', async () => {
+    const f = await earlyFixture(), request = await f.request(), db = f.hqApi.db;
+    f.setClock(Date.now() + 2000);
+    await assertSucceeds(f.review(request.id));
+    const approval = (await getDoc(doc(db, 'attendance_time_out_approvals/' + request.id))).data();
+    const duration = approval.validUntil.toMillis() - approval.reviewedAt.toMillis();
+    assert.ok(duration > 28 * 60000 && duration <= 30 * 60000, 'Client expiry remains below the authoritative server limit');
+    assert.equal((await f.staffService.close({...f.input, attendance: f.attendance})).saved, true);
+    // A second synthetic shift uses the same protected-policy paths but a new
+    // original punch. No tolerance is added to the Rules' thirty-minute cap.
+    const oldId = f.start.id, nextId = 'early-second-in';
+    const {id, ...source} = {...f.start, id: nextId};
+    await adminSet('attendance_logs/' + id, source);
+    const nextInput = {...f.input, start: {...f.start, id: nextId}};
+    f.setClock(Date.now() + 2 * 60000);
+    const next = await f.staffService.request({...nextInput, reason: 'Synthetic second-shift appointment'});
+    await assertFails(f.review(next.id));
+    assert.equal((await getDoc(doc(db, 'attendance_time_out_approvals/' + next.id))).exists(), false);
+    assert.equal((await getDoc(doc(db, 'staff_requests/' + next.id))).data().status, 'Pending');
+    assert.equal((await getDoc(doc(db, 'attendance_logs/' + oldId))).data().type, 'TIME IN');
+});
+
+test('public request status cannot manufacture early attendance authority, and unknown Staff cannot issue protected approvals', async () => {
+    const f = await earlyFixture(), request = await f.request(), db = f.staffApi.db;
+    await assertSucceeds(updateDoc(doc(db, 'staff_requests/' + request.id), {status: 'Approved', processedBy: 'forged-owner'}));
+    await assert.rejects(f.staffService.close({...f.input, attendance: f.attendance}), /Management approval/);
+    await adminSet('staff_requests/' + request.id, {...(await getDoc(doc(db, 'staff_requests/' + request.id))).data(), status: 'Pending'});
+    for (const ctx of [env.unauthenticatedContext(), anonymous(uid), google('unverified-owner', 'jgo031996@gmail.com', false), otherHQ(), google('no-permission', 'no-permission@example.test')]) {
+        await assertFails(approvalBatch(ctx, request.id));
+    }
+    assert.equal((await getDoc(doc(db, 'attendance_time_out_approvals/' + request.id))).exists(), false);
+    assert.equal((await getDocs(query(collection(db, 'attendance_logs'), where('type', '==', 'TIME OUT')))).size, 0);
+});
+
+test('early approval and reviewed request must be atomic and exact; forged links, tokens, versions and review actors fail', async () => {
+    const f = await earlyFixture(), request = await f.request(), ctx = owner();
+    await assertFails(approvalBatch(ctx, request.id, {omitRequest: true}));
+    for (const approval of [{requestVersion: 99}, {requestToken: 'different-token'}, {requestToken: 'x'}, {staffId: 'employee-2'}, {branch: 'Citygate'}, {timeInLogId: 'other-start'}, {reviewedByUid: 'other-owner'}, {reviewedByEmail: 'other@example.test'}, {extra: true}]) {
+        await assertFails(approvalBatch(ctx, request.id, {approval}));
+    }
+    for (const requestPatch of [{reason: 'Rewritten incident'}, {requestToken: 'new-unsafe-token'}, {processedBy: 'someone-else'}, {staffAcknowledged: true}, {processedAt: Timestamp.fromMillis(1)}]) {
+        await assertFails(approvalBatch(ctx, request.id, {requestPatch}));
+    }
+    await assertFails(approvalBatch(ctx, request.id, {approval: {validUntil: Timestamp.fromMillis(Date.now() - 1000)}}));
+    await assertFails(approvalBatch(ctx, request.id, {approval: {validUntil: Timestamp.fromMillis(Date.now() + 31 * 60000)}}));
+    await assertSucceeds(approvalBatch(ctx, request.id));
+    assert.equal((await getDoc(doc(ctx.firestore(), 'staff_requests/' + request.id))).data().status, 'Approved');
+});
+
+test('scoped inbox HQ can review early attendance but revocation, approval listing and same-version rewrite are denied', async () => {
+    const f = await earlyFixture(), request = await f.request();
+    await adminSet('hq_email_access/early-inbox@example.test', {active: true, permissions: ['inbox'], allowedBranches: [branch]});
+    const ctx = google('early-inbox', 'early-inbox@example.test'), api = rateApi(ctx, 'early-inbox', 'early-inbox@example.test');
+    const service = createEarlyTimeOutService(api, {now: () => new Date(f.clock)});
+    await assertSucceeds(service.review({requestId: request.id, decision: 'Approved', reviewer: {uid: 'early-inbox', email: 'early-inbox@example.test'}, assertReviewAccess: () => true}));
+    const path = 'attendance_time_out_approvals/' + request.id;
+    await assertSucceeds(getDoc(doc(env.unauthenticatedContext().firestore(), path)));
+    await assertFails(getDocs(collection(ctx.firestore(), 'attendance_time_out_approvals')));
+    await assertFails(deleteDoc(doc(owner().firestore(), path)));
+    const approval = (await getDoc(doc(ctx.firestore(), path))).data();
+    await assertFails(setDoc(doc(ctx.firestore(), path), {...approval, reviewedAt: serverTimestamp()}));
+    await f.staffService.cancel(f.input); await f.request();
+    await adminSet('hq_email_access/early-inbox@example.test', {active: false, permissions: ['inbox'], allowedBranches: [branch]});
+    await assertFails(service.review({requestId: request.id, decision: 'Approved', reviewer: {uid: 'early-inbox', email: 'early-inbox@example.test'}, assertReviewAccess: () => true}));
+    assert.equal((await getDoc(doc(ctx.firestore(), path))).data().requestVersion, 1);
+});
+
+test('cancel and re-request invalidates old approval; only a fresh version can close the original shift', async () => {
+    const f = await earlyFixture(), request = await f.request();
+    await f.review(request.id); await f.staffService.cancel(f.input); await f.request();
+    const db = f.hqApi.db, before = (await getDoc(doc(db, 'attendance_time_out_approvals/' + request.id))).data();
+    assert.equal((await getDoc(doc(db, 'staff_requests/' + request.id))).data().requestVersion, 2);
+    await assert.rejects(f.staffService.close({...f.input, attendance: f.attendance}), /Management approval/);
+    await assertFails(approvalBatch(owner(), request.id, {approval: {requestVersion: before.requestVersion, requestToken: before.requestToken}}));
+    await assertSucceeds(f.review(request.id));
+    assert.equal((await getDoc(doc(db, 'attendance_time_out_approvals/' + request.id))).data().requestVersion, 2);
+    assert.equal((await f.staffService.close({...f.input, attendance: f.attendance})).saved, true);
+});
+
+test('expired approval and unknown schedules cannot close early or fabricate a worked-hours record', async () => {
+    const f = await earlyFixture(), request = await f.request();
+    await f.review(request.id); f.setClock(+f.clock + 31 * 60000);
+    await assert.rejects(f.staffService.close({...f.input, attendance: f.attendance}), /Management approval/);
+    const withoutSnapshot = {...f.start}; delete withoutSnapshot.id; delete withoutSnapshot.scheduleSnapshot;
+    await adminSet('attendance_logs/' + f.start.id, withoutSnapshot);
+    const unknown = await f.request();
+    assert.equal((await getDoc(doc(f.hqApi.db, 'staff_requests/' + unknown.id))).data().requiresScheduleReview, true);
+    await assert.rejects(f.review(unknown.id), /schedule changed or cannot be verified/);
+    await assert.rejects(f.staffService.close({...f.input, attendance: f.attendance}), /could not be verified/);
+    assert.equal((await getDocs(query(collection(f.hqApi.db, 'attendance_logs'), where('type', '==', 'TIME OUT')))).size, 0);
+});
+
+test('protected approval cannot extend a shift beyond twenty-four hours; an authorized rejection needs no expiry', async () => {
+    const f = await earlyFixture(), request = await f.request(), db = f.hqApi.db;
+    const oldStart = new Date(Date.now() - 25 * 3600000), path = 'attendance_logs/' + f.start.id;
+    await adminSet(path, {...(await getDoc(doc(db, path))).data(), timestamp: Timestamp.fromDate(oldStart)});
+    const requestPath = 'staff_requests/' + request.id;
+    await adminSet(requestPath, {...(await getDoc(doc(db, requestPath))).data(), timeInAt: oldStart.toISOString()});
+    await assertFails(approvalBatch(owner(), request.id));
+    await assertFails(approvalBatch(owner(), request.id, {approval: {decision: 'Rejected', validUntil: Timestamp.fromMillis(Date.now() + 60000)}}));
+    await assertSucceeds(approvalBatch(owner(), request.id, {approval: {decision: 'Rejected', validUntil: null}}));
+    assert.equal((await getDoc(doc(db, 'attendance_time_out_approvals/' + request.id))).data().decision, 'Rejected');
+    assert.equal((await getDoc(doc(db, requestPath))).data().status, 'Rejected');
+    assert.equal((await getDocs(query(collection(db, 'attendance_logs'), where('type', '==', 'TIME OUT')))).size, 0);
 });

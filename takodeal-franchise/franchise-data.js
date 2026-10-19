@@ -3,6 +3,7 @@ import { resolveScheduleForDate } from './schedule-history.js';
 import {isPenaltyDeduction, deductionIsDue} from './sanction-schedule.js';
 import {planPayrollAttendance} from './payroll-attendance.js';
 import {configuredPermissions,canOpenHrTab,canOpenInventoryTab,workspaceRole} from './workspace-access-model.js';
+import {staffProfileForWork,staffRateWorkDate} from './staff-rate-model.js';
 
 export const RELEASE = 'franchise-workspace-20261005-r1';
 export const ROUTES = {
@@ -123,15 +124,15 @@ export function attendanceEstimate({logs,profiles,deductions=[],bonuses=[],ledge
   } else if (type.startsWith('TIME OUT') && active.has(name)) {
    const entry=active.get(name),hours=(at-ms(entry.timestamp))/3600000;active.delete(name);
    if (hours<=0 || hours>18 || (hours<1 && type!=='TIME OUT (AUTO)')) {p.review++;p.logs.push({in:entry.timestamp,out:log.timestamp,remark:'Invalid attendance duration; review required'});continue;}
-   const profile=profileMap[name],matched=resolveAttendanceShift(entry,schedule,profileMap);
+   const matched=resolveAttendanceShift(entry,schedule,profileMap),profile=staffProfileForWork(profileMap[name],entry,matched);
    const multiplier=hours>=13.5?2:1,night=earnedNightBonus(profile,matched,new Date(at));
    const basic=n(profile.hourlyRate)*multiplier,straight=hours>=13.5?50:0;
-   const holiday=resolveScheduleForDate(schedule,calendarDay(entry.timestamp))?.holidays?.[calendarDay(entry.timestamp)] ?? holidays[calendarDay(entry.timestamp)],holidayBonus=(basic+night)*(holiday==='Regular'?0.5:holiday==='Special'?0.1:0);
+   const workDate=staffRateWorkDate(entry,matched),holiday=resolveScheduleForDate(schedule,workDate)?.holidays?.[workDate] ?? holidays[workDate],holidayBonus=(basic+night)*(holiday==='Regular'?0.5:holiday==='Special'?0.1:0);
    const late=latePay(attendanceLateMinutes(entry,matched),profile,matched,entry.lateExempted===true).amount+n(entry.penaltyAmount)+n(log.penaltyAmount);
    p.hours+=hours;p.shifts+=multiplier;p.basic+=basic;p.bonus+=night+straight+holidayBonus;p.late+=late;
    if(matched.needsScheduleReview)p.review++;
    if(matched.amendmentNeedsReview){p.attendanceHeld=true;p.attendanceReviewRequired=true;p.attendanceReviewReasons=['A dated shift correction conflicts with a saved manual lateness review. HQ must confirm it before payment.'];}
-   p.logs.push({in:entry.timestamp,out:log.timestamp,hours,basic,bonus:night+straight+holidayBonus,late,remark:(type.includes('AUTO')?'Auto closed; review attendance':'Complete')+(matched.needsScheduleReview?' · Schedule reference needs review':'')});
+   p.logs.push({in:entry.timestamp,out:log.timestamp,hours,basic,dailyRate:profile.hourlyRate,rateWorkDate:workDate,bonus:night+straight+holidayBonus,late,remark:(type.includes('AUTO')?'Auto closed; review attendance':'Complete')+(matched.needsScheduleReview?' · Schedule reference needs review':'')});
   }
  }
  for (const [name,log] of active) {const p=person(name);p.review++;p.logs.push({in:log.timestamp,out:null,remark:'Missing time out; review required'});}

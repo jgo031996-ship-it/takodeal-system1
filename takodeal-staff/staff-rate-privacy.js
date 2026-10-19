@@ -1,5 +1,7 @@
 import {VaultSession} from './staff-privacy.js';
+import {staffRateForDate,loadStaffSalaryTimeline} from './staff-rate-model.js';
 export function profileDailyRate(profile) {
+    if(profile?.salaryRateVersion===1){try{return staffRateForDate(profile);}catch{return null;}}
     const value=profile?.hourlyRate ?? profile?.dailyRate;
     if(value==null || String(value).trim()==='')return null;
     const rate=Number(value);return Number.isFinite(rate) && rate>=0?rate:null;
@@ -32,6 +34,10 @@ export function installStaffRatePrivacy(api,d,storage,{now=()=>Date.now(),setInt
     }
     function reveal(id,profile) {
         if(identity()!==id || !visible() || profileId!==id)return false;
+        if(profile?.salaryRateVersion===1&&!profile.salaryRateTimeline){
+            const token=epoch;text('profileRateState','Confirming private salary history…');
+            return loadStaffSalaryTimeline(api,{...profile,staffId:id}).then(fresh=>epoch===token?reveal(id,fresh):false).catch(()=>{if(epoch===token&&identity()===id){text('profileDailyRate','Unavailable');text('profileRateState','Use your approved Staff phone and reconnect to confirm salary.');if(waiting){waiting.resolve(false);waiting=null;}}return false;});
+        }
         session.unlock(id);const rate=profileDailyRate(profile);
         text('profileDailyRate',rate==null?'Rate not yet set':'₱'+rate.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})+' / day');
         text('profileRateState','Unlocked · locks in 2 minutes');if($('profileRateUnlock'))$('profileRateUnlock').hidden=true;if($('profileRateLock'))$('profileRateLock').hidden=false;

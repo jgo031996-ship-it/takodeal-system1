@@ -7,6 +7,7 @@ import {dailyStaffRate,staffProfileOperation,saveStaffProfileAtomic,staffRateHis
 import {configuredPermissions} from '../takodeal-manager/workspace-access-model.js';
 import {profileDailyRate,installStaffRatePrivacy} from '../takodeal-staff/staff-rate-privacy.js';
 import {VaultSession,createPinVerifier,verifyPin,validVaultPin,validVerifier,attendanceHistory,escapeHtml} from '../takodeal-staff/staff-privacy.js';
+import {staffRateForDate} from '../takodeal-manager/staff-rate-model.js';
 const manager=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 const portal=readFileSync(new URL('../takodeal-staff/staff-portal.js',import.meta.url),'utf8').replace(/^import[^\n]+\n/gm,'').replace('export function','function');
 function rateFixture() {
@@ -139,8 +140,8 @@ test('a Payslip PIN changed on another device or account switch during the unloc
 test('actual Manager staff-save route keeps new profile IDs stable after a lost acknowledgment and records no first-save raise',async()=>{
     const h=rateFixture(),nodes=new Map();let nextId=0;const el=id=>{if(!nodes.has(id))nodes.set(id,{value:'',disabled:false,checked:false,style:{}});return nodes.get(id);};
     const api=h.api,doc=api.doc;api.doc=(...args)=>args.length===1?h.ref(args[0].table,'new-'+(++nextId)):doc(...args);api.globalStaffData={};api.staffProfileBaseline={id:'',exists:false,rate:null};api.loadHRModule=()=>{};
-    const values={empProfileId:'',empFullName:'New Staff',empBranchAssign:'Maa',empHourlyRate:'450',empRole:'Crew',empPin:'1111',empNightDiffRate:'0',profEmpId:'S001'};for(const [id,value] of Object.entries(values))el(id).value=value;
-    const context={window:api,document:{getElementById:el,querySelectorAll:()=>[]},dailyStaffRate,staffProfileOperation,saveStaffProfileAtomic,Swal:{fire(){}},console:{error(){}},Date};const start=manager.indexOf('window.saveEmployeeProfile ='),end=manager.indexOf('\n};',start)+3;vm.runInNewContext(manager.slice(start,end),context);
+    const values={empProfileId:'',empFullName:'New Staff',empBranchAssign:'Maa',empHourlyRate:'450',empRateEffectiveDate:'2026-10-19',empRole:'Crew',empPin:'1111',empNightDiffRate:'0',profEmpId:'S001'};for(const [id,value] of Object.entries(values))el(id).value=value;
+    const context={window:api,document:{getElementById:el,querySelectorAll:()=>[]},dailyStaffRate,staffRateForDate,staffProfileOperation,saveStaffProfileAtomic,Swal:{fire(){}},console:{error(){}},Date};const start=manager.indexOf('window.saveEmployeeProfile ='),end=manager.indexOf('\n};',start)+3;vm.runInNewContext(manager.slice(start,end),context);
     h.loseNextAck();await api.saveEmployeeProfile();await api.saveEmployeeProfile();assert.equal(nextId,1);assert.equal(el('empProfileId').value,'new-1');assert.equal([...h.docs.keys()].filter(path=>path.startsWith('staff_rate_changes/')).length,1);assert.equal(h.get('cashiers/new-1').latestRateRaise,null);assert.equal(el('btnSaveEmpProfile').disabled,false);
 });
 

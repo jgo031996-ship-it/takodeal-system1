@@ -45,7 +45,8 @@ test('legacy operational authority remains while new rate metadata is protected'
     // authorization and atomic-link requirements; they must not inherit the
     // preceding unrestricted update grant.
     assert.match(profile, /allow update: if !request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasAny\(\['rateHistory'\]\)/);
-    assert.match(profile, /!request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasAny\(\['latestRateRaise', 'staffRateAuditId'\]\)/);
+    assert.match(profile, /affectedKeys\(\)\.hasAny\(\['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision'\]\)/);
+    assert.match(profile, /resource\.data\.get\('salaryRateVersion',0\) == 1 && request\.resource\.data\.diff\(resource\.data\)\.affectedKeys\(\)\.hasAny\(\['hourlyRate','dailyRate','branch'\]\)/);
     assert.match(profile, /staffRateProfileLink\(cashierId, resource\.data, request\.resource\.data\)/);
     assert.doesNotMatch(profile, /allow (?:read, )?update: if true/);
     assert.match(legacy, /match \/hq_email_access\/\{email\}[\s\S]*?allow write: if offlineOwner\(\);/);

@@ -439,6 +439,8 @@
   <meta name="theme-color" content="#173f32">
   <link rel="stylesheet" href="manager-theme.css?v=20261004">
   <link rel="stylesheet" href="pos-settings-policy.css?v=20261018">
+  <link rel="stylesheet" href="notice-form.css?v=20261019">
+  <link rel="stylesheet" href="early-time-out-review.css?v=20261019">
   <link rel="stylesheet" href="leave-ui.css?v=20261018">
   <link rel="stylesheet" href="manager-workspace.css?v=20261004">
   <link rel="stylesheet" href="employee-id.css?v=20261004">
@@ -5613,6 +5615,9 @@
                 <div>
                     <label style="font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Daily Rate (₱) *</label>
                     <input type="number" id="empHourlyRate" placeholder="e.g. 450" style="width: 100%; padding: 12px; border: 2px solid #16a34a; background: white; border-radius: 6px; box-sizing: border-box; font-weight: 900; color: #15803d; font-size: 18px; outline: none;">
+                    <label for="empRateEffectiveDate" style="display:block;margin:12px 0 5px;font-size:12px;font-weight:700;color:#526b59">Salary effective date *</label>
+                    <input type="date" id="empRateEffectiveDate" required aria-describedby="empRateEffectiveHelp" style="width:100%;padding:11px;border:1px solid #d2dfd2;border-radius:6px;color:#244b35;background:white">
+                    <p id="empRateEffectiveHelp" style="font-size:11px;line-height:1.5;color:#71816e;margin-top:6px">This rate starts on the selected Philippine work date. Earlier shifts keep their previous rate; saved paid payslips stay unchanged.</p>
                 </div>
                 <div>
                     <label style="font-size: 12px; font-weight: 800; color: #64748b; margin-bottom: 5px; display: block;">Login Password *</label>
@@ -6419,26 +6424,19 @@
       </div>
   </div>
 
-  <div id="issueSanctionModal" class="overlay" style="display:none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; justify-content:center; align-items:center; z-index: 10005; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);">
-      <div style="background: white; width: 500px; max-width: 90%; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
-          <div style="background: #b91c1c; padding: 20px; color: white; display: flex; justify-content: space-between; align-items: center;">
-              <h2 style="margin: 0; font-size: 18px;">📝 Issue Notice to Explain (NTE)</h2>
-              <span onclick="document.getElementById('issueSanctionModal').style.display='none'" style="cursor: pointer; font-size: 24px; font-weight: bold;">&times;</span>
-          </div>
-          
-          <div style="padding: 20px; flex: 1; overflow-y: auto; text-align: left;">
-              <p style="font-size: 13px; color: #64748b; margin-top: 0;">Keep the issue date on record and choose when this notice becomes effective. Staff can end an active shift while a reply is pending.</p>
-  
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">Select Staff Member:</label>
-              <select id="sanctionStaffSelect" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;"></select>
-              <label style="font-size:12px;font-weight:bold;color:#475569;">Effective date (Philippine time)</label>
-              <input type="date" id="sanctionEffectiveDate" class="input-box" style="width:100%;margin-bottom:12px;">
-              <label style="font-size:12px;font-weight:bold;color:#475569;">Linked payroll penalty (₱, optional)</label>
-              <input type="number" id="sanctionPenaltyAmount" min="0" step="0.01" value="0" class="input-box" style="width:100%;margin-bottom:12px;">
-              <p style="font-size:12px;color:#64748b;">A penalty uses the same effective date and appears separately in unpaid payroll estimates. Paid payslips stay as saved.</p>
-  
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">Incident Type:</label>
-              <select id="sanctionType" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;" onchange="window.handleCustomDropdown(this)">
+  <div id="issueSanctionModal" class="overlay notice-form-overlay" style="display:none;">
+    <div class="notice-form-dialog" role="dialog" aria-modal="true" aria-labelledby="issueSanctionTitle" aria-describedby="issueSanctionDescription" tabindex="-1">
+      <header class="notice-form-header">
+        <div><small>HUMAN RESOURCES · DISCIPLINARY NOTICE</small><h2 id="issueSanctionTitle">Issue notice to explain</h2></div>
+        <button type="button" class="notice-form-close" data-notice-close aria-label="Close notice form" onclick="document.getElementById('issueSanctionModal').style.display='none'">×</button>
+      </header>
+      <div class="notice-form-scroll">
+        <p id="issueSanctionDescription" class="notice-form-help">Record the incident and choose when this notice takes effect. Review all details before issuing.</p>
+        <section class="notice-form-section" aria-labelledby="noticeStaffHeading">
+          <h3 id="noticeStaffHeading" class="notice-form-section-heading">Staff &amp; incident</h3>
+          <div class="notice-form-field"><label for="sanctionStaffSelect" class="notice-form-label">Staff member</label><select id="sanctionStaffSelect" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;"></select></div>
+          <div class="notice-form-grid">
+            <div class="notice-form-field"><label for="sanctionType" class="notice-form-label">Incident type</label><select id="sanctionType" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;" onchange="window.handleCustomDropdown(this)">
                   <option value="Cash Shortage / Mishandling">Cash Shortage / Mishandling</option>
                   <option value="Tardiness / Unexcused Absence">Tardiness / Unexcused Absence</option>
                   <option value="Insubordination / Attitude">Insubordination / Attitude</option>
@@ -6446,10 +6444,8 @@
                   <option value="Customer Complaint">Customer Complaint</option>
                   <option value="Other / Miscellaneous">Other / Miscellaneous</option>
                   <option value="ADD_NEW" style="font-weight: 900; color: #0ea5e9;">➕ Add Custom Incident Type...</option>
-              </select>
-  
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">Severity Level:</label>
-              <select id="sanctionSeverity" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;" onchange="window.handleCustomDropdown(this)">
+              </select></div>
+            <div class="notice-form-field"><label for="sanctionSeverity" class="notice-form-label">Severity level</label><select id="sanctionSeverity" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;" onchange="window.handleCustomDropdown(this)">
                   <option value="1st Offense - Verbal Warning">1st Offense - Verbal Warning</option>
                   <option value="2nd Offense - Written Warning">2nd Offense - Written Warning</option>
                   <option value="3rd Offense - 1 Day Suspension">3rd Offense - 1 Day Suspension</option>
@@ -6458,23 +6454,26 @@
                   <option value="6th Offense - 14 Days Suspension">6th Offense - 14 Days Suspension</option>
                   <option value="7th Offense - Termination Notice">7th Offense - Termination Notice</option>
                   <option value="ADD_NEW" style="font-weight: 900; color: #0ea5e9;">➕ Add Custom Severity Rule...</option>
-              </select>
-  
-              <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 5px;">
-                  <label style="font-size: 12px; font-weight: bold; color: #475569;">Incident Details (Be Specific):</label>
-                  <button type="button" onclick="window.generateAiNteLetter()" style="background: #8b5cf6; color: white; border: none; padding: 4px 10px; border-radius: 6px; font-size: 10px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(139, 92, 246, 0.3); transition: 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'">✨ Smart Auto-Draft</button>
-              </div>
-              <textarea id="sanctionDetails" placeholder="Type a short summary of the violation here, then click '✨ Smart Auto-Draft' to automatically convert it into a formal legal letter..." style="width: 100%; height: 80px; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none; resize: vertical; font-family: inherit; box-sizing: border-box;"></textarea>
-
-              <label style="font-size: 12px; font-weight: bold; color: #475569;">Upload Evidence / Proof 📸 (Optional):</label>
-              <input type="file" id="sanctionEvidencePhoto" accept="image/*" class="input-box" style="width: 100%; padding: 7px; margin-bottom: 10px; border: 1px dashed #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 12px;">
+              </select></div>
           </div>
-  
-          <div style="padding: 15px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 10px;">
-              <button onclick="document.getElementById('issueSanctionModal').style.display='none'" style="padding: 10px 20px; border-radius: 6px; border: 1px solid #cbd5e1; background: white; font-weight: bold; cursor: pointer; color: #475569;">Cancel</button>
-              <button id="btnSaveSanction" onclick="window.submitNewSanction()" style="padding: 10px 20px; border-radius: 6px; border: none; background: #b91c1c; color: white; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(185, 28, 28, 0.3);">🚀 Issue Digital Notice</button>
+        </section>
+        <section class="notice-form-section" aria-labelledby="noticeTimingHeading">
+          <h3 id="noticeTimingHeading" class="notice-form-section-heading">Timing &amp; optional penalty</h3>
+          <div class="notice-form-grid">
+            <div class="notice-form-field"><label for="sanctionEffectiveDate" class="notice-form-label">Effective date</label><input type="date" id="sanctionEffectiveDate" class="input-box" aria-describedby="noticeEffectiveHelp"><small id="noticeEffectiveHelp" class="notice-form-help">Philippine calendar date</small></div>
+            <div class="notice-form-field"><label for="sanctionPenaltyAmount" class="notice-form-label">Linked payroll penalty · optional</label><div class="notice-form-money"><span aria-hidden="true">₱</span><input type="number" id="sanctionPenaltyAmount" min="0" step="0.01" value="0" inputmode="decimal" class="input-box" aria-describedby="noticePenaltyHelp"></div></div>
           </div>
+          <p id="noticePenaltyHelp" class="notice-form-help">If applicable, a penalty uses this effective date and appears separately in unpaid payroll estimates. Paid payslips stay as saved.</p>
+        </section>
+        <section class="notice-form-section" aria-labelledby="noticeDetailsHeading">
+          <h3 id="noticeDetailsHeading" class="notice-form-section-heading">Details &amp; evidence</h3>
+          <div class="notice-form-actions"><label for="sanctionDetails" class="notice-form-label">Incident details</label><button type="button" class="notice-form-draft" onclick="window.generateAiNteLetter()">Draft notice</button></div>
+          <textarea id="sanctionDetails" rows="5" placeholder="Describe what happened, when it happened and the facts to be reviewed. You can use Draft notice to help prepare the wording."></textarea>
+          <div class="notice-form-field"><label for="sanctionEvidencePhoto" class="notice-form-label">Evidence photo · optional</label><input type="file" id="sanctionEvidencePhoto" accept="image/*" class="input-box notice-form-upload"></div>
+        </section>
       </div>
+      <footer class="notice-form-footer"><button type="button" class="notice-form-secondary" data-notice-close onclick="document.getElementById('issueSanctionModal').style.display='none'">Cancel</button><button type="button" class="notice-form-primary" id="btnSaveSanction" onclick="window.submitNewSanction()">Issue notice</button></footer>
+    </div>
   </div>
 
   <!-- 🏢 BRANCH REMITTANCE HISTORY MODAL -->
@@ -6608,6 +6607,10 @@
   </script>
   <script type="module" src="auth.js?v=staff-pos-repair-20261008-r12"></script>
   <script type="module" src="owner-pos-settings-access.js?v=20261018"></script>
+  <script type="module">
+    import {installNoticeFormLayout} from './notice-form-layout.js?v=20261019';
+    installNoticeFormLayout();
+  </script>
 
   
   <dialog id="masterStaffDocumentPreview" class="staff-document-preview"><div class="document-section-heading"><h3 id="masterStaffDocumentPreviewTitle">Document photo</h3><button type="button" id="masterStaffDocumentPreviewClose">Close</button></div><img id="masterStaffDocumentPreviewImage" alt="Private employee document"></dialog>

@@ -5,6 +5,8 @@ import vm from 'node:vm';
 import * as payroll from '../takodeal-staff/payroll-safety.js';
 import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
 import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js';
+import {prepareEarlyTimeOut} from '../takodeal-staff/early-time-out-ui.js';
+import {createEarlyTimeOutService} from '../takodeal-staff/early-time-out-actions.js';
 
 const source=readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
 const start=source.indexOf('window.punchTime = async function');
@@ -59,7 +61,7 @@ function harness({late=true}={}) {
         }return {isConfirmed:true};},close(){},showLoading(){},showValidationMessage(message){events.push('validation');alerts.push(['Validation',message]);}};
     const document={hidden:false,getElementById:node,querySelector:()=>null,querySelectorAll:()=>[]};
     node('view-timeclock').classList={contains:value=>value==='active'};
-    vm.runInNewContext(handler,{...api,...payroll,...reconciliation,createScheduleHistoryStore,window,auth:window.auth,localStorage,document,Swal,Date:ClockDate,console:{error(){},warn(){},log(){}}});
+    vm.runInNewContext(handler,{...api,...payroll,...reconciliation,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clockMs)})}),window,auth:window.auth,localStorage,document,Swal,Date:ClockDate,console:{error(){},warn(){},log(){}}});
     return Object.assign(h,{window,punch:type=>window.punchTime(type),advance:milliseconds=>{clockMs+=milliseconds;}});
 }
 
@@ -172,11 +174,11 @@ test('the proof upload timeout is not reused for attendance commit: pending ackn
     gate.resolve();await pending;assert.equal(h.batches.length,1);assert.equal(h.writes.length,2);assert.equal(h.window.staffPunchBusy,false);
 });
 
-test('Staff Time Out does not upload a late proof or require a camera, and keeps deterministic cross-app closure',async()=>{
-    const h=harness();h.records.set('attendance_logs/cashier-start',{staffName:profile.cashierName,staffId:'staff-id',branch:'Maa',type:'TIME IN',sourceApp:'cashier',timestamp:new Date('2026-10-06T01:15:00+08:00')});
+test('normal scheduled Staff Time Out does not upload a late proof or require a camera, and keeps deterministic cross-app closure',async()=>{
+    const h=harness();h.records.set('attendance_logs/cashier-start',{staffName:profile.cashierName,staffId:'staff-id',branch:'Maa',type:'TIME IN',sourceApp:'cashier',timestamp:new Date('2026-10-06T01:15:00+08:00'),scheduleSnapshot:{version:1,source:'clock-in',branch:'Maa',staffName:profile.cashierName,clockInAt:'2026-10-05T17:15:00.000Z',expectedStartAt:'2026-10-05T17:15:00.000Z',expectedEndAt:'2026-10-06T01:15:00.000Z',shiftId:'saved-night',wasScheduled:true,needsScheduleReview:false,scheduleRevisionId:'saved-original'}});
     h.records.set('sop_logs/synthetic-sop',{staffName:profile.cashierName,staffId:'staff-id',branch:'Maa',timeInLogId:'cashier-start',timestamp:new Date('2026-10-06T08:45:00+08:00')});
     h.window.uploadAttendanceProof=()=>{throw Error('Time Out must never upload a late proof.');};h.camera=()=>{throw Error('Camera is optional for Time Out.');};
-    await h.punch('TIME OUT');assert.equal(h.uploadCalls.length,0);assert.equal(h.batches.length,0);assert.equal(h.transactions.length,1);assert.equal(h.writes.length,1);
+    await h.punch('TIME OUT');assert.equal(h.uploadCalls.length,0);assert.equal(h.batches.length,0);assert.equal(h.transactions.length,2);assert.equal(h.transactions[0].length,0);assert.equal(h.writes.length,1);assert.equal([...h.records.keys()].some(path=>path.startsWith('staff_requests/')),false);
     const ended=h.records.get(h.writes[0]);assert.equal(ended.type,'TIME OUT');assert.equal(ended.timeInLogId,'cashier-start');assert.equal(ended.sourceApp,'staff');assert.equal(ended.photoBase64,'');
     await h.punch('TIME OUT');assert.equal(h.writes.length,1);assert.equal(h.alerts.at(-1)[0],'Already Timed Out');
 });

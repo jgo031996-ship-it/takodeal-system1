@@ -1,4 +1,4 @@
-const CACHE = 'takodeal-franchise-workspace-shift-amendment-20261017-r1';
+const CACHE = 'takodeal-franchise-workspace-hr-attendance-20261019-r1';
 const CORE=['./','index.html','style.css','main_franchise.js','auth.js','franchise-data.js','franchise-actions.js','franchise-workspace.js','payroll-safety.js','schedule-history.js','dispatch-safety.js','unlock-gate.js','hq-account-model.js','manifest.json','logo.jpg','icon-192.png','icon-512.png'];
 CORE.push('franchise-reads.js');
 CORE.push('attendance-reconcile.js','payroll-attendance.js');
@@ -20,3 +20,5 @@ self.addEventListener('fetch',event=>{
 CORE.push("operations-model.js","franchise-cost-model.js","franchise-supply-actions.js","franchise-staff-actions.js","staff-rate-changes.js");
 
 CORE.push("shift-amendments.js");
+
+CORE.push('staff-rate-model.js');

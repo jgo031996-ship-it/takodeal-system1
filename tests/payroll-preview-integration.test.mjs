@@ -26,6 +26,7 @@ function harness(options={}){
  const records={cashiers:[person],staff_ledger:[],payroll_records:[],attendance_logs:logs(16),staff_deductions:[],staff_bonuses:[]};
  const snapshot=(rows,metadata={fromCache:false,hasPendingWrites:false})=>{const docs=rows.map((row,index)=>({id:row.id||String(index),metadata:{fromCache:false,hasPendingWrites:false},data:()=>row}));return {docs,metadata,forEach:fn=>docs.forEach(fn)};};
  const api={db:{},auth:{currentUser:{...owner}},sessionUser:{...owner,isOwner:true,isFranchisee:false,permissions:['all'],allowedBranches:['All']},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),where:(field,op,value)=>({field,op,value}),orderBy:()=>({}),query:(ref,...filters)=>({...ref,filters}),getDocs:async()=>assert.fail('Default cached getDocs must never be called for payroll preview'),getDocsFromServer:async ref=>{calls.push(ref);return options.read?options.read(ref,{snapshot,records,logs}):snapshot(records[ref.table]||[]);},getDoc:async()=>({exists:()=>true,data:()=>plan}),isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>schedule.assembleScheduleHistory(plan),ManagerUI:{notify:message=>events.push(message)},liveAccounts:[{id:'sample-account',name:'Sample Cash',balance:5000}],globalPayrollCache:{Old:{name:'Old'}},currentPayslipData:{name:'Old'},updateDoc:async()=>writes.push('update'),addDoc:async()=>writes.push('add')};
+ api.getDocFromServer=async ref=>{if(options.readDoc)return options.readDoc(ref,{records});const row=(records[ref.table]||[]).find(item=>item.id===ref.id||item.staffId===ref.id);return {exists:()=>!!row,data:()=>row,metadata:{fromCache:false,hasPendingWrites:false}};};
  const Swal={fire:async(...args)=>{events.push(args);return options.confirm?options.confirm(...args):{isConfirmed:false};},showValidationMessage:message=>events.push(message)};
  const document={getElementById:node,querySelectorAll:()=>[]};
  const context=vm.createContext({...api,...payroll,...schedule,...sanctions,...freshness,...preview,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
@@ -43,3 +44,39 @@ for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
 
 test('actual modal and payment handlers deny a stale preview before rendering a payslip or opening a payment dialog',async()=>{const h=harness();await h.w.loadPayrollGenerator();const old=h.w.globalPayrollCache['Sample Staff'];h.node('payrollEnd').value='2030-01-17';await h.w.openPayslipModal('Sample Staff');assert.equal(h.w.currentPayslipData,null);assert.equal(h.node('payslipModal').style.display,'none');h.w.currentPayslipData=old;await h.w.finalizePayslip();assert.equal(h.writes.length,0);assert.ok(h.events.some(event=>Array.isArray(event)&&/Refresh unpaid payslip/.test(event[0])));});
 test('an existing payment confirmation cannot write after the cutoff changes underneath it',async()=>{const gate=held();let confirmation=false;const h=harness({confirm:async options=>{if(options?.title==='💸 Disburse Payroll'){confirmation=true;return gate.promise;}return {isConfirmed:false};}});await h.w.generateAutoPayslips();h.w.currentPayslipData=h.w.globalPayrollCache['Sample Staff'];h.node('psNetPay').innerText='450.00';for(const id of ['psLoans','psAdvance','psFoods'])h.node(id).innerText='0';const work=h.w.finalizePayslip();for(let n=0;n<20&&!confirmation;n++)await tick();assert.equal(confirmation,true);h.node('payrollEnd').value='2030-01-17';h.node('payrollEnd').emit('change');gate.resolve({isConfirmed:true,value:'0'});await work;assert.equal(h.writes.length,0);assert.equal(h.node('btnFinalizePayslip').disabled,true);});
+
+function datedSalary(h){
+ Object.assign(h.person,{hourlyRate:500,salaryRateVersion:1,salaryRateRevision:'raise'});
+ h.records.staff_salary_rates=[{id:'person-a',staffId:'person-a',branch:h.person.branch,version:1,revision:1,revisionId:'raise',baselineDailyRate:450,rates:{raise:{effectiveDate:'2030-01-17',dailyRate:500,sequence:1}}}];
+}
+for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
+ test(generator+': dated salary keeps the earlier cutoff old and splits a mixed cutoff per shift',async()=>{
+  const h=harness();datedSalary(h);await h.w[generator]();assert.equal(h.w.globalPayrollCache['Sample Staff'].basicPay,450);
+  h.node('payrollEnd').value='2030-01-17';h.records.attendance_logs=[...h.logs(16),...h.logs(17)];await h.w[generator]();
+  const d=h.w.globalPayrollCache['Sample Staff'];assert.equal(d.basicPay,950);assert.equal(d.shiftsWorked,2);assert.equal(d.logs.filter(row=>row.dailyRate===450).length,1);assert.equal(d.logs.filter(row=>row.dailyRate===500).length,1);
+  assert.equal(Object.hasOwn(d.profile,'salaryRateTimeline'),false);assert.equal(h.writes.length,0);
+ });
+ test(generator+': mixed-cutoff lateness uses each work date daily wage divided by eight',async()=>{
+  const h=harness();datedSalary(h);h.node('payrollEnd').value='2030-01-17';h.records.attendance_logs=[...h.logs(16),...h.logs(17)].map(row=>row.type==='TIME IN'?{...row,lateMinutes:30}:row);await h.w[generator]();
+  const d=h.w.globalPayrollCache['Sample Staff'];assert.equal(d.basicPay,950);assert.equal(d.lateDeduction,118.75);
+ });
+ test(generator+': post-midnight clock-in retains the previous scheduled work date wage',async()=>{
+  const h=harness();datedSalary(h);h.node('payrollEnd').value='2030-01-17';
+  h.records.attendance_logs=[{...h.logs(16)[0],timestamp:stamp('2030-01-17T00:15:00+08:00'),lateExempted:true,scheduleSnapshot:{expectedStartAt:'2030-01-16T23:00:00+08:00',expectedEndAt:'2030-01-17T07:00:00+08:00',shiftId:'night',shiftType:'night',isNightShift:true,wasScheduled:true}}, {...h.logs(16)[1],timestamp:stamp('2030-01-17T08:15:00+08:00')}];
+  await h.w[generator]();const d=h.w.globalPayrollCache['Sample Staff'];assert.equal(d.basicPay,450);assert.equal(d.logs[0].rateWorkDate,'2030-01-16');
+ });
+ test(generator+': private salary read failure holds unpaid amounts while paid snapshots stay immutable',async()=>{
+  const h=harness({readDoc:()=>{throw Error('Private salary access unavailable');}});datedSalary(h);await h.w[generator]();assert.equal(Object.keys(h.w.globalPayrollCache).length,0);assert.equal(h.writes.length,0);
+  const frozen={name:'Sample Staff',isPaid:true,basicPay:123,shiftsWorked:1,hours:8,start:'2030-01-16',end:'2030-01-16',logs:[],profile:{hourlyRate:123}};
+  h.records.payroll_records=[{id:'paid',staffName:'Sample Staff',startDate:'2030-01-16',endDate:'2030-01-16',frozenData:frozen}];await h.w[generator]();assert.equal(h.w.globalPayrollCache['Sample Staff'],frozen);assert.equal(frozen.basicPay,123);assert.equal(h.writes.length,0);
+ });
+}
+test('actual finalization refuses a changed salary revision before any cash or payroll write',async()=>{
+ const h=harness();datedSalary(h);await h.w.generateAutoPayslips();h.w.currentPayslipData=h.w.globalPayrollCache['Sample Staff'];h.person.salaryRateRevision='another-change';await h.w.finalizePayslip();
+ assert.equal(h.writes.length,0);assert.ok(h.events.some(event=>JSON.stringify(event).includes('Salary dates changed')));
+});
+
+test('actual finalization refuses a legacy preview after the first dated salary change',async()=>{
+ const h=harness();await h.w.generateAutoPayslips();h.w.currentPayslipData=h.w.globalPayrollCache['Sample Staff'];assert.equal(h.w.currentPayslipData.profile.salaryRateVersion,undefined);
+ datedSalary(h);await h.w.finalizePayslip();assert.equal(h.writes.length,0);assert.ok(h.events.some(event=>JSON.stringify(event).includes('Salary dates changed')));
+});
