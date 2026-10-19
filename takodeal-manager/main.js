@@ -38,6 +38,7 @@ import {installSanctionScheduling} from './sanction-scheduling-ui.js';
 import { generateEmployeeID } from './employee-id.js';
 import {dailyStaffRate,staffProfileOperation,saveStaffProfileAtomic,installStaffRateHistory} from './staff-rate-changes.js';
 import {installStaffSalaryDateUI} from './staff-salary-date-ui.js';
+import {installSopChecklistExport} from './sop-checklist-export-ui.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { installMenuBulk } from './menu-bulk.js';
 import { installRecipeReplacement } from './recipe-bulk.js';
@@ -27528,6 +27529,7 @@ installMonthlyBills();
 installStaffRateHistory(window,document);
 installMasterEmployeeDocuments(window,{d:document});
 installStaffSalaryDateUI(window,document);
+installSopChecklistExport(window,document);
 installCustomerHubSettings(window,document);
 
 installRiderManagementSafety(window);
