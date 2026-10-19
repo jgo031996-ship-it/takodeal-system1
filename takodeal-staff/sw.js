@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v24-hr-attendance-20261019';
+const CACHE_NAME = 'takodeal-staff-v25-clockout-finish-20261019';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./sanction-schedule.js');
 SHELL.push('./online-refund-pay.js');
@@ -38,3 +38,5 @@ self.addEventListener('fetch', event => {
 SHELL.push("./shift-amendments.js");
 
 SHELL.push('./staff-rate-model.js','./early-time-out-model.js','./early-time-out-actions.js','./early-time-out-ui.js');
+
+SHELL.push('./clock-out-schedule.js');
