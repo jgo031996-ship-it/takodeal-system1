@@ -75,6 +75,34 @@ function fixture({missingId = false, deferredHistory = false} = {}) {
     }};
 }
 
+test('confirmed employee profile updates and new staff saves close their own editor after acknowledgement', async () => {
+    for(const isNew of [false, true]) {
+        const f=fixture();
+        if(isNew) {
+            f.api.addNewStaff();
+            for(const [id,value] of Object.entries({empFullName:'New Employee',empHourlyRate:'480',empPin:'3333',profEmpId:'NEW-ID'}))f.node(id).value=value;
+        } else f.api.openEmployeeProfile('A');
+        const pending=f.api.saveEmployeeProfile();await f.waitForSave();
+        assert.equal(f.node('employeeProfileModal').style.display,'flex','pending saves keep the editor visible');
+        f.saves[0].finish();await pending;
+        assert.equal(f.node('employeeProfileModal').style.display,'none');
+        assert.equal(f.node('btnSaveEmpProfile').disabled,false);
+        assert.match(JSON.stringify(f.notices),/Staff profile (added|updated)/);
+    }
+});
+
+test('an unconfirmed profile save stays open with edits and closes only after a successful retry', async () => {
+    const f=fixture();f.api.openEmployeeProfile('A');f.node('empPhone').value='Edited phone';
+    const failed=f.api.saveEmployeeProfile();await f.waitForSave();
+    f.saves[0].fail();await failed;
+    assert.equal(f.node('employeeProfileModal').style.display,'flex');
+    assert.equal(f.node('empPhone').value,'Edited phone');
+    assert.equal(f.node('btnSaveEmpProfile').disabled,false);
+    const retry=f.api.saveEmployeeProfile();await f.waitForSave(2);
+    f.saves[1].finish();await retry;
+    assert.equal(f.node('employeeProfileModal').style.display,'none');
+});
+
 test('a slow employee ID query saves only the captured employee fields after a different employee is opened', async () => {
     const f = fixture({missingId:true});
     f.api.openEmployeeProfile('A');
