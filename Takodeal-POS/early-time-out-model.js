@@ -9,9 +9,14 @@ export function assessEarlyTimeOut(start,shift,now=new Date()){
     // A confirmed dated correction may retain a manual lateness review. Its
     // verified end time still governs clock-out; no lateness decision changes.
     const verifiedCorrection=shift?.attendanceCorrectionVerified===true&&shift?.wasScheduled===true;
-    const unknown=!shift||!verifiedCorrection&&(shift.needsScheduleReview===true||shift.amendmentNeedsReview===true)||shift.wasScheduled!==true||!Number.isFinite(end)||!Number.isFinite(expectedStart)||end<=expectedStart||end-begin>24*3600000;
-    const evidence={branch:start.branch,timeInLogId:start.id,timeInAt:new Date(begin).toISOString(),shiftId:shift?.shiftId??null,scheduledStartAt:Number.isFinite(expectedStart)?new Date(expectedStart).toISOString():null,scheduledEndAt:!unknown?new Date(end).toISOString():null,scheduleRevisionId:shift?.scheduleRevisionId||'',amendmentIds:shift?.scheduleAmendmentIds||shift?.amendmentIds||[],needsScheduleReview:unknown};
-    return {unknown,early:!unknown&&time<end,complete:!unknown&&time>=end,minutesEarly:!unknown?Math.max(0,Math.ceil((end-time)/60000)):null,...evidence,scheduleFingerprint:earlyTimeOutFingerprint(evidence)};
+    const completeOnly=shift?.clockOutCompleteOnly===true,bound=attendanceMillis(shift?.clockOutLatestFinishAt);
+    // An unassigned punch may only finish normally once EVERY plausible saved
+    // rule has ended. It can never receive an early-out approval through this path.
+    const boundComplete=completeOnly&&Number.isFinite(bound)&&Number.isFinite(expectedStart)&&bound>expectedStart&&bound>=begin&&bound-begin<=24*3600000&&time>=bound;
+    const unknown=completeOnly?!boundComplete:!shift||!verifiedCorrection&&(shift.needsScheduleReview===true||shift.amendmentNeedsReview===true)||shift.wasScheduled!==true||!Number.isFinite(end)||!Number.isFinite(expectedStart)||end<=expectedStart||end-begin>24*3600000;
+    const finish=completeOnly?bound:end;
+    const evidence={branch:start.branch,timeInLogId:start.id,timeInAt:new Date(begin).toISOString(),shiftId:shift?.shiftId??null,scheduledStartAt:Number.isFinite(expectedStart)?new Date(expectedStart).toISOString():null,scheduledEndAt:!unknown?new Date(finish).toISOString():null,scheduleRevisionId:shift?.scheduleRevisionId||'',amendmentIds:shift?.scheduleAmendmentIds||shift?.amendmentIds||[],needsScheduleReview:unknown,...(completeOnly?{clockOutCompleteOnly:true,clockOutLatestFinishAt:Number.isFinite(bound)?new Date(bound).toISOString():null,clockOutScheduleEvidence:shift.clockOutScheduleEvidence}:shift?.clockOutScheduleRecovered?{clockOutScheduleRecovered:true,clockOutScheduleEvidence:shift.clockOutScheduleEvidence}:{})};
+    return {unknown,early:!completeOnly&&!unknown&&time<end,complete:boundComplete||!unknown&&time>=finish,minutesEarly:!unknown?Math.max(0,Math.ceil((finish-time)/60000)):null,...evidence,scheduleFingerprint:earlyTimeOutFingerprint(evidence)};
 }
 export function sameEarlyTimeOutLink(row,context){return !!row&&row.staffId===context.staffId&&row.staffName===context.staffName&&row.branch===context.branch&&row.timeInLogId===context.timeInLogId&&row.timeInAt===context.timeInAt;}
 export function validEarlyTimeOutApproval(request,approval,context,now=new Date()){

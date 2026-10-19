@@ -19,7 +19,7 @@ function authority(api,actor,profile,grant,branch){
 }
 export function createEarlyTimeOutReviewService(api,{timeoutMs=25000,now=()=>new Date()}={}){
  async function read(promise){let timer;try{const result=await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Connect to HQ and reopen this time-out request.')),timeoutMs);})]);if(result.metadata?.fromCache||result.metadata?.hasPendingWrites||result.docs?.some(row=>row.metadata?.fromCache||row.metadata?.hasPendingWrites))throw Error('Confirm the saved approval account with HQ before reviewing.');return result;}finally{clearTimeout(timer);}}
- async function review(input){
+ async function invoke(action,input){
   if(!canReviewEarlyTimeOut(api))throw Error('Sign in with approved Request Inbox access to review early time-out.');
   const actor={uid:api.auth.currentUser.uid,email:api.auth.currentUser.email.toLowerCase()},key=reviewerIdentity(api);
   const guard=()=>{if(key!==reviewerIdentity(api)||!canReviewEarlyTimeOut(api))throw Error('The signed-in approval account changed. Reopen the request.');};
@@ -33,7 +33,7 @@ export function createEarlyTimeOutReviewService(api,{timeoutMs=25000,now=()=>new
    checked={profile:resolveHQAccount(profiles),grant:bridge?.exists()?bridge.data():null};authority(api,actor,checked.profile,checked.grant);
    return callback(tx);
   })};
-  return createEarlyTimeOutService(protectedAPI,{now}).review({...input,reviewer:actor,assertReviewAccess:branch=>{guard();if(!checked)throw Error('Confirm the approval account again.');authority(api,actor,checked.profile,checked.grant,branch);return true;}});
+  return createEarlyTimeOutService(protectedAPI,{now})[action]({...input,reviewer:actor,assertReviewAccess:branch=>{guard();if(!checked)throw Error('Confirm the approval account again.');authority(api,actor,checked.profile,checked.grant,branch);return true;}});
  }
- return {review};
+ return {review:input=>invoke('review',input),inspect:input=>invoke('inspectRequest',input),dismiss:input=>invoke('dismissRequest',input)};
 }

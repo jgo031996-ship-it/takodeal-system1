@@ -7,6 +7,8 @@ import {fileURLToPath} from 'node:url';
 import {saveStaffProfileAtomic, dateLegacyStaffIncrease} from '../takodeal-manager/staff-rate-changes.js';
 import {staffRateDate, staffRateForDate, staffProfileForWork} from '../takodeal-manager/staff-rate-model.js';
 import {createEarlyTimeOutService} from '../takodeal-manager/early-time-out-actions.js';
+import {createEarlyTimeOutReviewService} from '../takodeal-manager/early-time-out-review.js';
+import {createScheduleRevision} from '../takodeal-manager/schedule-history.js';
 import {attendanceEstimate} from '../takodeal-franchise/franchise-data.js';
 import {finalizeOrdinaryPayroll} from '../takodeal-manager/payroll-settlement.js';
 
@@ -624,6 +626,65 @@ async function approvalBatch(ctx, requestId, {approval = {}, requestPatch = {}, 
     return batch.commit();
 }
 
+async function finishBoundFixture() {
+    const f = await earlyFixture(), at = time => new Date(`2026-10-19T${time}:00+08:00`);
+    const plan = {currentYear: 2026, currentMonth: 10, branchConfig: {[branch]: [
+        {id: 'm1', name: 'Morning Staff 1', startTime: '09:00', endTime: '17:30', active: true},
+        {id: 'm2', name: 'Morning Staff 2', startTime: '09:30', endTime: '18:00', active: true}]},
+        currentSchedule: {19: {[branch]: {scheduled: {m1: 'Other Synthetic Crew', m2: 'UNFILLED'}, rest: ['Sample Staff'], unavailable: [], swaps: {}}}},
+        employees: [{id: staffId, name: 'Sample Staff', branch}], unavailability: {}};
+    const revision = createScheduleRevision(plan, {revisionId: 'synthetic-maa-captured', effectiveFrom: '2026-10-01', savedAt: new Date('2026-10-01T07:00:00+08:00'), cutover: '2026-10-01'});
+    await adminSet('settings/global_schedule', {...revision.snapshot, scheduleRevisionId: revision.revisionId, payrollHistoryEnforcedFrom: '2026-10-01'});
+    await adminSet('settings/schedule_month_2026_10', {month: '2026-10', revisionIds: [revision.revisionId], latestRevisionId: revision.revisionId});
+    await adminSet('settings/schedule_revision_' + revision.revisionId, revision);
+    const start = {...f.start, timestamp: Timestamp.fromDate(at('08:49')), scheduleSnapshot: {
+        version: 1, source: 'clock-in', branch, staffName: 'Sample Staff', clockInAt: at('08:49').toISOString(),
+        expectedStartAt: at('09:00').toISOString(), expectedEndAt: at('17:30').toISOString(), shiftId: 'm1',
+        wasScheduled: false, needsScheduleReview: false, scheduleRevisionId: revision.revisionId}};
+    const {id, ...source} = start; await adminSet('attendance_logs/' + id, source);
+    const input = {...f.input, start}; f.setClock(at('17:40'));
+    const request = await f.staffService.request({...input, reason: 'Synthetic unknown schedule review'});
+    return {...f, start, input, request, at, reviewService: createEarlyTimeOutReviewService(f.hqApi, {now: () => new Date(f.clock)})};
+}
+
+test('local Rules permit normal close after the complete-only bound without creating an approval or altering saved paid payroll', async () => {
+    const f = await finishBoundFixture(), db = f.hqApi.db;
+    const original = (await getDoc(doc(db, 'attendance_logs/' + f.start.id))).data(), paid = (await getDoc(doc(db, 'payroll_records/rate-frozen'))).data();
+    await assert.rejects(f.staffService.close({...f.input, attendance: f.attendance}), /could not be verified/);
+    assert.equal((await getDocs(query(collection(db, 'attendance_logs'), where('type', '==', 'TIME OUT')))).size, 0);
+    f.setClock(f.at('18:40'));
+    assert.equal((await f.staffService.inspect(f.input)).complete, true);
+    assert.equal((await getDocs(query(collection(db, 'attendance_logs'), where('type', '==', 'TIME OUT')))).size, 0, 'inspection does not create departure');
+    const result = await assertSucceeds(f.staffService.close({...f.input, attendance: {...f.attendance, timestamp: f.at('17:40')}}));
+    const out = (await getDoc(doc(db, 'attendance_logs/' + result.id))).data();
+    assert.equal(out.timestamp.toMillis(), +f.at('18:40')); assert.equal(out.earlyTimeOut, undefined);
+    assert.equal((await getDoc(doc(db, 'staff_requests/' + f.request.id))).data().status, 'Completed Normally');
+    assert.equal((await getDoc(doc(db, 'attendance_time_out_approvals/' + f.request.id))).exists(), false);
+    assert.deepEqual((await getDoc(doc(db, 'attendance_logs/' + f.start.id))).data(), original);
+    assert.deepEqual((await getDoc(doc(db, 'payroll_records/rate-frozen'))).data(), paid);
+    assert.equal((await f.staffService.close({...f.input, attendance: f.attendance})).alreadySaved, true);
+});
+
+test('local HQ review fresh-inspects the complete-only bound then dismisses only the obsolete request without clocking staff out', async () => {
+    const f = await finishBoundFixture(), db = f.hqApi.db;
+    const requestPath = 'staff_requests/' + f.request.id, pending = (await getDoc(doc(db, requestPath))).data();
+    const preview = {requestId: f.request.id, expectedRequestVersion: pending.requestVersion, expectedRequestToken: pending.requestToken};
+    await assert.rejects(f.reviewService.dismiss(preview), /still needs an attendance decision/);
+    f.setClock(f.at('18:40'));
+    const inspection = await assertSucceeds(f.reviewService.inspect(preview));
+    assert.equal(inspection.complete, true); assert.equal(inspection.clockOutCompleteOnly, true); assert.equal(inspection.closed, false);
+    assert.deepEqual((await getDoc(doc(db, requestPath))).data(), pending);
+    const result = await assertSucceeds(f.reviewService.dismiss({...preview, reviewNote: 'Verified finish has passed. Normal Time Out is available.'}));
+    assert.equal(result.decision, 'Not Required');
+    const resolved = (await getDoc(doc(db, requestPath))).data();
+    assert.equal(resolved.status, 'Not Required'); assert.equal(resolved.processedBy, 'jgo031996@gmail.com');
+    assert.equal(resolved.timeOutReview.verifiedFinishAt, f.at('18:00').toISOString()); assert.equal(resolved.timeOutReview.existingTimeOutLogId, null);
+    assert.equal((await getDoc(doc(db, 'attendance_time_out_approvals/' + f.request.id))).exists(), false);
+    assert.equal((await getDocs(query(collection(db, 'attendance_logs'), where('type', '==', 'TIME OUT')))).size, 0);
+    assert.deepEqual((await getDoc(doc(db, 'payroll_records/rate-frozen'))).data().frozenData, {dailyRate: 450, netPay: 4500});
+    assert.equal((await f.reviewService.dismiss(preview)).alreadySaved, true);
+});
+
 test('actual protected early approval closes one linked Time Out and preserves the original punch and paid payroll', async () => {
     const f = await earlyFixture(), request = await f.request();
     const original = (await getDoc(doc(f.hqApi.db, 'attendance_logs/' + f.start.id))).data();
@@ -727,7 +788,7 @@ test('expired approval and unknown schedules cannot close early or fabricate a w
     await adminSet('attendance_logs/' + f.start.id, withoutSnapshot);
     const unknown = await f.request();
     assert.equal((await getDoc(doc(f.hqApi.db, 'staff_requests/' + unknown.id))).data().requiresScheduleReview, true);
-    await assert.rejects(f.review(unknown.id), /schedule changed or cannot be verified/);
+    await assert.rejects(f.review(unknown.id), /does not identify a verified assigned shift finish/);
     await assert.rejects(f.staffService.close({...f.input, attendance: f.attendance}), /could not be verified/);
     assert.equal((await getDocs(query(collection(f.hqApi.db, 'attendance_logs'), where('type', '==', 'TIME OUT')))).size, 0);
 });
