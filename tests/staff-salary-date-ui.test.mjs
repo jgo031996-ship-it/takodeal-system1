@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {ensureSalaryEffectiveField,installStaffSalaryDateUI,legacySalaryDateMarkup} from '../takodeal-manager/staff-salary-date-ui.js';
+import {ensureSalaryEffectiveField,installStaffSalaryDateUI,legacySalaryDateMarkup,ensureSalaryDateStyles} from '../takodeal-manager/staff-salary-date-ui.js';
+test('older cached HTML loads the salary date stylesheet once, while a current page keeps its existing stylesheet',()=>{
+ for(const existing of [true,false]){const links=[],d={head:{append:node=>links.push(node)},querySelector:()=>existing||links.length?{}:null,createElement:tag=>({tag,setAttribute(key,value){this[key]=value;}})};ensureSalaryDateStyles(d);ensureSalaryDateStyles(d);assert.equal(links.length,existing?0:1);if(!existing){assert.equal(links[0].rel,'stylesheet');assert.match(links[0].href,/\/takodeal-manager\/staff-salary-date-ui\.css$/);assert.equal(links[0]['data-salary-date-style'],'true');}}
+});
 
 class Element {
  constructor(tag){this.tagName=tag.toUpperCase();this.children=[];this.parentNode=null;this.attributes=new Map();this.style={};this.dataset={};this.value='';this.open=false;this.listeners=new Map();this._html='';}
