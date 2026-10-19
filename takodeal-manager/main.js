@@ -24809,6 +24809,7 @@ window.saveEmployeeProfile = async function() {
             document.getElementById('empProfileId').value=docId;formSelection=docId;
             if(window.pendingEmployeeProfileRef===reference)window.pendingEmployeeProfileRef=null;
             window.staffProfileBaseline={id:docId,exists:true,rate:saved.profile.salaryRateVersion===1?staffRateForDate(saved.profile):dailyStaffRate(saved.profile),rateRevision:saved.profile.salaryRateRevision??null};
+            document.getElementById('employeeProfileModal').style.display='none';
             Swal.fire({toast:true,position:'top',icon:'success',title:saved.scheduled?'Salary change scheduled for '+saved.effectiveDate:wasNew?'Staff profile added':'Staff profile updated',showConfirmButton:false,timer:3000});
         }
         if(!sameActor())return;
