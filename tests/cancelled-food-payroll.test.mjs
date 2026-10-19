@@ -108,13 +108,15 @@ function paymentFixture(food) {
     const node=id=>{if(!elements.has(id))elements.set(id,{tagName:'INPUT',value:'0',innerText:'',style:{}});return elements.get(id);};
     node('psFoods').value=String(food);node('psNetPay').innerText='500.00';
     node('payrollStart').value='2026-10-01';node('payrollEnd').value='2026-10-15';
+    const staffProfile={staffId:'sample-staff',cashierName:'Sample Staff',branch:'Maa',hourlyRate:450};
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),
+        getDocFromServer:async ref=>({exists:()=>ref.table==='cashiers'&&ref.id===staffProfile.staffId,data:()=>({...staffProfile}),metadata:{fromCache:false,hasPendingWrites:false}}),
         serverTimestamp:()=>stamp(16),getDocs:async()=>({forEach:fn=>rows.forEach(row=>fn({id:row.id,data:()=>({...row})}))}),
         updateDoc:async(ref,change)=>{changes.push({ref,change});const row=rows.find(row=>ref.table==='staff_deductions'&&row.id===ref.id);if(row)Object.assign(row,change);},
         addDoc:async(ref,row)=>{records.push({table:ref.table,...row});return {id:'sample'};}};
     const paymentHistory={historyMonths:{}};
     api.auth={currentUser:{uid:'sample-payroll-owner',email:'owner@example.test'}};api.sessionUser={uid:'sample-payroll-owner',email:'owner@example.test',isOwner:true,permissions:['payroll']};
-    const window={...api,loadPayrollScheduleHistory:async()=>paymentHistory,currentPayslipData:{name:'Sample Staff',branch:'Maa',start:'2026-10-01',end:'2026-10-15'},
+    const window={...api,loadPayrollScheduleHistory:async()=>paymentHistory,currentPayslipData:{name:'Sample Staff',staffId:staffProfile.staffId,profile:{...staffProfile},branch:'Maa',start:'2026-10-01',end:'2026-10-15'},
         liveAccounts:[{id:'sample-account',name:'Sample account',balance:5000}],downloadPayslipImage(){},ManagerUI:{notify:text=>errors.push(text)}};
     window.currentPayslipData.scheduleEvidenceStamp=scheduleFreshness.payrollScheduleStamp(paymentHistory);
     const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,canOpenWorkspacePage,escapeHtml:String,window,document:{getElementById:node},Date,

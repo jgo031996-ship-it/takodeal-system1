@@ -7,11 +7,13 @@ import * as sanctions from '../Takodeal-POS/sanction-schedule.js';
 import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
 import {createScheduleHistoryStore,scheduleDateKey,monthKey,resolveScheduleForDate} from '../takodeal-staff/schedule-history.js';
 import {loadScheduleMonthView} from '../takodeal-staff/schedule-sync.js';
+import {prepareEarlyTimeOut} from '../Takodeal-POS/early-time-out-ui.js';
+import {createEarlyTimeOutService} from '../Takodeal-POS/early-time-out-actions.js';
 
 const staffSource = readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
 const cashierSource = readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8');
 const now = new Date('2026-10-06T09:02:00+08:00');
-const profile = {cashierName:'Sample Staff',scheduleNickname:'Sample',branch:'Maa',hourlyRate:500};
+const profile = {cashierName:'Sample Staff',scheduleNickname:'Sample',branch:'Maa',hourlyRate:500,pin:'test-pin'};
 const clone = value => value === undefined ? undefined : structuredClone(value);
 function schedule(month='2026-10',start='09:00',end='18:00',days=[6]) {
     const [year,number]=month.split('-').map(Number);
@@ -49,7 +51,8 @@ function dom() {
 function staffClock(h,clock) {
     const ui=dom(),fix={branch:'Maa',distance:2,accuracy:10,lat:7,lng:125,timestamp:+new Date(clock)};
     const window={...h.api,getAttendanceLocation:async()=>fix,checkActiveSanctions:async()=>false,loadMyAttendance(){},verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1,capturedAt:new Date(clock).toISOString()}}),assertAttendanceFaceFresh(){}};
-    const context={...h.api,...ui,...payroll,...reconciliation,createScheduleHistoryStore,window,Date:dateAt(clock)};
+    Object.assign(window,{Swal:ui.Swal,document:ui.document});
+    const context={...h.api,...ui,...payroll,...reconciliation,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock)};
     const start=staffSource.indexOf('window.punchTime = async function');
     vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('// 📥 STAFF REQUESTS & INBOX ENGINE',start)),context);
     return {...ui,window};
@@ -58,14 +61,15 @@ function cashierClock(h,clock,{cachedProfile=true,lastTimeInHours=null,pin='test
     const ui=dom();ui.node('clockStaffName').value=profile.cashierName;ui.node('clockStaffPin').value='test-pin';
     ui.node('timeClockModal').style.display='flex';
     let gpsDone;
-    if(lastTimeInHours!==null)h.records.set('attendance_logs/last-in',{staffId:'staff-id',staffName:profile.cashierName,branch:'Maa',type:'TIME IN',timestamp:new Date(+new Date(clock)-lastTimeInHours*3600000)});
+    if(lastTimeInHours!==null){const begin=new Date(+new Date(clock)-lastTimeInHours*3600000);h.records.set('attendance_logs/last-in',{staffId:'staff-id',staffName:profile.cashierName,branch:'Maa',type:'TIME IN',timestamp:begin,scheduleSnapshot:{version:1,source:'clock-in',branch:'Maa',staffName:profile.cashierName,expectedStartAt:begin.toISOString(),expectedEndAt:new Date(+begin+8*3600000).toISOString(),shiftId:'sample-saved-slot',wasScheduled:true,needsScheduleReview:false}});h.records.set('cashiers/staff-id',profile);}
     const window={...h.api,BRANCH_ZONES:{Maa:{lat:7,lng:125}},getDistanceInMeters:()=>2,prepareAttendanceCamera:async()=>true,verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1,capturedAt:new Date(clock).toISOString()}}),assertAttendanceFaceFresh(){},
         currentBranchStaffCache:cachedProfile?[{...profile,id:'staff-id',pin:'test-pin'}]:null};
     const api={...h.api,getDocs:async q=>{
         if(q.path==='cashiers'){const d={id:'staff-id',data:()=>({...profile,pin})};return {empty:false,docs:[d],forEach:fn=>fn(d)};}
         return h.api.getDocs(q);
     }};api.getDocsFromServer=async q=>{if(h.serverError)throw h.serverError;return api.getDocs(q);};Object.assign(window,api);
-    const context={...api,...ui,...payroll,...sanctions,...reconciliation,createScheduleHistoryStore,window,Date:dateAt(clock),
+    Object.assign(window,{Swal:ui.Swal,document:ui.document});
+    const context={...api,...ui,...payroll,...sanctions,...reconciliation,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock),
         navigator:{geolocation:{getCurrentPosition:ok=>{gpsDone=ok({coords:{latitude:7,longitude:125}});}}}};
     const start=cashierSource.indexOf('window.submitAttendance = async function');
     vm.runInNewContext(cashierSource.slice(start,cashierSource.indexOf('// 📥 STAFF REQUEST HUB (WITH INBOX)',start)),context);
@@ -160,6 +164,7 @@ test('Cashier does not save after the selected account or open Clock changes dur
 
 test('actual Cashier Time In is visible to Staff Time Out, including a completed overnight SOP, with no second closure',async()=>{
     const h=memory({'cashiers/staff-id':profile}),inClock='2026-10-06T22:00:00+08:00',outClock='2026-10-07T06:00:00+08:00';h.clock=inClock;
+    await h.store.save(schedule('2026-10','22:00','06:00',[6]),{effectiveFrom:'2026-10-06',expectedRevisionId:null});h.writes.length=0;
     const cashier=cashierClock(h,inClock);await cashier.window.submitAttendance('TIME IN');await cashier.wait();
     assert.equal(h.writes.length,1);const inRef=h.writes[0],original=clone(h.records.get(inRef));
     h.records.set('sop_logs/checklist',{staffId:'staff-id',staffName:profile.cashierName,branch:'Maa',timestamp:new Date('2026-10-06T23:45:00+08:00')});h.clock=outClock;
@@ -170,6 +175,7 @@ test('actual Cashier Time In is visible to Staff Time Out, including a completed
 });
 test('actual Staff Time In is visible to Cashier Time Out and keeps the original start untouched',async()=>{
     const h=memory({'cashiers/staff-id':profile}),inClock='2026-10-06T09:00:00+08:00',outClock='2026-10-06T17:00:00+08:00';h.clock=inClock;
+    await h.store.save(schedule('2026-10','09:00','17:00',[6]),{effectiveFrom:'2026-10-06',expectedRevisionId:null});h.writes.length=0;
     const staff=staffClock(h,inClock);await staff.window.punchTime('TIME IN');assert.equal(h.writes.length,1);const original=clone(h.records.get(h.writes[0])),startRef=h.writes[0];
     h.clock=outClock;const cashier=cashierClock(h,outClock);await cashier.window.submitAttendance('TIME OUT');await cashier.wait();assert.equal(h.writes.length,2);
     const end=h.records.get(h.writes[1]);assert.equal(end.timeInLogId,startRef.split('/').at(-1));assert.equal(end.sourceApp,'cashier');assert.deepEqual(h.records.get(startRef),original);
@@ -183,6 +189,7 @@ test('both actual clocks keep the newer shift active after a delayed linked clos
     for(const appName of ['staff','cashier']){
         const employee={staffId:'staff-id',staffName:profile.cashierName,branch:'Maa'},clock='2026-10-07T10:00:00+08:00';
         const older={...employee,type:'TIME IN',timestamp:new Date('2026-10-06T22:00:00+08:00')},newer={...employee,type:'TIME IN',timestamp:new Date('2026-10-07T02:00:00+08:00')},oldClosed={...employee,type:'TIME OUT',timeInLogId:'older',timestamp:new Date('2026-10-07T06:00:00+08:00')};
+        newer.scheduleSnapshot={version:1,source:'clock-in',branch:'Maa',staffName:profile.cashierName,expectedStartAt:newer.timestamp.toISOString(),expectedEndAt:new Date(clock).toISOString(),shiftId:'sample-newer-shift',wasScheduled:true,needsScheduleReview:false};
         const h=memory({'cashiers/staff-id':profile,'attendance_logs/older':older,'attendance_logs/newer':newer,'attendance_logs/old-closed':oldClosed,'sop_logs/current':{...employee,timeInLogId:'newer',timestamp:new Date('2026-10-07T07:30:00+08:00')}});h.clock=clock;
         const app=appName==='staff'?staffClock(h,clock):cashierClock(h,clock),punch=type=>appName==='staff'?app.window.punchTime(type):app.window.submitAttendance(type);
         await punch('TIME IN');await app.wait?.();assert.equal(h.writes.length,0,'a newer active shift must still block another Time In');

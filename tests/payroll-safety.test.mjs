@@ -257,13 +257,15 @@ function paymentFixture(food=330.25) {
     const elements=new Map();const node=id=>{if(!elements.has(id))elements.set(id,{tagName:'INPUT',value:'0',innerText:'',style:{}});return elements.get(id);};
     node('psFoods').value=String(food);node('psNetPay').innerText='500.00';
     node('payrollStart').value='2026-09-16';node('payrollEnd').value='2026-09-30';
+    const staffProfile={staffId:'sample-staff',cashierName:'Test Staff',branch:'Test',hourlyRate:450};
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),
+        getDocFromServer:async ref=>({exists:()=>ref.table==='cashiers'&&ref.id===staffProfile.staffId,data:()=>({...staffProfile}),metadata:{fromCache:false,hasPendingWrites:false}}),
         serverTimestamp:()=>stamp('10-04'),getDocs:async()=>({forEach:fn=>rows.forEach(row=>fn({id:row.id,data:()=>({...row})}))}),
         updateDoc:async(ref,change)=>{changes.push({ref,change});const row=rows.find(r=>ref.table==='staff_deductions'&&r.id===ref.id);if(row)Object.assign(row,change);},
         addDoc:async(ref,row)=>{records.push({table:ref.table,...row});return {id:'sample'};}};
     const paymentHistory={historyMonths:{}};
     api.auth={currentUser:{uid:'sample-payroll-owner',email:'owner@example.test'}};api.sessionUser={uid:'sample-payroll-owner',email:'owner@example.test',isOwner:true,permissions:['payroll']};
-    const window={...api,loadPayrollScheduleHistory:async()=>paymentHistory,currentPayslipData:{name:'Test Staff',branch:'Test',start:'2026-09-16',end:'2026-09-30'},
+    const window={...api,loadPayrollScheduleHistory:async()=>paymentHistory,currentPayslipData:{name:'Test Staff',staffId:staffProfile.staffId,profile:{...staffProfile},branch:'Test',start:'2026-09-16',end:'2026-09-30'},
         liveAccounts:[{id:'sample-account',name:'Sample account',balance:5000}],downloadPayslipImage(){},ManagerUI:{notify:text=>errors.push(text)}};
     window.currentPayslipData.scheduleEvidenceStamp=scheduleFreshness.payrollScheduleStamp(paymentHistory);
     const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,canOpenWorkspacePage,escapeHtml:String,window,document:{getElementById:node},Date,Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:e=>errors.push(e)}});

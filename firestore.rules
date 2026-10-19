@@ -501,7 +501,7 @@ service cloud.firestore {
       return event == 'increase' ? {'eventId': id, 'version': 1}
         : event == 'unchanged' ? before.get('latestRateRaise', null) : null;
     }
-    function staffRateAuditCreate(data, id) {
+    function staffRateAuditCreateV1(data, id) {
       let profile = /databases/$(database)/documents/cashiers/$(data.staffId);
       let before = exists(profile) ? get(profile).data : {};
       let after = getAfter(profile).data;
@@ -512,6 +512,7 @@ service cloud.firestore {
         && data.keys().hasAll(['version', 'staffId', 'staffName', 'branch', 'previousBranch', 'eventType',
           'fromDailyRate', 'toDailyRate', 'inputHash', 'actorUid', 'actorEmail', 'actorName', 'recordedAt'])
         && id.matches('^[A-Za-z0-9_-]{1,128}$') && data.version == 1
+        && after.get('salaryRateVersion', 0) != 1
         && data.staffId is string && data.staffId.matches('^[A-Za-z0-9_-]{1,128}$')
         && staffRateHQ(data.branch) && (!exists(profile) || staffRateHQ(before.get('branch', '')))
         && data.staffName == after.cashierName && data.branch == after.branch
@@ -527,6 +528,61 @@ service cloud.firestore {
         && data.inputHash is string && data.inputHash.matches('^[a-f0-9]{64}$')
         && data.recordedAt == request.time;
     }
+    function staffRateDatedMarker(before, data, id) {
+      return data.appliesNow
+        ? (data.eventType == 'increase' ? {'eventId': id, 'version': 1} : null)
+        : before.get('latestRateRaise', null);
+    }
+    function staffRateAuditCreateV2(data, id) {
+      let profile = /databases/$(database)/documents/cashiers/$(data.staffId);
+      let before = exists(profile) ? get(profile).data : {};
+      let after = getAfter(profile).data;
+      let salary = getAfter(/databases/$(database)/documents/staff_salary_rates/$(data.staffId)).data;
+      return data.keys().hasOnly(['version','staffId','staffName','branch','previousBranch','eventType','fromDailyRate','toDailyRate','effectiveDate','rateChange','appliesNow','rateRevision','projectionDate','projectionDailyRate','inputHash','actorUid','actorEmail','actorName','recordedAt'])
+        && data.keys().hasAll(['version','staffId','staffName','branch','previousBranch','eventType','fromDailyRate','toDailyRate','effectiveDate','rateChange','appliesNow','rateRevision','projectionDate','projectionDailyRate','inputHash','actorUid','actorEmail','actorName','recordedAt'])
+        && data.version == 2 && id.matches('^[A-Za-z0-9_-]{1,128}$')
+        && data.staffId is string && data.staffId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && staffRateHQ(data.branch) && (!exists(profile) || staffRateHQ(before.get('branch','')))
+        && data.staffName == after.cashierName && data.branch == after.branch && data.previousBranch == before.get('branch','')
+        && staffRateValid(data.fromDailyRate) && staffRateValid(data.toDailyRate) && data.toDailyRate != null
+        && (before.get('salaryRateVersion',0) == 1 || data.fromDailyRate == staffRateValue(before))
+        && data.rateChange is bool && data.eventType == (data.rateChange ? staffRateEvent(data.fromDailyRate,data.toDailyRate) : 'unchanged')
+        && data.appliesNow is bool && (!data.appliesNow || data.rateChange && data.projectionDailyRate == data.toDailyRate)
+        && data.effectiveDate is string && data.effectiveDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && data.projectionDate is string && data.projectionDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && data.projectionDailyRate is number && staffRateValid(data.projectionDailyRate) && staffRateValue(after) == data.projectionDailyRate
+        && after.salaryRateVersion == 1 && after.salaryRateRevision == id && after.staffRateAuditId == id
+        && after.get('latestRateRaise',null) == staffRateDatedMarker(before,data,id)
+        && salary.staffId == data.staffId && salary.branch == data.branch && salary.revisionId == id && salary.revision == data.rateRevision
+        && data.actorUid == request.auth.uid && data.actorEmail == request.auth.token.get('email','').lower()
+        && data.actorName is string && data.actorName.size() > 0 && data.actorName.size() <= 256
+        && data.inputHash is string && data.inputHash.matches('^[a-f0-9]{64}$') && data.recordedAt == request.time;
+    }
+    function staffRateAuditCreate(data, id) {
+      return data.get('version',0) == 2 ? staffRateAuditCreateV2(data,id) : staffRateAuditCreateV1(data,id);
+    }
+    function staffSalaryWrite(id, before, after) {
+      let auditId = after.revisionId;
+      let auditPath = /databases/$(database)/documents/staff_rate_changes/$(auditId);
+      let audit = getAfter(auditPath).data;
+      let profilePath = /databases/$(database)/documents/cashiers/$(id);
+      let priorRate = exists(profilePath) ? staffRateValue(get(profilePath).data) : null;
+      let oldRates = before.get('rates', {});
+      return after.keys().hasOnly(['version','staffId','branch','baselineDailyRate','rates','revision','revisionId','updatedAt','updatedByUid'])
+        && after.keys().hasAll(['version','staffId','branch','baselineDailyRate','rates','revision','revisionId','updatedAt','updatedByUid'])
+        && after.version == 1 && after.staffId == id && staffRateHQ(after.branch)
+        && (!before.keys().hasAny(['branch']) || staffRateHQ(before.branch))
+        && staffRateValid(after.baselineDailyRate) && after.baselineDailyRate == before.get('baselineDailyRate',priorRate)
+        && after.revision is int && after.revision == before.get('revision',0) + 1
+        && after.revisionId is string && after.revisionId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && after.rates is map && after.rates.size() <= 500
+        && !exists(auditPath) && audit.version == 2 && audit.staffId == id && audit.branch == after.branch
+        && audit.rateRevision == after.revision && audit.actorUid == request.auth.uid && audit.recordedAt == request.time
+        && (audit.rateChange ? (!oldRates.keys().hasAny([auditId]) && after.rates.size() == oldRates.size() + 1
+          && after.rates.diff(oldRates).affectedKeys().hasOnly([auditId])
+          && after.rates[auditId] == {'dailyRate':audit.toDailyRate,'effectiveDate':audit.effectiveDate,'sequence':after.revision}) : after.rates == oldRates)
+        && after.updatedAt == request.time && after.updatedByUid == request.auth.uid;
+    }
     function staffRateProfileLink(id, before, after) {
       let auditId = after.get('staffRateAuditId', '');
       let path = /databases/$(database)/documents/staff_rate_changes/$(auditId);
@@ -536,7 +592,10 @@ service cloud.firestore {
         && (!before.keys().hasAny(['branch']) || staffRateHQ(before.branch))
         && audit.staffId == id && audit.branch == after.branch
         && audit.actorUid == request.auth.uid && audit.recordedAt == request.time
-        && after.get('latestRateRaise', null) == staffRateMarker(before, audit.eventType, auditId);
+        && (audit.get('version',0) == 2
+          ? (after.get('salaryRateVersion',0) == 1 && after.salaryRateRevision == auditId
+            && after.get('latestRateRaise',null) == staffRateDatedMarker(before,audit,auditId))
+          : after.get('salaryRateVersion',0) != 1 && after.get('latestRateRaise', null) == staffRateMarker(before, audit.eventType, auditId));
     }
     match /staff_rate_changes/{auditId} {
       allow get: if (resource == null && staffRateHQAny()) || (resource != null && staffRateHQ(resource.data.branch));
@@ -544,15 +603,85 @@ service cloud.firestore {
       allow create: if staffRateAuditCreate(request.resource.data, auditId);
       allow update, delete: if false;
     }
+    match /staff_salary_rates/{staffId} {
+      allow get: if (resource == null && staffRateHQAny()) || (resource != null && (staffRateHQ(resource.data.branch) || docVaultOwn(staffId)));
+      allow list: if staffRateHQ(resource.data.branch);
+      allow create: if staffSalaryWrite(staffId,{},request.resource.data);
+      allow update: if staffSalaryWrite(staffId,resource.data,request.resource.data);
+      allow delete: if false;
+    }
     match /cashiers/{cashierId} {
       allow read: if true;
       allow create: if isHQUser() && !request.resource.data.keys().hasAny(['rateHistory'])
-        && (!request.resource.data.keys().hasAny(['latestRateRaise', 'staffRateAuditId'])
+        && (!request.resource.data.keys().hasAny(['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision'])
           || staffRateProfileLink(cashierId, {}, request.resource.data));
       allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['rateHistory'])
-        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['latestRateRaise', 'staffRateAuditId'])
+        && (!(request.resource.data.diff(resource.data).affectedKeys().hasAny(['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision'])
+          || (resource.data.get('salaryRateVersion',0) == 1 && request.resource.data.diff(resource.data).affectedKeys().hasAny(['hourlyRate','dailyRate','branch'])))
           || staffRateProfileLink(cashierId, resource.data, request.resource.data));
       allow delete: if isHQUser();
+    }
+    function earlyTimeOutHQ(branch) {
+      let email = isSignedIn() ? request.auth.token.get('email', '') : '';
+      let grant = /databases/$(database)/documents/hq_email_access/$(email);
+      return offlineOwner() || (isSignedIn() && request.auth.token.get('email_verified', false) == true
+        && exists(grant) && get(grant).data.get('active', false) == true
+        && get(grant).data.get('permissions', []) is list
+        && get(grant).data.permissions.hasAny(['all', 'payroll', 'inbox'])
+        && get(grant).data.get('allowedBranches', []) is list
+        && get(grant).data.allowedBranches.hasAny(['All', branch]));
+    }
+    function earlyTimeOutApproval(data, id) {
+      let pending = get(/databases/$(database)/documents/staff_requests/$(id)).data;
+      let reviewed = getAfter(/databases/$(database)/documents/staff_requests/$(id)).data;
+      let start = get(/databases/$(database)/documents/attendance_logs/$(data.timeInLogId)).data;
+      let person = get(/databases/$(database)/documents/cashiers/$(data.staffId)).data;
+      return earlyTimeOutHQ(data.branch)
+        && data.keys().hasOnly(['schemaVersion', 'requestId', 'requestVersion', 'requestToken', 'decision',
+          'staffId', 'staffName', 'branch', 'timeInLogId', 'timeInAt', 'scheduledEndAt', 'scheduleFingerprint',
+          'requestedDepartureAt', 'reviewedByUid', 'reviewedByEmail', 'reviewedAt', 'validUntil', 'reviewNote'])
+        && data.keys().hasAll(['schemaVersion', 'requestId', 'requestVersion', 'requestToken', 'decision',
+          'staffId', 'staffName', 'branch', 'timeInLogId', 'timeInAt', 'scheduledEndAt', 'scheduleFingerprint',
+          'requestedDepartureAt', 'reviewedByUid', 'reviewedByEmail', 'reviewedAt', 'validUntil', 'reviewNote'])
+        && data.schemaVersion == 1 && data.requestId == id && id.matches('^early-[a-f0-9]{64}$')
+        && data.requestVersion is int && data.requestVersion > 0
+        && data.requestToken is string && data.requestToken.matches('^[A-Za-z0-9_-]{8,120}$')
+        && data.decision in ['Approved', 'Rejected'] && pending.type == 'Early Time Out'
+        && pending.status == 'Pending' && reviewed.status == data.decision
+        && data.requestVersion == pending.requestVersion && data.requestToken == pending.requestToken
+        && data.staffId == pending.staffId && data.staffName == pending.staffName && data.branch == pending.branch
+        && data.timeInLogId == pending.timeInLogId && data.timeInAt == pending.timeInAt
+        && data.scheduledEndAt == pending.scheduledEndAt && data.scheduleFingerprint == pending.scheduleFingerprint
+        && data.requestedDepartureAt == pending.requestedDepartureAt
+        && reviewed.diff(pending).affectedKeys().hasOnly(['status', 'processedAt', 'processedBy', 'managerReply', 'staffAcknowledged'])
+        && reviewed.processedAt == request.time && reviewed.processedBy == request.auth.token.email
+        && reviewed.managerReply == data.reviewNote && reviewed.staffAcknowledged == false
+        && data.staffId is string && data.staffName is string && data.branch is string
+        && data.timeInLogId is string && data.timeInAt is string && data.scheduleFingerprint is string
+        && start.type == 'TIME IN' && start.branch == data.branch && start.timestamp is timestamp
+        && start.get('deleted', false) != true && !(start.get('status', '') in ['Voided', 'Cancelled'])
+        && (start.get('staffId', '') == data.staffId || (start.get('staffId', '') == '' && start.staffName == person.cashierName))
+        && person.cashierName == data.staffName && person.get('active', true) != false
+        && person.get('archived', false) != true && person.get('blocked', false) != true
+        && !(person.get('status', '') in ['Blocked', 'Revoked', 'Terminated', 'Resigned', 'Inactive', 'Disabled', 'Archived', 'Deleted'])
+        && data.reviewedByUid == request.auth.uid && data.reviewedByEmail == request.auth.token.email
+        && data.reviewedAt == request.time && data.reviewNote is string && data.reviewNote.size() <= 1500
+        && (data.decision == 'Rejected' ? data.validUntil == null
+          : data.scheduledEndAt is string && data.validUntil is timestamp && data.validUntil > request.time
+            && data.validUntil <= request.time + duration.value(30, 'm')
+            && data.validUntil <= start.timestamp + duration.value(24, 'h'));
+    }
+    // PIN-based attendance clients may read only a known request's decision.
+    // They cannot manufacture an authoritative HQ approval through staff_requests.
+    match /attendance_time_out_approvals/{requestId} {
+      allow get: if true;
+      allow list, delete: if false;
+      allow create: if earlyTimeOutApproval(request.resource.data, requestId);
+      allow update: if earlyTimeOutApproval(request.resource.data, requestId)
+        && request.resource.data.requestVersion > resource.data.requestVersion
+        && request.resource.data.staffId == resource.data.staffId
+        && request.resource.data.branch == resource.data.branch
+        && request.resource.data.timeInLogId == resource.data.timeInLogId;
     }
     match /staff_requests/{reqId} { allow read, create, update: if true; allow delete: if isHQUser(); }
     match /hr_sanctions/{sanctionId} { allow read, create, update: if true; allow delete: if isHQUser(); }

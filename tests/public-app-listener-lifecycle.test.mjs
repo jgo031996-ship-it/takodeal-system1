@@ -6,6 +6,7 @@ import * as payroll from '../takodeal-staff/payroll-safety.js';
 import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js';
 import * as sanctions from '../takodeal-staff/sanction-schedule.js';
 import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
+import {prepareEarlyTimeOut} from '../Takodeal-POS/early-time-out-ui.js';
 import {riderRuntime} from './helpers/rider-runtime-harness.mjs';
 
 const staff = readFileSync(new URL('../takodeal-staff/app.js', import.meta.url), 'utf8').replace(/\r\n/g,'\n');
@@ -36,7 +37,7 @@ function harness() {
     const addEventListener=(name,callback)=>{if(!events.has(name))events.set(name,[]);events.get(name).push(callback);};
     const window={...api,addEventListener,location:{reload(){}},initStaffAppSignaturePad(){},playNotificationPing(){},loadMyAttendance(){},
         getAttendanceLocation:async()=>({branch:'Maa',distance:1,accuracy:10,lat:7,lng:125,timestamp:Date.now()}),verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1}}),assertAttendanceFaceFresh(){}};
-    const context={...api,...payroll,...sanctions,...reconciliation,createScheduleHistoryStore,window,localStorage,document:{getElementById:node,addEventListener,querySelector:()=>null,querySelectorAll:()=>[]},
+    const context={...api,...payroll,...sanctions,...reconciliation,createScheduleHistoryStore,prepareEarlyTimeOut,window,localStorage,document:{getElementById:node,addEventListener,querySelector:()=>null,querySelectorAll:()=>[]},
         console:{error(){},warn(){},log(){}},Date,
         setInterval:(fn,delay)=>{const id=++sequence;intervals.set(id,{fn,delay});return id;},clearInterval:id=>intervals.delete(id),
         setTimeout:(fn,delay)=>{const id=++sequence;timeouts.set(id,{fn,delay});return id;},clearTimeout:id=>timeouts.delete(id),
@@ -132,6 +133,7 @@ test('Staff can record Time Out without reading or requiring a reply to its due 
     const h=staffApp();h.window.startSanctionListener('Staff A');h.emit(h.subscriptions[0],[{id:'due',status:'Pending Reply'}]);
     const fixtureNow=Date.now(),sopRecordedAt=new Date(fixtureNow-5*60000);
     const start={id:'in',staffId:'a',staffName:'Staff A',branch:'Maa',type:'TIME IN',timestamp:new Date(fixtureNow-8*3600000)};h.records.set('attendance_logs/in',start);
+    start.scheduleSnapshot={version:1,source:'clock-in',branch:'Maa',staffName:'Staff A',expectedStartAt:start.timestamp.toISOString(),expectedEndAt:new Date(fixtureNow).toISOString(),shiftId:'sample-saved-shift',wasScheduled:true,needsScheduleReview:false};h.records.set('cashiers/a',{cashierName:'Staff A',pin:'sample-pin'});
     // A saved Firestore timestamp is immutable. Generating a new Date in toDate()
     // can put the SOP just ahead of the validator's already-captured clock in CI.
     const history=async q=>snapshot(q.table==='attendance_logs'?[start]:q.table==='sop_logs'?[{id:'sop',staffId:'a',staffName:'Staff A',branch:'Maa',timestamp:{toDate:()=>sopRecordedAt}}]:[]);h.window.getDocs=history;h.context.getDocs=history;

@@ -1,0 +1,186 @@
+/* Notice-entry presentation only. Printed notices and payroll stay untouched. */
+@media screen {
+  #issueSanctionModal.notice-form-overlay {
+    --notice-green: #173f32;
+    --notice-border: #dce5d9;
+    position: fixed !important;
+    top: var(--notice-viewport-top, 0px) !important;
+    left: var(--notice-viewport-left, 0px) !important;
+    width: var(--notice-viewport-width, 100%) !important;
+    height: var(--notice-viewport-height, 100vh) !important;
+    max-width: 100%;
+    box-sizing: border-box;
+    z-index: 10005;
+    padding: 12px;
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+    justify-content: center !important;
+    align-items: center !important;
+    overflow: hidden;
+    background: rgba(16, 36, 28, .58) !important;
+    backdrop-filter: blur(4px);
+    color: #233e30;
+    isolation: isolate;
+  }
+  @supports (height: 100dvh) {
+    #issueSanctionModal.notice-form-overlay { height: var(--notice-viewport-height, 100dvh) !important; }
+  }
+  #issueSanctionModal *, #issueSanctionModal *::before, #issueSanctionModal *::after { box-sizing: border-box; }
+  #issueSanctionModal .notice-form-dialog {
+    width: min(760px, 100%) !important;
+    max-width: 100% !important;
+    max-height: 100%;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    display: flex !important;
+    flex-direction: column;
+    overflow: hidden !important;
+    border: 1px solid var(--notice-border);
+    border-radius: 18px !important;
+    background: #f7f8f2 !important;
+    box-shadow: 0 24px 80px #10291d40 !important;
+    text-align: left;
+    outline: none;
+  }
+  #issueSanctionModal .notice-form-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: flex-start !important;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 20px 24px !important;
+    background: var(--notice-green) !important;
+    color: white !important;
+  }
+  #issueSanctionModal .notice-form-header > div { min-width: 0; }
+  #issueSanctionModal .notice-form-eyebrow, #issueSanctionModal .notice-form-header small { display: block; margin-bottom: 6px; color: #d7e6cd; font-size: 10px; font-weight: 650; letter-spacing: 1.5px; text-transform: uppercase; }
+  #issueSanctionModal .notice-form-header h2 { margin: 0 !important; color: inherit !important; font-size: 22px !important; line-height: 1.25; font-weight: 700; overflow-wrap: anywhere; }
+  #issueSanctionModal .notice-form-close {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0 !important;
+    border: 1px solid #ffffff40 !important;
+    border-radius: 10px !important;
+    background: #ffffff12 !important;
+    color: white !important;
+    font-family: inherit;
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  #issueSanctionModal .notice-form-scroll {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding: 20px 24px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    scroll-padding-block: 12px;
+    text-align: left;
+  }
+  #issueSanctionModal .notice-form-intro { margin: 0 0 18px; color: #627567 !important; font-size: 13px !important; line-height: 1.6; }
+  #issueSanctionModal .notice-form-scroll > .notice-form-help { display: block; margin: 0 0 18px; font-size: 13px !important; line-height: 1.6; }
+  #issueSanctionModal .notice-form-section {
+    min-width: 0;
+    margin: 0 0 14px;
+    padding: 18px;
+    border: 1px solid var(--notice-border);
+    border-radius: 12px;
+    background: white;
+  }
+  #issueSanctionModal .notice-form-section:last-child { margin-bottom: 0; }
+  #issueSanctionModal .notice-form-section h3 { margin: 0 0 16px; color: var(--notice-green); font-size: 14px; line-height: 1.4; font-weight: 700; }
+  #issueSanctionModal .notice-form-section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+  #issueSanctionModal .notice-form-section-heading h3 { margin: 0; }
+  #issueSanctionModal .notice-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  #issueSanctionModal .notice-form-field { min-width: 0; margin-bottom: 16px; }
+  #issueSanctionModal .notice-form-grid > .notice-form-field { margin-bottom: 0; }
+  #issueSanctionModal .notice-form-field:last-child { margin-bottom: 0; }
+  #issueSanctionModal label, #issueSanctionModal .notice-form-label { display: block; margin: 0 0 7px; color: #415c49 !important; font-size: 12px !important; font-weight: 650; line-height: 1.5; }
+  #issueSanctionModal .notice-form-help { margin: 7px 0 0; color: #6d7e70 !important; font-size: 12px !important; line-height: 1.55; }
+  #issueSanctionModal :is(label, p, h3, small) { overflow-wrap: anywhere; }
+  #issueSanctionModal :is(input:not([type="hidden"]), select, textarea) {
+    display: block;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    min-height: 46px;
+    margin: 0 !important;
+    padding: 10px 12px !important;
+    border: 1px solid #cbd9cb !important;
+    border-radius: 8px !important;
+    background: #fff !important;
+    color: #233e30 !important;
+    font-family: inherit;
+    font-size: 16px !important;
+    line-height: 1.4;
+    box-shadow: inset 0 1px 2px #163d2605;
+    scroll-margin-block: 12px;
+  }
+  #issueSanctionModal :is(input, select, textarea):focus-visible, #issueSanctionModal button:focus-visible {
+    outline: 2px solid #41845b !important;
+    outline-offset: 2px;
+  }
+  #issueSanctionModal :is(input, select, textarea)[aria-invalid="true"] { border-color: #b15c44 !important; }
+  #issueSanctionModal :is(input, select, textarea):disabled { background: #f2f5ed !important; color: #7a887d !important; }
+  #issueSanctionModal #sanctionEffectiveDate { appearance: none; -webkit-appearance: none; font-variant-numeric: tabular-nums; }
+  #issueSanctionModal #sanctionEffectiveDate::-webkit-date-and-time-value { min-width: 0; text-align: left; line-height: 1.4; }
+  #issueSanctionModal #sanctionEffectiveDate::-webkit-datetime-edit { min-width: 0; padding: 0; }
+  #issueSanctionModal #sanctionEffectiveDate::-webkit-calendar-picker-indicator { margin: 0 0 0 8px; opacity: .75; cursor: pointer; }
+  #issueSanctionModal .notice-form-money { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; min-width: 0; min-height: 46px; border: 1px solid #cbd9cb; border-radius: 8px; background: white; overflow: hidden; }
+  #issueSanctionModal .notice-form-money > span { padding-left: 12px; color: #6d7e70; font-size: 16px; }
+  #issueSanctionModal .notice-form-money > input { border: 0 !important; border-radius: 0 !important; font-variant-numeric: tabular-nums; box-shadow: none; }
+  #issueSanctionModal .notice-form-money:focus-within { outline: 2px solid #41845b; outline-offset: 2px; }
+  #issueSanctionModal .notice-form-money:focus-within > input { outline: none !important; }
+  #issueSanctionModal #sanctionDetails { height: 140px !important; min-height: 112px; resize: vertical; }
+  #issueSanctionModal #sanctionDetails + .notice-form-field { margin-top: 16px; }
+  #issueSanctionModal .notice-form-draft { min-height: 44px; padding: 9px 12px !important; border: 1px solid #d7e1d0 !important; border-radius: 8px !important; background: #f1f6eb !important; color: #315c3b !important; font-family: inherit; font-size: 12px; font-weight: 600; line-height: 1.4; box-shadow: none !important; transform: none !important; cursor: pointer; }
+  #issueSanctionModal .notice-form-upload { padding: 14px; border: 1px dashed #cbd9cb; border-radius: 10px; background: #fafbf7; }
+  #issueSanctionModal #sanctionEvidencePhoto { overflow: hidden; padding: 6px !important; border: 0 !important; background: transparent !important; font-size: 13px !important; }
+  #issueSanctionModal #sanctionEvidencePhoto.notice-form-upload { border: 1px dashed #cbd9cb !important; background: #fafbf7 !important; }
+  #issueSanctionModal #sanctionEvidencePhoto::file-selector-button { min-height: 36px; margin-right: 10px; padding: 6px 10px; border: 1px solid #d7e1d0; border-radius: 6px; background: #edf3e8; color: #315c3b; font: inherit; cursor: pointer; }
+  #issueSanctionModal #sanctionEvidencePhoto::-webkit-file-upload-button { min-height: 36px; margin-right: 10px; padding: 6px 10px; border: 1px solid #d7e1d0; border-radius: 6px; background: #edf3e8; color: #315c3b; font: inherit; cursor: pointer; }
+  #issueSanctionModal #autoSanctionHelper { margin: 8px 0 0 !important; padding: 9px 10px !important; border: 1px solid #e4dfc6; border-radius: 8px !important; background: #faf7e9 !important; color: #72613a !important; font-size: 12px !important; font-weight: 500 !important; line-height: 1.5; }
+  #issueSanctionModal .notice-form-footer { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding: 14px 24px !important; border-top: 1px solid var(--notice-border) !important; background: #fffef9 !important; }
+  #issueSanctionModal .notice-form-footer-note { flex: 1 1 180px; margin: 0; color: #6d7e70; font-size: 12px; line-height: 1.5; }
+  #issueSanctionModal .notice-form-actions { display: flex; justify-content: flex-end; flex: 1 1 auto; flex-wrap: wrap; gap: 8px; min-width: 0; }
+  #issueSanctionModal .notice-form-section .notice-form-actions { justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  #issueSanctionModal .notice-form-actions > button, #issueSanctionModal .notice-form-footer > button { min-width: 110px; min-height: 44px; padding: 10px 16px !important; border-radius: 8px !important; font-family: inherit; font-size: 13px; font-weight: 650; line-height: 1.4; white-space: normal; cursor: pointer; box-shadow: none !important; }
+  #issueSanctionModal .notice-form-secondary { border: 1px solid #d5dfd1 !important; background: white !important; color: #3c5945 !important; }
+  #issueSanctionModal .notice-form-primary { border: 1px solid var(--notice-green) !important; background: var(--notice-green) !important; color: white !important; }
+  #issueSanctionModal button:disabled { opacity: .6; cursor: wait; }
+  @media (max-width: 560px) {
+    #issueSanctionModal.notice-form-overlay { padding: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
+    #issueSanctionModal .notice-form-dialog { border-radius: 14px !important; }
+    #issueSanctionModal .notice-form-header { padding: 16px !important; gap: 12px; }
+    #issueSanctionModal .notice-form-header h2 { font-size: 20px !important; }
+    #issueSanctionModal .notice-form-scroll { padding: 14px 12px !important; }
+    #issueSanctionModal .notice-form-section { padding: 14px; }
+    #issueSanctionModal .notice-form-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    #issueSanctionModal .notice-form-footer { padding: 12px !important; gap: 8px; }
+    #issueSanctionModal .notice-form-footer-note { flex-basis: 100%; font-size: 11px; }
+    #issueSanctionModal .notice-form-actions { flex-basis: 100%; }
+    #issueSanctionModal .notice-form-actions > button, #issueSanctionModal .notice-form-footer > button { flex: 1 1 110px; padding-inline: 10px !important; }
+  }
+  @media (max-height: 420px) {
+    #issueSanctionModal.notice-form-overlay { padding-block: 6px; }
+    #issueSanctionModal .notice-form-header { padding: 10px 14px !important; }
+    #issueSanctionModal .notice-form-header h2 { font-size: 18px !important; }
+    #issueSanctionModal .notice-form-eyebrow, #issueSanctionModal .notice-form-header small { margin-bottom: 3px; }
+    #issueSanctionModal .notice-form-footer { padding: 8px 12px !important; gap: 6px; }
+  }
+  @media (max-height: 300px) {
+    #issueSanctionModal .notice-form-header { padding: 6px 10px !important; }
+    #issueSanctionModal .notice-form-header h2 { font-size: 16px !important; }
+    #issueSanctionModal .notice-form-eyebrow, #issueSanctionModal .notice-form-header small { margin-bottom: 2px; font-size: 8px; letter-spacing: .5px; }
+    #issueSanctionModal .notice-form-footer { padding: 6px 10px !important; }
+    #issueSanctionModal .notice-form-footer > button { padding-block: 8px !important; font-size: 12px; }
+  }
+}

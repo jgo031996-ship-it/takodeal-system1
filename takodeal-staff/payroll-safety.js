@@ -1,6 +1,8 @@
 // Shared attendance math for Manager payroll and the Staff estimate.
 // Times in Schedule Manager are Philippine wall-clock times, independent of device timezone.
 import { resolveScheduleForDate, amendmentsForDate } from './schedule-history.js';
+import {staffRateForDate} from './staff-rate-model.js';
+export {staffRateDate,staffRateWorkDate,staffProfileForWork,loadStaffSalaryTimeline,staffRateForDate,payrollSalaryProfile,assertPayrollSalaryFresh} from './staff-rate-model.js';
 const minute = 60000;
 const day = 1440 * minute;
 // Meals and cancelled-food purchases belong in the Foods deduction.
@@ -316,7 +318,7 @@ export function nightRate(profile = {}) {
 export function latePay(minutesLate, profile = {}, shift, exempt = false) {
     const minutes = Math.max(0, Number(minutesLate) || 0);
     const hours = Math.ceil(minutes / 60);
-    const daily = Math.max(0, Number(profile.hourlyRate) || 0);
+    const daily = Math.max(0, Number(staffRateForDate(profile,shift?.expectedStartAt || profile.salaryWorkDate || new Date())) || 0);
     const ratePerHour = (daily + (shift?.isNightShift ? nightRate(profile) : 0)) / 8;
     return { hours, ratePerHour, amount: exempt ? 0 : Math.round(hours * ratePerHour * 100) / 100 };
 }

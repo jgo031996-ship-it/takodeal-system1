@@ -3,8 +3,10 @@ import {finalizeRefundPayroll} from './refund-payroll.js';
 import {payrollScheduleStamp,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
 import {createPayrollPreviewGuard,readPayrollSnapshot} from './payroll-preview-guard.js';
 import {installManagerLeaveUI,leaveRequestSummaryHTML} from './manager-leave-ui.js';
+import {installManagerEarlyTimeOutUI,earlyTimeOutSummaryHTML} from './early-time-out-review-ui.js';
 import {leaveStatus,leaveUnavailable,ownedScheduleLeave,scheduleUnavailable,leaveToday} from './leave-model.js';
 window.getManagerLeaveUI = () => window.managerLeaveUI || installManagerLeaveUI(window,document);
+window.getManagerEarlyTimeOutUI = () => window.managerEarlyTimeOutUI || (window.managerEarlyTimeOutUI=installManagerEarlyTimeOutUI(window,document));
 runManagerDomReady(() => window.getManagerLeaveUI());
 window.reviewOwnedScheduleLeave = function(date,name) {
     const marker=ownedScheduleLeave({unavailability,currentSchedule,currentYear,currentMonth},date,name)||scheduleUnavailable(unavailability[date],name,employees);
@@ -65,7 +67,8 @@ import { recipeProblems, ingredientUses } from './recipe-integrity.js';
 import { createLiveReport } from './live-report.js';
 import { calculateLateMinutes, resolveScheduledShift, scheduledShiftForDate, latePay, nightRate, earnedNightBonus,
     attendanceLateMinutes, isLatenessRequest, requestLateMinutes, legacyAttendanceCandidates,
-    reviewLateRequest, shiftType, shiftTimes, validateShiftConfig, isMealDeduction, resolveAttendanceShift, captureAttendanceSchedule } from './payroll-safety.js';
+    reviewLateRequest, shiftType, shiftTimes, validateShiftConfig, isMealDeduction, resolveAttendanceShift, captureAttendanceSchedule,
+    staffRateDate,staffRateWorkDate,staffProfileForWork,loadStaffSalaryTimeline,staffRateForDate,payrollSalaryProfile,assertPayrollSalaryFresh } from './payroll-safety.js';
 const historyLive = createLiveReport({
     subscribe: (...args) => window.onSnapshot(...args),
     status: text => { const el = document.getElementById('histLiveStatus'); if (el) el.textContent = text; }
@@ -419,10 +422,15 @@ window.loadHRModule = async function() {
     let activeCount = 0;
     let archivedCount = 0;
     let totalDailyRate = 0;
+    let unavailableDailyRates = 0;
 
     window.globalStaffData = {};
     let staffList = [];
     snap.forEach(docSnap => { staffList.push({ id: docSnap.id, ...docSnap.data() }); });
+    for(let index=0;index<staffList.length;index++)if(staffList[index].salaryRateVersion===1&&window.isBranchAllowed(staffList[index].branch)){
+        try{staffList[index]=await loadStaffSalaryTimeline(window,{...staffList[index],staffId:staffList[index].id});}
+        catch{staffList[index].salaryRateUnavailable=true;}
+    }
     staffList.sort((a, b) => (a.cashierName || "").localeCompare(b.cashierName || ""));
 
     staffList.forEach(data => {
@@ -433,7 +441,7 @@ window.loadHRModule = async function() {
             archivedCount++;
         } else {
             activeCount++;
-            totalDailyRate += (parseFloat(data.hourlyRate) || parseFloat(data.dailyRate) || 0); 
+            if(data.salaryRateUnavailable)unavailableDailyRates++;else totalDailyRate+=staffRateForDate(data)??0;
         }
 
         // 🛑 THE ARCHIVE FILTER (Stops resigned staff from rendering on the screen)
@@ -446,7 +454,8 @@ window.loadHRModule = async function() {
         let pinDisplay = isOwner ? (data.pin || '0000') : '****';
         if (data.pin === 'REVOKED') pinDisplay = '<span style="font-size: 11px; background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; border: 1px dashed #fca5a5;">REVOKED</span>'; 
         
-        let rateDisplay = data.hourlyRate ? `₱${data.hourlyRate}/day` : `<span style="color:#ef4444; font-size:11px;">Rate Missing</span>`;
+        const currentDaily=data.salaryRateUnavailable?null:staffRateForDate(data);
+        let rateDisplay = currentDaily!==null ? `₱${currentDaily}/day` : `<span style="color:#b83e3b; font-size:11px;">${data.salaryRateUnavailable?'Reconnect to confirm salary':'Rate not yet effective / missing'}</span>`;
 
         // Profile Picture Check
         let profilePicUrl = data.profilePicUrl || "data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' fill='%23e2e8f0'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-size='40'%3E👤%3C/text%3E%3C/svg%3E";
@@ -492,7 +501,7 @@ window.loadHRModule = async function() {
 
     if(activeEl) activeEl.innerText = activeCount;
     if(archivedEl) archivedEl.innerText = archivedCount;
-    if(rateEl) rateEl.innerText = '₱' + totalDailyRate.toLocaleString(undefined, {minimumFractionDigits: 2});
+    if(rateEl) rateEl.innerText = unavailableDailyRates?'Salary history unavailable':'₱' + totalDailyRate.toLocaleString(undefined, {minimumFractionDigits: 2});
 
   } catch (error) {
     console.error("HR Engine Error:", error);
@@ -9944,6 +9953,8 @@ window.loadInbox = async function() {
                     <br><small style="color:#64748b;">Recorded automatically by POS${d.receiptId ? ' · Receipt ' + escapeHtml(d.receiptId) : ''}</small>`;
             } else if (d.type === "Leave" || d.type === "Leave Change") {
                 detailsStr = leaveRequestSummaryHTML(d);
+            } else if (d.type === 'Early Time Out') {
+                detailsStr = earlyTimeOutSummaryHTML(d);
             } else if (d.type === "Cash Advance") {
                 detailsStr = `<strong style="color:var(--danger); font-size:15px;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</strong><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.reason || 'No reason provided'}"</span>`;
             } else if (d.type === "Reason Letter") {
@@ -10073,7 +10084,9 @@ window.updateLateRequestPreview = function() {
     const target = document.getElementById('replyLateCalculation');
     if (!attendance) { target.textContent = 'Select the correct clock-in before confirming.'; return; }
     const shift = resolveAttendanceShift(attendance,context.schedule,{[attendance.staffName]:context.profile});
-    const late = latePay(context.minutes, context.profile, shift, context.action === 'Approved');
+    const rateProfile=staffProfileForWork(context.profile,attendance,shift);
+    if(context.action==='Rejected'&&!(Number(staffRateForDate(rateProfile,rateProfile.salaryWorkDate))>0)){target.textContent='Set the Daily Rate effective on this work date before calculating a deduction.';return;}
+    const late = latePay(context.minutes, rateProfile, shift, context.action === 'Approved');
     target.textContent = context.action === 'Approved' ? `${context.minutes} minutes late — exempted from the late deduction.`
         : `${context.minutes} minutes late → ${late.hours} hour(s) × ₱${late.ratePerHour.toFixed(2)} = ₱${late.amount.toFixed(2)}. Applied once through attendance when payroll is generated.`;
 };
@@ -10084,6 +10097,7 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
         if (!snap.exists()) throw new Error('This request no longer exists. Refresh the inbox.');
         req = snap.data();
         if(req.type==='Leave'||req.type==='Leave Change')return window.getManagerLeaveUI().review(docId,action);
+        if(req.type==='Early Time Out')return window.getManagerEarlyTimeOutUI().review(docId,action);
         if (req.status !== 'Pending') throw new Error('This request was already reviewed. Refresh the inbox.');
         if (!window.isBranchAllowed(req.branch)) throw new Error('This branch is outside your access.');
         type = req.type; amount = Number(req.amount) || 0; staffName = req.staffName;
@@ -10094,8 +10108,7 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
                 window.loadPayrollScheduleHistory(scheduleDateKey(req.timestamp?.toDate?.() || req.timestamp),scheduleDateKey(req.timestamp?.toDate?.() || req.timestamp))
             ]);
             if (profileSnap.docs.length !== 1) throw new Error('The staff profile is missing or duplicated. Check Payroll & Rates first.');
-            const profile = profileSnap.docs[0].data();
-            if (action === 'Rejected' && !(Number(profile.hourlyRate) > 0)) throw new Error('Set this staff member’s Daily Rate before calculating a late deduction.');
+            const profile = await loadStaffSalaryTimeline(window,{...profileSnap.docs[0].data(),staffId:profileSnap.docs[0].id});
             let logs;
             if (req.attendanceLogId) {
                 const att = await tkOwnerDoc(window.doc(window.db, 'attendance_logs', req.attendanceLogId));
@@ -10186,6 +10199,10 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
         if(originalRequest.data().type==='Leave'||originalRequest.data().type==='Leave Change'){
             document.getElementById('dynamicReplyModal')?.remove();
             return window.getManagerLeaveUI().review(docId,action);
+        }
+        if(originalRequest.data().type==='Early Time Out'){
+            document.getElementById('dynamicReplyModal')?.remove();
+            return window.getManagerEarlyTimeOutUI().review(docId,action);
         }
         if (!window.isBranchAllowed(originalRequest.data().branch)) throw new Error('This branch is outside your access.');
         const context = window.lateRequestContext;
@@ -10561,6 +10578,9 @@ window.loadPayrollGenerator = async function() {
                 activeStaffNames.push(masterName);
             }
         });
+        for(const [name,profile] of Object.entries(staffDict))if(!paidRecords[name]&&profile.salaryRateVersion===1){
+            assertPreview();staffDict[name]=await loadStaffSalaryTimeline(window,profile);assertPreview();
+        }
         
         let ledgerDict = {}; 
         ledgerSnap.forEach(d => { ledgerDict[d.data().staffName] = { id: d.id, ...d.data() }; });
@@ -10620,7 +10640,7 @@ window.loadPayrollGenerator = async function() {
         const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>staffNameById[log.staffId]||resolveStaffName(log.staffName),frozenNames:Object.keys(paidRecords)});
         payrollPlan.logs.forEach(log => {
             let name = log.payrollStaffName;
-            if (!name) return;
+            if (!name || paidRecords[name]) return;
             
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
@@ -10646,11 +10666,13 @@ window.loadPayrollGenerator = async function() {
                     if(matchedShift?.amendmentNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'A shift-time correction conflicts with a reviewed attendance record. HR must confirm it.'];}
                     let { lateMinutes: calcMins, expectedStartHour: expStart, wasScheduled: wasSched } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
                     calcMins = attendanceLateMinutes(log, matchedShift);
-                    const late = latePay(calcMins, staffDict[name], matchedShift, log.lateExempted === true);
+                    const rateProfile=staffProfileForWork(staffDict[name]||{},log,matchedShift);
+                    const late = latePay(calcMins, rateProfile, matchedShift, log.lateExempted === true);
                     const lateHoursToDeduct = late.hours;
                     const lateAmount = late.amount;
 
                     activeShifts[name] = {
+                        rateProfile,
                         matchedShift,
                         time: logDate, 
                         lateMinutes: calcMins, 
@@ -10727,9 +10749,10 @@ window.loadPayrollGenerator = async function() {
                     remark += `<br><span style="color:#d97706; font-weight:bold;">${activeShifts[name].matchedShift.shiftType === 'night' ? 'Night' : 'Mid'} bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
                 }
 
-                let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
+                let logDateStr = staffRateWorkDate({timestamp:timeIn},activeShifts[name].matchedShift);
                 let hType = resolveScheduleForDate(scheduleData,logDateStr)?.holidays?.[logDateStr] ?? holidaysObj[logDateStr];
-                let dailyRate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
+                let dailyRate = activeShifts[name].rateProfile.hourlyRate;
+                staffData[name].basicPay=(staffData[name].basicPay||0)+dailyRate*shiftMultiplier;
                 let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
                 let hBonus = 0;
 
@@ -10742,6 +10765,7 @@ window.loadPayrollGenerator = async function() {
                     out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
                     hrs: hoursWorked.toFixed(2), 
                     remark: remark,
+                    dailyRate,rateWorkDate:logDateStr,
                     scheduleSource:activeShifts[name].matchedShift.scheduleSource,
                     scheduleRevisionId:activeShifts[name].matchedShift.scheduleRevisionId,
                     scheduleAmendmentIds:activeShifts[name].matchedShift.scheduleAmendmentIds || [],
@@ -10870,8 +10894,8 @@ window.loadPayrollGenerator = async function() {
                 if (paidRecords[name]) {
                     d = paidRecords[name]; isPaid = true; previewCache[name] = d;
                 } else {
-                    d = staffData[name]; let profile = staffDict[name] || {}; let dailyRate = profile.hourlyRate || 0; 
-                    d.basicPay = d.shiftsWorked * dailyRate;
+                    d = staffData[name]; let profile = staffDict[name] || {};
+                    d.basicPay = d.basicPay || 0;
 
                     let loanData = ledgerDict[name]; let autoLoanDeduction = 0;
                     if (loanData) {
@@ -10891,7 +10915,7 @@ window.loadPayrollGenerator = async function() {
                         name: name, staffId:profile.staffId, onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
-                        logs: staffData[name].logs, profile: staffDict[name] || null, start: startDateRaw, end: endDateRaw,
+                        logs: staffData[name].logs, profile: payrollSalaryProfile(staffDict[name] || {},endDateRaw), start: startDateRaw, end: endDateRaw,
                         attendanceReviewRequired:!!d.attendanceReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],
                         scheduleEvidenceStamp:payrollScheduleStamp(scheduleData),
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
@@ -11129,6 +11153,7 @@ window.finalizePayslip = async function() {
     try {
         previewToken = window.requirePayrollPreview(data);
         await assertPayrollScheduleFresh(window,data);
+        await assertPayrollSalaryFresh(window,data);
         window.getPayrollPreviewGuard().assertCurrent(previewToken);
         window.requirePayrollPreview(data);
     }
@@ -11220,6 +11245,7 @@ window.finalizePayslip = async function() {
         window.getPayrollPreviewGuard().assertCurrent(previewToken);
         window.requirePayrollPreview(data);
         await assertPayrollScheduleFresh(window,data);
+        await assertPayrollSalaryFresh(window,data);
         window.getPayrollPreviewGuard().assertCurrent(previewToken);
         window.requirePayrollPreview(data);
         if((data.onlineRefundRows||[]).length){
@@ -11885,6 +11911,9 @@ window.generateAutoPayslips = async function() {
             let stripped = masterName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim().toLowerCase();
             nameMap[stripped] = masterName;
         });
+        for(const [name,profile] of Object.entries(staffDict))if(!paidRecords[name]&&profile.salaryRateVersion===1){
+            assertPreview();staffDict[name]=await loadStaffSalaryTimeline(window,profile);assertPreview();
+        }
         
         let ledgerDict = {}; ledgerSnap.forEach(d => { ledgerDict[d.data().staffName] = { id: d.id, ...d.data() }; });
 
@@ -11909,6 +11938,7 @@ window.generateAutoPayslips = async function() {
             let lowerName = rawName.toLowerCase();
             let strippedName = lowerName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim();
             let name = log.payrollStaffName || nameMap[lowerName] || nameMap[strippedName] || rawName;
+            if(paidRecords[name])return;
             
             if (!staffData[name]) {
                 staffData[name] = { branch: log.branch, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
@@ -11930,13 +11960,15 @@ window.generateAutoPayslips = async function() {
                     if(matchedShift?.amendmentNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'A shift-time correction conflicts with a reviewed attendance record. HR must confirm it.'];}
                     let { lateMinutes: lateMinutes, expectedStartHour: expectedStartHour, wasScheduled: wasScheduled } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
                     lateMinutes = attendanceLateMinutes(log, matchedShift);
-                    const late = latePay(lateMinutes, staffDict[name], matchedShift, log.lateExempted === true);
+                    const rateProfile=staffProfileForWork(staffDict[name]||{},log,matchedShift);
+                    const late = latePay(lateMinutes, rateProfile, matchedShift, log.lateExempted === true);
                     const lateHoursToDeduct = late.hours;
                     const lateAmount = late.amount;
 
                     activeShifts[name] = {
                         matchedShift,
                         time: logDate, 
+                        rateProfile,
                         lateMinutes: lateMinutes, 
                         lateAmount: lateAmount, 
                         lateExempted: log.lateExempted || false,
@@ -12005,9 +12037,10 @@ window.generateAutoPayslips = async function() {
                     remark += `<br><span style="color:#d97706; font-weight:bold;">${activeShifts[name].matchedShift.shiftType === 'night' ? 'Night' : 'Mid'} bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
                 }
 
-                let logDateStr = `${timeIn.getFullYear()}-${String(timeIn.getMonth()+1).padStart(2,'0')}-${String(timeIn.getDate()).padStart(2,'0')}`;
+                let logDateStr = staffRateWorkDate({timestamp:timeIn},activeShifts[name].matchedShift);
                 let hType = resolveScheduleForDate(scheduleData,logDateStr)?.holidays?.[logDateStr] ?? holidaysObj[logDateStr];
-                let dailyRate = staffDict[name] ? (staffDict[name].hourlyRate || 0) : 0;
+                let dailyRate = activeShifts[name].rateProfile.hourlyRate;
+                staffData[name].basicPay=(staffData[name].basicPay||0)+dailyRate*shiftMultiplier;
                 let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
                 let hBonus = 0;
 
@@ -12020,6 +12053,7 @@ window.generateAutoPayslips = async function() {
                     out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
                     hrs: hoursWorked.toFixed(2), 
                     remark: remark,
+                    dailyRate,rateWorkDate:logDateStr,
                     scheduleSource:activeShifts[name].matchedShift.scheduleSource,
                     scheduleRevisionId:activeShifts[name].matchedShift.scheduleRevisionId,
                     scheduleAmendmentIds:activeShifts[name].matchedShift.scheduleAmendmentIds || [],
@@ -12132,8 +12166,8 @@ window.generateAutoPayslips = async function() {
                 if (paidRecords[name]) {
                     d = paidRecords[name]; isPaid = true; previewCache[name] = d;
                 } else {
-                    d = staffData[name]; let profile = staffDict[name] || {}; let dailyRate = profile.hourlyRate || 0; 
-                    d.basicPay = d.shiftsWorked * dailyRate;
+                    d = staffData[name]; let profile = staffDict[name] || {};
+                    d.basicPay = d.basicPay || 0;
 
                     let loanData = ledgerDict[name]; let autoLoanDeduction = 0;
                     if (loanData) {
@@ -12152,7 +12186,7 @@ window.generateAutoPayslips = async function() {
                         name: name, staffId:profile.staffId, onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
-                        logs: staffData[name].logs, profile: staffDict[name] || null, start: startInput, end: endInput,
+                        logs: staffData[name].logs, profile: payrollSalaryProfile(staffDict[name] || {},endInput), start: startInput, end: endInput,
                         attendanceReviewRequired:!!d.attendanceReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],
                         scheduleEvidenceStamp:payrollScheduleStamp(scheduleData),
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
@@ -13396,8 +13430,9 @@ window.openManualOvertimeModal = async function() {
             let d = docSnap.data();
             if (d.status === 'Resigned' || d.pin === 'REVOKED') return; 
             staffList.push(d.cashierName);
-            window.otCache.staff[d.cashierName] = d; 
+            window.otCache.staff[d.cashierName] = {...d,staffId:docSnap.id};
         });
+        for(const [name,profile] of Object.entries(window.otCache.staff))if(profile.salaryRateVersion===1)window.otCache.staff[name]=await loadStaffSalaryTimeline(window,profile);
         
         staffList.sort().forEach(name => {
             html += `<option value="${name}">${name}</option>`;
@@ -13428,7 +13463,9 @@ window.calcAutoOvertime = function() {
     if (!profile) return;
 
     // Retrieve rates (Note: hourlyRate field acts as Daily Rate in Takodeal DB)
-    let dailyRate = parseFloat(profile.hourlyRate) || 0; 
+    let dailyRate;
+    try{dailyRate=staffRateForDate(profile,dateRaw);if(dailyRate===null)throw Error('No salary is recorded for this work date.');}
+    catch(error){calcDisplay.innerText='—';infoDisplay.textContent=error.message;window.currentCalculatedOtAmount=0;return;}
     const customNightRate = nightRate(profile);
     
     const matched = scheduledShiftForDate(new Date(dateRaw + 'T12:00:00+08:00'), profile.branch,
@@ -24463,7 +24500,7 @@ runManagerDomReady(() => {
 window.addNewStaff = function() {
     window.staffProfileFormGeneration=(window.staffProfileFormGeneration || 0)+1;window.staffProfileSaveOwner=null;
     const saveButton=document.getElementById('btnSaveEmpProfile');if(saveButton){saveButton.disabled=false;saveButton.innerText='💾 Save Data';}
-    window.staffProfileBaseline={id:'',exists:false,rate:null};window.pendingEmployeeProfileRef=null;
+    window.staffProfileBaseline={id:'',exists:false,rate:null,rateRevision:null};window.pendingEmployeeProfileRef=null;
     const setVal = (id, val) => { let el = document.getElementById(id); if(el) el.value = val; };
     const setCheck = (id, val) => { let el = document.getElementById(id); if(el) el.checked = val; };
 
@@ -24473,6 +24510,7 @@ window.addNewStaff = function() {
     setVal('empRole', 'Crew');
     setVal('empDateHired', '');
     setVal('empHourlyRate', '');
+    setVal('empRateEffectiveDate',new Date(Date.now()+8*3600000).toISOString().slice(0,10));
     setVal('empPin', '');
     setVal('empNightDiffRate', '50');
     setCheck('staffWorkingStudent', false);
@@ -24509,7 +24547,7 @@ window.openEmployeeProfile = function(docId) {
     if (!data) return;
     window.staffProfileFormGeneration=(window.staffProfileFormGeneration || 0)+1;window.staffProfileSaveOwner=null;
     const saveButton=document.getElementById('btnSaveEmpProfile');if(saveButton){saveButton.disabled=false;saveButton.innerText='💾 Save Data';}
-    window.staffProfileBaseline={id:docId,exists:true,rate:dailyStaffRate(data)};window.pendingEmployeeProfileRef=null;
+    window.staffProfileBaseline={id:docId,exists:true,rate:data.salaryRateVersion===1&&data.salaryRateTimeline?staffRateForDate(data):dailyStaffRate(data),rateRevision:data.salaryRateRevision??null};window.pendingEmployeeProfileRef=null;
 
     const setVal = (id, val) => { let el = document.getElementById(id); if(el) el.value = val; };
     const setHtml = (id, val) => { let el = document.getElementById(id); if(el) el.innerHTML = val; };
@@ -24520,7 +24558,8 @@ window.openEmployeeProfile = function(docId) {
     setVal('empBranchAssign', data.branch || 'Cabantian');
     setVal('empRole', data.role || 'Crew');
     setVal('empDateHired', data.dateHired || '');
-    setVal('empHourlyRate', data.hourlyRate || '');
+    setVal('empHourlyRate',data.salaryRateVersion===1&&data.salaryRateTimeline?staffRateForDate(data):dailyStaffRate(data)??'');
+    setVal('empRateEffectiveDate',new Date(Date.now()+8*3600000).toISOString().slice(0,10));
     setVal('empPin', data.pin || '');
     
     let legacyRate = (data.eligibleNightDiff === false) ? 0 : 50;
@@ -24653,6 +24692,7 @@ window.saveEmployeeProfile = async function() {
     let name = document.getElementById('empFullName').value.trim();
     let branch = document.getElementById('empBranchAssign').value;
     let rate = Number(document.getElementById('empHourlyRate').value);
+    const effectiveDate=document.getElementById('empRateEffectiveDate')?.value;
     let newRole = document.getElementById('empRole').value.trim();
     let isWorkingStudent = document.getElementById('staffWorkingStudent').checked;
     let pin = document.getElementById('empPin').value.trim();
@@ -24757,14 +24797,14 @@ window.saveEmployeeProfile = async function() {
     if (ownsForm() && window.sessionUser?.isFranchisee && bAssignEl) bAssignEl.disabled = true;
     payload.empId=empId;
     if(!sameActor())throw Error('The Google account changed before this staff save. Reopen the profile.');
-    const operationId=staffProfileOperation(window,payload,reference.id);
-        const saved=await saveStaffProfileAtomic(window,reference.id,payload,{operationId,expectedExists:baseline.exists,expectedRate:baseline.rate});
+    const operationId=staffProfileOperation(window,payload,reference.id,{effectiveDate});
+        const saved=await saveStaffProfileAtomic(window,reference.id,payload,{operationId,expectedExists:baseline.exists,expectedRate:baseline.rate,expectedRateRevision:baseline.rateRevision,effectiveDate});
         docId=reference.id;
         if(ownsForm()){
             document.getElementById('empProfileId').value=docId;formSelection=docId;
             if(window.pendingEmployeeProfileRef===reference)window.pendingEmployeeProfileRef=null;
-            window.staffProfileBaseline={id:docId,exists:true,rate};
-            Swal.fire({toast:true,position:'top',icon:'success',title:wasNew?'Staff profile added':'Staff profile updated',showConfirmButton:false,timer:3000});
+            window.staffProfileBaseline={id:docId,exists:true,rate:saved.profile.salaryRateVersion===1?staffRateForDate(saved.profile):dailyStaffRate(saved.profile),rateRevision:saved.profile.salaryRateRevision??null};
+            Swal.fire({toast:true,position:'top',icon:'success',title:saved.scheduled?'Salary change scheduled for '+saved.effectiveDate:wasNew?'Staff profile added':'Staff profile updated',showConfirmButton:false,timer:3000});
         }
         if(!sameActor())return;
         // Retire only this confirmed attempt; another form's pending save and retry stay intact.

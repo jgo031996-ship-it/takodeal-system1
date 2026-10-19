@@ -17,6 +17,7 @@ import { MALL_FLOAT, mallOpeningCash, stockRequestDue, autoRequestId, businessCl
 import { closeShiftAtomic, readBranchPolicy, readMallOpeningCash } from './cash-settlement.js';
 import { createRemittanceAttemptStore, readRemittanceDrawer, submitRemittanceAtomic, readClosedCashCarry, recordOpeningCashReview } from './remittance-safety.js';
 import {captureAttendanceSchedule} from './payroll-safety.js';
+import {prepareEarlyTimeOut} from './early-time-out-ui.js';
 import {createCountSnapshot, stockReportQuantities} from './stock-report-units.js';
 import {createScheduleHistoryStore} from './schedule-history.js';
 import {scheduleDateKey} from './schedule-history.js';
@@ -3349,38 +3350,6 @@ window.submitAttendance = async function(type) {
                 alert(`🚨 SHIFT VIOLATION DETECTED (${hoursSinceLastLog.toFixed(1)} hrs)\n\nYou have exceeded the 14-hour single-shift limit. A notice will be saved with your Time Out for HQ review.`);
             }
 
-            let isWorkingStudent = staffProfile.isWorkingStudent === true;
-
-            if (hoursSinceLastLog < 8 && hoursSinceLastLog >= 0.25 && !isWorkingStudent) {
-                const { value: reason, isConfirmed } = await Swal.fire({
-                    title: '⚠️ Undertime Detected',
-                    html: `You have only worked <b>${hoursSinceLastLog.toFixed(1)} hours</b> today.<br><br>You must provide a valid reason for timing out early. This will be submitted directly to the Manager's Inbox.`,
-                    input: 'text',
-                    inputPlaceholder: 'Reason for leaving early...',
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonText: 'Submit & Time Out',
-                    confirmButtonColor: '#dc2626',
-                    customClass: { popup: 'rounded-2xl shadow-xl' }
-                });
-
-                if (!isConfirmed || !reason) {
-                    unlockUI(); return; 
-                }
-
-                let finalBranch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-                pendingAttendanceRecords.push({ref:doc(collection(db, 'staff_requests')),data:{
-                    type: "Reason Letter",
-                    staffName: staffName,
-                    branch: finalBranch,
-                    status: "Pending",
-                    explanationCause: "Undertime",
-                    explanationMessage: `Clocked out early after ${hoursSinceLastLog.toFixed(1)} hours. Reason: ${reason}`,
-                    timestamp: new Date()
-                }});
-                
-                Swal.fire({toast: true, position: 'top-end', icon: 'info', title: 'Undertime reason ready to save with Time Out', showConfirmButton: false, timer: 3000});
-            }
         }
     } catch(e) {
         console.error("Lock Engine Processing Error:", e);
@@ -3469,6 +3438,13 @@ window.submitAttendance = async function(type) {
                 if (Date.now() - gpsReceivedAt > 15000) throw Error('Location verification expired during the camera check. Keep Clock open and try Time In again.');
             }
             if (document.getElementById('clockStaffName').value !== staffName || document.getElementById('clockStaffPin').value.trim() !== inputPin || (localStorage.getItem('takodeal_device_branch') || 'Unknown') !== deviceBranch || document.getElementById('timeClockModal').style.display !== 'flex') throw Error('The Time Clock or selected account changed. Open Clock and record attendance again.');
+            let earlyClockOut=null;
+            const assertClockCurrent=()=>{if(document.getElementById('clockStaffName').value!==staffName || document.getElementById('clockStaffPin').value.trim()!==inputPin || document.getElementById('timeClockModal').style.display!=='flex' || localStorage.getItem('takodeal_device_branch')!==deviceBranch)throw Error('The Time Clock account changed. Record attendance again.');};
+            if(type==='TIME OUT'){
+                earlyClockOut=await prepareEarlyTimeOut(window,{start:activeTimeIn,staffId:staffProfile.id,staffName,pin:inputPin,assertCurrent:assertClockCurrent});
+                if(!earlyClockOut.proceed)return;
+                assertClockCurrent();if(Date.now()-gpsReceivedAt>60000)throw Error('Location verification expired. Tap Time Out again to refresh your location.');
+            }
             const photoBase64 = faceResult ? faceResult.photoBase64 : (window.captureOptionalAttendancePhoto?.() || '');
             const attendanceAt = new Date();
             const attendance = {
@@ -3489,7 +3465,8 @@ window.submitAttendance = async function(type) {
                 attendance.scheduleSnapshot = captureAttendanceSchedule(attendanceAt, finalBranch, staffName, schedule, {[staffName]:staffProfile});
             }
             if (type === 'TIME OUT') {
-                await closeAttendanceShift({db,doc,runTransaction},{start:activeTimeIn,attendance,records:pendingAttendanceRecords,assertCurrent:()=>{if(document.getElementById('clockStaffName').value!==staffName || document.getElementById('clockStaffPin').value.trim()!==inputPin || document.getElementById('timeClockModal').style.display!=='flex' || localStorage.getItem('takodeal_device_branch')!==deviceBranch)throw Error('The Time Clock account changed. Record attendance again.');}});
+                await earlyClockOut.service.close({start:activeTimeIn,staffId:staffProfile.id,staffName,pin:inputPin,attendance,records:pendingAttendanceRecords,assertCurrent:assertClockCurrent});
+                assertClockCurrent();
             } else if (pendingAttendanceRecords.length) {
                 const batch=writeBatch(db);
                 pendingAttendanceRecords.forEach(row=>batch.set(row.ref,row.data));

@@ -60,7 +60,7 @@ test('unlocked Staff estimates include the same POS meals in current and pending
     const deductions=[meal(224,'09-23'),meal(106.25,'09-28'),meal(136,'09-09','Paid'),meal(50,'10-16'),meal(99,'09-23','Unpaid','Other Staff')];
     const snapshot=rows=>({docs:rows.map((row,i)=>({id:String(i),data:()=>row})),forEach:fn=>rows.forEach((row,i)=>fn({id:String(i),data:()=>row}))});
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),
-        getDoc:async ref=>({exists:()=>ref.table==='cashiers',data:()=>ref.table==='cashiers'?{hourlyRate:450,scheduleNickname:'TEST'}:{}}),
+        getDocFromServer:async ref=>({exists:()=>ref.table==='cashiers',data:()=>ref.table==='cashiers'?{hourlyRate:450,scheduleNickname:'TEST'}:{}}),
         getDocs:async ref=>snapshot(ref.table==='staff_deductions'?deductions:[])};
     const context={...api,...payroll,...sanctions,...reconciliation,planPayrollAttendance,onlineRefundReviewHTML,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},
         window:{...api,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
@@ -81,7 +81,7 @@ test('relocking during a slow payroll fetch prevents old pay from returning to t
     const start=engine.indexOf('window.loadPayslipVault = async function() {'), end=engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',start);
     let finish; const vault=new VaultSession(); vault.unlock('id');
     const context={window:{staffVaultSession:vault},localStorage:{getItem:key=>key.endsWith('_id')?'id':'Ann'},
-        getDoc:()=>new Promise(resolve=>{finish=resolve;}),doc:()=>null,db:{},document:{getElementById:id=>{if(id==='liveCutoffDates')return {};throw Error('stale pay rendered');}},Date,console};
+        getDocFromServer:()=>new Promise(resolve=>{finish=resolve;}),doc:()=>null,db:{},document:{getElementById:id=>{if(id==='liveCutoffDates')return {};throw Error('stale pay rendered');}},Date,console};
     vm.runInNewContext(engine.slice(start,end),context);
     const pending=context.window.loadPayslipVault(); vault.lock(); finish({exists:()=>true,data:()=>({})}); await pending;
 });
@@ -164,19 +164,45 @@ test('five failed attempts trigger a local cooldown before another profile read 
     assert.equal(h.loads(),0);assert.match(h.node('vaultError').textContent,/Wait one minute/);
 });
 
-function staffLinkedEstimate(logs,{profileName='Test Staff',clock='2026-10-08T12:00:00+08:00'}={}){
+function staffLinkedEstimate(logs,{profileName='Test Staff',clock='2026-10-08T12:00:00+08:00',profile={},timeline,privateDenied=false,profileUnavailable=false,paidRecords=[]}={}){
     const nodes=new Map(),errors=[],queries=[];
     const node=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'',innerText:'',textContent:'',style:{},parentElement:{insertAdjacentHTML(){},querySelector(){return null;}},appendChild(){},prepend(){}});return nodes.get(id);};
     const snapshot=rows=>({docs:rows.map((row,index)=>({id:row.id||String(index),data:()=>row})),forEach:fn=>rows.forEach((row,index)=>fn({id:row.id||String(index),data:()=>row}))});
     class FixedDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}}
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:(ref,...filters)=>({...ref,filters}),where:(key,op,value)=>({key,op,value}),orderBy:()=>({}),
-        getDoc:async ref=>({exists:()=>ref.table==='cashiers',data:()=>ref.table==='cashiers'?{hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST'}:{}}),getDocs:async ref=>{queries.push(ref);return snapshot(ref.table==='attendance_logs'?logs.filter(row=>ref.filters.every(filter=>filter.op==='in'?filter.value.includes(row[filter.key]):row[filter.key]===filter.value)):[]);}};
+        getDoc:async ref=>({exists:()=>ref.table==='cashiers',data:()=>({hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST'})}),getDocFromServer:async ref=>{if(profileUnavailable&&ref.table==='cashiers')throw Error('Sample profile offline');if(privateDenied&&ref.table==='staff_salary_rates')throw Error('Sample private access denied');return {exists:()=>ref.table==='cashiers'||ref.table==='staff_salary_rates'&&!!timeline,data:()=>ref.table==='cashiers'?{hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST',...profile}:timeline};},getDocs:async ref=>{queries.push(ref);return snapshot(ref.table==='attendance_logs'?logs.filter(row=>ref.filters.every(filter=>filter.op==='in'?filter.value.includes(row[filter.key]):row[filter.key]===filter.value)):ref.table==='payroll_records'?paidRecords:[]);}};
     const context={...api,...payroll,...sanctions,...reconciliation,planPayrollAttendance,onlineRefundReviewHTML,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},window:{...api,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
     const at=engine.indexOf('window.loadPayslipVault = async function() {');vm.runInNewContext(engine.slice(at,engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',at)),context);return {node,errors,queries,window:context.window};
 }
 test('actual unlocked Staff estimate holds overlapping linked punches without inferred pay or lateness',async()=>{
     const base={staffId:'sample',staffName:'Test Staff',branch:'Maa'},stamp=value=>({toDate:()=>new Date(value)}),logs=[{...base,id:'old',type:'TIME IN',lateMinutes:200,penaltyAmount:500,timestamp:stamp('2026-10-06T22:00:00+08:00')},{...base,id:'new',type:'TIME IN',timestamp:stamp('2026-10-07T02:00:00+08:00')},{...base,id:'out',type:'TIME OUT',timeInLogId:'old',timestamp:stamp('2026-10-07T06:00:00+08:00')}];
     const h=staffLinkedEstimate(logs);await h.window.loadPayslipVault();assert.deepEqual(h.errors,[]);assert.equal(h.node('liveEstNetPay').innerText,'Held for HR review');assert.equal(h.node('liveEstGross').innerText,'Held for HR review');assert.equal(h.node('liveEstLates').innerText,'-₱0.00');assert.match(h.node('liveCutoffDetailedLogs').innerHTML,/overlap/);
+});
+
+test('actual Staff payroll splits dated wages and lateness inside one cutoff',async()=>{
+ const base={staffId:'sample',staffName:'Test Staff',branch:'Maa'},stamp=value=>({toDate:()=>new Date(value)});
+ const logs=[6,7].flatMap(day=>[{...base,id:'in'+day,type:'TIME IN',lateMinutes:30,timestamp:stamp('2026-10-0'+day+'T09:00:00+08:00')},{...base,id:'out'+day,type:'TIME OUT',timestamp:stamp('2026-10-0'+day+'T17:00:00+08:00')}]);
+ const profile={branch:'Maa',hourlyRate:500,nightDiffRate:0,salaryRateVersion:1,salaryRateRevision:'raise'};
+ const timeline={version:1,staffId:'sample',branch:'Maa',revision:1,baselineDailyRate:450,rates:{raise:{effectiveDate:'2026-10-07',dailyRate:500,sequence:1}}};
+ const h=staffLinkedEstimate(logs,{profile,timeline});await h.window.loadPayslipVault();assert.deepEqual(h.errors,[]);
+ assert.equal(h.node('liveEstGross').innerText,'₱950.00');assert.equal(h.node('liveEstLates').innerText,'-₱118.75');assert.equal(h.node('liveEstNetPay').innerText,'₱831.25');
+});
+
+test('private salary access unavailable holds Staff estimates explicitly while saved paid payslips remain available',async()=>{
+ const profile={branch:'Maa',hourlyRate:500,salaryRateVersion:1,salaryRateRevision:'raise'},record={id:'paid',staffName:'Test Staff',startDate:'2026-09-16',endDate:'2026-09-30',processedAt:new Date('2026-10-01T09:00:00+08:00'),acknowledged:true,finalNetPay:123,frozenData:{name:'Test Staff',basicPay:123,start:'2026-09-16',end:'2026-09-30',logs:[],isPaid:true}};
+ const h=staffLinkedEstimate([],{profile,privateDenied:true,paidRecords:[record]});await h.window.loadPayslipVault();assert.deepEqual(h.errors,[]);
+ assert.equal(h.node('liveEstNetPay').innerText,'Confirm salary on approved phone');assert.match(h.node('payslipHistoryList').innerHTML,/123\.00/);
+ assert.equal(record.frozenData.basicPay,123);
+});
+
+test('a stale legacy cache cannot bypass dated salary and offline profile holds only unpaid Staff estimates',async()=>{
+ const base={staffId:'sample',staffName:'Test Staff',branch:'Maa'},stamp=value=>({toDate:()=>new Date(value)});
+ const logs=[{...base,id:'in',type:'TIME IN',lateExempted:true,timestamp:stamp('2026-10-07T09:00:00+08:00')},{...base,id:'out',type:'TIME OUT',timestamp:stamp('2026-10-07T17:00:00+08:00')}];
+ const profile={branch:'Maa',hourlyRate:500,salaryRateVersion:1,salaryRateRevision:'raise',nightDiffRate:0};
+ const timeline={version:1,staffId:'sample',branch:'Maa',revision:1,baselineDailyRate:450,rates:{raise:{effectiveDate:'2026-10-07',dailyRate:500,sequence:1}}};
+ const fresh=staffLinkedEstimate(logs,{profile,timeline});await fresh.window.loadPayslipVault();assert.deepEqual(fresh.errors,[]);assert.equal(fresh.node('liveEstGross').innerText,'₱500.00');
+ const record={id:'paid',staffName:'Test Staff',startDate:'2026-09-16',endDate:'2026-09-30',processedAt:new Date('2026-10-01T09:00:00+08:00'),acknowledged:true,finalNetPay:123,frozenData:{name:'Test Staff',basicPay:123,start:'2026-09-16',end:'2026-09-30',logs:[],isPaid:true}};
+ const offline=staffLinkedEstimate(logs,{profileUnavailable:true,paidRecords:[record]});await offline.window.loadPayslipVault();assert.deepEqual(offline.errors,[]);assert.equal(offline.node('liveEstGross').innerText,'Confirm salary on approved phone');assert.match(offline.node('payslipHistoryList').innerHTML,/123\.00/);
 });
 test('actual Staff estimate finds renamed ID-bearing linked punches through its scoped ID query',async()=>{
     const base={staffId:'sample',staffName:'Previous Name',branch:'Maa'},stamp=value=>({toDate:()=>new Date(value)}),logs=[{...base,id:'in',type:'TIME IN',lateExempted:true,timestamp:stamp('2026-10-06T09:00:00+08:00')},{...base,id:'out',type:'TIME OUT',timeInLogId:'in',timestamp:stamp('2026-10-06T17:00:00+08:00')}];
