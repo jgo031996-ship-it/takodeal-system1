@@ -2,7 +2,9 @@ import {staffRateDate,validRateDate} from './staff-rate-model.js';
 import {dateLegacyStaffIncrease,legacyStaffIncreaseEligibility,staffProfileOperation} from './staff-rate-changes.js';
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=value=>'₱'+Number(value).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+export function ensureSalaryDateStyles(d){if(!d.head||d.querySelector('link[data-salary-date-style],link[href*="staff-salary-date-ui.css"]'))return;const link=d.createElement('link');link.rel='stylesheet';link.href=new URL('./staff-salary-date-ui.css',import.meta.url).href;link.setAttribute('data-salary-date-style','true');d.head.append(link);}
 export function ensureSalaryEffectiveField(d,{today=staffRateDate()}={}){
+ ensureSalaryDateStyles(d);
  const rate=d.getElementById('empHourlyRate'),modal=d.getElementById('employeeProfileModal');if(!rate||!modal?.contains(rate))return null;
  const mounted=d.getElementById('salaryEffectiveControl');if(mounted)return d.getElementById('empRateEffectiveDate');
  let input=d.getElementById('empRateEffectiveDate');if(input&&!modal.contains(input))return null;
