@@ -1,7 +1,11 @@
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
 import {finalizeRefundPayroll} from './refund-payroll.js';
+import {finalizeOrdinaryPayroll} from './payroll-settlement.js';
+import {payrollActorKey,loadPayrollAccounts,applyConfirmedPayroll,exportPayslipImage,syncPayslipImageButton} from './payroll-completion.js';
+import {installManagerTableWrapper} from './manager-table-wrapper.js';
 import {payrollScheduleStamp,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
 import {createPayrollPreviewGuard,readPayrollSnapshot} from './payroll-preview-guard.js';
+import {coordinatePayrollLoad,loadPayrollPreviewInputs,loadPayrollSalaryProfiles} from './payroll-loading.js';
 import {installManagerLeaveUI,leaveRequestSummaryHTML} from './manager-leave-ui.js';
 import {installManagerEarlyTimeOutUI,earlyTimeOutSummaryHTML} from './early-time-out-review-ui.js';
 import {leaveStatus,leaveUnavailable,ownedScheduleLeave,scheduleUnavailable,leaveToday} from './leave-model.js';
@@ -10507,13 +10511,11 @@ runManagerDomReady(() => window.getPayrollPreviewGuard());
 window.loadPayrollGenerator = async function() {
     const tbody = document.getElementById('payrollGeneratorBody');
     if (!tbody) return;
+    return coordinatePayrollLoad(window,{kind:'loadPayrollGenerator',getDates:()=>({start:document.getElementById('payrollStart').value,end:document.getElementById('payrollEnd').value}),invalidate:()=>window.getPayrollPreviewGuard().invalidate('Checking the newly selected payroll dates…')},async()=>{
     const previewGuard = window.getPayrollPreviewGuard(); let previewToken;
     try { previewToken = previewGuard.begin(); }
     catch(error) { window.ManagerUI?.notify?.(error.message); return; }
     const assertPreview = () => previewGuard.assertCurrent(previewToken);
-    const readPreview = async reference => {
-        assertPreview(); const snapshot = await readPayrollSnapshot(window,reference); assertPreview(); return snapshot;
-    };
     const previewCache = {};
 
     let startDateRaw = document.getElementById('payrollStart').value;
@@ -10553,19 +10555,15 @@ window.loadPayrollGenerator = async function() {
     };
 
     try {
-        const scheduleData = await window.loadPayrollScheduleHistory(startDateRaw,endDateRaw);
+        const {scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap}=await loadPayrollPreviewInputs(window,{start:startDateRaw,end:endDateRaw,fetchStartDate,fetchEndDate,trueStartDate,assertCurrent:assertPreview});
         assertPreview();
+        const scheduleEvidenceStamp=payrollScheduleStamp(scheduleData);
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
-
-        const prQ = window.query(window.collection(window.db, "payroll_records"), window.where("startDate", "==", startDateRaw), window.where("endDate", "==", endDateRaw));
-        const prSnap = await readPreview(prQ);
         let paidRecords = {};
         prSnap.forEach(docSnap => { paidRecords[docSnap.data().staffName] = docSnap.data().frozenData; });
         window.paidPayrollSnapshots ||= new WeakSet();
         Object.values(paidRecords).forEach(snapshot=>{if(snapshot&&typeof snapshot==='object')window.paidPayrollSnapshots.add(snapshot);});
 
-        const staffSnap = await readPreview(window.collection(window.db, "cashiers"));
-        const ledgerSnap = await readPreview(window.collection(window.db, "staff_ledger"));
         let staffDict = {}, staffNameById = {};
         let activeStaffNames = []; // Used for mapping typos
         
@@ -10580,9 +10578,7 @@ window.loadPayrollGenerator = async function() {
                 activeStaffNames.push(masterName);
             }
         });
-        for(const [name,profile] of Object.entries(staffDict))if(!paidRecords[name]&&profile.salaryRateVersion===1){
-            assertPreview();staffDict[name]=await loadStaffSalaryTimeline(window,profile);assertPreview();
-        }
+        staffDict=await loadPayrollSalaryProfiles(window,staffDict,paidRecords,{assertCurrent:assertPreview});
         
         let ledgerDict = {}; 
         ledgerSnap.forEach(d => { ledgerDict[d.data().staffName] = { id: d.id, ...d.data() }; });
@@ -10616,13 +10612,6 @@ window.loadPayrollGenerator = async function() {
             return staffDict[original] ? staffDict[original].cashierName : original;
         };
 
-        const attQ = window.query(window.collection(window.db, "attendance_logs"), window.where("timestamp", ">=", fetchStartDate), window.where("timestamp", "<=", fetchEndDate), window.orderBy("timestamp", "asc"));
-        const attSnap = await readPreview(attQ);
-
-        const deductQ = window.query(window.collection(window.db, "staff_deductions"), window.where("status", "==", "Unpaid"));
-        const deductSnap = await readPreview(deductQ);
-        const bonusQ = window.query(window.collection(window.db, "staff_bonuses"), window.where("dateAdded", ">=", trueStartDate), window.where("dateAdded", "<=", fetchEndDate));
-        const bonusSnap = await readPreview(bonusQ);
 
         let staffData = {}; 
         let activeShifts = {}; 
@@ -10919,7 +10908,7 @@ window.loadPayrollGenerator = async function() {
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: payrollSalaryProfile(staffDict[name] || {},endDateRaw), start: startDateRaw, end: endDateRaw,
                         attendanceReviewRequired:!!d.attendanceReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],
-                        scheduleEvidenceStamp:payrollScheduleStamp(scheduleData),
+                        scheduleEvidenceStamp,
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
                     d = previewCache[name];
@@ -10970,6 +10959,7 @@ window.loadPayrollGenerator = async function() {
     } catch (error) {
         previewGuard.fail(previewToken,error);
     }
+    });
 };
 
 // ========================================================
@@ -11103,6 +11093,7 @@ window.openPayslipModal = async function(staffName) {
     
     let modal = document.getElementById('payslipModal');
     if(modal) modal.style.display = 'flex';
+    syncPayslipImageButton(window,document);
 };
 
 window.recalcPayslip = function() {
@@ -11148,321 +11139,79 @@ window.recalcPayslip = function() {
 // 💸 ABSOLUTE OVERRIDE: SMART PAYSLIP ENGINE
 // ========================================================
 window.finalizePayslip = async function() {
-    let data = window.currentPayslipData;
-    if (!data) return;
-    if (data.isPaid || window.paidPayrollSnapshots?.has(data)) return Swal.fire('Payslip already paid','This saved payslip is complete. Its frozen figures have not changed.','info');
-    let previewToken;
-    try {
-        previewToken = window.requirePayrollPreview(data);
-        await assertPayrollScheduleFresh(window,data);
-        await assertPayrollSalaryFresh(window,data);
-        window.getPayrollPreviewGuard().assertCurrent(previewToken);
-        window.requirePayrollPreview(data);
-    }
-    catch(error) { return Swal.fire('Refresh unpaid payslip',error.message,'warning'); }
-    if (data.attendanceReviewRequired) {
-        Swal.fire('Payroll held for HR review','Confirm the linked attendance records in Human Resources, then regenerate this unpaid preview before payment.','warning');
-        return;
-    }
-    
-    let netPayStr = document.getElementById('psNetPay').innerText.replace(/,/g, '');
-    let finalNetPay = parseFloat(netPayStr) || 0;
-
-    // 🔥 THE MEAL/VALE EXTRACTOR FIX: Correctly reads the text numbers from the HTML
-    const getFieldVal = (id) => {
-        let el = document.getElementById(id);
-        if (!el) return 0;
-        let val = (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') ? el.value : el.innerText;
-        return parseFloat(val.toString().replace(/,/g, '')) || 0;
-    };
-
-    let actualLoanDeducted = getFieldVal('psLoans');
-    let actualValeDeducted = getFieldVal('psAdvance');
-    let actualFoodDeducted = getFieldVal('psFoods');
-
-    if (!window.liveAccounts || window.liveAccounts.length === 0) {
-        if(typeof window.loadAccountsAndBudget === 'function') await window.loadAccountsAndBudget();
-    }
-
-    let optionsHtml = '';
-    window.liveAccounts.forEach((a, i) => {
-        optionsHtml += `<option value="${i}">${a.name} (Bal: ₱${a.balance.toLocaleString(undefined, {minimumFractionDigits: 2})})</option>`;
-    });
-
-    const { value: accIdx, isConfirmed } = await Swal.fire({
-        title: '💸 Disburse Payroll',
-        html: `
-            <div style="font-size: 15px; color: #475569; margin-bottom: 20px;">
-                Net Pay to Disburse: <br>
-                <strong style="color: #16a34a; font-size: 28px;">₱${finalNetPay.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
-            </div>
-            <div style="text-align: left;">
-                <label style="font-size: 12px; font-weight: bold; color: #334155; display: block; margin-bottom: 8px;">Select Account to Deduct From:</label>
-                <select id="swal-acc-select" class="input-box" style="width: 100%; padding: 12px; font-size: 14px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; cursor: pointer; box-sizing: border-box;">
-                    <option value="">-- Choose Account --</option>
-                    ${optionsHtml}
-                </select>
-            </div>
-        `,
-        focusConfirm: false,
-        showCancelButton: true,
-        confirmButtonText: 'Confirm Payment',
-        cancelButtonText: 'Cancel',
-        confirmButtonColor: '#16a34a',
-        cancelButtonColor: '#94a3b8',
-        customClass: { popup: 'rounded-2xl shadow-2xl border border-gray-100' },
-        preConfirm: () => {
-            const val = document.getElementById('swal-acc-select').value;
-            if (!val) { Swal.showValidationMessage('❌ Please select an account to deduct from.'); }
-            return val;
-        }
-    });
-
-    if (!isConfirmed || !accIdx) return; 
-
-    let selAcc = window.liveAccounts[parseInt(accIdx)];
-    if (!selAcc) { 
-        Swal.fire('Error', 'Invalid account selected.', 'error');
-        return; 
-    }
-
-    if (selAcc.balance < finalNetPay) {
-        const confirmNegative = await Swal.fire({
-            title: '⚠️ Insufficient Funds',
-            html: `${selAcc.name} only has <strong>₱${selAcc.balance.toLocaleString()}</strong>.<br>Deducting this will make the account negative. Continue anyway?`,
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Yes, Proceed',
-            confirmButtonColor: '#dc2626',
-            cancelButtonColor: '#94a3b8',
-            customClass: { popup: 'rounded-2xl' }
-        });
-        if (!confirmNegative.isConfirmed) return;
-    }
-
-    let btn = document.getElementById('btnFinalizePayslip');
-    btn.innerText = "⏳ Processing..."; btn.disabled = true;
-    
-    try {
-        window.getPayrollPreviewGuard().assertCurrent(previewToken);
-        window.requirePayrollPreview(data);
-        await assertPayrollScheduleFresh(window,data);
-        await assertPayrollSalaryFresh(window,data);
-        window.getPayrollPreviewGuard().assertCurrent(previewToken);
-        window.requirePayrollPreview(data);
-        if((data.onlineRefundRows||[]).length){
-            const snapshot={...data,loans:actualLoanDeducted,advances:actualValeDeducted,meals:actualFoodDeducted,lateDeduction:getFieldVal('psLate'),sss:getFieldVal('psSSS'),philhealth:getFieldVal('psPhil'),pagibig:getFieldVal('psPagibig'),straightBonus:getFieldVal('psStraightBonus'),perfBonus:getFieldVal('psPerfBonus'),basicPay:getFieldVal('psBasicPay'),nightBonus:getFieldVal('psOvertime')};
-            await finalizeRefundPayroll(window,{data:snapshot,accountId:selAcc.id,finalNetPay});
-            Object.assign(data,snapshot,{isPaid:true,finalNetPay});
-            if(btn){btn.innerText='Paid & saved';btn.disabled=true;}
-            await Swal.fire('Payroll saved','The payment, refund deductions and payslip were saved together.','success');
-            window.downloadPayslipImage();window.generateAutoPayslips?.();window.loadAccountsAndBudget?.();return;
-        }
-        await updateDoc(doc(db, "cash_accounts", selAcc.id), { balance: selAcc.balance - finalNetPay });
-
-        await addDoc(collection(db, "expenses"), {
-            branch: "Main Office", 
-            amount: finalNetPay, 
-            category: "Payroll",
-            account: selAcc.name, 
-            note: `Payslip for ${data.name} (${data.start} to ${data.end}) - Branch: ${data.branch}`, 
-            timestamp: serverTimestamp()
-        });
-
-        if (actualLoanDeducted > 0) {
-            let lId = data.ledgerId;
-            if (!lId) {
-                const slQ = query(collection(db, "staff_ledger"), where("staffName", "==", data.name));
-                const slSnap = await getDocs(slQ);
-                if (!slSnap.empty) lId = slSnap.docs[0].id;
-            }
-
-            if (lId) {
-                const ledgerRef = doc(db, "staff_ledger", lId);
-                const ledgerSnap = await getDoc(ledgerRef);
-                if (ledgerSnap.exists()) {
-                    let currentPaid = parseFloat(ledgerSnap.data().totalPaid) || 0;
-                    await updateDoc(ledgerRef, { totalPaid: currentPaid + actualLoanDeducted });
-                    
-                    await addDoc(collection(db, "staff_deductions"), {
-                        staffName: data.name,
-                        type: "Company Loan Payment",
-                        amount: actualLoanDeducted,
-                        dateAdded: serverTimestamp(),
-                        status: "Paid",
-                        paidAt: serverTimestamp(),
-                        remarks: `Auto-deducted from Payslip`
-                    });
-                }
+    const data=window.currentPayslipData;
+    if(!data||window.payrollPaymentPending)return;
+    if(data.isPaid||window.paidPayrollSnapshots?.has(data))return Swal.fire('Payslip already paid','This saved payslip is complete. Its frozen figures have not changed.','info');
+    const btn=document.getElementById('btnFinalizePayslip');
+    let actorKey,previewToken,confirmed=false;
+    window.payrollPaymentPending=true;
+    const owns=()=>{try{return window.currentPayslipData===data&&payrollActorKey(window)===actorKey;}catch{return false;}};
+    try{
+        actorKey=payrollActorKey(window);previewToken=window.requirePayrollPreview(data);
+        const current=()=>{window.getPayrollPreviewGuard().assertCurrent(previewToken);window.requirePayrollPreview(data);if(!owns())throw Error('The selected payslip or payroll account changed. Reopen it before payment.');};
+        if(btn){btn.innerText='Checking payroll…';btn.disabled=true;}
+        const [,,accounts]=await Promise.all([assertPayrollScheduleFresh(window,data),assertPayrollSalaryFresh(window,data),loadPayrollAccounts(window,current)]);
+        current();
+        if(data.attendanceReviewRequired)throw Error('This payroll is held for attendance review. Confirm its records in Human Resources before payment.');
+        if(!accounts.length)throw Error('No permitted payment account could be confirmed. Open Cash & Budget and review the account.');
+        window.liveAccounts=accounts;
+        const getVal=id=>{const node=document.getElementById(id);const value=node?.tagName==='INPUT'||node?.tagName==='TEXTAREA'?node.value:node?.innerText;return Number.parseFloat(String(value??'').replace(/,/g,''))||0;};
+        const capture=()=>{
+            const custom=[...document.querySelectorAll('.ps-dynamic-deduction')].map((input,index)=>({name:data.profile?.customDeductions?.[index]?.name||'Other deduction',amount:Number.parseFloat(input.value)||0}));
+            return {...data,loans:getVal('psLoans'),advances:getVal('psAdvance'),meals:getVal('psFoods'),lateDeduction:getVal('psLate'),sss:getVal('psSSS'),philhealth:getVal('psPhil'),pagibig:getVal('psPagibig'),straightBonus:getVal('psStraightBonus'),perfBonus:getVal('psPerfBonus'),sourcePerfBonus:data.perfBonus||0,holidayPayTotal:getVal('psHoliday'),basicPay:getVal('psBasicPay'),nightBonus:getVal('psOvertime'),customDeductions:custom,customDeductionsTotal:Math.round(custom.reduce((sum,row)=>sum+row.amount,0)*100)/100,profile:{...data.profile,customDeductions:custom}};
+        };
+        const snapshot=capture(),finalNetPay=getVal('psNetPay');
+        const intent=row=>JSON.stringify(['loans','advances','meals','lateDeduction','sss','philhealth','pagibig','straightBonus','perfBonus','holidayPayTotal','basicPay','nightBonus','customDeductionsTotal','customDeductions'].map(key=>row[key]));
+        const capturedIntent=intent(snapshot);
+        const currentIntent=()=>{current();if(intent(capture())!==capturedIntent||getVal('psNetPay')!==finalNetPay)throw Error('Payslip amounts changed while payment was being prepared. Review them and confirm payment again.');};
+        const optionsHtml=accounts.map((account,index)=>'<option value="'+index+'">'+escapeHtml(account.name)+' (Bal: ₱'+Number(account.balance).toLocaleString(undefined,{minimumFractionDigits:2})+')</option>').join('');
+        const choice=await Swal.fire({title:'💸 Disburse Payroll',html:'<p>Net pay: <strong>₱'+finalNetPay.toLocaleString(undefined,{minimumFractionDigits:2})+'</strong></p><label for="swal-acc-select">Select account to deduct from</label><select id="swal-acc-select" class="input-box" style="width:100%;min-height:44px;margin-top:10px"><option value="">-- Choose Account --</option>'+optionsHtml+'</select>',showCancelButton:true,confirmButtonText:'Confirm Payment',confirmButtonColor:'#16a34a',focusConfirm:false,preConfirm:()=>{const value=document.getElementById('swal-acc-select').value;if(!value)Swal.showValidationMessage('Please select an account.');return value;}});
+        if(!choice.isConfirmed||choice.value==null||choice.value==='')return;
+        currentIntent();const account=accounts[Number(choice.value)];if(!account)throw Error('The selected payment account is unavailable.');
+        let allowNegativeBalance=false;
+        if(Number(account.balance)<finalNetPay){const answer=await Swal.fire({title:'Insufficient Funds',html:escapeHtml(account.name)+' has ₱'+Number(account.balance).toLocaleString()+'. Paying ₱'+finalNetPay.toLocaleString()+' will make its balance negative. Continue?',icon:'warning',showCancelButton:true,confirmButtonText:'Yes, Proceed',confirmButtonColor:'#dc2626'});if(!answer.isConfirmed)return;allowNegativeBalance=true;}
+        currentIntent();if(btn&&owns())btn.innerText='Saving payment…';
+        await Promise.all([assertPayrollScheduleFresh(window,data),assertPayrollSalaryFresh(window,data)]);currentIntent();
+        const result=(snapshot.onlineRefundRows||[]).length
+            ?await finalizeRefundPayroll(window,{data:snapshot,accountId:account.id,finalNetPay,assertCurrent:currentIntent,allowNegativeBalance})
+            :await finalizeOrdinaryPayroll(window,{data:snapshot,accountId:account.id,finalNetPay,assertCurrent:currentIntent,allowNegativeBalance});
+        confirmed=true;
+        const saved={...result,accountId:account.id,finalNetPay:result.finalNetPay??finalNetPay,frozenData:result.frozenData||{...snapshot,isPaid:true,finalNetPay}};
+        const active=applyConfirmedPayroll(window,document,data,saved,{actorKey});
+        // Only this saved row changes. Other employees retain their confirmed
+        // preview, and hidden ledger/budget panels refresh when opened normally.
+        if(active&&owns()){
+            await window.openPayslipModal(data.name);
+            if(owns()){
+                const image=window.downloadPayslipImage();
+                document.getElementById('payslipModal').style.display='none';
+                Promise.resolve(image).catch(error=>{if(owns())window.ManagerUI.notify('Payment is saved. The image could not be downloaded; open View Paid Payslip and try Download Image again.');console.error(error);});
             }
         }
-        
-        // 4. 🔥 SMART VALE & MEAL CLEARER 
-        let remainingValeToClear = actualValeDeducted;
-        let remainingFoodToClear = actualFoodDeducted;
-
-        if (remainingValeToClear > 0 || remainingFoodToClear > 0) {
-            const deductQ = query(collection(db, "staff_deductions"), where("staffName", "==", data.name));
-            const deductSnap = await getDocs(deductQ);
-            
-            let pendingDeductions = [];
-            const cutoffEnd = new Date(data.end + 'T23:59:59.999');
-            deductSnap.forEach(d => {
-                const row = d.data();
-                const added = row.dateAdded?.toDate?.() || new Date(row.dateAdded || row.timestamp);
-                if (row.status === "Unpaid" && added <= cutoffEnd) pendingDeductions.push({ id: d.id, ...row });
-            });
-
-            pendingDeductions.sort((a, b) => (a.dateAdded?.toDate() || 0) - (b.dateAdded?.toDate() || 0));
-
-            for (let dData of pendingDeductions) {
-                let dAmt = parseFloat(dData.amount) || 0;
-                let dRef = doc(db, "staff_deductions", dData.id);
-
-                if (dData.type === "Cash Advance" && remainingValeToClear > 0) {
-                    if (remainingValeToClear >= dAmt) {
-                        await updateDoc(dRef, { status: "Paid", paidAt: serverTimestamp() });
-                        remainingValeToClear -= dAmt;
-                    } else {
-                        await updateDoc(dRef, { amount: dAmt - remainingValeToClear });
-                        remainingValeToClear = 0; 
-                    }
-                }
-                else if (isMealDeduction(dData.type) && remainingFoodToClear > 0) {
-                    if (remainingFoodToClear >= dAmt) {
-                        await updateDoc(dRef, { status: "Paid", paidAt: serverTimestamp() });
-                        remainingFoodToClear -= dAmt;
-                    } else {
-                        await updateDoc(dRef, { amount: dAmt - remainingFoodToClear });
-                        remainingFoodToClear = 0; 
-                    }
-                }
-            }
+        let sameActor=false;try{sameActor=payrollActorKey(window)===actorKey;}catch{}
+        if(sameActor)Swal.fire({toast:true,position:'top-end',icon:'success',title:saved.alreadyPaid?'Payroll was already saved':'Payroll paid and saved',text:saved.alreadyPaid?'Saved payslip confirmed. No new deduction.':'₱'+saved.finalNetPay.toLocaleString(undefined,{minimumFractionDigits:2})+' · '+(saved.accountName||account.name),timer:3500,showConfirmButton:false});
+    }catch(error){
+        console.error(error);
+        let sameActor=false;try{sameActor=payrollActorKey(window)===actorKey;}catch{}
+        if(!previewToken&&sameActor)await Swal.fire('Refresh unpaid payslip',error.message,'warning');
+        else if(owns()){
+            if(confirmed)window.ManagerUI.notify('Payment was saved. Refresh the payroll list to view the confirmed payslip.');
+            else await Swal.fire('Payment was not confirmed',error.message||'Reconnect and try again. Your payslip remains open.','warning');
         }
-
-        data.isPaid = true; 
-        data.loans = actualLoanDeducted;
-        data.advances = actualValeDeducted;
-        data.meals = actualFoodDeducted;
-        
-        data.lateDeduction = getFieldVal('psLate');
-        data.sss = getFieldVal('psSSS');
-        data.philhealth = getFieldVal('psPhil');
-        data.pagibig = getFieldVal('psPagibig');
-        data.straightBonus = getFieldVal('psStraightBonus');
-        data.holidayPayTotal = getFieldVal('psHoliday');
-        data.nightBonus = getFieldVal('psOvertime');
-
-        Object.keys(data).forEach(key => {
-            if (data[key] === undefined) { data[key] = 0; }
-        });
-
-        await addDoc(collection(db, "payroll_records"), {
-            staffName: data.name, startDate: data.start, endDate: data.end,
-            frozenData: data, finalNetPay: finalNetPay, processedAt: serverTimestamp(),
-            acknowledged: false // 🔥 THE FIX: Flags it as unread for the Staff App!
-        });
-
-        // 🔥 MARK THE PERFORMANCE BONUSES AS PAID AUTOMATICALLY
-        if (data.perfBonus > 0) {
-            const bonusQ = window.query(window.collection(window.db, "staff_bonuses"), window.where("staffName", "==", data.name), window.where("status", "==", "Unpaid"), window.where("type", "==", "Performance Bonus"));
-            const bonusSnap = await window.getDocs(bonusQ);
-            bonusSnap.forEach(bDoc => {
-                window.updateDoc(window.doc(window.db, "staff_bonuses", bDoc.id), { status: "Paid", paidAt: window.serverTimestamp() });
-            });
+    }finally{
+        window.payrollPaymentPending=false;
+        if(btn&&owns()){
+            if(data.isPaid){btn.innerText='✅ Paid & Done!';btn.disabled=true;btn.style.background='#16a34a';}
+            else {try{window.requirePayrollPreview(data);btn.innerText='✅ Mark Paid & Auto-Deduct';btn.disabled=false;}catch{btn.innerText='Regenerate payroll list';btn.disabled=true;}}
         }
-
-        Swal.fire({
-            title: '✅ Payroll Disbursed!',
-            html: `<strong>₱${finalNetPay.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong> was successfully deducted from <strong>${selAcc.name}</strong>.<br><br><span style="font-size: 13px; color: #64748b;">All Vales and Loans have been accurately updated.</span>`,
-            icon: 'success',
-            confirmButtonColor: '#16a34a',
-            customClass: { popup: 'rounded-2xl' }
-        });
-        
-        if (btn) {
-            btn.innerText = "✅ Paid & Done!";
-            btn.style.background = "#16a34a";
-            btn.style.cursor = "not-allowed";
-            btn.disabled = true;
-        }
-        
-        window.downloadPayslipImage();
-        
-        if (typeof window.loadLedger === 'function') window.loadLedger(); 
-        if (typeof window.generateAutoPayslips === 'function') window.generateAutoPayslips(); 
-        if (typeof window.loadAccountsAndBudget === 'function') window.loadAccountsAndBudget();
-
-    } catch (e) {
-        console.error(e); window.ManagerUI.notify("❌ Failed to finalize payslip.");
-        if (btn) {
-            try { window.requirePayrollPreview(data); btn.innerText = "✅ Mark Paid & Auto-Deduct"; btn.disabled = false; }
-            catch { btn.innerText = 'Regenerate payroll list'; btn.disabled = true; }
-        }
-    } 
+    }
 };
 
 // ==========================================
 // 📸 PAYSLIP IMAGE DOWNLOADER (SCROLL-BAR FIX)
 // ==========================================
 window.downloadPayslipImage = function() {
-    const originalPayslip = document.getElementById('printablePayslip');
-    const btn = document.getElementById('btnDownloadPayslip');
-    let originalText = btn ? btn.innerText : "Download";
-    
-    if (btn) { btn.innerText = "⏳ Generating Image..."; btn.disabled = true; }
-
-    // 1. Create a temporary, full-size clone outside the modal so tablets don't crop it!
-    const printWrapper = document.createElement('div');
-    printWrapper.style.position = 'absolute';
-    printWrapper.style.left = '-9999px'; 
-    printWrapper.style.top = '0';
-    printWrapper.style.background = '#ffffff';
-    printWrapper.style.width = '800px'; // 🔥 INCREASED WIDTH for a beautiful A4 proportion
-    printWrapper.style.padding = '20px';
-    printWrapper.style.boxSizing = 'border-box';
-    
-    const clone = originalPayslip.cloneNode(true);
-    
-    // 🔥 THE FIX: Strip away ANY scrollbar properties before taking the screenshot!
-    clone.style.overflow = 'visible';
-    clone.style.maxHeight = 'none';
-    clone.style.height = 'auto';
-    
-    // 2. Convert all input boxes into static text so they render perfectly on mobile!
-    clone.querySelectorAll('input').forEach(inp => {
-        let span = document.createElement('span');
-        span.innerText = inp.value;
-        span.style.fontWeight = 'bold';
-        span.style.fontSize = '14px';
-        inp.parentNode.replaceChild(span, inp);
-    });
-    
-    printWrapper.appendChild(clone);
-    document.body.appendChild(printWrapper);
-
-    // 3. Take the Ultra-HD screenshot of the un-cropped clone
-    html2canvas(printWrapper, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
-        let imgData = canvas.toDataURL("image/png");
-        let link = document.createElement('a');
-        
-        let staffName = document.getElementById('psName').innerText.replace(/\s+/g, '_');
-        let endDate = document.getElementById('psEnd').innerText;
-        link.download = `Payslip_${staffName}_${endDate}.png`;
-        
-        link.href = imgData;
-        link.click();
-
-        document.body.removeChild(printWrapper); // Clean up the clone
-        document.getElementById('payslipModal').style.display = 'none';
-
-        if (btn) { btn.innerText = originalText; btn.disabled = false; }
-    }).catch(err => {
-        console.error("Error generating image:", err);
-        window.ManagerUI.notify("❌ Failed to generate image.");
-        document.body.removeChild(printWrapper);
-        if (btn) { btn.innerText = originalText; btn.disabled = false; }
-    });
+    return exportPayslipImage(window,document).catch(error=>{console.error(error);window.ManagerUI.notify('The payslip image could not be downloaded. Any confirmed payment remains saved; use Download Image to try again.');return null;});
 };
 
 // ==========================================
@@ -11853,6 +11602,7 @@ window.globalPayrollCache = {};
 // 💸 AUTO-PAYSLIP GENERATOR ENGINE (WITH AUTO-DEDUCT LOGIC)
 // ==========================================
 window.generateAutoPayslips = async function() {
+    return coordinatePayrollLoad(window,{kind:'generateAutoPayslips',getDates:()=>({start:document.getElementById('payrollStart').value,end:document.getElementById('payrollEnd').value}),invalidate:()=>window.getPayrollPreviewGuard().invalidate('Checking the newly selected payroll dates…')},async()=>{
     let startInput = document.getElementById('payrollStart').value;
     let endInput = document.getElementById('payrollEnd').value;
     let tableBody = document.getElementById('payrollGeneratorBody'); 
@@ -11862,9 +11612,6 @@ window.generateAutoPayslips = async function() {
     try { previewToken = previewGuard.begin(); }
     catch(error) { window.ManagerUI?.notify?.(error.message); return; }
     const assertPreview = () => previewGuard.assertCurrent(previewToken);
-    const readPreview = async reference => {
-        assertPreview(); const snapshot = await readPayrollSnapshot(window,reference); assertPreview(); return snapshot;
-    };
     const previewCache = {};
     if (!startInput || !endInput) { window.ManagerUI.notify("Please select both Cutoff Start and End dates."); return; }
 
@@ -11887,19 +11634,15 @@ window.generateAutoPayslips = async function() {
     };
 
     try {
-        const scheduleData = await window.loadPayrollScheduleHistory(startInput,endInput);
+        const {scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap}=await loadPayrollPreviewInputs(window,{start:startInput,end:endInput,fetchStartDate:trueStartDate,fetchEndDate,trueStartDate,assertCurrent:assertPreview});
         assertPreview();
+        const scheduleEvidenceStamp=payrollScheduleStamp(scheduleData);
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
-
-        const prQ = query(collection(db, "payroll_records"), where("startDate", "==", startInput), where("endDate", "==", endInput));
-        const prSnap = await readPreview(prQ);
         let paidRecords = {};
         prSnap.forEach(docSnap => { paidRecords[docSnap.data().staffName] = docSnap.data().frozenData; });
         window.paidPayrollSnapshots ||= new WeakSet();
         Object.values(paidRecords).forEach(snapshot=>{if(snapshot&&typeof snapshot==='object')window.paidPayrollSnapshots.add(snapshot);});
 
-        const staffSnap = await readPreview(collection(db, "cashiers"));
-        const ledgerSnap = await readPreview(collection(db, "staff_ledger"));
         let staffDict = {}, staffNameById = {};
         let nameMap = {}; 
         
@@ -11913,19 +11656,10 @@ window.generateAutoPayslips = async function() {
             let stripped = masterName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim().toLowerCase();
             nameMap[stripped] = masterName;
         });
-        for(const [name,profile] of Object.entries(staffDict))if(!paidRecords[name]&&profile.salaryRateVersion===1){
-            assertPreview();staffDict[name]=await loadStaffSalaryTimeline(window,profile);assertPreview();
-        }
+        staffDict=await loadPayrollSalaryProfiles(window,staffDict,paidRecords,{assertCurrent:assertPreview});
         
         let ledgerDict = {}; ledgerSnap.forEach(d => { ledgerDict[d.data().staffName] = { id: d.id, ...d.data() }; });
 
-        const attQ = query(collection(db, "attendance_logs"), where("timestamp", ">=", trueStartDate), where("timestamp", "<=", fetchEndDate), orderBy("timestamp", "asc"));
-        const attSnap = await readPreview(attQ);
-
-        const deductQ = query(collection(db, "staff_deductions"), where("status", "==", "Unpaid"));
-        const deductSnap = await readPreview(deductQ);
-        const bonusQ = query(collection(db, "staff_bonuses"), where("dateAdded", ">=", trueStartDate), where("dateAdded", "<=", fetchEndDate));
-        const bonusSnap = await readPreview(bonusQ);
 
         let staffData = {}; 
         let activeShifts = {}; 
@@ -12190,7 +11924,7 @@ window.generateAutoPayslips = async function() {
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: payrollSalaryProfile(staffDict[name] || {},endInput), start: startInput, end: endInput,
                         attendanceReviewRequired:!!d.attendanceReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],
-                        scheduleEvidenceStamp:payrollScheduleStamp(scheduleData),
+                        scheduleEvidenceStamp,
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
                     d = previewCache[name];
@@ -12244,6 +11978,7 @@ window.generateAutoPayslips = async function() {
     } catch (error) {
         previewGuard.fail(previewToken,error);
     }
+    });
 };
 
 // Run the date setter when the dashboard loads!
@@ -21591,29 +21326,7 @@ runManagerDomReady(() => {
     }
 
     // 2. THE TABLE AUTO-WRAPPER (MUTATION OBSERVER)
-    const tableObserver = new MutationObserver(() => {
-        // Find every table currently on the screen
-        document.querySelectorAll('table').forEach(table => {
-            // Payslips are compact print documents, not wide app data grids.
-            if (table.closest('#printablePayslip,.stock-request-review-popup')) return;
-            // If the table isn't already wrapped, wrap it!
-            if (!table.parentElement.classList.contains('mobile-table-wrapper') && !table.closest('.mobile-table-wrapper')) {
-                let wrapper = document.createElement('div');
-                wrapper.className = 'mobile-table-wrapper';
-                
-                // Move the table inside our smooth-scrolling wrapper
-                table.parentNode.insertBefore(wrapper, table);
-                wrapper.appendChild(table);
-                
-                // Force the table to stay wide so the user can swipe through it
-                table.style.minWidth = "800px"; 
-                table.style.width = "100%";
-            }
-        });
-    });
-
-    // Tell the observer to actively watch the whole app for changes
-    tableObserver.observe(document.body, { childList: true, subtree: true });
+    installManagerTableWrapper(window,document);
 });
 
 // ========================================================

@@ -8,6 +8,7 @@ import {saveStaffProfileAtomic, dateLegacyStaffIncrease} from '../takodeal-manag
 import {staffRateDate, staffRateForDate, staffProfileForWork} from '../takodeal-manager/staff-rate-model.js';
 import {createEarlyTimeOutService} from '../takodeal-manager/early-time-out-actions.js';
 import {attendanceEstimate} from '../takodeal-franchise/franchise-data.js';
+import {finalizeOrdinaryPayroll} from '../takodeal-manager/payroll-settlement.js';
 
 // These tests use real local Firebase Rules runtimes. They must not be silently
 // skipped when the runtime is missing, and cannot connect to production.
@@ -884,4 +885,47 @@ test('invalid legacy sources and dates cannot create a timeline or a guessed pri
     }
     assert.equal((await getDoc(doc(f.api.db, 'staff_salary_rates/' + staffId))).exists(), false);
     assert.deepEqual((await getDoc(doc(f.api.db, 'payroll_records/rate-frozen'))).data(), f.paid);
+});
+
+async function payrollPerformanceFixture(){
+    const employee='payroll-performance-staff',ctx=owner(),api=rateApi(ctx),profile={cashierName:'Synthetic Payroll Staff',branch,role:'Crew',hourlyRate:450,dateHired:'2030-01-01'};
+    api.auth.currentUser.providerData=[{providerId:'google.com'}];api.sessionUser.isOwner=true;
+    await adminSet('hq_managers/payroll-performance-owner',{email:'jgo031996@gmail.com',role:'System Architect',permissions:['all'],assignedBranch:'All',pin:'1234'});
+    await adminSet('cashiers/'+employee,profile);
+    await adminSet('cash_accounts/payroll-performance-bank',{name:'Synthetic Bank',branch:'Main Office',balance:1000});
+    const meal=(amount,date)=>({staffId:employee,staffName:profile.cashierName,branch,type:'Staff Meal (POS Auto)',amount,status:'Unpaid',dateAdded:Timestamp.fromDate(new Date(date))});
+    await adminSet('staff_deductions/payroll-performance-food-a',meal(40,'2030-01-02T10:00:00+08:00'));
+    await adminSet('staff_deductions/payroll-performance-food-b',meal(15,'2030-01-03T10:00:00+08:00'));
+    const data={staffId:employee,name:profile.cashierName,branch,start:'2030-01-01',end:'2030-01-15',profile:{...profile,staffId:employee},basicPay:450,meals:50,sourcePerfBonus:0,customDeductionsTotal:0,customDeductions:[],logs:[]};
+    return {api,data,input:{data,accountId:'payroll-performance-bank',finalNetPay:400}};
+}
+
+test('real Rules permit the ordinary payroll atomic save and exact partial Foods settlement, with no duplicate debit on retry',async()=>{
+    const f=await payrollPerformanceFixture();
+    const paid=await assertSucceeds(finalizeOrdinaryPayroll(f.api,f.input));assert.equal(paid.alreadyPaid,false);
+    assert.equal((await getDoc(doc(f.api.db,'cash_accounts/payroll-performance-bank'))).data().balance,600);
+    assert.equal((await getDoc(doc(f.api.db,'staff_deductions/payroll-performance-food-a'))).data().status,'Paid');
+    const remainder=(await getDoc(doc(f.api.db,'staff_deductions/payroll-performance-food-b'))).data();assert.equal(remainder.status,'Unpaid');assert.equal(remainder.amount,5);
+    const saved=(await getDoc(doc(f.api.db,'payroll_records/'+paid.id))).data();assert.equal(saved.frozenData.finalNetPay,400);assert.equal(saved.acknowledged,false);
+    const retry=await assertSucceeds(finalizeOrdinaryPayroll(f.api,f.input));assert.equal(retry.alreadyPaid,true);
+    assert.equal((await getDoc(doc(f.api.db,'cash_accounts/payroll-performance-bank'))).data().balance,600);
+    assert.equal((await getDocs(query(collection(f.api.db,'expenses'),where('payrollRecordId','==',paid.id)))).size,1);
+});
+
+test('real Rules preserve one atomic payroll save after a lost response, and do not reapply deductions',async()=>{
+    const f=await payrollPerformanceFixture(),run=f.api.runTransaction;let lose=true;
+    f.api.runTransaction=async(...args)=>{const result=await run(...args);if(lose){lose=false;throw Error('Synthetic response lost after commit');}return result;};
+    await assert.rejects(finalizeOrdinaryPayroll(f.api,f.input),/response lost/);
+    const result=await assertSucceeds(finalizeOrdinaryPayroll(f.api,f.input));assert.equal(result.alreadyPaid,true);
+    assert.equal((await getDoc(doc(f.api.db,'cash_accounts/payroll-performance-bank'))).data().balance,600);
+    assert.equal((await getDoc(doc(f.api.db,'staff_deductions/payroll-performance-food-b'))).data().amount,5);
+});
+
+test('real Rules payroll callback stops a stale selection before any bookkeeping is committed',async()=>{
+    const f=await payrollPerformanceFixture(),run=f.api.runTransaction;let stale=false;
+    f.api.runTransaction=async(db,callback)=>{stale=true;return run(db,callback);};
+    await assert.rejects(finalizeOrdinaryPayroll(f.api,{...f.input,assertCurrent:()=>{if(stale)throw Error('Synthetic selected cutoff changed');}}),/cutoff changed/);
+    assert.equal((await getDoc(doc(f.api.db,'cash_accounts/payroll-performance-bank'))).data().balance,1000);
+    assert.equal((await getDocs(query(collection(f.api.db,'payroll_records'),where('staffId','==',f.data.staffId)))).empty,true);
+    assert.equal((await getDoc(doc(f.api.db,'staff_deductions/payroll-performance-food-a'))).data().status,'Unpaid');
 });
