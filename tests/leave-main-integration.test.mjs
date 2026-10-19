@@ -7,6 +7,7 @@ import * as schedule from '../takodeal-manager/schedule-history.js';
 import * as sanctions from '../takodeal-manager/sanction-schedule.js';
 import * as freshness from '../takodeal-manager/payroll-schedule-freshness.js';
 import * as preview from '../takodeal-manager/payroll-preview-guard.js';
+import * as loading from '../takodeal-manager/payroll-loading.js';
 import {canOpenWorkspacePage} from '../takodeal-manager/workspace-access-model.js';
 import {planPayrollAttendance} from '../takodeal-manager/payroll-attendance.js';
 import {attendanceMillis} from '../takodeal-manager/attendance-reconcile.js';
@@ -21,7 +22,7 @@ function harness(options={}){
  const nodes=new Map(),events=[],writes=[],calls=[];
  const node=id=>{if(!nodes.has(id)){const listeners={};nodes.set(id,{id,value:'',innerText:'0',textContent:'',innerHTML:'',style:{},tagName:'DIV',disabled:false,addEventListener:(name,fn)=>{(listeners[name]||=[]).push(fn);},emit:name=>{for(const fn of listeners[name]||[])fn({target:node(id)});}});}return nodes.get(id);};
  node('payrollStart').value=node('payrollEnd').value='2030-01-16';node('payrollGrandTotalContainer').style.display='flex';node('payrollGrandTotalAmount').innerText='₱1,234.56';node('payslipModal').style.display='block';
- const person={id:'person-a',cashierName:'Sample Staff',scheduleNickname:'SAMPLE',branch:'Sample Branch',hourlyRate:450,nightDiffRate:0},owner={uid:'owner-a',email:'owner@example.test'};
+ const person={id:'person-a',cashierName:'Sample Staff',scheduleNickname:'SAMPLE',branch:'Sample Branch',hourlyRate:450,nightDiffRate:0},owner={uid:'owner-a',email:'owner@example.test',emailVerified:true};
  const plan={currentYear:2030,currentMonth:1,branchConfig:{'Sample Branch':[{id:'day',name:'Day',startTime:'09:00',endTime:'17:00',shiftType:'morning',active:true}]},currentSchedule:{16:{'Sample Branch':{scheduled:{day:'SAMPLE'}}},17:{'Sample Branch':{scheduled:{day:'SAMPLE'}}}}};
  const logs=day=>[{id:'in-'+day,staffId:person.id,staffName:person.cashierName,branch:person.branch,type:'TIME IN',timestamp:stamp('2030-01-'+day+'T09:00:00+08:00'),lateMinutes:0},{id:'out-'+day,staffId:person.id,staffName:person.cashierName,branch:person.branch,type:'TIME OUT',timestamp:stamp('2030-01-'+day+'T17:00:00+08:00')}];
  const records={cashiers:[person],staff_ledger:[],payroll_records:[],attendance_logs:logs(16),staff_deductions:[],staff_bonuses:[]};
@@ -29,7 +30,7 @@ function harness(options={}){
  const api={db:{},auth:{currentUser:{...owner}},sessionUser:{...owner,isOwner:true,isFranchisee:false,permissions:['all'],allowedBranches:['All']},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),where:(field,op,value)=>({field,op,value}),orderBy:()=>({}),query:(ref,...filters)=>({...ref,filters}),getDocs:async()=>assert.fail('Default cached getDocs must never be called for payroll preview'),getDocsFromServer:async ref=>{calls.push(ref);return options.read?options.read(ref,{snapshot,records,logs}):snapshot(records[ref.table]||[]);},getDoc:async()=>({exists:()=>true,data:()=>plan}),isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>schedule.assembleScheduleHistory(plan),ManagerUI:{notify:message=>events.push(message)},liveAccounts:[{id:'sample-account',name:'Sample Cash',balance:5000}],globalPayrollCache:{Old:{name:'Old'}},currentPayslipData:{name:'Old'},updateDoc:async()=>writes.push('update'),addDoc:async()=>writes.push('add')};
  const Swal={fire:async(...args)=>{events.push(args);return options.confirm?options.confirm(...args):{isConfirmed:false};},showValidationMessage:message=>events.push(message)};
  const document={getElementById:node,querySelectorAll:()=>[]};
- const context=vm.createContext({...api,...payroll,...schedule,...sanctions,...freshness,...preview,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
+ const context=vm.createContext({...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
  for(const name of ['getPayrollPreviewGuard','requirePayrollPreview','loadPayrollGenerator','generateAutoPayslips','openPayslipModal','finalizePayslip'])vm.runInContext(extract(name),context);
  return {context,w:api,node,nodes,events,writes,calls,records,logs,snapshot,person};
 }

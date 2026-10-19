@@ -22,9 +22,12 @@ test('account change during read holds the unpaid preview',async()=>{
 });
 test('both Owner generators stamp previews and use shared amendment-aware minutes',()=>{
  const source=fs.readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
- assert.equal((source.match(/scheduleEvidenceStamp:payrollScheduleStamp\(scheduleData\)/g)||[]).length,2);
+ // Each generator computes the stamp once per fresh run and shares that
+ // evidence with its staff rows instead of serializing the schedule per row.
+ assert.equal((source.match(/const scheduleEvidenceStamp=payrollScheduleStamp\(scheduleData\)/g)||[]).length,2);
+ assert.equal((source.match(/^\s+scheduleEvidenceStamp,$/gm)||[]).length,2);
  assert.equal((source.match(/attendanceLateMinutes\(log, matchedShift\)/g)||[]).length,2);
- assert.equal((source.match(/await assertPayrollScheduleFresh\(window,data\)/g)||[]).length,2);
+ assert.equal((source.match(/assertPayrollScheduleFresh\(window,data\)/g)||[]).length,2);
  assert.ok(source.includes('attendanceLateMinutes(data, matchedShift)'));
 });
 

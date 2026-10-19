@@ -1,6 +1,9 @@
 import * as scheduleFreshness from '../takodeal-manager/payroll-schedule-freshness.js';
 import * as previewFreshness from '../takodeal-manager/payroll-preview-guard.js';
-import {canOpenWorkspacePage} from '../takodeal-manager/workspace-access-model.js';
+import * as payrollLoading from '../takodeal-manager/payroll-loading.js';
+import * as payrollCompletion from '../takodeal-manager/payroll-completion.js';
+import {finalizeOrdinaryPayroll} from '../takodeal-manager/payroll-settlement.js';
+import {canOpenWorkspacePage,OWNER_EMAIL} from '../takodeal-manager/workspace-access-model.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -153,10 +156,10 @@ function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,sc
         getDocs:async q=>{const docs=(data[q.table]||[]).filter(row=>q.table!=='staff_deductions' || row.status==='Unpaid').map((row,i)=>({id:row.id||String(i),data:()=>row}));return {docs,forEach:fn=>docs.forEach(fn)};}};
     api.getDocsFromServer=api.getDocs;
     api.getDocs=async()=>{throw Error('Payroll preview must read confirmed server records.');};
-    api.auth={currentUser:{uid:'sample-payroll-owner',email:'owner@example.test'}};
-    api.sessionUser={uid:'sample-payroll-owner',email:'owner@example.test',isOwner:true,permissions:['payroll'],allowedBranches:['All']};
+    api.auth={currentUser:{uid:'sample-payroll-owner',email:OWNER_EMAIL,emailVerified:true}};
+    api.sessionUser={uid:'sample-payroll-owner',email:OWNER_EMAIL,isOwner:true,permissions:['all'],allowedBranches:['All']};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>historyData || assembleScheduleHistory(scheduleData || schedule(end,type))};
-    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,escapeHtml:value=>String(value).replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])),resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
+    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollLoading,...payrollCompletion,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,escapeHtml:value=>String(value).replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])),resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
         alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
     vm.runInContext(extract('getPayrollPreviewGuard')+'\n'+extract('requirePayrollPreview'),context);
     return {context,window,elements,errors};
@@ -246,33 +249,41 @@ test('the generated Foods deduction is subtracted from the payslip total and net
     assert.equal(elements.psTotalDeduct.innerText,'1,130.25');assert.equal(elements.psNetPay.innerText,'4,699.75');
 });
 function paymentFixture(food=330.25) {
-    const stamp=day=>({toDate:()=>new Date(`2026-${day}T12:00:00+08:00`)});
+    const stamp=day=>({seconds:Math.floor(new Date(`2026-${day}T12:00:00+08:00`).getTime()/1000)});
     const rows=[
         {id:'paid',staffName:'Test Staff',type:'Staff Meal',amount:136,status:'Paid',dateAdded:stamp('09-09')},
         {id:'pos-1',staffName:'Test Staff',type:'Staff Meal (POS Auto)',amount:224,status:'Unpaid',dateAdded:stamp('09-23')},
         {id:'pos-2',staffName:'Test Staff',type:'Staff Meal (POS Auto)',amount:106.25,status:'Unpaid',dateAdded:stamp('09-28')},
         {id:'future',staffName:'Test Staff',type:'Manager Meal (POS Auto)',amount:100,status:'Unpaid',dateAdded:stamp('10-04')}
     ];
-    const changes=[],records=[],errors=[];
-    const elements=new Map();const node=id=>{if(!elements.has(id))elements.set(id,{tagName:'INPUT',value:'0',innerText:'',style:{}});return elements.get(id);};
-    node('psFoods').value=String(food);node('psNetPay').innerText='500.00';
+    const errors=[],h=firestoreHarness(),elements=new Map();
+    const node=id=>{if(!elements.has(id))elements.set(id,{tagName:'INPUT',value:'0',innerText:'',style:{},querySelectorAll:()=>[]});return elements.get(id);};
+    node('psFoods').value=String(food);node('psNetPay').value='500.00';node('psNetPay').innerText='500.00';node('psBasicPay').value=String(500+food);
     node('payrollStart').value='2026-09-16';node('payrollEnd').value='2026-09-30';
     const staffProfile={staffId:'sample-staff',cashierName:'Test Staff',branch:'Test',hourlyRate:450};
-    const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),
-        getDocFromServer:async ref=>({exists:()=>ref.table==='cashiers'&&ref.id===staffProfile.staffId,data:()=>({...staffProfile}),metadata:{fromCache:false,hasPendingWrites:false}}),
-        serverTimestamp:()=>stamp('10-04'),getDocs:async()=>({forEach:fn=>rows.forEach(row=>fn({id:row.id,data:()=>({...row})}))}),
-        updateDoc:async(ref,change)=>{changes.push({ref,change});const row=rows.find(r=>ref.table==='staff_deductions'&&r.id===ref.id);if(row)Object.assign(row,change);},
-        addDoc:async(ref,row)=>{records.push({table:ref.table,...row});return {id:'sample'};}};
+    h.put('cashiers/'+staffProfile.staffId,staffProfile);
+    h.put('cash_accounts/sample-account',{name:'Sample account',branch:'Main Office',balance:5000});
+    h.put('hq_managers/sample-owner',{email:'owner@example.test',role:'Owner',active:true,pin:'sample-pin',permissions:['all'],assignedBranch:'All'});
+    h.put('hq_email_access/owner@example.test',{active:true,permissions:['all'],allowedBranches:['All']});
+    for(const row of rows)h.put('staff_deductions/'+row.id,row);
+    const before=structuredClone(h.docs),reads=[],api={...h.api};
+    api.getDocsFromServer=async ref=>{reads.push(ref.table);return h.api.getDocsFromServer(ref);};
+    api.getDocFromServer=async ref=>{const data=structuredClone(h.get(ref.path));return {ref,id:ref.id,exists:()=>data!==undefined,data:()=>structuredClone(data),metadata:{fromCache:false,hasPendingWrites:false}};};
+    api.getDocs=async()=>{throw Error('Payment must confirm server records.');};
     const paymentHistory={historyMonths:{}};
-    api.auth={currentUser:{uid:'sample-payroll-owner',email:'owner@example.test'}};api.sessionUser={uid:'sample-payroll-owner',email:'owner@example.test',isOwner:true,permissions:['payroll']};
-    const window={...api,loadPayrollScheduleHistory:async()=>paymentHistory,currentPayslipData:{name:'Test Staff',staffId:staffProfile.staffId,profile:{...staffProfile},branch:'Test',start:'2026-09-16',end:'2026-09-30'},
-        liveAccounts:[{id:'sample-account',name:'Sample account',balance:5000}],downloadPayslipImage(){},ManagerUI:{notify:text=>errors.push(text)}};
+    api.auth={currentUser:{uid:'sample-payroll-owner',email:'owner@example.test',emailVerified:true,providerData:[{providerId:'google.com'}]}};api.sessionUser={uid:'sample-payroll-owner',email:'owner@example.test',role:'Owner',isOwner:true,permissions:['all'],allowedBranches:['All']};
+    const window={...api,loadPayrollScheduleHistory:async()=>paymentHistory,currentPayslipData:{name:'Test Staff',staffId:staffProfile.staffId,profile:{...staffProfile},branch:'Test',start:'2026-09-16',end:'2026-09-30',basicPay:500+food,meals:food},
+        openPayslipModal(){},downloadPayslipImage(){},ManagerUI:{notify:text=>errors.push(text)}};
     window.currentPayslipData.scheduleEvidenceStamp=scheduleFreshness.payrollScheduleStamp(paymentHistory);
-    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,canOpenWorkspacePage,escapeHtml:String,window,document:{getElementById:node},Date,Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:e=>errors.push(e)}});
+    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollCompletion,finalizeOrdinaryPayroll,canOpenWorkspacePage,escapeHtml:String,window,document:{getElementById:node,querySelectorAll:()=>[]},Date,Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:e=>errors.push(e)}});
     vm.runInContext(extract('getPayrollPreviewGuard')+'\n'+extract('requirePayrollPreview')+'\n'+extract('finalizePayslip'),context);
     const preview=window.currentPayslipData,guard=window.getPayrollPreviewGuard(),token=guard.begin();
     window.globalPayrollCache={[preview.name]:preview};window.currentPayslipData=preview;guard.complete(token);
-    return {window,rows,changes,records,errors};
+    // Assertions below inspect committed transaction outcomes, not mocked SDK writes.
+    return {window,errors,h,reads,
+        get rows(){return rows.map(row=>h.get('staff_deductions/'+row.id));},
+        get changes(){return [...h.docs].filter(([path,data])=>before.has(path)&&JSON.stringify(data)!==JSON.stringify(before.get(path))).map(([path,change])=>({ref:{table:path.split('/')[0],id:path.split('/')[1]},change}));},
+        get records(){return [...h.docs].filter(([path])=>!before.has(path)).map(([path,row])=>({table:path.split('/')[0],...row}));}};
 }
 test('payroll clears POS meals already deducted, leaving paid and future-cutoff meals untouched',async()=>{
     const h=paymentFixture();await h.window.finalizePayslip();assert.deepEqual(h.errors,[]);
@@ -280,6 +291,9 @@ test('payroll clears POS meals already deducted, leaving paid and future-cutoff 
     assert.equal(h.rows.find(r=>r.id==='future').status,'Unpaid');
     assert.equal(h.changes.some(r=>r.ref.id==='paid'||r.ref.id==='future'),false);
     const saved=h.records.find(r=>r.table==='payroll_records');assert.equal(saved.frozenData.meals,330.25);
+    assert.equal(saved.finalNetPay,500);assert.equal(h.h.get('cash_accounts/sample-account').balance,4500);
+    assert.equal(h.records.filter(row=>row.table==='payroll_records').length,1);assert.ok(h.reads.includes('cash_accounts'));
+    assert.equal(h.window.currentPayslipData.isPaid,true);assert.equal(h.window.paidPayrollSnapshots.has(h.window.currentPayslipData),true);
 });
 test('an edited partial Foods amount leaves only its undeducted balance for the next payroll',async()=>{
     const h=paymentFixture(250);await h.window.finalizePayslip();assert.deepEqual(h.errors,[]);

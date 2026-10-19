@@ -28,7 +28,7 @@ export function loadManagerLibraries(w=window,d=document) {
     return Promise.all(['Chart','Swal'].map(name=>ensureManagerLibrary(name,w,d)));
 }
 export function prepareManagerTools(w=window,d=document) {
-    const tools={downloadPayslipImage:'html2canvas',downloadScheduleImage:'html2canvas',generateCOEImage:'html2canvas',
+    const tools={downloadScheduleImage:'html2canvas',generateCOEImage:'html2canvas',
         generateFranchiseSOA:'html2canvas',generateIDCard:'html2canvas',exportProspectusPDF:'html2pdf',downloadContractPDF:'html2pdf',openArchiveSalesModal:'XLSX',openAddBranchModal:'L'};
     for(const [action,library] of Object.entries(tools)) {
         const original=w[action];if(typeof original!=='function') continue;
