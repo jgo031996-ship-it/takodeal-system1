@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
-import {saveStaffProfileAtomic,staffProfileOperation} from '../takodeal-manager/staff-rate-changes.js';
+import {saveStaffProfileAtomic,staffProfileOperation,dateLegacyStaffIncrease,legacyStaffIncreaseEligibility} from '../takodeal-manager/staff-rate-changes.js';
 import {staffRateForDate,staffRateDate,staffRateWorkDate,staffProfileForWork,loadStaffSalaryTimeline,payrollSalaryProfile,assertPayrollSalaryFresh} from '../takodeal-manager/staff-rate-model.js';
 import {latePay} from '../takodeal-manager/payroll-safety.js';
 import {attendanceEstimate} from '../takodeal-franchise/franchise-data.js';
@@ -103,4 +103,54 @@ test('frozen payroll profile excludes the private salary timeline and a new sala
 
 test('operation identity includes the selected effective date',()=>{
  const api={};assert.notEqual(staffProfileOperation(api,payload(500),'staff',{effectiveDate:'2026-10-20'}),staffProfileOperation(api,payload(500),'staff',{effectiveDate:'2026-10-21'}));
+});
+
+async function undatedIncrease(){const h=fixture();await saveStaffProfileAtomic(h.api,'staff',payload(480),{operationId:'legacy-increase',expectedRate:450,now:()=>at('2026-10-19')});return h;}
+const dateLegacy=(h,date='2026-10-19',id='date-increase',options={})=>dateLegacyStaffIncrease(h.api,'staff','legacy-increase',{effectiveDate:date,operationId:id,now:()=>at('2026-10-19'),...options});
+
+test('dating the latest legacy increase freezes its trusted prior wage without altering its original audit or paid payroll',async()=>{
+ const h=await undatedIncrease(),old=structuredClone(h.get('staff_rate_changes/legacy-increase')),paid=structuredClone(h.get('payroll_records/old')),before=structuredClone(h.get('cashiers/staff'));
+ assert.equal(legacyStaffIncreaseEligibility(before,old,{staffId:'staff',auditId:'legacy-increase'}).eligible,true);
+ const saved=await dateLegacy(h,'2026-10-19','date-increase',{expectedRate:480,expectedRateRevision:null}),p=await loaded(h);
+ assert.equal(saved.alreadySaved,false);assert.equal(saved.profile.hourlyRate,480);assert.equal(staffRateForDate(p,'2026-10-18'),450);assert.equal(staffRateForDate(p,'2026-10-19'),480);
+ assert.equal(h.get('staff_rate_changes/date-increase').legacyAuditId,'legacy-increase');assert.equal(h.get('staff_salary_rates/staff').revision,1);assert.deepEqual(h.get('staff_rate_changes/legacy-increase'),old);assert.deepEqual(h.get('payroll_records/old'),paid);
+ const changed=Object.keys(h.get('cashiers/staff')).filter(key=>JSON.stringify(before[key])!==JSON.stringify(h.get('cashiers/staff')[key]));assert.deepEqual(changed.sort(),['latestRateRaise','salaryRateRevision','salaryRateVersion','staffRateAuditId']);
+});
+
+test('a future work date for a legacy increase restores its trusted baseline until that date and supports later dated raises',async()=>{
+ const h=await undatedIncrease();const saved=await dateLegacy(h,'2026-11-01');assert.equal(saved.scheduled,true);assert.equal(saved.profile.hourlyRate,450);
+ const p=await loaded(h);assert.equal(staffRateForDate(p,'2026-10-31'),450);assert.equal(staffRateForDate(p,'2026-11-01'),480);
+ await save(h,520,'2026-12-01','next',{expectedRate:450,expectedRateRevision:'date-increase'});assert.equal(staffRateForDate(await loaded(h),'2026-12-01'),520);assert.equal(h.get('staff_salary_rates/staff').baselineDailyRate,450);
+});
+
+test('legacy date retries are idempotent after a lost acknowledgement and reused dates or a second correction are rejected',async()=>{
+ const h=await undatedIncrease();h.loseNextAck();await assert.rejects(dateLegacy(h),/Connection lost/);
+ const retry=await Promise.all(Array.from({length:8},()=>dateLegacy(h,'2026-10-19','date-increase',{expectedRate:480,expectedRateRevision:null})));assert.ok(retry.every(row=>row.alreadySaved));
+ assert.equal(Object.keys(h.get('staff_salary_rates/staff').rates).length,1);await assert.rejects(dateLegacy(h,'2026-10-20'),/different salary date/);await assert.rejects(dateLegacy(h,'2026-10-19','another'),/already has dated/);
+});
+
+test('concurrent distinct legacy-date operations create exactly one timeline and immutable correction',async()=>{
+ const h=await undatedIncrease();const results=await Promise.allSettled([dateLegacy(h,'2026-10-19','first'),dateLegacy(h,'2026-10-20','second')]);
+ assert.equal(results.filter(row=>row.status==='fulfilled').length,1);assert.equal(Object.keys(h.get('staff_salary_rates/staff').rates).length,1);assert.equal([...h.docs.keys()].filter(path=>path.startsWith('staff_rate_changes/')).length,2);
+});
+
+test('an older or mismatched legacy audit and an existing salary timeline cannot be dated',async()=>{
+ for(const mutate of [
+  h=>h.put('cashiers/staff',{...h.get('cashiers/staff'),staffRateAuditId:'other'}),
+  h=>h.put('cashiers/staff',{...h.get('cashiers/staff'),latestRateRaise:{eventId:'other',version:1}}),
+  h=>h.put('cashiers/staff',{...h.get('cashiers/staff'),hourlyRate:490}),
+  h=>h.put('staff_rate_changes/legacy-increase',{...h.get('staff_rate_changes/legacy-increase'),branch:'Cabantian'}),
+  h=>h.put('staff_rate_changes/legacy-increase',{...h.get('staff_rate_changes/legacy-increase'),eventType:'baseline',fromDailyRate:0}),
+  h=>h.put('staff_salary_rates/staff',{version:1}),
+ ]){const h=await undatedIncrease();mutate(h);const before=structuredClone([...h.docs]);await assert.rejects(dateLegacy(h));assert.deepEqual([...h.docs],before);}
+});
+
+test('stale expected salary, revision or failed commit prevents every legacy date write',async()=>{
+ for(const options of [{expectedRate:450},{expectedRateRevision:'unexpected'}]){const h=await undatedIncrease(),before=structuredClone([...h.docs]);await assert.rejects(dateLegacy(h,'2026-10-19','date-increase',options),/changed after/);assert.deepEqual([...h.docs],before);}
+ const h=await undatedIncrease(),before=structuredClone([...h.docs]);h.failNextCommit();await assert.rejects(dateLegacy(h),/Commit rejected/);assert.deepEqual([...h.docs],before);
+});
+
+test('invalid dates and revoked or wrong-branch HQ access cannot date a legacy salary increase',async()=>{
+ for(const date of ['',undefined,'2026-02-30','10/19/2026']){const h=await undatedIncrease();await assert.rejects(dateLegacyStaffIncrease(h.api,'staff','legacy-increase',{operationId:'invalid',effectiveDate:date}),/valid salary effective date/);assert.equal(h.get('staff_salary_rates/staff'),undefined);}
+ for(const access of [{active:false,permissions:['payroll'],allowedBranches:['All']},{active:true,permissions:['payroll'],allowedBranches:['Cabantian']}]){const h=await undatedIncrease();h.put('hq_email_access/hr@example.test',access);await assert.rejects(dateLegacy(h),/payroll access/);assert.equal(h.get('staff_salary_rates/staff'),undefined);}
 });
