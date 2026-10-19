@@ -37,6 +37,7 @@ import {sanctionAuthority, findSanctionStaff, issueScheduledSanction, issueHando
 import {installSanctionScheduling} from './sanction-scheduling-ui.js';
 import { generateEmployeeID } from './employee-id.js';
 import {dailyStaffRate,staffProfileOperation,saveStaffProfileAtomic,installStaffRateHistory} from './staff-rate-changes.js';
+import {installStaffSalaryDateUI} from './staff-salary-date-ui.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { installMenuBulk } from './menu-bulk.js';
 import { installRecipeReplacement } from './recipe-bulk.js';
@@ -24685,6 +24686,9 @@ window.openEmployeeProfile = function(docId) {
 
 window.saveEmployeeProfile = async function() {
     if(document.getElementById('btnSaveEmpProfile')?.disabled)return;
+    const salaryDateField=document.getElementById('empRateEffectiveDate');
+    if(!salaryDateField)return window.ManagerUI.notify('Salary effective date is missing. Update the Owner app and reopen this profile before saving.');
+    if(window.staffSalaryDateReopenRequired===document.getElementById('empProfileId')?.value)return window.ManagerUI.notify('The salary effective date was saved. Reopen this profile before saving other edits.');
     let bAssignEl = document.getElementById('empBranchAssign');
     if (window.sessionUser && window.sessionUser.isFranchisee && bAssignEl) bAssignEl.disabled = false;
 
@@ -24692,7 +24696,7 @@ window.saveEmployeeProfile = async function() {
     let name = document.getElementById('empFullName').value.trim();
     let branch = document.getElementById('empBranchAssign').value;
     let rate = Number(document.getElementById('empHourlyRate').value);
-    const effectiveDate=document.getElementById('empRateEffectiveDate')?.value;
+    const effectiveDate=salaryDateField.value;
     let newRole = document.getElementById('empRole').value.trim();
     let isWorkingStudent = document.getElementById('staffWorkingStudent').checked;
     let pin = document.getElementById('empPin').value.trim();
@@ -27523,6 +27527,7 @@ installFranchiseWorkspace();
 installMonthlyBills();
 installStaffRateHistory(window,document);
 installMasterEmployeeDocuments(window,{d:document});
+installStaffSalaryDateUI(window,document);
 installCustomerHubSettings(window,document);
 
 installRiderManagementSafety(window);

@@ -4,9 +4,10 @@ import {readFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {saveStaffProfileAtomic} from '../takodeal-manager/staff-rate-changes.js';
-import {staffRateDate, staffRateForDate} from '../takodeal-manager/staff-rate-model.js';
+import {saveStaffProfileAtomic, dateLegacyStaffIncrease} from '../takodeal-manager/staff-rate-changes.js';
+import {staffRateDate, staffRateForDate, staffProfileForWork} from '../takodeal-manager/staff-rate-model.js';
 import {createEarlyTimeOutService} from '../takodeal-manager/early-time-out-actions.js';
+import {attendanceEstimate} from '../takodeal-franchise/franchise-data.js';
 
 // These tests use real local Firebase Rules runtimes. They must not be silently
 // skipped when the runtime is missing, and cannot connect to production.
@@ -742,4 +743,145 @@ test('protected approval cannot extend a shift beyond twenty-four hours; an auth
     assert.equal((await getDoc(doc(db, 'attendance_time_out_approvals/' + request.id))).data().decision, 'Rejected');
     assert.equal((await getDoc(doc(db, requestPath))).data().status, 'Rejected');
     assert.equal((await getDocs(query(collection(db, 'attendance_logs'), where('type', '==', 'TIME OUT')))).size, 0);
+});
+
+async function legacyIncreaseFixture() {
+    await rateSetup();
+    const ctx = owner(), api = rateApi(ctx), sourceId = 'legacy-date-source';
+    await rateSave(api, sourceId, 480);
+    return {ctx, api, sourceId, today: staffRateDate(),
+        source: (await getDoc(doc(api.db, 'staff_rate_changes/' + sourceId))).data(),
+        profile: (await getDoc(doc(api.db, 'cashiers/' + staffId))).data(),
+        paid: (await getDoc(doc(api.db, 'payroll_records/rate-frozen'))).data()};
+}
+function dateLegacy(f, operationId, effectiveDate = dateOffset(f.today, -8), options = {}) {
+    return dateLegacyStaffIncrease(f.api, staffId, f.sourceId, {operationId, effectiveDate, expectedRate: 480, expectedRateRevision: null, ...options});
+}
+function legacyMigrationBatch(f, ctx, operationId, {omit, audit = {}, salary = {}, profile = {}, actorUid = 'owner-uid', actorEmail = 'jgo031996@gmail.com'} = {}) {
+    const db = ctx.firestore(), effectiveDate = dateOffset(f.today, -8), batch = writeBatch(db);
+    const record = {version: 2, staffId, staffName: 'Sample Staff', branch, previousBranch: branch, eventType: 'increase',
+        fromDailyRate: 450, toDailyRate: 480, effectiveDate, rateChange: true, appliesNow: true, rateRevision: 1,
+        projectionDate: f.today, projectionDailyRate: 480, inputHash: sha, actorUid, actorEmail, actorName: 'Sample HQ',
+        legacyAuditId: f.sourceId, recordedAt: serverTimestamp(), ...audit};
+    if (omit !== 'profile') batch.update(doc(db, 'cashiers/' + staffId), {hourlyRate: 480, latestRateRaise: {eventId: operationId, version: 1},
+        salaryRateVersion: 1, salaryRateRevision: operationId, staffRateAuditId: operationId, ...profile});
+    if (omit !== 'timeline') batch.set(doc(db, 'staff_salary_rates/' + staffId), {version: 1, staffId, branch, baselineDailyRate: 450,
+        rates: {[operationId]: {effectiveDate, dailyRate: 480, sequence: 1}}, revision: 1, revisionId: operationId,
+        updatedAt: serverTimestamp(), updatedByUid: actorUid, ...salary});
+    if (omit !== 'audit') batch.set(doc(db, 'staff_rate_changes/' + operationId), record);
+    return batch.commit();
+}
+
+test('dating the latest trusted legacy raise preserves its old wage, mixed cutoff and paid snapshot', async () => {
+    const f = await legacyIncreaseFixture(), effectiveDate = dateOffset(f.today, -8), beforeDate = dateOffset(effectiveDate, -1);
+    await assertSucceeds(dateLegacy(f, 'legacy-date-confirmed', effectiveDate));
+    const profile = await salarySnapshot(f.ctx), audit = (await getDoc(doc(f.api.db, 'staff_rate_changes/legacy-date-confirmed'))).data();
+    assert.equal(profile.hourlyRate, 480); assert.equal(profile.salaryRateTimeline.baselineDailyRate, 450);
+    assert.equal(staffRateForDate(profile, dateOffset(effectiveDate, -20)), 450);
+    assert.equal(staffRateForDate(profile, beforeDate), 450); assert.equal(staffRateForDate(profile, effectiveDate), 480);
+    assert.equal(audit.version, 2); assert.equal(audit.legacyAuditId, f.sourceId); assert.equal(audit.fromDailyRate, 450); assert.equal(audit.toDailyRate, 480);
+    const logs = [beforeDate, effectiveDate].flatMap((date, index) => [
+        {id: 'dated-work-in-' + index, staffId, staffName: 'Sample Staff', branch, type: 'TIME IN', lateMinutes: 0, timestamp: new Date(date + 'T09:00:00+08:00')},
+        {id: 'dated-work-out-' + index, staffId, staffName: 'Sample Staff', branch, type: 'TIME OUT', timestamp: new Date(date + 'T17:00:00+08:00')}
+    ]);
+    const estimates = attendanceEstimate({logs, profiles: [{...profile, id: staffId, nightDiffRate: 0}], start: beforeDate, end: effectiveDate, branch});
+    assert.equal(estimates.length, 1); assert.equal(estimates[0].basic, 930);
+    assert.deepEqual(estimates[0].logs.map(row => row.dailyRate), [450, 480]);
+    assert.equal(staffProfileForWork(profile, logs[0], {}).hourlyRate, 450);
+    assert.equal(staffProfileForWork(profile, logs[2], {}).hourlyRate, 480);
+    assert.deepEqual((await getDoc(doc(f.api.db, 'staff_rate_changes/' + f.sourceId))).data(), f.source);
+    assert.deepEqual((await getDoc(doc(f.api.db, 'payroll_records/rate-frozen'))).data(), f.paid);
+});
+
+test('legacy-date lost acknowledgement and repeated operation reuse one correction and refuse another date or operation', async () => {
+    const f = await legacyIncreaseFixture(), run = f.api.runTransaction;
+    let lose = true;
+    f.api.runTransaction = async (...args) => {const result = await run(...args); if (lose) {lose = false; throw Error('Synthetic legacy-date lost acknowledgement');} return result;};
+    await assert.rejects(dateLegacy(f, 'legacy-date-retry'), /lost acknowledgement/);
+    assert.equal((await dateLegacy(f, 'legacy-date-retry')).alreadySaved, true);
+    await assert.rejects(dateLegacy(f, 'legacy-date-retry', dateOffset(f.today, -7)));
+    await assert.rejects(dateLegacy(f, 'legacy-date-second-operation'));
+    const profile = await salarySnapshot(f.ctx);
+    assert.deepEqual(Object.keys(profile.salaryRateTimeline.rates), ['legacy-date-retry']);
+    assert.equal(profile.salaryRateTimeline.revision, 1);
+    assert.equal((await getDocs(query(collection(f.api.db, 'staff_rate_changes'), where('staffId', '==', staffId), where('branch', '==', branch)))).size, 2);
+    assert.deepEqual((await getDoc(doc(f.api.db, 'payroll_records/rate-frozen'))).data(), f.paid);
+});
+
+test('legacy dating refuses a missing or no-longer-current audit, stale wage and stale revision without a partial correction', async () => {
+    const f = await legacyIncreaseFixture();
+    await assert.rejects(dateLegacyStaffIncrease(f.api, staffId, 'missing-legacy-audit', {operationId: 'legacy-missing-source', effectiveDate: dateOffset(f.today, -8), expectedRate: 480, expectedRateRevision: null}));
+    await assert.rejects(dateLegacy(f, 'legacy-stale-opened-rate', undefined, {expectedRate: 450}));
+    await assert.rejects(dateLegacy(f, 'legacy-stale-opened-revision', undefined, {expectedRateRevision: 'stale-private-revision'}));
+    await adminSet('cashiers/' + staffId, {...f.profile, hourlyRate: 481});
+    await assert.rejects(dateLegacy(f, 'legacy-current-wage-changed'));
+    await adminSet('cashiers/' + staffId, {...f.profile, staffRateAuditId: 'another-audit'});
+    await assert.rejects(dateLegacy(f, 'legacy-current-audit-changed'));
+    await adminSet('cashiers/' + staffId, {...f.profile, latestRateRaise: {eventId: 'another-audit', version: 1}});
+    await assert.rejects(dateLegacy(f, 'legacy-current-marker-changed'));
+    assert.equal((await getDoc(doc(f.api.db, 'staff_salary_rates/' + staffId))).exists(), false);
+    for (const id of ['legacy-missing-source', 'legacy-stale-opened-rate', 'legacy-stale-opened-revision', 'legacy-current-wage-changed', 'legacy-current-audit-changed', 'legacy-current-marker-changed']) {
+        assert.equal((await getDoc(doc(f.api.db, 'staff_rate_changes/' + id))).exists(), false);
+    }
+    assert.deepEqual((await getDoc(doc(f.api.db, 'staff_rate_changes/' + f.sourceId))).data(), f.source);
+});
+
+test('dating a legacy raise rejects an existing private timeline and cannot replace already dated history', async () => {
+    const f = await legacyIncreaseFixture();
+    const orphan = {version: 1, staffId, branch, baselineDailyRate: 400, rates: {}, revision: 1, revisionId: 'unrelated-history', updatedByUid: 'owner-uid', updatedAt: Timestamp.fromMillis(1000)};
+    await adminSet('staff_salary_rates/' + staffId, orphan);
+    await assert.rejects(dateLegacy(f, 'legacy-orphan-timeline'));
+    assert.deepEqual((await getDoc(doc(f.api.db, 'staff_salary_rates/' + staffId))).data(), orphan);
+    assert.equal((await getDoc(doc(f.api.db, 'staff_rate_changes/legacy-orphan-timeline'))).exists(), false);
+    await adminSet('cashiers/' + staffId, {...f.profile, salaryRateVersion: 1, salaryRateRevision: 'unrelated-history'});
+    await assert.rejects(dateLegacy(f, 'legacy-already-dated'));
+    assert.deepEqual((await getDoc(doc(f.api.db, 'staff_salary_rates/' + staffId))).data(), orphan);
+});
+
+test('legacy migration Rules require the exact immutable source and all three linked writes', async () => {
+    const f = await legacyIncreaseFixture();
+    for (const omit of ['profile', 'timeline', 'audit']) await assertFails(legacyMigrationBatch(f, f.ctx, 'legacy-partial-' + omit, {omit}));
+    await assertFails(legacyMigrationBatch(f, f.ctx, 'legacy-forged-source-id', {audit: {legacyAuditId: 'missing-source'}}));
+    await assertFails(legacyMigrationBatch(f, f.ctx, 'legacy-forged-old-wage', {audit: {fromDailyRate: 449}, salary: {baselineDailyRate: 449}}));
+    await assertFails(legacyMigrationBatch(f, f.ctx, 'legacy-forged-current-wage', {audit: {toDailyRate: 490, projectionDailyRate: 490}, profile: {hourlyRate: 490},
+        salary: {rates: {'legacy-forged-current-wage': {effectiveDate: dateOffset(f.today, -8), dailyRate: 490, sequence: 1}}}}));
+    assert.equal((await getDoc(doc(f.api.db, 'staff_salary_rates/' + staffId))).exists(), false);
+    assert.deepEqual((await getDoc(doc(f.api.db, 'cashiers/' + staffId))).data(), f.profile);
+    await assertSucceeds(legacyMigrationBatch(f, f.ctx, 'legacy-complete-control'));
+    assert.equal(staffRateForDate(await salarySnapshot(f.ctx), dateOffset(f.today, -9)), 450);
+    assert.equal(staffRateForDate(await salarySnapshot(f.ctx), dateOffset(f.today, -8)), 480);
+    assert.deepEqual((await getDoc(doc(f.api.db, 'staff_rate_changes/' + f.sourceId))).data(), f.source);
+    assert.deepEqual((await getDoc(doc(f.api.db, 'payroll_records/rate-frozen'))).data(), f.paid);
+});
+
+test('only verified payroll HQ in the staff branch can date a legacy increase', async () => {
+    const f = await legacyIncreaseFixture();
+    const denied = [
+        [env.unauthenticatedContext(), '', ''],
+        [anonymous(uid), uid, ''],
+        [google('unverified-owner', 'jgo031996@gmail.com', false), 'unverified-owner', 'jgo031996@gmail.com'],
+        [otherHQ(), 'hq-city', 'hq-city@example.test'],
+        [google('no-permission', 'no-permission@example.test'), 'no-permission', 'no-permission@example.test']
+    ];
+    for (const [index, [ctx, actorUid, actorEmail]] of denied.entries()) {
+        await assertFails(legacyMigrationBatch(f, ctx, 'legacy-denied-' + index, {actorUid, actorEmail}));
+    }
+    const ctx = google('rate-maa', 'rate-maa@example.test'), api = rateApi(ctx, 'rate-maa', 'rate-maa@example.test');
+    await adminSet('staff_document_config/current', vaultConfig(false));
+    await assertSucceeds(dateLegacyStaffIncrease(api, staffId, f.sourceId, {operationId: 'legacy-scoped-payroll', effectiveDate: dateOffset(f.today, -8), expectedRate: 480, expectedRateRevision: null}));
+    assert.equal((await salarySnapshot(f.ctx)).salaryRateTimeline.baselineDailyRate, 450);
+    await assertFails(getDoc(doc(otherHQ().firestore(), 'staff_salary_rates/' + staffId)));
+    await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(), 'staff_rate_changes/legacy-scoped-payroll')));
+});
+
+test('invalid legacy sources and dates cannot create a timeline or a guessed prior wage', async () => {
+    const f = await legacyIncreaseFixture();
+    for (const date of ['', '2026-02-30', '10/19/2026']) await assert.rejects(dateLegacy(f, 'legacy-invalid-' + nextOp(), date));
+    for (const [index, sourcePatch] of [{version: 2}, {eventType: 'unchanged'}, {fromDailyRate: null}, {fromDailyRate: 0}, {fromDailyRate: 480}, {toDailyRate: 479}, {staffId: 'employee-2'}, {staffName: 'Another Staff'}, {branch: 'Citygate'}].entries()) {
+        await adminSet('staff_rate_changes/' + f.sourceId, {...f.source, ...sourcePatch});
+        await assert.rejects(dateLegacy(f, 'legacy-invalid-source-' + index));
+        assert.equal((await getDoc(doc(f.api.db, 'staff_rate_changes/legacy-invalid-source-' + index))).exists(), false);
+    }
+    assert.equal((await getDoc(doc(f.api.db, 'staff_salary_rates/' + staffId))).exists(), false);
+    assert.deepEqual((await getDoc(doc(f.api.db, 'payroll_records/rate-frozen'))).data(), f.paid);
 });

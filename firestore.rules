@@ -514,7 +514,7 @@ service cloud.firestore {
         && id.matches('^[A-Za-z0-9_-]{1,128}$') && data.version == 1
         && after.get('salaryRateVersion', 0) != 1
         && data.staffId is string && data.staffId.matches('^[A-Za-z0-9_-]{1,128}$')
-        && staffRateHQ(data.branch) && (!exists(profile) || staffRateHQ(before.get('branch', '')))
+        && staffRateHQ(data.branch) && (!exists(profile) || before.get('branch','') == data.branch || staffRateHQ(before.get('branch', '')))
         && data.staffName == after.cashierName && data.branch == after.branch
         && data.previousBranch == before.get('branch', '')
         && staffRateValid(oldRate) && staffRateValid(newRate) && newRate != null
@@ -533,19 +533,39 @@ service cloud.firestore {
         ? (data.eventType == 'increase' ? {'eventId': id, 'version': 1} : null)
         : before.get('latestRateRaise', null);
     }
+    function staffRateLegacyCorrection(data, before, after) {
+      let legacyId = data.get('legacyAuditId','__no_legacy__');
+      let legacyPath = /databases/$(database)/documents/staff_rate_changes/$(legacyId);
+      let legacy = exists(legacyPath) ? get(legacyPath).data : {};
+      let salaryPath = /databases/$(database)/documents/staff_salary_rates/$(data.staffId);
+      return data.keys().hasAny(['legacyAuditId']) && legacyId is string && legacyId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && exists(legacyPath) && legacy.version == 1 && legacy.eventType == 'increase' && legacy.get('effectiveDate',null) == null
+        && before.get('salaryRateVersion',0) == 0 && before.get('salaryRateRevision',null) == null && !exists(salaryPath)
+        && before.get('staffRateAuditId','') == legacyId && before.get('latestRateRaise',null) == {'eventId':legacyId,'version':1}
+        && legacy.staffId == data.staffId && legacy.staffName == before.cashierName && legacy.branch == before.branch
+        && legacy.fromDailyRate is number && legacy.fromDailyRate > 0 && staffRateValid(legacy.fromDailyRate)
+        && legacy.toDailyRate is number && legacy.toDailyRate > legacy.fromDailyRate && staffRateValid(legacy.toDailyRate)
+        && staffRateValue(before) == legacy.toDailyRate && data.fromDailyRate == legacy.fromDailyRate && data.toDailyRate == legacy.toDailyRate
+        && data.eventType == 'increase' && data.rateChange == true && data.rateRevision == 1
+        && data.appliesNow == (data.effectiveDate <= data.projectionDate)
+        && data.projectionDailyRate == (data.appliesNow ? legacy.toDailyRate : legacy.fromDailyRate)
+        && after.diff(before).affectedKeys().hasOnly(['hourlyRate','staffRateAuditId','latestRateRaise','salaryRateVersion','salaryRateRevision']);
+    }
     function staffRateAuditCreateV2(data, id) {
       let profile = /databases/$(database)/documents/cashiers/$(data.staffId);
       let before = exists(profile) ? get(profile).data : {};
       let after = getAfter(profile).data;
       let salary = getAfter(/databases/$(database)/documents/staff_salary_rates/$(data.staffId)).data;
-      return data.keys().hasOnly(['version','staffId','staffName','branch','previousBranch','eventType','fromDailyRate','toDailyRate','effectiveDate','rateChange','appliesNow','rateRevision','projectionDate','projectionDailyRate','inputHash','actorUid','actorEmail','actorName','recordedAt'])
+      return data.keys().hasOnly(['version','staffId','staffName','branch','previousBranch','eventType','fromDailyRate','toDailyRate','effectiveDate','rateChange','appliesNow','rateRevision','projectionDate','projectionDailyRate','inputHash','actorUid','actorEmail','actorName','recordedAt','legacyAuditId'])
         && data.keys().hasAll(['version','staffId','staffName','branch','previousBranch','eventType','fromDailyRate','toDailyRate','effectiveDate','rateChange','appliesNow','rateRevision','projectionDate','projectionDailyRate','inputHash','actorUid','actorEmail','actorName','recordedAt'])
         && data.version == 2 && id.matches('^[A-Za-z0-9_-]{1,128}$')
         && data.staffId is string && data.staffId.matches('^[A-Za-z0-9_-]{1,128}$')
-        && staffRateHQ(data.branch) && (!exists(profile) || staffRateHQ(before.get('branch','')))
+        && staffRateHQ(data.branch) && (!exists(profile) || before.get('branch','') == data.branch || staffRateHQ(before.get('branch','')))
         && data.staffName == after.cashierName && data.branch == after.branch && data.previousBranch == before.get('branch','')
         && staffRateValid(data.fromDailyRate) && staffRateValid(data.toDailyRate) && data.toDailyRate != null
-        && (before.get('salaryRateVersion',0) == 1 || data.fromDailyRate == staffRateValue(before))
+        && (data.keys().hasAny(['legacyAuditId'])
+          ? staffRateLegacyCorrection(data,before,after)
+          : before.get('salaryRateVersion',0) == 1 || data.fromDailyRate == staffRateValue(before))
         && data.rateChange is bool && data.eventType == (data.rateChange ? staffRateEvent(data.fromDailyRate,data.toDailyRate) : 'unchanged')
         && data.appliesNow is bool && (!data.appliesNow || data.rateChange && data.projectionDailyRate == data.toDailyRate)
         && data.effectiveDate is string && data.effectiveDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
@@ -571,8 +591,11 @@ service cloud.firestore {
       return after.keys().hasOnly(['version','staffId','branch','baselineDailyRate','rates','revision','revisionId','updatedAt','updatedByUid'])
         && after.keys().hasAll(['version','staffId','branch','baselineDailyRate','rates','revision','revisionId','updatedAt','updatedByUid'])
         && after.version == 1 && after.staffId == id && staffRateHQ(after.branch)
-        && (!before.keys().hasAny(['branch']) || staffRateHQ(before.branch))
-        && staffRateValid(after.baselineDailyRate) && after.baselineDailyRate == before.get('baselineDailyRate',priorRate)
+        && (!before.keys().hasAny(['branch']) || before.branch == after.branch || staffRateHQ(before.branch))
+        && staffRateValid(after.baselineDailyRate)
+        && (audit.keys().hasAny(['legacyAuditId'])
+          ? (!before.keys().hasAny(['version']) && staffRateLegacyCorrection(audit,get(profilePath).data,getAfter(profilePath).data) && after.baselineDailyRate == audit.fromDailyRate)
+          : after.baselineDailyRate == before.get('baselineDailyRate',priorRate))
         && after.revision is int && after.revision == before.get('revision',0) + 1
         && after.revisionId is string && after.revisionId.matches('^[A-Za-z0-9_-]{1,128}$')
         && after.rates is map && after.rates.size() <= 500
@@ -589,7 +612,7 @@ service cloud.firestore {
       let audit = getAfter(path).data;
       return auditId is string && auditId.matches('^[A-Za-z0-9_-]{1,128}$')
         && !exists(path) && staffRateHQ(after.get('branch', ''))
-        && (!before.keys().hasAny(['branch']) || staffRateHQ(before.branch))
+        && (!before.keys().hasAny(['branch']) || before.branch == after.branch || staffRateHQ(before.branch))
         && audit.staffId == id && audit.branch == after.branch
         && audit.actorUid == request.auth.uid && audit.recordedAt == request.time
         && (audit.get('version',0) == 2

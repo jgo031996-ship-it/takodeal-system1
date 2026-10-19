@@ -1,7 +1,7 @@
 import {resolveHQAccount} from './hq-account-model.js';
 import {createWorkspaceSession,canOpenHrTab,OWNER_EMAIL} from './workspace-access-model.js';
-import {dailyStaffRate,staffRateDate,validRateDate,staffRateForDate,validateSalaryTimeline,loadStaffSalaryTimeline} from './staff-rate-model.js';
-export {dailyStaffRate} from './staff-rate-model.js';
+import {dailyStaffRate,staffRateDate,validRateDate,staffRateForDate,validateSalaryTimeline,loadStaffSalaryTimeline,legacyStaffIncreaseEligibility} from './staff-rate-model.js';
+export {dailyStaffRate,legacyStaffIncreaseEligibility} from './staff-rate-model.js';
 const text=value=>String(value ?? '').trim();
 const canonical=value=>Array.isArray(value)?value.map(canonical):value && typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,canonical(value[key])])):value;
 const intent=payload=>{const {roleHistory,...fields}=payload;return canonical(fields);};
@@ -96,6 +96,42 @@ export async function saveStaffProfileAtomic(api,staffId,payload,{operationId,ex
         return {staffId,alreadySaved:false,eventType,profile:{...(old || {}),...update}};
     });
 }
+export async function dateLegacyStaffIncrease(api,staffId,legacyAuditId,{effectiveDate,operationId,expectedRate,expectedRateRevision,now=()=>new Date()}={}){
+    if(!/^[A-Za-z0-9_-]{1,128}$/.test(staffId||'')||!/^[A-Za-z0-9_-]{1,128}$/.test(legacyAuditId||'')||!/^[A-Za-z0-9_-]{1,128}$/.test(operationId||'')||legacyAuditId===operationId)throw Error('Reopen this salary increase before choosing its work date.');
+    if(!validRateDate(effectiveDate))throw Error('Choose a valid salary effective date.');
+    const actor=actorNow(api),inputHash=await fingerprint({action:'date-legacy-increase',staffId,legacyAuditId,effectiveDate});
+    const access=await api.getDocsFromServer(api.query(api.collection(api.db,'hq_managers'),api.where('email','==',actor.email)));
+    const bridge=await readProtectedAccess(api,actor),account=resolveHQAccount(access.docs.map(row=>({id:row.id,data:row.data()})));
+    authorized(api,actor,account,[],bridge);
+    return api.runTransaction(api.db,async tx=>{
+        const records=[];for(const row of access.docs){const snap=await tx.get(api.doc(api.db,'hq_managers',row.id));if(snap.exists())records.push({id:row.id,data:snap.data()});}
+        const fresh=resolveHQAccount(records),profileRef=api.doc(api.db,'cashiers',staffId),legacyRef=api.doc(api.db,'staff_rate_changes',legacyAuditId),auditRef=api.doc(api.db,'staff_rate_changes',operationId),salaryRef=api.doc(api.db,'staff_salary_rates',staffId);
+        const profileSnap=await tx.get(profileRef),sourceSnap=await tx.get(legacyRef),savedSnap=await tx.get(auditRef),salarySnap=await tx.get(salaryRef);
+        const accessSnap=actor.email===OWNER_EMAIL?null:await tx.get(api.doc(api.db,'hq_email_access',actor.email)),old=profileSnap.exists()?profileSnap.data():null;
+        if(!old)throw Error('This employee profile no longer exists.');
+        authorized(api,actor,fresh,[old.branch],accessSnap?.exists()?accessSnap.data():null);
+        const today=staffRateDate(now());
+        if(savedSnap.exists()){
+            const saved=savedSnap.data();
+            if(saved.version!==2||saved.actorUid!==actor.uid||saved.staffId!==staffId||saved.legacyAuditId!==legacyAuditId||saved.inputHash!==inputHash)throw Error('This save reference belongs to a different salary date. Reopen the profile.');
+            if(old.salaryRateVersion!==1||!salarySnap.exists())throw Error('The confirmed salary history is unavailable. Reopen the employee profile.');
+            const timeline=validateSalaryTimeline(salarySnap.data());
+            if(timeline.staffId!==staffId||timeline.branch!==old.branch)throw Error('Salary history does not match this employee.');
+            return {staffId,legacyAuditId,alreadySaved:true,eventType:'increase',effectiveDate:saved.effectiveDate,scheduled:saved.effectiveDate>today,profile:{...old,salaryRateTimeline:timeline}};
+        }
+        if(salarySnap.exists())throw Error('This employee already has dated salary history. Reopen the employee profile.');
+        const eligible=legacyStaffIncreaseEligibility(old,sourceSnap.exists()?sourceSnap.data():null,{staffId,auditId:legacyAuditId});
+        if(!eligible.eligible)throw Error(eligible.reason);
+        if(expectedRate!==undefined&&dailyStaffRate(old)!==expectedRate||expectedRateRevision!==undefined&&(old.salaryRateRevision??null)!==expectedRateRevision)throw Error('This salary changed after the profile was opened. Reopen it before choosing the work date.');
+        const from=eligible.fromDailyRate,to=eligible.toDailyRate,appliesNow=effectiveDate<=today,projected=appliesNow?to:from;
+        const timeline={version:1,staffId,branch:old.branch,baselineDailyRate:from,rates:{[operationId]:{effectiveDate,dailyRate:to,sequence:1}},revision:1,revisionId:operationId,updatedAt:api.serverTimestamp(),updatedByUid:actor.uid};
+        const update={hourlyRate:projected,staffRateAuditId:operationId,latestRateRaise:appliesNow?{eventId:operationId,version:1}:old.latestRateRaise,salaryRateVersion:1,salaryRateRevision:operationId};
+        const audit={version:2,staffId,staffName:old.cashierName,branch:old.branch,previousBranch:old.branch,eventType:'increase',fromDailyRate:from,toDailyRate:to,effectiveDate,rateChange:true,appliesNow,rateRevision:1,projectionDate:today,projectionDailyRate:projected,legacyAuditId,inputHash,actorUid:actor.uid,actorEmail:actor.email,actorName:actor.name,recordedAt:api.serverTimestamp()};
+        authorized(api,actor,fresh,[old.branch],accessSnap?.exists()?accessSnap.data():null);
+        tx.update(profileRef,update);tx.set(salaryRef,timeline);tx.set(auditRef,audit);
+        return {staffId,legacyAuditId,alreadySaved:false,eventType:'increase',effectiveDate,scheduled:!appliesNow,profile:{...old,...update,salaryRateTimeline:timeline}};
+    });
+}
 const escape=value=>String(value ?? '').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const recordedMillis=value=>value?.toMillis?.() ?? value?.toDate?.()?.getTime?.() ?? (value?.seconds!=null?value.seconds*1000:new Date(value).getTime());
 export function staffRateHistoryMarkup(profile,events=[]) {
@@ -109,13 +145,13 @@ export function installStaffRateHistory(api,d) {
     if(api.staffRateHistoryInstalled)return;api.staffRateHistoryInstalled=true;const original=api.openEmployeeProfile;let epoch=0;
     api.openEmployeeProfile=function(id){
         const token=++epoch,node=d.getElementById('masterRateHistory'),actorUid=api.auth?.currentUser?.uid;
-        if(node)node.textContent='';original.call(api,id);
+        api.renderSalaryEffectiveDateActions?.(null,[]);if(node)node.textContent='';original.call(api,id);
         if(!node || !actorUid || !api.sessionUser || !canOpenHrTab(api.sessionUser,'Feed'))return;
         const rateInput=d.getElementById('empHourlyRate'),openedValue=rateInput?.value;
         node.textContent='Loading recorded rate changes…';
         api.getDocFromServer(api.doc(api.db,'cashiers',id)).then(async snapshot=>{
             if(epoch!==token || api.auth?.currentUser?.uid!==actorUid || !canOpenHrTab(api.sessionUser,'Feed') || d.getElementById('empProfileId')?.value!==id || d.getElementById('employeeProfileModal')?.style.display==='none')return;
-            if(!snapshot.exists()){node.textContent='Staff profile no longer exists.';return;}
+            if(!snapshot.exists()){node.textContent='Staff profile no longer exists.';api.renderSalaryEffectiveDateActions?.(null,[]);return;}
             const profile=await loadStaffSalaryTimeline(api,{...snapshot.data(),staffId:id});
             if(epoch!==token||d.getElementById('empProfileId')?.value!==id)return;
             if(rateInput && rateInput.value===openedValue){rateInput.value=staffRateForDate(profile)??'';if(api.staffProfileBaseline?.id===id){api.staffProfileBaseline.rate=staffRateForDate(profile);api.staffProfileBaseline.rateRevision=profile.salaryRateRevision??null;}}
@@ -124,9 +160,9 @@ export function installStaffRateHistory(api,d) {
             if(epoch!==token || actorNow(api).uid!==actorUid || d.getElementById('empProfileId')?.value!==id)return;
             const events=await api.getDocsFromServer(api.query(api.collection(api.db,'staff_rate_changes'),api.where('staffId','==',id),api.where('branch','==',profile.branch)));
             if(epoch!==token || api.auth?.currentUser?.uid!==actorUid || !canOpenHrTab(api.sessionUser,'Feed') || d.getElementById('empProfileId')?.value!==id || d.getElementById('employeeProfileModal')?.style.display==='none')return;
-            node.innerHTML=staffRateHistoryMarkup(profile,events.docs.map(row=>({...row.data(),id:row.id})));
-        }).catch(()=>{if(epoch===token)node.textContent='Recorded rate changes could not load. Reopen the profile when connected.';});
+            const rows=events.docs.map(row=>({...row.data(),id:row.id}));node.innerHTML=staffRateHistoryMarkup(profile,rows);api.renderSalaryEffectiveDateActions?.(profile,rows);
+        }).catch(()=>{if(epoch===token){node.textContent='Recorded rate changes could not load. Reopen the profile when connected.';api.renderSalaryEffectiveDateActions?.(null,[]);}});
     };
-    const addNew=api.addNewStaff;if(typeof addNew==='function')api.addNewStaff=function(...args){epoch++;const node=d.getElementById('masterRateHistory');if(node){node.textContent='';node.innerHTML='';}return addNew.apply(api,args);};
-    api.onAuthStateChanged?.(api.auth,()=>{epoch++;const node=d.getElementById('masterRateHistory');if(node){node.textContent='';node.innerHTML='';}});
+    const addNew=api.addNewStaff;if(typeof addNew==='function')api.addNewStaff=function(...args){epoch++;api.renderSalaryEffectiveDateActions?.(null,[]);const node=d.getElementById('masterRateHistory');if(node){node.textContent='';node.innerHTML='';}return addNew.apply(api,args);};
+    api.onAuthStateChanged?.(api.auth,()=>{epoch++;api.renderSalaryEffectiveDateActions?.(null,[]);const node=d.getElementById('masterRateHistory');if(node){node.textContent='';node.innerHTML='';}});
 }

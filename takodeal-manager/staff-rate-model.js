@@ -5,6 +5,15 @@ export function dailyStaffRate(profile){
  if(value==null||String(value).trim()===''||!['number','string'].includes(typeof value)||typeof value==='string'&&!/^[+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.trim()))return null;
  const rate=Number(value);return Number.isFinite(rate)&&rate>=0?rate:null;
 }
+export function legacyStaffIncreaseEligibility(profile,audit,{staffId,auditId}={}){
+ const result={eligible:false,reason:'Only the latest undated salary increase can be given a work date.',staffId:staffId||profile?.staffId||profile?.id,branch:profile?.branch,legacyAuditId:auditId||audit?.id,fromDailyRate:audit?.fromDailyRate,toDailyRate:audit?.toDailyRate};
+ if(!profile||!audit||!result.staffId||!result.legacyAuditId)return result;
+ if(profile.salaryRateVersion!=null&&profile.salaryRateVersion!==0||profile.salaryRateRevision!=null||profile.salaryRateTimeline)return {...result,reason:'This employee already has dated salary history.'};
+ const from=audit.fromDailyRate,to=audit.toDailyRate;
+ if(audit.version!==1||audit.eventType!=='increase'||audit.effectiveDate!=null||typeof from!=='number'||typeof to!=='number'||!Number.isFinite(from)||!Number.isFinite(to)||from<=0||to<=from)return result;
+ if(audit.staffId!==result.staffId||audit.staffName!==profile.cashierName||audit.branch!==profile.branch||profile.staffRateAuditId!==result.legacyAuditId||profile.latestRateRaise?.version!==1||profile.latestRateRaise?.eventId!==result.legacyAuditId||dailyStaffRate(profile)!==to)return {...result,reason:'The latest saved salary no longer matches this increase. Reopen the employee profile.'};
+ return {...result,eligible:true,reason:''};
+}
 export function validRateDate(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;}
 export function staffRateDate(value=new Date()){
  if(validRateDate(value))return value;
