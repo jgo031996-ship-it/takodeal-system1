@@ -14,7 +14,7 @@ import {loadPrinterLogo} from './printer-logo.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { receiveDispatch } from './dispatch-safety.js';
 import { MALL_FLOAT, mallOpeningCash, stockRequestDue, autoRequestId, businessClock } from './branch-operations.js';
-import { closeShiftAtomic, readBranchPolicy, readMallOpeningCash } from './cash-settlement.js';
+import { closeShiftAtomic, closeLegacyShiftAtomic, captureShiftCloseIdentity, assertShiftCloseIdentity, resolveShiftCloseIdentity, readBranchPolicy, readMallOpeningCash } from './cash-settlement.js';
 import { createRemittanceAttemptStore, readRemittanceDrawer, submitRemittanceAtomic, readClosedCashCarry, recordOpeningCashReview } from './remittance-safety.js';
 import {captureAttendanceSchedule} from './payroll-safety.js';
 import {prepareEarlyTimeOut} from './early-time-out-ui.js';
@@ -1385,8 +1385,8 @@ window.getLiveShiftDetails = async function (branch) {
 
 window.closeShift = async function (branch, shiftId, actualCash, expectedCash, diff) {
   try {
-    const shiftRef = doc(db, "shifts", shiftId);
-    await updateDoc(shiftRef, { active: false, endTime: serverTimestamp(), actualCash: actualCash, expectedCash: expectedCash, difference: diff });
+    const captured=captureShiftCloseIdentity(window,branch),closer=await resolveShiftCloseIdentity(window,captured);
+    await closeLegacyShiftAtomic(window,{branch,shiftId,actualCash,expectedCash,diff,closer,assertCurrent:()=>assertShiftCloseIdentity(window,captured)});
     return true;
   } catch (e) { console.error(e); throw e; }
 };
@@ -7280,7 +7280,10 @@ window.MASTER_CloseShift = async function () {
         if (!shiftId) throw new Error('No active shift found to close.');
 
         let branchName = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-        let cashierName = (window.sessionUser && window.sessionUser.cashierName) ? window.sessionUser.cashierName : (localStorage.getItem('cashierName') || 'Unknown');
+        const closeIdentity=captureShiftCloseIdentity(window,branchName);
+        const assertCloseCurrent=()=>{assertShiftCloseIdentity(window,closeIdentity);const currentId=(typeof activeShiftDetails!=='undefined'&&activeShiftDetails)?activeShiftDetails.logId:localStorage.getItem('currentShiftId');if(currentId!==shiftId)throw Error('The active shift changed. Reopen its closing review.');};
+        const closer=await resolveShiftCloseIdentity(window,closeIdentity);assertCloseCurrent();
+        let cashierName = closer.staffName;
 
         let startTime = new Date();
         if (typeof activeShiftDetails !== 'undefined' && activeShiftDetails && activeShiftDetails.startTime) {
@@ -7413,7 +7416,11 @@ window.MASTER_CloseShift = async function () {
             if (!dailyClose) { if (confirmBtn) { confirmBtn.innerHTML=origText; confirmBtn.disabled=false; } return; }
         }
         if (confirmBtn) confirmBtn.innerHTML = "⏳ Lightning Syncing to Cloud...";
-        await closeShiftAtomic(window, {expectedSalesRevision,shiftId,branch:branchName,cashier:cashierName,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance,cashOut,...dailyClose,closing:{cashBreakdown,physicalStockCount}});
+        assertCloseCurrent();
+        await closeShiftAtomic(window, {expectedSalesRevision,shiftId,branch:branchName,cashier:cashierName,closer,assertCurrent:assertCloseCurrent,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance,cashOut,...dailyClose,closing:{cashBreakdown,physicalStockCount}});
+        // The old account's commit remains saved if the screen changed while
+        // its acknowledgement travelled back. Do not clear the new session.
+        try{assertCloseCurrent();}catch{return;}
 
         // Clear the draft only after the atomic close succeeds.
         clearCurrentShiftCloseDraft({branch: branchName, shiftId});

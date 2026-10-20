@@ -8,6 +8,7 @@ import {sendStaffDeductionReply} from '../takodeal-staff/deduction-inbox.js';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {validateCashShortageLink} from '../takodeal-manager/cash-shortage-model.js';
 import {isLatenessRequest} from '../takodeal-manager/payroll-safety.js';
+import {shiftCloserSummaryHTML} from '../takodeal-manager/shift-closer-display.js';
 
 // Real native-dialog UI and real transaction callbacks, with a minimal DOM and
 // fictional in-memory records. No Firebase connection or real payroll actions.
@@ -39,6 +40,8 @@ const now=()=>new Date('2026-10-20T12:00:00+08:00');
 const hold=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const shiftId='sample-closed-shift',caseId='cash-shortage-'+shiftId;
+const closedBy=(extra={})=>({version:1,actorType:'staff',source:'pos-session',staffId:'sample-alpha',staffName:'Sample Alpha',authUid:'sample-pos-device',branch:'Sample Branch',recordedAt:now(),...extra});
+const setCloser=(f,extra={})=>f.h.put('shifts/'+shiftId,{...f.h.get('shifts/'+shiftId),closedBy:closedBy(extra)});
 async function fixture({pending=false,response=false,read=false,actions:overrides={}}={}){
  const h=firestoreHarness(),document=new Document(),email='jgo031996@gmail.com',notified=[],invalidated=[];
  const auth={currentUser:{uid:'sample-owner',email,emailVerified:true,providerData:[{providerId:'google.com'}]}};
@@ -64,6 +67,38 @@ test('joined cashier log is informational: actual UI requires explicit saved sta
  const f=await fixture(),dialog=await f.open();assert.equal(node(dialog,'staff').value,'');assert.match(node(dialog,'content').textContent,/Sample Alpha \/ Sample Beta/);assert.match(node(dialog,'content').textContent,/A shortage alone does not establish responsibility/);assert.doesNotMatch(node(dialog,'staff').textContent,/Inactive|Other Branch/);
  fillOpen(dialog,'');await node(dialog,'save').onclick();assert.equal(f.calls.open.length,0);assert.equal(linkedCount(f.h),0);assert.match(node(dialog,'status').textContent,/Select the staff account/);
  fillOpen(dialog);await node(dialog,'save').onclick();assert.equal(f.calls.open[0][0].staffId,'sample-beta');assert.equal(linkedCount(f.h),3);assert.equal(f.h.get('cash_shortage_reviews/'+caseId).staffId,'sample-beta');assert.equal(f.h.get('staff_deductions/'+caseId).amount,0);assert.equal(f.h.get('staff_deductions/'+caseId).status,'Pending Review');
+});
+
+test('saved exact active closing account is suggested without creating a case and the Owner can choose another account',async()=>{
+ const f=await fixture();setCloser(f);const before=structuredClone([...f.h.docs]),dialog=await f.open();assert.equal(node(dialog,'staff').value,'sample-alpha');assert.match(node(dialog,'content').textContent,/Closed by: Sample Alpha/);assert.match(node(dialog,'closer-selection').textContent,/does not assign responsibility/);assert.deepEqual([...f.h.docs],before);assert.equal(f.calls.open.length,0);await node(dialog,'save').onclick();assert.equal(f.calls.open.length,0);fillOpen(dialog,'sample-beta');await node(dialog,'save').onclick();assert.equal(f.calls.open[0][0].staffId,'sample-beta');assert.equal(f.h.get('cash_shortage_reviews/'+caseId).staffId,'sample-beta');assert.equal(f.h.get('staff_deductions/'+caseId).amount,0);
+});
+
+test('a relocated saved closer is freshly fetched by exact ID and keeps the real home branch on the review',async()=>{
+ const f=await fixture();setCloser(f,{staffId:'sample-foreign',staffName:'Sample Other Branch'});const dialog=await f.open();assert.equal(node(dialog,'staff').value,'sample-foreign');assert.match(node(dialog,'staff').textContent,/Sample Other Branch · Another Branch/);assert.match(node(dialog,'closer-selection').textContent,/Home branch: Another Branch; closing branch: Sample Branch/);fillOpen(dialog,'sample-foreign');await node(dialog,'save').onclick();assert.equal(f.h.get('cash_shortage_reviews/'+caseId).staffId,'sample-foreign');assert.equal(f.h.get('cash_shortage_reviews/'+caseId).staffBranch,'Another Branch');assert.equal(f.h.get('cash_shortage_reviews/'+caseId).branch,'Sample Branch');assert.equal(f.h.get('staff_deductions/'+caseId).branch,'Another Branch');
+});
+
+test('a PIN-only POS closer without a Firebase UID is still shown and suggested by the saved staff ID',async()=>{
+ const f=await fixture();setCloser(f,{authUid:null});const dialog=await f.open();assert.match(node(dialog,'content').textContent,/Closed by: Sample Alpha/);assert.equal(node(dialog,'staff').value,'sample-alpha');assert.equal(linkedCount(f.h),0);assert.equal(f.calls.open.length,0);
+});
+
+test('stored profile id fields cannot redirect a suggested closer away from the actual document ID',async()=>{
+ const f=await fixture();f.h.put('cashiers/sample-alpha',{...f.h.get('cashiers/sample-alpha'),id:'sample-beta'});setCloser(f);const dialog=await f.open();assert.equal(node(dialog,'staff').value,'sample-alpha');node(dialog,'details').value=f.initial.details;node(dialog,'evidence').value=f.initial.evidence;await node(dialog,'save').onclick();assert.equal(f.calls.open[0][0].staffId,'sample-alpha');assert.equal(f.h.get('cash_shortage_reviews/'+caseId).staffName,'Sample Alpha');
+});
+
+test('inactive, missing, renamed, malformed and HQ closers do not preselect an account from the shared POS log',async()=>{
+ for(const [closerPatch,profilePatch]of [[{staffId:'missing-staff',staffName:'Sample Missing'},null],[{}, {active:false}],[{}, {blocked:true}],[{}, {cashierName:'Renamed Sample Alpha'}],[{branch:'Wrong Branch'},null],[{actorType:'hq',source:'owner-review',staffId:null,staffName:null,email:'owner@example.test',displayName:'Sample Owner'},null]]){const f=await fixture();if(profilePatch)f.h.put('cashiers/sample-alpha',{...f.h.get('cashiers/sample-alpha'),...profilePatch});setCloser(f,closerPatch);const dialog=await f.open();assert.equal(node(dialog,'staff').value,'',JSON.stringify(closerPatch));assert.equal(f.calls.open.length,0);assert.equal(linkedCount(f.h),0);}
+});
+
+test('saved closing metadata never reassigns an existing pending case or automatically approves it',async()=>{
+ const f=await fixture({pending:true});setCloser(f);const original=structuredClone(f.h.get('cash_shortage_reviews/'+caseId)),dialog=await f.open();assert.match(node(dialog,'content').textContent,/Closed by: Sample Alpha/);assert.match(node(dialog,'content').textContent,/Sample Beta · Pending Review/);assert.equal(node(dialog,'staff'),null);assert.equal(node(dialog,'save').disabled,true);assert.deepEqual(f.h.get('cash_shortage_reviews/'+caseId),original);assert.equal(f.calls.open.length,0);assert.equal(f.calls.approve.length,0);
+});
+
+test('adding closing metadata preserves the source fingerprint and explicit approval of a historical selected case',async()=>{
+ const f=await fixture({pending:true,response:true}),before=structuredClone(f.h.get('cash_shortage_reviews/'+caseId));setCloser(f);const dialog=await f.open();fillApproval(dialog);await node(dialog,'save').onclick();const row=f.h.get('cash_shortage_reviews/'+caseId);assert.equal(row.sourceFingerprint,before.sourceFingerprint);assert.equal(row.staffId,'sample-beta');assert.equal(row.status,'Approved');assert.equal(row.authorizedAmount,70);assert.equal(f.calls.approve.length,1);
+});
+
+test('an unconfirmed direct closer profile read cannot supply a staff suggestion or enable a save',async()=>{
+ const f=await fixture();setCloser(f);const get=f.api.getDocFromServer;f.api.getDocFromServer=async ref=>{const snap=await get(ref);return ref.path==='cashiers/sample-alpha'?{...snap,metadata:{fromCache:true}}:snap;};const dialog=await f.open();assert.equal(node(dialog,'staff'),null);assert.equal(node(dialog,'save').hidden,true);assert.equal(node(dialog,'status').getAttribute('role'),'alert');assert.equal(linkedCount(f.h),0);
 });
 
 test('pending explanation and read acknowledgement cannot enable approval or authorize a deduction',async()=>{
@@ -116,6 +151,9 @@ for(const decision of ['approve','dismiss'])test(`a new private Staff dispute ho
 });
 
 const ownerSource=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
+test('actual Owner Z-reading renderer shows saved closing account and legacy unknown separately from the shared user log',async()=>{
+ const start=ownerSource.indexOf('window.loadZReadingReports = async function ()'),end=ownerSource.indexOf('window.activeExpenseTab =',start),body={innerHTML:''},errors=[],rows=[{cashier:'Sample Alpha / Sample Beta',closedBy:closedBy()},{cashier:'Sample Alpha / Sample Beta'},{cashier:'Sample Alpha / Sample Beta',closedBy:closedBy({actorType:'hq',source:'owner-review',staffId:null,staffName:null,email:'owner@example.test',displayName:'Sample Owner'})}];assert.ok(start>=0&&end>start);const context={window:{sessionUser:{isOwner:true}},document:{getElementById:id=>id==='zReadingTableBody'?body:null},db:{},query:()=>({}),collection:()=>({}),where:()=>({}),orderBy:()=>({}),getDocs:async()=>({forEach:fn=>rows.forEach((row,index)=>fn({id:'sample-shift-'+index,data:()=>({...row,branch:'Sample Branch',status:'Closed',active:false,startTime:{toDate:now},endTime:{toDate:now},expectedCash:100,declaredCash:90})}))}),canReviewCashShortage:()=>false,shiftCloserSummaryHTML,escapeHtml:unescape,formatMoney:value=>'₱'+value,console:{error:(...args)=>errors.push(args)},Date};vm.runInNewContext(ownerSource.slice(start,end),context);await context.window.loadZReadingReports();assert.deepEqual(errors,[]);assert.match(body.innerHTML,/Closed by: Sample Alpha/);assert.match(body.innerHTML,/Closed by: Not recorded/);assert.match(body.innerHTML,/Closed by: Sample Owner/);assert.match(body.innerHTML,/HQ closure/);assert.equal((body.innerHTML.match(/<strong>Sample Alpha \/ Sample Beta<\/strong>/g)||[]).length,3);
+});
 test('actual legacy cash Reason Letter approval or rejection only records a reply and cannot create a cash deduction',async()=>{
  const start=ownerSource.indexOf('window.submitRequestReply = async function('),end=ownerSource.indexOf('window.openForecasterItemTrace =',start),handler=ownerSource.slice(start,end);assert.ok(start>=0&&end>start);assert.doesNotMatch(ownerSource,/replyPenaltyAmt|request-penalty-/);assert.match(ownerSource,/Replying to this letter does not create a payroll deduction/);
  for(const type of ['Reason Letter','Cash Shortage / Mishandling'])for(const action of ['Approved','Rejected']){

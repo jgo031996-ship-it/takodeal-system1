@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
 import { mallCashPlan, mallOpeningCash, mallFinalShiftHint, stockRequestDue, autoRequestId, businessClock, archiveableShift } from '../takodeal-manager/branch-operations.js';
-import { closeShiftAtomic, readMallOpeningCash, approveRemittanceAtomic } from '../takodeal-manager/cash-settlement.js';
+import { closeShiftAtomic, closeLegacyShiftAtomic, captureShiftCloseIdentity, assertShiftCloseIdentity, resolveShiftCloseIdentity, readMallOpeningCash, approveRemittanceAtomic } from '../takodeal-manager/cash-settlement.js';
 import { confirmMallDailyClose } from '../takodeal-manager/shift-close-ui.js';
 import { commitDispatch, transitionDispatch, receiveDispatch } from '../takodeal-manager/dispatch-safety.js';
 import { createCollectionCache } from '../takodeal-manager/collection-cache.js';
@@ -197,6 +197,50 @@ test('failed settlement leaves the shift, balances, and remittance unchanged; lo
     assert.equal(h.get('shifts/one').active,true);assert.equal(h.get('cash_accounts/grab').balance,100);assert.equal(h.get('remittances/mall-one'),undefined);
     h.loseNextAck();await assert.rejects(closeShiftAtomic(h.api,closing),/lost/);await closeShiftAtomic(h.api,closing);
     assert.equal(h.get('cash_accounts/grab').balance,500);
+});
+function closingStaffEnvironment({legacy=false}={}){
+    const h=environment();h.api.auth={currentUser:{uid:'sample-pos-device'}};h.api.sessionUser={staffId:'sample-closer',cashierName:'Actual Closing Cashier',branch:'Citygate',pin:'1234'};
+    if(legacy)delete h.api.sessionUser.staffId;
+    h.api.localStorage={getItem:key=>key==='takodeal_device_branch'?'Citygate':null};
+    h.put('cashiers/sample-closer',{cashierName:'Actual Closing Cashier',branch:'Maa',pin:'1234',active:true});
+    h.put('shifts/one',{...h.get('shifts/one'),cashier:'Opening Cashier / Earlier Cashier / Actual Closing Cashier'});return h;
+}
+async function closingStaffInput(h){const captured=captureShiftCloseIdentity(h.api,'Citygate'),closer=await resolveShiftCloseIdentity(h.api,captured);return {...closing,closer,assertCurrent:()=>assertShiftCloseIdentity(h.api,captured)};}
+test('atomic closure records the actual logged-in account, its home/working branches and one close timestamp without a PIN or joined-name inference',async()=>{
+    const h=closingStaffEnvironment(),input=await closingStaffInput(h);await closeShiftAtomic(h.api,input);const saved=h.get('shifts/one');
+    assert.deepEqual(saved.closedBy,{version:1,actorType:'staff',source:'pos-session',staffId:'sample-closer',staffName:'Actual Closing Cashier',authUid:'sample-pos-device',branch:'Citygate',staffBranch:'Maa',recordedAt:saved.endTime});
+    assert.equal(saved.cashier,'Opening Cashier / Earlier Cashier / Actual Closing Cashier');assert.equal(saved.expectedCash,7500);assert.equal(saved.remittedCash,5500);assert.equal(h.get('cash_accounts/grab').balance,500);assert.equal(JSON.stringify(saved.closedBy).includes('1234'),false);
+});
+test('normal PIN-only cashier sessions close without a Firebase UID while late auth transitions cannot change the captured operator context',async()=>{
+    const h=closingStaffEnvironment();delete h.api.auth;await closeShiftAtomic(h.api,await closingStaffInput(h));assert.equal(h.get('shifts/one').closedBy.authUid,null);assert.equal(h.get('shifts/one').closedBy.staffId,'sample-closer');assert.equal(h.get('cash_accounts/grab').balance,500);
+    const f=closingStaffEnvironment();delete f.api.auth;const input=await closingStaffInput(f);f.api.auth={currentUser:{uid:'new-firebase-context'}};const before=structuredClone([...f.docs]);await assert.rejects(closeShiftAtomic(f.api,input),/cashier|branch/);assert.deepEqual([...f.docs],before);
+});
+test('old name-only staff login resolves a stable ID only with one fresh matching PIN, never solely a display name',async()=>{
+    const h=closingStaffEnvironment({legacy:true});const input=await closingStaffInput(h);assert.equal(input.closer.staffId,'sample-closer');await closeShiftAtomic(h.api,input);assert.equal(h.get('shifts/one').closedBy.staffId,'sample-closer');
+    for(const failure of ['missing-pin','wrong-pin','duplicate','cached','inactive']){const f=closingStaffEnvironment({legacy:true});if(failure==='missing-pin')delete f.api.sessionUser.pin;if(failure==='wrong-pin')f.api.sessionUser.pin='0000';if(failure==='duplicate')f.put('cashiers/duplicate',{...f.get('cashiers/sample-closer')});if(failure==='inactive')f.put('cashiers/sample-closer',{...f.get('cashiers/sample-closer'),active:false});if(failure==='cached'){const read=f.api.getDocsFromServer;f.api.getDocsFromServer=async(...args)=>({...await read(...args),metadata:{fromCache:true}});}
+        const before=structuredClone([...f.docs]);await assert.rejects(closingStaffInput(f),/staff account|Sign in again/);assert.deepEqual([...f.docs],before);
+    }
+});
+test('fresh staff revocation, ID/name/PIN mismatch and session/device switches stop all close financial writes',async()=>{
+    for(const failure of ['inactive','name','pin','missing','session','branch','device','uid']){const h=closingStaffEnvironment(),input=await closingStaffInput(h);if(failure==='inactive')h.put('cashiers/sample-closer',{...h.get('cashiers/sample-closer'),status:'Resigned'});if(failure==='name')h.put('cashiers/sample-closer',{...h.get('cashiers/sample-closer'),cashierName:'Another Account'});if(failure==='pin')h.put('cashiers/sample-closer',{...h.get('cashiers/sample-closer'),pin:'9999'});if(failure==='missing')h.docs.delete('cashiers/sample-closer');if(failure==='session')h.api.sessionUser={...h.api.sessionUser};if(failure==='branch')h.api.sessionUser.branch='Maa';if(failure==='device')h.api.localStorage={getItem:()=> 'Maa'};if(failure==='uid')h.api.auth.currentUser.uid='other-device';const before=structuredClone([...h.docs]);await assert.rejects(closeShiftAtomic(h.api,input),/staff account|branch|cashier/i);assert.deepEqual([...h.docs],before,failure);}
+});
+test('closer identity is rechecked after transaction reads before any settlement write',async()=>{
+    const h=closingStaffEnvironment(),input=await closingStaffInput(h),run=h.api.runTransaction;h.api.runTransaction=(db,callback)=>run(db,tx=>callback({...tx,get:async reference=>{const snap=await tx.get(reference);if(reference.path==='cashiers/sample-closer')h.api.sessionUser={...h.api.sessionUser,cashierName:'Next Cashier'};return snap;}}));const before=structuredClone([...h.docs]);await assert.rejects(closeShiftAtomic(h.api,input),/cashier|branch/);assert.deepEqual([...h.docs],before);
+});
+test('lost close acknowledgement and a second logged-in operator cannot replace the committed closer or debit again',async()=>{
+    const h=closingStaffEnvironment(),input=await closingStaffInput(h);h.loseNextAck();await assert.rejects(closeShiftAtomic(h.api,input),/lost/);const saved=structuredClone([...h.docs]),original=h.get('shifts/one').closedBy;
+    h.api.sessionUser={staffId:'second-closer',cashierName:'Second Cashier',branch:'Citygate',pin:'2222'};h.put('cashiers/second-closer',{cashierName:'Second Cashier',branch:'Citygate',pin:'2222'});const next=await closingStaffInput(h);assert.equal(await closeShiftAtomic(h.api,next),'already-closed');assert.deepEqual(h.get('shifts/one').closedBy,original);for(const [path,row]of saved)assert.deepEqual(h.get(path),row);assert.equal(h.get('cash_accounts/grab').balance,500);
+});
+test('concurrent different cashier close clients preserve the winner once and no private input fields leak into metadata',async()=>{
+    const h=closingStaffEnvironment(),one=await closingStaffInput(h),api={...h.api,auth:{currentUser:{uid:'other-pos-device'}},sessionUser:{staffId:'second-closer',cashierName:'Second Cashier',branch:'Citygate',pin:'2222'}};h.put('cashiers/second-closer',{cashierName:'Second Cashier',branch:'Citygate',pin:'2222'});const captured=captureShiftCloseIdentity(api,'Citygate'),two={...closing,closer:{...await resolveShiftCloseIdentity(api,captured),pin:'DO NOT RECORD',contact:'PRIVATE'},assertCurrent:()=>assertShiftCloseIdentity(api,captured)};
+    const results=await Promise.all([closeShiftAtomic(h.api,one),closeShiftAtomic(api,two)]);assert.equal(results.filter(value=>value==='closed').length,1);assert.equal(results.filter(value=>value==='already-closed').length,1);assert.ok(['sample-closer','second-closer'].includes(h.get('shifts/one').closedBy.staffId));assert.equal(h.get('cash_accounts/grab').balance,500);assert.doesNotMatch(JSON.stringify(h.get('shifts/one').closedBy),/DO NOT RECORD|PRIVATE|pin|contact/);
+});
+test('compatibility low-level close records identity once and retains its existing financial fields without adding a settlement',async()=>{
+    const h=closingStaffEnvironment(),input={...await closingStaffInput(h),actualCash:100,expectedCash:110,diff:-10};await closeLegacyShiftAtomic(h.api,input);const saved=structuredClone(h.get('shifts/one'));assert.equal(saved.actualCash,100);assert.equal(saved.difference,-10);assert.equal(saved.closedBy.staffId,'sample-closer');assert.deepEqual(saved.closedBy.recordedAt,saved.endTime);assert.equal(h.get('cash_accounts/grab').balance,100);assert.equal(h.get('remittances/mall-one'),undefined);
+    assert.equal(await closeLegacyShiftAtomic(h.api,{...input,actualCash:999}),'already-closed');assert.deepEqual(h.get('shifts/one'),saved);
+});
+test('legacy callers without identity remain honestly unknown and closed legacy records are never backfilled from cashier names',async()=>{
+    const h=environment();await closeShiftAtomic(h.api,closing);assert.equal(h.get('shifts/one').closedBy.actorType,'unknown');assert.equal(h.get('shifts/one').closedBy.staffId,null);const f=closingStaffEnvironment();f.put('shifts/one',{...f.get('shifts/one'),active:false,status:'Closed'});const before=structuredClone(f.get('shifts/one'));assert.equal(await closeShiftAtomic(f.api,await closingStaffInput(f)),'already-closed');assert.deepEqual(f.get('shifts/one'),before);assert.equal(f.get('shifts/one').closedBy,undefined);
 });
 test('ordinary branches preserve carry cash and create no mall remittance',async()=> {
     const h=environment();h.put('branches/mall',{name:'Citygate',isMallBranch:false});h.put('shifts/one',{branch:'Citygate',active:true,startingCash:2000,isMallBranch:false});

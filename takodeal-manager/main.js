@@ -4,6 +4,7 @@ import {finalizeRefundPayroll} from './refund-payroll.js';
 import {finalizeOrdinaryPayroll,readPayrollCashShortages} from './payroll-settlement.js';
 import {installCashShortageUI,canReviewCashShortage} from './cash-shortage-ui.js';
 import {isCashShortageDeduction} from './cash-shortage-model.js';
+import {shiftCloserSummaryHTML} from './shift-closer-display.js';
 runManagerDomReady(() => {window.cashShortageUI ||= installCashShortageUI(window,document);});
 import {payrollActorKey,loadPayrollAccounts,applyConfirmedPayroll,exportPayslipImage,syncPayslipImageButton} from './payroll-completion.js';
 import {installManagerTableWrapper} from './manager-table-wrapper.js';
@@ -7821,7 +7822,7 @@ window.loadZReadingReports = async function () {
         <tr>
           <td>${dateStr}</td>
           <td><span class="badge badge-closed">${safeBranch}</span></td>
-          <td><strong>${safeCashier}</strong></td>
+          <td><strong>${escapeHtml(data.cashier||'Not recorded')}</strong>${shiftCloserSummaryHTML(data,{compact:true})}</td>
           <td style="font-size: 13px;">
               <span style="color: #64748b;">Start: ${formatMoney(data.startingCash || 0)}</span><br>
               Exp: ${formatMoney(data.expectedCash)}<br>

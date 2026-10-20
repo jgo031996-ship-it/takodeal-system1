@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import { createSaleEngine, SALE_VERSION, receiptIngredientBurn } from '../Takodeal-POS/pos-safety.js';
 import { ensureShiftSalesUploaded, createShiftSalesFeed } from '../Takodeal-POS/shift-sales.js';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
+import {captureShiftCloseIdentity,resolveShiftCloseIdentity,assertShiftCloseIdentity} from '../Takodeal-POS/cash-settlement.js';
 
 const sale = (overrides = {}) => ({ saleVersion: SALE_VERSION, saleId: 'octopus-sale', receiptId: '20261004-0093-817BC060',
     branch: 'Maa', shiftId: 'S1', cashier: 'Cashier', netTotal: 640, paymentMethod: 'GCash', paymentVerified: false,
@@ -142,12 +143,12 @@ async function closeFlow(blocked=false) {
         cart:[{name:'Matcha Latte',qty:1}],recipeSnapshot:[{menuItem:'Matcha Latte',ingredientName:'Ceremonial Matcha',qty:6}]})];
     const messages=[],closed=[]; const values=new Map([['takodeal_device_branch','Maa'],['currentShiftId','S1']]);
     const storage={getItem:key=>values.get(key),removeItem:key=>values.delete(key)};
-    const w={...h.api,sessionUser:{cashierName:'Cashier'},saveCurrentShiftCloseDraft(){},getPendingSales:async()=>rows,
+    const w={...h.api,localStorage:storage,auth:{currentUser:{uid:'sample-device'}},sessionUser:{staffId:'sample-cashier',cashierName:'Cashier',branch:'Maa',pin:'SAMPLE PIN'},saveCurrentShiftCloseDraft(){},getPendingSales:async()=>rows,
         getDocFromServer:async()=>({exists:()=>true,data:()=>({active:true,isMallBranch:false})}),
         getDocs:async()=>{throw Error('Cached financial query must not be used');},
         syncOfflineQueue:async()=>{if(blocked)return;for(const row of rows)await engine.commit(await engine.prepare(row));rows=[];}};
     const server=w.getDocsFromServer;w.getDocsFromServer=async q=>{const s=await server(q);return {...s,forEach:fn=>s.docs.forEach(fn)};};
-    const context={window:w,localStorage:storage,console:{error(){}},Date,ensureShiftSalesUploaded,receiptIngredientBurn,
+    const context={window:w,localStorage:storage,console:{error(){}},Date,ensureShiftSalesUploaded,receiptIngredientBurn,captureShiftCloseIdentity,resolveShiftCloseIdentity,assertShiftCloseIdentity,
         document:{querySelector:()=>null,querySelectorAll:()=>[],getElementById:()=>null},
         activeShiftDetails:{logId:'S1',startTime:new Date('2026-10-04T00:00:00Z'),startingCash:0},
         Swal:{fire:async(...args)=>{messages.push(args);return {isConfirmed:true};}},
