@@ -35,5 +35,5 @@ export function createEarlyTimeOutReviewService(api,{timeoutMs=25000,now=()=>new
   })};
   return createEarlyTimeOutService(protectedAPI,{now})[action]({...input,reviewer:actor,assertReviewAccess:branch=>{guard();if(!checked)throw Error('Confirm the approval account again.');authority(api,actor,checked.profile,checked.grant,branch);return true;}});
  }
- return {review:input=>invoke('review',input),inspect:input=>invoke('inspectRequest',input),dismiss:input=>invoke('dismissRequest',input)};
+ return {review:input=>invoke('review',input),inspect:input=>invoke('inspectRequest',input),confirmShift:input=>invoke('confirmShiftRequest',input),dismiss:input=>invoke('dismissRequest',input)};
 }

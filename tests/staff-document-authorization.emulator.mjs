@@ -11,6 +11,8 @@ import {createEarlyTimeOutReviewService} from '../takodeal-manager/early-time-ou
 import {createScheduleRevision} from '../takodeal-manager/schedule-history.js';
 import {attendanceEstimate} from '../takodeal-franchise/franchise-data.js';
 import {finalizeOrdinaryPayroll} from '../takodeal-manager/payroll-settlement.js';
+import {emergencyShiftSourceFingerprint} from '../takodeal-manager/emergency-shift-model.js';
+import {linkedTimeOutId} from '../takodeal-manager/attendance-reconcile.js';
 
 // These tests use real local Firebase Rules runtimes. They must not be silently
 // skipped when the runtime is missing, and cannot connect to production.
@@ -989,4 +991,76 @@ test('real Rules payroll callback stops a stale selection before any bookkeeping
     assert.equal((await getDoc(doc(f.api.db,'cash_accounts/payroll-performance-bank'))).data().balance,1000);
     assert.equal((await getDocs(query(collection(f.api.db,'payroll_records'),where('staffId','==',f.data.staffId)))).empty,true);
     assert.equal((await getDoc(doc(f.api.db,'staff_deductions/payroll-performance-food-a'))).data().status,'Unpaid');
+});
+
+async function emergencyConfirmationFixture(){
+    const employee='emergency-staff',name='Synthetic Emergency Crew',ctx=owner(),db=ctx.firestore(),begin=new Date(Math.floor((Date.now()-2*3600000)/60000)*60000),finish=new Date(+begin+8*3600000),timeInId='emergency-original-in';
+    const workDate=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(begin),start={id:timeInId,type:'TIME IN',staffId:employee,staffName:name,branch,timestamp:begin,scheduleSnapshot:{version:1,source:'clock-in',wasScheduled:false,needsScheduleReview:true}};
+    const outId=await linkedTimeOutId(employee,timeInId),requestId='early-'+outId.slice('time-out-'.length),request={schemaVersion:1,type:'Early Time Out',status:'Pending',staffId:employee,staffName:name,branch,timeInLogId:timeInId,timeInAt:begin.toISOString(),requestVersion:1,requestToken:'emergency-request-token',scheduleFingerprint:'unknown-saved-shift',scheduledEndAt:null,requestedDepartureAt:new Date().toISOString()};
+    await adminSet('cashiers/'+employee,{cashierName:name,branch,pin:'1234',active:true});await adminSet('attendance_logs/'+timeInId,Object.fromEntries(Object.entries(start).filter(([key])=>key!=='id')));await adminSet('staff_requests/'+requestId,request);await adminSet('payroll_records/emergency-frozen',{status:'Paid',frozenData:{paidHours:80,netPay:4500}});
+    await adminSet('hq_email_access/emergency-maa@example.test',{active:true,permissions:['inbox'],allowedBranches:[branch]});
+    const base={schemaVersion:1,status:'Confirmed',version:1,staffId:employee,staffName:name,branch,timeInLogId:timeInId,timeInAt:Timestamp.fromDate(begin),expectedStartAt:Timestamp.fromDate(begin),expectedEndAt:Timestamp.fromDate(finish),workDate,shiftName:'Emergency covering shift',sourceFingerprint:emergencyShiftSourceFingerprint(start),reviewedByUid:'owner-uid',reviewedByEmail:'jgo031996@gmail.com',reviewedAt:serverTimestamp()};
+    return {ctx,db,base,request,requestId,start,outId,timeInId,employee};
+}
+function emergencyConfirmationBatch(f,ctx,id,{head={},event={},omit=null,previousRevisionId=null,actorUid='owner-uid',actorEmail='jgo031996@gmail.com'}={}){
+    const db=ctx.firestore(),next={...f.base,revisionId:id,reviewedByUid:actorUid,reviewedByEmail:actorEmail,...head},audit={schemaVersion:1,head:next,reason:'Emergency colleague cover confirmed by HQ.',previousRevisionId,requestId:f.requestId,requestVersion:f.request.requestVersion,requestToken:f.request.requestToken,reviewedScheduleFingerprint:'fresh-schedule-preview',...event},batch=writeBatch(db);
+    if(omit!=='head')batch.set(doc(db,'attendance_shift_confirmations/'+f.timeInId),next);
+    if(omit!=='event')batch.set(doc(db,'attendance_shift_confirmation_events/'+id),audit);
+    return batch.commit();
+}
+const emergencyOperation=()=> 'emergency-'+nextOp();
+
+test('emergency shift Rules permit paired Owner and branch Manager confirmations and preserve original punches and paid payroll',async()=>{
+    const f=await emergencyConfirmationFixture(),before=(await getDoc(doc(f.db,'attendance_logs/'+f.timeInId))).data(),paid=(await getDoc(doc(f.db,'payroll_records/emergency-frozen'))).data(),id=emergencyOperation();
+    await assertSucceeds(emergencyConfirmationBatch(f,f.ctx,id));const saved=(await getDoc(doc(f.db,'attendance_shift_confirmations/'+f.timeInId))).data();assert.equal(saved.revisionId,id);assert.equal(saved.version,1);
+    const manager=google('emergency-manager','emergency-maa@example.test'),next=emergencyOperation();await assertSucceeds(emergencyConfirmationBatch(f,manager,next,{head:{version:2,expectedEndAt:Timestamp.fromMillis(f.base.expectedEndAt.toMillis()+3600000)},previousRevisionId:id,actorUid:'emergency-manager',actorEmail:'emergency-maa@example.test'}));
+    const audit=(await getDoc(doc(manager.firestore(),'attendance_shift_confirmation_events/'+next))).data();assert.equal(audit.previousRevisionId,id);assert.equal(audit.head.version,2);assert.equal(audit.reason,'Emergency colleague cover confirmed by HQ.');
+    assert.deepEqual((await getDoc(doc(f.db,'attendance_logs/'+f.timeInId))).data(),before);assert.deepEqual((await getDoc(doc(f.db,'payroll_records/emergency-frozen'))).data(),paid);assert.equal((await getDoc(doc(f.db,'attendance_logs/'+f.outId))).exists(),false);assert.equal((await getDoc(doc(f.db,'attendance_time_out_approvals/'+f.requestId))).exists(),false);assert.equal((await getDoc(doc(f.db,'staff_requests/'+f.requestId))).data().status,'Pending');
+});
+
+test('emergency confirmations reject unauthenticated staff, unverified Owner, foreign branch and missing HQ permission',async()=>{
+    const f=await emergencyConfirmationFixture();
+    for(const ctx of [env.unauthenticatedContext(),anonymous(uid),google('bad-owner','jgo031996@gmail.com',false),otherHQ(),google('no-permission','no-permission@example.test')])await assertFails(emergencyConfirmationBatch(f,ctx,emergencyOperation()));
+    await adminSet('hq_email_access/emergency-maa@example.test',{active:false,permissions:['inbox'],allowedBranches:[branch]});await assertFails(emergencyConfirmationBatch(f,google('emergency-manager','emergency-maa@example.test'),emergencyOperation(),{actorUid:'emergency-manager',actorEmail:'emergency-maa@example.test'}));
+    assert.equal((await getDoc(doc(f.db,'attendance_shift_confirmations/'+f.timeInId))).exists(),false);
+});
+
+test('emergency Rules require complete paired writes, an immutable new audit and correct version ancestry',async()=>{
+    const f=await emergencyConfirmationFixture();for(const omit of ['head','event'])await assertFails(emergencyConfirmationBatch(f,f.ctx,emergencyOperation(),{omit}));
+    const id=emergencyOperation();await assertSucceeds(emergencyConfirmationBatch(f,f.ctx,id));
+    await assertFails(emergencyConfirmationBatch(f,f.ctx,id));await assertFails(emergencyConfirmationBatch(f,f.ctx,emergencyOperation(),{head:{version:1},previousRevisionId:id}));await assertFails(emergencyConfirmationBatch(f,f.ctx,emergencyOperation(),{head:{version:3},previousRevisionId:id}));await assertFails(emergencyConfirmationBatch(f,f.ctx,emergencyOperation(),{head:{version:2},previousRevisionId:'wrong-previous'}));await assertFails(emergencyConfirmationBatch(f,f.ctx,emergencyOperation(),{head:{version:2,sourceFingerprint:'changed-source'},previousRevisionId:id}));
+    await assertFails(updateDoc(doc(f.db,'attendance_shift_confirmation_events/'+id),{reason:'Rewritten audit reason'}));await assertFails(deleteDoc(doc(f.db,'attendance_shift_confirmation_events/'+id)));await assertFails(deleteDoc(doc(f.db,'attendance_shift_confirmations/'+f.timeInId)));
+});
+
+test('emergency Rules reject forged reviewers, invalid source links, time ranges and request identity without partial writes',async()=>{
+    const f=await emergencyConfirmationFixture(),begin=f.base.expectedStartAt.toMillis(),end=f.base.expectedEndAt.toMillis();
+    for(const patch of [{reviewedByUid:'forged'},{reviewedByEmail:'forged@example.test'},{reviewedAt:Timestamp.fromMillis(1000)},{timeInLogId:'another-time-in'},{staffId:'another-staff'},{staffName:'Other Crew'},{branch:'Citygate'},{timeInAt:Timestamp.fromMillis(f.base.timeInAt.toMillis()+1)},{workDate:'2026-02-30'},{workDate:'2000-01-01'},{expectedStartAt:Timestamp.fromMillis(begin+91*60000)},{expectedStartAt:Timestamp.fromMillis(begin-18*3600000)},{expectedEndAt:Timestamp.fromMillis(begin+30*60000)},{expectedEndAt:Timestamp.fromMillis(begin+19*3600000)},{expectedEndAt:Timestamp.fromMillis(begin)},{expectedEndAt:Timestamp.fromMillis(end+24*3600000)},{status:'Pending'},{schemaVersion:2},{unexpected:'field'}])await assertFails(emergencyConfirmationBatch(f,f.ctx,emergencyOperation(),{head:patch}));
+    for(const patch of [{requestVersion:2},{requestToken:'different-token'},{requestId:'early-'+'a'.repeat(64)},{reason:'short'},{reason:'x'.repeat(1501)},{previousRevisionId:'invented'},{reviewedScheduleFingerprint:''},{head:{...f.base,revisionId:'another-revision'}},{unexpected:'field'}])await assertFails(emergencyConfirmationBatch(f,f.ctx,emergencyOperation(),{event:patch}));
+    assert.equal((await getDoc(doc(f.db,'attendance_shift_confirmations/'+f.timeInId))).exists(),false);await assertSucceeds(emergencyConfirmationBatch(f,f.ctx,emergencyOperation()));
+});
+
+test('emergency Rules keep known timing reads available but private reasons cannot be listed or read by Staff or foreign HQ',async()=>{
+    const f=await emergencyConfirmationFixture(),id=emergencyOperation();await assertSucceeds(emergencyConfirmationBatch(f,f.ctx,id));
+    for(const ctx of [env.unauthenticatedContext(),anonymous(uid),otherHQ()]){await assertSucceeds(getDoc(doc(ctx.firestore(),'attendance_shift_confirmations/'+f.timeInId)));await assertFails(getDoc(doc(ctx.firestore(),'attendance_shift_confirmation_events/'+id)));await assertFails(getDocs(collection(ctx.firestore(),'attendance_shift_confirmations')));}
+    await assertSucceeds(getDoc(doc(google('emergency-manager','emergency-maa@example.test').firestore(),'attendance_shift_confirmation_events/'+id)));await assertSucceeds(getDoc(doc(f.db,'attendance_shift_confirmation_events/missing-emergency-event')));await assertFails(getDoc(doc(env.unauthenticatedContext().firestore(),'attendance_shift_confirmation_events/missing-emergency-event')));await assertFails(getDocs(collection(f.db,'attendance_shift_confirmation_events')));
+});
+
+test('emergency Rules refuse closed attendance, inactive staff and a no-longer-pending source request',async()=>{
+    for(const kind of ['closed','staff','request','source']){
+        const f=await emergencyConfirmationFixture();if(kind==='closed')await adminSet('attendance_logs/'+f.outId,{type:'TIME OUT',staffId:f.employee,staffName:f.start.staffName,branch,timeInLogId:f.timeInId,timestamp:Timestamp.now()});
+        if(kind==='staff')await adminSet('cashiers/'+f.employee,{cashierName:f.start.staffName,branch,active:false});if(kind==='request')await adminSet('staff_requests/'+f.requestId,{...f.request,status:'Cancelled'});if(kind==='source')await adminSet('attendance_logs/'+f.timeInId,{...f.start,status:'Voided'});
+        await assertFails(emergencyConfirmationBatch(f,f.ctx,emergencyOperation()));assert.equal((await getDoc(doc(f.db,'attendance_shift_confirmations/'+f.timeInId))).exists(),false);
+    }
+});
+
+test('the actual protected emergency service commits both records under real Rules and retries a lost response safely',async()=>{
+    const f=await emergencyConfirmationFixture(),api=rateApi(f.ctx);api.sessionUser.isOwner=true;
+    await adminSet('hq_managers/emergency-owner',{email:'jgo031996@gmail.com',role:'System Architect',permissions:['all'],assignedBranch:'All',pin:'1234',active:true});
+    const service=createEarlyTimeOutReviewService(api),preview=await service.inspect({requestId:f.requestId,expectedRequestVersion:1,expectedRequestToken:f.request.requestToken}),wall=value=>new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).format(value.toDate());
+    const input={requestId:f.requestId,operationId:emergencyOperation(),expectedRequestVersion:1,expectedRequestToken:f.request.requestToken,expectedConfirmationVersion:0,expectedSourceFingerprint:preview.emergencyShiftSourceFingerprint,expectedScheduleFingerprint:preview.scheduleFingerprint,workDate:f.base.workDate,startTime:wall(f.base.expectedStartAt),endTime:wall(f.base.expectedEndAt),shiftName:'Synthetic emergency cover',reason:'Confirm the dated emergency covering shift.'};
+    const original=(await getDoc(doc(f.db,'attendance_logs/'+f.timeInId))).data(),run=api.runTransaction;let lose=true;
+    api.runTransaction=async(...args)=>{const result=await run(...args);if(lose){lose=false;throw Error('Synthetic response lost after emergency save');}return result;};
+    await assert.rejects(service.confirmShift(input),/response lost/);const confirmed=(await getDoc(doc(f.db,'attendance_shift_confirmations/'+f.timeInId))).data();assert.equal(confirmed.revisionId,input.operationId);assert.equal(confirmed.version,1);
+    const retry=await assertSucceeds(service.confirmShift(input));assert.equal(retry.alreadySaved,true);const audit=(await getDoc(doc(f.db,'attendance_shift_confirmation_events/'+input.operationId))).data();assert.equal(audit.reason,input.reason);assert.equal(audit.reviewedScheduleFingerprint,preview.scheduleFingerprint);assert.equal(audit.previousRevisionId,null);
+    const after=await service.inspect({requestId:f.requestId,expectedRequestVersion:1,expectedRequestToken:f.request.requestToken});assert.equal(after.unknown,false);assert.equal(after.early,true);assert.equal(after.emergencyShiftVersion,1);assert.deepEqual((await getDoc(doc(f.db,'attendance_logs/'+f.timeInId))).data(),original);assert.equal((await getDoc(doc(f.db,'attendance_logs/'+f.outId))).exists(),false);assert.equal((await getDoc(doc(f.db,'attendance_time_out_approvals/'+f.requestId))).exists(),false);
 });

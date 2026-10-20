@@ -696,6 +696,96 @@ service cloud.firestore {
     }
     // PIN-based attendance clients may read only a known request's decision.
     // They cannot manufacture an authoritative HQ approval through staff_requests.
+    function emergencyShiftHQAny() {
+      let email = isSignedIn() ? request.auth.token.get('email', '') : '';
+      let grant = /databases/$(database)/documents/hq_email_access/$(email);
+      return offlineOwner() || (isSignedIn() && request.auth.token.get('email_verified', false) == true
+        && exists(grant) && get(grant).data.get('active', false) == true
+        && get(grant).data.get('permissions', []) is list
+        && get(grant).data.permissions.hasAny(['all', 'payroll', 'inbox'])
+        && get(grant).data.get('allowedBranches', []) is list && get(grant).data.allowedBranches.size() > 0);
+    }
+    function emergencyShiftOrigin(data, id) {
+      let start = get(/databases/$(database)/documents/attendance_logs/$(id)).data;
+      let person = get(/databases/$(database)/documents/cashiers/$(data.staffId)).data;
+      let date = data.workDate.split('-');
+      let midnight = timestamp.date(int(date[0]), int(date[1]), int(date[2])) - duration.value(8, 'h');
+      return data.timeInLogId == id && data.timeInAt == start.timestamp
+        && start.type == 'TIME IN' && start.timestamp is timestamp && start.timestamp <= request.time
+        && start.branch == data.branch && start.staffName == data.staffName
+        && start.get('deleted', false) != true && !(start.get('status', '') in ['Voided', 'Cancelled'])
+        && (start.get('staffId', '') == data.staffId || start.get('staffId', '') == '')
+        && person.cashierName == data.staffName && person.get('active', true) != false
+        && person.get('archived', false) != true && person.get('blocked', false) != true
+        && !(person.get('status', '') in ['Blocked', 'Revoked', 'Terminated', 'Resigned', 'Inactive', 'Disabled', 'Archived', 'Deleted'])
+        && data.expectedStartAt >= midnight && data.expectedStartAt < midnight + duration.value(24, 'h')
+        && data.expectedStartAt <= start.timestamp + duration.value(90, 'm')
+        && data.expectedStartAt > start.timestamp - duration.value(18, 'h')
+        && data.expectedEndAt >= data.expectedStartAt + duration.value(1, 'h')
+        && data.expectedEndAt <= data.expectedStartAt + duration.value(18, 'h')
+        && data.expectedEndAt > start.timestamp && data.expectedEndAt <= start.timestamp + duration.value(24, 'h');
+    }
+    function emergencyShiftHead(data, id) {
+      return data.keys().hasOnly(['schemaVersion','status','revisionId','version','staffId','staffName','branch','timeInLogId','timeInAt','expectedStartAt','expectedEndAt','workDate','shiftName','sourceFingerprint','reviewedByUid','reviewedByEmail','reviewedAt'])
+        && data.keys().hasAll(['schemaVersion','status','revisionId','version','staffId','staffName','branch','timeInLogId','timeInAt','expectedStartAt','expectedEndAt','workDate','shiftName','sourceFingerprint','reviewedByUid','reviewedByEmail','reviewedAt'])
+        && data.schemaVersion == 1 && data.status == 'Confirmed'
+        && id is string && id.size() > 0 && id.size() <= 150
+        && data.revisionId is string && data.revisionId.matches('^[A-Za-z0-9_-]{8,128}$')
+        && data.version is int && data.version > 0
+        && data.staffId is string && data.staffId.size() > 0 && data.staffId.size() <= 150
+        && data.staffName is string && data.staffName.size() > 0 && data.staffName.size() <= 200
+        && data.branch is string && data.branch.size() > 0 && data.branch.size() <= 200
+        && data.timeInAt is timestamp && data.expectedStartAt is timestamp && data.expectedEndAt is timestamp
+        && data.workDate is string && data.workDate.matches('^(20|21)[0-9]{2}-[0-9]{2}-[0-9]{2}$')
+        && data.shiftName is string && data.shiftName.trim().size() > 0 && data.shiftName.size() <= 160
+        && data.sourceFingerprint is string && data.sourceFingerprint.size() > 0 && data.sourceFingerprint.size() <= 30000
+        && data.reviewedByUid == request.auth.uid && data.reviewedByEmail == request.auth.token.get('email', '').lower()
+        && data.reviewedAt == request.time && earlyTimeOutHQ(data.branch) && emergencyShiftOrigin(data, id);
+    }
+    function emergencyShiftWrite(id, before, after) {
+      let eventPath = /databases/$(database)/documents/attendance_shift_confirmation_events/$(after.revisionId);
+      let event = getAfter(eventPath).data;
+      return emergencyShiftHead(after, id) && !exists(eventPath) && event.head == after
+        && event.previousRevisionId == before.get('revisionId', null)
+        && after.version == before.get('version', 0) + 1
+        && (!before.keys().hasAny(['version']) || (
+          after.staffId == before.staffId && after.staffName == before.staffName && after.branch == before.branch
+          && after.timeInLogId == before.timeInLogId && after.timeInAt == before.timeInAt
+          && after.sourceFingerprint == before.sourceFingerprint && after.revisionId != before.revisionId));
+    }
+    function emergencyShiftEvent(data, id) {
+      let headPath = /databases/$(database)/documents/attendance_shift_confirmations/$(data.head.timeInLogId);
+      let pending = get(/databases/$(database)/documents/staff_requests/$(data.requestId)).data;
+      let outId = data.requestId.replace('^early-', 'time-out-');
+      return data.keys().hasOnly(['schemaVersion','head','reason','previousRevisionId','requestId','requestVersion','requestToken','reviewedScheduleFingerprint'])
+        && data.keys().hasAll(['schemaVersion','head','reason','previousRevisionId','requestId','requestVersion','requestToken','reviewedScheduleFingerprint'])
+        && data.schemaVersion == 1 && id == data.head.revisionId
+        && getAfter(headPath).data == data.head && emergencyShiftHead(data.head, data.head.timeInLogId)
+        && data.previousRevisionId == (exists(headPath) ? get(headPath).data.revisionId : null)
+        && data.previousRevisionId != id
+        && data.reason is string && data.reason.trim().size() >= 8 && data.reason.size() <= 1500
+        && data.reviewedScheduleFingerprint is string && data.reviewedScheduleFingerprint.size() > 0 && data.reviewedScheduleFingerprint.size() <= 30000
+        && data.requestId is string && data.requestId.matches('^early-[a-f0-9]{64}$')
+        && data.requestVersion is int && data.requestVersion > 0 && data.requestVersion == pending.requestVersion
+        && data.requestToken is string && data.requestToken.matches('^[A-Za-z0-9_-]{8,120}$') && data.requestToken == pending.requestToken
+        && pending.type == 'Early Time Out' && pending.schemaVersion == 1 && pending.status == 'Pending'
+        && pending.staffId == data.head.staffId && pending.staffName == data.head.staffName && pending.branch == data.head.branch
+        && pending.timeInLogId == data.head.timeInLogId
+        && !exists(/databases/$(database)/documents/attendance_logs/$(outId));
+    }
+    // Staff/POS need only the minimal confirmation for their known Time In.
+    // Detailed emergency reasons remain private in the immutable HQ audit.
+    match /attendance_shift_confirmations/{timeInId} {
+      allow get: if true;
+      allow list, delete: if false;
+      allow create: if emergencyShiftWrite(timeInId, {}, request.resource.data);
+      allow update: if emergencyShiftWrite(timeInId, resource.data, request.resource.data);
+    }
+    match /attendance_shift_confirmation_events/{revisionId} {
+      allow get: if resource == null ? emergencyShiftHQAny() : earlyTimeOutHQ(resource.data.head.branch);
+      allow list, update, delete: if false;
+      allow create: if emergencyShiftEvent(request.resource.data, revisionId);
+    }
     match /attendance_time_out_approvals/{requestId} {
       allow get: if true;
       allow list, delete: if false;
