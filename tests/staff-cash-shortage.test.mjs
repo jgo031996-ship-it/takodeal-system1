@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {deductionNoticeHTML,deductionFallbackHTML,sendStaffDeductionReply,staffDeductionReplyMessage} from '../takodeal-staff/deduction-inbox.js';
+import {deductionNoticeHTML,deductionFallbackHTML,sendStaffDeductionReply,staffDeductionReplyMessage,acknowledgeCashShortagePayslip} from '../takodeal-staff/deduction-inbox.js';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 const notice={id:'cash-shortage-sample-shift',type:'Cash Shortage',staffId:'sample-crew',staffName:'Sample Crew',branch:'Sample Branch',sourcePlatform:'Z-reading',sourceReceiptId:'sample-shift',sourceShiftId:'sample-shift',sourceShortageCents:9000,reasonLabel:'Closed shift cash variance for review',details:'Sample expected cash differs from declared cash.',evidence:'Sample closing count and handover record.',status:'Pending Review',amount:0,noticeRevision:1,readRevision:0,replyRevision:0};
 test('Staff shortage review reports variance separately and creates no appearance of an approved charge',()=>{
@@ -54,4 +54,39 @@ test('Staff response confirmation follows fresh protected status and explains th
   assert.equal(h.get('staff_deduction_notices/'+notice.id).status,status);assert.equal(h.get('staff_deduction_notices/'+notice.id).amount,status==='Pending Review'?0:70);
  }
  assert.equal(staffDeductionReplyMessage({type:'Online Order Refund',status:'Approved'}),'Response sent. The Owner can read it in the incident review.');
+});
+
+
+const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a9L8AAAAASUVORK5CYII=';
+function acknowledgementHarness(change={}){
+ const h=firestoreHarness(),record={staffId:'sample-crew',staffName:'Sample Crew',finalNetPay:777,accountId:'sample-account',accountName:'Sample Account',cashShortageSettlements:{[notice.id]:90},acknowledged:false,frozenData:{staffId:'sample-crew',name:'Sample Crew',branch:'Sample Branch',isPaid:true,finalNetPay:777,basicPay:1000,cashShortages:90,cashShortageRows:[{id:notice.id,amount:90}],profile:{staffId:'sample-crew',hourlyRate:500}},...change};
+ h.put('payroll_records/sample-paid',record);h.put('cash_accounts/sample-account',{balance:1000});
+ const vault={db:h.api.db,sdk:h.api,auth:{currentUser:{uid:'sample-approved-phone'}}};return {h,vault,record,input:{recordId:'sample-paid',staffId:'sample-crew',signature:png}};
+}
+test('private Staff cash-backed payslip acknowledgement writes only its three signature fields and freezes finances',async()=>{
+ const {h,vault,record,input}=acknowledgementHarness(),before=structuredClone(record);assert.deepEqual(await acknowledgeCashShortagePayslip(vault,input),{alreadySaved:false});const after=h.get('payroll_records/sample-paid');assert.deepEqual(Object.keys(after).filter(key=>JSON.stringify(after[key])!==JSON.stringify(before[key])).sort(),['acknowledged','acknowledgedAt','signatureBase64']);assert.equal(after.acknowledged,true);assert.equal(after.signatureBase64,png);assert.deepEqual(after.frozenData,before.frozenData);assert.equal(after.finalNetPay,777);assert.deepEqual(after.cashShortageSettlements,before.cashShortageSettlements);assert.equal(h.get('cash_accounts/sample-account').balance,1000);
+});
+test('own paid record, stable approved-phone auth and PNG signature are required before acknowledgement',async()=>{
+ for(const failure of ['foreign','conflicting','unpaid','nocash','missing','switched','auth','unauthenticated']){
+  const {h,vault,input}=acknowledgementHarness();if(failure==='foreign')input.staffId='another-person';if(failure==='conflicting')h.put('payroll_records/sample-paid',{...h.get('payroll_records/sample-paid'),frozenData:{...h.get('payroll_records/sample-paid').frozenData,staffId:'another-person'}});if(failure==='unpaid')h.put('payroll_records/sample-paid',{...h.get('payroll_records/sample-paid'),frozenData:{...h.get('payroll_records/sample-paid').frozenData,isPaid:false}});if(failure==='nocash')h.put('payroll_records/sample-paid',{...h.get('payroll_records/sample-paid'),frozenData:{...h.get('payroll_records/sample-paid').frozenData,cashShortages:0,cashShortageRows:[]}});if(failure==='missing')input.recordId='missing-record';if(failure==='switched')input.stillCurrent=()=>false;if(failure==='auth'){let checks=0;input.stillCurrent=()=>{if(++checks===2)vault.auth.currentUser.uid='changed-phone';return true;};}if(failure==='unauthenticated')vault.auth.currentUser=null;const before=structuredClone([...h.docs]);await assert.rejects(acknowledgeCashShortagePayslip(vault,input),undefined,failure);assert.deepEqual([...h.docs],before,failure);
+ }
+ for(const invalid of ['',png.replace('image/png','image/jpeg'),'data:image/png;base64,AA==',png+'?',png.slice(0,-1),png+'A'.repeat(500000)]){const {h,vault,input}=acknowledgementHarness(),before=structuredClone([...h.docs]);await assert.rejects(acknowledgeCashShortagePayslip(vault,{...input,signature:invalid}),/signature/);assert.deepEqual([...h.docs],before);}
+});
+test('failed save leaves acknowledgement unset and lost acknowledgement retry never replaces the saved signature',async()=>{
+ const f=acknowledgementHarness();f.h.failNextCommit();await assert.rejects(acknowledgeCashShortagePayslip(f.vault,f.input),/Commit rejected/);assert.equal(f.h.get('payroll_records/sample-paid').acknowledged,false);f.h.loseNextAck();await assert.rejects(acknowledgeCashShortagePayslip(f.vault,f.input),/Connection lost/);assert.equal(f.h.get('payroll_records/sample-paid').signatureBase64,png);
+ const replacement=png.replace('P8/x8A','P8/w8A');assert.deepEqual(await acknowledgeCashShortagePayslip(f.vault,{...f.input,signature:replacement}),{alreadySaved:true});assert.equal(f.h.get('payroll_records/sample-paid').signatureBase64,png);assert.equal(f.h.get('payroll_records/sample-paid').finalNetPay,777);
+ const g=acknowledgementHarness(),results=await Promise.all(Array.from({length:12},()=>acknowledgeCashShortagePayslip(g.vault,g.input)));assert.equal(results.filter(row=>!row.alreadySaved).length,1);assert.equal(g.h.get('payroll_records/sample-paid').signatureBase64,png);
+});
+function signatureHandlerFixture({data={},createClient,legacy=false}={}){
+ const f=acknowledgementHarness(),identity={id:'sample-crew'},alerts=[],errors=[],calls={privateClient:0,publicWrites:0,reload:0};
+ const api={staffVaultSession:{epoch:1,allows:()=>true},loadPayslipVault(){calls.reload++;}},context={window:api,localStorage:{getItem:()=>identity.id},firebaseConfig:{sample:true},createStaffDocumentFirebase:async(config,currentIdentity)=>{calls.privateClient++;assert.equal(config.sample,true);assert.equal(currentIdentity(),identity.id);return createClient?createClient(f,identity):f.vault;},acknowledgeCashShortagePayslip,db:{legacy:true},doc:(_db,table,id)=>({table,id}),updateDoc:async()=>{calls.publicWrites++;if(!legacy)throw Error('Cash-backed signature used the public database.');},serverTimestamp:()=>({seconds:1}),Swal:{fire:options=>{alerts.push(options);return Promise.resolve(options?.title?.includes('Acknowledge Payslip')?{isConfirmed:true,value:png}:{isConfirmed:false});}},Date,console:{error:error=>errors.push(error)}};
+ const start=source.indexOf('window.openPayslipSignatureModal = function('),end=source.indexOf('window.loadMyLoanLedger =',start);vm.runInNewContext(source.slice(start,end),context);return {...f,api,identity,alerts,errors,calls,sign:()=>api.openPayslipSignatureModal('sample-paid',encodeURIComponent(JSON.stringify({...f.record.frozenData,...data})))};
+}
+test('actual Staff signature handler uses existing private approved phone client for cash-backed payroll',async()=>{
+ const f=signatureHandlerFixture(),before=structuredClone(f.record);await f.sign();assert.deepEqual(f.errors,[]);assert.equal(f.calls.privateClient,1);assert.equal(f.calls.publicWrites,0);assert.equal(f.calls.reload,1);assert.equal(f.h.get('payroll_records/sample-paid').signatureBase64,png);assert.deepEqual(f.h.get('payroll_records/sample-paid').frozenData,before.frozenData);assert.match(f.alerts.at(-1).title,/Payslip Acknowledged/);
+ const g=signatureHandlerFixture({data:{cashShortages:0}});await g.sign();assert.equal(g.calls.privateClient,1);assert.equal(g.calls.publicWrites,0);assert.equal(g.h.get('payroll_records/sample-paid').acknowledged,true);
+});
+test('actual signature handler stops after a staff switch while private client connects and keeps legacy path unchanged',async()=>{
+ const f=signatureHandlerFixture({createClient:async(f,identity)=>{identity.id='another-person';return f.vault;}});await f.sign();assert.equal(f.calls.privateClient,1);assert.equal(f.calls.publicWrites,0);assert.equal(f.calls.reload,0);assert.equal(f.h.get('payroll_records/sample-paid').acknowledged,false);assert.deepEqual(f.errors,[]);
+ const g=signatureHandlerFixture({legacy:true,data:{cashShortages:0,cashShortageRows:[]}});await g.sign();assert.equal(g.calls.privateClient,0);assert.equal(g.calls.publicWrites,1);assert.equal(g.calls.reload,1);assert.deepEqual(g.errors,[]);
 });

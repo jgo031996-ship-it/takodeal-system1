@@ -802,7 +802,9 @@ service cloud.firestore {
     match /payroll_records/{recordId} { allow read: if true;
       allow create: if cashShortagePayrollMetadata(request.resource.data,recordId)
         && (recordId.matches('refund-payroll-.*') ? (offlineOwner() && request.resource.data.frozenData.isPaid == true && request.resource.data.processedAt == request.time && request.resource.data.processedBy == request.auth.token.email && request.resource.data.refundSettlements is map && request.resource.data.finalNetPay is number && request.resource.data.finalNetPay >= 0) : isHQUser());
-      allow update: if (!recordId.matches('refund-payroll-.*') && !cashShortageProtectedPayroll(resource.data) && !cashShortageProtectedPayroll(request.resource.data)) || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged']) && request.resource.data.acknowledged == true);
+      allow update: if cashShortageProtectedPayroll(resource.data) || cashShortageProtectedPayroll(request.resource.data)
+        ? cashShortageSignedAcknowledgment(resource.data,request.resource.data)
+        : (!recordId.matches('refund-payroll-.*') || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged']) && request.resource.data.acknowledged == true));
       allow delete: if !recordId.matches('refund-payroll-.*') && !cashShortageProtectedPayroll(resource.data) && isHQUser(); }
     match /staff_ledger/{ledgerId} { allow read: if true; allow write: if isHQUser(); }
     function onlineIncidentCreate(data, id) {
@@ -1045,6 +1047,14 @@ service cloud.firestore {
     function cashShortageRow(rows,map,index,recordId) { return rows.size() <= index || cashShortagePayrollRow(rows[index],map,recordId); }
     function cashShortageProtectedPayroll(payroll) {
       return payroll.get('cashShortageSettlements',{}).size() > 0 || payroll.get('frozenData',{}).get('cashShortages',0) > 0 || payroll.get('frozenData',{}).get('cashShortageRows',[]).size() > 0;
+    }
+    function cashShortageSignedAcknowledgment(before,after) {
+      return docVaultOwn(before.staffId) && before.get('acknowledged',false) == false
+        && after.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])
+        && after.acknowledged == true && after.acknowledgedAt == request.time
+        && after.signatureBase64 is string && after.signatureBase64.size() >= 64 && after.signatureBase64.size() <= 500000
+        && (after.signatureBase64.size() - 22) % 4 == 0
+        && after.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');
     }
     // Validate the full tuple list once per payroll, not once for each of the three protected case records.
     function cashShortagePayrollMetadata(payroll,recordId) {

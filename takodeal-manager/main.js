@@ -3,6 +3,7 @@ import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {finalizeRefundPayroll} from './refund-payroll.js';
 import {finalizeOrdinaryPayroll,readPayrollCashShortages} from './payroll-settlement.js';
 import {installCashShortageUI,canReviewCashShortage} from './cash-shortage-ui.js';
+import {isCashShortageDeduction} from './cash-shortage-model.js';
 runManagerDomReady(() => {window.cashShortageUI ||= installCashShortageUI(window,document);});
 import {payrollActorKey,loadPayrollAccounts,applyConfirmedPayroll,exportPayslipImage,syncPayslipImageButton} from './payroll-completion.js';
 import {installManagerTableWrapper} from './manager-table-wrapper.js';
@@ -11084,6 +11085,7 @@ window.loadLedger = async function() {
         let valesData = {};
         deductSnap.forEach(doc => {
             let d = doc.data();
+            if(isCashShortageDeduction({...d,id:doc.id}))return;
             if (!valesData[d.staffName]) valesData[d.staffName] = 0;
             valesData[d.staffName] += (parseFloat(d.amount) || 0);
         });
@@ -11297,7 +11299,13 @@ window.logLoanPayment = async function(docId, staffName, currentPaid, currentBal
             const deductSnap = await getDocs(deductQ);
             
             let pending = [];
-            deductSnap.forEach(d => pending.push({ id: d.id, ...d.data() }));
+            deductSnap.forEach(d => {const row={...d.data(),id:d.id};if(!isCashShortageDeduction(row))pending.push(row);});
+
+            // A stale ledger may still include a protected cash case in its
+            // displayed balance. Check the collectible ordinary total before
+            // changing any row; cash cases settle only with protected payroll.
+            const ordinaryAvailable=pending.reduce((sum,row)=>sum+Math.max(0,Number(row.amount)||0),0)+Math.max(0,Number(currentBalance)||0);
+            if(Math.round(amount*100)>Math.round(ordinaryAvailable*100))throw Error('The manual payment balance changed. Refresh the ledger. Cash shortages can only be collected through their reviewed payroll.');
             
             // Sort oldest first so old debts die first!
             pending.sort((a, b) => (a.dateAdded?.toDate() || 0) - (b.dateAdded?.toDate() || 0));
@@ -11340,7 +11348,7 @@ window.logLoanPayment = async function(docId, staffName, currentPaid, currentBal
         window.loadLedger();
     } catch (e) { 
         console.error(e); 
-        Swal.fire('❌ Error', 'Failed to log manual payment. Check console.', 'error'); 
+        Swal.fire('❌ Error', e.message || 'Failed to log manual payment. Check console.', 'error');
     }
 };
 
@@ -24228,6 +24236,7 @@ window.openEmployeeProfile = function(docId) {
             actionHtml += `<button onclick="window.deleteStaffDeduction('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px;">🗑️ Delete</button>`;
             actionHtml += window.penaltyDateAction?.({...d,id:dDoc.id}) || '';
             if(d.type==='Online Order Refund')actionHtml=`<button onclick="window.reviewOnlineRefundIncident('${dDoc.id}')" style="min-height:44px;padding:8px 12px;">Review incident</button>`;
+            if(d.type==='Cash Shortage'||dDoc.id.startsWith('cash-shortage-'))actionHtml=canReviewCashShortage(window)&&d.sourceShiftId?`<button type="button" data-cash-shortage="${escapeHtml(d.sourceShiftId)}" style="min-height:44px;padding:8px 12px;">Review cash shortage</button>`:'<span style="font-size:11px;color:#64748b">Owner review · protected payroll</span>';
 
             histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                 <td style="padding:12px 8px; color: #64748b;">${dateStr}</td>

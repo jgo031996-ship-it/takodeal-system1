@@ -1,4 +1,4 @@
-import {installDeductionInbox} from './deduction-inbox.js';
+import {installDeductionInbox,acknowledgeCashShortagePayslip} from './deduction-inbox.js';
 import {installStaffLeaveUI} from './staff-leave-ui.js';
 import {leaveToday} from './leave-model.js';
 window.getStaffLeaveUI=()=>window.staffLeaveUI||installStaffLeaveUI(window,document);
@@ -2222,6 +2222,7 @@ window.loadPayslipVault = async function() {
         const onlineSnap=await getDocs(query(collection(db,'staff_deductions'),where('staffId','==',onlineStaffId)));
         if(!stillOpen())return;
         const onlineRows=onlineSnap.docs.map(row=>({id:row.id,...row.data()})).filter(row=>row.type==='Online Order Refund'&&row.staffId===onlineStaffId);
+        const hasCashShortageReview=onlineSnap.docs.some(row=>{const item=row.data();return item.staffId===onlineStaffId&&(item.type==='Cash Shortage'||row.id.startsWith('cash-shortage-'))&&['Pending Review','Unpaid'].includes(item.status);});
         let pendingUnpaidVales = 0, scheduledPenaltyReview = 0;
         
         let cutoffEndTimestamp = new Date(endDateStr + 'T23:59:59'); 
@@ -2265,6 +2266,7 @@ window.loadPayslipVault = async function() {
         const onlineDueAmount=onlineDue.reduce((sum,row)=>sum+(Number(row.amount)||0),0);
         let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - liveUnpaidVales - cutoffLoanDeduction - onlineDueAmount;
         let refundEstimate=document.getElementById('liveOnlineRefundEstimate');if(!refundEstimate){refundEstimate=document.createElement('p');refundEstimate.id='liveOnlineRefundEstimate';document.getElementById('payslipLiveSection').prepend(refundEstimate);}refundEstimate.textContent='ONLINE REFUND ORDERS: −₱'+onlineDueAmount.toFixed(2);refundEstimate.hidden=!onlineDueAmount;
+        let cashReviewHint=document.getElementById('liveCashShortageReviewHint');if(!cashReviewHint){cashReviewHint=document.createElement('p');cashReviewHint.id='liveCashShortageReviewHint';cashReviewHint.style.cssText='padding:10px 12px;border:1px solid #e6d9bd;border-radius:8px;background:#fff9ed;font-size:12px;';document.getElementById('payslipLiveSection').prepend(cashReviewHint);}cashReviewHint.hidden=!hasCashShortageReview;cashReviewHint.textContent='This estimate excludes cash shortage reviews. Open My Inbox for the protected review and your response. Any lawfully approved amount will be itemized on the final payslip.';
 
         document.getElementById('liveEstGross').innerText = currentData.salaryHistoryUnavailable?'Confirm salary on approved phone':currentData.attendanceHeld ? 'Held for HR review' : '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstLates').innerText = '-₱' + currentData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
@@ -2419,6 +2421,7 @@ window.loadPayslipVault = async function() {
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Unpaid Vales/Meals:</span> <strong style="color:#ef4444;">-₱${pendingUnpaidVales.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
                         ${prevLoanStr}
                     </div>
+                    ${hasCashShortageReview?'<p style="font-size:12px;color:#7a5a21;line-height:1.5">This estimate excludes cash shortage reviews. Check My Inbox; any lawfully approved amount is itemized on the final payslip.</p>':''}
                     
                     ${prevData.salaryHistoryUnavailable?'<p style="font-size:12px;color:#92400e;line-height:1.5">Use your approved Staff phone and reconnect to confirm the daily wage for each work date.</p>':prevData.amendmentReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">A dated shift correction needs HQ review of a saved lateness decision. This attendance estimate is held until that review is complete.</p>' : prevData.attendanceHeld ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Linked punches conflict or overlap. The attendance estimate is held for HR review; no payable hours or lateness penalty have been inferred.</p>' : prevData.scheduleReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Saved schedule evidence is missing for some clock-ins in this estimate. Review the attendance details before payroll approval.</p>' : ''}
                     <details style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
@@ -3697,7 +3700,8 @@ window.loadMySanctionsHistory = async function() {
 // ========================================================
 window.openPayslipSignatureModal = function(recordId, encodedData) {
     if (!window.staffVaultSession?.allows(localStorage.getItem('takodeal_staff_id'))) return;
-    const payEpoch = window.staffVaultSession.epoch;
+    const payEpoch = window.staffVaultSession.epoch, payStaffId = localStorage.getItem('takodeal_staff_id');
+    const signatureCurrent = () => localStorage.getItem('takodeal_staff_id')===payStaffId && window.staffVaultSession.allows(payStaffId,payEpoch);
     let d = JSON.parse(decodeURIComponent(encodedData));
     
     // Calculate preview math
@@ -3719,7 +3723,7 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
     let totalDeduct = (parseFloat(lateDeduct) + parseFloat(sss) + parseFloat(phil) + parseFloat(pagibig) + parseFloat(vale) + parseFloat(loans) + parseFloat(meals) + parseFloat(customDeducts) + Number(d.onlineRefunds||0) + Number(d.cashShortages||0)).toFixed(2);
     let netPayFmt = (d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2});
 
-    Swal.fire({
+    return Swal.fire({
         title: `<h3 style="margin: 0; color: #b45309; text-transform: uppercase;">Acknowledge Payslip</h3>`,
         html: `
             <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 15px; font-size: 13px; text-align: left; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
@@ -3789,24 +3793,31 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
             canvas.addEventListener('mouseup', stopDraw);
         },
         preConfirm: () => {
-            if (!window.staffVaultSession.allows(localStorage.getItem('takodeal_staff_id'), payEpoch)) return false;
+            if (!signatureCurrent()) return false;
             if (!window.hasSignedStaffNTE) { Swal.showValidationMessage("You must sign inside the box to accept your payslip."); return false; }
             return document.getElementById('payslipSignatureCanvas').toDataURL('image/png');
         }
     }).then(async (res) => {
-        if (res.isConfirmed && window.staffVaultSession.allows(localStorage.getItem('takodeal_staff_id'), payEpoch)) {
+        if (res.isConfirmed && signatureCurrent()) {
             Swal.fire({title: 'Saving Signature...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
             try {
-                await updateDoc(doc(db, "payroll_records", recordId), {
-                    acknowledged: true,
-                    acknowledgedAt: serverTimestamp(),
-                    signatureBase64: res.value // Save drawing to Firebase!
-                });
-                if (!window.staffVaultSession.allows(localStorage.getItem('takodeal_staff_id'), payEpoch)) return;
+                if (Number(d.cashShortages)>0 || Array.isArray(d.cashShortageRows) && d.cashShortageRows.length>0) {
+                    const vault=await createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'));
+                    if (!signatureCurrent()) return;
+                    await acknowledgeCashShortagePayslip(vault,{recordId,staffId:payStaffId,signature:res.value,stillCurrent:signatureCurrent});
+                } else {
+                    await updateDoc(doc(db, "payroll_records", recordId), {
+                        acknowledged: true,
+                        acknowledgedAt: serverTimestamp(),
+                        signatureBase64: res.value
+                    });
+                }
+                if (!signatureCurrent()) return;
                 Swal.fire({title: '✅ Payslip Acknowledged!', text: 'Your signed record has been securely moved to the Past Payslips vault.', icon: 'success', customClass: { popup: 'rounded-2xl' }});
                 window.loadPayslipVault(); // Instantly refresh
             } catch(e) {
-                console.error(e); Swal.fire('Error', 'Failed to save signature. Check connection.', 'error');
+                if (!signatureCurrent()) return;
+                console.error(e); Swal.fire('Error', e.message || 'Failed to save signature. Check connection.', 'error');
             }
         }
     });

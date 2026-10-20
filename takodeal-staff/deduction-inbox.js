@@ -3,6 +3,23 @@ const money=value=>'₱'+Number(value||0).toFixed(2);
 const readDeadline=promise=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('The Inbox connection is slow. Retry when connected.')),20000);})]).finally(()=>clearTimeout(timer));};
 export const noticeUnread=row=>Number(row.readRevision||0)<Number(row.noticeRevision||1);
 export function validateStaffReply(row,staffId,message){if(row.staffId!==staffId)throw Error('This notice belongs to a different employee.');const reply=String(message||'').trim();if(!reply||reply.length>1500)throw Error('Enter a response of up to 1,500 characters.');return {staffReply:reply,replyRevision:Number(row.replyRevision||0)+1};}
+export async function acknowledgeCashShortagePayslip(vault,{recordId,staffId,signature,stillCurrent=()=>true}={}) {
+    if (typeof recordId!=='string' || !recordId || recordId.length>500 || recordId.includes('/') || !staffId || !vault?.auth?.currentUser?.uid) throw Error('Reconnect your approved Staff phone before signing this payslip.');
+    if (typeof signature!=='string' || signature.length<64 || signature.length>500000 || (signature.length-22)%4!==0 || !/^data:image\/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$/.test(signature)) throw Error('Draw your signature again before acknowledging the payslip.');
+    const {sdk,db}=vault,uid=vault.auth.currentUser.uid;
+    return sdk.runTransaction(db,async tx=>{
+        if (!stillCurrent() || vault.auth.currentUser?.uid!==uid) throw Error('Your staff account changed. Reopen your payslip.');
+        const ref=sdk.doc(db,'payroll_records',recordId),snap=await tx.get(ref);
+        if (!stillCurrent() || vault.auth.currentUser?.uid!==uid) throw Error('Your staff account changed. Reopen your payslip.');
+        if (!snap.exists()) throw Error('The saved payslip is unavailable. Reopen Pay while connected.');
+        const row=snap.data(),frozen=row.frozenData;
+        if (row.staffId!==staffId || [frozen?.staffId,frozen?.profile?.staffId].some(id=>id && id!==staffId)) throw Error('This payslip belongs to a different employee.');
+        if (frozen?.isPaid!==true || !(Number(frozen.cashShortages)>0 || Array.isArray(frozen.cashShortageRows) && frozen.cashShortageRows.length>0)) throw Error('Confirm this paid cash-shortage payslip with HQ before signing.');
+        if (row.acknowledged===true) return {alreadySaved:true};
+        tx.update(ref,{acknowledged:true,acknowledgedAt:sdk.serverTimestamp(),signatureBase64:signature});
+        return {alreadySaved:false};
+    });
+}
 export async function sendStaffDeductionReply(vault,{noticeId,staffId,message,stillCurrent=()=>true}={}) {
     if (!staffId || !noticeId || !vault?.auth?.currentUser?.uid) throw Error('Reconnect your approved Staff phone before sending a response.');
     const {sdk,db}=vault,uid=vault.auth.currentUser.uid;
