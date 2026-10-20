@@ -42,6 +42,11 @@ test('a completed payment cannot replace another account, cutoff or newly genera
   assert.equal(h.node('payrollGrandTotalAmount').innerText,'New screen');assert.equal(h.data.isPaid,true,'the captured confirmed payment remains marked complete');
  }
 });
+test('confirmed cash shortage payroll updates its row and remaining total from the frozen full amount',()=>{
+ const h=fixture(),button=new Node('button'),row={cells:[{textContent:h.data.name},{},{},{textContent:''}],style:{},querySelector:()=>button};h.node('payrollGeneratorBody').querySelectorAll=()=>[row];h.api.globalPayrollCache.Other={name:'Other',basicPay:400,cashShortages:90};
+ assert.equal(applyConfirmedPayroll(h.api,h.d,h.data,{frozenData:{...h.data,cashShortages:90,cashShortageRows:[{id:'cash-shortage-sample',amount:90}]},finalNetPay:390,accountId:'bank',accountBalance:4610},{actorKey:payrollActorKey(h.api)}),true);
+ assert.equal(row.cells[3].textContent,'Total: ₱110.00 · Paid and saved');assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱700.00');assert.equal(h.data.cashShortages,90);assert.equal(h.api.liveAccounts[0].balance,4610);
+});
 test('account picker reads just fresh permitted cash accounts, without opening budget or ledger',async()=>{
  const h=fixture(),reads=[];h.api.collection=(_,table)=>({table});h.api.getDocsFromServer=async ref=>{reads.push(ref.table);return {docs:[{id:'real-id',data:()=>({id:'spoof',branch:'Maa',balance:100,name:'Branch cash'})},{id:'other',data:()=>({branch:'Citygate',balance:200})}],metadata:{fromCache:false}};};
  h.api.auth.currentUser.email=h.api.sessionUser.email='manager@example.test';h.api.sessionUser.allowedBranches=['Maa'];

@@ -1,7 +1,10 @@
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {finalizeRefundPayroll} from './refund-payroll.js';
-import {finalizeOrdinaryPayroll} from './payroll-settlement.js';
+import {finalizeOrdinaryPayroll,readPayrollCashShortages} from './payroll-settlement.js';
+import {installCashShortageUI,canReviewCashShortage} from './cash-shortage-ui.js';
+import {isCashShortageDeduction} from './cash-shortage-model.js';
+runManagerDomReady(() => {window.cashShortageUI ||= installCashShortageUI(window,document);});
 import {payrollActorKey,loadPayrollAccounts,applyConfirmedPayroll,exportPayslipImage,syncPayslipImageButton} from './payroll-completion.js';
 import {installManagerTableWrapper} from './manager-table-wrapper.js';
 import {payrollScheduleStamp,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
@@ -7827,7 +7830,7 @@ window.loadZReadingReports = async function () {
           <td>${varText}</td>
           <td>
             <button onclick="viewZReadingDetails('${docSnap.id}', '${breakdownStr}', '${stockStr}', '${safeCashier}', '${safeBranch}', ${declared}, ${data.declaredCash - data.expectedCash})" class="btn-refresh" style="background: #0f172a; color: white; border: none; padding: 6px 12px; border-radius: 6px; width: 100%;">🔍 Full Audit</button>
-            ${Math.abs(data.declaredCash - data.expectedCash) > 0.05 ? `<br><button onclick="alert('Notify the staff via your Group Chat to submit a Reason Letter in their POS.')" style="margin-top: 5px; background: white; color: #dc2626; border: 1px solid #fca5a5; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; width: 100%;">✉️ Require Letter</button>` : ''}
+            ${Number.isFinite(Number(data.expectedCash)) && data.expectedCash != null && Number.isFinite(Number(data.declaredCash)) && data.declaredCash != null && Math.round(Number(data.expectedCash)*100)-Math.round(Number(data.declaredCash)*100)>5 && canReviewCashShortage(window) ? `<br><button type="button" data-cash-shortage="${escapeHtml(docSnap.id)}" style="margin-top:5px;background:white;color:#a53d2e;border:1px solid #e4b8a8;padding:8px 12px;border-radius:6px;font-weight:bold;cursor:pointer;font-size:12px;width:100%;">Review cash shortage</button>` : ''}
           </td>
         </tr>
       `;
@@ -10004,13 +10007,8 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
                     <div id="replyLateCalculation" style="font-size:12px;color:#166534;line-height:1.5;"></div>
                 </div>` : ''}
 
-                <!-- 🔥 THE SHORTAGE PENALTY PIPELINE 🔥 -->
                 ${isReasonLetter ? `
-                <div style="background: #fff1f2; border: 1px dashed #fca5a5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-                    <label style="font-size: 12px; font-weight: bold; color: #b91c1c; display: block; margin-bottom: 5px;">⚠️ Convert Shortage to Salary Deduction (₱)</label>
-                    <div style="font-size: 11px; color: #ef4444; margin-bottom: 8px;">If you want to charge the missing cash to their payroll, enter the amount below.</div>
-                    <input type="number" id="replyPenaltyAmt" placeholder="e.g. 150.00" style="width: 100%; padding: 10px; border: 1px solid #fca5a5; border-radius: 6px; box-sizing: border-box; font-weight: bold; color: #dc2626; outline: none;">
-                </div>
+                <p style="padding:12px;background:#f3f7ef;border-radius:8px;font-size:12px;color:#45614f;">For a cash shortage, open Z-Reading Reports → Review cash shortage. The saved shift, staff explanation and deduction authority must be reviewed together. Replying to this letter does not create a payroll deduction.</p>
                 ` : ''}
 
                 <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px;">
@@ -10035,8 +10033,7 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
     const btn = document.getElementById('btnSubmitReply');
     const replyMsg = document.getElementById('replyMessage').value.trim();
     const fileInput = document.getElementById('replyProofImage');
-    const penaltyInput = document.getElementById('replyPenaltyAmt');
-    const penaltyAmt = penaltyInput ? parseFloat(penaltyInput.value) || 0 : 0;
+    const penaltyAmt = 0; // Cash charges use the protected, source-linked Z-reading review.
 
     btn.innerText = "⏳ Processing...";
     btn.disabled = true;
@@ -10152,15 +10149,9 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
             });
         }
 
-        // 5. PENALTY / SHORTAGE LEDGER ROUTER 
-        if (penaltyAmt > 0) {
-            const penaltyStaff=await findSanctionStaff(window,staffName,reqData.branch);
-            await issueScheduledSanction(window,{staffId:penaltyStaff.id,staffName,branch:penaltyStaff.branch,type:'Cash/Stock Shortage',severity:'Written Warning & Deduction',details:`Linked to Reason Letter (${action}): ${replyMsg}`,remarks:`Request ${docId}. Incident date ${phDay(originalDate)}. ${replyMsg}`,amount:penaltyAmt,deductionType:'Cash/Stock Shortage Penalty',effectiveDate:phDay()},{id:'request-penalty-'+docId});
-        }
-
         Swal.fire({
             title: `✅ Request ${action}`, 
-            text: penaltyAmt > 0 ? `Message sent and ₱${penaltyAmt} was added to ${staffName}'s deductions ledger.` : 'Message successfully sent to cashier.', 
+            text: 'Message successfully sent to cashier.',
             icon: 'success',
             customClass: { popup: 'rounded-2xl' }
         });
@@ -10648,12 +10639,18 @@ window.loadPayrollGenerator = async function() {
             }
         }
 
+        const cashShortageInputs=deductSnap.docs.map(row=>({...row.data(),id:row.id})).filter(row=>!paidRecords[staffNameById[row.staffId]||row.staffName]);
+        const checkedCashShortages=cashShortageInputs.some(row=>row.type==='Cash Shortage'||row.id.startsWith('cash-shortage-'))?await readPayrollCashShortages(window,cashShortageInputs,endDateRaw):new Map();
+        previewGuard.assertCurrent(previewToken);
         deductSnap.forEach(docSnap => {
-            let deduct = docSnap.data(); 
-            let name = deduct.type==='Online Order Refund' ? staffNameById[deduct.staffId] : resolveStaffName(deduct.staffName); // Refunds always use the saved employee ID.
-            if (!name) return;
+            let deduct = docSnap.data();
+            const cashShortage=deduct.type==='Cash Shortage'||docSnap.id.startsWith('cash-shortage-');
+            if(cashShortage&&!checkedCashShortages.has(docSnap.id))return;
+            let name = deduct.type==='Online Order Refund'||cashShortage ? staffNameById[deduct.staffId] : resolveStaffName(deduct.staffName);
+            if (!name) {if(cashShortage)throw Error('A cash shortage employee is missing from the saved directory. Resolve it before payroll.');return;}
 
-            if(isPenaltyDeduction(deduct) && deduct.scheduleVersion===1){if(!deductionIsDue(deduct,endDateRaw))return;}
+            if(cashShortage){if(staffDict[name]?.staffId!==deduct.staffId||deduct.staffName!==name||staffDict[name]?.branch!==deduct.branch)throw Error('A cash shortage belongs to an ambiguous employee. Resolve the directory before payroll.');}
+            else if(isPenaltyDeduction(deduct) && deduct.scheduleVersion===1){if(!deductionIsDue(deduct,endDateRaw))return;}
             else {let dDate=deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();if(dDate>trueEndDate)return;}
             
             if (!staffData[name]) {
@@ -10661,7 +10658,8 @@ window.loadPayrollGenerator = async function() {
                 staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
             let amt = parseFloat(deduct.amount) || 0;
-            if(deduct.type==='Online Order Refund'){
+            if(cashShortage){staffData[name].cashShortages=(staffData[name].cashShortages||0)+checkedCashShortages.get(docSnap.id).amount;(staffData[name].cashShortageRows ||= []).push({id:docSnap.id,amount:checkedCashShortages.get(docSnap.id).amount});}
+            else if(deduct.type==='Online Order Refund'){
                 if(staffDict[name]?.staffId!==deduct.staffId || deduct.staffName!==name)throw Error('An online refund belongs to an ambiguous employee name. Resolve the directory before payroll.');
                 staffData[name].onlineRefunds=(staffData[name].onlineRefunds||0)+amt;
                 (staffData[name].onlineRefundRows ||= []).push({id:docSnap.id,amount:amt});
@@ -10745,7 +10743,7 @@ window.loadPayrollGenerator = async function() {
                     
                     // (Around line 1928) Update globalPayrollCache to include the perfBonus
                     previewCache[name] = {
-                        name: name, staffId:profile.staffId, onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
+                        name: name, staffId:profile.staffId, cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: payrollSalaryProfile(staffDict[name] || {},endDateRaw), start: startDateRaw, end: endDateRaw,
@@ -10756,7 +10754,7 @@ window.loadPayrollGenerator = async function() {
                     d = previewCache[name];
                 }
 
-                let totalDeduct = (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
+                let totalDeduct = (d.cashShortages || 0) + (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
                 let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0 && !d.attendanceReviewRequired) masterPayrollTotal += estNet;
@@ -10779,7 +10777,7 @@ window.loadPayrollGenerator = async function() {
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
                         <td style="padding: 12px; font-weight: bold;">${d.attendanceReviewRequired ? 'Held for HR review' : (d.hours ?? d.totalHours ?? 0).toFixed(2)+' hrs'} ${bonusLabel} ${straightLabel} ${holLabel}</td>
-                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
+                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.cashShortages ? '<br><span style="font-size:11px;color:#b45309">-₱'+d.cashShortages.toFixed(2)+' (Owner-reviewed cash shortage)</span>' : ''}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
                 `;
@@ -10879,6 +10877,9 @@ window.openPayslipModal = async function(staffName) {
     let onlineRefundBox=document.getElementById('psOnlineRefunds');
     if(!onlineRefundBox){const box=document.createElement('div');box.style.cssText='padding:10px;border:1px solid #dce6df;border-radius:8px;margin-top:8px;font-size:12px;';box.innerHTML='<span>ONLINE REFUND ORDERS</span><strong id="psOnlineRefunds" style="float:right">0.00</strong><p style="font-size:11px;margin:6px 0 0;color:#64756d">Confirmed charges are included in net pay. Staff can respond through My Inbox.</p>';document.getElementById('psFoods')?.parentElement?.after(box);onlineRefundBox=document.getElementById('psOnlineRefunds');}
     onlineRefundBox.textContent=Number(data.onlineRefunds||0).toFixed(2);
+    let cashShortageLine=document.getElementById('psCashShortages');
+    if(!cashShortageLine){const box=document.createElement('div');box.style.cssText='padding:10px;border:1px solid #e7dbc8;border-radius:8px;margin-top:8px;font-size:12px;';box.innerHTML='<span>OWNER-REVIEWED CASH SHORTAGE</span><strong id="psCashShortages" style="float:right">0.00</strong><p style="font-size:11px;margin:6px 0 0;color:#64756d">Approved full amounts are included in net pay from their effective date. Linked records are verified again before payment.</p>';document.getElementById('psFoods')?.parentElement?.after(box);cashShortageLine=document.getElementById('psCashShortages');}
+    cashShortageLine.textContent=Number(data.cashShortages||0).toFixed(2);
     let penaltyLine=document.getElementById('psPenalties');
     if(!penaltyLine){const wrap=document.createElement('div');wrap.style.cssText='padding:8px;font-size:12px;background:#fff8ed;border:1px solid #efdfc6;';wrap.innerHTML='<span>Scheduled penalties for ledger review: ₱</span><strong id="psPenalties">0.00</strong><br><small>Excluded from calculated net pay. Review and record any collection separately.</small>';document.getElementById('psFoods')?.parentElement?.after(wrap);penaltyLine=document.getElementById('psPenalties');}
     safeSet('psPenalties', data.penalties || 0);
@@ -10969,7 +10970,7 @@ window.recalcPayslip = function() {
     });
 
     let gross = basic + overtime + straightBonus + holiday + perfBonus;
-    let deductions = late + sss + phil + pagibig + advance + loans + foods + getVal('psOnlineRefunds') + customDeductionsSum;
+    let deductions = late + sss + phil + pagibig + advance + loans + foods + getVal('psOnlineRefunds') + Number(window.currentPayslipData?.cashShortages||0) + customDeductionsSum;
     let net = gross - deductions;
 
     safeSetText('psGross', gross.toLocaleString(undefined, {minimumFractionDigits: 2}));
@@ -11084,6 +11085,7 @@ window.loadLedger = async function() {
         let valesData = {};
         deductSnap.forEach(doc => {
             let d = doc.data();
+            if(isCashShortageDeduction({...d,id:doc.id}))return;
             if (!valesData[d.staffName]) valesData[d.staffName] = 0;
             valesData[d.staffName] += (parseFloat(d.amount) || 0);
         });
@@ -11297,7 +11299,13 @@ window.logLoanPayment = async function(docId, staffName, currentPaid, currentBal
             const deductSnap = await getDocs(deductQ);
             
             let pending = [];
-            deductSnap.forEach(d => pending.push({ id: d.id, ...d.data() }));
+            deductSnap.forEach(d => {const row={...d.data(),id:d.id};if(!isCashShortageDeduction(row))pending.push(row);});
+
+            // A stale ledger may still include a protected cash case in its
+            // displayed balance. Check the collectible ordinary total before
+            // changing any row; cash cases settle only with protected payroll.
+            const ordinaryAvailable=pending.reduce((sum,row)=>sum+Math.max(0,Number(row.amount)||0),0)+Math.max(0,Number(currentBalance)||0);
+            if(Math.round(amount*100)>Math.round(ordinaryAvailable*100))throw Error('The manual payment balance changed. Refresh the ledger. Cash shortages can only be collected through their reviewed payroll.');
             
             // Sort oldest first so old debts die first!
             pending.sort((a, b) => (a.dateAdded?.toDate() || 0) - (b.dateAdded?.toDate() || 0));
@@ -11340,7 +11348,7 @@ window.logLoanPayment = async function(docId, staffName, currentPaid, currentBal
         window.loadLedger();
     } catch (e) { 
         console.error(e); 
-        Swal.fire('❌ Error', 'Failed to log manual payment. Check console.', 'error'); 
+        Swal.fire('❌ Error', e.message || 'Failed to log manual payment. Check console.', 'error');
     }
 };
 
@@ -11681,16 +11689,23 @@ window.generateAutoPayslips = async function() {
             }
         }
 
+        const cashShortageInputs=deductSnap.docs.map(row=>({...row.data(),id:row.id})).filter(row=>!paidRecords[staffNameById[row.staffId]||row.staffName]);
+        const checkedCashShortages=cashShortageInputs.some(row=>row.type==='Cash Shortage'||row.id.startsWith('cash-shortage-'))?await readPayrollCashShortages(window,cashShortageInputs,endInput):new Map();
+        previewGuard.assertCurrent(previewToken);
         deductSnap.forEach(docSnap => {
-            let deduct = docSnap.data(); let name = deduct.type==='Online Order Refund' ? staffNameById[deduct.staffId] : deduct.staffName;
-            if(isPenaltyDeduction(deduct) && deduct.scheduleVersion===1){if(!deductionIsDue(deduct,endInput))return;}
+            let deduct = docSnap.data();const cashShortage=deduct.type==='Cash Shortage'||docSnap.id.startsWith('cash-shortage-');
+            if(cashShortage&&!checkedCashShortages.has(docSnap.id))return;
+            let name = deduct.type==='Online Order Refund'||cashShortage ? staffNameById[deduct.staffId] : deduct.staffName;
+            if(cashShortage){if(!name||staffDict[name]?.staffId!==deduct.staffId||deduct.staffName!==name||staffDict[name]?.branch!==deduct.branch)throw Error('A cash shortage belongs to an ambiguous employee. Resolve the directory before payroll.');}
+            else if(isPenaltyDeduction(deduct) && deduct.scheduleVersion===1){if(!deductionIsDue(deduct,endInput))return;}
             else {let dDate=deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();if(dDate>trueEndDate)return;}
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
                 staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
             }
             let amt = parseFloat(deduct.amount) || 0;
-            if(deduct.type==='Online Order Refund'){
+            if(cashShortage){staffData[name].cashShortages=(staffData[name].cashShortages||0)+checkedCashShortages.get(docSnap.id).amount;(staffData[name].cashShortageRows ||= []).push({id:docSnap.id,amount:checkedCashShortages.get(docSnap.id).amount});}
+            else if(deduct.type==='Online Order Refund'){
                 if(staffDict[name]?.staffId!==deduct.staffId || deduct.staffName!==name)throw Error('An online refund belongs to an ambiguous employee name. Resolve the directory before payroll.');
                 staffData[name].onlineRefunds=(staffData[name].onlineRefunds||0)+amt;
                 (staffData[name].onlineRefundRows ||= []).push({id:docSnap.id,amount:amt});
@@ -11761,7 +11776,7 @@ window.generateAutoPayslips = async function() {
                     let customDeductSum = 0; profileCustomDeducts.forEach(c => customDeductSum += c.amount);
                     
                     previewCache[name] = {
-                        name: name, staffId:profile.staffId, onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
+                        name: name, staffId:profile.staffId, cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: payrollSalaryProfile(staffDict[name] || {},endInput), start: startInput, end: endInput,
@@ -11772,7 +11787,7 @@ window.generateAutoPayslips = async function() {
                     d = previewCache[name];
                 }
 
-                let totalDeduct = (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
+                let totalDeduct = (d.cashShortages || 0) + (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
                 let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0) + (d.perfBonus || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0 && !d.attendanceReviewRequired) masterPayrollTotal += estNet;
@@ -11798,7 +11813,7 @@ window.generateAutoPayslips = async function() {
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
                         <td style="padding: 12px; font-weight: bold;">${d.attendanceReviewRequired ? 'Held for HR review' : (d.hours ?? d.totalHours ?? 0).toFixed(2)+' hrs'} ${bonusLabel} ${straightLabel} ${holLabel} ${perfLabel}</td>
-                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
+                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.cashShortages ? '<br><span style="font-size:11px;color:#b45309">-₱'+d.cashShortages.toFixed(2)+' (Owner-reviewed cash shortage)</span>' : ''}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
                 `;
@@ -24221,6 +24236,7 @@ window.openEmployeeProfile = function(docId) {
             actionHtml += `<button onclick="window.deleteStaffDeduction('${dDoc.id}', '${data.cashierName}', '${docId}')" style="background:#fef2f2; color:#dc2626; border:1px solid #fca5a5; padding:6px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:bold; width: 85px;">🗑️ Delete</button>`;
             actionHtml += window.penaltyDateAction?.({...d,id:dDoc.id}) || '';
             if(d.type==='Online Order Refund')actionHtml=`<button onclick="window.reviewOnlineRefundIncident('${dDoc.id}')" style="min-height:44px;padding:8px 12px;">Review incident</button>`;
+            if(d.type==='Cash Shortage'||dDoc.id.startsWith('cash-shortage-'))actionHtml=canReviewCashShortage(window)&&d.sourceShiftId?`<button type="button" data-cash-shortage="${escapeHtml(d.sourceShiftId)}" style="min-height:44px;padding:8px 12px;">Review cash shortage</button>`:'<span style="font-size:11px;color:#64748b">Owner review · protected payroll</span>';
 
             histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                 <td style="padding:12px 8px; color: #64748b;">${dateStr}</td>

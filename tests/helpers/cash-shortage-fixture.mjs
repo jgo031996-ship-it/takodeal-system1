@@ -1,0 +1,10 @@
+import {cashShortageId,cashShortageSource,CASH_SHORTAGE_BASES} from '../../takodeal-manager/cash-shortage-model.js';
+export function approvedCashShortage({shiftId='closed-sample',staffId='sample-staff',name='Sample Staff',branch='Maa',amount=90,effectiveDate='2030-01-01'}={}){
+ const id=cashShortageId(shiftId),shift={branch,status:'Closed',active:false,startTime:new Date('2030-01-01T09:00:00+08:00'),endTime:new Date('2030-01-01T18:00:00+08:00'),expectedCash:14355,declaredCash:14265,startingCash:500,cashOut:0,totalCashSales:13855};
+ const source=cashShortageSource(shiftId,shift),identity={staffId,staffName:name,sourceShiftId:shiftId,sourceReceiptId:shiftId,sourcePlatform:'Z-reading'};
+ const review={...source,...identity,id,type:'Cash Shortage',schemaVersion:1,staffBranch:branch,status:'Approved',revision:2,amount,authorizedAmount:amount,effectiveDate,responsibilityConfirmed:true,lawfulAuthorityConfirmed:true,lawfulBasis:CASH_SHORTAGE_BASES[0],authorityReference:'Documented lawful authority reference',finding:'The completed review identifies the responsible staff member.',replyRevisionReviewed:1};
+ const deduction={...identity,id,incidentId:id,type:'Cash Shortage',branch,sourceBranch:branch,cashShortageVersion:1,status:'Unpaid',reviewRevision:2,amount,authorizedAmount:amount,effectiveDate,dateAdded:new Date('2030-01-01T19:00:00+08:00')};
+ const notice={...identity,id,incidentId:id,type:'Cash Shortage',branch,version:1,status:'Approved',noticeRevision:2,replyRevision:1,staffReply:'My response to the documented cash shortage review.',amount,effectiveDate,lawfulBasis:review.lawfulBasis,authorityReference:review.authorityReference,finding:review.finding,ownerReply:review.finding};
+ return {id,shiftId,shift,review,deduction,notice};
+}
+export function seedCashShortage(h,options={}){const row=approvedCashShortage(options);for(const [table,value]of [['shifts',row.shift],['cash_shortage_reviews',row.review],['staff_deductions',row.deduction],['staff_deduction_notices',row.notice]])h.put(table+'/'+(table==='shifts'?row.shiftId:row.id),value);return row;}

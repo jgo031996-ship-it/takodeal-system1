@@ -12,6 +12,10 @@ import * as completion from '../takodeal-manager/payroll-completion.js';
 import {canOpenWorkspacePage} from '../takodeal-manager/workspace-access-model.js';
 import {planPayrollAttendance} from '../takodeal-manager/payroll-attendance.js';
 import {attendanceMillis} from '../takodeal-manager/attendance-reconcile.js';
+import {readPayrollCashShortages} from '../takodeal-manager/payroll-settlement.js';
+import {approvedCashShortage} from './helpers/cash-shortage-fixture.mjs';
+import {isCashShortageDeduction} from '../takodeal-manager/cash-shortage-model.js';
+import {canReviewCashShortage} from '../takodeal-manager/cash-shortage-ui.js';
 
 const source=fs.readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 function extract(name){const start=source.indexOf('\nwindow.'+name+' = '),end=source.indexOf('\n};',start+1);assert.ok(start>=0&&end>start,name+' source exists');return source.slice(start+1,end+3);}
@@ -31,7 +35,7 @@ function harness(options={}){
  api.getDocFromServer=async ref=>{if(options.readDoc)return options.readDoc(ref,{records});const row=(records[ref.table]||[]).find(item=>item.id===ref.id||item.staffId===ref.id);return {exists:()=>!!row,data:()=>row,metadata:{fromCache:false,hasPendingWrites:false}};};
  const Swal={fire:async(...args)=>{events.push(args);return options.confirm?options.confirm(...args):{isConfirmed:false};},showValidationMessage:message=>events.push(message)};
  const document={getElementById:node,querySelectorAll:()=>[]};
- const context=vm.createContext({...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...completion,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
+ const context=vm.createContext({...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...completion,readPayrollCashShortages,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
  for(const name of ['getPayrollPreviewGuard','requirePayrollPreview','loadPayrollGenerator','generateAutoPayslips','openPayslipModal','finalizePayslip'])vm.runInContext(extract(name),context);
  return {context,w:api,node,nodes,events,writes,calls,records,logs,snapshot,person};
 }
@@ -96,4 +100,69 @@ for(const generator of ['loadPayrollGenerator','generateAutoPayslips'])test(gene
 for(const generator of ['loadPayrollGenerator','generateAutoPayslips'])test(generator+': repeated Generate clicks share one physical query bundle and keep one current preview',async()=>{
  const gate=held();let h;h=harness({read:async(ref,{snapshot,records})=>{await gate.promise;return snapshot(records[ref.table]||[]);}});
  const pending=Array.from({length:12},()=>h.w[generator]());assert.equal(h.calls.length,6);gate.resolve();await Promise.all(pending);assert.equal(h.calls.length,6);assert.equal(h.w.globalPayrollCache['Sample Staff'].basicPay,450);assert.doesNotThrow(()=>h.w.getPayrollPreviewGuard().requireReady());assert.equal(h.writes.length,0);
+});
+
+function addReviewedCashShortage(h,options={}){
+ h.w.auth.currentUser.providerData=[{providerId:'google.com'}];
+ const row=approvedCashShortage({staffId:h.person.id,name:h.person.cashierName,branch:h.person.branch,effectiveDate:'2030-01-16',...options});
+ h.records.staff_deductions.push(row.deduction);(h.records.cash_shortage_reviews||=[]).push(row.review);(h.records.staff_deduction_notices||=[]).push(row.notice);(h.records.shifts||=[]).push({...row.shift,id:row.shiftId});return row;
+}
+for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
+ test(generator+': the real generator includes only due Owner-reviewed cash shortages with full linked amount and keeps legacy penalties excluded',async()=>{
+  const h=harness(),row=addReviewedCashShortage(h);addReviewedCashShortage(h,{shiftId:'future',effectiveDate:'2030-01-17'});
+  h.records.staff_deductions.push({id:'legacy',staffName:h.person.cashierName,branch:h.person.branch,type:'Penalty',scheduleVersion:1,scheduleRevision:1,effectiveDate:'2030-01-16',amount:500,status:'Unpaid',dateAdded:stamp('2030-01-16T12:00:00+08:00')});
+  await h.w[generator]();const d=h.w.globalPayrollCache['Sample Staff'];assert.ok(d,JSON.stringify(h.events));assert.equal(d.cashShortages,90);assert.deepEqual(JSON.parse(JSON.stringify(d.cashShortageRows)),[{id:row.id,amount:90}]);assert.equal(d.penalties,500);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱360.00');assert.match(h.node('payrollGeneratorBody').innerHTML,/90.00 \(Owner-reviewed cash shortage\)/);assert.match(h.node('payrollGeneratorBody').innerHTML,/excluded from net pay/);assert.equal(h.writes.length,0);
+ });
+ test(generator+': revoked cash review stops a new preview rather than publishing a smaller or unverified payroll',async()=>{
+  const h=harness();addReviewedCashShortage(h);h.records.staff_deduction_notices[0].status='Cancelled';await h.w[generator]();assert.equal(Object.keys(h.w.globalPayrollCache).length,0);assert.equal(h.node('payrollGrandTotalAmount').innerText,'—');assert.equal(h.writes.length,0);assert.throws(()=>h.w.getPayrollPreviewGuard().requireReady());
+ });
+ test(generator+': a confirmed earlier paid cutoff remains read-only while future cash shortages are withheld',async()=>{
+  const h=harness();addReviewedCashShortage(h,{effectiveDate:'2030-01-17'});const frozen={name:'Sample Staff',branch:h.person.branch,staffId:h.person.id,isPaid:true,finalNetPay:123,basicPay:123,hours:8,start:'2030-01-16',end:'2030-01-16',logs:[],profile:{hourlyRate:123}};h.records.payroll_records=[{id:'old-paid',staffId:h.person.id,staffName:h.person.cashierName,startDate:frozen.start,endDate:frozen.end,frozenData:frozen}];await h.w[generator]();assert.equal(h.w.globalPayrollCache['Sample Staff'],frozen);assert.equal(frozen.basicPay,123);assert.equal(frozen.cashShortages,undefined);assert.equal(h.writes.length,0);
+ });
+ test(generator+': a newly reviewed cash source cannot block or recompute an already paid staff snapshot',async()=>{
+  const h=harness();addReviewedCashShortage(h);h.records.cash_shortage_reviews[0].status='Cancelled';const frozen={name:'Sample Staff',branch:h.person.branch,staffId:h.person.id,isPaid:true,finalNetPay:123,basicPay:123,hours:8,start:'2030-01-16',end:'2030-01-16',logs:[],profile:{hourlyRate:123}};h.records.payroll_records=[{id:'old-paid',staffId:h.person.id,staffName:h.person.cashierName,startDate:frozen.start,endDate:frozen.end,frozenData:frozen}];await h.w[generator]();assert.equal(h.w.globalPayrollCache['Sample Staff'],frozen);assert.equal(frozen.cashShortages,undefined);assert.equal(h.writes.length,0);
+ });
+}
+
+test('actual payslip editor shows a fixed cash shortage line and includes it once in recalculated net',async()=>{
+ const h=harness();addReviewedCashShortage(h);await h.w.generateAutoPayslips();h.node('psDynamicDeductionsArea').innerHTML='';
+ vm.runInContext(extract('recalcPayslip'),h.context);await h.w.openPayslipModal('Sample Staff');assert.equal(h.node('psCashShortages').textContent,'90.00');assert.equal(h.node('psTotalDeduct').innerText,'90.00');assert.equal(h.node('psNetPay').innerText,'360.00');assert.equal(h.w.currentPayslipData.cashShortages,90);assert.equal(h.writes.length,0);
+});
+
+function installLedgerHandlers(h,{payment='20',owner=true}={}){
+ const changes=[],alerts=[],reloads=[];
+ h.node('ledgerBranchFilter').value='All';
+ h.w.auth.currentUser.email=h.w.sessionUser.email=owner?'jgo031996@gmail.com':'manager@example.test';h.w.sessionUser.isOwner=owner;
+ h.context.getDocs=async ref=>h.snapshot((h.records[ref.table]||[]).filter(row=>(ref.filters||[]).every(filter=>filter.op!=='=='||row[filter.field]===filter.value)));
+ h.context.updateDoc=async(ref,patch)=>{changes.push({ref,patch});const row=(h.records[ref.table]||[]).find(row=>row.id===ref.id);if(!row)throw Error('Missing saved row');Object.assign(row,patch);};
+ h.context.addDoc=async(ref,data)=>{changes.push({ref,data});(h.records[ref.table]||=[]).push({id:'created-'+changes.length,...data});};
+ h.context.serverTimestamp=()=>stamp('2030-01-16T12:00:00+08:00');h.context.isCashShortageDeduction=isCashShortageDeduction;h.context.canReviewCashShortage=canReviewCashShortage;h.context.installSanctionScheduling=()=>{};h.context.dailyStaffRate=profile=>profile.hourlyRate;
+ h.context.Swal.fire=async(...args)=>{alerts.push(args);return args[0]?.input==='number'?{value:payment}:{isConfirmed:false};};
+ for(const name of ['loadLedger','logLoanPayment','openEmployeeProfile'])vm.runInContext(extract(name),h.context);
+ return {changes,alerts,reloads,stubReload:()=>{h.w.loadLedger=()=>reloads.push(true);}};
+}
+function ordinaryLedgerRow(h,{id='meal',type='Staff Meal',amount=20}={}){return {id,type,amount,staffName:h.person.cashierName,staffId:h.person.id,branch:h.person.branch,status:'Unpaid',dateAdded:stamp('2030-01-15T12:00:00+08:00')};}
+
+test('actual ledger totals exclude approved, future, disputed and prefix-protected cash cases while ordinary debts stay payable',async()=>{
+ const h=harness(),cash=approvedCashShortage({staffId:h.person.id,name:h.person.cashierName,branch:h.person.branch,effectiveDate:'2030-01-16'});
+ h.records.staff_deductions=[{...cash.deduction,dateAdded:stamp('2030-01-01T19:00:00+08:00')},{...cash.deduction,id:'cash-shortage-future',effectiveDate:'2030-01-31',amount:70},{...cash.deduction,id:'cash-shortage-disputed',amount:80},{...cash.deduction,id:'cash-shortage-legacy-looking',type:'Staff Meal',amount:10},ordinaryLedgerRow(h)];
+ const controls=installLedgerHandlers(h);await h.w.loadLedger();assert.match(h.node('ledgerTableBody').innerHTML,/logLoanPayment\('undefined', 'Sample Staff', 0, 0, 20\)/);assert.equal(controls.changes.length,0);
+ controls.stubReload();await h.w.logLoanPayment('undefined','Sample Staff',0,0,20);assert.equal(controls.changes.length,1);assert.equal(controls.changes[0].ref.id,'meal');assert.equal(h.records.staff_deductions.at(-1).status,'Paid');for(const row of h.records.staff_deductions.slice(0,-1))assert.equal(row.status,'Unpaid');assert.equal(controls.reloads.length,1);
+});
+
+test('a stale manual payment that included cash shortages fails before any ordinary deduction or loan write',async()=>{
+ const h=harness();h.records.staff_deductions=[ordinaryLedgerRow(h),{...ordinaryLedgerRow(h,{id:'cash-shortage-case',type:'Cash Shortage',amount:90}),effectiveDate:'2030-01-31'}];h.records.staff_ledger=[{id:'loan',staffName:h.person.cashierName,totalLoaned:200,totalPaid:0}];
+ const controls=installLedgerHandlers(h,{payment:'310'});controls.stubReload();await h.w.logLoanPayment('loan','Sample Staff',0,200,110);assert.deepEqual(controls.changes,[]);assert.equal(h.records.staff_deductions[0].status,'Unpaid');assert.equal(h.records.staff_deductions[1].status,'Unpaid');assert.equal(h.records.staff_ledger[0].totalPaid,0);assert.ok(controls.alerts.some(args=>String(args[1]).includes('Cash shortages can only be collected through their reviewed payroll')));
+});
+
+test('manual cash payment still applies ordinary rows first and the remaining amount to its legacy loan',async()=>{
+ const h=harness();h.records.staff_deductions=[ordinaryLedgerRow(h),ordinaryLedgerRow(h,{id:'advance',type:'Cash Advance',amount:30}),ordinaryLedgerRow(h,{id:'cash-shortage-hold',type:'Cash Shortage',amount:90})];h.records.staff_ledger=[{id:'loan',staffName:h.person.cashierName,totalLoaned:200,totalPaid:0}];
+ const controls=installLedgerHandlers(h,{payment:'100'});controls.stubReload();await h.w.logLoanPayment('loan','Sample Staff',0,200,50);assert.equal(h.records.staff_deductions[0].status,'Paid');assert.equal(h.records.staff_deductions[1].status,'Paid');assert.equal(h.records.staff_deductions[2].status,'Unpaid');assert.equal(h.records.staff_ledger[0].totalPaid,50);assert.equal(controls.changes.some(row=>row.ref.id==='cash-shortage-hold'),false);assert.equal(controls.reloads.length,1);
+});
+
+for(const owner of [true,false])test('actual employee history offers protected cash review only to Owner and preserves ordinary controls ('+(owner?'Owner':'Manager')+')',async()=>{
+ const h=harness(),cash=approvedCashShortage({staffId:h.person.id,name:h.person.cashierName,branch:h.person.branch});h.records.staff_deductions=[{...cash.deduction,dateAdded:stamp('2030-01-16T12:00:00+08:00')},ordinaryLedgerRow(h)];h.w.globalStaffData={[h.person.id]:h.person};
+ const controls=installLedgerHandlers(h,{owner});h.w.openEmployeeProfile(h.person.id);await tick();const html=h.node('empProfileHistoryBody').innerHTML,cashHTML=html.slice(html.indexOf('Cash Shortage'),html.indexOf('</tr>',html.indexOf('Cash Shortage')));assert.ok(cashHTML);assert.doesNotMatch(cashHTML,/forceMarkDeductionPaid|deleteStaffDeduction/);
+ if(owner)assert.match(cashHTML,/data-cash-shortage="closed-sample"/);else {assert.doesNotMatch(cashHTML,/data-cash-shortage=/);assert.match(cashHTML,/Owner review/);}
+ assert.match(html,/forceMarkDeductionPaid\('meal'/);assert.match(html,/deleteStaffDeduction\('meal'/);assert.deepEqual(controls.changes,[]);
 });

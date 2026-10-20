@@ -800,9 +800,12 @@ service cloud.firestore {
     match /hr_sanctions/{sanctionId} { allow read, create, update: if true; allow delete: if isHQUser(); }
     match /acknowledgments/{ackId} { allow read, create, update: if true; allow delete: if isHQUser(); }
     match /payroll_records/{recordId} { allow read: if true;
-      allow create: if recordId.matches('refund-payroll-.*') ? (offlineOwner() && request.resource.data.frozenData.isPaid == true && request.resource.data.processedAt == request.time && request.resource.data.processedBy == request.auth.token.email && request.resource.data.refundSettlements is map && request.resource.data.finalNetPay is number && request.resource.data.finalNetPay >= 0) : isHQUser();
-      allow update: if !recordId.matches('refund-payroll-.*') || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged']) && request.resource.data.acknowledged == true);
-      allow delete: if !recordId.matches('refund-payroll-.*') && isHQUser(); }
+      allow create: if cashShortagePayrollMetadata(request.resource.data,recordId)
+        && (recordId.matches('refund-payroll-.*') ? (offlineOwner() && request.resource.data.frozenData.isPaid == true && request.resource.data.processedAt == request.time && request.resource.data.processedBy == request.auth.token.email && request.resource.data.refundSettlements is map && request.resource.data.finalNetPay is number && request.resource.data.finalNetPay >= 0) : isHQUser());
+      allow update: if cashShortageProtectedPayroll(resource.data) || cashShortageProtectedPayroll(request.resource.data)
+        ? cashShortageSignedAcknowledgment(resource.data,request.resource.data)
+        : (!recordId.matches('refund-payroll-.*') || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['acknowledged']) && request.resource.data.acknowledged == true));
+      allow delete: if !recordId.matches('refund-payroll-.*') && !cashShortageProtectedPayroll(resource.data) && isHQUser(); }
     match /staff_ledger/{ledgerId} { allow read: if true; allow write: if isHQUser(); }
     function onlineIncidentCreate(data, id) {
       let sale = get(/databases/$(database)/documents/transactions/$(data.sourceSaleId)).data;
@@ -939,10 +942,166 @@ service cloud.firestore {
           && after.staffReply is string && after.staffReply.size() > 0 && after.staffReply.size() <= 1500
           && after.replyRevision == before.replyRevision + 1 && after.repliedAt == request.time && after.repliedByUid == request.auth.uid));
     }
+    function cashShortageKind(data,id) { return data.get('type','') == 'Cash Shortage' || id.matches('^cash-shortage-.*'); }
+    function cashShortageSource(data,id) {
+      let shift = get(/databases/$(database)/documents/shifts/$(data.sourceShiftId)).data;
+      let staff = get(/databases/$(database)/documents/cashiers/$(data.staffId)).data;
+      return id == 'cash-shortage-' + data.sourceShiftId && data.sourceShiftId.matches('^[-A-Za-z0-9_]{1,160}$')
+        && shift.status == 'Closed' && shift.active == false && shift.startTime is timestamp && shift.endTime is timestamp && shift.endTime >= shift.startTime
+        && shift.expectedCash is number && shift.expectedCash >= 0 && shift.declaredCash is number && shift.declaredCash >= 0
+        && data.expectedCash == int(shift.expectedCash * 100 + 0.5) / 100.0 && data.declaredCash == int(shift.declaredCash * 100 + 0.5) / 100.0
+        && data.sourceShortageCents is int && data.sourceShortageCents > 5
+        && data.sourceShortageCents == int(shift.expectedCash * 100 + 0.5) - int(shift.declaredCash * 100 + 0.5)
+        && data.sourceShortage == data.sourceShortageCents / 100.0 && data.branch == shift.branch
+        && data.staffName == staff.cashierName && data.staffBranch == staff.branch
+        && staff.get('active',true) != false && staff.get('archived',false) != true && staff.get('blocked',false) != true
+        && !(staff.get('status','').lower() in ['blocked','inactive','disabled','revoked','terminated','archived','resigned','deleted'])
+        && data.sourceReceiptId == data.sourceShiftId && data.sourcePlatform == 'Z-reading'
+        && data.sourceFingerprint is string && data.sourceFingerprint.size() > 0 && data.sourceFingerprint.size() <= 30000;
+    }
+    function cashShortageLinks(row,charge,notice,id) {
+      return row.id == id && row.type == 'Cash Shortage' && charge.type == 'Cash Shortage' && notice.type == 'Cash Shortage'
+        && row.schemaVersion == 1 && charge.cashShortageVersion == 1 && notice.version == 1
+        && charge.incidentId == id && notice.id == id && notice.incidentId == id
+        && charge.staffId == row.staffId && notice.staffId == row.staffId && charge.staffName == row.staffName && notice.staffName == row.staffName
+        && charge.branch == row.staffBranch && notice.branch == row.staffBranch && charge.sourceBranch == row.branch
+        && charge.sourceShiftId == row.sourceShiftId && notice.sourceShiftId == row.sourceShiftId
+        && charge.sourceReceiptId == row.sourceShiftId && notice.sourceReceiptId == row.sourceShiftId
+        && charge.sourcePlatform == 'Z-reading' && notice.sourcePlatform == 'Z-reading'
+        && charge.amount == row.amount && charge.authorizedAmount == row.amount && row.authorizedAmount == row.amount && notice.amount == row.amount
+        && charge.effectiveDate == row.effectiveDate && notice.effectiveDate == row.effectiveDate
+        && charge.reviewRevision == row.revision && notice.noticeRevision == row.revision;
+    }
+    function cashShortageCreate(data,id) {
+      let charge = getAfter(/databases/$(database)/documents/staff_deductions/$(id)).data;
+      let notice = getAfter(/databases/$(database)/documents/staff_deduction_notices/$(id)).data;
+      return offlineOwner() && cashShortageSource(data,id) && cashShortageLinks(data,charge,notice,id)
+        && data.keys().hasOnly(['schemaVersion','id','type','sourceShiftId','sourceReceiptId','sourcePlatform','branch','staffId','staffName','staffBranch','expectedCash','declaredCash','sourceShortage','sourceShortageCents','sourceFingerprint','details','evidence','revision','status','amount','authorizedAmount','effectiveDate','openIntent','createdAt','createdByUid','createdBy'])
+        && data.status == 'Pending Review' && data.amount == 0 && data.revision == 1 && data.effectiveDate == null
+        && charge.status == 'Pending Review' && notice.status == 'Pending Review' && notice.replyRevision == 0 && notice.readRevision == 0
+        && data.details is string && data.details.size() >= 8 && data.details.size() <= 1500
+        && data.evidence is string && data.evidence.size() >= 5 && data.evidence.size() <= 1000
+        && data.openIntent is string && data.openIntent.size() > 0 && data.openIntent.size() <= 40000
+        && data.createdAt == request.time && data.createdByUid == request.auth.uid && data.createdBy == request.auth.token.email;
+    }
+    function cashShortageReview(before,after,id) {
+      let charge = getAfter(/databases/$(database)/documents/staff_deductions/$(id)).data;
+      let notice = getAfter(/databases/$(database)/documents/staff_deduction_notices/$(id)).data;
+      let response = get(/databases/$(database)/documents/staff_deduction_notices/$(id)).data;
+      let due = after.get('effectiveDate','2000-01-01') == null ? ['2000','01','01'] : after.effectiveDate.split('-');
+      return offlineOwner() && before.status in ['Pending Review','Approved'] && !before.keys().hasAny(['paidAt','payrollRecordId','partialPaid','amountPaid','payrollFrozen'])
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','revision','lawfulBasis','authorityReference','finding','responsibilityConfirmed','lawfulAuthorityConfirmed','replyRevisionReviewed','approvalIntent','reviewedAt','reviewedBy','dismissalReason'])
+        && after.revision == before.revision + 1 && after.reviewedAt == request.time && after.reviewedBy == request.auth.token.email
+        && cashShortageLinks(after,charge,notice,id) && notice.status == after.status
+        && (after.status == 'Dismissed' ? (after.amount == 0 && charge.status == 'Dismissed' && after.dismissalReason is string && after.dismissalReason.size() >= 8 && after.dismissalReason.size() <= 1500)
+          : (after.status == 'Approved' && charge.status == 'Unpaid' && cashShortageSource(after,id)
+            && after.amount is number && after.amount > 0 && after.amount <= after.sourceShortageCents / 100.0 && after.amount == int(after.amount * 100 + 0.5) / 100.0
+            && after.effectiveDate is string && after.effectiveDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+            && timestamp.date(int(due[0]),int(due[1]),int(due[2])) + duration.value(16,'h') > request.time
+            && after.lawfulBasis in ['Legal authority permitting this deduction','Court / authorized agency order']
+            && after.responsibilityConfirmed == true && after.lawfulAuthorityConfirmed == true
+            && after.authorityReference is string && after.authorityReference.size() >= 8 && after.authorityReference.size() <= 1500
+            && after.finding is string && after.finding.size() >= 15 && after.finding.size() <= 1500
+            && response.replyRevision is int && response.replyRevision > 0 && response.staffReply is string && response.staffReply.size() > 0
+            && after.replyRevisionReviewed == response.replyRevision && notice.replyRevision == response.replyRevision));
+    }
+    function cashShortageChargeCreate(data,id) {
+      let row = getAfter(/databases/$(database)/documents/cash_shortage_reviews/$(id)).data;
+      let notice = getAfter(/databases/$(database)/documents/staff_deduction_notices/$(id)).data;
+      return offlineOwner() && !exists(/databases/$(database)/documents/cash_shortage_reviews/$(id))
+        && cashShortageLinks(row,data,notice,id) && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
+        && data.dateAdded == request.time && data.loggedBy == request.auth.token.email
+        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourceShiftId','sourceReceiptId','sourcePlatform','amount','effectiveDate','status','cashShortageVersion','sourceBranch','authorizedAmount','reviewRevision','dateAdded','loggedBy','remarks']);
+    }
+    function cashShortageNoticeCreate(data,id) {
+      let row = getAfter(/databases/$(database)/documents/cash_shortage_reviews/$(id)).data;
+      let charge = getAfter(/databases/$(database)/documents/staff_deductions/$(id)).data;
+      return offlineOwner() && !exists(/databases/$(database)/documents/cash_shortage_reviews/$(id))
+        && cashShortageLinks(row,charge,data,id) && data.status == 'Pending Review' && data.amount == 0
+        && data.details == row.details && data.evidence == row.evidence && data.sourceShortageCents == row.sourceShortageCents
+        && data.replyRevision == 0 && data.readRevision == 0 && data.createdAt == request.time && data.updatedAt == request.time
+        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourceShiftId','sourceReceiptId','sourcePlatform','amount','effectiveDate','status','version','id','sourceShortageCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']);
+    }
+    function cashShortageChargeReview(before,after,id) {
+      let row = getAfter(/databases/$(database)/documents/cash_shortage_reviews/$(id)).data;
+      let notice = getAfter(/databases/$(database)/documents/staff_deduction_notices/$(id)).data;
+      return offlineOwner() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(['paidAt','payrollRecordId','partialPaid','amountPaid','payrollFrozen'])
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
+        && after.reviewRevision == before.reviewRevision + 1 && after.reviewedAt == request.time && after.reviewedBy == request.auth.token.email
+        && cashShortageLinks(row,after,notice,id) && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == request.time;
+    }
+    function cashShortageNoticeReview(before,after,id) {
+      let row = getAfter(/databases/$(database)/documents/cash_shortage_reviews/$(id)).data;
+      let charge = getAfter(/databases/$(database)/documents/staff_deductions/$(id)).data;
+      return offlineOwner() && before.status in ['Pending Review','Approved']
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','updatedAt'])
+        && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == request.time && after.status == row.status
+        && cashShortageLinks(row,charge,after,id) && row.reviewedAt == request.time
+        && (row.status == 'Dismissed' ? after.ownerReply == row.dismissalReason : (after.ownerReply == row.finding && after.lawfulBasis == row.lawfulBasis && after.authorityReference == row.authorityReference && after.finding == row.finding));
+    }
+    function cashShortagePayrollRow(item,map,recordId) {
+      let row = getAfter(/databases/$(database)/documents/cash_shortage_reviews/$(item.id)).data;
+      return item.keys().hasOnly(['id','amount']) && item.id is string && item.amount is number && item.amount > 0 && map[item.id] == item.amount
+        && row.status == 'Paid' && row.amount == item.amount && row.payrollRecordId == recordId && row.paidAt == request.time;
+    }
+    function cashShortageRow(rows,map,index,recordId) { return rows.size() <= index || cashShortagePayrollRow(rows[index],map,recordId); }
+    function cashShortageProtectedPayroll(payroll) {
+      return payroll.get('cashShortageSettlements',{}).size() > 0 || payroll.get('frozenData',{}).get('cashShortages',0) > 0 || payroll.get('frozenData',{}).get('cashShortageRows',[]).size() > 0;
+    }
+    function cashShortageSignedAcknowledgment(before,after) {
+      return docVaultOwn(before.staffId) && before.get('acknowledged',false) == false
+        && after.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])
+        && after.acknowledged == true && after.acknowledgedAt == request.time
+        && after.signatureBase64 is string && after.signatureBase64.size() >= 64 && after.signatureBase64.size() <= 500000
+        && (after.signatureBase64.size() - 22) % 4 == 0
+        && after.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');
+    }
+    // Validate the full tuple list once per payroll, not once for each of the three protected case records.
+    function cashShortagePayrollMetadata(payroll,recordId) {
+      let rows = payroll.get('frozenData',{}).get('cashShortageRows',[]);
+      let map = payroll.get('cashShortageSettlements',{});
+      return rows is list && rows.size() <= 6 && rows.toSet().size() == rows.size()
+        && map is map && map.size() == rows.size()
+        && cashShortageRow(rows,map,0,recordId) && cashShortageRow(rows,map,1,recordId) && cashShortageRow(rows,map,2,recordId) && cashShortageRow(rows,map,3,recordId) && cashShortageRow(rows,map,4,recordId) && cashShortageRow(rows,map,5,recordId)
+        && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (rows.size() > 3 ? rows[3].amount : 0) + (rows.size() > 4 ? rows[4].amount : 0) + (rows.size() > 5 ? rows[5].amount : 0)
+        && (rows.size() == 0 || (offlineOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == request.time && payroll.processedBy == request.auth.token.email && rows.size() + payroll.get('refundSettlements',{}).size() <= 6));
+    }
+    function cashShortagePaidChange(before,after) {
+      return offlineOwner() && before.type == 'Cash Shortage' && before.status in ['Approved','Unpaid'] && before.amount > 0
+        && !before.keys().hasAny(['paidAt','payrollRecordId','partialPaid','amountPaid','payrollFrozen'])
+        && after.diff(before).affectedKeys().hasOnly(['status','paidAt','payrollRecordId']) && after.status == 'Paid' && after.paidAt == request.time;
+    }
+    function cashShortageCasePaid(before,after,id) {
+      let charge = getAfter(/databases/$(database)/documents/staff_deductions/$(id)).data;
+      let notice = getAfter(/databases/$(database)/documents/staff_deduction_notices/$(id)).data;
+      let payroll = getAfter(/databases/$(database)/documents/payroll_records/$(after.payrollRecordId)).data;
+      // Links and all financial/source fields were established at authorization and are immutable in this transition.
+      return cashShortagePaidChange(before,after) && before.status == 'Approved'
+        && charge.status == 'Paid' && notice.status == 'Paid' && charge.amount == before.amount && notice.amount == before.amount
+        && charge.reviewRevision == before.revision && notice.noticeRevision == before.revision
+        && notice.replyRevision == before.replyRevisionReviewed && before.replyRevisionReviewed > 0 && notice.staffReply is string && notice.staffReply.size() > 0
+        && charge.payrollRecordId == after.payrollRecordId && notice.payrollRecordId == after.payrollRecordId && charge.paidAt == request.time && notice.paidAt == request.time
+        && payroll.staffId == before.staffId && payroll.frozenData.branch == before.staffBranch && payroll.frozenData.name == before.staffName
+        && payroll.processedAt == request.time && payroll.frozenData.isPaid == true && before.effectiveDate <= payroll.endDate
+        && payroll.cashShortageSettlements[id] == before.amount && {'id':id,'amount':before.amount} in payroll.frozenData.cashShortageRows;
+    }
+    function cashShortageCompanionPaid(before,after,id,revision) {
+      let row = getAfter(/databases/$(database)/documents/cash_shortage_reviews/$(id)).data;
+      return cashShortagePaidChange(before,after) && row.status == 'Paid' && row.staffId == before.staffId && row.amount == before.amount && row.revision == revision
+        && row.payrollRecordId == after.payrollRecordId && row.paidAt == request.time;
+    }
+    match /cash_shortage_reviews/{id} {
+      allow get, list: if offlineOwner() || staffRateHQ(resource.data.staffBranch);
+      allow create: if cashShortageCreate(request.resource.data,id);
+      allow update: if request.resource.data.status == 'Paid' ? cashShortageCasePaid(resource.data,request.resource.data,id) : cashShortageReview(resource.data,request.resource.data,id);
+      allow delete: if false;
+    }
     match /staff_deduction_notices/{id} {
-      allow get, list: if offlineOwner() || docVaultOwn(resource.data.staffId);
-      allow create: if refundNoticeCreate(request.resource.data,id);
-      allow update: if refundNoticeStaffUpdate(resource.data,request.resource.data)
+      allow get, list: if offlineOwner() || docVaultOwn(resource.data.staffId) || (cashShortageKind(resource.data,id) && staffRateHQ(resource.data.branch));
+      allow create: if cashShortageKind(request.resource.data,id) ? cashShortageNoticeCreate(request.resource.data,id) : refundNoticeCreate(request.resource.data,id);
+      allow update: if cashShortageKind(resource.data,id) || cashShortageKind(request.resource.data,id)
+        ? (request.resource.data.status == 'Paid' && resource.data.status != 'Paid' ? cashShortageCompanionPaid(resource.data,request.resource.data,id,resource.data.noticeRevision) : (refundNoticeStaffUpdate(resource.data,request.resource.data) || cashShortageNoticeReview(resource.data,request.resource.data,id)))
+        : refundNoticeStaffUpdate(resource.data,request.resource.data)
         || refundNoticeOwnerUpdate(resource.data,request.resource.data,id) || refundPaid(resource.data,request.resource.data,id);
       allow delete: if false;
     }
@@ -955,13 +1114,16 @@ service cloud.firestore {
     }
     match /staff_deductions/{deductId} {
       allow read: if true;
-      allow create: if request.resource.data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
+      allow create: if cashShortageKind(request.resource.data,deductId) ? cashShortageChargeCreate(request.resource.data,deductId)
+        : request.resource.data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
         ? (onlineIncidentCharge(request.resource.data, deductId) || directIncidentCharge(request.resource.data,deductId))
         : request.resource.data.get('type', '') == 'Cancelled Food Purchase'
         ? (cancelledFoodWriter(request.resource.data.branch)
           && cancelledFoodChargeLink(request.resource.data, deductId))
         : isHQUser();
-      allow update: if resource.data.get('type', '') == 'Online Order Refund' || request.resource.data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
+      allow update: if cashShortageKind(resource.data,deductId) || cashShortageKind(request.resource.data,deductId)
+        ? (request.resource.data.status == 'Paid' ? cashShortageCompanionPaid(resource.data,request.resource.data,deductId,resource.data.reviewRevision) : cashShortageChargeReview(resource.data,request.resource.data,deductId))
+        : resource.data.get('type', '') == 'Online Order Refund' || request.resource.data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
         ? (offlineOwner() && resource.data.type == 'Online Order Refund' && request.resource.data.amount == 0
           && resource.data.status == 'Pending Review'
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','responseRecorded','reviewedAt','reviewedBy'])
@@ -971,7 +1133,7 @@ service cloud.firestore {
           && request.resource.data.reviewedAt == request.time && request.resource.data.reviewedBy == request.auth.token.email) || (resource.data.get('type','') == 'Online Order Refund' && (directChargeReview(resource.data,request.resource.data,deductId) || refundPaid(resource.data,request.resource.data,deductId)))
         : resource.data.get('type', '') == 'Cancelled Food Purchase'
         ? verifiedHQ(resource.data.branch) : isHQUser();
-      allow delete: if resource.data.get('type', '') != 'Online Order Refund'
+      allow delete: if !cashShortageKind(resource.data,deductId) && resource.data.get('type', '') != 'Online Order Refund'
         && (resource.data.get('type', '') == 'Cancelled Food Purchase' ? verifiedHQ(resource.data.branch) : isHQUser());
     }
     match /staff_bonuses/{bonusId} { allow read: if true; allow write: if isHQUser(); }
