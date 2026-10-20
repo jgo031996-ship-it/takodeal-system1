@@ -1,5 +1,46 @@
 import { mallCashPlan, mallOpeningCash, money, businessClock } from './branch-operations.js';
 const ref = (api, table, id) => api.doc(api.db, table, id);
+const text=value=>String(value??'').trim();
+const staffKey=value=>typeof value==='string'&&/^[-A-Za-z0-9_]{1,160}$/.test(value);
+const sessionKey=session=>JSON.stringify([session?.staffId??session?.id??null,session?.cashierName,session?.branch,session?.pin??null]);
+const staffActive=profile=>profile&&profile.active!==false&&profile.archived!==true&&profile.blocked!==true&&!/blocked|revoked|inactive|disabled|terminated|resigned|deleted|archived/i.test(text(profile.status))&&!/^(BLOCKED|REVOKED)$/i.test(text(profile.pin));
+export function captureShiftCloseIdentity(api,branch){
+ const session=api.sessionUser,authUid=api.auth?.currentUser?.uid??null;
+ if(!session||!text(session.cashierName)||!text(branch)||session.branch!==branch)throw Error('Sign in to the current branch with your own staff account before closing this shift.');
+ const savedId=session.staffId??session.id??null;
+ if(savedId!==null&&!staffKey(savedId))throw Error('Your saved staff account ID is invalid. Sign in again before closing.');
+ const captured={sessionRef:session,key:sessionKey(session),staffId:savedId,staffName:String(session.cashierName),authUid,branch};assertShiftCloseIdentity(api,captured);return captured;
+}
+export function assertShiftCloseIdentity(api,captured){
+ const deviceBranch=api.localStorage?.getItem?.('takodeal_device_branch');
+ if(!captured||api.sessionUser!==captured.sessionRef||sessionKey(api.sessionUser)!==captured.key||(api.auth?.currentUser?.uid??null)!==captured.authUid||deviceBranch&&deviceBranch!==captured.branch)throw Error('The signed-in cashier or working branch changed. Reopen the shift close review.');
+}
+export async function resolveShiftCloseIdentity(api,captured){
+ assertShiftCloseIdentity(api,captured);let staffId=captured.staffId;
+ if(!staffId){
+  if(!text(captured.sessionRef.pin))throw Error('Your saved login has no staff account ID. Sign in again before closing this shift.');
+  const snap=await api.getDocsFromServer(api.query(api.collection(api.db,'cashiers'),api.where('cashierName','==',captured.staffName)));
+  assertShiftCloseIdentity(api,captured);
+  if(snap.metadata?.fromCache||snap.metadata?.hasPendingWrites||snap.docs.length!==1||snap.docs.some(row=>row.metadata?.fromCache||row.metadata?.hasPendingWrites)||!staffActive(snap.docs[0].data())||String(snap.docs[0].data().cashierName)!==captured.staffName||String(snap.docs[0].data().pin)!==String(captured.sessionRef.pin)||!staffKey(snap.docs[0].id))throw Error('Your current staff account could not be identified uniquely. Sign in again before closing.');
+  staffId=snap.docs[0].id;
+ }
+ return {version:1,actorType:'staff',source:'pos-session',staffId,staffName:captured.staffName,authUid:captured.authUid,branch:captured.branch};
+}
+async function closeIdentity(tx,api,input,stamp){
+ const closer=input.closer,guard=input.assertCurrent||(()=>{});guard();
+ if(!closer)return {version:1,actorType:'unknown',source:'legacy-unknown',staffId:null,staffName:null,authUid:null,branch:input.branch,staffBranch:null,recordedAt:stamp};
+ if(closer.version!==1||closer.actorType!=='staff'||closer.source!=='pos-session'||!staffKey(closer.staffId)||!text(closer.staffName)||closer.branch!==input.branch||(closer.authUid??null)!==(api.auth?.currentUser?.uid??null))throw Error('The closing staff account changed. Reopen this shift close review.');
+ const snap=await tx.get(ref(api,'cashiers',closer.staffId));guard();const profile=snap.exists()?snap.data():null;
+ if(!staffActive(profile)||String(profile.cashierName)!==closer.staffName||!text(profile.branch)||api.sessionUser?.pin!==undefined&&String(api.sessionUser.pin)!==String(profile.pin))throw Error('The saved closing staff account is inactive or changed. Sign in again before closing.');
+ return {version:1,actorType:'staff',source:'pos-session',staffId:closer.staffId,staffName:closer.staffName,authUid:closer.authUid??null,branch:input.branch,staffBranch:profile.branch,recordedAt:stamp};
+}
+// Compatibility close has no receipt/account settlement. Preserve its existing
+// financial fields, but capture the same actual operator and never replace a
+// saved closer when a caller retries an already ended shift.
+export async function closeLegacyShiftAtomic(api,input){
+ input={...input,closer:input.closer?{...input.closer}:undefined};
+ return api.runTransaction(api.db,async tx=>{const shiftRef=ref(api,'shifts',input.shiftId),snap=await tx.get(shiftRef);if(!snap.exists()||snap.data().branch!==input.branch)throw Error('Shift does not belong to this branch.');if(snap.data().active===false||snap.data().status==='Closed')return 'already-closed';const stamp=api.serverTimestamp(),closedBy=await closeIdentity(tx,api,input,stamp);input.assertCurrent?.();tx.update(shiftRef,{active:false,endTime:stamp,actualCash:input.actualCash,expectedCash:input.expectedCash,difference:input.diff,closedBy});return 'closed';});
+}
 export async function readBranchPolicy(api, branch) {
     const snap = await (api.getDocsFromServer || api.getDocs)(api.query(api.collection(api.db,'branches'),api.where('name','==',branch)));
     if (snap.docs.length !== 1) throw new Error('Branch settings are missing or duplicated. Ask Manager to check this branch.');
@@ -10,9 +51,11 @@ export async function readMallOpeningCash(api, branch) {
     return mallOpeningCash(snap.docs[0]?.data());
 }
 export async function closeShiftAtomic(api, input) {
+    input={...input,closer:input.closer?{...input.closer}:undefined};
     const {shiftId,branch,cashier,declaredCash,totalCashSales,totalDigitalSales,digitalBreakdown,physicalStockCount,shiftIngredientBurn,variance} = input;
-    const policy = await readBranchPolicy(api,branch);
+    input.assertCurrent?.();const policy = await readBranchPolicy(api,branch);input.assertCurrent?.();
     const accounts = await api.getDocs(api.query(api.collection(api.db,'cash_accounts'),api.where('branch','==','Main Office')));
+    input.assertCurrent?.();
     const accountPlans = Object.entries(digitalBreakdown).filter(([method,value])=>!['gcash','salary deduction'].includes(method.trim().toLowerCase()) && money(value)>0).map(([name,value]) => {
         const matches = accounts.docs.filter(row=>row.data().name===name);
         if (matches.length>1) throw new Error('Duplicate HQ cash account: '+name);
@@ -23,6 +66,7 @@ export async function closeShiftAtomic(api, input) {
         const shiftRef = ref(api,'shifts',shiftId), shift = await tx.get(shiftRef);
         if (!shift.exists() || shift.data().branch !== branch) throw new Error('Shift does not belong to this branch.');
         if (shift.data().active === false && shift.data().status === 'Closed') return 'already-closed';
+        input.assertCurrent?.();
         const currentPolicy = await tx.get(ref(api,'branches',policy.id));
         if (!currentPolicy.exists()) throw new Error('Branch settings were removed.');
         if (input.expectedSalesRevision !== undefined && Number(shift.data().salesRevision || 0) !== input.expectedSalesRevision) throw new Error('Sales changed during shift close. Reload the closing review before settling.');
@@ -34,10 +78,11 @@ export async function closeShiftAtomic(api, input) {
         const remitRef = ref(api,'remittances','mall-'+shiftId);
         if (isFinalShiftOfDay && (await tx.get(remitRef)).exists()) throw new Error('A mall remittance already exists for this open shift. Ask Manager to review.');
         const expectedCash = money(stored.startingCash ?? 0) + money(totalCashSales) - money(input.cashOut);
-        const closing = {...input.closing,active:false,status:'Closed',endTime:api.serverTimestamp(),expectedCash,declaredCash:money(declaredCash),totalCashSales:money(totalCashSales),totalDigitalSales:money(totalDigitalSales),digitalBreakdown,cashPolicyVersion:2};
+        const stamp=api.serverTimestamp(),closedBy=await closeIdentity(tx,api,input,stamp);
+        const closing = {...input.closing,active:false,status:'Closed',endTime:stamp,closedBy,expectedCash,declaredCash:money(declaredCash),totalCashSales:money(totalCashSales),totalDigitalSales:money(totalDigitalSales),digitalBreakdown,cashPolicyVersion:2};
         if (isMall) Object.assign(closing,{isMallBranch:true,isFinalShiftOfDay,businessDay:input.businessDay || businessClock().day,retainedCash:money(declaredCash),remittedCash:0,remittanceId:''});
         if (plan) Object.assign(closing,{isMallBranch:true,mallFloat:2000,retainedCash:plan.retainedCash,remittedCash:plan.remittedCash,floatShortage:plan.floatShortage,remittanceId:plan.remittedCash>0 ? remitRef.id : ''});
-        tx.update(shiftRef,closing);
+        input.assertCurrent?.();tx.update(shiftRef,closing);
         if (plan?.remittedCash > 0) tx.set(remitRef,{branch,shiftId,cashierName:cashier,amount:plan.remittedCash,retainedCash:plan.retainedCash,type:'Mall Daily Remittance',channel:'Physical Handover',status:'Pending',dateStr:closing.businessDay,timestamp:api.serverTimestamp(),cashPolicyVersion:2});
         for (const account of accountReads) {
             const data = account.snapshot.exists() ? account.snapshot.data() : {};
