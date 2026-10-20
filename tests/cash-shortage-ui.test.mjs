@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {installCashShortageUI,cashShortageSummaryHTML} from '../takodeal-manager/cash-shortage-ui.js';
+import {installCashShortageUI,cashShortageSummaryHTML,ensureCashShortageStyles,CASH_SHORTAGE_STYLESHEET} from '../takodeal-manager/cash-shortage-ui.js';
 import {openCashShortageReview,approveCashShortageReview,dismissCashShortageReview} from '../takodeal-manager/cash-shortage.js';
 import {sendStaffDeductionReply} from '../takodeal-staff/deduction-inbox.js';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
@@ -24,6 +24,7 @@ class Element {
  setAttribute(name,value){this.attributes[name]=String(value);if(['id','class'].includes(name))this[name==='class'?'className':name]=String(value);if(name==='value')this.value=value;if(name==='disabled')this.disabled=true;if(name==='hidden')this.hidden=true;if(name==='checked')this.checked=true;}
  getAttribute(name){return this.attributes[name]??null;}
  addEventListener(type,callback){(this.listeners[type]||=[]).push(callback);}
+ removeEventListener(type,callback){this.listeners[type]=(this.listeners[type]||[]).filter(fn=>fn!==callback);}
  emit(type){const event={target:this,defaultPrevented:false,preventDefault(){this.defaultPrevented=true;}};for(const callback of this.listeners[type]||[])callback(event);return event;}
  showModal(){this.open=true;}
  close(){if(this.open){this.open=false;this.emit('close');}}
@@ -34,7 +35,7 @@ class Element {
  get innerHTML(){return this._html;}
  set innerHTML(html){this.children=[];this._text='';this._html=String(html);const stack=[this];for(const token of String(html).match(/<[^>]+>|[^<]+/g)||[]){if(token.startsWith('</')){stack.pop();continue;}if(!token.startsWith('<')){stack.at(-1)._text+=unescape(token);continue;}const tag=/^<([\w-]+)/.exec(token)?.[1];if(!tag)continue;const node=new Element(tag,this.ownerDocument);for(const match of token.slice(tag.length+1,-1).matchAll(/([\w-]+)(?:="([^"]*)")?/g))node.setAttribute(match[1],unescape(match[2]??''));stack.at(-1).append(node);if(!['input','br','img','hr','meta','link'].includes(tag))stack.push(node);}}
 }
-class Document {constructor(){this.body=new Element('body',this);this.listeners={};}createElement(tag){return new Element(tag,this);}querySelector(selector){return this.body.querySelector(selector);}addEventListener(type,callback){(this.listeners[type]||=[]).push(callback);}}
+class Document {constructor(){this.head=new Element('head',this);this.body=new Element('body',this);this.listeners={};this.baseURI=new URL('../takodeal-manager/index.html',import.meta.url).href;this.styleMarker='';}createElement(tag){return new Element(tag,this);}querySelectorAll(selector){return [...this.head.querySelectorAll(selector),...this.body.querySelectorAll(selector)];}querySelector(selector){return this.querySelectorAll(selector)[0]||null;}addEventListener(type,callback){(this.listeners[type]||=[]).push(callback);}}
 const node=(dialog,key)=>dialog.querySelector('[data-'+key+']');
 const now=()=>new Date('2026-10-20T12:00:00+08:00');
 const hold=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
@@ -42,7 +43,7 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const shiftId='sample-closed-shift',caseId='cash-shortage-'+shiftId;
 const closedBy=(extra={})=>({version:1,actorType:'staff',source:'pos-session',staffId:'sample-alpha',staffName:'Sample Alpha',authUid:'sample-pos-device',branch:'Sample Branch',recordedAt:now(),...extra});
 const setCloser=(f,extra={})=>f.h.put('shifts/'+shiftId,{...f.h.get('shifts/'+shiftId),closedBy:closedBy(extra)});
-async function fixture({pending=false,response=false,read=false,actions:overrides={}}={}){
+async function fixture({pending=false,response=false,read=false,styles=false,actions:overrides={}}={}){
  const h=firestoreHarness(),document=new Document(),email='jgo031996@gmail.com',notified=[],invalidated=[];
  const auth={currentUser:{uid:'sample-owner',email,emailVerified:true,providerData:[{providerId:'google.com'}]}};
  const api={...h.api,auth,sessionUser:{uid:'sample-owner',email,isOwner:true,role:'Owner',permissions:['all'],allowedBranches:['all']},limit:value=>({limit:value}),serverTimestamp:now,getDocFromServer:async ref=>({exists:()=>h.get(ref.path)!==undefined,data:()=>structuredClone(h.get(ref.path)),metadata:{fromCache:false,hasPendingWrites:false}}),ManagerUI:{notify:message=>notified.push(message)},invalidateCollectionCache:name=>invalidated.push(name)};
@@ -56,12 +57,42 @@ async function fixture({pending=false,response=false,read=false,actions:override
  async function reply(message='Sample cashier explanation: I dispute responsibility pending cash reconciliation.') {await sendStaffDeductionReply({db:api.db,sdk:api,auth:{currentUser:{uid:'sample-approved-staff-phone'}}},{noticeId:caseId,staffId:'sample-beta',message});}
  if(response)await reply();
  if(read)h.put('staff_deduction_notices/'+caseId,{...h.get('staff_deduction_notices/'+caseId),readRevision:1,readAt:now()});
- const ui=installCashShortageUI(api,document,{actions,now});
+ if(styles)api.getComputedStyle=()=>({getPropertyValue:name=>name==='--cash-shortage-layout-ready'?document.styleMarker:''});
+ const ui=installCashShortageUI(api,document,{actions,now,ensureStyles:styles?ensureCashShortageStyles:async()=>{}});
  return {h,api,document,notified,invalidated,calls,ui,initial,reply,open:async()=>{await ui.review(shiftId);return document.querySelector('dialog');}};
 }
 function fillOpen(dialog,staffId='sample-beta'){node(dialog,'staff').value=staffId;node(dialog,'details').value='Sample cash count requires an explanation.';node(dialog,'evidence').value='Sample signed count reference.';}
 function fillApproval(dialog,changes={}) {for(const [key,value]of Object.entries({amount:'70.00',date:'2026-10-20',basis:'Court / authorized agency order',authority:'Sample authority order and applicability reference.',finding:'Sample reviewed responsibility with the cashier explanation and reconciliation.',...changes}))node(dialog,key).value=value;node(dialog,'responsibility').checked=true;node(dialog,'lawful').checked=true;}
 const linkedCount=h=>[...h.docs.keys()].filter(path=>/^(cash_shortage_reviews|staff_deductions|staff_deduction_notices)\//.test(path)).length;
+
+const styleLink=(d,href=CASH_SHORTAGE_STYLESHEET)=>{const link=d.createElement('link');link.rel='stylesheet';link.href=href;d.head.append(link);return link;};
+const finishStyle=(d,link)=>{d.styleMarker='20261021';link.sheet={};link.emit('load');};
+test('warm old Owner HTML acquires and applies its missing layout before any shortage dialog or record read',async()=>{
+ const f=await fixture({styles:true}),reads=[],read=f.api.getDocFromServer;f.api.getDocFromServer=async ref=>{reads.push(ref.path);return read(ref);};
+ const pending=f.ui.review(shiftId);assert.equal(f.document.querySelector('dialog'),null);assert.deepEqual(reads,[]);const links=f.document.querySelectorAll('link');assert.equal(links.length,1);assert.equal(links[0].href,CASH_SHORTAGE_STYLESHEET);assert.match(links[0].href,/v=20261021-layout-r1/);
+ finishStyle(f.document,links[0]);const dialog=await pending;assert.equal(dialog.open,true);assert.ok(reads.length>0);assert.equal(f.document.querySelectorAll('dialog').length,1);assert.equal(linkedCount(f.h),0);assert.deepEqual(f.notified,[]);
+});
+test('repeated opening clicks share one loading style and one dialog, including an exact-version static link still loading',async()=>{
+ const f=await fixture({styles:true}),link=styleLink(f.document),first=f.ui.review(shiftId),second=f.ui.review(shiftId);assert.equal(f.document.querySelectorAll('link').length,1);assert.equal(f.document.querySelector('dialog'),null);finishStyle(f.document,link);const [a,b]=await Promise.all([first,second]);assert.equal(a,b);assert.equal(f.document.querySelectorAll('dialog').length,1);assert.equal(linkedCount(f.h),0);
+ node(a,'close').onclick();const next=await f.ui.review(shiftId);assert.equal(next.open,true);assert.equal(f.document.querySelectorAll('link').length,1);
+});
+test('a loaded exact stylesheet is reused while an old version never counts as ready',async()=>{
+ const f=await fixture({styles:true}),old=styleLink(f.document,CASH_SHORTAGE_STYLESHEET.replace('20261021-layout-r1','20261020'));old.sheet={};f.document.styleMarker='20261021';const pending=f.ui.review(shiftId);assert.equal(f.document.querySelectorAll('link').length,2);assert.equal(f.document.querySelector('dialog'),null);const current=f.document.querySelectorAll('link')[1];finishStyle(f.document,current);await pending;assert.equal(f.document.querySelectorAll('dialog').length,1);
+ const d=new Document(),w={getComputedStyle:()=>({getPropertyValue:()=>d.styleMarker})},ready=styleLink(d);ready.sheet={};d.styleMarker='20261021';await ensureCashShortageStyles(w,d);assert.equal(d.querySelectorAll('link').length,1);assert.equal(d.querySelector('dialog'),null);
+});
+for(const failure of ['network','stale-worker-style'])test('stylesheet '+failure+' leaves a normal message and no unstyled modal, then a clean retry can open',async()=>{
+ const f=await fixture({styles:true}),pending=f.ui.review(shiftId),first=f.document.querySelector('link');if(failure==='network')first.emit('error');else {first.sheet={};f.document.styleMarker='';first.emit('load');}assert.equal(await pending,null);assert.equal(f.document.querySelector('dialog'),null);assert.equal(f.document.querySelectorAll('link').length,0);assert.equal(f.notified.length,1);assert.match(f.notified[0],/layout.*(load|updating)/);assert.equal(linkedCount(f.h),0);
+ const retry=f.ui.review(shiftId),second=f.document.querySelector('link');assert.notEqual(second,first);finishStyle(f.document,second);assert.equal((await retry).open,true);assert.equal(f.document.querySelectorAll('link').length,1);
+});
+test('stylesheet deadline releases the pending open and late old load events cannot open an unstyled modal',async t=>{
+ t.mock.timers.enable({apis:['setTimeout']});const f=await fixture({styles:true}),pending=f.ui.review(shiftId),first=f.document.querySelector('link');t.mock.timers.tick(12001);assert.equal(await pending,null);assert.match(f.notified[0],/too long/);assert.equal(f.document.querySelector('dialog'),null);finishStyle(f.document,first);assert.equal(f.document.querySelector('dialog'),null);assert.equal(linkedCount(f.h),0);
+});
+test('Owner switching accounts while the layout loads cannot open a stale shortage review',async()=>{
+ const f=await fixture({styles:true}),pending=f.ui.review(shiftId),link=f.document.querySelector('link');f.api.auth.currentUser={...f.api.auth.currentUser,uid:'other-owner'};finishStyle(f.document,link);assert.equal(await pending,null);assert.equal(f.document.querySelector('dialog'),null);assert.equal(f.notified.length,0);assert.equal(linkedCount(f.h),0);
+});
+test('the stylesheet loader coalesces calls per document and keeps unrelated documents independent',async()=>{
+ const d=new Document(),other=new Document(),w={getComputedStyle:()=>({getPropertyValue:()=>d.styleMarker})},otherW={getComputedStyle:()=>({getPropertyValue:()=>other.styleMarker})};const one=ensureCashShortageStyles(w,d),two=ensureCashShortageStyles(w,d),third=ensureCashShortageStyles(otherW,other);assert.equal(one,two);assert.notEqual(one,third);assert.equal(d.querySelectorAll('link').length,1);assert.equal(other.querySelectorAll('link').length,1);finishStyle(d,d.querySelector('link'));finishStyle(other,other.querySelector('link'));await Promise.all([one,two,third]);assert.equal(d.querySelector('dialog'),null);assert.equal(other.querySelector('dialog'),null);
+});
 
 test('joined cashier log is informational: actual UI requires explicit saved staff ID and filters inactive/other-branch accounts',async()=>{
  const f=await fixture(),dialog=await f.open();assert.equal(node(dialog,'staff').value,'');assert.match(node(dialog,'content').textContent,/Sample Alpha \/ Sample Beta/);assert.match(node(dialog,'content').textContent,/A shortage alone does not establish responsibility/);assert.doesNotMatch(node(dialog,'staff').textContent,/Inactive|Other Branch/);
