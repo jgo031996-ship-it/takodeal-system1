@@ -35,6 +35,18 @@ function fixture(options={}){
 }
 const node=(dialog,key)=>dialog.querySelector('[data-'+key+']');
 
+test('confirmed decisions show success immediately while their single saved row refresh is pending',async()=>{
+ const gate=hold(),f=fixture(),ids=[];f.api.applyConfirmedInboxRequest=id=>{ids.push(id);return gate.promise;};const dialog=await f.open();await node(dialog,'confirm').onclick();
+ assert.equal(dialog.open,false);assert.equal(f.calls.review.length,1);assert.deepEqual(ids,['sample-request']);assert.equal(f.calls.reload,0);assert.equal(f.calls.messages.at(-1)[2],'success');gate.resolve();await tick();
+});
+test('a row refresh failure after confirmed dismissal cannot report a failed decision or retry it',async()=>{
+ const gate=hold(),f=fixture({state:{early:false,complete:true}}),notices=[];f.api.applyConfirmedInboxRequest=()=>gate.promise;f.api.ManagerUI={notify:message=>notices.push(message)};const dialog=await f.open();await node(dialog,'dismiss').onclick();gate.reject(Error('Synthetic connection loss'));await tick();
+ assert.equal(f.calls.dismiss.length,1);assert.equal(f.calls.messages.at(-1)[2],'success');assert.equal(dialog.open,false);assert.match(notices[0],/decision is saved/);assert.equal(f.calls.reload,0);
+});
+test('a previous account receives no row refresh failure message after sign-out',async()=>{
+ const gate=hold(),f=fixture(),notices=[];f.api.applyConfirmedInboxRequest=()=>gate.promise;f.api.ManagerUI={notify:message=>notices.push(message)};const dialog=await f.open();await node(dialog,'confirm').onclick();f.api.auth.currentUser.uid='new-account';gate.reject(Error('Synthetic late failure'));await tick();assert.deepEqual(notices,[]);assert.equal(f.calls.review.length,1);
+});
+
 test('unverified Inbox summaries use schedule review wording and escape staff-provided text',()=>{
  const html=earlyTimeOutSummaryHTML({requiresScheduleReview:true,reason:'<script>bad()</script>',managerReply:'<img onerror=bad()>',scheduledEndAt:null});
  assert.match(html,/Time-out schedule review/);assert.doesNotMatch(html,/Early time-out approval|<script>|<img|1970/);assert.match(html,/&lt;script&gt;/);assert.match(html,/not a recorded Time Out/);

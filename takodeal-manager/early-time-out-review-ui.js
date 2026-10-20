@@ -51,7 +51,10 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
    try{
     const input={requestId,reviewNote:reply.value.trim(),expectedRequestVersion:row.requestVersion,expectedRequestToken:row.requestToken,expectedScheduleFingerprint:inspection.scheduleFingerprint};
     const result=isDismiss?await service.dismiss(input):await service.review({...input,decision});
-    if(!current())return;dialog.close();await w.loadInbox?.();if(identity()!==key)return;
+    if(!current())return;dialog.close();if(identity()!==key)return;
+    // The transaction has confirmed the decision. Updating the list must not
+    // delay that confirmation or turn a later refresh failure into a save error.
+    try{const refresh=typeof w.applyConfirmedInboxRequest==='function'?w.applyConfirmedInboxRequest(requestId):w.loadInbox?.();Promise.resolve(refresh).catch(()=>{if(identity()===key)w.ManagerUI?.notify?.('The decision is saved. Refresh Request Inbox to see its latest row.');});}catch{if(identity()===key)w.ManagerUI?.notify?.('The decision is saved. Refresh Request Inbox to see its latest row.');}
     await w.Swal.fire(isDismiss?'Unnecessary request dismissed':decision==='Approved'?'Early time-out approved':'Request rejected',result.alreadySaved?'This decision was already saved.':isDismiss?'Only the request was closed. Attendance, actual worked hours and payroll were not changed.':decision==='Approved'?'Staff can now tap Time Out within the approved time window (up to 30 minutes). Recorded hours are preserved.':'The request was rejected. Recorded attendance and worked hours are preserved.','success');
    }catch(error){if(current()){status.textContent=error.message||'The save could not be confirmed. Retry this same review.';status.setAttribute('role','alert');retry.hidden=false;}}
    finally{busy=false;if(dialog.open)controls();}

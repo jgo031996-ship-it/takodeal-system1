@@ -1,4 +1,5 @@
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
+import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {finalizeRefundPayroll} from './refund-payroll.js';
 import {finalizeOrdinaryPayroll} from './payroll-settlement.js';
 import {payrollActorKey,loadPayrollAccounts,applyConfirmedPayroll,exportPayslipImage,syncPayslipImageButton} from './payroll-completion.js';
@@ -9903,179 +9904,17 @@ window.submitReasonLetter = function() {
 // 📥 STAFF REQUEST INBOX ENGINE
 // ==========================================
 
-// Global listener to update the sidebar badge in real-time
-onSnapshot(query(collection(db, "staff_requests"), where("status", "==", "Pending")), (snapshot) => {
-    let badge = document.getElementById('inboxBadge');
-    if (badge) {
-        if (!snapshot.empty) {
-            badge.innerText = snapshot.size;
-            badge.style.display = 'inline-block';
-        } else {
-            badge.style.display = 'none';
-        }
-    }
-});
+// Keep the sidebar badge live while respecting the current account scope.
+installInboxBadge(window,document);
 
 window.loadInbox = async function() {
-    const pendingBody = document.getElementById('inboxTableBody');
-    const resolvedBody = document.getElementById('resolvedRequestsBody');
-    if (!pendingBody) return;
-
-    pendingBody.innerHTML = '<tr><td colspan="6" class="text-center">Loading requests...</td></tr>';
-
-    try {
-        // 🛡️ INBOX SECURITY WALL
-        let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
-        let q = query(collection(db, "staff_requests"), orderBy("timestamp", "desc"));
-        
-        if (isFranchisee && window.sessionUser.branch) {
-            // Franchisees only download requests from their own staff
-            q = query(collection(db, "staff_requests"), where("branch", "==", window.sessionUser.branch), orderBy("timestamp", "desc"));
-        }
-        const deductionQuery = isFranchisee && window.sessionUser.branch
-            ? query(collection(db, "staff_deductions"), where("branch", "==", window.sessionUser.branch))
-            : collection(db, "staff_deductions");
-        const [snap, deductionSnap] = await Promise.all([getDocs(q), getDocs(deductionQuery)]);
-        const requests = [], deductions = [];
-        snap.forEach(row => requests.push({ ...row.data(), id: row.id }));
-        deductionSnap.forEach(row => deductions.push({ ...row.data(), id: row.id }));
-        const history = requestHistory(requests, deductions, isFranchisee ? window.sessionUser.branch : null);
-
-        let pendingHtml = '';
-        let pendingCount = 0;
-        let resolvedByStaff = Object.create(null);
-
-        history.forEach(d => {
-            const docSnap = { id: d.id };
-            const time = historyTime(d.timestamp);
-            let dateStr = time ? new Date(time).toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',...(/^\d{4}-\d{2}-\d{2}$/.test(d.timestamp)?{}:{timeStyle:'short'})})+(/^\d{4}-\d{2}-\d{2}$/.test(d.timestamp)?' · time not recorded':' (PH)') : 'Submission time not recorded';
-            const staffKey = String(d.staffName || 'Unknown');
-            let safeName = d.staffName ? d.staffName.replace(/'/g, "\\'") : 'Unknown';
-
-            let detailsStr = "";
-            if (d.historySource === 'deduction') {
-                detailsStr = `<strong style="color:#0f766e;">${escapeHtml(d.item || 'POS meal deduction')}</strong>
-                    <br><span style="color:var(--danger);font-weight:bold;">Deduct: ₱${(Number(d.amount) || 0).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-                    <br><small style="color:#64748b;">Recorded automatically by POS${d.receiptId ? ' · Receipt ' + escapeHtml(d.receiptId) : ''}</small>`;
-            } else if (d.type === "Leave" || d.type === "Leave Change") {
-                detailsStr = leaveRequestSummaryHTML(d);
-            } else if (d.type === 'Early Time Out') {
-                detailsStr = earlyTimeOutSummaryHTML(d);
-            } else if (d.type === "Cash Advance") {
-                detailsStr = `<strong style="color:var(--danger); font-size:15px;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</strong><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.reason || 'No reason provided'}"</span>`;
-            } else if (d.type === "Reason Letter") {
-                detailsStr = `<strong style="color: #1e293b;">Cause: ${d.explanationCause || 'Variance'}</strong><br><span style="font-size:11px; color:#64748b; font-style:italic;">"${d.explanationMessage || 'No explanation provided'}"</span>`;
-            } else if (isMealDeduction(d.type)) {
-                // 🔥 THE FIX: Catches all manual and POS-Auto meals, then formats the items cleanly!
-                let itemsList = d.item ? d.item.replace(/ \| /g, '<br><span style="color:#64748b; font-size:11px; font-family:monospace;">') + '</span>' : 'Food Item';
-                detailsStr = `
-                    <div style="max-width: 250px; white-space: normal;">
-                        <strong style="color: #0f766e; font-size: 13px; line-height: 1.4; display: block; margin-bottom: 4px;">🍔 ${itemsList}</strong>
-                        <span style="color:var(--danger); font-size:12px; font-weight:900;">Deduct: ₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</span>
-                    </div>`;
-            } else {
-                detailsStr = d.amount ? `₱${d.amount.toLocaleString(undefined, {minimumFractionDigits:2})}` : (d.item || d.reason || 'N/A');
-            }
-
-            let attachedImage = d.photoBase64 || d.proofImageUrl || d.imageUrl || d.image;
-            if (attachedImage) {
-                detailsStr += `<br><button onclick="window.viewSelfie('${attachedImage}', 'Attached Photo from ${safeName}')" style="margin-top: 8px; background: #f0f9ff; border: 1px solid #bae6fd; color: #0284c7; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">📷 View Photo</button>`;
-            }
-
-            if (d.status === "Pending") {
-                pendingCount++;
-                pendingHtml += `
-                    <tr style="border-bottom: 1px solid #f1f5f9;">
-                        <td style="padding: 12px; color: #64748b;">${dateStr}</td>
-                        <td style="padding: 12px; font-weight: bold; color: #334155;">${escapeHtml(staffKey)}</td>
-                        <td style="padding: 12px;"><span class="badge badge-closed">${escapeHtml(d.branch || 'Not recorded')}</span></td>
-                        <td style="padding: 12px;">
-                            <span style="font-weight: bold; color: var(--primary); font-size: 14px;">${escapeHtml(d.type || 'Request')}</span><br>
-                            <span style="background: #fef9c3; color: #ca8a04; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-top: 4px; display: inline-block;">Pending Review</span>
-                        </td>
-                        <td style="padding: 12px; max-width: 250px; white-space: normal;">${detailsStr}</td>
-                        <td style="padding: 12px;">
-                            <button onclick="window.handleRequest('${docSnap.id}', 'Approved', '${d.type}', ${d.amount || 0}, '${safeName}')" style="background: #16a34a; color: white; padding: 6px 12px; border:none; border-radius:4px; margin-right:5px; margin-bottom:5px; cursor:pointer; font-weight:bold; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);">Approve</button>
-                            <button onclick="window.handleRequest('${docSnap.id}', 'Rejected', '${d.type}', ${d.amount || 0}, '${safeName}')" style="background: #ef4444; color: white; padding: 6px 12px; border:none; border-radius:4px; cursor:pointer; font-weight:bold; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);">Reject</button>
-                        </td>
-                    </tr>
-                `;
-            } else {
-                // 🔥 NEW: Store resolved items into the group memory
-                if (!resolvedByStaff[staffKey]) resolvedByStaff[staffKey] = [];
-                d.dateStr = dateStr;
-                d.detailsStr = detailsStr;
-                resolvedByStaff[staffKey].push(d);
-            }
-        });
-
-        // 🔥 NEW: Build the Accordion UI for Resolved Items!
-        let resolvedHtml = '';
-        for (let staff in resolvedByStaff) {
-            let reqs = resolvedByStaff[staff];
-            let safeStaffId = 'history' + Object.keys(resolvedByStaff).indexOf(staff); // Removes spaces for HTML IDs
-            
-            resolvedHtml += `
-                <tr style="background: white; cursor: pointer; border-bottom: 1px solid #e2e8f0; transition: background 0.2s;" 
-                    onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='white'"
-                    onclick="window.toggleResolvedStaff('${safeStaffId}')">
-                    <td colspan="4" style="font-weight: 900; color: #334155; font-size: 15px; padding: 18px;">
-                        <span id="icon_res_${safeStaffId}" style="display:inline-block; width:20px; color:#94a3b8;">▼</span> 👤 ${escapeHtml(staff)}
-                    </td>
-                    <td style="text-align: right; padding: 18px;">
-                        <span style="font-size: 12px; color: white; background: var(--primary); padding: 6px 12px; border-radius: 20px; font-weight: bold; display: inline-flex; align-items: center; box-shadow: 0 2px 4px rgba(15, 118, 110, 0.3);">
-                            🔍 View ${reqs.length} Records
-                        </span>
-                    </td>
-                </tr>
-            `;
-            
-            reqs.forEach(d => {
-                let statusColor = d.status === "Rejected" ? "#dc2626" : "#0f766e";
-                let statusBg = d.status === "Rejected" ? "#fef2f2" : "#e8f3ed";
-                const deductionBadge = d.deductionStatus ? `<br><span style="display:inline-block;margin-top:5px;font-size:11px;font-weight:bold;color:${d.deductionStatus === 'Paid' ? '#16a34a' : '#b45309'};">${escapeHtml(d.deductionStatus)}</span>` : '';
-                resolvedHtml += `
-                    <tr class="res-row-${safeStaffId}" style="display: none; background: #f8fafc; border-bottom: 1px dashed #cbd5e1;">
-                        <td style="padding: 12px; padding-left: 45px; color: #64748b;">${d.dateStr}</td>
-                        <td style="padding: 12px;"><span style="font-size:11px; color:#64748b; font-weight:bold;">📍 ${escapeHtml(d.branch || 'Not recorded')}</span></td>
-                        <td style="padding: 12px;"><span style="font-weight: bold; color: var(--primary);">${escapeHtml(d.type || 'Request')}</span></td>
-                        <td style="padding: 12px; max-width: 250px; white-space: normal;">${d.detailsStr}</td>
-                        <td style="padding: 12px; text-align:right;"><span style="background: ${statusBg}; color: ${statusColor}; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold;">${escapeHtml(d.status)}</span>${deductionBadge}</td>
-                    </tr>
-                `;
-            });
-        }
-
-        pendingBody.innerHTML = pendingHtml || '<tr><td colspan="6" class="text-center" style="padding: 30px; color: #16a34a; font-weight: bold;">No pending requests! 🎉</td></tr>';
-        if (resolvedBody) resolvedBody.innerHTML = resolvedHtml || '<tr><td colspan="5" class="text-center" style="padding: 30px; color: #64748b;">No resolved history yet.</td></tr>';
-
-        let badge = document.getElementById('inboxBadge');
-        if (badge) {
-            badge.innerText = pendingCount;
-            badge.style.display = pendingCount > 0 ? 'inline-block' : 'none';
-        }
-
-    } catch(e) {
-        console.error("Inbox Error:", e);
-        pendingBody.innerHTML = '<tr><td colspan="6" class="text-center" style="color:red; padding: 20px;">Error loading inbox. Check console.</td></tr>';
-    }
+    return (window.ownerInbox || installOwnerInbox(window,document)).load();
 };
-
-// 🔥 NEW: Toggle Function for the Resolved Accordion
+window.applyConfirmedInboxRequest = function(id) {
+    return (window.ownerInbox || installOwnerInbox(window,document)).applyConfirmedRequest(id);
+};
 window.toggleResolvedStaff = function(staffId) {
-    let rows = document.querySelectorAll('.res-row-' + staffId);
-    let icon = document.getElementById('icon_res_' + staffId);
-    if(rows.length === 0) return;
-    
-    let isHidden = rows[0].style.display === 'none';
-    rows.forEach(row => {
-        row.style.display = isHidden ? 'table-row' : 'none';
-    });
-    
-    if (icon) {
-        icon.innerText = isHidden ? '▲' : '▼';
-        icon.style.color = isHidden ? '#0f766e' : '#94a3b8';
-    }
+    return (window.ownerInbox || installOwnerInbox(window,document)).toggle(staffId);
 };
 
 // ========================================================
@@ -10097,6 +9936,9 @@ window.updateLateRequestPreview = function() {
         : `${context.minutes} minutes late → ${late.hours} hour(s) × ₱${late.ratePerHour.toFixed(2)} = ₱${late.amount.toFixed(2)}. Applied once through attendance when payroll is generated.`;
 };
 window.handleRequest = async function(docId, action, type, amount, staffName) {
+    const cachedRequest = window.ownerInbox?.request(docId);
+    if(cachedRequest?.type==='Early Time Out')return window.getManagerEarlyTimeOutUI().review(docId,action);
+    if(cachedRequest?.type==='Leave'||cachedRequest?.type==='Leave Change')return window.getManagerLeaveUI().review(docId,action);
     let req;
     try {
         const snap = await tkOwnerDoc(window.doc(window.db, 'staff_requests', docId));
