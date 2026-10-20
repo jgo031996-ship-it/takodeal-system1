@@ -31,7 +31,7 @@ test('sanction date decisions are identical across apps',()=>{
 });
 test('upgrade keeps paid receipts, photos and the offline sale ledger through Cashier update',()=>{
     const worker=source('Takodeal-POS/sw.js');
-    assert.match(worker,/const CORE = 'takodeal-pos-core-attendance-speed-20261020'/);
+    assert.match(worker,/const CORE = 'takodeal-pos-core-emergency-shift-20261020'/);
     for(const [app,list] of [['Takodeal-POS','required'],['takodeal-staff','SHELL'],['takodeal-manager','CORE_ASSETS']])assert.ok(assets(app,list).includes('clock-out-schedule.js'),app+' can verify a completed shift offline after installation');
     assert.ok(assets('Takodeal-POS','required').includes('checkout-controls.js'),'checkout resets work offline');
     assert.match(worker,/dispatch-restock-model\.js/);
@@ -63,3 +63,5 @@ test('attendance speed upgrade installs fresh schedule and transaction readers i
  assert.ok(assets('takodeal-manager','CORE_ASSETS').includes('owner-inbox.js'));
  for(const name of ['attendance-schedule-reader.js','attendance-transaction-reader.js','early-time-out-actions.js'])for(const app of ['Takodeal-POS','takodeal-staff'])assert.equal(source(app+'/'+name),source('takodeal-manager/'+name));
 });
+
+test('emergency shift evidence installs identically across attendance apps',()=>{for(const [app,list] of [['takodeal-manager','CORE_ASSETS'],['Takodeal-POS','required'],['takodeal-staff','SHELL']]){assert.ok(assets(app,list).includes('emergency-shift-model.js'));assert.equal(source(app+'/emergency-shift-model.js'),source('takodeal-manager/emergency-shift-model.js'));assert.equal(source(app+'/early-time-out-actions.js'),source('takodeal-manager/early-time-out-actions.js'));}});
