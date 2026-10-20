@@ -17,7 +17,8 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
   const current=()=>token===generation&&dialog.open&&identity()===key;
   const eligible=()=>!!row&&!!inspection&&(decision==='Rejected'||inspection.early===true&&!inspection.unknown&&!inspection.closed&&!inspection.complete&&!inspection.scheduleChanged);
   const dismissible=()=>!!inspection&&(inspection.complete===true||inspection.closed===true)&&!inspection.unknown;
-  const controls=()=>{confirm.disabled=busy||loading||!current()||!eligible();dismiss.disabled=busy||loading||!current()||!dismissible();close.disabled=reply.disabled=busy;retry.disabled=busy||loading;};
+  const completingReview=()=>decision==='Approved'&&dismissible();
+  const controls=()=>{confirm.textContent=completingReview()?'Confirm review':decision==='Approved'?'Approve early time-out':'Reject request';confirm.disabled=busy||loading||!current()||!(eligible()||completingReview());dismiss.hidden=!dismissible()||completingReview();dismiss.disabled=busy||loading||!current()||!dismissible();close.disabled=reply.disabled=busy;retry.disabled=busy||loading;};
   close.onclick=()=>{if(!busy)dialog.close();};dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});dialog.addEventListener('close',()=>{clearTimeout(timer);dialog.remove();});
   async function inspect(){
    if(loading||busy||!current())return;loading=true;row=null;inspection=null;retry.hidden=true;dismiss.hidden=true;controls();status.setAttribute('role','status');status.textContent='Confirming the saved request and scheduled finish…';
@@ -34,14 +35,14 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
     if(unknown)inspection={...checked,unknown:true};
     const earlyLabel=checked.early&&!unknown&&!checked.scheduleChanged&&!checked.complete&&!checked.closed;
     details.innerHTML='<p><strong>'+escape(row.staffName)+'</strong> · '+escape(row.branch)+'</p><strong>'+(earlyLabel?'Early time-out approval':'Time-out schedule review')+'</strong><br><span>'+(unknown?'Scheduled finish: Needs schedule review':(checked.clockOutCompleteOnly?'Latest matching shift finish: ':'Verified scheduled finish: ')+escape(date(checked.scheduledEndAt)))+'</span><br><small>'+escape(row.reason||'No reason recorded')+'</small>'+(row.managerReply?'<br><small>Management: '+escape(row.managerReply)+'</small>':'')+(checked.scheduleChanged?'<br><small>The request originally listed: '+escape(date(row.scheduledEndAt))+'.</small>':'');
-    title.textContent=eligible()&&decision==='Approved'?'Approve early time-out':decision==='Rejected'?'Reject time-out request':'Time-out schedule review';
+    title.textContent=completingReview()?'Confirm time-out review':eligible()&&decision==='Approved'?'Approve early time-out':decision==='Rejected'?'Reject time-out request':'Time-out schedule review';
     if(inspection.unknown){status.textContent='The saved schedule reference could not be verified. This does not establish that the staff member left early. Approval is unavailable until the schedule reference is confirmed.';status.setAttribute('role','alert');guidance.textContent='Keep the actual attendance punches on file. You can reject this request with an explanation, or close this review while HQ checks the saved reference.';}
-    else if(checked.closed){status.textContent='Attendance already has a recorded Time Out. No early time-out approval is needed for this request.';guidance.textContent='Dismissing this unnecessary request only closes the request. It does not alter the recorded Time Out, worked hours or payroll.';}
-    else if(checked.complete){status.textContent=checked.clockOutCompleteOnly?'All matching saved shifts have finished. No early time-out approval is needed.':'The verified scheduled finish has already passed. No early time-out approval is needed.';guidance.textContent='Staff should tap normal Time Out when they finish. This request is not a recorded Time Out. Dismissing it only closes the request and preserves actual worked hours.';}
+    else if(checked.closed){status.textContent='Attendance already has a recorded Time Out. No early time-out approval is needed for this request.';guidance.textContent='Confirm review closes this unnecessary request with your reply. It does not alter the recorded Time Out, worked hours or payroll.';}
+    else if(checked.complete){status.textContent=checked.clockOutCompleteOnly?'All matching saved shifts have finished. No early time-out approval is needed.':'The verified scheduled finish has already passed. No early time-out approval is needed.';guidance.textContent='Confirm review closes this request with your reply; early approval is not required. Staff should tap normal Time Out when they finish. This request is not a recorded Time Out and does not change actual worked hours.';}
     else if(checked.scheduleChanged){status.textContent='The verified saved schedule differs from this request. Review the verified scheduled finish shown here; the old request cannot authorize early Time Out.';status.setAttribute('role','alert');guidance.textContent='Staff should retry Time Out using the current saved schedule. Actual attendance and worked hours remain on file.';}
     else if(checked.early){status.textContent='The saved schedule confirms that this shift has not reached its scheduled finish. Review the staff member and reason before confirming.';guidance.textContent='Approval permits early clock-out for up to 30 minutes. It does not end the shift. Staff must tap Time Out when they finish; actual recorded hours remain on file.';}
     else{inspection={...checked,unknown:true};status.textContent='The saved schedule result could not confirm whether early approval is needed. Retry the schedule check.';status.setAttribute('role','alert');retry.hidden=false;}
-    dismiss.hidden=!dismissible();
+    dismiss.hidden=!dismissible()||completingReview();
    }catch(error){if(current()){row=null;inspection=null;status.textContent=error.message||'The saved schedule could not be confirmed. Retry the schedule check.';status.setAttribute('role','alert');retry.hidden=false;}}
    finally{clearTimeout(timer);loading=false;if(dialog.open)controls();}
   }
@@ -55,11 +56,11 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
     // The transaction has confirmed the decision. Updating the list must not
     // delay that confirmation or turn a later refresh failure into a save error.
     try{const refresh=typeof w.applyConfirmedInboxRequest==='function'?w.applyConfirmedInboxRequest(requestId):w.loadInbox?.();Promise.resolve(refresh).catch(()=>{if(identity()===key)w.ManagerUI?.notify?.('The decision is saved. Refresh Request Inbox to see its latest row.');});}catch{if(identity()===key)w.ManagerUI?.notify?.('The decision is saved. Refresh Request Inbox to see its latest row.');}
-    await w.Swal.fire(isDismiss?'Unnecessary request dismissed':decision==='Approved'?'Early time-out approved':'Request rejected',result.alreadySaved?'This decision was already saved.':isDismiss?'Only the request was closed. Attendance, actual worked hours and payroll were not changed.':decision==='Approved'?'Staff can now tap Time Out within the approved time window (up to 30 minutes). Recorded hours are preserved.':'The request was rejected. Recorded attendance and worked hours are preserved.','success');
+    await w.Swal.fire(isDismiss?'Time-out review completed':decision==='Approved'?'Early time-out approved':'Request rejected',result.alreadySaved?'This decision was already saved.':isDismiss?'Your review and reply were saved. Early approval was not required, so the request was closed as Not Required. Attendance, actual worked hours and payroll were not changed.':decision==='Approved'?'Staff can now tap Time Out within the approved time window (up to 30 minutes). Recorded hours are preserved.':'The request was rejected. Recorded attendance and worked hours are preserved.','success');
    }catch(error){if(current()){status.textContent=error.message||'The save could not be confirmed. Retry this same review.';status.setAttribute('role','alert');retry.hidden=false;}}
    finally{busy=false;if(dialog.open)controls();}
   }
-  confirm.onclick=()=>save(false);dismiss.onclick=()=>save(true);retry.onclick=inspect;
+  confirm.onclick=()=>save(completingReview());dismiss.onclick=()=>save(true);retry.onclick=inspect;
   await inspect();
  }
  return {review,service};
