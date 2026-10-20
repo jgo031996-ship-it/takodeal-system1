@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v28-cash-shortage-20261020';
+const CACHE_NAME = 'takodeal-staff-v29-hr-recovery-20261021';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./sanction-schedule.js');
 SHELL.push('./online-refund-pay.js');
@@ -9,6 +9,7 @@ SHELL.push('./staff-rate-privacy.js','./staff-documents.js','./staff-documents.c
 SHELL.push('./deduction-inbox.js','./deduction-inbox.css');
 SHELL.push('./schedule-sync.js','./schedule-view-sync.js');
 SHELL.push('./leave-model.js','./leave-request-actions.js','./staff-leave-ui.js','./leave-ui.css');
+SHELL.push('./attendance-amendment-review-model.js','./attendance-metadata-reader.js','./onboarding-model.js','./onboarding-service.js','./onboarding-ui.js','./onboarding.css');
 self.addEventListener('install', event => {
     event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });

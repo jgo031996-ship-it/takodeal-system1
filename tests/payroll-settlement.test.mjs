@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
-import {finalizeOrdinaryPayroll,ordinaryPayrollId,validateOrdinaryPayrollSnapshot,confirmedPayrollResult,PAYROLL_SETTLEMENT_LIMITS} from '../takodeal-manager/payroll-settlement.js';
+import {finalizeOrdinaryPayroll,ordinaryPayrollId,validateOrdinaryPayrollSnapshot,confirmedPayrollResult,PAYROLL_SETTLEMENT_LIMITS,sameSavedPayrollValue,checkSavedPayrollPayment} from '../takodeal-manager/payroll-settlement.js';
 import {createRefundPayrollEngine,finalizeRefundPayroll,freezeRefundPayslip} from '../takodeal-manager/refund-payroll.js';
 const branch='Maa',staffId='sample-staff',name='Sample Staff',start='2030-01-01',end='2030-01-15';
 const paymentId=ordinaryPayrollId(staffId,start,end),refundPaymentId='refund-payroll-'+staffId+'-'+start+'-'+end;
@@ -26,6 +26,49 @@ function reward(amount,day=3,extra={}){return {staffId,staffName:name,branch,typ
 function afterPreflight(f,work){const run=f.h.api.runTransaction;let once=true;f.h.api.runTransaction=async(...args)=>{if(once){once=false;await work();}return run(...args);};}
 function refundData(){return {staffId,name,branch,start,end,profile:{staffId,cashierName:name,hourlyRate:450,dateHired:'2029-01-01'},basicPay:450,onlineRefunds:80,onlineRefundRows:[{id:'online-refund-sample',amount:80}],advances:0,meals:0,loans:0,perfBonus:0};}
 function seedRefund(h){h.put('staff_deductions/online-refund-sample',deduction('online-refund-sample',80,'Online Order Refund'));h.put('online_order_incidents/online-refund-sample',{staffId,status:'Unpaid'});h.put('staff_deduction_notices/online-refund-sample',{staffId,status:'Unpaid'});}
+const reverseMaps=value=>value instanceof Date?new Date(value):Array.isArray(value)?value.map(reverseMaps):value&&typeof value==='object'?Object.fromEntries(Object.entries(value).reverse().map(([key,row])=>[key,reverseMaps(row)])):value;
+function varyPayrollReadOrder(f,transform=reverseMaps){const read=f.h.api.getDocsFromServer;f.h.api.getDocsFromServer=async reference=>{const snap=await read(reference);return reference.table==='payroll_records'?{...snap,docs:snap.docs.map(row=>({...row,data:()=>{const saved=row.data();return {...saved,frozenData:transform(saved.frozenData)};}}))}:snap;};}
+function savedRecord(f,extra={}){return {staffId,staffName:name,branch,startDate:start,endDate:end,finalNetPay:450,accountId:'previous-bank',accountName:'Original Payment Bank',acknowledged:false,frozenData:{...structuredClone(f.data),isPaid:true,finalNetPay:450},...extra};}
+
+test('Firestore nested map order cannot block a new cutoff because a different old paid record is serialized in another order',async()=>{
+ const f=fixture(),old=savedRecord(f,{startDate:'2029-12-16',endDate:'2029-12-31'});old.frozenData.logs[0].recordedAt={seconds:1893456000,nanoseconds:123456789};f.h.put('payroll_records/previous-cutoff',old);assert.notEqual(JSON.stringify(old.frozenData),JSON.stringify(reverseMaps(old.frozenData)));varyPayrollReadOrder(f);
+ const result=await f.pay();assert.equal(result.alreadyPaid,false);assert.equal(result.finalNetPay,450);assert.deepEqual(f.h.get('payroll_records/previous-cutoff'),old);assert.equal(f.h.get('cash_accounts/cash').balance,4550);
+});
+test('an existing unacknowledged paid cutoff wins over new edits and reordered maps without another debit or obligation settlement',async()=>{
+ for(const legacy of [false,true]){const f=fixture(),record=savedRecord(f,{finalNetPay:123,frozenData:{...structuredClone(f.data),basicPay:123,isPaid:true,finalNetPay:123}}),recordKey=legacy?'legacy-random-payment':paymentId;if(legacy)delete record.staffId;f.h.put('payroll_records/'+recordKey,record);f.h.put('staff_deductions/new-food',deduction('new-food',50));varyPayrollReadOrder(f);const before=structuredClone([...f.h.docs]);
+  const result=await f.pay({data:{...f.data,basicPay:999,meals:50},finalNetPay:949});assert.equal(result.alreadyPaid,true);assert.equal(result.finalNetPay,123);assert.equal(result.accountId,'previous-bank');assert.equal(result.accountName,'Original Payment Bank');assert.deepEqual([...f.h.docs],before);assert.equal(f.h.get('payroll_records/'+recordKey).acknowledged,false);
+ }
+});
+test('semantic saved-map comparison recognizes Timestamp serialization but retains primitive types, array order and every changed value',()=>{
+ class Timestamp{constructor(seconds,nanoseconds){this.seconds=seconds;this.nanoseconds=nanoseconds;}toMillis(){return this.seconds*1000+this.nanoseconds/1e6;}}
+ const first={profile:{name:'Sample',rate:450},logs:[{stamp:new Timestamp(100,123456789),in:'09:00'},{out:'17:00'}]},second={logs:[{in:'09:00',stamp:{nanoseconds:123456789,seconds:100}},{out:'17:00'}],profile:{rate:450,name:'Sample'}};assert.equal(sameSavedPayrollValue(first,second),true);assert.equal(sameSavedPayrollValue(new Date(100000),{seconds:100,nanoseconds:0}),true);
+ for(const changed of [{...second,profile:{...second.profile,rate:451}},{...second,profile:{...second.profile,rate:'450'}},{...second,logs:[...second.logs].reverse()},{...second,logs:[{stamp:{seconds:100,nanoseconds:123456788},in:'09:00'},second.logs[1]]}])assert.equal(sameSavedPayrollValue(first,changed),false);
+ assert.equal(sameSavedPayrollValue({seconds:100},{seconds:100,nanoseconds:0}),false);assert.equal(sameSavedPayrollValue({seconds:100,nanoseconds:0,type:'duration'},{seconds:100,nanoseconds:0}),false);
+});
+test('actual saved financial or attendance changes still stop payment before any financial write',async()=>{
+ for(const change of ['money','array','stamp','cutoff']){const f=fixture(),old=savedRecord(f,{startDate:'2029-12-16',endDate:'2029-12-31'});old.frozenData.logs=[{stamp:{seconds:100,nanoseconds:123},in:'09:00'},{out:'17:00'}];f.h.put('payroll_records/previous',old);varyPayrollReadOrder(f);afterPreflight(f,()=>{const current=structuredClone(old);if(change==='money')current.frozenData.basicPay++;if(change==='array')current.frozenData.logs.reverse();if(change==='stamp')current.frozenData.logs[0].stamp.nanoseconds++;if(change==='cutoff')current.endDate='2030-01-01';f.h.put('payroll_records/previous',current);});await assert.rejects(f.pay(),/saved payroll record changed/);assert.equal(f.h.get('cash_accounts/cash').balance,5000);assert.equal(paths(f.h,'expenses').length,0);}
+});
+
+test('Check saved payment is read-only, uses original paid amount/account and treats pending Staff acknowledgment as already paid',async()=>{
+ const f=fixture(),record=savedRecord(f,{frozenData:{...f.data,isPaid:true,finalNetPay:450,cashShortages:90,cashShortageRows:[{id:'cash-shortage-closed-case',amount:90}]}});f.h.put('payroll_records/'+paymentId,record);f.h.put('staff_deductions/still-open',deduction('still-open',50));varyPayrollReadOrder(f);const before=structuredClone([...f.h.docs]),queried=[],read=f.h.api.getDocsFromServer;f.h.api.getDocsFromServer=async reference=>{queried.push(reference.table);return read(reference);};
+ const result=await checkSavedPayrollPayment(f.h.api,{data:f.data});assert.equal(result.status,'paid');assert.equal(result.alreadyPaid,true);assert.equal(result.finalNetPay,450);assert.equal(result.accountId,'previous-bank');assert.equal(result.frozenData.cashShortages,90);assert.equal(f.h.get('payroll_records/'+paymentId).acknowledged,false);assert.deepEqual([...f.h.docs],before);assert.equal(queried.some(table=>['cash_accounts','expenses','staff_deductions','cash_shortage_reviews'].includes(table)),false);
+});
+test('a read-only check finding no saved record leaves every financial record and the edited preview unchanged',async()=>{
+ const f=fixture(),preview=structuredClone(f.data);f.h.put('staff_deductions/food',deduction('food',50));const before=structuredClone([...f.h.docs]);assert.deepEqual(await checkSavedPayrollPayment(f.h.api,{data:f.data}),{status:'not-recorded',alreadyPaid:false});assert.deepEqual(f.data,preview);assert.deepEqual([...f.h.docs],before);
+});
+test('read-only check holds explicit drafts, unpaid or incomplete saved records and ambiguous duplicate payments',async()=>{
+ for(const status of ['Draft','Unpaid','Pending','Cancelled','Voided']){const f=fixture();f.h.put('payroll_records/'+paymentId,savedRecord(f,{status}));const before=structuredClone([...f.h.docs]);await assert.rejects(checkSavedPayrollPayment(f.h.api,{data:f.data}),/incomplete saved/);assert.deepEqual([...f.h.docs],before);await assert.rejects(f.pay(),/incomplete saved/);assert.deepEqual([...f.h.docs],before);}
+ const f=fixture();f.h.put('payroll_records/'+paymentId,savedRecord(f));f.h.put('payroll_records/'+refundPaymentId,savedRecord(f));await assert.rejects(checkSavedPayrollPayment(f.h.api,{data:f.data}),/More than one/);assert.equal(f.h.get('cash_accounts/cash').balance,5000);
+ const g=fixture();g.h.put('payroll_records/'+paymentId,savedRecord(g,{finalNetPay:undefined}));await assert.rejects(checkSavedPayrollPayment(g.h.api,{data:g.data}),/amount/);
+});
+test('read-only check revalidates Manager grant, exact saved employee and account/branch scope without a write',async()=>{
+ const f=fixture({manager:true});f.h.put('payroll_records/'+paymentId,savedRecord(f));assert.equal((await checkSavedPayrollPayment(f.h.api,{data:f.data})).status,'paid');
+ const g=fixture({manager:true});g.h.put('payroll_records/'+paymentId,savedRecord(g,{branch:'Citygate',frozenData:{...g.data,isPaid:true,finalNetPay:450,branch:'Citygate'}}));await assert.rejects(checkSavedPayrollPayment(g.h.api,{data:g.data}),/outside/);
+ const k=fixture({manager:true});k.h.put('payroll_records/'+paymentId,savedRecord(k));afterPreflight(k,()=>k.h.put('hq_email_access/payroll@example.test',{active:false,allowedBranches:[branch],permissions:['payroll']}));await assert.rejects(checkSavedPayrollPayment(k.h.api,{data:k.data}),/access/);assert.equal(k.h.get('cash_accounts/cash').balance,5000);
+});
+test('a read-only check cannot label cached/failed network data or a switched account as confirmed payment',async()=>{
+ for(const failure of ['cache','network','account']){const f=fixture();f.h.put('payroll_records/'+paymentId,savedRecord(f));const read=f.h.api.getDocsFromServer;f.h.api.getDocsFromServer=async reference=>{if(failure==='network')throw Error('Synthetic network failure');const snap=await read(reference);if(failure==='cache')return {...snap,metadata:{fromCache:true}};f.h.api.auth.currentUser={...f.h.api.auth.currentUser,uid:'different-owner'};return snap;};const before=structuredClone([...f.h.docs]);await assert.rejects(checkSavedPayrollPayment(f.h.api,{data:f.data}),/confirmed|network|account|Google/);assert.deepEqual([...f.h.docs],before);}
+});
 
 test('ordinary payroll saves one atomic debit, expense and frozen edited payslip without leaking private profile fields',async()=>{
  const f=fixture(),before=structuredClone(f.data);const result=await f.pay();

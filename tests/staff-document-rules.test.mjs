@@ -40,7 +40,15 @@ test('legacy operational authority remains while new rate metadata is protected'
     const profile = body(legacy, 'match /cashiers/{cashierId}');
     assert.match(profile, /allow read: if true;/);
     assert.match(profile, /allow create: if isHQUser\(\)/);
-    assert.match(profile, /allow delete: if isHQUser\(\);/);
+    assert.match(profile, /allow delete: if isHQUser\(\) && !resource\.data\.keys\(\)\.hasAny\(\['onboardingStartConfirmation','contractTerms'\]\);/);
+    assert.match(profile, /affectedKeys\(\)\.hasAny\(\['onboardingStartConfirmation','contractTerms'\]\)/);
+    assert.match(profile, /onboardingProfileLink\(cashierId,resource\.data,request\.resource\.data\)/);
+    const attendance = body(legacy, 'match /attendance_logs/{logId}');
+    assert.match(attendance, /allow read: if true;/);
+    assert.match(attendance, /allow create: if !request\.resource\.data\.keys\(\)\.hasAny\(\['scheduleAmendmentReview'\]\);/);
+    assert.match(attendance, /affectedKeys\(\)\.hasAny\(\['scheduleAmendmentReview'\]\)/);
+    assert.match(attendance, /amendmentReviewMarker\(request\.resource\.data\.scheduleAmendmentReview,resource\.data,logId\)/);
+    assert.match(attendance, /allow delete: if isHQUser\(\) && !resource\.data\.keys\(\)\.hasAny\(\['scheduleAmendmentReview'\]\);/);
     // Ordinary legacy edits still pass. Only the new audit/history fields add
     // authorization and atomic-link requirements; they must not inherit the
     // preceding unrestricted update grant.

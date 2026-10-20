@@ -1,0 +1,40 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {firestoreHarness} from './helpers/firestore-harness.mjs';
+import {confirmAttendanceAmendmentReview} from '../takodeal-manager/attendance-amendment-review.js';
+import {attendanceAmendmentReviewFingerprint,applyAttendanceAmendmentReview} from '../takodeal-manager/attendance-amendment-review-model.js';
+import {createScheduleRevision,assembleScheduleHistory} from '../takodeal-manager/schedule-history.js';
+import {captureAttendanceSchedule,resolveAttendanceShift} from '../takodeal-manager/payroll-safety.js';
+
+const ownerEmail='jgo031996@gmail.com',branch='Sample Branch',name='Sample Staff',staffId='sample-staff',attendanceId='sample-time-in';
+function fixture(){
+ const h=firestoreHarness(),profile={cashierName:name,branch,active:true,hourlyRate:450},at=new Date('2026-10-16T13:59:00+08:00'),plan=startTime=>({currentYear:2026,currentMonth:10,branchConfig:{[branch]:[{id:'mid',name:'Mid shift',shiftType:'mid',startTime,endTime:'22:00',active:true}]},currentSchedule:{16:{[branch]:{scheduled:{mid:name}}}}}),before=createScheduleRevision(plan('13:00'),{revisionId:'before',effectiveFrom:'2026-10-01',savedAt:new Date('2026-10-01T00:00:00+08:00'),cutover:'2026-10-01'}),after=createScheduleRevision(plan('14:00'),{revisionId:'canonical',effectiveFrom:'2026-10-17',savedAt:new Date('2026-10-17T00:00:00+08:00'),cutover:'2026-10-01'});
+ const event={id:'sample-correction',branch,effectiveFrom:'2026-10-16',effectiveTo:'2026-10-31',sourceRevisionId:'before',sourceRevisionIds:['before'],sourceDates:{'2026-10-16':'before'},canonicalRevisionId:'canonical',sequence:1,recordedAt:'2026-10-17T01:00:00.000Z',actor:{uid:'owner'},reason:'Correct the saved shift from the actual effective work date.',changes:[{shiftId:'mid',beforeStart:'13:00',beforeEnd:'22:00',startTime:'14:00',endTime:'22:00'}]};
+ const original=assembleScheduleHistory(before.snapshot,[{month:'2026-10',revisions:[before]}],{enforcedFrom:'2026-10-01'}),history=assembleScheduleHistory(after.snapshot,[{month:'2026-10',revisions:[before,after],shiftAmendments:[event]}],{enforcedFrom:'2026-10-01'}),log={type:'TIME IN',staffId,staffName:name,branch,timestamp:at,scheduleSnapshot:captureAttendanceSchedule(at,branch,name,original,{[name]:{...profile,staffId}}),lateMinutes:59,lateExempted:true,lateDecision:'A saved manual decision needs explicit Owner review.'};
+ h.put('cashiers/'+staffId,profile);h.put('attendance_logs/'+attendanceId,log);h.put('payroll_records/paid-history',{frozenData:{isPaid:true,finalNetPay:4500}});h.put('hq_managers/owner',{email:ownerEmail,role:'Owner',assignedBranch:'All',permissions:['all'],pin:'1234',active:true});
+ h.put('settings/global_schedule',{...after.snapshot,scheduleRevisionId:'canonical',payrollHistoryEnforcedFrom:'2026-10-01'});h.put('settings/schedule_history_policy',{payrollHistoryEnforcedFrom:'2026-10-01'});h.put('settings/schedule_month_2026_10',{month:'2026-10',revisionIds:['before','canonical'],latestRevisionId:'canonical',shiftAmendments:[event]});h.put('settings/schedule_revision_before',before);h.put('settings/schedule_revision_canonical',after);h.put('settings/schedule_shift_amendments_2026_10',{month:'2026-10',shiftAmendments:[event]});
+ h.api.auth={currentUser:{uid:'owner',email:ownerEmail,emailVerified:true,providerData:[{providerId:'google.com'}]}};h.api.sessionUser={uid:'owner',email:ownerEmail,isOwner:true,permissions:['all'],allowedBranches:['All']};
+ const shift=resolveAttendanceShift({...log,id:attendanceId},history,{[name]:{...profile,staffId}},name),input={attendanceId,expectedFingerprint:attendanceAmendmentReviewFingerprint(log,shift),expectedRevision:0,choice:'Use corrected schedule minutes',reason:'Reviewed the confirmed effective shift with the original attendance evidence.'};
+ return {h,profile,history,log,shift,input,save:patch=>confirmAttendanceAmendmentReview(h.api,{...input,...patch})};
+}
+
+test('Owner review saves an immutable linked decision while preserving the original punch, earlier lateness decision and paid payroll',async()=>{
+ const f=fixture(),original=structuredClone(f.log),paid=structuredClone(f.h.get('payroll_records/paid-history'));assert.equal(f.shift.attendanceCorrectionVerified,true);assert.equal(f.shift.amendmentNeedsReview,true);
+ const result=await f.save();assert.equal(result.revision,1);assert.equal(result.lateMinutes,0);const saved=f.h.get('attendance_logs/'+attendanceId),{scheduleAmendmentReview,...unchanged}=saved;assert.deepEqual(unchanged,original);assert.deepEqual(f.h.get('payroll_records/paid-history'),paid);assert.equal(f.h.get('attendance_amendment_reviews/amendment-'+attendanceId+'-1').previousDecision.lateMinutes,59);assert.equal(scheduleAmendmentReview.choice,'Use corrected schedule minutes');assert.equal(applyAttendanceAmendmentReview(saved,f.shift).amendmentReviewVerified,true);
+});
+
+test('only the three explicit choices determine reviewed minutes and waiver, without rewriting raw attendance',async()=>{
+ for(const [choice,lateMinutes,exempt] of [['Keep saved lateness decision',59,true],['Use corrected schedule minutes',0,false],['Waive lateness',0,true]]){const f=fixture(),result=await f.save({choice});assert.equal(result.lateMinutes,lateMinutes);assert.equal(result.exempt,exempt);assert.equal(f.h.get('attendance_logs/'+attendanceId).lateMinutes,59);}
+});
+
+test('changed attendance, correction or review revision cannot confirm an old preview',async()=>{
+ for(const changed of ['timestamp','late','schedule','revision']){const f=fixture(),before=structuredClone([...f.h.docs]);if(changed==='timestamp')f.h.put('attendance_logs/'+attendanceId,{...f.log,timestamp:new Date(+f.log.timestamp+60000)});if(changed==='late')f.h.put('attendance_logs/'+attendanceId,{...f.log,lateMinutes:60});if(changed==='schedule')f.h.put('settings/schedule_shift_amendments_2026_10',{month:'2026-10',shiftAmendments:[]});if(changed==='revision')f.h.put('attendance_logs/'+attendanceId,{...f.log,scheduleAmendmentReview:{revision:1}});await assert.rejects(f.save(),/changed|verified|amendment|correction/i);assert.equal([...f.h.docs.keys()].some(path=>path.startsWith('attendance_amendment_reviews/')),false);assert.deepEqual(f.h.get('payroll_records/paid-history'),new Map(before).get('payroll_records/paid-history'));}
+});
+
+test('failed commits leave no partial marker, and a lost acknowledgment cannot create a duplicate revision using the old expected version',async()=>{
+ const f=fixture(),before=structuredClone([...f.h.docs]);f.h.failNextCommit();await assert.rejects(f.save(),/Commit rejected/);assert.deepEqual([...f.h.docs],before);f.h.loseNextAck();await assert.rejects(f.save(),/lost after commit/);await assert.rejects(f.save(),/changed/);assert.equal([...f.h.docs.keys()].filter(path=>path.startsWith('attendance_amendment_reviews/')).length,1);assert.equal(f.h.get('attendance_logs/'+attendanceId).scheduleAmendmentReview.revision,1);
+});
+
+test('unverified or changed Owner, stale HQ data, inactive account and wrong staff identity fail before any review write',async()=>{
+ for(const changed of ['manager','unverified','provider','cache','pending-row','inactive','identity','switch']){const f=fixture(),read=f.h.api.getDocsFromServer;if(changed==='manager')f.h.api.sessionUser.isOwner=false;if(changed==='unverified')f.h.api.auth.currentUser.emailVerified=false;if(changed==='provider')f.h.api.auth.currentUser.providerData=[{providerId:'password'}];if(changed==='cache'||changed==='pending-row'||changed==='switch')f.h.api.getDocsFromServer=async ref=>{const snap=await read(ref);if(changed==='cache')snap.metadata={fromCache:true};if(changed==='pending-row')snap.docs[0].metadata={hasPendingWrites:true};if(changed==='switch')f.h.api.sessionUser.uid='another';return snap;};if(changed==='inactive')f.h.put('hq_managers/owner',{email:ownerEmail,active:false});if(changed==='identity')f.h.put('cashiers/'+staffId,{...f.profile,cashierName:'Different staff'});await assert.rejects(f.save());assert.equal([...f.h.docs.keys()].some(path=>path.startsWith('attendance_amendment_reviews/')),false);}
+});

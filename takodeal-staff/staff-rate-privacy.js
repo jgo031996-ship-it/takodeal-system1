@@ -36,7 +36,7 @@ export function installStaffRatePrivacy(api,d,storage,{now=()=>Date.now(),setInt
         if(identity()!==id || !visible() || profileId!==id)return false;
         if(profile?.salaryRateVersion===1&&!profile.salaryRateTimeline){
             const token=epoch;text('profileRateState','Confirming private salary history…');
-            return loadStaffSalaryTimeline(api,{...profile,staffId:id}).then(fresh=>epoch===token?reveal(id,fresh):false).catch(()=>{if(epoch===token&&identity()===id){text('profileDailyRate','Unavailable');text('profileRateState','Use your approved Staff phone and reconnect to confirm salary.');if(waiting){waiting.resolve(false);waiting=null;}}return false;});
+            return (api.loadPrivateStaffSalaryProfile?api.loadPrivateStaffSalaryProfile({...profile,staffId:id}):loadStaffSalaryTimeline(api,{...profile,staffId:id})).then(fresh=>epoch===token?reveal(id,fresh):false).catch(()=>{if(epoch===token&&identity()===id){text('profileDailyRate','Unavailable');text('profileRateState','Use your approved Staff phone and reconnect to confirm salary.');if(waiting){waiting.resolve(false);waiting=null;}}return false;});
         }
         session.unlock(id);const rate=profileDailyRate(profile);
         text('profileDailyRate',rate==null?'Rate not yet set':'₱'+rate.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})+' / day');

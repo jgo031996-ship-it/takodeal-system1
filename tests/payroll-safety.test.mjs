@@ -16,6 +16,10 @@ import {attendanceMillis} from '../takodeal-manager/attendance-reconcile.js';
 import * as sanctions from '../takodeal-manager/sanction-schedule.js';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
 import { assembleScheduleHistory, createScheduleRevision, resolveScheduleForDate } from '../takodeal-manager/schedule-history.js';
+// Run the real held-record link renderer. Only the browser-only document SDK
+// adapter is replaced; these payroll tests never open that private adapter.
+const hrReviewURL=new URL('../takodeal-manager/hr-review-ui.js',import.meta.url),hrReviewSource=readFileSync(hrReviewURL,'utf8').replace(/import \{createStaffDocumentFirebase\} from '\.\/staff-document-firebase.js';/,"const createStaffDocumentFirebase=async()=>{throw Error('Document adapter is outside this payroll fixture');};").replace(/from '(\.\/[^']+)'/g,(_,path)=>"from '"+new URL(path,hrReviewURL).href+"'");
+const {heldPayrollReviewHTML}=await import('data:text/javascript;base64,'+Buffer.from(hrReviewSource).toString('base64'));
 
 const profile = { cashierName: 'Test Staff', scheduleNickname: 'TEST', branch: 'Test Branch', hourlyRate: 450, nightDiffRate: 50 };
 test('manual and POS meal labels share one Foods category, excluding other deductions', () => {
@@ -160,7 +164,7 @@ function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,sc
     api.auth={currentUser:{uid:'sample-payroll-owner',email:OWNER_EMAIL,emailVerified:true}};
     api.sessionUser={uid:'sample-payroll-owner',email:OWNER_EMAIL,isOwner:true,permissions:['all'],allowedBranches:['All']};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>historyData || assembleScheduleHistory(scheduleData || schedule(end,type))};
-    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollLoading,...payrollCompletion,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,escapeHtml:value=>String(value).replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])),resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
+    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollLoading,...payrollCompletion,heldPayrollReviewHTML,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,escapeHtml:value=>String(value).replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])),resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
         alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
     vm.runInContext(extract('getPayrollPreviewGuard')+'\n'+extract('requirePayrollPreview'),context);
     return {context,window,elements,errors};
@@ -250,6 +254,7 @@ test('the generated Foods deduction is subtracted from the payslip total and net
     assert.equal(elements.psTotalDeduct.innerText,'1,130.25');assert.equal(elements.psNetPay.innerText,'4,699.75');
 });
 function paymentFixture(food=330.25) {
+    let recoveryChecks=0;
     const stamp=day=>({seconds:Math.floor(new Date(`2026-${day}T12:00:00+08:00`).getTime()/1000)});
     const rows=[
         {id:'paid',staffName:'Test Staff',type:'Staff Meal',amount:136,status:'Paid',dateAdded:stamp('09-09')},
@@ -274,14 +279,14 @@ function paymentFixture(food=330.25) {
     const paymentHistory={historyMonths:{}};
     api.auth={currentUser:{uid:'sample-payroll-owner',email:'owner@example.test',emailVerified:true,providerData:[{providerId:'google.com'}]}};api.sessionUser={uid:'sample-payroll-owner',email:'owner@example.test',role:'Owner',isOwner:true,permissions:['all'],allowedBranches:['All']};
     const window={...api,loadPayrollScheduleHistory:async()=>paymentHistory,currentPayslipData:{name:'Test Staff',staffId:staffProfile.staffId,profile:{...staffProfile},branch:'Test',start:'2026-09-16',end:'2026-09-30',basicPay:500+food,meals:food},
-        openPayslipModal(){},downloadPayslipImage(){},ManagerUI:{notify:text=>errors.push(text)}};
+        openPayslipModal(){},downloadPayslipImage(){},checkCurrentSavedPayroll:async()=>{recoveryChecks++;},ManagerUI:{notify:text=>errors.push(text)}};
     window.currentPayslipData.scheduleEvidenceStamp=scheduleFreshness.payrollScheduleStamp(paymentHistory);
     const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollCompletion,finalizeOrdinaryPayroll,canOpenWorkspacePage,escapeHtml:String,window,document:{getElementById:node,querySelectorAll:()=>[]},Date,Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:e=>errors.push(e)}});
     vm.runInContext(extract('getPayrollPreviewGuard')+'\n'+extract('requirePayrollPreview')+'\n'+extract('finalizePayslip'),context);
     const preview=window.currentPayslipData,guard=window.getPayrollPreviewGuard(),token=guard.begin();
     window.globalPayrollCache={[preview.name]:preview};window.currentPayslipData=preview;guard.complete(token);
     // Assertions below inspect committed transaction outcomes, not mocked SDK writes.
-    return {window,errors,h,reads,
+    return {window,errors,h,reads,get recoveryChecks(){return recoveryChecks;},
         get rows(){return rows.map(row=>h.get('staff_deductions/'+row.id));},
         get changes(){return [...h.docs].filter(([path,data])=>before.has(path)&&JSON.stringify(data)!==JSON.stringify(before.get(path))).map(([path,change])=>({ref:{table:path.split('/')[0],id:path.split('/')[1]},change}));},
         get records(){return [...h.docs].filter(([path])=>!before.has(path)).map(([path,row])=>({table:path.split('/')[0],...row}));}};
@@ -293,7 +298,7 @@ test('payroll clears POS meals already deducted, leaving paid and future-cutoff 
     assert.equal(h.changes.some(r=>r.ref.id==='paid'||r.ref.id==='future'),false);
     const saved=h.records.find(r=>r.table==='payroll_records');assert.equal(saved.frozenData.meals,330.25);
     assert.equal(saved.finalNetPay,500);assert.equal(h.h.get('cash_accounts/sample-account').balance,4500);
-    assert.equal(h.records.filter(row=>row.table==='payroll_records').length,1);assert.ok(h.reads.includes('cash_accounts'));
+    assert.equal(h.records.filter(row=>row.table==='payroll_records').length,1);assert.ok(h.reads.includes('cash_accounts'));assert.equal(h.recoveryChecks,0);
     assert.equal(h.window.currentPayslipData.isPaid,true);assert.equal(h.window.paidPayrollSnapshots.has(h.window.currentPayslipData),true);
 });
 test('an edited partial Foods amount leaves only its undeducted balance for the next payroll',async()=>{
@@ -305,7 +310,7 @@ test('an edited partial Foods amount leaves only its undeducted balance for the 
 test('payroll payment stops before account or ledger writes for an HR-held preview or an immutable paid snapshot',async()=>{
     for(const state of ['held','paid']){
         const h=paymentFixture();if(state==='held')h.window.currentPayslipData.attendanceReviewRequired=true;else h.window.paidPayrollSnapshots=new WeakSet([h.window.currentPayslipData]);
-        const before=structuredClone(h.window.currentPayslipData);await h.window.finalizePayslip();assert.equal(h.changes.length,0);assert.equal(h.records.length,0);assert.deepEqual(h.window.currentPayslipData,before);
+        const before=structuredClone(h.window.currentPayslipData);await h.window.finalizePayslip();assert.equal(h.changes.length,0);assert.equal(h.records.length,0);assert.deepEqual(h.window.currentPayslipData,before);assert.equal(h.recoveryChecks,state==='held'?1:0);
     }
 });
 test('Manager and Staff serve identical shared math; source links new letters to attendance atomically',()=>{
@@ -583,7 +588,7 @@ test('actual payslip finalization holds an unpaid preview after a shift amendmen
     const h=paymentFixture(),before=structuredClone(h.window.currentPayslipData);
     h.window.loadPayrollScheduleHistory=async()=>({historyMonths:{'2026-09':{revisions:[],shiftAmendments:[{id:'sample-amendment',recordedAt:'2026-09-30T12:00:00Z'}]}}});
     await h.window.finalizePayslip();
-    assert.equal(h.changes.length,0);assert.equal(h.records.length,0);assert.deepEqual(h.window.currentPayslipData,before);
+    assert.equal(h.changes.length,0);assert.equal(h.records.length,0);assert.deepEqual(h.window.currentPayslipData,before);assert.equal(h.recoveryChecks,1);
 });
 
 

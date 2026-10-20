@@ -442,7 +442,65 @@ service cloud.firestore {
       allow delete: if (!protectedSales(resource.data.get('branch', '')) && isHQUser()) || isOwner();
     }
     match /stock_logs/{logId} { allow read, create, update: if true; allow delete: if isOwner(); }
-    match /attendance_logs/{logId} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    // Only the verified Google Owner may issue these reviewed HR markers.
+    // Existing ordinary profile/attendance fields retain their preceding policy.
+    function protectedHROwner() {
+      return offlineOwner() && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+    function protectedHRId(value) { return value is string && value.matches('^[-A-Za-z0-9_]{1,180}$'); }
+    function protectedHRReason(value) { return value is string && value.trim().size() >= 8 && value.size() <= 1500; }
+    function protectedHRDate(value) {
+      return value is string && value.matches('^[1-9][0-9]{3}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$');
+    }
+    function amendmentReviewMarker(marker, before, logId) {
+      let prior = before.get('scheduleAmendmentReview', {});
+      let auditPath = /databases/$(database)/documents/attendance_amendment_reviews/$(marker.auditId);
+      let audit = getAfter(auditPath).data;
+      return protectedHROwner() && marker is map
+        && marker.keys().hasOnly(['version','revision','auditId','sourceFingerprint','choice','lateMinutes','exempt','reason','actorUid','actorEmail','reviewedAt'])
+        && marker.keys().hasAll(['version','revision','auditId','sourceFingerprint','choice','lateMinutes','exempt','reason','actorUid','actorEmail','reviewedAt'])
+        && before.type == 'TIME IN' && protectedHRId(before.staffId)
+        && marker.version == 1 && marker.revision is int && marker.revision == prior.get('revision',0) + 1
+        && marker.auditId == 'amendment-' + logId + '-' + string(marker.revision)
+        && marker.sourceFingerprint is string && marker.sourceFingerprint.size() > 0 && marker.sourceFingerprint.size() <= 30000
+        && marker.choice in ['Keep saved lateness decision','Use corrected schedule minutes','Waive lateness']
+        && marker.lateMinutes is int && marker.lateMinutes >= 0 && marker.lateMinutes <= 1080 && marker.exempt is bool
+        && (marker.choice != 'Waive lateness' || marker.lateMinutes == 0 && marker.exempt == true)
+        && protectedHRReason(marker.reason) && marker.actorUid == request.auth.uid
+        && marker.actorEmail == request.auth.token.email && marker.reviewedAt == request.time
+        && !exists(auditPath) && audit.attendanceId == logId && audit.staffId == before.staffId
+        && audit.staffName == before.staffName && audit.branch == before.branch
+        && audit.previousReview == before.get('scheduleAmendmentReview',null)
+        && audit.version == marker.version && audit.revision == marker.revision && audit.auditId == marker.auditId
+        && audit.sourceFingerprint == marker.sourceFingerprint && audit.choice == marker.choice && audit.lateMinutes == marker.lateMinutes
+        && audit.exempt == marker.exempt && audit.reason == marker.reason && audit.actorUid == marker.actorUid
+        && audit.actorEmail == marker.actorEmail && audit.reviewedAt == marker.reviewedAt;
+    }
+    function amendmentReviewAudit(data, auditId) {
+      let path = /databases/$(database)/documents/attendance_logs/$(data.attendanceId);
+      let before = get(path).data;
+      let after = getAfter(path).data;
+      let decision = {'lateMinutes':before.get('lateMinutes',null),'reviewedLateMinutes':before.get('reviewedLateMinutes',null),'lateExempted':before.get('lateExempted',false) == true,'lateDecision':before.get('lateDecision',null),'lateReviewRequestId':before.get('lateReviewRequestId',null)};
+      return protectedHROwner() && protectedHRId(data.attendanceId)
+        && data.keys().hasOnly(['version','revision','auditId','sourceFingerprint','choice','lateMinutes','exempt','reason','actorUid','actorEmail','reviewedAt','attendanceId','staffId','staffName','branch','workDate','previousReview','previousDecision'])
+        && data.auditId == auditId && protectedHRDate(data.workDate) && data.previousDecision == decision
+        && after.diff(before).affectedKeys().hasOnly(['scheduleAmendmentReview'])
+        && after.get('scheduleAmendmentReview',null) != before.get('scheduleAmendmentReview',null)
+        && amendmentReviewMarker(after.scheduleAmendmentReview,before,data.attendanceId);
+    }
+    match /attendance_amendment_reviews/{auditId} {
+      allow read: if protectedHROwner();
+      allow create: if amendmentReviewAudit(request.resource.data,auditId);
+      allow update, delete: if false;
+    }
+    match /attendance_logs/{logId} {
+      allow read: if true;
+      allow create: if !request.resource.data.keys().hasAny(['scheduleAmendmentReview']);
+      allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['scheduleAmendmentReview'])
+        || (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['scheduleAmendmentReview'])
+          && amendmentReviewMarker(request.resource.data.scheduleAmendmentReview,resource.data,logId));
+      allow delete: if isHQUser() && !resource.data.keys().hasAny(['scheduleAmendmentReview']);
+    }
     match /manager_alerts/{alertId} { allow read, create, update: if true; allow delete: if isHQUser(); }
     match /sop_logs/{sopId} { allow read, create, update: if true; allow delete: if isHQUser(); }
     match /shift_swaps/{swapId} { allow read, create, update: if true; allow delete: if isHQUser(); }
@@ -633,16 +691,84 @@ service cloud.firestore {
       allow update: if staffSalaryWrite(staffId,resource.data,request.resource.data);
       allow delete: if false;
     }
+    function onboardingResult(data, before, after, staffId) {
+      let start = data.action == 'confirm-start';
+      let result = data.result;
+      let prior = start ? before.get('onboardingStartConfirmation',null) : before.get('contractTerms',{}).get('initial',null);
+      return result is map && result.version == 1 && result.auditId is string && result.auditId.size() <= 340
+        && result.auditId.matches('^onboarding-' + staffId + '-[-A-Za-z0-9_]{1,160}$')
+        && data.previous == prior && result.revision is int && result.revision == (prior == null ? 0 : prior.get('revision',0)) + 1
+        && protectedHRReason(result.reason)
+        && (start
+          ? (result.keys().hasOnly(['version','revision','auditId','reason','confirmedAt','confirmedByUid','confirmedBy','date','sourceAttendanceId'])
+            && result.keys().hasAll(['version','revision','auditId','reason','confirmedAt','confirmedByUid','confirmedBy','date','sourceAttendanceId'])
+            && protectedHRDate(result.date) && result.sourceAttendanceId == data.sourceAttendanceId
+            && result.confirmedAt == request.time && result.confirmedByUid == request.auth.uid && result.confirmedBy == request.auth.token.email
+            && after.onboardingStartConfirmation == result && after.diff(before).affectedKeys().hasOnly(['onboardingStartConfirmation']))
+          : (result.keys().hasOnly(['version','revision','startDate','endDate','remindOn','auditId','reason','issuedAt','issuedByUid','issuedBy'])
+            && result.keys().hasAll(['version','revision','startDate','endDate','remindOn','auditId','reason','issuedAt','issuedByUid','issuedBy'])
+            && protectedHRDate(result.startDate) && protectedHRDate(result.endDate) && protectedHRDate(result.remindOn)
+            && result.startDate <= result.remindOn && result.remindOn <= result.endDate && result.startDate < result.endDate
+            && result.issuedAt == request.time && result.issuedByUid == request.auth.uid && result.issuedBy == request.auth.token.email
+            && before.get('signedContracts',{}).get('initial',null) == null && before.get('signedContracts',{}).get('extension',null) == null && before.get('signedContracts',{}).get('regularization',null) == null
+            && !(before.get('contractStatus','') in ['Regular','Extended','Pending Renewal','Pending Regularization'])
+            && after.contractStatus == 'Pending Initial Contract' && after.contractTerms.initial == result
+            && after.contractTerms.diff(before.get('contractTerms',{})).affectedKeys().hasOnly(['initial'])
+            && after.diff(before).affectedKeys().hasOnly(['contractTerms','contractStatus'])));
+    }
+    function onboardingSource(data) {
+      let source = get(/databases/$(database)/documents/attendance_logs/$(data.sourceAttendanceId)).data;
+      let at = source.get('timestamp',null);
+      let date = data.action == 'confirm-start' ? data.result.date : data.result.startDate;
+      let parts = date.split('-');
+      return source.type == 'TIME IN' && source.staffName == data.staffName
+        && source.get('staffId',null) in [null,'',data.staffId] && at is timestamp
+        && (at + duration.value(8,'h')).year() == int(parts[0])
+        && (at + duration.value(8,'h')).month() == int(parts[1]) && (at + duration.value(8,'h')).day() == int(parts[2]);
+    }
+    function onboardingAudit(data,auditId) {
+      let path = /databases/$(database)/documents/cashiers/$(data.staffId);
+      let before = get(path).data;
+      let after = getAfter(path).data;
+      return protectedHROwner() && protectedHRId(data.staffId)
+        && data.keys().hasOnly(['version','action','staffId','staffName','branch','intent','sourceAttendanceId','previous','result','recordedAt','recordedByUid','recordedBy'])
+        && data.keys().hasAll(['version','action','staffId','staffName','branch','intent','sourceAttendanceId','previous','result','recordedAt','recordedByUid','recordedBy'])
+        && data.version == 1 && data.action in ['confirm-start','initial-contract'] && data.result.auditId == auditId
+        && data.staffName == before.cashierName && data.branch == before.branch && after.cashierName == before.cashierName && after.branch == before.branch
+        && before.get('active',true) != false && before.get('archived',false) != true
+        && data.intent is string && data.intent.size() > 0 && data.intent.size() <= 5000
+        && (data.sourceAttendanceId == null || protectedHRId(data.sourceAttendanceId) && onboardingSource(data))
+        && data.recordedAt == request.time && data.recordedByUid == request.auth.uid && data.recordedBy == request.auth.token.email
+        && onboardingResult(data,before,after,data.staffId);
+    }
+    function onboardingProfileLink(id,before,after) {
+      let start = after.diff(before).affectedKeys().hasAny(['onboardingStartConfirmation']);
+      let result = start ? after.onboardingStartConfirmation : after.contractTerms.initial;
+      let path = /databases/$(database)/documents/staff_onboarding_reviews/$(result.auditId);
+      let audit = getAfter(path).data;
+      // The new audit's create rule performs the full before/after validation.
+      // Link exactly once here to stay within Firestore's expression budget.
+      return protectedHROwner() && !exists(path) && audit.staffId == id && audit.result == result
+        && audit.action == (start ? 'confirm-start' : 'initial-contract')
+        && audit.recordedAt == request.time && audit.recordedByUid == request.auth.uid && audit.recordedBy == request.auth.token.email;
+    }
+    match /staff_onboarding_reviews/{auditId} {
+      allow read: if protectedHROwner();
+      allow create: if onboardingAudit(request.resource.data,auditId);
+      allow update, delete: if false;
+    }
     match /cashiers/{cashierId} {
       allow read: if true;
-      allow create: if isHQUser() && !request.resource.data.keys().hasAny(['rateHistory'])
+      allow create: if isHQUser() && !request.resource.data.keys().hasAny(['rateHistory','onboardingStartConfirmation','contractTerms'])
         && (!request.resource.data.keys().hasAny(['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision'])
           || staffRateProfileLink(cashierId, {}, request.resource.data));
       allow update: if !request.resource.data.diff(resource.data).affectedKeys().hasAny(['rateHistory'])
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['onboardingStartConfirmation','contractTerms'])
+          || onboardingProfileLink(cashierId,resource.data,request.resource.data))
         && (!(request.resource.data.diff(resource.data).affectedKeys().hasAny(['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision'])
           || (resource.data.get('salaryRateVersion',0) == 1 && request.resource.data.diff(resource.data).affectedKeys().hasAny(['hourlyRate','dailyRate','branch'])))
           || staffRateProfileLink(cashierId, resource.data, request.resource.data));
-      allow delete: if isHQUser();
+      allow delete: if isHQUser() && !resource.data.keys().hasAny(['onboardingStartConfirmation','contractTerms']);
     }
     function earlyTimeOutHQ(branch) {
       let email = isSignedIn() ? request.auth.token.get('email', '') : '';
