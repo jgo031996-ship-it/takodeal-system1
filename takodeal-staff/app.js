@@ -2533,8 +2533,8 @@ window.viewPastPayslip = function(encodedData) {
     let meals = parseFloat(d.meals || 0).toFixed(2);
     let customDeducts = parseFloat(d.customDeductionsTotal || 0).toFixed(2);
     
-    let totalDeduct = (parseFloat(lateDeduct) + parseFloat(sss) + parseFloat(phil) + parseFloat(pagibig) + parseFloat(vale) + parseFloat(loans) + parseFloat(meals) + parseFloat(customDeducts)).toFixed(2);
-    let netPay = parseFloat(d.finalNetPay || (grossIncome - totalDeduct)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    let totalDeduct = (parseFloat(lateDeduct) + parseFloat(sss) + parseFloat(phil) + parseFloat(pagibig) + parseFloat(vale) + parseFloat(loans) + parseFloat(meals) + parseFloat(customDeducts) + Number(d.onlineRefunds||0) + Number(d.cashShortages||0)).toFixed(2);
+    let netPay = parseFloat(d.finalNetPay ?? (grossIncome - totalDeduct)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
     let logoUrl = "https://takodeal-owner.vercel.app/payslip%20logo.jpg";
 
@@ -2689,6 +2689,7 @@ window.viewPastPayslip = function(encodedData) {
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
                                     <span>Foods / Penalties</span> <span>${(parseFloat(meals) + parseFloat(customDeducts)).toFixed(2)}</span>
                                 </div><div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span>ONLINE REFUND ORDERS</span><span>${Number(d.onlineRefunds||0).toFixed(2)}</span>
+                                </div><div style="display:flex;justify-content:space-between;padding:4px 8px;font-size:13px;"><span>CASH SHORTAGES</span><span>${Number(d.cashShortages||0).toFixed(2)}</span>
                                 </div>
                                 <div style="display: flex; justify-content: space-between; padding: 8px; font-weight: bold; background: #f1f5f9; border-top: 1px solid black;">
                                     <span>TOTAL DEDUCTIONS</span> <span>${totalDeduct}</span>
@@ -3715,7 +3716,7 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
     let meals = parseFloat(d.meals || 0).toFixed(2);
     let customDeducts = parseFloat(d.customDeductionsTotal || 0).toFixed(2);
     
-    let totalDeduct = (parseFloat(lateDeduct) + parseFloat(sss) + parseFloat(phil) + parseFloat(pagibig) + parseFloat(vale) + parseFloat(loans) + parseFloat(meals) + parseFloat(customDeducts)).toFixed(2);
+    let totalDeduct = (parseFloat(lateDeduct) + parseFloat(sss) + parseFloat(phil) + parseFloat(pagibig) + parseFloat(vale) + parseFloat(loans) + parseFloat(meals) + parseFloat(customDeducts) + Number(d.onlineRefunds||0) + Number(d.cashShortages||0)).toFixed(2);
     let netPayFmt = (d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2});
 
     Swal.fire({
@@ -3735,6 +3736,8 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
                         <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Lates:</span> <span>₱${lateDeduct}</span></div>
                         <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Loans/Gov:</span> <span>₱${(parseFloat(sss)+parseFloat(phil)+parseFloat(pagibig)+parseFloat(loans)).toFixed(2)}</span></div>
                         <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Vales/Meals:</span> <span>₱${(parseFloat(vale)+parseFloat(meals)+parseFloat(customDeducts)).toFixed(2)}</span></div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Online Refund Orders:</span> <span>₱${Number(d.onlineRefunds||0).toFixed(2)}</span></div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Cash Shortages:</span> <span>₱${Number(d.cashShortages||0).toFixed(2)}</span></div>
                         <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; color:#b91c1c; border-top: 1px dashed #cbd5e1; padding-top: 4px;"><span>DEDUCT:</span> <span>₱${totalDeduct}</span></div>
                     </div>
                 </div>

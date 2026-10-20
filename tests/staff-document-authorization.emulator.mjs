@@ -13,6 +13,7 @@ import {attendanceEstimate} from '../takodeal-franchise/franchise-data.js';
 import {finalizeOrdinaryPayroll} from '../takodeal-manager/payroll-settlement.js';
 import {emergencyShiftSourceFingerprint} from '../takodeal-manager/emergency-shift-model.js';
 import {linkedTimeOutId} from '../takodeal-manager/attendance-reconcile.js';
+import {openCashShortageReview,approveCashShortageReview,dismissCashShortageReview} from '../takodeal-manager/cash-shortage.js';
 
 // These tests use real local Firebase Rules runtimes. They must not be silently
 // skipped when the runtime is missing, and cannot connect to production.
@@ -1063,4 +1064,56 @@ test('the actual protected emergency service commits both records under real Rul
     await assert.rejects(service.confirmShift(input),/response lost/);const confirmed=(await getDoc(doc(f.db,'attendance_shift_confirmations/'+f.timeInId))).data();assert.equal(confirmed.revisionId,input.operationId);assert.equal(confirmed.version,1);
     const retry=await assertSucceeds(service.confirmShift(input));assert.equal(retry.alreadySaved,true);const audit=(await getDoc(doc(f.db,'attendance_shift_confirmation_events/'+input.operationId))).data();assert.equal(audit.reason,input.reason);assert.equal(audit.reviewedScheduleFingerprint,preview.scheduleFingerprint);assert.equal(audit.previousRevisionId,null);
     const after=await service.inspect({requestId:f.requestId,expectedRequestVersion:1,expectedRequestToken:f.request.requestToken});assert.equal(after.unknown,false);assert.equal(after.early,true);assert.equal(after.emergencyShiftVersion,1);assert.deepEqual((await getDoc(doc(f.db,'attendance_logs/'+f.timeInId))).data(),original);assert.equal((await getDoc(doc(f.db,'attendance_logs/'+f.outId))).exists(),false);assert.equal((await getDoc(doc(f.db,'attendance_time_out_approvals/'+f.requestId))).exists(),false);
+});
+
+async function shortageFixture(count=1,shiftPatch={}){
+ const ctx=owner(),api=rateApi(ctx);api.auth.currentUser.providerData=[{providerId:'google.com'}];api.sessionUser.isOwner=true;
+ await adminSet('hq_managers/shortage-owner',{email:'jgo031996@gmail.com',role:'Owner',permissions:['all'],assignedBranch:'All',pin:'1234',active:true});await adminSet('cashiers/'+staffId,{cashierName:'Sample Staff',branch,pin:'1234',active:true});
+ const ids=[];for(let i=0;i<count;i++){const shiftId='shortage-shift-'+i;await adminSet('shifts/'+shiftId,{branch,status:'Closed',active:false,startTime:Timestamp.fromMillis(Date.now()-2*3600000),endTime:Timestamp.fromMillis(Date.now()-3600000),expectedCash:1000,declaredCash:900,cashier:'Sample Staff / Other Crew',floatShortage:9999,...shiftPatch});const result=await openCashShortageReview(api,{shiftId,staffId,details:'Review the closed cash count with the selected employee.',evidence:'Synthetic count sheet '+i});ids.push(result.id);}
+ return {ctx,api,db:api.db,ids};
+}
+async function shortageReply(f,id,replyRevision=1){return updateDoc(doc(anonymous(uid).firestore(),'staff_deduction_notices/'+id),{staffReply:'I dispute this loss. Please review the actual handover records.',replyRevision,repliedAt:serverTimestamp(),repliedByUid:uid});}
+const shortageApproval=(expectedRevision=1,expectedReplyRevision=1)=>({amount:10,effectiveDate:staffRateDate(),lawfulBasis:'Court / authorized agency order',authorityReference:'Synthetic authorized court order applicable to this recovery.',finding:'Responsibility finding recorded after reviewing the specific evidence.',responsibilityConfirmed:true,lawfulAuthorityConfirmed:true,expectedRevision,expectedReplyRevision});
+async function approveShortages(f){for(const id of f.ids){await assertSucceeds(shortageReply(f,id));await assertSucceeds(approveCashShortageReview(f.api,id,shortageApproval()));}}
+async function cashPaymentBatch(f,{ids=f.ids,omit=null,total=ids.length*10,refundIds=[]}={}){
+ const payrollId=(refundIds.length?'refund-payroll-':'payroll-')+'shortage-'+nextOp(),batch=writeBatch(f.db),stamp=serverTimestamp(),cashRows=ids.map(id=>({id,amount:10}));
+ batch.set(doc(f.db,'payroll_records/'+payrollId),{staffId,staffName:'Sample Staff',branch,startDate:staffRateDate(),endDate:staffRateDate(),processedAt:stamp,processedBy:'jgo031996@gmail.com',cashShortageSettlements:Object.fromEntries(ids.map(id=>[id,10])),refundSettlements:Object.fromEntries(refundIds.map(id=>[id,10])),finalNetPay:1000-total-refundIds.length*10,frozenData:{name:'Sample Staff',branch,isPaid:true,cashShortages:total,cashShortageRows:cashRows}});
+ for(const id of ids)for(const table of ['cash_shortage_reviews','staff_deductions','staff_deduction_notices'])if(table!==omit)batch.update(doc(f.db,table+'/'+id),{status:'Paid',paidAt:stamp,payrollRecordId:payrollId});
+ for(const id of refundIds)for(const table of ['online_order_incidents','staff_deductions','staff_deduction_notices'])batch.update(doc(f.db,table+'/'+id),{status:'Paid',paidAt:stamp,payrollRecordId:payrollId});
+ f.lastPayrollId=payrollId;return batch.commit();
+}
+
+test('cash shortage Rules allow one Owner pending review with zero collectible amount and protected Staff response, then lawful authorization',async()=>{
+ const f=await shortageFixture(),id=f.ids[0];assert.equal((await getDoc(doc(f.db,'staff_deductions/'+id))).data().amount,0);await assert.rejects(approveCashShortageReview(f.api,id,shortageApproval()));await assertSucceeds(shortageReply(f,id));await assertSucceeds(approveCashShortageReview(f.api,id,shortageApproval()));const review=(await getDoc(doc(f.db,'cash_shortage_reviews/'+id))).data();assert.equal(review.status,'Approved');assert.equal(review.sourceShortageCents,10000);assert.equal(review.amount,10);assert.equal((await getDoc(doc(f.db,'staff_deductions/'+id))).data().status,'Unpaid');
+ await assertSucceeds(shortageReply(f,id,2));await assertFails(cashPaymentBatch(f));await assertSucceeds(approveCashShortageReview(f.api,id,shortageApproval(2,2)));assert.equal((await getDoc(doc(f.db,'cash_shortage_reviews/'+id))).data().revision,3);assert.equal((await getDoc(doc(f.db,'staff_deduction_notices/'+id))).data().replyRevision,2);await assertSucceeds(cashPaymentBatch(f));
+});
+
+test('cash shortage protected type and source ID cannot be forged, retyped, deleted or used by staff or unrelated HQ',async()=>{
+ const f=await shortageFixture(),id=f.ids[0],review=(await getDoc(doc(f.db,'cash_shortage_reviews/'+id))).data(),charge=(await getDoc(doc(f.db,'staff_deductions/'+id))).data();
+ for(const ctx of [env.unauthenticatedContext(),anonymous(uid),otherHQ()]){await assertFails(setDoc(doc(ctx.firestore(),'cash_shortage_reviews/cash-shortage-fake'),{...review,id:'cash-shortage-fake'}));await assertFails(updateDoc(doc(ctx.firestore(),'staff_deductions/'+id),{amount:50}));}
+ await assertFails(setDoc(doc(f.db,'staff_deductions/cash-shortage-forged'),{type:'Cash Advance',staffId,staffName:'Sample Staff',amount:100,status:'Unpaid'}));await assertFails(updateDoc(doc(f.db,'staff_deductions/'+id),{type:'Cash Advance'}));await assertFails(updateDoc(doc(f.db,'staff_deduction_notices/'+id),{type:'Online Order Refund'}));for(const table of ['cash_shortage_reviews','staff_deductions','staff_deduction_notices'])await assertFails(deleteDoc(doc(f.db,table+'/'+id)));
+ await assertFails(updateDoc(doc(f.db,'staff_deduction_notices/'+id),{staffReply:'Forged Owner staff response',replyRevision:1,repliedAt:serverTimestamp(),repliedByUid:'owner-uid'}));assert.equal((await getDoc(doc(f.db,'staff_deductions/'+id))).data().amount,charge.amount);
+});
+
+test('cash shortage approval requires paired notices, response and real reviewed authority rather than direct monetary edits',async()=>{
+ const f=await shortageFixture(),id=f.ids[0];await assertSucceeds(shortageReply(f,id));for(const patch of [{amount:50,status:'Unpaid'},{authorizedAmount:50},{reviewRevision:2,status:'Unpaid'}])await assertFails(updateDoc(doc(f.db,'staff_deductions/'+id),patch));
+ await assertSucceeds(approveCashShortageReview(f.api,id,shortageApproval()));await assertFails(cashPaymentBatch(f,{omit:'staff_deduction_notices'}));await assertFails(cashPaymentBatch(f,{total:5}));await assertSucceeds(cashPaymentBatch(f));for(const table of ['cash_shortage_reviews','staff_deductions','staff_deduction_notices'])assert.equal((await getDoc(doc(f.db,table+'/'+id))).data().status,'Paid');await assertFails(updateDoc(doc(f.db,'payroll_records/'+f.lastPayrollId),{cashShortageSettlements:{},frozenData:{isPaid:true,netPay:9999}}));await assertFails(deleteDoc(doc(f.db,'payroll_records/'+f.lastPayrollId)));await assertSucceeds(updateDoc(doc(f.db,'payroll_records/'+f.lastPayrollId),{acknowledged:true}));await assertFails(cashPaymentBatch(f));await assert.rejects(dismissCashShortageReview(f.api,id,{reason:'Cannot change a paid deduction.',expectedRevision:2}));
+});
+
+test('six complete cash cases settle atomically within Rules limits and a seventh case is explicitly held',async()=>{
+ const f=await shortageFixture(7);await approveShortages(f);await assertFails(cashPaymentBatch(f));await assertSucceeds(cashPaymentBatch(f,{ids:f.ids.slice(0,6)}));for(const id of f.ids.slice(0,6))assert.equal((await getDoc(doc(f.db,'cash_shortage_reviews/'+id))).data().status,'Paid');assert.equal((await getDoc(doc(f.db,'cash_shortage_reviews/'+f.ids[6]))).data().status,'Approved');
+});
+
+test('three cash cases and three existing protected refund cases settle together using their common payroll proof while seven combined cases are held',async()=>{
+ const f=await shortageFixture(3);await approveShortages(f);const refundIds=['online-refund-shortage-one','online-refund-shortage-two','online-refund-shortage-three','online-refund-shortage-four'];for(const id of refundIds)for(const table of ['online_order_incidents','staff_deductions','staff_deduction_notices'])await adminSet(table+'/'+id,{staffId,type:'Online Order Refund',status:'Unpaid',amount:10});await assertFails(cashPaymentBatch(f,{refundIds}));await assertSucceeds(cashPaymentBatch(f,{refundIds:refundIds.slice(0,3)}));for(const id of [...f.ids,...refundIds.slice(0,3)])assert.equal((await getDoc(doc(f.db,'staff_deductions/'+id))).data().status,'Paid');
+});
+
+test('cash shortage Rules accept rounded legacy three-decimal source totals but reject noncanonical authorization amounts',async()=>{
+ const f=await shortageFixture(1,{expectedCash:1000.005,declaredCash:900.004}),id=f.ids[0],review=(await getDoc(doc(f.db,'cash_shortage_reviews/'+id))).data();assert.equal(review.expectedCash,1000.01);assert.equal(review.declaredCash,900);assert.equal(review.sourceShortageCents,10001);await approveShortages(f);await assertSucceeds(shortageReply(f,id,2));
+ const batch=writeBatch(f.db),stamp=serverTimestamp();batch.update(doc(f.db,'cash_shortage_reviews/'+id),{amount:10.001,authorizedAmount:10.001,revision:3,replyRevisionReviewed:2,reviewedAt:stamp});batch.update(doc(f.db,'staff_deductions/'+id),{amount:10.001,authorizedAmount:10.001,reviewRevision:3,reviewedAt:stamp});batch.update(doc(f.db,'staff_deduction_notices/'+id),{amount:10.001,noticeRevision:3,updatedAt:stamp});await assertFails(batch.commit());await assertSucceeds(approveCashShortageReview(f.api,id,shortageApproval(2,2)));await assertSucceeds(cashPaymentBatch(f));
+});
+
+test('cash-backed payroll cannot be created without consuming the reviewed case or added later to an older ordinary payroll',async()=>{
+ const f=await shortageFixture(),id=f.ids[0];await approveShortages(f);const base={staffId,staffName:'Sample Staff',branch,startDate:staffRateDate(),endDate:staffRateDate(),processedAt:serverTimestamp(),processedBy:'jgo031996@gmail.com',finalNetPay:990},cash={cashShortageSettlements:{[id]:10},frozenData:{name:'Sample Staff',branch,isPaid:true,cashShortages:10,cashShortageRows:[{id,amount:10}]}};
+ await assertFails(setDoc(doc(f.db,'payroll_records/forged-cash-payroll'),{...base,...cash}));await assertSucceeds(setDoc(doc(f.db,'payroll_records/ordinary-before-cash'),{...base,frozenData:{name:'Sample Staff',branch,isPaid:true}}));await assertFails(updateDoc(doc(f.db,'payroll_records/ordinary-before-cash'),cash));for(const omit of ['cash_shortage_reviews','staff_deductions','staff_deduction_notices'])await assertFails(cashPaymentBatch(f,{omit}));await assertSucceeds(cashPaymentBatch(f));
 });
