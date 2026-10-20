@@ -1,3 +1,4 @@
+import {installOwnerInbox} from '../takodeal-manager/owner-inbox.js';
 import * as scheduleFreshness from '../takodeal-manager/payroll-schedule-freshness.js';
 import * as previewFreshness from '../takodeal-manager/payroll-preview-guard.js';
 import * as payrollLoading from '../takodeal-manager/payroll-loading.js';
@@ -430,20 +431,17 @@ test('history does not pair separate receipts or meals on different times; franc
     assert.deepEqual(rows.map(row=>row.id),['request','own']);
     assert.equal(historyTime('bad date'),0);assert.equal(historyTime({seconds:123}),123000);
 });
-test('the real Inbox renders ledger-only POS meals without putting them in pending approvals or writing data',async()=>{
+test('the real Inbox renders ledger-only POS meals lazily without putting them in pending approvals or writing data',async()=>{
     const nodes=Object.fromEntries(['inboxTableBody','resolvedRequestsBody','inboxBadge'].map(id=>[id,{innerHTML:'',style:{}}]));
     const requests=[{id:'approved',staffName:'Test Staff',type:'Staff Meal',status:'Approved',amount:68,timestamp:historyStamp(8)}];
     const deductions=[autoMeal('one'),autoMeal('two',77,30),autoMeal('paid',68,8,{status:'Paid'})];
-    const calls=[],errors=[];
-    const window={sessionUser:{isFranchisee:false}};
-    const context={window,requestHistory,historyTime,isMealDeduction:payroll.isMealDeduction,db:{},
-        escapeHtml:value=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])),
-        collection:(_,table)=>({table}),query:ref=>ref,orderBy:()=>({}),where:()=>({}),
-        getDocs:async ref=>{calls.push(ref.table);return {forEach:fn=>(ref.table==='staff_requests'?requests:deductions).forEach(row=>fn({id:row.id,data:()=>row}))};},
-        document:{getElementById:id=>nodes[id]},console:{error:e=>errors.push(e)}};
+    const calls=[],errors=[],window={auth:{currentUser:{uid:'hq',email:OWNER_EMAIL,emailVerified:true}},sessionUser:{uid:'hq',email:OWNER_EMAIL,role:'Owner',permissions:['all'],allowedBranches:['All']},db:{},collection:(_,table)=>({table}),query:ref=>ref,orderBy:()=>({}),where:()=>({}),getDocsFromServer:async ref=>{calls.push(ref.table);return {docs:(ref.table==='staff_requests'?requests:deductions).map(row=>({id:row.id,data:()=>row}))};}};
+    const context={window,installOwnerInbox,document:{getElementById:id=>nodes[id]},console:{error:e=>errors.push(e)}};
     vm.runInNewContext(extract('loadInbox'),context);await window.loadInbox();
     assert.deepEqual(errors,[]);assert.deepEqual(calls,['staff_requests','staff_deductions']);
     assert.match(nodes.resolvedRequestsBody.innerHTML,/View 3 Records/);
+    assert.doesNotMatch(nodes.resolvedRequestsBody.innerHTML,/Recorded automatically by POS/);
+    window.ownerInbox.toggle('history0');
     assert.equal((nodes.resolvedRequestsBody.innerHTML.match(/Recorded automatically by POS/g)||[]).length,2);
     assert.match(nodes.resolvedRequestsBody.innerHTML,/>Paid<\/span>/);assert.match(nodes.resolvedRequestsBody.innerHTML,/>Unpaid<\/span>/);
     assert.match(nodes.inboxTableBody.innerHTML,/No pending requests/);assert.equal(nodes.inboxBadge.innerText,0);
