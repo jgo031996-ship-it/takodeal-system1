@@ -3,7 +3,8 @@ import {installPOSSettingsHub} from './pos-settings-hub.js';
 import {installPOSLeaveRequests} from './leave-request-ui.js';
 import { imageFor } from './cashier-data.js';
 import { installAttendanceCamera, createAttendanceStreamSession } from './attendance-camera.js';
-import {readStaffRecords, latestAttendance, attendanceMillis, attendanceKind, closeAttendanceShift} from './attendance-reconcile.js';
+import {readStaffRecords, latestAttendance, attendanceMillis, attendanceKind, closeAttendanceShift,attendanceReadRecovery} from './attendance-reconcile.js';
+import {createAttendanceMetadataReader} from './attendance-metadata-reader.js';
 import { createRecipeFeed } from './recipe-feed.js';
 import { installMealCheckout } from './meal-checkout.js';
 import { installCancelledOrders } from './cancelled-orders-ui.js';
@@ -97,6 +98,7 @@ window.where = where;
 window.collection = collection;
 window.getDocs = getDocs;
 window.getDocsFromServer = getDocsFromServer;
+window.readStaffMetadata=createAttendanceMetadataReader({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,auth,fetch:typeof window.fetch==='function'?window.fetch.bind(window):null});
 window.getDocFromServer = getDocFromServer;
 window.runTransaction = runTransaction;
 window.deleteDoc = deleteDoc;
@@ -3262,11 +3264,19 @@ window.submitAttendance = async function(type) {
     const pendingAttendanceRecords = [];
     let activeTimeIn = null;
     let userLogs = [];
+    const clockReadEpoch=typeof attendanceModalEpoch==='number'?attendanceModalEpoch:null,clockReadBranch=localStorage.getItem('takodeal_device_branch');
+    const clockStillSelected=()=>document.getElementById('clockStaffName')?.value===staffName&&document.getElementById('clockStaffPin')?.value.trim()===inputPin&&document.getElementById('timeClockModal')?.style.display==='flex'&&localStorage.getItem('takodeal_device_branch')===clockReadBranch&&(clockReadEpoch===null||attendanceModalEpoch===clockReadEpoch);
     try {
-        const records = await readStaffRecords({db,collection,query,where,getDocs,getDocsFromServer},staffProfile.id,staffName);
+        const records = await readStaffRecords({db,collection,query,where,getDocs,getDocsFromServer,readStaffMetadata:window.readStaffMetadata},staffProfile.id,staffName,{metadataOnly:true,assertCurrent:()=>{if(!clockStillSelected())throw Error('The selected Time Clock account changed. Choose the staff account again.');}});
         const latest = latestAttendance(records,staffProfile.id,staffName);
         if(latest)userLogs=[latest];
-    } catch(error) { alert(error.message); unlockUI(); return; }
+    } catch(error) {
+        if(!clockStillSelected()){unlockUI();return;}
+        const issue=attendanceReadRecovery(error);let answer;
+        try{answer=await Swal.fire({titleText:issue.title,text:issue.message,icon:'warning',showCancelButton:issue.retryable,confirmButtonText:issue.retryable?'Retry HQ connection':'Keep Time Clock open',cancelButtonText:'Keep Time Clock open',confirmButtonColor:'#17604c'});}finally{unlockUI();}
+        if(answer?.isConfirmed&&issue.retryable&&clockStillSelected())return window.submitAttendance(type);
+        return;
+    }
 
     try {
         let lastType = "";

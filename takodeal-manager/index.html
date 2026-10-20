@@ -451,6 +451,7 @@
   <link rel="stylesheet" href="staff-documents.css?v=staff-pos-repair-20261008-r12">
   <link rel="stylesheet" href="manager-mobile.css?v=20261010-r1">
     <link rel="stylesheet" href="./online-refunds.css">
+<link rel="stylesheet" href="hr-review.css?v=20261021">
 </head>
 
 <body class="manager-theme">
@@ -486,6 +487,7 @@
           </a>
           <div class="nav-submenu" id="hrSubmenu">
               <a href="#" class="nav-subitem active" id="subnav-Feed" onclick="window.navToHr('Feed')">💸 Payroll & Time Feed</a>
+              <a href="#" class="nav-subitem" onclick="window.openHRReviewCenter();return false;">🔎 HR Review Center</a>
               <a href="#" class="nav-subitem" id="subnav-Schedule" onclick="window.navToHr('Schedule')">📅 Schedule Manager</a>
               <a href="#" class="nav-subitem" id="subnav-Ledger" onclick="window.navToHr('Ledger')">💳 Loans & Ledger</a>
               <a href="#" class="nav-subitem" id="subnav-Sanctions" onclick="window.navToHr('Sanctions')">⚖️ Disciplinary Actions</a>
@@ -5851,6 +5853,7 @@
           <div style="background: #1e293b; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;" class="no-print">
               <h2 style="margin: 0; font-size: 16px; color: white;">Digital Payslip Generator</h2>
               <div style="display: flex; gap: 10px;">
+                  <button type="button" onclick="window.checkCurrentSavedPayroll()" id="btnCheckSavedPayslip" style="background:#fff;color:#14594b;border:1px solid #cdded1;padding:8px 15px;border-radius:6px;font-weight:bold;cursor:pointer">Check saved payment</button>
                   <button onclick="window.finalizePayslip()" id="btnFinalizePayslip" style="background: #3b82f6; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.3s;">✅ Mark Paid & Auto-Deduct</button>
                   <button onclick="window.downloadPayslipImage()" id="btnDownloadPayslip" style="background: #10b981; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">⬇️ Download Image</button>
                   <button onclick="document.getElementById('payslipModal').style.display='none'" style="background: transparent; color: white; border: 1px solid white; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">✖ Close</button>

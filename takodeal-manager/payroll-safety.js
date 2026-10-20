@@ -2,6 +2,7 @@
 // Times in Schedule Manager are Philippine wall-clock times, independent of device timezone.
 import { resolveScheduleForDate, amendmentsForDate } from './schedule-history.js';
 import {staffRateForDate} from './staff-rate-model.js';
+import {applyAttendanceAmendmentReview} from './attendance-amendment-review-model.js';
 export {staffRateDate,staffRateWorkDate,staffProfileForWork,loadStaffSalaryTimeline,staffRateForDate,payrollSalaryProfile,assertPayrollSalaryFresh} from './staff-rate-model.js';
 const minute = 60000;
 const day = 1440 * minute;
@@ -259,12 +260,13 @@ export function resolveAttendanceAmendment(log, schedule, profiles = {}, staffNa
     if (!Number.isFinite(distance) || distance < -90 || distance >= 18*60) return null;
     const correctedLateMinutes = Math.max(0,Math.floor(distance));
     const manual = manualLatenessReview(log);
-    return {...original,shiftId:targetShiftId,shiftName:reconcile?target.name||original.shiftName:original.shiftName,shiftType:reconcile?shiftType(target):original.shiftType,isNightShift:reconcile?bonusShift(target):original.isNightShift,wasScheduled:true,expectedStartAt,expectedEndAt,expectedStartHour:start/60,correctedLateMinutes,
+    const corrected = {...original,shiftId:targetShiftId,shiftName:reconcile?target.name||original.shiftName:original.shiftName,shiftType:reconcile?shiftType(target):original.shiftType,isNightShift:reconcile?bonusShift(target):original.isNightShift,wasScheduled:true,expectedStartAt,expectedEndAt,expectedStartHour:start/60,correctedLateMinutes,
         lateMinutes:manual?attendanceLateMinutes(log,original.lateMinutes):correctedLateMinutes,
         attendanceCorrectionVerified:true,amendmentNeedsReview:manual,needsScheduleReview:manual,
         scheduleSource:'shift-amendment',scheduleAmendmentId:applied.at(-1),scheduleAmendmentIds:applied,workDate,
         originalShiftId:original.shiftId,targetShiftId,assignmentReconciled:reconcile,amendmentReason:reconciler?.reason||active.find(event=>event.id===applied.at(-1))?.reason||'',
         originalExpectedStartAt:original.expectedStartAt,originalExpectedEndAt:original.expectedEndAt};
+    return manual ? applyAttendanceAmendmentReview(log,corrected) : corrected;
 }
 function manualLatenessReview(log) {
     return log.reviewedLateMinutes != null || log.lateExempted === true || !!(log.lateReviewRequestId || log.lateDecision || log.lateReviewedAt || log.lateReviewedBy);
@@ -316,6 +318,7 @@ export function nightRate(profile = {}) {
     return Number.isFinite(amount) ? Math.max(0, amount) : 0;
 }
 export function latePay(minutesLate, profile = {}, shift, exempt = false) {
+    if(shift?.amendmentReviewVerified===true)exempt=shift.amendmentLateExempted===true;
     const minutes = Math.max(0, Number(minutesLate) || 0);
     const hours = Math.ceil(minutes / 60);
     const daily = Math.max(0, Number(staffRateForDate(profile,shift?.expectedStartAt || profile.salaryWorkDate || new Date())) || 0);
@@ -327,6 +330,7 @@ export function earnedNightBonus(profile, shift, timeOut) {
 }
 export function attendanceLateMinutes(log, calculated = 0) {
     if (calculated && typeof calculated === 'object') {
+        if(calculated.amendmentReviewVerified===true)return Math.max(0,Number(calculated.lateMinutes)||0);
         if (calculated.attendanceCorrectionVerified === true && !calculated.amendmentNeedsReview
             && !manualLatenessReview(log)) return Math.max(0,Number(calculated.correctedLateMinutes)||0);
         calculated = calculated.lateMinutes ?? 0;

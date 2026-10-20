@@ -9,6 +9,8 @@ import {createScheduleHistoryStore,scheduleDateKey,monthKey,resolveScheduleForDa
 import {loadScheduleMonthView} from '../takodeal-staff/schedule-sync.js';
 import {prepareEarlyTimeOut} from '../Takodeal-POS/early-time-out-ui.js';
 import {createEarlyTimeOutService} from '../Takodeal-POS/early-time-out-actions.js';
+import {createAttendanceMetadataReader} from '../Takodeal-POS/attendance-metadata-reader.js';
+import {metadataFetch} from './helpers/attendance-metadata-fixture.mjs';
 
 const staffSource = readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
 const cashierSource = readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8');
@@ -45,7 +47,7 @@ function dom() {
     const alerts=[];
     return {nodes,node,alerts,localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,String(value))},
         document:{getElementById:node,querySelector:()=>null,querySelectorAll:()=>[]},
-        Swal:{fire:async(...args)=>{alerts.push(args);return {isConfirmed:true};},close(){},showLoading(){}},
+        Swal:{fire:async(...args)=>{alerts.push(args);return {isConfirmed:args[0]?.confirmButtonText!=='Retry HQ connection'};},close(){},showLoading(){}},
         alert:message=>alerts.push([message]),confirm:()=>true,console:{error(){},warn(){},log(){}}};
 }
 function staffClock(h,clock) {
@@ -182,7 +184,23 @@ test('actual Staff Time In is visible to Cashier Time Out and keeps the original
 });
 test('a Cashier Time Out does not create a phantom record when fresh HQ attendance cannot be read',async()=>{
     const h=memory(),cashier=cashierClock(h,now,{lastTimeInHours:8});h.serverError=Error('offline');await cashier.window.submitAttendance('TIME OUT');await cashier.wait();
-    assert.equal(h.writes.length,0);assert.match(cashier.alerts.at(-1)[0],/confirmed with HQ/);assert.equal(cashier.window.isProcessingAttendance,false);
+    assert.equal(h.writes.length,0);assert.match(cashier.alerts.at(-1)[0].text,/confirmed with HQ/);assert.equal(cashier.alerts.at(-1)[0].confirmButtonText,'Retry HQ connection');assert.equal(cashier.node('timeClockModal').style.display,'flex');assert.equal(cashier.window.isProcessingAttendance,false);
+});
+
+test('actual Cashier Time Out reads all projected attendance evidence without a full photo-history SDK query',async()=>{
+    const h=memory(),cashier=cashierClock(h,now,{lastTimeInHours:8}),requests=[];h.records.get('attendance_logs/last-in').photoBase64='large-photo'.repeat(10000);h.serverError=Error('The heavy query must not run.');cashier.window.readStaffMetadata=createAttendanceMetadataReader({projectId:'sample-project',apiKey:'sample-public-key',auth:{currentUser:null},fetch:metadataFetch(h.records,request=>requests.push(request))});await cashier.window.submitAttendance('TIME OUT');await cashier.wait();assert.equal(h.writes.length,1);assert.equal(h.records.get(h.writes[0]).type,'TIME OUT');assert.equal(h.records.get(h.writes[0]).timeInLogId,'last-in');assert.equal(requests.length,2);assert.equal(requests.some(({query})=>query.limit||query.select.fields.some(row=>row.fieldPath==='photoBase64')),false);
+});
+
+test('explicit HQ retry rechecks the same selected clock and records at most one actual closure',async()=>{
+    const h=memory(),cashier=cashierClock(h,now,{lastTimeInHours:8});h.serverError=Object.assign(Error('Synthetic disconnected device'),{code:'unavailable'});const show=cashier.Swal.fire;let retries=0;cashier.Swal.fire=async(...args)=>{if(args[0]?.confirmButtonText==='Retry HQ connection'){retries++;h.serverError=null;return {isConfirmed:true};}return show(...args);};await cashier.window.submitAttendance('TIME OUT');await cashier.wait();assert.equal(retries,1);assert.equal(h.writes.length,1);assert.equal(h.records.get(h.writes[0]).timeInLogId,'last-in');assert.equal(cashier.window.isProcessingAttendance,false);
+});
+
+test('a clock account change while the HQ retry prompt is open cannot retry or create attendance',async()=>{
+    const h=memory(),cashier=cashierClock(h,now,{lastTimeInHours:8});h.serverError=Error('offline');cashier.Swal.fire=async()=>{cashier.node('clockStaffName').value='Another Staff';return {isConfirmed:true};};await cashier.window.submitAttendance('TIME OUT');await cashier.wait();assert.equal(h.writes.length,0);assert.equal(cashier.window.isProcessingAttendance,false);assert.equal(cashier.node('clockStaffName').value,'Another Staff');
+});
+
+test('a real HQ access denial gives management guidance without treating it as an offline retry',async()=>{
+    const h=memory(),cashier=cashierClock(h,now,{lastTimeInHours:8});h.serverError=Object.assign(Error('Synthetic denied request'),{code:'permission-denied'});await cashier.window.submitAttendance('TIME OUT');await cashier.wait();assert.equal(h.writes.length,0);assert.equal(cashier.alerts.at(-1)[0].titleText,'HQ attendance access needs review');assert.equal(cashier.alerts.at(-1)[0].showCancelButton,false);assert.equal(cashier.alerts.at(-1)[0].confirmButtonText,'Keep Time Clock open');
 });
 
 test('both actual clocks keep the newer shift active after a delayed linked closure of an older shift',async()=>{
@@ -243,7 +261,9 @@ function swapApp(h) {
     const ui=dom(),window={loadStaffSchedule(){}};
     const context={...h.api,...ui,window,scheduleDateKey,monthKey,Date:dateAt(now)};
     const start=staffSource.indexOf('window.handleIncomingSwap = async function');
-    vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('// 🖨️ UNIVERSAL HR DOCUMENT PRINTER',start)),context);
+    // Extract this actual callback only. The later contract/onboarding section
+    // now installs document listeners which are unrelated to swap acceptance.
+    const end=staffSource.indexOf('\n};',start)+3;assert.ok(start>=0&&end>start);vm.runInNewContext(staffSource.slice(start,end),context);
     return {...ui,window};
 }
 const request={status:'Pending',targetName:'Sample',targetAssignedName:'Sample',requesterName:'Other Staff',requesterAssignedName:'Other',

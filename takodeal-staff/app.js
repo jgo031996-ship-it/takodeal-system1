@@ -1,3 +1,8 @@
+import {createAttendanceMetadataReader} from './attendance-metadata-reader.js';
+import {getAuth} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
+import {installStaffOnboarding} from './onboarding-ui.js';
+import {onboardingDay} from './onboarding-model.js';
+import {contractOfferFingerprint,reviewedContractRate,signOfferedContract} from './onboarding-service.js';
 import {installDeductionInbox,acknowledgeCashShortagePayslip} from './deduction-inbox.js';
 import {installStaffLeaveUI} from './staff-leave-ui.js';
 import {leaveToday} from './leave-model.js';
@@ -38,6 +43,8 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+const staffPrimaryAuth = getAuth(app);
+window.readStaffMetadata = createAttendanceMetadataReader({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,auth:staffPrimaryAuth,fetch:window.fetch?.bind(window)});
 
 // 🔥 UPGRADE: This activates the "Indestructible Offline Mode" on the Staff App!
 const db = initializeFirestore(app, {
@@ -488,6 +495,7 @@ window.saveProfileData = async function() {
         let successMsg = newPin ? 'Your profile, files, and PIN have been saved.' : 'Your HR profile and IDs have securely synced to HQ.';
         Swal.fire('✅ Saved', successMsg, 'success');
         window.closeStaffProfile();
+        void window.refreshStaffOnboarding?.({force:true});
         document.getElementById('profPin').value = ''; 
     } catch (e) {
         console.error("Save Profile Error:", e);
@@ -497,79 +505,44 @@ window.saveProfileData = async function() {
     }
 };
 
-// 🔥 THE DOLE CONTRACT LIFECYCLE & RENEWAL ENGINE
-window.checkContractLifecycle = async function(staffId) {
-    try {
-        const docSnap = await getDoc(doc(db, "cashiers", staffId));
-        if (!docSnap.exists()) return;
-        let d = docSnap.data();
+// Personal reminders never issue a contract offer or change employment by a timer.
+window.checkContractLifecycle = function(staffId) {
+    if(staffId!==localStorage.getItem('takodeal_staff_id'))return Promise.resolve(null);
+    return window.staffOnboarding?.refresh() || Promise.resolve(null);
+};
 
-        if (!d.dateHired) return; 
-
-        if (d.pin && String(d.pin).toUpperCase() === 'REVOKED') return;
-        if (d.status === 'Resigned' || d.contractStatus === 'Resigned') return;
-        
-        if (d.role && (d.role.toLowerCase().includes('owner') || d.role.toLowerCase().includes('manager'))) return;
-
-        // 1. INTERCEPT NEW HIRES
-        if (d.contractStatus === 'Pending Initial Contract') {
-            window.showContractUI(staffId, d, 'Initial');
-            return;
-        }
-
-        if (d.contractStatus === 'Regular' || d.contractStatus === 'Extended' || d.contractStatus === 'Active') return;
-
-        // 2. INTERCEPT REGULARIZATION OFFERS (Issued from Manager App)
-        if (d.contractStatus === 'Pending Regularization') {
-            window.showContractUI(staffId, d, 'Regularization');
-            return;
-        }
-
-        // 3. INTERCEPT 6-MONTH EXTENSION OFFERS (Issued from Manager App)
-        if (d.contractStatus === 'Pending Renewal') {
-            window.showContractUI(staffId, d, 'Extension');
-            return;
-        }
-
-        let hiredDate = new Date(d.dateHired);
-        let contractEnd = new Date(hiredDate);
-        contractEnd.setMonth(contractEnd.getMonth() + 6);
-
-        let today = new Date();
-        let daysLeft = Math.ceil((contractEnd - today) / (1000 * 60 * 60 * 24));
-
-        if (daysLeft <= 0) {
-            // 🔥 THE AUTO-REGULARIZATION UPGRADE!
-            // If they hit 6 months and haven't been fired by the manager, they automatically get Regularized!
-            window.showContractUI(staffId, d, 'Regularization');
-        } else if (daysLeft <= 30) {
-            let lastWarn = localStorage.getItem('takodeal_last_contract_warn');
-            let todayStr = today.toDateString();
-            
-            if (lastWarn !== todayStr) {
-                Swal.fire({
-                    title: '⏳ Contract Expiring Soon',
-                    text: `You have ${daysLeft} days remaining on your 6-month probationary contract. Please coordinate with Management.`,
-                    icon: 'warning', toast: true, position: 'top', timer: 8000, showConfirmButton: false
-                });
-                localStorage.setItem('takodeal_last_contract_warn', todayStr);
-            }
-        }
-    } catch (e) {
-        console.error("Contract Engine Error:", e);
-    }
+// Contract wages use the existing approved private Staff client, never public salary fallback.
+const previousContractRateLock=window.onStaffRateLocked;
+window.onStaffRateLocked=function(){previousContractRateLock?.();if(window.staffPendingContractOffer){window.closePendingContractReview?.();Swal.close();}};
+window.staffContractPrivateAPI = async function(staffId,stillCurrent=()=>true) {
+    const check=()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId||!stillCurrent())throw Error('Your staff profile changed. Reopen the contract.');};check();
+    const client=await createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'));check();
+    const user=client.auth.currentUser;if(!user?.uid)throw Error('Use your approved Staff phone to review the contract wage.');
+    await client.store.binding();check();if(client.auth.currentUser!==user)throw Error('Your private Staff account changed. Reopen the contract.');
+    return {db:client.db,auth:client.auth,doc:client.sdk.doc,getDocFromServer:client.sdk.getDocFromServer,runTransaction:client.sdk.runTransaction,localStorage};
+};
+window.loadPrivateStaffSalaryProfile = async function(profile) {
+    const staffId=profile.staffId||localStorage.getItem('takodeal_staff_id');
+    if(profile.salaryRateVersion!==1)return profile;
+    const api=await window.staffContractPrivateAPI(staffId),user=api.auth.currentUser;
+    const result=await loadStaffSalaryTimeline(api,{...profile,staffId});
+    if(localStorage.getItem('takodeal_staff_id')!==staffId||api.auth.currentUser!==user)throw Error('Your staff profile changed. Reopen the contract.');
+    return result;
 };
 
 // ========================================================
 // 📄 UNIFIED DOLE CONTRACT CONTENT GENERATOR
 // ========================================================
 window.getUnifiedContractContent = function(data, signDate, type) {
-    let dailySalary = profileDailyRate(data) == null ? 'Rate not set' : profileDailyRate(data).toFixed(2);
+    const knownRate=Number.isFinite(data.contractDailyRate)?data.contractDailyRate:profileDailyRate(data);
+    let dailySalary = knownRate == null ? 'Rate not set' : knownRate.toFixed(2);
 
     let content = "";
+    const savedInitial = data.contractTerms?.initial;
+    const datedInitial = savedInitial?.version===1 && typeof savedInitial.startDate==='string' && onboardingDay(savedInitial.startDate)===savedInitial.startDate && typeof savedInitial.endDate==='string' && onboardingDay(savedInitial.endDate)===savedInitial.endDate;
     if (type === 'Initial') {
         content = `
-            <p><b>1. POSITION AND COMMENCEMENT</b><br>The Employer hereby employs the Employee as a <b>${data.role || 'Service Crew'}</b>. Employment shall commence on <b>${data.dateHired || signDate}</b> and shall be valid for a period of six (6) months.</p>
+            <p><b>1. POSITION AND COMMENCEMENT</b><br>The Employer hereby employs the Employee as a <b>${data.role || 'Service Crew'}</b>. Employment shall commence on <b>${datedInitial?savedInitial.startDate:data.dateHired || signDate}</b>${datedInitial?' with the saved six-month term ending on <b>'+savedInitial.endDate+'</b>.':' and shall be valid for a period of six (6) months.'}</p>
             <p><b>2. WORK SCHEDULE AND COMPENSATION</b><br>The Employee shall receive a daily basic salary of <b>₱${dailySalary}</b>. Entitled to one (1) day off per week.</p>
             <p><b>3. ATTENDANCE AND ABSENCES POLICY</b><br>Unexcused absences and tardiness are subject to progressive disciplinary action (Verbal Warning, Written Warning, Suspension, Termination).</p>
             <p><b>4. CONFIDENTIALITY AGREEMENT</b><br>Strict maintenance of proprietary recipes under penalty of <b>₱1,000,000.00</b> for breaches.</p>
@@ -599,6 +572,11 @@ window.getUnifiedContractContent = function(data, signDate, type) {
 
 // 📄 1. UNIFIED EMPLOYMENT CONTRACT UI
 window.showContractUI = function(staffId, data, type) {
+    if(staffId!==localStorage.getItem('takodeal_staff_id'))return;
+    const knownRate=reviewedContractRate(data,type);
+    if(!Number.isFinite(knownRate)||knownRate<0)return Swal.fire('Wage needs HR review','HQ must confirm the contract wage before you can sign.','info');
+    data={...data,contractDailyRate:knownRate};
+    window.staffPendingContractOffer={staffId,type,fingerprint:contractOfferFingerprint(data,type),dailyRate:knownRate};
     let dateToday = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
     let dateHired = data.dateHired ? new Date(data.dateHired).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : dateToday;
     
@@ -631,6 +609,7 @@ window.showContractUI = function(staffId, data, type) {
 window.getSignaturePadHTML = function(staffId, type) {
     return `
         <div style="background: #f8fafc; border: 2px dashed #0f766e; padding: 20px; border-radius: 8px; margin-top: 30px; text-align: center;">
+            <button type="button" onclick="window.closePendingContractReview()" style="display:block;margin:0 0 15px auto;padding:9px 12px;border:1px solid #cbd5e1;border-radius:6px;background:white;color:#475569;">Review later</button>
             <h3 style="margin: 0 0 10px 0; color: #0f766e;">Required Digital Signature</h3>
             <p style="font-size: 12px; color: #64748b; margin-bottom: 15px;">Please sign your name inside the box below to legally accept this contract.</p>
             <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; touch-action: none; position: relative; margin-bottom: 15px;">
@@ -719,42 +698,29 @@ window.clearContractSignature = function() {
     }
 };
 
-// ✅ UNIVERSAL CONTRACT ACCEPTOR
+window.closePendingContractReview = function() {
+    const overlay=document.getElementById('renewalContractOverlay');if(overlay){overlay.style.display='none';overlay.innerHTML='';}
+    document.getElementById('appContainer').style.display='flex';window.staffPendingContractOffer=null;window.coePendingData=null;
+};
+// Accept only the explicit, unchanged Owner offer the current employee opened.
 window.acceptContract = async function(staffId, type) {
-    if (window.isContractSignatureBlank) {
-        return Swal.fire('Signature Required', 'Please sign your name in the box to legally accept this contract.', 'warning');
-    }
-
-    Swal.fire({title: 'Signing & Generating PDF...', text: 'Please wait while we attach your signature and government IDs...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-    try {
-        const canvas = document.getElementById('contractSigCanvas');
-        const signatureBase64 = canvas.toDataURL('image/png');
-
-        let todayStr = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-        
-        let newStatus = 'Active';
-        let contractKey = 'initial';
-        if (type === 'Regularization') { newStatus = 'Regular'; contractKey = 'regularization'; }
-        if (type === 'Extension') { newStatus = 'Extended'; contractKey = 'extension'; }
-        
-        let updatePayload = { 
-            contractStatus: newStatus, 
-            contractSignature: signatureBase64,
-            [`signedContracts.${contractKey}`]: todayStr
-        };
-
-        await updateDoc(doc(db, "cashiers", staffId), updatePayload);
-        
-        window.coePendingData.contractSignature = signatureBase64;
-
-        document.getElementById('renewalContractOverlay').style.display = 'none';
-        document.getElementById('appContainer').style.display = 'flex';
-        
-        window.downloadContractPDF(type, window.coePendingData, todayStr, true);
-
-    } catch(e) {
-        console.error(e); Swal.fire('Error', 'Failed to sign contract. Check connection.', 'error');
-    }
+    if(window.isContractSignatureBlank)return Swal.fire('Signature Required','Please sign inside the box before accepting this contract.','warning');
+    const offer=window.staffPendingContractOffer;
+    if(!offer||offer.staffId!==staffId||offer.type!==type||localStorage.getItem('takodeal_staff_id')!==staffId)return Swal.fire('Reopen contract','Open the contract offer from your personal reminders before signing.','info');
+    const stillCurrent=()=>window.staffPendingContractOffer===offer&&localStorage.getItem('takodeal_staff_id')===staffId&&window.staffRateSession?.allows(staffId);
+    Swal.fire({title:'Saving your contract signature…',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+    try{
+        const signature=document.getElementById('contractSigCanvas').toDataURL('image/png');
+        if(!window.staffRateSession?.allows(staffId))throw Error('Your wage privacy session expired. Reopen the contract and unlock it again.');
+        const api=await window.staffContractPrivateAPI(staffId,stillCurrent);
+        const result=await signOfferedContract(api,{staffId,type,signature,expectedFingerprint:offer.fingerprint,expectedDailyRate:offer.dailyRate,stillCurrent});
+        if(!stillCurrent())return;
+        window.coePendingData=result.profile;
+        window.closePendingContractReview();
+        void window.refreshStaffOnboarding?.({force:true});
+        if(result.alreadySaved)return Swal.fire('Contract already signed','Your existing signed record is preserved. Open Profile to view your saved contract.','success');
+        window.downloadContractPDF(type,result.profile,result.signedOn,true);
+    }catch(error){if(stillCurrent()){console.error(error);Swal.fire('Contract not signed',error.message||'Reconnect and reopen your contract.','error');}}
 };
 
 // ========================================================
@@ -853,17 +819,27 @@ window.downloadContractPDF = function(type, data, signDate, isStaffApp = false) 
 window.reprintContract = async function(type, encodedData, signDate) {
     const staffId=decodeURIComponent(encodedData);
     if(staffId!==localStorage.getItem('takodeal_staff_id') || !await window.ensureStaffRateUnlocked())return;
-    const snap=await getDocFromServer(doc(db,'cashiers',staffId));
-    if(staffId!==localStorage.getItem('takodeal_staff_id') || !window.staffRateSession?.allows(staffId) || !snap.exists())return;
-    let data = snap.data();
-    let printWin = window.open('', '', 'width=850,height=900');
-    if(!printWin)return Swal.fire('Allow document window','Allow the document window, then select the contract again.','info');
-    printWin.document.write(window.getContractPrintHTML(type, data, signDate));
+    try {
+        const snap=await getDocFromServer(doc(db,'cashiers',staffId));
+        if(staffId!==localStorage.getItem('takodeal_staff_id') || !window.staffRateSession?.allows(staffId) || !snap.exists())return;
+        let data = snap.data();const key={Initial:'initial',Extension:'extension',Regularization:'regularization'}[type];
+        const savedSignDate=key && data.signedContracts?.[key];
+        if(typeof savedSignDate!=='string' || !savedSignDate.trim())return Swal.fire('Contract not signed','This saved contract has no employee acceptance on file.','info');
+        data=await window.loadPrivateStaffSalaryProfile({...data,staffId});
+        if(staffId!==localStorage.getItem('takodeal_staff_id') || !window.staffRateSession?.allows(staffId))return;
+        const rate=reviewedContractRate(data,type);if(rate===null)throw Error('The saved contract wage could not be confirmed. Reconnect using the approved Staff phone.');
+        data={...data,contractDailyRate:rate};
+        let printWin = window.open('', '', 'width=850,height=900');
+        if(!printWin)return Swal.fire('Allow document window','Allow the document window, then select the contract again.','info');
+        printWin.document.write(window.getContractPrintHTML(type, data, savedSignDate));
+    } catch(error) { if(staffId===localStorage.getItem('takodeal_staff_id'))return Swal.fire('Contract unavailable',error.message||'Reconnect and reopen your saved contract.','info'); }
 };
 
 window.getContractPrintHTML = function(type, data, signDate) {
-    let title = "EMPLOYMENT CONTRACT";
-    let content = window.getUnifiedContractContent(data, data.dateHired || signDate);
+    const title = {Initial:'Employment Contract',Extension:'Contract Renewal & Extension',Regularization:'Regularization of Employment'}[type] || 'Employment Contract';
+    // Legacy extension reprints used the saved signature date for their six-month end.
+    const printableData=type==='Extension'?{...data,dateHired:signDate}:data;
+    let content = window.getUnifiedContractContent(printableData, signDate, type);
     let logoUrl = window.location.origin + '/payslip%20logo.jpg';
 
     return `
@@ -1296,7 +1272,7 @@ window.punchTime = async function(type) {
         Swal.fire({title: 'Verifying with HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
 
         // Read the same employee ID across Cashier and Staff, including exact legacy names.
-        const userLogs = await readStaffRecords(window, punchStaffId, staffName);
+        const userLogs = await readStaffRecords(window,punchStaffId,staffName,{metadataOnly:true,assertCurrent:()=>{if(localStorage.getItem('takodeal_staff_id')!==punchStaffId||localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff session changed. Sign in again.');}});
         const lastLog = latestAttendance(userLogs, punchStaffId, staffName);
         const lastType = attendanceKind(lastLog);
         const hoursSince = lastLog ? (Date.now() - attendanceMillis(lastLog.timestamp)) / 3600000 : 0;
@@ -1313,7 +1289,7 @@ window.punchTime = async function(type) {
 
         // 2. 📋 THE DAILY SOP COMPLIANCE BLOCKER (ONLY ON TIME OUT)
         if (type === "TIME OUT") {
-            const sopRecords = await readStaffRecords(window,punchStaffId,staffName,{table:'sop_logs',names:[activeTimeIn.staffName]});
+            const sopRecords = await readStaffRecords(window,punchStaffId,staffName,{table:'sop_logs',names:[activeTimeIn.staffName],metadataOnly:true,assertCurrent:()=>{if(localStorage.getItem('takodeal_staff_id')!==punchStaffId)throw Error('Your staff session changed. Sign in again.');}});
             const hasSopToday = sopCoversShift(sopRecords,activeTimeIn,punchStaffId,staffName);
             
             if (!hasSopToday) {
@@ -1501,6 +1477,7 @@ window.punchTime = async function(type) {
         
         window.staffLateProofDraft = null;
         window.loadMyAttendance?.(true);
+        if(type==='TIME IN')void window.refreshStaffOnboarding?.({force:true});
         Swal.fire('✅ Success', `${type} logged securely at ${closestBranch}!`, 'success');
 
     } catch(e) { 
@@ -1740,7 +1717,7 @@ window.initSopModule = async function() {
     const epoch = window.sopShiftEpoch = (window.sopShiftEpoch || 0) + 1;
     if (gpsBadge) { gpsBadge.innerText = 'Syncing with your active shift…'; gpsBadge.style.background = '#fffbeb'; gpsBadge.style.color = '#d97706'; }
     try {
-        const logs = await readStaffRecords(window,staffId,staffName);
+        const logs = await readStaffRecords(window,staffId,staffName,{metadataOnly:true,assertCurrent:()=>{if(window.sopShiftEpoch!==epoch||localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff session changed.');}});
         if (window.sopShiftEpoch !== epoch || localStorage.getItem('takodeal_staff_id') !== staffId || localStorage.getItem('takodeal_staff_name') !== staffName) return;
         const latest = latestAttendance(logs,staffId,staffName);
         const active = attendanceKind(latest) === 'TIME IN' ? latest : null;
@@ -1911,7 +1888,7 @@ window.submitSopChecklist = async function() {
     btn.innerText = "⏳ Submitting to HQ..."; btn.disabled = true;
 
     try {
-        const latest = latestAttendance(await readStaffRecords(window,staffId,staffName),staffId,staffName);
+        const latest = latestAttendance(await readStaffRecords(window,staffId,staffName,{metadataOnly:true,assertCurrent:()=>{if(localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff session changed.');}}),staffId,staffName);
         const active = attendanceKind(latest) === 'TIME IN' ? latest : null;
         if (localStorage.getItem('takodeal_staff_id') !== staffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
         if (active && active.branch !== branch) throw Error('Submit SOP for your active shift at ' + (active.branch || 'the branch confirmed by HQ') + '.');
@@ -2127,8 +2104,9 @@ window.loadPayslipVault = async function() {
                     lateMinutes = attendanceLateMinutes(log, matchedShift);
                     wasScheduled = matchedShift?.wasScheduled || false;
                     const rateProfile=staffProfileForWork(staffProfile,log,matchedShift);
-                    const late = latePay(lateMinutes, rateProfile, matchedShift, log.lateExempted === true);
-                    activeShift = { time: logDate, lateMinutes, lateAmount: late.amount, lateExempted: log.lateExempted === true,
+                    const lateExempted = matchedShift?.amendmentReviewVerified ? matchedShift.amendmentLateExempted : log.lateExempted === true;
+                    const late = latePay(lateMinutes, rateProfile, matchedShift, lateExempted);
+                    activeShift = { time: logDate, lateMinutes, lateAmount: late.amount, lateExempted,
                         manualPenalty, wasScheduled, matchedShift,rateProfile };
 
                 } else if (logType.includes("TIME OUT") && activeShift) {
@@ -3253,76 +3231,6 @@ window.handleIncomingSwap = async function(swapId, action) {
     } catch(error) {console.error(error);Swal.fire('Could not process swap',error.message,'error');}
 };
 
-// ==========================================
-// 🖨️ UNIVERSAL HR DOCUMENT PRINTER (STAFF APP)
-// ==========================================
-window.reprintContract = function(type, encodedData, signDate) {
-    let data = JSON.parse(decodeURIComponent(encodedData));
-    let printWin = window.open('', '', 'width=850,height=900');
-    printWin.document.write(window.getContractPrintHTML(type, data, signDate));
-};
-
-window.getContractPrintHTML = function(type, data, signDate) {
-    let title = ""; let content = "";
-    let logoUrl = window.location.origin + '/payslip%20logo.jpg';
-    
-    if (type === 'Initial') {
-        title = "Employment Contract";
-        content = `
-            <p><b>1. POSITION AND COMMENCEMENT</b><br>The Employer hereby employs the Employee as a <b>${data.role}</b>. Employment shall commence on <b>${data.dateHired || signDate}</b> and shall be valid for a period of six (6) months.</p>
-            <p><b>2. WORK SCHEDULE AND COMPENSATION</b><br>The Employee shall receive a daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>. Entitled to one (1) day off per week.</p>
-            <p><b>3. ATTENDANCE AND ABSENCES POLICY</b><br>Unexcused absences and tardiness are subject to progressive disciplinary action (Verbal Warning, Written Warning, Suspension, Termination).</p>
-            <p><b>4. CONFIDENTIALITY AGREEMENT</b><br>Strict maintenance of proprietary recipes under penalty of <b>₱1,000,000.00</b> for breaches.</p>
-            <p><b>5. HEALTH DECLARATION</b><br>Employee affirms physical fitness for a food-handling environment.</p>
-            <p><b>6. NOTICE OF RESIGNATION</b><br>Mandatory 30-day notice prior to voluntary resignation.</p>
-            <p><b>7. COMPANY UNIFORM AND PROPERTY</b><br>Obligation to care for and return provided items to avoid payroll deductions.</p>
-        `;
-    } else if (type === 'Extension') {
-        title = "Contract Renewal & Extension";
-        let contractEnd = new Date(signDate); contractEnd.setMonth(contractEnd.getMonth() + 6);
-        content = `
-            <p><b>1. EXTENSION OF EMPLOYMENT</b><br>Employment is extended as <b>${data.role}</b> for an additional six (6) months from <b>${signDate}</b> to <b>${contractEnd.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'})}</b>. This is the final probationary phase.</p>
-            <p><b>2. COMPENSATION</b><br>Daily basic salary remains <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>.</p>
-            <p><b>3. REAFFIRMATION OF TERMS</b><br>All original policies (Attendance, ₱1M Confidentiality penalty, 30-Day Notice) remain in full force.</p>
-            <p><b>4. PATHWAY TO REGULARIZATION</b><br>Upon successful completion, the Employee may be offered a regularized contract.</p>
-        `;
-    } else if (type === 'Regularization') {
-        title = "Regularization of Employment";
-        content = `
-            <p><b>1. REGULARIZATION</b><br>Effective <b>${signDate}</b>, the Employer hereby grants the Employee <b>REGULAR (PERMANENT)</b> employment status.</p>
-            <p><b>2. COMPENSATION</b><br>Daily basic salary of <b>₱${(data.hourlyRate * 8).toFixed(2)}</b>.</p>
-            <p><b>3. REAFFIRMATION OF TERMS</b><br>All original policies (Attendance, ₱1M Confidentiality penalty, 30-Day Notice) remain in full force.</p>
-            <p><b>4. TERMINATION</b><br>Employment may only be terminated for just or authorized causes as provided by the Philippine Labor Code.</p>
-        `;
-    }
-
-    return `
-        <html><head><title>${title} - ${data.cashierName}</title></head>
-        <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1e293b; max-width: 800px; margin: 0 auto; line-height: 1.6; position: relative;">
-            <img src="${logoUrl}" style="position: absolute; left: 40px; top: 30px; width: 100px; height: 100px; object-fit: contain;">
-            <div style="text-align: center; margin-bottom: 30px; padding-top: 10px;">
-                <h1 style="margin: 0; font-size: 38px; letter-spacing: 2px; color: #0f172a;">TAKODEÁL</h1>
-                <p style="margin: 0; color: #64748b; font-size: 14px; text-transform: uppercase;">Davao City, Philippines</p>
-            </div>
-            <hr style="border: none; border-top: 3px solid #0f172a; margin-bottom: 40px;">
-            <h2 style="text-align: center; color: #b45309; text-transform: uppercase;">${title}</h2>
-            <p>This Agreement is executed on <b>${signDate}</b> between <b>TAKODEAL TAKOYAKI FOODCART</b> ("Employer") and <b>${data.cashierName.toUpperCase()}</b> ("Employee").</p>
-            ${content}
-            <div style="margin-top: 80px; display: grid; grid-template-columns: 1fr 1fr; gap: 40px;">
-                <div>
-                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>${data.cashierName.toUpperCase()}</b></div>
-                    <span style="font-size: 14px; color: #64748b;">Employee Signature / Digitally Accepted</span>
-                </div>
-                <div>
-                    <div style="border-bottom: 1px solid #1e293b; margin-bottom: 5px;"><b>Chery Ann R. Fonda</b></div>
-                    <span style="font-size: 14px; color: #64748b;">CEO, Founder & General Manager</span>
-                </div>
-            </div>
-            <script>setTimeout(() => { window.print(); window.close(); }, 1500);</script>
-        </body></html>
-    `;
-};
-
 // ========================================================
 // 📅 DYNAMIC SCHEDULE IMAGE NOTIFICATION ENGINE
 // ========================================================
@@ -4158,6 +4066,7 @@ installStaffPhone();
 installStaffDocuments(window,{createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
 
 installDeductionInbox(window,{createClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
+installStaffOnboarding(window,document,{createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
 window.staffScheduleSync = installScheduleViewSync(window, {window, document,
     scope: () => document.getElementById('view-schedule')?.classList.contains('active')
         && localStorage.getItem('takodeal_staff_id') && localStorage.getItem('takodeal_staff_name')

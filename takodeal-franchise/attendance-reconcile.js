@@ -18,30 +18,56 @@ export function belongsToAttendance(row,staffId,names) {
     if(row?.staffId)return row.staffId===staffId;
     return names.some(name=>nameKey(name)===nameKey(row?.staffName));
 }
-export async function readStaffRecords(api,staffId,name,{fresh=true,table='attendance_logs',names=[]}={}) {
+export function attendanceReadRecovery(error) {
+    if(error?.attendanceRecovery)return error.attendanceRecovery;
+    const code=String(error?.code||error?.cause?.code||'').replace(/^firestore\//,''),message=String(error?.message||'');
+    if(code==='permission-denied'||code==='unauthenticated')return {title:'HQ attendance access needs review',message:'HQ did not allow this device to read attendance. Ask the Owner or Manager to check its access. Keep Time Clock open; no punch was created.',retryable:false,reason:'access'};
+    if(code==='failed-precondition'&&/index/i.test(message))return {title:'HQ attendance search needs review',message:'HQ needs an attendance search index before this check can finish. Ask the Owner or Manager to review the database search. No punch was created.',retryable:false,reason:'index'};
+    if(code==='resource-exhausted')return {title:'HQ attendance search reached a limit',message:'The attendance check reached an HQ service limit. Ask management to review the attendance history before retrying. No punch was created.',retryable:false,reason:'limit'};
+    if(code==='attendance/read-api')return {title:'Update Time Clock',message:'This app session cannot confirm attendance with HQ. Open the updated app while connected, then try again. No punch was created.',retryable:false,reason:'update'};
+    if(code==='attendance/read-invalid')return {title:'HQ attendance response needs review',message:'HQ returned an incomplete attendance response. Refresh Time Clock while connected or ask management to check the record. No punch was created.',retryable:true,reason:'response'};
+    if(code==='attendance/read-timeout'||code==='deadline-exceeded')return {title:'HQ attendance check took too long',message:'HQ did not confirm the latest attendance in time. Keep Time Clock open, check the connection and retry. No punch was created.',retryable:true,reason:'timeout'};
+    if(code==='attendance/read-freshness')return {title:'Waiting for confirmed HQ attendance',message:'The attendance response is still cached or waiting to sync. Keep Time Clock open and retry while connected. No punch was created.',retryable:true,reason:'freshness'};
+    if(!code&&/timestamp|ahead of this device clock|legacy name-only|one employee/i.test(message))return {title:'Saved attendance needs management review',message:message+' No punch was created.',retryable:false,reason:'records'};
+    return {title:'Attendance could not be confirmed',message:'The latest attendance could not be confirmed with HQ. Keep Time Clock open, reconnect and retry; no punch was created.',retryable:true,reason:code||'connection'};
+}
+function attendanceReadError(cause,phase) {
+    const recovery=attendanceReadRecovery(cause),error=new Error(recovery.message,{cause});
+    error.code='attendance/hq-unconfirmed';error.sourceCode=String(cause?.code||'');error.phase=phase;error.attendanceRecovery=recovery;return error;
+}
+export async function readStaffRecords(api,staffId,name,{fresh=true,table='attendance_logs',names=[],metadataOnly=false,timeoutMs=25000,assertCurrent=()=>{}}={}) {
     if(typeof staffId!=='string'||!staffId||staffId.includes('/'))throw Error('Sign in to your staff account again.');
     const aliases=[...new Set([name,...names].filter(value=>typeof value==='string'&&value.trim()).map(value=>value.trim()))];
     if(!aliases.length)throw Error('Choose your staff account again.');
-    const read=fresh?api.getDocsFromServer:api.getDocs;
-    if(typeof read!=='function')throw Error('Connect to HQ to verify the latest attendance from both apps.');
+    const read=fresh?api.getDocsFromServer:api.getDocs,projected=fresh&&metadataOnly&&typeof api.readStaffMetadata==='function';
+    if(typeof read!=='function'&&!projected)throw attendanceReadError(Object.assign(Error('Server read API unavailable.'),{code:'attendance/read-api'}),'setup');
+    const deadline=Date.now()+(Number.isFinite(timeoutMs)&&timeoutMs>0?timeoutMs:25000);
+    const confirmedRead=async(q,phase,search)=>{
+        assertCurrent();let timer,snapshot;
+        try{
+            if(Date.now()>=deadline)throw Object.assign(Error('Attendance read deadline.'),{code:'attendance/read-timeout'});
+            snapshot=await Promise.race([Promise.resolve().then(()=>projected?api.readStaffMetadata(search):read(q)),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Object.assign(Error('Attendance read deadline.'),{code:'attendance/read-timeout'})),Math.max(1,deadline-Date.now()));})]);
+            if(!snapshot||!Array.isArray(snapshot.docs)&&typeof snapshot.forEach!=='function')throw Object.assign(Error('Invalid attendance response.'),{code:'attendance/read-invalid'});
+            const documents=Array.isArray(snapshot.docs)?snapshot.docs:[];if(!Array.isArray(snapshot.docs))snapshot.forEach(entry=>documents.push(entry));
+            if(fresh&&(snapshot.metadata?.fromCache||snapshot.metadata?.hasPendingWrites||documents.some(row=>row.metadata?.fromCache||row.metadata?.hasPendingWrites)))throw Object.assign(Error('Attendance response not confirmed.'),{code:'attendance/read-freshness'});
+            if(documents.some(row=>typeof row?.id!=='string'||!row.id||typeof row.data!=='function'))throw Object.assign(Error('Invalid attendance documents.'),{code:'attendance/read-invalid'});
+            snapshot={...snapshot,docs:documents};
+        }catch(error){throw attendanceReadError(error,phase);}finally{clearTimeout(timer);}
+        assertCurrent();return snapshot;
+    };
     const base=api.collection(api.db,table);
-    const queries=[api.query(base,api.where('staffId','==',staffId)),...aliases.map(alias=>api.query(base,api.where('staffName','==',alias)))];
-    let snapshots;
-    try{snapshots=await Promise.all(queries.map(q=>read(q)));}
-    catch(error){throw Error('The latest attendance could not be confirmed with HQ. Reconnect and try again; no punch was created.',{cause:error});}
+    const searches=[{table,field:'staffId',value:staffId},...aliases.map(value=>({table,field:'staffName',value}))],queries=searches.map(({field,value})=>api.query(base,api.where(field,'==',value)));
+    const snapshots=await Promise.all(queries.map((q,index)=>confirmedRead(q,index?'name-history':'staff-id-history',searches[index])));
     const merged=new Map();
     for(const snap of snapshots){
-        const documents=Array.isArray(snap.docs)?snap.docs:[];
-        if(!Array.isArray(snap.docs))snap.forEach?.(entry=>documents.push(entry));
-        for(const entry of documents){const row={...entry.data(),id:entry.id};if(belongsToAttendance(row,staffId,aliases))merged.set(entry.id,row);}
+        for(const entry of snap.docs){const saved=entry.data();if(!saved||typeof saved!=='object'||Array.isArray(saved))throw attendanceReadError(Object.assign(Error('Invalid saved attendance.'),{code:'attendance/read-invalid'}),'merge-history');const row={...saved,id:entry.id};if(belongsToAttendance(row,staffId,aliases))merged.set(entry.id,row);}
     }
     const rows=[...merged.values()];
     // A name-only legacy row is safe only when the directory identifies one person.
     const legacyNames=[...new Set(rows.filter(row=>!row.staffId).map(row=>row.staffName))];
     for(const legacyName of legacyNames){
-        const directory=await read(api.query(api.collection(api.db,'cashiers'),api.where('cashierName','==',legacyName)));
-        const people=Array.isArray(directory.docs)?directory.docs:[];
-        if(!Array.isArray(directory.docs))directory.forEach?.(entry=>people.push(entry));
+        const directory=await confirmedRead(api.query(api.collection(api.db,'cashiers'),api.where('cashierName','==',legacyName)),'legacy-staff-directory',{table:'cashiers',field:'cashierName',value:legacyName});
+        const people=directory.docs;
         if(people.length!==1 || people[0].id!==staffId)throw Error('A legacy name-only record cannot be matched to one employee. Ask HQ to confirm the staff identity before continuing.');
     }
     return rows;

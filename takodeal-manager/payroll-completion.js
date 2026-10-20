@@ -1,6 +1,7 @@
 import {readPayrollSnapshot} from './payroll-preview-guard.js';
 import {canOpenWorkspacePage,OWNER_EMAIL} from './workspace-access-model.js';
 import {ensureManagerLibrary} from './manager-libraries.js';
+import {checkSavedPayrollPayment,PAYROLL_SETTLEMENT_LIMITS} from './payroll-settlement.js';
 
 export function payrollActorKey(api){
     const user=api.auth?.currentUser,session=api.sessionUser;
@@ -23,7 +24,11 @@ export function payrollEstimate(data){
     return Math.max(0,amount(data.basicPay)+amount(data.nightBonus??data.nightBonusTotal)+amount(data.straightBonus)+amount(data.holidayPayTotal)+amount(data.perfBonus)-['cashShortages','onlineRefunds','meals','advances','loans','sss','pagibig','philhealth','lateDeduction'].reduce((sum,key)=>sum+amount(data[key]),0));
 }
 export function applyConfirmedPayroll(api,d,data,saved,{actorKey}={}){
-    const frozen=saved.frozenData||data;Object.assign(data,frozen,{isPaid:true,finalNetPay:saved.finalNetPay??frozen.finalNetPay});
+    const frozen={...(saved.frozenData||data)},identity=Object.fromEntries(['name','staffId','branch','start','end'].map(key=>[key,data[key]]));
+    // A recovered legacy snapshot may omit a newer deduction field. Do not
+    // merge an unsaved preview's charges into that already-paid document.
+    for(const key of Object.keys(data))delete data[key];
+    Object.assign(data,identity,frozen,{isPaid:true,finalNetPay:saved.finalNetPay??frozen.finalNetPay});
     let current;try{current=payrollActorKey(api);}catch{return false;}
     if(actorKey&&current!==actorKey)return false;
     if(api.globalPayrollCache?.[data.name]!==data)return false;
@@ -42,6 +47,31 @@ export function applyConfirmedPayroll(api,d,data,saved,{actorKey}={}){
     const total=d.getElementById('payrollGrandTotalAmount');
     if(total)total.innerText='₱'+Object.values(api.globalPayrollCache).reduce((sum,item)=>sum+payrollEstimate(item),0).toLocaleString(undefined,{minimumFractionDigits:2});
     return true;
+}
+
+const paymentCheckUI=new WeakMap();
+export function checkSavedPayslipPayment(api,d,{data=api.currentPayslipData,button=d.getElementById('btnCheckSavedPayslip'),onFound=()=>{},inspect=checkSavedPayrollPayment,timeoutMs=PAYROLL_SETTLEMENT_LIMITS.timeoutMs}={}){
+    if(!data)return Promise.resolve({status:'unavailable'});
+    const existing=paymentCheckUI.get(api);if(existing?.data===data)return existing.promise;
+    let actorKey;try{actorKey=payrollActorKey(api);}catch(error){api.ManagerUI?.notify?.(error.message);return Promise.resolve({status:'unconfirmed'});}
+    const selection=JSON.stringify([data.staffId,data.name,data.branch,data.start,data.end]);
+    const current=()=>{if(payrollActorKey(api)!==actorKey||api.currentPayslipData!==data||(api.globalPayrollCache&&api.globalPayrollCache[data.name]!==data)||JSON.stringify([data.staffId,data.name,data.branch,data.start,data.end])!==selection||d.getElementById('payrollStart')?.value!==data.start||d.getElementById('payrollEnd')?.value!==data.end)throw Error('The selected payslip or payroll account changed. Reopen it before checking payment.');};
+    const isCurrent=()=>{try{current();return true;}catch{return false;}};
+    const label=button?.innerText,disabled=button?.disabled;if(button){button.disabled=true;button.innerText='Checking saved payment…';}
+    const entry={data};
+    entry.promise=Promise.resolve().then(async()=>{let timer,result;
+        try{
+            current();result=await Promise.race([inspect(api,{data,assertCurrent:current}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Saved payroll could not be confirmed in time. Reconnect and check again. No payment or deduction was changed.')),timeoutMs);})]);current();
+            if(result.status==='paid'){
+                applyConfirmedPayroll(api,d,data,result,{actorKey});
+                try{await onFound(result);}catch{if(isCurrent())api.ManagerUI?.notify?.('Saved payment confirmed. Reopen View Paid Payslip to view the recorded figures.');return result;}
+                if(isCurrent())api.ManagerUI?.notify?.('Saved payment confirmed: ₱'+Number(result.finalNetPay).toLocaleString(undefined,{minimumFractionDigits:2})+(result.accountName?' · '+result.accountName:'')+'. No new payment or deduction.');
+            }else if(isCurrent())api.ManagerUI?.notify?.('No confirmed payment record was found for this employee and cutoff. Nothing was marked paid or deducted. If you already paid outside the app, reconcile its actual payment details before recording it.');
+            return result;
+        }catch(error){if(isCurrent())api.ManagerUI?.notify?.(error.message||'Saved payment could not be confirmed. No payment or deduction was changed.');return {status:'unconfirmed'};}
+        finally{clearTimeout(timer);if(button&&isCurrent()){button.disabled=disabled;button.innerText=label;}if(paymentCheckUI.get(api)===entry)paymentCheckUI.delete(api);}
+    });
+    paymentCheckUI.set(api,entry);return entry.promise;
 }
 
 const imageQueues=new WeakMap();

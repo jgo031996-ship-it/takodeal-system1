@@ -14,6 +14,19 @@ const amount=(value,{negative=false}={})=>{if(value==null||value==='')value=0;if
 export function ordinaryPayrollId(staffId,start,end){id(staffId);if(!validRateDate(start)||!validRateDate(end)||start>end)throw Error('Choose a valid payroll cutoff.');return id('payroll-'+staffId+'-'+start+'-'+end);}
 const refundId=(staffId,start,end)=>id('refund-payroll-'+staffId+'-'+start+'-'+end);
 const safeProfile=profile=>Object.fromEntries(['staffId','id','cashierName','role','dateHired','hourlyRate','salaryRateVersion','salaryRateRevision','sssAmount','pagibigAmount','philHealthAmount','eligibleNightDiff','nightDiffRate','customDeductions'].filter(key=>profile?.[key]!==undefined).map(key=>[key,json(profile[key])]));
+// Firestore map key order is not payroll data. Preserve array order and types,
+// while comparing Timestamp instances with their equivalent serialized values.
+export function sameSavedPayrollValue(left,right){
+ const encode=(value,seen=new Set())=>{
+  if(value===null)return ['null'];
+  if(typeof value!=='object')return [typeof value,typeof value==='number'?String(value):value];
+  if(value instanceof Date){const time=value.getTime();return ['timestamp',Math.floor(time/1000),(time%1000+1000)%1000*1000000];}
+  if(Number.isSafeInteger(value.seconds)&&(Object.hasOwn(value,'nanoseconds')||typeof value.toMillis==='function')&&Number.isSafeInteger(value.nanoseconds??0)&&(value.nanoseconds??0)>=0&&(value.nanoseconds??0)<1000000000&&(value.type===undefined||value.type==='firestore/timestamp/1.0')&&Object.keys(value).every(key=>['seconds','nanoseconds','type'].includes(key)))return ['timestamp',value.seconds,value.nanoseconds??0];
+  if(seen.has(value))throw Error('A saved payroll record contains invalid linked data. Ask HQ to review it.');seen.add(value);
+  const result=Array.isArray(value)?['array',value.map(item=>encode(item,seen))]:['map',Object.keys(value).sort().map(key=>[key,encode(value[key],seen)])];seen.delete(value);return result;
+ };
+ return JSON.stringify(encode(left))===JSON.stringify(encode(right));
+}
 export function payrollCashShortageRows(data){
  const source=data.cashShortageRows??[];if(!Array.isArray(source)||source.length>CASH_SHORTAGE_LIMIT)throw Error('Review the linked cash shortage deductions before paying.');
  const seen=new Set(),result=source.map(row=>{if(!row||!id(row.id).startsWith('cash-shortage-')||seen.has(row.id)||amount(row.amount)<=0)throw Error('Each cash shortage must use one complete approved amount.');seen.add(row.id);return {id:row.id,amount:amount(row.amount)/100};});
@@ -65,7 +78,7 @@ export function validateOrdinaryPayrollSnapshot(data,finalNetPay){
 // historical payroll or infer another payable amount from the current form.
 export function confirmedPayrollResult(record,{id:recordId,staffId,start,end,legacyName}={}){
  const frozen=record?.frozenData;
- if(!record||record.startDate!==start||record.endDate!==end||!frozen||typeof frozen!=='object'||Array.isArray(frozen)||frozen.isPaid===false)throw Error('An incomplete saved payroll record needs HQ review before another payment.');
+ if(!record||record.startDate!==start||record.endDate!==end||!frozen||typeof frozen!=='object'||Array.isArray(frozen)||frozen.isPaid===false||record.isPaid===false||/^(draft|unpaid|pending|cancelled|canceled|voided|failed)$/i.test(text(record.status)))throw Error('An incomplete saved payroll record needs HQ review before another payment.');
  const ids=[record.staffId,frozen.staffId,frozen.profile?.staffId].filter(Boolean);
  if(ids.length?ids.some(value=>value!==staffId):!legacyName||text(record.staffName||frozen.name)!==legacyName)throw Error('The saved payroll identity is ambiguous. Ask HQ to review it.');
  if(record.staffName&&frozen.name&&text(record.staffName)!==text(frozen.name))throw Error('The saved payroll names do not agree. Ask HQ to review them.');
@@ -81,6 +94,42 @@ function belongs(row,data){const keys=[row.staffId,row.frozenData?.staffId,row.f
 function allocation(rows,total,label){let remaining=amount(total);const result=[];for(const row of rows){if(!remaining)break;const original=amount(row.amount),taken=Math.min(original,remaining);if(!taken)continue;result.push({id:row.id,original,taken,remaining:original-taken,row});remaining-=taken;}if(remaining)throw Error(label+' changed. Refresh this unpaid payslip before paying.');return result;}
 function staffRow(row,data){if(row.staffId&&row.staffId!==data.staffId)throw Error('A payroll item belongs to another employee ID. Ask HQ to review it.');if(text(row.staffName)!==data.name||row.branch&&row.branch!==data.branch)throw Error('A payroll item belongs to another employee or branch.');}
 export function assertCashShortagePayrollOwner(api,hq){const identity=actor(api);if(identity.email!==OWNER_EMAIL||api.sessionUser?.isOwner!==true)throw Error('The verified Owner must finalize cash shortage deductions.');if(hq)authorized(api,identity,hq,null,[]);return identity.key;}
+function confirmedHistory(history,get,data){return history.map(row=>{const fresh=get('payroll_records',row.id);if(!fresh||!belongs(fresh,data)||fresh.startDate!==row.startDate||fresh.endDate!==row.endDate||!sameSavedPayrollValue(fresh.frozenData,row.frozenData)||fresh.finalNetPay!==row.finalNetPay)throw Error('A saved payroll record changed during payment. Refresh before continuing.');return {...fresh,id:row.id};});}
+function selectedSavedPayroll(data,existing,own,refund,recordId){
+ const otherId=refundId(data.staffId,data.start,data.end);
+ if(own&&refund||(own||refund)&&existing.some(row=>row.id!==recordId&&row.id!==otherId&&row.startDate===data.start&&row.endDate===data.end))throw Error('More than one saved payment covers this cutoff. Ask HQ to review it.');
+ if(own||refund)return {row:own||refund,id:own?recordId:otherId};
+ const exact=existing.filter(row=>row.startDate===data.start&&row.endDate===data.end);
+ if(exact.length>1)throw Error('Duplicate saved payroll records need HQ review. No new payment was made.');
+ return exact.length?{row:exact[0],id:exact[0].id,legacyName:data.name}:null;
+}
+
+// This action can recover a confirmed prior payment, but cannot mark a draft,
+// debit a bank account, settle deductions or infer an outside-app payment.
+export async function checkSavedPayrollPayment(api,{data,assertCurrent=()=>{}}={}){
+ if(typeof api.getDocsFromServer!=='function'||typeof api.getDocFromServer!=='function'||typeof api.runTransaction!=='function')throw Error('Reconnect to HQ to check saved payroll.');
+ const identity=actor(api),personData={staffId:id(data?.staffId),name:text(data?.name),branch:text(data?.branch),start:data?.start,end:data?.end},recordId=ordinaryPayrollId(personData.staffId,personData.start,personData.end);
+ if(!personData.name||!personData.branch)throw Error('Open the saved employee and cutoff before checking payment.');
+ const guard=()=>{assertCurrent();if(actor(api).key!==identity.key)throw Error('Your payroll account or permissions changed. Reopen the payslip.');};guard();
+ const ref=(table,key)=>api.doc(api.db,table,key),query=(table,filters)=>api.query(api.collection(api.db,table),...filters.map(([key,value])=>api.where(key,'==',value)),...(typeof api.limit==='function'?[api.limit(PAYROLL_SETTLEMENT_LIMITS.queryRows+1)]:[])),read=async reference=>rows(await api.getDocsFromServer(reference));
+ const jobs=[()=>read(query('hq_managers',[['email',identity.email]])),()=>read(query('payroll_records',[['startDate',personData.start],['endDate',personData.end]])),()=>read(query('payroll_records',[['staffId',personData.staffId]])),()=>read(query('payroll_records',[['staffName',personData.name]])),()=>read(query('cashiers',[['cashierName',personData.name]]))];
+ jobs.push(identity.email!==OWNER_EMAIL?async()=>{const snap=await api.getDocFromServer(ref('hq_email_access',identity.email));guard();if(snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('HQ access could not be confirmed.');return snap.exists()?snap.data():null;}:async()=>null);
+ const [hq,cutoff,byId,byName,directory,grant]=await parallel(jobs,guard);authorized(api,identity,hq,grant,[personData.branch]);
+ if(directory.length!==1||directory[0].id!==personData.staffId)throw Error('This payroll name does not identify one saved employee. Ask HR to separate the profiles.');
+ const history=[...new Map([...cutoff,...byId,...byName].filter(row=>belongs(row,personData)).map(row=>[row.id,row])).values()];
+ if(history.length>PAYROLL_SETTLEMENT_LIMITS.rows)throw Error('This payroll has too many saved records for one safe check. Ask HQ to reconcile it.');
+ const references=[ref('cashiers',personData.staffId),ref('payroll_records',recordId),ref('payroll_records',refundId(personData.staffId,personData.start,personData.end)),...history.map(row=>ref('payroll_records',row.id)),...hq.map(row=>ref('hq_managers',row.id)),...(identity.email!==OWNER_EMAIL?[ref('hq_email_access',identity.email)]:[])],unique=[...new Map(references.map(reference=>[reference.path||JSON.stringify(reference),reference])).values()];
+ return api.runTransaction(api.db,async tx=>{
+  const snapshots=await parallel(unique.map(reference=>()=>tx.get(reference)),guard),saved=new Map(unique.map((reference,index)=>[reference.path||JSON.stringify(reference),snapshots[index]])),get=(table,key)=>{const reference=ref(table,key),snap=saved.get(reference.path||JSON.stringify(reference));return snap?.exists()?snap.data():null;};
+  const person=get('cashiers',personData.staffId);if(!person||text(person.cashierName||person.fullName||person.name)!==personData.name||person.branch!==personData.branch)throw Error('The saved employee identity or branch changed. Reopen payroll.');
+  const freshHQ=hq.map(row=>{const current=get('hq_managers',row.id);if(!current)throw Error('Your saved HQ authorization changed.');return {...current,id:row.id};});
+  authorized(api,identity,freshHQ,identity.email===OWNER_EMAIL?null:get('hq_email_access',identity.email),[personData.branch]);
+  const existing=confirmedHistory(history,get,personData),selected=selectedSavedPayroll(personData,existing,get('payroll_records',recordId),get('payroll_records',refundId(personData.staffId,personData.start,personData.end)),recordId);guard();
+  if(!selected)return {status:'not-recorded',alreadyPaid:false};
+  authorized(api,identity,freshHQ,identity.email===OWNER_EMAIL?null:get('hq_email_access',identity.email),[personData.branch,selected.row.branch||selected.row.frozenData?.branch||personData.branch]);
+  return {status:'paid',...confirmedPayrollResult(selected.row,{id:selected.id,staffId:personData.staffId,start:personData.start,end:personData.end,legacyName:selected.legacyName})};
+ });
+}
 
 async function settle(api,input,identity,guard){
  const {data,accountId,finalNetPay,allowNegativeBalance=false}=input,recordId=ordinaryPayrollId(data.staffId,data.start,data.end),ref=(table,key)=>api.doc(api.db,table,key);
@@ -116,7 +165,7 @@ async function settle(api,input,identity,guard){
   const freshHQ=hq.map(row=>{const fresh=get('hq_managers',row.id);if(!fresh)throw Error('Your saved HQ authorization changed.');return {...fresh,id:row.id};});
   authorized(api,identity,freshHQ,identity.email===OWNER_EMAIL?null:get('hq_email_access',identity.email),[data.branch]);
   const own=get('payroll_records',recordId),refund=get('payroll_records',refundId(data.staffId,data.start,data.end));
-  const existing=history.map(row=>{const fresh=get('payroll_records',row.id);if(!fresh||!belongs(fresh,data)||fresh.startDate!==row.startDate||fresh.endDate!==row.endDate||JSON.stringify(fresh.frozenData)!==JSON.stringify(row.frozenData)||fresh.finalNetPay!==row.finalNetPay)throw Error('A saved payroll record changed during payment. Refresh before continuing.');return {...fresh,id:row.id};});
+  const existing=confirmedHistory(history,get,data);
   if(own&&refund||(own||refund)&&existing.some(row=>row.id!==recordId&&row.id!==refundId(data.staffId,data.start,data.end)&&row.startDate===data.start&&row.endDate===data.end))throw Error('More than one saved payment covers this cutoff. Ask HQ to review it.');
   if(own||refund){const paid=own||refund;authorized(api,identity,freshHQ,identity.email===OWNER_EMAIL?null:get('hq_email_access',identity.email),[data.branch,paid.branch||paid.frozenData?.branch||data.branch]);return confirmedPayrollResult(paid,{id:own?recordId:refundId(data.staffId,data.start,data.end),staffId:data.staffId,start:data.start,end:data.end});}
   const exact=existing.filter(row=>row.startDate===data.start&&row.endDate===data.end);
