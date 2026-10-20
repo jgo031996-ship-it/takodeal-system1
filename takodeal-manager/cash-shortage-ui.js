@@ -5,15 +5,48 @@ import {cashShortageSource,cashShortageId} from './cash-shortage-model.js';
 import {savedShiftCloser,activeShortageStaff,suggestedShiftCloser,shiftCloserSummaryHTML} from './shift-closer-display.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=value=>'₱'+Number(value||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+export const CASH_SHORTAGE_STYLESHEET=new URL('./cash-shortage.css?v=20261021-layout-r1',import.meta.url).href;
+const styleLoads=new WeakMap();
+function shortageStylesApplied(w,d){
+ if(typeof w.getComputedStyle!=='function'||!d.body)return false;
+ const probe=d.createElement('dialog');probe.className='cash-shortage-dialog';probe.hidden=true;
+ try{d.body.append(probe);return String(w.getComputedStyle(probe).getPropertyValue('--cash-shortage-layout-ready')||'').trim()==='20261021';}catch{return false;}finally{probe.remove();}
+}
+// An older open Owner document may load new modules without acquiring the new
+// HTML's stylesheet links. Wait for this exact style release before opening.
+export function ensureCashShortageStyles(w,d,{timeoutMs=12000}={}){
+ if(styleLoads.has(d))return styleLoads.get(d);
+ if(!d.head||typeof d.querySelectorAll!=='function')return Promise.reject(Error('The cash shortage layout could not load. Reopen the review after updating the app.'));
+ const existing=[...d.querySelectorAll('link')].find(link=>{try{return (link.rel||link.getAttribute('rel'))==='stylesheet'&&new URL(link.href||link.getAttribute('href'),d.baseURI||import.meta.url).href===CASH_SHORTAGE_STYLESHEET;}catch{return false;}});
+ if(existing&&!existing.disabled&&shortageStylesApplied(w,d))return Promise.resolve();
+ const link=existing||d.createElement('link');
+ const promise=new Promise((resolve,reject)=>{
+  let timer,done=false;
+  const finish=error=>{if(done)return;done=true;clearTimeout(timer);link.removeEventListener?.('load',loaded);link.removeEventListener?.('error',failed);if(error){link.remove();reject(error);}else resolve();};
+  const failed=()=>finish(Error('The cash shortage layout could not load. Check your connection, then reopen the review.'));
+  const loaded=()=>{if(link.disabled||typeof w.getComputedStyle==='function'&&!shortageStylesApplied(w,d))return finish(Error('The cash shortage layout is still updating. Use the app update prompt, then reopen the review.'));finish();};
+  link.addEventListener('load',loaded);link.addEventListener('error',failed);
+  timer=setTimeout(()=>finish(Error('The cash shortage layout took too long to load. Check your connection, then reopen the review.')),timeoutMs);
+  if(!existing){link.rel='stylesheet';link.href=CASH_SHORTAGE_STYLESHEET;link.setAttribute('data-cash-shortage-style','20261021-layout-r1');d.head.append(link);}
+  else if(link.sheet)loaded();
+ });
+ styleLoads.set(d,promise);promise.finally(()=>{if(styleLoads.get(d)===promise)styleLoads.delete(d);}).catch(()=>{});return promise;
+}
 export const canReviewCashShortage=w=>w.auth?.currentUser?.email?.toLowerCase()===OWNER_EMAIL&&w.auth.currentUser.emailVerified===true&&w.sessionUser?.isOwner===true&&w.auth.currentUser.uid===w.sessionUser.uid;
 export function cashShortageSummaryHTML(shift,cash){return `<div class="cash-shortage-amounts"><div><small>EXPECTED CASH</small><strong>${money(cash.expected)}</strong></div><div><small>DECLARED CASH</small><strong>${money(cash.declared)}</strong></div><div><small>CASH SHORTAGE</small><strong>${money(cash.shortage)}</strong></div></div>${shiftCloserSummaryHTML(shift)}<p><strong>${esc(shift.branch)}</strong> · POS user log: ${esc(shift.cashier||'Not recorded')}</p><p class="cash-shortage-note">The user log can list several people who used the POS. Confirm the saved staff account after checking who handled this cash. A shortage alone does not establish responsibility.</p>`;}
-export function installCashShortageUI(w,d,{actions={open:input=>openCashShortageReview(w,input),approve:(id,input)=>approveCashShortageReview(w,id,input),dismiss:(id,input)=>dismissCashShortageReview(w,id,input)},now=()=>new Date()}={}){
- let generation=0,dialog;
+export function installCashShortageUI(w,d,{actions={open:input=>openCashShortageReview(w,input),approve:(id,input)=>approveCashShortageReview(w,id,input),dismiss:(id,input)=>dismissCashShortageReview(w,id,input)},now=()=>new Date(),ensureStyles=ensureCashShortageStyles}={}){
+ let generation=0,dialog,opening;
  const identity=()=>JSON.stringify([w.auth?.currentUser?.uid,w.auth?.currentUser?.email,w.sessionUser?.uid,w.sessionUser?.isOwner]);
  async function review(shiftId){
   if(!canReviewCashShortage(w))return w.ManagerUI?.notify?.('The signed-in Owner can review cash shortages and authorize payroll deductions.');
-  if(dialog?.open)return;
-  const token=++generation,key=identity(),node=d.createElement('dialog');dialog=node;node.className='cash-shortage-dialog';node.setAttribute('aria-labelledby','cashShortageTitle');
+  if(dialog?.open)return dialog;
+  if(opening)return opening;
+  const token=++generation,key=identity();
+  const work=(async()=>{try{await ensureStyles(w,d);}catch(error){if(token===generation&&key===identity()&&canReviewCashShortage(w))w.ManagerUI?.notify?.(error.message||'The cash shortage layout could not load. Reopen the review after updating the app.');return null;}if(token!==generation||key!==identity()||!canReviewCashShortage(w))return null;return openReview(shiftId,token,key);})();
+  opening=work;try{return await work;}finally{if(opening===work)opening=null;}
+ }
+ async function openReview(shiftId,token,key){
+  const node=d.createElement('dialog');dialog=node;node.className='cash-shortage-dialog';node.setAttribute('aria-labelledby','cashShortageTitle');
   node.innerHTML='<header><div><small>Z-READING · CASH ACCOUNTABILITY</small><h2 id="cashShortageTitle">Review cash shortage</h2></div><button type="button" data-close aria-label="Close cash shortage review">×</button></header><div class="cash-shortage-body"><p data-status role="status">Checking the saved Z-reading…</p><div data-content></div></div><footer><button type="button" data-refresh>Refresh review</button><button type="button" data-dismiss hidden>Dismiss without deduction</button><button type="button" data-save hidden>Request staff explanation</button></footer>';
   d.body.append(node);node.showModal();
   const q=selector=>node.querySelector(selector),status=q('[data-status]'),content=q('[data-content]'),save=q('[data-save]'),dismiss=q('[data-dismiss]'),refresh=q('[data-refresh]'),close=q('[data-close]');
