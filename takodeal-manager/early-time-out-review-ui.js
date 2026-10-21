@@ -32,12 +32,21 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
   close.onclick=()=>{if(!busy)dialog.close();};dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});dialog.addEventListener('close',()=>{clearTimeout(timer);dialog.remove();});
   async function inspect({afterConfirmation=false}={}){
    if(loading||busy&&!afterConfirmation||!current())return;loading=true;row=null;navigationRow=null;inspection=null;retry.hidden=true;dismiss.hidden=true;controls();status.setAttribute('role','status');status.textContent=afterConfirmation?'Replacement shift saved. Rechecking the scheduled finish…':'Confirming the saved request and scheduled finish…';
+   let accepting=true;
    try{
-    const snap=await Promise.race([w.getDocFromServer(w.doc(w.db,'staff_requests',requestId)),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Connect to HQ and retry the schedule check.')),25000);})]);
+    let original;
+    const verifyRequest=saved=>{if(!accepting||!current())return;if(saved.type!=='Early Time Out'||saved.status!=='Pending'||!canReviewEarlyTimeOut(w,saved.branch))throw Error('This request is no longer pending or is outside your branch access.');original=saved;navigationRow=saved;};
+    const work=async()=>{
+     if(service.includesVerifiedRequest===true)return service.inspect({requestId,onVerifiedRequest:verifyRequest});
+     // Compatibility with a supplied legacy inspector. The production service
+     // returns its own fresh request, so it needs no duplicate UI database get.
+     const snap=await w.getDocFromServer(w.doc(w.db,'staff_requests',requestId));if(!accepting||!current())return null;
+     if(!snap.exists()||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('The saved request could not be confirmed. Refresh Request Inbox.');
+     verifyRequest(snap.data());return service.inspect({requestId,expectedRequestVersion:original.requestVersion,expectedRequestToken:original.requestToken});
+    };
+    const checked=await Promise.race([work(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Connect to HQ and retry the schedule check.')),25000);})]);
     clearTimeout(timer);if(!current())return;
-    if(!snap.exists()||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('The saved request could not be confirmed. Refresh Request Inbox.');
-    const original=snap.data();if(original.type!=='Early Time Out'||original.status!=='Pending'||!canReviewEarlyTimeOut(w,original.branch))throw Error('This request is no longer pending or is outside your branch access.');navigationRow=original;
-    const checked=await service.inspect({requestId,expectedRequestVersion:original.requestVersion,expectedRequestToken:original.requestToken});
+    if(!original)throw Error('The saved request could not be confirmed. Refresh Request Inbox.');
     if(!current())return;
     if(!checked?.request||requestIdentity(checked.request)!==requestIdentity(original)||!canReviewEarlyTimeOut(w,checked.request.branch))throw Error('The saved request changed during the schedule check. Retry before reviewing it.');
     row=checked.request;inspection=checked;
@@ -60,7 +69,7 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
     if(afterConfirmation)status.textContent='Replacement shift saved. '+status.textContent;
     return true;
    }catch(error){if(current()){row=null;inspection=null;status.textContent=(confirmedReplacement?'The replacement shift is saved. ':'')+(error.message||'The saved schedule could not be confirmed. Retry the schedule check.');status.setAttribute('role','alert');retry.hidden=false;}}
-   finally{clearTimeout(timer);loading=false;if(dialog.open)controls();}
+   finally{accepting=false;clearTimeout(timer);loading=false;if(dialog.open)controls();}
   }
   async function saveReplacement(){
    if(busy||loading||!current()||!replacementEligible())return;

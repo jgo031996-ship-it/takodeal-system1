@@ -10,7 +10,8 @@ const at=time=>new Date(`2026-10-19T${time}:00+08:00`);
 function fixture({extraRules=[]}={}){
  const h=firestoreHarness();let clock=at('17:00'),sequence=0;
  h.api.serverTimestamp=()=>new Date(clock);
- h.api.getDocFromServer=async ref=>({exists:()=>h.get(ref.path)!==undefined,data:()=>structuredClone(h.get(ref.path))});
+ h.api.getDocFromServer=async ref=>({exists:()=>h.get(ref.path)!==undefined,data:()=>structuredClone(h.get(ref.path)),metadata:{fromCache:false,hasPendingWrites:false}});
+ const query=h.api.getDocsFromServer;h.api.getDocsFromServer=async ref=>{const result=await query(ref);return {...result,metadata:{fromCache:false,hasPendingWrites:false},docs:result.docs.map(row=>({...row,metadata:{fromCache:false,hasPendingWrites:false}}))};};
  h.api.auth={currentUser:{uid:'maa-reviewer',email,emailVerified:true}};
  h.api.sessionUser={uid:'maa-reviewer',email,role:'Manager',permissions:['inbox'],allowedBranches:[branch]};
  h.put('hq_managers/maa-reviewer',{email,role:'Manager',permissions:['inbox'],assignedBranch:branch,pin:'4829',active:true});

@@ -40,6 +40,8 @@ import {installOwnerScheduleSync} from './owner-schedule-sync.js';
 import {validateManualAttendance, saveManualAttendance} from './attendance-audit.js';
 import {planPayrollAttendance} from './payroll-attendance.js';
 import {attendanceMillis} from './attendance-reconcile.js';
+import {loadStaffDirectory,staffDirectoryActorKey} from './staff-directory-reader.js';
+import {installPaymentReviewScanner} from './payment-review-scanner.js';
 import {installHRReviewCenter,heldPayrollReviewHTML} from './hr-review-ui.js';
 window.openHRReviewCenter = context => {window.hrReviewCenter ||= installHRReviewCenter(window,document);return window.hrReviewCenter.open(context);};
 window.openAttendanceRecovery = context => window.openHRReviewCenter(context);
@@ -433,6 +435,8 @@ window.toggleArchivedStaff = function() {
 window.loadHRModule = async function() {
   const tbody = document.getElementById('staffTableBody');
   if (!tbody) return;
+  const hrSequence=window.hrDirectorySequence=(window.hrDirectorySequence||0)+1,archive=!!window.showArchivedStaff;let hrActor;
+  const assertCurrent=()=>{if(hrSequence!==window.hrDirectorySequence||archive!==!!window.showArchivedStaff||staffDirectoryActorKey(window,'branches')!==hrActor)throw Error('The selected staff directory changed.');};
 
   tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 40px; color: #0ea5e9; font-weight: bold;">⚡ Fetching secure staff records...</td></tr>';
 
@@ -440,12 +444,9 @@ window.loadHRModule = async function() {
     let isFranchisee = window.sessionUser && window.sessionUser.isFranchisee;
     let myBranch = window.sessionUser ? window.sessionUser.branch : null;
     
-    let q = collection(db, "cashiers");
-    if (isFranchisee && myBranch) {
-        q = query(collection(db, "cashiers"), where("branch", "==", myBranch));
-    }
-    
-    const snap = await getDocs(q);
+    hrActor=staffDirectoryActorKey(window,'branches');
+    let staffList=await loadStaffDirectory(window,{page:'branches',assertCurrent,readRates:profile=>archive||profile.status!=='Resigned',allowPartialRates:true});
+    assertCurrent();
     let html = '';
     const isOwner = window.sessionUser && window.sessionUser.isOwner;
 
@@ -455,12 +456,6 @@ window.loadHRModule = async function() {
     let unavailableDailyRates = 0;
 
     window.globalStaffData = {};
-    let staffList = [];
-    snap.forEach(docSnap => { staffList.push({ id: docSnap.id, ...docSnap.data() }); });
-    for(let index=0;index<staffList.length;index++)if(staffList[index].salaryRateVersion===1&&window.isBranchAllowed(staffList[index].branch)){
-        try{staffList[index]=await loadStaffSalaryTimeline(window,{...staffList[index],staffId:staffList[index].id});}
-        catch{staffList[index].salaryRateUnavailable=true;}
-    }
     staffList.sort((a, b) => (a.cashierName || "").localeCompare(b.cashierName || ""));
 
     staffList.forEach(data => {
@@ -534,6 +529,8 @@ window.loadHRModule = async function() {
     if(rateEl) rateEl.innerText = unavailableDailyRates?'Salary history unavailable':'₱' + totalDailyRate.toLocaleString(undefined, {minimumFractionDigits: 2});
 
   } catch (error) {
+    if(hrSequence!==window.hrDirectorySequence||archive!==!!window.showArchivedStaff)return;
+    if(hrActor){try{assertCurrent();}catch{return;}}
     console.error("HR Engine Error:", error);
     tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color: red; padding: 30px; font-weight: bold;">Error loading staff records.</td></tr>';
   }
@@ -2772,6 +2769,8 @@ const logisticsFeed = createLogisticsFeed({
     if (isFranchisee) q = query(collection(db, "purchase_orders"), where("branch", "==", myBranch), where("status", "in", ["Pending", "Delayed", "Drafting"]));
     return window.onSnapshot(q, next, error);
     },
+    isActive:()=>document.visibilityState!=='hidden'&&document.getElementById('view-dispatch')?.classList.contains('active')===true,
+    onReset:()=>{window.logisticsState.requests=[];window.logisticsState.deliveries=[];const badge=document.getElementById('poNotificationBadge');if(badge)badge.style.display='none';},
     deliveries: (next, error) => window.onSnapshot(collection(db, "dispatch_logs"), next, error),
     onOrders: (snapshot, initialLoad) => {
         let pendingCount = 0; let newOrderArrived = false;
@@ -2785,7 +2784,7 @@ const logisticsFeed = createLogisticsFeed({
 
         let badge = document.getElementById('poNotificationBadge');
         if (badge) { badge.innerText = pendingCount; badge.style.display = pendingCount > 0 ? 'inline-block' : 'none'; }
-        window.renderLogisticsUI();
+        if(document.visibilityState!=='hidden'&&document.getElementById('view-dispatch')?.classList.contains('active'))window.renderLogisticsUI();
 
         if (newOrderArrived) {
             window.playManagerPing();
@@ -2803,7 +2802,7 @@ const logisticsFeed = createLogisticsFeed({
 window.startPOListener = () => logisticsFeed.start();
 window.stopPOListener = () => logisticsFeed.stop();
 // Request badges stay live in the background. Brief tab switches reuse both feeds.
-document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'hidden') logisticsFeed.start(); });
+document.addEventListener('visibilitychange', () => { if(document.visibilityState==='hidden')logisticsFeed.syncVisibility();else logisticsFeed.start(); });
 window.addEventListener('pagehide', () => logisticsFeed.stop());
 window.addEventListener('pageshow', () => logisticsFeed.start());
 
@@ -3401,7 +3400,8 @@ window.loadMenuEditor = async function() {
 
   try {
     // 🔥 Use the Zero-Cost Cache!
-    const [cachedMenu, recipeRows] = await Promise.all([window.fetchCachedCollection("menu"), window.fetchCachedCollection("bom"), window.loadMenuCosting()]);
+    const [cachedMenu, recipeRows, inventoryRows] = await Promise.all([window.fetchCachedCollection("menu"), window.fetchCachedCollection("bom"), window.fetchCachedCollection("inventory")]);
+    globalInventoryCosts={};for(const data of inventoryRows){const cost=parseFloat(data.baseCost)||0;if(!globalInventoryCosts[data.name]||cost>globalInventoryCosts[data.name].cost)globalInventoryCosts[data.name]={cost,uom:data.uom};}
     window.menuRecipeRows = recipeRows;
     
     let layoutOrder = [];
@@ -5442,7 +5442,7 @@ window.loadMenuCosting = async function() {
 
   try {
       // 1. Get Live Inventory Costs (WITH SMART MULTI-BRANCH FILTER)
-      const invSnap = await cachedSnapshot('inventory');
+      const [invSnap,bomSnap,menuSnap]=await Promise.all([cachedSnapshot('inventory'),cachedSnapshot('bom'),cachedSnapshot('menu')]);
       globalInventoryCosts = {};
         
       invSnap.forEach(doc => {
@@ -5456,7 +5456,6 @@ window.loadMenuCosting = async function() {
       });
 
     // 2. Get Recipes
-    const bomSnap = await cachedSnapshot('bom');
     let recipes = {};
     bomSnap.forEach(doc => {
       let data = doc.data();
@@ -5465,7 +5464,6 @@ window.loadMenuCosting = async function() {
     });
 
     // 3. Get Menu & Collect Unique Categories!
-    const menuSnap = await cachedSnapshot('menu');
     let html = '';
     let totalMarginPct = 0; let menuCount = 0; let missingBomCount = 0;
 
@@ -13019,6 +13017,8 @@ window.otCache = { staff: {}, schedule: null };
 window.currentCalculatedOtAmount = 0;
 
 window.openManualOvertimeModal = async function() {
+    const otSequence=window.manualOTDirectorySequence=(window.manualOTDirectorySequence||0)+1;let otActor;
+    const assertCurrent=()=>{if(otSequence!==window.manualOTDirectorySequence||document.getElementById('manualOvertimeModal')?.style.display!=='flex'||staffDirectoryActorKey(window,'payroll')!==otActor)throw Error('The overtime selection changed.');};
     document.getElementById('manualOvertimeModal').style.display = 'flex';
     let select = document.getElementById('manOtStaff');
     select.innerHTML = '<option value="">Loading Staff...</option>';
@@ -13034,29 +13034,19 @@ window.openManualOvertimeModal = async function() {
     window.currentCalculatedOtAmount = 0;
 
     try {
-        // 1. Fetch Schedule Engine
-        const schedSnap = await getDoc(doc(db, "settings", "global_schedule"));
-        if (schedSnap.exists()) window.otCache.schedule = schedSnap.data();
-
-        // 2. Fetch Staff Profiles
-        const snap = await getDocs(collection(db, "cashiers"));
-        let html = '<option value="">-- Select Staff --</option>';
-        let staffList = [];
-        window.otCache.staff = {}; 
-        
-        snap.forEach(docSnap => {
-            let d = docSnap.data();
-            if (d.status === 'Resigned' || d.pin === 'REVOKED') return; 
-            staffList.push(d.cashierName);
-            window.otCache.staff[d.cashierName] = {...d,staffId:docSnap.id};
-        });
-        for(const [name,profile] of Object.entries(window.otCache.staff))if(profile.salaryRateVersion===1)window.otCache.staff[name]=await loadStaffSalaryTimeline(window,profile);
-        
+        otActor=staffDirectoryActorKey(window,'payroll');
+        const [schedSnap,staffProfiles]=await Promise.all([getDoc(doc(db,'settings','global_schedule')),loadStaffDirectory(window,{page:'payroll',assertCurrent,profileFilter:profile=>profile.status!=='Resigned'&&profile.pin!=='REVOKED'})]);
+        assertCurrent();
+        if(schedSnap.exists())window.otCache.schedule=schedSnap.data();
+        let html='<option value="">-- Select Staff --</option>',staffList=[];
+        window.otCache.staff={};
+        for(const profile of staffProfiles){staffList.push(profile.cashierName);window.otCache.staff[profile.cashierName]=profile;}
         staffList.sort().forEach(name => {
             html += `<option value="${name}">${name}</option>`;
         });
         select.innerHTML = html;
     } catch (e) {
+        if(otActor){try{assertCurrent();}catch{return;}}
         console.error(e);
         select.innerHTML = '<option value="">Error loading staff</option>';
     }
@@ -20523,29 +20513,10 @@ window.updateUnverifiedBadges = function(count) {
 
 // 🔥 BACKGROUND PROCESS OPTIMIZATION 🔥
 // Reduces background memory lag by 90%
-window.scanUnverifiedNow = async function() {
-    try {
-        let lookBack = new Date();
-        lookBack.setDate(lookBack.getDate() - 4); // Capped at 4 days to save memory
-        const q = query(collection(db, "transactions"), where("timestamp", ">=", lookBack));
-        const snap = await getDocs(q);
-        
-        let count = 0;
-        snap.forEach(doc => {
-            let tx = doc.data();
-            let method = (tx.paymentMethod || '').toLowerCase();
-            if (tx.status !== 'Voided' && method !== 'cash' && method !== '' && tx.paymentVerified !== true) count++;
-        });
-        window.updateUnverifiedBadges(count);
-    } catch(e) { console.error("Silent Background Scanner Error:", e); }
-};
-
-window.startManagerUnverifiedScanner = function() {
-    setTimeout(window.scanUnverifiedNow, 3000); // Run once 3 seconds after boot
-    setInterval(window.scanUnverifiedNow, 120000); // Only run every 2 MINUTES (instead of 30 seconds)
-};
-
-setTimeout(window.startManagerUnverifiedScanner, 4000); // Boot trigger
+window.ownerPaymentScanner ||= installPaymentReviewScanner(window,document);
+window.scanUnverifiedNow = () => window.ownerPaymentScanner.scan({force:true});
+window.startManagerUnverifiedScanner = () => window.ownerPaymentScanner.start();
+setTimeout(window.startManagerUnverifiedScanner,4000);
 
 // ==========================================
 // 🍳 LIVE PREP TIMER UPDATER ENGINE
@@ -27116,6 +27087,7 @@ const loginOriginalSwitchView = window.switchView;
 window.switchView = function(view,...args) {
     const result = loginOriginalSwitchView.call(this,view,...args);
     if (view === 'history') window.loadHistoryShiftDropdown();
+    logisticsFeed.syncVisibility();
     return result;
 };
 

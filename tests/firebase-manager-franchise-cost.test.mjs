@@ -17,12 +17,13 @@ const snapshot = rows => ({ docs:rows.map((data,i) => ({id:'doc-'+i,data:()=>dat
 function logisticsFixture() {
     const main = readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
     const block = main.slice(main.indexOf('const logisticsFeed = createLogisticsFeed('), main.indexOf('window.switchLogisticsBranch ='));
-    const listeners=[],events={},badge={style:{}},w={sessionUser:{email:'owner@test',uid:'owner',permissions:['all']},
+    let dispatchActive=true;const listeners=[],events={},badge={style:{}},w={sessionUser:{email:'owner@test',uid:'owner',permissions:['all']},
         auth:{currentUser:{uid:'owner'}},logisticsState:{requests:[],deliveries:[]},
         onSnapshot(ref,next,error) { const listener={ref,next,error,stopped:false};listeners.push(listener);return ()=>{listener.stopped=true;}; },
-        addEventListener:(name,fn)=>events[name]=fn,renderLogisticsUI(){},playManagerPing(){w.pings++;},pings:0};
-    const d={visibilityState:'visible',getElementById:()=>badge,addEventListener:(name,fn)=>events[name]=fn};
-    vm.runInNewContext(block,{window:w,document:d,createLogisticsFeed,canOpenWorkspacePage,db:{},
+        addEventListener:(name,fn)=>events[name]=fn,renderLogisticsUI(){w.renders++;},playManagerPing(){w.pings++;},pings:0,renders:0,switchView:view=>{dispatchActive=view==='dispatch';},loadHistoryShiftDropdown(){}};
+    const d={visibilityState:'visible',hidden:false,getElementById:id=>id==='view-dispatch'?{classList:{contains:()=>dispatchActive}}:badge,addEventListener:(name,fn)=>events[name]=fn};
+    const routeStart=main.indexOf('const loginOriginalSwitchView = window.switchView;'),routeEnd=main.indexOf('\n};',routeStart)+3;
+    vm.runInNewContext(block+'\n'+main.slice(routeStart,routeEnd),{window:w,document:d,createLogisticsFeed,canOpenWorkspacePage,db:{},
         collection:(_,table)=>({table}),where:(...args)=>args,query:(ref,...filters)=>({...ref,filters}),
         Swal:{fire(){}},console});
     return {w,d,listeners,events,badge};
@@ -40,16 +41,23 @@ test('actual logistics starter owns exactly two subscriptions across repeated ca
     f.w.stopPOListener();assert.ok(f.listeners.every(l=>l.stopped));
 });
 
-test('background alerts remain live without reconnect churn; page exit stops both feeds and stale callbacks',()=>{
-    const f=logisticsFixture();f.w.startPOListener();const old=f.listeners[0];
-    f.d.visibilityState='hidden';f.events.visibilitychange();assert.ok(f.listeners.every(l=>!l.stopped));
-    old.next(snapshot([{status:'Pending',timestamp:1}]));assert.equal(f.w.logisticsState.requests.length,1);assert.equal(f.badge.innerText,1);
-    old.next(snapshot([{status:'Pending',timestamp:2}]));assert.equal(f.w.pings,1,'new-order notifications still arrive in the background');
-    f.d.visibilityState='visible';f.events.visibilitychange();f.events.pageshow();assert.equal(f.listeners.length,2);
-    f.events.pagehide();assert.ok(f.listeners.every(l=>l.stopped));
-    old.next(snapshot([{status:'Pending',timestamp:99}]));assert.equal(f.w.logisticsState.requests[0].timestamp,2);
-    f.events.pageshow();f.events.visibilitychange();assert.equal(f.listeners.length,4);
+test('background request alerts stay live while the delivery feed detaches and old callbacks cannot restore reset state',()=>{
+    const f=logisticsFixture();f.w.startPOListener();const old=f.listeners[0],delivery=f.listeners[1];
+    f.d.visibilityState='hidden';f.events.visibilitychange();assert.equal(old.stopped,false);assert.equal(delivery.stopped,true);
+    old.next(snapshot([{status:'Pending',timestamp:1}]));assert.equal(f.w.logisticsState.requests.length,1);assert.equal(f.badge.innerText,1);assert.equal(f.w.renders,0);
+    old.next(snapshot([{status:'Pending',timestamp:2}]));assert.equal(f.w.pings,1,'new-order notifications still arrive in the background');assert.equal(f.w.renders,0);
+    delivery.next({forEach(){throw Error('Hidden historical delivery payload must never be read.');}});assert.equal(f.w.renders,0);
+    f.d.visibilityState='visible';f.events.visibilitychange();f.events.pageshow();assert.equal(f.listeners.length,3);assert.equal(old.stopped,false);
+    f.events.pagehide();assert.ok(f.listeners.every(l=>l.stopped));assert.equal(f.w.logisticsState.requests.length,0);assert.equal(f.w.logisticsState.deliveries.length,0);assert.equal(f.badge.style.display,'none');
+    old.next(snapshot([{status:'Pending',timestamp:99}]));assert.equal(f.w.logisticsState.requests.length,0);
+    f.events.pageshow();f.events.visibilitychange();assert.equal(f.listeners.length,5);
     f.w.stopPOListener();
+});
+
+test('actual route wrapper detaches delivery history on leaving Dispatch, leaves its badge live and reads fresh history on return',()=>{
+    const f=logisticsFixture();f.w.startPOListener();const orders=f.listeners[0],oldDelivery=f.listeners[1];f.w.switchView('payroll');assert.equal(oldDelivery.stopped,true);assert.equal(orders.stopped,false);
+    orders.next(snapshot([{status:'Pending',timestamp:1}]));assert.equal(f.badge.innerText,1);assert.equal(f.w.renders,0);oldDelivery.next({forEach(){throw Error('Old hidden payload cannot sort or render.');}});
+    f.w.switchView('dispatch');f.w.startPOListener();assert.equal(f.listeners.length,3);const rows=Array.from({length:6000},(_,index)=>({timestamp:index,id:'sample-'+index}));f.listeners[2].next(snapshot(rows));assert.equal(f.w.logisticsState.deliveries.length,6000);assert.equal(f.w.renders,1);assert.equal(f.listeners[2].ref.filters,undefined,'full historical delivery evidence is retained');f.w.switchView('inbox');assert.equal(f.listeners[2].stopped,true);assert.equal(orders.stopped,false);f.w.stopPOListener();
 });
 
 test('logistics respects saved access and rebuilds its existing branch query on identity changes',()=>{
