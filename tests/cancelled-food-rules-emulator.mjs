@@ -1,7 +1,7 @@
 // Local emulator regression runner; implementation owned by printer agent.
 import test,{before,beforeEach,after} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFileSync,existsSync} from 'node:fs';
+import {readFileSync,existsSync,writeFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import {fileURLToPath} from 'node:url';
 import {resolve} from 'node:path';
@@ -9,6 +9,7 @@ import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {createConnection} from 'node:net';
 import {createCancelledOrderEngine} from '../Takodeal-POS/cancelled-orders.js';
+import {quoteCancelledFoodPortion} from '../Takodeal-POS/cancelled-food-portions.js';
 import {createOnlineRefundEngine} from '../takodeal-manager/online-refunds.js';
 import {createSaleEngine,SALE_VERSION,saleFingerprint} from '../Takodeal-POS/pos-safety.js';
 
@@ -40,7 +41,7 @@ before(async()=>{
     while(!await reachable()){if(child.exitCode!==null||Date.now()>deadline)throw Error('Local emulator failed to start: '+output);await pause(100);}
     env=await initializeTestEnvironment({projectId,firestore:{host,port,rules:readFileSync(resolve(root,'firestore.rules'),'utf8')}});
 },{timeout:40000});
-after(async()=>{await env?.cleanup();if(child && child.exitCode===null){child.kill();await Promise.race([once(child,'exit'),pause(3000)]);}});
+after(async()=>{if(process.env.PORTION_RULE_COVERAGE==='1')try{const coverage=await fetch('http://'+endpoint+'/emulator/v1/projects/'+projectId+':ruleCoverage').then(response=>response.json());writeFileSync(resolve(root,'../portions-rules-coverage.json'),JSON.stringify(coverage));}catch{}await env?.cleanup();if(child && child.exitCode===null){child.kill();await Promise.race([once(child,'exit'),pause(3000)]);}});
 
 test('active crew or manager assigned to another branch can purchase without a permission failure',async()=>{
     await adminUpdate('cashiers/'+staffId,{branch:'Cabantian',role:'Manager'});const f=await cancelled();await assertSucceeds(f.e.purchase(purchaser(f.quote)));assert.equal((await read('staff_deductions/'+purchaseId)).staffId,staffId);
@@ -241,4 +242,102 @@ test('a non-Owner cannot forge a private notice or approve their own employee bi
 });
 test('full rules allow atomic Owner payroll settlement and deny ledger edits afterwards',async()=>{
  const {createRefundPayrollEngine}=await import('../takodeal-manager/refund-payroll.js');const id='online-refund-'+sourceSaleId,db=google('owner-pay','jgo031996@gmail.com');await refundEngine(db).record(refundInput());await adminUpdate('cashiers/'+staffId,{hourlyRate:500});await adminSet('cash_accounts/sample-account',{name:'SAMPLE Account',balance:1000});const data={name:staffName,staffId,branch,profile:{staffId,hourlyRate:500},basicPay:500,start:'2026-10-01',end:'2026-10-15',onlineRefunds:80,onlineRefundRows:[{id,amount:80}],advances:0,meals:0,loans:0};await assertSucceeds(createRefundPayrollEngine({...api(db),auth:{currentUser:{uid:'owner-pay',email:'jgo031996@gmail.com'}}},{ownerCheck:()=>true}).pay({data,accountId:'sample-account',finalNetPay:420}));assert.equal((await read('staff_deductions/'+id)).status,'Paid');assert.equal((await read('cash_accounts/sample-account')).balance,580);await assertFails(updateDoc(doc(db,'staff_deductions/'+id),{status:'Unpaid'}));await assertFails(updateDoc(doc(db,'payroll_records/refund-payroll-'+staffId+'-2026-10-01-2026-10-15'),{finalNetPay:999}));
+});
+
+// Portions exercise the actual production engine and the entire deployed Rules,
+// including the shared allocation ledger, not a reduced validator fixture.
+const portionOp=n=>n.toString(16).padStart(32,'0');
+const portionReceiptId=n=>'cancelled-food-'+sourceSaleId+'-portion-'+portionOp(n);
+async function portionQuote(e,selection=[{lineIndex:0,qty:1}],n=1){return quoteCancelledFoodPortion(await e.available(input),selection,portionOp(n));}
+async function portionPacket(selection=[{lineIndex:0,qty:1}],n=1){
+ const db=anon('approved-pos'),e=engine(db);await e.cancel({...input,reason:'customer'});const quote=await portionQuote(e,selection,n),writes=[],base=api(db);
+ base.runTransaction=(database,callback)=>runTransaction(database,tx=>callback({get:reference=>tx.get(reference),set:(reference,data,options)=>writes.push({kind:'set',path:reference.path,data,options}),update:(reference,data)=>writes.push({kind:'update',path:reference.path,data})}));
+ await createCancelledOrderEngine(base).purchase(purchaser(quote));return {writes,quote,id:portionReceiptId(n)};
+}
+async function sourceCart(cart){
+ const sale=await read('transactions/'+sourceSaleId);sale.cart=cart;sale.subTotalBeforeDiscount=cart.reduce((sum,item)=>sum+item.lineTotalFinal,0);sale.netTotal=sale.subTotalBeforeDiscount;
+ await admin(async db=>{const batch=writeBatch(db);batch.set(doc(db,'transactions/'+sourceSaleId),sale);batch.update(doc(db,'pos_sale_commits/'+sourceSaleId),{fingerprint:saleFingerprint(sale)});await batch.commit();});
+}
+test('actual Rules split one prepared receipt among two employees and retain original stock once',async()=>{
+ await sourceCart([{name:'Mango Shake',qty:2,lineTotalFinal:200},{name:'Bonito Takoyaki 6 Pcs',qty:2,lineTotalFinal:240}]);
+ await adminSet('cashiers/emulator-staff-two',{cashierName:'Synthetic Second Staff',role:'Staff',active:true,pin:'6789'});
+ const db=anon('approved-pos'),e=engine(db);await e.cancel({...input,reason:'customer'});
+ const selected=[{lineIndex:0,qty:1},{lineIndex:1,qty:1}],first=await portionQuote(e,selected,1);await assertSucceeds(e.purchase(purchaser(first)));
+ assert.deepEqual((await e.available(input)).lines.map(row=>row.remainingQty),[1,1]);
+ const second=await portionQuote(e,selected,2);await assertSucceeds(e.purchase(purchaser(second,{staffId:'emulator-staff-two',staffName:'Synthetic Second Staff',pin:'6789'})));
+ for(const n of [1,2]){const receipt=await read('transactions/'+portionReceiptId(n)),charge=await read('staff_deductions/'+portionReceiptId(n));assert.equal(receipt.netTotal,176);assert.equal(charge.amount,176);assert.deepEqual(receipt.inventoryMovements,[]);assert.deepEqual(charge.purchasedItems.map(row=>row.qty),[1,1]);}
+ assert.deepEqual((await read('cancelled_food_allocations/'+sourceSaleId)).purchasedQuantities,{'0':2,'1':2});assert.equal((await read('inventory/emulator-batter')).currentStock,88);assert.equal((await read('shifts/'+shiftId)).salesRevision,3);
+});
+for(const protectSalesV2 of [true,false])test('six selected rows fit real Rules limits with protected sales '+protectSalesV2,async()=>{
+ await adminUpdate('offline_policy/'+branch,{protectSalesV2});await sourceCart(Array.from({length:6},(_,index)=>({name:'Synthetic line '+index,qty:2,lineTotalFinal:20,variantName:index%2?'Large':'Small',notes:'Source options '+index,addons:{Cream:{name:'Cream',qty:1,price:5}}})));
+ const f=await portionPacket(Array.from({length:6},(_,lineIndex)=>({lineIndex,qty:1})));await assertSucceeds(commitPacket(anon('approved-pos'),f.writes));const receipt=await read('transactions/'+f.id);assert.equal(receipt.cart.length,6);assert.equal(receipt.netTotal,48);assert.equal((await read('staff_deductions/'+f.id)).purchasedItems.length,6);
+});
+test('real concurrent purchases cannot claim the same last remaining portion',async()=>{
+ await sourceCart([{name:'Synthetic food',qty:1,lineTotalFinal:100}]);const e=engine(anon('approved-pos'));await e.cancel({...input,reason:'customer'});const first=await portionQuote(e,undefined,1),second=await portionQuote(e,undefined,2);
+ const results=await Promise.allSettled([e.purchase(purchaser(first)),e.purchase(purchaser(second))]);assert.equal(results.filter(row=>row.status==='fulfilled').length,1);assert.equal((await read('cancelled_food_allocations/'+sourceSaleId)).purchasedQuantities['0'],1);assert.equal((await read('shifts/'+shiftId)).salesRevision,2);
+});
+test('real lost acknowledgment recovery and repeated confirmations acknowledge the same portion',async()=>{
+ const db=anon('approved-pos'),e=engine(db);await e.cancel({...input,reason:'customer'});const quote=await portionQuote(e),base=api(db);let first=true;base.runTransaction=async(database,callback)=>{const result=await runTransaction(database,callback);if(first){first=false;throw Error('Synthetic lost response after real commit');}return result;};
+ const lost=createCancelledOrderEngine(base);assert.equal((await lost.purchase(purchaser(quote))).alreadyPurchased,true);await assertSucceeds(e.purchase(purchaser(quote)));await assertSucceeds(e.confirmPortion(purchaser(quote)));assert.equal((await read('shifts/'+shiftId)).salesRevision,2);assert.equal((await read('cancelled_food_allocations/'+sourceSaleId)).purchasedQuantities['0'],1);
+});
+test('partial source and allocation links cannot be omitted from an otherwise valid receipt packet',async()=>{
+ const f=await portionPacket();for(const omitted of ['cancelled_food_allocations/'+sourceSaleId,'transactions/'+sourceSaleId,'staff_deductions/'+f.id,'pos_sale_commits/'+f.id,'cancelled_food_purchase_lines/'+f.id+'--0'])await assertFails(commitPacket(anon('approved-pos'),f.writes.filter(row=>row.path!==omitted)));assert.equal(await read('transactions/'+f.id),undefined);
+});
+test('raw partial purchase packets reject forged quantity, item price, options, source and private deduction evidence',async()=>{
+ const f=await portionPacket(),selection=f.quote.selection;
+ const changes=[
+  ['transactions/'+f.id,data=>({...data,cart:[{...data.cart[0],qty:2}]})],
+  ['transactions/'+f.id,data=>({...data,cart:[{...data.cart[0],lineTotalFinal:1}]})],
+  ['transactions/'+f.id,data=>({...data,cart:[{...data.cart[0],name:'Different food'}]})],
+  ['transactions/'+f.id,data=>({...data,cart:[{...data.cart[0],addons:{Forged:{qty:9,price:1}}}]})],
+  ['transactions/'+f.id,data=>({...data,cart:[{...data.cart[0],sourceOriginalQty:99}]})],
+  ['transactions/'+f.id,data=>({...data,cancelledFoodSelection:[{...selection[0],qty:-1}]})],
+  ['transactions/'+f.id,data=>({...data,cancelledFoodSelection:[{...selection[0],priorPurchasedQty:1}]})],
+  ['transactions/'+f.id,data=>({...data,cancelledFoodSelection:[{...selection[0],baseCents:1}]})],
+  ['transactions/'+f.id,data=>({...data,cancelledFoodSelection:[{...selection[0],discountCents:1}]})],
+  ['transactions/'+f.id,data=>({...data,cancelledFoodSelection:[selection[0],selection[0]]})],
+  ['transactions/'+f.id,data=>({...data,netTotal:1,globalDiscountAmount:119})],
+  ['transactions/'+f.id,data=>({...data,cancelledFoodQuote:{...data.cancelledFoodQuote,amount:1}})],
+  ['transactions/'+sourceSaleId,data=>({...data,cancelledFoodPurchasedUnits:99})],
+  ['transactions/'+sourceSaleId,data=>({...data,cancelledFoodLastPurchaseId:'forged-purchase'})],
+  ['transactions/'+sourceSaleId,data=>({...data,netTotal:1})],
+  ['cancelled_food_allocations/'+sourceSaleId,data=>({...data,purchasedQuantities:{'0':2}})],
+  ['cancelled_food_allocations/'+sourceSaleId,data=>({...data,purchasedQuantities:{'0':1,'1':1}})],
+  ['cancelled_food_allocations/'+sourceSaleId,data=>({...data,lastPurchaseId:'forged-purchase'})],
+  ['staff_deductions/'+f.id,data=>({...data,purchasedItems:[{...data.purchasedItems[0],qty:2}]})],
+  ['staff_deductions/'+f.id,data=>({...data,purchasedItems:[{...data.purchasedItems[0],name:'Different food'}]})],
+  ['staff_deductions/'+f.id,data=>({...data,purchasedItems:[{...data.purchasedItems[0],amount:1}]})],
+  ['staff_deductions/'+f.id,data=>({...data,amount:1})],
+  ['staff_deductions/'+f.id,data=>({...data,sourceReceiptId:'other-source'})]
+  ,['cancelled_food_purchase_lines/'+f.id+'--0',data=>({...data,selectionSlot:1})]
+  ,['cancelled_food_purchase_lines/'+f.id+'--0',data=>({...data,sourceSaleId:'forged-source'})]
+  ,['cancelled_food_purchase_lines/'+f.id+'--0',data=>({...data,purchaseId:'forged-purchase'})]
+ ];
+ for(const [path,change]of changes){const forged=f.writes.map(row=>row.path===path?{...row,data:change(row.data)}:row);await assertFails(commitPacket(anon('approved-pos'),forged));}
+ assert.equal(await read('transactions/'+f.id),undefined);assert.equal(await read('cancelled_food_allocations/'+sourceSaleId),undefined);
+});
+test('partial ledger and source accounting markers cannot be cleared, decreased or edited unpaired on a legacy branch',async()=>{
+ await adminUpdate('offline_policy/'+branch,{protectSalesV2:false});const f=await portionPacket();await assertSucceeds(commitPacket(anon('approved-pos'),f.writes));const db=anon('approved-pos');
+ for(const change of [{purchasedQuantities:{'0':0}},{lastPurchaseId:'other-purchase'}])await assertFails(updateDoc(doc(db,'cancelled_food_allocations/'+sourceSaleId),change));await assertFails(sdk.deleteDoc(doc(db,'cancelled_food_allocations/'+sourceSaleId)));
+ for(const change of [{cancelledFoodPurchasedUnits:0},{cancelledFoodAllocationVersion:sdk.deleteField()},{cancelledFoodLastPurchaseId:'other-purchase'}])await assertFails(updateDoc(doc(db,'transactions/'+sourceSaleId),change));
+});
+test('old whole receipt client cannot overwrite a later partial allocation and full legacy purchases expose no portions',async()=>{
+ const wholePacket=await packet(),e=engine(anon('approved-pos')),quote=await portionQuote(e);await assertSucceeds(e.purchase(purchaser(quote)));await assertFails(commitPacket(anon('approved-pos'),wholePacket));assert.equal(await read('transactions/'+purchaseId),undefined);
+});
+test('legacy full receipt purchase blocks a new raw portion packet',async()=>{
+ const f=await portionPacket(),e=engine(anon('approved-pos')),quote=await e.quote(input);await assertSucceeds(e.purchase(purchaser(quote)));await assertFails(commitPacket(anon('approved-pos'),f.writes));await assert.rejects(e.available(input),/in full/);
+});
+for(const uid of ['unapproved-pos','revoked-pos','other-branch-pos'])test('new partial packets remain denied for '+uid,async()=>{const f=await portionPacket();await assertFails(commitPacket(anon(uid),f.writes));assert.equal(await read('staff_deductions/'+f.id),undefined);});
+test('server denies stale partial quote after policy change or closed shift',async()=>{
+ const f=await portionPacket();await adminUpdate('settings/global_pos_config',{cancelledFoodDiscountPct:30});await assertFails(commitPacket(anon('approved-pos'),f.writes));await adminUpdate('settings/global_pos_config',{cancelledFoodDiscountPct:20});await adminUpdate('shifts/'+shiftId,{active:false,status:'Closed'});await assertFails(commitPacket(anon('approved-pos'),f.writes));
+});
+for(const protectedSales of [true,false])test('prepared sources and partial receipt financial identity stay frozen with protectedSales='+protectedSales,async()=>{
+ await adminUpdate('offline_policy/'+branch,{protectSalesV2:protectedSales});const f=await portionPacket();await assertSucceeds(commitPacket(anon('approved-pos'),f.writes));const db=anon('approved-pos'),source=doc(db,'transactions/'+sourceSaleId),receipt=doc(db,'transactions/'+f.id);
+ for(const change of [{cart:[{name:'6 Pcs Takoyaki',qty:99,lineTotalFinal:1}]},{netTotal:1},{subTotalBeforeDiscount:1},{receiptId:'other-receipt'},{status:'Paid'},{preparedCancellation:sdk.deleteField()},{cancelledFoodAllocationVersion:sdk.deleteField()}])await assertFails(updateDoc(source,change));
+ for(const change of [{cart:[{name:'Other food',qty:1,lineTotalFinal:1}]},{netTotal:1},{cancelledFoodSourceId:sdk.deleteField()},{cancelledFoodStaffId:'other-staff'},{cancelledFoodQuote:{}},{status:'Voided'}])await assertFails(updateDoc(receipt,change));
+ await assertFails(sdk.deleteDoc(source));await assertFails(sdk.deleteDoc(receipt));assert.equal((await read('transactions/'+f.id)).netTotal,96);
+});
+test('immutable per-line proofs cannot be forged independently, replaced after purchase or deleted',async()=>{
+ const f=await portionPacket(),db=anon('approved-pos'),proofPath='cancelled_food_purchase_lines/'+f.id+'--0';
+ await assertFails(setDoc(doc(db,proofPath),{purchaseId:f.id,sourceSaleId,selectionSlot:0}));await assertSucceeds(commitPacket(db,f.writes));await assertFails(updateDoc(doc(db,proofPath),{selectionSlot:1}));await assertFails(sdk.deleteDoc(doc(db,proofPath)));
 });
