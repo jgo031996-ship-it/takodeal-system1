@@ -23,11 +23,13 @@ let runtimeLoaded = false, workspaceLoading = false;
 const gate = createUnlockGate({
     verifyOnUnlock:true,
     async verify(user) {
-        // One server check prevents stale cached access or a revoked PIN from unlocking.
+        // Both initial identification and PIN unlock use fresh server authority.
+        // HTTPS avoids a stalled persistent multi-tab Firestore listen stream.
         const ref = window.query(window.collection(window.db, 'hq_managers'), window.where('email', '==', user.email));
         let snap;
-        try { snap = await bounded(window.getDocsFromServer(ref)); }
+        try { snap = typeof window.readHQAccountFromServer==='function' ? await window.readHQAccountFromServer(user) : await bounded(window.getDocsFromServer(ref)); }
         catch (error) {
+            if (String(error.code||'').startsWith('hq/')) throw error;
             if (error.code === 'permission-denied') throw new Error('This account cannot access workspace permissions. Ask the owner to check access.');
             throw new Error(navigator.onLine ? 'Unable to verify your account. Check the connection, then choose Retry.' : 'You are offline. Reconnect, then choose Retry to verify your account.');
         }

@@ -1,5 +1,6 @@
 import { createCollectionCache } from './collection-cache.js';
 import { createDeviceStore } from './device-store.js';
+import { createHQAccountReader } from './hq-account-reader.js';
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, getDoc, getDocsFromServer, getDocFromServer, query, where, serverTimestamp, doc, updateDoc, limit, orderBy, onSnapshot, setDoc, deleteDoc, increment, enableNetwork, disableNetwork, writeBatch, startAfter, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getAuth, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
@@ -22,6 +23,9 @@ window.db = initializeFirestore(app, {
   localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})
 });
 window.auth = getAuth(app);
+window.readHQAccountFromServer = createHQAccountReader({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,auth:window.auth,
+  getAppCheckToken:typeof window.getHQAppCheckToken==='function'?()=>window.getHQAppCheckToken():undefined,
+  onDiagnostic:status=>{window.managerAccountCheckStatus=status;}});
 window.provider = new GoogleAuthProvider();
 window.storage = getStorage(app);
 
