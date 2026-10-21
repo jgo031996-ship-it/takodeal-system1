@@ -23,7 +23,9 @@ export function createCollectionCache(read, { now = Date.now, ttl = name => ['in
                     }
                 }
                 const rows = await read(name); entry.at = now();
-                if (storage && user && entries.get(key) === entry) await queue(key, () => storage.put(user, name, { rows, at: entry.at }));
+                // Device persistence is optional. Keep writes ordered with invalidation,
+                // but show the confirmed rows without waiting for a slow disk transaction.
+                if (storage && user && entries.get(key) === entry) void queue(key, () => storage.put(user, name, { rows, at: entry.at }));
                 return rows;
             }).then(rows => {
                 entry.rows = rows; return rows;

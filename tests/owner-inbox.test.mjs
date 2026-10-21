@@ -4,13 +4,18 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {installOwnerInbox,installInboxBadge,inboxActorKey} from '../takodeal-manager/owner-inbox.js';
 import {OWNER_EMAIL} from '../takodeal-manager/workspace-access-model.js';
+import {canOpenWorkspacePage} from '../takodeal-manager/workspace-access-model.js';
+import {requestHistory,historyTime} from '../takodeal-manager/request-history.js';
+import {isMealDeduction} from '../takodeal-manager/payroll-safety.js';
+import {leaveRequestSummaryHTML} from '../takodeal-manager/manager-leave-ui.js';
+import {earlyTimeOutSummaryHTML} from '../takodeal-manager/early-time-out-review-ui.js';
 const tick=()=>new Promise(resolve=>setImmediate(resolve)),hold=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};};
 const snapshot=rows=>({metadata:{fromCache:false,hasPendingWrites:false},docs:rows.map(row=>({id:row.id,data:()=>structuredClone(row),metadata:{fromCache:false,hasPendingWrites:false}}))});
 const at=n=>new Date(1900000000000+n*1000),row=(id,extra={})=>({id,type:'Early Time Out',status:'Pending',staffName:'Sample Crew',staffId:'crew',branch:'Sample Branch',timestamp:at(1),reason:'Sample request',...extra});
-function fixture({requests=[row('one')],deductions=[],readMany,readOne,timeoutMs=1000}={}){
+function fixture({requests=[row('one')],deductions=[],readMany,readOne,timeoutMs=1000,install=installOwnerInbox}={}){
  const nodes=Object.fromEntries(['inboxTableBody','resolvedRequestsBody','inboxBadge'].map(id=>[id,{innerHTML:'',innerText:'',style:{}}])),calls={many:[],one:[],reviews:[],photos:[],messages:[]};
  const d={getElementById:id=>nodes[id]||null},w={auth:{currentUser:{uid:'hq',email:OWNER_EMAIL,emailVerified:true}},sessionUser:{uid:'hq',email:OWNER_EMAIL,role:'Owner',isOwner:true,permissions:['all'],allowedBranches:['All']},db:{},collection:(_db,table)=>({table}),doc:(_db,table,id)=>({table,id}),query:(reference,...filters)=>({...reference,filters}),where:(key,op,value)=>({key,op,value}),orderBy:(key,direction)=>({key,direction}),getDocsFromServer:async reference=>{calls.many.push(reference);if(readMany)return readMany(reference);const source=reference.table==='staff_requests'?requests:deductions;return snapshot(source.filter(entry=>(reference.filters||[]).filter(f=>f.op==='==').every(f=>entry[f.key]===f.value)));},getDocFromServer:async reference=>{calls.one.push(reference);if(readOne)return readOne(reference);const saved=requests.find(entry=>entry.id===reference.id);return{exists:()=>!!saved,data:()=>structuredClone(saved),metadata:{fromCache:false,hasPendingWrites:false}};},handleRequest:(...args)=>calls.reviews.push(args),viewSelfie:(...args)=>calls.photos.push(args),ManagerUI:{notify:message=>calls.messages.push(message)}};
- const inbox=installOwnerInbox(w,d,{timeoutMs});w.toggleResolvedStaff=id=>inbox.toggle(id);return{w,d,nodes,calls,inbox,requests,deductions};
+ const inbox=install(w,d,{timeoutMs});w.toggleResolvedStaff=id=>inbox.toggle(id);return{w,d,nodes,calls,inbox,requests,deductions};
 }
 test('concurrent inbox refreshes share two complete queries and render canonical IDs without writes',async()=>{
  const gate=hold(),f=fixture({readMany:async reference=>{await gate.promise;return snapshot(reference.table==='staff_requests'?[row('saved',{id:'saved',staffName:'<script>bad</script>'})]:[]);}}),first=f.inbox.load(),second=f.inbox.load();await tick();assert.equal(f.calls.many.length,2);gate.resolve();assert.equal(await first,true);assert.equal(await second,true);assert.equal(f.calls.many.length,2);assert.match(f.nodes.inboxTableBody.innerHTML,/&lt;script&gt;/);assert.doesNotMatch(f.nodes.inboxTableBody.innerHTML,/<script>/);assert.equal(f.nodes.inboxBadge.innerText,1);
@@ -58,4 +63,20 @@ test('the global badge remains live across pages and stops subscriptions before 
 test('real main inbox wrappers use the controller, and cached protected types skip the redundant preliminary read',async()=>{
  const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),extract=name=>{const start=source.indexOf('\nwindow.'+name+' = '),end=source.indexOf('\n};',start+1);assert.ok(start>=0&&end>start);return source.slice(start+1,end+3);};
  const calls=[],w={ownerInbox:{load:()=>calls.push('load'),applyConfirmedRequest:id=>calls.push(id),toggle:id=>calls.push(id),request:()=>({type:'Early Time Out'})},getManagerEarlyTimeOutUI:()=>({review:(...args)=>calls.push(args)})};const ctx={window:w,document:{},installOwnerInbox};for(const name of ['loadInbox','applyConfirmedInboxRequest','toggleResolvedStaff','handleRequest'])vm.runInNewContext(extract(name),ctx);await w.loadInbox();w.applyConfirmedInboxRequest('saved');w.toggleResolvedStaff('history0');await w.handleRequest('saved','Approved');assert.deepEqual(calls,['load','saved','history0',['saved','Approved']]);
+});
+
+function countedDerivations(){
+ let calls=0;const source=readFileSync(new URL('../takodeal-manager/owner-inbox.js',import.meta.url),'utf8').replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,''),context=vm.createContext({canOpenWorkspacePage,OWNER_EMAIL,historyTime,isMealDeduction,leaveRequestSummaryHTML,earlyTimeOutSummaryHTML,setTimeout,clearTimeout,requestHistory:(...args)=>{calls++;return requestHistory(...args);}});vm.runInContext(source+'\nglobalThis.testInstall=installOwnerInbox;',context);return {install:context.testInstall,calls:()=>calls};
+}
+
+test('large inbox history pages reuse one derivation and never rebuild pending actions or download either collection again',async t=>{
+ const counted=countedDerivations(),requests=[row('pending',{timestamp:at(20000)})],deductions=[];for(let index=0;index<6000;index++)requests.push(row('r'+index,{status:'Approved',type:'Reason Letter',explanationMessage:'History entry '+index,timestamp:at(index)}));for(let index=0;index<3000;index++)deductions.push({id:'meal'+index,type:'Staff Meal (POS Auto)',status:'Paid',staffName:'Sample Crew',branch:'Sample Branch',dateAdded:at(index),amount:5});
+ const f=fixture({requests,deductions,install:counted.install});let pendingWrites=0,html='';Object.defineProperty(f.nodes.inboxTableBody,'innerHTML',{get:()=>html,set:value=>{pendingWrites++;html=value;}});await f.inbox.load();const initialWrites=pendingWrites,pendingHTML=html,version=Number(/ownerInbox.review\(0,'Approved',(\d+)\)/.exec(html)[1]);assert.equal(counted.calls(),1);assert.match(f.nodes.resolvedRequestsBody.innerHTML,/View 9000 Records/);
+ for(let index=0;index<4;index++){f.inbox.toggle('history0');f.inbox.page('history0',index);f.inbox.page('history0',179);assert.match(f.nodes.resolvedRequestsBody.innerHTML,/Records 8951–9000 of 9000/);f.inbox.toggle('history0');}
+ assert.equal(counted.calls(),1);assert.equal(pendingWrites,initialWrites);assert.equal(html,pendingHTML);assert.equal(f.calls.many.length,2);assert.equal(f.calls.one.length,0);f.inbox.review(0,'Approved',version);assert.equal(f.calls.reviews[0][0],'pending');t.diagnostic('9000 resolved records;16 history interactions;1 request/deduction derivation;0 additional reads;0 pending-table replacements.');
+});
+
+test('only fresh data invalidates derived row indices, retaining confirmed overlays and rejecting old queued actions',async()=>{
+ const counted=countedDerivations(),requests=[row('one'),row('resolved',{status:'Approved',type:'Reason Letter',explanationMessage:'Prior history'})],f=fixture({requests,install:counted.install});await f.inbox.load();const firstVersion=Number(/ownerInbox.review\(0,'Approved',(\d+)\)/.exec(f.nodes.inboxTableBody.innerHTML)[1]);f.inbox.toggle('history0');f.inbox.toggle('history0');assert.equal(counted.calls(),1);
+ f.requests.unshift(row('new',{timestamp:at(5)}));await f.inbox.load();assert.equal(counted.calls(),2);assert.equal(f.inbox.review(0,'Approved',firstVersion),false);assert.equal(f.calls.reviews.length,0);f.requests[0].status='Not Required';await f.inbox.applyConfirmedRequest('new');assert.equal(counted.calls(),3);f.inbox.toggle('history0');assert.equal(counted.calls(),3);assert.match(f.nodes.resolvedRequestsBody.innerHTML,/Not Required/);assert.equal(f.calls.many.length,4);assert.equal(f.calls.one.length,1);
 });

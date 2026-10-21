@@ -51,7 +51,7 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
   return branches.includes('All')||!!row.branch&&branches.includes(row.branch);
  };
  const allowed=row=>!!inboxActorKey(w)&&rowAccess(row);
- function workspace(){w.refreshOwnerInboxBadge?.();const key=inboxActorKey(w);if(!key){state=null;return null;}if(state?.key!==key)state={key,loaded:false,requests:[],deductions:[],overlays:new Map(),groups:[],groupIds:new Map(),open:new Set(),pages:new Map(),records:[]};return state;}
+ function workspace(){w.refreshOwnerInboxBadge?.();const key=inboxActorKey(w);if(!key){state=null;return null;}if(state?.key!==key)state={key,loaded:false,dataVersion:0,derivedVersion:-1,requests:[],deductions:[],overlays:new Map(),groups:[],groupIds:new Map(),open:new Set(),pages:new Map(),records:[]};return state;}
  const current=target=>state===target&&inboxActorKey(w)===target.key;
  function visible(promise){let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('HQ is taking longer than expected. Retry Refresh Inbox; no request was changed.')),timeoutMs);})]).finally(()=>clearTimeout(timer));}
  function share(map,key,work){let physical=map.get(key);if(!physical){physical=Promise.resolve().then(work);map.set(key,physical);const release=()=>{if(map.get(key)===physical)map.delete(key);};physical.then(release,release);}return visible(physical);}
@@ -70,15 +70,25 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
  }
  function draw(target){
   if(!current(target)||!target.loaded)return false;
-  const rows=requestHistory(target.requests.filter(rowAccess),target.deductions.filter(rowAccess));target.records=rows;target.drawVersion=(target.drawVersion||0)+1;const grouped=new Map();let pending='',count=0;
-  rows.forEach((row,index)=>{
+  // Paging an unchanged dataset reuses its exact sorted rows and action indices.
+  // A server refresh or confirmed request invalidates this in-memory derivation.
+  const changed=target.derivedVersion!==target.dataVersion;let pending='',count=0;
+  if(changed){
+   const rows=requestHistory(target.requests.filter(rowAccess),target.deductions.filter(rowAccess));target.records=rows;target.drawVersion=(target.drawVersion||0)+1;const grouped=new Map();
+   rows.forEach((row,index)=>{
    if(row.status!=='Pending'){const name=String(row.staffName||'Unknown');if(!grouped.has(name))grouped.set(name,[]);grouped.get(name).push({row,index});return;}
    count++;pending+='<tr data-inbox-request="'+escape(row.id)+'"><td style="padding:12px;color:#64748b;">'+escape(dateLabel(row.timestamp))+'</td><td style="padding:12px;font-weight:bold;">'+escape(row.staffName||'Unknown')+'</td><td style="padding:12px;"><span class="badge badge-closed">'+escape(row.branch||'Not recorded')+'</span></td><td style="padding:12px;"><strong>'+escape(row.type||'Request')+'</strong><br><span style="background:#fef9c3;color:#854d0e;font-size:11px;">Pending Review</span></td><td style="padding:12px;max-width:250px;white-space:normal;">'+details(row,index)+'</td><td style="padding:12px;"><button type="button" onclick="window.ownerInbox.review('+index+',\'Approved\','+target.drawVersion+')" style="background:#166653;color:white;padding:7px 12px;border:0;border-radius:5px;margin:3px;">Approve</button><button type="button" onclick="window.ownerInbox.review('+index+',\'Rejected\','+target.drawVersion+')" style="background:#b83c3c;color:white;padding:7px 12px;border:0;border-radius:5px;margin:3px;">Reject</button></td></tr>';
-  });
-  target.groups=[];let history='';
-  for(const [name,entries] of grouped){
-   if(!target.groupIds.has(name))target.groupIds.set(name,'history'+target.groupIds.size);
-   const id=target.groupIds.get(name),expanded=target.open.has(id),pages=Math.ceil(entries.length/size),page=Math.min(target.pages.get(id)||0,pages-1);target.pages.set(id,page);target.groups.push({id,entries});
+   });
+   target.groups=[];
+   for(const [name,entries] of grouped){
+    if(!target.groupIds.has(name))target.groupIds.set(name,'history'+target.groupIds.size);
+    target.groups.push({name,id:target.groupIds.get(name),entries});
+   }
+   target.derivedVersion=target.dataVersion;
+  }
+  let history='';
+  for(const {name,id,entries} of target.groups){
+   const expanded=target.open.has(id),pages=Math.ceil(entries.length/size),page=Math.min(target.pages.get(id)||0,pages-1);target.pages.set(id,page);
    history+='<tr><td colspan="4" style="padding:18px;font-weight:bold;"><button type="button" aria-expanded="'+expanded+'" onclick="window.toggleResolvedStaff(\''+id+'\')" style="background:none;border:0;color:inherit;font:inherit;cursor:pointer;">'+(expanded?'▲':'▼')+' 👤 '+escape(name)+'</button></td><td style="padding:18px;text-align:right;"><button type="button" onclick="window.toggleResolvedStaff(\''+id+'\')">View '+entries.length+' Records</button></td></tr>';
    if(!expanded)continue;
    for(const {row,index} of entries.slice(page*size,(page+1)*size)){
@@ -88,9 +98,9 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
    if(pages>1)history+='<tr><td colspan="5" style="padding:12px;text-align:right;"><button type="button" '+(page===0?'disabled ':'')+'onclick="window.ownerInbox.page(\''+id+'\','+(page-1)+')">Previous</button> <span>Records '+(page*size+1)+'–'+Math.min((page+1)*size,entries.length)+' of '+entries.length+'</span> <button type="button" '+(page+1>=pages?'disabled ':'')+'onclick="window.ownerInbox.page(\''+id+'\','+(page+1)+')">Next</button></td></tr>';
   }
   const pendingBody=node('inboxTableBody'),resolved=node('resolvedRequestsBody'),badge=node('inboxBadge');
-  if(pendingBody)pendingBody.innerHTML=pending||'<tr><td colspan="6" style="padding:30px;color:#166653;">No pending requests! 🎉</td></tr>';
+  if(changed&&pendingBody)pendingBody.innerHTML=pending||'<tr><td colspan="6" style="padding:30px;color:#166653;">No pending requests! 🎉</td></tr>';
   if(resolved)resolved.innerHTML=history||'<tr><td colspan="5" style="padding:30px;">No resolved history yet.</td></tr>';
-  if(badge){badge.innerText=count;badge.style.display=count?'inline-block':'none';}
+  if(changed&&badge){badge.innerText=count;badge.style.display=count?'inline-block':'none';}
   return true;
  }
  function refs(table){const session=w.sessionUser,base=w.collection(w.db,table),all=email(w.auth.currentUser.email)===OWNER_EMAIL||session.allowedBranches?.includes('All'),branches=[...new Set((session.allowedBranches||[]).filter(branch=>typeof branch==='string'&&branch&&branch!=='All'))];if(!all&&!branches.length)throw Error('No request branches are assigned to this account.');return (all?[null]:branches).map(branch=>branch?w.query(base,w.where('branch','==',branch)):base);}
@@ -103,7 +113,7 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
    const [requests,deductions]=await Promise.all(['staff_requests','staff_deductions'].map(async table=>{const snapshots=await Promise.all(refs(table,target).map(reference=>read(reference)));const records=new Map();for(const snapshot of snapshots)for(const row of snapshotRows(fresh(snapshot)))if(allowed(row))records.set(row.id,row);return [...records.values()];}));
    if(!current(target))return false;
    const merged=new Map(requests.map(row=>[row.id,row]));for(const [id,overlay] of target.overlays)if(overlay.sequence>start){if(overlay.row)merged.set(id,overlay.row);else merged.delete(id);}else target.overlays.delete(id);
-   target.requests=[...merged.values()];target.deductions=deductions;target.loaded=true;return draw(target);
+   target.requests=[...merged.values()];target.deductions=deductions;target.loaded=true;target.dataVersion++;return draw(target);
   });}catch(error){if(current(target)){if(!target.loaded)node('inboxTableBody').innerHTML='<tr><td colspan="6" role="alert">'+escape(error.message||'Requests could not load. Retry Refresh Inbox.')+'</td></tr>';else w.ManagerUI?.notify?.('Saved inbox remains visible. '+(error.message||'Refresh could not finish.'));}return false;}
  }
  async function applyConfirmedRequest(id){
@@ -112,7 +122,7 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
    const read=w.getDocFromServer;if(typeof read!=='function')throw Error('Refresh this saved request from HQ.');const snapshot=fresh(await read(w.doc(w.db,'staff_requests',id)));
    if(!current(target))return false;
    const row=snapshot.exists()?{...snapshot.data(),id}:null;if(row&&!allowed(row))throw Error('This request is outside your branch access.');
-   target.overlays.set(id,{row,sequence:++sequence});const requests=new Map(target.requests.map(entry=>[entry.id,entry]));if(row)requests.set(id,row);else requests.delete(id);target.requests=[...requests.values()];return target.loaded?draw(target):false;
+   target.overlays.set(id,{row,sequence:++sequence});const requests=new Map(target.requests.map(entry=>[entry.id,entry]));if(row)requests.set(id,row);else requests.delete(id);target.requests=[...requests.values()];target.dataVersion++;return target.loaded?draw(target):false;
   });
  }
  function toggle(id){const target=workspace();if(!target?.loaded||!target.groups.some(group=>group.id===id))return false;if(target.open.has(id))target.open.delete(id);else target.open.add(id);return draw(target);}
