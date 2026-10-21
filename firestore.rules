@@ -145,64 +145,58 @@ service cloud.firestore {
         && marker.saleId == id && marker.branch == source.branch && marker.receiptId == source.receiptId
         && marker.fingerprint == fingerprint;
     }
+    function cancelledBuyer(staff, name) {
+      return cancelledStaffPin(staff).trim().upper() != 'REVOKED'
+        && staff.get('active',true) != false && staff.get('archived',false) != true
+        && !string(staff.get('status','')).lower().matches('.*(blocked|inactive|terminated|archived|resigned|deleted).*')
+        && staff.get('role','Staff').trim().lower() in ['staff','staff crew','crew','cashier','manager']
+        && staff.get('cashierName',staff.get('fullName',staff.get('name',''))) == name;
+    }
+    function cancelledCharge(data, charge, id, source) {
+      return charge.diff({
+        'staffId':data.cancelledFoodStaffId,'staffName':data.customerName,'branch':data.branch,
+        'type':'Cancelled Food Purchase','category':'Foods','status':'Unpaid','amount':data.netTotal,
+        'originalAmount':data.subTotalBeforeDiscount,'discountPct':data.globalDiscountValue,
+        'discountAmount':data.globalDiscountAmount,'sourceSaleId':source.saleId,
+        'sourceReceiptId':source.receiptId,'sourcePlatform':data.cancelledFoodQuote.platform,
+        'purchaseId':id,'receiptId':data.receiptId,'item':charge.item,
+        'dateAdded':request.time,'loggedBy':data.cashier
+      }).affectedKeys().hasOnly(['purchasedItems','cancelledFoodSelection']);
+    }
     function cancelledFoodPurchase(data, id) {
       let prior = get(/databases/$(database)/documents/transactions/$(data.cancelledFoodSourceId)).data;
       let source = getAfter(/databases/$(database)/documents/transactions/$(data.cancelledFoodSourceId)).data;
-      let staff = get(/databases/$(database)/documents/cashiers/$(data.cancelledFoodStaffId)).data;
       let config = exists(/databases/$(database)/documents/settings/global_pos_config)
         ? get(/databases/$(database)/documents/settings/global_pos_config).data : {};
-      let charge = getAfter(/databases/$(database)/documents/staff_deductions/$(id)).data;
-      let base = source.get('subTotalBeforeDiscount', null) == null ? source.netTotal : source.subTotalBeforeDiscount;
+      let base = prior.get('subTotalBeforeDiscount',prior.netTotal);
       let percent = cancelledDiscount(config);
       let baseCents = math.round(base * 100);
       let discountCents = math.round(baseCents * percent / 100.0);
-      let quoted = data.get('cancelledFoodQuote', {});
+      let quote = data.cancelledFoodQuote;
       return id.matches('cancelled-food-.+') && !exists(/databases/$(database)/documents/transactions/$(id))
-        && data.get('saleVersion', 0) == 2 && data.get('saleId', '') == id
-        && config.get('cancelledFoodPurchaseEnabled', true) == true
-        && cancelledFoodSource(prior, data.cancelledFoodSourceId, quoted.get('fingerprint', ''))
-        && prior.status == 'Voided' && prior.get('preparedCancellation', {}).get('prepared', false) == true
-        && prior.get('cancelledFoodPurchaseId', '') == ''
-        && source.diff(prior).affectedKeys().hasOnly(['cancelledFoodPurchaseId'])
-        && source.status == 'Voided' && source.get('preparedCancellation', {}).get('prepared', false) == true
-        && source.cancelledFoodPurchaseId == id && data.branch == source.branch && data.shiftId == source.shiftId
-        && preparedShift(source, source)
-        && data.cart == source.cart && data.inventoryMovements == [] && data.inventoryState == 'applied'
-        && data.status == 'Paid' && data.paymentMethod == 'Salary Deduction' && data.paymentVerified == true
-        && data.cancelledFoodSourceReceiptId == source.receiptId && data.globalDiscountType == 'cancelled_food' && data.amountReceived == 0
-        && data.timestamp == request.time && data.receiptId == 'CF-' + source.receiptId
-        && base is number && base >= 0 && percent >= 0 && percent <= 100
-        && data.globalDiscountValue == percent
-        && data.subTotalBeforeDiscount == baseCents / 100.0
-        && data.netTotal == (baseCents - discountCents) / 100.0
-        && data.globalDiscountAmount == discountCents / 100.0
-        && quoted.keys().hasOnly(['sourceSaleId','branch','shiftId','sourceReceiptId','platform','baseAmount','discountPct','discountAmount','amount','fingerprint'])
-        && quoted.sourceSaleId == data.cancelledFoodSourceId && quoted.branch == data.branch && quoted.shiftId == data.shiftId
-        && quoted.sourceReceiptId == source.receiptId
-        && quoted.platform == (source.paymentMethod.trim().lower() == 'grab' ? 'Grab' : 'Foodpanda')
-        && quoted.baseAmount == data.subTotalBeforeDiscount && quoted.discountPct == percent
-        && quoted.discountAmount == data.globalDiscountAmount && quoted.amount == data.netTotal
-        && quoted.fingerprint is string && quoted.fingerprint.size() > 0
-        && cancelledStaffPin(staff).trim().upper() != 'REVOKED'
-        && staff.get('active', true) != false && staff.get('archived', false) != true
-        && !string(staff.get('status', '')).lower().matches('.*(blocked|inactive|terminated|archived|resigned|deleted).*')
-        && staff.get('role', 'Staff') is string
-        && staff.get('role', 'Staff').trim().lower() in ['staff','staff crew','crew','cashier','manager']
-        && staff.get('cashierName', staff.get('fullName', staff.get('name', ''))) == data.customerName
-        && charge.purchaseId == id && charge.staffId == data.cancelledFoodStaffId && charge.staffName == data.customerName
-        && charge.branch == data.branch && charge.sourceSaleId == data.cancelledFoodSourceId
-        && charge.amount == data.netTotal && charge.type == 'Cancelled Food Purchase'
-        && charge.originalAmount == data.subTotalBeforeDiscount && charge.discountPct == percent
-        && charge.discountAmount == data.globalDiscountAmount
-        && charge.sourceReceiptId == source.receiptId && charge.sourcePlatform == quoted.platform
-        && charge.receiptId == data.receiptId
-        && charge.category == 'Foods' && charge.status == 'Unpaid' && charge.dateAdded == request.time;
+        && config.get('cancelledFoodPurchaseEnabled',true) == true
+        && cancelledFoodSource(prior,data.cancelledFoodSourceId,quote.fingerprint)
+        && prior.status == 'Voided' && prior.preparedCancellation.prepared == true
+        && prior.get('cancelledFoodPurchaseId','') == '' && prior.get('cancelledFoodAllocationVersion',0) == 0
+        && source.diff(prior).affectedKeys().hasOnly(['cancelledFoodPurchaseId']) && source.cancelledFoodPurchaseId == id
+        && [data.branch,data.shiftId,data.saleId,data.saleVersion,data.status,data.paymentMethod,data.paymentVerified,data.inventoryState,data.globalDiscountType,data.cancelledFoodSourceReceiptId,data.receiptId]
+          == [source.branch,source.shiftId,id,2,'Paid','Salary Deduction',true,'applied','cancelled_food',source.receiptId,'CF-'+source.receiptId]
+        && preparedShift(source,source) && data.cart == source.cart && data.inventoryMovements == [] && data.amountReceived == 0
+        && data.timestamp == request.time && base is number && base >= 0 && percent >= 0 && percent <= 100
+        && data.globalDiscountValue == percent && data.subTotalBeforeDiscount == baseCents / 100.0
+        && data.globalDiscountAmount == discountCents / 100.0 && data.netTotal == (baseCents-discountCents) / 100.0
+        && quote == {'sourceSaleId':source.saleId,'branch':data.branch,'shiftId':data.shiftId,'sourceReceiptId':source.receiptId,
+          'platform':source.paymentMethod.trim().lower() == 'grab' ? 'Grab' : 'Foodpanda','baseAmount':data.subTotalBeforeDiscount,
+          'discountPct':data.globalDiscountValue,'discountAmount':data.globalDiscountAmount,'amount':data.netTotal,'fingerprint':quote.fingerprint}
+        && cancelledBuyer(get(/databases/$(database)/documents/cashiers/$(data.cancelledFoodStaffId)).data,data.customerName)
+        && cancelledCharge(data,getAfter(/databases/$(database)/documents/staff_deductions/$(id)).data,id,source);
     }
     function preparedPurchaseTransition(before, after, id) {
       let purchaseId = after.get('cancelledFoodPurchaseId', '');
       return before.get('saleVersion', 0) == 2 && before.get('saleId', '') == id
         && before.get('preparedCancellation', {}).get('prepared', false) == true && before.status == 'Voided'
         && before.get('cancelledFoodPurchaseId', '') == '' && purchaseId is string && purchaseId != ''
+        && before.get('cancelledFoodAllocationVersion', 0) == 0
         && after.diff(before).affectedKeys().hasOnly(['cancelledFoodPurchaseId'])
         // A genuinely new companion receipt must pass its own complete create
         // validator. Do not repeat that validator here (Rules expression cap).
@@ -216,7 +210,158 @@ service cloud.firestore {
       return data.purchaseId == id && !exists(/databases/$(database)/documents/transactions/$(id))
         && purchase.get('cancelledFoodSourceId', '') != ''
         && purchase.branch == data.branch && purchase.cancelledFoodStaffId == data.staffId
-        && purchase.customerName == data.staffName && purchase.netTotal == data.amount;
+        && purchase.customerName == data.staffName && purchase.netTotal == data.amount
+        && (purchase.get('cancelledFoodPortionVersion',0) != 1 || data.purchasedItems == purchase.cart);
+    }
+    // One serialized allocation map per original receipt makes concurrent
+    // partial purchases mutually exclusive without re-consuming ingredients.
+    function portionSum(selection, key) {
+      return selection[0][key]
+        + (selection.size() > 1 ? selection[1][key] : 0)
+        + (selection.size() > 2 ? selection[2][key] : 0)
+        + (selection.size() > 3 ? selection[3][key] : 0)
+        + (selection.size() > 4 ? selection[4][key] : 0)
+        + (selection.size() > 5 ? selection[5][key] : 0);
+    }
+    function portionLine(source, purchase, prior, next, slot, percent) {
+      let chosen = purchase.cancelledFoodSelection[slot];
+      let original = source.cart[chosen.lineIndex];
+      let item = purchase.cart[slot];
+      let quantity = original.qty;
+      let key = string(chosen.lineIndex);
+      let previous = prior.get(key, 0);
+      let total = original.get('lineTotalFinal', null) != null ? math.round(original.lineTotalFinal * 100)
+        : math.round(original.get('price', original.get('variantPrice', original.get('basePrice', 0))) * original.qty * 100);
+      let start = math.round(total * previous / quantity);
+      let end = math.round(total * (previous + chosen.qty) / quantity);
+      return chosen == {'lineIndex':chosen.lineIndex,'qty':chosen.qty,'allocationId':source.saleId,
+          'priorPurchasedQty':previous,'baseCents':end-start,
+          'discountCents':math.round(end * percent / 100.0)-math.round(start * percent / 100.0)}
+        && chosen.lineIndex is int && chosen.lineIndex >= 0
+        && (slot == 0 || chosen.lineIndex > purchase.cancelledFoodSelection[slot - 1].lineIndex)
+        && quantity is int && quantity > 0 && quantity <= 100000
+        && chosen.qty is int && chosen.qty > 0 && previous is int && previous >= 0
+        && previous + chosen.qty <= quantity && next.get(key, 0) == previous + chosen.qty
+        && total >= 0 && total <= 10000000000
+        && item.diff(original).affectedKeys().hasOnly(['qty','lineTotalFinal','sourceLineIndex','sourceOriginalQty','baseAmount','discountAmount','amount'])
+        && item.qty == chosen.qty && item.lineTotalFinal == chosen.baseCents / 100.0
+        && item.sourceLineIndex == chosen.lineIndex
+        && item.sourceOriginalQty == quantity
+        && item.baseAmount == item.lineTotalFinal
+        && item.discountAmount == chosen.discountCents / 100.0
+        && item.amount == (chosen.baseCents-chosen.discountCents) / 100.0;
+    }
+    function portionProof(purchase, slot) {
+      return getAfter(/databases/$(database)/documents/cancelled_food_purchase_lines/$(purchase.saleId+'--'+string(slot))).data
+        == {'purchaseId':purchase.saleId,'sourceSaleId':purchase.cancelledFoodSourceId,'selectionSlot':slot};
+    }
+    function portionLines(source, purchase, prior, next) {
+      let selection = purchase.cancelledFoodSelection;
+      return selection is list && selection.size() > 0 && selection.size() <= 6
+        && purchase.cart is list && purchase.cart.size() == selection.size()
+        && next.diff(prior).affectedKeys().hasOnly([
+          string(selection[0].lineIndex),
+          selection.size() > 1 ? string(selection[1].lineIndex) : string(selection[0].lineIndex),
+          selection.size() > 2 ? string(selection[2].lineIndex) : string(selection[0].lineIndex),
+          selection.size() > 3 ? string(selection[3].lineIndex) : string(selection[0].lineIndex),
+          selection.size() > 4 ? string(selection[4].lineIndex) : string(selection[0].lineIndex),
+          selection.size() > 5 ? string(selection[5].lineIndex) : string(selection[0].lineIndex)])
+        && portionProof(purchase,0)
+        && (selection.size() < 2 || portionProof(purchase,1))
+        && (selection.size() < 3 || portionProof(purchase,2))
+        && (selection.size() < 4 || portionProof(purchase,3))
+        && (selection.size() < 5 || portionProof(purchase,4))
+        && (selection.size() < 6 || portionProof(purchase,5));
+    }
+    function cancelledPortionProof(data, id) {
+      let purchase=getAfter(/databases/$(database)/documents/transactions/$(data.purchaseId)).data;
+      let source=get(/databases/$(database)/documents/transactions/$(data.sourceSaleId)).data;
+      let prior=exists(/databases/$(database)/documents/cancelled_food_allocations/$(data.sourceSaleId))
+        ? get(/databases/$(database)/documents/cancelled_food_allocations/$(data.sourceSaleId)).data.purchasedQuantities : {};
+      let ledger=getAfter(/databases/$(database)/documents/cancelled_food_allocations/$(data.sourceSaleId)).data;
+      let config=exists(/databases/$(database)/documents/settings/global_pos_config)
+        ? get(/databases/$(database)/documents/settings/global_pos_config).data : {};
+      return data.keys().hasOnly(['purchaseId','sourceSaleId','selectionSlot'])
+        && data.selectionSlot is int && data.selectionSlot>=0 && data.selectionSlot<6
+        && id==data.purchaseId+'--'+string(data.selectionSlot)
+        && !exists(/databases/$(database)/documents/transactions/$(data.purchaseId))
+        && purchase.cancelledFoodSourceId==data.sourceSaleId && purchase.cancelledFoodPortionVersion==1
+        && ledger.lastPurchaseId==data.purchaseId
+        && portionLine(source,purchase,prior,ledger.purchasedQuantities,data.selectionSlot,cancelledDiscount(config));
+    }
+    function cancelledPortionAllocation(data, sourceId) {
+      let source = get(/databases/$(database)/documents/transactions/$(sourceId)).data;
+      let purchase = getAfter(/databases/$(database)/documents/transactions/$(data.lastPurchaseId)).data;
+      let prior = resource == null ? {} : resource.data.purchasedQuantities;
+      return data.keys().hasOnly(['sourceSaleId','sourceReceiptId','branch','shiftId','purchasedQuantities','lastPurchaseId','updatedAt'])
+        && data.sourceSaleId == sourceId && data.sourceReceiptId == source.receiptId
+        && data.branch == source.branch && data.shiftId == source.shiftId && data.updatedAt == request.time
+        && data.purchasedQuantities is map && data.lastPurchaseId is string
+        && !exists(/databases/$(database)/documents/transactions/$(data.lastPurchaseId))
+        && purchase.cancelledFoodSourceId == sourceId && purchase.cancelledFoodPortionVersion == 1
+        && source.get('cancelledFoodPurchaseId', '') == '' && source.status == 'Voided'
+        && source.get('preparedCancellation', {}).get('prepared', false) == true
+        && portionLines(source,purchase,prior,data.purchasedQuantities);
+    }
+    function cancelledPortionPurchase(data, id) {
+      let source = get(/databases/$(database)/documents/transactions/$(data.cancelledFoodSourceId)).data;
+      let ledger = getAfter(/databases/$(database)/documents/cancelled_food_allocations/$(data.cancelledFoodSourceId)).data;
+      let config = exists(/databases/$(database)/documents/settings/global_pos_config)
+        ? get(/databases/$(database)/documents/settings/global_pos_config).data : {};
+      let quote = data.cancelledFoodQuote;
+      let selection = data.cancelledFoodSelection;
+      let base = portionSum(selection,'baseCents');
+      let discount = portionSum(selection,'discountCents');
+      let percent = cancelledDiscount(config);
+      let charge = getAfter(/databases/$(database)/documents/staff_deductions/$(id)).data;
+      return id.matches('^cancelled-food-.+-portion-'+quote.operationId+'$')
+        && quote.operationId.matches('^[a-f0-9]{32}$') && !exists(/databases/$(database)/documents/transactions/$(id))
+        && config.get('cancelledFoodPurchaseEnabled',true) == true
+        && cancelledFoodSource(source,data.cancelledFoodSourceId,quote.fingerprint)
+        && source.status == 'Voided' && source.preparedCancellation.prepared == true && source.get('cancelledFoodPurchaseId','') == ''
+        && getAfter(/databases/$(database)/documents/transactions/$(data.cancelledFoodSourceId)).data.cancelledFoodLastPurchaseId == id
+        && [ledger.lastPurchaseId,ledger.sourceSaleId,ledger.branch,ledger.shiftId,ledger.updatedAt]
+          == [id,source.saleId,source.branch,source.shiftId,request.time]
+        && [data.branch,data.shiftId,data.saleId,data.saleVersion,data.status,data.paymentMethod,data.paymentVerified,data.inventoryState,data.inventoryReviewRequired,data.globalDiscountType,data.cancelledFoodSourceReceiptId,data.receiptId,data.cancelledFoodPortionVersion]
+          == [source.branch,source.shiftId,id,2,'Paid','Salary Deduction',true,'applied',false,'cancelled_food',source.receiptId,'CF-'+source.receiptId+'-'+quote.operationId,1]
+        && selection.size()>0 && selection.size()<=6 && data.cart.size()==selection.size()
+        && data.inventoryMovements == [] && data.amountReceived==0 && data.timestamp==request.time
+        && data.globalDiscountValue==percent && percent>=0 && percent<=100
+        && data.subTotalBeforeDiscount==base / 100.0 && data.globalDiscountAmount==discount / 100.0
+        && data.netTotal==(base-discount) / 100.0 && data.netTotal>=0
+        && quote == {'portionVersion':1,'operationId':quote.operationId,'selection':selection,
+          'sourceSaleId':source.saleId,'branch':data.branch,'shiftId':data.shiftId,'sourceReceiptId':source.receiptId,
+          'platform':source.paymentMethod.trim().lower() == 'grab' ? 'Grab' : 'Foodpanda',
+          'baseAmount':data.subTotalBeforeDiscount,'discountPct':data.globalDiscountValue,
+          'discountAmount':data.globalDiscountAmount,'amount':data.netTotal,'fingerprint':quote.fingerprint}
+        && cancelledBuyer(get(/databases/$(database)/documents/cashiers/$(data.cancelledFoodStaffId)).data,data.customerName)
+        && cancelledCharge(data,charge,id,source) && charge.cancelledFoodSelection==selection;
+    }
+    function preparedPortionTransition(before, after, id) {
+      let purchaseId = after.get('cancelledFoodLastPurchaseId', '');
+      let purchase = getAfter(/databases/$(database)/documents/transactions/$(purchaseId)).data;
+      return before.get('saleVersion', 0) == 2 && before.get('saleId', '') == id
+        && before.status == 'Voided' && before.get('preparedCancellation', {}).get('prepared', false) == true
+        && before.get('cancelledFoodPurchaseId', '') == ''
+        && before.get('cancelledFoodAllocationVersion', 0) in [0,1]
+        && after.diff(before).affectedKeys().hasOnly(['cancelledFoodAllocationVersion','cancelledFoodLastPurchaseId','cancelledFoodPurchasedUnits'])
+        && after.cancelledFoodAllocationVersion == 1
+        && !exists(/databases/$(database)/documents/transactions/$(purchaseId))
+        && purchase.cancelledFoodSourceId == id && purchase.cancelledFoodPortionVersion == 1
+        && after.cancelledFoodPurchasedUnits == before.get('cancelledFoodPurchasedUnits',0) + portionSum(purchase.cancelledFoodSelection,'qty')
+        && preparedShift(before,after);
+    }
+    function ordinaryTransactionUpdate(before, after, id) {
+      return before.get('preparedCancellation',{}).get('prepared',false) == true
+        ? (before.inventoryState == 'deferred' && after.inventoryState == 'applied'
+          && after.inventoryAppliedAt == request.time
+          && after.diff(before).affectedKeys().hasOnly(['inventoryState','inventoryAppliedAt']) && saleWriter(before.branch))
+        : before.get('cancelledFoodSourceId','') != '' ? false
+        : (!protectedSales(before.get('branch','')) && !protectedSales(after.get('branch','')))
+        || (before.get('branch','') == after.get('branch','')
+          && (verifiedHQ(before.get('branch','')) || (trustedPOS(before.get('branch',''))
+            && ((before.get('inventoryState','') == 'audit_pending' && after.get('inventoryState','') == 'applied'
+              && after.diff(before).affectedKeys().hasOnly(['inventoryState'])) || safetyTransition(before,after,id)))));
     }
     function cancelledPolicyWrite(id, before, after) {
       // Protect only this feature's policy fields. Existing unrelated settings
@@ -425,21 +570,33 @@ service cloud.firestore {
       allow read: if true;
       allow create: if request.resource.data.get('cancelledFoodSourceId', '') != ''
         ? (cancelledFoodWriter(request.resource.data.branch)
-          && cancelledFoodPurchase(request.resource.data, txId) && safetySale(request.resource.data, txId))
+          && (request.resource.data.get('cancelledFoodPortionVersion',0) == 1
+            ? cancelledPortionPurchase(request.resource.data,txId) : cancelledFoodPurchase(request.resource.data, txId))
+          && safetySale(request.resource.data, txId))
         : (!protectedSales(request.resource.data.get('branch', ''))
         || verifiedHQ(request.resource.data.get('branch', ''))
         || (trustedPOS(request.resource.data.get('branch', ''))
           && ((request.resource.data.get('localSaleId', '') == txId && request.resource.data.get('syncVersion', 0) == 2)
             || safetySale(request.resource.data, txId) || parkedAccountability(request.resource.data, txId))));
-      allow update: if (!protectedSales(resource.data.get('branch', '')) && !protectedSales(request.resource.data.get('branch', '')))
-        || (resource.data.get('branch', '') == request.resource.data.get('branch', '')
-          && (verifiedHQ(resource.data.get('branch', ''))
-            || (trustedPOS(resource.data.get('branch', ''))
-              && ((resource.data.get('inventoryState', '') == 'audit_pending'
-                && request.resource.data.get('inventoryState', '') == 'applied'
-                && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['inventoryState']))
-                || safetyTransition(resource.data, request.resource.data, txId)))));
-      allow delete: if (!protectedSales(resource.data.get('branch', '')) && isHQUser()) || isOwner();
+      allow update: if request.resource.data.diff(resource.data).affectedKeys().hasAny(['cancelledFoodPurchaseId','cancelledFoodAllocationVersion','cancelledFoodLastPurchaseId','cancelledFoodPurchasedUnits'])
+        ? (resource.data.branch == request.resource.data.branch
+          && (request.resource.data.get('cancelledFoodAllocationVersion',0) == 1
+            ? preparedPortionTransition(resource.data,request.resource.data,txId) : preparedPurchaseTransition(resource.data,request.resource.data,txId)))
+        : ordinaryTransactionUpdate(resource.data,request.resource.data,txId);
+      allow delete: if resource.data.get('preparedCancellation',{}).get('prepared',false) != true
+        && resource.data.get('cancelledFoodSourceId','') == ''
+        && ((!protectedSales(resource.data.get('branch', '')) && isHQUser()) || isOwner());
+    }
+    match /cancelled_food_allocations/{sourceId} {
+      allow read: if true;
+      // A fresh companion receipt authorizes the writer in its own create rule.
+      allow create, update: if cancelledPortionAllocation(request.resource.data,sourceId);
+      allow delete: if false;
+    }
+    match /cancelled_food_purchase_lines/{lineId} {
+      allow read: if true;
+      allow create: if cancelledPortionProof(request.resource.data,lineId);
+      allow update,delete: if false;
     }
     match /stock_logs/{logId} { allow read, create, update: if true; allow delete: if isOwner(); }
     // Only the verified Google Owner may issue these reviewed HR markers.
@@ -1244,8 +1401,7 @@ service cloud.firestore {
         : request.resource.data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
         ? (onlineIncidentCharge(request.resource.data, deductId) || directIncidentCharge(request.resource.data,deductId))
         : request.resource.data.get('type', '') == 'Cancelled Food Purchase'
-        ? (cancelledFoodWriter(request.resource.data.branch)
-          && cancelledFoodChargeLink(request.resource.data, deductId))
+        ? cancelledFoodChargeLink(request.resource.data, deductId)
         : isHQUser();
       allow update: if cashShortageKind(resource.data,deductId) || cashShortageKind(request.resource.data,deductId)
         ? (request.resource.data.status == 'Paid' ? cashShortageCompanionPaid(resource.data,request.resource.data,deductId,resource.data.reviewRevision) : cashShortageChargeReview(resource.data,request.resource.data,deductId))

@@ -79,6 +79,30 @@ test('ordinary payroll saves one atomic debit, expense and frozen edited payslip
  assert.deepEqual(f.data,before);assert.equal(f.h.get('expenses/'+paymentId).note,`Payslip for ${name} (${start} to ${end}) - Branch: Maa`);
 });
 
+test('ordinary settlement freezes the actual selected cancelled-food receipt details and partial collection',async()=>{
+ const f=fixture();f.data.meals=50;f.input.finalNetPay=400;
+ f.h.put('staff_deductions/portion',deduction('portion',200,'Cancelled Food Purchase',3,{sourceSaleId:'source',sourcePlatform:'Grab',sourceReceiptId:'OR-SOURCE',receiptId:'CF-PORTION',purchaseId:'portion',purchasedItems:[{name:'Mango shake',qty:1,size:'Large',amount:80},{name:'Bonito takoyaki',qty:1,amount:120}],pin:'NEVER COPY'}));
+ const result=await f.pay(),details=result.frozenData.deductionDetails;
+ assert.equal(result.frozenData.deductionDetailsVersion,1);assert.equal(details[0].amount,50);assert.equal(details[0].sourceReceiptId,'OR-SOURCE');assert.equal(details[0].items[0].qty,1);assert.equal(details[0].items[0].name,'Mango shake');assert.equal(details[0].pin,undefined);
+ assert.equal(f.h.get('staff_deductions/portion').amount,150);const frozen=structuredClone(result.frozenData);
+ f.h.put('staff_deductions/portion',{...f.h.get('staff_deductions/portion'),purchasedItems:[{name:'CHANGED AFTER PAYMENT',qty:99}]});
+ const again=await f.pay();assert.equal(again.alreadyPaid,true);assert.deepEqual(again.frozenData,frozen);assert.equal(f.h.get('cash_accounts/cash').balance,4600);
+});
+
+test('refund settlement freezes freshly verified selected food evidence beside the separate refund charge',async()=>{
+ const f=fixture(),data=refundData();seedRefund(f.h);data.meals=40;
+ const row={id:'portion',...deduction('portion',40,'Cancelled Food Purchase',3,{sourcePlatform:'Foodpanda',sourceReceiptId:'PANDA-OR',receiptId:'CF-PANDA',purchasedItems:[{name:'Bonito takoyaki',qty:1,amount:40}]})};f.h.put('staff_deductions/portion',row);
+ const engine=createRefundPayrollEngine(f.h.api,{ownerCheck:()=>true});
+ const result=await engine.pay({data,accountId:'cash',finalNetPay:330,deductionRows:[row]});
+ assert.equal(result.frozenData.deductionDetailsVersion,1);assert.equal(result.frozenData.deductionDetails[0].sourcePlatform,'Foodpanda');assert.equal(result.frozenData.deductionDetails[0].amount,40);assert.equal(result.frozenData.deductionDetails[0].items[0].qty,1);assert.equal(result.frozenData.onlineRefunds,80);assert.equal(f.h.get('cash_accounts/cash').balance,4670);
+});
+
+test('receipt detail size is checked before any payroll financial write',async()=>{
+ const f=fixture();f.data.meals=20;f.input.finalNetPay=430;
+ for(let index=0;index<20;index++)f.h.put('staff_deductions/food-'+index,deduction('food-'+index,1,'Cancelled Food Purchase',3,{purchasedItems:Array.from({length:200},()=>({name:'Food'.repeat(75),qty:1,notes:'Options'.repeat(40)}))}));
+ const before=structuredClone([...f.h.docs]);await assert.rejects(f.pay(),/too much receipt detail/);assert.deepEqual([...f.h.docs],before);
+});
+
 test('a rejected atomic commit changes no account, deductions, expense or payroll',async()=>{
  const f=fixture();f.data.meals=100;f.input.finalNetPay=350;f.h.put('staff_deductions/food',deduction('food',100));
  const before=structuredClone([...f.h.docs]);f.h.failNextCommit();await assert.rejects(f.pay(),/Commit rejected/);

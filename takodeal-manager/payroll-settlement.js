@@ -3,6 +3,7 @@ import {createWorkspaceSession,canOpenHrTab,OWNER_EMAIL} from './workspace-acces
 import {dailyStaffRate,validRateDate,validateSalaryTimeline} from './staff-rate-model.js';
 import {isMealDeduction} from './payroll-safety.js';
 import {isCashShortageDeduction,validateCashShortageLink,CASH_SHORTAGE_LIMIT} from './cash-shortage-model.js';
+import {snapshotPayrollDeductionRows} from './payroll-deduction-details.js';
 
 export const PAYROLL_SETTLEMENT_LIMITS=Object.freeze({rows:140,queryRows:250,readConcurrency:8,timeoutMs:25000,maxCents:1000000000000,documentBytes:750000});
 const pending=new WeakMap(),text=value=>String(value??'').trim();
@@ -184,6 +185,8 @@ async function settle(api,input,identity,guard){
   const cashSettlements=validatePayrollCashShortageSet(data,cashCandidates,get);
   const frozen=validateOrdinaryPayrollSnapshot(data,finalNetPay),freshDeductions=eligibleDeductions.map(row=>{const fresh=get('staff_deductions',row.id);if(!fresh||fresh.status!=='Unpaid'||fresh.type!==row.type||amount(fresh.amount)!==amount(row.amount))throw Error('A meal or advance changed. Regenerate payroll.');staffRow(fresh,data);return {...fresh,id:row.id};});
   const allocations=[...allocation(freshDeductions.filter(row=>row.type==='Cash Advance'),data.advances,'Cash advances'),...allocation(freshDeductions.filter(row=>isMealDeduction(row.type)),data.meals,'Foods deductions')];
+  frozen.deductionDetailsVersion=1;frozen.deductionDetails=snapshotPayrollDeductionRows(freshDeductions,allocations.map(row=>({id:row.id,taken:row.taken/100})));
+  if(new TextEncoder().encode(JSON.stringify(frozen)).length>PAYROLL_SETTLEMENT_LIMITS.documentBytes)throw Error('This payslip has too much receipt detail for one safe payment. Ask HQ to reconcile the linked deductions.');
   const freshBonuses=eligibleBonuses.map(row=>{const fresh=get('staff_bonuses',row.id);if(!fresh||fresh.status!=='Unpaid'||fresh.type!==row.type||amount(fresh.amount)!==amount(row.amount))throw Error('A performance bonus changed. Regenerate payroll.');staffRow(fresh,data);return {...fresh,id:row.id};});
   const savedBonusTotal=freshBonuses.reduce((sum,row)=>sum+amount(row.amount),0),sourceBonus=amount(input.sourcePerfBonus??data.sourcePerfBonus??data.perfBonus);
   if(savedBonusTotal!==sourceBonus)throw Error('The saved performance bonuses changed. Regenerate this unpaid payslip.');

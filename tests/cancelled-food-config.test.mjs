@@ -142,11 +142,12 @@ function purchaseDialogFixture(change=()=>{}){
     h.put('transactions/prepared-sample',sale);h.put('pos_sale_commits/prepared-sample',{saleId:sale.saleId,branch:sale.branch,receiptId:sale.receiptId,fingerprint:saleFingerprint(sale)});
     h.put('shifts/open-sample',{branch:'Maa',active:true,status:'Open',salesRevision:1});
     h.put('cashiers/sample-person',{cashierName:'Current Staff Name',fullName:'Older Alias',pin:'5678',role:'Staff',branch:'Maa',active:true});
-    const w={sessionUser:{branch:'Maa',cashierName:'Sample Cashier'},currentShift:{shiftId:'open-sample',active:true},localStorage:{getItem:()=>null},loadSalesDashboard:()=>{},Swal:{isLoading:()=>false,showValidationMessage:message=>messages.push(message),fire:async options=>{
+    const local=new Map(),qty={dataset:{cancelledFoodQty:'0'},value:'1',addEventListener:()=>{}};
+    const w={sessionUser:{branch:'Maa',cashierName:'Sample Cashier'},currentShift:{shiftId:'open-sample',active:true},localStorage:{getItem:key=>local.get(key)??null,setItem:(key,value)=>local.set(key,value),removeItem:key=>local.delete(key)},loadSalesDashboard:()=>{},Swal:{isLoading:()=>false,showValidationMessage:message=>messages.push(message),fire:async options=>{
         if(options.title==='Staff purchase of prepared food'){change(w,auth);const value=await options.preConfirm();return value?{isConfirmed:true,value}:{isConfirmed:false};}
         messages.push(options.title);return {isConfirmed:false};
     }}};
-    installCancelledOrders({...h.api,auth},{window:w,document:{getElementById:id=>id==='cancelledFoodPin'?pin:consent}});
+    installCancelledOrders({...h.api,auth},{window:w,document:{getElementById:id=>id==='cancelledFoodPin'?pin:consent,querySelectorAll:()=>[qty]}});
     return {h,w,auth,pin,messages};
 }
 test('installed staff purchase uses the exact Staff profile canonical name when a legacy fullName differs',async()=>{

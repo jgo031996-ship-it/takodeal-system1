@@ -9,6 +9,7 @@ import {leaveToday} from './leave-model.js';
 window.getStaffLeaveUI=()=>window.staffLeaveUI||installStaffLeaveUI(window,document);
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>window.getStaffLeaveUI(),{once:true});else queueMicrotask(()=>window.getStaffLeaveUI());
 import {onlineRefundReviewHTML} from './online-refund-pay.js';
+import {payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,snapshotPayrollDeductionRows} from './payroll-deduction-details.js';
 import { installStaffLocation } from './staff-location.js';
 import { installAttendanceCamera } from './attendance-camera.js';
 import { installAttendanceProofUploader } from './attendance-proof.js';
@@ -2201,14 +2202,15 @@ window.loadPayslipVault = async function() {
         if(!stillOpen())return;
         const onlineRows=onlineSnap.docs.map(row=>({id:row.id,...row.data()})).filter(row=>row.type==='Online Order Refund'&&row.staffId===onlineStaffId);
         const hasCashShortageReview=onlineSnap.docs.some(row=>{const item=row.data();return item.staffId===onlineStaffId&&(item.type==='Cash Shortage'||row.id.startsWith('cash-shortage-'))&&['Pending Review','Unpaid'].includes(item.status);});
-        let pendingUnpaidVales = 0, scheduledPenaltyReview = 0;
+        let pendingUnpaidVales = 0, scheduledPenaltyReview = 0, pendingActiveDeductions=[];
         
         let cutoffEndTimestamp = new Date(endDateStr + 'T23:59:59'); 
         let prevCutoffEndTimestamp = new Date(prevEndStr + 'T23:59:59'); 
         
-        dedSnap.forEach(d => { 
-            let data = d.data();
-            if (data.status === "Unpaid" && isMatch(data.staffName)) {
+        const ownDeductionRows=new Map();
+        [dedSnap,onlineSnap].forEach(snapshot=>snapshot.forEach(row=>{const data=row.data();if(data.staffId?data.staffId===onlineStaffId:isMatch(data.staffName))ownDeductionRows.set(row.id,{...data,id:row.id});}));
+        ownDeductionRows.forEach(data => {
+            if (data.status === "Unpaid") {
                 if (isPenaltyDeduction(data) && data.scheduleVersion===1 && deductionIsDue(data,endDateStr)) scheduledPenaltyReview += Number(data.amount)||0;
                 let dDate = safeDate(data.dateAdded || data.timestamp);
                 if (data.type === "Cash Advance" || isMealDeduction(data.type)) {
@@ -2219,6 +2221,7 @@ window.loadPayslipVault = async function() {
                     }
                     if (dDate <= prevCutoffEndTimestamp) {
                         pendingUnpaidVales += val; 
+                        pendingActiveDeductions.push(data);
                     }
                 }
             }
@@ -2242,7 +2245,11 @@ window.loadPayslipVault = async function() {
 
         const onlineDue=onlineRows.filter(row=>row.status==='Unpaid'&&(row.dateAdded?.toDate?.()||new Date(row.dateAdded))<=cutoffEndTimestamp);
         const onlineDueAmount=onlineDue.reduce((sum,row)=>sum+(Number(row.amount)||0),0);
-        let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - liveUnpaidVales - cutoffLoanDeduction - onlineDueAmount;
+        const profileCharges={sss:staffProfile.sssAmount||0,philhealth:staffProfile.philHealthAmount||0,pagibig:staffProfile.pagibigAmount||0,customDeductions:staffProfile.customDeductions||[]};
+        const recurringDeductionTotal=payslipDeductionBreakdown(profileCharges).total;
+        const estimateDeductionData=(activeRows,late,refundRows)=>({...profileCharges,lateDeduction:late,loans:cutoffLoanDeduction,advances:activeRows.filter(row=>row.type==='Cash Advance').reduce((sum,row)=>sum+(Number(row.amount)||0),0),meals:activeRows.filter(row=>isMealDeduction(row.type)).reduce((sum,row)=>sum+(Number(row.amount)||0),0),onlineRefunds:refundRows.reduce((sum,row)=>sum+(Number(row.amount)||0),0),onlineRefundRows:refundRows,deductionDetailsVersion:1,deductionDetails:snapshotPayrollDeductionRows(activeRows,activeRows.filter(row=>Number(row.amount)>0).map(row=>({id:row.id,taken:Number(row.amount)})))});
+        const currentDeductionDetails=estimateDeductionData(liveActiveDeductions,currentData.totalLatePenalty,onlineDue);
+        let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - liveUnpaidVales - cutoffLoanDeduction - onlineDueAmount - recurringDeductionTotal;
         let refundEstimate=document.getElementById('liveOnlineRefundEstimate');if(!refundEstimate){refundEstimate=document.createElement('p');refundEstimate.id='liveOnlineRefundEstimate';document.getElementById('payslipLiveSection').prepend(refundEstimate);}refundEstimate.textContent='ONLINE REFUND ORDERS: −₱'+onlineDueAmount.toFixed(2);refundEstimate.hidden=!onlineDueAmount;
         let cashReviewHint=document.getElementById('liveCashShortageReviewHint');if(!cashReviewHint){cashReviewHint=document.createElement('p');cashReviewHint.id='liveCashShortageReviewHint';cashReviewHint.style.cssText='padding:10px 12px;border:1px solid #e6d9bd;border-radius:8px;background:#fff9ed;font-size:12px;';document.getElementById('payslipLiveSection').prepend(cashReviewHint);}cashReviewHint.hidden=!hasCashShortageReview;cashReviewHint.textContent='This estimate excludes cash shortage reviews. Open My Inbox for the protected review and your response. Any lawfully approved amount will be itemized on the final payslip.';
 
@@ -2270,6 +2277,10 @@ window.loadPayslipVault = async function() {
         document.getElementById('liveEstOT').innerText = '+₱' + currentData.totalBonuses.toLocaleString(undefined, {minimumFractionDigits: 2});
 
         let valesRow = document.getElementById('liveEstVales').parentElement;
+        const valesLabel=valesRow.querySelector('span');if(valesLabel)valesLabel.textContent='Cash advances / food purchases:';
+        let profileRow=document.getElementById('liveEstProfileDeductionsRow');
+        if(!profileRow){profileRow=document.createElement('div');profileRow.id='liveEstProfileDeductionsRow';profileRow.style.cssText='display:flex;justify-content:space-between;gap:12px;margin-bottom:10px;font-size:14px';valesRow.after(profileRow);}
+        profileRow.hidden=!recurringDeductionTotal;profileRow.innerHTML='<span style="color:#64748b;font-weight:bold">Government / recurring deductions:</span><strong style="color:#ef4444">−₱'+recurringDeductionTotal.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})+'</strong>';
         if (!document.getElementById('liveEstLoanRow')) {
             valesRow.insertAdjacentHTML('afterend', `<div id="liveEstLoanRow" style="display: none; justify-content: space-between; margin-bottom: 10px; font-size: 14px;"><span style="color: #64748b; font-weight: bold;">Company Loan Deduction:</span><strong id="liveEstLoan" style="color: #ef4444;">-₱0.00</strong></div>`);
         }
@@ -2324,9 +2335,6 @@ window.loadPayslipVault = async function() {
                 </div>
             </div>
             
-            <div style="margin-top: 15px; background: white; border-radius: 12px; border: 1px solid #fca5a5; padding: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
-                <h3 style="margin-top: 0; color: #b91c1c; font-size: 14px; border-bottom: 2px solid #fecaca; padding-bottom: 8px;">💸 Active Unpaid Deductions</h3>
-                <div style="max-height: 150px; overflow-y: auto;">
         `;
 
         if (loanData && remBal > 0) {
@@ -2337,20 +2345,7 @@ window.loadPayslipVault = async function() {
                 </div>`;
         }
 
-        if (liveActiveDeductions.length > 0) {
-            liveActiveDeductions.forEach(d => {
-                let dDate = d.dateAdded || d.timestamp;
-                let dateStr = dDate ? safeDate(dDate).toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) : '';
-                detailsHtml += `
-                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 8px 0; border-bottom: 1px dashed #e2e8f0;">
-                        <div><strong style="color: #334155;">${d.type}</strong><br><span style="font-size: 11px; color: #64748b;">${dateStr} - <span style="color:#ef4444; font-weight:bold;">Unpaid</span> (${d.remarks || d.item || 'Salary Deduction'})</span></div>
-                        <strong style="color: #dc2626;">-₱${parseFloat(d.amount).toFixed(2)}</strong>
-                    </div>`;
-            });
-        } else {
-            detailsHtml += `<div style="padding: 15px; text-align: center; color: #94a3b8; font-size: 12px;">No short-term vales or meals.</div>`;
-        }
-        detailsHtml += `</div></div>`;
+        detailsHtml+=payslipDeductionDetailsHTML(currentDeductionDetails,{live:true});
         detailsHtml+=onlineRefundReviewHTML(onlineRows,onlineStaffId);
         logsContainer.innerHTML = detailsHtml;
 
@@ -2374,7 +2369,9 @@ window.loadPayslipVault = async function() {
             
             let prevEstGross = prevData.basicPay;
             const prevOnlineAmount=onlineRows.filter(row=>row.status==='Unpaid'&&(row.dateAdded?.toDate?.()||new Date(row.dateAdded))<=prevCutoffEndTimestamp).reduce((sum,row)=>sum+(Number(row.amount)||0),0);
-            let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - pendingUnpaidVales - cutoffLoanDeduction - prevOnlineAmount;
+            let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - pendingUnpaidVales - cutoffLoanDeduction - prevOnlineAmount - recurringDeductionTotal;
+            const previousRefundRows=onlineRows.filter(row=>row.status==='Unpaid'&&(row.dateAdded?.toDate?.()||new Date(row.dateAdded))<=prevCutoffEndTimestamp);
+            const previousDeductionDetails=estimateDeductionData(pendingActiveDeductions,prevData.totalLatePenalty,previousRefundRows);
 
             let prevLoanStr = (cutoffLoanDeduction > 0) ? `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Company Loan:</span> <strong style="color:#ef4444;">-₱${cutoffLoanDeduction.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>` : '';
 
@@ -2398,7 +2395,9 @@ window.loadPayslipVault = async function() {
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Late Penalties:</span> <strong style="color:#ef4444;">-₱${prevData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
                         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Unpaid Vales/Meals:</span> <strong style="color:#ef4444;">-₱${pendingUnpaidVales.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>
                         ${prevLoanStr}
+                        ${recurringDeductionTotal?'<div style="display:flex;justify-content:space-between;gap:12px"><span>Government / recurring deductions:</span><strong style="color:#ef4444">−₱'+recurringDeductionTotal.toFixed(2)+'</strong></div>':''}
                     </div>
+                    ${payslipDeductionDetailsHTML(previousDeductionDetails,{live:true})}
                     ${hasCashShortageReview?'<p style="font-size:12px;color:#7a5a21;line-height:1.5">This estimate excludes cash shortage reviews. Check My Inbox; any lawfully approved amount is itemized on the final payslip.</p>':''}
                     
                     ${prevData.salaryHistoryUnavailable?'<p style="font-size:12px;color:#92400e;line-height:1.5">Use your approved Staff phone and reconnect to confirm the daily wage for each work date.</p>':prevData.amendmentReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">A dated shift correction needs HQ review of a saved lateness decision. This attendance estimate is held until that review is complete.</p>' : prevData.attendanceHeld ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Linked punches conflict or overlap. The attendance estimate is held for HR review; no payable hours or lateness penalty have been inferred.</p>' : prevData.scheduleReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Saved schedule evidence is missing for some clock-ins in this estimate. Review the attendance details before payroll approval.</p>' : ''}
@@ -2501,7 +2500,7 @@ window.viewPastPayslip = function(encodedData) {
     let straightPay = parseFloat(d.straightBonus || 0).toFixed(2);
     let holPay = parseFloat(d.holidayPayTotal || d.holiday || 0).toFixed(2);
     // 🔥 Added Performance Bonus
-    let perfBonus = parseFloat(d.performanceBonus || 0).toFixed(2); 
+    let perfBonus = parseFloat(d.perfBonus ?? d.performanceBonus ?? 0).toFixed(2);
     
     let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay) + parseFloat(perfBonus)).toFixed(2);
 
@@ -2514,7 +2513,7 @@ window.viewPastPayslip = function(encodedData) {
     let meals = parseFloat(d.meals || 0).toFixed(2);
     let customDeducts = parseFloat(d.customDeductionsTotal || 0).toFixed(2);
     
-    let totalDeduct = (parseFloat(lateDeduct) + parseFloat(sss) + parseFloat(phil) + parseFloat(pagibig) + parseFloat(vale) + parseFloat(loans) + parseFloat(meals) + parseFloat(customDeducts) + Number(d.onlineRefunds||0) + Number(d.cashShortages||0)).toFixed(2);
+    let totalDeduct = payslipDeductionBreakdown(d).total.toFixed(2);
     let netPay = parseFloat(d.finalNetPay ?? (grossIncome - totalDeduct)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
     let logoUrl = "https://takodeal-owner.vercel.app/payslip%20logo.jpg";
@@ -2649,29 +2648,7 @@ window.viewPastPayslip = function(encodedData) {
                             </div>
                             <div>
                                 <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black; text-align: left;">DEDUCTIONS</div>
-                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                    <span>Late/Undertime</span> <span>${lateDeduct}</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                    <span>SSS</span> <span>${sss}</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                    <span>PhilHealth</span> <span>${phil}</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                    <span>Pag-IBIG</span> <span>${pagibig}</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                    <span>Cash Advance (Vale)</span> <span>${vale}</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                    <span>Company Loans</span> <span>${loans}</span>
-                                </div>
-                                <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px; font-size: 13px;">
-                                    <span>Foods / Penalties</span> <span>${(parseFloat(meals) + parseFloat(customDeducts)).toFixed(2)}</span>
-                                </div><div style="display:flex;justify-content:space-between;margin-bottom:8px;"><span>ONLINE REFUND ORDERS</span><span>${Number(d.onlineRefunds||0).toFixed(2)}</span>
-                                </div><div style="display:flex;justify-content:space-between;padding:4px 8px;font-size:13px;"><span>CASH SHORTAGES</span><span>${Number(d.cashShortages||0).toFixed(2)}</span>
-                                </div>
+                                <div style="padding:4px 8px;font-size:13px">${payslipDeductionSummaryHTML(d)}</div>
                                 <div style="display: flex; justify-content: space-between; padding: 8px; font-weight: bold; background: #f1f5f9; border-top: 1px solid black;">
                                     <span>TOTAL DEDUCTIONS</span> <span>${totalDeduct}</span>
                                 </div>
@@ -2687,6 +2664,7 @@ window.viewPastPayslip = function(encodedData) {
                             </div>
                         </div>
 
+                        ${payslipDeductionDetailsHTML(d,{showTotal:false})}
                         <!-- 🔥 ATTENDANCE SUMMARY TABLE -->
                         <div style="margin-top: 35px;">
                             <div style="border-top: 2px dashed #0f172a; margin-bottom: 20px;"></div>
@@ -3617,7 +3595,8 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
     let otPay = parseFloat(d.nightBonus || d.overtime || 0).toFixed(2);
     let straightPay = parseFloat(d.straightBonus || 0).toFixed(2);
     let holPay = parseFloat(d.holidayPayTotal || d.holiday || 0).toFixed(2);
-    let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay)).toFixed(2);
+    let perfBonus = parseFloat(d.perfBonus ?? d.performanceBonus ?? 0).toFixed(2);
+    let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay) + parseFloat(perfBonus)).toFixed(2);
 
     let lateDeduct = parseFloat(d.lateDeduction || 0).toFixed(2);
     let sss = parseFloat(d.sss || 0).toFixed(2);
@@ -3628,7 +3607,7 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
     let meals = parseFloat(d.meals || 0).toFixed(2);
     let customDeducts = parseFloat(d.customDeductionsTotal || 0).toFixed(2);
     
-    let totalDeduct = (parseFloat(lateDeduct) + parseFloat(sss) + parseFloat(phil) + parseFloat(pagibig) + parseFloat(vale) + parseFloat(loans) + parseFloat(meals) + parseFloat(customDeducts) + Number(d.onlineRefunds||0) + Number(d.cashShortages||0)).toFixed(2);
+    let totalDeduct = payslipDeductionBreakdown(d).total.toFixed(2);
     let netPayFmt = (d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2});
 
     return Swal.fire({
@@ -3640,22 +3619,19 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
                     <div>
                         <div style="font-weight:bold; color:#16a34a; border-bottom: 1px solid #e2e8f0; margin-bottom: 6px; padding-bottom: 2px;">INCOME</div>
                         <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Basic:</span> <span>₱${basicPay}</span></div>
-                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Bonus/OT:</span> <span>₱${(parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay)).toFixed(2)}</span></div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Bonus/OT:</span> <span>₱${(parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay) + parseFloat(perfBonus)).toFixed(2)}</span></div>
                         <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; color:#15803d; border-top: 1px dashed #cbd5e1; padding-top: 4px;"><span>GROSS:</span> <span>₱${grossIncome}</span></div>
                     </div>
                     <div>
                         <div style="font-weight:bold; color:#dc2626; border-bottom: 1px solid #e2e8f0; margin-bottom: 6px; padding-bottom: 2px;">DEDUCTIONS</div>
-                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Lates:</span> <span>₱${lateDeduct}</span></div>
-                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Loans/Gov:</span> <span>₱${(parseFloat(sss)+parseFloat(phil)+parseFloat(pagibig)+parseFloat(loans)).toFixed(2)}</span></div>
-                        <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Vales/Meals:</span> <span>₱${(parseFloat(vale)+parseFloat(meals)+parseFloat(customDeducts)).toFixed(2)}</span></div>
-                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Online Refund Orders:</span> <span>₱${Number(d.onlineRefunds||0).toFixed(2)}</span></div>
-                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>Cash Shortages:</span> <span>₱${Number(d.cashShortages||0).toFixed(2)}</span></div>
+                        ${payslipDeductionSummaryHTML(d)}
                         <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; color:#b91c1c; border-top: 1px dashed #cbd5e1; padding-top: 4px;"><span>DEDUCT:</span> <span>₱${totalDeduct}</span></div>
                     </div>
                 </div>
                 <div style="background: #f1f5f9; text-align: center; padding: 10px; font-weight: 900; font-size: 18px; margin-top: 15px; border-radius: 6px; color: #0f172a; border: 1px solid #e2e8f0;">
                     NET PAY: <span style="color: #16a34a;">₱${netPayFmt}</span>
                 </div>
+                ${payslipDeductionDetailsHTML(d,{showTotal:false})}
                 <div style="text-align: center; margin-top: 15px;">
                     <button type="button" onclick="window.viewPastPayslip('${encodedData}')" style="background: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; transition: 0.2s;">🔍 View Full Detailed Payslip</button>
                 </div>

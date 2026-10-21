@@ -60,6 +60,37 @@ test('the global badge remains live across pages and stops subscriptions before 
  subscriptions[0].next(snapshot([row('stale'),row('stale2')]));assert.equal(f.nodes.inboxBadge.style.display,'none');subscriptions[1].next(snapshot([row('own'),row('foreign',{branch:'Hidden'})]));subscriptions[2].next(snapshot([row('other',{branch:'Other'})]));assert.equal(f.nodes.inboxBadge.innerText,2);assert.equal(f.nodes.inboxBadge.style.display,'inline-block');
  f.w.auth.currentUser=null;badge.refresh();assert.equal(stopped.length,3);assert.equal(f.nodes.inboxBadge.style.display,'none');subscriptions[2].next(snapshot([row('old',{branch:'Other'})]));assert.equal(f.nodes.inboxBadge.style.display,'none');
 });
+
+test('a new server-confirmed pending request reaches the open inbox through the existing badge subscription without another history read',async()=>{
+ const f=fixture(),subscriptions=[];await f.inbox.load();f.w.onSnapshot=(reference,next)=>{subscriptions.push(next);return()=>{};};installInboxBadge(f.w,f.d);const saved=row('new-clock-request',{staffName:'Fictional New Crew',requiresScheduleReview:true,requestVersion:1,requestToken:'fictional-token',timestamp:at(4)});subscriptions[0](snapshot([row('one'),saved]));assert.match(f.nodes.inboxTableBody.innerHTML,/Fictional New Crew/);assert.match(f.nodes.inboxTableBody.innerHTML,/new-clock-request/);assert.equal(f.inbox.request('new-clock-request').requestVersion,1);assert.equal(f.calls.many.length,2);assert.equal(f.calls.one.length,0);
+});
+
+test('a fresh live pending event during the initial history load survives its older query response',async()=>{
+ const gate=hold(),subscriptions=[],f=fixture({readMany:async reference=>{const prior=snapshot(reference.table==='staff_requests'?[row('old-request')]:[]);await gate.promise;return prior;}});
+ f.w.onSnapshot=(reference,next)=>{subscriptions.push(next);return()=>{};};installInboxBadge(f.w,f.d);const loading=f.inbox.load();await tick();assert.equal(f.calls.many.length,2);
+ subscriptions[0](snapshot([row('old-request'),row('arrived-during-load',{staffName:'Fictional New Crew',requestVersion:1,requestToken:'new-request-token',timestamp:at(8)})]));
+ assert.doesNotMatch(f.nodes.inboxTableBody.innerHTML,/Fictional New Crew/,'an incomplete full history is not presented as loaded');gate.resolve();assert.equal(await loading,true);assert.equal(f.inbox.request('arrived-during-load').status,'Pending');assert.match(f.nodes.inboxTableBody.innerHTML,/Fictional New Crew/);assert.match(f.nodes.inboxTableBody.innerHTML,/arrived-during-load/);assert.equal(f.nodes.inboxBadge.innerText,2);assert.equal(f.calls.many.length,2);assert.equal(f.calls.one.length,0);
+});
+
+test('a cached or previous-actor pending event during initial load cannot become an overlay',async()=>{
+ const gate=hold(),subscriptions=[],f=fixture({readMany:async()=>{await gate.promise;return snapshot([]);}});f.w.onSnapshot=(reference,next)=>{subscriptions.push(next);return()=>{};};installInboxBadge(f.w,f.d);const loading=f.inbox.load();await tick();subscriptions[0]({...snapshot([row('cached-new')]),metadata:{fromCache:true}});f.inbox.receivePending([row('wrong-actor')],{actorKey:'an-earlier-account'});gate.resolve();await loading;assert.equal(f.inbox.request('cached-new'),null);assert.equal(f.inbox.request('wrong-actor'),null);assert.doesNotMatch(f.nodes.inboxTableBody.innerHTML,/cached-new|wrong-actor/);
+});
+
+test('cached pending events, wrong actors and out-of-branch events cannot enter a live manager inbox',async()=>{
+ const f=fixture(),subscriptions=[];await f.inbox.load();f.w.onSnapshot=(reference,next)=>{subscriptions.push(next);return()=>{};};installInboxBadge(f.w,f.d);subscriptions[0]({...snapshot([row('cached')]),metadata:{fromCache:true}});assert.equal(f.inbox.request('cached'),null);const key=inboxActorKey(f.w);assert.equal(f.inbox.receivePending([row('wrong-actor')],{actorKey:'previous-actor'}),false);assert.equal(f.inbox.request('wrong-actor'),null);assert.equal(f.inbox.receivePending([row('wrong-branch',{branch:'Other'})],{actorKey:key,branch:'Sample Branch'}),false);assert.equal(f.inbox.request('wrong-branch'),null);
+});
+
+test('a request completed on another clock moves from pending into visible activity using one exact record read',async()=>{
+ const f=fixture();await f.inbox.load();f.requests[0].status='Completed Normally';f.requests[0].requiresScheduleReview=true;f.requests[0].timeOutLogId='fictional-recorded-out';f.inbox.receivePending([],{actorKey:inboxActorKey(f.w),branch:null});await tick();assert.equal(f.calls.one.length,1);assert.equal(f.calls.many.length,2);assert.match(f.nodes.inboxTableBody.innerHTML,/No pending requests/);assert.match(f.nodes.inboxTableBody.innerHTML,/Recent time-out request activity/);assert.match(f.nodes.inboxTableBody.innerHTML,/Normal Time Out recorded/);assert.match(f.nodes.inboxTableBody.innerHTML,/No early approval was used/);assert.doesNotMatch(f.nodes.inboxTableBody.innerHTML,/Scheduled finish: Needs schedule review/);assert.equal(f.inbox.request('one').status,'Completed Normally');
+});
+
+test('live pending overlays survive a stale full response and older request versions cannot replace a newer saved request',async()=>{
+ const f=fixture({requests:[]});await f.inbox.load();const gate=hold();f.w.getDocsFromServer=async reference=>{await gate.promise;return snapshot([]);};const loading=f.inbox.load();await tick();const current=row('current',{requestVersion:2,requestToken:'current-token'});f.inbox.receivePending([current],{actorKey:inboxActorKey(f.w)});gate.resolve();await loading;assert.equal(f.inbox.request('current').requestVersion,2);assert.equal(f.inbox.receivePending([row('current',{requestVersion:1,requestToken:'old-token'})],{actorKey:inboxActorKey(f.w)}),false);assert.equal(f.inbox.request('current').requestToken,'current-token');
+});
+
+test('a new request version can replace a previously completed review without reusing its old row actions',async()=>{
+ const requests=[row('again',{status:'Rejected',requestVersion:1,requestToken:'original-token'})],f=fixture({requests});await f.inbox.load();const latest=row('again',{requestVersion:2,requestToken:'new-request-token'});f.inbox.receivePending([latest],{actorKey:inboxActorKey(f.w)});assert.equal(f.inbox.request('again').requestVersion,2);assert.equal(f.inbox.request('again').status,'Pending');assert.match(f.nodes.inboxTableBody.innerHTML,/ownerInbox.review/);
+});
 test('real main inbox wrappers use the controller, and cached protected types skip the redundant preliminary read',async()=>{
  const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),extract=name=>{const start=source.indexOf('\nwindow.'+name+' = '),end=source.indexOf('\n};',start+1);assert.ok(start>=0&&end>start);return source.slice(start+1,end+3);};
  const calls=[],w={ownerInbox:{load:()=>calls.push('load'),applyConfirmedRequest:id=>calls.push(id),toggle:id=>calls.push(id),request:()=>({type:'Early Time Out'})},getManagerEarlyTimeOutUI:()=>({review:(...args)=>calls.push(args)})};const ctx={window:w,document:{},installOwnerInbox};for(const name of ['loadInbox','applyConfirmedInboxRequest','toggleResolvedStaff','handleRequest'])vm.runInNewContext(extract(name),ctx);await w.loadInbox();w.applyConfirmedInboxRequest('saved');w.toggleResolvedStaff('history0');await w.handleRequest('saved','Approved');assert.deepEqual(calls,['load','saved','history0',['saved','Approved']]);

@@ -31,6 +31,10 @@ export function installInboxBadge(w,d){
    const unsubscribe=w.onSnapshot(w.query(w.collection(w.db,'staff_requests'),...filters),snapshot=>{
     if(version!==generation)return;if(inboxActorKey(w)!==key){refresh();return;}
     const rows=snapshotRows(snapshot).filter(row=>row.status==='Pending'&&(all||branches.includes(row.branch)));counts.set(branch,new Set(rows.map(row=>row.id)));
+    // Reuse the live badge's branch-scoped server snapshot. Newly saved
+    // requests must also appear in an already-open inbox without another full
+    // history download. Cached or locally pending snapshots never enter it.
+    if(!snapshot.metadata?.fromCache&&!snapshot.metadata?.hasPendingWrites&&!snapshot.docs?.some(row=>row.metadata?.fromCache||row.metadata?.hasPendingWrites))w.ownerInbox?.receivePending?.(rows,{actorKey:next,branch});
     if(counts.size!==branches.length)return;const ids=new Set([...counts.values()].flatMap(value=>[...value])),badge=node();if(badge){badge.innerText=ids.size;badge.style.display=ids.size?'inline-block':'none';}
    },()=>{if(version===generation){const badge=node();if(badge)badge.style.display='none';}});stops.push(unsubscribe);
   }
@@ -79,6 +83,9 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
    if(row.status!=='Pending'){const name=String(row.staffName||'Unknown');if(!grouped.has(name))grouped.set(name,[]);grouped.get(name).push({row,index});return;}
    count++;pending+='<tr data-inbox-request="'+escape(row.id)+'"><td style="padding:12px;color:#64748b;">'+escape(dateLabel(row.timestamp))+'</td><td style="padding:12px;font-weight:bold;">'+escape(row.staffName||'Unknown')+'</td><td style="padding:12px;"><span class="badge badge-closed">'+escape(row.branch||'Not recorded')+'</span></td><td style="padding:12px;"><strong>'+escape(row.type||'Request')+'</strong><br><span style="background:#fef9c3;color:#854d0e;font-size:11px;">Pending Review</span></td><td style="padding:12px;max-width:250px;white-space:normal;">'+details(row,index)+'</td><td style="padding:12px;"><button type="button" onclick="window.ownerInbox.review('+index+',\'Approved\','+target.drawVersion+')" style="background:#166653;color:white;padding:7px 12px;border:0;border-radius:5px;margin:3px;">Approve</button><button type="button" onclick="window.ownerInbox.review('+index+',\'Rejected\','+target.drawVersion+')" style="background:#b83c3c;color:white;padding:7px 12px;border:0;border-radius:5px;margin:3px;">Reject</button></td></tr>';
    });
+   const recent=rows.map((row,index)=>({row,index})).filter(({row})=>row.type==='Early Time Out'&&row.status!=='Pending').slice(0,8);
+   if(recent.length)pending+='<tr><td colspan="6" style="padding:16px;background:#f5f9f4;"><details open><summary style="cursor:pointer;font-weight:700;">Recent time-out request activity · '+recent.length+'</summary><p style="font-size:12px;color:#64748b;">A request leaves Pending Review after normal Time Out, cancellation or a management decision. The saved request remains in Resolved Requests History below.</p>'+recent.map(({row,index})=>'<article style="margin-top:12px;padding-top:12px;border-top:1px solid #dce5dc;"><strong>'+escape(row.staffName)+' · '+escape(row.branch||'Branch not recorded')+'</strong> <span style="color:#17604c;">'+escape(row.status)+'</span><br><small>'+escape(dateLabel(row.timestamp))+'</small><div style="font-size:13px;margin-top:6px;">'+details(row,index)+'</div></article>').join('')+'</details></td></tr>';
+   if(!count)pending='<tr><td colspan="6" style="padding:24px;color:#166653;">No pending requests. Completed reviews remain in the history below.</td></tr>'+pending;
    target.groups=[];
    for(const [name,entries] of grouped){
     if(!target.groupIds.has(name))target.groupIds.set(name,'history'+target.groupIds.size);
@@ -125,10 +132,31 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
    target.overlays.set(id,{row,sequence:++sequence});const requests=new Map(target.requests.map(entry=>[entry.id,entry]));if(row)requests.set(id,row);else requests.delete(id);target.requests=[...requests.values()];target.dataVersion++;return target.loaded?draw(target):false;
   });
  }
+ function receivePending(rows,{actorKey,branch=null}={}){
+  // Keep a verified live event even while the initial complete history is
+  // loading. Its sequence overlay must win over a query response whose server
+  // snapshot was taken before this request arrived. Drawing still waits for the
+  // complete history, and a disappearing Pending row is never guessed resolved.
+  const target=workspace();if(!target||actorKey!==target.key||!current(target)||!Array.isArray(rows))return false;
+  const records=new Map(target.requests.map(row=>[row.id,row]));let changed=false;
+  for(const row of rows){
+   if(!row||typeof row.id!=='string'||!row.id||row.id.includes('/')||row.status!=='Pending'||branch&&row.branch!==branch||!allowed(row))continue;
+   const existing=records.get(row.id);if(existing&&JSON.stringify(existing)===JSON.stringify(row))continue;
+   if(existing?.type==='Early Time Out'&&Number.isSafeInteger(existing.requestVersion)&&(!Number.isSafeInteger(row.requestVersion)||row.requestVersion<existing.requestVersion||row.requestVersion===existing.requestVersion&&row.requestToken!==existing.requestToken))continue;
+   if(existing&&existing.status!=='Pending'&&!(Number.isSafeInteger(row.requestVersion)&&row.requestVersion>Number(existing.requestVersion))){applyConfirmedRequest(row.id).catch(()=>{});continue;}
+   records.set(row.id,row);target.overlays.set(row.id,{row,sequence:++sequence});changed=true;
+  }
+  // Rows removed from the Pending query may have been completed on another
+  // device. Read only those saved documents so their history/status updates;
+  // never guess that a disappearing row was approved or discard its history.
+  const ids=new Set(rows.map(row=>row?.id));
+  for(const previous of target.requests)if(previous.status==='Pending'&&(!branch||previous.branch===branch)&&!ids.has(previous.id)&&allowed(previous))applyConfirmedRequest(previous.id).catch(()=>{if(current(target))w.ManagerUI?.notify?.('A request changed. Refresh Inbox to confirm its latest status.');});
+  if(!changed)return false;target.requests=[...records.values()];target.dataVersion++;return draw(target);
+ }
  function toggle(id){const target=workspace();if(!target?.loaded||!target.groups.some(group=>group.id===id))return false;if(target.open.has(id))target.open.delete(id);else target.open.add(id);return draw(target);}
  function page(id,value){const target=workspace(),group=target?.groups.find(entry=>entry.id===id);if(!group||!Number.isSafeInteger(value)||value<0||value>=Math.ceil(group.entries.length/size))return false;target.pages.set(id,value);target.open.add(id);return draw(target);}
  function request(id){const target=workspace();return target?.loaded?target.requests.find(row=>row.id===id&&allowed(row))||null:null;}
  function review(index,decision,version){const target=workspace(),row=target?.records[index];if(!row||version!==undefined&&version!==target.drawVersion||row.status!=='Pending'||!allowed(row)||!['Approved','Rejected'].includes(decision))return false;return w.handleRequest?.(row.id,decision,row.type,Number(row.amount)||0,row.staffName||'Unknown');}
  function photo(index,version){const target=workspace(),row=target?.records[index];if(!row||version!==undefined&&version!==target.drawVersion||!allowed(row))return false;const url=row.photoBase64||row.proofImageUrl||row.imageUrl||row.image;if(url)w.viewSelfie?.(url,'Attached Photo from '+String(row.staffName||'Staff'));}
- const controller={load,applyConfirmedRequest,toggle,page,request,review,photo,clear(){state=null;}};w.ownerInbox=controller;return controller;
+ const controller={load,applyConfirmedRequest,receivePending,toggle,page,request,review,photo,clear(){state=null;}};w.ownerInbox=controller;return controller;
 }

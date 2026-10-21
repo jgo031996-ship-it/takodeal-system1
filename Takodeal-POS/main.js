@@ -1616,6 +1616,7 @@ window.viewReceiptDetails = async function (receiptId) {
         tx.cart.forEach(cartItem => {
             let addonsText = '';
             if (cartItem.addons) {
+                if (Number(cartItem.sourceOriginalQty)>Number(cartItem.qty)) addonsText += `<br><span style="color:#64748b;font-size:11px;">Original receipt options for ${Number(cartItem.sourceOriginalQty)} items; confirm the actual prepared portion.</span>`;
                 for(let key in cartItem.addons) {
                     if(cartItem.addons[key].qty > 0) {
                         let addonName = cartItem.addons[key].name || key; 

@@ -11,6 +11,7 @@ import {planPayrollAttendance} from '../takodeal-staff/payroll-attendance.js';
 import {createScheduleHistoryStore,scheduleDateKey,createScheduleRevision,assembleScheduleHistory} from '../takodeal-staff/schedule-history.js';
 import {installStaffRatePrivacy} from '../takodeal-staff/staff-rate-privacy.js';
 import {onlineRefundReviewHTML} from '../takodeal-staff/online-refund-pay.js';
+import * as deductionDetails from '../takodeal-staff/payroll-deduction-details.js';
 
 test('separate PIN verifier uses unique salts and rejects incorrect, malformed and unsafe input', async () => {
     const a = await createPinVerifier('246810', webcrypto), b = await createPinVerifier('246810', webcrypto);
@@ -62,7 +63,7 @@ test('unlocked Staff estimates include the same POS meals in current and pending
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),
         getDocFromServer:async ref=>({exists:()=>ref.table==='cashiers',data:()=>ref.table==='cashiers'?{hourlyRate:450,scheduleNickname:'TEST'}:{}}),
         getDocs:async ref=>snapshot(ref.table==='staff_deductions'?deductions:[])};
-    const context={...api,...payroll,...sanctions,...reconciliation,planPayrollAttendance,onlineRefundReviewHTML,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},
+    const context={...api,...payroll,...sanctions,...reconciliation,...deductionDetails,planPayrollAttendance,onlineRefundReviewHTML,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},
         window:{...api,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
     const start=engine.indexOf('window.loadPayslipVault = async function() {'),end=engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',start);
     vm.runInNewContext(engine.slice(start,end),context);await context.window.loadPayslipVault();
@@ -164,14 +165,14 @@ test('five failed attempts trigger a local cooldown before another profile read 
     assert.equal(h.loads(),0);assert.match(h.node('vaultError').textContent,/Wait one minute/);
 });
 
-function staffLinkedEstimate(logs,{profileName='Test Staff',clock='2026-10-08T12:00:00+08:00',profile={},timeline,privateDenied=false,profileUnavailable=false,paidRecords=[]}={}){
+function staffLinkedEstimate(logs,{profileName='Test Staff',clock='2026-10-08T12:00:00+08:00',profile={},timeline,privateDenied=false,profileUnavailable=false,paidRecords=[],deductionRows=[]}={}){
     const nodes=new Map(),errors=[],queries=[];
     const node=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'',innerText:'',textContent:'',style:{},parentElement:{insertAdjacentHTML(){},querySelector(){return null;}},appendChild(){},prepend(){}});return nodes.get(id);};
     const snapshot=rows=>({docs:rows.map((row,index)=>({id:row.id||String(index),data:()=>row})),forEach:fn=>rows.forEach((row,index)=>fn({id:row.id||String(index),data:()=>row}))});
     class FixedDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}}
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:(ref,...filters)=>({...ref,filters}),where:(key,op,value)=>({key,op,value}),orderBy:()=>({}),
-        getDoc:async ref=>({exists:()=>ref.table==='cashiers',data:()=>({hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST'})}),getDocFromServer:async ref=>{if(profileUnavailable&&ref.table==='cashiers')throw Error('Sample profile offline');if(privateDenied&&ref.table==='staff_salary_rates')throw Error('Sample private access denied');return {exists:()=>ref.table==='cashiers'||ref.table==='staff_salary_rates'&&!!timeline,data:()=>ref.table==='cashiers'?{hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST',...profile}:timeline};},getDocs:async ref=>{queries.push(ref);return snapshot(ref.table==='attendance_logs'?logs.filter(row=>ref.filters.every(filter=>filter.op==='in'?filter.value.includes(row[filter.key]):row[filter.key]===filter.value)):ref.table==='payroll_records'?paidRecords:[]);}};
-    const context={...api,...payroll,...sanctions,...reconciliation,planPayrollAttendance,onlineRefundReviewHTML,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},window:{...api,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
+        getDoc:async ref=>({exists:()=>ref.table==='cashiers',data:()=>({hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST'})}),getDocFromServer:async ref=>{if(profileUnavailable&&ref.table==='cashiers')throw Error('Sample profile offline');if(privateDenied&&ref.table==='staff_salary_rates')throw Error('Sample private access denied');return {exists:()=>ref.table==='cashiers'||ref.table==='staff_salary_rates'&&!!timeline,data:()=>ref.table==='cashiers'?{hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST',...profile}:timeline};},getDocs:async ref=>{queries.push(ref);return snapshot(ref.table==='attendance_logs'||ref.table==='staff_deductions'?(ref.table==='attendance_logs'?logs:deductionRows).filter(row=>ref.filters.every(filter=>filter.op==='in'?filter.value.includes(row[filter.key]):row[filter.key]===filter.value)):ref.table==='payroll_records'?paidRecords:[]);}};
+    const context={...api,...payroll,...sanctions,...reconciliation,...deductionDetails,planPayrollAttendance,onlineRefundReviewHTML,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},window:{...api,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
     const at=engine.indexOf('window.loadPayslipVault = async function() {');vm.runInNewContext(engine.slice(at,engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',at)),context);return {node,errors,queries,window:context.window};
 }
 test('actual unlocked Staff estimate holds overlapping linked punches without inferred pay or lateness',async()=>{
@@ -208,6 +209,14 @@ test('actual Staff estimate finds renamed ID-bearing linked punches through its 
     const base={staffId:'sample',staffName:'Previous Name',branch:'Maa'},stamp=value=>({toDate:()=>new Date(value)}),logs=[{...base,id:'in',type:'TIME IN',lateExempted:true,timestamp:stamp('2026-10-06T09:00:00+08:00')},{...base,id:'out',type:'TIME OUT',timeInLogId:'in',timestamp:stamp('2026-10-06T17:00:00+08:00')}];
     const h=staffLinkedEstimate(logs,{profileName:'Current Name'});await h.window.loadPayslipVault();assert.deepEqual(h.errors,[]);assert.equal(h.node('liveEstGross').innerText,'₱450.00');assert.equal(h.node('liveEstLates').innerText,'-₱0.00');
     assert.ok(h.queries.some(query=>query.table==='attendance_logs'&&query.filters.some(filter=>filter.key==='staffId'&&filter.value==='sample')));
+});
+test('actual Staff estimate names recurring charges and selected cancelled-food items while counting an ID-owned receipt once',async()=>{
+ const base={staffId:'sample',staffName:'Test Staff',branch:'Maa'},stamp=value=>({toDate:()=>new Date(value)}),logs=[{...base,id:'in',type:'TIME IN',lateExempted:true,timestamp:stamp('2026-10-06T09:00:00+08:00')},{...base,id:'out',type:'TIME OUT',timeInLogId:'in',timestamp:stamp('2026-10-06T17:00:00+08:00')}];
+ const profile={branch:'Maa',sssAmount:10,philHealthAmount:20,pagibigAmount:30,customDeductions:[{name:'Wi-Fi',amount:50},{name:'Cancelled Orders',amount:168}]};
+ const food={...base,id:'food',staffName:'Previous Name',type:'Cancelled Food Purchase',status:'Unpaid',amount:100,sourcePlatform:'Foodpanda',sourceReceiptId:'SAMPLE-OR',receiptId:'CF-SAMPLE',dateAdded:stamp('2026-10-06T19:00:00+08:00'),purchasedItems:[{name:'Mango shake',qty:1,amount:100}]};
+ const paid={...food,id:'paid',staffName:'Test Staff',status:'Paid',amount:500},future={...food,id:'future',staffName:'Test Staff',dateAdded:stamp('2026-11-01T19:00:00+08:00')},foreign={...food,id:'foreign',staffId:'another-staff',staffName:'Test Staff',amount:999};
+ const h=staffLinkedEstimate(logs,{profile,deductionRows:[food,paid,future,foreign]});await h.window.loadPayslipVault();assert.deepEqual(h.errors,[]);assert.equal(h.node('liveEstGross').innerText,'₱450.00');assert.equal(h.node('liveEstVales').innerText,'-₱100.00');assert.equal(h.node('liveEstNetPay').innerText,'₱72.00');
+ const html=h.node('liveCutoffDetailedLogs').innerHTML;assert.match(html,/Wi-Fi/);assert.match(html,/Cancelled Orders/);assert.match(html,/SSS/);assert.match(html,/PhilHealth/);assert.match(html,/Pag-IBIG/);assert.match(html,/1 × Mango shake/);assert.match(html,/Foodpanda/);assert.match(html,/SAMPLE-OR/);assert.doesNotMatch(html,/₱999\.00|₱500\.00/);assert.match(html,/₱378\.00/);
 });
 test('a known linked closure from the previous Staff cutoff does not hold the current estimate or charge it twice',async()=>{
     const base={staffId:'sample',staffName:'Test Staff',branch:'Maa'},stamp=value=>({toDate:()=>new Date(value)}),logs=[{...base,id:'old',type:'TIME IN',lateExempted:true,timestamp:stamp('2026-09-30T22:00:00+08:00')},{...base,id:'old-out',type:'TIME OUT',timeInLogId:'old',timestamp:stamp('2026-10-01T06:00:00+08:00')}];
