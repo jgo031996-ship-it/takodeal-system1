@@ -20,7 +20,11 @@ test('a Co-Owner or Manager title never adds permissions or an unassigned dashbo
  for(const role of ['Co-Owner','Manager']){const s=createWorkspaceSession(user,{...profile,role});assert.equal(workspaceLandingPage(s),'sop');assert.equal(canOpenWorkspacePage(s,'dashboard'),false);assert.equal(canOpenWorkspacePage(s,'posconfig'),false);assert.deepEqual(s.permissions,['sop']);}
 });
 test('all access is an explicit saved setting and an unknown route stays unavailable',()=>{
- const s=createWorkspaceSession(user,{...profile,permissions:['all']});for(const route of WORKSPACE_ROUTES)assert.equal(canOpenWorkspacePage(s,route),true,route);assert.equal(canOpenWorkspacePage(s,'unknown'),false);assert.equal(canOpenWorkspacePage(null,'dashboard'),false);
+ const s=createWorkspaceSession(user,{...profile,permissions:['all']});for(const route of WORKSPACE_ROUTES)assert.equal(canOpenWorkspacePage(s,route),route!=='government-permits',route);assert.equal(canOpenWorkspacePage(s,'unknown'),false);assert.equal(canOpenWorkspacePage(null,'dashboard'),false);
+});
+test('government and private payment records stay with the verified system Owner rather than a general all-tabs grant',()=>{
+ for(const permissions of [['all'],['government-permits','branches']])assert.equal(canOpenWorkspacePage(createWorkspaceSession(user,{...profile,permissions}),'government-permits'),false);
+ assert.equal(canOpenWorkspacePage(createWorkspaceSession({...user,email:OWNER_EMAIL},{...profile,email:OWNER_EMAIL,permissions:['all']}),'government-permits'),true);
 });
 test('individual HR and inventory permissions open only the selected children',()=>{
  const s=createWorkspaceSession(user,{...profile,permissions:['ledger','audits']});assert.equal(canOpenHrTab(s,'Ledger'),true);assert.equal(canOpenHrTab(s,'Feed'),false);assert.equal(canOpenHrTab(s,'Schedule'),false);assert.equal(canOpenWorkspacePage(s,'inventory'),true);assert.equal(canOpenInventoryTab(s,'Audits'),true);assert.equal(canOpenInventoryTab(s,'Overview'),false);assert.equal(canOpenInventoryTab(s,'Waste'),false);

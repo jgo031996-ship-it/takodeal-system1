@@ -1,5 +1,5 @@
 export const OWNER_EMAIL = 'jgo031996@gmail.com';
-export const WORKSPACE_ROUTES = ['dashboard','accounts','financial-flow','franchise-hub','transfers','payables','devices','payroll','schedule','ledger','inbox','branches','menu','dispatch','riders','zreadings','history','expenses','sop','posconfig','customerapp','equipment','inventory','purchases','alerts','bulletin','addons','admin'];
+export const WORKSPACE_ROUTES = ['dashboard','accounts','financial-flow','franchise-hub','transfers','payables','devices','payroll','schedule','ledger','inbox','branches','menu','dispatch','riders','zreadings','history','expenses','sop','posconfig','customerapp','equipment','government-permits','inventory','purchases','alerts','bulletin','addons','admin'];
 export const HR_TABS = {Feed:'feed',Schedule:'schedule',Ledger:'ledger',Sanctions:'sanctions',Inbox:'inbox'};
 export const INVENTORY_TABS = ['Overview','AIBrief','Yield','Audits','Waste','Prep','StockLogs','Invoices','Forecaster','Alerts'];
 export const inventoryPermission = tab => tab==='Alerts'?'low-stock-alerts':String(tab).toLowerCase();
@@ -20,6 +20,7 @@ export function canOpenInventoryTab(user,tab) {
 export function canOpenWorkspacePage(user,route) {
  route=canonicalRoute(route);
  if(!user || !WORKSPACE_ROUTES.includes(route))return false;
+ if(route==='government-permits')return lower(user.email)===OWNER_EMAIL;
  if(fullWorkspaceAccess(user))return true;
  const permissions=configuredPermissions(user);
  if(route==='payroll')return canOpenHrTab(user,'Feed') || canOpenHrTab(user,'Sanctions');
