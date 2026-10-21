@@ -81,6 +81,8 @@ import { loadRecipeState, createRecipeBatch, operationFor, recipePlan, saveRecip
 import { approveRemittanceAtomic } from './cash-settlement.js';
 import { legacyRemittanceDuplicates, rejectLegacyDuplicateAtomic } from './remittance-review.js';
 import { canOpenWorkspacePage,configuredPermissions } from './workspace-access-model.js';
+import {installGovernmentPermits} from './government-permits.js';
+import {installBookkeeperPayments} from './bookkeeper-payments.js';
 import { createLogisticsFeed } from './logistics-feed.js';
 import { commitDispatch, transitionDispatch } from './dispatch-safety.js';
 import {installDispatchRestockUI,renderAutoRestockInvoiceRow} from './dispatch-restock-ui.js';
@@ -820,6 +822,7 @@ window.switchView = function (viewId) {
   if (viewId === 'admin') title = "HQ Access Control";
   if (viewId === 'payables') title = "Supplier Payables & Terms";
   if (viewId === 'equipment') title = "Assets & Equipment Tracker";
+  if (viewId === 'government-permits') title = "Government & Compliance";
   if (viewId === 'posconfig') title = "Master POS Config Hub";
   if (viewId === 'sop') title = "SOP Manager";
   if (viewId === 'schedule') {
@@ -845,6 +848,7 @@ window.switchView = function (viewId) {
   if (viewId === 'zreadings') window.loadZReadingReports();
   if (viewId === 'expenses') window.loadExpenseLogs();
   if (viewId === 'equipment') window.loadEquipmentDashboard();
+  if (viewId === 'government-permits') window.loadGovernmentCompliance?.();
   if (viewId === 'posconfig') { window.loadPosConfigHub(); window.loadPosLayout(); window.loadSidebarLayout(); }
   if (viewId === 'admin') { 
       window.loadAdminDashboard(); 
@@ -2425,9 +2429,11 @@ window.renderDispatchCart = function() {
     if (typeof window.dispatchCart === 'undefined') window.dispatchCart = [];
     
     let isTable = container.tagName.toLowerCase() === 'tbody';
+    const clearButton=document.getElementById('btnSetAsideDispatch');
+    if(clearButton)clearButton.disabled=window.dispatchCart.length===0;
 
     if (window.dispatchCart.length === 0) {
-        let emptyHtml = isTable ? '<tr><td colspan="3" style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</td></tr>' : '<div style="padding:20px; text-align:center; color:#94a3b8; font-weight:bold;">Cart is empty.</div>';
+        let emptyHtml = isTable ? '<tr><td class="dispatch-cart-empty">Cart is empty.</td></tr>' : '<div class="dispatch-cart-empty">Cart is empty.</div>';
         container.innerHTML = emptyHtml; return;
     }
     
@@ -2450,76 +2456,32 @@ window.renderDispatchCart = function() {
         let hqStock = Math.max(0, Number(item.hqStock) || 0);
         
         let uomOptions = '';
-        if (pUom.toLowerCase() !== bUom.toLowerCase()) uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${pUom}</option>`;
-        uomOptions += `<option value="base" ${item.selectedUom === 'base' ? 'selected' : ''}>${bUom}</option>`;
+        if (pUom.toLowerCase() !== bUom.toLowerCase()) uomOptions += `<option value="purch" ${item.selectedUom === 'purch' ? 'selected' : ''}>${escapeStock(pUom)}</option>`;
+        uomOptions += `<option value="base" ${item.selectedUom === 'base' ? 'selected' : ''}>${escapeStock(bUom)}</option>`;
 
-        let hqColor = hqStock < baseQty ? '#dc2626' : '#16a34a';
-        let hqWarningText = hqStock < baseQty ? '⚠️ LOW HQ STOCK' : '🟢 HQ Stock OK';
-        let hqBgColor = hqStock < baseQty ? '#fef2f2' : '#dcfce7';
-        let hqBorderColor = hqStock < baseQty ? '#fca5a5' : '#bbf7d0';
+        let hqWarningText = hqStock < baseQty ? 'Low Main Office stock' : 'Stock available';
 
         // Detect if this was a physical stock count alert to show the extra badge
         let isAudit = (item.requestType === 'Low Stock' || item.requestType === 'Out of Stock' || item.physicalStock !== undefined);
         let branchReportBadge = isAudit ? reportDetailsHTML(item) : '';
 
-        // 🔥 THE ALIGNMENT FIX: Strict fixed widths (80px and 100px) force them into a perfect grid!
+        const itemName=escapeStock(item.name||item.itemName||'Unnamed item');
         let controlsHtml = `
-            <div style="display:flex; justify-content:center; align-items:center; gap: 5px; margin: 0 auto; width: max-content;">
-                <input type="number" step="any" id="cartQty_${index}" value="${rawQty || ''}" 
-                    oninput="window.updateDispatchQty(${index}, this.value)" 
-                    style="width: 80px; min-width: 80px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; text-align: center; outline: none; font-weight: bold; color: #d97706; font-size: 14px; box-sizing: border-box;">
-                
-                <select onchange="window.updateDispatchUom(${index}, this.value)" 
-                    style="width: 100px; min-width: 100px; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; color: #d97706; font-weight: bold; cursor: pointer; outline: none; box-sizing: border-box;">
-                    ${uomOptions}
-                </select>
+            <div class="dispatch-cart-controls">
+                <label for="cartQty_${index}">Quantity<input type="number" inputmode="decimal" step="any" id="cartQty_${index}" value="${rawQty || ''}" oninput="window.updateDispatchQty(${index}, this.value)" aria-label="Quantity for ${itemName}"></label>
+                <label for="cartUom_${index}">Unit<select id="cartUom_${index}" onchange="window.updateDispatchUom(${index}, this.value)" aria-label="Unit for ${itemName}">${uomOptions}</select></label>
             </div>
         `;
-
-        if (isTable) {
-            html += `
-                <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 15px 10px; width: 45%; vertical-align: middle;">
-                        <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
-                        ${branchReportBadge}
-                        <span style="font-size: 11px; color: ${hqColor}; background: ${hqBgColor}; border: 1px dashed ${hqBorderColor}; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; font-weight: bold;">
-                            Main Office available stock: ${escapeStock(purchaseQuantity(hqStock,item))} (${hqWarningText})
-                        </span><br>
-                        <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold; display: inline-block; margin-top: 4px;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
-                    </td>
-                    <td style="padding: 15px 10px; text-align: center; width: 35%; vertical-align: middle;">
-                        ${controlsHtml}
-                    </td>
-                    <td style="padding: 15px 10px; text-align: right; width: 20%; vertical-align: middle;">
-                        <button onclick="window.removeFromDispatchCart(${index})" 
-                            style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 6px 10px; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 12px;">✖ Remove</button>
-                    </td>
-                </tr>
-            `;
-        } else {
-            // Fallback for non-table layouts
-            html += `
-                <div style="display: grid; grid-template-columns: 2fr 1.5fr 1fr; align-items: center; padding: 15px 5px; border-bottom: 1px solid #f1f5f9; gap: 15px;">
-                    <div>
-                        <strong style="color: #0f172a; font-size: 14px;">${item.name || item.itemName}</strong><br>
-                        ${branchReportBadge}
-                        <span style="font-size: 11px; color: ${hqColor}; font-weight: bold;">Main Office available stock: ${escapeStock(purchaseQuantity(hqStock,item))} (${hqWarningText})</span><br>
-                        <span id="dispatch_send_text_${index}" style="font-size: 11px; color: #059669; font-weight: bold;">Sending in ${bUom} (${baseQty.toFixed(2)} ${bUom})</span>
-                    </div>
-                    <div>${controlsHtml}</div>
-                    <div style="text-align: right;">
-                        <button onclick="window.removeFromDispatchCart(${index})" style="background: #fef2f2; color: #ef4444; border: 1px solid #fca5a5; padding: 8px 12px; border-radius: 6px; font-weight: bold; cursor: pointer;">✖ Remove</button>
-                    </div>
-                </div>
-            `;
-        }
+        const rowHtml=`<article class="dispatch-cart-item">
+            <div class="dispatch-cart-heading"><strong>${itemName}</strong><button type="button" class="dispatch-cart-remove" onclick="window.removeFromDispatchCart(${index})" aria-label="Remove ${itemName} from dispatch">Remove</button></div>
+            <div class="dispatch-cart-line"><div class="dispatch-cart-details">
+                <span class="dispatch-cart-stock ${hqStock<baseQty?'is-low':''}">Main Office: ${escapeStock(purchaseQuantity(hqStock,item))} <span>· ${hqWarningText}</span></span>
+                <span id="dispatch_send_text_${index}" class="dispatch-cart-sending">Sending in ${escapeStock(bUom)} (${baseQty.toFixed(2)} ${escapeStock(bUom)})</span>
+                ${branchReportBadge}
+            </div>${controlsHtml}</div>
+        </article>`;
+        html+=isTable?'<tr><td class="dispatch-cart-cell">'+rowHtml+'</td></tr>':rowHtml;
     });
-
-    if (isTable) {
-        html += `<tr><td colspan="3" style="padding: 15px; text-align: right; border-top: 2px dashed #e2e8f0;"><button onclick="window.clearDispatchCart()" style="background: #f8fafc; color: #475569; border: 1px dashed #cbd5e1; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🧹 Set Aside / Clear Cart</button></td></tr>`;
-    } else {
-        html += `<div style="margin-top: 15px; text-align: right; border-top: 2px dashed #e2e8f0; padding-top: 15px;"><button onclick="window.clearDispatchCart()" style="background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🧹 Set Aside / Clear Cart</button></div>`;
-    }
 
     container.innerHTML = html;
 };
@@ -24065,6 +24027,7 @@ runManagerDomReady(() => {
 // ========================================================
 
 window.addNewStaff = function() {
+    window.employeeSssUI?.reset();
     window.staffProfileFormGeneration=(window.staffProfileFormGeneration || 0)+1;window.staffProfileSaveOwner=null;
     const saveButton=document.getElementById('btnSaveEmpProfile');if(saveButton){saveButton.disabled=false;saveButton.innerText='💾 Save Data';}
     window.staffProfileBaseline={id:'',exists:false,rate:null,rateRevision:null};window.pendingEmployeeProfileRef=null;
@@ -24112,6 +24075,7 @@ window.addNewStaff = function() {
 window.openEmployeeProfile = function(docId) {
     let data = window.globalStaffData[docId];
     if (!data) return;
+    window.employeeSssUI?.reset();
     window.staffProfileFormGeneration=(window.staffProfileFormGeneration || 0)+1;window.staffProfileSaveOwner=null;
     const saveButton=document.getElementById('btnSaveEmpProfile');if(saveButton){saveButton.disabled=false;saveButton.innerText='💾 Save Data';}
     window.staffProfileBaseline={id:docId,exists:true,rate:data.salaryRateVersion===1&&data.salaryRateTimeline?staffRateForDate(data):dailyStaffRate(data),rateRevision:data.salaryRateRevision??null};window.pendingEmployeeProfileRef=null;
@@ -24249,6 +24213,14 @@ window.openEmployeeProfile = function(docId) {
         console.error(e);
         if (currentProfile() && tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>';
     });
+};
+
+window.openEmployeeSssRecords = async function() {
+    const staffId=document.getElementById('empProfileId')?.value,generation=window.staffProfileFormGeneration,uid=window.auth?.currentUser?.uid,email=window.auth?.currentUser?.email;
+    if(!staffId)return window.ManagerUI.notify('Save the employee profile before opening SSS records.');
+    const isCurrent=()=>window.staffProfileFormGeneration===generation&&window.auth?.currentUser?.uid===uid&&window.auth?.currentUser?.email===email&&document.getElementById('empProfileId')?.value===staffId&&document.getElementById('employeeProfileModal')?.style.display!=='none';
+    try{const {installEmployeeSssUI}=await import('./staff-sss-ui.js');if(!isCurrent())return;window.employeeSssUI ||= installEmployeeSssUI(window,document);await window.employeeSssUI.open({staffId,isCurrent});}
+    catch(error){if(isCurrent())window.ManagerUI.notify(error.message);}
 };
 
 window.saveEmployeeProfile = async function() {
@@ -27106,3 +27078,6 @@ installRiderManagementViews(window,document);
 installOnlineRefunds(window,document);
 installDispatchRestockUI(window);
 installDispatchDestinationRepair(window,{document,dialogs:Swal});
+installGovernmentPermits(window,document);
+const bookkeeperPayments=installBookkeeperPayments(window,document);
+window.loadGovernmentCompliance=()=>bookkeeperPayments?.refresh();

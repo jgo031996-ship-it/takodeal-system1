@@ -452,6 +452,10 @@
   <link rel="stylesheet" href="manager-mobile.css?v=20261010-r1">
     <link rel="stylesheet" href="./online-refunds.css">
 <link rel="stylesheet" href="hr-review.css?v=20261021">
+  <link rel="stylesheet" href="dispatch-cart.css?v=20261021">
+  <link rel="stylesheet" href="government-permits.css?v=20261021">
+  <link rel="stylesheet" href="bookkeeper-payments.css?v=20261021">
+  <link rel="stylesheet" href="staff-sss.css?v=20261021">
 </head>
 
 <body class="manager-theme">
@@ -510,6 +514,7 @@
           <span class="nav-text">Customer App Hub</span>
       </a>
       <a href="#" class="nav-item" id="nav-equipment" onclick="switchView('equipment');"><span class="nav-icon">🛠️</span> <span class="nav-text">Assets & Equipment</span></a>
+      <a href="#" class="nav-item" id="nav-government-permits" onclick="switchView('government-permits');" style="display:none"><span class="nav-icon">📑</span> <span class="nav-text">Government & Compliance</span></a>
       <div class="nav-item-wrapper">
           <a href="#" class="nav-item" id="nav-inventory" onclick="window.toggleInvDropdown(event)">
               <span class="nav-icon">📦</span> 
@@ -1822,6 +1827,14 @@
       </div>
     </div>
 
+    <section id="view-government-permits" class="view" aria-label="Government &amp; Compliance">
+      <div class="government-compliance-shell">
+        <header class="government-compliance-heading"><h1>Government &amp; Compliance</h1><p>Keep permits, renewal records and professional service payments organized.</p></header>
+        <section id="governmentPermitsHost" class="government-compliance-panel" aria-label="Government permits"></section>
+        <section id="bookkeeperPaymentsHost" class="government-compliance-panel" aria-label="Bookkeeper payments"></section>
+      </div>
+    </section>
+
     <!-- 🛠️ ASSETS & EQUIPMENT MANAGER -->
     <div id="view-equipment" class="view" style="padding: 20px; background: var(--bg-color); width: 100%; overflow-y: auto;">
         <div style="max-width: 1400px; margin: 0 auto;">
@@ -3090,18 +3103,16 @@
               <!-- 🤖 AI TRACKER SECURE CONTAINER -->
               <div id="dispAiTracker" style="width: 100%; margin-bottom: 20px;"></div>
 
-              <div class="table-responsive manager-dispatch-cart" style="border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 25px;">
-                <table class="data-table" style="background: white; width: 100%; border-collapse: collapse; text-align: left;">
-                  <thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;">
+              <div class="mobile-table-wrapper manager-dispatch-cart">
+                <table id="dispatchCartTable" class="data-table">
+                  <thead>
                     <tr>
-                      <th style="padding: 12px 15px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">Item</th>
-                      <th style="padding: 12px 15px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; text-align: center;">Qty to Send</th>
-                      <th style="padding: 12px 15px; font-size: 11px; color: #475569; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; text-align: right;">Action</th>
+                      <th scope="col">Items to dispatch</th>
                     </tr>
                   </thead>
                   <tbody id="dispatchCartBody">
                     <tr>
-                      <td colspan="3" class="text-center" style="padding: 30px; color: #94a3b8; font-style: italic;">Cart is empty.</td>
+                      <td class="dispatch-cart-empty">Cart is empty.</td>
                     </tr>
                   </tbody>
                 </table>
@@ -3117,6 +3128,9 @@
                   </div>
               </div>
               <button onclick="submitMultiDispatch()" id="btnSubmitDispatch" style="width: 100%; background: #d97706; color: white; border: none; padding: 18px; border-radius: 12px; font-size: 16px; font-weight: 900; cursor: pointer; box-shadow: 0 10px 20px -5px rgba(217, 119, 6, 0.3); transition: 0.2s;">🚀 Send Dispatch Delivery</button>
+              <div class="dispatch-cart-actions">
+                <button type="button" id="btnSetAsideDispatch" onclick="window.clearDispatchCart()" disabled>Set Aside / Clear Cart</button>
+              </div>
             </div>
           </div>
 
@@ -5749,6 +5763,7 @@
         </div>
 
         <!-- Section 5: History -->
+        <link rel="stylesheet" href="./staff-sss.css">
         <div style="background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
             <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; text-transform: uppercase;">📜 Advances & Deductions History</h3>
             <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
@@ -5765,6 +5780,11 @@
                     <tr><td colspan="5" class="text-center" style="padding: 20px; color: #94a3b8;">No deduction history.</td></tr>
                 </tbody>
             </table>
+            <div style="margin-top:18px;padding-top:16px;border-top:1px solid #dce6df;">
+                <button type="button" onclick="window.openEmployeeSssRecords()" style="padding:12px 16px;min-height:44px;border:1px solid #c7dbcf;border-radius:9px;background:#f2f8f2;color:#23533f;font-weight:700;cursor:pointer;">SSS deductions & payment records</button>
+                <p style="font-size:12px;color:#64748b;line-height:1.5;">Review saved employee deductions and separately record actual SSS remittances. Owner access required.</p>
+                <div id="employeeSssRecords"></div>
+            </div>
         </div>
       </div>
 

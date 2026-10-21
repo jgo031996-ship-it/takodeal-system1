@@ -1419,6 +1419,235 @@ service cloud.firestore {
         && (resource.data.get('type', '') == 'Cancelled Food Purchase' ? verifiedHQ(resource.data.branch) : isHQUser());
     }
     match /staff_bonuses/{bonusId} { allow read: if true; allow write: if isHQUser(); }
+    // Owner compliance records are independent of payroll and bank postings.
+    function complianceOwner() {
+      return offlineOwner() && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+    function complianceText(value, maximum) { return value is string && value.size() <= maximum; }
+    function complianceId(value) { return value is string && value.matches('^[A-Za-z0-9_-]{1,180}$'); }
+    function complianceDay(value) { return value is string && value.matches('^2[01][0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
+    function complianceMonth(value) { return value is string && value.matches('^2[01][0-9]{2}-(0[1-9]|1[0-2])$'); }
+    function permitRecordDay(value) { return value is string && value.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
+    function complianceCents(value) { return value is int && value >= 0 && value <= 1000000000; }
+    function complianceFileDescriptor(value, kind, recordId) {
+      return value is map && value.keys().hasOnly(['id','kind','recordId','fileName','contentType','size','sha256','chunkCount'])
+        && value.id is string && value.id.matches('^[a-fA-F0-9-]{36}$') && value.kind == kind && value.recordId == recordId
+        && complianceText(value.fileName,160) && value.fileName.size() > 0
+        && value.contentType in ['application/pdf','image/jpeg','image/png']
+        && value.size is int && value.size > 0 && value.size <= 2097152
+        && value.sha256 is string && value.sha256.matches('^[a-f0-9]{64}$')
+        && value.chunkCount is int && value.chunkCount >= 1 && value.chunkCount <= 15
+        && value.chunkCount == int(math.ceil(value.size / 147456.0));
+    }
+    function complianceAttachment(value, kind, recordId) {
+      return value == null || (complianceFileDescriptor(value,kind,recordId)
+        && getAfter(/databases/$(database)/documents/owner_record_files/$(value.id)).data.diff(value).affectedKeys().hasOnly([
+          'schemaVersion','chunkSize','operationId','createdAt','createdByUid','createdByEmail']));
+    }
+    function permitBusiness(data) {
+      return {'branch':data.branch,'permitType':data.permitType,'permitName':data.permitName,'agency':data.agency,
+        'permitNumber':data.permitNumber,'issueDate':data.issueDate,'expiryDate':data.expiryDate,'renewalStatus':data.renewalStatus,
+        'notes':data.notes,'attachment':data.attachment,'archived':data.archived};
+    }
+    function permitShape(data, id) {
+      return data.keys().hasOnly(['schemaVersion','recordId','branch','permitType','permitName','agency','permitNumber','issueDate','expiryDate','renewalStatus','notes','attachment','archived','revision','createdAt','createdByUid','createdByEmail','updatedAt','updatedByUid','updatedByEmail','lastChangeId'])
+        && data.schemaVersion == 1 && data.recordId == id && complianceId(id)
+        && complianceText(data.branch,120) && data.branch.size() > 0
+        && complianceText(data.permitType,80) && data.permitType.size() > 0
+        && complianceText(data.permitName,160) && data.permitName.size() > 0
+        && complianceText(data.agency,160) && complianceText(data.permitNumber,120)
+        && (data.issueDate == '' || permitRecordDay(data.issueDate)) && (data.expiryDate == '' || permitRecordDay(data.expiryDate))
+        && (data.issueDate == '' || data.expiryDate == '' || data.expiryDate >= data.issueDate)
+        && data.renewalStatus in ['Not started','Preparing','Submitted','Completed','Not required']
+        && complianceText(data.notes,4000) && data.archived is bool && data.revision is int && data.revision > 0
+        && complianceAttachment(data.attachment,'government_permit',id) && complianceId(data.lastChangeId)
+        && data.updatedAt == request.time && data.updatedByUid == request.auth.uid && data.updatedByEmail == request.auth.token.email;
+    }
+    function permitChange(data,id,before,action) {
+      let event = getAfter(/databases/$(database)/documents/government_permits/$(id)/changes/$(data.lastChangeId)).data;
+      return event.schemaVersion == 1 && event.operationId == data.lastChangeId && event.recordId == id
+        && event.revision == data.revision && event.action == action && event.before == before && event.after == permitBusiness(data)
+        && event.recordedAt == request.time && event.recordedByUid == request.auth.uid && event.recordedByEmail == request.auth.token.email;
+    }
+    match /government_permits/{id} {
+      allow read: if complianceOwner();
+      allow create: if complianceOwner() && permitShape(request.resource.data,id)
+        && request.resource.data.revision == 1 && request.resource.data.createdAt == request.time
+        && request.resource.data.createdByUid == request.auth.uid && request.resource.data.createdByEmail == request.auth.token.email
+        && permitChange(request.resource.data,id,null,'Created');
+      allow update: if complianceOwner() && permitShape(request.resource.data,id)
+        && request.resource.data.revision == resource.data.revision + 1
+        && request.resource.data.createdAt == resource.data.createdAt && request.resource.data.createdByUid == resource.data.createdByUid
+        && request.resource.data.createdByEmail == resource.data.createdByEmail
+        && request.resource.data.lastChangeId != resource.data.lastChangeId
+        && permitChange(request.resource.data,id,permitBusiness(resource.data),request.resource.data.archived != resource.data.archived
+          ? (request.resource.data.archived ? 'Archived' : 'Restored') : 'Updated');
+      allow delete: if false;
+      match /changes/{changeId} {
+        allow read: if complianceOwner();
+        allow create: if complianceOwner() && request.resource.data.keys().hasOnly(['schemaVersion','operationId','recordId','revision','action','before','after','reason','recordedAt','recordedByUid','recordedByEmail','intent'])
+          && request.resource.data.schemaVersion == 1 && request.resource.data.operationId == changeId
+          && request.resource.data.recordId == id && request.resource.data.revision is int
+          && request.resource.data.action in ['Created','Updated','Archived','Restored']
+          && complianceText(request.resource.data.reason,1000) && request.resource.data.intent.matches('^[a-f0-9]{64}$')
+          && request.resource.data.recordedAt == request.time && request.resource.data.recordedByUid == request.auth.uid && request.resource.data.recordedByEmail == request.auth.token.email
+          && getAfter(/databases/$(database)/documents/government_permits/$(id)).data.lastChangeId == changeId
+          && getAfter(/databases/$(database)/documents/government_permits/$(id)).data.revision == request.resource.data.revision
+          && request.resource.data.after == permitBusiness(getAfter(/databases/$(database)/documents/government_permits/$(id)).data);
+        allow update, delete: if false;
+      }
+    }
+    function sssFrozenCents(value) {
+      return value is number && value >= 0 ? math.round(value * 100)
+        : value is string && value.matches('^[0-9]+([.][0-9]{1,2})?$') ? math.round(float(value) * 100) : -1;
+    }
+    function sssSavedPayroll(row,staffId,staffName) {
+      let saved = get(/databases/$(database)/documents/payroll_records/$(row.payrollRecordId)).data;
+      let frozen = saved.frozenData;
+      let net = saved.get('finalNetPay',null);
+      let frozenNet = frozen.get('finalNetPay',net);
+      let ids = [saved.get('staffId',''),frozen.get('staffId',''),frozen.get('profile',{}).get('staffId','')];
+      let start = row.startDate;
+      let end = row.endDate;
+      return [saved.startDate,saved.endDate,frozen.get('start',start),frozen.get('end',end)] == [start,end,start,end]
+        && start <= end && complianceDay(start) && complianceDay(end)
+        && ids.toSet().hasOnly(['',staffId]) && (staffId in ids
+          || (saved.get('staffName','') == staffName && frozen.get('name',staffName) == staffName))
+        && frozen is map && saved.get('isPaid',true) != false && frozen.get('isPaid',true) != false
+        && !(saved.get('status','').lower() in ['draft','unpaid','pending','cancelled','canceled','voided','failed'])
+        && sssFrozenCents(net) >= 0 && (frozenNet == net || sssFrozenCents(frozenNet) == sssFrozenCents(net))
+        && sssFrozenCents(frozen.get('sss',null)) == row.deductedCents;
+    }
+    function sssAllocationIds(rows) {
+      let n = rows.size();
+      return [n>0?rows[0].payrollRecordId:'',n>1?rows[1].payrollRecordId:''];
+    }
+    function sssAllocationSum(rows) {
+      let n = rows.size();
+      return (n>0?rows[0].amountCents:0)+(n>1?rows[1].amountCents:0);
+    }
+    function sssPayrollAt(rows,at,staffId,staffName) {
+      return rows.size()<=at || sssSavedPayroll(rows[at],staffId,staffName);
+    }
+    function sssLedgerAllocation(row,staffId,staffName,before,after) {
+      let id = row.payrollRecordId;
+      let old = before.get(id,0);
+      let next = after.get(id,0);
+      let amount = row.amountCents;
+      let deducted = row.deductedCents;
+      return row.keys().hasOnly(['payrollRecordId','startDate','endDate','deductedCents','amountCents'])
+        && complianceId(id) && complianceCents(deducted) && complianceCents(amount)
+        && amount > 0 && amount <= deducted
+        && old is int && old >= 0 && next == old + amount && next <= deducted && next > 0;
+    }
+    function sssLedgerAt(rows,at,staffId,staffName,before,after) {
+      return rows.size()<=at || (sssLedgerAllocation(rows[at],staffId,staffName,before,after)
+        && (at<1 || sssSavedPayroll(rows[at],staffId,staffName)));
+    }
+    function sssRecord(data,id) {
+      let staff = get(/databases/$(database)/documents/cashiers/$(data.staffId)).data;
+      let ledger = getAfter(/databases/$(database)/documents/staff_sss_allocation_totals/$(data.staffId)).data;
+      let rows = data.allocations;
+      let employee = data.employeeShareCents;
+      let employer = data.employerShareCents;
+      let ec = data.ecShareCents;
+      let total = data.totalCents;
+      return data.keys().hasOnly(['version','recordId','staffId','staffName','branch','contributionMonth','remittedDate','employeeShareCents','employerShareCents','ecShareCents','totalCents','reference','referenceKey','notes','evidenceReference','allocations','proof','intent','recordedAt','recordedByUid','recordedBy'])
+        && data.version == 1 && data.recordId == id && id.matches('^sss-[a-f0-9]{64}$') && complianceId(data.staffId)
+        && data.staffName == staff.get('cashierName',staff.get('fullName',staff.get('name',''))) && data.branch == staff.branch
+        && complianceMonth(data.contributionMonth) && complianceDay(data.remittedDate)
+        && complianceText(data.reference,120) && data.reference.size() >= 3 && complianceText(data.referenceKey,240) && data.referenceKey.size()>0
+        && complianceText(data.notes,1500) && complianceText(data.evidenceReference,500) && complianceText(data.intent,30000)
+        && complianceCents(employee) && complianceCents(employer) && complianceCents(ec)
+        && complianceCents(total) && total > 0 && total == employee+employer+ec
+        && rows is list && rows.size() <= 2
+        // One monthly remittance can link the two payroll cutoffs. Split the
+        // immutable frozen proofs across the required atomic pair to stay within
+        // Firestore's expression limit without trusting the client allocation.
+        && sssPayrollAt(rows,0,data.staffId,data.staffName)
+        && employee == sssAllocationSum(rows)
+        && complianceAttachment(data.proof,'sss_remittance',id) && ledger.lastRemittanceId == id
+        && ledger.updatedAt == request.time && ledger.updatedByUid == request.auth.uid
+        && data.recordedAt == request.time && data.recordedByUid == request.auth.uid && data.recordedBy == request.auth.token.email;
+    }
+    function sssLedgerWrite(data,staffId,before,revision) {
+      let record = getAfter(/databases/$(database)/documents/staff_sss_remittances/$(data.lastRemittanceId)).data;
+      let rows = record.allocations;
+      let ids = sssAllocationIds(rows);
+      let totals = data.allocatedCentsByPayroll;
+      return data.keys().hasOnly(['version','staffId','revision','allocatedCentsByPayroll','lastRemittanceId','updatedAt','updatedByUid'])
+        && data.version == 1 && data.staffId == staffId && data.revision == revision+1
+        && totals is map && totals.size() <= 500
+        && !totals.keys().hasAny(['']) && data.lastRemittanceId.matches('^sss-[a-f0-9]{64}$')
+        && !exists(/databases/$(database)/documents/staff_sss_remittances/$(data.lastRemittanceId))
+        && record.recordId == data.lastRemittanceId && record.staffId == staffId && record.recordedAt == request.time
+        && rows.size() <= 2 && ids.toSet().size() == rows.size() + (rows.size()<2?1:0)
+        && totals.diff(before).affectedKeys().hasOnly(ids)
+        && sssLedgerAt(rows,0,staffId,record.staffName,before,totals) && sssLedgerAt(rows,1,staffId,record.staffName,before,totals)
+        && data.updatedAt == request.time && data.updatedByUid == request.auth.uid;
+    }
+    match /staff_sss_remittances/{id} {
+      allow read: if complianceOwner();
+      allow create: if complianceOwner() && sssRecord(request.resource.data,id);
+      allow update, delete: if false;
+    }
+    match /staff_sss_allocation_totals/{staffId} {
+      allow read: if complianceOwner();
+      allow create: if complianceOwner() && sssLedgerWrite(request.resource.data,staffId,{},0);
+      allow update: if complianceOwner() && sssLedgerWrite(request.resource.data,staffId,resource.data.allocatedCentsByPayroll,resource.data.revision);
+      allow delete: if false;
+    }
+    match /bookkeeper_payments/{id} {
+      allow read: if complianceOwner();
+      allow create: if complianceOwner() && request.resource.data.keys().hasOnly(['schemaVersion','recordId','payee','branch','serviceMonth','paidDate','amountCents','paymentMethod','reference','notes','attachment','intent','recordedAt','recordedByUid','recordedByEmail'])
+        && request.resource.data.schemaVersion == 1 && request.resource.data.recordId == id && id.matches('^bookkeeper-[a-f0-9]{64}$')
+        && complianceText(request.resource.data.payee,120) && request.resource.data.payee.size()>0
+        && complianceText(request.resource.data.branch,100) && request.resource.data.branch.size()>0
+        && complianceMonth(request.resource.data.serviceMonth) && complianceDay(request.resource.data.paidDate)
+        && request.resource.data.amountCents is int && request.resource.data.amountCents>0 && request.resource.data.amountCents<=99999999999
+        && request.resource.data.paymentMethod in ['Cash','Bank transfer','GCash','Other']
+        && complianceText(request.resource.data.reference,120) && request.resource.data.reference.size()>0
+        && complianceText(request.resource.data.notes,1500) && complianceText(request.resource.data.intent,10000)
+        && complianceAttachment(request.resource.data.attachment,'bookkeeper_payment',id)
+        && request.resource.data.recordedAt==request.time && request.resource.data.recordedByUid==request.auth.uid && request.resource.data.recordedByEmail==request.auth.token.email;
+      allow update, delete: if false;
+    }
+    function complianceFileParent(data,id) {
+      let parent = data.kind == 'government_permit'
+        ? getAfter(/databases/$(database)/documents/government_permits/$(data.recordId)).data
+        : data.kind == 'sss_remittance' ? getAfter(/databases/$(database)/documents/staff_sss_remittances/$(data.recordId)).data
+        : getAfter(/databases/$(database)/documents/bookkeeper_payments/$(data.recordId)).data;
+      return (data.kind == 'sss_remittance' ? parent.proof.id : parent.attachment.id) == id;
+    }
+    function complianceFileMeta(data) {
+      return {'id':data.id,'kind':data.kind,'recordId':data.recordId,'fileName':data.fileName,'contentType':data.contentType,'size':data.size,'sha256':data.sha256,'chunkCount':data.chunkCount};
+    }
+    match /owner_record_files/{id} {
+      allow get: if complianceOwner();
+      allow list, update, delete: if false;
+      allow create: if complianceOwner() && request.resource.data.keys().hasOnly(['schemaVersion','id','kind','recordId','fileName','contentType','size','sha256','chunkCount','chunkSize','operationId','createdAt','createdByUid','createdByEmail'])
+        && request.resource.data.schemaVersion == 1 && request.resource.data.id == id
+        && request.resource.data.kind in ['government_permit','sss_remittance','bookkeeper_payment']
+        && complianceFileDescriptor(complianceFileMeta(request.resource.data),request.resource.data.kind,request.resource.data.recordId)
+        && request.resource.data.chunkSize == 147456 && complianceId(request.resource.data.operationId)
+        && request.resource.data.createdAt == request.time && request.resource.data.createdByUid == request.auth.uid && request.resource.data.createdByEmail == request.auth.token.email
+        && complianceFileParent(request.resource.data,id);
+      match /chunks/{chunkId} {
+        allow get: if complianceOwner();
+        allow list, update, delete: if false;
+        allow create: if complianceOwner() && request.resource.data.keys().hasOnly(['schemaVersion','fileId','index','size','sha256','data'])
+          && request.resource.data.schemaVersion == 1 && request.resource.data.fileId == id
+          && request.resource.data.index is int && request.resource.data.index>=0 && request.resource.data.index<15
+          && chunkId == (request.resource.data.index<10 ? '000'+string(request.resource.data.index) : '00'+string(request.resource.data.index))
+          && request.resource.data.size is int && request.resource.data.size>0 && request.resource.data.size<=147456
+          && request.resource.data.sha256.matches('^[a-f0-9]{64}$')
+          && request.resource.data.data is string && request.resource.data.data.size()>0 && request.resource.data.data.size()<=196608
+          && request.resource.data.data.matches('^[A-Za-z0-9+/]*={0,2}$')
+          && !exists(/databases/$(database)/documents/owner_record_files/$(id))
+          && request.resource.data.index<getAfter(/databases/$(database)/documents/owner_record_files/$(id)).data.chunkCount
+          && getAfter(/databases/$(database)/documents/owner_record_files/$(id)).data.createdAt==request.time;
+      }
+    }
     match /budgets/{budgetId} { allow read, write: if isHQUser(); }
     match /equipment_assets/{assetId} { allow read, write: if isHQUser(); }
     match /yield_logs/{yieldId} { allow read, write: if isHQUser(); }

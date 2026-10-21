@@ -28,6 +28,7 @@ export const MANAGER_PAGES = Object.freeze({
     posconfig: ['Configuration', 'POS Config Hub', 'Manage cashier settings and the layout of the POS.'],
     customerapp: ['Configuration', 'Customer App Hub', 'Manage the customer menu and ordering experience.'],
     equipment: ['Operations', 'Assets & Equipment', 'Track company equipment and asset records.'],
+    'government-permits': ['Company records', 'Government & Compliance', 'Track permits, renewals and bookkeeper payment records.'],
     inventory: ['Inventory', 'Live Inventory', 'Review branch stock, audits, and inventory activity.'],
     purchases: ['Inventory', 'Purchases & Alerts', 'Review purchase needs and low stock alerts.'],
     alerts: ['Operations', 'Security Alerts', 'Review incidents and activity requiring attention.'],

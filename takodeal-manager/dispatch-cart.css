@@ -1,0 +1,27 @@
+/* The dispatch cart is a wrapping list, including inside the desktop table. */
+body.manager-theme #view-dispatch .manager-dispatch-card .manager-dispatch-cart{min-width:0;max-width:100%;margin-bottom:20px;border:1px solid #dce5de;border-radius:10px;overflow:visible!important;container-type:inline-size}
+#view-dispatch #dispatchCartTable{width:100%!important;min-width:0!important;max-width:100%;table-layout:fixed;border-collapse:collapse;background:#fff;text-align:left}
+#view-dispatch #dispatchCartTable th{padding:11px 14px!important;background:#f4f7f2;color:#526b5c;font-size:11px;letter-spacing:.05em;text-transform:uppercase;border-bottom:1px solid #dce5de;white-space:normal}
+#view-dispatch #dispatchCartTable .dispatch-cart-cell{padding:0!important;border-bottom:1px solid #e4ebe5;white-space:normal!important}
+#view-dispatch #dispatchCartTable tr:last-child .dispatch-cart-cell{border-bottom:0}
+#view-dispatch .dispatch-cart-item{min-width:0;max-width:100%;padding:12px 14px;color:#254336}
+#view-dispatch .dispatch-cart-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0;margin-bottom:9px}
+#view-dispatch .dispatch-cart-heading strong{min-width:0;font-size:14px;line-height:1.45;overflow-wrap:anywhere}
+#view-dispatch .dispatch-cart-remove{flex:0 0 auto;min-height:38px;max-width:100%;padding:7px 11px;border:1px solid #ebd2ce;border-radius:7px;background:#fff9f7;color:#a33d33;font-size:12px;font-weight:600;cursor:pointer}
+#view-dispatch .dispatch-cart-line{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,220px);align-items:start;gap:12px;min-width:0}
+#view-dispatch .dispatch-cart-details{display:grid;align-content:start;gap:5px;min-width:0;font-size:11px;line-height:1.5;overflow-wrap:anywhere}
+#view-dispatch .dispatch-cart-stock{color:#426450}
+#view-dispatch .dispatch-cart-stock span{color:#698271}
+#view-dispatch .dispatch-cart-stock.is-low,#view-dispatch .dispatch-cart-stock.is-low span{color:#a23b32;font-weight:600}
+#view-dispatch .dispatch-cart-sending{color:#426450;font-weight:600}
+#view-dispatch .dispatch-cart-details .stock-report-details{font-size:11px!important;line-height:1.5!important}
+#view-dispatch .dispatch-cart-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:8px;min-width:0}
+#view-dispatch .dispatch-cart-controls label{display:grid;min-width:0;gap:4px;color:#617568;font-size:11px;font-weight:600}
+body.manager-theme #view-dispatch .manager-dispatch-cart .dispatch-cart-controls :is(input,select){box-sizing:border-box;width:100%!important;min-width:0!important;max-width:100%;min-height:42px;padding:8px 9px;border:1px solid #cad8cd;border-radius:7px;background:#fff;color:#264b3a;font:inherit;font-size:14px}
+#view-dispatch .dispatch-cart-empty{padding:22px 14px!important;text-align:center!important;color:#738276;font-size:13px!important;white-space:normal!important}
+#view-dispatch .dispatch-cart-actions{display:flex;justify-content:flex-end;min-width:0;margin-top:12px}
+#view-dispatch #btnSetAsideDispatch{box-sizing:border-box;max-width:100%;min-height:44px;padding:10px 15px;border:1px solid #cbd9ce;border-radius:8px;background:#f6f8f3;color:#315e48;font:600 13px Arial,sans-serif;white-space:normal;cursor:pointer}
+#view-dispatch #btnSetAsideDispatch:disabled{opacity:.5;cursor:not-allowed}
+#view-dispatch :is(.dispatch-cart-controls input,.dispatch-cart-controls select,.dispatch-cart-remove,#btnSetAsideDispatch):focus-visible{outline:3px solid #8ebba0;outline-offset:2px}
+@container(max-width:540px){#view-dispatch .dispatch-cart-line{grid-template-columns:minmax(0,1fr)}#view-dispatch .dispatch-cart-controls{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}#view-dispatch .dispatch-cart-item{padding:12px}#view-dispatch .dispatch-cart-remove{min-height:42px}}
+@media(max-width:600px){#view-dispatch .dispatch-cart-actions #btnSetAsideDispatch{width:100%}body.manager-theme #view-dispatch .manager-dispatch-cart .dispatch-cart-controls :is(input,select){font-size:16px}#view-dispatch .dispatch-cart-line{grid-template-columns:minmax(0,1fr)}}
