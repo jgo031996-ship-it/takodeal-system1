@@ -1,3 +1,5 @@
+import * as roster from '../takodeal-manager/payroll-roster-model.js';
+import * as rosterUI from '../takodeal-manager/payroll-balance-review.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -29,8 +31,8 @@ function harness(options={}){
  const snapshot=(rows,metadata={fromCache:false,hasPendingWrites:false})=>{const docs=rows.map((row,index)=>({id:row.id||String(index),metadata:{fromCache:false,hasPendingWrites:false},data:()=>row}));return {docs,metadata,forEach:fn=>docs.forEach(fn)};};
  const api={db:{},auth:{currentUser:{...owner}},sessionUser:{...owner,isOwner:true,isFranchisee:false,permissions:['all'],allowedBranches:['All']},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),where:(field,op,value)=>({field,op,value}),orderBy:()=>({}),query:(ref,...filters)=>({...ref,filters}),getDocs:async()=>assert.fail('Default cached getDocs must never be called for payroll preview'),getDocsFromServer:async ref=>{calls.push(ref);return options.read?options.read(ref,{snapshot,records,logs}):snapshot(records[ref.table]||[]);},getDoc:async()=>({exists:()=>true,data:()=>plan}),isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>schedule.assembleScheduleHistory(plan),ManagerUI:{notify:message=>events.push(message)},liveAccounts:[{id:'sample-account',name:'Sample Cash',balance:5000}],globalPayrollCache:{Old:{name:'Old'}},currentPayslipData:{name:'Old'},updateDoc:async()=>writes.push('update'),addDoc:async()=>writes.push('add')};
  const Swal={fire:async(...args)=>{events.push(args);return options.confirm?options.confirm(...args):{isConfirmed:false};},showValidationMessage:message=>events.push(message)};
- const document={getElementById:node,querySelectorAll:()=>[]};
- const context=vm.createContext({...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
+ const document={getElementById:id=>id==='payrollBalanceReview'?null:node(id),querySelectorAll:()=>[]};
+ const context=vm.createContext({...roster,...rosterUI,...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
  for(const name of ['getPayrollPreviewGuard','requirePayrollPreview','loadPayrollGenerator','generateAutoPayslips','openPayslipModal','finalizePayslip'])vm.runInContext(extract(name),context);
  return {context,w:api,node,nodes,events,writes,calls,records,logs,snapshot,person};
 }

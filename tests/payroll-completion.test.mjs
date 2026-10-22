@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {payrollActorKey,loadPayrollAccounts,applyConfirmedPayroll,checkSavedPayslipPayment,exportPayslipImage,syncPayslipImageButton} from '../takodeal-manager/payroll-completion.js';
+import {notificationTone} from '../takodeal-manager/manager-dialogs.js';
 const held=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 class Node{
  constructor(tag='div'){this.tagName=tag.toUpperCase();this.children=[];this.style={};this.innerText='';this.textContent='';this.value='';this.id='';this.disabled=false;}
@@ -80,10 +81,10 @@ test('edits made during image generation remain open instead of being dismissed 
 });
 
 function paymentCheckFixture(){
- const h=fixture(),notifications=[];h.api.ManagerUI={notify:text=>notifications.push(text)};h.node('btnCheckSavedPayslip').innerText='Check saved payment';
+ const h=fixture(),notifications=[],notificationOptions=[];h.api.ManagerUI={notify:(text,options)=>{notifications.push(text);notificationOptions.push(options);}};h.node('btnCheckSavedPayslip').innerText='Check saved payment';
  for(const action of ['updateDoc','setDoc','addDoc','deleteDoc','writeBatch','generateAutoPayslips','loadLedger','loadAccountsAndBudget'])h.api[action]=()=>assert.fail('A read-only payment check must not write or rebuild financial data');
  const saved={status:'paid',id:'saved-payment',alreadyPaid:true,finalNetPay:410,accountId:'original-bank',accountName:'Original PNB',frozenData:{staffId:h.data.staffId,name:h.data.name,branch:h.data.branch,start:h.data.start,end:h.data.end,basicPay:430,meals:20,hours:7,finalNetPay:410,isPaid:true}};
- return {...h,notifications,saved};
+ return {...h,notifications,notificationOptions,saved};
 }
 
 test('saved payment check restores the exact original snapshot without inheriting newer preview charges or debiting an account',async()=>{
@@ -101,7 +102,11 @@ test('read-only saved-payment UI coalesces repeated checks and opens the confirm
 
 test('no saved payment leaves the preview and finances unchanged and never marks outside-app payment as paid',async()=>{
  const h=paymentCheckFixture(),before=structuredClone(h.data);const result=await checkSavedPayslipPayment(h.api,h.d,{inspect:async()=>({status:'not-recorded',alreadyPaid:false}),onFound:()=>assert.fail('No paid snapshot to open')});
- assert.equal(result.status,'not-recorded');assert.deepEqual(h.data,before);assert.equal(h.api.liveAccounts[0].balance,5000);assert.match(h.notifications[0],/No confirmed payment record/);assert.match(h.notifications[0],/Nothing was marked paid or deducted/);assert.match(h.notifications[0],/outside the app/);
+ assert.equal(result.status,'not-recorded');assert.deepEqual(h.data,before);assert.equal(h.api.liveAccounts[0].balance,5000);assert.match(h.notifications[0],/No saved payment for this cutoff/);assert.match(h.notifications[0],/2030-01-01 to 2030-01-15/);assert.match(h.notifications[0],/Nothing was marked paid or deducted/);assert.match(h.notifications[0],/original payment date, account and amount/);assert.match(h.notifications[0],/outside the app/);assert.equal(h.notificationOptions[0].type,'info');assert.equal(notificationTone(h.notifications[0],h.notificationOptions[0].type),'info');assert.equal(h.node('btnCheckSavedPayslip').disabled,false);assert.equal(h.node('btnCheckSavedPayslip').innerText,'Check saved payment');
+});
+
+test('an incomplete inspector result stays unconfirmed and cannot be reported as proof that no payment exists',async()=>{
+ const h=paymentCheckFixture(),before=structuredClone(h.data);const result=await checkSavedPayslipPayment(h.api,h.d,{inspect:async()=>({status:'unconfirmed'}),onFound:()=>assert.fail('No confirmed paid snapshot')});assert.equal(result.status,'unconfirmed');assert.deepEqual(h.data,before);assert.equal(h.notifications.length,1);assert.match(h.notifications[0],/could not be confirmed/);assert.doesNotMatch(h.notifications[0],/No saved payment for this cutoff/);assert.equal(h.node('btnCheckSavedPayslip').disabled,false);assert.equal(h.node('btnCheckSavedPayslip').innerText,'Check saved payment');
 });
 
 test('network failure and timed-out saved-payment checks remain unconfirmed and ignore late results',async()=>{

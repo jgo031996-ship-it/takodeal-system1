@@ -1,3 +1,5 @@
+import * as roster from '../takodeal-manager/payroll-roster-model.js';
+import * as rosterUI from '../takodeal-manager/payroll-balance-review.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -26,7 +28,7 @@ async function fixture(options={}){
  const h=firestoreHarness(),nodes=new Map(),events=[],notifications=[],exports=[],opens=[],queries=[],rows=[];
  const inputIds=new Set(['psOvertime','psStraightBonus','psHoliday','psPerfBonus','psLate','psSSS','psPhil','psPagibig','psAdvance','psLoans','psFoods','psPayDistributed']);
  const node=id=>{if(!nodes.has(id))nodes.set(id,new Node(id,inputIds.has(id)?'INPUT':'DIV'));return nodes.get(id);};
- const d={getElementById:node,querySelectorAll:()=>[]};
+ const d={getElementById:id=>id==='payrollBalanceReview'?null:node(id),querySelectorAll:()=>[]};
  const uid='sample-owner',email='sample-owner@example.test',branch='Sample Branch',staffId='sample-staff',name='Sample Staff',start='2030-01-16',end=start;
  const actor={uid,email,emailVerified:true,providerData:[{providerId:'google.com'}]},hq={email,role:'Owner',fullName:'Sample Owner',permissions:['all'],assignedBranch:'All',active:true};
  Object.assign(h.api,{auth:{currentUser:actor},sessionUser:createWorkspaceSession(actor,hq),isBranchAllowed:()=>true,ManagerUI:{notify:message=>notifications.push(message)}});
@@ -40,14 +42,14 @@ async function fixture(options={}){
  h.api.getDocFromServer=async reference=>({ref:reference,id:reference.id,metadata:{fromCache:false,hasPendingWrites:false},exists:()=>h.docs.has(reference.path),data:()=>structuredClone(h.get(reference.path))});
  const read=h.api.getDocsFromServer;h.api.getDocsFromServer=async reference=>{queries.push(reference.table);return read(reference);};
  let transactions=0;const run=h.api.runTransaction;h.api.runTransaction=async(...args)=>{transactions++;return run(...args);};
- const data={staffId,name,branch,start,end,profile:{...profile},hours:8,shiftsWorked:1,basicPay:450,nightBonus:0,straightBonus:0,holidayPayTotal:0,perfBonus:0,lateDeduction:0,sss:0,philhealth:0,pagibig:0,advances:0,meals:35,loans:50,ledgerId:'sample-loan',customDeductionsTotal:0,onlineRefunds:0,onlineRefundRows:[],scheduleEvidenceStamp:freshness.payrollScheduleStamp(history),logs:[{date:'Jan 16',in:'09:00 AM',out:'05:00 PM',hrs:'8.00',remark:'Complete'}]};
+ const data={staffId,name,branch,start,end,profile:{...profile},hours:8,shiftsWorked:1,basicPay:450,nightBonus:0,straightBonus:0,holidayPayTotal:0,perfBonus:0,lateDeduction:0,sss:0,philhealth:0,pagibig:0,advances:0,meals:35,loans:50,ledgerId:'sample-loan',customDeductionsTotal:0,onlineRefunds:0,onlineRefundRows:[],scheduleEvidenceStamp:freshness.payrollScheduleStamp(history,{start,end}),logs:[{date:'Jan 16',in:'09:00 AM',out:'05:00 PM',hrs:'8.00',remark:'Complete'}]};
  const other={name:'Other Staff',staffId:'other',branch,start,end,basicPay:400,hours:8,profile:{hourlyRate:400},isPaid:false};
  const row=person=>{const button=new Node('button');button.textContent='Generate Payslip';const value={cells:[{textContent:person.name},{textContent:person.branch},{textContent:'8.00 hrs'},{textContent:'Original deductions'}],style:{background:'white',opacity:'1'},querySelector:()=>button,button};rows.push(value);return value;};
  const ownRow=row(data),otherRow=row(other);node('payrollGeneratorBody').querySelectorAll=selector=>selector==='tr'?rows:[];
  node('payrollStart').value=start;node('payrollEnd').value=end;node('payrollGrandTotalContainer').style.display='flex';
  const state={h,w:h.api,d,node,data,other,ownRow,otherRow,events,notifications,exports,opens,queries,transactions:()=>transactions,recordId:ordinaryPayrollId(staffId,start,end)};
  const Swal={fire:async(...args)=>{events.push(args);const first=args[0];if(first?.title==='💸 Disburse Payroll')return options.confirm?options.confirm(state,first):{isConfirmed:true,value:'0'};return {isConfirmed:false};},showValidationMessage:message=>notifications.push(message)};
- const context=vm.createContext({...completion,...preview,...freshness,assertPayrollSalaryFresh,canOpenWorkspacePage,window:h.api,document:d,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value),
+ const context=vm.createContext({...roster,...rosterUI,...completion,...preview,...freshness,assertPayrollSalaryFresh,canOpenWorkspacePage,window:h.api,document:d,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value),
   finalizeOrdinaryPayroll:async(api,input)=>{const result=await finalizeOrdinaryPayroll(api,input);await options.afterEngine?.(state,result);return result;},
   finalizeRefundPayroll:()=>assert.fail('This ordinary fixture must use the atomic ordinary-payroll engine'),
   exportPayslipImage:async()=>{exports.push({data:h.api.currentPayslipData,name:node('psName').innerText,isPaid:h.api.currentPayslipData?.isPaid});if(options.imageFailure)throw Error('Synthetic image renderer failure');return {filename:'sample.png'};}
