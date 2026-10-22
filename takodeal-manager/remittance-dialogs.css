@@ -1,0 +1,54 @@
+/* Remittance reviews fit their dialog; long values wrap instead of being clipped. */
+#remitAuditModal{z-index:10100!important;inset:0;box-sizing:border-box;padding:16px;width:100%!important;height:100%!important}
+#remitAuditModal .remittance-audit-dialog{display:flex;flex-direction:column;min-width:0;width:min(560px,100%)!important;max-width:100%;max-height:calc(100vh - 32px)!important;max-height:calc(100dvh - 32px)!important}
+#remitAuditModal .remittance-audit-header{flex:0 0 auto;gap:16px}
+#remitAuditModal .remittance-audit-header h3{min-width:0;overflow-wrap:anywhere}
+#remitAuditModal .remittance-audit-close{display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;border:0;border-radius:7px;color:#fff;background:transparent;font-size:24px;cursor:pointer}
+#remitAuditModal .remittance-audit-close:hover{background:#ffffff20}
+#remitAuditModal .remittance-audit-close:focus-visible{outline:2px solid #fff;outline-offset:2px}
+#remitAuditBody{flex:1 1 auto;min-height:0;min-width:0;max-height:none!important;overflow-y:auto;overscroll-behavior:contain;padding:18px!important}
+#remitAuditBody table{width:100%!important;min-width:0!important;max-width:100%!important;table-layout:fixed}
+#remitAuditBody td{min-width:0;white-space:normal!important;overflow-wrap:anywhere;vertical-align:top;padding:12px!important}
+#remitAuditBody td:first-child{width:57%}
+#remitAuditBody td:last-child{width:43%}
+#remitAuditBody .mobile-table-wrapper{min-width:0!important;width:100%!important;max-width:100%!important;overflow:visible!important}
+#remitAuditBody :is(.remittance-recent-row,.remittance-fund-row){gap:10px;align-items:flex-start}
+#remitAuditBody :is(.remittance-recent-row,.remittance-fund-row)>:first-child{min-width:0;overflow-wrap:anywhere}
+#remitAuditBody :is(.remittance-recent-row,.remittance-fund-row)>strong{max-width:48%;overflow-wrap:anywhere;text-align:right}
+#remitAuditBody button{max-width:100%;white-space:normal!important;overflow-wrap:anywhere;line-height:1.4}
+
+#branchTransferHistoryModal{box-sizing:border-box;padding:16px;width:100%!important;height:100%!important}
+#branchTransferHistoryModal>.remittance-history-dialog{min-width:0;width:min(1080px,100%)!important;max-width:100%!important;max-height:calc(100vh - 32px)!important;max-height:calc(100dvh - 32px)!important}
+#branchTransferHistoryModal .remittance-history-header{flex:0 0 auto;gap:12px;padding:16px 20px!important}
+#branchTransferHistoryModal .remittance-history-header h2{min-width:0;overflow-wrap:anywhere}
+#branchTransferHistoryModal .remittance-history-header button{flex:0 0 auto}
+#branchTransferHistoryModal .remittance-history-scroll{min-width:0;min-height:0;padding:16px!important;overscroll-behavior:contain}
+#branchTransferHistoryModal :is(.table-responsive,.mobile-table-wrapper){width:100%!important;min-width:0!important;max-width:100%!important;overflow:visible!important}
+#branchTransferHistoryModal table{min-width:0!important;width:100%!important;max-width:100%!important;table-layout:fixed}
+#branchTransferHistoryModal :is(th,td){min-width:0;white-space:normal!important;overflow-wrap:anywhere;vertical-align:middle;padding:12px 10px!important}
+#branchTransferHistoryModal :is(th,td):nth-child(1){width:16%}
+#branchTransferHistoryModal :is(th,td):nth-child(2){width:18%}
+#branchTransferHistoryModal :is(th,td):nth-child(3){width:19%}
+#branchTransferHistoryModal :is(th,td):nth-child(4){width:12%}
+#branchTransferHistoryModal :is(th,td):nth-child(5){width:15%}
+#branchTransferHistoryModal :is(th,td):nth-child(6){width:20%}
+#branchTransferHistoryModal td:last-child>div{min-width:0;flex-wrap:wrap;gap:6px!important}
+#branchTransferHistoryModal td button{min-width:0;max-width:100%;white-space:normal!important;overflow-wrap:anywhere;line-height:1.35;min-height:36px}
+@media(max-width:700px){
+ #branchTransferHistoryModal{padding:10px}
+ #branchTransferHistoryModal>.remittance-history-dialog{max-height:calc(100dvh - 20px)!important}
+ #branchTransferHistoryModal .remittance-history-scroll{padding:10px!important}
+ #branchTransferHistoryModal table,#branchTransferHistoryModal tbody{display:block}
+ #branchTransferHistoryModal thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+ #branchTransferHistoryModal tbody tr{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px 14px;padding:14px;border-bottom:1px solid #dce6e1!important}
+ #branchTransferHistoryModal tbody td{display:block;width:auto!important;padding:0!important;text-align:left!important}
+ #branchTransferHistoryModal tbody td::before{content:attr(data-label);display:block;font-size:10px;font-weight:700;color:#64776c;text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px}
+ #branchTransferHistoryModal tbody td:last-child{grid-column:1/-1}
+ #branchTransferHistoryModal tbody td:last-child>div{justify-content:flex-start!important}
+ #branchTransferHistoryModal tbody td[colspan]{grid-column:1/-1}
+ #branchTransferHistoryModal tbody td[colspan]::before{display:none}
+ #remitAuditModal{padding:10px}
+ #remitAuditModal .remittance-audit-dialog{max-height:calc(100dvh - 20px)!important}
+ #remitAuditBody{padding:12px!important}
+ #remitAuditBody td{font-size:13px;padding:10px!important}
+}

@@ -6860,18 +6860,18 @@ window.openBranchTransferHistory = async function(branchName) {
 
             html += `
                 <tr style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
-                    <td style="padding: 15px 20px; font-size: 12px; color: #64748b;">${dateStr}</td>
-                    <td style="padding: 15px 20px;">
+                    <td data-label="Date / time sent" style="padding: 15px 20px; font-size: 12px; color: #64748b;">${dateStr}</td>
+                    <td data-label="Cashier" style="padding: 15px 20px;">
                         <div style="font-weight: bold; color: #334155; font-size: 13px;">${escapeHtml(d.cashier || d.cashierName || d.staffName || 'Staff')}</div>
                     </td>
-                    <td style="padding: 15px 20px; font-size: 13px; color: #0f172a;">
+                    <td data-label="Channel & reference" style="padding: 15px 20px; font-size: 13px; color: #0f172a;">
                         <strong>${escapeHtml(d.channel || 'Cash')}</strong><br>
                         <span style="color: #0284c7; font-size: 11px;">Ref: ${escapeHtml(d.referenceNumber || d.ref || 'N/A')}</span>
                         ${originalTransfer ? '<p style="color:#92400e;font-size:11px;margin:5px 0 0">A manual transfer for this amount was recorded shortly before this automatic collection. Review before receiving it.</p>' : ''}
                     </td>
-                    <td style="padding: 15px 20px; text-align: center;">${statusBadge}</td>
-                    <td style="padding: 15px 20px; text-align: right; font-weight: 900; color: #16a34a; font-size: 14px;">₱${parseFloat(d.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
-                    <td style="padding: 15px 20px; text-align: center;">${actionHtml}</td>
+                    <td data-label="Status" style="padding: 15px 20px; text-align: center;">${statusBadge}</td>
+                    <td data-label="Amount" style="padding: 15px 20px; text-align: right; font-weight: 900; color: #16a34a; font-size: 14px;">₱${parseFloat(d.amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                    <td data-label="Action" style="padding: 15px 20px; text-align: center;">${actionHtml}</td>
                 </tr>
             `;
         });
@@ -12078,11 +12078,11 @@ window.autoFill7DaySupply = function() {
 window.viewRemittanceAudit = async function(remitId, branch, startStr, endStr, amount, channel) {
     if (!document.getElementById('remitAuditModal')) {
         document.body.insertAdjacentHTML('beforeend', `
-            <div class="overlay" id="remitAuditModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10000; align-items:center; justify-content:center;">
-                <div style="background:white; width:500px; border-radius:12px; overflow:hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
-                    <div style="background:#0f172a; color:white; padding:15px 20px; display:flex; justify-content:space-between; align-items:center;">
-                        <h3 style="margin:0; font-size:16px;">🔍 Financial Audit</h3>
-                        <span onclick="document.getElementById('remitAuditModal').style.display='none'" style="cursor:pointer; font-size:24px;">✖</span>
+            <div class="overlay" id="remitAuditModal" role="dialog" aria-modal="true" aria-labelledby="remitAuditTitle" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10100; align-items:center; justify-content:center;">
+                <div class="remittance-audit-dialog" style="background:white; width:500px; border-radius:12px; overflow:hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+                    <div class="remittance-audit-header" style="background:#0f172a; color:white; padding:15px 20px; display:flex; justify-content:space-between; align-items:center;">
+                        <h3 id="remitAuditTitle" style="margin:0; font-size:16px;">🔍 Financial Audit</h3>
+                        <button type="button" class="remittance-audit-close" aria-label="Close financial audit" onclick="document.getElementById('remitAuditModal').style.display='none'">×</button>
                     </div>
                     <div id="remitAuditBody" style="padding:20px; background:#f8fafc; max-height: 80vh; overflow-y: auto;">Loading financial data...</div>
                 </div>
@@ -12153,7 +12153,7 @@ window.viewRemittanceAudit = async function(remitId, branch, startStr, endStr, a
         remitsList.sort((a,b) => b.timestamp - a.timestamp).slice(0, 4).forEach(r => {
             let rDate = r.timestamp ? r.timestamp.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric'}) : '';
             let sColor = r.status === 'Received' ? '#16a34a' : '#ea580c';
-            recentRemittancesHtml += `<div style="display:flex; justify-content:space-between; font-size:12px; border-bottom:1px dashed #cbd5e1; padding:6px 0;">
+            recentRemittancesHtml += `<div class="remittance-recent-row" style="display:flex; justify-content:space-between; font-size:12px; border-bottom:1px dashed #cbd5e1; padding:6px 0;">
                 <span style="color:#475569;">${rDate} <span style="font-size:10px; font-weight:bold; color:${sColor};">(${r.status})</span></span>
                 <strong style="color:#0f172a;">₱${parseFloat(r.amount).toLocaleString(undefined, {minimumFractionDigits:2})}</strong>
             </div>`;
@@ -12178,7 +12178,7 @@ window.viewRemittanceAudit = async function(remitId, branch, startStr, endStr, a
             let expDate = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate() : new Date(d.timestamp)) : new Date();
             if (expDate >= periodStart && expDate <= periodEnd) {
                 let dateStr = expDate.toLocaleDateString('en-US', {month:'short', day:'numeric'});
-                managerFundHtml += `<div style="display:flex; justify-content:space-between; font-size:12px; border-bottom:1px dashed #fcd34d; padding:6px 0;">
+                managerFundHtml += `<div class="remittance-fund-row" style="display:flex; justify-content:space-between; font-size:12px; border-bottom:1px dashed #fcd34d; padding:6px 0;">
                     <span style="color:#92400e; font-weight: bold;">${dateStr} - ${d.description || d.category}</span>
                     <strong style="color:#dc2626;">- ₱${parseFloat(d.amount).toLocaleString(undefined, {minimumFractionDigits:2})}</strong>
                 </div>`;
