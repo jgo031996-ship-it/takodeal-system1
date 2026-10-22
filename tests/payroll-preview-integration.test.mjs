@@ -1,3 +1,5 @@
+import * as roster from '../takodeal-manager/payroll-roster-model.js';
+import * as rosterUI from '../takodeal-manager/payroll-balance-review.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,7 +11,7 @@ import * as freshness from '../takodeal-manager/payroll-schedule-freshness.js';
 import * as preview from '../takodeal-manager/payroll-preview-guard.js';
 import * as loading from '../takodeal-manager/payroll-loading.js';
 import * as completion from '../takodeal-manager/payroll-completion.js';
-import {canOpenWorkspacePage} from '../takodeal-manager/workspace-access-model.js';
+import {canOpenWorkspacePage,OWNER_EMAIL} from '../takodeal-manager/workspace-access-model.js';
 import {planPayrollAttendance} from '../takodeal-manager/payroll-attendance.js';
 import {attendanceMillis} from '../takodeal-manager/attendance-reconcile.js';
 import {readPayrollCashShortages} from '../takodeal-manager/payroll-settlement.js';
@@ -18,6 +20,10 @@ import {isCashShortageDeduction} from '../takodeal-manager/cash-shortage-model.j
 import {canReviewCashShortage} from '../takodeal-manager/cash-shortage-ui.js';
 
 const source=fs.readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
+const reviewSource=fs.readFileSync(new URL('../takodeal-manager/hr-review-ui.js',import.meta.url),'utf8');
+const reviewStart=reviewSource.indexOf('export function heldPayrollReviewHTML('),reviewEnd=reviewSource.indexOf('\n}',reviewStart);
+assert.ok(reviewStart>=0&&reviewEnd>reviewStart,'actual held payroll renderer exists');
+const heldRenderer=reviewSource.slice(reviewStart,reviewEnd+2).replace('export ','');
 function extract(name){const start=source.indexOf('\nwindow.'+name+' = '),end=source.indexOf('\n};',start+1);assert.ok(start>=0&&end>start,name+' source exists');return source.slice(start+1,end+3);}
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const held=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return {promise,resolve};};
@@ -34,8 +40,10 @@ function harness(options={}){
  const api={db:{},auth:{currentUser:{...owner}},sessionUser:{...owner,isOwner:true,isFranchisee:false,permissions:['all'],allowedBranches:['All']},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),where:(field,op,value)=>({field,op,value}),orderBy:()=>({}),query:(ref,...filters)=>({...ref,filters}),getDocs:async()=>assert.fail('Default cached getDocs must never be called for payroll preview'),getDocsFromServer:async ref=>{calls.push(ref);return options.read?options.read(ref,{snapshot,records,logs}):snapshot(records[ref.table]||[]);},getDoc:async()=>({exists:()=>true,data:()=>plan}),isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>schedule.assembleScheduleHistory(plan),ManagerUI:{notify:message=>events.push(message)},liveAccounts:[{id:'sample-account',name:'Sample Cash',balance:5000}],globalPayrollCache:{Old:{name:'Old'}},currentPayslipData:{name:'Old'},updateDoc:async()=>writes.push('update'),addDoc:async()=>writes.push('add')};
  api.getDocFromServer=async ref=>{if(options.readDoc)return options.readDoc(ref,{records});const row=(records[ref.table]||[]).find(item=>item.id===ref.id||item.staffId===ref.id);return {exists:()=>!!row,data:()=>row,metadata:{fromCache:false,hasPendingWrites:false}};};
  const Swal={fire:async(...args)=>{events.push(args);return options.confirm?options.confirm(...args):{isConfirmed:false};},showValidationMessage:message=>events.push(message)};
- const document={getElementById:node,querySelectorAll:()=>[]};
- const context=vm.createContext({...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...completion,readPayrollCashShortages,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
+ const document={getElementById:id=>id==='payrollBalanceReview'?null:node(id),querySelectorAll:()=>[]};
+ const context=vm.createContext({...roster,...rosterUI,...roster,...rosterUI,...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...completion,readPayrollCashShortages,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
+ context.html=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ vm.runInContext(heldRenderer,context);
  for(const name of ['getPayrollPreviewGuard','requirePayrollPreview','loadPayrollGenerator','generateAutoPayslips','openPayslipModal','finalizePayslip'])vm.runInContext(extract(name),context);
  return {context,w:api,node,nodes,events,writes,calls,records,logs,snapshot,person};
 }
@@ -166,3 +174,92 @@ for(const owner of [true,false])test('actual employee history offers protected c
  if(owner)assert.match(cashHTML,/data-cash-shortage="closed-sample"/);else {assert.doesNotMatch(cashHTML,/data-cash-shortage=/);assert.match(cashHTML,/Owner review/);}
  assert.match(html,/forceMarkDeductionPaid\('meal'/);assert.match(html,/deleteStaffDeduction\('meal'/);assert.deepEqual(controls.changes,[]);
 });
+
+// Actual-handler identity regressions: a later name-only classification must
+// not erase a conflict detected on an original staff-ID-bearing source row.
+for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
+ test(generator+': revoked and unmatched old balances are reviewable without zero-hour payable staff or source changes',async()=>{
+  const h=harness();h.w.auth.currentUser.email=h.w.sessionUser.email=OWNER_EMAIL;h.records.attendance_logs=[];Object.assign(h.person,{status:'Resigned',pin:'REVOKED',dateResigned:'2030-01-10'});
+  h.records.staff_deductions=[ordinaryLedgerRow(h,{id:'former-meal',amount:120}),{id:'orphan-advance',staffName:'Unmatched Former Sample',branch:h.person.branch,type:'Cash Advance',amount:300,status:'Unpaid',dateAdded:stamp('2029-12-01T12:00:00+08:00')}];
+  const sources=h.records.staff_deductions.map(row=>[row.id,row.staffId,row.staffName,row.amount,row.status]);let review=[];h.context.renderPayrollBalanceReview=(_document,rows)=>{review=rows;};
+  await h.w[generator]();assert.equal(Object.keys(h.w.globalPayrollCache).length,0);assert.equal(h.node('payrollGrandTotalContainer').style.display,'none');
+  for(const id of ['former-meal','orphan-advance'])assert.ok(review.some(row=>row.records?.some(record=>record.id===id)),id+' remains reviewable');
+  assert.deepEqual(h.records.staff_deductions.map(row=>[row.id,row.staffId,row.staffName,row.amount,row.status]),sources);assert.equal(h.writes.length,0);
+ });
+ test(generator+': a current employee with only unpaid balances remains in the payroll list',async()=>{
+  const h=harness();h.records.attendance_logs=[];h.records.staff_deductions=[ordinaryLedgerRow(h,{amount:20})];await h.w[generator]();
+  const row=h.w.globalPayrollCache[h.person.cashierName];assert.ok(row);assert.equal(row.hours,0);assert.equal(row.meals,20);assert.equal(row.attendanceReviewRequired,false);assert.equal(h.writes.length,0);
+ });
+ test(generator+': offboarding after actual cutoff work does not hide legitimate final pay',async()=>{
+  const h=harness();Object.assign(h.person,{status:'Resigned',pin:'REVOKED',dateResigned:'2030-01-17'});await h.w[generator]();
+  const row=h.w.globalPayrollCache[h.person.cashierName];assert.ok(row);assert.equal(row.hours,8);assert.equal(row.basicPay,450);assert.equal(row.attendanceReviewRequired,false);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱450.00');assert.equal(h.writes.length,0);
+ });
+ test(generator+': an archived paid snapshot remains available even after its live employee profile is missing',async()=>{
+  const h=harness();h.w.auth.currentUser.email=h.w.sessionUser.email=OWNER_EMAIL;h.records.cashiers=[];h.records.attendance_logs=[];
+  const frozen={name:'Archived Sample Staff',staffId:'former-person',branch:'Former Sample Branch',isPaid:true,basicPay:333,finalNetPay:222,hours:8,start:'2030-01-16',end:'2030-01-16',logs:[],profile:{staffId:'former-person',hourlyRate:333}};
+  h.records.payroll_records=[{id:'archived-paid',staffId:'former-person',staffName:frozen.name,branch:frozen.branch,startDate:frozen.start,endDate:frozen.end,frozenData:frozen}];
+  await h.w[generator]();assert.equal(h.w.globalPayrollCache[frozen.name],frozen);assert.equal(frozen.basicPay,333);assert.equal(frozen.finalNetPay,222);assert.equal(h.writes.length,0);
+ });
+ for(const sourceId of ['person-b','missing-person'])test(generator+': conflicting or missing source staff ID cannot pay the matching display name ('+sourceId+')',async()=>{
+  const h=harness();h.records.cashiers.push({...h.person,id:'person-b',cashierName:'Other Sample Staff',scheduleNickname:'OTHER'});
+  // Only the actual Owner receives unmatched legacy rows. Scoped HQ accounts
+  // correctly cannot infer access from an unknown employee's display name.
+  if(sourceId==='missing-person'){h.w.auth.currentUser.email=OWNER_EMAIL;h.w.sessionUser.email=OWNER_EMAIL;}
+  h.records.attendance_logs=h.logs(16).map(row=>({...row,staffId:sourceId}));
+  const source=h.records.attendance_logs.map(row=>[row.id,row.staffId,row.staffName,row.type]);
+  await h.w[generator]();const preview=h.w.globalPayrollCache[h.person.cashierName];
+  assert.ok(preview,'the affected cutoff work remains visible for identity review');assert.equal(preview.attendanceReviewRequired,true);
+  assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱0.00');assert.equal(h.writes.length,0);
+  assert.deepEqual(h.records.attendance_logs.map(row=>[row.id,row.staffId,row.staffName,row.type]),source);
+ });
+ test(generator+': a bonus with conflicting employee identity is kept for review and cannot increase another employee pay',async()=>{
+  const h=harness();h.records.cashiers.push({...h.person,id:'person-b',cashierName:'Other Sample Staff',scheduleNickname:'OTHER'});
+  h.records.staff_bonuses=[{id:'conflicting-bonus',staffId:'person-b',staffName:h.person.cashierName,branch:h.person.branch,type:'Manual OT',amount:100,dateAdded:stamp('2030-01-16T12:00:00+08:00')}];
+  let review=[];h.context.renderPayrollBalanceReview=(_document,rows)=>{review=rows;};await h.w[generator]();
+  assert.equal(h.w.globalPayrollCache[h.person.cashierName].nightBonus,0);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱450.00');
+  assert.ok(review.some(row=>row.records?.some(record=>record.id==='conflicting-bonus')));assert.equal(h.writes.length,0);
+ });
+ test(generator+': a renamed employee already paid for this cutoff cannot get another payable preview',async()=>{
+  const h=harness(),frozen={name:'Previous Sample Name',staffId:h.person.id,branch:h.person.branch,isPaid:true,basicPay:123,finalNetPay:123,hours:8,start:'2030-01-16',end:'2030-01-16',logs:[],profile:{staffId:h.person.id,hourlyRate:123}};
+  h.records.payroll_records=[{id:'renamed-paid',staffId:h.person.id,staffName:frozen.name,startDate:frozen.start,endDate:frozen.end,frozenData:frozen}];
+  await h.w[generator]();assert.equal(h.w.globalPayrollCache[frozen.name],frozen);assert.equal(frozen.basicPay,123);
+  const candidate=h.w.globalPayrollCache[h.person.cashierName];assert.ok(!candidate||candidate.attendanceReviewRequired===true,'same employee ID must never produce another payable row');
+  assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱123.00');assert.equal(h.writes.length,0);
+ });
+ test(generator+': conflicting cutoff work under a paid name remains reviewable without changing the frozen payslip',async()=>{
+  const h=harness(),frozen={name:h.person.cashierName,staffId:h.person.id,branch:h.person.branch,isPaid:true,basicPay:123,finalNetPay:123,hours:8,start:'2030-01-16',end:'2030-01-16',logs:[],profile:{staffId:h.person.id,hourlyRate:123}};
+  h.records.payroll_records=[{id:'same-name-paid',staffId:h.person.id,staffName:frozen.name,startDate:frozen.start,endDate:frozen.end,frozenData:frozen}];
+  h.records.cashiers.push({...h.person,id:'person-b',cashierName:'Other Sample Staff',scheduleNickname:'OTHER'});h.records.attendance_logs=h.logs(16).map(row=>({...row,staffId:'person-b'}));
+  let review=[];h.context.renderPayrollBalanceReview=(_document,rows)=>{review=rows;};await h.w[generator]();
+  assert.equal(h.w.globalPayrollCache[frozen.name],frozen);assert.equal(frozen.basicPay,123);
+  assert.ok(review.some(row=>row.records?.some(record=>record.id==='in-16'&&record.staffId==='person-b')),'the conflict cannot vanish behind a different employee paid name');
+  assert.equal(h.writes.length,0);
+ });
+}
+
+for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
+ test(generator+': a wrong-ID loan cannot deduct from the matching display name and holds payroll for review',async()=>{
+  const h=harness();h.records.cashiers.push({...h.person,id:'person-b',cashierName:'Other Sample Staff',scheduleNickname:'OTHER'});
+  const loan={id:'wrong-person-loan',staffId:'person-b',staffName:h.person.cashierName,branch:h.person.branch,totalLoaned:1000,totalPaid:250,cutoffDeduction:100};h.records.staff_ledger=[loan];
+  let review=[];h.context.renderPayrollBalanceReview=(_document,rows)=>{review=rows;};await h.w[generator]();const row=h.w.globalPayrollCache[h.person.cashierName];
+  assert.ok(row);assert.equal(row.attendanceReviewRequired,true);assert.equal(row.loans,0);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱0.00');
+  assert.ok(review.some(entry=>entry.records?.some(record=>record.id===loan.id)));assert.equal(loan.totalPaid,250);assert.equal(h.writes.length,0);
+ });
+ test(generator+': duplicate positive loans are retained separately and cannot select a last-write deduction',async()=>{
+  const h=harness();h.records.staff_ledger=[{id:'first-loan',staffId:h.person.id,staffName:h.person.cashierName,totalLoaned:1000,totalPaid:250,cutoffDeduction:100},{id:'second-loan',staffId:h.person.id,staffName:h.person.cashierName,totalLoaned:800,totalPaid:50,cutoffDeduction:80}];
+  const source=JSON.stringify(h.records.staff_ledger);let review=[];h.context.renderPayrollBalanceReview=(_document,rows)=>{review=rows;};await h.w[generator]();const row=h.w.globalPayrollCache[h.person.cashierName];
+  assert.equal(row.attendanceReviewRequired,true);assert.equal(row.loans,0);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱0.00');
+  for(const id of ['first-loan','second-loan'])assert.ok(review.some(entry=>entry.records?.some(record=>record.id===id)),id);
+  assert.equal(JSON.stringify(h.records.staff_ledger),source);assert.equal(h.writes.length,0);
+ });
+ test(generator+': a valid legacy exact-name loan keeps the existing cutoff deduction unchanged',async()=>{
+  const h=harness(),loan={id:'legacy-loan',staffName:h.person.cashierName,totalLoaned:1000,totalPaid:250,cutoffDeduction:100};h.records.staff_ledger=[loan];await h.w[generator]();
+  const row=h.w.globalPayrollCache[h.person.cashierName];assert.equal(row.hours,8);assert.equal(row.basicPay,450);assert.equal(row.loans,100);assert.equal(row.ledgerId,'legacy-loan');assert.equal(row.attendanceReviewRequired,false);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱350.00');assert.equal(loan.totalPaid,250);assert.equal(h.writes.length,0);
+ });
+ test(generator+': a former loan-only balance remains reviewable without creating a payable payroll employee',async()=>{
+  const h=harness();Object.assign(h.person,{status:'Resigned',pin:'REVOKED'});h.records.attendance_logs=[];
+  h.records.staff_ledger=[{id:'former-loan',staffId:h.person.id,staffName:h.person.cashierName,branch:h.person.branch,totalLoaned:1000,totalPaid:250,cutoffDeduction:100}];
+  let review=[];h.context.renderPayrollBalanceReview=(_document,rows)=>{review=rows;};await h.w[generator]();assert.equal(Object.keys(h.w.globalPayrollCache).length,0);assert.equal(h.node('payrollGrandTotalContainer').style.display,'none');
+  assert.equal(review.length,1);assert.equal(review[0].records[0].id,'former-loan');assert.equal(review[0].records[0].amount,750);assert.equal(h.records.staff_ledger[0].totalPaid,250);assert.equal(h.writes.length,0);
+ });
+}

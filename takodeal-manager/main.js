@@ -11,6 +11,8 @@ import {installManagerTableWrapper} from './manager-table-wrapper.js';
 import {payrollScheduleStamp,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
 import {createPayrollPreviewGuard,readPayrollSnapshot} from './payroll-preview-guard.js';
 import {coordinatePayrollLoad,loadPayrollPreviewInputs,loadPayrollSalaryProfiles} from './payroll-loading.js';
+import {createPayrollRosterResolver,buildPayrollLedgerReview} from './payroll-roster-model.js';
+import {buildPayrollRosterReview,renderPayrollBalanceReview} from './payroll-balance-review.js';
 import {installManagerLeaveUI,leaveRequestSummaryHTML} from './manager-leave-ui.js';
 import {installManagerEarlyTimeOutUI,earlyTimeOutSummaryHTML} from './early-time-out-review-ui.js';
 import {leaveStatus,leaveUnavailable,ownedScheduleLeave,scheduleUnavailable,leaveToday} from './leave-model.js';
@@ -10294,6 +10296,7 @@ window.getPayrollPreviewGuard = function() {
             const notice = document.getElementById('payrollPreviewStatus');
             if (notice) notice.textContent = state.message;
             if (state.status === 'ready') return;
+            renderPayrollBalanceReview(document,[]);
             window.globalPayrollCache = {};
             window.currentPayslipData = null;
             const total = document.getElementById('payrollGrandTotalContainer');
@@ -10370,13 +10373,15 @@ window.loadPayrollGenerator = async function() {
     try {
         const {scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap}=await loadPayrollPreviewInputs(window,{start:startDateRaw,end:endDateRaw,fetchStartDate,fetchEndDate,trueStartDate,assertCurrent:assertPreview});
         assertPreview();
-        const scheduleEvidenceStamp=payrollScheduleStamp(scheduleData);
+        const scheduleEvidenceStamp=payrollScheduleStamp(scheduleData,{start:startDateRaw,end:endDateRaw});
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
         let paidRecords = {};
         prSnap.forEach(docSnap => { paidRecords[docSnap.data().staffName] = docSnap.data().frozenData; });
         window.paidPayrollSnapshots ||= new WeakSet();
         Object.values(paidRecords).forEach(snapshot=>{if(snapshot&&typeof snapshot==='object')window.paidPayrollSnapshots.add(snapshot);});
 
+        const rosterResolver=createPayrollRosterResolver(staffSnap.docs.map(row=>({...row.data(),staffId:row.id})));
+        const balanceSources=new Map(),unmatchedBalanceRows=[],identityProblems=new Map();
         let staffDict = {}, staffNameById = {};
         let activeStaffNames = []; // Used for mapping typos
         
@@ -10393,37 +10398,13 @@ window.loadPayrollGenerator = async function() {
         });
         staffDict=await loadPayrollSalaryProfiles(window,staffDict,paidRecords,{assertCurrent:assertPreview});
         
-        let ledgerDict = {}; 
-        ledgerSnap.forEach(d => { ledgerDict[d.data().staffName] = { id: d.id, ...d.data() }; });
+        const ledgerReview=buildPayrollLedgerReview(ledgerSnap.docs.map(row=>({...row.data(),id:row.id})),rosterResolver);
+        const ledgerDict=ledgerReview.ledgerDict;
+        unmatchedBalanceRows.push(...ledgerReview.reviewRows);
+        for(const hold of ledgerReview.holds)identityProblems.set(hold.name,{status:'conflict',name:hold.name,reason:hold.reason});
 
         // 🔥 SMART NAME RESOLVER (Merges "Quinnie" into "Quennie")
-        const resolveStaffName = (rawName) => {
-            if (!rawName) return null;
-            let original = rawName.trim();
-
-            // 1. Exact Match Check
-            let activeExact = activeStaffNames.find(n => n.toLowerCase() === original.toLowerCase());
-            if (activeExact) return activeExact;
-
-            // 2. Fuzzy Match Check (Allows up to 2 typos in the First Name)
-            let parts = original.toLowerCase().replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').split(' ').filter(Boolean);
-            if (parts.length >= 2) {
-                let lastName = parts[parts.length - 1];
-                let firstName = parts[0];
-
-                for (let activeName of activeStaffNames) {
-                    let aParts = activeName.toLowerCase().replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').split(' ').filter(Boolean);
-                    let aLastName = aParts[aParts.length - 1];
-                    let aFirstName = aParts[0];
-
-                    if (lastName === aLastName) {
-                        let dist = getEditDistance(firstName, aFirstName);
-                        if (dist <= 2) return activeName; // Auto-Merge!
-                    }
-                }
-            }
-            return staffDict[original] ? staffDict[original].cashierName : original;
-        };
+        const resolveStaffName = rawName => rosterResolver(rawName).name || String(rawName||'').trim();
 
 
         let staffData = {}; 
@@ -10441,7 +10422,8 @@ window.loadPayrollGenerator = async function() {
 
         const attendanceRecords=[];
         attSnap.forEach(docSnap=>attendanceRecords.push({...docSnap.data(),id:docSnap.id}));
-        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>staffNameById[log.staffId]||resolveStaffName(log.staffName),frozenNames:Object.keys(paidRecords)});
+        for(const record of attendanceRecords){const identity=rosterResolver(record);if(identity.status!=='matched'||identity.nameCollision){identityProblems.set(identity.name||record.staffName,identity);if(paidRecords[identity.name||record.staffName])unmatchedBalanceRows.push({name:identity.name||record.staffName,branch:record.branch||'Not confirmed',reason:identity.reason,records:[record]});}}
+        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,frozenNames:Object.keys(paidRecords)});
         payrollPlan.logs.forEach(log => {
             let name = log.payrollStaffName;
             if (!name || paidRecords[name]) return;
@@ -10632,6 +10614,10 @@ window.loadPayrollGenerator = async function() {
             if(cashShortage){if(staffDict[name]?.staffId!==deduct.staffId||deduct.staffName!==name||staffDict[name]?.branch!==deduct.branch)throw Error('A cash shortage belongs to an ambiguous employee. Resolve the directory before payroll.');}
             else if(isPenaltyDeduction(deduct) && deduct.scheduleVersion===1){if(!deductionIsDue(deduct,endDateRaw))return;}
             else {let dDate=deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();if(dDate>trueEndDate)return;}
+            const deductionIdentity=rosterResolver(deduct);
+            if(deductionIdentity.status!=='matched'||deductionIdentity.nameCollision){unmatchedBalanceRows.push({name:deduct.staffName||'Employee identity needs review',branch:deduct.branch||'Not confirmed',reason:deductionIdentity.reason,records:[{...deduct,id:docSnap.id}]});return;}
+            name=deductionIdentity.name;
+            const savedSources=balanceSources.get(name)||[];savedSources.push({...deduct,id:docSnap.id});balanceSources.set(name,savedSources);
             
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
@@ -10650,8 +10636,10 @@ window.loadPayrollGenerator = async function() {
         });
 
         bonusSnap.forEach(docSnap => {
-            let b = docSnap.data(); 
-            let name = resolveStaffName(b.staffName); 
+            let b = docSnap.data();
+            const bonusIdentity=rosterResolver(b);
+            if(bonusIdentity.status!=='matched'||bonusIdentity.nameCollision){unmatchedBalanceRows.push({name:b.staffName||'Employee identity needs review',branch:b.branch||'Not confirmed',reason:bonusIdentity.reason,records:[{...b,id:docSnap.id,type:'Earned bonus · '+(b.type||'Bonus')}]});return;}
+            let name=bonusIdentity.name;
             if (!name) return;
 
             if (!staffData[name]) {
@@ -10692,7 +10680,12 @@ window.loadPayrollGenerator = async function() {
         });
         
         let html = '';
-        let allStaffNames = new Set([...Object.keys(staffData), ...Object.keys(paidRecords)]);
+        const paidStaffIds=new Set(prSnap.docs.map(row=>{const saved=row.data();return saved.staffId||saved.frozenData?.staffId||saved.frozenData?.profile?.staffId||saved.frozenData?.profile?.id;}).filter(Boolean));
+        for(const name of Object.keys(staffData)){if(!paidRecords[name]&&paidStaffIds.has(staffDict[name]?.staffId))identityProblems.set(name,{status:'conflict',name,reason:'A paid payslip already exists for this employee and cutoff under a saved name. Confirm the saved identity before another payment.'});}
+        const roster=buildPayrollRosterReview({staffData,paidRecords,staffDict,resolver:rosterResolver,sources:balanceSources,unmatched:unmatchedBalanceRows,identities:identityProblems});
+        for(const hold of roster.holds){const row=staffData[hold.name];if(row){row.attendanceReviewRequired=true;row.attendanceReviewReasons=[...(row.attendanceReviewReasons||[]),hold.reason];}}
+        let allStaffNames = new Set(roster.names);
+        roster.reviewRows=roster.reviewRows.filter(row=>!row.reviewIfNoCutoffWork||!allStaffNames.has(row.name)||Boolean(paidRecords[row.name]));
         let masterPayrollTotal = 0; 
 
         if (allStaffNames.size === 0) {
@@ -10766,9 +10759,11 @@ window.loadPayrollGenerator = async function() {
         previewGuard.complete(previewToken);
         window.globalPayrollCache = previewCache;
         tbody.innerHTML = html;
+        renderPayrollBalanceReview(document,roster.reviewRows);
         const heldCount = Object.values(previewCache).filter(row => row.attendanceReviewRequired).length;
         const status = document.getElementById('payrollPreviewStatus');
         if (status) status.textContent = allStaffNames.size ? 'HQ confirmed · ' + allStaffNames.size + ' staff record(s).' + (heldCount ? ' ' + heldCount + ' held for HR review and excluded from the estimate.' : '') : 'HQ confirmed · No payroll records found for this cutoff.';
+        if(status&&roster.reviewRows.length)status.textContent+=' '+roster.reviewRows.length+' former or unmatched balance group(s) are kept separately below.';
 
         let grandTotalContainer = document.getElementById('payrollGrandTotalContainer');
         if (grandTotalContainer && allStaffNames.size > 0) {
@@ -11470,13 +11465,15 @@ window.generateAutoPayslips = async function() {
     try {
         const {scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap}=await loadPayrollPreviewInputs(window,{start:startInput,end:endInput,fetchStartDate:trueStartDate,fetchEndDate,trueStartDate,assertCurrent:assertPreview});
         assertPreview();
-        const scheduleEvidenceStamp=payrollScheduleStamp(scheduleData);
+        const scheduleEvidenceStamp=payrollScheduleStamp(scheduleData,{start:startInput,end:endInput});
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
         let paidRecords = {};
         prSnap.forEach(docSnap => { paidRecords[docSnap.data().staffName] = docSnap.data().frozenData; });
         window.paidPayrollSnapshots ||= new WeakSet();
         Object.values(paidRecords).forEach(snapshot=>{if(snapshot&&typeof snapshot==='object')window.paidPayrollSnapshots.add(snapshot);});
 
+        const rosterResolver=createPayrollRosterResolver(staffSnap.docs.map(row=>({...row.data(),staffId:row.id})));
+        const balanceSources=new Map(),unmatchedBalanceRows=[],identityProblems=new Map();
         let staffDict = {}, staffNameById = {};
         let nameMap = {}; 
         
@@ -11492,7 +11489,10 @@ window.generateAutoPayslips = async function() {
         });
         staffDict=await loadPayrollSalaryProfiles(window,staffDict,paidRecords,{assertCurrent:assertPreview});
         
-        let ledgerDict = {}; ledgerSnap.forEach(d => { ledgerDict[d.data().staffName] = { id: d.id, ...d.data() }; });
+        const ledgerReview=buildPayrollLedgerReview(ledgerSnap.docs.map(row=>({...row.data(),id:row.id})),rosterResolver);
+        const ledgerDict=ledgerReview.ledgerDict;
+        unmatchedBalanceRows.push(...ledgerReview.reviewRows);
+        for(const hold of ledgerReview.holds)identityProblems.set(hold.name,{status:'conflict',name:hold.name,reason:hold.reason});
 
 
         let staffData = {}; 
@@ -11500,7 +11500,8 @@ window.generateAutoPayslips = async function() {
 
         const attendanceRecords=[];
         attSnap.forEach(docSnap=>attendanceRecords.push({...docSnap.data(),id:docSnap.id}));
-        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>staffNameById[log.staffId]||nameMap[String(log.staffName||'').toLowerCase()]||nameMap[String(log.staffName||'').toLowerCase().replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi,'').trim()]||log.staffName,frozenNames:Object.keys(paidRecords)});
+        for(const record of attendanceRecords){const identity=rosterResolver(record);if(identity.status!=='matched'||identity.nameCollision){identityProblems.set(identity.name||record.staffName,identity);if(paidRecords[identity.name||record.staffName])unmatchedBalanceRows.push({name:identity.name||record.staffName,branch:record.branch||'Not confirmed',reason:identity.reason,records:[record]});}}
+        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,frozenNames:Object.keys(paidRecords)});
         payrollPlan.logs.forEach(log => {
             let rawName = log.staffName;
             if (!rawName) return;
@@ -11683,6 +11684,10 @@ window.generateAutoPayslips = async function() {
             if(cashShortage){if(!name||staffDict[name]?.staffId!==deduct.staffId||deduct.staffName!==name||staffDict[name]?.branch!==deduct.branch)throw Error('A cash shortage belongs to an ambiguous employee. Resolve the directory before payroll.');}
             else if(isPenaltyDeduction(deduct) && deduct.scheduleVersion===1){if(!deductionIsDue(deduct,endInput))return;}
             else {let dDate=deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();if(dDate>trueEndDate)return;}
+            const deductionIdentity=rosterResolver(deduct);
+            if(deductionIdentity.status!=='matched'||deductionIdentity.nameCollision){unmatchedBalanceRows.push({name:deduct.staffName||'Employee identity needs review',branch:deduct.branch||'Not confirmed',reason:deductionIdentity.reason,records:[{...deduct,id:docSnap.id}]});return;}
+            name=deductionIdentity.name;
+            const savedSources=balanceSources.get(name)||[];savedSources.push({...deduct,id:docSnap.id});balanceSources.set(name,savedSources);
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
                 staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
@@ -11700,7 +11705,10 @@ window.generateAutoPayslips = async function() {
         });
 
         bonusSnap.forEach(docSnap => {
-            let b = docSnap.data(); let name = b.staffName;
+            let b = docSnap.data();
+            const bonusIdentity=rosterResolver(b);
+            if(bonusIdentity.status!=='matched'||bonusIdentity.nameCollision){unmatchedBalanceRows.push({name:b.staffName||'Employee identity needs review',branch:b.branch||'Not confirmed',reason:bonusIdentity.reason,records:[{...b,id:docSnap.id,type:'Earned bonus · '+(b.type||'Bonus')}]});return;}
+            let name=bonusIdentity.name;
             if (!staffData[name]) {
                 let branchName = staffDict[name] ? staffDict[name].branch : "Unknown";
                 staffData[name] = { branch: branchName, totalHours: 0, shiftsWorked: 0, nightShifts: 0, nightBonusTotal: 0, holidayPayTotal: 0, foodDeductions: 0, cashAdvances: 0, loans: 0, ledgerId: null, sss: 0, pagibig: 0, philhealth: 0, lateDeduction: 0, logs: [] };
@@ -11730,7 +11738,12 @@ window.generateAutoPayslips = async function() {
         });
         
         let html = '';
-        let allStaffNames = new Set([...Object.keys(staffData), ...Object.keys(paidRecords)]);
+        const paidStaffIds=new Set(prSnap.docs.map(row=>{const saved=row.data();return saved.staffId||saved.frozenData?.staffId||saved.frozenData?.profile?.staffId||saved.frozenData?.profile?.id;}).filter(Boolean));
+        for(const name of Object.keys(staffData)){if(!paidRecords[name]&&paidStaffIds.has(staffDict[name]?.staffId))identityProblems.set(name,{status:'conflict',name,reason:'A paid payslip already exists for this employee and cutoff under a saved name. Confirm the saved identity before another payment.'});}
+        const roster=buildPayrollRosterReview({staffData,paidRecords,staffDict,resolver:rosterResolver,sources:balanceSources,unmatched:unmatchedBalanceRows,identities:identityProblems});
+        for(const hold of roster.holds){const row=staffData[hold.name];if(row){row.attendanceReviewRequired=true;row.attendanceReviewReasons=[...(row.attendanceReviewReasons||[]),hold.reason];}}
+        let allStaffNames = new Set(roster.names);
+        roster.reviewRows=roster.reviewRows.filter(row=>!row.reviewIfNoCutoffWork||!allStaffNames.has(row.name)||Boolean(paidRecords[row.name]));
         let masterPayrollTotal = 0; 
 
         if (allStaffNames.size === 0) {
@@ -11806,9 +11819,11 @@ window.generateAutoPayslips = async function() {
         previewGuard.complete(previewToken);
         window.globalPayrollCache = previewCache;
         tableBody.innerHTML = html;
+        renderPayrollBalanceReview(document,roster.reviewRows);
         const heldCount = Object.values(previewCache).filter(row => row.attendanceReviewRequired).length;
         const status = document.getElementById('payrollPreviewStatus');
         if (status) status.textContent = allStaffNames.size ? 'HQ confirmed · ' + allStaffNames.size + ' staff record(s).' + (heldCount ? ' ' + heldCount + ' held for HR review and excluded from the estimate.' : '') : 'HQ confirmed · No payroll records found for this cutoff.';
+        if(status&&roster.reviewRows.length)status.textContent+=' '+roster.reviewRows.length+' former or unmatched balance group(s) are kept separately below.';
 
         let grandTotalContainer = document.getElementById('payrollGrandTotalContainer');
         if (grandTotalContainer && allStaffNames.size > 0) {

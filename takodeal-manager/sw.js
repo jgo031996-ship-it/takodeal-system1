@@ -1,10 +1,11 @@
-const CACHE_NAME = 'takodeal-manager-core-v83-permits-sss-dispatch-20261021';
+const CACHE_NAME = 'takodeal-manager-core-v84-payroll-roster-20261022';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = ['./', './index.html', './main.js', './franchise-workspace.js', './monthly-bills.js', './monthly-bills-ui.js', './device-fleet.js', './app-update.js', './employee-id.js', './employee-id.css', './payslip.css', './schedule-layout.js', './request-history.js', './schedule-layout.css', './login.css', './login-ui.js', './unlock-gate.js', './device-store.js', './manager-libraries.js', './branch-operations.js', './cash-settlement.js', './shift-close-ui.js', './collection-cache.js', './manager-dialogs.js', './manager-workspace.js', './manager-workspace.css', './dispatch-safety.js', './menu-bulk.js', './pos-safety.js', './recipe-integrity.js', './live-report.js', './payroll-safety.js', './dashboard.js', './dashboard-data.js', './dashboard.css', './manager-theme.css', './manager-theme.js', './manager-scroll.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
 CORE_ASSETS.push('./logistics-feed.js','./dispatch-restock-model.js','./dispatch-restock-finance.js','./dispatch-restock-ui.js','./dispatch-set-aside.js','./dispatch-request-draft.js','./dispatch-destination-repair.js');
 CORE_ASSETS.push('./staff-rate-changes.js','./staff-document-hq.js','./staff-documents.js','./staff-documents.css','./staff-document-model.js','./staff-document-store.js','./staff-document-firebase.js');
 CORE_ASSETS.push('./attendance-reconcile.js','./payroll-attendance.js');
+CORE_ASSETS.push('./payroll-roster-model.js','./payroll-balance-review.js','./payroll-balance-review.css');
 CORE_ASSETS.push('./payroll-loading.js','./payroll-settlement.js','./payroll-completion.js','./manager-table-wrapper.js');
 CORE_ASSETS.push('./payroll-deduction-details.js');
 CORE_ASSETS.push('./recipe-bulk-model.js','./recipe-bulk.js','./recipe-changes.js','./sanction-schedule.js','./sanction-actions.js','./sanction-scheduling-ui.js');

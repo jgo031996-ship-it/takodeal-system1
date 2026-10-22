@@ -1,3 +1,5 @@
+import * as roster from '../takodeal-manager/payroll-roster-model.js';
+import * as rosterUI from '../takodeal-manager/payroll-balance-review.js';
 import {installOwnerInbox} from '../takodeal-manager/owner-inbox.js';
 import * as scheduleFreshness from '../takodeal-manager/payroll-schedule-freshness.js';
 import * as previewFreshness from '../takodeal-manager/payroll-preview-guard.js';
@@ -21,7 +23,7 @@ import { assembleScheduleHistory, createScheduleRevision, resolveScheduleForDate
 const hrReviewURL=new URL('../takodeal-manager/hr-review-ui.js',import.meta.url),hrReviewSource=readFileSync(hrReviewURL,'utf8').replace(/import \{createStaffDocumentFirebase\} from '\.\/staff-document-firebase.js';/,"const createStaffDocumentFirebase=async()=>{throw Error('Document adapter is outside this payroll fixture');};").replace(/from '(\.\/[^']+)'/g,(_,path)=>"from '"+new URL(path,hrReviewURL).href+"'");
 const {heldPayrollReviewHTML}=await import('data:text/javascript;base64,'+Buffer.from(hrReviewSource).toString('base64'));
 
-const profile = { cashierName: 'Test Staff', scheduleNickname: 'TEST', branch: 'Test Branch', hourlyRate: 450, nightDiffRate: 50 };
+const profile = { id: 'one', cashierName: 'Test Staff', scheduleNickname: 'TEST', branch: 'Test Branch', hourlyRate: 450, nightDiffRate: 50 };
 test('manual and POS meal labels share one Foods category, excluding other deductions', () => {
     for (const type of ['Staff Meal','Staff Meal (POS Auto)','Manager Meal','Manager Meal (POS Auto)',' staff meal (pos auto) ']) {
         assert.equal(payroll.isMealDeduction(type), true, type);
@@ -164,7 +166,7 @@ function payrollUi({exempt=false,end='23:30',type='mid',frozen=null,logs=null,sc
     api.auth={currentUser:{uid:'sample-payroll-owner',email:OWNER_EMAIL,emailVerified:true}};
     api.sessionUser={uid:'sample-payroll-owner',email:OWNER_EMAIL,isOwner:true,permissions:['all'],allowedBranches:['All']};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>historyData || assembleScheduleHistory(scheduleData || schedule(end,type))};
-    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollLoading,...payrollCompletion,heldPayrollReviewHTML,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,escapeHtml:value=>String(value).replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])),resolveScheduleForDate,window,Date,document:{getElementById:id=>elements[id]||null},
+    const context=vm.createContext({...roster,...rosterUI,...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollLoading,...payrollCompletion,heldPayrollReviewHTML,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,escapeHtml:value=>String(value).replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character])),resolveScheduleForDate,window,Date,document:{getElementById:id=>id==='payrollBalanceReview'?null:elements[id]||null},
         alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
     vm.runInContext(extract('getPayrollPreviewGuard')+'\n'+extract('requirePayrollPreview'),context);
     return {context,window,elements,errors};
@@ -241,7 +243,7 @@ for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
 test('manual OT uses selected shift category and the employee bonus rate',()=>{
     const elements={manOtStaff:{value:'Test Staff'},manOtDate:{value:'2026-10-03'},manOtHours:{value:'1'},manOtCalcAmount:{},manOtRateInfo:{}};
     const window={otCache:{staff:{'Test Staff':profile},schedule:schedule()}};
-    const context=vm.createContext({...payroll,window,document:{getElementById:id=>elements[id]}});
+    const context=vm.createContext({...roster,...rosterUI,...payroll,window,document:{getElementById:id=>id==='payrollBalanceReview'?null:elements[id]}});
     vm.runInContext(extract('calcAutoOvertime'),context);window.calcAutoOvertime();
     assert.equal(window.currentCalculatedOtAmount,62.5);
     window.otCache.schedule=schedule('23:30','morning');window.calcAutoOvertime();assert.equal(window.currentCalculatedOtAmount,56.25);
@@ -249,7 +251,7 @@ test('manual OT uses selected shift category and the employee bonus rate',()=>{
 test('the generated Foods deduction is subtracted from the payslip total and net pay',()=>{
     const elements=Object.fromEntries(['psBasicPay','psOvertime','psStraightBonus','psHoliday','psPerfBonus','psLate','psSSS','psPhil','psPagibig','psAdvance','psLoans','psFoods','psGross','psTotalDeduct','psNetPay'].map(id=>[id,{tagName:'INPUT',value:'0',innerText:''}]));
     Object.assign(elements.psBasicPay,{value:'5830'});elements.psAdvance.value='500';elements.psLoans.value='250';elements.psFoods.value='330.25';
-    const context={window:{},document:{getElementById:id=>elements[id],querySelectorAll:()=>[{value:'50'}]}};
+    const context={window:{},document:{getElementById:id=>id==='payrollBalanceReview'?null:elements[id],querySelectorAll:()=>[{value:'50'}]}};
     vm.runInNewContext(extract('recalcPayslip'),context);context.window.recalcPayslip();
     assert.equal(elements.psTotalDeduct.innerText,'1,130.25');assert.equal(elements.psNetPay.innerText,'4,699.75');
 });
@@ -280,8 +282,8 @@ function paymentFixture(food=330.25) {
     api.auth={currentUser:{uid:'sample-payroll-owner',email:'owner@example.test',emailVerified:true,providerData:[{providerId:'google.com'}]}};api.sessionUser={uid:'sample-payroll-owner',email:'owner@example.test',role:'Owner',isOwner:true,permissions:['all'],allowedBranches:['All']};
     const window={...api,loadPayrollScheduleHistory:async()=>paymentHistory,currentPayslipData:{name:'Test Staff',staffId:staffProfile.staffId,profile:{...staffProfile},branch:'Test',start:'2026-09-16',end:'2026-09-30',basicPay:500+food,meals:food},
         openPayslipModal(){},downloadPayslipImage(){},checkCurrentSavedPayroll:async()=>{recoveryChecks++;},ManagerUI:{notify:text=>errors.push(text)}};
-    window.currentPayslipData.scheduleEvidenceStamp=scheduleFreshness.payrollScheduleStamp(paymentHistory);
-    const context=vm.createContext({...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollCompletion,finalizeOrdinaryPayroll,canOpenWorkspacePage,escapeHtml:String,window,document:{getElementById:node,querySelectorAll:()=>[]},Date,Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:e=>errors.push(e)}});
+    window.currentPayslipData.scheduleEvidenceStamp=scheduleFreshness.payrollScheduleStamp(paymentHistory,window.currentPayslipData);
+    const context=vm.createContext({...roster,...rosterUI,...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollCompletion,finalizeOrdinaryPayroll,canOpenWorkspacePage,escapeHtml:String,window,document:{getElementById:id=>id==='payrollBalanceReview'?null:node(id),querySelectorAll:()=>[]},Date,Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:e=>errors.push(e)}});
     vm.runInContext(extract('getPayrollPreviewGuard')+'\n'+extract('requirePayrollPreview')+'\n'+extract('finalizePayslip'),context);
     const preview=window.currentPayslipData,guard=window.getPayrollPreviewGuard(),token=guard.begin();
     window.globalPayrollCache={[preview.name]:preview};window.currentPayslipData=preview;guard.complete(token);
@@ -441,7 +443,7 @@ test('the real Inbox renders ledger-only POS meals lazily without putting them i
     const requests=[{id:'approved',staffName:'Test Staff',type:'Staff Meal',status:'Approved',amount:68,timestamp:historyStamp(8)}];
     const deductions=[autoMeal('one'),autoMeal('two',77,30),autoMeal('paid',68,8,{status:'Paid'})];
     const calls=[],errors=[],window={auth:{currentUser:{uid:'hq',email:OWNER_EMAIL,emailVerified:true}},sessionUser:{uid:'hq',email:OWNER_EMAIL,role:'Owner',permissions:['all'],allowedBranches:['All']},db:{},collection:(_,table)=>({table}),query:ref=>ref,orderBy:()=>({}),where:()=>({}),getDocsFromServer:async ref=>{calls.push(ref.table);return {docs:(ref.table==='staff_requests'?requests:deductions).map(row=>({id:row.id,data:()=>row}))};}};
-    const context={window,installOwnerInbox,document:{getElementById:id=>nodes[id]},console:{error:e=>errors.push(e)}};
+    const context={window,installOwnerInbox,document:{getElementById:id=>id==='payrollBalanceReview'?null:nodes[id]},console:{error:e=>errors.push(e)}};
     vm.runInNewContext(extract('loadInbox'),context);await window.loadInbox();
     assert.deepEqual(errors,[]);assert.deepEqual(calls,['staff_requests','staff_deductions']);
     assert.match(nodes.resolvedRequestsBody.innerHTML,/View 3 Records/);
@@ -480,7 +482,7 @@ test('actual Owner Time Feed supplies the authoritative profile ID for correctio
         const nodes={attendanceTableBody:{innerHTML:''},attendanceDateFilter:{value:'2026-10-16'},attendanceSort:{value:'time'}},errors=[];
         const api={db:{},collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),getDocs:async ref=>{const row=ref.table==='attendance_logs'?punch:savedProfile,id=ref.table==='attendance_logs'?'punch':documentId;return {forEach:fn=>fn({id,data:()=>row})};}};
         const window={...api,isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>history};
-        const context=vm.createContext({...api,...payroll,window,document:{getElementById:id=>nodes[id]},Date,console:{error:(...args)=>errors.push(args),warn:(...args)=>errors.push(args)}});
+        const context=vm.createContext({...roster,...rosterUI,...api,...payroll,window,document:{getElementById:id=>id==='payrollBalanceReview'?null:nodes[id]},Date,console:{error:(...args)=>errors.push(args),warn:(...args)=>errors.push(args)}});
         vm.runInContext(extract('loadAttendanceLogs'),context);await window.loadAttendanceLogs();assert.deepEqual(errors,[]);return nodes.attendanceTableBody.innerHTML;
     }
     assert.doesNotMatch(await feed('13:59'),/LATE \(59 mins\)/);

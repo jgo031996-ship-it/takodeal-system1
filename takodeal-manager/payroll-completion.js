@@ -66,7 +66,9 @@ export function checkSavedPayslipPayment(api,d,{data=api.currentPayslipData,butt
                 applyConfirmedPayroll(api,d,data,result,{actorKey});
                 try{await onFound(result);}catch{if(isCurrent())api.ManagerUI?.notify?.('Saved payment confirmed. Reopen View Paid Payslip to view the recorded figures.');return result;}
                 if(isCurrent())api.ManagerUI?.notify?.('Saved payment confirmed: ₱'+Number(result.finalNetPay).toLocaleString(undefined,{minimumFractionDigits:2})+(result.accountName?' · '+result.accountName:'')+'. No new payment or deduction.');
-            }else if(isCurrent())api.ManagerUI?.notify?.('No confirmed payment record was found for this employee and cutoff. Nothing was marked paid or deducted. If you already paid outside the app, reconcile its actual payment details before recording it.');
+            }else if(result.status==='not-recorded'){
+                if(isCurrent())api.ManagerUI?.notify?.('No saved payment for this cutoff ('+data.start+' to '+data.end+'). This check only searches payroll records saved in the app. If you already paid outside the app, confirm the original payment date, account and amount before recording it. Nothing was marked paid or deducted.',{type:'info'});
+            }else throw Error('Saved payment could not be confirmed. Reconnect and check again. No payment or deduction was changed.');
             return result;
         }catch(error){if(isCurrent())api.ManagerUI?.notify?.(error.message||'Saved payment could not be confirmed. No payment or deduction was changed.');return {status:'unconfirmed'};}
         finally{clearTimeout(timer);if(button&&isCurrent()){button.disabled=disabled;button.innerText=label;}if(paymentCheckUI.get(api)===entry)paymentCheckUI.delete(api);}
