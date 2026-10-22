@@ -122,7 +122,9 @@ export function initManagerTheme({ document: d = document, window: w = window, o
         const active = d.querySelector('.main-content > .view.active');
         if (!active) return;
         const view = active.id.replace(/^view-/, '');
-        const hrTab = d.querySelector('#hrSubmenu .nav-subitem.active')?.id.replace('subnav-', '');
+        const hrTab = view === 'payroll'
+            ? (d.getElementById('payrollSectionSanctions')?.style.display === 'block' ? 'Sanctions' : 'Feed')
+            : d.querySelector('#hrSubmenu .nav-subitem.active')?.id.replace('subnav-', '');
         const inventoryTab = d.querySelector('#invSubmenu .nav-subitem.active')?.id.replace('subnav-', '') || 'Overview';
         const meta = managerPageMeta(view, { hrTab, inventoryTab });
         const pageKey = `${view}:${meta.title}`;
@@ -155,17 +157,32 @@ export function initManagerTheme({ document: d = document, window: w = window, o
                 if (el.classList.contains('active') !== selected) el.classList.toggle('active', selected);
             });
         }
-        if (view === 'sop') {
-            const submenu = d.getElementById('hrSubmenu');
-            submenu?.querySelectorAll('.nav-subitem').forEach(el => el.classList.toggle('active', el.id === 'nav-sop'));
-            if (view !== lastView) {
-                submenu?.classList.add('open');
-                const icon = d.getElementById('hrDropdownIcon');
-                if (icon) icon.textContent = '▲';
+        const activeGroup = ['payroll','schedule','ledger','inbox','sop'].includes(view) ? 'hrSubmenu'
+            : view === 'inventory' ? 'invSubmenu' : null;
+        const hrSelection = {schedule:'subnav-Schedule',ledger:'subnav-Ledger',inbox:'subnav-Inbox',sop:'nav-sop'}[view]
+            || (hrTab === 'Sanctions' ? 'subnav-Sanctions' : 'subnav-Feed');
+        for (const [id, parentId, iconId] of [['hrSubmenu','nav-payroll','hrDropdownIcon'],['invSubmenu','nav-inventory','invDropdownIcon']]) {
+            const submenu = d.getElementById(id);
+            if (!submenu) continue;
+            // Keep the last child for reopening, but only the current section stays expanded.
+            // Do not reopen the current group during refreshes after a manual collapse.
+            const wasOpen = submenu.classList.contains('open');
+            const shouldOpen = id === activeGroup && (view !== lastView || wasOpen);
+            if (wasOpen !== shouldOpen) submenu.classList.toggle('open', shouldOpen);
+            if (id === 'hrSubmenu' && id === activeGroup) {
+                submenu.querySelectorAll('.nav-subitem').forEach(el => {
+                    const selected = el.id === hrSelection;
+                    if (el.classList.contains('active') !== selected) el.classList.toggle('active', selected);
+                });
             }
+            const open = submenu.classList.contains('open');
+            const icon = d.getElementById(iconId);
+            if (icon && icon.textContent !== (open ? '▲' : '▼')) icon.textContent = open ? '▲' : '▼';
+            d.getElementById(parentId)?.setAttribute('aria-expanded', String(open));
         }
         d.querySelectorAll('.sidebar .nav-item,.sidebar .nav-subitem').forEach(el => {
-            if (el.classList.contains('active')) el.setAttribute('aria-current', 'page');
+            const submenu = el.closest('.nav-submenu');
+            if (el.classList.contains('active') && (!submenu || submenu.id === activeGroup)) el.setAttribute('aria-current', 'page');
             else el.removeAttribute('aria-current');
         });
         d.querySelector('.mobile-menu-btn')?.setAttribute('aria-expanded', String(d.querySelector('.sidebar')?.classList.contains('show-mobile') || false));
@@ -180,11 +197,13 @@ export function initManagerTheme({ document: d = document, window: w = window, o
             if (r.type === 'childList') {
                 for (const node of r.addedNodes) if (node.nodeType === 1) decorate(node);
                 queue();
-            } else if (r.target.matches('.view,.sidebar,.nav-item,.nav-subitem,.tab-btn')) queue();
+            } else if (r.target.matches('.view,.sidebar,.nav-item,.nav-subitem,.nav-submenu,.tab-btn') || r.target.id === 'payrollSectionSanctions') queue();
         }
     });
     observer.observe(d.querySelector('.main-content'), {subtree:true, childList:true, attributes:true, attributeFilter:['class']});
     observer.observe(d.querySelector('.sidebar'), {subtree:true, attributes:true, attributeFilter:['class']});
+    const sanctions = d.getElementById('payrollSectionSanctions');
+    if (sanctions) observer.observe(sanctions, {attributes:true, attributeFilter:['style']});
     d.querySelectorAll('.view').forEach(decorate);
     sync();
     return { sync, stop: () => { observer.disconnect(); scrolling.stop(); aiHub?.stop(); accessWorkspace?.stop(); } };
