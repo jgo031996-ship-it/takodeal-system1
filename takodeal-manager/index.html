@@ -447,6 +447,7 @@
   <link rel="stylesheet" href="manager-workspace.css?v=20261004">
   <link rel="stylesheet" href="employee-id.css?v=20261004">
   <link rel="stylesheet" href="payslip.css?v=20261004">
+  <link rel="stylesheet" href="remittance-dialogs.css?v=20261022">
   <link rel="stylesheet" href="payroll-balance-review.css?v=20261022">
   <link rel="stylesheet" href="schedule-layout.css?v=20261004">
   <link rel="stylesheet" href="staff-documents.css?v=staff-pos-repair-20261008-r12">
@@ -6506,12 +6507,12 @@
 
   <!-- 🏢 BRANCH REMITTANCE HISTORY MODAL -->
   <div id="branchTransferHistoryModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10050; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
-    <div style="background: var(--bg-color); width: 95%; max-width: 1000px; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.5); max-height: 90vh;">
-      <div style="background: var(--primary); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center;">
+    <div class="remittance-history-dialog" style="background: var(--bg-color); width: 95%; max-width: 1000px; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.5); max-height: 90vh;">
+      <div class="remittance-history-header" style="background: var(--primary); padding: 15px 25px; display: flex; justify-content: space-between; align-items: center;">
         <h2 style="margin: 0; font-size: 18px; color: white;" id="bthModalTitle">📜 Remittance History</h2>
         <button onclick="document.getElementById('branchTransferHistoryModal').style.display='none'" style="background: none; border: none; font-size: 28px; cursor: pointer; color: white; line-height: 1;">&times;</button>
       </div>
-      <div style="padding: 20px; overflow-y: auto; background: #f8fafc; flex: 1;">
+      <div class="remittance-history-scroll" style="padding: 20px; overflow-y: auto; background: #f8fafc; flex: 1;">
         <div class="table-responsive">
           <table class="data-table" style="background: white; border-radius: 8px; border: 1px solid #e2e8f0; width: 100%; border-collapse: collapse;">
             <thead style="background: #f1f5f9; text-transform: uppercase; font-size: 11px; color: #475569; letter-spacing: 0.5px;">

@@ -131,12 +131,14 @@ test('direct tables and nested added subtrees are deduplicated and wrapped in th
     assert.equal(wrapper.parentElement, h.body);
 });
 
-test('print payslips, stock request reviews and existing wrappers retain their original styles', () => {
+test('print payslips, stock request reviews, remittance dialogs and existing wrappers retain their original styles', () => {
     const h = fixture(), excluded = [];
-    for (const kind of ['payslip', 'review', 'wrapped', 'nested-wrapper']) {
+    for (const kind of ['payslip', 'review', 'remit-audit', 'remit-history', 'wrapped', 'nested-wrapper']) {
         const panel = h.body.appendChild(h.element('div'));
         if (kind === 'payslip') panel.id = 'printablePayslip';
         else if (kind === 'review') panel.className = 'stock-request-review-popup';
+        else if (kind === 'remit-audit') panel.id = 'remitAuditModal';
+        else if (kind === 'remit-history') panel.id = 'branchTransferHistoryModal';
         else panel.className = 'mobile-table-wrapper';
         const parent = kind === 'nested-wrapper' ? panel.appendChild(h.element('div')) : panel;
         const table = parent.appendChild(h.element('table'));

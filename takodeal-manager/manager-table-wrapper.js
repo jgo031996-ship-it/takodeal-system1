@@ -19,7 +19,7 @@ export function installManagerTableWrapper(w, d) {
     function wrap(table) {
         if (table.isConnected === false || !table.parentElement) return;
         // Compact print documents and request reviews retain their existing layout.
-        if (table.closest('#printablePayslip,.stock-request-review-popup')) return;
+        if (table.closest('#printablePayslip,.stock-request-review-popup,#remitAuditModal,#branchTransferHistoryModal')) return;
         if (table.parentElement.classList.contains('mobile-table-wrapper') || table.closest('.mobile-table-wrapper')) return;
         const wrapper = d.createElement('div');
         wrapper.className = 'mobile-table-wrapper';
