@@ -12,7 +12,7 @@ function assets(app,name){
 test('installed shells contain all new recipe and scheduling dependencies',()=>{
     for(const [app,name,required] of [
         ['takodeal-manager','CORE_ASSETS',['recipe-bulk-model.js','recipe-bulk.js','recipe-changes.js','sanction-actions.js','sanction-schedule.js','sanction-scheduling-ui.js','audit-modal.css','audit-modal-layout.js']],
-        ['Takodeal-POS','required',['recipe-feed.js','sanction-schedule.js']],
+        ['Takodeal-POS','required',['recipe-feed.js','sanction-schedule.js','franchise-dispatch-pricing.js','franchise-supply-model.js','franchise-cost-model.js','operations-model.js']],
         ['takodeal-staff','SHELL',['sanction-schedule.js','attendance-proof.js']],
         ['takodeal-franchise','CORE',['sanction-schedule.js','sanction-actions.js','sanction-scheduling-ui.js','workspace-access-model.js']]
     ]){
@@ -31,7 +31,7 @@ test('sanction date decisions are identical across apps',()=>{
 });
 test('upgrade keeps paid receipts, photos and the offline sale ledger through Cashier update',()=>{
     const worker=source('Takodeal-POS/sw.js');
-    assert.match(worker,/const CORE = 'takodeal-pos-core-reviewed-cases-20261023'/);
+    assert.match(worker,/const CORE = 'takodeal-pos-core-franchise-invoices-20261023'/);
     for(const [app,list] of [['Takodeal-POS','required'],['takodeal-staff','SHELL'],['takodeal-manager','CORE_ASSETS']])assert.ok(assets(app,list).includes('clock-out-schedule.js'),app+' can verify a completed shift offline after installation');
     assert.ok(assets('Takodeal-POS','required').includes('checkout-controls.js'),'checkout resets work offline');
     assert.match(worker,/dispatch-restock-model\.js/);

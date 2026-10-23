@@ -5,7 +5,7 @@ import {planPayrollAttendance} from './payroll-attendance.js';
 import {configuredPermissions,canOpenHrTab,canOpenInventoryTab,workspaceRole} from './workspace-access-model.js';
 import {staffProfileForWork,staffRateWorkDate} from './staff-rate-model.js';
 
-export const RELEASE = 'franchise-workspace-20261005-r1';
+export const RELEASE = 'franchise-business-v2-20261023';
 export const ROUTES = {
  dashboard: ['Store Dashboard','Sales, expenses and staff activity for your branch.','loadDashboard',true],
  accounts: ['Cash & Budget','Manage branch cash accounts and monthly spending.','loadAccountsView',false],

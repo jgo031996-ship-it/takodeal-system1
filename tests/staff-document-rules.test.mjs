@@ -24,8 +24,44 @@ function body(source, declaration) {
     }
     throw Error(`Unbalanced block ${declaration}`);
 }
-const rule = path => body(vault, `match ${path}`);
-const fn = name => body(vault, `function ${name}(`);
+const rule = path => expandVerifiedAliases(body(vault, `match ${path}`));
+// The size-limited production Rules share transparent selectors/readers. Pin
+// their entire bodies before expanding calls for the existing predicate checks;
+// an altered actor, timestamp, read method or document path must still fail.
+function expandVerifiedAliases(source) {
+    const aliases = {
+        reqUid: 'return request.auth.uid;',
+        reqEmail: 'return request.auth.token.email;',
+        reqTime: 'return request.time;',
+        readData: 'return get(/databases/$(database)/documents/$(collectionName)/$(recordId)).data;',
+        nextData: 'return getAfter(/databases/$(database)/documents/$(collectionName)/$(recordId)).data;',
+        newData: 'return request.resource.data;',
+        oldData: 'return resource.data;',
+        reqProvider: 'return request.auth.token.firebase.sign_in_provider;',
+        reqVerified: "return request.auth.token.get('email_verified', false);",
+        paidKeys: "return ['paidAt','payrollRecordId','partialPaid','amountPaid','payrollFrozen'];",
+        inactiveStaff: "return ['Blocked', 'Revoked', 'Terminated', 'Resigned', 'Inactive', 'Disabled', 'Archived', 'Deleted'];",
+        rateKeys: "return ['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision'];",
+        privatePoKeys: "return ['dispatchInvoice','deliveryReceipt','supplyInvoice','requestedByEmail'];"
+    };
+    for (const [name, expected] of Object.entries(aliases)) {
+        assert.equal((firestore.match(new RegExp(`\\bfunction ${name}\\(`, 'g')) || []).length, 1, `${name} must not be shadowed`);
+        assert.equal(body(firestore, `function ${name}(`).trim(), expected, `${name} must remain a transparent selector`);
+        if (!['readData', 'nextData'].includes(name)) assert.match(firestore, new RegExp(`\\bfunction ${name}\\(\\)`));
+    }
+    assert.match(firestore, /function readData\(collectionName,recordId\)/);
+    assert.match(firestore, /function nextData\(collectionName,recordId\)/);
+    let expanded = source;
+    for (const [name, expected] of Object.entries(aliases)) {
+        if (!['readData', 'nextData'].includes(name)) expanded = expanded.replace(new RegExp(`\\b${name}\\(\\)`, 'g'), expected.slice('return '.length, -1));
+    }
+    expanded = expanded.replace(/\b(readData|nextData)\('([A-Za-z0-9_]+)',\s*([A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*)\)/g,
+        (_, helper, collection, id) => `${helper === 'readData' ? 'get' : 'getAfter'}(/databases/$(database)/documents/${collection}/$(${id})).data`);
+    assert.doesNotMatch(expanded, new RegExp(`\\b(?:${Object.keys(aliases).join('|')})\\(`),
+        'A changed helper call must be reviewed instead of silently omitted from the policy checks');
+    return expanded;
+}
+const fn = name => expandVerifiedAliases(body(vault, `function ${name}(`));
 
 test('private vault has explicit nonoverlapping collection blocks and no public wildcard', () => {
     assert.notEqual(firestore.indexOf(marker), -1);
@@ -37,7 +73,7 @@ test('private vault has explicit nonoverlapping collection blocks and no public 
 
 test('legacy operational authority remains while new rate metadata is protected', () => {
     const legacy = firestore.slice(0, firestore.indexOf(marker));
-    const profile = body(legacy, 'match /cashiers/{cashierId}');
+    const profile = expandVerifiedAliases(body(legacy, 'match /cashiers/{cashierId}'));
     const profileCreate = body(profile, 'function selectorCashiersCreate('), profileUpdate = body(profile, 'function selectorCashiersUpdate(');
     assert.match(profile, /allow read: if true;/);
     assert.match(profile, /allow create: if selectorCashiersCreate\(request\.resource\.data\);/);
@@ -46,7 +82,7 @@ test('legacy operational authority remains while new rate metadata is protected'
     assert.match(profile, /allow delete: if isHQUser\(\) && !resource\.data\.keys\(\)\.hasAny\(\['onboardingStartConfirmation','contractTerms'\]\);/);
     assert.match(profileUpdate, /affectedKeys\(\)\.hasAny\(\['onboardingStartConfirmation','contractTerms'\]\)/);
     assert.match(profileUpdate, /onboardingProfileLink\(cashierId,before,data\)/);
-    const attendance = body(legacy, 'match /attendance_logs/{logId}');
+    const attendance = expandVerifiedAliases(body(legacy, 'match /attendance_logs/{logId}'));
     const attendanceUpdate = body(attendance, 'function selectorAttendanceLogsUpdate(');
     assert.match(attendance, /allow read: if true;/);
     assert.match(attendance, /allow create: if !request\.resource\.data\.keys\(\)\.hasAny\(\['scheduleAmendmentReview'\]\);/);
@@ -65,7 +101,36 @@ test('legacy operational authority remains while new rate metadata is protected'
     assert.match(profileUpdate, /staffRateProfileLink\(cashierId, before, data\)/);
     assert.doesNotMatch(profile, /allow (?:read, )?update: if true/);
     assert.match(legacy, /match \/hq_email_access\/\{email\}[\s\S]*?allow write: if offlineOwner\(\);/);
-    assert.match(legacy, /match \/rider_topups\/\{topupId\}/);
+    assert.equal((legacy.match(/\bfunction legacyCandidate\(/g) || []).length, 1);
+    assert.match(legacy, /\bfunction legacyCandidate\(root\)/);
+    const flatLegacy = body(legacy, 'match /{legacyCollection}/{legacyDocument}');
+    const treeLegacy = body(legacy, 'match /{legacyTree}/{legacyTail=**}').trim();
+    const expectedLegacyNames = ['account_logs','archived_months','bom','branches','budgets','cash_accounts',
+        'customer_app_categories','daily_metrics','dispatch_logs','equipment_assets','expenses','foodpanda_payouts',
+        'franchise_accounts','franchise_budgets','franchise_comms','franchise_ledger','global_addons','grab_payouts',
+        'hq_restocks','inventory','manager_alerts','menu','parked_orders','payables','pos_devices','remittances',
+        'rider_topups','riders','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests',
+        'stock_counts','stock_logs','suppliers','yield_logs'];
+    const literalNames = [...new Set([flatLegacy, treeLegacy].flatMap(text => [...text.matchAll(/\[([^\]]+)\]/g)]
+        .flatMap(list => [...list[1].matchAll(/'([^']+)'/g)].map(name => name[1]))))].sort();
+    assert.equal(expectedLegacyNames.length, 38);
+    assert.deepEqual(literalNames, expectedLegacyNames, 'Only the original 38 collection roots may enter legacy literal clauses');
+    assert.equal(body(legacy, 'function legacyCandidate(').trim(), `return root.matches('^(${expectedLegacyNames.join('|')})$');`);
+    for (const method of ['read', 'create', 'update', 'delete']) {
+        const expression = new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(flatLegacy)?.[1];
+        assert.ok(expression, `Missing legacy ${method} policy`);
+        const prefix = 'legacyCandidate(legacyCollection) && (';
+        assert.ok(expression.startsWith(prefix) && expression.endsWith(')'), 'Every legacy method must retain the exact deny-only prefix');
+        const union = expression.slice(prefix.length, -1);
+        const clause = /\(legacyCollection in \[([^\]]+)\](?: && (isHQUser|isOwner)\(\))?\)/g;
+        const clauses = [...union.matchAll(clause)];
+        assert.equal(union.replace(clause, '').replace(/\s|\|\|/g, ''), '', 'Only the explicit literal unions may grant legacy access');
+        for (const row of clauses) assert.doesNotMatch(row[1], /'(?:hr_sanctions|settings)'/, 'Deny-only roots must remain absent from every legacy whitelist');
+        const riderGrants = clauses.filter(row => row[1].split(',').map(name => name.trim()).includes("'rider_topups'"));
+        assert.equal(riderGrants.length, 1, `${method} must retain exactly one rider-topup authority path`);
+        assert.equal(riderGrants[0][2], 'isHQUser', `${method} rider topups must remain HQ-only`);
+    }
+    assert.equal(treeLegacy, "allow read, write: if legacyCandidate(legacyTree) && (legacyTree in ['archived_months','customer_app_categories','daily_metrics','franchise_accounts','franchise_budgets','suppliers'] && isHQUser());");
 });
 
 test('HQ authority requires verified email and protected active permissions plus branch scope', () => {
@@ -122,7 +187,7 @@ test('pending requests have no private grant and cannot retarget an existing ide
     assert.match(valid, /let present = eligible && exists\(path\);/);
     assert.match(valid, /let binding = present \? get\(path\)\.data : \{\};/);
     assert.match(valid, /return eligible && \(!present \|\| \(binding\.staffId == data\.staffId && binding\.active == false\)\)/);
-    assert.match(request, /allow list: if docVaultHQAll\(\)/);
+    assert.match(request, /^[ \t]*allow read: if \(request\.method == 'get' && isSignedIn\(\) && request\.auth\.uid == uid\) \|\| docVaultHQAll\(\);[ \t]*$/m);
     assert.match(request, /allow create: if docVaultRequest\(uid, request\.resource\.data\);/);
     assert.match(request, /allow update: if selectorStaffDocumentRequestsUpdate\(request\.resource\.data,resource == null \? null : resource\.data\);/);
     assert.match(update, /docVaultRequest\(uid, data\)\s*&& before\.uid == uid && data\.staffId == before\.staffId/);

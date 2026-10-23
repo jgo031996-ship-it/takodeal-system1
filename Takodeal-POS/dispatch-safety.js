@@ -1,5 +1,7 @@
 import {planDispatchRestock,assertDispatchRestockCurrent,canonicalDispatchIntent} from './dispatch-restock-model.js';
 import {canOpenWorkspacePage} from './workspace-access-model.js';
+import {planFranchiseDispatch,franchiseDispatchFingerprint,verifyFranchiseDispatchPricing} from './franchise-dispatch-pricing.js';
+import {supplyDispatchItems,supplyFingerprint,validateSupplyDispatchInvoice} from './franchise-supply-model.js';
 
 // Approved was used by the older cart loader. It means reviewed, not sent.
 // Completed/merged requests and explicit delivery links must never be reopened.
@@ -39,16 +41,19 @@ export async function prepareDispatchRestock(api,{source,destination,items}) {
     return plan;
 }
 
-export async function commitDispatch(api, { id, source, destination, driver, actor, items, skipped = [], purchaseOrderIds = [], now = new Date(), autoRestock=null, assertCurrent=()=>{} }) {
+export async function commitDispatch(api, { id, source, destination, driver, actor, items, skipped = [], purchaseOrderIds = [], now = new Date(), autoRestock=null, supplyPricing=null, assertCurrent=()=>{} }) {
     if (!id || !source || !destination || source === destination || !driver || !items.length) throw new Error('Choose different source and destination branches, a driver, and items to send.');
     if (items.length * (autoRestock?7:4) + purchaseOrderIds.length > 430) throw new Error('Split this delivery into smaller batches.');
-    const identity=autoRestock?captureDispatchAuthority(api,{source,destination,restock:autoRestock.needsRestock}):null;
+    const identity=autoRestock||supplyPricing?captureDispatchAuthority(api,{source,destination,restock:autoRestock?.needsRestock===true}):null;
+    if(supplyPricing&&(identity.session.isFranchisee||source!=='Main Office'))throw Error('HQ must approve and issue the priced delivery invoice.');
     if(autoRestock&&autoRestock.source!==source)throw Error('The restock preview belongs to another source.');
-    const guard=()=>{assertCurrent();if(identity){const current=captureDispatchAuthority(api,{source,destination,restock:autoRestock.needsRestock});if(current.session!==identity.session||current.uid!==identity.uid||current.email!==identity.email||current.name!==identity.name)throw Error('Your account changed. Reopen the delivery.');}};
+    const guard=()=>{assertCurrent();if(identity){const current=captureDispatchAuthority(api,{source,destination,restock:autoRestock?.needsRestock===true});if(current.session!==identity.session||current.uid!==identity.uid||current.email!==identity.email||current.name!==identity.name)throw Error('Your account changed. Reopen the delivery.');}};
     guard();
-    const intent=canonicalDispatchIntent({source,destination,driver,actor,actorUid:identity?.uid,items,skipped,purchaseOrderIds:[...new Set(purchaseOrderIds.filter(Boolean))].sort(),autoRestock});
+    const intent=canonicalDispatchIntent({source,destination,driver,actor,actorUid:identity?.uid,items,skipped,purchaseOrderIds:[...new Set(purchaseOrderIds.filter(Boolean))].sort(),autoRestock,...(supplyPricing?{supplyPricing}: {})});
     const read=autoRestock?api.getDocsFromServer:api.getDocs;
     const inventory = await read(api.query(api.collection(api.db,'inventory'),api.where('branch','==',source)));
+    let recipes=[],recipeRevision,accountRows=[];
+    if(supplyPricing){const version=await api.getDocFromServer(api.doc(api.db,'settings','recipe_revision')),data=version.exists()?version.data():{};recipeRevision={version:data.version??0,revisionId:data.revisionId||''};const [snap,accounts]=await Promise.all([api.getDocsFromServer(api.collection(api.db,'bom')),api.getDocsFromServer(api.query(api.collection(api.db,'hq_managers'),api.where('email','==',identity.email)))]);recipes=snap.docs.map(row=>({...row.data(),id:row.id}));accountRows=accounts.docs;}
     const branchSnap = await read(api.query(api.collection(api.db,'branches'),api.where('name','==',destination)));
     if (branchSnap.docs.length !== 1) throw new Error('Destination branch settings are missing or duplicated.');
     const resolved = items.map(item => {
@@ -77,12 +82,19 @@ export async function commitDispatch(api, { id, source, destination, driver, act
             if (!row.exists() || row.data().branch!==source || row.data().name!==item.name) throw new Error('Source stock changed. Reload the delivery.');
             stocks.set(item.reference.id,{reference:item.reference,data:row.data(),quantity:0});
         }
-        const orders=[];
+        const orders=[],orderRows=[],privateOrderRefs=new Map();
         for (const orderId of new Set(purchaseOrderIds.filter(Boolean))) {
             const orderRef=reference('purchase_orders',orderId), order=await tx.get(orderRef);
             assertDispatchRequestAvailable(order.exists()?order.data():null,{id:orderId,source,destination});
             orders.push(orderRef);
+            if(order.data().quoteVersion===2){const fullRef=reference('franchise_supply_orders',orderId),full=await tx.get(fullRef);if(!full.exists())throw Error('The protected priced order is missing. Refresh Dispatch.');const row={...full.data(),id:orderId};assertDispatchRequestAvailable(row,{id:orderId,source,destination});if(row.quoteVersion!==2||supplyFingerprint(row.dispatchItems)!==supplyFingerprint(order.data().items))throw Error('The protected order and logistics request do not match.');orderRows.push(row);privateOrderRefs.set(orderId,fullRef);}
+            else orderRows.push({...order.data(),id:orderId});
         }
+        const pricedOrders=orderRows.some(row=>row.quoteVersion===2);
+        if(pricedOrders&&(!supplyPricing||supplyPricing.version!==1||supplyPricing.fingerprint!==franchiseDispatchFingerprint(orderRows)||branchPolicy.data().isFranchise!==true))throw Error('Review the current priced franchise order before sending.');
+        const pricedPlans=pricedOrders?planFranchiseDispatch(orderRows,resolved,{id,uid:identity.uid,email:identity.email}):[];
+        if(pricedPlans.length)await verifyFranchiseDispatchPricing(api,tx,{orders:orderRows,plans:pricedPlans,inventory:inventory.docs.map(row=>({...row.data(),id:row.id})),recipes,recipeRevision,identity,accountRows,destination});
+        const pricedLines=new Map(pricedPlans.flatMap(plan=>plan.dispatchInvoice.lines.map(line=>[line.dispatchLogId,{...line,orderId:plan.orderId}])));
         for (const item of resolved) stocks.get(item.reference.id).quantity+=item.quantity;
         const plan=autoRestock?assertDispatchRestockCurrent(autoRestock,[...stocks].map(([id,stock])=>({...stock.data,id})),items):null;
         const planned=new Map((plan?.lines||[]).map(line=>[line.id,line]));
@@ -103,20 +115,21 @@ export async function commitDispatch(api, { id, source, destination, driver, act
         const outgoing=new Map([...stocks].map(([stockId,stock])=>[stockId,planned.has(stockId)?Math.max(0,planned.get(stockId).oldQty)+planned.get(stockId).restockQty:Number(stock.data.currentStock)]));
         resolved.forEach((item,index)=> {
             const stock=stocks.get(item.reference.id), key=id+'-'+index;
-            const line=planned.get(item.reference.id),unitCost=line?line.baseCost:Number(item.cost ?? item.baseCost ?? stock.data.baseCost ?? 0);
+            const line=planned.get(item.reference.id),supplyLine=pricedLines.get(key),unitCost=line?line.baseCost:Number(item.cost ?? item.baseCost ?? stock.data.baseCost ?? 0);
             if(branchPolicy.data().isFranchise===true&&unitCost===null)throw Error('A saved supply price is required before charging a franchise delivery.');
-            tx.set(reference('dispatch_logs',key),{batchId:id,sourceBranch:source,fromBranch:source,sourceId:item.reference.id,toBranch:destination,unitCost,franchiseCharged:branchPolicy.data().isFranchise === true,details:`${source} ➡️ ${destination}`,item:item.name,qty:item.quantity,uom:item.baseUom || item.uom || stock.data.uom || 'units',displayQty:Number(item.rawQty || item.quantity),displayUom:item.friendlyUom || item.uom || stock.data.uom || 'units',convRate:Number(item.convRate || 1),category:item.category || stock.data.category || 'Uncategorized',driver,status:'In Transit',date:now.toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}),time:now.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'}),timestamp:now});
+            tx.set(reference('dispatch_logs',key),{batchId:id,sourceBranch:source,fromBranch:source,sourceId:item.reference.id,toBranch:destination,unitCost,...(supplyLine?{supplyInvoiceVersion:1,franchiseSupplyOrderId:supplyLine.orderId}:{}),franchiseCharged:branchPolicy.data().isFranchise === true,details:`${source} ➡️ ${destination}`,item:item.name,qty:item.quantity,uom:supplyLine?.baseUom || item.baseUom || item.uom || stock.data.uom || 'units',displayQty:supplyLine?.displayQty??Number(item.rawQty || item.quantity),displayUom:supplyLine?.displayUom || item.friendlyUom || item.uom || stock.data.uom || 'units',convRate:supplyLine?.conversionRate??Number(item.convRate || 1),category:item.category || stock.data.category || 'Uncategorized',driver,status:'In Transit',date:now.toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}),time:now.toLocaleTimeString('en-PH',{hour:'2-digit',minute:'2-digit'}),timestamp:now});
             const before=outgoing.get(item.reference.id),after=before-item.quantity;outgoing.set(item.reference.id,after);
             tx.set(reference('stock_logs','out-'+key),{branch:source,item:item.name,uom:stock.data.uom || 'units',oldQty:before,newQty:after,variance:-item.quantity,type:'Stock Dispatch',dispatchBatchId:id,note:`Sent to ${destination} (Driver: ${driver})`,user:actor,timestamp:api.serverTimestamp()});
             tx.set(reference('stock_logs','in-'+key),{branch:destination,item:item.name,uom:item.baseUom || item.uom || 'units',oldQty:0,newQty:0,variance:0,type:'Incoming Dispatch',note:`From ${source}; awaiting cashier receipt.`,user:actor,timestamp:api.serverTimestamp()});
         });
         if (branchPolicy.data().isFranchise === true) {
-            const amount = resolved.reduce((sum,item)=>sum + (planned.has(item.reference.id)?planned.get(item.reference.id).baseCost:Number(item.cost ?? item.baseCost ?? stocks.get(item.reference.id).data.baseCost ?? 0))*item.quantity,0);
+            const amount = pricedPlans.length?Math.round(pricedPlans.reduce((sum,plan)=>sum+plan.dispatchInvoice.grandTotal,0)*100)/100:resolved.reduce((sum,item)=>sum + (planned.has(item.reference.id)?planned.get(item.reference.id).baseCost:Number(item.cost ?? item.baseCost ?? stocks.get(item.reference.id).data.baseCost ?? 0))*item.quantity,0);
             if (!Number.isFinite(amount) || amount<0) throw new Error('Invalid franchise supply cost.');
             if (amount>0) tx.set(reference('franchise_ledger','supply-'+id),{branch:destination,type:'Charge',category:'B2B Supply Dispatch',amount,description:'Supplies dispatched '+id,loggedBy:actor,timestamp:api.serverTimestamp()});
         }
-        for (const orderRef of orders) tx.update(orderRef,{status:'Completed',dispatchBatchId:id,completedAt:api.serverTimestamp()});
-        if (skipped.length) tx.set(reference('purchase_orders','delayed-'+id),{branch:destination,items:skipped,status:'Delayed',type:'Delayed Delivery',requestedBy:actor,sourceRequestIds:purchaseOrderIds,timestamp:api.serverTimestamp()});
+        for (const orderRef of orders){const priced=pricedPlans.find(plan=>plan.orderId===orderRef.id);tx.update(orderRef,{status:'Completed',dispatchBatchId:id,completedAt:api.serverTimestamp()});if(priced)tx.update(privateOrderRefs.get(orderRef.id),{status:'Completed',dispatchBatchId:id,completedAt:api.serverTimestamp(),dispatchLogIds:priced.dispatchLogIds,dispatchInvoice:{...priced.dispatchInvoice,recordedAt:api.serverTimestamp()}});}
+        if(pricedPlans.length)pricedPlans.forEach((plan,index)=>{if(plan.residualItems.length){const key='franchise-residual-'+id+'-'+index,dispatchItems=supplyDispatchItems(plan.residualItems),requestedBy=typeof actor==='string'&&!actor.includes('@')?actor:'HQ dispatch';tx.set(reference('franchise_supply_orders',key),{branch:destination,items:plan.residualItems,dispatchItems,status:'Pending',type:'Franchise Order',requestedBy,requestedByUid:identity.uid,requestedByEmail:identity.email,quoteVersion:2,supplyInvoice:plan.residualInvoice,sourceOrderId:plan.orderId,quoteRecordedAt:api.serverTimestamp(),timestamp:api.serverTimestamp()});tx.set(reference('purchase_orders',key),{quoteVersion:2,branch:destination,status:'Pending',type:'Franchise Order',requestedBy,timestamp:api.serverTimestamp(),items:dispatchItems});}});
+        else if (skipped.length) tx.set(reference('purchase_orders','delayed-'+id),{branch:destination,items:skipped,status:'Delayed',type:'Delayed Delivery',requestedBy:actor,sourceRequestIds:purchaseOrderIds,timestamp:api.serverTimestamp()});
         return 'dispatched';
     });
 }
@@ -150,7 +163,16 @@ export async function transitionDispatch(api, {ids, mode, actor}) {
             if ((data.sourceBranch || data.fromBranch || 'Main Office')!==entry.source) throw new Error('Delivery source changed. Reload the feed.');
             const quantity=Number(data.qty);
             if (!Number.isFinite(quantity) || quantity<=0) throw new Error('Invalid saved delivery quantity.');
+            let credit=data.unitCost*quantity;
             if (mode==='return') {
+                if(data.supplyInvoiceVersion===1){
+                    if(typeof data.franchiseSupplyOrderId!=='string'||!data.franchiseSupplyOrderId||data.franchiseSupplyOrderId.includes('/'))throw Error('The protected invoice link needs HQ review.');
+                    const snap=await tx.get(ref('franchise_supply_orders',data.franchiseSupplyOrderId));if(!snap.exists())throw Error('The original supply invoice is missing. Ask HQ to review the return.');
+                    const order={...snap.data(),id:data.franchiseSupplyOrderId},invoice=validateSupplyDispatchInvoice(order),line=invoice.lines.find(row=>row.dispatchLogId===entry.id);
+                    if(order.branch!==data.toBranch||invoice.dispatchBatchId!==data.batchId||!line||line.hqItemId!==data.sourceId||line.name!==data.item||line.baseQty!==quantity)throw Error('The returned item does not match its original protected invoice.');
+                    credit=line.total;
+                }
+                if(data.franchiseCharged&&(!Number.isFinite(credit)||credit<0))throw Error('The original supply invoice charge needs review before a return.');
                 if (!entry.stockRef) throw new Error('Source stock changed. Reload the feed.');
                 if (!stocks.has(entry.stockRef.id)) {
                     const stock=await tx.get(entry.stockRef);
@@ -160,16 +182,16 @@ export async function transitionDispatch(api, {ids, mode, actor}) {
                 stocks.get(entry.stockRef.id).quantity+=quantity;
                 if (data.franchiseCharged && (!Number.isFinite(data.unitCost) || data.unitCost<0)) throw new Error('Invalid saved supply charge.');
             }
-            deliveries.push({reference,data,quantity,entry});
+            deliveries.push({reference,data,quantity,entry,credit});
         }
         for (const stock of stocks.values()) tx.update(stock.reference,{currentStock:Number(stock.data.currentStock)+stock.quantity});
-        for (const {reference,data,quantity,entry} of deliveries) {
+        for (const {reference,data,quantity,entry,credit} of deliveries) {
             if (mode==='arrive') tx.update(reference,{status:'Arrived',arrivedAt:api.serverTimestamp()});
             else {
                 const stock=stocks.get(entry.stockRef.id);
                 tx.update(reference,{status:'Backloaded',receivedQty:0,receivedDisplayQty:0,returnedAt:api.serverTimestamp(),returnedBy:actor});
                 tx.set(ref('stock_logs','return-'+entry.id),{branch:entry.source,item:data.item,uom:stock.data.uom || 'units',oldQty:Number(stock.data.currentStock),newQty:Number(stock.data.currentStock)+stock.quantity,variance:quantity,type:'Delivery Backload',note:'Delivery returned from '+data.toBranch,user:actor,timestamp:api.serverTimestamp()});
-                if (data.franchiseCharged && data.unitCost*quantity>0) tx.set(ref('franchise_ledger','supply-return-'+entry.id),{branch:data.toBranch,type:'Credit',category:'B2B Supply Return',amount:data.unitCost*quantity,description:'Credit for returned delivery '+entry.id,loggedBy:actor,timestamp:api.serverTimestamp()});
+                if (data.franchiseCharged && credit>0) tx.set(ref('franchise_ledger','supply-return-'+entry.id),{branch:data.toBranch,type:'Credit',category:'B2B Supply Return',amount:credit,description:'Credit for returned delivery '+entry.id,loggedBy:actor,timestamp:api.serverTimestamp()});
             }
         }
         return deliveries.map(({data,entry})=>({...data,id:entry.id}));

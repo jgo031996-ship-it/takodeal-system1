@@ -4,6 +4,8 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {attendanceRows} from '../Takodeal-POS/cashier-data.js';
 import {attendanceEstimate,money,esc} from '../takodeal-franchise/franchise-data.js';
+import {buildFranchisePayslip} from '../takodeal-franchise/franchise-payroll-model.js';
+import {installFranchisePayslipUI} from '../takodeal-franchise/franchise-payslip-ui.js';
 
 const at=time=>new Date('2026-10-07T'+time+':00+08:00');
 const punch=(id,type,time,extra={})=>({id,staffId:'staff-1',staffName:'Sample Staff',branch:'Maa',type,timestamp:at(time),...extra});
@@ -50,14 +52,32 @@ test('actual Franchise estimate retains both valid adjacent explicit shifts at a
 test('the actual Franchise payroll view renders held gross/net as review text and shows the reason in details',async()=>{
  const source=readFileSync(new URL('../takodeal-franchise/franchise-workspace.js',import.meta.url),'utf8');
  const begin=source.indexOf(" define('payroll',"),end=source.indexOf(" define('schedule',",begin);assert.ok(begin>=0&&end>begin);
- let render,click,details,load;
+ class PayslipElement {
+  constructor(tag,document){this.tagName=tag.toUpperCase();this.document=document;this.children=[];this.style={};this.listeners={};this.attributes={};this.disabled=false;this.textContent='';}
+  get isConnected(){return this===this.document.body||!!this.parent?.isConnected;}
+  append(...nodes){for(const node of nodes){node.parent=this;this.children.push(node);}}
+  remove(){if(this.parent){this.parent.children=this.parent.children.filter(node=>node!==this);this.parent=null;}}
+  setAttribute(key,value){this.attributes[key]=value;}
+  addEventListener(key,handler){this.listeners[key]=handler;}
+  focus(){this.document.activeElement=this;}
+ }
+ const document={createElement(tag){return new PayslipElement(tag,this);}};document.body=document.createElement('body');
+ const original=document.createElement('button');document.body.append(original);original.focus();
+ const errors=[],state={route:'payroll'},scope='sample-account:Maa';
+ const payslips=installFranchisePayslipUI({document,window:{},assertCurrent:()=>assert.equal(state.route,'payroll'),onError:error=>errors.push(error.message)});
+ let render,click,load;
  const ctx=vm.createContext({define:(_id,handler)=>{load=handler;},selectedRange:()=>({start:new Date('2026-10-07T00:00:00+08:00'),end:new Date('2026-10-08T00:00:00+08:00')}),
   read:async table=>table==='cashiers'?profiles:[older,newer,oldClose],staffRows:async()=>[],createScheduleHistoryStore:()=>({loadRange:async()=>({})}),
-  api:{},session:()=>({branch:'Maa'}),calendarDay:()=> '2026-10-07',$:()=>({value:'2026-10-07'}),attendanceEstimate,money,esc,
+  api:{},session:()=>({branch:'Maa'}),calendarDay:()=> '2026-10-07',$:()=>({value:'2026-10-07'}),accountScope:()=>scope,payrollRows:async()=>[],state,payslipScope:'',payslips,buildFranchisePayslip,money,esc,
   table:()=>({card:{append(){}},body:{addEventListener:(_event,handler)=>{click=handler;}}}),element:()=>({}),cell:value=>'<td>'+value+'</td>',number:value=>'<td>'+money(value)+'</td>',
-  tools:(_card,_id,rows,renderer)=>{render=rows.map(renderer).join('');},showDetails:(...args)=>{details=args;},dateText:()=> 'Sample attendance time'});
+  badge:value=>'<span>'+esc(value)+'</span>',tools:(_card,_id,rows,renderer)=>{render=rows.map(renderer).join('');},showActionError:error=>errors.push(error.message)});
  vm.runInContext(source.slice(begin,end),ctx);await load({});
- assert.match(render,/HR review required/);assert.doesNotMatch(render,/₱500\.00/);
- click({target:{closest:()=>({dataset:{payroll:'Sample Staff'}})}});
- assert.equal(details[1].find(row=>row[0]==='Net estimate')[1],'HR review required');assert.match(details[1].find(row=>row[0]==='Reason')[1],/overlap/);
+ assert.match(render,/HR review required/);assert.match(render,/data-franchise-payslip="staff-1"/);assert.doesNotMatch(render,/₱/);assert.equal(state.payrollScope,scope);
+ const target=id=>({target:{closest:selector=>{assert.equal(selector,'[data-franchise-payslip]');return {dataset:{franchisePayslip:id}};}}});
+ click(target('Sample Staff'));assert.equal(document.body.children.length,1,'a displayed name cannot select a different saved staff identity');
+ click(target('staff-1'));assert.equal(ctx.payslipScope,scope);assert.equal(document.body.children.length,2);
+ const panel=document.body.children.at(-1).children[0],content=panel.children[1].innerHTML;
+ const overlapReason=estimate([older,newer,oldClose])[0].attendanceReviewReasons.find(reason=>/overlap/.test(reason));assert.ok(overlapReason);
+ assert.equal(panel.attributes.role,'dialog');assert.match(content,/HR review required/);assert.ok(content.includes(esc(overlapReason)),'the actual payslip dialog preserves the exact overlap diagnostic');assert.doesNotMatch(content,/Estimated net pay|Saved net pay|₱/);assert.equal(panel.children[0].children[1].children[0].disabled,true,'held attendance cannot print a monetary payslip');assert.deepEqual(errors,[]);
+ payslips.close();
 });

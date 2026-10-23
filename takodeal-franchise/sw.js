@@ -1,4 +1,4 @@
-const CACHE = 'takodeal-franchise-workspace-reviewed-cases-20261023';
+const CACHE = 'takodeal-franchise-business-v2-20261023';
 const CORE=['./','index.html','style.css','main_franchise.js','auth.js','franchise-data.js','franchise-actions.js','franchise-workspace.js','payroll-safety.js','schedule-history.js','dispatch-safety.js','unlock-gate.js','hq-account-model.js','manifest.json','logo.jpg','icon-192.png','icon-512.png'];
 CORE.push('franchise-reads.js');
 CORE.push('attendance-reconcile.js','payroll-attendance.js');
@@ -23,3 +23,6 @@ CORE.push("operations-model.js","franchise-cost-model.js","franchise-supply-acti
 CORE.push("shift-amendments.js");
 
 CORE.push('staff-rate-model.js');
+CORE.push('discipline-case-model.js','franchise-discipline-model.js','franchise-discipline-actions.js','franchise-discipline-ui.js','franchise-discipline.css','franchise-payroll-model.js','franchise-payslip-ui.js','franchise-supply-model.js','franchise-supply-ui.js','franchise-supply.css');
+CORE.push('franchise-dispatch-pricing.js');
+CORE.push('dispatch-restock-model.js');

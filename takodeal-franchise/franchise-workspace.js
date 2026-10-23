@@ -7,19 +7,25 @@ import {installScheduleViewSync} from './schedule-view-sync.js';
 import { createFranchiseReads } from './franchise-reads.js';
 import {phDay, noticeIsDue} from './sanction-schedule.js';
 import {issueScheduledSanction, sanctionAuthority, finishSanction} from './sanction-actions.js';
-import {previewSupplyRequest,submitSupplyRequest} from './franchise-supply-actions.js';
+import {previewSupplyRequest,submitSupplyRequest,previewSupplyCatalogItem} from './franchise-supply-actions.js';
+import {supplyCartHTML,supplyTotalsHTML,supplyOrderSummaryHTML,installFranchiseSupplyDocuments} from './franchise-supply-ui.js';
+import {supplyOrderDisplay} from './franchise-supply-model.js';
 import {addFranchiseStaff} from './franchise-staff-actions.js';
 import {installSanctionScheduling} from './sanction-scheduling-ui.js';
 import {installFranchiseHQUI} from './franchise-hq-ui.js';
 import {loadStaffSalaryTimeline,staffRateForDate} from './staff-rate-model.js';
+import {installFranchiseDiscipline} from './franchise-discipline-ui.js';
+import {buildFranchisePayslip} from './franchise-payroll-model.js';
+import {installFranchisePayslipUI} from './franchise-payslip-ui.js';
 
 export function installFranchiseWorkspace(api) {
  const $=id=>document.getElementById(id),state={route:'dashboard',generation:0,loaded:new Map(),inventory:new Map(),cart:[],cartBranch:'',pending:0,schedule:null,charts:[]};
+ let payslips,payslipScope;
  const session=()=>{const s=api.sessionUser;if (!s || !s.allowedBranches?.includes(s.branch)) throw new Error('Sign in and select an assigned branch.');return s;};
  const accountScope=()=>{const s=session();return JSON.stringify([api.auth?.currentUser?.uid,s.email,s.branch,s.cashierName,s.allowedBranches,s.permissions]);};
  const reader=createFranchiseReads(api,{scope:accountScope});
  const hq=installFranchiseHQUI(api,{document,session,getRoute:()=>state.route,read:(...args)=>read(...args),refresh:route=>api.switchView(route),onError:showActionError});api.franchiseHQ=hq;
- api.clearFranchiseReadRequests=()=>reader.reset();
+ api.clearFranchiseReadRequests=()=>{reader.reset();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();payslips?.close();};
  const selectedRange=()=>range($('globalStartDate').value,$('globalEndDate').value);
  const element=(tag,cls,text)=>{const el=document.createElement(tag);el.className=cls || '';if(text!=null)el.textContent=text;return el;};
  function button(text,action,cls='secondary-button') {const el=element('button',cls,text);el.type='button';el.addEventListener('click',()=>Promise.resolve(action()).catch(showActionError));return el;}
@@ -55,9 +61,15 @@ export function installFranchiseWorkspace(api) {
  async function accountsForBranch() {const [modern,legacy]=await Promise.all([read('cash_accounts'),read('franchise_accounts')]);return [...modern.map(a=>({...a,accountName:a.name || a.accountName,table:'cash_accounts'})),...legacy.map(a=>({...a,table:'franchise_accounts'}))];}
  async function budgetsForBranch() {const [modern,legacy]=await Promise.all([read('budgets'),read('franchise_budgets')]);return [...modern.map(a=>({...a,table:'budgets'})),...legacy.map(a=>({...a,table:'franchise_budgets'}))];}
  async function staffRows(tableName,profiles,filters=[]) {
-  const names=[...new Set(profiles.map(p=>p.cashierName).filter(Boolean))],rows=[];
-  for(let i=0;i<names.length;i+=30)rows.push(...await globalRead(tableName,['staffName','in',names.slice(i,i+30)],...filters));
-  return rows.filter(r=>!r.branch || r.branch===session().branch);
+  const names=[...new Set(profiles.map(p=>p.cashierName).filter(Boolean))],ids=[...new Set(profiles.map(p=>p.id).filter(Boolean))],jobs=[];
+  for(const [field,values]of [['staffName',names],['staffId',ids]])for(let i=0;i<values.length;i+=30)jobs.push(globalRead(tableName,[field,'in',values.slice(i,i+30)],...filters));
+  const rows=(await Promise.all(jobs)).flat();
+  return [...new Map(rows.filter(r=>!r.branch || r.branch===session().branch).map(row=>[row.id,row])).values()];
+ }
+ async function payrollRows(profiles,start,end) {
+  const filters=[['startDate','==',start],['endDate','==',end]],jobs=[staffRows('payroll_records',profiles,filters),read('payroll_records',{filters})];
+  const branch=session().branch,rows=(await Promise.all(jobs)).flat();
+  return [...new Map(rows.filter(row=>(!row.branch||row.branch===branch)&&(!row.frozenData?.branch||row.frozenData.branch===branch)).map(row=>[row.id,row])).values()];
  }
  async function inventory(force=false) {const branch=session().branch,scope=accountScope(),version=reader.version(),cache=state.inventory.get(branch);if(!force && cache?.scope===scope && Date.now()-cache.at<60000)return cache.rows;const rows=await read('inventory',{branch});if(api.sessionUser && scope===accountScope() && version===reader.version())state.inventory.set(branch,{rows,scope,at:Date.now()});return rows;}
  api.fetchCachedInventory=async branch=>{if(branch!==session().branch)throw new Error('Inventory branch is outside the selected workspace.');return inventory();};
@@ -75,9 +87,9 @@ export function installFranchiseWorkspace(api) {
  api.switchView=async route=>{
   if(!ROUTES[route])throw new Error('This page is unavailable.');if(!canVisit(api.sessionUser,route))throw new Error('This page is outside your assigned access.');
   if(state.schedule?.dirty && route!=='schedule' && state.route==='schedule') {const answer=await Swal.fire({title:'Keep unsaved schedule?',text:'Stay here to save your changes, or leave without saving.',showCancelButton:true,confirmButtonText:'Stay and save',cancelButtonText:'Leave without saving'});if(answer.isConfirmed)return;state.schedule=null;}
-  if(state.route!==route)hq.stop();state.route=route;
+  if(state.route!==route){if(state.pending)throw Error('Wait for the current save to finish before changing pages.');hq.stop();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();payslips?.close();}state.route=route;
   for(const [key,meta] of Object.entries(ROUTES)){$('view-'+key).classList.toggle('active',key===route);const nav=$('nav-'+key);nav.classList.toggle('active',key===route);nav.setAttribute('aria-current',key===route?'page':'false');}
-  for(const group of ['hr','inventory']) {const active=ROUTES[route][4]===group;$('nav-'+group).classList.toggle('active',active);if(active){$('sidebar').classList.remove('collapsed');$(group+'Submenu').classList.add('open');$('nav-'+group).setAttribute('aria-expanded','true');}}
+  for(const group of ['hr','inventory']) {const active=ROUTES[route][4]===group;$('nav-'+group).classList.toggle('active',active);$(group+'Submenu').classList.toggle('open',active);$('nav-'+group).setAttribute('aria-expanded',String(active));if(active)$('sidebar').classList.remove('collapsed');}
   $('pageTitle').textContent=ROUTES[route][0];$('pageDescription').textContent=ROUTES[route][1];$('headingBranch').textContent='/ '+session().branch;$('globalDateControls').hidden=!ROUTES[route][3];
   $('sidebar').classList.remove('show-mobile');$('drawerBackdrop').hidden=true;
   await api[ROUTES[route][2]]();hq.start();
@@ -88,9 +100,10 @@ export function installFranchiseWorkspace(api) {
  };
  api.changeFranchiseBranch=async()=>{
   const next=$('franchiseBranchSelect').value,previous=session().branch;
+  if(state.pending){$('franchiseBranchSelect').value=previous;throw Error('Wait for the current save to finish before changing branches.');}
   if(!session().allowedBranches.includes(next))throw new Error('This branch is outside your assigned access.');
   if(state.cart.length || state.schedule?.dirty || hq.hasDraft() || hq.isPending()) {if(hq.isPending())throw Error('An HQ message is still sending. Wait for it to finish before changing branches.');const answer=await Swal.fire({title:'Switch branch?',text:'Unsaved supply requests, schedule changes and HQ message drafts belong to the current branch. Save them first, or discard them to switch.',showCancelButton:true,confirmButtonText:'Discard and switch'});if(!answer.isConfirmed){$('franchiseBranchSelect').value=previous;return;}hq.clearDrafts();}
-  hq.stop();
+  hq.stop();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();payslips?.close();
   reader.reset();state.generation++;api.sessionUser.branch=next;state.cart=[];state.cartBranch=next;state.inventory.clear();state.loaded.clear();state.schedule=null;
   for(const key of Object.keys(ROUTES))root(key).replaceChildren();
   await api.switchView(state.route);
@@ -223,18 +236,36 @@ export function installFranchiseWorkspace(api) {
 
  define('b2b',async r=>{
   const branch=session().branch;if(state.cartBranch!==branch){state.cart=[];state.cartBranch=branch;}
-  const [catalog,deliveries,requests]=await Promise.all([globalRead('inventory',['branch','==','Main Office'],['allowRequest','==',true]),globalRead('dispatch_logs',['toBranch','==',branch]),read('purchase_orders')]);
+  const [catalog,recipes,deliveries,legacyRequests,pricedRequests]=await Promise.all([globalRead('inventory',['branch','==','Main Office']),globalRead('bom'),globalRead('dispatch_logs',['toBranch','==',branch]),read('purchase_orders'),read('franchise_supply_orders')]);
+  const publicRequests=new Map(legacyRequests.map(row=>[row.id,row]));
+  const pricedHistory=pricedRequests.map(row=>{try{return supplyOrderDisplay(row,publicRequests.get(row.id));}catch(error){return {...row,status:'HQ link review needed',supplyLinkReview:error.message};}});
+  const requests=[...legacyRequests.filter(row=>row.quoteVersion!==2),...pricedHistory];
+  state.supplyPricingContext={inventory:catalog,recipes};
   api.hqInventoryCache=catalog.filter(i=>i.branch==='Main Office' && i.allowRequest===true);
   const cols=element('div','two-columns');r.append(cols);const order=card(cols,'Request supplies','Only items approved for branch ordering are listed.'),body=element('div','card-body');body.innerHTML=`<div class="form-grid"><label class="full">Item<input id="b2bSearch" list="b2bDatalist" placeholder="Choose an approved HQ item"><datalist id="b2bDatalist">${api.hqInventoryCache.map(i=>`<option value="${esc(itemName(i))}"></option>`).join('')}</datalist></label><label>Quantity<input type="number" min="0.001" step="0.001" id="b2bQty"></label><label>Unit<select id="b2bUom"><option value="base">Choose an item first</option></select></label></div>`;body.append(button('Add to request',()=>api.addB2bToCart(),'primary-button'));const cart=element('div','',null);cart.id='b2bCartList';body.append(cart,button('Send request to HQ',()=>api.submitB2bRequest(),'primary-button'));order.card.append(body);
   const incoming=card(cols,'Incoming deliveries','Confirm actual quantities after the driver marks the delivery arrived.'),deliveryBody=element('div','card-body');deliveryBody.id='b2bDeliveriesContainer';incoming.card.append(deliveryBody);
-  const active=deliveries.filter(d=>d.toBranch===branch && ['In Transit','Arrived'].includes(d.status));const groups=new Map();for(const d of active){const key=d.dispatchId || d.id;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(d);}for(const [id,items] of groups){const shipment=element('div','budget-row');shipment.innerHTML=`<div><strong>${esc(items[0].driver || 'HQ delivery')}</strong>${badge(items.every(i=>i.status==='Arrived')?'Arrived':'In transit','warning')}</div><p class="notice">${items.map(i=>`${esc(i.displayQty ?? (n(i.qty)/Math.max(n(i.convRate),1)))} ${esc(i.displayUom || i.uom)} · ${esc(i.item)}`).join('<br>')}</p>`;if(items.every(i=>i.status==='Arrived'))shipment.append(button('Verify & receive stock',()=>api.receiveHQDelivery(id,items),'primary-button'));deliveryBody.append(shipment);}if(!active.length)deliveryBody.append(element('div','empty','No incoming deliveries.'));
-  const c=table(r,'Supply request history',['Requested','Requested by','Items','Status']);tools(c,'b2b',requests.sort((a,b)=>ms(b.timestamp)-ms(a.timestamp)),p=>'<tr>'+cell(esc(dateText(p.timestamp)))+cell(esc(p.requestedBy))+cell((p.items || []).map(i=>`${esc(i.displayQty ?? i.qty)} ${esc(i.displayUom || i.uom || '')} · ${esc(itemName(i))}${i.supplyQuote?' · '+money(i.supplyQuote.total):p.quoteVersion?' · HQ quote required':''}`).join('<br>'))+cell(badge(p.status || 'Pending',p.status==='Pending'?'warning':''))+'</tr>',{status:true});
+  const active=deliveries.filter(d=>d.toBranch===branch && ['In Transit','Arrived'].includes(d.status));const groups=new Map();for(const d of active){const key=d.batchId || d.dispatchId || d.id;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(d);}for(const [id,items] of groups){const shipment=element('div','budget-row');shipment.innerHTML=`<div><strong>${esc(items[0].driver || 'HQ delivery')}</strong>${badge(items.every(i=>i.status==='Arrived')?'Arrived':'In transit','warning')}</div><p class="notice">${items.map(i=>`${esc(i.displayQty ?? (n(i.qty)/Math.max(n(i.convRate),1)))} ${esc(i.displayUom || i.uom)} · ${esc(i.item)}`).join('<br>')}</p>`;if(items.every(i=>i.status==='Arrived'))shipment.append(button('Verify & receive stock',()=>api.receiveHQDelivery(id,items),'primary-button'));deliveryBody.append(shipment);}if(!active.length)deliveryBody.append(element('div','empty','No incoming deliveries.'));
+  const c=table(r,'Supply orders & delivery invoices',['Requested','Requested by','Items','Total','Status','Documents'],'Review saved prices, download an invoice and sign after verifying the delivered quantities.');
+  tools(c,'b2b',requests.sort((a,b)=>ms(b.timestamp)-ms(a.timestamp)),p=>'<tr>'+cell(esc(dateText(p.timestamp)))+cell(esc(p.requestedBy))+cell((p.items||[]).map(i=>esc(i.displayQty??i.qty)+' '+esc(i.displayUom||i.uom||'')+' · '+esc(itemName(i))+(i.supplyQuote?'<br><small>'+money(i.supplyQuote.unitPrice)+' per '+esc(i.displayUom||i.uom||'')+'</small>':'')).join('<br>'))+cell(p.dispatchInvoice?(p.dispatchInvoice.grandTotal==null?'HQ quote required':money(p.dispatchInvoice.grandTotal))+'<br><small>Delivery invoice</small>':p.quoteVersion?supplyOrderSummaryHTML(p):'Quote not recorded')+cell(badge(p.deliveryReceipt?'Receipt signed':p.status||'Pending',p.deliveryReceipt?'':p.status==='Pending'?'warning':''))+cell('<div class="button-row"><button class="table-action" data-supply-view="'+esc(p.id)+'">View '+(p.dispatchInvoice?'invoice':'order')+'</button><button class="table-action" data-supply-download="'+esc(p.id)+'">Download</button>'+(p.dispatchInvoice&&!p.deliveryReceipt?'<button class="primary-button" data-supply-sign="'+esc(p.id)+'">Review & sign receipt</button>':'')+'</div>')+'</tr>',{status:true});
+  c.body.addEventListener('click',event=>{const view=event.target.closest('[data-supply-view]')?.dataset.supplyView,download=event.target.closest('[data-supply-download]')?.dataset.supplyDownload,sign=event.target.closest('[data-supply-sign]')?.dataset.supplySign;const action=view?()=>api.viewSupplyInvoice(view):download?()=>api.downloadSupplyInvoice(download):sign?()=>api.signSupplyDeliveryReceipt(sign):null;if(action)Promise.resolve().then(action).catch(showActionError);});
   requestAnimationFrame(()=>{if(state.route!=='b2b' || !document.getElementById('b2bSearch'))return;$('b2bSearch').addEventListener('input',api.updateB2bUom);api.renderB2bCart();});
  });
  api.updateB2bUom=()=>{const item=api.hqInventoryCache?.find(i=>itemName(i)===$('b2bSearch')?.value.trim()),drop=$('b2bUom');if(!drop)return;drop.replaceChildren();if(!item){drop.append(new Option('Choose an approved item','base'));return;}const base=item.uom || 'units',purchase=item.purchaseUom || item.purchUom,rate=n(item.conversionRate ?? item.convRate) || 1;if(purchase && purchase!==base && rate>1){const option=new Option(purchase,'purch');option.dataset.rate=rate;drop.append(option);}const option=new Option(base,'base');option.dataset.rate='1';drop.append(option);};
- api.addB2bToCart=()=>{const name=$('b2bSearch').value.trim(),item=api.hqInventoryCache.find(i=>itemName(i)===name),qty=Number($('b2bQty').value),option=$('b2bUom').selectedOptions[0];if(!item || !Number.isFinite(qty) || qty<=0)throw new Error('Choose an approved item and enter a positive quantity.');const rate=n(option.dataset.rate) || 1;state.cart.push({hqItemId:item.id,itemName:name,name,rawQty:qty,displayQty:qty,displayUom:option.text,qty:qty*rate,convRate:rate,requestType:'Franchise Restock Order'});state.requestId=null;$('b2bSearch').value='';$('b2bQty').value='';api.renderB2bCart();};
- api.renderB2bCart=()=>{const root=$('b2bCartList');if(!root)return;root.replaceChildren();root.className='card-body';for(const [index,item] of state.cart.entries()){const row=element('div','budget-row');row.append(element('p','',`${item.displayQty} ${item.displayUom} · ${item.name}`),button('Remove',()=>{state.cart.splice(index,1);state.requestId=null;api.renderB2bCart();}));root.append(row);}if(!state.cart.length)root.append(element('p','notice','Your request cart is empty.'));};
- api.submitB2bRequest=async()=>{if(!state.cart.length)throw new Error('Add supplies to the request first.');if(state.pending)return;state.pending++;const branch=session().branch,items=structuredClone(state.cart),id=state.requestId ||= uniqueId('franchise-order');try{const preview=await previewSupplyRequest(api,items),known=preview.items.filter(i=>i.supplyQuote),unknown=preview.items.length-known.length;const confirmed=await Swal.fire({title:'Review supply request',html:'<p>'+esc(branch)+' · '+items.length+' item(s)</p>'+preview.items.map(i=>'<p>'+esc(i.displayQty)+' '+esc(i.displayUom)+' · '+esc(i.name)+'<br><strong>'+(i.supplyQuote?money(i.supplyQuote.unitPrice)+' per '+esc(i.displayUom)+' · '+money(i.supplyQuote.total):'HQ quote required')+'</strong></p>').join('')+'<p>Quoted item total: '+money(known.reduce((sum,i)=>sum+i.supplyQuote.total,0))+(unknown?' · '+unknown+' item(s) await HQ pricing':'')+'. Delivery or other charges may be separate. Sending does not deduct money. Saved quotes remain attached to this request.</p>',showCancelButton:true,confirmButtonText:'Send request to HQ'});if(!confirmed.isConfirmed)return;if(branch!==session().branch)throw Error('The branch changed. Review the request again.');await submitSupplyRequest(api,preview,id);reader.reset();state.cart=[];state.requestId=null;await api.loadB2BSupply();}finally{state.pending--;}};
+ api.addB2bToCart=()=>{
+  const name=$('b2bSearch').value.trim(),item=api.hqInventoryCache.find(i=>itemName(i)===name),qty=Number($('b2bQty').value),option=$('b2bUom').selectedOptions[0];
+  if(!item||!option||!Number.isFinite(qty)||qty<=0)throw Error('Choose an approved item and enter a positive quantity.');if(state.cart.length>=80)throw Error('Send this request before adding more than 80 item lines.');
+  const line=previewSupplyCatalogItem(item,{hqItemId:item.id,name,displayQty:qty,displayUom:option.text},state.supplyPricingContext.inventory,state.supplyPricingContext.recipes);state.cart.push(line);state.requestId=null;$('b2bSearch').value='';$('b2bQty').value='';api.renderB2bCart();
+ };
+ api.renderB2bCart=()=>{const target=$('b2bCartList');if(!target)return;target.className='supply-cart';target.innerHTML=supplyCartHTML(state.cart);target.onclick=event=>{const raw=event.target.closest('[data-supply-remove]')?.dataset.supplyRemove;if(raw==null)return;const index=Number(raw);if(!Number.isInteger(index)||index<0||index>=state.cart.length||state.pending)return;state.cart.splice(index,1);state.requestId=null;api.renderB2bCart();};};
+ api.submitB2bRequest=async()=>{
+  if(!state.cart.length)throw Error('Add supplies to the request first.');if(state.pending)return;state.pending++;
+  const branch=session().branch,items=structuredClone(state.cart),id=state.requestId ||= uniqueId('franchise-order');
+  try{
+   const preview=await previewSupplyRequest(api,items);
+   const confirmed=await Swal.fire({title:'Review supply order',html:'<div class="supply-review"><p>'+esc(branch)+' · '+items.length+' item line(s)</p>'+preview.items.map(item=>'<article class="supply-cart-line"><div><strong>'+esc(item.name)+'</strong><span>'+esc(item.displayQty)+' '+esc(item.displayUom)+'</span></div><div><strong>'+(item.supplyQuote?money(item.supplyQuote.total):'HQ quote required')+'</strong><small>'+(item.supplyQuote?money(item.supplyQuote.unitPrice)+' per '+esc(item.displayUom):'No price assumed')+'</small></div></article>').join('')+supplyTotalsHTML(preview.totals)+'<p class="supply-caption">HQ confirms the final invoice for quantities dispatched. The recipient signs after verifying the delivery.</p></div>',showCancelButton:true,confirmButtonText:'Send order to HQ',customClass:{popup:'supply-order-dialog'}});
+   if(!confirmed.isConfirmed)return;if(branch!==session().branch)throw Error('The branch changed. Review this order again.');await submitSupplyRequest(api,preview,id);reader.reset();state.cart=[];state.requestId=null;await api.loadB2BSupply();
+  }finally{state.pending--;}
+ };
 
  api.receiveHQDelivery=async(id,items)=>{const branch=session().branch;const html=items.map((i,index)=>field('received-'+index,i.item+' · '+(i.displayUom || i.uom),'number',i.displayQty ?? (n(i.qty)/(n(i.convRate) || 1)),'min="0" step="0.001"')).join('')+field('remarks','Receiving remarks');const result=await form('Verify received stock',html,async b=>{const received=items.map((i,index)=>({id:i.id,actualDisplayQty:Number($('form-received-'+index).value),remarks:$('form-remarks').value}));if(received.some((i,index)=>!$('form-received-'+index).value.trim()))throw new Error('Enter the received quantity for every item.');await receiveDispatch(api,{branch:b,actor:session().cashierName,items:received});state.inventory.delete(b);return true;},{confirm:'Confirm receipt'});if(result.isConfirmed && session().branch===branch)await api.loadB2BSupply();};
 
@@ -261,16 +292,21 @@ export function installFranchiseWorkspace(api) {
   },{confirm:action==='Approved'?'Approve':'Reject'});if(result.isConfirmed)await api.loadInbox();
  };
  define('payroll',async r=>{
-  const dates=selectedRange(),profiles=await Promise.all((await read('cashiers')).map(profile=>profile.salaryRateVersion===1?loadStaffSalaryTimeline(api,profile):profile)),[logs,deductions,bonuses,ledgers,schedule]=await Promise.all([read('attendance_logs',{time:'timestamp',start:dates.start,end:new Date(+dates.end+18*3600000)}),staffRows('staff_deductions',profiles),staffRows('staff_bonuses',profiles),staffRows('staff_ledger',profiles),createScheduleHistoryStore(api).loadRange(calendarDay(new Date(+dates.start-86400000)),calendarDay(dates.end))]);
-  const holidays=schedule.holidays || {},rows=attendanceEstimate({logs,profiles,deductions,bonuses,ledgers,schedule,holidays,start:$('globalStartDate').value,end:$('globalEndDate').value,branch:session().branch});
-  const c=table(r,'Attendance & payroll estimates',['Staff','Hours','Shifts','Gross estimate','Deductions','Net estimate','Attendance']);c.card.append(element('p','notice','Estimates use saved employee rates, attendance, unpaid deductions and the Manager bonus rules. Review missing or invalid punches before payroll approval. This page does not issue payroll payments.'));
-  const heldLabel='HR review required';
-  tools(c,'payroll',rows,p=>'<tr>'+cell(`<strong>${esc(p.name)}</strong>`)+cell(p.attendanceHeld?'Review':p.hours.toFixed(1))+cell(p.attendanceHeld?'Review':p.shifts)+(p.attendanceHeld?cell(heldLabel):number(p.gross))+cell(money(p.totalDeductions)+(p.scheduledPenaltyReview?'<br><small>Scheduled penalties for ledger review: '+money(p.scheduledPenaltyReview)+' · excluded from net pay</small>':''))+(p.attendanceHeld?cell(heldLabel):number(p.net))+cell(`<button class="table-action" data-payroll="${esc(p.name)}">${p.attendanceHeld?heldLabel:p.review?'Review '+p.review+' punch(es)':'View details'}</button>`)+'</tr>');
-  c.body.addEventListener('click',e=>{
-   const name=e.target.closest('[data-payroll]')?.dataset.payroll,p=rows.find(p=>p.name===name);if(!p)return;
-   const attendanceAmount=value=>p.attendanceHeld?heldLabel:money(value);
-   showDetails('Payroll estimate · '+name,[...(p.attendanceHeld?[['Status',heldLabel],['Reason',(p.attendanceReviewReasons || []).join('\n')]]:[]),['Basic pay',attendanceAmount(p.basic)],['Bonuses',attendanceAmount(p.bonus)],['Lateness / penalties',attendanceAmount(p.late)],['Saved meals',money(p.meals)],['Saved advances',money(p.advances)],['Loan deduction',money(p.loan)],['Saved statutory / custom deductions',money(p.fixed)],['Scheduled penalties for ledger review (excluded from net)',money(p.scheduledPenaltyReview)],['Net estimate',attendanceAmount(p.net)]],p.logs.map(l=>dateText(l.in)+' → '+(l.out?dateText(l.out):'Missing time out')+' · '+l.remark).join('\n'));
-  });
+  const scope=accountScope(),branch=session().branch,dates=selectedRange(),start=$('globalStartDate').value,end=$('globalEndDate').value;
+  const profiles=await Promise.all((await read('cashiers')).map(profile=>profile.salaryRateVersion===1?loadStaffSalaryTimeline(api,profile):profile));
+  const [logs,deductions,bonuses,ledgers,schedule,payrollRecords]=await Promise.all([
+   read('attendance_logs',{time:'timestamp',start:dates.start,end:new Date(+dates.end+18*3600000)}),
+   staffRows('staff_deductions',profiles),staffRows('staff_bonuses',profiles),staffRows('staff_ledger',profiles),
+   createScheduleHistoryStore(api).loadRange(calendarDay(new Date(+dates.start-86400000)),calendarDay(dates.end)),
+   payrollRows(profiles,start,end)
+  ]);
+  if(scope!==accountScope())throw Error('The account or branch changed. Reload payroll.');
+  const rows=profiles.map(staff=>buildFranchisePayslip({staff,profiles,start,end,branch,logs,deductions,bonuses,ledgers,schedule,holidays:schedule.holidays||{},payrollRecords}));
+  state.payrollScope=scope;
+  const c=table(r,'Payroll & payslips',['Staff','Hours','Shifts','Gross','Deductions','Net pay','Payslip'],'Generate a simple payslip for the selected cutoff. Saved paid payslips retain their original amounts; unpaid previews use current verified records.');
+  tools(c,'payroll',rows,p=>'<tr>'+cell('<strong>'+esc(p.name)+'</strong><br>'+badge(p.kind==='paid'?'Saved paid payslip':p.kind==='held'?'HR review required':'Unpaid preview',p.kind==='paid'?'':'warning'))+cell(p.hours==null?'—':p.hours.toFixed(1))+cell(p.shifts??'—')+(p.kind==='held'?cell('Review required'):number(p.totals.gross))+(p.kind==='held'?cell('Review required'):number(p.totals.deductions))+(p.kind==='held'?cell('Review required'):number(p.totals.net))+cell('<button class="table-action" data-franchise-payslip="'+esc(p.staffId)+'">'+(p.kind==='paid'?'View paid payslip':p.kind==='held'?'View review details':'Generate payslip')+'</button>')+'</tr>');
+  c.card.append(element('p','notice','Generating, downloading or printing does not mark payroll as paid or deduct money. Confirm payment separately in the approved payroll workflow.'));
+  c.body.addEventListener('click',event=>{const id=event.target.closest('[data-franchise-payslip]')?.dataset.franchisePayslip,model=rows.find(row=>row.staffId===id);if(!model)return;try{if(scope!==accountScope()||state.route!=='payroll')throw Error('Reload this branch’s payroll before opening a payslip.');payslipScope=scope;payslips.open(model);}catch(error){showActionError(error);}});
  });
  define('schedule',async r=>{
   const scheduleViewToken=api.franchiseScheduleSync?.token();
@@ -287,20 +323,7 @@ export function installFranchiseWorkspace(api) {
   draw();effective.addEventListener('change',()=>{if(effective.value<editor.effectiveFrom || effective.value>effective.max){effective.value=state.schedule.effectiveFrom;return;}state.schedule.effectiveFrom=effective.value;state.schedule.saveId=null;draw();});input.addEventListener('change',async()=>{try{if(!/^\d{4}-\d{2}$/.test(input.value)){input.value=state.schedule.month;throw new Error('Choose a valid schedule month.');}if(state.schedule.dirty || state.schedule.saving){input.value=state.schedule.month;throw new Error('Save or reload your current changes before selecting another month.');}state.schedule.month=input.value;await api.loadScheduleFromCloud();}catch(error){showActionError(error);}});
  });
  api.saveScheduleToCloud=async()=>{const s=state.schedule;if(!s || s.branch!==session().branch || s.identity!==session().email || !canVisit(session(),'schedule'))throw new Error('Reload the branch schedule first.');if(s.readOnly)throw new Error('Historical months are read-only.');if(!s.shifts.some(shift=>shift.active!==false))throw new Error('HQ must configure this branch’s shift times first.');if(s.saving)return;s.saving=true;state.pending++;try{const result=await saveBranchSchedule(api,{branch:s.branch,year:s.year,month:s.monthNumber,days:s.days,original:s.original,actor:s.identity,effectiveFrom:s.effectiveFrom,expectedRevisionId:s.expectedRevisionId,revisionId:s.saveId ||= uniqueId('franchise-schedule'),authorize:b=>session().branch===b && session().email===s.identity && canVisit(session(),'schedule')});s.dirty=false;await api.loadScheduleFromCloud();await Swal.fire({title:'Schedule saved',text:result.publishedCurrent?'Your branch assignments are now available to staff.':'Your future plan is saved. Today’s live shift settings remain in effect.',icon:'success'});}finally{s.saving=false;state.pending--;}};
- define('sanctions',async r=>{
-  installSanctionScheduling(api,document);
-  const rows=(await read('hr_sanctions')).sort((a,b)=>ms(b.timestamp)-ms(a.timestamp)),c=table(r,'Notices & staff replies',['Issued','Staff','Incident','Severity','Status','Actions']);c.head.append(button('Issue notice',()=>api.openIssueSanctionModal(),'primary-button'));
-  tools(c,'sanctions',rows,s=>'<tr>'+cell(esc(dateText(s.timestamp))+'<br>Effective: '+esc(s.effectiveDate || 'Immediate (legacy notice)'))+cell(esc(s.staffName))+cell(esc(s.type))+cell(esc(s.severity))+cell(badge(s.status==='Pending Reply'&&!noticeIsDue(s)?'Scheduled':s.status || 'Pending Reply',s.status==='Resolved'?'':'warning'))+cell(`<button class="table-action" data-notice="${esc(s.id)}">View & review</button><button class="table-action" data-date="${esc(s.id)}">Effective date / audit</button>`)+'</tr>',{status:true});c.body.addEventListener('click',e=>{const id=e.target.closest('[data-notice]')?.dataset.notice,dateId=e.target.closest('[data-date]')?.dataset.date;if(id)api.viewSanction(id).catch(showActionError);if(dateId)api.editSanctionEffectiveDate(dateId);});
- });
- api.openIssueSanctionModal=async()=>{
-  sanctionAuthority(api,session().branch);const profiles=(await read('cashiers')).filter(p=>p.status!=='Resigned'),id=uniqueId('notice');if(!profiles.length)throw new Error('No staff are registered for this branch.');
-  const result=await form('Issue a staff notice',selectField('staff','Staff member',profiles.map(p=>[p.id,p.cashierName]))+field('type','Incident type')+field('severity','Severity / notice level')+field('effective','Effective date (PH)','date',phDay())+field('penalty','Optional linked penalty (₱)','number','0')+'<label class="full">Incident details<textarea id="form-details" placeholder="Describe the incident and the response required."></textarea></label>',async branch=>{const profile=profiles.find(p=>p.id===$('form-staff').value),details=$('form-details').value.trim(),type=$('form-type').value.trim(),severity=$('form-severity').value.trim();if(!profile || !details || !type || !severity)throw new Error('Complete the incident, severity and details.');await issueScheduledSanction(api,{branch,staffId:profile.id,staffName:profile.cashierName,type,severity,details,effectiveDate:$('form-effective').value,amount:$('form-penalty').value},{id});return true;},{confirm:'Issue notice'});if(result.isConfirmed)await api.loadSanctionsDashboard();
- };
- api.viewSanction=async id=>{
-  const ref=api.doc(api.db,'hr_sanctions',id),snap=await api.getDocFromServer(ref);if(!snap.exists() || snap.data().branch!==session().branch)throw new Error('This notice is outside your branch.');const d=snap.data();
-  const answer=await Swal.fire({titleText:d.type || 'Staff notice',html:`<dl class="details-list"><div><dt>Staff</dt><dd>${esc(d.staffName)}</dd></div><div><dt>Status</dt><dd>${esc(d.status)}</dd></div></dl><div class="memo-content">${esc(d.details)}\n\nStaff reply:\n${esc(d.staffReply || d.reply || d.response || 'No reply yet.')}</div>`,showCancelButton:true,confirmButtonText:d.status==='Resolved'?'Close':'Mark resolved',cancelButtonText:'Close'});
-  if(answer.isConfirmed && d.status!=='Resolved')await finishSanction(api,id,{changeId:uniqueId('resolve')});reader.reset();await api.loadSanctionsDashboard();
- };
+ define('sanctions',async r=>{await api.franchiseDiscipline.renderDashboard(r);});
  define('bulletin',async r=>{
   const notices=await globalRead('announcements',['active','==',true]),acks=await globalRead('acknowledgments',['staffName','==',session().cashierName]),target=notices.filter(a=>!a.targetType || a.targetType==='All' || a.targetType==='Branch' && a.targetBranch===session().branch || a.targetType==='Individual' && a.targetStaff===session().cashierName).sort((a,b)=>ms(b.timestamp)-ms(a.timestamp)),grid=element('div','announcement-grid');r.append(grid);
   for(const notice of target){const ack=acks.find(a=>a.announcementId===notice.id && (!a.branch || a.branch===session().branch)),item=element('div','announcement');item.append(element('h3','',notice.title || 'HQ notice'),element('small','',dateText(notice.timestamp)),element('p','',String(notice.message || '').slice(0,180)));const status=element('span','badge'+(ack?'':' warning'),ack?'Acknowledged':'Signature required');item.append(status,button('Read announcement',()=>api.viewAnnouncement(notice,ack)));grid.append(item);}if(!target.length)grid.append(element('div','empty','No active announcements for this branch.'));
@@ -325,6 +348,9 @@ export function installFranchiseWorkspace(api) {
   pending:()=>{let notice=$('scheduleSavedUpdateNotice');if(!notice){notice=element('p','notice','A saved schedule update is available. Your unsaved changes are kept. Save them or use Sync to reload.');notice.id='scheduleSavedUpdateNotice';notice.setAttribute('role','status');$('body-schedule')?.prepend(notice);}}
  });
  api.loadScheduleFromCloud=api.franchiseScheduleSync.wrap(api.loadScheduleFromCloud);
+ api.franchiseSupplyDocuments=installFranchiseSupplyDocuments(api,{window:globalThis.window,document,onPendingChange:delta=>{state.pending+=delta;},onSaved:()=>{reader.reset();return api.loadB2BSupply();}});
+ api.franchiseDiscipline=installFranchiseDiscipline(api,{document,reload:()=>{reader.reset();return api.loadSanctionsDashboard();},onPending:delta=>{state.pending+=delta;}});
+ payslips=installFranchisePayslipUI({document,window:globalThis.window,assertCurrent:()=>{if(state.route!=='payroll'||payslipScope!==accountScope()||!canVisit(session(),'payroll'))throw Error('The payroll account or branch changed. Reopen this payslip.');},onError:showActionError});
  installAppUpdates(state,hq);
 }
 
