@@ -1,0 +1,74 @@
+/* Fleet controls stay scoped to this tab so other Owner actions are unaffected. */
+#view-riders .rider-button-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+#view-riders .rider-button-group-actions { justify-content: flex-end; }
+body #view-riders .rider-button {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 10px 14px;
+  border: 1px solid #cbdcd3;
+  border-radius: 8px;
+  background: #fff;
+  color: #244c3c;
+  font-size: 13px;
+  font-weight: 650;
+  font-family: inherit;
+  line-height: 1.35;
+  text-align: center;
+  white-space: normal;
+  cursor: pointer;
+  transition: background-color .15s, border-color .15s;
+}
+body #view-riders .rider-button:hover {
+  background: #edf5ef;
+  border-color: #729e88;
+}
+body #view-riders .rider-button-primary {
+  background: #12644f;
+  border-color: #12644f;
+  color: #fff;
+}
+body #view-riders .rider-button-primary:hover {
+  background: #0c523e;
+  border-color: #0c523e;
+}
+body #view-riders .rider-button-danger {
+  background: #fff5f4;
+  border-color: #e4aaa6;
+  color: #9c302d;
+}
+body #view-riders .rider-button-danger:hover {
+  background: #fde8e6;
+  border-color: #bd5b55;
+}
+body #view-riders .rider-button:focus-visible {
+  outline: 3px solid #dca550;
+  outline-offset: 3px;
+}
+body #view-riders .rider-button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+}
+#view-riders .rider-button-icon { width: 17px; height: 17px; flex: 0 0 17px; }
+#view-riders .rider-document-missing { color: #65786c; font-size: 12px; }
+#view-riders :is(#riderFleetBody,#riderTopUpBody) td { vertical-align: middle; }
+#view-riders #riderFleetBody td:first-child img {
+  border-radius: 10px;
+  object-fit: cover;
+  vertical-align: middle;
+  margin: 0 10px 8px 0;
+}
+@media (max-width: 768px) {
+  #view-riders .rider-button-group { align-items: stretch; }
+  #view-riders .rider-button-group .rider-button { flex: 1 1 118px; }
+  #view-riders .rider-refresh { width: 100%; }
+}
