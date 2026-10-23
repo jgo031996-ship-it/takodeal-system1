@@ -114,6 +114,12 @@ export async function commitSetAside(api,{id,source,destination,actor,items,purc
             if(!['Pending','Drafting','Delayed'].includes(po.status)||po.mergedInto)throw Error('A linked request was already processed. Refresh it before setting this draft aside.');
         });
         assertActor(api,identity,source,destination,assertCurrent);
+        if(requests.some(snapshot=>snapshot.data().quoteVersion===2)){
+            if(requests.some(snapshot=>snapshot.data().quoteVersion!==2)||savedItems.some(row=>!ids.includes(row.purchaseOrderId)))throw Error('Keep priced requests separate from manual or older drafts before setting them aside.');
+            // The immutable priced request is already saved. Clearing its local
+            // cart must not merge, reprice or duplicate the original order.
+            return {status:'set-aside',id,source,destination,type:'Priced requests retained',retainedRequestIds:ids};
+        }
         tx.set(target,{branch:destination,sourceBranch:source,destinationBranch:destination,items:savedItems,status:'Pending',type,
             requestedBy:identity.name,timestamp:api.serverTimestamp(),sourcePurchaseOrderIds:ids,
             managerMessage:'Saved from the Dispatch Cart. Stock has not been dispatched.',

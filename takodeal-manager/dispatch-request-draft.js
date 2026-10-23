@@ -6,7 +6,7 @@ const attempts=new Map(),keys=['takodeal_dispatch_cart','takodeal_dispatch_from'
 const clone=value=>JSON.parse(JSON.stringify(value));
 const canonical=value=>Array.isArray(value)?value.map(canonical):value && typeof value==='object'?Object.fromEntries(Object.keys(value).sort().filter(key=>value[key]!==undefined).map(key=>[key,canonical(value[key])])):value;
 const stringify=value=>JSON.stringify(canonical(value));
-const requestFields=po=>({branch:po.branch,sourceBranch:po.sourceBranch ?? null,destinationBranch:po.destinationBranch ?? null,type:po.type ?? null,requestedBy:po.requestedBy ?? null,items:po.items});
+const requestFields=po=>({branch:po.branch,sourceBranch:po.sourceBranch ?? null,destinationBranch:po.destinationBranch ?? null,type:po.type ?? null,requestedBy:po.requestedBy ?? null,items:po.items,...(po.quoteVersion===2?{quoteVersion:2,supplyInvoice:po.supplyInvoice}:{})});
 const activeIds=storage=>[...new Set(String(storage.getItem('takodeal_active_po') || '').split(',').map(value=>value.trim()).filter(Boolean))];
 const close=(a,b)=>Math.abs(a-b)<=Math.max(1,Math.abs(a),Math.abs(b))*1e-9;
 const unit=value=>String(value || '').trim().toLowerCase();
@@ -24,9 +24,10 @@ function assertCurrent(api,actor,branch,source){
     // source. This prepares a request/cart; it does not authorize a stock send.
     if(source && source!=='Main Office' && !api.isBranchAllowed(source))throw Error('The request source is outside your Dispatch permissions.');
 }
-function stageCart(before,po,hqDetails,branchDetails={}){
+function stageCart(before,po,hqDetails,branchDetails={},poId){
     const cart=clone(before);
-    for(const originalRequest of po.items){
+    if(before.length&&(po.quoteVersion===2?before.some(row=>!row.purchaseOrderId):before.some(row=>row.purchaseOrderId)))throw Error('Finish or clear the priced franchise draft before mixing it with older requests.');
+    for(const [requestIndex,originalRequest] of po.items.entries()){
         const req=clone(originalRequest);const branchItem=branchDetails[req.itemName||req.name];if(!req.targetSnapshot&&branchItem){const target=stockTarget(branchItem);req.targetSnapshot={baseUom:target.baseUom,purchaseUom:target.purchaseUom,conversionRate:target.conversionRate,targetBaseQty:target.target,cycle:target.cycle};}
         const name=req.itemName || req.name;if(typeof name!=='string' || !name.trim())throw Error('An item name is missing. Review this request before loading it.');
         const hq=Object.hasOwn(hqDetails,name)?hqDetails[name]:{},purchase=hq.purchaseUom || hq.purchUom || req.purchaseUom || req.uom || 'units',base=hq.uom || hq.baseUom || req.uom || req.baseUom || 'units';
@@ -39,8 +40,13 @@ function stageCart(before,po,hqDetails,branchDetails={}){
         const raw=audit?0:original/conversion,quantity=audit?0:original,selected=purchase.toLowerCase()!==base.toLowerCase()?'purch':'base';
         const mapped={...clone(req),rawQty:raw,qty:quantity,origRawQty:raw,origBaseQty:quantity,purchaseUom:purchase,baseUom:base,conversionRate:conversion,selectedUom:selected,
             hqStock:parseFloat(hq.currentStock) || 0,requestType:badge,physicalStock:physical,systemStock:system,convRate:selected==='purch'?conversion:1,friendlyUom:selected==='purch'?purchase:base};
+        if(po.quoteVersion===2){
+            const savedRate=Number(req.convRate),savedQty=Number(req.displayQty),currentRate=req.displayUom===base?1:req.displayUom===purchase?conversion:NaN;
+            if(req.baseUom!==base||!Number.isFinite(savedRate)||savedRate<=0||savedRate!==currentRate||!Number.isFinite(savedQty)||savedQty<=0||!close(savedQty*savedRate,original))throw Error('This priced request’s units changed. Ask the branch for a fresh supply quote before loading it.');
+            Object.assign(mapped,{purchaseOrderId:poId,purchaseOrderLineIndex:requestIndex,rawQty:savedQty,qty:original,origRawQty:savedQty,origBaseQty:original,convRate:savedRate,friendlyUom:req.displayUom,baseUom:req.baseUom,selectedUom:req.displayUom===base?'base':'purch'});
+        }
         if(!close(mapped.rawQty*mapped.convRate,mapped.qty))throw Error(`The dispatch units for ${name} are inconsistent. Ask HQ to review the item conversion before loading this request.`);
-        const existing=cart.find(item=>(item.itemName || item.name)===name);
+        const existing=po.quoteVersion===2?null:cart.find(item=>!item.purchaseOrderId&&(item.itemName || item.name)===name);
         if(existing){
             const oldRate=Number(existing.convRate || 1),oldRaw=Number(existing.rawQty ?? existing.qty),oldBase=Number(existing.qty),oldUnit=existing.friendlyUom || (existing.selectedUom==='purch'?existing.purchaseUom:existing.baseUom || existing.uom);
             if(existing.selectedUom!==mapped.selectedUom || unit(existing.baseUom || existing.uom)!==unit(mapped.baseUom) || unit(oldUnit)!==unit(mapped.friendlyUom) || !Number.isFinite(oldRate) || !close(oldRate,mapped.convRate) ||
@@ -103,7 +109,7 @@ export async function loadStockRequestDraft(api,{poId,po,hqDetails={},branchDeta
         if(stringify(requestFields(current))!==request)throw Error('This request changed or was already processed. Refresh it before loading the cart.');
         for(const id of ids){const linked=records.get(id);assertDispatchRequestAvailable(linked.exists()?linked.data():null,{id,source,destination:po.branch});}
         if(alreadyLoaded)return {alreadyLoaded:true};
-        const staged=stageCart(before,po,hqDetails,branchDetails),intent=await hash(api,stringify({poId,request:requestFields(po),before,staged}));
+        const staged=stageCart(before,po,hqDetails,branchDetails,poId),intent=await hash(api,stringify({poId,request:requestFields(po),before,staged}));
         assertCurrent(api,actor,po.branch,source);
         if(!sameDraft(api,storage,before,snapshot,controls))throw Error('Your dispatch draft changed while this request was loading. Review it again.');
         const key=actor.uid+':'+poId+':'+intent;if(!attempts.has(key))attempts.set(key,'request-draft-'+(api.crypto || globalThis.crypto).randomUUID());const operationId=attempts.get(key);

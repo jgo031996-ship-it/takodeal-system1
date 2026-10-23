@@ -3,6 +3,7 @@ import {commitSetAside} from './dispatch-set-aside.js';
 import {canonicalDispatchIntent,isDispatchAutoRestock} from './dispatch-restock-model.js';
 import {collectDispatchRestockEstimates,renderDispatchRestockEstimates} from './dispatch-restock-finance.js';
 import {canOpenWorkspacePage} from './workspace-access-model.js';
+import {previewFranchiseDispatchPricing} from './franchise-dispatch-pricing.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=value=>value===null?'Needs price review':'₱'+Number(value).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const quantity=value=>Number(value).toLocaleString('en-PH',{maximumFractionDigits:6});
@@ -144,11 +145,13 @@ export function installDispatchRestockUI(api,{document:d=globalThis.document,sto
    // it before inspecting the now-Completed requests, without another send.
    if(!pending)await requestLinks(draft,check);
    let plan=pending?.payload?.autoRestock??await prepareDispatchRestock(api,draft);check();
-   const answer=await dialogs.fire({title:pending?'Retry saved delivery':'Send delivery to '+draft.destination,html:preview(plan),input:'text',inputLabel:'Driver / person delivering',inputValue:pending?.payload?.driver||'',inputPlaceholder:'Enter the driver’s name',showCancelButton:true,confirmButtonText:pending?'Retry same delivery':'Send delivery',confirmButtonColor:'#176552',inputValidator:value=>!String(value||'').trim()?'Enter the driver’s name.':undefined});
+   const supplyPricing=pending?.payload?.supplyPricing??await previewFranchiseDispatchPricing(api,draft);check();
+   const supplySummary=supplyPricing?'<div class="notice" style="text-align:left;margin-top:14px"><strong>Franchise delivery invoice · '+esc(money(supplyPricing.grandTotal))+'</strong>'+supplyPricing.orders.map(order=>'<p>'+esc(order.orderId)+'<br>'+order.lines.map(line=>esc(line.displayQty+' '+line.displayUom+' · '+line.name)+' — '+esc(money(line.total))).join('<br>')+'</p>').join('')+'<p>Only the quantities being sent are invoiced. The recipient signs after verifying the delivery.</p></div>':'';
+   const answer=await dialogs.fire({title:pending?'Retry saved delivery':'Send delivery to '+draft.destination,html:preview(plan)+supplySummary,input:'text',inputLabel:'Driver / person delivering',inputValue:pending?.payload?.driver||'',inputPlaceholder:'Enter the driver’s name',showCancelButton:true,confirmButtonText:pending?'Retry same delivery':'Send delivery',confirmButtonColor:'#176552',inputValidator:value=>!String(value||'').trim()?'Enter the driver’s name.':undefined});
    if(!answer.isConfirmed)return;check();
    const driver=String(answer.value||'').trim();if(!driver)throw Error('Enter the driver’s name.');
    if(pending&&driver!==pending.payload.driver)throw Error('Retry this delivery with its saved driver name. Review the feed before changing an earlier attempt.');
-   if(!pending){pending={version:1,id:'dispatch-'+api.crypto.randomUUID(),signature,payload:{source:draft.source,destination:draft.destination,driver,actor:identity.name,items:draft.items,skipped:draft.skipped,purchaseOrderIds:draft.purchaseOrderIds,autoRestock:plan}};storage.setItem('takodeal_dispatch_attempt',JSON.stringify(pending));}
+   if(!pending){pending={version:1,id:'dispatch-'+api.crypto.randomUUID(),signature,payload:{source:draft.source,destination:draft.destination,driver,actor:identity.name,items:draft.items,skipped:draft.skipped,purchaseOrderIds:draft.purchaseOrderIds,autoRestock:plan,...(supplyPricing?{supplyPricing}:{})}};storage.setItem('takodeal_dispatch_attempt',JSON.stringify(pending));}
    if(button)button.textContent='Saving restock and delivery…';
    await commitDispatch(api,{id:pending.id,...pending.payload,assertCurrent:check});
    committed=true;
