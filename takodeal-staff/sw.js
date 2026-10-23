@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v30-attendance-food-portions-20261021';
+const CACHE_NAME = 'takodeal-staff-v31-reviewed-cases-20261023';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./sanction-schedule.js');
 SHELL.push('./online-refund-pay.js');

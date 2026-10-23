@@ -24,7 +24,7 @@ import {createScheduleHistoryStore} from './schedule-history.js';
 import {scheduleDateKey} from './schedule-history.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
 import {installScheduleViewSync} from './schedule-view-sync.js';
-import {pendingDueNotices, clockInRestriction, startPhilippineDayTimer, acknowledgeSanction} from './sanction-schedule.js';
+import {pendingDueNotices, clockInRestriction, startPhilippineDayTimer, acknowledgeSanction, sanctionReviewSummary} from './sanction-schedule.js';
 // ========================================================
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
@@ -6428,16 +6428,18 @@ window.renderCashierSanctions = function() {
     if(!modal)return;
     if(!sanction){modal.style.display='none';return;}
     const active=document.getElementById('activeSanctionId');
-    document.getElementById('sanctionLockType').innerText=sanction.type || 'Violation';
-    document.getElementById('sanctionLockSeverity').innerText=sanction.severity || 'Warning';
-    document.getElementById('sanctionLockDetails').innerText=sanction.details || 'No details provided.';
+    const summary=sanctionReviewSummary(sanction);window.activeCashierSanctionIsCase=summary.isCase;
+    document.getElementById('sanctionLockType').innerText=(sanction.type || 'Violation')+(summary.isCase?' · '+summary.caseNumber:'');
+    document.getElementById('sanctionLockSeverity').innerText=summary.isCase?summary.actionHeading+': '+summary.actionLabel+'\nFinding: '+summary.finding:summary.actionLabel;
+    document.getElementById('sanctionLockDetails').innerText=(sanction.details || 'No details provided.')+(summary.isCase?'\n\n'+summary.message:'');
+    const submit=document.getElementById('btnSubmitSanctionReply');if(submit)submit.innerText=summary.isCase?'Submit explanation':'Submit Explanation & Unlock';
     if(active.value!==sanction.id){active.value=sanction.id;document.getElementById('sanctionStaffReply').value='';window.hasSignedNTE=false;
         const epoch=window.cashierSanctionEpoch;if(window.cashierSanctionPadTimer)clearTimeout(window.cashierSanctionPadTimer);
         window.cashierSanctionPadTimer=setTimeout(()=>{if(epoch!==window.cashierSanctionEpoch || localStorage.getItem('cashierName')!==name || active.value!==sanction.id)return;window.initSignaturePad();window.cashierSanctionPadTimer=null;},300);
     }
     let close=document.getElementById('cashierSanctionCloseNotice');
     if(!close){close=document.createElement('button');close.id='cashierSanctionCloseNotice';close.type='button';close.textContent='Close notice · Time Out remains available';close.style.cssText='width:100%;padding:12px;margin-top:12px;border:1px solid #d1dcd5;border-radius:8px;background:white;color:#345847;';close.onclick=()=>{modal.style.display='none';};modal.querySelector('div')?.append(close);}
-    modal.style.display='flex';
+    close.textContent=summary.isCase?'Close notice · Pending reply does not block Time In or Time Out':'Close notice · Time Out remains available';modal.style.display='flex';
 };
 window.checkActiveSanctions = async function(staffName) {
     if(!staffName)return;
@@ -6457,6 +6459,7 @@ document.addEventListener('visibilitychange',()=>{if(document.visibilityState===
 window.submitSanctionReply = async function() {
     let sanctionId = document.getElementById('activeSanctionId').value;
     let replyText = document.getElementById('sanctionStaffReply').value.trim();
+    const caseNotice=window.activeCashierSanctionIsCase===true;
 
     if (!replyText || replyText.length < 15) {
         Swal.fire('Too Short', 'You must provide a detailed written explanation (at least 15 characters).', 'warning');
@@ -6478,14 +6481,14 @@ window.submitSanctionReply = async function() {
 
         await acknowledgeSanction({db,doc,runTransaction,serverTimestamp},{id:sanctionId,staffName:localStorage.getItem('cashierName'),reply:replyText,signature:signatureDataUrl},{identity:()=>({staffName:localStorage.getItem('cashierName'),staffId:window.currentBranchStaffCache?.find(row=>row.cashierName===localStorage.getItem('cashierName'))?.id || ''})});
 
-        Swal.fire('Submitted', 'Your explanation and signature have been logged. A scheduled suspension still follows its effective date until management resolves it.', 'success');
+        Swal.fire('Submitted', caseNotice?'Your explanation and signature have been sent for management review. This reply is not an admission, a final finding or an effective suspension.':'Your explanation and signature have been logged. A scheduled suspension still follows its effective date until management resolves it.', 'success');
         document.getElementById('hrSanctionModal').style.display = 'none';
 
     } catch (e) {
         console.error(e);
         Swal.fire('Could not submit', e.message || 'Check internet connection.', 'error');
     } finally {
-        btn.innerText = "Submit Explanation & Unlock"; btn.disabled = false;
+        btn.innerText = caseNotice?'Submit explanation':"Submit Explanation & Unlock"; btn.disabled = false;
     }
 };
 

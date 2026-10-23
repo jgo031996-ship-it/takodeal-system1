@@ -24,7 +24,7 @@ import {createStaffDocumentFirebase} from './staff-document-firebase.js';
 import {profileDailyRate} from './staff-rate-privacy.js';
 import {loadStaffSalaryTimeline,staffRateForDate,staffProfileForWork,staffRateWorkDate} from './staff-rate-model.js';
 import { calculateLateMinutes, resolveScheduledShift, resolveAttendanceShift, captureAttendanceSchedule, latePay, earnedNightBonus, attendanceLateMinutes, isMealDeduction } from './payroll-safety.js';
-import {phDay, pendingDueNotices, clockInRestriction, startPhilippineDayTimer, noticeIsDue, deductionIsDue, isPenaltyDeduction, acknowledgeSanction} from './sanction-schedule.js';
+import {phDay, pendingDueNotices, clockInRestriction, startPhilippineDayTimer, noticeIsDue, deductionIsDue, isPenaltyDeduction, acknowledgeSanction, sanctionReviewSummary} from './sanction-schedule.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
 import {installScheduleViewSync} from './schedule-view-sync.js';
@@ -3377,12 +3377,14 @@ window.renderActiveSanctions = function(snap, staffName) {
         window.staffSanctionPadTimer = null;
         return false;
     }
-    const entry = entries.find(entry=>entry.id===due[0].id), sanction = entry.data();
+    const entry = entries.find(entry=>entry.id===due[0].id), sanction = entry.data(), summary=sanctionReviewSummary(sanction);window.activeStaffSanctionIsCase=summary.isCase;
     let close = document.getElementById('staffSanctionCloseNotice');
     if (!close) {close=document.createElement('button');close.id='staffSanctionCloseNotice';close.type='button';close.textContent='Close notice · Time Out remains available';close.style.cssText='width:100%;margin-top:12px;padding:12px;border:1px solid #d1dcd5;border-radius:8px;background:white;color:#345847;';close.onclick=()=>{modal.style.display='none';};modal.querySelector('div')?.append(close);}
-    document.getElementById('sanctionLockType').innerText = sanction.type || 'Violation';
-    document.getElementById('sanctionLockSeverity').innerText = sanction.severity || 'Warning';
-    document.getElementById('sanctionLockDetails').innerText = sanction.details || 'No details provided.';
+    close.textContent=summary.isCase?'Close notice · Pending reply does not block Time In or Time Out':'Close notice · Time Out remains available';
+    document.getElementById('sanctionLockType').innerText = (sanction.type || 'Violation')+(summary.isCase?' · '+summary.caseNumber:'');
+    document.getElementById('sanctionLockSeverity').innerText = summary.isCase?summary.actionHeading+': '+summary.actionLabel+'\nFinding: '+summary.finding:summary.actionLabel;
+    document.getElementById('sanctionLockDetails').innerText = (sanction.details || 'No details provided.')+(summary.isCase?'\n\n'+summary.message:'');
+    const submit=document.getElementById('btnSubmitAppSanction');if(submit)submit.innerText=summary.isCase?'Submit explanation':'Submit & Unlock App';
     // Snapshot updates must not erase an explanation or signature being written.
     if (active.value !== entry.id) {
         active.value = entry.id;
@@ -3431,7 +3433,10 @@ window.checkActiveSanctions = async function(staffName, {requireFresh = false} =
         if (epoch !== window.staffLiveListenerEpoch || localStorage.getItem('takodeal_staff_id') !== staffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
         const restricted = clockInRestriction(snap.docs.map(entry=>({...entry.data(),id:entry.id})).filter(row=>!row.staffId || row.staffId===staffId));
         if (requireFresh && restricted && !restricted.replyRequired) throw Error(restricted.message);
-        return window.renderActiveSanctions(snap, staffName);
+        // The notice remains available from the listener and HR history. A v2
+        // pending explanation is not a clock-in restriction or a final finding.
+        if(requireFresh&&!restricted)return false;
+        const shown=window.renderActiveSanctions(snap, staffName);return requireFresh?!!restricted?.replyRequired:shown;
     } catch (error) {
         console.error('Error checking sanctions:', error);
         if (requireFresh) throw Error(error.message || 'Connect to HQ to verify HR notices before Time In.');
@@ -3443,6 +3448,7 @@ document.addEventListener('visibilitychange',()=>{const name=localStorage.getIte
 window.submitStaffAppSanctionReply = async function() {
     let sanctionId = document.getElementById('activeSanctionId').value;
     let replyText = document.getElementById('sanctionStaffReply').value.trim();
+    const caseNotice=window.activeStaffSanctionIsCase===true;
 
     if (!replyText || replyText.length < 15) {
         Swal.fire('Explanation Too Short', 'You must provide a detailed written explanation (at least 15 characters) before unlocking the app.', 'warning');
@@ -3465,7 +3471,7 @@ window.submitStaffAppSanctionReply = async function() {
 
         Swal.fire({
             title: '✅ Notice Acknowledged', 
-            text: 'Your explanation and signature have been logged to HQ. A scheduled suspension still follows its effective date until management resolves it.',
+            text: caseNotice?'Your explanation and signature have been sent for management review. This reply is not an admission, a final finding or an effective suspension.':'Your explanation and signature have been logged to HQ. A scheduled suspension still follows its effective date until management resolves it.',
             icon: 'success', 
             customClass: { popup: 'rounded-2xl' }
         });
@@ -3476,7 +3482,7 @@ window.submitStaffAppSanctionReply = async function() {
         console.error(e);
         Swal.fire('Could not submit', e.message || 'Check internet connection.', 'error');
     } finally {
-        btn.innerText = "Submit & Unlock App"; btn.disabled = false;
+        btn.innerText = caseNotice?'Submit explanation':"Submit & Unlock App"; btn.disabled = false;
     }
 };
 
@@ -3494,6 +3500,7 @@ window.loadMySanctionsHistory = async function() {
     
     let container = document.getElementById('mySanctionsList');
     let staffName = localStorage.getItem('takodeal_staff_name') || localStorage.getItem('cashierName');
+    const staffId=localStorage.getItem('takodeal_staff_id'),safe=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     
     if (!staffName) {
         container.innerHTML = '<div style="text-align:center; color:#dc2626; font-weight:bold;">Error: Not logged in.</div>';
@@ -3507,10 +3514,11 @@ window.loadMySanctionsHistory = async function() {
             window.collection(window.db, "hr_sanctions"), 
             window.where("staffName", "==", staffName)
         );
-        const snap = await window.getDocs(q);
+        const snap = await window.getDocsFromServer(q);
+        if(localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_name')!==staffName)return;
 
         let records = [];
-        snap.forEach(doc => records.push({ id: doc.id, ...doc.data() }));
+        snap.forEach(doc => {const row=doc.data();if(!row.staffId||row.staffId===staffId)records.push({...row,id:doc.id});});
 
         // Sort newest first
         records.sort((a,b) => {
@@ -3521,18 +3529,21 @@ window.loadMySanctionsHistory = async function() {
 
         let html = '';
         records.forEach(d => {
+            const summary=sanctionReviewSummary(d);
             let dateStr = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate().toLocaleDateString('en-PH', { month: 'short', day: 'numeric', year: 'numeric' }) : new Date(d.timestamp).toLocaleDateString()) : 'Unknown Date';
             
             let statusBadge = '';
             let actionBtn = ''; // 🔥 Create an empty variable for the button
             
-            if (d.status === 'Pending Reply') {
+            if(summary.isCase&&['Reviewed','Archived','Cancelled','Canceled'].includes(d.status)){
+                statusBadge='<span style="color:#27684d;font-weight:bold;">'+safe(d.status)+' · '+safe(summary.finding)+'</span>';
+            } else if (d.status === 'Pending Reply') {
                 if (!noticeIsDue(d)) {
                     statusBadge = `<span style="color:#27684d;font-weight:bold;">Scheduled · Effective ${d.effectiveDate}</span>`;
                 } else {
                 statusBadge = `<span style="background: #fef2f2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid #fca5a5;">⚠️ Action Required</span>`;
                 // 🔥 Inject the manual trigger button!
-                actionBtn = `<button onclick="window.checkActiveSanctions('${staffName}')" style="width: 100%; margin-top: 15px; background: #dc2626; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 900; font-size: 14px; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3);">✍️ Click Here to Acknowledge & Sign</button>`;
+                actionBtn = `<button onclick="window.checkActiveSanctions(${safe(JSON.stringify(staffName))})" style="width: 100%; margin-top: 15px; background: #dc2626; color: white; border: none; padding: 12px; border-radius: 8px; font-weight: 900; font-size: 14px; cursor: pointer; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3);">✍️ Read notice &amp; send explanation</button>`;
                 }
             } else if (d.status === 'Resolved') {
                 statusBadge = `<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px; border: 1px solid #bbf7d0;">✅ Resolved</span>`;
@@ -3545,7 +3556,7 @@ window.loadMySanctionsHistory = async function() {
                 replyHtml = `
                     <div style="margin-top: 10px; padding: 10px; background: white; border-radius: 6px; border: 1px dashed #cbd5e1;">
                         <span style="font-size: 11px; font-weight: bold; color: #64748b;">YOUR EXPLANATION:</span>
-                        <div style="font-size: 13px; color: #334155; font-style: italic; margin-top: 4px;">"${d.staffReply}"</div>
+                        <div style="font-size: 13px; color: #334155; font-style: italic; margin-top: 4px;">"${safe(d.staffReply)}"</div>
                     </div>
                 `;
             }
@@ -3554,17 +3565,18 @@ window.loadMySanctionsHistory = async function() {
                 <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; text-align: left;">
                     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
                         <div>
-                            <strong style="color: #b91c1c; font-size: 15px; display: block;">${d.type}</strong>
-                            <span style="font-size: 11px; color: #64748b;">Issued: ${dateStr}<br>Effective: ${d.effectiveDate || 'Immediate (legacy notice)'}</span>
+                            <strong style="color: #b91c1c; font-size: 15px; display: block;">${safe(d.type)}</strong>
+                            <span style="font-size: 11px; color: #64748b;">Issued: ${safe(dateStr)}<br>${summary.isCase?safe(summary.caseNumber)+'<br>Finding: '+safe(summary.finding):'Effective: '+safe(d.effectiveDate || 'Immediate (legacy notice)')}</span>
                         </div>
                         ${statusBadge}
                     </div>
                     
-                    <div style="font-size: 13px; font-weight: bold; color: #ea580c; margin-bottom: 8px;">Penalty: ${d.severity}</div>
+                    <div style="font-size: 13px; font-weight: bold; color: #ea580c; margin-bottom: 8px;">${safe(summary.actionHeading)}: ${safe(summary.actionLabel)}</div>
+                    ${summary.isCase?'<p style="font-size:12px;color:#64748b;">'+safe(summary.message)+'</p>':''}
                     
                     <div style="font-size: 13px; color: #334155; background: white; padding: 10px; border-radius: 6px; border-left: 3px solid #dc2626;">
                         <span style="font-size: 11px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 4px;">HQ REPORT:</span>
-                        ${d.details}
+                        ${safe(d.details)}
                     </div>
                     
                     ${actionBtn} <!-- 🔥 The button will appear here if action is required! -->
