@@ -1,3 +1,4 @@
+import {installDisciplineCases} from './discipline-case-ui.js';
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {finalizeRefundPayroll} from './refund-payroll.js';
@@ -27096,3 +27097,6 @@ installDispatchDestinationRepair(window,{document,dialogs:Swal});
 installGovernmentPermits(window,document);
 const bookkeeperPayments=installBookkeeperPayments(window,document);
 window.loadGovernmentCompliance=()=>bookkeeperPayments?.refresh();
+
+// Continuous case numbering and reviewed actions replace the legacy auto-escalation form.
+installDisciplineCases(window,document);

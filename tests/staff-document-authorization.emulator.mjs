@@ -1223,3 +1223,40 @@ test('protected onboarding reviews require ISO date bounds and ordering, plus so
  for(const source of [{type:'TIME OUT',staffId,staffName:'Sample Staff',timestamp:Timestamp.fromDate(new Date('2026-01-01T09:00:00+08:00'))},{type:'TIME IN',staffId:'different',staffName:'Sample Staff',timestamp:Timestamp.fromDate(new Date('2026-01-01T09:00:00+08:00'))},{type:'TIME IN',staffId,staffName:'Different Staff',timestamp:Timestamp.fromDate(new Date('2026-01-01T09:00:00+08:00'))},{type:'TIME IN',staffId,staffName:'Sample Staff',timestamp:Timestamp.fromDate(new Date('2026-01-02T00:01:00+08:00'))}]){await adminSet('attendance_logs/source-review',source);await assertFails(manualOnboardingBatch(owner(),{auditPatch:{sourceAttendanceId:'source-review'},resultPatch:{sourceAttendanceId:'source-review'}}));}
  await adminSet('attendance_logs/source-review',{type:'TIME IN',staffName:'Sample Staff',timestamp:Timestamp.fromDate(new Date('2026-01-01T00:01:00+08:00'))});await assertSucceeds(manualOnboardingBatch(owner(),{auditPatch:{sourceAttendanceId:'source-review'},resultPatch:{sourceAttendanceId:'source-review'}}));
 });
+
+test('a valid fresh early-approval proof may create a record but cannot rewrite an existing approval identity or reuse its version',async()=>{
+    for(const [index,kind]of ['staffId','branch','timeInLogId','sameVersion'].entries()){
+        const f=await earlyFixture(),outId=await linkedTimeOutId(staffId,f.start.id),requestId='early-'+outId.slice('time-out-'.length);
+        // Every subcase starts with an actual approved record, not a malformed
+        // fixture that could be rejected by the common approval validator.
+        await env.withSecurityRulesDisabled(async ctx=>{const db=ctx.firestore();await deleteDoc(doc(db,'attendance_time_out_approvals/'+requestId));await deleteDoc(doc(db,'staff_requests/'+requestId));});
+        const request=await f.request();await f.review(request.id);
+        const old=(await getDoc(doc(f.hqApi.db,'attendance_time_out_approvals/'+request.id))).data();
+        const source=(await getDoc(doc(f.hqApi.db,'attendance_logs/'+f.start.id))).data();
+        const pending={...(await getDoc(doc(f.hqApi.db,'staff_requests/'+request.id))).data(),status:'Pending',requestVersion:kind==='sameVersion'?old.requestVersion:old.requestVersion+1,requestToken:'renewal-valid-token-'+kind};
+        if(kind==='staffId'){
+            pending.staffId='renewal-other-staff';pending.staffName='Synthetic Other Staff';
+            await adminSet('cashiers/'+pending.staffId,{cashierName:pending.staffName,branch,pin:'1111',active:true});
+            await adminSet('attendance_logs/'+f.start.id,{...source,staffId:pending.staffId,staffName:pending.staffName});
+        }
+        if(kind==='branch'){
+            pending.branch='Citygate';
+            await adminSet('cashiers/'+staffId,{cashierName:'Sample Staff',branch:pending.branch,pin:'1111',active:true});
+            await adminSet('attendance_logs/'+f.start.id,{...source,branch:pending.branch});
+        }
+        if(kind==='timeInLogId'){
+            pending.timeInLogId='renewal-other-valid-time-in';
+            await adminSet('attendance_logs/'+pending.timeInLogId,source);
+        }
+        await adminSet('staff_requests/'+request.id,pending);
+        await assertFails(approvalBatch(owner(),request.id));
+        assert.deepEqual((await getDoc(doc(f.hqApi.db,'attendance_time_out_approvals/'+request.id))).data(),old,kind);
+        assert.equal((await getDoc(doc(f.hqApi.db,'staff_requests/'+request.id))).data().status,'Pending',kind);
+        // The exact same pending/source/actor/expiry proof succeeds on creation.
+        // Thus the denial above exercises only the retained update-only guard.
+        const freshId='early-'+['a','b','c','d'][index].repeat(64);
+        await adminSet('staff_requests/'+freshId,pending);
+        await assertSucceeds(approvalBatch(owner(),freshId));
+        assert.equal((await getDoc(doc(f.hqApi.db,'attendance_time_out_approvals/'+freshId))).data().requestVersion,pending.requestVersion);
+    }
+});

@@ -96,3 +96,33 @@ test('private files: an orphan manifest or chunk cannot be created',async()=>{
  await assertFails(setDoc(doc(db,'owner_record_files',id),manifest));
  await assertFails(setDoc(doc(db,'owner_record_files',id,'chunks','0000'),{schemaVersion:1,fileId:id,index:0,size:10,sha256:'a'.repeat(64),data:'U0FNUExF'}));
 });
+
+test('permit create/update dispatch retains initial revision and immutable creation metadata with a fully matched audit',async()=>{
+ const db=owner(),id=crypto.randomUUID();
+ const business=record=>Object.fromEntries(['branch','permitType','permitName','agency','permitNumber','issueDate','expiryDate','renewalStatus','notes','attachment','archived'].map(key=>[key,record[key]]));
+ function rawPermit(recordId,before=null,mutate=()=>{}){
+  const operationId=crypto.randomUUID(),stamp=serverTimestamp();
+  const record={schemaVersion:1,recordId,branch,permitType:'Business permit',permitName:'SAMPLE raw dispatch permit',agency:'SAMPLE agency',permitNumber:'SAMPLE-2026',issueDate:'2026-01-01',expiryDate:'2026-12-31',renewalStatus:'Not started',notes:'SAMPLE Rules equivalence only',attachment:null,archived:false,
+   revision:(before?.revision||0)+1,createdAt:before?.createdAt??stamp,createdByUid:before?.createdByUid??'sample-owner',createdByEmail:before?.createdByEmail??email,
+   updatedAt:stamp,updatedByUid:'sample-owner',updatedByEmail:email,lastChangeId:operationId};
+  mutate(record);
+  const event={schemaVersion:1,operationId,recordId,revision:record.revision,action:before?'Updated':'Created',before:before?business(before):null,after:business(record),reason:'SAMPLE paired dispatch control',recordedAt:stamp,recordedByUid:'sample-owner',recordedByEmail:email,intent:'a'.repeat(64)};
+  const batch=writeBatch(db);batch.set(doc(db,'government_permits',recordId),record);batch.set(doc(db,'government_permits',recordId,'changes',operationId),event);
+  return {operationId,commit:()=>batch.commit()};
+ }
+ // Both legitimate operations must pass the same common shape/audit helpers.
+ await assertSucceeds(rawPermit(id).commit());
+ const original=await read('government_permits/'+id);
+ const attacks={createdAt:row=>{row.createdAt=new Date('2000-01-01T00:00:00Z');},createdByUid:row=>{row.createdByUid='forged-creator';},createdByEmail:row=>{row.createdByEmail='forged-creator@example.invalid';}};
+ for(const [field,mutate]of Object.entries(attacks)){
+  const attempt=rawPermit(id,original,mutate);await assertFails(attempt.commit());
+  assert.deepEqual(await read('government_permits/'+id),original,field);
+  assert.equal(await read('government_permits/'+id+'/changes/'+attempt.operationId),undefined,field);
+ }
+ await assertSucceeds(rawPermit(id,original).commit());
+ const updated=await read('government_permits/'+id);assert.equal(updated.revision,2);
+ for(const field of Object.keys(attacks))assert.deepEqual(updated[field],original[field],field);
+ const freshId=crypto.randomUUID(),wrongFirst=rawPermit(freshId,null,row=>{row.revision=2;});
+ await assertFails(wrongFirst.commit());assert.equal(await read('government_permits/'+freshId),undefined);assert.equal(await read('government_permits/'+freshId+'/changes/'+wrongFirst.operationId),undefined);
+ await assertSucceeds(rawPermit(freshId).commit());assert.equal((await read('government_permits/'+freshId)).revision,1);
+});

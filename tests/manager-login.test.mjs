@@ -136,9 +136,10 @@ test('index does not start the heavy Manager or report libraries before unlock; 
     const html=source('index.html');assert.doesNotMatch(html,/<script[^>]+src="main\.js/);assert.doesNotMatch(html,/<script[^>]+src="https:\/\/[^\"]*(chart|xlsx|leaflet|html2pdf)/);
     const main=source('main.js');assert.doesNotMatch(main,/window\.(checkManagerPin|finalizeManagerLogin)\s*=/);
     assert.doesNotMatch(main,/setInterval\(function\(\).*?undefined:/s);assert.doesNotMatch(main,/STEP 3: Contacting Firebase/);
+    const readyHelper=main.split(/\r?\n/).find(line=>line.startsWith('const runManagerDomReady = '));assert.ok(readyHelper,'exercise the real DOM-ready helper independently of static module imports');
     for(const readyState of ['loading','complete']) {
         let registered,executed=0;const context={document:{readyState,addEventListener:(_,fn)=>registered=fn},queueMicrotask};
-        vm.runInNewContext(main.split('\n')[0]+'\nrunManagerDomReady(()=>execute());',{...context,execute:()=>executed++});
+        vm.runInNewContext(readyHelper+'\nrunManagerDomReady(()=>execute());',{...context,execute:()=>executed++});
         registered?.();await new Promise(resolve=>setImmediate(resolve));assert.equal(executed,1);
     }
 });

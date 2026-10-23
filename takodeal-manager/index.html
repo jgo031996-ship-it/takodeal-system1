@@ -448,6 +448,7 @@
   <link rel="stylesheet" href="employee-id.css?v=20261004">
   <link rel="stylesheet" href="payslip.css?v=20261004">
   <link rel="stylesheet" href="remittance-dialogs.css?v=20261022">
+<link rel="stylesheet" href="discipline-cases.css?v=20261023">
   <link rel="stylesheet" href="payroll-balance-review.css?v=20261022">
   <link rel="stylesheet" href="schedule-layout.css?v=20261004">
   <link rel="stylesheet" href="staff-documents.css?v=staff-pos-repair-20261008-r12">
@@ -2592,12 +2593,13 @@
               <div class="card-header" style="background: #fff1f2; padding: 25px; border-bottom: 1px solid #fecaca; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                   <div>
                       <h2 style="margin: 0; color: #be123c; font-size: 22px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 26px;">⚖️</span> Staff Incident & Sanction Tracker</h2>
-                      <p style="margin: 6px 0 0 0; color: #9f1239; font-size: 13px; font-weight: 500;">Issue digital Notice to Explain (NTE) forms. Staff must reply via the POS.</p>
+                      <p style="margin: 6px 0 0 0; color: #9f1239; font-size: 13px; font-weight: 500;">Record continuous cases, review explanations, and choose an action for each finding.</p>
                   </div>
                   <div style="display: flex; gap: 12px; align-items: center;">
                       <select id="sanctionBranchFilter" onchange="window.loadSanctionsDashboard()" style="padding: 12px 18px; border-radius: 8px; border: 1px solid #fca5a5; outline: none; font-weight: bold; color: #9f1239; background: white; font-size: 14px; cursor: pointer;">
                           <option value="All">🌐 All Branches</option>
                       </select>
+                      <button type="button" id="disciplineSettingsButton" hidden onclick="window.openDisciplineSettings()">Severity settings</button>
                       <button class="btn-refresh" onclick="window.openIssueSanctionModal()" style="background: #dc2626; color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3); transition: 0.2s;">
                           ➕ Issue New Notice (NTE)
                       </button>
@@ -6474,25 +6476,16 @@
                   <option value="Other / Miscellaneous">Other / Miscellaneous</option>
                   <option value="ADD_NEW" style="font-weight: 900; color: #0ea5e9;">➕ Add Custom Incident Type...</option>
               </select></div>
-            <div class="notice-form-field"><label for="sanctionSeverity" class="notice-form-label">Severity level</label><select id="sanctionSeverity" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 15px; outline: none;" onchange="window.handleCustomDropdown(this)">
-                  <option value="1st Offense - Verbal Warning">1st Offense - Verbal Warning</option>
-                  <option value="2nd Offense - Written Warning">2nd Offense - Written Warning</option>
-                  <option value="3rd Offense - 1 Day Suspension">3rd Offense - 1 Day Suspension</option>
-                  <option value="4th Offense - 3 Days Suspension">4th Offense - 3 Days Suspension</option>
-                  <option value="5th Offense - 7 Days Suspension">5th Offense - 7 Days Suspension</option>
-                  <option value="6th Offense - 14 Days Suspension">6th Offense - 14 Days Suspension</option>
-                  <option value="7th Offense - Termination Notice">7th Offense - Termination Notice</option>
-                  <option value="ADD_NEW" style="font-weight: 900; color: #0ea5e9;">➕ Add Custom Severity Rule...</option>
-              </select></div>
+            <div class="notice-form-field"><label for="sanctionSeverity" class="notice-form-label">Proposed severity · optional</label><select id="sanctionSeverity" class="input-box"><option value="">Select a staff member first</option></select></div>
           </div>
         </section>
         <section class="notice-form-section" aria-labelledby="noticeTimingHeading">
-          <h3 id="noticeTimingHeading" class="notice-form-section-heading">Timing &amp; optional penalty</h3>
+          <h3 id="noticeTimingHeading" class="notice-form-section-heading">Notice timing</h3>
           <div class="notice-form-grid">
             <div class="notice-form-field"><label for="sanctionEffectiveDate" class="notice-form-label">Effective date</label><input type="date" id="sanctionEffectiveDate" class="input-box" aria-describedby="noticeEffectiveHelp"><small id="noticeEffectiveHelp" class="notice-form-help">Philippine calendar date</small></div>
-            <div class="notice-form-field"><label for="sanctionPenaltyAmount" class="notice-form-label">Linked payroll penalty · optional</label><div class="notice-form-money"><span aria-hidden="true">₱</span><input type="number" id="sanctionPenaltyAmount" min="0" step="0.01" value="0" inputmode="decimal" class="input-box" aria-describedby="noticePenaltyHelp"></div></div>
+
           </div>
-          <p id="noticePenaltyHelp" class="notice-form-help">If applicable, a penalty uses this effective date and appears separately in unpaid payroll estimates. Paid payslips stay as saved.</p>
+          <p id="noticePenaltyHelp" class="notice-form-help">This notice requests an explanation. Management records a finding and reviewed action separately after the staff reply.</p>
         </section>
         <section class="notice-form-section" aria-labelledby="noticeDetailsHeading">
           <h3 id="noticeDetailsHeading" class="notice-form-section-heading">Details &amp; evidence</h3>
