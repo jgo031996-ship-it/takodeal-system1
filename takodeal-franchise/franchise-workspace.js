@@ -17,15 +17,18 @@ import {loadStaffSalaryTimeline,staffRateForDate} from './staff-rate-model.js';
 import {installFranchiseDiscipline} from './franchise-discipline-ui.js';
 import {buildFranchisePayslip} from './franchise-payroll-model.js';
 import {installFranchisePayslipUI} from './franchise-payslip-ui.js';
+import {installFranchiseItemPicker} from './franchise-item-picker.js';
+import {installFranchisePayrollControls} from './franchise-payroll-controls.js';
 
 export function installFranchiseWorkspace(api) {
  const $=id=>document.getElementById(id),state={route:'dashboard',generation:0,loaded:new Map(),inventory:new Map(),cart:[],cartBranch:'',pending:0,schedule:null,charts:[]};
- let payslips,payslipScope;
+ let payslips,payslipScope,payrollControls;
  const session=()=>{const s=api.sessionUser;if (!s || !s.allowedBranches?.includes(s.branch)) throw new Error('Sign in and select an assigned branch.');return s;};
  const accountScope=()=>{const s=session();return JSON.stringify([api.auth?.currentUser?.uid,s.email,s.branch,s.cashierName,s.allowedBranches,s.permissions]);};
+ const payrollContext=()=>JSON.stringify([accountScope(),payrollControls.getRange()]);
  const reader=createFranchiseReads(api,{scope:accountScope});
  const hq=installFranchiseHQUI(api,{document,session,getRoute:()=>state.route,read:(...args)=>read(...args),refresh:route=>api.switchView(route),onError:showActionError});api.franchiseHQ=hq;
- api.clearFranchiseReadRequests=()=>{reader.reset();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();payslips?.close();};
+ api.clearFranchiseReadRequests=()=>{reader.reset();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();payrollControls?.reset();};
  const selectedRange=()=>range($('globalStartDate').value,$('globalEndDate').value);
  const element=(tag,cls,text)=>{const el=document.createElement(tag);el.className=cls || '';if(text!=null)el.textContent=text;return el;};
  function button(text,action,cls='secondary-button') {const el=element('button',cls,text);el.type='button';el.addEventListener('click',()=>Promise.resolve(action()).catch(showActionError));return el;}
@@ -35,7 +38,7 @@ export function installFranchiseWorkspace(api) {
  const empty=(cols,text)=>`<tr><td class="empty" colspan="${cols}">${esc(text)}</td></tr>`;
  function card(root,title,subtitle='') {const c=element('div','card'),head=element('div','card-head'),copy=element('div');copy.append(element('h2','',title));if(subtitle)copy.append(element('p','',subtitle));head.append(copy);c.append(head);root.append(c);return {card:c,head};}
  function table(root,title,columns,subtitle='') {const c=card(root,title,subtitle),wrap=element('div','table-wrap'),table=element('table','data-table');table.innerHTML='<thead><tr>'+columns.map(t=>`<th>${esc(t)}</th>`).join('')+'</tr></thead><tbody></tbody>';wrap.append(table);c.card.append(wrap);return {...c,wrap,body:table.tBodies[0],columns};}
- function tools(c,route,rows,renderRow,{search=true,category=false,status=false}={}) {
+ function tools(c,route,rows,renderRow,{search=true,category=false,status=false,emptyText='No matching records for this branch and period.'}={}) {
   const bar=element('div','tools'),searchInput=element('input');searchInput.type='search';searchInput.placeholder='Search records…';let categoryInput,statusInput;
   if(search){const label=element('label','search','Search');label.append(searchInput);bar.append(label);}
   const dropdown=(text,values)=>{const label=element('label','',text),input=element('select');input.append(new Option('All '+text.toLowerCase(),'All'));for(const value of values)input.append(new Option(value,value));label.append(input);bar.append(label);return input;};
@@ -44,7 +47,7 @@ export function installFranchiseWorkspace(api) {
   c.card.insertBefore(bar,c.wrap);
   const pager=element('div','pager'),summary=element('span'),actions=element('div','button-row');let page=0,filtered=rows;
   const prev=button('Previous',()=>{page--;draw();}),next=button('Next',()=>{page++;draw();});actions.append(prev,next);pager.append(summary,actions);c.card.append(pager);
-  function draw() {const query=searchInput.value.trim().toLowerCase();filtered=rows.filter(r=>(!query || Object.entries(r).filter(([k,v])=>!['pin','securityPin','password','signature'].includes(k) && typeof v!=='object').map(([,v])=>String(v)).join(' ').toLowerCase().includes(query)) && (!categoryInput || categoryInput.value==='All' || (r.category || 'Uncategorized')===categoryInput.value) && (!statusInput || statusInput.value==='All' || (r.status || 'Recorded')===statusInput.value));page=Math.max(0,Math.min(page,Math.ceil(filtered.length/50)-1));c.body.innerHTML=filtered.slice(page*50,(page+1)*50).map(renderRow).join('') || empty(c.columns.length,'No matching records for this branch and period.');summary.textContent=filtered.length?`${page*50+1}–${Math.min((page+1)*50,filtered.length)} of ${filtered.length} records`:'0 records';prev.disabled=page===0;next.disabled=(page+1)*50>=filtered.length;state.loaded.set(route,{rows:filtered,columns:c.columns});}
+  function draw() {const query=searchInput.value.trim().toLowerCase();filtered=rows.filter(r=>(!query || Object.entries(r).filter(([k,v])=>!['pin','securityPin','password','signature'].includes(k) && typeof v!=='object').map(([,v])=>String(v)).join(' ').toLowerCase().includes(query)) && (!categoryInput || categoryInput.value==='All' || (r.category || 'Uncategorized')===categoryInput.value) && (!statusInput || statusInput.value==='All' || (r.status || 'Recorded')===statusInput.value));page=Math.max(0,Math.min(page,Math.ceil(filtered.length/50)-1));c.body.innerHTML=filtered.slice(page*50,(page+1)*50).map(renderRow).join('') || empty(c.columns.length,query&&rows.length&&route==='payroll'?'No staff match this search. Clear the search to show the loaded staff.':emptyText);summary.textContent=filtered.length?`${page*50+1}–${Math.min((page+1)*50,filtered.length)} of ${filtered.length} records`:'0 records';prev.disabled=page===0;next.disabled=(page+1)*50>=filtered.length;state.loaded.set(route,{rows:filtered,columns:c.columns});}
   for(const input of [searchInput,categoryInput,statusInput].filter(Boolean))input.addEventListener('input',()=>{page=0;draw();});draw();
   c.head.append(button('Export CSV',()=>exportCSV(route,filtered)));
  }
@@ -52,7 +55,7 @@ export function installFranchiseWorkspace(api) {
   const keys=[...new Set(rows.flatMap(r=>Object.keys(r).filter(k=>!['pin','securityPin','password','signature','photoBase64','proofImageUrl'].includes(k) && (typeof r[k]!=='object' || ['timestamp','startTime','endTime','dateAdded'].includes(k)))))];
   const csvValue=value=>{let text=String(value ?? '');if(/^[=+@-]/.test(text))text="'"+text;return '"'+text.replaceAll('"','""')+'"';};
   const content='\uFEFF'+[keys.map(csvValue).join(','),...rows.map(r=>keys.map(k=>csvValue(['timestamp','startTime','endTime','dateAdded'].includes(k)?dateText(r[k]):r[k])).join(','))].join('\r\n');
-  const url=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'})),a=element('a');a.href=url;a.download=`takodeal-${route}-${session().branch}-${$('globalStartDate').value}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const url=URL.createObjectURL(new Blob([content],{type:'text/csv;charset=utf-8'})),a=element('a');a.href=url;a.download=`takodeal-${route}-${session().branch}-${route==='payroll'?payrollControls.getRange().start:$('globalStartDate').value}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
  }
  async function read(tableName,{branch=session().branch,time=null,start=null,end=null,filters=[]}={}) {
   return reader.read(tableName,{branch,time,start,end,filters});
@@ -77,20 +80,20 @@ export function installFranchiseWorkspace(api) {
  function errorMessage(error) {if(error.code==='permission-denied')return 'Your account cannot read these records. Ask HQ to review your branch access.';if(!navigator.onLine)return 'You are offline. Reconnect and choose Retry to load current records.';return error.message || 'The records could not load. Check your connection and retry.';}
  async function load(route,loader) {
   if(!canVisit(api.sessionUser,route))throw new Error('This page is outside your assigned access.');
-  const current=++state.generation,branch=session().branch,scope=accountScope(),r=root(route);r.replaceChildren(element('div','loading','Loading current branch records…'));$('syncDataBtn').disabled=true;
+  const current=++state.generation,branch=session().branch,scope=accountScope(),r=root(route);if(route==='b2b'){state.itemPicker?.destroy();state.itemPicker=null;}if(route==='payroll'){payrollControls.sync({newLoad:true});payrollControls.setLoading(true);payslips?.close();}r.replaceChildren(element('div','loading','Loading current branch records…'));$('syncDataBtn').disabled=true;
   const detached=element('div');
   try {await loader(detached);if(current!==state.generation || branch!==api.sessionUser?.branch || scope!==accountScope())return;r.replaceChildren(...detached.childNodes);r.dataset.loaded='true';$('workspaceMessage').hidden=true;}
   catch(error) {if(current!==state.generation || branch!==api.sessionUser?.branch || scope!==accountScope())return;r.replaceChildren();const box=element('div','page-error');box.append(element('p','',errorMessage(error)),button('Retry',()=>api.switchView(route)));r.append(box);r.dataset.loaded='error';}
-  finally {if(current===state.generation)$('syncDataBtn').disabled=false;}
+  finally {if(current===state.generation){$('syncDataBtn').disabled=false;payrollControls.setLoading(false);}}
  }
  const define=(route,fn)=>{api[ROUTES[route][2]]=()=>load(route,fn);};
  api.switchView=async route=>{
   if(!ROUTES[route])throw new Error('This page is unavailable.');if(!canVisit(api.sessionUser,route))throw new Error('This page is outside your assigned access.');
   if(state.schedule?.dirty && route!=='schedule' && state.route==='schedule') {const answer=await Swal.fire({title:'Keep unsaved schedule?',text:'Stay here to save your changes, or leave without saving.',showCancelButton:true,confirmButtonText:'Stay and save',cancelButtonText:'Leave without saving'});if(answer.isConfirmed)return;state.schedule=null;}
-  if(state.route!==route){if(state.pending)throw Error('Wait for the current save to finish before changing pages.');hq.stop();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();payslips?.close();}state.route=route;
+  if(state.route!==route){if(state.pending)throw Error('Wait for the current save to finish before changing pages.');hq.stop();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();}state.route=route;
   for(const [key,meta] of Object.entries(ROUTES)){$('view-'+key).classList.toggle('active',key===route);const nav=$('nav-'+key);nav.classList.toggle('active',key===route);nav.setAttribute('aria-current',key===route?'page':'false');}
   for(const group of ['hr','inventory']) {const active=ROUTES[route][4]===group;$('nav-'+group).classList.toggle('active',active);$(group+'Submenu').classList.toggle('open',active);$('nav-'+group).setAttribute('aria-expanded',String(active));if(active)$('sidebar').classList.remove('collapsed');}
-  $('pageTitle').textContent=ROUTES[route][0];$('pageDescription').textContent=ROUTES[route][1];$('headingBranch').textContent='/ '+session().branch;$('globalDateControls').hidden=!ROUTES[route][3];
+  $('pageTitle').textContent=ROUTES[route][0];$('pageDescription').textContent=ROUTES[route][1];$('headingBranch').textContent='/ '+session().branch;$('globalDateControls').hidden=route==='payroll'||!ROUTES[route][3];
   $('sidebar').classList.remove('show-mobile');$('drawerBackdrop').hidden=true;
   await api[ROUTES[route][2]]();hq.start();
  };
@@ -103,7 +106,7 @@ export function installFranchiseWorkspace(api) {
   if(state.pending){$('franchiseBranchSelect').value=previous;throw Error('Wait for the current save to finish before changing branches.');}
   if(!session().allowedBranches.includes(next))throw new Error('This branch is outside your assigned access.');
   if(state.cart.length || state.schedule?.dirty || hq.hasDraft() || hq.isPending()) {if(hq.isPending())throw Error('An HQ message is still sending. Wait for it to finish before changing branches.');const answer=await Swal.fire({title:'Switch branch?',text:'Unsaved supply requests, schedule changes and HQ message drafts belong to the current branch. Save them first, or discard them to switch.',showCancelButton:true,confirmButtonText:'Discard and switch'});if(!answer.isConfirmed){$('franchiseBranchSelect').value=previous;return;}hq.clearDrafts();}
-  hq.stop();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();payslips?.close();
+  hq.stop();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();
   reader.reset();state.generation++;api.sessionUser.branch=next;state.cart=[];state.cartBranch=next;state.inventory.clear();state.loaded.clear();state.schedule=null;
   for(const key of Object.keys(ROUTES))root(key).replaceChildren();
   await api.switchView(state.route);
@@ -242,19 +245,19 @@ export function installFranchiseWorkspace(api) {
   const requests=[...legacyRequests.filter(row=>row.quoteVersion!==2),...pricedHistory];
   state.supplyPricingContext={inventory:catalog,recipes};
   api.hqInventoryCache=catalog.filter(i=>i.branch==='Main Office' && i.allowRequest===true);
-  const cols=element('div','two-columns');r.append(cols);const order=card(cols,'Request supplies','Only items approved for branch ordering are listed.'),body=element('div','card-body');body.innerHTML=`<div class="form-grid"><label class="full">Item<input id="b2bSearch" list="b2bDatalist" placeholder="Choose an approved HQ item"><datalist id="b2bDatalist">${api.hqInventoryCache.map(i=>`<option value="${esc(itemName(i))}"></option>`).join('')}</datalist></label><label>Quantity<input type="number" min="0.001" step="0.001" id="b2bQty"></label><label>Unit<select id="b2bUom"><option value="base">Choose an item first</option></select></label></div>`;body.append(button('Add to request',()=>api.addB2bToCart(),'primary-button'));const cart=element('div','',null);cart.id='b2bCartList';body.append(cart,button('Send request to HQ',()=>api.submitB2bRequest(),'primary-button'));order.card.append(body);
+  const cols=element('div','two-columns');r.append(cols);const order=card(cols,'Request supplies','Only items approved for branch ordering are listed.'),body=element('div','card-body');body.innerHTML=`<div class="form-grid"><label class="full">Item<input id="b2bSearch" placeholder="Type at least 2 letters to find an item"></label><label>Quantity<input type="number" min="0.001" step="0.001" id="b2bQty"></label><label>Unit<select id="b2bUom"><option value="base">Choose an item first</option></select></label></div>`;body.append(button('Add to request',()=>api.addB2bToCart(),'primary-button'));const cart=element('div','',null);cart.id='b2bCartList';body.append(cart,button('Send request to HQ',()=>api.submitB2bRequest(),'primary-button'));order.card.append(body);
   const incoming=card(cols,'Incoming deliveries','Confirm actual quantities after the driver marks the delivery arrived.'),deliveryBody=element('div','card-body');deliveryBody.id='b2bDeliveriesContainer';incoming.card.append(deliveryBody);
   const active=deliveries.filter(d=>d.toBranch===branch && ['In Transit','Arrived'].includes(d.status));const groups=new Map();for(const d of active){const key=d.batchId || d.dispatchId || d.id;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(d);}for(const [id,items] of groups){const shipment=element('div','budget-row');shipment.innerHTML=`<div><strong>${esc(items[0].driver || 'HQ delivery')}</strong>${badge(items.every(i=>i.status==='Arrived')?'Arrived':'In transit','warning')}</div><p class="notice">${items.map(i=>`${esc(i.displayQty ?? (n(i.qty)/Math.max(n(i.convRate),1)))} ${esc(i.displayUom || i.uom)} · ${esc(i.item)}`).join('<br>')}</p>`;if(items.every(i=>i.status==='Arrived'))shipment.append(button('Verify & receive stock',()=>api.receiveHQDelivery(id,items),'primary-button'));deliveryBody.append(shipment);}if(!active.length)deliveryBody.append(element('div','empty','No incoming deliveries.'));
   const c=table(r,'Supply orders & delivery invoices',['Requested','Requested by','Items','Total','Status','Documents'],'Review saved prices, download an invoice and sign after verifying the delivered quantities.');
   tools(c,'b2b',requests.sort((a,b)=>ms(b.timestamp)-ms(a.timestamp)),p=>'<tr>'+cell(esc(dateText(p.timestamp)))+cell(esc(p.requestedBy))+cell((p.items||[]).map(i=>esc(i.displayQty??i.qty)+' '+esc(i.displayUom||i.uom||'')+' · '+esc(itemName(i))+(i.supplyQuote?'<br><small>'+money(i.supplyQuote.unitPrice)+' per '+esc(i.displayUom||i.uom||'')+'</small>':'')).join('<br>'))+cell(p.dispatchInvoice?(p.dispatchInvoice.grandTotal==null?'HQ quote required':money(p.dispatchInvoice.grandTotal))+'<br><small>Delivery invoice</small>':p.quoteVersion?supplyOrderSummaryHTML(p):'Quote not recorded')+cell(badge(p.deliveryReceipt?'Receipt signed':p.status||'Pending',p.deliveryReceipt?'':p.status==='Pending'?'warning':''))+cell('<div class="button-row"><button class="table-action" data-supply-view="'+esc(p.id)+'">View '+(p.dispatchInvoice?'invoice':'order')+'</button><button class="table-action" data-supply-download="'+esc(p.id)+'">Download</button>'+(p.dispatchInvoice&&!p.deliveryReceipt?'<button class="primary-button" data-supply-sign="'+esc(p.id)+'">Review & sign receipt</button>':'')+'</div>')+'</tr>',{status:true});
   c.body.addEventListener('click',event=>{const view=event.target.closest('[data-supply-view]')?.dataset.supplyView,download=event.target.closest('[data-supply-download]')?.dataset.supplyDownload,sign=event.target.closest('[data-supply-sign]')?.dataset.supplySign;const action=view?()=>api.viewSupplyInvoice(view):download?()=>api.downloadSupplyInvoice(download):sign?()=>api.signSupplyDeliveryReceipt(sign):null;if(action)Promise.resolve().then(action).catch(showActionError);});
-  requestAnimationFrame(()=>{if(state.route!=='b2b' || !document.getElementById('b2bSearch'))return;$('b2bSearch').addEventListener('input',api.updateB2bUom);api.renderB2bCart();});
+  requestAnimationFrame(()=>{const input=body.querySelector('#b2bSearch');if(state.route!=='b2b'||document.getElementById('b2bSearch')!==input)return;state.itemPicker?.destroy();state.itemPicker=installFranchiseItemPicker({input,items:api.hqInventoryCache,getName:itemName,onSelectionChange:()=>api.updateB2bUom()});api.renderB2bCart();});
  });
- api.updateB2bUom=()=>{const item=api.hqInventoryCache?.find(i=>itemName(i)===$('b2bSearch')?.value.trim()),drop=$('b2bUom');if(!drop)return;drop.replaceChildren();if(!item){drop.append(new Option('Choose an approved item','base'));return;}const base=item.uom || 'units',purchase=item.purchaseUom || item.purchUom,rate=n(item.conversionRate ?? item.convRate) || 1;if(purchase && purchase!==base && rate>1){const option=new Option(purchase,'purch');option.dataset.rate=rate;drop.append(option);}const option=new Option(base,'base');option.dataset.rate='1';drop.append(option);};
+ api.updateB2bUom=()=>{const item=state.itemPicker?.getSelectedItem(),drop=$('b2bUom');if(!drop)return;drop.replaceChildren();if(!item){drop.append(new Option('Choose an approved item','base'));return;}const base=item.uom || 'units',purchase=item.purchaseUom || item.purchUom,rate=n(item.conversionRate ?? item.convRate) || 1;if(purchase && purchase!==base && rate>1){const option=new Option(purchase,'purch');option.dataset.rate=rate;drop.append(option);}const option=new Option(base,'base');option.dataset.rate='1';drop.append(option);};
  api.addB2bToCart=()=>{
-  const name=$('b2bSearch').value.trim(),item=api.hqInventoryCache.find(i=>itemName(i)===name),qty=Number($('b2bQty').value),option=$('b2bUom').selectedOptions[0];
-  if(!item||!option||!Number.isFinite(qty)||qty<=0)throw Error('Choose an approved item and enter a positive quantity.');if(state.cart.length>=80)throw Error('Send this request before adding more than 80 item lines.');
-  const line=previewSupplyCatalogItem(item,{hqItemId:item.id,name,displayQty:qty,displayUom:option.text},state.supplyPricingContext.inventory,state.supplyPricingContext.recipes);state.cart.push(line);state.requestId=null;$('b2bSearch').value='';$('b2bQty').value='';api.renderB2bCart();
+  const item=state.itemPicker?.getSelectedItem(),qty=Number($('b2bQty').value),option=$('b2bUom').selectedOptions[0];
+  if(!item||!option||!Number.isFinite(qty)||qty<=0)throw Error('Choose an item from the suggestions and enter a positive quantity.');if(state.cart.length>=80)throw Error('Send this request before adding more than 80 item lines.');
+  const line=previewSupplyCatalogItem(item,{hqItemId:item.id,name:itemName(item),displayQty:qty,displayUom:option.text},state.supplyPricingContext.inventory,state.supplyPricingContext.recipes);state.cart.push(line);state.requestId=null;state.itemPicker.clear();$('b2bQty').value='';api.renderB2bCart();
  };
  api.renderB2bCart=()=>{const target=$('b2bCartList');if(!target)return;target.className='supply-cart';target.innerHTML=supplyCartHTML(state.cart);target.onclick=event=>{const raw=event.target.closest('[data-supply-remove]')?.dataset.supplyRemove;if(raw==null)return;const index=Number(raw);if(!Number.isInteger(index)||index<0||index>=state.cart.length||state.pending)return;state.cart.splice(index,1);state.requestId=null;api.renderB2bCart();};};
  api.submitB2bRequest=async()=>{
@@ -292,21 +295,26 @@ export function installFranchiseWorkspace(api) {
   },{confirm:action==='Approved'?'Approve':'Reject'});if(result.isConfirmed)await api.loadInbox();
  };
  define('payroll',async r=>{
-  const scope=accountScope(),branch=session().branch,dates=selectedRange(),start=$('globalStartDate').value,end=$('globalEndDate').value;
+  const scope=payrollContext(),branch=session().branch,{start,end}=payrollControls.getRange(),{startDate,endDate}=payrollControls.queryRange();
   const profiles=await Promise.all((await read('cashiers')).map(profile=>profile.salaryRateVersion===1?loadStaffSalaryTimeline(api,profile):profile));
-  const [logs,deductions,bonuses,ledgers,schedule,payrollRecords]=await Promise.all([
-   read('attendance_logs',{time:'timestamp',start:dates.start,end:new Date(+dates.end+18*3600000)}),
+  const [logs,deductions,bonuses,ledgers,schedule,payrollRecords]=profiles.length?await Promise.all([
+   read('attendance_logs',{time:'timestamp',start:new Date(+startDate-18*3600000),end:endDate}),
    staffRows('staff_deductions',profiles),staffRows('staff_bonuses',profiles),staffRows('staff_ledger',profiles),
-   createScheduleHistoryStore(api).loadRange(calendarDay(new Date(+dates.start-86400000)),calendarDay(dates.end)),
+   createScheduleHistoryStore(api).loadRange(addDays(start,-1),addDays(end,1)),
    payrollRows(profiles,start,end)
-  ]);
-  if(scope!==accountScope())throw Error('The account or branch changed. Reload payroll.');
+  ]):[[],[],[],[],{},[]];
+  if(scope!==payrollContext())throw Error('The account, branch or cutoff changed. Reload payroll.');
   const rows=profiles.map(staff=>buildFranchisePayslip({staff,profiles,start,end,branch,logs,deductions,bonuses,ledgers,schedule,holidays:schedule.holidays||{},payrollRecords}));
   state.payrollScope=scope;
-  const c=table(r,'Payroll & payslips',['Staff','Hours','Shifts','Gross','Deductions','Net pay','Payslip'],'Generate a simple payslip for the selected cutoff. Saved paid payslips retain their original amounts; unpaid previews use current verified records.');
-  tools(c,'payroll',rows,p=>'<tr>'+cell('<strong>'+esc(p.name)+'</strong><br>'+badge(p.kind==='paid'?'Saved paid payslip':p.kind==='held'?'HR review required':'Unpaid preview',p.kind==='paid'?'':'warning'))+cell(p.hours==null?'—':p.hours.toFixed(1))+cell(p.shifts??'—')+(p.kind==='held'?cell('Review required'):number(p.totals.gross))+(p.kind==='held'?cell('Review required'):number(p.totals.deductions))+(p.kind==='held'?cell('Review required'):number(p.totals.net))+cell('<button class="table-action" data-franchise-payslip="'+esc(p.staffId)+'">'+(p.kind==='paid'?'View paid payslip':p.kind==='held'?'View review details':'Generate payslip')+'</button>')+'</tr>');
+  const c=table(r,'Payroll & payslips',['Staff','Hours','Shifts','Gross','Deductions','Net pay','Payslip'],branch+' · Loaded cutoff: '+start+' to '+end+' (PH). Saved paid payslips retain their original amounts.');
+  const openPayslip=model=>{if(!model)return;if(scope!==payrollContext()||state.route!=='payroll')throw Error('Reload this branch and cutoff before opening a payslip.');payslipScope=scope;payslips.open(model);};
+  const chooser=element('div','payroll-payslip-chooser'),label=element('label','','Staff member'),select=element('select');select.id='payrollPayslipStaff';select.setAttribute('aria-label','Staff member for payslip');select.append(new Option('Choose a staff member…',''));for(const row of rows)select.append(new Option(row.name,row.staffId));label.append(select);
+  const generate=button('Generate payslip',()=>openPayslip(rows.find(row=>row.staffId===select.value)),'primary-button');generate.id='generateFranchisePayslip';generate.disabled=true;select.disabled=!rows.length;
+  select.addEventListener('change',()=>{const model=rows.find(row=>row.staffId===select.value);generate.disabled=!model;generate.textContent=model?.kind==='paid'?'View paid payslip':model?.kind==='held'?'View review details':'Generate payslip';});chooser.append(label,generate);c.card.insertBefore(chooser,c.wrap);
+  if(!rows.length){const setup=element('div','payroll-staff-setup');setup.append(element('h3','','No staff assigned to '+branch),element('p','','Payroll uses the saved staff accounts for this branch. Add the staff in Branch Staff, or ask HQ to review their branch assignment, then load payroll again.'));if(canVisit(session(),'staff'))setup.append(button('Open Branch Staff',()=>api.switchView('staff'),'primary-button'));c.card.insertBefore(setup,chooser);}
+  tools(c,'payroll',rows,p=>'<tr>'+cell('<strong>'+esc(p.name)+'</strong><br>'+badge(p.kind==='paid'?'Saved paid payslip':p.kind==='held'?'HR review required':'Unpaid preview',p.kind==='paid'?'':'warning'))+cell(p.hours==null?'—':p.hours.toFixed(1))+cell(p.shifts??'—')+(p.kind==='held'?cell('Review required'):number(p.totals.gross))+(p.kind==='held'?cell('Review required'):number(p.totals.deductions))+(p.kind==='held'?cell('Review required'):number(p.totals.net))+cell('<button type="button" class="table-action" data-franchise-payslip="'+esc(p.staffId)+'">'+(p.kind==='paid'?'View paid payslip':p.kind==='held'?'View review details':'Generate payslip')+'</button>')+'</tr>',{emptyText:rows.length?'No staff match this search. Clear the search to show the loaded staff.':'No staff profiles are assigned to '+branch+'. Open Branch Staff to complete setup.'});
   c.card.append(element('p','notice','Generating, downloading or printing does not mark payroll as paid or deduct money. Confirm payment separately in the approved payroll workflow.'));
-  c.body.addEventListener('click',event=>{const id=event.target.closest('[data-franchise-payslip]')?.dataset.franchisePayslip,model=rows.find(row=>row.staffId===id);if(!model)return;try{if(scope!==accountScope()||state.route!=='payroll')throw Error('Reload this branch’s payroll before opening a payslip.');payslipScope=scope;payslips.open(model);}catch(error){showActionError(error);}});
+  c.body.addEventListener('click',event=>{const id=event.target.closest('[data-franchise-payslip]')?.dataset.franchisePayslip,model=rows.find(row=>row.staffId===id);if(!model)return;try{openPayslip(model);}catch(error){showActionError(error);}});
  });
  define('schedule',async r=>{
   const scheduleViewToken=api.franchiseScheduleSync?.token();
@@ -350,7 +358,8 @@ export function installFranchiseWorkspace(api) {
  api.loadScheduleFromCloud=api.franchiseScheduleSync.wrap(api.loadScheduleFromCloud);
  api.franchiseSupplyDocuments=installFranchiseSupplyDocuments(api,{window:globalThis.window,document,onPendingChange:delta=>{state.pending+=delta;},onSaved:()=>{reader.reset();return api.loadB2BSupply();}});
  api.franchiseDiscipline=installFranchiseDiscipline(api,{document,reload:()=>{reader.reset();return api.loadSanctionsDashboard();},onPending:delta=>{state.pending+=delta;}});
- payslips=installFranchisePayslipUI({document,window:globalThis.window,assertCurrent:()=>{if(state.route!=='payroll'||payslipScope!==accountScope()||!canVisit(session(),'payroll'))throw Error('The payroll account or branch changed. Reopen this payslip.');},onError:showActionError});
+ payrollControls=installFranchisePayrollControls({root:$('payrollCutoffPanel'),document,branch:()=>api.sessionUser?.branch||'',today:calendarDay,onApply:()=>{payslips?.close();return api.refreshActiveData();},onError:showActionError});
+ payslips=installFranchisePayslipUI({document,window:globalThis.window,assertCurrent:()=>{if(state.route!=='payroll'||payslipScope!==payrollContext()||!canVisit(session(),'payroll'))throw Error('The payroll account, branch or cutoff changed. Reopen this payslip.');},onError:showActionError});
  installAppUpdates(state,hq);
 }
 

@@ -84,6 +84,9 @@ export function buildFranchisePayslip(input={}){
   const cutoffEnd=Date.parse(model.end+'T16:00:00Z'),cutoffStart=Date.parse(model.start+'T00:00:00+08:00');
   const inPeriod=(row,end=cutoffEnd)=>stamp(row.timestamp??row.dateAdded)==null||stamp(row.timestamp??row.dateAdded)>=cutoffStart&&stamp(row.timestamp??row.dateAdded)<end;
   const logs=select((input.logs||[]).filter(row=>inPeriod(row,cutoffEnd+18*3600000)),'Attendance',true),allDeductions=select((input.deductions||[]).filter(row=>row.status==='Unpaid'&&(stamp(row.dateAdded)==null||stamp(row.dateAdded)<cutoffEnd)),'A deduction'),bonuses=select((input.bonuses||[]).filter(row=>inPeriod(row)),'A bonus'),ledgers=select(input.ledgers,'A loan ledger');
+  // Earlier clock-ins are evidence only: a verified linked closure may belong
+  // to the previous cutoff. They never enter this cutoff's payable starts.
+  const referenceLogs=select((input.logs||[]).filter(row=>{const at=stamp(row.timestamp);return at==null||at>=cutoffStart-18*3600000&&at<cutoffEnd+18*3600000;}),'Attendance reference',true);
   if(logs.some(row=>stamp(row.timestamp)==null))reasons.push('An attendance timestamp is invalid. HQ must review the punch.');
   if(staff.salaryRateVersion!==1&&dailyStaffRate(staff)===null)reasons.push('The saved daily rate needs HQ review.');
   const due=allDeductions.filter(row=>row.status==='Unpaid'&&stamp(row.dateAdded)!=null&&stamp(row.dateAdded)<cutoffEnd&&deductionIsDue(row,model.end));
@@ -100,7 +103,7 @@ export function buildFranchisePayslip(input={}){
   const ledger=ledgers[0],loan=ledger?Math.max(0,Math.min(cents(ledger.cutoffDeduction,'Loan cutoff deduction',{optional:true}),cents(ledger.totalLoaned,'Loan principal')-cents(ledger.totalPaid,'Loan paid total',{optional:true}))):0;
   const fixed=[['sss','SSS','sssAmount'],['philhealth','PhilHealth','philHealthAmount'],['pagibig','Pag-IBIG','pagibigAmount']].map(([key,label,field])=>moneyRow(key,label,cents(staff[field],label,{optional:true})));
   fixed.push(...customRows(staff.customDeductions));
-  const estimated=attendanceEstimate({logs,profiles:[staff],deductions:[],bonuses,ledgers:[],schedule:input.schedule||{},holidays:input.holidays||{},start:model.start,end:model.end,branch:model.branch})[0]||{hours:0,shifts:0,basic:0,bonus:0,late:0,logs:[],review:0};
+  const estimated=attendanceEstimate({logs,referenceLogs,profiles:[staff],deductions:[],bonuses,ledgers:[],schedule:input.schedule||{},holidays:input.holidays||{},start:model.start,end:model.end,branch:model.branch,calendarCutoff:true})[0]||{hours:0,shifts:0,basic:0,bonus:0,late:0,logs:[],review:0};
   if(estimated.attendanceHeld||estimated.attendanceReviewRequired||estimated.review>0)reasons.push(...(estimated.attendanceReviewReasons||[]),'Attendance or the saved schedule needs HR review before a payslip estimate can be shown.');
   if(reasons.length)return held(model,reasons);
   const basic=cents(estimated.basic,'Basic pay'),bonus=cents(estimated.bonus,'Bonuses'),late=cents(estimated.late,'Late / undertime');
