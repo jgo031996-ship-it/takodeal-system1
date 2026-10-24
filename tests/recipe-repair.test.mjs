@@ -6,6 +6,7 @@ import { firestoreHarness } from './helpers/firestore-harness.mjs';
 import { createSaleEngine, saleFingerprint, SALE_VERSION } from '../Takodeal-POS/pos-safety.js';
 import { recipeProblems, ingredientUses } from '../takodeal-manager/recipe-integrity.js';
 import { createLiveReport } from '../takodeal-manager/live-report.js';
+import { readProductAddonRows } from '../takodeal-manager/product-options-draft.js';
 
 function sauceSale() {
     const h = firestoreHarness();
@@ -139,6 +140,7 @@ function managerFunction(name, context) {
     // These DOM tests exercise row staging/retained input; the real revision,
     // permission and transaction adapter is exercised in recipe-bulk-safety.
     if(name==='saveAdvancedProduct'){
+        context.readProductAddonRows = readProductAddonRows;
         context.window.advRecipeState ||= {revision:{version:0,revisionId:''},documents:{}};
         context.createRecipeBatch=async api=>api.writeBatch(api.db);
         context.operationFor=()=> 'test-product-operation';
@@ -182,14 +184,26 @@ test('single and bulk deletion never execute a write when dependency checks fail
 });
 
 test('opening a different recipe or a new product clears abandoned deletion intent', async () => {
-    const elements = new Map();
-    const context = { document: { getElementById: id => { if(!elements.has(id)) elements.set(id, { style: {}, value: '', replaceChildren() {} }); return elements.get(id); } },
-        window: { deletedAdvRecipes: ['old-recipe'], preloadInventoryForAddons: async () => { throw new Error('offline'); } } };
-    await assert.rejects(managerFunction('openBomEditor', context)('Other product'), /offline/);
+    const elements = new Map(), notices = [];
+    const context = { console: { error() {} }, document: { getElementById: id => { if(!elements.has(id)) elements.set(id, { style: {}, value: '', disabled: false, replaceChildren() {} }); return elements.get(id); } },
+        window: { ManagerUI: { notify: message => notices.push(message) }, deletedAdvRecipes: ['old-recipe'], advRecipeState: { stale: true }, pendingAdvMenuRef: { id: 'stale-menu' }, currentAdvRecipe: [{ docId: 'old-recipe' }], preloadInventoryForAddons: async () => { throw new Error('offline'); } } };
+    await managerFunction('openBomEditor', context)('Other product');
     assert.equal(context.window.deletedAdvRecipes.length, 0);
+    assert.equal(context.window.currentAdvRecipe.length, 0);
+    assert.equal(context.window.advRecipeState, null);
+    assert.equal(context.window.pendingAdvMenuRef, null);
+    assert.equal(elements.get('btnSaveAdvProd').disabled, false);
+    assert.match(notices[0], /offline/i);
     context.window.deletedAdvRecipes = ['another-recipe'];
+    context.window.advRecipeState = { stale: true };
+    context.window.pendingAdvMenuRef = { id: 'another-stale-menu' };
+    context.window.currentAdvRecipe = [{ docId: 'another-recipe' }];
     await assert.rejects(managerFunction('openNewProductModal', context)(), /offline/);
     assert.equal(context.window.deletedAdvRecipes.length, 0);
+    assert.equal(context.window.currentAdvRecipe.length, 0);
+    assert.equal(context.window.advRecipeState, null);
+    assert.equal(context.window.pendingAdvMenuRef, null);
+    assert.equal(elements.get('btnSaveAdvProd').disabled, false);
 });
 
 test('actual history renderer receives new sales without downloading reference collections again', async () => {
@@ -233,7 +247,7 @@ test('new product and recipe retries reuse the same IDs after a lost server ackn
 
 test('unified editor refuses missing add-on stock and invalid prices before any write', async()=>{
     const elements=Object.fromEntries(Object.entries({btnSaveAdvProd:'',advProdId:'item',advProdName:'A',advProdCat:'Food',advProdPrice:'10',advProdGrabPrice:'12',advProdFpPrice:'13',advProdMixMatch:'',advancedProductModal:''}).map(([id,value])=>[id,{value,style:{},disabled:false}]));
-    let writes=0,message='';const addon={querySelector:selector=>({value:({'.addon-name':'Extra sauce','.addon-price':'-1','.addon-ingredient':'Deleted sauce','.addon-qty':'5'})[selector]})};
+    let writes=0,message='';const addon={dataset:{},querySelector:selector=>({value:({'.addon-name':'Extra sauce','.addon-price':'-1','.addon-ingredient':'Deleted sauce','.addon-qty':'5'})[selector]})};
     const context={console:{error(){}},recipeProblems,document:{getElementById:id=>elements[id],querySelectorAll:selector=>selector==='#addonTableBody tr'?[addon]:[]},Swal:{fire(){}},window:{db:{},ManagerUI:{notify:text=>message=text},currentAdvRecipe:[],deletedAdvRecipes:[],collection:(_,name)=>name,query:()=>({}),where:()=>({}),getDocsFromServer:async q=>q==='inventory'?{docs:[{data:()=>({name:'Sauce'})}]}:{docs:[]},writeBatch:()=>writes++}};
     await managerFunction('saveAdvancedProduct',context)();assert.equal(writes,0);assert.match(message,/Invalid add-on price/);assert.match(message,/Missing ingredient: Deleted sauce/);
 });

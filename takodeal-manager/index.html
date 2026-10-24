@@ -13,6 +13,8 @@
   <!-- 🗺️ FREE MAP ENGINE FOR BRANCH PINS -->
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="rider-management.css?v=20261023-buttons">
+  <link rel="stylesheet" href="menu-options.css?v=20261024">
+  <link rel="stylesheet" href="product-editor-layout.css?v=20261024">
   <link rel="stylesheet" href="cash-shortage.css?v=20261021-layout-r1">
   <link rel="stylesheet" href="schedule-memory.css?v=20261006">
   <link rel="stylesheet" href="customer-hub-settings.css?v=20261009">
@@ -2986,7 +2988,7 @@
                         <th style="padding: 15px 25px; font-size: 11px; color: #92400e; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800; text-align: right;">Actions</th>
                       </tr>
                     </thead>
-                    <tbody id="globalAddonsBody">
+                    <tbody id="costingGlobalAddonsBody">
                       <tr><td colspan="5" class="text-center" style="padding: 40px; color: #b45309; font-weight: bold;">Loading Add-Ons...</td></tr>
                     </tbody>
                   </table>
@@ -3734,61 +3736,7 @@
     </div>
   </div>
     
-<div id="view-addons" class="view">
-      <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-          <div>
-            <h2 style="margin: 0; color: #d97706;">🍟 Global Add-Ons & Upgrades</h2>
-            <span style="font-size: 12px; color: var(--text-muted);">Create Add-Ons here once, and assign them to categories.</span>
-          </div>
-          <button class="btn-refresh" style="background: var(--primary); color: white; border: none;" onclick="window.openGlobalAddonModal()">➕ Create Add-On</button>
-        </div>
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Add-On Name</th>
-                <th>Extra Price (₱)</th>
-                <th>Linked Ingredient (Deducts)</th>
-                <th>Applies To Category</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="globalAddonsBody">
-              <tr><td colspan="5" class="text-center">Loading Add-Ons...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-
-<div id="view-addons" class="view">
-      <div class="card">
-        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
-          <div>
-            <h2 style="margin: 0; color: #d97706;">🍟 Global Add-Ons & Upgrades</h2>
-            <span style="font-size: 12px; color: var(--text-muted);">Create Add-Ons here once, and assign them to categories.</span>
-          </div>
-          <button class="btn-refresh" style="background: var(--primary); color: white; border: none;" onclick="window.openGlobalAddonModal()">➕ Create Add-On</button>
-        </div>
-        <div class="table-responsive">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Add-On Name</th>
-                <th>Extra Price (₱)</th>
-                <th>Linked Ingredient (Deducts)</th>
-                <th>Applies To Category</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="globalAddonsBody">
-              <tr><td colspan="5" class="text-center">Loading Add-Ons...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+<div id="view-addons" class="view"><section id="menuOptionsRoot" aria-label="Global add-ons and bundle planning"><p>Open Global Add-Ons to load saved options.</p></section></div>
 
     <div id="globalAddonModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.6); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
       <div style="background: white; width: 500px; max-width: 95%; border-radius: 12px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
