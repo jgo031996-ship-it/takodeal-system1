@@ -1,4 +1,7 @@
 import {installDisciplineCases} from './discipline-case-ui.js';
+import {installMenuOptions} from './menu-options-ui.js';
+import {installProductEditorLayout} from './product-editor-layout.js';
+import {installProductAddonDrafts,readProductAddonRows} from './product-options-draft.js';
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {finalizeRefundPayroll} from './refund-payroll.js';
@@ -5718,6 +5721,7 @@ window.currentAdvRecipe = []; // Stores the live rows in the modal
 
 window.openBomEditor = async function (menuItemName, selectedId) {
   if (document.getElementById('btnSaveAdvProd')?.disabled) return;
+  const openingButton=document.getElementById('btnSaveAdvProd');if(openingButton)openingButton.disabled=true;
   window.deletedAdvRecipes = [];
   window.pendingAdvMenuRef = null;
   window.advRecipeState = null;
@@ -5728,9 +5732,8 @@ window.openBomEditor = async function (menuItemName, selectedId) {
   document.getElementById('advRecipeBody').innerHTML = '<tr><td colspan="5" class="text-center">Loading...</td></tr>';
 
   // WAIT for inventory to load so the Add-on dropdowns actually work!
-  await window.preloadInventoryForAddons(); 
-
   try {
+    await window.preloadInventoryForAddons();
     window.advRecipeState = await loadRecipeState(window);
     window.recipeOperations?.delete('advanced-product');
     const menuRows = Object.entries(window.advRecipeState.documents.menu).map(([id,row])=>({...row,id})).filter(row => selectedId ? row.id === selectedId : row.name === menuItemName);
@@ -5741,7 +5744,7 @@ window.openBomEditor = async function (menuItemName, selectedId) {
       document.getElementById('addonTableBody').innerHTML = '';
       if (mData.addons && Array.isArray(mData.addons)) {
         mData.addons.forEach(addon => {
-          window.addAddonRow(addon.name, addon.price, addon.linkedIngredient, addon.deductQty);
+          window.addAddonRow(addon.name, addon.price, addon.linkedIngredient || addon.ingredient, addon.deductQty ?? addon.qty ?? 0, addon);
         });
       }
       document.getElementById('advProdId').value = menuSnap.docs[0].id;
@@ -5799,7 +5802,7 @@ window.openBomEditor = async function (menuItemName, selectedId) {
   } catch (e) {
     window.advRecipeState = null;
     console.error(e); window.ManagerUI.notify('Product was not opened. '+e.message);
-  }
+  } finally {if(openingButton)openingButton.disabled=false;}
 };
 
 // ========================================================
@@ -5886,13 +5889,14 @@ window.autoLoadCategoryAddons = async function() {
 
 window.renderAdvRecipeTable = function () {
   const tbody = document.getElementById('advRecipeBody');
+  const editorText=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
   let html = '';
   let totalCost = 0;
 
   // 1. Build the hidden "Smart Search" Datalist
   let datalistHtml = '<datalist id="inventoryDatalist">';
   for (let invName in globalInventoryCosts) {
-    datalistHtml += `<option value="${invName}">`;
+    datalistHtml += `<option value="${editorText(invName)}">`;
   }
   datalistHtml += '</datalist>';
 
@@ -5914,13 +5918,13 @@ window.renderAdvRecipeTable = function () {
       totalCost += lineCost;
 
       // 2. The Upgraded Searchable Input box
-      let nameField = `<input type="text" list="inventoryDatalist" value="${item.ingredientName}" placeholder="Type to search..." style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; outline: none; box-sizing: border-box;" onchange="updateAdvRecipeName(${index}, this.value)">${!invData ? '<small style="color:#b91c1c;">Missing inventory ingredient — select its replacement.</small>' : ''}`;
+      let nameField = `<input type="text" list="inventoryDatalist" value="${editorText(item.ingredientName)}" placeholder="Type to search..." style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; outline: none; box-sizing: border-box;" onchange="updateAdvRecipeName(${index}, this.value)">${!invData ? '<small style="color:#b91c1c;">Missing inventory ingredient — select its replacement.</small>' : ''}`;
 
       html += `
         <tr style="border-bottom: 1px solid #f3f4f6;">
           <td style="padding: 10px 5px;">${nameField}</td>
-          <td style="padding: 10px 5px;"><input type="number" value="${item.qty || 0}" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; outline: none; box-sizing: border-box;" onkeyup="updateAdvRecipeQty(${index}, this.value)" onchange="updateAdvRecipeQty(${index}, this.value)"></td>
-          <td style="padding: 10px 5px; color: #6b7280; font-size: 13px;">${uom}</td>
+          <td style="padding: 10px 5px;"><input type="number" value="${editorText(item.qty || 0)}" style="width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 4px; outline: none; box-sizing: border-box;" onkeyup="updateAdvRecipeQty(${index}, this.value)" onchange="updateAdvRecipeQty(${index}, this.value)"></td>
+          <td style="padding: 10px 5px; color: #6b7280; font-size: 13px;">${editorText(uom)}</td>
           <td style="padding: 10px 5px; font-weight: bold; color: #4b5563;">${formatMoney(lineCost)}</td>
           <td style="padding: 10px 5px; text-align: center;"><button onclick="removeAdvRecipeRow(${index})" style="background: none; border: none; cursor: pointer; color: #ef4444; font-size: 16px;">🗑️</button></td>
         </tr>
@@ -6033,18 +6037,7 @@ window.saveAdvancedProduct = async function () {
     if (duplicates.docs.some(row => row.id !== (menuId || window.pendingAdvMenuRef?.id))) throw new Error('Another menu item already uses this name.');
     const recipeRows = window.currentAdvRecipe.map(item => ({ ...item }));
     const deletedRecipes = [...(window.deletedAdvRecipes || [])];
-    let addonsArray = [];
-    document.querySelectorAll('#addonTableBody tr').forEach(row => {
-      let nameInput = row.querySelector('.addon-name');
-      if (nameInput && nameInput.value.trim() !== '') { 
-        addonsArray.push({
-          name: nameInput.value.trim(),
-          price: Number(row.querySelector('.addon-price').value),
-          linkedIngredient: row.querySelector('.addon-ingredient').value,
-          deductQty: Number(row.querySelector('.addon-qty').value)
-        });
-      }
-    });
+    const addonsArray = readProductAddonRows(document);
 
     const inventorySnap = await window.getDocsFromServer(window.collection(window.db, 'inventory'));
     const availableNames = new Set(inventorySnap.docs.map(d => d.data().name));
@@ -27100,3 +27093,5 @@ window.loadGovernmentCompliance=()=>bookkeeperPayments?.refresh();
 
 // Continuous case numbering and reviewed actions replace the legacy auto-escalation form.
 installDisciplineCases(window,document);
+
+runManagerDomReady(()=>{installProductAddonDrafts(window,document);window.productEditorLayout ||= installProductEditorLayout({document,window});window.menuOptions ||= installMenuOptions(window,document);});

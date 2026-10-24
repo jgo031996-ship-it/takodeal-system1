@@ -855,7 +855,7 @@ window.openAddOrderModal = async function(name, basePrice, existingItem = null) 
                     });
                     
                     extraAddonHtml += `
-                        <div class="section-title" style="margin-bottom: 8px; width: 100%; text-align: left;">EXTRA ADD-ONS (Optional)</div>
+                        <div class="section-title" style="margin-bottom: 8px; width: 100%; text-align: left;">EXTRA ADD-ONS PER ITEM (Optional)</div>
                         <div id="extraAddonListContainer" style="display: flex; flex-direction: column; gap: 8px; width: 100%;"></div>
                     `;
                 }
@@ -1049,7 +1049,7 @@ window.confirmAddOrUpdateToCart = function() {
             let bfInfo = window.currentBaseFlavorsInfo.find(b => b.name === flavor);
             
             window.pendingItem.addons[flavor] = { 
-                name: flavor, price: 0, qty: qty, linkedIngredient: bfInfo ? (bfInfo.linkedIngredient || '') : '', deductQty: bfInfo ? (bfInfo.deductQty || 0) : 0 
+                name: flavor, price: 0, qty: 1, linkedIngredient: bfInfo ? (bfInfo.linkedIngredient || '') : '', deductQty: bfInfo ? (bfInfo.deductQty || 0) : 0
             };
         }
     }
@@ -1101,7 +1101,8 @@ window.confirmAddOrUpdateToCart = function() {
         addonsTotal += (window.pendingItem.addons[key].price * window.pendingItem.addons[key].qty);
     }
     
-    let lineTotalBeforeDisc = (window.pendingItem.variantPrice * qty) + addonsTotal;
+    // Add-on counts are per item; apply the parent quantity once, as in the preview.
+    let lineTotalBeforeDisc = (window.pendingItem.variantPrice + addonsTotal) * qty;
     
     let rowDiscount = 0;
     if (window.pendingItem.discountType === 'percentage' && window.pendingItem.discountVal > 0) rowDiscount = lineTotalBeforeDisc * (window.pendingItem.discountVal / 100);
