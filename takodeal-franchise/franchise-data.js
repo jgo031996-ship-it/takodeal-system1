@@ -104,11 +104,13 @@ export function ledgerRows(rows) {
   return {...row,charge:charge?n(row.amount):0,payment:payment?n(row.amount):0,balance};
  });
 }
-export function attendanceEstimate({logs,profiles,deductions=[],bonuses=[],ledgers=[],schedule={},holidays={},start,end,branch}) {
- const {start:from,end:to}=range(start,end),active=new Map(),people=new Map();
+export function attendanceEstimate({logs,referenceLogs=logs,profiles,deductions=[],bonuses=[],ledgers=[],schedule={},holidays={},start,end,branch,calendarCutoff=false}) {
+ // Payslip cutoffs use Philippine calendar dates; existing report callers keep
+ // their 08:30 business-day window. A matching Time Out may close overnight.
+ const bounds=range(start,end),from=calendarCutoff?new Date(start+'T00:00:00+08:00'):bounds.start,to=calendarCutoff?new Date(addDays(end,1)+'T00:00:00+08:00'):bounds.end,active=new Map(),people=new Map();
  const profileMap=Object.fromEntries(profiles.map(p=>[p.cashierName,p]));
  const profileIds=new Map(profiles.filter(p=>p.id).map(p=>[p.id,p]));
- const plan=planPayrollAttendance(logs.filter(log=>log.branch===branch),{resolveName:log=>profileIds.get(log.staffId)?.cashierName || log.staffName});
+ const plan=planPayrollAttendance(logs.filter(log=>log.branch===branch),{resolveName:log=>profileIds.get(log.staffId)?.cashierName || log.staffName,referenceRecords:referenceLogs.filter(log=>log.branch===branch)});
  const person=name=>{if (!people.has(name)) people.set(name,{name,hours:0,shifts:0,basic:0,bonus:0,late:0,meals:0,advances:0,scheduledPenaltyReview:0,logs:[],review:0});return people.get(name);};
  for(const review of plan.reviews) {
   if(!profileMap[review.name])continue;

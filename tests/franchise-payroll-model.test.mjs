@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildFranchisePayslip} from '../takodeal-franchise/franchise-payroll-model.js';
+import {attendanceEstimate} from '../takodeal-franchise/franchise-data.js';
 const branch='Sample Branch',staff={id:'sample-staff',branch,cashierName:'Sample Crew',hourlyRate:500};
 const at=(day,time)=>`${day}T${time}:00+08:00`;
 function punches(day='2026-10-01',id=staff.id){return [{id:'in-'+day,staffId:id,staffName:staff.cashierName,branch,type:'TIME IN',timestamp:at(day,'09:00'),scheduleSnapshot:{version:1,branch,staffName:staff.cashierName,shiftId:'m',shiftType:'Morning',wasScheduled:true,expectedStartAt:at(day,'09:00'),expectedEndAt:at(day,'17:30')}},{id:'out-'+day,staffId:id,staffName:staff.cashierName,branch,type:'TIME OUT',timeInLogId:'in-'+day,timestamp:at(day,'17:30')}];}
+function timedPunches(day,startTime,endDay,endTime,shiftType='Morning'){
+ const logs=punches(day),begin=at(day,startTime),finish=at(endDay,endTime);logs[0].timestamp=begin;logs[0].scheduleSnapshot={...logs[0].scheduleSnapshot,shiftType,expectedStartAt:begin,expectedEndAt:finish};logs[1].timestamp=finish;return logs;
+}
 function input(patch={}){return {staff,profiles:[staff],branch,start:'2026-10-01',end:'2026-10-15',logs:punches(),schedule:{currentYear:2026,currentMonth:10,branchConfig:{[branch]:[{id:'m',name:'Morning',startTime:'09:00',endTime:'17:30',active:true}]},currentSchedule:{1:{[branch]:{scheduled:{m:'Sample Crew'}}},2:{[branch]:{scheduled:{m:'Sample Crew'}}}}},...patch};}
 const row=(id,type,amount,extra={})=>({id,staffId:staff.id,staffName:staff.cashierName,branch,type,amount,status:'Unpaid',dateAdded:at('2026-10-01','10:00'),...extra});
 const frozen={staffId:staff.id,name:'Original Saved Name',branch,start:'2026-10-01',end:'2026-10-15',isPaid:true,basicPay:4000,nightBonus:350,meals:534.5,customDeductionsTotal:218,profile:{staffId:staff.id,customDeductions:[{name:'Wi-Fi',amount:50},{name:'Cancelled Orders',amount:168}]},finalNetPay:3597.5};
@@ -11,6 +15,40 @@ const saved=(f=frozen)=>({id:'sample-paid',staffId:staff.id,staffName:f.name,bra
 
 test('uses the stored daily wage once per completed shift, rather than multiplying it by hours',()=>{
  const model=buildFranchisePayslip(input());assert.equal(model.kind,'estimate',JSON.stringify(model.reviewReasons));assert.equal(model.hours,8.5);assert.equal(model.totals.basic,500);assert.equal(model.totals.net,500);assert.equal(model.rateRows[0].dailyRate,500);assert.ok(Object.isFrozen(model));assert.ok(Object.isFrozen(model.totals));
+});
+test('calendar payroll includes an 08:00 shift on the first cutoff day',()=>{
+ const model=buildFranchisePayslip(input({logs:timedPunches('2026-10-01','08:00','2026-10-01','16:30')}));
+ assert.equal(model.kind,'estimate',JSON.stringify(model.reviewReasons));assert.equal(model.hours,8.5);assert.equal(model.shifts,1);assert.equal(model.totals.basic,500);assert.equal(model.attendanceRows[0].in,+new Date(at('2026-10-01','08:00')));
+});
+test('calendar payroll excludes the next cutoff early-morning Time In even when it was loaded for overnight closures',()=>{
+ const current=timedPunches('2026-10-15','08:00','2026-10-15','16:30'),next=timedPunches('2026-10-16','07:00','2026-10-16','15:30');
+ const model=buildFranchisePayslip(input({logs:[...current,...next]}));
+ assert.equal(model.kind,'estimate',JSON.stringify(model.reviewReasons));assert.equal(model.hours,8.5);assert.equal(model.shifts,1);assert.equal(model.totals.basic,500);assert.equal(model.attendanceRows.length,1);assert.equal(model.attendanceRows[0].in,+new Date(at('2026-10-15','08:00')));
+});
+test('calendar payroll completes a last-day overnight shift using its next-day linked Time Out',()=>{
+ const model=buildFranchisePayslip(input({logs:timedPunches('2026-10-15','22:00','2026-10-16','06:30','Night')}));
+ assert.equal(model.kind,'estimate',JSON.stringify(model.reviewReasons));assert.equal(model.hours,8.5);assert.equal(model.shifts,1);assert.equal(model.totals.basic,500);assert.equal(model.attendanceRows[0].out,+new Date(at('2026-10-16','06:30')));assert.equal(model.attendanceRows[0].workDate,'2026-10-15');
+});
+test('a verified previous-cutoff overnight closure is reference evidence and never adds wages to this cutoff',()=>{
+ const prior=timedPunches('2026-09-30','22:00','2026-10-01','06:30','Night'),current=timedPunches('2026-10-01','08:00','2026-10-01','16:30'),logs=[...prior,...current],original=structuredClone(logs);
+ const model=buildFranchisePayslip(input({logs}));
+ assert.equal(model.kind,'estimate',JSON.stringify(model.reviewReasons));assert.equal(model.hours,8.5);assert.equal(model.shifts,1);assert.equal(model.totals.basic,500);assert.equal(model.attendanceRows.length,1);assert.equal(model.attendanceRows[0].in,+new Date(at('2026-10-01','08:00')));assert.deepEqual(logs,original);
+});
+test('an unverified previous-cutoff closure stays held when its source is missing, invalid or outside the reference window',()=>{
+ const prior=timedPunches('2026-09-30','22:00','2026-10-01','06:30','Night'),current=timedPunches('2026-10-01','08:00','2026-10-01','16:30');
+ const variants=[[prior[1]], [{...prior[0],type:'TIME OUT'},prior[1]], [{...prior[0],timestamp:at('2026-09-29','22:00')},prior[1]], [{...prior[0],deleted:true},prior[1]]];
+ for(const rows of variants){const model=buildFranchisePayslip(input({logs:[...rows,...current]}));assert.equal(model.kind,'held');assert.equal(model.totals.net,null);assert.match(model.reviewReasons.join(' '),/Linked Time In is missing or ambiguous/);}
+});
+test('a previous-cutoff closure cannot borrow a different employee or branch source to clear review',()=>{
+ const prior=timedPunches('2026-09-30','22:00','2026-10-01','06:30','Night'),current=timedPunches('2026-10-01','08:00','2026-10-01','16:30');
+ for(const patch of [{staffId:'another-staff'},{branch:'Another branch'},{staffId:undefined,staffName:'Different name'}]){
+  const model=buildFranchisePayslip(input({logs:[{...prior[0],...patch},prior[1],...current]}));assert.equal(model.kind,'held');assert.equal(model.totals.net,null);assert.equal(model.incomeRows.length,0);
+ }
+});
+test('generic attendance keeps its existing 08:30 business-day boundaries unless calendar payroll is requested',()=>{
+ const args={logs:timedPunches('2026-10-01','08:00','2026-10-01','16:30'),profiles:[staff],branch,start:'2026-10-01',end:'2026-10-15'};
+ const [business]=attendanceEstimate(args),[calendar]=attendanceEstimate({...args,calendarCutoff:true});assert.equal(business.hours,0);assert.equal(business.gross,0);assert.equal(calendar.hours,8.5);assert.equal(calendar.gross,500);
+ assert.equal(attendanceEstimate({...args,logs:punches()})[0].hours,8.5);
 });
 test('dated wage increases apply to their own work dates',()=>{
  const person={...staff,salaryRateVersion:1,salaryRateTimeline:{version:1,revision:1,baselineDailyRate:450,rates:{increase:{dailyRate:480,effectiveDate:'2026-10-02',sequence:1}}}};

@@ -188,9 +188,9 @@ test('reset during an index failure never launches the old full-branch fallback'
 });
 
 function fakeNode(tag='div') {
-    const classes=new Set(),node={tagName:tag.toUpperCase(),childNodes:[],value:'',dataset:{},style:{},hidden:false,disabled:false,events:{},
+    const classes=new Set(),node={tagName:tag.toUpperCase(),childNodes:[],value:'',dataset:{},attributes:{},style:{},hidden:false,disabled:false,events:{},
         classList:{contains:c=>classes.has(c),add:(...cs)=>cs.forEach(c=>classes.add(c)),remove:(...cs)=>cs.forEach(c=>classes.delete(c)),toggle(c,v){v ??= !classes.has(c);v?classes.add(c):classes.delete(c);return v;}},
-        setAttribute(){},addEventListener(name,fn){this.events[name]=fn;},append(...children){if(this.tagName==='SELECT' && !this.childNodes.length)this.value=children[0]?.value || '';this.childNodes.push(...children);},insertBefore(child){this.childNodes.unshift(child);},replaceChildren(...children){this.childNodes=children;},querySelectorAll:()=>[],querySelector:()=>null};
+        setAttribute(name,value){this.attributes[name]=String(value);},removeAttribute(name){delete this.attributes[name];},getAttribute(name){return this.attributes[name]??null;},addEventListener(name,fn){this.events[name]=fn;},append(...children){if(this.tagName==='SELECT' && !this.childNodes.length)this.value=children[0]?.value || '';this.childNodes.push(...children);},insertBefore(child){this.childNodes.unshift(child);},replaceChildren(...children){this.childNodes=children;},querySelectorAll:()=>[],querySelector:()=>null};
     if(tag==='table')node.tBodies=[fakeNode('tbody')];return node;
 }
 function workspaceFixture() {

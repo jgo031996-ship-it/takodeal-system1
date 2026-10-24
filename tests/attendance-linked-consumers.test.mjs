@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {attendanceRows} from '../Takodeal-POS/cashier-data.js';
-import {attendanceEstimate,money,esc} from '../takodeal-franchise/franchise-data.js';
+import {attendanceEstimate,money,esc,addDays} from '../takodeal-franchise/franchise-data.js';
 import {buildFranchisePayslip} from '../takodeal-franchise/franchise-payroll-model.js';
 import {installFranchisePayslipUI} from '../takodeal-franchise/franchise-payslip-ui.js';
 
@@ -56,6 +56,7 @@ test('the actual Franchise payroll view renders held gross/net as review text an
   constructor(tag,document){this.tagName=tag.toUpperCase();this.document=document;this.children=[];this.style={};this.listeners={};this.attributes={};this.disabled=false;this.textContent='';}
   get isConnected(){return this===this.document.body||!!this.parent?.isConnected;}
   append(...nodes){for(const node of nodes){node.parent=this;this.children.push(node);}}
+  insertBefore(node,before){const index=this.children.indexOf(before);node.parent=this;if(index<0)this.children.push(node);else this.children.splice(index,0,node);}
   remove(){if(this.parent){this.parent.children=this.parent.children.filter(node=>node!==this);this.parent=null;}}
   setAttribute(key,value){this.attributes[key]=value;}
   addEventListener(key,handler){this.listeners[key]=handler;}
@@ -66,10 +67,13 @@ test('the actual Franchise payroll view renders held gross/net as review text an
  const errors=[],state={route:'payroll'},scope='sample-account:Maa';
  const payslips=installFranchisePayslipUI({document,window:{},assertCurrent:()=>assert.equal(state.route,'payroll'),onError:error=>errors.push(error.message)});
  let render,click,load;
+ const element=(tag,cls,text)=>{const node=document.createElement(tag);node.className=cls||'';if(text!==undefined)node.textContent=text;return node;};
+ const payrollControls={getRange:()=>({start:'2026-10-07',end:'2026-10-07'}),queryRange:()=>({startDate:new Date('2026-10-07T00:00:00+08:00'),endDate:new Date('2026-10-08T18:00:00+08:00')})};
  const ctx=vm.createContext({define:(_id,handler)=>{load=handler;},selectedRange:()=>({start:new Date('2026-10-07T00:00:00+08:00'),end:new Date('2026-10-08T00:00:00+08:00')}),
   read:async table=>table==='cashiers'?profiles:[older,newer,oldClose],staffRows:async()=>[],createScheduleHistoryStore:()=>({loadRange:async()=>({})}),
-  api:{},session:()=>({branch:'Maa'}),calendarDay:()=> '2026-10-07',$:()=>({value:'2026-10-07'}),accountScope:()=>scope,payrollRows:async()=>[],state,payslipScope:'',payslips,buildFranchisePayslip,money,esc,
-  table:()=>({card:{append(){}},body:{addEventListener:(_event,handler)=>{click=handler;}}}),element:()=>({}),cell:value=>'<td>'+value+'</td>',number:value=>'<td>'+money(value)+'</td>',
+  api:{},session:()=>({branch:'Maa'}),calendarDay:()=> '2026-10-07',$:()=>({value:'2026-10-07'}),accountScope:()=>scope,payrollContext:()=>scope,payrollControls,payrollRows:async()=>[],state,payslipScope:'',payslips,buildFranchisePayslip,money,esc,addDays,
+  Option:function(label,value){const node=element('option','',label);node.value=value;return node;},button:(text,action,cls)=>{const node=element('button',cls,text);node.addEventListener('click',action);return node;},
+  table:()=>{const card=element('div'),wrap=element('div'),body=element('tbody');card.append(wrap);body.addEventListener=(_event,handler)=>{click=handler;};return {card,wrap,body};},element,cell:value=>'<td>'+value+'</td>',number:value=>'<td>'+money(value)+'</td>',
   badge:value=>'<span>'+esc(value)+'</span>',tools:(_card,_id,rows,renderer)=>{render=rows.map(renderer).join('');},showActionError:error=>errors.push(error.message)});
  vm.runInContext(source.slice(begin,end),ctx);await load({});
  assert.match(render,/HR review required/);assert.match(render,/data-franchise-payslip="staff-1"/);assert.doesNotMatch(render,/₱/);assert.equal(state.payrollScope,scope);
