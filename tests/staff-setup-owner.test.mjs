@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {generateStaffSetupCode,isSetupOwner,createSetupOwnerClient,installStaffSetupCodes,STAFF_SETUP_ENDPOINT} from '../takodeal-manager/staff-setup-codes.js';
+import {generateStaffSetupCode,isSetupOwner,createSetupOwnerClient,installStaffSetupCodes,STAFF_SETUP_ENDPOINT,setupDeviceUsage} from '../takodeal-manager/staff-setup-codes.js';
 
 const owner=()=>({uid:'qa-owner',email:'jgo031996@gmail.com',emailVerified:true,getIdToken:async()=> 'qa-token'});
 test('personal setup code uses rejection sampling and preserves leading zero digits',()=>{
@@ -47,7 +47,7 @@ test('deadline bounds token verification and a late token cannot send a setup co
 function harness(request){
  const nodes=new Map(),events=new Map(),docEvents=new Map();let mutation,authChange,n=0;
  const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',style:{display:'flex'},hidden:false,disabled:false,textContent:'',addEventListener:(type,fn)=>events.set(id+':'+type,fn)});return nodes.get(id);};
- for(const id of ['empProfileId','employeeProfileModal','staffSetupCodeStatus','staffSetupCodeGenerate','staffSetupCodeDisable','staffSetupCodeRefresh','staffSetupCodeCopy','staffSetupCodeValue','staffSetupCodeResult','staffSetupPolicyStatus','staffSetupPolicyEnable','staffSetupPolicyPause','staffSetupPolicyRefresh'])node(id);
+ for(const id of ['empProfileId','employeeProfileModal','staffSetupCodeStatus','staffSetupCodeGenerate','staffSetupCodeDisable','staffSetupCodeRefresh','staffSetupCodeCopy','staffSetupCodeValue','staffSetupCodeResult','staffSetupPolicyStatus','staffSetupPolicyEnable','staffSetupPolicyPause','staffSetupPolicyRefresh','staffSetupDeviceUsage','staffSetupDeviceUsageNote','staffSetupUsageRefresh'])node(id);
  node('empProfileId').value='employee-a';
  const d={hidden:false,getElementById:id=>nodes.get(id)||null,addEventListener:(event,fn)=>docEvents.set(event,fn)};
  const api={auth:{currentUser:owner(),onAuthStateChanged(fn){authChange=fn;}},navigator:{clipboard:{writeText:async value=>{api.copied=value;}}},Swal:{fire:async()=>({isConfirmed:true})},openEmployeeProfile(){},addNewStaff(){node('empProfileId').value='';},switchView(){},addEventListener:(event,fn)=>docEvents.set(event,fn)};
@@ -115,6 +115,30 @@ test('explicit rollout conflict reloads current policy and leaves controls usabl
 });
 test('explicit protected-device conflict forgets superseded operation and refreshes without replaying a write',async()=>{
  const calls=[];let reads=0,refreshes=0;const h=harness(async(route,body)=>{calls.push({...body});if(calls.length===1)throw Object.assign(Error('Device changed; refresh.'),{status:409});return{deviceId:body.deviceId,status:'Blocked'};});h.api.db={};h.api.doc=()=>'';h.api.loadDeviceFleet=()=>refreshes++;h.api.getDocFromServer=async()=>{reads++;return{exists:()=>true,data:()=>({appType:'Staff',setupVersion:1}),metadata:{}};};await assert.rejects(h.controller.routeDeviceChange('DEV-QA','block',()=>{}),error=>error.status===409);assert.equal(refreshes,1);assert.equal(calls.length,1);await h.controller.routeDeviceChange('DEV-QA','block',()=>{});assert.equal(reads,2);assert.notEqual(calls[0].operationId,calls[1].operationId);
+});
+test('phone usage uses the server limit dynamically and describes reached capacity',async()=>{
+ for(const limit of [2,3]){const h=harness(async()=>({...metadata,activeDevices:2,deviceLimit:limit}));await h.controller.loadProfile();assert.equal(h.node('staffSetupDeviceUsage').textContent,`2 of ${limit} active phones`);assert.match(h.node('staffSetupDeviceUsageNote').textContent,limit===2?/Limit reached/:/old registration/);assert.equal(h.node('staffSetupUsageRefresh').disabled,false);}
+});
+test('absent or malformed usage never invents zero active phones',async()=>{
+ for(const value of [metadata,{...metadata,activeDevices:-1,deviceLimit:2},{...metadata,activeDevices:0},{...metadata,activeDevices:'0',deviceLimit:2},{...metadata,activeDevices:1,deviceLimit:0}]){assert.equal(setupDeviceUsage(value),null);const h=harness(async()=>value);await h.controller.loadProfile();assert.equal(h.node('staffSetupDeviceUsage').textContent,'Phone usage not available');assert.match(h.node('staffSetupDeviceUsageNote').textContent,/No count has been assumed/);}
+});
+test('issuing and disabling a code retain last-checked phone usage without resetting capacity',async()=>{
+ const h=harness(async(route,body)=>route==='code-status'?{...metadata,activeDevices:2,deviceLimit:2}:route==='issue-code'?{staffId:body.staffId,enabled:true,version:body.expectedVersion+1}:{staffId:body.staffId,enabled:false,version:body.expectedVersion+1});await h.controller.loadProfile();await h.click('staffSetupCodeGenerate');assert.equal(h.node('staffSetupCodeResult').hidden,false);assert.equal(h.node('staffSetupDeviceUsage').textContent,'2 of 2 active phones');assert.match(h.node('staffSetupDeviceUsageNote').textContent,/Last checked/);await h.click('staffSetupCodeDisable');assert.equal(h.node('staffSetupDeviceUsage').textContent,'2 of 2 active phones');assert.equal(h.node('staffSetupCodeResult').hidden,true);
+});
+test('refreshing phone usage preserves a newly confirmed code and its copy action',async()=>{
+ let reads=0;const h=harness(async(route,body)=>route==='code-status'?reads++?{...metadata,enabled:true,version:1,activeDevices:2,deviceLimit:2}:{...metadata,activeDevices:1,deviceLimit:2}:{staffId:body.staffId,enabled:true,version:1});await h.controller.loadProfile();await h.click('staffSetupCodeGenerate');const shown=h.node('staffSetupCodeValue').textContent;await h.click('staffSetupUsageRefresh');assert.equal(h.node('staffSetupDeviceUsage').textContent,'2 of 2 active phones');assert.equal(h.node('staffSetupCodeValue').textContent,shown);assert.equal(h.node('staffSetupCodeResult').hidden,false);assert.equal(h.node('staffSetupCodeCopy').disabled,false);await h.click('staffSetupCodeCopy');assert.equal(h.api.copied,'0123456789');
+});
+test('failed phone-usage refresh keeps the last checked count with an explicit stale message',async()=>{
+ let reads=0;const h=harness(async()=>{if(reads++)throw Error('HQ connection unavailable.');return{...metadata,activeDevices:1,deviceLimit:2};});await h.controller.loadProfile();await h.click('staffSetupUsageRefresh');assert.equal(h.node('staffSetupDeviceUsage').textContent,'1 of 2 active phones');assert.match(h.node('staffSetupDeviceUsageNote').textContent,/connection unavailable.*last checked/);assert.equal(h.node('staffSetupUsageRefresh').disabled,false);
+});
+test('a late usage reply for a closed or different profile cannot reveal the previous staff count',async()=>{
+ let finish,reads=0;const h=harness(async()=>reads++?new Promise(resolve=>{finish=()=>resolve({...metadata,activeDevices:2,deviceLimit:2});}):{...metadata,activeDevices:1,deviceLimit:2});await h.controller.loadProfile();const pending=h.click('staffSetupUsageRefresh');h.controller.clear();h.node('empProfileId').value='employee-b';finish();await pending;assert.equal(h.node('staffSetupDeviceUsage').textContent,'Phone usage not available');assert.equal(h.node('staffSetupCodeValue').textContent,'');
+});
+test('usage read begun before local issuance cannot clear its newer confirmed code',async()=>{
+ let finish,reads=0;const h=harness(async(route,body)=>route==='code-status'?reads++?new Promise(resolve=>{finish=()=>resolve({...metadata,activeDevices:1,deviceLimit:2});}):{...metadata,activeDevices:0,deviceLimit:2}:{staffId:body.staffId,enabled:true,version:1});await h.controller.loadProfile();const pending=h.click('staffSetupUsageRefresh');await h.click('staffSetupCodeGenerate');const shown=h.node('staffSetupCodeValue').textContent;finish();await pending;assert.equal(h.node('staffSetupCodeValue').textContent,shown);assert.equal(h.node('staffSetupCodeResult').hidden,false);assert.equal(h.node('staffSetupDeviceUsage').textContent,'1 of 2 active phones');
+});
+test('usage refresh clears shown code only when HQ explicitly confirms a newer credential decision',async()=>{
+ let reads=0;const h=harness(async(route,body)=>route==='code-status'?reads++?{...metadata,enabled:false,version:2,activeDevices:1,deviceLimit:2}:{...metadata,activeDevices:1,deviceLimit:2}:{staffId:body.staffId,enabled:true,version:1});await h.controller.loadProfile();await h.click('staffSetupCodeGenerate');assert.equal(h.node('staffSetupCodeResult').hidden,false);await h.click('staffSetupUsageRefresh');assert.equal(h.node('staffSetupCodeResult').hidden,true);assert.match(h.node('staffSetupCodeStatus').textContent,/status changed at HQ/);assert.equal(h.node('staffSetupCodeGenerate').textContent,'Replace setup code');
 });
 test('source integration precaches private UI and routes both single and bulk fleet operations',()=>{
  const main=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),html=readFileSync(new URL('../takodeal-manager/index.html',import.meta.url),'utf8'),sw=readFileSync(new URL('../takodeal-manager/sw.js',import.meta.url),'utf8'),module=readFileSync(new URL('../takodeal-manager/staff-setup-codes.js',import.meta.url),'utf8');

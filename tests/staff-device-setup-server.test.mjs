@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {createStaffDeviceSetup,hashSetupCode,verifySetupCode,activeSetupStaff,PRODUCTION_ORIGINS,MAX_REQUEST_BYTES,RATE_LIMITS} from '../functions/staff-device-setup/service.mjs';
+import {createStaffDeviceSetup,hashSetupCode,verifySetupCode,activeSetupStaff,PRODUCTION_ORIGINS,MAX_REQUEST_BYTES,MAX_ACTIVE_DEVICES,RATE_LIMITS} from '../functions/staff-device-setup/service.mjs';
 
 const token='fixture_firebase_token_1234567890',setupCode='0753146290',otherCode='0296841753';
 const owner={uid:'owner_uid',email:'jgo031996@gmail.com',email_verified:true,firebase:{sign_in_provider:'google.com'}};
@@ -39,7 +39,7 @@ test('real setup code hashes use unique random salts, slow verifier and constant
  await assert.rejects(hashSetupCode(1234567890));
 });
 test('configuration is a nonsecret unauthenticated bootstrap and defaults disabled when absent',async()=>{
- const f=fixture({enabled:null});const result=await f.request('/config',{}, {authorization:undefined});assert.equal(result.status,200);assert.deepEqual(result.body,{enabled:false,revision:0,protocolVersion:1});assert.equal(f.commits.length,0);assert.equal(f.verifications.length,0);
+ const f=fixture({enabled:null});const result=await f.request('/config',{}, {authorization:undefined});assert.equal(result.status,200);assert.deepEqual(result.body,{enabled:false,revision:0,protocolVersion:1,deviceLimit:2});assert.equal(f.commits.length,0);assert.equal(f.verifications.length,0);
 });
 test('policy changes require verified Owner and expected revision; repeated operation is stable',async()=>{
  const f=fixture({enabled:false}),body={enabled:true,expectedRevision:1,operationId:'operation_policy_one'};
@@ -55,7 +55,7 @@ test('Owner issue code stores only a salted verifier and status/audit contain no
  assert.ok(f.verifications.every(([,checkRevoked])=>checkRevoked===true));
 });
 test('Owner code status for an unissued account is disabled version zero',async()=>{
- const f=fixture();assert.deepEqual((await f.request('/code-status',{staffId:'staff_one'})).body,{staffId:'staff_one',enabled:false,version:0,issuedAt:null});
+ const f=fixture();assert.deepEqual((await f.request('/code-status',{staffId:'staff_one'})).body,{staffId:'staff_one',enabled:false,version:0,issuedAt:null,activeDevices:0,deviceLimit:2});
 });
 test('code issue is idempotent after lost acknowledgment and rejects altered code or staff',async()=>{
  const f=fixture();f.failAfterCommit=true;assert.equal((await f.request('/issue-code',issue)).status,503);assert.equal(f.docs.get('staff_setup_credentials/staff_one').version,1);
@@ -80,7 +80,7 @@ test('a delayed old policy acknowledgment cannot hide a newer rollout change',as
 test('correct code automatically activates one anonymous UID and derives branch/name from current profile',async()=>{
  const f=fixture();await f.issue();const result=await f.activate();assert.equal(result.status,200);assert.deepEqual(result.body,{enabled:true,mode:'protected',device:{staffId:'staff_one',staffName:'Sample Staff',branch:'Maa',deviceId:activation.deviceId,status:'Active'}});
  const binding=f.docs.get('staff_app_bindings/anon_one'),mirror=f.docs.get('pos_devices/'+activation.deviceId),index=f.docs.get('staff_app_device_index/'+activation.deviceId);assert.equal(binding.status,'Active');assert.equal(binding.codeVersion,1);assert.equal(mirror.setupVersion,1);assert.equal(mirror.setupUid,'anon_one');assert.equal(mirror.appType,'Staff');assert.equal(mirror.staffId,'staff_one');assert.equal(index.uid,'anon_one');
- const writes=f.commits.at(-1);assert.deepEqual(writes.map(([,p])=>p).sort(),['pos_devices/'+activation.deviceId,'staff_app_bindings/anon_one','staff_app_device_index/'+activation.deviceId,'staff_setup_audit/'+activation.operationId,'staff_setup_operations/'+activation.operationId].sort());
+ const writes=f.commits.at(-1);assert.deepEqual(writes.map(([,p])=>p).sort(),['pos_devices/'+activation.deviceId,'staff_app_bindings/anon_one','staff_app_device_index/'+activation.deviceId,'staff_setup_audit/'+activation.operationId,'staff_setup_operations/'+activation.operationId,'staff_setup_device_slots/staff_one','staff_setup_credentials/staff_one'].sort());
 });
 test('wrong, absent and disabled credentials return the same generic invalid-code result with no binding',async()=>{
  for(const mode of ['wrong','absent','disabled']){const f=fixture();if(mode!=='absent')await f.issue();if(mode==='disabled'){f.owner();assert.equal((await f.request('/disable-code',{staffId:'staff_one',expectedVersion:1,operationId:'operation_disable_one'})).status,200);}const result=await f.activate({...activation,code:mode==='wrong'?otherCode:setupCode});assert.equal(result.status,403);assert.deepEqual(result.body,{error:{code:'setup-code-invalid',message:'The setup code could not be verified. Check it with HQ and try again.'}});assert.equal(f.docs.has('staff_app_bindings/anon_one'),false);assert.equal(f.docs.has('pos_devices/'+activation.deviceId),false);}
@@ -130,7 +130,7 @@ test('orphaned protected mirror or index fails closed rather than returning lega
  for(const mode of ['mirror','index']){const f=fixture({enabled:false});if(mode==='mirror')f.docs.set('pos_devices/'+activation.deviceId,{setupUid:'anon_someone',status:'Active'});else f.docs.set('staff_app_device_index/'+activation.deviceId,{uid:'anon_someone'});f.staff();assert.equal((await f.request('/device-status',{deviceId:activation.deviceId})).status,403);}
 });
 test('incomplete or mismatched protected mirror cannot authorize a bound phone',async()=>{
- for(const mode of ['missing','uid','staff','branch','appType']){const f=await enrolled(),path='pos_devices/'+activation.deviceId;if(mode==='missing')f.docs.delete(path);else{const mirror=f.docs.get(path);if(mode==='uid')mirror.setupUid='another_uid';if(mode==='staff')mirror.staffId='staff_two';if(mode==='branch')mirror.branch='Citygate';if(mode==='appType')mirror.appType='Cashier';}f.staff();assert.equal((await f.request('/device-status',{deviceId:activation.deviceId})).status,403);}
+ for(const mode of ['missing','uid','staff','branch','appType']){const f=await enrolled(),path='pos_devices/'+activation.deviceId;if(mode==='missing')f.docs.delete(path);else{const mirror=f.docs.get(path);if(mode==='uid')mirror.setupUid='another_uid';if(mode==='staff')mirror.staffId='staff_two';if(mode==='branch')mirror.branch='Citygate';if(mode==='appType')mirror.appType='Cashier';}f.staff();assert.equal((await f.request('/device-status',{deviceId:activation.deviceId})).status,503);}
 });
 test('revocation or branch change blocks fresh status and activation replay; unblocking requires review',async()=>{
  for(const edit of [{status:'Revoked'},{pin:'REVOKED'},{active:false},{branch:'Citygate'}]){const f=await enrolled();Object.assign(f.docs.get('cashiers/staff_one'),edit);f.staff();const status=await f.request('/device-status',{deviceId:activation.deviceId});assert.equal(status.status,200);assert.equal(status.body.device.status,'Blocked');assert.equal((await f.activate()).status,403);assert.equal((await f.action('unblock')).status,409);}
@@ -186,4 +186,87 @@ test('Owner issuance is only accepted from Owner origin and activation only from
 });
 test('all replies disable caching and successful responses never reveal setup verifier',async()=>{
  const f=fixture(),response=await f.issue();assert.equal(response.headers['Cache-Control'],'no-store');assert.equal(response.headers['Pragma'],'no-cache');assert.equal(response.headers['X-Content-Type-Options'],'nosniff');assert.equal(JSON.stringify(response).includes('scrypt'),false);assert.equal(JSON.stringify(response).includes('salt'),false);
+});
+
+const slotsPath='staff_setup_device_slots/staff_one';
+const extraActivation=n=>({...activation,deviceId:'DEV-TEST-PHONE-'+n,deviceName:'Sample phone '+n,operationId:'operation_extra_phone_'+n});
+async function usage(f){f.owner();const response=await f.request('/code-status',{staffId:'staff_one'});assert.equal(response.status,200,JSON.stringify(response.body));return response.body;}
+async function actionFor(f,deviceId,action,operationId){f.owner();return f.request('/device-action',{deviceId,action,operationId});}
+
+test('the Owner-selected default is exactly two active phone registrations per staff',()=>assert.equal(MAX_ACTIVE_DEVICES,2));
+test('third phone is rejected atomically and tells staff how to free an old registration',async()=>{
+ const f=await enrolled();assert.equal((await f.activate(extraActivation(2),'anon_two')).status,200);const before=structuredClone(f.docs.get(slotsPath));
+ const response=await f.activate(extraActivation(3),'anon_three');assert.equal(response.status,409);assert.equal(response.body.error.code,'device-limit');assert.match(response.body.error.message,/2 active phones/);assert.match(response.body.error.message,/Owner to block or delete/);
+ assert.equal(f.docs.has('staff_app_bindings/anon_three'),false);assert.equal(f.docs.has('staff_app_device_index/'+extraActivation(3).deviceId),false);assert.equal(f.docs.has('pos_devices/'+extraActivation(3).deviceId),false);assert.equal(f.docs.has('staff_setup_operations/'+extraActivation(3).operationId),false);assert.deepEqual(f.docs.get(slotsPath),before);assert.equal((await usage(f)).activeDevices,2);
+});
+test('concurrent distinct phones competing for the last slot admit exactly one',async()=>{
+ const f=await enrolled();f.staff('anon_two');const a=f.request('/activate',extraActivation(2));f.staff('anon_three');const b=f.request('/activate',extraActivation(3));const responses=await Promise.all([a,b]);assert.deepEqual(responses.map(r=>r.status).sort(),[200,409]);
+ assert.equal(f.docs.get(slotsPath).activeDevices.length,2);assert.equal([...f.docs.keys()].filter(path=>path.startsWith('staff_app_bindings/')).length,2);assert.equal((await usage(f)).activeDevices,2);
+});
+test('an identical activation retry at a full cap does not consume another slot',async()=>{
+ const f=await enrolled();assert.equal((await f.activate(extraActivation(2),'anon_two')).status,200);const saved=structuredClone(f.docs.get(slotsPath));const response=await f.activate(activation,'anon_one');assert.equal(response.status,200);assert.deepEqual(f.docs.get(slotsPath),saved);assert.equal((await usage(f)).activeDevices,2);
+});
+test('a lost last-slot acknowledgment can be recovered without double-counting',async()=>{
+ const f=await enrolled();f.failAfterCommit=true;assert.equal((await f.activate(extraActivation(2),'anon_two')).status,503);assert.equal(f.docs.get(slotsPath).activeDevices.length,2);const revision=f.docs.get(slotsPath).revision;
+ assert.equal((await f.activate(extraActivation(2),'anon_two')).status,200);assert.equal(f.docs.get(slotsPath).revision,revision);assert.equal((await usage(f)).activeDevices,2);
+});
+test('block frees one slot; repeat block and delete of the blocked phone cannot free a different slot',async()=>{
+ const f=await enrolled();await f.activate(extraActivation(2),'anon_two');assert.equal((await f.action('block','operation_block_once')).status,200);assert.equal((await usage(f)).activeDevices,1);
+ assert.equal((await f.action('block','operation_block_again')).status,200);assert.equal((await usage(f)).activeDevices,1);
+ assert.equal((await f.action('delete','operation_delete_blocked')).status,200);assert.equal((await usage(f)).activeDevices,1);assert.equal(f.docs.get(slotsPath).activeDevices[0].uid,'anon_two');assert.equal(f.docs.get('staff_app_bindings/anon_two').status,'Active');
+ assert.equal((await f.activate(extraActivation(3),'anon_three')).status,200);assert.equal((await usage(f)).activeDevices,2);
+});
+test('delete of an active phone frees one slot and retains its reserved device index',async()=>{
+ const f=await enrolled();await f.activate(extraActivation(2),'anon_two');const index=structuredClone(f.docs.get('staff_app_device_index/'+activation.deviceId));assert.equal((await f.action('delete','operation_delete_active')).status,200);assert.equal((await usage(f)).activeDevices,1);
+ assert.deepEqual(f.docs.get('staff_app_device_index/'+activation.deviceId),index);assert.equal((await f.activate(extraActivation(3),'anon_three')).status,200);assert.equal((await usage(f)).activeDevices,2);
+});
+test('unblock must reserve a slot and fails at capacity without changing the blocked binding or mirror',async()=>{
+ const f=await enrolled();await f.activate(extraActivation(2),'anon_two');await f.action('block','operation_block_first');await f.activate(extraActivation(3),'anon_three');
+ const before=structuredClone(f.docs.get(slotsPath)),response=await f.action('unblock','operation_unblock_full');assert.equal(response.status,409);assert.equal(response.body.error.code,'device-limit');assert.equal(f.docs.get('staff_app_bindings/anon_one').status,'Blocked');assert.equal(f.docs.get('pos_devices/'+activation.deviceId).status,'Blocked');assert.deepEqual(f.docs.get(slotsPath),before);
+ assert.equal((await actionFor(f,extraActivation(2).deviceId,'block','operation_block_second')).status,200);assert.equal((await f.action('unblock','operation_unblock_available')).status,200);assert.equal((await usage(f)).activeDevices,2);assert.ok(f.docs.get(slotsPath).activeDevices.some(item=>item.uid==='anon_one'));
+});
+test('concurrent unblock and new activation share the last-slot fence',async()=>{
+ const f=await enrolled();await f.activate(extraActivation(2),'anon_two');await f.action('block','operation_block_one');
+ f.owner();const a=f.request('/device-action',{deviceId:activation.deviceId,action:'unblock',operationId:'operation_race_unblock'});f.staff('anon_three');const b=f.request('/activate',extraActivation(3));const results=await Promise.all([a,b]);assert.deepEqual(results.map(r=>r.status).sort(),[200,409]);assert.equal((await usage(f)).activeDevices,2);
+});
+test('code replacement and disabling preserve the slot registry and existing full usage',async()=>{
+ const f=await enrolled();await f.activate(extraActivation(2),'anon_two');const before=structuredClone(f.docs.get(slotsPath));await f.issue({...issue,code:otherCode,expectedVersion:1,operationId:'operation_rotate_full'});assert.deepEqual(f.docs.get(slotsPath),before);assert.equal((await usage(f)).activeDevices,2);
+ const replacement={...extraActivation(3),code:otherCode};assert.equal((await f.activate(replacement,'anon_three')).status,409);f.owner();assert.equal((await f.request('/disable-code',{staffId:'staff_one',expectedVersion:2,operationId:'operation_disable_full'})).status,200);assert.deepEqual(f.docs.get(slotsPath),before);assert.equal((await usage(f)).activeDevices,2);
+});
+test('code-issuance retry stays valid when only phone usage changed',async()=>{
+ const f=fixture();const issued=await f.issue();await f.activate();f.owner();const retry=await f.request('/issue-code',issue);assert.equal(retry.status,200);assert.deepEqual(retry.body,issued.body);assert.equal((await usage(f)).activeDevices,1);
+});
+test('clearing a phone or changing to a new UID does not erase the server account cap',async()=>{
+ const f=await enrolled();await f.activate(extraActivation(2),'anon_two');assert.equal((await f.activate(extraActivation(3),'anon_after_reset')).status,409);assert.equal((await usage(f)).activeDevices,2);assert.equal(f.docs.get('staff_app_bindings/anon_one').status,'Active');
+});
+test('staff accounts have independent device limits',async()=>{
+ const f=await enrolled();await f.activate(extraActivation(2),'anon_two');await f.issue({...issue,staffId:'staff_two',operationId:'operation_issue_second_staff'});const response=await f.activate({...extraActivation(3),staffId:'staff_two'},'anon_three');assert.equal(response.status,200);assert.equal((await usage(f)).activeDevices,2);assert.equal(f.docs.get('staff_setup_device_slots/staff_two').activeDevices.length,1);
+});
+test('first credential and its empty registry are one atomic operation',async()=>{
+ const f=fixture();f.hooks.beforeCommit=writes=>{if(writes.some(([,path])=>path===slotsPath))throw Error('Simulated registry write failure');};assert.equal((await f.request('/issue-code',issue)).status,503);assert.equal(f.docs.has('staff_setup_credentials/staff_one'),false);assert.equal(f.docs.has(slotsPath),false);assert.equal(f.docs.has('staff_setup_operations/'+issue.operationId),false);
+});
+test('never-issued disable initializes a zero-slot registry without granting an activation credential',async()=>{
+ const f=fixture();assert.equal((await f.request('/disable-code',{staffId:'staff_one',expectedVersion:0,operationId:'operation_disable_unissued'})).status,200);assert.equal(f.docs.get(slotsPath).activeDevices.length,0);assert.equal((await usage(f)).activeDevices,0);assert.equal((await f.activate()).status,403);
+});
+test('pre-limit credentials or known bindings without a registry are held for explicit review, never counted as zero',async()=>{
+ const f=await enrolled();f.docs.delete(slotsPath);const before=f.commits.length;f.owner();assert.equal((await f.request('/code-status',{staffId:'staff_one'})).status,503);assert.equal((await f.request('/issue-code',{...issue,expectedVersion:1,operationId:'operation_rotate_missing_registry'})).status,503);assert.equal(f.commits.length,before);f.staff();assert.equal((await f.request('/device-status',{deviceId:activation.deviceId})).status,503);assert.equal((await f.activate(extraActivation(2),'anon_two')).status,503);
+ const g=fixture();await g.issue();delete g.docs.get('staff_setup_credentials/staff_one').deviceSlotsVersion;g.docs.delete(slotsPath);g.owner();assert.equal((await g.request('/code-status',{staffId:'staff_one'})).status,503);assert.equal((await g.request('/issue-code',{...issue,expectedVersion:1,operationId:'operation_rotate_old_credential'})).status,503);
+});
+test('orphaned registry without its credential is not treated as an unissued account',async()=>{
+ const f=fixture();await f.issue();f.docs.delete('staff_setup_credentials/staff_one');assert.equal((await f.request('/code-status',{staffId:'staff_one'})).status,503);assert.equal((await f.request('/issue-code',issue)).status,503);assert.equal(f.docs.get(slotsPath).activeDevices.length,0);
+});
+test('registry corruption and orphaned active references fail closed without inferred repairs',async()=>{
+ const cases=[
+  f=>{f.docs.get(slotsPath).staffId='staff_two';},f=>{f.docs.get(slotsPath).revision=0;},f=>{f.docs.get(slotsPath).activeDevices.push({...f.docs.get(slotsPath).activeDevices[0]});},
+  f=>{f.docs.get(slotsPath).activeDevices=[];},f=>{f.docs.delete('staff_app_bindings/anon_one');},f=>{f.docs.delete('staff_app_device_index/'+activation.deviceId);},f=>{f.docs.delete('pos_devices/'+activation.deviceId);},
+  f=>{f.docs.get('staff_app_bindings/anon_one').status='Blocked';}
+ ];
+ for(const mutate of cases){const f=await enrolled();mutate(f);f.owner();const status=await f.request('/code-status',{staffId:'staff_one'});assert.equal(status.status,503);f.staff();assert.ok([403,503].includes((await f.request('/device-status',{deviceId:activation.deviceId})).status));assert.equal((await f.activate(extraActivation(2),'anon_two')).status,503);}
+});
+test('slot mutation and device action roll back together on failure and lost acknowledgments do not free twice',async()=>{
+ const f=await enrolled();await f.activate(extraActivation(2),'anon_two');const before=structuredClone(f.docs.get(slotsPath));f.hooks.beforeCommit=writes=>{if(writes.some(([,path])=>path===slotsPath))throw Error('Simulated atomic failure');};assert.equal((await f.action('block','operation_block_fail')).status,503);assert.deepEqual(f.docs.get(slotsPath),before);assert.equal(f.docs.get('staff_app_bindings/anon_one').status,'Active');
+ f.hooks.beforeCommit=null;f.failAfterCommit=true;const request={deviceId:activation.deviceId,action:'block',operationId:'operation_block_lost_ack'};f.owner();assert.equal((await f.request('/device-action',request)).status,503);assert.equal((await usage(f)).activeDevices,1);f.owner();const revision=f.docs.get(slotsPath).revision;assert.equal((await f.request('/device-action',request)).status,200);assert.equal(f.docs.get(slotsPath).revision,revision);assert.equal((await usage(f)).activeDevices,1);
+});
+test('a missing or changed credential registry anchor cannot silently authorize an empty or altered counter',async()=>{
+ for(const edit of [{deviceSlotsRevision:99},{deviceSlotsHash:'0'.repeat(64)},{deviceSlotsVersion:0}]){const f=await enrolled();Object.assign(f.docs.get('staff_setup_credentials/staff_one'),edit);f.owner();assert.equal((await f.request('/code-status',{staffId:'staff_one'})).status,503);assert.equal((await f.action('block','operation_block_bad_anchor')).status,503);assert.equal((await f.activate(extraActivation(2),'anon_two')).status,503);}
 });

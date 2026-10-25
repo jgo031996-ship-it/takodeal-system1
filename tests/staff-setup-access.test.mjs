@@ -94,10 +94,10 @@ function uiHarness(){
     const localStorage={getItem:key=>store.get(key)||null,setItem:(key,value)=>store.set(key,value),removeItem:key=>store.delete(key)};
     const window={crypto:{randomUUID:()=>`12345678-1234-4123-8123-${String(++uuid).padStart(12,'0')}`},stopStaffLiveListeners(){},lockPayslipVault(){},checkNormalLogin(){loginCalls++;},addEventListener:(name,fn)=>events.set('win:'+name,fn)};
     const env={window,document,localStorage,navigator:{onLine:true},setTimeout:fn=>(timers.set(++timerId,fn),timerId),clearTimeout:id=>timers.delete(id)};
-    const auth=authHarness(),requests=[];let result={enabled:true,mode:'protected',device:null},activateWait=null;
-    const fetcher=async(url,options)=>{const body=JSON.parse(options.body);requests.push({url,body});if(url.endsWith('/activate')){if(activateWait)await activateWait;result={...protectedState(),device:{...protectedState().device,deviceId:body.deviceId,staffId:body.staffId}};return response(200,result);}return response(200,result);};
+    const auth=authHarness(),requests=[];let result={enabled:true,mode:'protected',device:null},activateWait=null,activateFailure=null;
+    const fetcher=async(url,options)=>{const body=JSON.parse(options.body);requests.push({url,body});if(url.endsWith('/activate')){if(activateWait)await activateWait;if(activateFailure)return response(activateFailure.status,{error:{code:activateFailure.code,message:activateFailure.message}});result={...protectedState(),device:{...protectedState().device,deviceId:body.deviceId,staffId:body.staffId}};return response(200,result);}return response(200,result);};
     const gate=installStaffSetupGate({...auth,projectId:'test',apiKey:'public',fetcher,directoryFetcher:async()=>response(200,{documents:[{name:'projects/test/databases/(default)/documents/cashiers/staff-a',fields:{cashierName:{stringValue:'Sample Staff'},branch:{stringValue:'Maa'}}}]})},{legacyRequest:async()=>{legacyCalls++;},legacyListen:async()=>{legacyCalls++;},stopLegacy(){}},env);
-    return {gate,window,document,localStorage,store,node,requests,events,timers,auth,setResult:value=>result=value,setActivateWait:value=>activateWait=value,get loginCalls(){return loginCalls;},get legacyCalls(){return legacyCalls;}};
+    return {gate,window,document,localStorage,store,node,requests,events,timers,auth,setResult:value=>result=value,setActivateWait:value=>activateWait=value,setActivateFailure:value=>activateFailure=value,get loginCalls(){return loginCalls;},get legacyCalls(){return legacyCalls;}};
 }
 test('required setup replaces legacy public ID with a new protected enrollment, activates automatically and stores no code',async()=>{
     const h=uiHarness();h.store.set('takodeal_device_id','DEV-OLDPUBLIC123');h.store.set('takodeal_staff_id','staff-b');h.store.set('takodeal_staff_name','Other Staff');
@@ -106,6 +106,22 @@ test('required setup replaces legacy public ID with a new protected enrollment, 
         h.node('deviceNameInput').value='My phone';h.node('setupStaffInput').value='staff-a';h.node('staffSetupCode').value='12345 67890';await h.window.requestDeviceAccess();
         const activation=h.requests.find(r=>r.url.endsWith('/activate'));assert.deepEqual(Object.keys(activation.body).sort(),['code','deviceId','deviceName','operationId','staffId']);assert.equal(activation.body.code,'1234567890');assert.equal(activation.body.deviceId,first.deviceId);assert.equal(h.store.get('takodeal_device_id'),first.deviceId);assert.equal(h.store.has('takodeal_staff_id'),false);assert.equal(h.store.has(STAFF_SETUP_DRAFT),false);assert.equal(h.node('staffSetupCode').value,'');assert.equal([...h.store.values()].some(v=>String(v).includes('1234567890')),false);assert.equal(h.loginCalls,1);assert.equal(h.node('deviceAuthOverlay').style.display,'none');
         await h.gate.start(false);assert.equal(h.loginCalls,1,'routine status checks do not restart portal loaders');
+    }finally{h.gate.stop();}
+});
+test('account device-cap refusal keeps the phone unactivated, clears the code and permits the same nonsecret retry after HQ frees a slot',async()=>{
+    const h=uiHarness(),legacyId='DEV-OLDPUBLIC123',code='1234567890',message='This staff account already has 2 active phones. Ask the Owner to block or delete an old phone registration before activating this one.';
+    h.store.set('takodeal_device_id',legacyId);
+    try{
+        await h.gate.start();await new Promise(setImmediate);h.node('deviceNameInput').value='Replacement phone';h.node('setupStaffInput').value='staff-a';h.node('staffSetupCode').value=code;
+        h.setActivateFailure({status:409,code:'device-limit',message});await h.window.requestDeviceAccess();
+        const first=h.requests.find(row=>row.url.endsWith('/activate')),draft=JSON.parse(h.store.get(STAFF_SETUP_DRAFT));
+        assert.equal(h.node('deviceRegistrationStatus').textContent,message);assert.equal(h.node('staffSetupCode').value,'');assert.equal(h.node('button').disabled,false);
+        assert.equal(h.gate.authority.isVerified(),false);assert.equal(h.gate.authority.binding(),null);assert.equal(h.loginCalls,0);assert.equal(h.legacyCalls,0);assert.equal(h.node('appContainer').style.display,'none');assert.equal(h.node('registerCard').style.display,'block');assert.equal(h.store.get('takodeal_device_id'),legacyId);assert.equal(h.store.has('takodeal_staff_id'),false);
+        assert.equal(draft.operationId,first.body.operationId);assert.equal(draft.deviceId,first.body.deviceId);assert.equal(draft.staffId,'staff-a');assert.equal(draft.deviceName,'Replacement phone');assert.equal(Object.hasOwn(draft,'code'),false);assert.equal([...h.store.values()].some(value=>String(value).includes(code)),false);
+        // Owner blocks/deletes an older active registration on the server. The
+        // client does not reset counts or generate a different setup identity.
+        h.setActivateFailure(null);h.node('staffSetupCode').value=code;await h.window.requestDeviceAccess();
+        const retry=h.requests.filter(row=>row.url.endsWith('/activate')).at(-1);assert.equal(retry.body.operationId,first.body.operationId);assert.equal(retry.body.deviceId,first.body.deviceId);assert.equal(h.store.get('takodeal_device_id'),first.body.deviceId);assert.equal(h.store.has(STAFF_SETUP_DRAFT),false);assert.equal(h.node('staffSetupCode').value,'');assert.equal(h.loginCalls,1);
     }finally{h.gate.stop();}
 });
 test('legacy registration is available only after an explicit disabled response, and no public record substitutes for outage',async()=>{

@@ -2,6 +2,8 @@
 
 This release adds an Owner-issued, reusable **10-digit Staff app setup code** for each employee. Correct setup codes activate the Staff app automatically; no separate device approval click is required. This code is separate from the daily Staff login PIN and Payslip PIN.
 
+Each employee may have **at most two active Staff app devices**. The limit belongs to the employee account, so replacing the setup code or clearing browser data does not reset it. A reset phone obtains a new identity; its old registration continues to occupy a place until the Owner blocks or deletes it. Blocked/deleted registrations do not occupy an active place. Unblocking a phone must reserve a place again and is refused when two other phones are active. The profile shows the last checked active-device count and offers a separate usage refresh that preserves a newly shown setup code.
+
 ## Owner workflow
 
 1. Open **Staff & Security**, then open the employee's profile.
@@ -31,13 +33,15 @@ Routine reopening remembers the device identity and rechecks its server status. 
 - Exact production browser origins: Owner and Staff. CORS restricts browser use, while Firebase token verification with revocation checking establishes identity. No service-account key is created or delivered to the browser.
 - Runtime identity: `staff-device-setup@takodeal-pos.iam.gserviceaccount.com`.
 - Runtime bounds: 512 MiB, 1 CPU, concurrency 4, min instances 0, max instances 2, timeout 30 seconds. These bounds do not constitute a hard billing cap.
-- Private collections: `staff_setup_credentials`, `staff_app_setup_config`, `staff_app_bindings`, `staff_app_device_index`, `staff_setup_audit`, `staff_setup_operations`, `staff_setup_attempts`. All client reads and writes are denied; the service supplies limited metadata.
+- Private collections: `staff_setup_credentials`, `staff_app_setup_config`, `staff_app_bindings`, `staff_app_device_index`, `staff_setup_audit`, `staff_setup_operations`, `staff_setup_attempts`, `staff_setup_device_slots`. All client reads and writes are denied; the service supplies limited metadata.
 - Credentials use independent salted scrypt verifiers. Plaintext codes are never stored. Immutable audit entries omit codes/verifiers; private operation receipts retain a salted verifier only when necessary to validate an exact uncertain retry.
 - Server validation checks exact routes, methods, fields, sizes, origins, verified Owner or anonymous device identity, staff eligibility, expected versions and operation IDs. Activation attempts are limited by verified UID, transport peer and global counters. The transport peer may group users behind the cloud proxy, so the UID/global limits remain essential.
 - Enrollment commits the private UID binding, immutable device index, public fleet mirror, operation receipt and audit atomically. Lost acknowledgements retry the same operation. Stale code/policy/device operations do not overwrite or falsely confirm newer decisions. A deleted device index remains reserved.
 - Public `pos_devices` mirrors with setup metadata or private index reservations cannot be created, changed, marker-stripped or deleted directly by any client, including Owner. Protected fleet actions must go through the service.
 
 Code issuance/rotation is independent of current phone status. Blocked/deleted protected devices remain protected when the global rollout is paused. Legacy mode is returned only for an unbound/unreserved device while the explicit trusted policy is disabled; network errors never grant legacy fallback.
+
+The two-device counter is a private per-employee slot registry read and updated in the same transaction as activation, blocking, unblocking or deletion. Concurrent requests compete for the same registry; retries do not allocate another place. Rotation never clears it. Each tracked active place is checked against the exact private UID binding, immutable device index and fleet mirror. A missing or inconsistent registry fails closed, instead of assuming zero. The initial two-device deployment requires verified empty protected credential/binding collections with rollout disabled; existing untracked credentials require a separately reviewed migration. No query/list permission is added to the runtime role.
 
 ## Cloud release order
 
