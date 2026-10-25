@@ -31,7 +31,7 @@ test('sanction date decisions are identical across apps',()=>{
 });
 test('upgrade keeps paid receipts, photos and the offline sale ledger through Cashier update',()=>{
     const worker=source('Takodeal-POS/sw.js');
-    assert.match(worker,/const CORE = 'takodeal-pos-core-menu-options-20261024'/);
+    assert.match(worker,/const CORE = 'takodeal-pos-core-schedule-proposals-20261025'/);
     for(const [app,list] of [['Takodeal-POS','required'],['takodeal-staff','SHELL'],['takodeal-manager','CORE_ASSETS']])assert.ok(assets(app,list).includes('clock-out-schedule.js'),app+' can verify a completed shift offline after installation');
     assert.ok(assets('Takodeal-POS','required').includes('checkout-controls.js'),'checkout resets work offline');
     assert.match(worker,/dispatch-restock-model\.js/);
