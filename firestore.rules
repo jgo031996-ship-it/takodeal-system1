@@ -473,7 +473,7 @@ service cloud.firestore {
     // The verification service alone submits and decides proposals. Approval
     // and the canonical dated revision are committed in one server transaction.
     match /branch_schedule_proposals/{proposalId} {
-      allow read: if protectedHROwner() || (trustedPOS(resource.data.proposal.branch) && resource.data.submittedBy.uid == request.auth.uid);
+      allow read: if protectedHROwner();
       allow write: if false;
     }
     match /branch_schedule_proposal_operations/{id} { allow read, write: if false; }

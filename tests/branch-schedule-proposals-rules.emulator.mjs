@@ -47,16 +47,16 @@ test('verified Owner reads proposals; unauthenticated, unrelated and unapproved 
  await sampleSeed();await assertSucceeds(getDocFromServer(proposalRef(owner())));const listed=await assertSucceeds(getDocsFromServer(collection(owner(),'branch_schedule_proposals')));assert.equal(listed.size,1);
  for(const db of [publicDB(),anon(),env.authenticatedContext('unrelated',{email:'other@example.com',email_verified:true}).firestore(),env.authenticatedContext('unverified-owner',{email:'jgo031996@gmail.com',email_verified:false}).firestore()])await assertFails(getDocFromServer(proposalRef(db)));
 });
-test('approved same-UID branch tablet reads only its own submitted proposals',async()=>{
- await sampleSeed();await admin(db=>setDoc(doc(db,'pos_bindings/sample-phone'),{status:'Active',branch:'SAMPLE Branch'}));await assertSucceeds(getDocFromServer(proposalRef(anon())));
+test('approved same-UID branch tablets cannot directly read even their own submitted proposals',async()=>{
+ await sampleSeed();await admin(db=>setDoc(doc(db,'pos_bindings/sample-phone'),{status:'Active',branch:'SAMPLE Branch'}));await assertFails(getDocFromServer(proposalRef(anon())));
  await admin(db=>updateDoc(doc(db,'pos_bindings/sample-phone'),{branch:'OTHER Branch'}));await assertFails(getDocFromServer(proposalRef(anon())));
  await admin(db=>updateDoc(doc(db,'pos_bindings/sample-phone'),{branch:'SAMPLE Branch',status:'Revoked'}));await assertFails(getDocFromServer(proposalRef(anon())));
 });
 
-test('same-branch tablets cannot read another tablet submission or list proposals without scope filters',async()=>{
+test('same-branch tablets cannot read another submission or list proposals even with own-scope filters',async()=>{
  await sampleSeed();await admin(async db=>{await setDoc(doc(db,'pos_bindings/sample-phone'),{uid:'sample-phone',status:'Active',branch:'SAMPLE Branch'});await setDoc(doc(db,'branch_schedule_proposals/other-proposal'),{...pending,proposal:{...pending.proposal,id:'other-proposal'},submittedBy:{...pending.submittedBy,uid:'other-phone'}});});
  const db=anon();await assertFails(getDocFromServer(doc(db,'branch_schedule_proposals/other-proposal')));await assertFails(getDocsFromServer(collection(db,'branch_schedule_proposals')));
- const own=await assertSucceeds(getDocsFromServer(query(collection(db,'branch_schedule_proposals'),where('proposal.branch','==','SAMPLE Branch'),where('submittedBy.uid','==','sample-phone'))));assert.equal(own.size,1);
+ await assertFails(getDocsFromServer(query(collection(db,'branch_schedule_proposals'),where('proposal.branch','==','SAMPLE Branch'),where('submittedBy.uid','==','sample-phone'))));
 });
 test('all browser identities including verified Owner are denied direct decisions',async()=>{
  await admin(db=>setDoc(doc(db,'pos_bindings/sample-phone'),{uid:'sample-phone',status:'Active',branch:'SAMPLE Branch'}));
