@@ -474,11 +474,9 @@ service cloud.firestore {
     // and the canonical dated revision are committed in one server transaction.
     match /branch_schedule_proposals/{proposalId} {
       allow read: if protectedHROwner();
-      allow write: if false;
     }
-    match /branch_schedule_proposal_operations/{id} { allow read, write: if false; }
-    match /branch_schedule_proposal_review_operations/{id} { allow read, write: if false; }
-    match /branch_schedule_proposal_attempts/{id} { allow read, write: if false; }
+    // No client write grants exist for proposals or their private submission,
+    // review-operation and attempt collections; all remain default-denied.
 
 
     // Exact legacy one-document policies. No default grant or recursive path.
