@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="manifest" href="manifest.json?v=staff-device-fleet-20261004-r3">
-    <meta name="takodeal-release" content="staff-proof-older-phones-20261010-r1">
+    <meta name="takodeal-release" content="staff-personal-setup-20261025">
     <meta name="theme-color" content="#173f35">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="TAKODEÁL Staff">
@@ -25,6 +25,7 @@
 <link rel="stylesheet" href="deduction-inbox.css">
 <link rel="stylesheet" href="leave-ui.css">
 <link rel="stylesheet" href="onboarding.css?v=20261021">
+<link rel="stylesheet" href="staff-setup.css?v=20261025">
 </head>
 <body>
  
@@ -36,18 +37,26 @@
             <div class="login-header">
                 <img src="logo.jpg" alt="Takodeál" class="login-logo">
                 <span class="eyebrow">TAKODEÁL TEAM</span><h2>Set up your device</h2>
-                <p style="font-size: 12px; color: #64748b; line-height: 1.4; margin-bottom: 15px;">Give this device a name and choose your branch. HQ will review your request before you sign in.</p>
+                <p id="deviceSetupIntro" style="font-size: 12px; color: #64748b; line-height: 1.4; margin-bottom: 15px;">Connect to HQ to check how to set up this phone.</p>
             </div>
             
             <label class="field-label" for="deviceNameInput">Device name</label><input type="text" id="deviceNameInput" placeholder="e.g. Aljhon Phone" autocomplete="off" style="width: 100%; padding: 12px; font-size: 15px; font-weight: bold; text-align: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 12px; box-sizing: border-box; outline: none;">
             
-            <label class="field-label" for="deviceBranchInput">Your branch</label><select id="deviceBranchInput" style="width: 100%; padding: 12px; font-size: 14px; font-weight: bold; text-align-last: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; outline: none; background: white; color: #0f172a; cursor: pointer;">
+            <div id="staffSetupFields" hidden>
+                <label for="setupStaffInput">Your staff account</label>
+                <select id="setupStaffInput" autocomplete="off"><option value="">Choose your name</option></select>
+                <button type="button" id="setupStaffReload">Refresh staff names</button>
+                <label for="staffSetupCode">Personal setup code</label>
+                <input id="staffSetupCode" type="password" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="10-digit code" aria-describedby="staffSetupHelp">
+                <p id="staffSetupHelp" class="setup-help">Use the personal code the Owner gave you. A correct code activates this phone automatically. Then sign in with your normal Staff login PIN.</p>
+            </div>
+            <div id="legacyBranchFields"><label class="field-label" for="deviceBranchInput">Your branch</label><select id="deviceBranchInput" style="width: 100%; padding: 12px; font-size: 14px; font-weight: bold; text-align-last: center; border: 2px solid #e2e8f0; border-radius: 12px; margin-bottom: 20px; box-sizing: border-box; outline: none; background: white; color: #0f172a; cursor: pointer;">
                 <option value="Auto">📍 Auto-Detect Branch via GPS</option>
                 <option value="Cabantian">📍 Cabantian Branch</option>
                 <option value="Citygate">📍 Citygate Branch</option>
                 <option value="Maa">📍 Maa Branch</option>
                 <option value="Main Office">🏢 Main Office / Roving</option>
-            </select>
+            </select></div>
 
             <button class="btn-primary" onclick="window.requestDeviceAccess()">Request access</button><p id="deviceRegistrationStatus" class="device-registration-status" role="status" aria-live="polite"></p>
 
@@ -654,6 +663,6 @@
         import {installStaffAppUpdate} from "./staff-phone.js";
         installStaffAppUpdate();
       </script>
-      <script type="module" src="app.js?v=tablet-attendance-stock-20261009-r1"></script>
+      <script type="module" src="app.js?v=staff-personal-setup-20261025"></script>
 </body>
 </html>

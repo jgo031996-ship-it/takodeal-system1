@@ -8,6 +8,7 @@ import * as sanctions from '../takodeal-staff/sanction-schedule.js';
 import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
 import {prepareEarlyTimeOut} from '../Takodeal-POS/early-time-out-ui.js';
 import {riderRuntime} from './helpers/rider-runtime-harness.mjs';
+import {installStaffSetupGate} from '../takodeal-staff/staff-setup-access.js';
 
 const staff = readFileSync(new URL('../takodeal-staff/app.js', import.meta.url), 'utf8').replace(/\r\n/g,'\n');
 const customer = readFileSync(new URL('../Customer/index.html', import.meta.url), 'utf8');
@@ -22,7 +23,7 @@ function harness() {
     const node=id=>{
         if (!nodes.has(id)) {const classes=new Set(['hidden']);nodes.set(id,{id,value:'',dataset:{},style:{display:'none'},innerHTML:'',innerText:'',textContent:'',disabled:false,videoWidth:0,
             classList:{add:(...args)=>args.forEach(v=>classes.add(v)),remove:(...args)=>args.forEach(v=>classes.delete(v)),contains:v=>classes.has(v)},
-            parentElement:{insertAdjacentElement(){}},insertBefore(){},getContext:()=>({clearRect(){}})});}
+            parentElement:{insertAdjacentElement(){}},insertBefore(){},getContext:()=>({clearRect(){}}),children:[],addEventListener(){},replaceChildren(){this.children=[];},append(child){this.children.push(child);}});}
         return nodes.get(id);
     };
     const localStorage={getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,String(value)),removeItem:key=>storage.delete(key)};
@@ -37,7 +38,7 @@ function harness() {
     const addEventListener=(name,callback)=>{if(!events.has(name))events.set(name,[]);events.get(name).push(callback);};
     const window={...api,addEventListener,location:{reload(){}},initStaffAppSignaturePad(){},playNotificationPing(){},loadMyAttendance(){},
         getAttendanceLocation:async()=>({branch:'Maa',distance:1,accuracy:10,lat:7,lng:125,timestamp:Date.now()}),verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1}}),assertAttendanceFaceFresh(){}};
-    const context={...api,...payroll,...sanctions,...reconciliation,createScheduleHistoryStore,prepareEarlyTimeOut,window,localStorage,document:{getElementById:node,addEventListener,querySelector:()=>null,querySelectorAll:()=>[]},
+    const context={...api,...payroll,...sanctions,...reconciliation,createScheduleHistoryStore,prepareEarlyTimeOut,window,localStorage,document:{getElementById:node,createElement:()=>({value:'',textContent:''}),addEventListener,querySelector:()=>null,querySelectorAll:()=>[]},
         console:{error(){},warn(){},log(){}},Date,
         setInterval:(fn,delay)=>{const id=++sequence;intervals.set(id,{fn,delay});return id;},clearInterval:id=>intervals.delete(id),
         setTimeout:(fn,delay)=>{const id=++sequence;timeouts.set(id,{fn,delay});return id;},clearTimeout:id=>timeouts.delete(id),
@@ -60,6 +61,17 @@ function staffApp() {
     return h;
 }
 async function startStaff(h) {h.window.startInboxListener();await h.window.listenToIncomingSwaps();h.window.startSanctionListener(h.storage.get('takodeal_staff_name'));}
+function protectedStaffGate(h){
+    const deviceId='DEV-MOCK-1234',user={uid:'device-user',getIdToken:async()=>'sample-token'},auth={currentUser:user};let pause=false,finish;
+    let device={deviceId,staffId:'a',staffName:'Staff A',branch:'Maa',status:'Active'};
+    const reply=()=>({ok:true,status:200,json:async()=>({enabled:true,mode:'protected',device})});
+    const gate=installStaffSetupGate({projectId:'fixture',apiKey:'public',auth,ensureUser:async()=>user,delay:h.context.setTimeout,cancelDelay:h.context.clearTimeout,
+        fetcher:async()=>pause?new Promise(resolve=>{finish=()=>resolve(reply());}):reply(),directoryFetcher:async()=>({ok:true,json:async()=>({documents:[]})})},
+        {legacyRequest:()=>{throw Error('Protected fixture cannot use legacy registration.');},legacyListen:()=>{throw Error('Protected fixture cannot trust a public device mirror.');},stopLegacy(){}},h.context);
+    h.storage.set('takodeal_device_id',deviceId);
+    h.window.checkNormalLogin=async()=>{if(gate.authority.isVerified()&&gate.authority.binding()?.staffId===h.storage.get('takodeal_staff_id'))await startStaff(h);};
+    return {gate,pause:()=>{pause=true;},resume:()=>{pause=false;finish();},device:value=>{device=value;},active:()=>({deviceId,staffId:'a',staffName:'Staff A',branch:'Maa',status:'Active'})};
+}
 
 test('Staff login initialization creates one inbox, swap and staff-scoped sanction listener with no polling reads',async()=>{
     const h=staffApp();await Promise.all([startStaff(h),startStaff(h),startStaff(h)]);
@@ -86,16 +98,37 @@ test('Staff deferred nickname lookup is deduplicated and cannot attach a listene
     finish({exists:()=>true,data:()=>({scheduleNickname:'Alias'})});await pending;assert.equal(h.subscriptions.length,0);
 });
 
-test('Staff restores exactly one subscription set after browser back navigation',async()=>{
-    const h=staffApp();await startStaff(h);h.event('pagehide');assert.equal(h.subscriptions.filter(s=>s.active).length,0);
-    h.event('pageshow',{persisted:true});await new Promise(setImmediate);
-    assert.equal(h.subscriptions.filter(s=>s.active).length,3);
+test('Staff back navigation waits for fresh device verification before restoring one subscription set',async()=>{
+    const h=staffApp(),setup=protectedStaffGate(h);
+    try{
+        await setup.gate.start();await new Promise(setImmediate);assert.equal(h.subscriptions.filter(s=>s.active).length,3);
+        h.event('pagehide');assert.equal(h.subscriptions.filter(s=>s.active).length,0);
+        setup.pause();h.event('pageshow',{persisted:true});await new Promise(setImmediate);
+        assert.equal(h.subscriptions.filter(s=>s.active).length,0,'a saved staff ID and back-cache page do not restore private streams');
+        assert.equal(setup.gate.authority.isVerified(),false);setup.resume();await new Promise(setImmediate);
+        assert.equal(h.subscriptions.filter(s=>s.active).length,3);assert.equal(setup.gate.authority.isVerified(),true);
+        await setup.gate.start(false);await new Promise(setImmediate);assert.equal(h.subscriptions.filter(s=>s.active).length,3);
+    }finally{setup.gate.stop();h.window.stopStaffLiveListeners();}
+});
+
+test('Protected Staff setup required or blocked status detaches current streams and ignores old snapshots',async()=>{
+    for(const state of ['setup-required','blocked']){
+        const h=staffApp(),setup=protectedStaffGate(h);
+        try{
+            await setup.gate.start();await new Promise(setImmediate);const old=[...h.subscriptions];assert.equal(old.filter(s=>s.active).length,3);
+            setup.device(state==='blocked'?{...setup.active(),status:'Blocked'}:null);await setup.gate.start(false);await new Promise(setImmediate);
+            assert.equal(old.every(s=>!s.active&&s.stops===1),true);assert.equal(setup.gate.authority.isVerified(),false);assert.equal(h.node('appContainer').style.display,'none');
+            old.forEach(sub=>h.emit(sub,[{id:'stale-private-notice',status:'Pending Reply'}]));assert.equal(h.node('activeSanctionId').value,'');assert.equal(h.subscriptions.filter(s=>s.active).length,0);
+        }finally{setup.gate.stop();h.window.stopStaffLiveListeners();}
+    }
 });
 
 test('Staff device approval or block checks detach the signed-in streams while the app is paused',async()=>{
     const h=staffApp();await startStaff(h);const old=[...h.subscriptions];h.context.AbortController=AbortController;
-    h.context.registrationConfig={projectId:'fixture',apiKey:'public',fetcher:async()=>({ok:true,json:async()=>({fields:{status:{stringValue:'Pending'}}})})};
-    h.run(registration.replace(/^export /gm,''));h.run('installStaffRegistration(registrationConfig);');
+    h.context.registrationConfig={projectId:'fixture',apiKey:'public',setup:false,fetcher:async()=>({ok:true,json:async()=>({fields:{status:{stringValue:'Pending'}}})})};
+    // This VM fixture executes the actual legacy functions without ESM imports.
+    // Protected rollout behavior above imports and runs the real gate module.
+    h.run(registration.replace(/^import[^\n]*\r?\n/gm,'').replace(/^export /gm,''));h.run('installStaffRegistration(registrationConfig);');
     await h.window.listenToDeviceStatus('DEV-MOCK-1234');
     assert.equal(old.every(s=>s.stops===1),true);assert.equal(h.node('appContainer').style.display,'none');
     assert.equal(h.subscriptions.filter(s=>s.active).length,1);h.event('pagehide');assert.equal(h.subscriptions.filter(s=>s.active).length,0);

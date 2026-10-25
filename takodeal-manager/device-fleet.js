@@ -7,7 +7,7 @@ export function fleetRows(devices, allowed = () => true) {
         const status = pending ? 'Pending approval' : approved ? 'Active' : d.status==='Blocked' ? 'Blocked' : 'Needs review';
         const date = milliseconds(d.registeredAt) ? new Date(milliseconds(d.registeredAt)).toLocaleString('en-PH',{month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'Date unavailable';
         const button = (label, action, value='') => `<button class="btn-refresh" data-fleet-action="${action}" data-device-id="${escape(d.id)}" data-status="${value}">${label}</button>`;
-        return `<tr class="${pending?'fleet-pending':''}"><td><input type="checkbox" class="device-bulk-cb" value="${escape(d.id)}" aria-label="Select ${escape(d.deviceName)}"></td><td><strong>${escape(d.deviceName || 'Unnamed device')}</strong><br><small>Device ID: ${escape(d.id)}</small></td><td>${escape(d.branch || 'Unassigned')}</td><td>${escape(date)}</td><td><span class="fleet-status ${pending?'pending':approved?'active':'paused'}">${status}</span></td><td><div class="fleet-actions">${pending?button('Approve','status','Active')+button('Reject','status','Blocked'):approved?button('Block','status','Blocked'):button('Unblock','status','Active')}${button('Delete','delete')}</div></td></tr>`;
+        return `<tr class="${pending?'fleet-pending':''}"><td><input type="checkbox" class="device-bulk-cb" value="${escape(d.id)}" aria-label="Select ${escape(d.deviceName)}"></td><td><strong>${escape(d.deviceName || 'Unnamed device')}</strong><br><small>Device ID: ${escape(d.id)}</small>${d.setupVersion===1?`<br><small>Personal setup${d.staffName?' · '+escape(d.staffName):''}</small>`:''}</td><td>${escape(d.branch || 'Unassigned')}</td><td>${escape(date)}</td><td><span class="fleet-status ${pending?'pending':approved?'active':'paused'}">${status}</span></td><td><div class="fleet-actions">${pending?button('Approve','status','Active')+button('Reject','status','Blocked'):approved?button('Block','status','Blocked'):button('Unblock','status','Active')}${button('Delete','delete')}</div></td></tr>`;
     }).join('');
 }
 export function createFleetReader({projectId,apiKey,getToken=async()=>null,fetcher=fetch,delay=setTimeout,cancelDelay=clearTimeout}) {
@@ -23,7 +23,7 @@ export function createFleetReader({projectId,apiKey,getToken=async()=>null,fetch
                 if(!response.ok)throw Error(data.error?.message || 'HQ device list is unavailable.');
                 for(const record of data.documents || []) {
                     const f=record.fields || {},string=name=>f[name]?.stringValue;
-                    rows.push({id:record.name.split('/').pop(),deviceName:string('deviceName'),branch:string('branch'),status:string('status'),registeredAt:f.registeredAt?.timestampValue});
+                    rows.push({id:record.name.split('/').pop(),deviceName:string('deviceName'),branch:string('branch'),status:string('status'),registeredAt:f.registeredAt?.timestampValue,setupVersion:Number(f.setupVersion?.integerValue||0),staffName:string('staffName')});
                 }
                 page=data.nextPageToken || '';
             } while(page);
