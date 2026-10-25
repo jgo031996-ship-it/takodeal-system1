@@ -1,8 +1,10 @@
 import {installDisciplineCases} from './discipline-case-ui.js';
+import {installStaffSetupCodes} from './staff-setup-codes.js';
 import {installMenuOptions} from './menu-options-ui.js';
 import {installProductEditorLayout} from './product-editor-layout.js';
 import {installProductAddonDrafts,readProductAddonRows} from './product-options-draft.js';
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
+runManagerDomReady(() => installStaffSetupCodes(window,document));
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {finalizeRefundPayroll} from './refund-payroll.js';
 import {finalizeOrdinaryPayroll,readPayrollCashShortages} from './payroll-settlement.js';
@@ -7060,17 +7062,19 @@ window.smartImportCSV = function (event) {
 window.toggleDeviceStatus = async function (deviceId, newStatus) {
   if (!(await window.ManagerUI.confirm(`Are you sure you want to change this device to ${newStatus}?`))) return;
   try {
-    await updateDoc(doc(db, "pos_devices", deviceId), { status: newStatus });
+    if(!window.staffSetupCodes)throw Error('Device controls are loading. Reopen the device list.');
+    await window.staffSetupCodes.routeDeviceChange(deviceId,newStatus==='Active'?'unblock':'block',()=>updateDoc(doc(db,"pos_devices",deviceId),{status:newStatus}));
     window.loadDeviceFleet();
-  } catch (e) { window.ManagerUI.notify("Failed to update status."); }
+  } catch (e) { window.ManagerUI.notify(e.message || "Failed to update status."); }
 };
 
 window.deleteDevice = async function (deviceId) {
-  if (!(await window.ManagerUI.confirm("Are you sure you want to permanently delete this device? It will log out the tablet."))) return;
+  if (!(await window.ManagerUI.confirm("Delete this device registration? Protected Staff phones lose access at their next verification. Disable the employee’s personal setup code too if you need to prevent activation on a new or reset phone."))) return;
   try {
-    await deleteDoc(doc(db, "pos_devices", deviceId));
+    if(!window.staffSetupCodes)throw Error('Device controls are loading. Reopen the device list.');
+    await window.staffSetupCodes.routeDeviceChange(deviceId,'delete',()=>deleteDoc(doc(db,"pos_devices",deviceId)));
     window.loadDeviceFleet();
-  } catch (e) { window.ManagerUI.notify("Failed to delete device."); }
+  } catch (e) { window.ManagerUI.notify(e.message || "Failed to delete device."); }
 };
 
 window.toggleAllDeviceCheckboxes = function(source) {
@@ -7086,7 +7090,7 @@ window.bulkDeleteDevices = async function() {
 
     let confirmDelete = await Swal.fire({
         title: 'Bulk Delete?',
-        text: `Are you sure you want to permanently delete ${checkboxes.length} registered devices? They will be logged out immediately.`,
+        text: `Delete ${checkboxes.length} device registrations? Protected Staff phones lose access at their next verification. A valid personal setup code can still activate a new or reset phone.`,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#dc2626',
@@ -7101,8 +7105,9 @@ window.bulkDeleteDevices = async function() {
 
     try {
         let promises = [];
+        if(!window.staffSetupCodes)throw Error('Device controls are loading. Reopen the device list.');
         checkboxes.forEach(cb => {
-            promises.push(deleteDoc(doc(db, "pos_devices", cb.value)));
+            promises.push(window.staffSetupCodes.routeDeviceChange(cb.value,'delete',()=>deleteDoc(doc(db,"pos_devices",cb.value))));
         });
 
         await Promise.all(promises);

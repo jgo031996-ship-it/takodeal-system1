@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="rider-management.css?v=20261023-buttons">
   <link rel="stylesheet" href="menu-options.css?v=20261024">
   <link rel="stylesheet" href="bundle-category.css?v=20261025">
+  <link rel="stylesheet" href="staff-setup-codes.css?v=20261025">
   <link rel="stylesheet" href="product-editor-layout.css?v=20261024">
   <link rel="stylesheet" href="cash-shortage.css?v=20261021-layout-r1">
   <link rel="stylesheet" href="schedule-memory.css?v=20261006">
@@ -1328,6 +1329,7 @@
                 </h2>
                 <span style="font-size: 13px; color: #64748b; margin-top: 4px; display: block; font-weight: 500;">New requests appear first. Approve staff phones and manage branch POS devices here.</span>
                 <p id="deviceFleetStatus" role="status" aria-live="polite" style="font-size:13px;margin:8px 0 0;color:#176347;">Connecting to HQ…</p>
+                <p style="font-size:12px;margin:8px 0 0;color:#64748b;max-width:700px;line-height:1.5;">Protected Staff phones apply blocks or deletion at their next verification. To stop new or reset phones from activating too, disable the employee’s personal setup code in their Staff &amp; Security profile.</p>
               </div>
               <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                   <button class="btn-refresh" style="background: #ef4444; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); transition: 0.2s;" onclick="window.bulkDeleteDevices()">🗑️ Delete Selected</button>
@@ -1384,6 +1386,13 @@
           </div>
         </div>
 
+        <section id="staffSetupPolicyPanel" class="staff-setup-panel" aria-labelledby="staffSetupPolicyTitle">
+          <div class="staff-setup-heading"><div><span class="staff-setup-eyebrow">STAFF APP · PERSONAL DEVICE ACCESS</span><h3 id="staffSetupPolicyTitle">Personal setup codes</h3></div><span class="staff-setup-badge">Owner managed</span></div>
+          <p>Open a staff profile below to generate that employee’s personal setup code. The correct code activates their own new or reset phone automatically.</p>
+          <p id="staffSetupPolicyStatus" role="status" aria-live="polite">Refresh to check whether setup codes are required.</p>
+          <div class="staff-setup-actions"><button id="staffSetupPolicyRefresh" type="button">Refresh setup status</button><button id="staffSetupPolicyEnable" class="staff-setup-primary" type="button" disabled>Require setup codes</button><button id="staffSetupPolicyPause" class="staff-setup-danger" type="button" hidden disabled>Pause requirement</button></div>
+          <p class="staff-setup-note">Prepare and privately distribute codes before enabling this. Existing phones need one setup check to establish their employee link. This does not change daily login or Payslip PINs.</p>
+        </section>
         <!-- 📊 NEW STAFF COUNTERS -->
         <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-bottom: 25px;">
             <div style="background: #f0fdf4; border: 1px solid #bbf7d0; padding: 20px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
@@ -5581,6 +5590,14 @@
             </div>
         </div>
 
+        <section id="staffSetupCodePanel" class="staff-setup-panel" aria-labelledby="staffSetupCodeTitle">
+          <div class="staff-setup-heading"><div><span class="staff-setup-eyebrow">STAFF APP · THIS EMPLOYEE</span><h3 id="staffSetupCodeTitle">Personal setup code</h3></div><span class="staff-setup-badge">10 private digits</span></div>
+          <p>Give this code only to this employee. They select their name and enter it when setting up the Staff app after a fresh installation or clearing its data.</p>
+          <p id="staffSetupCodeStatus" role="status" aria-live="polite">Open a saved employee profile to check their setup code.</p>
+          <div class="staff-setup-actions"><button id="staffSetupCodeGenerate" type="button" class="staff-setup-primary" disabled>Generate setup code</button><button id="staffSetupCodeDisable" type="button" class="staff-setup-danger" disabled>Disable code</button><button id="staffSetupCodeRefresh" type="button">Refresh status</button></div>
+          <div id="staffSetupCodeResult" class="staff-setup-code-result" hidden><span class="staff-setup-eyebrow">SHOW ONCE · GIVE TO THIS EMPLOYEE</span><code id="staffSetupCodeValue" aria-label="Personal setup code"></code><div class="staff-setup-actions"><button id="staffSetupCodeCopy" type="button" disabled>Copy setup code</button></div><p>Copy it now if needed. It disappears when you close or leave this profile. HQ does not keep a readable copy.</p></div>
+          <p class="staff-setup-note">A code can be reused for this employee’s future setups. Replacing or disabling it stops future activations with the old code. Blocking an existing phone takes effect at its next verification. To stop both current access and new setups, block the phone and disable this code.</p>
+        </section>
         <!-- Section 2: Payroll & Rates -->
         <div style="background: white; border-radius: 12px; padding: 25px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
             <h3 style="margin-top: 0; color: #16a34a; font-size: 18px; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px; margin-bottom: 20px;">💸 Payroll & Rates</h3>

@@ -1,0 +1,12 @@
+#deviceAuthOverlay{padding:20px 12px;overflow-y:auto;align-items:center;justify-content:flex-start}
+#deviceAuthOverlay .login-card{flex-shrink:0;width:min(100%,440px);max-width:440px;margin:auto;overflow-wrap:anywhere}
+#staffSetupFields{border:1px solid #cfddd0;background:#f5f9f3;border-radius:14px;padding:16px;margin:0 0 16px;text-align:left}
+#staffSetupFields[hidden],#legacyBranchFields[hidden]{display:none!important}
+#staffSetupFields label{display:block;font-size:13px;font-weight:700;color:#264b3c;margin:0 0 7px}
+#staffSetupFields select,#staffSetupFields input{width:100%;min-width:0;max-width:100%;min-height:46px;border:1px solid #b9cebd;border-radius:10px;background:#fff;color:#183e32;font:inherit;padding:10px 12px;box-sizing:border-box}
+#staffSetupFields select{margin-bottom:9px;text-align:left}
+#staffSetupFields input{font-size:20px;letter-spacing:.16em;text-align:center;margin-bottom:6px}
+.setup-help{font-size:12px;line-height:1.5;color:#5b7065;margin:8px 0 14px}
+#setupStaffReload{display:block;padding:4px 0;margin:0 0 15px;border:0;background:transparent;color:#0f766e;text-decoration:underline;font:inherit;font-size:12px;cursor:pointer}
+#deviceRegistrationStatus{white-space:normal;overflow-wrap:anywhere}
+@media(max-width:480px){#deviceAuthOverlay{padding:14px 10px}#deviceAuthOverlay .login-card{padding:23px 20px}#deviceAuthOverlay .login-header h2{font-size:24px}#staffSetupFields{padding:13px}}

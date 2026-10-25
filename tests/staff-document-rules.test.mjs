@@ -119,7 +119,10 @@ test('legacy operational authority remains while new rate metadata is protected'
     for (const method of ['read', 'create', 'update', 'delete']) {
         const expression = new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(flatLegacy)?.[1];
         assert.ok(expression, `Missing legacy ${method} policy`);
-        const prefix = 'legacyCandidate(legacyCollection) && (';
+        const setupGuard = method === 'read' ? '' : method === 'create'
+            ? 'staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && '
+            : `staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),${method === 'delete' ? '{}' : 'newData()'}) && `;
+        const prefix = 'legacyCandidate(legacyCollection) && ' + setupGuard + '(';
         assert.ok(expression.startsWith(prefix) && expression.endsWith(')'), 'Every legacy method must retain the exact deny-only prefix');
         const union = expression.slice(prefix.length, -1);
         const clause = /\(legacyCollection in \[([^\]]+)\](?: && (isHQUser|isOwner)\(\))?\)/g;

@@ -444,17 +444,42 @@ service cloud.firestore {
     match /customer_feedback/{document=**} { allow create: if true; allow read, update, delete: if isHQUser(); }
     match /franchise_leads/{document=**} { allow create: if true; allow read, update, delete: if isHQUser(); }
 
+    // Staff setup credentials and bindings are server-owned. A public fleet
+    // mirror never grants activation; the immutable private device index also
+    // reserves deleted IDs so removing public markers cannot reopen a write.
+    function staffSetupProtected(id, data) {
+      return data.keys().hasAny(['setupVersion','setupUid'])
+        || exists(/databases/$(database)/documents/staff_app_device_index/$(id));
+    }
+    function staffSetupCreateAllowed(root, id, data) {
+      return root != 'pos_devices' || (!staffSetupProtected(id, data)
+        && !(data.get('appType','') == 'Staff'
+          && exists(/databases/$(database)/documents/staff_app_setup_config/current)
+          && readData('staff_app_setup_config','current').get('enabled',false) == true));
+    }
+    function staffSetupExistingAllowed(root, id, before, after) {
+      return root != 'pos_devices' || (!staffSetupProtected(id, before)
+        && !staffSetupProtected(id, after));
+    }
+    match /staff_setup_credentials/{id} { allow read, write: if false; }
+    match /staff_app_setup_config/{id} { allow read, write: if false; }
+    match /staff_app_bindings/{id} { allow read, write: if false; }
+    match /staff_app_device_index/{id} { allow read, write: if false; }
+    match /staff_setup_audit/{id} { allow read, write: if false; }
+    match /staff_setup_operations/{id} { allow read, write: if false; }
+    match /staff_setup_attempts/{id} { allow read, write: if false; }
+
     // Exact legacy one-document policies. No default grant or recursive path.
     match /{legacyCollection}/{legacyDocument} {
       allow read: if legacyCandidate(legacyCollection) && ((legacyCollection in ['account_logs','bom','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','global_addons','grab_payouts','inventory','manager_alerts','menu','parked_orders','pos_devices','remittances','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests','stock_counts','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','yield_logs'] && isHQUser()));
-      allow create: if legacyCandidate(legacyCollection) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','remittances','shift_swaps','shifts','sop_logs','staff_requests','stock_counts','stock_logs'])
+      allow create: if legacyCandidate(legacyCollection) && staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','remittances','shift_swaps','shifts','sop_logs','staff_requests','stock_counts','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isHQUser())
         || (legacyCollection in ['bom','global_addons','menu'] && isOwner()));
-      allow update: if legacyCandidate(legacyCollection) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','remittances','shift_swaps','shifts','sop_logs','staff_requests','stock_counts','stock_logs'])
+      allow update: if legacyCandidate(legacyCollection) && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','remittances','shift_swaps','shifts','sop_logs','staff_requests','stock_counts','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','foodpanda_payouts','grab_payouts','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isHQUser())
         || (legacyCollection in ['bom','global_addons'] && isOwner()));
-      allow delete: if legacyCandidate(legacyCollection) && ((legacyCollection in ['branches','parked_orders'])
+      allow delete: if legacyCandidate(legacyCollection) && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),{}) && ((legacyCollection in ['branches','parked_orders'])
         || (legacyCollection in ['account_logs','budgets','cash_accounts','dispatch_logs','equipment_assets','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','hq_restocks','manager_alerts','payables','pos_devices','rider_topups','riders','shift_swaps','sop_logs','staff_bonuses','staff_ledger','staff_requests','yield_logs'] && isHQUser())
         || (legacyCollection in ['bom','global_addons','inventory','menu','remittances','shifts','stock_counts','stock_logs'] && isOwner()));
     }

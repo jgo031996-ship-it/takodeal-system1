@@ -17,6 +17,10 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/staff-document-broker
       - name: Verify real private document SDK without cloud access
         run: node tools/private-broker-sdk-check.mjs
+      - name: Install locked Staff device setup runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/staff-device-setup
+      - name: Verify Staff device setup SDK without cloud access
+        run: node tools/staff-device-setup-sdk-check.mjs
       - name: Check workspace scripts
         run: |
           for script in takodeal-manager/*.js Takodeal-POS/*.js Customer/*.js takodeal-staff/*.js takodeal-franchise/*.js takodeal-delivery/*.js; do node --check "$script"; done

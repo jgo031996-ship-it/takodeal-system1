@@ -1,5 +1,5 @@
 import {createAttendanceMetadataReader} from './attendance-metadata-reader.js';
-import {getAuth} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
+import {getAuth,signInAnonymously,setPersistence,browserLocalPersistence,onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
 import {installStaffOnboarding} from './onboarding-ui.js';
 import {onboardingDay} from './onboarding-model.js';
 import {contractOfferFingerprint,reviewedContractRate,signOfferedContract} from './onboarding-service.js';
@@ -103,9 +103,7 @@ window.stopStaffLiveListeners = function() {
 window.addEventListener('pagehide', () => window.stopStaffLiveListeners());
 window.addEventListener('pageshow', event => {
     if (!event.persisted || !localStorage.getItem('takodeal_staff_id')) return;
-    window.startInboxListener();
-    window.listenToIncomingSwaps();
-    window.startSanctionListener(localStorage.getItem('takodeal_staff_name'));
+    window.startStaffDeviceSetup?.();
 });
 // =======================================================
 // 🧠 TAKODEAL GLOBAL CACHE ENGINE (COST SAVER)
@@ -168,18 +166,7 @@ window.ALLOWED_RADIUS_METERS = 50;
 // ==========================================
 document.addEventListener("DOMContentLoaded", () => {
     localStorage.removeItem('takodeal_device_trusted');
-
-    let deviceId = localStorage.getItem('takodeal_device_id');
-
-    if (!deviceId) {
-        document.getElementById('deviceAuthOverlay').style.display = 'flex';
-        document.getElementById('registerCard').style.display = 'block';
-        document.getElementById('pendingCard').style.display = 'none';
-        document.getElementById('loginOverlay').style.display = 'none';
-        document.getElementById('appContainer').style.display = 'none';
-    } else {
-        window.listenToDeviceStatus(deviceId);
-    }
+    window.startStaffDeviceSetup?.();
 });
 
 // ==========================================
@@ -199,8 +186,16 @@ window.getClosestBranch = function() {
 };
 
 window.checkNormalLogin = function() {
+    if(!window.staffSetupAccess?.isVerified()){window.startStaffDeviceSetup?.();return false;}
     let savedName = localStorage.getItem('takodeal_staff_name');
     let savedId = localStorage.getItem('takodeal_staff_id');
+    const setupBinding=window.staffSetupAccess.binding();
+    if(setupBinding && savedId!==setupBinding.staffId){
+        window.stopStaffLiveListeners();window.lockPayslipVault?.();
+        for(const key of ['takodeal_staff_name','takodeal_staff_id','takodeal_staff_pic'])localStorage.removeItem(key);
+        savedName=null;savedId=null;
+    }
+    if(savedId){window.staffSetupAccess.assertStaff(savedId);if(setupBinding){savedName=setupBinding.staffName;localStorage.setItem('takodeal_staff_name',savedName);}}
     
     // 🚀 AUTO-LOGIN ENGINE
     if (savedName && savedId) {
@@ -248,22 +243,33 @@ window.loginStaff = async function() {
     btn.innerText = "⏳ Verifying..."; btn.disabled = true; errorMsg.style.display = 'none';
 
     try {
-        const qStr = query(collection(db, "cashiers"), where("pin", "==", pinInput));
-        const snapStr = await getDocs(qStr);
+        if(!window.staffSetupAccess)throw Error('Reconnect to confirm this phone before signing in.');
+        const deviceId=localStorage.getItem('takodeal_device_id');
+        await window.staffSetupAccess.confirm(deviceId);
+        const setupSession=window.staffSetupAccess.capture(),setupBinding=window.staffSetupAccess.binding();
         let staffData = null; let docId = null;
-
-        if (!snapStr.empty) {
-            staffData = snapStr.docs[0].data(); docId = snapStr.docs[0].id;
+        if(setupBinding){
+            const profile=await getDocFromServer(doc(db,'cashiers',setupBinding.staffId));
+            const data=profile.exists()?profile.data():null;
+            if(data && (data.branch!==setupBinding.branch || data.cashierName!==setupBinding.staffName))throw Error('Your staff profile changed. Check this phone’s setup again before signing in.');
+            const pinMatches=data && (String(data.pin)===pinInput || typeof data.pin==='number'&&Number.isSafeInteger(data.pin)&&/^\d+$/.test(pinInput)&&Number(pinInput)===data.pin);
+            if(data && data.active!==false && data.archived!==true && data.blocked!==true && !/^(Blocked|Revoked|Terminated|Resigned|Inactive|Disabled|Archived|Deleted)$/i.test(String(data.status||'')) && !/^(REVOKED|BLOCKED)$/i.test(String(data.pin)) && pinMatches){staffData=data;docId=setupBinding.staffId;}
         } else {
-            let pinNum = parseInt(pinInput);
-            if (!isNaN(pinNum)) {
-                const qNum = query(collection(db, "cashiers"), where("pin", "==", pinNum));
-                const snapNum = await getDocs(qNum);
-                if (!snapNum.empty) { staffData = snapNum.docs[0].data(); docId = snapNum.docs[0].id; }
+            const qStr = query(collection(db, "cashiers"), where("pin", "==", pinInput));
+            const snapStr = await getDocs(qStr);
+            if (!snapStr.empty) {staffData=snapStr.docs[0].data();docId=snapStr.docs[0].id;}
+            else {
+                let pinNum = parseInt(pinInput);
+                if (!isNaN(pinNum)) {
+                    const qNum = query(collection(db, "cashiers"), where("pin", "==", pinNum));
+                    const snapNum = await getDocs(qNum);
+                    if (!snapNum.empty) { staffData = snapNum.docs[0].data(); docId = snapNum.docs[0].id; }
+                }
             }
         }
 
         if (staffData) {
+            window.staffSetupAccess.assert(setupSession,docId);
             if (localStorage.getItem('takodeal_staff_id') !== docId) window.stopStaffLiveListeners();
             // Re-establish session memory
             localStorage.setItem('takodeal_staff_name', staffData.cashierName);
@@ -279,6 +285,7 @@ window.loginStaff = async function() {
             
             document.getElementById('loginOverlay').style.opacity = '0';
             setTimeout(() => {
+                try{window.staffSetupAccess.assert(setupSession,docId);}catch{window.stopStaffLiveListeners();window.startStaffDeviceSetup?.();return;}
                 document.getElementById('loginOverlay').style.display = 'none';
                 document.getElementById('appContainer').style.display = 'flex';
                 document.getElementById('loginPin').value = ''; 
@@ -297,7 +304,7 @@ window.loginStaff = async function() {
             errorMsg.innerText = "❌ Incorrect PIN. Please try again."; errorMsg.style.display = 'block';
         }
     } catch (e) {
-        console.error(e); errorMsg.innerText = "❌ Connection error."; errorMsg.style.display = 'block';
+        errorMsg.innerText = e.message || "Connection error. Check again before signing in."; errorMsg.style.display = 'block';
     } finally {
         btn.innerText = "Secure Login"; btn.disabled = false;
     }
@@ -4049,7 +4056,20 @@ window.acknowledgeMeal = async function(docId) {
 // ==========================================
 installStaffPortal();
 installStaffLocation();
-installStaffRegistration({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey});
+let setupAuthUid=staffPrimaryAuth.currentUser?.uid||null;
+installStaffRegistration({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,setup:{
+    auth:staffPrimaryAuth,
+    ensureUser:async({guard=()=>{}}={})=>{
+        await staffPrimaryAuth.authStateReady();guard();
+        if(staffPrimaryAuth.currentUser)return staffPrimaryAuth.currentUser;
+        await setPersistence(staffPrimaryAuth,browserLocalPersistence);guard();
+        const signedIn=await signInAnonymously(staffPrimaryAuth);guard();return signedIn.user;
+    },
+    onAuthChange:callback=>onAuthStateChanged(staffPrimaryAuth,user=>{
+        const changed=setupAuthUid && setupAuthUid!==(user?.uid||null);setupAuthUid=user?.uid||null;
+        if(changed)callback();
+    })
+}});
 installStaffPhone();
 installStaffDocuments(window,{createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
 

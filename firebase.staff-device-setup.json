@@ -1,0 +1,7 @@
+{
+  "functions": [{
+    "source": "functions/staff-device-setup",
+    "codebase": "staff-device-setup",
+    "ignore": ["node_modules", ".git", "*-debug.log", "*.local"]
+  }]
+}

@@ -1,4 +1,6 @@
-// Registration and approval checks use bounded HTTP requests even if realtime sync stalls.
+import {installStaffSetupGate} from './staff-setup-access.js';
+// Legacy registration remains available only when the trusted service explicitly
+// returns disabled rollout mode. Public device records never grant protected setup.
 export function createDeviceConnection({projectId,apiKey,fetcher=fetch,delay=setTimeout,cancelDelay=clearTimeout,Controller=AbortController}) {
     const root=`https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents`;
     async function request(url,options) {
@@ -113,7 +115,7 @@ export function installStaffRegistration(config) {
             const status=record.status;
             if(status==='Active' || status==='Approved') {
                 if(el('deviceAuthOverlay'))el('deviceAuthOverlay').style.display='none';
-                if(!entered){entered=true;window.checkNormalLogin();window.listenToIncomingSwaps();}
+                if(!entered){entered=true;window.checkNormalLogin();if(!config.setup||window.staffSetupAccess?.isVerified())window.listenToIncomingSwaps();}
             } else {
                 entered=false;
                 pendingScreen(id,status==='Pending'?'Request received by HQ':'Device access paused',status==='Pending'?'Your request is in the Manager’s Device Fleet. Ask HQ to approve this device.':'HQ approval is required before you can sign in.',true);
@@ -153,4 +155,5 @@ export function installStaffRegistration(config) {
         if(document.hidden)stop();else if(!busy){const id=localStorage.getItem('takodeal_device_id');if(id)window.listenToDeviceStatus(id);}
     });
     window.addEventListener('pagehide',stop);
+    if(config.setup)return installStaffSetupGate({...config,...config.setup},{legacyRequest:window.requestDeviceAccess,legacyListen:window.listenToDeviceStatus,stopLegacy:stop});
 }
