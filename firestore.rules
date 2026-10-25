@@ -470,34 +470,14 @@ service cloud.firestore {
     match /staff_setup_attempts/{id} { allow read, write: if false; }
     match /staff_setup_device_slots/{id} { allow read, write: if false; }
 
-    // A trusted service creates branch proposals after checking the branch
-    // tablet, active staff profile and staff PIN. Clients cannot forge origin.
+    // The verification service alone submits and decides proposals. Approval
+    // and the canonical dated revision are committed in one server transaction.
     match /branch_schedule_proposals/{proposalId} {
-      function proposalOwner() {
-        return isSignedIn() && request.auth.token.get('email_verified', false) == true
-          && request.auth.token.get('email', '') == 'jgo031996@gmail.com';
-      }
-      function reviewFields() {
-        return newData().diff(oldData()).affectedKeys().hasOnly(['status','reviewedAt','reviewedByUid','reviewedByEmail','reviewNote','revisionId'])
-          && oldData().status == 'Pending' && newData().status in ['Approved','Rejected']
-          && newData().reviewedAt == request.time && newData().reviewedByUid == request.auth.uid
-          && newData().reviewedByEmail == request.auth.token.email
-          && newData().reviewNote is string && newData().reviewNote.size() >= 3 && newData().reviewNote.size() <= 1500;
-      }
-      function linkedRevision() {
-        let revision = getAfter(/databases/$(database)/documents/settings/$('schedule_revision_' + newData().revisionId)).data;
-        return newData().revisionId is string && newData().revisionId.matches('^[A-Za-z0-9_-]{1,100}$')
-          && !exists(/databases/$(database)/documents/settings/$('schedule_revision_' + newData().revisionId))
-          && revision.source == 'cashier-schedule-proposal' && revision.branchScheduleProposalId == proposalId
-          && revision.actor == request.auth.token.email && revision.month == oldData().proposal.month
-          && revision.effectiveFrom == oldData().proposal.from && revision.effectiveTo == oldData().proposal.to;
-      }
-      allow read: if proposalOwner() || (trustedPOS(resource.data.proposal.branch) && resource.data.submittedBy.uid == request.auth.uid);
-      allow create, delete: if false;
-      allow update: if proposalOwner() && reviewFields()
-        && (newData().status == 'Rejected' ? newData().revisionId == null : linkedRevision());
+      allow read: if protectedHROwner() || (trustedPOS(resource.data.proposal.branch) && resource.data.submittedBy.uid == request.auth.uid);
+      allow write: if false;
     }
     match /branch_schedule_proposal_operations/{id} { allow read, write: if false; }
+    match /branch_schedule_proposal_review_operations/{id} { allow read, write: if false; }
     match /branch_schedule_proposal_attempts/{id} { allow read, write: if false; }
 
 

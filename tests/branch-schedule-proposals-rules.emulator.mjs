@@ -14,7 +14,7 @@ process.env.FIRESTORE_EMULATOR_HOST=endpoint;
 const root=fileURLToPath(new URL('../',import.meta.url)),tools=resolve(root,'../staff-nextlevel-tools'),req=createRequire(resolve(tools,'package.json'));
 const {initializeTestEnvironment,assertSucceeds,assertFails}=req('@firebase/rules-unit-testing');
 const sdk=req('firebase/firestore');sdk.setLogLevel('silent');
-const {doc,setDoc,updateDoc,deleteDoc,getDocFromServer,getDocsFromServer,collection,writeBatch,deleteField}=sdk;
+const {doc,setDoc,updateDoc,deleteDoc,getDocFromServer,getDocsFromServer,collection,query,where,writeBatch,deleteField}=sdk;
 const java=JSON.parse(readFileSync(resolve(tools,'runtime.json'))).java,jar=resolve(tools,'emulators/cloud-firestore-emulator-v1.22.0.jar');
 if(!existsSync(java)||!existsSync(jar))throw Error('Local emulator runtime missing.');
 let env,child,output='';const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -39,41 +39,49 @@ const revision={source:'cashier-schedule-proposal',branchScheduleProposalId:prop
 const proposalRef=db=>doc(db,proposalPath),revisionRef=db=>doc(db,'settings/schedule_revision_proposal-'+proposalId);
 const sampleSeed=()=>admin(db=>setDoc(proposalRef(db),pending));
 test('all browser identities are denied proposal creation and deletion',async()=>{
+ await admin(db=>setDoc(doc(db,'pos_bindings/sample-phone'),{uid:'sample-phone',status:'Active',branch:'SAMPLE Branch'}));
  for(const db of [publicDB(),anon(),owner()])await assertFails(setDoc(proposalRef(db),pending));
  await sampleSeed();for(const db of [publicDB(),anon(),owner()])await assertFails(deleteDoc(proposalRef(db)));
 });
 test('verified Owner reads proposals; unauthenticated, unrelated and unapproved devices cannot',async()=>{
- await sampleSeed();await assertSucceeds(getDocFromServer(proposalRef(owner())));
- for(const db of [publicDB(),anon(),env.authenticatedContext('unrelated',{email:'other@example.com',email_verified:true}).firestore()])await assertFails(getDocFromServer(proposalRef(db)));
+ await sampleSeed();await assertSucceeds(getDocFromServer(proposalRef(owner())));const listed=await assertSucceeds(getDocsFromServer(collection(owner(),'branch_schedule_proposals')));assert.equal(listed.size,1);
+ for(const db of [publicDB(),anon(),env.authenticatedContext('unrelated',{email:'other@example.com',email_verified:true}).firestore(),env.authenticatedContext('unverified-owner',{email:'jgo031996@gmail.com',email_verified:false}).firestore()])await assertFails(getDocFromServer(proposalRef(db)));
 });
 test('approved same-UID branch tablet reads only its own submitted proposals',async()=>{
  await sampleSeed();await admin(db=>setDoc(doc(db,'pos_bindings/sample-phone'),{status:'Active',branch:'SAMPLE Branch'}));await assertSucceeds(getDocFromServer(proposalRef(anon())));
  await admin(db=>updateDoc(doc(db,'pos_bindings/sample-phone'),{branch:'OTHER Branch'}));await assertFails(getDocFromServer(proposalRef(anon())));
  await admin(db=>updateDoc(doc(db,'pos_bindings/sample-phone'),{branch:'SAMPLE Branch',status:'Revoked'}));await assertFails(getDocFromServer(proposalRef(anon())));
 });
-test('only the verified Owner can reject a pending proposal',async()=>{
- await sampleSeed();for(const db of [publicDB(),anon(),env.authenticatedContext('sample-owner',{email:'jgo031996@gmail.com',email_verified:false}).firestore(),env.authenticatedContext('sample-manager',{email:'manager@example.com',email_verified:true}).firestore()])await assertFails(setDoc(proposalRef(db),review(db)));
- await assertSucceeds(setDoc(proposalRef(owner()),review(owner())));
+
+test('same-branch tablets cannot read another tablet submission or list proposals without scope filters',async()=>{
+ await sampleSeed();await admin(async db=>{await setDoc(doc(db,'pos_bindings/sample-phone'),{uid:'sample-phone',status:'Active',branch:'SAMPLE Branch'});await setDoc(doc(db,'branch_schedule_proposals/other-proposal'),{...pending,proposal:{...pending.proposal,id:'other-proposal'},submittedBy:{...pending.submittedBy,uid:'other-phone'}});});
+ const db=anon();await assertFails(getDocFromServer(doc(db,'branch_schedule_proposals/other-proposal')));await assertFails(getDocsFromServer(collection(db,'branch_schedule_proposals')));
+ const own=await assertSucceeds(getDocsFromServer(query(collection(db,'branch_schedule_proposals'),where('proposal.branch','==','SAMPLE Branch'),where('submittedBy.uid','==','sample-phone'))));assert.equal(own.size,1);
 });
-test('review cannot alter original proposal, origin, reason or submission timestamp',async()=>{
+test('all browser identities including verified Owner are denied direct decisions',async()=>{
+ await admin(db=>setDoc(doc(db,'pos_bindings/sample-phone'),{uid:'sample-phone',status:'Active',branch:'SAMPLE Branch'}));
+ await sampleSeed();for(const db of [publicDB(),anon(),env.authenticatedContext('sample-owner',{email:'jgo031996@gmail.com',email_verified:false}).firestore(),env.authenticatedContext('sample-manager',{email:'manager@example.com',email_verified:true}).firestore()])await assertFails(setDoc(proposalRef(db),review(db)));
+ for(const decision of ['Rejected','Approved'])await assertFails(setDoc(proposalRef(owner()),review(owner(),decision)));
+});
+test('direct review cannot alter original proposal, origin, reason or submission timestamp',async()=>{
  await sampleSeed();const db=owner();for(const change of [{proposal:{...pending.proposal,branch:'OTHER'}},{submittedBy:{...pending.submittedBy,staffName:'Forged'}},{intent:'altered'},{submittedAt:'2030-01-01'}])await assertFails(setDoc(proposalRef(db),review(db,'Rejected',change)));
 });
-test('review attribution, server timestamp and explanation are required',async()=>{
+test('direct review remains forbidden with forged attribution, time or explanation',async()=>{
  await sampleSeed();const db=owner();for(const change of [{reviewedByUid:'forged'},{reviewedByEmail:'manager@example.com'},{reviewedAt:new Date(0)},{reviewNote:'x'},{status:'Pending'},{revisionId:'invented'}])await assertFails(setDoc(proposalRef(db),review(db,'Rejected',change)));
 });
-test('approval requires a newly-created matching schedule revision in the same atomic batch',async()=>{
+test('a client cannot approve even with a newly-created matching schedule revision in the same batch',async()=>{
  await sampleSeed();const db=owner();await assertFails(setDoc(proposalRef(db),review(db,'Approved')));
  for(const change of [{source:'manager-save'},{branchScheduleProposalId:'wrong'},{actor:'wrong@example.com'},{month:'2026-11'},{effectiveFrom:'2026-10-24'},{effectiveTo:'2026-10-27'}]){const batch=writeBatch(db);batch.set(proposalRef(db),review(db,'Approved'));batch.set(revisionRef(db),{...revision,...change});await assertFails(batch.commit());}
- const batch=writeBatch(db);batch.set(proposalRef(db),review(db,'Approved'));batch.set(revisionRef(db),revision);await assertSucceeds(batch.commit());
+ const batch=writeBatch(db);batch.set(proposalRef(db),review(db,'Approved'));batch.set(revisionRef(db),revision);await assertFails(batch.commit());assert.equal((await getDocFromServer(revisionRef(db))).exists(),false);
 });
 test('an existing stale revision cannot be reused to label a proposal approved',async()=>{
  await sampleSeed();await admin(db=>setDoc(revisionRef(db),revision));const db=owner();await assertFails(setDoc(proposalRef(db),review(db,'Approved')));
 });
 test('a decided proposal is immutable even to Owner',async()=>{
- await sampleSeed();const db=owner();await assertSucceeds(setDoc(proposalRef(db),review(db)));await assertFails(updateDoc(proposalRef(db),{reviewNote:'Changed after decision',reviewedAt:sdk.serverTimestamp()}));await assertFails(setDoc(proposalRef(db),review(db,'Approved')));
+ await admin(db=>setDoc(proposalRef(db),{...review(db),reviewedAt:new Date('2026-10-25T12:30:00Z')}));const db=owner();await assertSucceeds(getDocFromServer(proposalRef(db)));await assertFails(updateDoc(proposalRef(db),{reviewNote:'Changed after decision',reviewedAt:sdk.serverTimestamp()}));await assertFails(setDoc(proposalRef(db),review(db,'Approved')));await assertFails(deleteDoc(proposalRef(db)));
 });
 test('service operation receipts, rate counters and nested records stay private',async()=>{
- for(const table of ['branch_schedule_proposal_operations','branch_schedule_proposal_attempts']){
+ for(const table of ['branch_schedule_proposal_operations','branch_schedule_proposal_review_operations','branch_schedule_proposal_attempts']){
   await admin(db=>setDoc(doc(db,table,'sample'),{sample:true}));
   for(const db of [publicDB(),anon(),owner()]){await assertFails(getDocFromServer(doc(db,table,'sample')));await assertFails(getDocsFromServer(collection(db,table)));await assertFails(setDoc(doc(db,table,'new'),{sample:true}));await assertFails(updateDoc(doc(db,table,'sample'),{sample:false}));await assertFails(deleteDoc(doc(db,table,'sample')));await assertFails(setDoc(doc(db,table+'/sample/nested/child'),{sample:true}));}
  }

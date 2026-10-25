@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {createBranchScheduleProposals,PRODUCTION_ORIGINS,MAX_REQUEST_BYTES} from '../functions/branch-schedule-proposals/service.mjs';
+import {createBranchScheduleProposals,PRODUCTION_ORIGINS,MAX_REQUEST_BYTES,OWNER_ORIGIN,CASHIER_ORIGIN} from '../functions/branch-schedule-proposals/service.mjs';
 import {createScheduleRevision,shiftAmendmentFingerprint} from '../takodeal-manager/schedule-history.js';
 import {projectScheduleMonth} from '../takodeal-manager/schedule-sync.js';
-import {scheduleProposalContext} from '../takodeal-manager/schedule-proposal-model.js';
+import {scheduleProposalContext,buildApprovedScheduleProposalSnapshot} from '../takodeal-manager/schedule-proposal-model.js';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 
 // Only synthetic identities and a local optimistic transaction harness. These
@@ -15,6 +15,7 @@ const TOKEN='fixture_firebase_token_1234567890',PIN='SAMPLE-PIN-4815';
 const NOW=Date.parse('2026-10-25T04:00:00Z'),MONTH='2026-10',UID='sample_pos_uid';
 const clone=structuredClone,digest=value=>createHash('sha256').update(value).digest('hex');
 const actor=uid=>({uid,firebase:{sign_in_provider:'anonymous'}});
+const ownerActor=()=>({uid:'sample_owner_uid',email:'jgo031996@gmail.com',email_verified:true,firebase:{sign_in_provider:'google.com'}});
 const baseStaff={cashierName:'Sample Alpha',scheduleNickname:'Alpha',branch:'Maa',active:true,status:'Active',role:'Staff',pin:PIN};
 const staffRows={staff_one:baseStaff,staff_two:{...baseStaff,cashierName:'Sample Beta',scheduleNickname:'Beta',pin:'SAMPLE-PIN-8732'},staff_four:{...baseStaff,cashierName:'Sample Gamma',scheduleNickname:'Gamma',pin:'SAMPLE-PIN-6159'},staff_three:{...baseStaff,cashierName:'Sample Other',scheduleNickname:'Other',branch:'Citygate',pin:'SAMPLE-PIN-1193'}};
 function roster(){
@@ -27,7 +28,7 @@ function roster(){
 function fixture(){
  const h=firestoreHarness(),snapshot=roster(),revision=createScheduleRevision(snapshot,{revisionId:'sample_base_revision',effectiveFrom:'2026-10-25',savedAt:new Date(NOW),actor:'sample-hq@example.invalid'});revision.sequence=1;
  const index={schemaVersion:1,kind:'schedule-month',month:MONTH,revisionIds:[revision.revisionId],latestRevisionId:revision.revisionId,payrollHistoryEnforcedFrom:'2026-10-25'};
- const head={...clone(revision.snapshot),scheduleRevisionId:revision.revisionId,scheduleEffectiveFrom:'2026-10-25'};
+ const head={...clone(revision.snapshot),scheduleRevisionId:revision.revisionId,scheduleEffectiveFrom:'2026-10-25',payrollHistoryEnforcedFrom:'2026-10-25'};
  h.put('settings/global_schedule',head);h.put('settings/schedule_month_2026_10',index);h.put('settings/schedule_revision_'+revision.revisionId,revision);
  for(const [id,person]of Object.entries(staffRows))h.put('cashiers/'+id,person);
  h.put('pos_bindings/'+UID,{uid:UID,status:'Active',branch:'Maa',deviceId:'DEV-SAMPLE-TABLET',legacyDeviceDocId:'fleet_auto_document',deviceName:'Sample Maa tablet'});
@@ -43,6 +44,9 @@ function fixture(){
  });
  state.body={staffId:'staff_one',pin:PIN,operationId:'sample_operation_one',proposal};state.view=view;
  state.request=(body=state.body,options={})=>service({method:'POST',path:'/submit',query:{},origin:PRODUCTION_ORIGINS[0],contentType:'application/json',authorization:'Bearer '+TOKEN,rawSize:Buffer.byteLength(JSON.stringify(body)),body:clone(body),trustedIP:state.ip,...options});
+ state.owner=()=>{state.actor=ownerActor();};
+ state.reviewBody=(decision='Approved',reason='Verified the saved branch cover arrangement.')=>({id:state.body.proposal.id,decision,reason,expectedIntent:state.get('branch_schedule_proposals/'+state.body.proposal.id)?.intent,operationId:'sample_review_operation'});
+ state.review=(body=state.reviewBody(),options={})=>state.request(body,{path:'/review',origin:OWNER_ORIGIN,...options});
  state.proposalWrites=()=>state.commits.flat().filter(path=>path.startsWith('branch_schedule_proposals/'));
  state.settingSnapshot=()=>JSON.stringify([...state.docs].filter(([path])=>path.startsWith('settings/')));
  return state;
@@ -212,8 +216,100 @@ test('actual cloud adapter pins dedicated runtime, revoked checks, trusted socke
  assert.equal(exported,handler);assert.equal(options.serviceAccount,'branch-schedule-proposals@takodeal-pos.iam.gserviceaccount.com');assert.equal(options.region,'asia-southeast1');assert.equal(options.memory,'256MiB');assert.equal(options.cpu,1);assert.equal(options.concurrency,4);assert.equal(options.maxInstances,2);assert.equal(options.minInstances,0);assert.equal(options.timeoutSeconds,60);assert.equal(options.cors,false);
  await deps.verifyToken('sample-token',true);assert.deepEqual(verified,['sample-token',true]);
  await deps.store.transaction(async tx=>{const a=tx.get('settings/sample'),b=tx.get('settings/sample');assert.equal(a,b);assert.equal((await a).path,'settings/sample');tx.set('branch_schedule_proposals/sample',{});await assert.rejects(async()=>tx.get('settings/after-write'));});assert.deepEqual(reads,['settings/sample']);assert.equal(writes[0][0],'branch_schedule_proposals/sample');
+ for(const path of ['payroll_records/sample','attendance_logs/sample','cashiers/sample','settings/arbitrary_config'])await assert.rejects(deps.store.transaction(async tx=>tx.set(path,{})),/Only reviewed schedule paths/);
  await assert.rejects(deps.store.transaction(async tx=>{for(let i=0;i<501;i++)await tx.get('settings/sample-'+i);}),/history review/);
  const response={status(code){assert.equal(code,200);return this;},set(headers){assert.equal(headers['Cache-Control'],'no-store');return this;},json(body){assert.equal(body.status,'Pending');},end(){assert.fail('JSON response expected');}};
  await handler({method:'POST',path:'/submit',query:{},rawBody:Buffer.from('{}'),body:{},socket:{remoteAddress:'trusted-socket-peer'},get:name=>({'Origin':PRODUCTION_ORIGINS[0],'Authorization':'Bearer token','Content-Type':'application/json','X-Forwarded-For':'spoofed-client'}[name])},response);
  assert.equal(requestData.trustedIP,'trusted-socket-peer');assert.equal(requestData.rawSize,2);
+});
+
+test('verified Google Owner review atomically approves one stable dated revision with server audit',async()=>{
+ const {f,row}=await accepted(),before=clone(f.get('settings/global_schedule')),commits=f.commits.length;f.owner();const body=f.reviewBody(),result=await f.review(body);assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(result.body.alreadySaved,false);assert.equal(result.body.row.status,'Approved');assert.equal(result.body.row.id,row.proposal.id);assert.equal(result.body.row.revisionId,'proposal-'+row.proposal.id);
+ const revision=f.get('settings/schedule_revision_proposal-'+row.proposal.id);assert.equal(revision.source,'cashier-schedule-proposal');assert.equal(revision.effectiveFrom,'2026-10-26');assert.equal(revision.effectiveTo,'2026-10-27');assert.equal(revision.actor,'jgo031996@gmail.com');assert.equal(revision.branchScheduleProposalId,row.proposal.id);
+ assert.equal(result.body.row.reviewedAt,new Date(NOW).toISOString());assert.equal(result.body.row.reviewedByUid,'sample_owner_uid');assert.equal(revision.branchScheduleProposalAudit.reviewedByUid,'sample_owner_uid');assert.equal(revision.branchScheduleProposalAudit.approvedAt,result.body.row.reviewedAt);assert.deepEqual(revision.branchScheduleProposalAudit.submittedBy,row.submittedBy);
+ assert.equal(f.commits.length,commits+1);const paths=f.commits.at(-1);assert.ok(paths.includes('branch_schedule_proposals/'+row.proposal.id));assert.ok(paths.includes('settings/schedule_revision_proposal-'+row.proposal.id));assert.ok(paths.some(path=>path.startsWith('branch_schedule_proposal_review_operations/')));
+ assert.deepEqual(f.get('settings/global_schedule'),before,'future approval cannot replace today’s canonical head');assert.deepEqual(f.get('settings/schedule_month_2026_10').revisionIds,['sample_base_revision','proposal-'+row.proposal.id]);assert.deepEqual(result.body.row.staffSnapshot,row.staffSnapshot);assert.equal(JSON.stringify(result.body).includes(PIN),false);
+});
+
+test('approval preserves other branches, prior dates, HQ times, paid payroll and attendance punches',async()=>{
+ const {f,row}=await accepted();f.put('payroll_records/sample_paid',{staffId:'staff_one',paid:true,netPay:1234});f.put('attendance_logs/sample_punch',{staffId:'staff_one',type:'TIME OUT',timestamp:'2026-10-25T10:00:00Z'});
+ const before=clone(f.get('settings/global_schedule')),paid=clone(f.get('payroll_records/sample_paid')),punch=clone(f.get('attendance_logs/sample_punch'));f.owner();assert.equal((await f.review()).status,200);const snapshot=f.get('settings/schedule_revision_proposal-'+row.proposal.id).snapshot;
+ assert.equal(snapshot.currentSchedule[26].Maa.scheduled.morning,'Beta');assert.equal(snapshot.currentSchedule[26].Maa.scheduled.night,'Alpha');assert.deepEqual(snapshot.currentSchedule[26].Maa.unavailable,[{name:'Gamma',status:'Day Off',staffId:'staff_four'}]);
+ assert.deepEqual(snapshot.branchConfig,before.branchConfig);assert.deepEqual(snapshot.currentSchedule[26].Citygate,before.currentSchedule[26].Citygate);assert.deepEqual(snapshot.currentSchedule[25],before.currentSchedule[25]);assert.deepEqual(snapshot.currentSchedule[28],before.currentSchedule[28]);assert.deepEqual(f.get('payroll_records/sample_paid'),paid);assert.deepEqual(f.get('attendance_logs/sample_punch'),punch);
+});
+
+test('Owner rejection writes only proposal and private operation receipt',async()=>{
+ const {f}=await accepted(),settings=f.settingSnapshot();f.owner();const body=f.reviewBody('Rejected','Refresh the HQ roster and submit again.'),result=await f.review(body);assert.equal(result.status,200);assert.equal(result.body.row.status,'Rejected');assert.equal(result.body.row.revisionId,null);assert.equal(f.settingSnapshot(),settings);
+ assert.ok(f.commits.at(-1).every(path=>path.startsWith('branch_schedule_proposals/')||path.startsWith('branch_schedule_proposal_review_operations/')));
+});
+
+test('Cashier and Owner origins are isolated for POST and preflight on their own route',async()=>{
+ const {f}=await accepted();f.owner();for(const [path,origin]of [['/submit',OWNER_ORIGIN],['/review',CASHIER_ORIGIN]])for(const method of ['POST','OPTIONS']){const result=await f.request(path==='/review'?f.reviewBody():f.body,{path,origin,method,preflightMethod:'POST',preflightHeaders:'authorization,content-type'});assert.equal(result.status,403);assert.equal(result.headers['Access-Control-Allow-Origin'],undefined);}
+ const preflight=await f.review({}, {method:'OPTIONS',authorization:undefined,preflightMethod:'POST',preflightHeaders:'authorization, content-type'});assert.equal(preflight.status,204);assert.equal(preflight.headers['Access-Control-Allow-Origin'],OWNER_ORIGIN);
+});
+
+for(const variant of ['anonymous','unverified','other-email','other-provider','missing-uid','revoked'])test(`Owner review refuses ${variant} identity before private reads or writes`,async()=>{
+ const {f}=await accepted();f.owner();if(variant==='anonymous')f.actor=actor('anonymous_actor');else if(variant==='unverified')f.actor.email_verified=false;else if(variant==='other-email')f.actor.email='other@example.invalid';else if(variant==='other-provider')f.actor.firebase.sign_in_provider='password';else if(variant==='missing-uid')delete f.actor.uid;else f.revoked=true;
+ f.reads.length=0;const before=f.commits.length,result=await f.review();assert.equal(result.status,variant==='revoked'?401:403);assert.equal(f.reads.length,0);assert.equal(f.commits.length,before);assert.ok(f.verifications.every(([,revoked])=>revoked===true));
+});
+
+test('forged reviewer, times, canonical writes and malformed review fields are never accepted',async()=>{
+ const {f}=await accepted();f.owner();for(const change of [body=>{body.reviewedByUid='forged';},body=>{body.reviewedAt='2000-01-01';},body=>{body.snapshot={branchConfig:{}};},body=>{body.revisionId='forged';},body=>{body.pin=PIN;},body=>{body.reason='x';},body=>{body.decision='AutoApproved';},body=>{body.expectedIntent='bad';},body=>{body.id='../other';},body=>{body.operationId='../operation';}]){const body=f.reviewBody(),before=f.commits.length;change(body);f.reads.length=0;const result=await f.review(body);assert.equal(result.status,400);assert.equal(f.reads.length,0);assert.equal(f.commits.length,before);}
+});
+
+test('approval uses trusted Philippine date and refuses a late pending proposal while permitting rejection',async()=>{
+ const {f}=await accepted();f.owner();f.time=Date.parse('2026-10-28T04:00:00Z');const settings=f.settingSnapshot(),result=await f.review();assert.equal(result.status,409);assert.match(result.body.message,/today or future/);assert.equal(f.settingSnapshot(),settings);assert.equal(f.get('branch_schedule_proposals/'+f.body.proposal.id).status,'Pending');assert.equal((await f.review(f.reviewBody('Rejected','The dates passed; submit a fresh plan.'))).status,200);
+});
+
+for(const [name,patch]of Object.entries({'resigned staff':{status:' Resigned '},'revoked PIN':{pin:'REVOKED'},'moved branch':{branch:'Citygate'},'changed schedule alias':{scheduleNickname:'Changed alias'},'blocked profile':{blocked:true}}))test(`approval refuses ${name} without changing schedule records`,async()=>{
+ const {f}=await accepted();f.put('cashiers/staff_two',{...f.get('cashiers/staff_two'),...patch});f.owner();const settings=f.settingSnapshot(),result=await f.review();assert.equal(result.status,409,JSON.stringify(result.body));assert.equal(f.settingSnapshot(),settings);assert.equal(f.get('branch_schedule_proposals/'+f.body.proposal.id).status,'Pending');
+});
+
+test('fresh source edits and stale expected intent block Owner approval',async()=>{
+ for(const variant of ['rules','revision','intent']){const {f}=await accepted();f.owner();const body=f.reviewBody();if(variant==='rules'){const path='settings/schedule_revision_sample_base_revision',revision=clone(f.get(path));revision.snapshot.branchConfig.Maa[0].endTime='18:00';f.put(path,revision);}else if(variant==='revision')f.put('settings/schedule_month_2026_10',{...f.get('settings/schedule_month_2026_10'),latestRevisionId:'missing_revision'});else body.expectedIntent='a'.repeat(64);
+  const settings=f.settingSnapshot(),result=await f.review(body);assert.equal(result.status,409);assert.equal(f.settingSnapshot(),settings);assert.equal(f.get('branch_schedule_proposals/'+f.body.proposal.id).status,'Pending');
+ }
+});
+
+test('profile or canonical changes racing approval are retried against fresh transaction state',async()=>{
+ for(const variant of ['profile','schedule']){const {f}=await accepted();f.owner();let changed=false;f.hooks.beforeCommit=paths=>{if(!changed&&paths.some(path=>path.startsWith('settings/schedule_revision_proposal-'))){changed=true;if(variant==='profile')f.put('cashiers/staff_two',{...f.get('cashiers/staff_two'),status:'Resigned'});else {const path='settings/schedule_revision_sample_base_revision',revision=clone(f.get(path));revision.snapshot.branchConfig.Maa[0].endTime='18:00';f.put(path,revision);}}};
+  const result=await f.review();assert.equal(result.status,409);assert.ok(f.retries()>0);assert.equal(f.get('branch_schedule_proposals/'+f.body.proposal.id).status,'Pending');assert.equal(f.get('settings/schedule_revision_proposal-'+f.body.proposal.id),undefined);
+ }
+});
+
+test('a rejected atomic review commit leaves neither approval, revision nor review receipt',async()=>{
+ const {f}=await accepted();f.owner();const settings=f.settingSnapshot();f.failNextCommit();const result=await f.review();assert.equal(result.status,503);assert.equal(f.settingSnapshot(),settings);assert.equal(f.get('branch_schedule_proposals/'+f.body.proposal.id).status,'Pending');assert.equal([...f.docs.keys()].some(path=>path.startsWith('branch_schedule_proposal_review_operations/')),false);
+});
+
+test('lost review acknowledgment is confirmed by its receipt without publishing another revision',async()=>{
+ const {f}=await accepted();f.owner();const body=f.reviewBody();f.loseProposalAck=true;const first=await f.review(body);assert.equal(first.status,503);assert.equal(f.get('branch_schedule_proposals/'+body.id).status,'Approved');const settings=f.settingSnapshot(),commits=f.commits.length;
+ const retry=await f.review(body);assert.equal(retry.status,200);assert.equal(retry.body.alreadySaved,true);assert.equal(f.settingSnapshot(),settings);assert.equal(f.commits.length,commits);assert.deepEqual(f.get('settings/schedule_month_2026_10').revisionIds,['sample_base_revision','proposal-'+body.id]);
+ assert.equal((await f.review({...body,reason:'Altered retry reason.'})).status,409);assert.equal((await f.review({...body,decision:'Rejected'})).status,409);assert.equal((await f.review({...body,id:'different_proposal'})).status,409);assert.equal(f.settingSnapshot(),settings);
+});
+
+test('concurrent identical review operations converge; opposite decisions can commit only one outcome',async()=>{
+ const {f}=await accepted();f.owner();const body=f.reviewBody(),[a,b]=await Promise.all([f.review(body),f.review(body)]);assert.equal(a.status,200);assert.equal(b.status,200);assert.deepEqual(a.body.row,b.body.row);assert.deepEqual(f.get('settings/schedule_month_2026_10').revisionIds,['sample_base_revision','proposal-'+body.id]);
+ const {f:g}=await accepted();g.owner();const [approved,rejected]=await Promise.all([g.review(),g.review({...g.reviewBody('Rejected','Another review rejected this plan.'),operationId:'opposite_review'})]);assert.deepEqual([approved.status,rejected.status].sort(),[200,409]);const saved=g.get('branch_schedule_proposals/'+g.body.proposal.id);if(saved.status==='Rejected')assert.equal(g.get('settings/schedule_revision_proposal-'+g.body.proposal.id),undefined);else assert.equal(saved.status,'Approved');
+});
+
+test('new-operation confirmation reserves that ID but does not overwrite a saved decision or history',async()=>{
+ const {f}=await accepted();f.owner();assert.equal((await f.review()).status,200);const settings=f.settingSnapshot(),saved=clone(f.get('branch_schedule_proposals/'+f.body.proposal.id)),body={...f.reviewBody(),operationId:'new_confirmation'};
+ assert.equal((await f.review(body)).body.alreadySaved,true);assert.deepEqual(f.get('branch_schedule_proposals/'+body.id),saved);assert.equal(f.settingSnapshot(),settings);assert.equal((await f.review({...body,decision:'Rejected'})).status,409);assert.equal((await f.review({...body,expectedIntent:'a'.repeat(64)})).status,409);
+});
+
+test('receipt tampering or a changed saved decision cannot return a stale successful acknowledgment',async()=>{
+ for(const variant of ['uid','fingerprint','decision']){const {f}=await accepted();f.owner();const body=f.reviewBody();assert.equal((await f.review(body)).status,200);const opPath='branch_schedule_proposal_review_operations/'+digest(f.actor.uid+'|'+body.operationId);if(variant==='uid')f.put(opPath,{...f.get(opPath),uid:'another_owner'});else if(variant==='fingerprint')f.put(opPath,{...f.get(opPath),inputHash:'tampered'});else f.put('branch_schedule_proposals/'+body.id,{...f.get('branch_schedule_proposals/'+body.id),reviewNote:'Changed after acknowledgement'});
+  const before=f.commits.length;assert.equal((await f.review(body)).status,409);assert.equal(f.commits.length,before);
+ }
+});
+
+test('an orphan matching revision cannot be treated as an approved proposal when history callbacks short-circuit',async()=>{
+ const {f,row}=await accepted(),base=f.get('settings/schedule_revision_sample_base_revision'),index=f.get('settings/schedule_month_2026_10');
+ const view=projectScheduleMonth({month:MONTH,current:f.get('settings/global_schedule'),archive:{month:MONTH,revisions:[base],latestRevision:base,latestRevisionId:base.revisionId,shiftAmendments:[],indexFingerprint:shiftAmendmentFingerprint({index,durable:null})},now:new Date(NOW)});
+ const people=Object.entries(staffRows).map(([staffId,p])=>({staffId,name:p.cashierName,scheduleName:p.scheduleNickname,branch:p.branch,active:true})),snapshot=buildApprovedScheduleProposalSnapshot(view,row.proposal,people);
+ const orphan=createScheduleRevision(snapshot,{revisionId:'proposal-'+row.proposal.id,effectiveFrom:row.proposal.from,effectiveTo:row.proposal.to,savedAt:new Date(NOW),actor:'jgo031996@gmail.com',source:'cashier-schedule-proposal'});f.put('settings/schedule_revision_'+orphan.revisionId,orphan);f.owner();const settings=f.settingSnapshot(),result=await f.review();assert.equal(result.status,409);assert.equal(result.body.code,'review-unconfirmed');assert.equal(f.settingSnapshot(),settings);assert.equal(f.get('branch_schedule_proposals/'+row.proposal.id).status,'Pending');assert.equal([...f.docs.keys()].some(path=>path.startsWith('branch_schedule_proposal_review_operations/')),false);
+});
+
+test('a saved approval remains confirmable after its work date passes without rewriting history',async()=>{
+ const {f}=await accepted();f.owner();f.time=Date.parse('2026-10-26T04:00:00Z');const body=f.reviewBody();assert.equal((await f.review(body)).status,200);assert.equal(f.get('settings/global_schedule').scheduleRevisionId,'proposal-'+body.id);const settings=f.settingSnapshot();f.time=Date.parse('2026-11-01T04:00:00Z');assert.equal((await f.review(body)).body.alreadySaved,true);assert.equal(f.settingSnapshot(),settings);
 });

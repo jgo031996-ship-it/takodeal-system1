@@ -4,8 +4,8 @@ const id=x=>typeof x==='string'&&/^[A-Za-z0-9_-]{1,100}$/.test(x);
 const canonical=x=>JSON.stringify(x,(_key,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.keys(v).sort().map(k=>[k,v[k]])):v);
 const fresh=s=>{if(!s||s.metadata?.fromCache||s.metadata?.hasPendingWrites||s.docs?.some(d=>d.metadata?.fromCache||d.metadata?.hasPendingWrites))throw Error('Connect to HQ before reviewing schedules.');return s;};
 const profile=(p,staffId)=>({staffId,name:p.cashierName,scheduleName:p.scheduleNickname||p.cashierName,branch:p.branch,active:p.active!==false&&p.blocked!==true&&p.archived!==true&&!['revoked','resigned','terminated','inactive','blocked','disabled','deleted','archived'].includes(String(p.status||'').trim().toLowerCase())&&!['REVOKED','BLOCKED'].includes(String(p.pin||'').trim().toUpperCase())&&['staff','staff crew','crew','cashier','manager'].includes(String(p.role||'Staff').trim().toLowerCase())});
-export function createScheduleProposalReview(api,{now=()=>new Date()}={}){
- const ref=id=>api.doc(api.db,'branch_schedule_proposals',id),operations=new Map();
+export function createScheduleProposalReview(api,{now=()=>new Date(),fetch=globalThis.fetch,makeId=()=>globalThis.crypto.randomUUID(),timeoutMs=45000}={}){
+ const ref=id=>api.doc(api.db,'branch_schedule_proposals',id),operations=new Map(),receipts=new Map();
  const identity=()=>canonical([api.auth?.currentUser?.uid,api.auth?.currentUser?.email,api.sessionUser?.uid,api.sessionUser?.email,api.sessionUser?.isOwner]);
  function owner(){const u=api.auth?.currentUser,s=api.sessionUser;if(!u?.uid||u.email?.toLowerCase()!=='jgo031996@gmail.com'||u.emailVerified!==true||s?.isOwner!==true||s.uid!==u.uid||s.email?.toLowerCase()!==u.email.toLowerCase()||s.isFranchisee)throw Error('Sign in and unlock the verified Owner account before reviewing schedules.');return {uid:u.uid,email:u.email};}
  const guard=key=>{owner();if(identity()!==key)throw Error('The Owner account changed. Reopen this schedule review.');};
@@ -35,29 +35,30 @@ export function createScheduleProposalReview(api,{now=()=>new Date()}={}){
  }
  async function prepare(idValue){const row=await load(idValue),key=identity();if(row.status!=='Pending')return {row};const result=await context(row);guard(key);return {row,...result};}
  function decide({id:idValue,decision,reason,expectedIntent}){
-  const actor=owner(),key=identity();if(!id(idValue)||!['Approved','Rejected'].includes(decision)||typeof reason!=='string'||reason.trim().length<3||reason.length>1500)throw Error('Choose a proposal, decision and review note of at least 3 characters.');
+  owner();const key=identity();if(!id(idValue)||!['Approved','Rejected'].includes(decision)||typeof reason!=='string'||reason.trim().length<3||reason.length>1500||typeof expectedIntent!=='string'||!/^[a-f0-9]{64}$/.test(expectedIntent))throw Error('Choose a proposal, decision and review note of at least 3 characters.');
   const operationKey=canonical([key,idValue]),intent=canonical([decision,reason.trim(),expectedIntent]);
   if(operations.has(operationKey)){const pending=operations.get(operationKey);if(pending.intent!==intent)throw Error('The earlier decision is still awaiting confirmation. Refresh its status before changing the review.');return pending.promise;}
-  const work=(async()=>{
-   const row=await load(idValue);guard(key);if(row.intent!==expectedIntent)throw Error('This proposal changed. Refresh and review it again.');
-   const revisionId='proposal-'+idValue;if(row.status===decision&&(decision==='Rejected'||row.revisionId===revisionId))return {alreadySaved:true,row};if(row.status!=='Pending')throw Error('Another review already decided this proposal. Refresh its saved status.');
-   const review={status:decision,reviewedAt:api.serverTimestamp(),reviewedByUid:actor.uid,reviewedByEmail:actor.email,reviewNote:reason.trim(),revisionId:decision==='Approved'?revisionId:null};
-   if(decision==='Rejected'){
-    await api.runTransaction(api.db,async tx=>{guard(key);const current=await tx.get(ref(idValue));guard(key);if(!current.exists()||current.data().intent!==expectedIntent)throw Error('The saved proposal changed.');const data=current.data();if(data.status==='Rejected')return;if(data.status!=='Pending')throw Error('Another review already decided this proposal.');tx.set(ref(idValue),{...data,...review});});
-   }else{
-    const prepared=await context(row);guard(key);const snapshot=prepared.snapshot;
-    await api.getScheduleHistoryStore().save(snapshot,{expectedRevisionId:row.proposal.baseRevisionId,effectiveFrom:row.proposal.from,effectiveTo:row.proposal.to,revisionId,source:'cashier-schedule-proposal',actor:actor.email,
-     readExtra:async(tx,{revision})=>{guard(key);const saved=await tx.get(ref(idValue));if(!saved.exists()||saved.data().status!=='Pending'||saved.data().intent!==expectedIntent)throw Error('This proposal was already reviewed or changed.');
-      const next=await context(saved.data(),{read:reference=>tx.get(reference),transaction:tx});guard(key);if(canonical(next.snapshot)!==canonical(snapshot))throw Error('The saved branch schedule or staff directory changed. Review the proposal again.');
-      return {row:saved.data(),revision};},
-     writeExtra:async(tx,extra)=>{guard(key);if(!extra?.revision)throw Error('The schedule revision was not prepared.');
-      tx.set(api.doc(api.db,'settings','schedule_revision_'+revisionId),{...extra.revision,branchScheduleProposalId:idValue,branchScheduleProposalAudit:{submittedBy:extra.row.submittedBy,submittedAt:extra.row.submittedAt,reviewedByUid:actor.uid,reviewedByEmail:actor.email,approvedAt:api.serverTimestamp()}});
-      tx.set(ref(idValue),{...extra.row,...review});}
-    });
-   }
-   guard(key);const confirmed=await load(idValue);if(confirmed.status!==decision||decision==='Approved'&&confirmed.revisionId!==revisionId)throw Error('HQ has not confirmed this decision. Refresh the proposal before retrying.');
-   return {alreadySaved:false,row:confirmed};
-  })();const entry={intent,promise:work};operations.set(operationKey,entry);work.finally(()=>{if(operations.get(operationKey)===entry)operations.delete(operationKey);}).catch(()=>{});return work;
+  const receiptKey=canonical([operationKey,intent]);if(!receipts.has(receiptKey)){const value=makeId();if(!id(value))throw Error('A secure review number could not be created. Reopen this review.');receipts.set(receiptKey,value);}
+  const operationId=receipts.get(receiptKey);
+  const controller=new AbortController();let timer,expired=false;
+  const check=()=>{guard(key);if(expired)throw Error('HQ has not confirmed this review yet. Refresh its status or retry the same decision.');};
+  const exchange=(async()=>{
+   const row=await load(idValue);check();if(row.intent!==expectedIntent)throw Error('This proposal changed. Refresh and review it again.');
+   const revisionId='proposal-'+idValue;
+   if(row.status===decision&&(decision==='Rejected'||row.revisionId===revisionId))return {alreadySaved:true,row};
+   if(row.status!=='Pending')throw Error('Another review already decided this proposal. Refresh its saved status.');
+    const token=await api.auth.currentUser.getIdToken();check();if(typeof token!=='string'||token.length<20)throw Error('Sign in to verify the Owner account again.');
+    const response=await fetch('https://asia-southeast1-takodeal-pos.cloudfunctions.net/branchScheduleProposals/review',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+token},body:JSON.stringify({id:idValue,decision,reason:reason.trim(),expectedIntent,operationId}),signal:controller.signal,cache:'no-store',credentials:'omit',redirect:'error'});check();
+    const result=await response.json();check();
+    if(!response.ok)throw Error(typeof result?.message==='string'?result.message.slice(0,500):'HQ has not confirmed this review. Keep the same decision and refresh its saved status.');
+    const saved=result?.row;
+    if(typeof result?.alreadySaved!=='boolean'||saved?.id!==idValue||saved?.schemaVersion!==1||saved?.proposal?.id!==idValue||saved?.intent!==expectedIntent||saved?.status!==decision||saved?.revisionId!==(decision==='Approved'?revisionId:null)||typeof saved?.reviewedAt!=='string'||!Number.isFinite(Date.parse(saved.reviewedAt))||typeof saved?.reviewedByUid!=='string'||saved.reviewedByEmail?.toLowerCase()!=='jgo031996@gmail.com')throw Error('HQ has not confirmed this decision. Refresh the saved proposal before retrying.');
+    const confirmed=await load(idValue);check();
+    if(confirmed.status!==decision||confirmed.intent!==expectedIntent||confirmed.revisionId!==saved.revisionId||canonical([confirmed.reviewedAt,confirmed.reviewedByUid,confirmed.reviewedByEmail,confirmed.reviewNote])!==canonical([saved.reviewedAt,saved.reviewedByUid,saved.reviewedByEmail,saved.reviewNote]))throw Error('HQ has not confirmed this decision. Refresh the proposal before retrying.');
+    return {alreadySaved:result.alreadySaved,row:confirmed};
+  })();
+  const work=Promise.race([exchange,new Promise((_,reject)=>{timer=setTimeout(()=>{expired=true;controller.abort();reject(Error('HQ has not confirmed this review yet. Refresh its status or retry the same decision.'));},timeoutMs);})]).finally(()=>clearTimeout(timer));
+  const entry={intent,promise:work};operations.set(operationKey,entry);work.finally(()=>{if(operations.get(operationKey)===entry)operations.delete(operationKey);}).catch(()=>{});return work;
  }
  return {list,load,prepare,decide,context};
 }
