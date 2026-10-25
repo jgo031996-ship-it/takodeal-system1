@@ -78,12 +78,12 @@ function recoveryDom(){
  return{nodes,events,document:{hidden:false,getElementById:id=>nodes.get(id)||null,createElement:()=>new Element(),addEventListener(){}},window:{addEventListener:(name,handler)=>events.set(name,handler),ManagerUI:{confirm:async()=>false},Swal:{isVisible:()=>false}}};
 }
 
-test('reload control commits the latest visible edit again and never reloads after backup failure',async()=>{
- const db=server(),store=memoryStore(),dom=recoveryDom();let value=initial(),visibleEnd='17:30',expected,failed=false,reloads=0,unavailable=false;const write=store.write;
+test('reload control commits the latest visible edit again and never reloads after backup failure',{timeout:10000},async()=>{
+ const db=server(),store=memoryStore(),dom=recoveryDom(),preserved=held();let value=initial(),visibleEnd='17:30',expected,failed=false,reloads=0,unavailable=false;const write=store.write;
  store.write=async row=>{if(unavailable)throw Error('Disk full');return write(row);};
  dom.window.managerCloudHealth={isFailed:()=>failed,assertReady(){if(failed)throw Error('Connection stopped');}};dom.window.location={reload(){reloads++;}};
- const controller=installOwnerScheduleSync(dom.window,dom.document,{draftStore:store,now,editorId:'reload-editor',getIdentity:actor,getMonth:()=> '2026-10',getSnapshot:()=>value,captureEditor:()=>{value.branchConfig.Maa[0].endTime=visibleEnd;return value;},getExpectedRevision:()=>expected,setExpectedRevision:id=>{expected=id;},getEffectiveFrom:()=> '2026-10-25',readView:db.view,applyView:view=>{value=copy(view.editorSnapshot);},saveSnapshot:db.save});
- await controller.load();visibleEnd='18:40';failed=true;dom.events.get('managercloudfailure')();await tick();await tick();
+ const controller=installOwnerScheduleSync(dom.window,dom.document,{draftStore:store,now,editorId:'reload-editor',getIdentity:actor,getMonth:()=> '2026-10',getSnapshot:()=>value,captureEditor:()=>{value.branchConfig.Maa[0].endTime=visibleEnd;return value;},getExpectedRevision:()=>expected,setExpectedRevision:id=>{expected=id;},getEffectiveFrom:()=> '2026-10-25',readView:db.view,applyView:view=>{value=copy(view.editorSnapshot);},saveSnapshot:db.save,onRecovery:state=>{if(failed&&state.preserved)preserved.resolve();}});
+ await controller.load();visibleEnd='18:40';failed=true;dom.events.get('managercloudfailure')();await preserved.promise;
  const reload=dom.nodes.get('ownerScheduleReloadApp');assert.equal(reload.disabled,false);
  visibleEnd='19:10';await reload.events.click();assert.equal(reloads,1);assert.equal([...store.rows.values()][0].editorSnapshot.branchConfig.Maa[0].endTime,'19:10');
  unavailable=true;visibleEnd='19:20';await reload.events.click();assert.equal(reloads,1);assert.equal(controller.recoveryState().preserved,false);assert.equal(reload.disabled,true);
