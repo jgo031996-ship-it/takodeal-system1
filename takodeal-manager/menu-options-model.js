@@ -1,4 +1,5 @@
 import {recipeFingerprint} from './recipe-changes.js';
+import {normalizeCategoryBundleDraft,validateCategoryBundleShape} from './bundle-category-model.js';
 
 const string=value=>String(value??'').trim();
 const nameKey=value=>string(value).normalize('NFKC').toLocaleLowerCase();
@@ -130,6 +131,8 @@ export function previewAddonApply(state,id,selection={}){
  return {addonId:id,addon,targets,changes,conflicts,canApply:changes.length>0&&conflicts.length===0};
 }
 export function normalizeBundleDraft(input,state){
+ if(input?.version===2)return normalizeCategoryBundleDraft(input,state);
+ if(input?.version!==undefined&&input.version!==1)throw Error('This bundle draft version is unsupported. Refresh the planner.');
  const name=label(input?.name,'Bundle name',120);
  if(!Array.isArray(input?.components)||input.components.length<1||input.components.length>20)throw Error('Choose 1–20 products for this draft bundle.');
  const seen=new Set(),menu=records(state,'menu'),components=input.components.map(row=>{
@@ -145,6 +148,6 @@ export function normalizeBundleDraft(input,state){
 export function bundleDraftRows(state){
  const saved=records(state,'settings').menu_bundle_drafts;if(!saved)return [];
  if(saved.version!==1||!Number.isSafeInteger(saved.revision)||saved.revision<0||!Array.isArray(saved.drafts)||saved.drafts.length>50)throw Error('The saved bundle drafts need Owner review before editing.');
- const ids=new Set();for(const row of saved.drafts){menuOptionId(row?.id,'Bundle draft ID');if(ids.has(row.id)||row.status!=='draft'||row.version!==1)throw Error('The saved bundle draft identity needs Owner review.');ids.add(row.id);}
+ const ids=new Set();for(const row of saved.drafts){menuOptionId(row?.id,'Bundle draft ID');if(ids.has(row.id)||row.status!=='draft'||![1,2].includes(row.version))throw Error('The saved bundle draft identity needs Owner review.');if(row.version===2){try{validateCategoryBundleShape(row);}catch{throw Error('The saved category bundle draft needs Owner review before editing.');}}ids.add(row.id);}
  return saved.drafts.map(row=>structuredClone(row));
 }
