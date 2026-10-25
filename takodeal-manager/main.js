@@ -1,10 +1,11 @@
 import {installDisciplineCases} from './discipline-case-ui.js';
 import {installStaffSetupCodes} from './staff-setup-codes.js';
+import {installScheduleProposalReview} from './schedule-proposal-review-ui.js';
 import {installMenuOptions} from './menu-options-ui.js';
 import {installProductEditorLayout} from './product-editor-layout.js';
 import {installProductAddonDrafts,readProductAddonRows} from './product-options-draft.js';
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
-runManagerDomReady(() => installStaffSetupCodes(window,document));
+runManagerDomReady(() => {installStaffSetupCodes(window,document);installScheduleProposalReview(window,document);});
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {finalizeRefundPayroll} from './refund-payroll.js';
 import {finalizeOrdinaryPayroll,readPayrollCashShortages} from './payroll-settlement.js';
@@ -831,6 +832,8 @@ window.switchView = function (viewId) {
   if (viewId === 'payables') title = "Supplier Payables & Terms";
   if (viewId === 'equipment') title = "Assets & Equipment Tracker";
   if (viewId === 'government-permits') title = "Government & Compliance";
+  const cashierApprovalButton=document.getElementById('cashierDeviceApprovals');
+  if(cashierApprovalButton)cashierApprovalButton.hidden=!(window.sessionUser?.isOwner===true&&window.auth?.currentUser?.email?.toLowerCase()==='jgo031996@gmail.com'&&window.auth.currentUser.emailVerified===true&&window.sessionUser.uid===window.auth.currentUser.uid);
   if (viewId === 'posconfig') title = "Master POS Config Hub";
   if (viewId === 'sop') title = "SOP Manager";
   if (viewId === 'schedule') {
@@ -8395,9 +8398,9 @@ let scheduleMemoryUI = null, scheduleMemoryExpectedRevision = undefined;
 window.getScheduleHistoryStore = () => window.scheduleHistoryStore ||= createScheduleHistoryStore(window);
 window.loadPayrollScheduleHistory = (from, to) => window.getScheduleHistoryStore().loadRange(scheduleDateKey(new Date(+new Date(from+'T00:00:00+08:00')-86400000)), to);
 window.getScheduleMemorySnapshot = () => ({branchConfig, employees, unavailability, currentSchedule, currentYear, currentMonth, holidays:window.scheduleHolidays});
-window.applyScheduleMemorySnapshot = async snapshot => {
+window.applyScheduleMemorySnapshot = async (snapshot, {preserveDraftEmployees=false}={}) => {
     const data = JSON.parse(JSON.stringify(snapshot));
-    branchConfig=data.branchConfig || {}; employees=window.scheduleDirectoryProfiles || data.employees || []; window.employees=employees;
+    branchConfig=data.branchConfig || {}; employees=preserveDraftEmployees ? (data.employees || []) : (window.scheduleDirectoryProfiles || data.employees || []); window.employees=employees;
     unavailability=data.unavailability || {}; currentSchedule=data.currentSchedule || {};
     window.branchConfig=branchConfig;window.currentSchedule=currentSchedule;window.unavailability=unavailability;
     currentYear=data.currentYear; currentMonth=data.currentMonth; window.currentYear=currentYear; window.currentMonth=currentMonth;
@@ -8416,6 +8419,7 @@ window.initScheduleMemory = async () => {
         onHistory:value=>window.ownerScheduleSync?.setHistory(value),
         confirmVersionChange:async()=>!window.ownerScheduleSync?.isDirty()||await window.ManagerUI.confirm('View this saved version and discard unsaved edits in this editor?')});
     window.scheduleSwapReview ||= installScheduleSwapReview(window,document);
+    window.scheduleProposalReviewUI?.mountAudit();
 };
 window.selectScheduleMonth = () => scheduleMemoryUI?.selectMonth();
 window.getOwnerScheduleSync = function() {
@@ -8424,6 +8428,8 @@ window.getOwnerScheduleSync = function() {
     const authorized=()=>!!window.auth?.currentUser?.uid&&window.auth.currentUser.email?.toLowerCase()===window.sessionUser?.email?.toLowerCase()&&(!window.sessionUser?.uid||window.sessionUser.uid===window.auth.currentUser.uid)&&canOpenWorkspacePage(window.sessionUser,'schedule');
     window.ownerScheduleSync=installOwnerScheduleSync(window,document,{
         getIdentity:actor,authorize:authorized,getSnapshot:window.getScheduleMemorySnapshot,
+        captureEditor:()=>{window.captureTempShiftConfig();return window.getScheduleMemorySnapshot();},
+        applyRecoveredSnapshot:snapshot=>window.applyScheduleMemorySnapshot(snapshot,{preserveDraftEmployees:true}),
         getMonth:()=>document.getElementById('monthSelector')?.value || (currentYear&&currentMonth?monthKey({currentYear,currentMonth}):scheduleDateKey(new Date()).slice(0,7)),
         getExpectedRevision:()=>scheduleMemoryExpectedRevision,setExpectedRevision:value=>scheduleMemoryExpectedRevision=value,
         getEffectiveFrom:()=>scheduleMemoryUI?.effectiveFrom(),
@@ -8446,7 +8452,7 @@ window.saveToCloud = async function() {
 window.loadFromCloud = async function() {
     await window.initScheduleMemory();
     const loaded=await window.getOwnerScheduleSync().load();
-    if(loaded){void window.scheduleSwapReview?.refresh();void window.refreshScheduleSuspensionNotice();}
+    if(loaded){void window.scheduleSwapReview?.refresh();void window.refreshScheduleSuspensionNotice();void window.scheduleProposalReviewUI?.audit();}
     return loaded;
 };
 let scheduleSuspensionRead=null;
@@ -8664,7 +8670,7 @@ window.renderConfigUI = function() {
 };
 
 window.saveShiftConfigChanges = async function() {
-    if(window.scheduleMemoryReadOnly)return window.ManagerUI.notify('This saved schedule version is read-only.');
+    if(window.scheduleMemoryReadOnly){window.ManagerUI.notify('This saved schedule version is read-only.');return false;}
     window.captureTempShiftConfig();
     Object.entries(branchConfig).forEach(([branch, shifts]) => {
         if (window.isBranchAllowed(branch)) shifts.forEach(shift => validateShiftConfig(shift));
@@ -8694,9 +8700,10 @@ window.saveShiftConfigChanges = async function() {
         window.renderTables();
     }
     
-    if (await window.saveToCloud() === false) throw new Error('Shift rules were not saved. Check the connection and try again.');
+    if (await window.saveToCloud() === false) throw new Error(document.getElementById('ownerScheduleSyncStatus')?.textContent || 'HQ has not confirmed this save. Your edits remain in this editor.');
     const msg = document.getElementById("configSaveMsg");
     if(msg) { msg.style.display = "inline"; setTimeout(() => msg.style.display = "none", 2000); }
+    return true;
 };
 
 window.saveManualSchedule = async function() {
@@ -8709,7 +8716,7 @@ window.saveManualSchedule = async function() {
         await Swal.fire({title:'Schedule saved',text:'Your edits were saved to HQ. Phone schedules can now load this saved version.',icon:'success',customClass:{popup:'rounded-2xl'}});
         return true;
     } catch(error) {
-        await Swal.fire({title:'Schedule not saved',text:error.message || 'Check the connection and try again.',icon:'error'});
+        await Swal.fire({title:window.managerCloudHealth?.isFailed()?'Reconnect the Owner app':'Schedule save not confirmed',text:error.message || 'HQ has not confirmed this save. Keep your edits and review the saved status before retrying.',icon:'warning'});
         return false;
     }
 };
@@ -19269,20 +19276,20 @@ setTimeout(() => {
     window.saveShiftConfigChanges = async function() {
         let btn = document.querySelector('button[onclick="saveShiftConfigChanges()"]');
         let origText = btn ? btn.innerText : "💾 Save Shift Rules";
-        if (btn) { btn.innerText = "⏳ Syncing Rules safely..."; btn.disabled = true; }
+        if (btn) { btn.innerText = "Saving shift rules…"; btn.disabled = true; }
 
         try {
             // Run your original save function so the database updates properly
             if (typeof originalSaveShiftRules === 'function') {
                 let result = originalSaveShiftRules();
                 if (result instanceof Promise) result = await result;
-                if(result===false)throw Error("Shift rules were not saved.");
+                if(result===false)return false;
             }
 
             // Display a success message letting you know the staff were protected
             Swal.fire({
-                title: '✅ Rules Synced!',
-                text: 'Shift times and days updated successfully. Your assigned staff were NOT removed!',
+                title: 'Shift rules saved',
+                text: 'HQ confirmed the updated shift rules.',
                 icon: 'success',
                 timer: 3000,
                 showConfirmButton: false,
@@ -19292,7 +19299,8 @@ setTimeout(() => {
             window.renderTables();
         } catch (error) {
             console.error(error);
-            Swal.fire('Check shift rules', error.message || 'Shift rules were not saved. Check the connection.', 'warning');
+            await Swal.fire(window.managerCloudHealth?.isFailed() ? 'Reconnect the Owner app' : 'Schedule save needs review', error.message || 'HQ has not confirmed this save. Your edits remain in the editor.', 'warning');
+            return false;
         } finally {
             if (btn) { btn.innerText = origText; btn.disabled = false; }
         }
@@ -26784,8 +26792,9 @@ function tkReconcileSale(record, targetShift, inventory, effects, owner, note) {
 
 })();
 
-import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
-  getDocFromServer as tkOwnerDoc } from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
+const tkOwnerTransaction=(...args)=>window.runTransaction(...args),
+  tkOwnerDocs=(...args)=>window.getDocsFromServer(...args),
+  tkOwnerDoc=(...args)=>window.getDocFromServer(...args);
 
 (function installTakodealOwnerReview() {
   const owner = () => window.auth?.currentUser?.email === 'jgo031996@gmail.com' && window.auth.currentUser.emailVerified === true;
@@ -27037,6 +27046,10 @@ import { runTransaction as tkOwnerTransaction, getDocsFromServer as tkOwnerDocs,
     if (!panel.open) panel.showModal(); await refresh();
   }
   window.TKDeviceAdmin = { open, refresh };
+  window.openCashierDeviceApprovals=async()=>{
+    if(!owner()||window.sessionUser?.isOwner!==true||window.sessionUser.uid!==window.auth.currentUser.uid)return window.ManagerUI.notify('Unlock the verified Owner account to approve Cashier tablets.');
+    try{await open();}catch(error){window.ManagerUI.notify(error.message||'Cashier approvals could not load.');}
+  };
 
 })();
 

@@ -470,6 +470,15 @@ service cloud.firestore {
     match /staff_setup_attempts/{id} { allow read, write: if false; }
     match /staff_setup_device_slots/{id} { allow read, write: if false; }
 
+    // The verification service alone submits and decides proposals. Approval
+    // and the canonical dated revision are committed in one server transaction.
+    match /branch_schedule_proposals/{proposalId} {
+      allow read: if protectedHROwner();
+    }
+    // No client write grants exist for proposals or their private submission,
+    // review-operation and attempt collections; all remain default-denied.
+
+
     // Exact legacy one-document policies. No default grant or recursive path.
     match /{legacyCollection}/{legacyDocument} {
       allow read: if legacyCandidate(legacyCollection) && ((legacyCollection in ['account_logs','bom','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','global_addons','grab_payouts','inventory','manager_alerts','menu','parked_orders','pos_devices','remittances','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests','stock_counts','stock_logs'])

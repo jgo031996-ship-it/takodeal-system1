@@ -1,5 +1,5 @@
 import './firebase-core.js';
-import { signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/13.1.0/firebase-auth.js";
 import { createUnlockGate, bounded } from './unlock-gate.js';
 import { resolveHQAccount } from './hq-account-model.js';
 import { createWorkspaceSession, workspaceRole, workspaceLandingPage } from './workspace-access-model.js';

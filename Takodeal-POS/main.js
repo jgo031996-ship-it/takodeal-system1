@@ -1,4 +1,5 @@
 import {installCycleCounts} from './stock-count-ui.js';
+import {installCashierScheduleProposals} from './cashier-schedule-proposals.js';
 import {installPOSSettingsHub} from './pos-settings-hub.js';
 import {installPOSLeaveRequests} from './leave-request-ui.js';
 import { imageFor } from './cashier-data.js';
@@ -34,7 +35,7 @@ import { installSaleSafety } from './pos-checkout.js';
 import { saleIdentity, receiptIngredientBurn } from './pos-safety.js';
 // 🔥 NEW: Import Firebase Storage
 import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
-import { getAuth, signInWithPopup, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 
 window.onSnapshot = onSnapshot;
 window.orderBy = orderBy;
@@ -9839,6 +9840,7 @@ window.compressImage = function(file, maxWidth = 800, maxHeight = 800, quality =
 window.submitComprehensiveCloseShift = (...args) => window.MASTER_CloseShift(...args);
 
 installCycleCounts(window,document);
+installCashierScheduleProposals(window,document,{primaryAuth:auth,signInAnonymously,projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey});
 window.cashierScheduleSync = installScheduleViewSync(window, {window, document,
     scope: () => document.getElementById('view-schedule')?.classList.contains('active')
         && localStorage.getItem('cashierName') && localStorage.getItem('takodeal_device_branch')

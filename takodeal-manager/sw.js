@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v93-staff-device-limit-20261025';
+const CACHE_NAME = 'takodeal-manager-core-v94-schedule-recovery-proposals-20261025';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = ['./', './index.html', './main.js', './franchise-workspace.js', './monthly-bills.js', './monthly-bills-ui.js', './device-fleet.js', './app-update.js', './employee-id.js', './employee-id.css', './payslip.css', './schedule-layout.js', './request-history.js', './schedule-layout.css', './login.css', './login-ui.js', './unlock-gate.js', './device-store.js', './manager-libraries.js', './branch-operations.js', './cash-settlement.js', './shift-close-ui.js', './collection-cache.js', './manager-dialogs.js', './manager-workspace.js', './manager-workspace.css', './dispatch-safety.js', './menu-bulk.js', './pos-safety.js', './recipe-integrity.js', './live-report.js', './payroll-safety.js', './dashboard.js', './dashboard-data.js', './dashboard.css', './manager-theme.css', './manager-theme.js', './manager-scroll.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
@@ -14,8 +14,9 @@ CORE_ASSETS.push('./payroll-loading.js','./payroll-settlement.js','./payroll-com
 CORE_ASSETS.push('./payroll-deduction-details.js');
 CORE_ASSETS.push('./recipe-bulk-model.js','./recipe-bulk.js','./recipe-changes.js','./sanction-schedule.js','./sanction-actions.js','./sanction-scheduling-ui.js');
 CORE_ASSETS.push('./audit-modal.css','./audit-modal-layout.js','./manager-mobile.css');
+CORE_ASSETS.push('./cloud-connection-notice.js','./firestore-health.js','./schedule-recovery-draft.js','./schedule-proposal-model.js','./schedule-proposal-review.js','./schedule-proposal-review-ui.js','./schedule-proposal-review.css');
 const VENDORS = [
-    ...['app','auth','firestore','storage'].map(name => `https://www.gstatic.com/firebasejs/10.8.1/firebase-${name}.js`),
+    ...['app','auth','firestore','storage'].map(name => `https://www.gstatic.com/firebasejs/13.1.0/firebase-${name}.js`),
     'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
     'https://cdn.jsdelivr.net/npm/sweetalert2@11.10.6/dist/sweetalert2.all.min.js',
     'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
@@ -78,7 +79,7 @@ self.addEventListener('fetch', event => {
     if (request.method !== 'GET') return;
     const local = url.origin === self.location.origin;
     const navigation = local && request.mode === 'navigate' && [new URL('./', self.location.href).pathname, new URL('./index.html', self.location.href).pathname].includes(url.pathname);
-    const vendor = VENDORS.includes(url.href) || url.origin === 'https://www.gstatic.com' && /^\/firebasejs\/10\.8\.1\/[\w.-]+\.js$/.test(url.pathname);
+    const vendor = VENDORS.includes(url.href) || url.origin === 'https://www.gstatic.com' && /^\/firebasejs\/13\.1\.0\/[\w.-]+\.js$/.test(url.pathname);
     const core = local && CORE_ASSETS.some(asset => new URL(asset, self.location.href).pathname === url.pathname);
     const image = request.destination === 'image' && (local || !/googleapis\.com|firebase/.test(url.hostname));
     // Only static app files and public images are cached. Auth/API requests pass through.

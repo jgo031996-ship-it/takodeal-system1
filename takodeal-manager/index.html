@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Welcome · TAKODEÁL Owner</title>
   <meta name="theme-color" content="#173f32">
+  <script type="module" src="cloud-connection-notice.js"></script>
   <link rel="stylesheet" href="login.css?v=20261004">
 
   <!-- 🔥 NEW: ENTERPRISE EXCEL GENERATOR -->
@@ -19,6 +20,7 @@
   <link rel="stylesheet" href="product-editor-layout.css?v=20261024">
   <link rel="stylesheet" href="cash-shortage.css?v=20261021-layout-r1">
   <link rel="stylesheet" href="schedule-memory.css?v=20261006">
+  <link rel="stylesheet" href="schedule-proposal-review.css?v=20261025">
   <link rel="stylesheet" href="customer-hub-settings.css?v=20261009">
   <link rel="stylesheet" href="stock-request-review.css?v=20261009">
   <link rel="stylesheet" href="audit-modal.css?v=20261010">
@@ -1334,6 +1336,7 @@
               <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                   <button class="btn-refresh" style="background: #ef4444; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3); transition: 0.2s;" onclick="window.bulkDeleteDevices()">🗑️ Delete Selected</button>
                   <button class="btn-refresh" onclick="window.checkManagerAppUpdate()">Check for app updates</button>
+                  <button id="cashierDeviceApprovals" type="button" class="btn-refresh" hidden onclick="window.openCashierDeviceApprovals()">Cashier device approvals</button>
                   <button class="btn-refresh" style="background: #0ea5e9; color: white; border: none; padding: 12px 20px; border-radius: 8px; font-weight: 900; cursor: pointer; font-size: 13px; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;" onclick="loadDeviceFleet()">🔄 Refresh Devices</button>
               </div>
             </div>
