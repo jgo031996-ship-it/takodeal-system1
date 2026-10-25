@@ -29,7 +29,7 @@ function fixture(){
 
 test('Owner-issued code activates a bound phone automatically and cannot switch employee account',async()=>{
  const f=fixture(),code=generateStaffSetupCode(),phone=f.phone();
- assert.deepEqual(await f.owner('config',{}),{enabled:false,revision:0,protocolVersion:1});
+ assert.deepEqual(await f.owner('config',{}),{enabled:false,revision:0,protocolVersion:1,deviceLimit:2});
  assert.equal((await f.owner('issue-code',f.issue(code))).version,1);await f.enable();
  const payload=f.activation(code);assert.equal((await phone.authority.confirm(payload.deviceId)).device,null);
  const activated=await phone.transport.call('/activate',payload);assert.equal(activated.device.status,'Active');

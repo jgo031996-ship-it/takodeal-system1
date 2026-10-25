@@ -29,7 +29,7 @@ const admin=fn=>env.withSecurityRulesDisabled(ctx=>fn(ctx.firestore()));
 const r=(db,id='DEV-SAMPLE-PHONE')=>doc(db,'pos_devices',id);
 const legacy={deviceId:'DEV-SAMPLE-PHONE',deviceName:'SAMPLE phone',branch:'SAMPLE Branch',appType:'Staff',status:'Pending'};
 const reserved={...legacy,setupVersion:1,setupUid:'sample-phone',staffId:'sample-staff',status:'Active'};
-const roots=['staff_setup_credentials','staff_app_setup_config','staff_app_bindings','staff_app_device_index','staff_setup_audit','staff_setup_operations','staff_setup_attempts'];
+const roots=['staff_setup_credentials','staff_app_setup_config','staff_app_bindings','staff_app_device_index','staff_setup_audit','staff_setup_operations','staff_setup_attempts','staff_setup_device_slots'];
 
 test('private setup credentials, bindings, counters and audit cannot be read or written by browser identities',async()=>{
  for(const root of roots)await admin(db=>setDoc(doc(db,root,'sample'),{sample:true}));

@@ -468,6 +468,7 @@ service cloud.firestore {
     match /staff_setup_audit/{id} { allow read, write: if false; }
     match /staff_setup_operations/{id} { allow read, write: if false; }
     match /staff_setup_attempts/{id} { allow read, write: if false; }
+    match /staff_setup_device_slots/{id} { allow read, write: if false; }
 
     // Exact legacy one-document policies. No default grant or recursive path.
     match /{legacyCollection}/{legacyDocument} {
