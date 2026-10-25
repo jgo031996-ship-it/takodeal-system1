@@ -82,7 +82,9 @@ export function createMenuOptionsService(api){
   menuOptionId(id,'Bundle draft ID');context(state,assertCurrent).guard();const draft=normalizeBundleDraft(input,state),rows=bundleDraftRows(state),index=rows.findIndex(row=>row.id===id),before=index<0?null:rows[index],doc=state.documents.settings.menu_bundle_drafts;
   if(index<0&&rows.length>=50)throw Error('Keep at most 50 saved bundle drafts.');
   const saved={...draft,id,revision:(Number.isSafeInteger(before?.revision)?before.revision:0)+1};if(index<0)rows.push(saved);else rows[index]=saved;
-  return commit({state,operationId,assertCurrent,kind:'save-bundle-draft',recordId:id,intent:draft,checks:draft.components.map(row=>expected(state,'menu',row.menuId)),writes:[{table:'settings',id:'menu_bundle_drafts',mode:'set',data:stamp=>({version:1,revision:(doc?.revision||0)+1,drafts:rows,updatedAt:stamp})}]});
+  if(new TextEncoder().encode(JSON.stringify(rows)).length>750000)throw Error('These saved bundle plans are too large. Reduce the reviewed choices or remove unused plans.');
+  const productIds=draft.version===2?[...new Set(draft.slots.flatMap(slot=>slot.menuIds))]:draft.components.map(row=>row.menuId);
+  return commit({state,operationId,assertCurrent,kind:'save-bundle-draft',recordId:id,intent:draft,checks:productIds.map(menuId=>expected(state,'menu',menuId)),writes:[{table:'settings',id:'menu_bundle_drafts',mode:'set',data:stamp=>({version:1,revision:(doc?.revision||0)+1,drafts:rows,updatedAt:stamp})}]});
  }
  async function deleteBundleDraft(id,{state,operationId,assertCurrent=()=>{}}={}){
   menuOptionId(id,'Bundle draft ID');context(state,assertCurrent).guard();const rows=bundleDraftRows(state),before=rows.find(row=>row.id===id),doc=state.documents.settings.menu_bundle_drafts;
