@@ -1,4 +1,5 @@
 import {installCashRemittance} from './cash-remittance-ui.js';
+import {createCashierDeviceAuthContext} from './cashier-device-auth.js';
 import {installCycleCounts} from './stock-count-ui.js';
 import {installCashierScheduleProposals} from './cashier-schedule-proposals.js';
 import {installPOSSettingsHub} from './pos-settings-hub.js';
@@ -30,8 +31,8 @@ import {pendingDueNotices, clockInRestriction, startPhilippineDayTimer, acknowle
 // ========================================================
 // 🔥 1. FIREBASE ENGINE & IMPORTS (MUST BE AT THE VERY TOP)
 // ========================================================
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer, getDocFromServer, startAfter, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeApp, getApps } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { initializeFirestore, getFirestore, persistentLocalCache, persistentMultipleTabManager, collection, addDoc, getDocs, query, where, serverTimestamp, doc, getDoc, updateDoc, limit, orderBy, deleteDoc, onSnapshot, increment, setDoc, runTransaction, getDocsFromServer, getDocFromServer, startAfter, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { installSaleSafety } from './pos-checkout.js';
 import { saleIdentity, receiptIngredientBurn } from './pos-safety.js';
 // 🔥 NEW: Import Firebase Storage
@@ -54,7 +55,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
-window.installCashRemittance = () => installCashRemittance(window,document,{primaryAuth:auth,signInAnonymously});
+
 window.mobileOrderFirebaseUid = () => auth.currentUser?.uid || '';
 const provider = new GoogleAuthProvider();
 window.installPOSSettings = () => {
@@ -109,6 +110,9 @@ window.doc = doc;
 window.updateDoc = updateDoc;
 window.getDoc = getDoc;
 window.setDoc = setDoc;
+// Device approvals use their own matching auth/database context when Google is signed in.
+const cashierDeviceContext = createCashierDeviceAuthContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
+window.installCashRemittance = () => installCashRemittance(window,document,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
 
 // =======================================================
 // 🧠 TAKODEAL INVENTORY CACHE - BRANCH SAFE
@@ -9844,7 +9848,7 @@ window.compressImage = function(file, maxWidth = 800, maxHeight = 800, quality =
 window.submitComprehensiveCloseShift = (...args) => window.MASTER_CloseShift(...args);
 
 installCycleCounts(window,document);
-installCashierScheduleProposals(window,document,{primaryAuth:auth,signInAnonymously,projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey});
+installCashierScheduleProposals(window,document,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext,projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey});
 window.cashierScheduleSync = installScheduleViewSync(window, {window, document,
     scope: () => document.getElementById('view-schedule')?.classList.contains('active')
         && localStorage.getItem('cashierName') && localStorage.getItem('takodeal_device_branch')

@@ -100,10 +100,11 @@ export function proposalDaysFromChoices(context,choices){
   return proposed;
  });
 }
-export function installCashierScheduleProposals(w,d,{primaryAuth,signInAnonymously,projectId,apiKey,fetcher=w.fetch?.bind(w),readMonth=loadScheduleMonthView,readDirectory=readScheduleProposalDirectory,timeoutMs=20000,now=()=>new Date(),deviceGate}={}){
+export function installCashierScheduleProposals(w,d,{primaryAuth,signInAnonymously,projectId,apiKey,fetcher=w.fetch?.bind(w),readMonth=loadScheduleMonthView,readDirectory=readScheduleProposalDirectory,timeoutMs=20000,now=()=>new Date(),deviceGate,deviceContext}={}){
  if(w.cashierScheduleProposals)return w.cashierScheduleProposals;
  const container=d.getElementById('cashierScheduleContainer');if(!container)return null;
- const session=createScheduleProposalSession(w,primaryAuth),transport=createScheduleProposalTransport({auth:primaryAuth,fetcher,timeoutMs}),gate=deviceGate||createScheduleProposalDeviceGate({api:w,auth:primaryAuth,signInAnonymously,timeoutMs});
+ const staffSession=createScheduleProposalSession(w,null);
+ let selectedAuth=primaryAuth,session=createScheduleProposalSession(w,primaryAuth),transport=createScheduleProposalTransport({auth:primaryAuth,fetcher,timeoutMs}),gate=deviceGate||createScheduleProposalDeviceGate({api:w,auth:primaryAuth,signInAnonymously,timeoutMs});
  const element=(tag,text,className)=>{const node=d.createElement(tag);if(text!==undefined)node.textContent=text;if(className)node.className=className;return node;};
  const panel=element('section',undefined,'schedule-proposal-launch'),heading=element('div'),openButton=element('button','Propose schedule changes');openButton.type='button';heading.append(element('strong','Need to change this branch’s roster?'),element('p','Send assignments to the Owner for review. The saved roster changes only after approval.'));panel.append(heading,openButton);container.before(panel);
  const dialog=element('dialog',undefined,'schedule-proposal-dialog');dialog.setAttribute('aria-labelledby','scheduleProposalTitle');
@@ -130,7 +131,7 @@ export function installCashierScheduleProposals(w,d,{primaryAuth,signInAnonymous
  }
  async function loadRoster(){if(busy)return;const token=++epoch;context=null;view=null;pending=null;daysNode.replaceChildren();send.disabled=true;busy=true;controls();pin.value='';state('Confirming the saved roster and staff accounts…');
   try{permit.assertCurrent();const selectedFrom=from.value,selectedTo=to.value,today=scheduleDateKey(now());if(selectedFrom<today||selectedFrom.slice(0,7)!==selectedTo.slice(0,7)||selectedTo<selectedFrom)throw Error('Choose today or future dates within the same month.');
-   const result=await Promise.all([readMonth(w,{month:selectedFrom.slice(0,7),branch:permit.branch,timeoutMs}),readDirectory({auth:primaryAuth,projectId,apiKey,branch:permit.branch,uid:permit.uid,fetcher,timeoutMs,assertCurrent:()=>assert(token)})]);assert(token);
+   const result=await Promise.all([readMonth(w,{month:selectedFrom.slice(0,7),branch:permit.branch,timeoutMs}),readDirectory({auth:selectedAuth,projectId,apiKey,branch:permit.branch,uid:permit.uid,fetcher,timeoutMs,assertCurrent:()=>assert(token)})]);assert(token);
    view=result[0];context=scheduleProposalContext({monthView:view,staff:result[1],branch:permit.branch,from:selectedFrom,to:selectedTo,today});context.directory=result[1];showDays();state('Review each date, describe the change, then confirm with your staff PIN.');
   }catch(error){if(token===epoch&&dialog.open)state(error.message||'The saved roster could not load.');}finally{if(token===epoch){busy=false;controls();}}
  }
@@ -142,13 +143,15 @@ export function installCashierScheduleProposals(w,d,{primaryAuth,signInAnonymous
   finally{value='';if(token===epoch){busy=false;controls();}}
  }
  async function verifyDevice(request=false){if(busy||!preAuth)return;const token=epoch;busy=true;deviceReady=false;permit=null;pin.value='';controls();state('Confirming this tablet’s secure HQ approval…');
-  try{const result=await gate.check({permit:preAuth,request,assertCurrent:()=>{if(token!==epoch||!dialog.open)throw Error('This setup closed. Reopen Branch Schedule.');}});preAuth.assertCurrent();if(token!==epoch||!dialog.open)return;
+  try{const setupCurrent=()=>{preAuth?.assertCurrent();if(token!==epoch||!dialog.open)throw Error('This setup closed. Reopen Branch Schedule.');};
+   if(deviceContext){if(typeof deviceContext.resolve!=='function')throw Error('Secure tablet setup is unavailable. Ask HQ to update the Cashier app.');const selected=await deviceContext.resolve({assertCurrent:setupCurrent});setupCurrent();if(!selected?.auth||!selected.deviceApi)throw Error('Secure tablet setup could not be confirmed. Check approval again.');selectedAuth=selected.auth;session=createScheduleProposalSession(w,selectedAuth);transport=createScheduleProposalTransport({auth:selectedAuth,fetcher,timeoutMs});gate=deviceGate||createScheduleProposalDeviceGate({api:selected.deviceApi,auth:selectedAuth,signInAnonymously,timeoutMs});}
+   const result=await gate.check({permit:preAuth,request,assertCurrent:setupCurrent});preAuth.assertCurrent();if(token!==epoch||!dialog.open)return;
    if(result.status==='Active'){permit=session.capture();if(permit.uid!==result.uid)throw Error('The tablet account changed. Reopen Branch Schedule.');deviceReady=true;approval.hidden=true;state('Choose the dates to change, then load the saved roster.');}
    else{approval.hidden=false;requestApproval.hidden=result.status!=='Missing';approvalText.textContent=result.status==='Missing'?'This tablet needs the Owner’s secure approval before it can send schedule proposals. Request approval, then ask the Owner to open Device Fleet → Cashier device approvals.':'Approval requested. Ask the Owner to open Device Fleet → Cashier device approvals and approve this tablet. This does not change the branch roster.';approvalUid.textContent='Secure tablet ID: '+result.uid;state('Schedule proposals are locked until the Owner approves this secure tablet ID.');}
   }catch(error){if(token===epoch&&dialog.open){approval.hidden=false;requestApproval.hidden=true;approvalText.textContent=error.message||'This tablet could not be confirmed. Reconnect and check approval.';approvalUid.textContent='';state('No schedule proposal was sent. Check the saved approval or ask the Owner to review Device Fleet.');}}
   finally{if(token===epoch){busy=false;controls();}}
  }
- function open(){clear();try{preAuth=session.captureStaff();const today=scheduleDateKey(now());from.min=to.min=today;from.value=to.value=today;reason.value='';find('[data-proposal-identity]').textContent=preAuth.name+' · '+preAuth.branch;approval.hidden=true;dialog.showModal();controls();timer=w.setInterval(()=>{try{(permit||preAuth)?.assertCurrent();}catch{close();}},1000);void verifyDevice();}catch(error){permit=null;preAuth=null;w.Swal?.fire?.('Branch schedule',error.message,'info');}}
+ function open(){clear();try{preAuth=staffSession.captureStaff();const today=scheduleDateKey(now());from.min=to.min=today;from.value=to.value=today;reason.value='';find('[data-proposal-identity]').textContent=preAuth.name+' · '+preAuth.branch;approval.hidden=true;dialog.showModal();controls();timer=w.setInterval(()=>{try{(permit||preAuth)?.assertCurrent();}catch{close();}},1000);void verifyDevice();}catch(error){permit=null;preAuth=null;w.Swal?.fire?.('Branch schedule',error.message,'info');}}
  requestApproval.onclick=()=>void verifyDevice(true);checkApproval.onclick=()=>void verifyDevice(false);
  openButton.onclick=open;load.onclick=()=>void loadRoster();form.addEventListener('submit',submit);for(const button of dialog.querySelectorAll('[data-proposal-close]'))button.onclick=close;dialog.addEventListener('cancel',event=>{event.preventDefault();close();});dialog.addEventListener('close',()=>{if(permit){clear();permit=null;}});
  const changed=()=>{if(context&&!pending){context=null;view=null;daysNode.replaceChildren();send.disabled=true;state('The dates changed. Load the saved roster again before editing.');}};from.addEventListener('change',changed);to.addEventListener('change',changed);
