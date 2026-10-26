@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {createScheduleProposalTransport,createScheduleProposalSession,createScheduleProposalDeviceGate,readScheduleProposalDirectory,proposalDaysFromChoices,SCHEDULE_PROPOSAL_ENDPOINT} from '../Takodeal-POS/cashier-schedule-proposals.js';
+import {createScheduleProposalTransport,createScheduleProposalSession,createScheduleProposalDeviceGate,readScheduleProposalDirectory,proposalDaysFromChoices,SCHEDULE_PROPOSAL_ENDPOINT,installCashierScheduleProposals} from '../Takodeal-POS/cashier-schedule-proposals.js';
+import {ReviewDocument,ReviewElement,drain} from './helpers/review-dom.mjs';
 const response=(status,data)=>({ok:status>=200&&status<300,status,json:async()=>data});
 const deferred=()=>{let resolve;const promise=new Promise(ok=>resolve=ok);return {promise,resolve};};
 const tick=()=>new Promise(setImmediate);
@@ -43,3 +44,32 @@ test('an Active private UID cannot use a revoked or relinked public fleet record
 test('setup deadline covers auth readiness and sign-in, and late identity creation cannot write a binding',async()=>{for(const stage of ['ready','signin']){const h=gateHarness({signed:false}),late=deferred(),c=clock();if(stage==='ready')h.auth.authStateReady=()=>late.promise;else h.signInAnonymously=()=>late.promise;const gate=createScheduleProposalDeviceGate({...h,...c}),pending=gate.check({permit:h.permit,request:true});await tick();c.expire();await assert.rejects(pending,/too long/);h.auth.currentUser=h.user;late.resolve(stage==='signin'?{user:h.user}:undefined);await tick();assert.equal(h.writes.length,0);assert.equal(h.reads.length,0);assert.equal(c.size(),0);}});
 test('setup context changes and late transaction retries cannot create an approval for another staff session',async()=>{const h=gateHarness(),late=deferred();let current=true;h.permit.assertCurrent=()=>{if(!current)throw Error('Staff changed');};const original=h.api.getDocsFromServer;h.api.getDocsFromServer=async query=>{await late.promise;return original(query);};const pending=createScheduleProposalDeviceGate(h).check({permit:h.permit,request:true});await tick();current=false;late.resolve();await assert.rejects(pending,/Staff changed/);assert.equal(h.writes.length,0);});
 test('setup refuses cached binding or fleet results rather than accepting an old approval',async()=>{const h=gateHarness();h.records.set('pos_bindings/'+h.user.uid,h.binding);h.api.getDocFromServer=async()=>({metadata:{fromCache:true},exists:()=>true,data:()=>h.binding});await assert.rejects(createScheduleProposalDeviceGate(h).check({permit:h.permit}),/Reconnect to HQ/);assert.equal(h.writes.length,0);});
+
+function proposalDOM(){
+ const d=new ReviewDocument(),html=Object.getOwnPropertyDescriptor(ReviewElement.prototype,'innerHTML');
+ const decorate=node=>{if(node.decorated)return node;node.decorated=true;node.style={};const matches=node.matches.bind(node);node.matches=selector=>selector.startsWith('.')?(node.className||node.attributes.class||'').split(/\s+/).includes(selector.slice(1)):matches(selector);
+  node.before=other=>{const parent=node.parentElement;other.parentElement=parent;parent.children.splice(parent.children.indexOf(node),0,other);};
+  node.prepend=(...nodes)=>{for(const child of nodes)child.parentElement=node;node.children.unshift(...nodes);};node.replaceChildren=(...nodes)=>{node.children=[];node._text='';node.append(...nodes);};
+  Object.defineProperty(node,'innerHTML',{get(){return html.get.call(this);},set(value){html.set.call(this,value);const walk=parent=>{for(const child of parent.children){decorate(child);walk(child);}};walk(this);}});return node;
+ };decorate(d.body);d.createElement=tag=>decorate(new ReviewElement(tag,d));const container=d.createElement('div');container.id='cashierScheduleContainer';d.body.append(container);return d;
+}
+function editorHarness({active=true,resolve}={}){
+ const h=gateHarness(),d=proposalDOM(),storage=new Map([['takodeal_device_branch','Maa'],['takodeal_device_id','DEV-test']]),google={uid:'google-owner',isAnonymous:false,getIdToken:async()=>{throw Error('Google token must not be used for a proposal');}},primaryAuth={currentUser:google,authStateReady:async()=>{}},calls=[],directoryCalls=[],monthCalls=[];
+ if(active)h.records.set('pos_bindings/'+h.user.uid,h.binding);
+ const w={...h.api,auth:primaryAuth,sessionUser:{staffId:'staff-1',cashierName:'Ana',branch:'Maa'},localStorage:{getItem:name=>storage.get(name)||null},crypto:{randomUUID:()=> 'proposal-ui'},setInterval:()=>0,addEventListener(){},Swal:{fire(){}}};
+ const day={branchConfig:{Maa:[{id:'morning',name:'Morning 1',startTime:'09:00',endTime:'17:30',active:true}]},employees:[{staffId:'staff-1',name:'Ana',branch:'Maa'}],currentSchedule:{26:{Maa:{scheduled:{morning:'Ana'},rest:[],unavailable:[],swaps:{}}}},unavailability:{},holidays:{}},view={month:'2026-10',hasSavedSchedule:true,expectedRevisionId:'base',editorSnapshot:day,daySnapshots:{26:day},dayRevisions:{26:'base'},unverifiedDays:[]};
+ const deviceContext={resolve:resolve||(async({assertCurrent})=>{assertCurrent();return {auth:h.auth,deviceApi:h.api,kind:'isolated'};})},controller=installCashierScheduleProposals(w,d,{primaryAuth,deviceContext,signInAnonymously:h.signInAnonymously,projectId:'sample-project',now:()=>new Date('2026-10-26T12:00:00+08:00'),readMonth:async(api,options)=>{monthCalls.push({api,options});return structuredClone(view);},readDirectory:async options=>{directoryCalls.push(options);return [{staffId:'staff-1',name:'Ana',scheduleName:'Ana',branch:'Maa',active:true}];},fetcher:async(url,options)=>{calls.push({url,options});return response(200,{id:'proposal-ui',status:'Pending',submittedAt:'2026-10-26T12:00:00Z'});}});
+ return {...h,w,d,controller,google,primaryAuth,calls,directoryCalls,monthCalls,node:selector=>d.querySelector(selector),button:name=>d.body.querySelectorAll('button').find(node=>node.textContent===name)};
+}
+test('actual proposal dialog checks isolated approval, loads selected-auth directory and submits device token while Google stays signed in',async()=>{
+ const f=editorHarness();f.controller.open();await drain();assert.equal(f.node('[data-proposal-load]').disabled,false);assert.equal(f.node('[data-proposal-submit]').disabled,true);assert.equal(f.primaryAuth.currentUser,f.google);
+ await f.controller.load();assert.equal(f.directoryCalls[0].auth,f.auth);assert.equal(f.directoryCalls[0].uid,f.user.uid);assert.equal(f.monthCalls[0].api,f.w);assert.equal(f.node('[data-proposal-submit]').disabled,false);
+ f.node('[data-proposal-reason]').value='Emergency cover for a sick staff member';f.node('[data-proposal-pin]').value='0031';f.node('form').emit('submit');await drain();assert.equal(f.calls.length,1);assert.equal(f.calls[0].options.headers.Authorization,'Bearer firebase-token');assert.equal(JSON.parse(f.calls[0].options.body).staffId,'staff-1');assert.equal(f.node('[data-proposal-pin]').value,'');assert.match(f.node('[data-proposal-status]').textContent,/Proposal received by HQ/);assert.equal(f.primaryAuth.currentUser,f.google);assert.equal(f.writes.length,0);f.controller.close();
+});
+test('actual Check approval remains retryable and enables the roster only after fresh Owner activation',async()=>{
+ const f=editorHarness({active:false});f.controller.open();await drain();assert.equal(f.node('[data-proposal-load]').disabled,true);assert.match(f.node('[data-proposal-status]').textContent,/locked until the Owner approves/);f.button('Request secure tablet approval').click();await drain();assert.equal(f.records.get('pos_bindings/'+f.user.uid).status,'Pending');assert.equal(f.node('[data-proposal-load]').disabled,true);assert.equal(f.writes.length,1);
+ f.records.set('pos_bindings/'+f.user.uid,f.binding);f.button('Check approval').click();await drain();assert.equal(f.node('[data-proposal-load]').disabled,false);assert.equal(f.writes.length,1);assert.equal(f.primaryAuth.currentUser,f.google);f.controller.close();
+});
+test('a delayed context after closing the real proposal dialog starts no binding check or submission',async()=>{
+ const late=deferred(),f=editorHarness({resolve:async({assertCurrent})=>{await late.promise;assertCurrent();throw Error('Should not resolve a closed dialog');}});f.controller.open();f.controller.close();late.resolve();await drain();assert.equal(f.reads.length,0);assert.equal(f.writes.length,0);assert.equal(f.calls.length,0);assert.equal(f.node('dialog').open,false);
+});
