@@ -159,13 +159,13 @@ test('actual submit handler rejects BLOCKED device sentinel instead of treating 
     assert.equal(f.btn.disabled,false);
 });
 
-function openingFixture({legacyTransfer=false}={}) {
+function openingFixture({legacyTransfer=false,isMallBranch=false,startingCash='2000'}={}) {
     const h=fixture(), stored=storage();stored.setItem('takodeal_device_branch','Maa');stored.setItem('cashierName','John');
     if(legacyTransfer)h.put('expenses/legacy',{branch:'Maa',shiftId:'Accumulated_Floating',amount:24000,description:'[REMITTANCE TO HQ] - Cash to John',timestamp:at('2026-10-05T18:03:00+08:00')});
-    const nodes=new Map([['btnOpenShiftSubmit',{innerText:'Open shift',disabled:false}],['inputStartingCash',{value:'2000'}],['btnTopShift',{innerText:''}],['shiftLockout',{style:{}}],['btnMainPlaceOrder',{disabled:true}]]);
+    const nodes=new Map([['btnOpenShiftSubmit',{innerText:'Open shift',disabled:false}],['inputStartingCash',{value:startingCash}],['btnTopShift',{innerText:''}],['shiftLockout',{style:{}}],['btnMainPlaceOrder',{disabled:true}]]);
     const dialogs=[],errors=[];let opens=0;
     const window={...h.api,sessionUser:{branch:'Maa',cashierName:'John'},lastEndingCash:26000,openNewShift:async()=>{opens++;return 'new-shift';},closeModal:()=>{}};
-    const context={window,localStorage:stored,document:{getElementById:id=>nodes.get(id),querySelectorAll:()=>[]},readBranchPolicy:async()=>({isMallBranch:false}),readClosedCashCarry,recordOpeningCashReview,console:{error:()=>{}},alert:message=>errors.push(message),Swal:{fire:async value=>{dialogs.push(value);return {isConfirmed:true};}}};
+    const context={window,localStorage:stored,document:{getElementById:id=>nodes.get(id),querySelectorAll:()=>[]},readBranchPolicy:async()=>({isMallBranch}),readClosedCashCarry,recordOpeningCashReview,console:{error:()=>{}},alert:message=>errors.push(message),Swal:{fire:async value=>{dialogs.push(value);return {isConfirmed:true,value:'Owner supplied extra opening cash'};}}};
     const source=readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8'),start=source.indexOf('window.submitOpenShift = async function()'),end=source.indexOf('\n};',start)+3;
     vm.runInNewContext(source.slice(start,end),context);
     return {h,window,dialogs,errors,opens:()=>opens};
@@ -189,4 +189,34 @@ test('actual next-shift handler records an unexplained owner collection as an HQ
 test('actual next-shift handler ignores rapid second taps while drawer review is running',async()=>{
     const f=openingFixture({legacyTransfer:true});await Promise.all([f.window.submitOpenShift(),f.window.submitOpenShift()]);
     assert.equal(f.opens(),1);assert.equal(f.window.cashierShiftOpening,false);
+});
+test('a mall shift preserves a lower physical opening count and records its difference without inventing float',async()=>{
+    const f=openingFixture({legacyTransfer:true,isMallBranch:true,startingCash:'1200'});await f.window.submitOpenShift();assert.equal(f.opens(),1);assert.equal(f.window.currentShift.startingCash,1200);const reviews=[...f.h.docs].filter(([p])=>p.startsWith('manager_alerts/'));assert.equal(reviews.length,1);assert.equal(reviews[0][1].expectedCash,2000);assert.equal(reviews[0][1].startingCash,1200);assert.equal(reviews[0][1].varianceAmount,-800);assert.equal([...f.h.docs.keys()].filter(p=>p.startsWith('remittances/')).length,0);
+});
+test('extra opening float requires an explanation and stays separate from any cash remittance',async()=>{
+    const f=openingFixture({legacyTransfer:true,isMallBranch:true,startingCash:'2300'});await f.window.submitOpenShift();assert.equal(f.opens(),1);assert.equal(f.window.currentShift.startingCash,2300);const reviews=[...f.h.docs].filter(([p])=>p.startsWith('manager_alerts/'));assert.equal(reviews.length,1);assert.equal(reviews[0][1].varianceAmount,300);assert.match(reviews[0][1].reportedReason,/extra opening/);assert.equal([...f.h.docs.keys()].filter(p=>p.startsWith('remittances/')).length,0);
+});
+test('fractional centavos cannot become a new opening balance that later blocks drawer reconciliation',async()=>{const f=openingFixture({legacyTransfer:true,isMallBranch:true,startingCash:'0.001'});await f.window.submitOpenShift();assert.equal(f.opens(),0);assert.equal(f.window.currentShift,undefined);assert.equal([...f.h.docs.keys()].filter(p=>p.startsWith('manager_alerts/')).length,0);});
+
+test('actual closed carry subtracts an ordinary post-close withdrawal explicitly linked to that cash source',async()=>{
+ const h=fixture();h.put('shifts/previous',{...h.get('shifts/previous'),declaredCash:1000});h.put('expenses/post-close-cost',{branch:'Maa',shiftId:'Accumulated_Floating',cashSourceShiftId:'previous',paidFrom:'Drawer',amount:100,category:'Supplies',timestamp:at('2026-10-05T18:04:00+08:00')});
+ assert.equal(await readClosedCashCarry(h.api,'Maa','previous',h.get('shifts/previous')),900);const checked=await readRemittanceDrawer(h.api,'Maa');assert.equal(checked.available,900);assert.ok(checked.legacyCarryExpenseIds.includes('post-close-cost'));
+});
+test('actual retained cash rather than expected ledger cash is carried into the next opening',async()=>{
+ const h=fixture();h.put('shifts/previous',{...h.get('shifts/previous'),declaredCash:1000,retainedCash:900,expectedRetainedCash:1000});assert.equal(await readClosedCashCarry(h.api,'Maa','previous',h.get('shifts/previous')),900);
+});
+test('closed carry excludes Manager Fund and already-adjusted withdrawals without counting either again',async()=>{
+ const h=fixture();h.put('shifts/previous',{...h.get('shifts/previous'),declaredCash:1000,retainedCash:900});h.put('expenses/fund',{branch:'Maa',shiftId:'Accumulated_Floating',cashSourceShiftId:'previous',paidFrom:'Manager Fund',amount:9999,timestamp:at('2026-10-05T18:04:00+08:00')});h.put('expenses/already-adjusted',{branch:'Maa',shiftId:'Accumulated_Floating',cashSourceShiftId:'previous',paidFrom:'Drawer',amount:100,carryAlreadyAdjusted:true,timestamp:at('2026-10-05T18:04:00+08:00')});assert.equal(await readClosedCashCarry(h.api,'Maa','previous',h.get('shifts/previous')),900);
+});
+test('a legacy carry checkpoint prevents an ordinary cash expense from being subtracted after migration twice',async()=>{
+ const h=fixture();h.put('shifts/previous',{...h.get('shifts/previous'),declaredCash:1000});h.put('expenses/post-close-cost',{branch:'Maa',shiftId:'Accumulated_Floating',cashSourceShiftId:'previous',paidFrom:'Drawer',amount:100,timestamp:at('2026-10-05T18:04:00+08:00')});const before=await readRemittanceDrawer(h.api,'Maa');assert.equal(before.available,900);await submitRemittanceAtomic(h.api,attempt({amount:500}),before);assert.equal(h.get('shifts/previous').retainedCash,400);assert.equal(await readClosedCashCarry(h.api,'Maa','previous',h.get('shifts/previous')),400);
+});
+test('closed carry cannot mix another branch or contradictory drawer source links',async()=>{
+ const h=fixture();await assert.rejects(readClosedCashCarry(h.api,'Other','previous',h.get('shifts/previous')),/no longer closed/);h.put('expenses/conflicting',{branch:'Maa',shiftId:'previous',cashSourceShiftId:'another-drawer',paidFrom:'Drawer',amount:100,timestamp:at('2026-10-05T18:04:00+08:00')});await assert.rejects(readClosedCashCarry(h.api,'Maa','previous',h.get('shifts/previous')),/conflicting drawer links/);
+});
+test('ambiguous unlinked post-close cash expenses and negative physical carry require Owner review',async()=>{
+ for(const variant of ['ambiguous','negative']){const h=fixture();h.put('shifts/previous',{...h.get('shifts/previous'),declaredCash:1000});h.put('expenses/post-close-cost',{branch:'Maa',shiftId:'Accumulated_Floating',...(variant==='negative'?{cashSourceShiftId:'previous'}:{}),paidFrom:'Drawer',amount:variant==='negative'?1000.01:100,timestamp:at('2026-10-05T18:04:00+08:00')});await assert.rejects(readClosedCashCarry(h.api,'Maa','previous',h.get('shifts/previous')),variant==='negative'?/withdrawals exceed/:/no verified source drawer/);}
+});
+test('cached or locally pending post-close reads cannot be used as confirmed opening carry',async()=>{
+ for(const flag of ['fromCache','hasPendingWrites'])for(const scope of ['query','document']){const h=fixture(),read=h.api.getDocsFromServer;h.put('expenses/post-close-cost',{branch:'Maa',shiftId:'Accumulated_Floating',cashSourceShiftId:'previous',paidFrom:'Drawer',amount:100,timestamp:at('2026-10-05T18:04:00+08:00')});h.api.getDocsFromServer=async q=>{const result=await read(q);if(scope==='query')result.metadata={[flag]:true};else result.docs[0].metadata={[flag]:true};return result;};await assert.rejects(readClosedCashCarry(h.api,'Maa','previous',h.get('shifts/previous')),/Connect to HQ/);}
 });

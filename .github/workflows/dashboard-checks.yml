@@ -21,6 +21,12 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/staff-device-setup
       - name: Verify Staff device setup SDK without cloud access
         run: node tools/staff-device-setup-sdk-check.mjs
+      - name: Install locked cash remittance review runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/cash-remittance-review
+      - name: Verify real cash remittance SDK without cloud access
+        run: node tools/cash-remittance-sdk-check.mjs
+      - name: Verify generated security rules match the readable policy
+        run: node tools/build-firestore-rules.mjs --check
       - name: Check workspace scripts
         run: |
           for script in takodeal-manager/*.js Takodeal-POS/*.js Customer/*.js takodeal-staff/*.js takodeal-franchise/*.js takodeal-delivery/*.js; do node --check "$script"; done

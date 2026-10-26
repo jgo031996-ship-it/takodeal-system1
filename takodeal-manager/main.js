@@ -1,3 +1,4 @@
+import {installCashRemittanceReview} from './cash-remittance-review-ui.js';
 import {installDisciplineCases} from './discipline-case-ui.js';
 import {installStaffSetupCodes} from './staff-setup-codes.js';
 import {installScheduleProposalReview} from './schedule-proposal-review-ui.js';
@@ -87,8 +88,8 @@ import {installRiderManagementViews} from './rider-management-view.js';
 import {renderStockRequestReview} from './stock-request-review.js';
 import {loadStockRequestDraft} from './dispatch-request-draft.js';
 import { loadRecipeState, createRecipeBatch, operationFor, recipePlan, saveRecipePlan, readRecipeRevision, recipeOperationApplied, loadInventoryDeletionState, inventoryDeletionPlan } from './recipe-changes.js';
-import { approveRemittanceAtomic } from './cash-settlement.js';
-import { legacyRemittanceDuplicates, rejectLegacyDuplicateAtomic } from './remittance-review.js';
+
+import { legacyRemittanceDuplicates } from './remittance-review.js';
 import { canOpenWorkspacePage,configuredPermissions } from './workspace-access-model.js';
 import {installGovernmentPermits} from './government-permits.js';
 import {installBookkeeperPayments} from './bookkeeper-payments.js';
@@ -6692,15 +6693,16 @@ window.loadCashExplorer = async function() {
 window.loadCashFlowHub = async function() {
     try {
         let safeCash = 0;
-        const accSnap = await getDocs(collection(db, "cash_accounts"));
+        const accSnap = await window.getDocsFromServer(collection(db, "cash_accounts"));
         accSnap.forEach(doc => { safeCash += (parseFloat(doc.data().balance) || 0); });
 
         let branchHtml = '';
         let totalDrawerCash = 0;
+        let drawerNeedsReview = 0;
 
         // 🔥 PRE-FETCH PENDING REMITTANCES TO BUILD THE COUNTER BADGES
         const pendingRemitsQ = query(collection(db, "remittances"), where("status", "==", "Pending"));
-        const pendingRemitsSnap = await getDocs(pendingRemitsQ);
+        const pendingRemitsSnap = await window.getDocsFromServer(pendingRemitsQ);
         let pendingByBranch = {};
         pendingRemitsSnap.forEach(d => {
             let r = d.data();
@@ -6717,42 +6719,16 @@ window.loadCashFlowHub = async function() {
             let alertBg = "#f0fdfa";
             let alertBorder = "#bbf7d0";
 
-            const activeQ = query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true));
-            const activeSnap = await getDocs(activeQ);
-
-            if (!activeSnap.empty) {
-                let sData = activeSnap.docs[0].data();
-                let sTime = sData.startTime.toDate();
-                drawerAmount = parseFloat(sData.startingCash) || 0;
-
-                const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", sTime));
-                const txSnap = await getDocs(txQ);
-                txSnap.forEach(t => {
-                    let tx = t.data();
-                    if (tx.status !== 'Voided') {
-                        if (tx.splitDetails) {
-                            let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
-                            if (cashSplit) drawerAmount += cashSplit.amount;
-                        } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
-                            drawerAmount += (parseFloat(tx.netTotal) || 0);
-                        }
-                    }
-                });
-
-                const expQ = query(collection(db, "expenses"), where("shiftId", "==", activeSnap.docs[0].id));
-                const expSnap = await getDocs(expQ);
-                expSnap.forEach(e => { drawerAmount -= (parseFloat(e.data().amount) || 0); });
-
-                drawerStatus = '<span style="color:#16a34a; font-weight:bold; font-size:11px;">🟢 Register Open</span>';
-            } else {
-                const closedQ = query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed"), orderBy("endTime", "desc"), limit(1));
-                const closedSnap = await getDocs(closedQ);
-                if (!closedSnap.empty) {
-                    drawerAmount = Number(closedSnap.docs[0].data().retainedCash ?? closedSnap.docs[0].data().declaredCash ?? 0);
-                    drawerStatus = '<span style="color:#64748b; font-weight:bold; font-size:11px;">⚪ Register Closed</span>';
-                } else {
-                    drawerStatus = '<span style="color:#94a3b8; font-weight:bold; font-size:11px;">No Data</span>';
-                }
+            try {
+                const savedDrawer = await window.cashRemittanceReviewUI.client.drawer(branch);
+                drawerAmount = savedDrawer.snapshot.expectedBeforeCents / 100;
+                drawerStatus = savedDrawer.snapshot.active
+                    ? '<span style="color:#167447;font-weight:bold;font-size:11px;">Expected balance · register open</span>'
+                    : '<span style="color:#64748b;font-weight:bold;font-size:11px;">Expected carry · register closed</span>';
+            } catch (error) {
+                drawerNeedsReview++;
+                branchHtml += '<div style="padding:15px;border:1px solid #e4c9a3;border-radius:8px;background:#fff8e8"><strong>'+escapeHtml(branch)+'</strong><p>Drawer needs review</p><small>'+escapeHtml(error.message)+'</small></div>';
+                continue;
             }
 
             if (drawerAmount > 5000) {
@@ -6776,13 +6752,13 @@ window.loadCashFlowHub = async function() {
         }
 
         document.getElementById('hubSafeCash').innerText = `₱${safeCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-        document.getElementById('hubFloatingCash').innerText = `₱${totalDrawerCash.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+        document.getElementById('hubFloatingCash').innerText = `₱${totalDrawerCash.toLocaleString(undefined, {minimumFractionDigits: 2})}` + (drawerNeedsReview ? ' · '+drawerNeedsReview+' drawer(s) need review' : '');
         
         if (document.getElementById('lifetimeRemittanceTabs')) document.getElementById('lifetimeRemittanceTabs').style.display = 'flex';
         
         document.querySelectorAll('div, span, h3').forEach(el => {
-            if (el.innerText === "FLOATING CASH (AT BRANCHES)") el.innerText = "LIVE CASH IN DRAWERS";
-            if (el.innerText === "Expected Z-Reading Cash not yet remitted") el.innerText = "Total physical cash sitting in branches right now";
+            if (["FLOATING CASH (AT BRANCHES)","LIVE CASH IN DRAWERS"].includes(el.innerText)) el.innerText = "EXPECTED CASH IN DRAWERS";
+            if (["Expected Z-Reading Cash not yet remitted","Total physical cash sitting in branches right now"].includes(el.innerText)) el.innerText = "Expected from verified drawer records; see each remittance for its physical count";
         });
 
         document.getElementById('branchFloatingContainer').innerHTML = branchHtml;
@@ -6848,13 +6824,13 @@ window.openBranchTransferHistory = async function(branchName) {
             } else if (d.status === "Pending") {
                 actionHtml = `
                     <div style="display: flex; gap: 5px; justify-content: center;">
-                        <button onclick="window.viewRemittanceAudit('${docId}', '${branchName}', '${d.salesPeriodStart || ''}', '${d.salesPeriodEnd || ''}', ${d.amount}, '${d.channel}')" style="background: #0ea5e9; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">🔍 Audit</button>
-                        <button onclick="window.approveRemittance('${docId}')" style="background: #16a34a; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">Approve</button>
-                        <button onclick="window.rejectRemittance('${docId}', '${branchName}')" style="background: #dc2626; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">Reject</button>
+                        <button onclick="window.viewRemittanceAudit(decodeURIComponent('${encodeURIComponent(docId).replace(/'/g,'%27')}'))" style="background: #0ea5e9; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">🔍 Audit</button>
+                        <button onclick="window.approveRemittance(decodeURIComponent('${encodeURIComponent(docId).replace(/'/g,'%27')}'))" style="background: #16a34a; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">Review & receive</button>
+                        <button onclick="window.rejectRemittance(decodeURIComponent('${encodeURIComponent(docId).replace(/'/g,'%27')}'))" style="background: #dc2626; color: white; border: none; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 11px;">Reject</button>
                     </div>
                 `;
             } else {
-                actionHtml = `<span style="color: #94a3b8; font-size: 11px; font-style: italic;">Locked</span>`;
+                actionHtml = `<button onclick="window.viewRemittanceAudit(decodeURIComponent('${encodeURIComponent(docId).replace(/'/g,'%27')}'))" style="background:#f1f5f9;color:#164d3d;border:1px solid #b9cfc2;padding:8px 10px;border-radius:6px;cursor:pointer;font-weight:bold;font-size:11px">View saved details</button>`;
             }
 
             html += `
@@ -6882,83 +6858,20 @@ window.openBranchTransferHistory = async function(branchName) {
     }
 };
 
-window.reviewDuplicateRemittance = async function(encodedDuplicateId, encodedOriginalId) {
-    if (!canOpenWorkspacePage(window.sessionUser, 'transfers')) return window.ManagerUI.notify('Your account does not have remittance review permission.');
-    const identity = () => JSON.stringify([String(window.sessionUser?.email || '').trim().toLowerCase(), window.sessionUser?.uid || '']);
-    const reviewerIdentity = identity(), reviewer = window.sessionUser?.email;
-    const authorize = branch => {
-        const signedIn = window.auth && JSON.stringify([String(window.auth.currentUser?.email || '').trim().toLowerCase(), window.auth.currentUser?.uid || '']);
-        if (!reviewer || reviewerIdentity !== identity() || signedIn && signedIn !== reviewerIdentity || !canOpenWorkspacePage(window.sessionUser, 'transfers') || !window.isBranchAllowed(branch)) throw Error('Your account or branch access changed. Reopen the remittance review.');
-    };
-    try {
-        const duplicateId = decodeURIComponent(encodedDuplicateId), originalId = decodeURIComponent(encodedOriginalId);
-        const read = window.getDocFromServer || window.getDoc;
-        const [duplicate, original] = await Promise.all([read(window.doc(window.db,'remittances',duplicateId)), read(window.doc(window.db,'remittances',originalId))]);
-        if (!duplicate.exists() || !original.exists()) throw Error('A transfer record is missing. Refresh the history.');
-        const d = duplicate.data(), o = original.data();
-        authorize(d.branch);
-        const fmt = row => row.timestamp?.toDate?.().toLocaleString('en-PH', {timeZone:'Asia/Manila'}) || 'Time not recorded';
-        const result = await Swal.fire({title:'Review possible duplicate',
-            html:`<p>${escapeHtml(d.branch)} · ₱${Number(d.amount).toLocaleString('en-PH',{minimumFractionDigits:2})}</p><p><strong>Keep original transfer</strong><br>${escapeHtml(fmt(o))} · ${escapeHtml(o.cashier || o.cashierName || o.remittedBy)}<br>${escapeHtml(o.salesPeriodStart)} → ${escapeHtml(o.salesPeriodEnd)}</p><p><strong>Review automatic collection</strong><br>${escapeHtml(fmt(d))} · ${escapeHtml(d.channel)}</p><p>Confirm only if these records represent one physical cash handover. The duplicate record will remain in history as rejected. The original transfer, expenses and account balances stay intact.</p>`,
-            showCancelButton:true, confirmButtonText:'One handover — reject duplicate', cancelButtonText:'Keep both for review'});
-        if (!result.isConfirmed) return;
-        authorize(d.branch);
-        await rejectLegacyDuplicateAtomic(window, duplicateId, originalId, reviewer, authorize);
-        await Swal.fire('Duplicate reviewed','The original transfer is retained. The automatic duplicate is rejected with an audit record.','success');
-        window.openBranchTransferHistory(d.branch);window.loadUnremittedCashDashboard?.();window.loadCashFlowHub?.();
-    } catch(error) {Swal.fire('Could not review duplicate',error.message,'error');}
+window.reviewDuplicateRemittance = async function(encodedId,encodedOriginalId) {
+    if (!window.cashRemittanceReviewUI) throw Error('Update the Owner app before reviewing cash.');
+    return window.cashRemittanceReviewUI.open(decodeURIComponent(encodedId),{focus:'reject',possibleOriginalId:decodeURIComponent(encodedOriginalId)});
 };
 
-window.rejectRemittance = async function(docId, branchName) {
-    let reason = (await window.ManagerUI.prompt(`WARNING: You are about to reject a remittance from ${branchName}.\n\nPlease enter the reason for rejection (this will be saved in the logs):`));
-    
-    // If they click cancel or leave it blank, abort the rejection.
-    if (reason === null || reason.trim() === "") {
-        return; 
-    }
-    
-    if ((await window.ManagerUI.confirm(`Final Confirmation: Reject this remittance?`))) {
-        try {
-            Swal.fire({title: 'Rejecting...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-            await updateDoc(doc(db, "remittances", docId), {
-                status: "Rejected",
-                rejectedReason: reason,
-                rejectedAt: serverTimestamp(),
-                rejectedBy: window.sessionUser ? window.sessionUser.cashierName : "Manager"
-            });
-            
-            Swal.fire("Rejected", "Remittance has been rejected and locked.", "success");
-            
-            window.loadCashExplorer(); // Refresh the table instantly
-            if (typeof window.loadUnremittedCashDashboard === 'function') window.loadUnremittedCashDashboard();
-            if (typeof window.loadDashboard === 'function') window.loadDashboard();
-            
-            // 🔥 THE UI FIX: Refresh the Modal so the button disappears instantly!
-            if (document.getElementById('branchTransferHistoryModal') && document.getElementById('branchTransferHistoryModal').style.display === 'flex') {
-                window.openBranchTransferHistory(branchName);
-            }
-            
-        } catch (e) {
-            console.error("Error rejecting remittance:", e);
-            Swal.fire("Error", "Failed to reject remittance. Please check your connection.", "error");
-        }
-    }
+window.rejectRemittance = async function(id) {
+    if (!window.cashRemittanceReviewUI) throw Error('Update the Owner app before reviewing cash.');
+    return window.cashRemittanceReviewUI.open(id,{focus:'reject'});
 };
 
 // --- THE NEW SMART DEPOSIT APPROVAL BUTTON (ULTRA MODE UI) ---
 window.approveRemittance = async function(id) {
- if(!await window.ManagerUI.confirm('Confirm that you received this remittance and want to deposit it into the HQ cash account.'))return;
- try {
-  const remit=await window.getDoc(window.doc(window.db,'remittances',id));if(!remit.exists())throw Error('Remittance not found.');
-  if(remit.data().status==='Received')return window.ManagerUI.notify('This remittance was already received.');
-  const name=remit.data().channel==='Physical Handover' ? 'Cash' : remit.data().channel;
-  const accounts=await window.getDocs(window.query(window.collection(window.db,'cash_accounts'),window.where('branch','==','Main Office'),window.where('name','==',name)));
-  if(accounts.docs.length!==1)throw Error('Choose or create one HQ '+name+' account before receiving this remittance.');
-  await approveRemittanceAtomic(window,id,accounts.docs[0].ref,window.sessionUser?.cashierName || 'Manager');
-  window.ManagerUI.notify('Remittance received and deposited.');window.loadCashFlowHub();window.loadAccountsAndBudget();
-  if(document.getElementById('branchTransferHistoryModal')?.style.display==='flex')window.openBranchTransferHistory(remit.data().branch);
- }catch(error){Swal.fire('Could not receive remittance',error.message,'error');}
+    if (!window.cashRemittanceReviewUI) throw Error('Update the Owner app before receiving cash.');
+    return window.cashRemittanceReviewUI.open(id,{focus:'receive'});
 };
 
 // ========================================================
@@ -12081,175 +11994,9 @@ window.autoFill7DaySupply = function() {
 // ========================================================
 // 🔍 REMITTANCE AUDIT ENGINE (TRUE LEDGER MATH UPGRADE)
 // ========================================================
-window.viewRemittanceAudit = async function(remitId, branch, startStr, endStr, amount, channel) {
-    if (!document.getElementById('remitAuditModal')) {
-        document.body.insertAdjacentHTML('beforeend', `
-            <div class="overlay" id="remitAuditModal" role="dialog" aria-modal="true" aria-labelledby="remitAuditTitle" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:10100; align-items:center; justify-content:center;">
-                <div class="remittance-audit-dialog" style="background:white; width:500px; border-radius:12px; overflow:hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
-                    <div class="remittance-audit-header" style="background:#0f172a; color:white; padding:15px 20px; display:flex; justify-content:space-between; align-items:center;">
-                        <h3 id="remitAuditTitle" style="margin:0; font-size:16px;">🔍 Financial Audit</h3>
-                        <button type="button" class="remittance-audit-close" aria-label="Close financial audit" onclick="document.getElementById('remitAuditModal').style.display='none'">×</button>
-                    </div>
-                    <div id="remitAuditBody" style="padding:20px; background:#f8fafc; max-height: 80vh; overflow-y: auto;">Loading financial data...</div>
-                </div>
-            </div>
-        `);
-    }
-
-    document.getElementById('remitAuditModal').style.display = 'flex';
-    let body = document.getElementById('remitAuditBody');
-    body.innerHTML = `<div style="text-align:center; padding: 40px; color: #64748b;">⏳ Crunching true ledger balance for ${branch}...</div>`;
-
-    try {
-        let unremittedCashAvailable = 0;
-        
-        // 1. Fetch Closed Shifts
-        const shiftSnap = await getDocs(query(collection(db, "shifts"), where("branch", "==", branch), where("status", "==", "Closed")));
-        shiftSnap.forEach(doc => {
-            let d = doc.data();
-            unremittedCashAvailable += (parseFloat(d.totalCashSales) || 0);
-            unremittedCashAvailable -= (parseFloat(d.cashOut) || parseFloat(d.expenses) || 0);
-        });
-
-        // 2. Fetch Active Shifts
-        const activeSnap = await getDocs(query(collection(db, "shifts"), where("branch", "==", branch), where("active", "==", true)));
-        for (let docSnap of activeSnap.docs) {
-            let d = docSnap.data();
-            let validStartTime = d.startTime && d.startTime.toDate ? d.startTime.toDate() : new Date(d.startTime);
-            
-            const txQ = query(collection(db, "transactions"), where("branch", "==", branch), where("timestamp", ">=", validStartTime));
-            const txSnap = await getDocs(txQ);
-            txSnap.forEach(tDoc => {
-                let tx = tDoc.data();
-                if (tx.status !== 'Voided') {
-                    if (tx.splitDetails) {
-                        let cashSplit = tx.splitDetails.find(s => s.method === "Cash");
-                        if (cashSplit) unremittedCashAvailable += cashSplit.amount;
-                    } else if (tx.paymentMethod === 'Cash' || !tx.paymentMethod) {
-                        unremittedCashAvailable += (tx.netTotal || 0);
-                    }
-                }
-            });
-
-            const expQ = query(collection(db, "expenses"), where("shiftId", "==", docSnap.id));
-            const expSnap = await getDocs(expQ);
-            expSnap.forEach(eDoc => {
-                unremittedCashAvailable -= (parseFloat(eDoc.data().amount) || 0);
-            });
-        }
-
-        // 3. Fetch Remittances to subtract them AND build the History list
-        const remitSnap = await getDocs(query(collection(db, "remittances"), where("branch", "==", branch)));
-        let recentRemittancesHtml = '';
-        let remitsList = [];
-
-        remitSnap.forEach(doc => {
-            let d = doc.data();
-            if (d.status !== "Rejected") {
-                // VERY IMPORTANT: We DO NOT subtract the current remittance we are auditing! 
-                // We want to know exactly how much cash they had available BEFORE this remittance.
-                if (doc.id !== remitId) {
-                    unremittedCashAvailable -= (parseFloat(d.amount) || 0);
-                }
-            }
-            if (doc.id !== remitId) remitsList.push(d); // Add to history list
-        });
-
-        // Build the requested Remittance History list
-        remitsList.sort((a,b) => b.timestamp - a.timestamp).slice(0, 4).forEach(r => {
-            let rDate = r.timestamp ? r.timestamp.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric'}) : '';
-            let sColor = r.status === 'Received' ? '#16a34a' : '#ea580c';
-            recentRemittancesHtml += `<div class="remittance-recent-row" style="display:flex; justify-content:space-between; font-size:12px; border-bottom:1px dashed #cbd5e1; padding:6px 0;">
-                <span style="color:#475569;">${rDate} <span style="font-size:10px; font-weight:bold; color:${sColor};">(${r.status})</span></span>
-                <strong style="color:#0f172a;">₱${parseFloat(r.amount).toLocaleString(undefined, {minimumFractionDigits:2})}</strong>
-            </div>`;
-        });
-        if (!recentRemittancesHtml) recentRemittancesHtml = '<div style="font-size:12px; color:#94a3b8; font-style:italic;">No previous remittances found.</div>';
-
-        // 🔥 3.5 FETCH MANAGER FUND PURCHASES (MALL BRANCHES)
-        let managerFundExpensesTotal = 0;
-        let managerFundHtml = '';
-        
-        let periodStart = new Date(startStr + 'T00:00:00');
-        let periodEnd = new Date(endStr + 'T23:59:59');
-
-        const mfExpQ = query(collection(db, "expenses"), where("branch", "==", branch), where("paidFrom", "==", "Manager Fund"));
-        const mfExpSnap = await getDocs(mfExpQ);
-
-        mfExpSnap.forEach(doc => {
-            let d = doc.data();
-            managerFundExpensesTotal += (parseFloat(d.amount) || 0);
-            
-            // Only show it in the breakdown list if it happened during THIS remittance period!
-            let expDate = d.timestamp ? (d.timestamp.toDate ? d.timestamp.toDate() : new Date(d.timestamp)) : new Date();
-            if (expDate >= periodStart && expDate <= periodEnd) {
-                let dateStr = expDate.toLocaleDateString('en-US', {month:'short', day:'numeric'});
-                managerFundHtml += `<div class="remittance-fund-row" style="display:flex; justify-content:space-between; font-size:12px; border-bottom:1px dashed #fcd34d; padding:6px 0;">
-                    <span style="color:#92400e; font-weight: bold;">${dateStr} - ${d.description || d.category}</span>
-                    <strong style="color:#dc2626;">- ₱${parseFloat(d.amount).toLocaleString(undefined, {minimumFractionDigits:2})}</strong>
-                </div>`;
-            }
-        });
-
-        unremittedCashAvailable -= managerFundExpensesTotal; // Safely deducts it from the expected cash!
-
-        let managerFundUI = '';
-        if (managerFundHtml !== '') {
-            managerFundUI = `
-                <div style="margin-top: 15px; text-align: left; padding: 15px; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px;">
-                    <div style="font-size: 11px; font-weight: bold; color: #b45309; margin-bottom: 5px; text-transform: uppercase;">🛍️ Manager Mall Purchases (Deducted)</div>
-                    ${managerFundHtml}
-                </div>
-            `;
-        }
-      
-        // 4. Calculate Variance!
-        // Fix micro-decimal math errors
-        if (unremittedCashAvailable < 0.1) unremittedCashAvailable = 0; 
-        
-        let diff = amount - unremittedCashAvailable;
-        if (Math.abs(diff) < 0.1) diff = 0;
-
-        let diffColor = diff === 0 ? '#16a34a' : (diff < 0 ? '#dc2626' : '#ea580c');
-        let diffNote = diff === 0 ? "Perfect Match ✔️" : (diff < 0 ? "Shorting Detected 🔻" : "Over Remitted 🔺");
-
-        body.innerHTML = `
-            <div style="background: white; border: 1px solid #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 15px;">
-                <div style="font-size:12px; color:#64748b; font-weight:bold; margin-bottom:5px;">TRUE LEDGER AUDIT</div>
-                <div style="font-size:14px; font-weight:bold; color:#0f172a;">📍 ${branch}</div>
-            </div>
-            
-            <table style="width:100%; border-collapse: collapse; font-size: 14px; background: white; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
-                <tr style="background: #f1f5f9; border-bottom: 1px solid #cbd5e1;">
-                    <td style="padding: 15px; font-weight:bold; color:#0f172a;">Total Unremitted Cash Available</td>
-                    <td style="padding: 15px; text-align:right; font-weight:900; color:#0f172a;">₱${unremittedCashAvailable.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                </tr>
-                <tr>
-                    <td style="padding: 15px; font-weight:bold; color:#0ea5e9;">Cashier Currently Remitting</td>
-                    <td style="padding: 15px; text-align:right; font-weight:900; color:#0ea5e9;">₱${amount.toLocaleString(undefined, {minimumFractionDigits:2})}</td>
-                </tr>
-            </table>
-
-            <div style="margin-top: 15px; text-align: center; padding: 15px; background: #fffbeb; border: 1px dashed #fcd34d; border-radius: 8px;">
-                <div style="font-size: 12px; font-weight: bold; color: #b45309;">VARIANCE ANALYSIS</div>
-                <div style="font-size: 18px; font-weight: 900; color: ${diffColor}; margin-top: 5px;">${diffNote} <br>(₱${Math.abs(diff).toLocaleString(undefined, {minimumFractionDigits:2})})</div>
-                <div style="font-size: 11px; color: #92400e; margin-top: 8px; font-style: italic;">*Note: This strictly calculates Unremitted Cash Profit (Sales minus Expenses) and completely ignores the drawer's starting float.</div>
-            </div>
-            
-            ${managerFundUI}
-            <!-- 🔥 THE NEW REMITTANCE HISTORY BLOCK 🔥 -->
-            <div style="margin-top: 15px; text-align: left; padding: 15px; background: white; border: 1px solid #cbd5e1; border-radius: 8px;">
-                <div style="font-size: 11px; font-weight: bold; color: #64748b; margin-bottom: 5px; text-transform: uppercase;">Recent Remittance History</div>
-                ${recentRemittancesHtml}
-            </div>
-            
-            <button onclick="window.approveRemittance('${remitId}', ${amount}, '${branch}', '${channel}'); document.getElementById('remitAuditModal').style.display='none';" style="width:100%; margin-top:15px; padding:15px; background:#16a34a; color:white; font-weight:bold; border:none; border-radius:8px; cursor:pointer; font-size:16px; transition:0.2s;">Approve ₱${amount.toLocaleString()} Remittance</button>
-        `;
-
-    } catch(e) {
-        console.error(e);
-        body.innerHTML = `<div style="color:red; text-align:center; padding: 20px;">Failed to run audit. Check console.</div>`;
-    }
+window.viewRemittanceAudit = async function(remitId) {
+    if (!window.cashRemittanceReviewUI) throw Error('Update the Owner app before reviewing cash.');
+    return window.cashRemittanceReviewUI.open(remitId);
 };
 
 // ========================================================
@@ -19332,7 +19079,7 @@ window.loadRemittanceAnalytics = async function() {
             let s = (d.status || '').toLowerCase();
             
             // 🔥 THE FIX: Accept ANY status as long as it isn't explicitly rejected, voided, or failed!
-            let isApproved = !['rejected', 'declined', 'cancelled', 'void', 'voided', 'failed'].includes(s);
+            let isApproved = ['received','approved'].includes(s);
             
             // 🔥 THE FIX: Aggressively search for the branch name using every possible variable
             let branchName = d.branch || d.fromBranch || d.senderBranch || (d.fromAccount ? d.fromAccount.split(' - ')[0] : null);
@@ -19344,7 +19091,7 @@ window.loadRemittanceAnalytics = async function() {
 
             if (isApproved && branchName && branchIsAllowed) {
                 // 🔥 THE FIX: Aggressively search for the amount using every possible variable
-                let amt = parseFloat(d.amount) || parseFloat(d.remittedAmount) || parseFloat(d.total) || parseFloat(d.cashAmount) || 0;
+                let amt = d.receiptPolicyVersion === 4 ? Number(d.receivedAmount) : (parseFloat(d.amount) || parseFloat(d.remittedAmount) || parseFloat(d.total) || parseFloat(d.cashAmount) || 0);
                 
                 if (amt > 0) {
                     hasValidData = true;
@@ -27113,3 +26860,5 @@ window.loadGovernmentCompliance=()=>bookkeeperPayments?.refresh();
 installDisciplineCases(window,document);
 
 runManagerDomReady(()=>{installProductAddonDrafts(window,document);window.productEditorLayout ||= installProductEditorLayout({document,window});window.menuOptions ||= installMenuOptions(window,document);});
+
+installCashRemittanceReview(window,document);

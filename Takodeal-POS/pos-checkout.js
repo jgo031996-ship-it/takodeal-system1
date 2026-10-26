@@ -132,6 +132,9 @@ export function installSaleSafety(api, environment = globalThis) {
         }
     }
     w.processCheckout = async function(payload) {
+        try { if(w.hasPendingCashRemittance?.()) return {status:'failed',error:'An earlier cash transfer is awaiting confirmation on this tablet. Open cash remittance and verify its saved result before taking another payment.'}; }
+        catch { return {status:'failed',error:'The saved cash transfer list needs review. Open cash remittance before taking another payment.'}; }
+        if (w.cashierRemitSubmitting || w.cashierCashCountActive) return { status: 'failed', error: 'Finish the cash remittance count or discard an unsent count before taking another payment.' };
         if (w.isProcessingOrder) return { status: 'failed', error: 'Checkout is already processing.' };
         w.isProcessingOrder = true;
         let saved;

@@ -1,3 +1,4 @@
+import {installCashRemittance} from './cash-remittance-ui.js';
 import {installCycleCounts} from './stock-count-ui.js';
 import {installCashierScheduleProposals} from './cashier-schedule-proposals.js';
 import {installPOSSettingsHub} from './pos-settings-hub.js';
@@ -53,6 +54,7 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+window.installCashRemittance = () => installCashRemittance(window,document,{primaryAuth:auth,signInAnonymously});
 window.mobileOrderFirebaseUid = () => auth.currentUser?.uid || '';
 const provider = new GoogleAuthProvider();
 window.installPOSSettings = () => {
@@ -6053,8 +6055,8 @@ window.openShiftModal = async function() {
         
         let inputStart = document.getElementById('inputStartingCash');
         inputStart.placeholder = "Enter physical cash count...";
-        inputStart.value = policy.isMallBranch ? MALL_FLOAT : "";
-        inputStart.readOnly = policy.isMallBranch === true; 
+        inputStart.value = "";
+        inputStart.readOnly = false;
 
         // 🔥 THE BEHAVIORAL WARNING & HANDOVER ENGINE
         const q = window.query(window.collection(window.db, "shifts"), window.where("branch", "==", sessionUser.branch), window.where("status", "==", "Closed"), window.orderBy("endTime", "desc"), window.limit(1));
@@ -6074,8 +6076,8 @@ window.openShiftModal = async function() {
 
                 let expected = parseFloat(lastShift.expectedCash) || 0;
                 let diff = Number(lastShift.declaredCash ?? lastShift.actualCash ?? 0) - expected;
-                inputStart.value = policy.isMallBranch ? window.lastEndingCash : "";
-                inputStart.readOnly = policy.isMallBranch === true; 
+                inputStart.value = "";
+                inputStart.readOnly = false;
 
                 // 🔥 THE NEW EDITABLE BLIND COUNT HANDOVER
                 let stockNotes = '';
@@ -6133,7 +6135,7 @@ window.openShiftModal = async function() {
             } else {
                 window.lastEndingCash = 0;
                 inputStart.value = policy.isMallBranch ? MALL_FLOAT : "";
-        inputStart.readOnly = policy.isMallBranch === true;
+        inputStart.readOnly = false;
                 noteEl.style.display = "none";
             }
         }).catch(error => {
@@ -9286,8 +9288,8 @@ document.addEventListener("DOMContentLoaded", () => {
 window.openNewShift = async function (branch, cashier, startCash, {isCurrent=()=>true}={}) {
   try {
     const policy = await readBranchPolicy(window,branch);
-    if (policy.isMallBranch) startCash = await readMallOpeningCash(window,branch);
-    if (!Number.isFinite(startCash) || startCash < 0) throw new Error('Enter a valid starting cash amount.');
+    // Keep the actual physical opening count; a policy float is not cash.
+    if (!Number.isFinite(startCash) || startCash < 0 || !Number.isSafeInteger(Math.round(startCash*100)) || Math.abs(startCash*100-Math.round(startCash*100))>0.000001) throw new Error('Enter a valid physical starting cash amount with at most two decimal places.');
     let safeCashier = cashier || localStorage.getItem('cashierName') || localStorage.getItem('activeCashier') || 'Unknown';
     if (!isCurrent()) throw new Error('The cashier or branch changed. Reopen the shift form.');
     // Save to Firebase
@@ -9338,21 +9340,18 @@ window.submitOpenShift = async function() {
 
         const policy = await readBranchPolicy(window,branch);
         assertCurrent();
-        if (policy.isMallBranch) { startCash = await readMallOpeningCash(window,branch); if (startEl) startEl.value = startCash; lastEndingCash = startCash; }
-        else {
-            const previous = await window.getDocsFromServer(window.query(window.collection(window.db, 'shifts'), window.where('branch', '==', branch), window.where('status', '==', 'Closed'), window.orderBy('endTime', 'desc'), window.limit(1)));
-            if (previous.docs[0]) {
-                const row = previous.docs[0];
-                lastEndingCash = await readClosedCashCarry(window, branch, row.id, row.data());
-                window.lastEndingCash = lastEndingCash;
-                window.lastShiftDataForDispute = { ...row.data(), id: row.id };
-            } else { lastEndingCash = 0; window.lastEndingCash = 0; window.lastShiftDataForDispute = null; }
-        }
+        const previous = await window.getDocsFromServer(window.query(window.collection(window.db, 'shifts'), window.where('branch', '==', branch), window.where('status', '==', 'Closed'), window.orderBy('endTime', 'desc'), window.limit(1)));
+        if (previous.docs[0]) {
+            const row = previous.docs[0];
+            lastEndingCash = await readClosedCashCarry(window, branch, row.id, row.data());
+            window.lastEndingCash = lastEndingCash;
+            window.lastShiftDataForDispute = { ...row.data(), id: row.id };
+        } else { lastEndingCash = 0; window.lastEndingCash = 0; window.lastShiftDataForDispute = null; }
         assertCurrent();
-        if (!Number.isFinite(startCash) || startCash < 0 || (!policy.isMallBranch && !String(startEl?.value ?? '').trim()))
+        if (!Number.isFinite(startCash) || startCash < 0 || !Number.isSafeInteger(Math.round(startCash*100)) || Math.abs(startCash*100-Math.round(startCash*100))>0.000001 || !String(startEl?.value ?? '').trim())
             throw new Error('Enter the physical starting cash amount. Use 0 only if the drawer is empty.');
         // 1. CASH DISPUTE CHECK
-        if (startCash !== lastEndingCash && lastEndingCash > 0) {
+        if (startCash !== lastEndingCash && window.lastShiftDataForDispute?.id) {
             let diff = lastEndingCash - startCash;
             if (diff > 0) {
                 let result = await Swal.fire({
@@ -9381,6 +9380,11 @@ window.submitOpenShift = async function() {
                     if (btn) { btn.innerText = origText; btn.disabled = false; }
                     return; 
                 }
+            } else if (diff < 0) {
+                const review = await Swal.fire({icon:'info',title:'Extra opening cash needs review',text:'The previous drawer recorded ₱'+lastEndingCash.toFixed(2)+'. You counted ₱'+startCash.toFixed(2)+'. The extra ₱'+Math.abs(diff).toFixed(2)+' must be explained; it is not assumed to be an HQ top-up.',input:'textarea',inputPlaceholder:'Explain where this extra cash came from',showCancelButton:true,confirmButtonText:'Record difference for Owner review',inputValidator:value=>!value||value.trim().length<8?'Give an explanation of at least 8 characters.':undefined});
+                if (!review.isConfirmed) return;
+                assertCurrent();
+                await recordOpeningCashReview(window,{branch,cashier:shiftName,previousShiftId:window.lastShiftDataForDispute.id,expectedCash:lastEndingCash,startingCash:startCash,reason:String(review.value).trim()});
             }
         }
 

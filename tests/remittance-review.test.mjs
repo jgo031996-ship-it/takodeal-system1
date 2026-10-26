@@ -44,48 +44,14 @@ test('stored document id fields cannot replace the real transfer paths during du
     assert.equal(h.get('remittances/auto').duplicateOf,'manual');assert.equal(h.get('remittances/manual').status,'Pending');
 });
 
-function reviewFixture({branchAllowed=true,permissions=['transfers'],answer=true,onConfirm=()=>{}}={}) {
-    const h=firestoreHarness();h.put('remittances/manual',original);h.put('remittances/auto',duplicate);
-    h.put('cash_accounts/hq',{balance:50000});h.put('expenses/remit-manual',{amount:24000});
-    const dialogs=[],notices=[],user={email:'owner-preview@example.test',uid:'preview-owner',cashierName:'Owner',permissions};
-    const window={...h.api,sessionUser:user,auth:{currentUser:{email:user.email,uid:user.uid}},isBranchAllowed:()=>branchAllowed,ManagerUI:{notify:message=>notices.push(message)},getDocFromServer:async ref=>({exists:()=>h.docs.has(ref.path),data:()=>structuredClone(h.docs.get(ref.path))}),openBranchTransferHistory:()=>{},loadUnremittedCashDashboard:()=>{},loadCashFlowHub:()=>{}};
-    const Swal={fire:async (...args)=>{dialogs.push(args);if(typeof args[0]==='object'){onConfirm(window);return {isConfirmed:answer};}return {isConfirmed:true};}};
-    const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),start=source.indexOf('window.reviewDuplicateRemittance = async function('),end=source.indexOf('\n};',start)+3;
-    vm.runInNewContext(source.slice(start,end),{window,Swal,canOpenWorkspacePage,rejectLegacyDuplicateAtomic,escapeHtml:value=>String(value??'').replace(/[&<>"']/g,'_')});
-    return {h,window,dialogs,notices};
+function dispatchFixture(available=true){
+ const calls=[],w={cashRemittanceReviewUI:available?{open:async(...args)=>{calls.push(args);return true;}}:null};
+ const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),start=source.indexOf('window.reviewDuplicateRemittance = async function('),end=source.indexOf('\n};',start)+3;
+ vm.runInNewContext(source.slice(start,end),{window:w});return{w,calls};
 }
-
-test('actual review handler denies branch access and missing remittance permissions before any write',async()=>{
-    for(const options of [{branchAllowed:false},{permissions:['dashboard']}]){
-        const f=reviewFixture(options);await f.window.reviewDuplicateRemittance('auto','manual');
-        assert.equal(f.h.get('remittances/auto').status,undefined);assert.equal(f.h.docs.size,4);
-        assert.equal(f.dialogs.some(args=>typeof args[0]==='object'),false);
-    }
+test('legacy duplicate action opens the protected review and never directly changes money or records',async()=>{
+ const f=dispatchFixture();await f.w.reviewDuplicateRemittance('sample-duplicate','sample-original');assert.equal(f.calls.length,1);assert.equal(f.calls[0][0],'sample-duplicate');assert.equal(f.calls[0][1].focus,'reject');assert.equal(f.calls[0][1].possibleOriginalId,'sample-original');
 });
-
-test('actual review handler cancels cleanly and preserves both pending source records',async()=>{
-    const f=reviewFixture({answer:false});await f.window.reviewDuplicateRemittance('auto','manual');
-    assert.equal(f.h.get('remittances/auto').status,undefined);assert.equal(f.h.docs.size,4);
-    assert.equal(f.h.get('cash_accounts/hq').balance,50000);assert.equal(f.h.get('expenses/remit-manual').amount,24000);
-});
-
-test('actual review handler rejects Google-account identity changes and revoked permissions after confirmation',async()=>{
-    for(const change of [window=>{window.sessionUser={...window.sessionUser,email:'other@example.test',uid:'other-uid'};},window=>{window.sessionUser.permissions=[];}]){
-        const f=reviewFixture({onConfirm:change});await f.window.reviewDuplicateRemittance('auto','manual');
-        assert.equal(f.h.get('remittances/auto').status,undefined);assert.equal(f.h.docs.size,4);
-        assert.equal(f.dialogs.at(-1)[0],'Could not review duplicate');
-    }
-});
-
-test('actual confirmed review keeps the original pending while rejecting one automatic copy with the signed-in account in its audit',async()=>{
-    const f=reviewFixture();await f.window.reviewDuplicateRemittance('auto','manual');
-    assert.equal(f.h.get('remittances/auto').status,'Rejected');assert.equal(f.h.get('remittances/manual').status,'Pending');
-    assert.equal(f.h.get('remittances/auto').rejectedBy,'owner-preview@example.test');
-    assert.equal(f.h.get('cash_accounts/hq').balance,50000);assert.equal(f.h.get('expenses/remit-manual').amount,24000);
-    assert.equal([...f.h.docs.keys()].filter(key=>key.startsWith('manager_alerts/')).length,1);
-});
-
-test('actual review handler reports malformed encoded IDs without throwing outside its error handler',async()=>{
-    const f=reviewFixture();await f.window.reviewDuplicateRemittance('%broken','manual');
-    assert.equal(f.h.docs.size,4);assert.equal(f.dialogs[0][0],'Could not review duplicate');
+test('duplicate action fails closed if protected review is unavailable or the supplied record ID is malformed',async()=>{
+ const missing=dispatchFixture(false);await assert.rejects(missing.w.reviewDuplicateRemittance('sample','original'),/Update the Owner app/);assert.equal(missing.calls.length,0);const bad=dispatchFixture();await assert.rejects(bad.w.reviewDuplicateRemittance('%broken','original'),/URI malformed/);assert.equal(bad.calls.length,0);
 });

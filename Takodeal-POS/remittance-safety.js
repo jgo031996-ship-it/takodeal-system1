@@ -1,4 +1,5 @@
 import { money } from './branch-operations.js';
+import { calculateDrawerSnapshot } from './cash-remittance-model.js';
 
 const dateOf = value => value?.toDate?.() || (value?.seconds !== undefined ? new Date(value.seconds * 1000) : new Date(value));
 const reference = (api, table, id) => api.doc(api.db, table, id);
@@ -59,21 +60,15 @@ async function closedCashCarrySnapshot(api, branch, shiftId, shift) {
     const closing = dateOf(shift.endTime);
     if (!Number.isFinite(+closing)) throw new Error('The previous drawer has no valid close time. Ask the owner to review.');
     const snapshot = await serverRead(api, api.query(api.collection(api.db, 'expenses'), api.where('branch', '==', branch), api.where('timestamp', '>=', closing)));
-    let postedAfterClose = 0;
-    const applied = new Set(Array.isArray(shift.legacyCarryExpenseIds) ? shift.legacyCarryExpenseIds : []);
-    for (const row of rowsOf(snapshot)) {
-        const expense = row.data();
-        if (applied.has(row.id)) continue;
-        if (expense.branch !== branch || nonDrawerExpense(expense) || expense.carryAlreadyAdjusted === true) continue;
-        if (expense.cashSourceShiftId && expense.cashSourceShiftId !== shiftId) continue;
-        if (expense.shiftId !== 'Accumulated_Floating' && expense.cashSourceShiftId !== shiftId) continue;
-        // Old manual transfers wrote an expense against Accumulated_Floating,
-        // but left declaredCash unchanged. That cash has already left the drawer.
-        if (expense.remittanceId || /^\[REMITTANCE TO HQ\]/.test(expense.description || '')) { postedAfterClose += money(expense.amount); applied.add(row.id); }
-    }
-    const available = money(shift.retainedCash ?? shift.declaredCash ?? shift.actualCash ?? 0) - money(postedAfterClose);
-    if (available < -0.05) throw new Error('Recorded transfers exceed the previous drawer cash. Ask the owner to review these records before opening another shift.');
-    return { available: money(Math.max(0, available)), legacyCarryExpenseIds: [...applied] };
+    if (snapshot.metadata?.fromCache || snapshot.metadata?.hasPendingWrites || rowsOf(snapshot).some(row => row.metadata?.fromCache || row.metadata?.hasPendingWrites))
+        throw new Error('Connect to HQ to confirm the previous drawer cash before opening another shift.');
+    // Opening cash follows the actual retained count. Keep a separate expected
+    // ledger checkpoint out of this physical carry calculation, while reusing
+    // the same expense-source and deduplication rules as remittance review.
+    const checked = calculateDrawerSnapshot({shift:{...shift,id:shiftId,expectedRetainedCash:undefined},branch,
+        expenses:rowsOf(snapshot).map(row => ({...row.data(),id:row.id})),asOf:new Date()});
+    if (checked.expectedBeforeCents < 0) throw new Error('Recorded cash withdrawals exceed the previous drawer cash. Ask the owner to review these records before opening another shift.');
+    return {available:checked.expectedBeforeCents / 100,legacyCarryExpenseIds:checked.legacyCarryExpenseIds};
 }
 export async function readClosedCashCarry(api, branch, shiftId, shift) { return (await closedCashCarrySnapshot(api, branch, shiftId, shift)).available; }
 
@@ -144,14 +139,14 @@ export async function submitRemittanceAtomic(api, attempt, drawer) {
 // handover. Actual transfers are submitted through the remittance form.
 export async function recordOpeningCashReview(api, input) {
     const expected = money(input.expectedCash), counted = money(input.startingCash);
-    if (!input.previousShiftId || expected <= counted) return null;
+    if (!input.previousShiftId || expected === counted) return null;
     const id = 'opening-cash-' + encodeURIComponent(input.previousShiftId) + '-' + Math.round(counted * 100);
     return api.runTransaction(api.db, async tx => {
         const alertRef = reference(api, 'manager_alerts', id), existing = await tx.get(alertRef);
         if (existing.exists()) return id;
         const previous = await tx.get(reference(api, 'shifts', input.previousShiftId));
         if (!previous.exists() || previous.data().branch !== input.branch) throw new Error('The previous drawer could not be verified.');
-        tx.set(alertRef, { type: 'OPENING_CASH_REVIEW', branch: input.branch, cashier: input.cashier, previousShiftId: input.previousShiftId, expectedCash: expected, startingCash: counted, varianceAmount: counted - expected, reportedReason: input.reason, reviewStatus: 'Pending', message: `Opening drawer differs by ₱${money(expected - counted).toFixed(2)}. Staff reported: ${input.reason}. Review existing remittances before recording any further cash collection.`, timestamp: api.serverTimestamp(), isRead: false });
+        tx.set(alertRef, { type: 'OPENING_CASH_REVIEW', branch: input.branch, cashier: input.cashier, previousShiftId: input.previousShiftId, expectedCash: expected, startingCash: counted, varianceAmount: counted - expected, reportedReason: input.reason, reviewStatus: 'Pending', message: `Opening drawer differs by ₱${money(Math.abs(expected - counted)).toFixed(2)}. Staff reported: ${input.reason}. Review existing remittances before recording any further cash collection.`, timestamp: api.serverTimestamp(), isRead: false });
         return id;
     });
 }

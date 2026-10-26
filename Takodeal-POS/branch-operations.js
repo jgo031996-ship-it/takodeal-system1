@@ -28,8 +28,17 @@ export function archiveableShift(shift, { today = businessClock().day, latestId 
 }
 
 export function mallOpeningCash(previous) {
-    if (!previous || previous.isFinalShiftOfDay === true) return MALL_FLOAT;
-    return money(previous.retainedCash ?? previous.declaredCash ?? previous.actualCash ?? MALL_FLOAT);
+    if (!previous) return MALL_FLOAT;
+    if (previous.retainedCash !== undefined && previous.retainedCash !== null) return money(previous.retainedCash);
+    const counted = previous.declaredCash ?? previous.actualCash;
+    if (counted === undefined || counted === null) throw new Error('The previous mall drawer has no recorded physical cash. Ask HQ to review its carry balance.');
+    if (previous.isFinalShiftOfDay === true && previous.remittedCash !== undefined && previous.remittedCash !== null) {
+        const balance = money(counted) - money(previous.remittedCash);
+        if (balance < 0) throw new Error('The previous mall remittance exceeds its counted cash. Ask HQ to review it.');
+        return money(balance);
+    }
+    // The policy target is not proof that somebody replenished the drawer.
+    return money(counted);
 }
 function scheduleMinutes(value) {
     const match = String(value || '').trim().replace(/\s+/g,'').match(/^(\d{1,2})(?::(\d{2}))?(am|pm|nn)?$/i);
