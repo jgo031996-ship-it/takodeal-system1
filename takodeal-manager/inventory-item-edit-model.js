@@ -81,6 +81,12 @@ export function inventoryItemIdentity(row) {
     const item = source(row);
     const savedBase = first(row, ['baseUom', 'uom'], '');
     const savedPurchase = first(row, ['purchaseUom', 'purchUom'], '');
+    for (const aliases of [['baseUom', 'uom'], ['purchaseUom', 'purchUom']]) {
+        const values = aliases.filter(field => row?.[field] != null && text(row[field]) !== '').map(field => unit(row[field]));
+        if (new Set(values).size > 1) return null;
+    }
+    const conversions = ['conversionRate', 'conversion'].filter(field => row?.[field] != null && text(row[field]) !== '').map(field => recordNumber(row[field]));
+    if (conversions.some(value => !Number.isFinite(value) || value <= 0) || new Set(conversions).size > 1) return null;
     if (!text(savedBase) || !text(savedPurchase) && item.conversionRate !== 1 || !Number.isFinite(item.conversionRate) || item.conversionRate <= 0)
         return null;
     // Deliberately no fuzzy item-name matching. Equal unit labels may differ
@@ -127,9 +133,11 @@ const patchKeys = {
  * draft is a partial canonicalDraft(original), using purchase/base target boxes.
  * items MUST be the branch snapshots loaded for the open edit preview. The
  * caller must transactionally check each update.expected and fresh access.
- * copyMetadata is an explicit Owner choice; false leaves all other metadata.
+ * Store item details share by default; copyMetadata:false keeps those local.
+ * A changed store purchase cost always shares with compatible store items.
+ * syncStoreCost explicitly reapplies an unchanged source cost to repair peers.
  */
-export function buildInventoryItemEditPlan({original, draft = {}, items = [], permittedBranches = [], copyMetadata = false} = {}) {
+export function buildInventoryItemEditPlan({original, draft = {}, items = [], permittedBranches = [], copyMetadata = true, syncStoreCost = false} = {}) {
     if (!original?.id) fail('Reopen the stock item before saving.', 'id');
     if (!draft || Array.isArray(draft) || typeof draft !== 'object') fail('The item edits are invalid.', 'item');
     for (const key of Object.keys(draft)) {
@@ -137,6 +145,7 @@ export function buildInventoryItemEditPlan({original, draft = {}, items = [], pe
         if (!DRAFT_FIELDS.has(key)) fail('The item edit contains an unsupported field: ' + key + '.', key);
     }
     if (typeof copyMetadata !== 'boolean') fail('Choose whether to copy item details.', 'copyMetadata');
+    if (typeof syncStoreCost !== 'boolean') fail('Choose whether to synchronize the store cost.', 'syncStoreCost');
     if (own(draft, 'repairLowStockAlert') && draft.repairLowStockAlert !== true)
         fail('Confirm the saved low-stock alert repair explicitly.', 'lowStockPurchaseQty');
     if (draft.repairLowStockAlert && !own(draft, 'lowStockPurchaseQty'))
@@ -146,6 +155,7 @@ export function buildInventoryItemEditPlan({original, draft = {}, items = [], pe
     const permitted = new Set(permittedBranches.map(text));
     const allowed = branch => permitted.has('All') || permitted.has(branch);
     if (!allowed(before.branch)) fail('Your approved branch access does not allow this item.', 'branch');
+    if (syncStoreCost && before.branch === HQ) fail('Main Office costs stay separate. Open a store item to synchronize its store cost.', 'syncStoreCost');
     if (own(draft, 'id') && draft.id !== original.id || own(draft, 'branch') && text(draft.branch) !== before.branch)
         fail('The branch cannot be changed here. Open the item in the branch you want to edit.', 'branch');
     const after = {...before};
@@ -159,6 +169,7 @@ export function buildInventoryItemEditPlan({original, draft = {}, items = [], pe
         const value = number(draft[key], key === 'conversionRate' ? 'Units per purchase unit' : 'Purchase cost', key, {positive: key === 'conversionRate'});
         if (!sameNumber(value, before[key])) changes[key] = after[key] = value;
     }
+    if (syncStoreCost) changes.purchaseCost = after.purchaseCost = number(after.purchaseCost, 'Purchase cost', 'purchaseCost');
     if (own(draft, 'restockCycle') && draft.restockCycle !== opened.restockCycle) {
         const value = cycle(draft.restockCycle);
         if (value !== before.restockCycle) changes.restockCycle = after.restockCycle = value;
@@ -202,16 +213,23 @@ export function buildInventoryItemEditPlan({original, draft = {}, items = [], pe
     const metadataFields = changedFields.filter(field => META_FIELDS.includes(field));
     if (settingFields.length && (own(changes, 'conversionRate') || own(changes, 'baseUom')))
         fail('Save unit or conversion changes first, then reopen the item to change its restock settings.', own(changes, 'conversionRate') ? 'conversionRate' : 'baseUom');
+    const shareCost = before.branch !== HQ && own(changes, 'purchaseCost');
+    if (shareCost && ['purchaseUom', 'baseUom', 'conversionRate'].some(field => own(changes, field)))
+        fail('Save and review unit or conversion changes separately, then reopen the item before sharing its cost.', 'purchaseCost');
+    if (shareCost && identity === null)
+        fail('Review the saved purchase unit, base unit and conversion aliases before sharing this store cost.', 'conversionRate');
     const settingsToCopy = before.branch === HQ ? [] : settingFields;
-    // Names require separate linked review. Units and costs are always local:
-    // copying conversion alone would invalidate another branch's cost aliases.
-    const metadataToCopy = copyMetadata ? metadataFields.filter(field => COPYABLE_METADATA_FIELDS.includes(field)) : [];
+    // Linked names and unit/conversion edits need their own review. Main Office
+    // never broadcasts its editor changes to stores, even with copyMetadata.
+    const metadataToCopy = before.branch !== HQ && copyMetadata ? metadataFields.filter(field => COPYABLE_METADATA_FIELDS.includes(field)) : [];
     const peerFields = [...new Set([...settingsToCopy, ...metadataToCopy])];
     const selectedPatch = {};
     for (const [field, value] of Object.entries(changes)) if (field !== 'purchaseCost') Object.assign(selectedPatch, patchKeys[field](value));
     if (own(changes, 'purchaseCost') || own(changes, 'conversionRate')) {
         const cost = number(after.purchaseCost, 'Purchase cost', 'purchaseCost');
-        Object.assign(selectedPatch, {purchaseCost: cost, purchCost: cost, cost, baseCost: cost / after.conversionRate});
+        const conversion = number(after.conversionRate, 'Units per purchase unit', 'conversionRate', {positive: true});
+        const baseCost = number(cost / conversion, 'Base-unit cost', 'purchaseCost');
+        Object.assign(selectedPatch, {purchaseCost: cost, purchCost: cost, cost, baseCost});
     }
     const selectedExtraGuards = [];
     if (own(changes, 'baseUom')) {
@@ -219,8 +237,8 @@ export function buildInventoryItemEditPlan({original, draft = {}, items = [], pe
         selectedExtraGuards.push('currentStock');
     }
     const updates = Object.keys(selectedPatch).length ? [{id: original.id, branch: before.branch, patch: selectedPatch, expected: guard(original, selectedPatch, selectedExtraGuards)}] : [];
-    const skippedPeers = [], copiedBranches = [], peerCandidates = [];
-    if (peerFields.length) {
+    const skippedPeers = [], copiedBranches = [], copiedCostBranches = [], peerCandidates = [];
+    if (peerFields.length || shareCost) {
         const eligible = items.filter(row => row?.id !== original.id && text(row?.branch) !== HQ && allowed(text(row?.branch)) && text(row?.name) === before.name);
         const byBranch = new Map();
         for (const row of eligible) {
@@ -243,17 +261,26 @@ export function buildInventoryItemEditPlan({original, draft = {}, items = [], pe
             const repairingAlert = field === 'lowStockAlert' && draft.repairLowStockAlert && conflictingAlertAliases(row);
             if (!equal || repairingAlert) Object.assign(patch, patchKeys[field](changes[field]));
         }
+        if (shareCost) {
+            const costPatch = Object.fromEntries(['purchaseCost', 'purchCost', 'cost', 'baseCost'].map(field => [field, selectedPatch[field]]));
+            // Include even an already-equal peer: its cost and unit baseline
+            // must still hold when the whole store group is saved atomically.
+            // This also repairs aliases hidden by the preferred display value.
+            Object.assign(patch, costPatch);
+            copiedCostBranches.push(peerBefore.branch);
+        }
         if (!Object.keys(patch).length) continue;
         const extra = [];
         if (own(patch, 'baseUom')) {
             if (Number(row.currentStock) !== 0) fail('A base-unit change needs a reviewed stock conversion in ' + row.branch + '.', 'baseUom');
             extra.push('currentStock');
         }
-        // purchaseCost/baseCost and currentStock are never copied to a peer.
+        // Physical quantities, including negative balances, are never copied.
         updates.push({id: row.id, branch: peerBefore.branch, patch, expected: guard(row, patch, extra)});
         copiedBranches.push(peerBefore.branch);
     }
     return {identity, updates, changes, changedFields, settingFields, metadataFields,
-        copiedBranches: copiedBranches.sort(), skippedPeers, selectedBranch: before.branch,
+        copiedBranches: copiedBranches.sort(), copiedCostBranches: copiedCostBranches.sort(),
+        sharedFields: [...peerFields, ...(shareCost ? ['purchaseCost'] : [])], skippedPeers, selectedBranch: before.branch,
         scope: before.branch === HQ ? 'main-office-only' : 'matching-non-hq-branches'};
 }

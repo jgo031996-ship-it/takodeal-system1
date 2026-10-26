@@ -6,6 +6,7 @@ import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {loadRecipeState,createRecipeBatch,operationFor,recipePlan,saveRecipePlan,readRecipeRevision,recipeOperationApplied,loadInventoryDeletionState,inventoryDeletionPlan} from '../takodeal-manager/recipe-changes.js';
 import {recipeProblems,ingredientUses} from '../takodeal-manager/recipe-integrity.js';
 import {readProductAddonRows} from '../takodeal-manager/product-options-draft.js';
+import {installRecipeCostUI} from '../takodeal-manager/recipe-cost-ui.js';
 const main=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 function fixture() {
     const h=firestoreHarness(),notices=[],elements=new Map();
@@ -80,7 +81,12 @@ test('actual new product lost acknowledgment retry reuses exact menu/BOM IDs wit
 
 test('actual editor refuses a stale selected product name and clears the prior recipe and save baseline',async()=>{
     const f=fixture();f.api.currentAdvRecipe=[{docId:'unrelated',ingredientName:'Other Sauce',qty:200}];f.api.preloadInventoryForAddons=async()=>{};
+    f.api.sessionUser.allowedBranches=['All'];
+    f.h.put('inventory/maa',{...f.h.get('inventory/maa'),baseCost:.01});f.h.put('inventory/office',{...f.h.get('inventory/office'),baseCost:.1});
+    const read=f.api.getDocsFromServer;f.api.getDocsFromServer=async query=>{const saved=await read(query),docs=saved.docs.map(doc=>({...doc,metadata:{fromCache:false,hasPendingWrites:false}}));return {...saved,metadata:{fromCache:false,hasPendingWrites:false},docs,forEach:fn=>docs.forEach(fn)};};
+    const costs=installRecipeCostUI({window:f.api,document:{getElementById:()=>null}});
     await f.route('openBomEditor')('Old menu name','small');assert.equal(f.api.advRecipeState,null);assert.equal(f.api.currentAdvRecipe.length,0);assert.match(f.notices[0],/changed or its name is duplicated/);
+    const checked=costs.recipeSummary([{ingredientName:'Old Sauce',qty:20}]);assert.equal(checked.valid,true);assert.equal(checked.cost,.2);assert.equal(f.h.get('settings/recipe_revision'),undefined);
 });
 
 test('actual single unused-stock deletion advances the recipe revision and recovers a lost acknowledgment once',async()=>{

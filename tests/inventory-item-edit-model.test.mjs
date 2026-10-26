@@ -77,24 +77,153 @@ test('an ambiguous matching destination is blocked rather than merged, while unr
     assert.doesNotThrow(() => buildInventoryItemEditPlan({...f, draft: {maintainingPurchaseQty: 10}}));
 });
 
-test('local item details and cost edits do not propagate without an explicit metadata choice', () => {
+test('explicitly local metadata stays local while a changed store cost still shares', () => {
     const f = fixture();
-    const plan = buildInventoryItemEditPlan({...f, draft: {category: 'Consumables', purchaseCost: '150', name: 'Bowl revised', showInPrep: true}});
-    assert.equal(plan.updates.length, 1);
+    const plan = buildInventoryItemEditPlan({...f, copyMetadata: false, draft: {category: 'Consumables', purchaseCost: '150', name: 'Bowl revised', showInPrep: true}});
+    assert.equal(plan.updates.length, 3);
     assert.deepEqual(patchFor(plan, 'maa'), {name: 'Bowl revised', category: 'Consumables', showInPrep: true, purchaseCost: 150, purchCost: 150, cost: 150, baseCost: 3});
+    for (const id of ['cab', 'agdao']) assert.deepEqual(patchFor(plan, id), {purchaseCost: 150, purchCost: 150, cost: 150, baseCost: 3});
+    assert.equal(patchFor(plan, 'office'), undefined);
+    assert.deepEqual(plan.copiedCostBranches, ['Agdao', 'Cabantian']);
 });
 
-test('even explicitly copied item details never copy cost or valuation and never edit HQ', () => {
+test('store item details and changed costs share automatically without editing HQ or stock', () => {
     const f = fixture();
-    const plan = buildInventoryItemEditPlan({...f, copyMetadata: true, draft: {category: 'Consumables', purchaseCost: 150, allowRequest: false}});
-    assert.deepEqual(patchFor(plan, 'cab'), {category: 'Consumables', allowRequest: false});
+    const plan = buildInventoryItemEditPlan({...f, draft: {category: 'Consumables', purchaseCost: 150, allowRequest: false, showInPrep: true, image: 'https://example.test/item.png'}});
+    for (const id of ['cab', 'agdao']) assert.deepEqual(patchFor(plan, id), {category: 'Consumables', showInPrep: true, allowRequest: false, image: 'https://example.test/item.png', purchaseCost: 150, purchCost: 150, cost: 150, baseCost: 3});
     assert.equal(patchFor(plan, 'office'), undefined);
     assert.equal(patchFor(plan, 'foreign'), undefined);
     for (const update of plan.updates.filter(update => update.id !== f.original.id)) {
         assert.ok(!Object.hasOwn(update.patch, 'currentStock'));
-        assert.ok(!Object.hasOwn(update.patch, 'baseCost'));
-        assert.ok(!Object.hasOwn(update.patch, 'purchaseCost'));
+        assert.ok(!Object.hasOwn(update.patch, 'conversionRate'));
+        assert.ok(!Object.hasOwn(update.patch, 'baseUom'));
     }
+    assert.deepEqual(plan.sharedFields, ['category', 'showInPrep', 'allowRequest', 'image', 'purchaseCost']);
+});
+
+test('Cabantian Ice Cubes at 15 per kilogram shares all cost aliases to the other three stores only', () => {
+    const ice = (id, branch, cost, currentStock) => row(id, branch, {name: 'Ice Cubes', purchaseUom: 'Kilo', baseUom: 'gram', conversionRate: 1000, purchaseCost: cost, purchCost: cost, cost, baseCost: cost / 1000, currentStock});
+    const original = ice('cab-ice', 'Cabantian', 12, -500), items = [original, ice('maa-ice', 'Maa', 11, 7800), ice('city-ice', 'Citygate', 10, -2300), ice('agdao-ice', 'Agdao', 13, 0), ice('hq-ice', 'Main Office', 20, 25000)], before = structuredClone(items);
+    const plan = buildInventoryItemEditPlan({original, items, permittedBranches: ['Cabantian', 'Maa', 'Citygate', 'Agdao', 'Main Office'], draft: {purchaseCost: '15'}});
+    for (const id of ['cab-ice', 'maa-ice', 'city-ice', 'agdao-ice']) assert.deepEqual(patchFor(plan, id), {purchaseCost: 15, purchCost: 15, cost: 15, baseCost: .015});
+    assert.equal(patchFor(plan, 'hq-ice'), undefined);
+    assert.deepEqual(plan.copiedCostBranches, ['Agdao', 'Citygate', 'Maa']);
+    assert.deepEqual(items, before);
+    for (const update of plan.updates) {
+        assert.ok(!Object.hasOwn(update.patch, 'currentStock'));
+        const opened = items.find(item => item.id === update.id);
+        assert.equal(assertInventoryEditUnchanged({...opened, currentStock: opened.currentStock - 125}, update.expected), true);
+    }
+});
+
+test('an explicit same-price sync repairs peer aliases while an ordinary unchanged save does nothing', () => {
+    const f = fixture();
+    f.original = {...f.original, purchaseCost: 15, purchCost: 15, cost: 15, baseCost: .3};
+    f.items = f.items.map(item => item.id === 'maa' ? f.original : item.id === 'cab' ? {...item, purchaseCost: 15, purchCost: 99, cost: 98, baseCost: 2} : item);
+    const draft = {...inventoryItemEditDraft(f.original)};
+    assert.deepEqual(buildInventoryItemEditPlan({...f, draft}).updates, []);
+    const plan = buildInventoryItemEditPlan({...f, draft, syncStoreCost: true});
+    for (const id of ['maa', 'cab', 'agdao']) assert.deepEqual(patchFor(plan, id), {purchaseCost: 15, purchCost: 15, cost: 15, baseCost: .3});
+    assert.ok(plan.changedFields.includes('purchaseCost'));
+    assert.deepEqual(plan.copiedCostBranches, ['Agdao', 'Cabantian']);
+    assert.equal(patchFor(plan, 'office'), undefined);
+});
+
+test('explicit cost sharing supports a real zero and repairs missing or string aliases', () => {
+    const f = fixture();
+    f.items[2] = {...f.items[2], purchaseCost: '0', baseCost: 0};
+    const plan = buildInventoryItemEditPlan({...f, draft: {purchaseCost: 0}});
+    for (const id of ['maa', 'cab', 'agdao']) assert.deepEqual(patchFor(plan, id), {purchaseCost: 0, purchCost: 0, cost: 0, baseCost: 0});
+    assert.deepEqual(plan.copiedCostBranches, ['Agdao', 'Cabantian']);
+    assert.equal(patchFor(plan, 'office'), undefined);
+});
+
+test('a peer with every cost alias already correct is still guarded by the explicit group sync', () => {
+    const f = fixture(); f.items[2] = {...f.items[2], purchaseCost: 100, purchCost: 100, cost: 100, baseCost: 2};
+    const plan = buildInventoryItemEditPlan({...f, syncStoreCost: true});
+    assert.deepEqual(patchFor(plan, 'cab'), {purchaseCost: 100, purchCost: 100, cost: 100, baseCost: 2});
+    assert.deepEqual(plan.copiedCostBranches, ['Agdao', 'Cabantian']);
+    assert.deepEqual(patchFor(plan, 'maa'), {purchaseCost: 100, purchCost: 100, cost: 100, baseCost: 2});
+    assert.throws(() => assertInventoryEditUnchanged({...f.items[2], purchaseCost: 110}, plan.updates.find(update => update.id === 'cab').expected), /changed after you opened/);
+});
+
+test('Main Office edits always stay independent even when metadata sharing is explicitly requested', () => {
+    const f = fixture(); f.original = f.items[0];
+    const plan = buildInventoryItemEditPlan({...f, copyMetadata: true, draft: {category: 'New HQ category', showInPrep: true, allowRequest: false, image: 'https://example.test/hq.png', purchaseCost: 200}});
+    assert.equal(plan.updates.length, 1);
+    assert.equal(plan.updates[0].id, 'office');
+    assert.deepEqual(plan.copiedBranches, []);
+    assert.deepEqual(plan.copiedCostBranches, []);
+    assert.deepEqual(plan.sharedFields, []);
+    assert.throws(() => buildInventoryItemEditPlan({...f, syncStoreCost: true}), /Main Office costs stay separate/);
+});
+
+test('cost sharing is held until changed store unit labels and conversions are reviewed separately', () => {
+    const f = fixture();
+    for (const patch of [{purchaseUom: 'Bag'}, {baseUom: 'gram'}, {conversionRate: 100}]) {
+        assert.throws(() => buildInventoryItemEditPlan({...f, draft: {...patch, purchaseCost: 150}}), /unit or conversion changes separately/);
+        assert.throws(() => buildInventoryItemEditPlan({...f, draft: patch, syncStoreCost: true}), /unit or conversion changes separately/);
+    }
+    assert.doesNotThrow(() => buildInventoryItemEditPlan({...f, draft: {purchaseUom: 'PACK', purchaseCost: 150}}));
+    for (const syncStoreCost of [null, 1, 'yes']) assert.throws(() => buildInventoryItemEditPlan({...f, syncStoreCost}), error => error.field === 'syncStoreCost');
+});
+
+test('a cost-sharing plan holds every overwritten peer alias and unit identity but permits stock-only movements', () => {
+    const f = fixture(), plan = buildInventoryItemEditPlan({...f, draft: {purchaseCost: 150}}), peer = plan.updates.find(update => update.id === 'cab'), opened = f.items[2];
+    for (const field of ['purchaseCost', 'purchCost', 'cost', 'baseCost', 'name', 'branch', 'purchaseUom', 'purchUom', 'baseUom', 'uom', 'conversionRate', 'conversion']) {
+        assert.ok(peer.expected.fields.includes(field));
+        assert.throws(() => assertInventoryEditUnchanged({...opened, [field]: field.includes('Cost') || field === 'cost' ? 999 : 'Changed'}, peer.expected), /changed after you opened/);
+    }
+    assert.equal(assertInventoryEditUnchanged({...opened, currentStock: -987, maintainingStock: 0}, peer.expected), true);
+});
+
+test('cost sharing refuses ambiguous peers, skips incompatible identities and respects branch access', () => {
+    const f = fixture();
+    f.items.push(row('city', 'Citygate', {conversionRate: 100}), row('other-name', 'Maa', {name: '4 Pcs Paper Bowl'}));
+    const plan = buildInventoryItemEditPlan({...f, permittedBranches: ['Maa', 'Cabantian', 'Citygate'], draft: {purchaseCost: 150}});
+    assert.deepEqual(plan.copiedCostBranches, ['Cabantian']);
+    assert.deepEqual(plan.skippedPeers.map(item => item.id), ['city']);
+    assert.equal(patchFor(plan, 'agdao'), undefined);
+    assert.equal(patchFor(plan, 'other-name'), undefined);
+    f.items.push(row('cab-duplicate', 'Cabantian'));
+    assert.throws(() => buildInventoryItemEditPlan({...f, draft: {purchaseCost: 150}}), /More than one matching item exists in Cabantian/);
+});
+
+test('same-price synchronization validates missing costs and positive conversion rather than inventing a price', () => {
+    const f = fixture();
+    for (const purchaseCost of [undefined, null, -1, NaN, Infinity, true]) {
+        const original = {...f.original, purchaseCost, purchCost: undefined, cost: undefined, baseCost: undefined};
+        assert.throws(() => buildInventoryItemEditPlan({...f, original, syncStoreCost: true}), /Purchase cost|purchase cost/);
+    }
+    for (const conversionRate of [0, -1, Infinity, 'unknown']) assert.throws(() => buildInventoryItemEditPlan({...f, original: {...f.original, conversionRate}, draft: {purchaseCost: 150}}), error => error.field === 'conversionRate');
+});
+
+test('identity rejects conflicting saved unit or conversion aliases without fuzzy labels', () => {
+    const f = fixture();
+    for (const aliases of [{baseUom: 'gram', uom: 'ml'}, {purchaseUom: 'Pack', purchUom: 'Bag'}, {conversionRate: 50, conversion: 100}, {conversion: true}]) {
+        assert.equal(inventoryItemIdentity({...f.original, ...aliases}), null);
+        const original = {...f.original, ...aliases};
+        assert.throws(() => buildInventoryItemEditPlan({...f, original, draft: {purchaseCost: 150}}), /Review the saved purchase unit, base unit and conversion aliases/);
+        assert.throws(() => buildInventoryItemEditPlan({...f, original, syncStoreCost: true}), /Review the saved purchase unit, base unit and conversion aliases/);
+    }
+    assert.equal(inventoryItemIdentity({...f.original, purchUom: ' pack ', uom: 'PIECE', conversion: '50'}), inventoryItemIdentity(f.original));
+    assert.notEqual(inventoryItemIdentity({...f.original, baseUom: 'pieces'}), inventoryItemIdentity(f.original));
+});
+
+test('conflicting peer aliases are skipped while compatible store costs remain one guarded group', () => {
+    const f = fixture(); f.items[2] = {...f.items[2], uom: 'ml'};
+    const plan = buildInventoryItemEditPlan({...f, draft: {purchaseCost: 150}});
+    assert.equal(patchFor(plan, 'cab'), undefined);
+    assert.deepEqual(plan.copiedCostBranches, ['Agdao']);
+    assert.deepEqual(plan.skippedPeers, [{id: 'cab', branch: 'Cabantian', reason: 'Different units or conversion'}]);
+});
+
+test('Main Office cost remains local despite conflicting unused unit aliases', () => {
+    const f = fixture(); f.original = {...f.items[0], uom: 'ml'};
+    const plan = buildInventoryItemEditPlan({...f, copyMetadata: true, draft: {purchaseCost: 150}});
+    assert.equal(plan.updates.length, 1);
+    assert.deepEqual(patchFor(plan, 'office'), {purchaseCost: 150, purchCost: 150, cost: 150, baseCost: 3});
+    assert.deepEqual(plan.copiedCostBranches, []);
 });
 
 test('branch and record identity are immutable and a selected item outside approved access is refused', () => {
