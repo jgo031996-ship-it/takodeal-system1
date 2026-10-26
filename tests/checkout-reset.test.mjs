@@ -68,3 +68,11 @@ test('payment choice cannot change while the current sale is being saved',()=>{
     const f=checkout();f.w.isSubmittingOrder=true;f.w.setPaymentMethod(f.gcash,'Gcash');assert.equal(f.w.selectedPaymentMethod,'Cash');assert.equal(f.cash.getAttribute('aria-pressed'),'true');
     f.w.isSubmittingOrder=false;f.w.setPaymentMethod(f.gcash,'Gcash');assert.equal(f.w.selectedPaymentMethod,'Gcash');assert.equal(f.gcash.getAttribute('aria-pressed'),'true');
 });
+test('cash counting pauses the real checkout pipeline before any receipt is queued and resumes after the count is released',async()=>{
+    for(const flag of ['cashierRemitSubmitting','cashierCashCountActive']){
+        const f=checkout(),payload={branch:'Maa',cart:[{name:'Sample food',qty:1,lineTotalFinal:70}],netTotal:70,paymentMethod:'Cash'},cart=JSON.stringify(f.w.cart);
+        f.w[flag]=true;const stopped=await f.w.processCheckout(payload);assert.equal(stopped.status,'failed');assert.match(stopped.error,/cash remittance count/);assert.equal((await f.w.saleOutbox.list()).length,0);assert.equal(JSON.stringify(f.w.cart),cart);
+        f.w[flag]=false;const resumed=await f.w.processCheckout(payload);assert.equal(resumed.status,'queued');assert.equal((await f.w.saleOutbox.list()).length,1);
+    }
+});
+test('a durable unconfirmed transfer blocks checkout after restart even without an in-memory counting flag',async()=>{const f=checkout();f.w.hasPendingCashRemittance=()=>true;const result=await f.w.processCheckout({branch:'Maa',cart:[{name:'Sample food',qty:1}],netTotal:70,paymentMethod:'Cash'});assert.equal(result.status,'failed');assert.match(result.error,/earlier cash transfer/);assert.equal((await f.w.saleOutbox.list()).length,0);assert.equal(f.w.isProcessingOrder,false);});

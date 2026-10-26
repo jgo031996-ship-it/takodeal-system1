@@ -270,7 +270,7 @@ function installUpdates(){
   window.setInterval(()=>{if(document.visibilityState==='visible' && navigator.onLine)releaseRegistration?.update().catch(()=>{});},15*60*1000);
   if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){showCashierUpdateNotice('updated','POS Settings updated','Signed-in staff can use printer and branch tools directly. Open Settings to connect your receipt printer.');localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
 }
-function install(){installTheme();installRemittance();installClock();installPrinterHub();installTabletControls();installParkedOrders();installUpdates();installSalesActions();window.installPOSSettings?.();}
+function install(){installTheme();installRemittance();window.installCashRemittance?.();installClock();installPrinterHub();installTabletControls();installParkedOrders();installUpdates();installSalesActions();window.installPOSSettings?.();}
 if(document.readyState==='complete')install();else window.addEventListener('load',install,{once:true});
 
 function installTabletControls(){

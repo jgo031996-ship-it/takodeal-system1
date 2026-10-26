@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 
 // Structural policy regression checks, NOT a Firebase Rules interpreter. A real
 // emulator/Rules compile and unauthorized access tests remain release prerequisites.
-const firestore = readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+const firestore = readFileSync(new URL('../firestore.policy.rules', import.meta.url), 'utf8');
 const storage = readFileSync(new URL('../docs/staff-document-storage.rules.snippet', import.meta.url), 'utf8');
 const marker = '// Private Staff document vault.';
 const vault = firestore.slice(firestore.indexOf(marker));
@@ -108,13 +108,17 @@ test('legacy operational authority remains while new rate metadata is protected'
     const expectedLegacyNames = ['account_logs','archived_months','bom','branches','budgets','cash_accounts',
         'customer_app_categories','daily_metrics','dispatch_logs','equipment_assets','expenses','foodpanda_payouts',
         'franchise_accounts','franchise_budgets','franchise_comms','franchise_ledger','global_addons','grab_payouts',
-        'hq_restocks','inventory','manager_alerts','menu','parked_orders','payables','pos_devices','remittances',
+        'hq_restocks','inventory','manager_alerts','menu','parked_orders','payables','pos_devices',
         'rider_topups','riders','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests',
         'stock_counts','stock_logs','suppliers','yield_logs'];
     const literalNames = [...new Set([flatLegacy, treeLegacy].flatMap(text => [...text.matchAll(/\[([^\]]+)\]/g)]
         .flatMap(list => [...list[1].matchAll(/'([^']+)'/g)].map(name => name[1]))))].sort();
-    assert.equal(expectedLegacyNames.length, 38);
-    assert.deepEqual(literalNames, expectedLegacyNames, 'Only the original 38 collection roots may enter legacy literal clauses');
+    assert.equal(expectedLegacyNames.length, 37);
+    assert.deepEqual(literalNames, expectedLegacyNames, 'Only the 37 non-remittance legacy roots may enter these literal clauses');
+    const remittances = body(legacy, 'match /remittances/{remittanceId}');
+    assert.match(remittances, /allow read: if true;/);
+    assert.match(remittances, /allow create: if mallHandover\(newData\(\)\);/);
+    assert.doesNotMatch(remittances, /allow (?:update|delete|write)/);
     assert.equal(body(legacy, 'function legacyCandidate(').trim(), `return root.matches('^(${expectedLegacyNames.join('|')})$');`);
     for (const method of ['read', 'create', 'update', 'delete']) {
         const expression = new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(flatLegacy)?.[1];

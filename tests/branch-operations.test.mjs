@@ -85,23 +85,29 @@ test('earlier mall shifts carry all counted cash; only the final daily close rem
     assert.equal(mallOpeningCash(h.get('shifts/two')),2000);assert.equal(h.get('cash_accounts/cash').balance,10000);
 });
 
-test('opening cash preserves interim actual counts; a final close resets the next opening',()=> {
+test('opening cash preserves actual retained counts after both interim and final closes',()=> {
     assert.equal(mallOpeningCash(),2000);assert.equal(mallOpeningCash({declaredCash:7500,isFinalShiftOfDay:false}),7500);
     assert.equal(mallOpeningCash({declaredCash:7500,retainedCash:2000}),2000);
     assert.equal(mallOpeningCash({declaredCash:1200,isFinalShiftOfDay:false}),1200);
     assert.equal(mallOpeningCash({declaredCash:8500,retainedCash:2000,isFinalShiftOfDay:true}),2000);
+    assert.equal(mallOpeningCash({declaredCash:1200,retainedCash:1200,floatShortage:800,isFinalShiftOfDay:true}),1200);
+    assert.equal(mallOpeningCash({declaredCash:0,retainedCash:0,floatShortage:2000,isFinalShiftOfDay:true}),0);
+    assert.equal(mallOpeningCash({declaredCash:8500,remittedCash:6500,isFinalShiftOfDay:true}),2000);
+    assert.equal(mallOpeningCash({actualCash:1200,isFinalShiftOfDay:true}),1200);
+    assert.throws(()=>mallOpeningCash({isFinalShiftOfDay:true}),/no recorded physical cash/);
+    assert.throws(()=>mallOpeningCash({declaredCash:1200,remittedCash:2000,isFinalShiftOfDay:true}),/exceeds its counted cash/);
 });
 
 const mallSchedule={branchConfig:{Citygate:[{id:'morning',startTime:'10:00',endTime:'19:00',days:[0,1,2,3,4,5,6]},{id:'night',startTime:'12:00',endTime:'21:00',days:[0,1,2,3,4,5,6]}]}};
 
-test('mall opening reads the latest server handover and does not reset an earlier shift to petty cash',async()=> {
+test('mall opening reads the latest handover while preserving the actual entered physical starting count',async()=> {
     let fetched;
     const api={db:{},collection:(db,table)=>table,where:(...parts)=>parts,orderBy:(...parts)=>parts,limit:value=>value,query:(...parts)=>parts,getDocsFromServer:async query=>{fetched=query;return {docs:[{data:()=>({declaredCash:7500,isFinalShiftOfDay:false})}]};}};
     assert.equal(await readMallOpeningCash(api,'Citygate'),7500);assert.equal(fetched[0],'shifts');assert.deepEqual(fetched[3],['endTime','desc']);assert.equal(fetched[4],1);
     const source=readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8'),start=source.indexOf('window.openNewShift ='),end=source.indexOf('\n};',start)+3;
     let created;const window={db:{},collection:()=>({}),serverTimestamp:()=>1,addDoc:async(ref,data)=>{created=data;return {id:'new'};}};
     vm.runInNewContext(source.slice(start,end),{window,MALL_FLOAT:2000,readBranchPolicy:async()=>({isMallBranch:true}),readMallOpeningCash:async()=>7500,Number,localStorage:{getItem:()=>null},console});
-    await window.openNewShift('Citygate','Test',2000);assert.equal(created.startingCash,7500);assert.equal(created.isMallBranch,true);
+    await window.openNewShift('Citygate','Test',1200);assert.equal(created.startingCash,1200);assert.equal(created.mallFloat,2000);assert.equal(created.isMallBranch,true);
 });
 
 test('owner-reviewed mall settlement preserves interim cash and only final closure creates a guarded pending remittance',async()=> {

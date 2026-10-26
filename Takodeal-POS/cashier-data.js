@@ -73,7 +73,7 @@ export function imageFor(item, catalogue = []) {
 export function updateBlocker(w) {
   const carts = [w.cart, ...Object.values(w.platformCarts || {}),w.prepCart,w.kitchenPrepCart,w.consumablesCart,w.wasteCart,w.expenseCart];
   if (carts.some(cart => Array.isArray(cart) && cart.length)) return 'Finish or park your order and save any stock, prep or waste entries before updating.';
-  if (w.isProcessingOrder || w.isSubmittingOrder || w.isSubmittingWasteCart || w.isProcessingAttendance || w.cashierRemitSubmitting || w.cashierShiftOpening || w.isBluetoothPrinting || w.bluetoothPrintQueue?.length) return 'Please wait for checkout, attendance, remittance, shift opening or printing to finish before updating.';
+  if (w.isProcessingOrder || w.isSubmittingOrder || w.isSubmittingWasteCart || w.isProcessingAttendance || w.cashierRemitSubmitting || w.cashierCashCountActive || w.cashierShiftOpening || w.isBluetoothPrinting || w.bluetoothPrintQueue?.length) return 'Please wait for checkout, attendance, remittance, shift opening or printing to finish before updating.';
   return '';
 }
 export function labelSettings(input = {}) {
