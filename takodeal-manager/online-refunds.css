@@ -82,3 +82,42 @@
     .online-receipt-actions button{width:100%}
 }
 .online-platform-card{min-width:0;white-space:normal;touch-action:manipulation}.online-platform-card:focus-visible{outline:3px solid #168e72;outline-offset:3px}.online-platform-card:hover{box-shadow:0 8px 22px #173f3220!important}@media(max-width:600px){.online-platform-card{padding:16px!important;gap:10px;flex-wrap:wrap}.online-platform-card :is(#histSumGrab,#histSumFoodpanda){font-size:clamp(22px,6vw,28px)!important;overflow-wrap:anywhere}.online-platform-card :is(#histCountGrab,#histCountFoodpanda){font-size:12px!important;white-space:normal}}
+.online-orders-dialog [data-online-results]{min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable}
+.online-orders-dialog [data-online-results] [data-online-orders]{overflow:visible;scrollbar-gutter:auto}
+.online-orders-summary{flex-wrap:wrap}
+.online-orders-summary [data-compare-prices]{margin-left:auto;min-height:40px;padding:8px 12px}
+.online-orders-dialog [data-price-comparison]{padding:20px 28px 4px;min-width:0;overflow-wrap:anywhere}
+.online-orders-dialog [data-price-comparison][hidden]{display:none}
+.online-price-notice{padding:13px 15px;margin:0 0 14px!important;border:1px solid #ddcfac;border-radius:9px;background:#fffaed;color:#6f5728;font-size:11px;line-height:1.7}
+.online-comparison-panel{min-width:0;margin:0 0 14px;padding:16px;border:1px solid #dce7de;border-radius:11px;background:#f8fbf7}
+.online-comparison-panel h3{margin:0 0 6px;font-size:15px;color:#1a4e3c}
+.online-comparison-scope,.online-price-coverage,.online-price-explanation,.online-comparison-checked{margin:7px 0 0;color:#62756a;font-size:11px;line-height:1.65;overflow-wrap:anywhere}
+.online-price-figures{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin:13px 0 0;min-width:0}
+.online-price-figures>div{min-width:0;padding:10px;border:1px solid #e1e9df;border-radius:7px;background:#fff;overflow-wrap:anywhere}
+.online-price-figures dt{font-size:10px;font-weight:650;color:#697d70;line-height:1.5}
+.online-price-figures dd{margin:4px 0 0;color:#1d4936;font-size:14px;font-weight:750;font-variant-numeric:tabular-nums;line-height:1.5;overflow-wrap:anywhere}
+.online-price-figures small{display:block;margin-top:5px;color:#718177;font-size:10px;line-height:1.5}
+.online-order-card{display:block}
+.online-order-head{display:flex;justify-content:space-between;gap:18px;align-items:center;min-width:0}
+.online-order-comparison{margin-top:13px;border-top:1px dashed #d8e3d9;padding-top:10px;min-width:0}
+.online-price-caption{margin:0;color:#5e7969;font-size:10px;font-weight:700;letter-spacing:.2px}
+.online-price-warning{margin:9px 0 0;color:#a24b30;font-size:11px;line-height:1.6;overflow-wrap:anywhere}
+.online-price-reference{margin:10px 0 0;padding:10px 12px;border-radius:7px;background:#fff7eb;color:#916335;font-size:11px;line-height:1.6}
+.online-price-items{margin-top:12px;border:1px solid #dce6db;border-radius:8px;background:#fff;min-width:0}
+.online-price-items>summary{padding:11px 13px;color:#245b43;cursor:pointer;font-size:11px;font-weight:700}
+.online-price-item{padding:12px;border-top:1px solid #e4ebe2;min-width:0}
+.online-price-item>strong{font-size:12px;overflow-wrap:anywhere}
+.online-price-item .online-price-figures{grid-template-columns:repeat(3,minmax(0,1fr))}
+.online-payout-panel{background:#f3f7fb;border-color:#d7e1ec}
+.online-payout-amount{display:block;margin-top:12px;font-size:22px;color:#204f6b;font-variant-numeric:tabular-nums;line-height:1.4;overflow-wrap:anywhere}
+.online-payout-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:11px 13px;border-top:1px solid #e3eaf0;font-size:11px}
+.online-payout-row span{min-width:0;overflow-wrap:anywhere}.online-payout-row small{display:block;color:#6d7c88}.online-payout-row strong{flex-shrink:0;font-variant-numeric:tabular-nums}
+.online-comparison-loading{margin:15px 0;color:#526c5d;font-size:12px}
+@media(max-width:600px){
+ .online-orders-dialog [data-price-comparison]{padding:15px 18px 0}
+ .online-orders-summary [data-compare-prices]{width:100%;margin:0;font-size:12px}
+ .online-comparison-panel{padding:12px}.online-price-figures,.online-price-item .online-price-figures{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+ .online-price-figures>div{padding:9px}.online-price-figures dd{font-size:13px}
+ .online-order-head{align-items:flex-start;gap:12px}.online-order-head .online-order-actions{flex-direction:column;gap:8px}
+ .online-price-item{padding:10px}.online-payout-row{padding:10px;font-size:10px}.online-payout-amount{font-size:20px}
+}

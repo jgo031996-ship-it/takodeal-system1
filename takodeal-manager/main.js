@@ -37,6 +37,7 @@ window.reviewOwnedScheduleLeave = function(date,name) {
 };
 import {reportDetailsHTML,purchaseQuantity,escapeStock} from './stock-cycle.js';
 import {installOnlineRefunds} from './online-refunds-ui.js';
+import {createPlatformComparisonReader} from './platform-comparison-reader.js';
 import { installDeviceFleet } from './device-fleet.js';
 import {installMasterEmployeeDocuments} from './staff-document-hq.js';
 import { installFranchiseWorkspace } from './franchise-workspace.js';
@@ -26835,7 +26836,7 @@ installCustomerHubSettings(window,document);
 installRiderManagementSafety(window);
 installRiderManagementViews(window,document);
 
-installOnlineRefunds(window,document);
+installOnlineRefunds(window,document,{readComparisonData:createPlatformComparisonReader(window)});
 installDispatchRestockUI(window);
 installDispatchDestinationRepair(window,{document,dialogs:Swal});
 installGovernmentPermits(window,document);
