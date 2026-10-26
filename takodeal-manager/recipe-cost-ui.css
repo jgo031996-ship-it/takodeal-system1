@@ -1,0 +1,12 @@
+.recipe-cost-basis{display:flex;align-items:end;gap:10px;flex-wrap:wrap;padding:12px;margin:10px 0;border:1px solid #d9e5df;border-radius:10px;background:#f6faf6;min-width:0;box-sizing:border-box}
+.recipe-cost-basis label{display:grid;gap:5px;color:#244c3e;font-size:12px;font-weight:700;min-width:180px;flex:1 1 220px;max-width:360px}
+.recipe-cost-basis select{width:100%;min-width:0;box-sizing:border-box;background:white;border:1px solid #b8cfc1;border-radius:7px;padding:9px;color:#173e31;font:inherit;font-size:13px}
+.recipe-cost-basis button{border:1px solid #aec9bb;border-radius:7px;background:white;color:#135b47;font-weight:700;padding:10px 13px;cursor:pointer;min-height:38px}
+.recipe-cost-basis button:disabled,.recipe-cost-basis select:disabled{opacity:.65;cursor:wait}
+.recipe-cost-status{flex:1 0 100%;margin:0!important;color:#5c7066;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.recipe-cost-status[data-verified="false"],.recipe-cost-issue{color:#a54124}
+.recipe-cost-issue,.recipe-cost-unit-price{display:block;font-size:11px;line-height:1.45;margin-top:4px;overflow-wrap:anywhere;white-space:normal}
+.recipe-cost-unit-price{color:#5e7166;font-weight:400}
+#advRecipeBody input{width:100%;min-width:0;box-sizing:border-box;padding:8px;border:1px solid #cbd5d1;border-radius:5px;font:inherit}
+#advRecipeBody td{padding:10px 5px}
+@media(max-width:600px){.recipe-cost-basis{align-items:stretch;gap:8px}.recipe-cost-basis label{max-width:none;min-width:0}.recipe-cost-basis button{flex:0 1 auto;align-self:end}.recipe-cost-status{font-size:11px}}

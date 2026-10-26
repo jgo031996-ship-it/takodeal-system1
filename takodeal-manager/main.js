@@ -87,6 +87,7 @@ import {installRiderManagementSafety} from './rider-management.js';
 import {installRiderManagementViews} from './rider-management-view.js';
 import {renderStockRequestReview} from './stock-request-review.js';
 import {loadStockRequestDraft} from './dispatch-request-draft.js';
+import {installRecipeCostUI} from './recipe-cost-ui.js';
 import { loadRecipeState, createRecipeBatch, operationFor, recipePlan, saveRecipePlan, readRecipeRevision, recipeOperationApplied, loadInventoryDeletionState, inventoryDeletionPlan } from './recipe-changes.js';
 
 import { legacyRemittanceDuplicates } from './remittance-review.js';
@@ -3374,8 +3375,8 @@ window.loadMenuEditor = async function() {
 
   try {
     // 🔥 Use the Zero-Cost Cache!
-    const [cachedMenu, recipeRows, inventoryRows] = await Promise.all([window.fetchCachedCollection("menu"), window.fetchCachedCollection("bom"), window.fetchCachedCollection("inventory")]);
-    globalInventoryCosts={};for(const data of inventoryRows){const cost=parseFloat(data.baseCost)||0;if(!globalInventoryCosts[data.name]||cost>globalInventoryCosts[data.name].cost)globalInventoryCosts[data.name]={cost,uom:data.uom};}
+    const [cachedMenu, recipeRows, inventoryRows] = await Promise.all([window.fetchCachedCollection("menu"), window.fetchCachedCollection("bom"), window.recipeCostUI.freshInventory()]);
+    window.recipeCostUI.useInventory(inventoryRows,{fresh:true});
     window.menuRecipeRows = recipeRows;
     
     let layoutOrder = [];
@@ -3492,9 +3493,8 @@ window.renderMenuEditorUI = function() {
     let missing = 0, margins = [];
     const summary = item => {
         const recipe = (window.menuRecipeRows || []).filter(row => row.menuItem === item.name);
-        const problems = recipeProblems(recipe, new Set(Object.keys(globalInventoryCosts)));
-        const valid = recipe.length > 0 && !problems.length;
-        const cost = recipe.reduce((sum,row) => sum + Number(row.qty || 0) * Number(globalInventoryCosts[row.ingredientName]?.cost || 0), 0);
+        const checked = window.recipeCostUI.recipeSummary(recipe);
+        const {valid,cost} = checked;
         const price = Number(item.price ?? item.basePrice ?? 0);
         return {valid,cost,price,margin:price - cost,pct:price > 0 ? (price-cost)/price*100 : 0};
     };
@@ -5407,7 +5407,7 @@ window.switchCostingTab = function (element, tabName) {
         }
     };
 
-window.loadMenuCosting = async function() {
+window.loadMenuCosting = async function({reuseCosts=false}={}) {
   const tbody = document.getElementById('bomTableBody');
   if (!tbody) return;
   tbody.innerHTML = '<tr><td colspan="6" class="text-center">Calculating margins...</td></tr>';
@@ -5416,18 +5416,8 @@ window.loadMenuCosting = async function() {
 
   try {
       // 1. Get Live Inventory Costs (WITH SMART MULTI-BRANCH FILTER)
-      const [invSnap,bomSnap,menuSnap]=await Promise.all([cachedSnapshot('inventory'),cachedSnapshot('bom'),cachedSnapshot('menu')]);
-      globalInventoryCosts = {};
-        
-      invSnap.forEach(doc => {
-          let data = doc.data();
-          let currentCost = parseFloat(data.baseCost) || 0;
-            
-          // 🔥 THE FIX: If an item exists in multiple branches, ALWAYS grab the highest/updated cost to protect margins!
-          if (!globalInventoryCosts[data.name] || currentCost > globalInventoryCosts[data.name].cost) {
-              globalInventoryCosts[data.name] = { cost: currentCost, uom: data.uom };
-          }
-      });
+      const [inventoryRows,bomSnap,menuSnap]=await Promise.all([reuseCosts?Promise.resolve(null):window.recipeCostUI.freshInventory(),cachedSnapshot('bom'),cachedSnapshot('menu')]);
+      if(inventoryRows)window.recipeCostUI.useInventory(inventoryRows,{fresh:true});
 
     // 2. Get Recipes
     let recipes = {};
@@ -5478,14 +5468,8 @@ window.loadMenuCosting = async function() {
 
       let price = parseFloat(item.price) || 0;
       let recipe = recipes[item.name] || [];
-      const recipeIssues = recipeProblems(recipe, new Set(Object.keys(globalInventoryCosts)));
-      const validRecipe = recipe.length > 0 && recipeIssues.length === 0;
-
-      let cogs = 0;
-      recipe.forEach(ing => {
-        let currentCost = globalInventoryCosts[ing.ingredientName] ? globalInventoryCosts[ing.ingredientName].cost : 0;
-        cogs += (currentCost * ing.qty);
-      });
+      const checked = window.recipeCostUI.recipeSummary(recipe);
+      const recipeIssues = checked.issues, validRecipe = checked.valid, cogs = checked.cost;
 
       let margin = price - cogs;
       let marginPct = price > 0 ? (margin / price) * 100 : 0;
@@ -5547,7 +5531,8 @@ window.openNewProductModal = async function () {
   
   // 🛠️ FIX 2: Load Addon inventory
   await window.preloadInventoryForAddons();
-  window.advRecipeState = await loadRecipeState(window);
+  const [freshRecipeState] = await Promise.all([loadRecipeState(window),window.recipeCostUI.freshInventory()]);
+  window.advRecipeState = freshRecipeState;
   window.recipeOperations?.delete('advanced-product');
   document.getElementById('addonTableBody').innerHTML = '';
 
@@ -5740,7 +5725,8 @@ window.openBomEditor = async function (menuItemName, selectedId) {
   // WAIT for inventory to load so the Add-on dropdowns actually work!
   try {
     await window.preloadInventoryForAddons();
-    window.advRecipeState = await loadRecipeState(window);
+    const [freshRecipeState] = await Promise.all([loadRecipeState(window),window.recipeCostUI.freshInventory()]);
+  window.advRecipeState = freshRecipeState;
     window.recipeOperations?.delete('advanced-product');
     const menuRows = Object.entries(window.advRecipeState.documents.menu).map(([id,row])=>({...row,id})).filter(row => selectedId ? row.id === selectedId : row.name === menuItemName);
     if (menuRows.length !== 1 || menuRows[0].name !== menuItemName || Object.values(window.advRecipeState.documents.menu).filter(row=>row.name===menuItemName).length !== 1) throw new Error('This product changed or its name is duplicated. Refresh before editing.');
@@ -26862,3 +26848,6 @@ installDisciplineCases(window,document);
 runManagerDomReady(()=>{installProductAddonDrafts(window,document);window.productEditorLayout ||= installProductEditorLayout({document,window});window.menuOptions ||= installMenuOptions(window,document);});
 
 installCashRemittanceReview(window,document);
+
+// Explicit store/HQ cost basis replaces the legacy highest-branch cost scan.
+installRecipeCostUI({window,document,setCosts:costs=>{globalInventoryCosts=costs;}});

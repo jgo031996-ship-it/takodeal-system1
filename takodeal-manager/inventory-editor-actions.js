@@ -78,12 +78,12 @@ function guardedLinks(plan,links){
  addExpected(plan,'settings','global_mixmatch',links.mix);
 }
 
-export async function saveInventoryEditorSettings(api,state,draft,{copyMetadata=false,renameLinked=false,operationId}={}){
+export async function saveInventoryEditorSettings(api,state,draft,{copyMetadata=true,syncStoreCost=false,renameLinked=false,operationId}={}){
  const context=await access(api);checkState(api,state,context);
  if(typeof renameLinked!=='boolean')fail('Choose whether linked item names should be updated.','name');
  const permittedBranches=state.permittedBranches.filter(branch=>allowed(context,branch));
- const edit=buildInventoryItemEditPlan({original:state.original,draft,items:state.items,permittedBranches,copyMetadata});
- if(!edit.updates.length)return {status:'unchanged',copiedBranches:[],changes:edit.changes,skippedPeers:edit.skippedPeers};
+ const edit=buildInventoryItemEditPlan({original:state.original,draft,items:state.items,permittedBranches,copyMetadata,syncStoreCost});
+ if(!edit.updates.length)return {status:'unchanged',copiedBranches:edit.copiedBranches,copiedCostBranches:edit.copiedCostBranches,sharedFields:edit.sharedFields,changes:edit.changes,changedFields:edit.changedFields,skippedPeers:edit.skippedPeers};
  const rename=own(edit.changes,'name');
  if(rename)fail('Linked item names require a separate recipe-link review; use recipe replacement rather than renaming here.','name');
  const updates=new Map(edit.updates.map(row=>[row.id,{...row,patch:{...row.patch}}]));
@@ -96,13 +96,13 @@ export async function saveInventoryEditorSettings(api,state,draft,{copyMetadata=
  }
  for(const update of updates.values())if(!allowed(context,update.branch))fail('Your approved branch access does not allow every affected item.','branch');
  const writes=[...updates.values()].map(row=>({table:'inventory',id:row.id,mode:'update',data:row.patch}));
- const intent={kind:'inventory-settings',previewId:state.previewId,id:state.original.id,changes:edit.changes,copyMetadata,renameLinked};
+ const intent={kind:'inventory-settings',previewId:state.previewId,id:state.original.id,changes:edit.changes,copyMetadata,syncStoreCost,renameLinked};
  const baseline={revision:state.revision,documents:{...state.documents,...(links?{bom:documents(links.bom),menu:documents(links.menu),global_addons:documents(links.global_addons)}:{})}};
  const plan=recipePlan(baseline,writes,{label:'Inventory item settings',intent});
  for(const row of updates.values())addExpected(plan,'inventory',row.id,row.expected.data,row.expected.fields);
  if(links)guardedLinks(plan,links);guardAccess(plan,context);
  const result=await saveRecipePlan(api,plan,{operationId:operation(api,'inventory-settings:'+state.original.id+':'+state.previewId,intent,operationId),route:'inventory'});
- return {...result,copiedBranches:edit.copiedBranches,changes:edit.changes,changedFields:edit.changedFields,skippedPeers:edit.skippedPeers};
+ return {...result,copiedBranches:edit.copiedBranches,copiedCostBranches:edit.copiedCostBranches,sharedFields:edit.sharedFields,changes:edit.changes,changedFields:edit.changedFields,skippedPeers:edit.skippedPeers};
 }
 
 function count(value,label){

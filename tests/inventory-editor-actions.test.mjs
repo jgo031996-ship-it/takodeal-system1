@@ -44,13 +44,124 @@ test('Main Office target edits never change branch quantities, costs, metadata o
  assert.equal(h.get('inventory/Main Office').currentStock,500);assert.equal(h.get('inventory/Main Office').baseCost,.1);
 });
 
-test('store edits automatically copy only changed restock settings to exact compatible stores',async()=>{
+test('store edits automatically share changed restock settings, item details and cost to compatible stores',async()=>{
  const h=fixture(),state=await open(h,'Maa'),hq=structuredClone(h.get('inventory/Main Office'));
  const result=await saveInventoryEditorSettings(h.api,state,{branch:'Maa',maintainingPurchaseQty:'3',category:'Updated local category',purchaseCost:'110'},{operationId:'store-target'});
  assert.deepEqual(result.copiedBranches,['Agdao']);assert.equal(h.get('inventory/Agdao').maintainingStock,3000);
- assert.equal(h.get('inventory/Agdao').category,undefined);assert.equal(h.get('inventory/Agdao').purchaseCost,100);assert.equal(h.get('inventory/Agdao').baseCost,.1);
+ assert.equal(h.get('inventory/Agdao').category,'Updated local category');assert.equal(h.get('inventory/Agdao').purchaseCost,110);assert.equal(h.get('inventory/Agdao').baseCost,.11);
  assert.equal(h.get('inventory/Maa').purchaseCost,110);assert.equal(h.get('inventory/Maa').category,'Updated local category');
+ assert.deepEqual(result.copiedCostBranches,['Agdao']);assert.deepEqual(result.sharedFields,['maintainingStock','category','purchaseCost']);
  assert.deepEqual(h.get('inventory/Main Office'),hq);assert.equal(h.get('inventory/other').maintainingStock,1000);
+});
+
+function addStore(h,branch,patch={}){
+ h.put('branches/'+branch,{name:branch});
+ h.put('inventory/'+branch,{...structuredClone(h.get('inventory/Maa')),branch,...patch});
+}
+function assertCost(row,cost){
+ for(const field of ['purchaseCost','purchCost','cost'])assert.equal(row[field],cost,field);
+ assert.equal(row.baseCost,cost/1000);
+}
+
+test('one store cost correction updates all three store aliases and base costs without changing HQ or physical quantities',async()=>{
+ const h=fixture();addStore(h,'Citygate',{currentStock:-43});
+ h.put('inventory/Maa',{...h.get('inventory/Maa'),currentStock:-12});
+ h.put('inventory/Agdao',{...h.get('inventory/Agdao'),currentStock:783});
+ const state=await open(h,'Maa'),hq=structuredClone(h.get('inventory/Main Office')),other=structuredClone(h.get('inventory/other'));
+ const result=await saveInventoryEditorSettings(h.api,state,{purchaseCost:'15'},{operationId:'all-store-cost'});
+ assert.equal(result.status,'saved');assert.deepEqual(result.copiedCostBranches,['Agdao','Citygate']);assert.deepEqual(result.sharedFields,['purchaseCost']);
+ for(const branch of ['Maa','Agdao','Citygate'])assertCost(h.get('inventory/'+branch),15);
+ assert.equal(h.get('inventory/Maa').currentStock,-12);assert.equal(h.get('inventory/Agdao').currentStock,783);assert.equal(h.get('inventory/Citygate').currentStock,-43);
+ assert.deepEqual(h.get('inventory/Main Office'),hq);assert.deepEqual(h.get('inventory/other'),other);
+ assert.equal([...h.docs.keys()].filter(path=>path.startsWith('stock_logs/')).length,0);assert.equal(h.get('settings/recipe_revision').version,1);
+});
+
+test('explicit cost resync repairs peers when the source price was already corrected while an ordinary unchanged save stays idle',async()=>{
+ const h=fixture();addStore(h,'Citygate');
+ h.put('inventory/Maa',{...h.get('inventory/Maa'),purchaseCost:15,purchCost:15,cost:15,baseCost:.015});
+ const state=await open(h,'Maa'),hq=structuredClone(h.get('inventory/Main Office'));
+ const unchanged=await saveInventoryEditorSettings(h.api,state,{purchaseCost:'15'});
+ assert.equal(unchanged.status,'unchanged');assert.deepEqual(unchanged.copiedCostBranches,[]);assert.deepEqual(unchanged.sharedFields,[]);assert.deepEqual(unchanged.changedFields,[]);
+ assert.equal(h.get('settings/recipe_revision'),undefined);assert.equal(h.get('inventory/Agdao').purchaseCost,100);
+ const result=await saveInventoryEditorSettings(h.api,state,{purchaseCost:'15'},{syncStoreCost:true,operationId:'repair-store-cost'});
+ assert.deepEqual(result.copiedCostBranches,['Agdao','Citygate']);assert.deepEqual(result.sharedFields,['purchaseCost']);
+ for(const branch of ['Maa','Agdao','Citygate'])assertCost(h.get('inventory/'+branch),15);
+ assert.deepEqual(h.get('inventory/Main Office'),hq);
+});
+
+test('every overwritten source cost alias is checked before committing the entire store group',async()=>{
+ for(const [field,value] of [['purchaseCost',90],['purchCost',90],['cost',90],['baseCost',.09]]){
+  const h=fixture(),state=await open(h,'Maa');h.put('inventory/Maa',{...h.get('inventory/Maa'),[field]:value});
+  const source=structuredClone(h.get('inventory/Maa')),peer=structuredClone(h.get('inventory/Agdao'));
+  await assert.rejects(saveInventoryEditorSettings(h.api,state,{purchaseCost:'15'},{operationId:'stale-cost-'+field}),/affected item changed/);
+  assert.deepEqual(h.get('inventory/Maa'),source);assert.deepEqual(h.get('inventory/Agdao'),peer);assert.equal(h.get('settings/recipe_revision'),undefined);
+ }
+});
+
+test('an already-equal peer still guards its cost aliases and identity against a concurrent change',async()=>{
+ for(const patch of [{purchaseCost:16},{purchCost:16},{cost:16},{baseCost:.016},{conversionRate:500},{uom:'ml'}]){
+  const h=fixture();h.put('inventory/Agdao',{...h.get('inventory/Agdao'),purchaseCost:15,purchCost:15,cost:15,baseCost:.015});
+  const state=await open(h,'Maa');h.put('inventory/Agdao',{...h.get('inventory/Agdao'),...patch});
+  const source=structuredClone(h.get('inventory/Maa')),peer=structuredClone(h.get('inventory/Agdao'));
+  await assert.rejects(saveInventoryEditorSettings(h.api,state,{purchaseCost:'15'},{operationId:'stale-equal-peer-'+Object.keys(patch)[0]}),/affected item changed/);
+  assert.deepEqual(h.get('inventory/Maa'),source);assert.deepEqual(h.get('inventory/Agdao'),peer);assert.equal(h.get('settings/recipe_revision'),undefined);
+ }
+});
+
+test('a lost acknowledgment and concurrent cost retries commit once and the resync choice belongs to the operation intent',async()=>{
+ const h=fixture();addStore(h,'Citygate');const state=await open(h,'Maa');h.loseNextAck();
+ await assert.rejects(saveInventoryEditorSettings(h.api,state,{purchaseCost:'15'},{operationId:'lost-cost'}),/Connection lost/);
+ const retries=await Promise.all(Array.from({length:5},()=>saveInventoryEditorSettings(h.api,state,{purchaseCost:'15'},{operationId:'lost-cost'})));
+ assert.ok(retries.every(result=>result.status==='already-applied'));assert.equal(h.get('settings/recipe_revision').version,1);
+ for(const branch of ['Maa','Agdao','Citygate'])assertCost(h.get('inventory/'+branch),15);
+ await assert.rejects(saveInventoryEditorSettings(h.api,state,{purchaseCost:'15'},{syncStoreCost:true,operationId:'lost-cost'}),/different edits/);
+ assert.equal([...h.docs.keys()].filter(path=>path.startsWith('settings/recipe_operation_')).length,1);
+});
+
+test('a cost sync can set zero and is limited to the freshly permitted store branches',async()=>{
+ const h=fixture({owner:false,branches:'Maa'}),state=await open(h,'Maa'),hq=structuredClone(h.get('inventory/Main Office')),peer=structuredClone(h.get('inventory/Agdao'));
+ h.api.sessionUser.allowedBranches=['All'];
+ const result=await saveInventoryEditorSettings(h.api,state,{purchaseCost:'0',category:'New category',showInPrep:false},{syncStoreCost:true,operationId:'scoped-zero-cost'});
+ assertCost(h.get('inventory/Maa'),0);assert.deepEqual(result.copiedCostBranches,[]);
+ assert.deepEqual(h.get('inventory/Main Office'),hq);assert.deepEqual(h.get('inventory/Agdao'),peer);
+});
+
+test('store category, flags and photo share by default while the metadata opt-out does not stop a changed cost from sharing',async()=>{
+ const h=fixture(),state=await open(h,'Maa'),hq=structuredClone(h.get('inventory/Main Office'));
+ const metadata={category:'Sauces',showInPrep:false,allowRequest:false,image:'https://example.test/new-sauce.png'};
+ const result=await saveInventoryEditorSettings(h.api,state,metadata,{operationId:'store-details'});
+ assert.deepEqual(result.sharedFields,['category','showInPrep','allowRequest','image']);assert.deepEqual(result.copiedCostBranches,[]);
+ for(const branch of ['Maa','Agdao'])for(const [field,value] of Object.entries(metadata))assert.equal(h.get('inventory/'+branch)[field],value);
+ assert.deepEqual(h.get('inventory/Main Office'),hq);
+ const local={category:'Local detail',showInPrep:true,allowRequest:true,image:''};
+ const next=await saveInventoryEditorSettings(h.api,await open(h,'Maa'),{...local,purchaseCost:'15'},{copyMetadata:false,operationId:'local-details-store-cost'});
+ assert.deepEqual(next.sharedFields,['purchaseCost']);assert.deepEqual(next.copiedCostBranches,['Agdao']);
+ for(const [field,value] of Object.entries(metadata))assert.equal(h.get('inventory/Agdao')[field],value);
+ for(const [field,value] of Object.entries(local))assert.equal(h.get('inventory/Maa')[field],value);
+ assertCost(h.get('inventory/Agdao'),15);assert.deepEqual(h.get('inventory/Main Office'),hq);
+});
+
+test('Main Office metadata and cost remain separate even with explicit metadata copying and HQ cost resync is refused',async()=>{
+ for(const copyMetadata of [true,false]){
+  const h=fixture(),state=await open(h),peer=structuredClone(h.get('inventory/Maa'));
+  const result=await saveInventoryEditorSettings(h.api,state,{purchaseCost:'15',category:'HQ only',showInPrep:false,allowRequest:false,image:'https://example.test/hq.png'},{copyMetadata,operationId:'hq-details-'+copyMetadata});
+  assertCost(h.get('inventory/Main Office'),15);assert.deepEqual(result.copiedBranches,[]);assert.deepEqual(result.copiedCostBranches,[]);assert.deepEqual(result.sharedFields,[]);
+  assert.deepEqual(h.get('inventory/Maa'),peer);
+ }
+ const h=fixture(),state=await open(h);
+ await assert.rejects(saveInventoryEditorSettings(h.api,state,{purchaseCost:'15'},{syncStoreCost:true,operationId:'hq-cost-sync'}),/Main Office costs stay separate/);
+ assert.equal(h.get('inventory/Main Office').purchaseCost,100);assert.equal(h.get('settings/recipe_revision'),undefined);
+});
+
+test('cost sharing cannot also change unit identity or conversion and non-boolean options fail before writes',async()=>{
+ for(const patch of [{purchaseUom:'Bottle'},{baseUom:'ml'},{conversionRate:500}]){
+  const h=fixture(),state=await open(h,'Maa');
+  await assert.rejects(saveInventoryEditorSettings(h.api,state,{purchaseCost:'15',...patch},{operationId:'cost-unit-'+Object.keys(patch)[0]}),/unit or conversion changes separately/);
+  assert.equal(h.get('inventory/Maa').purchaseCost,100);assert.equal(h.get('inventory/Agdao').purchaseCost,100);assert.equal(h.get('settings/recipe_revision'),undefined);
+ }
+ for(const options of [{syncStoreCost:'true'},{copyMetadata:'true'}]){
+  const h=fixture(),state=await open(h,'Maa');await assert.rejects(saveInventoryEditorSettings(h.api,state,{purchaseCost:'15'},options),/Choose whether/);assert.equal(h.get('settings/recipe_revision'),undefined);
+ }
 });
 
 test('branch access excludes stores outside the fresh saved scope even if the UI session says all',async()=>{
