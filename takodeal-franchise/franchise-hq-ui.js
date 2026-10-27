@@ -1,11 +1,46 @@
 import {canVisit,dateText,calendarDay,money,ms} from './franchise-data.js';
-import {summarizeFranchiseLedger,conversationAudience} from './franchise-hq-model.js';
+import {summarizeFranchiseLedger,conversationAudience,conversationVisible} from './franchise-hq-model.js';
 import {createFranchiseConversations} from './franchise-hq-actions.js';
 
 const copy=value=>structuredClone(value);
 const stamp=value=>JSON.stringify(value);
 const uid=prefix=>prefix+'-'+crypto.randomUUID();
 const amount=value=>value===null?'Needs review':money(value);
+function rowFingerprint(row){
+ try{
+  const seen=new Set(),normal=value=>{
+   if(value===undefined)return ['undefined'];
+   if(value===null)return ['null'];
+   if(['string','number','boolean'].includes(typeof value))return [typeof value,typeof value==='number'?String(value):value];
+   if(value instanceof Date)return ['date',normal(+value)];
+   if(typeof value!=='object'||seen.has(value))throw Error('Uncomparable row');
+   seen.add(value);const result=Array.isArray(value)?['array',value.map(normal)]:['object',Object.keys(value).sort().map(key=>[key,normal(value[key])])];seen.delete(value);return result;
+  };
+  return JSON.stringify(normal(row));
+ }catch{return null;}
+}
+
+// Fingerprints suppress equivalent listener notifications, never substitute for a server read.
+export function createFranchiseHQSnapshotTracker(seed=null){
+ const removed=Symbol('removed'),latest=new Map(),parts=new Map();let unseeded=seed===null;
+ const versions=rows=>new Map(rows.map(row=>[row.id,rowFingerprint(row)]));
+ if(seed)for(const [id,version]of versions(seed))latest.set(id,version);
+ return{
+  seed(key,rows){parts.set(key,versions(rows));},
+  changed(key,rows){
+   const previous=parts.get(key)||new Map(),current=versions(rows);parts.set(key,current);
+   let changed=unseeded;unseeded=false;
+   if(current.size!==rows.length)changed=true;
+   for(const id of new Set([...previous.keys(),...current.keys()])){
+    const version=current.has(id)?current.get(id):removed;
+    if(version===null){changed=true;latest.set(id,version);continue;}
+    if(previous.has(id)&&previous.get(id)===version||!previous.has(id)&&version===removed)continue;
+    if(!latest.has(id)||latest.get(id)!==version){changed=true;latest.set(id,version);}
+   }
+   return changed;
+  }
+ };
+}
 export function franchiseStatementCSV(rows){const cell=value=>'"'+String(value??'').replace(/^[=+@-]/,"'$&").replaceAll('"','""')+'"';return '\uFEFF'+[['Date & time','Category','Description','Charge','Payment / credit','Balance'],...rows.map(row=>[dateText(row.timestamp),row.category||row.type,row.description,row.charge===null?'Needs review':row.charge,row.payment===null?'Needs review':row.payment,row.balance===null?'Needs review':row.balance])].map(row=>row.map(cell).join(',')).join('\r\n');}
 
 // Drafts stay local to one signed-in account and selected branch. A refresh never
@@ -39,7 +74,7 @@ export function createFranchiseHQLifecycle({getScope,getRoute,visible,dirty,refr
 }
 
 export function installFranchiseHQUI(api,{document:d,session,getRoute,read,refresh,onError}={}){
- const drafts=createFranchiseHQDrafts(),selected=new Map(),billFilters=new Map(),reads=new Map(),writes=new Map();let nodes=null,detailGeneration=0;
+ const drafts=createFranchiseHQDrafts(),selected=new Map(),billFilters=new Map(),reads=new Map(),writes=new Map();let nodes=null,detailGeneration=0,lastRead=null;
  const actor=()=>{const s=session(),user=api.auth?.currentUser;if(!user?.uid||user.uid!==s.uid||String(user.email||'').trim().toLowerCase()!==String(s.email||'').trim().toLowerCase())throw Error('Your signed-in account changed. Sign in again before loading HQ records.');return stamp([user.uid,s.email,s.branch,s.allowedBranches,s.permissions]);};
  const draftScope=()=>{const s=api.sessionUser||{};return stamp([api.auth?.currentUser?.uid,s.email,s.branch]);};
  const assertAccess=(s,_operation,branch)=>Boolean(s&&s.branch===branch&&canVisit(s,'hq-conversations'));
@@ -51,13 +86,21 @@ export function installFranchiseHQUI(api,{document:d,session,getRoute,read,refre
  function notice(text,error=false){if(!nodes?.notice?.isConnected)return;nodes.notice.textContent=text;nodes.notice.classList.toggle('is-error',error);nodes.notice.setAttribute('role',error?'alert':'status');}
  function physical(key,fn){const identity=actor(),scoped=identity+'|'+key,old=reads.get(scoped);if(old)return old.timedOut?Promise.reject(Error('The previous HQ read is still pending. Retry after the connection recovers.')):old.deadline;const entry={timedOut:false,promise:Promise.resolve().then(()=>{if(identity!==actor())throw Error('Your account or branch changed. Reload this page.');return fn();})};reads.set(scoped,entry);let timer;const clear=()=>{if(reads.get(scoped)===entry)reads.delete(scoped);};entry.promise.then(clear,clear);entry.deadline=Promise.race([entry.promise,new Promise((_,reject)=>{timer=setTimeout(()=>{entry.timedOut=true;reject(Error('HQ records could not be confirmed yet. Your draft is kept. Retry when connected.'));},20000);})]).finally(()=>clearTimeout(timer));return entry.deadline;}
  const lifecycle=createFranchiseHQLifecycle({getScope:actor,getRoute,visible:()=>canVisit(api.sessionUser,getRoute())&&!d.hidden&&Boolean(d.getElementById('view-'+getRoute())?.classList.contains('active')),dirty:()=>getRoute()==='hq-conversations'&&(drafts.has(draftScope())||writes.size>0),refresh,subscribe:(route,change)=>{
-  if(typeof api.onSnapshot!=='function')return ()=>{};const branch=session().branch;
+  if(typeof api.onSnapshot!=='function')return ()=>{};const branch=session().branch,identity=actor(),baseline=lastRead?.identity===identity&&lastRead.route===route?lastRead.rows:null,tracker=createFranchiseHQSnapshotTracker(baseline);
   const clauses=route==='hq-billing'?[['franchise_ledger','branch',branch]]:[['franchise_comms','branch',branch],['franchise_comms','targetBranch',branch],['franchise_comms','audience','network']];
-  const stops=clauses.map(([table,key,value])=>api.onSnapshot(api.query(api.collection(api.db,table),api.where(key,'==',value)),{includeMetadataChanges:true},snap=>{if(!snap.metadata?.fromCache&&!snap.metadata?.hasPendingWrites)change({});},error=>change({error})));return ()=>stops.forEach(stop=>stop());
+  const visible=row=>route==='hq-billing'?row.branch===branch:conversationVisible(session(),row,{hq:false,branch});
+  const stops=clauses.map(([table,key,value],index)=>{
+   if(baseline)tracker.seed(index,baseline.filter(row=>row[key]===value));
+   return api.onSnapshot(api.query(api.collection(api.db,table),api.where(key,'==',value)),{includeMetadataChanges:true},snap=>{
+    if(snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)return;
+    try{if(identity!==actor())return;const rows=snap.docs.map(doc=>({...doc.data(),id:doc.id})).filter(visible);if(tracker.changed(index,rows))change({});}catch(error){change({error});}
+   },error=>change({error}));
+  });return ()=>stops.forEach(stop=>stop());
  },status:notice});
 
  async function loadBilling(root){
   const identity=actor(),branch=session().branch,snap=await physical('ledger',()=>api.getDocsFromServer(api.query(api.collection(api.db,'franchise_ledger'),api.where('branch','==',branch))));if(identity!==actor())throw Error('Your account or branch changed. Reload HQ billing.');const raw=snap.docs.map(row=>({...row.data(),id:row.id})).filter(row=>row.branch===branch);
+  lastRead={identity,route:'hq-billing',rows:raw};
   const summary=summarizeFranchiseLedger(raw),hero=el('div','hero');const heading=el('div');heading.append(el('div','eyebrow','BALANCE WITH HQ'),el('h2','',amount(summary.balance)),el('p','',branch+' · All saved charges and payments'));hero.append(heading);root.append(hero);
   const card=el('section','card franchise-hq-statement'),head=el('div','card-head'),title=el('div');title.append(el('h2','','HQ billing statement'),el('p','','Choose dates to review a statement. The balance above includes all saved records.'));head.append(title,button('Print statement',()=>api.print?.()),button('Export CSV',()=>{const url=URL.createObjectURL(new Blob([franchiseStatementCSV(filtered)],{type:'text/csv;charset=utf-8'})),link=el('a');link.href=url;link.download='takodeal-hq-statement-'+branch+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}));card.append(head);root.append(card);
   const filters=billFilters.get(draftScope())||{from:'',to:'',search:''},tools=el('div','tools'),from=el('input'),to=el('input'),search=el('input');from.type=to.type='date';from.value=filters.from;to.value=filters.to;search.type='search';search.placeholder='Category or description';search.value=filters.search;tools.append(label('From date',from),label('To date',to),label('Search',search));card.append(tools);
@@ -79,6 +122,7 @@ export function installFranchiseHQUI(api,{document:d,session,getRoute,read,refre
 
  async function loadConversations(root){
   const identity=actor(),scope=draftScope(),branch=session().branch,rows=(await physical('threads',()=>conversations.list(branch))).sort((a,b)=>ms(b.lastActivity||b.timestamp)-ms(a.lastActivity||a.timestamp));if(identity!==actor())throw Error('Your account or branch changed. Reload HQ conversations.');
+  lastRead={identity,route:'hq-conversations',rows};
   const top=el('div','card-head'),title=el('div');title.append(el('h2','','HQ conversations'),el('p','',branch+' · Questions, branch updates and HQ discussions'));top.append(title);root.append(top);
   const status=el('p','notice');status.setAttribute('role','status');const refreshButton=button('Refresh messages',()=>lifecycle.reload(true));top.append(refreshButton);root.append(status);
   const layout=el('div','franchise-hq-chat'),list=el('aside','card franchise-hq-thread-list'),main=el('section','card franchise-hq-thread-detail');layout.append(list,main);root.append(layout);nodes={notice:status,list,main,scope,identity};

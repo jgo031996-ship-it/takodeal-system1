@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
-import {createFranchiseHQDrafts,createFranchiseHQLifecycle,installFranchiseHQUI,franchiseStatementCSV} from '../takodeal-franchise/franchise-hq-ui.js';
+import {createFranchiseHQDrafts,createFranchiseHQLifecycle,createFranchiseHQSnapshotTracker,installFranchiseHQUI,franchiseStatementCSV} from '../takodeal-franchise/franchise-hq-ui.js';
 import {ROUTES,branchScope,canVisit} from '../takodeal-franchise/franchise-data.js';
 import {workspaceRole} from '../takodeal-franchise/workspace-access-model.js';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
@@ -27,6 +27,68 @@ function fixture(){
  h.put('franchise_comms/own-thread',thread('Agdao'));h.put('franchise_comms/other-thread',thread('Maa','Other branch confidential topic'));h.put('franchise_comms/legacy-thread',{branch:'Agdao',type:'Help',title:'Older own branch thread',message:'Old question',replies:[],timestamp:{seconds:2}});h.put('franchise_comms/legacy-hq-help',{branch:'HQ Main Office',type:'Discussion',title:'Legacy unknown private recipient',message:'Unknown recipient',replies:[],timestamp:{seconds:2}});
  let route='hq-conversations',ui;const refresh=async next=>{route=next;d.root.replaceChildren();await (route==='hq-billing'?ui.loadBilling(d.root):ui.loadConversations(d.root));ui.start();};ui=installFranchiseHQUI(h.api,{document:d.document,session:()=>h.api.sessionUser,getRoute:()=>route,refresh});return {...h,...d,events,subscriptions,ui,refresh,set route(value){route=value;}};
 }
+function listenerSnapshot(f,subscription,metadata={fromCache:false,hasPendingWrites:false}){
+ const {table,filters=[]}=subscription.query;
+ return{metadata,docs:[...f.docs].filter(([path,row])=>path.startsWith(table+'/')&&filters.every(filter=>row[filter.key]===filter.value)).map(([path,row])=>({id:path.slice(table.length+1),data:()=>structuredClone(row)}))};
+}
+function countReads(f){const original=f.api.getDocsFromServer;let reads=0;f.api.getDocsFromServer=async query=>{reads++;return original(query);};return()=>reads;}
+const settle=async()=>{for(let i=0;i<6;i++)await tick();};
+const emitAll=f=>{for(const subscription of f.subscriptions.filter(row=>!row.stopped))subscription.next(listenerSnapshot(f,subscription));};
+
+test('equivalent initial conversation snapshots and metadata repeats cause no extra full-list reads',async()=>{
+ const f=fixture(),reads=countReads(f);await f.ui.loadConversations(f.root);f.ui.start();assert.equal(reads(),4);assert.equal(f.subscriptions.length,3);
+ emitAll(f);emitAll(f);await settle();assert.equal(reads(),4);assert.match(texts(f.root),/Sample branch conversation/);f.ui.stop();
+});
+
+test('an update arriving before the first listener snapshot refreshes once across overlapping queries',async()=>{
+ const f=fixture(),reads=countReads(f);await f.ui.loadConversations(f.root);f.put('franchise_comms/own-thread',{...f.get('franchise_comms/own-thread'),title:'Changed before listener'});f.ui.start();emitAll(f);await settle();
+ assert.equal(reads(),8);assert.match(texts(f.root),/Changed before listener/);f.ui.stop();
+});
+
+test('the same live conversation update or deletion refreshes once across branch and target listeners',async()=>{
+ const f=fixture(),reads=countReads(f);await f.ui.loadConversations(f.root);f.ui.start();emitAll(f);await settle();
+ f.put('franchise_comms/own-thread',{...f.get('franchise_comms/own-thread'),title:'One changed thread'});emitAll(f);await settle();assert.equal(reads(),8);assert.match(texts(f.root),/One changed thread/);
+ f.docs.delete('franchise_comms/own-thread');emitAll(f);await settle();assert.equal(reads(),12);assert.doesNotMatch(texts(f.root),/One changed thread/);f.ui.stop();
+});
+
+test('a genuinely newer update during an in-flight refresh retains one follow-up server read',async()=>{
+ const f=fixture(),reads=countReads(f);await f.ui.loadConversations(f.root);f.ui.start();emitAll(f);await settle();
+ const wait=held(),original=f.api.getDocsFromServer;let block=true;
+ f.api.getDocsFromServer=async query=>{if(block&&query.filters?.some(filter=>filter.value==='Agdao')){block=false;await wait.promise;}return original(query);};
+ f.put('franchise_comms/own-thread',{...f.get('franchise_comms/own-thread'),title:'First update'});emitAll(f);await tick();
+ f.put('franchise_comms/own-thread',{...f.get('franchise_comms/own-thread'),title:'Newer update'});emitAll(f);wait.resolve();await settle();
+ assert.equal(reads(),12);assert.match(texts(f.root),/Newer update/);f.ui.stop();
+});
+
+test('dirty drafts suppress automatic reloads while manual Refresh still performs fresh reads and keeps text',async()=>{
+ const f=fixture(),reads=countReads(f);await f.ui.loadConversations(f.root);f.ui.start();emitAll(f);await settle();
+ const subject=all(f.root).find(node=>node.tagName==='input');subject.value='Unsent title';await subject.dispatch('input');
+ f.put('franchise_comms/own-thread',{...f.get('franchise_comms/own-thread'),title:'Updated while drafting'});emitAll(f);await settle();
+ assert.equal(reads(),4);assert.match(texts(f.root),/Your draft is kept/);assert.equal(subject.value,'Unsent title');
+ await f.ui.reload(true);assert.equal(reads(),8);assert.equal(all(f.root).find(node=>node.tagName==='input').value,'Unsent title');assert.match(texts(f.root),/Updated while drafting/);f.ui.stop();
+});
+
+test('billing initial snapshot is deduplicated but a changed ledger and manual Refresh still read the server',async()=>{
+ const f=fixture(),reads=countReads(f);f.route='hq-billing';f.put('franchise_ledger/charge',{branch:'Agdao',type:'Charge',amount:100,timestamp:{seconds:1}});await f.ui.loadBilling(f.root);f.ui.start();emitAll(f);await settle();assert.equal(reads(),1);
+ f.put('franchise_ledger/charge',{branch:'Agdao',type:'Charge',amount:150,timestamp:{seconds:1}});emitAll(f);await settle();assert.equal(reads(),2);assert.match(texts(f.root),/150/);
+ await f.ui.reload(true);assert.equal(reads(),3);f.ui.stop();
+});
+
+test('a new branch seeds only its own just-read rows and ignores callbacks from the old branch',async()=>{
+ const f=fixture(),reads=countReads(f);await f.ui.loadConversations(f.root);f.ui.start();const old=[...f.subscriptions];
+ f.api.sessionUser.branch='Maa';await f.refresh('hq-conversations');emitAll(f);for(const sub of old)sub.next(listenerSnapshot(f,sub));await settle();
+ assert.equal(reads(),8);assert.ok(old.every(sub=>sub.stopped));assert.match(texts(f.root),/Other branch confidential topic/);assert.doesNotMatch(texts(f.root),/Sample branch conversation/);f.ui.stop();
+});
+
+test('fingerprints ignore field/document order, distinguish typed changes, and conservatively refresh opaque rows',()=>{
+ const row={id:'row',amount:100,timestamp:{seconds:1,nanoseconds:1}},tracker=createFranchiseHQSnapshotTracker([row]);tracker.seed('a',[row]);tracker.seed('b',[row]);
+ assert.equal(tracker.changed('a',[{timestamp:{nanoseconds:1,seconds:1},amount:100,id:'row'}]),false);
+ const updated={...row,amount:'100'};assert.equal(tracker.changed('a',[updated]),true);assert.equal(tracker.changed('b',[updated]),false);
+ assert.equal(tracker.changed('a',[]),true);assert.equal(tracker.changed('b',[]),false);
+ const circular={id:'opaque'};circular.self=circular;assert.equal(tracker.changed('a',[circular]),true);assert.equal(tracker.changed('a',[circular]),true);
+ const unknown=createFranchiseHQSnapshotTracker();assert.equal(unknown.changed('a',[]),true);assert.equal(unknown.changed('b',[]),false);
+});
+
 test('drafts retain unsent text per account/branch and clear only exact acknowledged text',()=>{
  const drafts=createFranchiseHQDrafts(),a='accountA/Agdao',b='accountB/Agdao';drafts.set(a+'|new',{type:'Help',title:'',message:''});assert.equal(drafts.has(a),false);drafts.set(a+'|reply/thread',{message:'First'});const id=drafts.attempt(a+'|reply/thread',{message:'First'});assert.equal(drafts.attempt(a+'|reply/thread',{message:'First'}),id);drafts.set(a+'|reply/thread',{message:'New edits'});drafts.clearIf(a+'|reply/thread',{message:'First'});assert.equal(drafts.get(a+'|reply/thread').message,'New edits');assert.equal(drafts.has(b),false);assert.notEqual(drafts.attempt(a+'|reply/thread',{message:'New edits'}),id);drafts.clear(a);assert.equal(drafts.has(a),false);
 });

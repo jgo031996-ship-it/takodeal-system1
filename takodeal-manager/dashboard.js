@@ -291,16 +291,28 @@ export function createDashboard(w = window, d = document) {
         if (!el(id)) return;
         el(id).innerHTML = products.map(p => `<tr><td><strong>${esc(p.name)}</strong>${p.problems.length ? '<small class="dash-warning">'+esc(p.problems.join(' · '))+'</small>' : ''}</td><td>${p.qty}</td><td class="dash-amount">${money(p.sales)}</td><td>${p.cogs == null ? '—' : money(p.cogs)}</td><td>${p.costPercent == null ? '—' : p.costPercent.toFixed(1)+'%'}</td><td>${p.margin == null ? '—' : money(p.margin)}</td><td><span class="dash-badge ${p.problems.length ? 'review' : p.costPercent > 55 ? 'review' : 'live'}">${p.problems.length ? 'Check recipe / cost' : p.costPercent > 55 ? 'High ingredient cost' : p.costPercent < 35 && p.qty >= 5 ? 'Strong margin' : 'Within range'}</span></td></tr>`).join('') || '<tr><td colspan="7" class="dash-empty">No paid sales in this period.</td></tr>';
     }
-    async function historyProducts(start,end,branch) {
-        const current = ++reportGeneration;
+    async function historyProducts(start,end,branch,loaded = null) {
+        const current = ++reportGeneration, scope = accountScope();
+        const active = () => {
+            try { return current === reportGeneration && scope === accountScope() && (!loaded || loaded.isCurrent?.() === true); }
+            catch { return false; }
+        };
         const tbody = el('historyProductAnalyticsBody'); if (!tbody) return;
+        if (!active()) return;
         tbody.innerHTML='<tr><td colspan="7" class="dash-empty">Loading product report…</td></tr>';
         try {
-            const q = [w.where('timestamp','>=',start),w.where('timestamp','<=',end)];
-            if (branch && branch !== 'All') q.unshift(w.where('branch','==',branch));
-            const [tx,inventory,bom] = await Promise.all([w.getDocs(w.query(collection('transactions'),...q)).then(rows),read('inventory'),read('bom')]);
-            if (current === reportGeneration) renderProductTable('historyProductAnalyticsBody',productReport(tx.filter(t=>allowed(t.branch)),inventory,bom));
-        } catch(error) { if (current === reportGeneration) tbody.innerHTML='<tr><td colspan="7">'+esc(error.message)+'</td></tr>'; }
+            let tx, inventory, bom;
+            if (loaded) {
+                // History already owns these reads; never silently re-query an incomplete capture.
+                if (![loaded.transactions,loaded.inventory,loaded.bom].every(Array.isArray)) throw Error('The report inputs are incomplete. Update the sales report to retry.');
+                ({ transactions:tx, inventory, bom } = loaded);
+            } else {
+                const q = [w.where('timestamp','>=',start),w.where('timestamp','<=',end)];
+                if (branch && branch !== 'All') q.unshift(w.where('branch','==',branch));
+                [tx,inventory,bom] = await Promise.all([w.getDocs(w.query(collection('transactions'),...q)).then(rows),read('inventory'),read('bom')]);
+            }
+            if (active()) renderProductTable('historyProductAnalyticsBody',productReport(tx.filter(t=>allowed(t.branch) && (!branch || branch==='All' || t.branch===branch) && milliseconds(t.timestamp)>=+start && milliseconds(t.timestamp)<=+end),inventory,bom));
+        } catch(error) { if (active()) tbody.innerHTML='<tr><td colspan="7">'+esc(error.message)+'</td></tr>'; }
     }
     async function auditCounter() {
         if (!state.scope) return;

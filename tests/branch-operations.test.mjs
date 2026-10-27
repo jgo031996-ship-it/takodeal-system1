@@ -336,7 +336,7 @@ function stockRequestClient(h, clock) {
     const source=readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8'),start=source.indexOf('window.runAutonomousRestockAI ='),end=source.indexOf('\n};',start)+3;
     const memory=new Map([['takodeal_device_branch','Citygate']]);let reads=0;
     const snapshot=(reference)=>({ref:reference,id:reference.id,exists:()=>h.docs.has(reference.path),data:()=>structuredClone(h.get(reference.path))});
-    const window={...h.api,restockSchedule:{requestDay:5,requestTime:'18:00'},itemVelocityCache:{},calculateBranchVelocity:async()=>{},getDoc:async reference=>{reads++;return snapshot(reference);},getDocs:async query=>{
+    const window={...h.api,limit:n=>({limit:n}),restockSchedule:{requestDay:5,requestTime:'18:00'},itemVelocityCache:{},calculateBranchVelocity:async()=>{},getDoc:async reference=>{reads++;return snapshot(reference);},getDocs:async query=>{
         reads++;const docs=[...h.docs.keys()].filter(path=>path.startsWith(query.table+'/') && (query.filters || []).every(filter=>Array.isArray(filter.value)?filter.value.includes(h.get(path)[filter.key]):h.get(path)[filter.key]===filter.value)).map(path=>snapshot(h.ref(query.table,path.slice(query.table.length+1))));
         return {docs,empty:docs.length===0,forEach:callback=>docs.forEach(callback)};
     }};

@@ -1,4 +1,5 @@
 import {createAttendanceMetadataReader} from './attendance-metadata-reader.js';
+import {createStaffPayrollAttendanceReader} from './staff-payroll-reader.js';
 import {getAuth,signInAnonymously,setPersistence,browserLocalPersistence,onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
 import {installStaffOnboarding} from './onboarding-ui.js';
 import {onboardingDay} from './onboarding-model.js';
@@ -46,6 +47,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const staffPrimaryAuth = getAuth(app);
 window.readStaffMetadata = createAttendanceMetadataReader({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,auth:staffPrimaryAuth,fetch:window.fetch?.bind(window)});
+window.readStaffPayrollAttendance = createStaffPayrollAttendanceReader({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,auth:staffPrimaryAuth,fetch:window.fetch?.bind(window)});
 
 // 🔥 UPGRADE: This activates the "Indestructible Offline Mode" on the Staff App!
 const db = initializeFirestore(app, {
@@ -2041,10 +2043,10 @@ window.loadPayslipVault = async function() {
         };
 
         let fetchStart = new Date(prevStartStr + 'T00:00:00');
-        const attQ = query(collection(db, "attendance_logs"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10)));
-        const attendanceSources = await Promise.all([getDocs(attQ),getDocs(query(collection(db,"attendance_logs"),where("staffId","==",staffId)))]);
+        if(typeof window.readStaffPayrollAttendance!=='function')throw Error('Payroll attendance is not ready. Reopen Pay and reconnect.');
+        const attendanceSource = await window.readStaffPayrollAttendance({staffId,names:[staffName,nickname],assertCurrent:()=>{if(!stillOpen())throw Error('This Pay view closed or changed. Reopen Pay.');}});
         const attendanceRecords = new Map();
-        attendanceSources.forEach(snap=>snap.forEach(row=>{const data=row.data();if(data.staffId?data.staffId===staffId:isMatch(data.staffName))attendanceRecords.set(row.id,{...data,id:row.id});}));
+        attendanceSource.forEach(row=>{const data=row.data();if(data.staffId?data.staffId===staffId:isMatch(data.staffName))attendanceRecords.set(row.id,{...data,id:row.id});});
         const attSnap = {forEach:fn=>attendanceRecords.forEach(log=>fn({id:log.id,data:()=>log}))};
         if (!stillOpen()) return;
         

@@ -12646,7 +12646,7 @@ window.confirmPayableSettlement = async function() {
 // ========================================================
 // 📈 PRODUCT OPTIMIZATION & ANALYTICS ENGINE (DUAL-SYNC UPGRADE)
 // ========================================================
-window.loadProductAnalytics = (start, end, branch) => globalDashboard.historyProducts(start, end, branch);
+window.loadProductAnalytics = (start, end, branch, loaded) => globalDashboard.historyProducts(start, end, branch, loaded);
 
 // ==========================================
 // 📝 MANUAL ATTENDANCE OVERRIDE ENGINE
@@ -13031,6 +13031,9 @@ window.runProductReport = function() {
 // ========================================================
 window.loadSalesHistoryTab = async function() {
     const reportSession = historyLive.start();
+    const historyScope = () => JSON.stringify([window.auth?.currentUser?.uid,window.sessionUser?.uid,window.sessionUser?.email,window.sessionUser?.permissions,window.sessionUser?.allowedBranches,window.sessionUser?.branch,window.sessionUser?.isFranchisee]);
+    const historyAccount = historyScope();
+    const historyCurrent = () => reportSession.active() && historyAccount === historyScope();
     const tbodyTx = document.getElementById('historyTableBody');
     const tbodyShifts = document.getElementById('historyShiftsBody');
     const tbodyDaily = document.getElementById('historyDailyBody');
@@ -13082,14 +13085,16 @@ window.loadSalesHistoryTab = async function() {
             getDocsFn(qShifts), getDocsFn(qRej), getDocsFn(qParked)
         ]);
 
-        if (!reportSession.active()) return;
+        if (!historyCurrent()) return;
         // 1. PROCESS COSTS & MENU CATEGORIES
         let inventoryCosts = {};
-        invSnap.forEach(doc => { inventoryCosts[doc.data().name] = parseFloat(doc.data().baseCost) || 0; });
+        const analyticsInventory = [], analyticsBom = [];
+        invSnap.forEach(doc => { const data=doc.data(); analyticsInventory.push({...data,id:doc.id}); inventoryCosts[data.name] = parseFloat(data.baseCost) || 0; });
 
         let recipeCosts = {};
         bomSnap.forEach(doc => {
             let data = doc.data();
+            analyticsBom.push({...data,id:doc.id});
             if (!recipeCosts[data.menuItem]) recipeCosts[data.menuItem] = 0;
             recipeCosts[data.menuItem] += ((inventoryCosts[data.ingredientName] || 0) * (data.qty || 1));
         });
@@ -13098,7 +13103,7 @@ window.loadSalesHistoryTab = async function() {
         menuSnap.forEach(d => { menuCats[d.data().name] = d.data().category || "Uncategorized"; });
 
         async function renderHistory(liveTxSnap, isLiveUpdate = false) {
-        if (!reportSession.active()) return;
+        if (!historyCurrent()) return;
         // 2. PROCESS ACTUAL SHIFTS
         window.globalShiftReports = {}; 
         shiftSnap.forEach(doc => {
@@ -13123,11 +13128,13 @@ window.loadSalesHistoryTab = async function() {
 
         // 3. 🔥 THE MAGIC ROUTER: COMBINE TRANSACTIONS based on Data Source
         let allTxArray = [];
+        let analyticsTransactions = null;
         window.onlineHistoryRows = [];
 
         if (dataSource === "LIVE") {
             // Transactions arrive from the bounded live listener.
-            liveTxSnap.forEach(doc => allTxArray.push({id: doc.id, ...doc.data()}));
+            analyticsTransactions = [];
+            liveTxSnap.forEach(doc => { const row={id:doc.id,...doc.data()}; allTxArray.push(row); analyticsTransactions.push(row); });
             
             rejectedSnap.forEach(doc => allTxArray.push({id: doc.id, isMobileRejected: true, ...doc.data()}));
             parkedSnap.forEach(doc => {
@@ -13142,7 +13149,7 @@ window.loadSalesHistoryTab = async function() {
             // Unzip the file from Firebase Storage memory!
             const response = await fetch(dataSource);
             const rawJsonData = await response.json();
-            if (!reportSession.active()) return;
+            if (!historyCurrent()) return;
             
             // Backwards compatible router: checks if the file is an old transactions-only array or the new Universal format
             let archiveTx = Array.isArray(rawJsonData) ? rawJsonData : (rawJsonData.transactions || []);
@@ -13465,7 +13472,11 @@ window.loadSalesHistoryTab = async function() {
         if(document.getElementById('distOrderTypeBody')) document.getElementById('distOrderTypeBody').innerHTML = buildDistHtml(distOrderType);
         if(document.getElementById('distPaymentBody')) document.getElementById('distPaymentBody').innerHTML = buildDistHtml(distPayment);
 
-        if (!isLiveUpdate && typeof window.loadProductAnalytics === 'function') window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
+        if (typeof window.loadProductAnalytics === 'function') {
+            // Reuse each live snapshot, including the server update after an initial cached snapshot.
+            if (dataSource === 'LIVE') window.loadProductAnalytics(startOfDay, endOfDay, branchFilter, {transactions:analyticsTransactions,inventory:analyticsInventory,bom:analyticsBom,isCurrent:historyCurrent});
+            else if (!isLiveUpdate) window.loadProductAnalytics(startOfDay, endOfDay, branchFilter);
+        }
         }
         if (dataSource === 'LIVE') {
             const qTx = window.query ? window.query(window.collection(window.db, "transactions"), window.where("timestamp", ">=", startOfDay), window.where("timestamp", "<=", endOfDay)) : query(collection(db, "transactions"), where("timestamp", ">=", startOfDay), where("timestamp", "<=", endOfDay));
@@ -13476,7 +13487,7 @@ window.loadSalesHistoryTab = async function() {
         }
 
     } catch (e) {
-        if (!reportSession.active()) return;
+        if (!historyCurrent()) return;
         console.error("History Error:", e);
         if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
     }
