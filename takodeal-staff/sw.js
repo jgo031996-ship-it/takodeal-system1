@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v32-personal-setup-20261025';
+const CACHE_NAME = 'takodeal-staff-v33-payroll-read-efficiency-20261027';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./staff-setup-access.js','./staff-setup.css');
 SHELL.push('./sanction-schedule.js');
@@ -7,6 +7,7 @@ SHELL.push('./payroll-deduction-details.js');
 SHELL.push('./attendance-reconcile.js','./attendance-proof.js');
 SHELL.push('./staff-document-broker.js');
 SHELL.push('./payroll-attendance.js');
+SHELL.push('./staff-payroll-reader.js');
 SHELL.push('./staff-rate-privacy.js','./staff-documents.js','./staff-documents.css','./staff-document-model.js','./staff-document-store.js','./staff-document-firebase.js','./attendance-camera.js','./attendance-camera.css');
 SHELL.push('./deduction-inbox.js','./deduction-inbox.css');
 SHELL.push('./schedule-sync.js','./schedule-view-sync.js');

@@ -5340,17 +5340,46 @@ window.calculateBranchVelocity = async function(branch) {
 // ========================================================
 // 🤖 ULTRA AI: AUTONOMOUS 7-DAY FORECASTER & RESTOCK ENGINE
 // ========================================================
-window.runAutonomousRestockAI = async function(forceRun = false) {
+window.runAutonomousRestockAI = function(forceRun = false) {
     let branch = localStorage.getItem('takodeal_device_branch');
-    if (!branch) return;
+    if (!branch || branch === 'Main Office') return Promise.resolve();
 
-    if (branch === 'Main Office' || window.restockRequestRunning) return;
+    const active = window.restockRequestFlight;
+    if (active) {
+        // One automatic evaluation can serve repeated timer calls. An explicit
+        // manual forecast still gets its own fresh force-run after an auto run.
+        if (forceRun && !active.forceRun && active.branch === branch) {
+            active.manual ||= active.promise.then(() => {
+                if (localStorage.getItem('takodeal_device_branch') === branch) return window.runAutonomousRestockAI(true);
+            });
+            return active.manual;
+        }
+        return active.promise;
+    }
+    if (window.restockRequestRunning) return Promise.resolve();
     const clock = businessClock();
     const lockKey = 'takodeal_ai_restock_' + branch;
     const schedule = window.restockSchedule || {};
-    if (!forceRun && (!stockRequestDue(schedule) || localStorage.getItem(lockKey) === clock.day)) return;
+    if (!forceRun && (!stockRequestDue(schedule) || localStorage.getItem(lockKey) === clock.day)) return Promise.resolve();
+    const flight = {branch,forceRun:Boolean(forceRun),promise:null,manual:null};
+    window.restockRequestFlight = flight;
     window.restockRequestRunning = true;
+    flight.promise = Promise.resolve().then(async () => {
     try {
+        // An existing request suppresses forecasting, so confirm that first.
+        // Only existence matters: do not download every pending request.
+        const pendingQ = window.query(
+            window.collection(window.db, "purchase_orders"),
+            window.where("branch", "==", branch),
+            window.where("status", "in", ["Pending", "Drafting", "Delayed"]),
+            window.limit(1)
+        );
+        const earlyPending = await window.getDocs(pendingQ);
+        if (!earlyPending.empty) {
+            if (forceRun && typeof Swal !== 'undefined') Swal.fire('Queue Full', 'HQ is still processing your active stock requests. Please wait until they are dispatched before generating new ones.', 'info');
+            return;
+        }
+
         // 1. Fetch live velocity & inventory
         await window.calculateBranchVelocity(branch);
         
@@ -5371,12 +5400,8 @@ window.runAutonomousRestockAI = async function(forceRun = false) {
             }
         } catch(e) {}
 
-        // 3. Avoid duplicate pending POs
-        const pendingQ = window.query(
-            window.collection(window.db, "purchase_orders"),
-            window.where("branch", "==", branch),
-            window.where("status", "in", ["Pending", "Drafting", "Delayed"])
-        );
+        // 3. Keep the final fresh check: another tablet may have requested stock
+        // while this device was reading inventory and calculating its forecast.
         const pendingSnap = await window.getDocs(pendingQ);
         if (!pendingSnap.empty) {
             if (forceRun && typeof Swal !== 'undefined') Swal.fire('Queue Full', 'HQ is still processing your active stock requests. Please wait until they are dispatched before generating new ones.', 'info');
@@ -5469,7 +5494,14 @@ window.runAutonomousRestockAI = async function(forceRun = false) {
         }
     } catch (e) {
         console.error("AI Forecaster Error:", e);
-    } finally { window.restockRequestRunning = false; }
+    } finally {
+        if (window.restockRequestFlight === flight) {
+            window.restockRequestFlight = null;
+            window.restockRequestRunning = false;
+        }
+    }
+    });
+    return flight.promise;
 };
 
 // Periodic Background Evaluation (Every 15 minutes) - Will silently abort if it's not Friday!

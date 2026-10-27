@@ -5,6 +5,9 @@ on:
     branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || format('run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   calculations:
     runs-on: ubuntu-latest
@@ -13,6 +16,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            functions/staff-document-broker/package-lock.json
+            functions/staff-device-setup/package-lock.json
+            functions/cash-remittance-review/package-lock.json
       - name: Install locked private document runtime
         run: npm ci --ignore-scripts --no-audit --no-fund --prefix functions/staff-document-broker
       - name: Verify real private document SDK without cloud access
