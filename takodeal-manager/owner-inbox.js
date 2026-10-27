@@ -3,6 +3,7 @@ import {requestHistory,historyTime} from './request-history.js';
 import {isMealDeduction} from './payroll-safety.js';
 import {leaveRequestSummaryHTML} from './manager-leave-ui.js';
 import {earlyTimeOutSummaryHTML} from './early-time-out-review-ui.js';
+import {lateRequestSummaryHTML,lateRequestRecoveryContext} from './late-request-summary.js';
 
 const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const email=value=>String(value||'').trim().toLowerCase();
@@ -66,7 +67,7 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
   else if(row.type==='Leave'||row.type==='Leave Change')html=leaveRequestSummaryHTML(row);
   else if(row.type==='Early Time Out')html=earlyTimeOutSummaryHTML(row);
   else if(row.type==='Cash Advance')html='<strong style="color:var(--danger);font-size:15px;">₱'+money(row.amount)+'</strong><br><small>'+escape(row.reason||'No reason provided')+'</small>';
-  else if(row.type==='Reason Letter')html='<strong>Cause: '+escape(row.explanationCause||'Variance')+'</strong><br><small>'+escape(row.explanationMessage||'No explanation provided')+'</small>';
+  else if(row.type==='Reason Letter'){html=lateRequestSummaryHTML(row);const context=lateRequestRecoveryContext(row);if(context)html+='<button type="button" onclick="window.ownerInbox.lateAttendance('+index+','+state.drawVersion+')">'+(context.attendanceLogId?'Review linked attendance →':'Find clock-in for review →')+'</button>';}
   else if(isMealDeduction(row.type))html='<strong style="color:#0f766e;">🍔 '+escape(row.item||'Food Item').replace(/ \| /g,'<br>')+'</strong><br><span style="color:var(--danger);font-weight:bold;">Deduct: ₱'+money(row.amount)+'</span>';
   else html=row.amount?'₱'+money(row.amount):escape(row.item||row.reason||'N/A');
   if(row.photoBase64||row.proofImageUrl||row.imageUrl||row.image)html+='<br><button type="button" onclick="window.ownerInbox.photo('+index+','+state.drawVersion+')">📷 View Photo</button>';
@@ -158,5 +159,6 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
  function request(id){const target=workspace();return target?.loaded?target.requests.find(row=>row.id===id&&allowed(row))||null:null;}
  function review(index,decision,version){const target=workspace(),row=target?.records[index];if(!row||version!==undefined&&version!==target.drawVersion||row.status!=='Pending'||!allowed(row)||!['Approved','Rejected'].includes(decision))return false;return w.handleRequest?.(row.id,decision,row.type,Number(row.amount)||0,row.staffName||'Unknown');}
  function photo(index,version){const target=workspace(),row=target?.records[index];if(!row||version!==undefined&&version!==target.drawVersion||!allowed(row))return false;const url=row.photoBase64||row.proofImageUrl||row.imageUrl||row.image;if(url)w.viewSelfie?.(url,'Attached Photo from '+String(row.staffName||'Staff'));}
- const controller={load,applyConfirmedRequest,receivePending,toggle,page,request,review,photo,clear(){state=null;}};w.ownerInbox=controller;return controller;
+ function lateAttendance(index,version){const target=workspace(),row=target?.records[index];if(!row||version!==undefined&&version!==target.drawVersion||!allowed(row))return false;const context=lateRequestRecoveryContext(row);if(!context)return false;if(typeof w.openAttendanceRecovery!=='function'){w.ManagerUI?.notify?.('Open Human Resources → HR review center to review this saved clock-in.');return false;}return w.openAttendanceRecovery(context);}
+ const controller={load,applyConfirmedRequest,receivePending,toggle,page,request,review,photo,lateAttendance,clear(){state=null;}};w.ownerInbox=controller;return controller;
 }

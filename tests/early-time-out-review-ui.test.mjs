@@ -83,6 +83,15 @@ test('missing source/version evidence cannot confirm a replacement and a closed 
 test('overnight replacement hours use the selected Philippine work date without moving the original Time In',async()=>{
  const f=fixture({row:{timeInAt:'2026-10-19T19:25:00+08:00'},state:unknownState}),dialog=await f.open();replacement(dialog,{start:'19:30',end:'04:00'});await node(dialog,'shift-confirm').onclick();assert.equal(f.calls.confirmShift.length,1);assert.equal(f.calls.confirmShift[0].workDate,'2026-10-19');assert.equal(f.calls.confirmShift[0].endTime,'04:00');assert.equal(f.row.timeInAt,'2026-10-19T19:25:00+08:00');
 });
+test('replacement preview shows October 22 5:30 PM through October 23 2:30 AM before saving nine hours',async()=>{
+ const f=fixture({row:{timeInAt:'2026-10-22T17:30:00+08:00'},state:unknownState}),dialog=await f.open();replacement(dialog,{date:'2026-10-22',start:'17:30',end:'02:30'});node(dialog,'shift-end').emit('input');
+ const preview=node(dialog,'shift-preview'),formatted=value=>new Date(value).toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'})+' (PH)';
+ assert.ok(preview.textContent.includes(formatted('2026-10-22T17:30:00+08:00')));assert.ok(preview.textContent.includes(formatted('2026-10-23T02:30:00+08:00')));assert.match(preview.textContent,/next day.*9 hours/);assert.equal(preview.getAttribute('role'),'status');assert.equal(f.calls.confirmShift.length,0);
+ await node(dialog,'shift-confirm').onclick();assert.equal(f.calls.confirmShift.length,1);assert.equal(f.calls.confirmShift[0].startTime,'17:30');assert.equal(f.calls.confirmShift[0].endTime,'02:30');assert.equal(f.calls.confirmShift[0].workDate,'2026-10-22');
+});
+test('AM-to-next-AM 21-hour preview warns and the protected confirmation is never submitted',async()=>{
+ const f=fixture({row:{timeInAt:'2026-10-22T05:30:00+08:00'},state:unknownState}),dialog=await f.open();replacement(dialog,{date:'2026-10-22',start:'05:30',end:'02:30'});node(dialog,'shift-start').emit('change');assert.match(node(dialog,'shift-preview').textContent,/21 hours.*Outside the allowed 1–18 hours/);assert.equal(node(dialog,'shift-preview').getAttribute('role'),'alert');await node(dialog,'shift-confirm').onclick();assert.equal(f.calls.confirmShift.length,0);assert.match(node(dialog,'shift-status').textContent,/no more than 18 hours/);
+});
 
 test('confirmed decisions show success immediately while their single saved row refresh is pending',async()=>{
  const gate=hold(),f=fixture(),ids=[];f.api.applyConfirmedInboxRequest=id=>{ids.push(id);return gate.promise;};const dialog=await f.open();await node(dialog,'confirm').onclick();

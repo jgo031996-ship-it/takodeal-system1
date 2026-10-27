@@ -8,6 +8,8 @@ import {installProductAddonDrafts,readProductAddonRows} from './product-options-
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
 runManagerDomReady(() => {installStaffSetupCodes(window,document);installScheduleProposalReview(window,document);});
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
+import {lateRequestSummary,lateRequestSummaryHTML,lateRequestRecoveryContext} from './late-request-summary.js';
+import {resolveCorrectedLateRequest,lateRequestResolutionFingerprint,reviewOriginalLateRequest} from './late-request-resolution.js';
 import {finalizeRefundPayroll} from './refund-payroll.js';
 import {finalizeOrdinaryPayroll,readPayrollCashShortages} from './payroll-settlement.js';
 import {installCashShortageUI,canReviewCashShortage} from './cash-shortage-ui.js';
@@ -47,6 +49,8 @@ import { enhanceScheduleLayout } from './schedule-layout.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
 import {installScheduleMemoryUI} from './schedule-memory-ui.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
+import {toScheduleEmployee,upsertScheduleEmployee,mergeScheduleEmployeeAliases,availableSchedulePoolStaff} from './schedule-staff-directory.js';
+import {availableScheduleReliefStaff} from './schedule-relief-staff.js';
 import {installOwnerScheduleSync} from './owner-schedule-sync.js';
 import {validateManualAttendance, saveManualAttendance} from './attendance-audit.js';
 import {planPayrollAttendance} from './payroll-attendance.js';
@@ -113,7 +117,7 @@ import { recipeProblems, ingredientUses } from './recipe-integrity.js';
 import { createLiveReport } from './live-report.js';
 import { calculateLateMinutes, resolveScheduledShift, scheduledShiftForDate, latePay, nightRate, earnedNightBonus,
     attendanceLateMinutes, isLatenessRequest, requestLateMinutes, legacyAttendanceCandidates,
-    reviewLateRequest, shiftType, shiftTimes, validateShiftConfig, isMealDeduction, resolveAttendanceShift, captureAttendanceSchedule,
+    shiftType, shiftTimes, validateShiftConfig, isMealDeduction, resolveAttendanceShift, captureAttendanceSchedule,
     staffRateDate,staffRateWorkDate,staffProfileForWork,loadStaffSalaryTimeline,staffRateForDate,payrollSalaryProfile,assertPayrollSalaryFresh } from './payroll-safety.js';
 const historyLive = createLiveReport({
     subscribe: (...args) => window.onSnapshot(...args),
@@ -8300,7 +8304,7 @@ window.loadPayrollScheduleHistory = (from, to) => window.getScheduleHistoryStore
 window.getScheduleMemorySnapshot = () => ({branchConfig, employees, unavailability, currentSchedule, currentYear, currentMonth, holidays:window.scheduleHolidays});
 window.applyScheduleMemorySnapshot = async (snapshot, {preserveDraftEmployees=false}={}) => {
     const data = JSON.parse(JSON.stringify(snapshot));
-    branchConfig=data.branchConfig || {}; employees=preserveDraftEmployees ? (data.employees || []) : (window.scheduleDirectoryProfiles || data.employees || []); window.employees=employees;
+    branchConfig=data.branchConfig || {}; employees=preserveDraftEmployees ? (data.employees || []) : (Array.isArray(window.scheduleDirectoryProfiles)?mergeScheduleEmployeeAliases(window.scheduleDirectoryProfiles,data.employees || []):(data.employees || [])); window.employees=employees;
     unavailability=data.unavailability || {}; currentSchedule=data.currentSchedule || {};
     window.branchConfig=branchConfig;window.currentSchedule=currentSchedule;window.unavailability=unavailability;
     currentYear=data.currentYear; currentMonth=data.currentMonth; window.currentYear=currentYear; window.currentMonth=currentMonth;
@@ -8336,7 +8340,7 @@ window.getOwnerScheduleSync = function() {
         readView:async month=>{
             const [saved,staff]=await Promise.allSettled([loadScheduleMonthView(window,{month,store:window.getScheduleHistoryStore()}),window.getDocsFromServer(window.collection(window.db,'cashiers'))]);
             if(saved.status==='rejected')throw saved.reason;
-            const directory=staff.status==='fulfilled'?staff.value.docs.map(doc=>({...doc.data(),staffId:doc.id})).filter(data=>data.status!=='Resigned'&&data.pin!=='REVOKED').map(data=>({staffId:data.staffId,name:data.scheduleNickname||data.cashierName,fullName:data.cashierName,cashierName:data.cashierName,scheduleNickname:data.scheduleNickname||'',branch:data.branch||'Unassigned'})):null;
+            const directory=staff.status==='fulfilled'?staff.value.docs.map(doc=>toScheduleEmployee(doc.data(),doc.id)).filter(employee=>employee?.scheduleEligible):null;
             return {...saved.value,directory};
         },
         applyView:async view=>{window.scheduleDirectoryProfiles=view.directory;await window.applyScheduleMemorySnapshot(view.editorSnapshot);scheduleMemoryUI?.bindView(view);},
@@ -9118,6 +9122,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
     
     let dayData = schedObj[day][branch];
     let curStaff = dayData.scheduled[shiftId];
+    if(window.scheduleMemoryReadOnly)return window.ManagerUI.notify('This saved schedule version is read-only. Reload the latest schedule before assigning staff.');
     
     if (typeof swapData !== 'undefined') {
         swapData = { day, branch, shiftId, curStaff }; 
@@ -9162,26 +9167,32 @@ window.openSwapModal = async function(day, branch, shiftId) {
         optionsHtml += '</optgroup>';
     }
 
-    // 3. 🌍 RELIEF STAFF
-    let empList = window.employees || (typeof employees !== 'undefined' ? employees : []);
-    let otherStaff = empList.filter(e => e.branch !== branch);
-    if (otherStaff.length > 0) {
-        optionsHtml += '<optgroup label="🌍 Pull Relief Staff (Other Branches)">';
-        otherStaff.sort((a,b) => a.name.localeCompare(b.name)).forEach(e => {
-            let realProfile = profileFunc(e.name) || e;
-            let displayName = realProfile.scheduleNickname || realProfile.cashierName || e.name;
-            optionsHtml += `<option value="global_${e.name}">${displayName} (from ${e.branch})</option>`;
-        });
-        optionsHtml += '</optgroup>';
-    }
-
     // 🔥 4. NEW: UNAVAILABLE / OFF STAFF (Reads Directly from Global Memory)
     let safeYear = typeof currentYear !== 'undefined' ? currentYear : window.currentYear;
     let safeMonth = typeof currentMonth !== 'undefined' ? currentMonth : window.currentMonth;
     let fullDateStr = `${safeYear}-${String(safeMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     
     let targetUnavailObj = typeof unavailability !== 'undefined' ? unavailability : window.unavailability;
-    let todaysLeaves = targetUnavailObj[fullDateStr];
+    const empList=window.employees || (typeof employees!=='undefined'?employees:[]);
+    const reliefStaff=availableScheduleReliefStaff({employees:empList,branch,dayBranches:schedObj[day],unavailability:targetUnavailObj?.[fullDateStr] || {},isBranchAllowed:name=>window.isBranchAllowed?.(name)===true});
+    if(reliefStaff.length){
+        optionsHtml+='<optgroup label="🌍 Available Relief Staff">';
+        for(const employee of reliefStaff)optionsHtml+='<option value="relief_'+escapeHtml(encodeURIComponent(employee.staffId))+'">'+escapeHtml(employee.name)+' (from '+escapeHtml(employee.branch)+')</option>';
+        optionsHtml+='</optgroup>';
+    }
+    // New HR staff need not already exist in a saved day's Standby bucket.
+    // Keep the stored day intact until the Owner explicitly assigns someone.
+    const poolStaff=availableSchedulePoolStaff({employees:empList,branch,dayData,dayBranches:schedObj[day],unavailability:targetUnavailObj?.[fullDateStr] || {}});
+    if(poolStaff.length){
+        optionsHtml += '<optgroup label="'+escapeHtml('📍 Available '+branch+' Staff')+'">';
+        for(const employee of poolStaff)optionsHtml += '<option value="pool_'+escapeHtml(encodeURIComponent(employee.staffId))+'">'+escapeHtml(employee.scheduleNickname || employee.scheduleName || employee.cashierName || employee.name)+' (not yet scheduled)</option>';
+        optionsHtml += '</optgroup>';
+    }
+    let todaysLeaves = {...(targetUnavailObj?.[fullDateStr] || {})};
+    for(const entry of dayData.unavailable || [])if(entry?.name&&!Object.hasOwn(todaysLeaves,entry.name))todaysLeaves[entry.name]=entry;
+    const actorKey=()=>JSON.stringify([window.auth?.currentUser?.uid,window.auth?.currentUser?.email,window.sessionUser?.uid,window.sessionUser?.email,window.sessionUser?.permissions,window.sessionUser?.allowedBranches,window.sessionUser?.branch,window.sessionUser?.assignedBranch,window.sessionUser?.role]);
+    const activeSwap=typeof swapData!=='undefined'?swapData:window.swapData;
+    activeSwap.context={actor:actorKey(),year:safeYear,month:safeMonth,dayState:JSON.stringify(schedObj[day]),poolNames:Object.fromEntries(poolStaff.map(employee=>[employee.staffId,employee.name])),reliefChoices:Object.fromEntries(reliefStaff.map(employee=>[employee.staffId,JSON.stringify([employee.name,employee.branch,employee.standbySources])]))};
 
     if (todaysLeaves && Object.keys(todaysLeaves).length > 0) {
         optionsHtml += '<optgroup label="🛏️ Override: Assign from Leave/Off">';
@@ -9240,7 +9251,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
     });
 
     if (isConfirmed && formValues) {
-        window.executeSwap(formValues.target, formValues.markSwap);
+        await window.executeSwap(formValues.target, formValues.markSwap);
     }
 };
 
@@ -9248,10 +9259,31 @@ window.executeSwap = async function(target, markAsSwap) {
     let targetSwapData = typeof swapData !== 'undefined' ? swapData : window.swapData;
     const { day, branch, shiftId, curStaff } = targetSwapData; 
     let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
+    if(typeof target!=='string'||!schedObj?.[day]?.[branch]?.scheduled)return false;
+    const context=targetSwapData.context;
+    const saveUser=window.auth?.currentUser,saveSession=window.sessionUser;
+    const actor=JSON.stringify([window.auth?.currentUser?.uid,window.auth?.currentUser?.email,window.sessionUser?.uid,window.sessionUser?.email,window.sessionUser?.permissions,window.sessionUser?.allowedBranches,window.sessionUser?.branch,window.sessionUser?.assignedBranch,window.sessionUser?.role]);
+    const ownsAssignment=()=>window.auth?.currentUser===saveUser&&window.sessionUser===saveSession&&(typeof swapData!=='undefined'?swapData:window.swapData)===targetSwapData&&(!context||context.year===currentYear&&context.month===currentMonth&&context.actor===JSON.stringify([window.auth?.currentUser?.uid,window.auth?.currentUser?.email,window.sessionUser?.uid,window.sessionUser?.email,window.sessionUser?.permissions,window.sessionUser?.allowedBranches,window.sessionUser?.branch,window.sessionUser?.assignedBranch,window.sessionUser?.role]));
+    if(context&&(context.actor!==actor||context.year!==currentYear||context.month!==currentMonth||context.dayState!==JSON.stringify(schedObj[day])||window.scheduleMemoryReadOnly||!canOpenWorkspacePage(window.sessionUser,'schedule')||window.isBranchAllowed?.(branch)===false)){
+        window.ManagerUI.notify('This staff list or schedule changed. Reopen the assignment window before saving.');return false;
+    }
     let newStaff = null;
     const targetDate=`${currentYear}-${String(currentMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    const targetPerson=target.startsWith('unavail_')?target.slice(8):target.startsWith('global_')?target.slice(7):target.startsWith('rest_')?schedObj[day][branch].rest[Number(target.slice(5))]:target.startsWith('shift_')?schedObj[day][branch].scheduled[target.slice(6)]:null;
+    let selectedPoolStaff=null;
+    if(target.startsWith('pool_')){
+        let staffId;try{staffId=decodeURIComponent(target.slice(5));}catch{return false;}
+        selectedPoolStaff=availableSchedulePoolStaff({employees:window.employees || employees,branch,dayData:schedObj[day][branch],dayBranches:schedObj[day],unavailability:unavailability[targetDate] || {}}).find(employee=>employee.staffId===staffId);
+        if(!context||!selectedPoolStaff||!Object.hasOwn(context.poolNames,staffId)||context.poolNames[staffId]!==selectedPoolStaff.name){window.ManagerUI.notify('This staff member is no longer available in this branch. Reload the saved staff list and try again.');return false;}
+    }
+    let selectedReliefStaff=null;
+    if(target.startsWith('relief_')){
+        let staffId;try{staffId=decodeURIComponent(target.slice(7));}catch{return false;}
+        selectedReliefStaff=availableScheduleReliefStaff({employees:window.employees || employees,branch,dayBranches:schedObj[day],unavailability:unavailability[targetDate] || {},isBranchAllowed:name=>window.isBranchAllowed?.(name)===true}).find(employee=>employee.staffId===staffId);
+        if(!context||!selectedReliefStaff||context.reliefChoices?.[staffId]!==JSON.stringify([selectedReliefStaff.name,selectedReliefStaff.branch,selectedReliefStaff.standbySources])){window.ManagerUI.notify('This relief assignment changed or the staff member is no longer available. Reopen the assignment window.');return false;}
+    }
+    const targetPerson=selectedPoolStaff?.name || selectedReliefStaff?.name || (target.startsWith('unavail_')?target.slice(8):target.startsWith('rest_')?schedObj[day][branch].rest[Number(target.slice(5))]:target.startsWith('shift_')?schedObj[day][branch].scheduled[target.slice(6)]:null);
     if(targetPerson&&window.reviewOwnedScheduleLeave(targetDate,targetPerson))return;
+    if(!targetPerson||typeof window.saveToCloud!=='function')return false;
 
     if (!schedObj[day][branch].swaps) schedObj[day][branch].swaps = {};
 
@@ -9265,8 +9297,9 @@ window.executeSwap = async function(target, markAsSwap) {
             schedObj[day][branch].swaps[shiftId] = curStaff;
             schedObj[day][branch].swaps[tSId] = newStaff;
         }
-    } else if (target.startsWith('global_')) {
-        newStaff = target.replace('global_', '');
+    } else if (selectedPoolStaff || selectedReliefStaff) {
+        newStaff = selectedPoolStaff?.name || selectedReliefStaff.name;
+        if(selectedReliefStaff)for(const source of selectedReliefStaff.standbySources)schedObj[day][source.branch].rest=schedObj[day][source.branch].rest.filter(name=>name!==source.name);
         schedObj[day][branch].scheduled[shiftId] = newStaff;
 
         if (curStaff !== "UNFILLED" && curStaff !== "N/A" && !schedObj[day][branch].rest.includes(curStaff)) {
@@ -9316,9 +9349,12 @@ window.executeSwap = async function(target, markAsSwap) {
     if (typeof window.updateStaffDisplay === 'function') window.updateStaffDisplay();
     if (typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
     if (typeof window.updateUnavailabilityList === 'function') window.updateUnavailabilityList();
-    if (typeof window.saveToCloud === 'function') window.saveToCloud();
-
-    Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Shift Reassigned!', showConfirmButton: false, timer: 2000});
+    try{
+        const saved=await window.saveToCloud();
+        if(!ownsAssignment())return false;
+        if(saved!==true){await Swal.fire('Assignment not yet confirmed','Your edit remains in this schedule draft. Keep the editor open and use Save or the recovery controls to confirm it with HQ.','warning');return false;}
+        await Swal.fire({toast:true,position:'top-end',icon:'success',title:'Shift assignment saved to HQ',showConfirmButton:false,timer:2000});return true;
+    }catch(error){if(!ownsAssignment())return false;await Swal.fire('Assignment not yet confirmed','Keep this schedule draft open and check the save status before retrying. '+String(error.message || ''),'warning');return false;}
 };
 
 window.clearSwapBadge = function() {
@@ -9818,13 +9854,30 @@ window.updateLateRequestPreview = function() {
     const id = document.getElementById('replyAttendanceLog').value;
     const attendance = context.logs.find(log => log.id === id);
     const target = document.getElementById('replyLateCalculation');
-    if (!attendance) { target.textContent = 'Select the correct clock-in before confirming.'; return; }
+    const button=document.getElementById('btnSubmitReply');context.selectedLatePreview=null;
+    if (!attendance) { target.textContent = 'Select the correct clock-in before confirming.';if(button)button.disabled=true;return; }
     const shift = resolveAttendanceShift(attendance,context.schedule,{[attendance.staffName]:context.profile});
+    const summary=lateRequestSummary(context.request,{attendance,shift}),dated=shift?.attendanceCorrectionVerified===true||shift?.amendmentNeedsReview===true||shift?.assignmentReconciliationRequired===true;
+    target.innerHTML=lateRequestSummaryHTML(context.request,{attendance,shift})+'<button type="button" onclick="window.openLateRequestAttendance()" style="padding:8px 12px;margin:6px 0;">Review linked attendance →</button>';
+    if(dated){
+        const zero=summary?.linked&&summary.reviewedMinutes===0&&shift.amendmentNeedsReview!==true&&shift.needsScheduleReview!==true;
+        context.selectedLatePreview={attendanceId:attendance.id,corrected:true,zero,fingerprint:zero?lateRequestResolutionFingerprint(context.request,attendance,shift):null};
+        if(button){button.disabled=!zero;button.innerText=zero?'Close reviewed zero-lateness letter':'Review dated attendance first';}
+        target.innerHTML+='<p>'+ (zero?'The verified dated attendance has zero late minutes. Closing this letter keeps the original submission and the saved attendance review intact.':'Complete the dated attendance review before closing this letter. The original reported minutes will not overwrite the corrected review.')+'</p>';return;
+    }
     const rateProfile=staffProfileForWork(context.profile,attendance,shift);
-    if(context.action==='Rejected'&&!(Number(staffRateForDate(rateProfile,rateProfile.salaryWorkDate))>0)){target.textContent='Set the Daily Rate effective on this work date before calculating a deduction.';return;}
-    const late = latePay(context.minutes, rateProfile, shift, context.action === 'Approved');
-    target.textContent = context.action === 'Approved' ? `${context.minutes} minutes late — exempted from the late deduction.`
-        : `${context.minutes} minutes late → ${late.hours} hour(s) × ₱${late.ratePerHour.toFixed(2)} = ₱${late.amount.toFixed(2)}. Applied once through attendance when payroll is generated.`;
+    if(context.action==='Rejected'&&!(Number(staffRateForDate(rateProfile,rateProfile.salaryWorkDate))>0)){target.innerHTML+='<p>Set the Daily Rate effective on this work date before calculating a deduction.</p>';if(button)button.disabled=true;return;}
+    const minutes=requestLateMinutes(context.request,attendance),late=latePay(minutes,rateProfile,shift,context.action==='Approved');
+    context.selectedLatePreview={attendanceId:attendance.id,corrected:false};if(button){button.disabled=false;button.innerText='Confirm '+context.action;}
+    target.innerHTML+='<p><b>Review of the original reported minutes:</b> '+(context.action==='Approved'?`${minutes} minutes reported — exempted from the late deduction.`:`${minutes} minutes reported → ${late.hours} hour(s) × ₱${late.ratePerHour.toFixed(2)} = ₱${late.amount.toFixed(2)}.`)+'</p>';
+};
+window.openLateRequestAttendance = function() {
+    const context=window.lateRequestContext;if(!context?.request)return;
+    const selected=document.getElementById('replyAttendanceLog')?.value,attendance=context.logs.find(log=>log.id===selected),recovery=lateRequestRecoveryContext(context.request);
+    if(!recovery||!attendance)return window.ManagerUI.notify('Choose the linked Time In before opening attendance review.');
+    recovery.attendanceLogId=attendance.id;if(attendance.staffId)recovery.staffId=attendance.staffId;
+    document.getElementById('dynamicReplyModal')?.remove();window.lateRequestContext=null;
+    return window.openAttendanceRecovery(recovery);
 };
 window.handleRequest = async function(docId, action, type, amount, staffName) {
     const cachedRequest = window.ownerInbox?.request(docId);
@@ -9864,7 +9917,7 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
             }
             if (!logs.length) throw new Error('No matching clock-in was found for this letter. Check the staff member’s attendance before reviewing it.');
             const minutes = requestLateMinutes(req, logs[0]);
-            window.lateRequestContext = { requestId: docId, action, logs, minutes, profile,
+            window.lateRequestContext = { requestId: docId,request:{...req,id:docId}, action, logs, minutes, profile,
                 schedule: scheduleSnap };
         }
     } catch (error) { return Swal.fire('Check request', error.message, 'warning'); }
@@ -9919,6 +9972,8 @@ window.submitCurrentRequestReply = function() {
 };
 window.submitRequestReply = async function(docId, action, type, amount, staffName) {
     const btn = document.getElementById('btnSubmitReply');
+    const initialLateContext=window.lateRequestContext,replyModal=document.getElementById('dynamicReplyModal'),replyUser=window.auth?.currentUser,replySession=window.sessionUser;
+    const ownsLateReply=()=>window.lateRequestContext===initialLateContext&&document.getElementById('dynamicReplyModal')===replyModal&&window.auth?.currentUser===replyUser&&window.sessionUser===replySession;
     const replyMsg = document.getElementById('replyMessage').value.trim();
     const fileInput = document.getElementById('replyProofImage');
     const penaltyAmt = 0; // Cash charges use the protected, source-linked Z-reading review.
@@ -9940,12 +9995,23 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
         if (!window.isBranchAllowed(originalRequest.data().branch)) throw new Error('This branch is outside your access.');
         const context = window.lateRequestContext;
         if (isLatenessRequest(originalRequest.data())) {
-            if (context?.requestId !== docId) throw new Error('Reopen this lateness letter before confirming its linked clock-in.');
-            const result = await reviewLateRequest({ db: window.db, doc: window.doc,
-                runTransaction: window.runTransaction, serverTimestamp: window.serverTimestamp }, {
+            if(!ownsLateReply())return;
+            if (context?.requestId !== docId||context.action!==action) throw new Error('Reopen this lateness letter before confirming its linked clock-in.');
+            const selected=document.getElementById('replyAttendanceLog').value,preview=context.selectedLatePreview;
+            if(!preview||preview.attendanceId!==selected)throw Error('Select and review the linked clock-in before confirming.');
+            if(preview.corrected){
+                if(!preview.zero)throw Error('Finish the dated attendance review before closing this original letter.');
+                const result=await resolveCorrectedLateRequest(window,{requestId:docId,attendanceId:selected,expectedFingerprint:preview.fingerprint,action,reply:replyMsg});
+                if(!ownsLateReply())return;
+                document.getElementById('dynamicReplyModal')?.remove();window.lateRequestContext=null;await window.loadInbox();
+                Swal.fire('Zero lateness confirmed',result.alreadyResolved?'This reviewed letter was already closed.':'The letter is closed with zero current late minutes. Its original submission, attendance and paid payslips remain on file.','success');return;
+            }
+            const result = await reviewOriginalLateRequest(window, {
                 requestId: docId, attendanceId: document.getElementById('replyAttendanceLog').value,
+                profileId:context.profile.staffId || context.profile.id,
                 action, reply: replyMsg, actor: window.sessionUser?.cashierName || 'Manager'
             });
+            if(!ownsLateReply())return;
             document.getElementById('dynamicReplyModal')?.remove();
             window.lateRequestContext = null;
             await window.loadInbox();
@@ -10050,9 +10116,11 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
 
     } catch (e) {
         console.error("Action Error:", e);
+        if(initialLateContext&&!ownsLateReply())return;
         Swal.fire('Error', e.message || 'Failed to process request. Check connection.', 'error');
         btn.innerText = `Confirm ${action}`;
         btn.disabled = false;
+        if(window.lateRequestContext?.requestId===docId)window.updateLateRequestPreview();
     }
 };
 
@@ -24126,29 +24194,11 @@ window.saveEmployeeProfile = async function() {
 
         // 🔥 THE MEMORY BRIDGE: Instantly sync the profile changes to the Schedule Calendar!
         if (window.employees) {
-            let schedName = payload.scheduleNickname || payload.cashierName;
-            
-            // Find them by their original full name OR their old schedule name
-            let oldName = oldData ? oldData.cashierName : null;
-            let oldNick = oldData ? (oldData.scheduleNickname || oldData.cashierName) : null;
-            
-            let existingEmp = window.employees.find(e => e.fullName === oldName || e.name === oldNick);
-            
-            if (existingEmp) {
-                // If they exist, update their branch and names instantly
-                existingEmp.branch = payload.branch;
-                existingEmp.name = schedName;
-                existingEmp.fullName = payload.cashierName;
-                existingEmp.scheduleNickname = payload.scheduleNickname;
-            } else {
-                // If it's a brand new employee, push them into the schedule pool
-                window.employees.push({
-                    name: schedName,
-                    fullName: payload.cashierName,
-                    scheduleNickname: payload.scheduleNickname,
-                    branch: payload.branch
-                });
-            }
+            // A nickname is a label, not an account identity. Refresh only this
+            // confirmed HR account, keeping all saved daily assignments intact.
+            employees=upsertScheduleEmployee(window.employees,saved.profile,docId,{previousProfile:oldData});
+            window.employees=employees;
+            if(Array.isArray(window.scheduleDirectoryProfiles))window.scheduleDirectoryProfiles=upsertScheduleEmployee(window.scheduleDirectoryProfiles,saved.profile,docId,{previousProfile:oldData});
             
             // Instantly re-render the Schedule UI to show them in the new branch!
             if (typeof window.updateStaffDisplay === 'function') window.updateStaffDisplay();
