@@ -9,6 +9,7 @@ import {requestHistory,historyTime} from '../takodeal-manager/request-history.js
 import {isMealDeduction} from '../takodeal-manager/payroll-safety.js';
 import {leaveRequestSummaryHTML} from '../takodeal-manager/manager-leave-ui.js';
 import {earlyTimeOutSummaryHTML} from '../takodeal-manager/early-time-out-review-ui.js';
+import {lateRequestSummaryHTML,lateRequestRecoveryContext} from '../takodeal-manager/late-request-summary.js';
 const tick=()=>new Promise(resolve=>setImmediate(resolve)),hold=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};};
 const snapshot=rows=>({metadata:{fromCache:false,hasPendingWrites:false},docs:rows.map(row=>({id:row.id,data:()=>structuredClone(row),metadata:{fromCache:false,hasPendingWrites:false}}))});
 const at=n=>new Date(1900000000000+n*1000),row=(id,extra={})=>({id,type:'Early Time Out',status:'Pending',staffName:'Sample Crew',staffId:'crew',branch:'Sample Branch',timestamp:at(1),reason:'Sample request',...extra});
@@ -97,7 +98,7 @@ test('real main inbox wrappers use the controller, and cached protected types sk
 });
 
 function countedDerivations(){
- let calls=0;const source=readFileSync(new URL('../takodeal-manager/owner-inbox.js',import.meta.url),'utf8').replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,''),context=vm.createContext({canOpenWorkspacePage,OWNER_EMAIL,historyTime,isMealDeduction,leaveRequestSummaryHTML,earlyTimeOutSummaryHTML,setTimeout,clearTimeout,requestHistory:(...args)=>{calls++;return requestHistory(...args);}});vm.runInContext(source+'\nglobalThis.testInstall=installOwnerInbox;',context);return {install:context.testInstall,calls:()=>calls};
+ let calls=0;const source=readFileSync(new URL('../takodeal-manager/owner-inbox.js',import.meta.url),'utf8').replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,''),context=vm.createContext({canOpenWorkspacePage,OWNER_EMAIL,historyTime,isMealDeduction,leaveRequestSummaryHTML,earlyTimeOutSummaryHTML,lateRequestSummaryHTML,lateRequestRecoveryContext,setTimeout,clearTimeout,requestHistory:(...args)=>{calls++;return requestHistory(...args);}});vm.runInContext(source+'\nglobalThis.testInstall=installOwnerInbox;',context);return {install:context.testInstall,calls:()=>calls};
 }
 
 test('large inbox history pages reuse one derivation and never rebuild pending actions or download either collection again',async t=>{
@@ -110,4 +111,7 @@ test('large inbox history pages reuse one derivation and never rebuild pending a
 test('only fresh data invalidates derived row indices, retaining confirmed overlays and rejecting old queued actions',async()=>{
  const counted=countedDerivations(),requests=[row('one'),row('resolved',{status:'Approved',type:'Reason Letter',explanationMessage:'Prior history'})],f=fixture({requests,install:counted.install});await f.inbox.load();const firstVersion=Number(/ownerInbox.review\(0,'Approved',(\d+)\)/.exec(f.nodes.inboxTableBody.innerHTML)[1]);f.inbox.toggle('history0');f.inbox.toggle('history0');assert.equal(counted.calls(),1);
  f.requests.unshift(row('new',{timestamp:at(5)}));await f.inbox.load();assert.equal(counted.calls(),2);assert.equal(f.inbox.review(0,'Approved',firstVersion),false);assert.equal(f.calls.reviews.length,0);f.requests[0].status='Not Required';await f.inbox.applyConfirmedRequest('new');assert.equal(counted.calls(),3);f.inbox.toggle('history0');assert.equal(counted.calls(),3);assert.match(f.nodes.resolvedRequestsBody.innerHTML,/Not Required/);assert.equal(f.calls.many.length,4);assert.equal(f.calls.one.length,1);
+});
+test('lateness inbox labels the original report and opens its exact HR record without per-row queries or writes',async()=>{
+ const letter=row('letter',{type:'Reason Letter',staffId:'crew',attendanceLogId:'original-in',timestamp:new Date('2026-10-23T17:12:00+08:00'),explanationCause:'Tardiness / Late Arrival',explanationMessage:'Clocked in 462 minutes late. Reason: Please review my night start.',lateMinutes:462}),f=fixture({requests:[letter]}),opened=[];f.w.openAttendanceRecovery=context=>opened.push(context);await f.inbox.load();assert.match(f.nodes.inboxTableBody.innerHTML,/Original submission · 462 minutes reported/);assert.match(f.nodes.inboxTableBody.innerHTML,/Review linked attendance/);assert.doesNotMatch(f.nodes.inboxTableBody.innerHTML,/Confirmed dated attendance review/);const version=Number(/lateAttendance\(0,(\d+)\)/.exec(f.nodes.inboxTableBody.innerHTML)[1]);f.inbox.lateAttendance(0,version);assert.equal(opened[0].attendanceLogId,'original-in');assert.equal(opened[0].staffId,'crew');assert.equal(opened[0].from,'2026-10-22');assert.equal(opened[0].to,'2026-10-23');assert.equal(f.calls.many.length,2);assert.equal(f.calls.one.length,0);assert.equal(f.inbox.lateAttendance(0,version-1),false);assert.equal(opened.length,1);f.w.auth.currentUser=null;assert.equal(f.inbox.lateAttendance(0,version),false);assert.equal(opened.length,1);
 });
