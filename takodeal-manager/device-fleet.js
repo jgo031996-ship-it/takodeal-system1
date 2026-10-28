@@ -1,4 +1,4 @@
-import {waitForAppUpdate} from './app-update.js';
+import {waitForAppUpdate} from './owner-app-update.js';
 const escape = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const milliseconds = value => value?.toMillis ? value.toMillis() : value?.toDate ? value.toDate().getTime() : new Date(value || 0).getTime() || 0;
 export function fleetRows(devices, allowed = () => true) {
@@ -41,7 +41,7 @@ export function installDeviceFleet(config) {
         if(updating)return;
         if(!navigator.onLine){status('Connect to the internet to update the Manager app.');return;}
         updating=true;status('Checking for app updates…');
-        try {await waitForAppUpdate(await navigator.serviceWorker?.getRegistration());window.location.reload();}
+        try {await waitForAppUpdate(await navigator.serviceWorker?.getRegistration(),{serviceWorker:navigator.serviceWorker});window.location.reload();}
         catch(e){status(e.message || 'Update unavailable. Check your connection and try again.');}
         finally{updating=false;}
     };

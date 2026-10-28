@@ -1,4 +1,5 @@
 // This entry renders and handles the keypad without downloading business data.
+import {installOwnerUpdateNotice} from './owner-update-notice.js';
 const el = id => document.getElementById(id);
 let installPrompt;
 window.ManagerLogin = {
@@ -50,6 +51,7 @@ window.installManagerApp = async () => {
 storageStatus(matchMedia('(display-mode: standalone)').matches);
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(async registration => {
+        window.ownerUpdateNotice=installOwnerUpdateNotice(window,document,navigator,registration);
         await navigator.serviceWorker.ready;
         el('loginDeviceDescription').textContent = 'App files saved on this device. Live data syncs online.';
         registration.update().catch(() => {});
