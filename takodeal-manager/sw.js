@@ -1,8 +1,9 @@
-const CACHE_NAME = 'takodeal-manager-core-v99-schedule-attendance-20261028';
+const CACHE_NAME = 'takodeal-manager-core-v100-update-notice-20261028';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = ['./', './index.html', './main.js', './franchise-workspace.js', './monthly-bills.js', './monthly-bills-ui.js', './device-fleet.js', './app-update.js', './employee-id.js', './employee-id.css', './payslip.css', './schedule-layout.js', './request-history.js', './schedule-layout.css', './login.css', './login-ui.js', './unlock-gate.js', './device-store.js', './manager-libraries.js', './branch-operations.js', './cash-settlement.js', './shift-close-ui.js', './collection-cache.js', './manager-dialogs.js', './manager-workspace.js', './manager-workspace.css', './dispatch-safety.js', './menu-bulk.js', './pos-safety.js', './recipe-integrity.js', './live-report.js', './payroll-safety.js', './dashboard.js', './dashboard-data.js', './dashboard.css', './manager-theme.css', './manager-theme.js', './manager-scroll.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
 CORE_ASSETS.push('./staff-setup-codes.js','./staff-setup-codes.css');
+CORE_ASSETS.push('./owner-app-update.js','./owner-update-notice.js');
 CORE_ASSETS.push('./logistics-feed.js','./dispatch-restock-model.js','./dispatch-restock-finance.js','./dispatch-restock-ui.js','./dispatch-set-aside.js','./dispatch-request-draft.js','./dispatch-destination-repair.js');
 CORE_ASSETS.push('./franchise-dispatch-pricing.js','./franchise-supply-model.js');
 CORE_ASSETS.push('./staff-rate-changes.js','./staff-document-hq.js','./staff-documents.js','./staff-documents.css','./staff-document-model.js','./staff-document-store.js','./staff-document-firebase.js');
@@ -49,6 +50,10 @@ CORE_ASSETS.push('./leave-model.js','./leave-request-actions.js','./leave-schedu
 CORE_ASSETS.push('./franchise-hq-ui.js','./franchise-hq-model.js','./franchise-hq-actions.js');
 CORE_ASSETS.push('./hr-review-ui.js','./hr-review.css','./attendance-amendment-review.js','./attendance-amendment-review-model.js','./onboarding-model.js','./onboarding-owner.js','./attendance-metadata-reader.js');
 CORE_ASSETS.push('./staff-directory-reader.js','./payment-review-scanner.js');
+self.addEventListener('message', event => {
+    if(event.data?.type!=='OWNER_RELEASE_CHECK')return;
+    try{event.ports?.[0]?.postMessage({type:'OWNER_RELEASE',release:CACHE_NAME});}catch{}
+});
 self.addEventListener('install', event => {
     event.waitUntil((async () => {
         const cache = await caches.open(CACHE_NAME);
