@@ -448,7 +448,7 @@
   <link rel="stylesheet" href="manager-theme.css?v=20261004">
   <link rel="stylesheet" href="pos-settings-policy.css?v=20261018">
   <link rel="stylesheet" href="notice-form.css?v=20261019">
-  <link rel="stylesheet" href="early-time-out-review.css?v=20261019">
+  <link rel="stylesheet" href="early-time-out-review.css?v=20261028-review">
 <link rel="stylesheet" href="staff-salary-date-ui.css?v=20261019-r1">
   <link rel="stylesheet" href="leave-ui.css?v=20261018">
   <link rel="stylesheet" href="manager-workspace.css?v=20261004">
@@ -2720,6 +2720,11 @@
                   <option value="Citygate">📍 Citygate</option>
                   <option value="Maa">📍 Maa</option>
                   <option value="Main Office">🏢 Main Office</option>
+              </select>
+              <select id="ledgerStaffView" aria-label="Ledger staff records" class="input-box" style="min-height:44px;padding:10px 12px;border:1px solid #cadbd0;border-radius:8px;background:white;color:#214b39;font:inherit" onchange="window.loadLedger()">
+                  <option value="active">Current staff</option>
+                  <option value="archived">Archived staff &amp; outstanding balances</option>
+                  <option value="all">All saved staff</option>
               </select>
               <button class="btn-refresh" style="background: #0ea5e9; border: none; color: white; padding: 12px 24px; border-radius: 8px; font-weight: 900; font-size: 14px; cursor: pointer; box-shadow: 0 4px 6px rgba(14, 165, 233, 0.3); transition: 0.2s;" onclick="loadLedger()">🔄 Refresh Ledger</button>
             </div>
@@ -5775,7 +5780,7 @@
           <button style="flex: 1; background: #10b981; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);" onclick="window.offerOfficialContract()">📄 Issue Contract</button>
           <button style="flex: 1; background: #fff1f2; color: #dc2626; border: 1px solid #fecaca; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s;" onclick="window.processResignation()">📜 Offboard</button>
           <button style="flex: 1; background: #0f172a; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(15, 23, 42, 0.3);" onclick="window.generateIDCard()">🪪 Download Employee ID</button>
-          <button onclick="window.deleteCurrentStaff()" style="background: #ef4444; color: white; border: none; padding: 14px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3);">🗑️ Delete Staff</button>
+          <button onclick="window.deleteCurrentStaff()" style="background: #ef4444; color: white; border: none; padding: 14px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px; box-shadow: 0 4px 6px rgba(239, 68, 68, 0.3);">Archive Staff</button>
           <button id="btnSaveEmpProfile" onclick="window.saveEmployeeProfile()" style="flex: 1.5; padding: 14px; font-weight: 900; border-radius: 8px; font-size: 16px; background: #d97706; color: white; border: none; cursor: pointer; box-shadow: 0 6px 12px rgba(217, 119, 6, 0.3);">💾 Save Data</button>
       </div>
     </div>

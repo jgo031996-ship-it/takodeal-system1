@@ -1,4 +1,5 @@
 import {OWNER_EMAIL, canOpenHrTab, createWorkspaceSession} from './workspace-access-model.js';
+import {activeStaffProfile} from './staff-lifecycle-model.js';
 import {resolveHQAccount, savedPin} from './hq-account-model.js';
 import {phDay, futureEffectiveDate} from './sanction-schedule.js';
 import {normalizeDisciplinePolicy, caseHistory, sameCaseStaff} from './discipline-case-model.js';
@@ -93,7 +94,7 @@ function employee(profile, staffId, {name, branch, active = false} = {}) {
     const staffName = text(profile?.cashierName);
     if (!profile || !staffName || !text(profile.branch)) throw Error('The saved staff identity is missing. Review Staff & Security first.');
     if (name && staffName !== name || branch && profile.branch !== branch) throw Error('The staff assignment changed. Select the saved staff profile again.');
-    if (active && (profile.active === false || profile.blocked === true || profile.archived === true || /^(resigned|terminated|inactive|disabled|revoked)$/i.test(text(profile.status)) || /^(REVOKED|BLOCKED)$/i.test(String(profile.pin || '')))) throw Error('This staff profile is inactive. Review it before issuing another notice.');
+    if (active && !activeStaffProfile(profile)) throw Error('This staff profile is inactive. Review it before issuing another notice.');
     return {id:staffId, staffId, name:staffName, cashierName:staffName, branch:profile.branch};
 }
 function counterState(value, staffId) {

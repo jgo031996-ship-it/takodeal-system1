@@ -1,3 +1,4 @@
+import {createStaffHistoryResolver} from './staff-lifecycle-model.js';
 import {canOpenWorkspacePage,OWNER_EMAIL} from './workspace-access-model.js';
 import {requestHistory,historyTime} from './request-history.js';
 import {isMealDeduction} from './payroll-safety.js';
@@ -56,7 +57,7 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
   return branches.includes('All')||!!row.branch&&branches.includes(row.branch);
  };
  const allowed=row=>!!inboxActorKey(w)&&rowAccess(row);
- function workspace(){w.refreshOwnerInboxBadge?.();const key=inboxActorKey(w);if(!key){state=null;return null;}if(state?.key!==key)state={key,loaded:false,dataVersion:0,derivedVersion:-1,requests:[],deductions:[],overlays:new Map(),groups:[],groupIds:new Map(),open:new Set(),pages:new Map(),records:[]};return state;}
+ function workspace(){w.refreshOwnerInboxBadge?.();const key=inboxActorKey(w);if(!key){state=null;return null;}if(state?.key!==key)state={key,loaded:false,dataVersion:0,derivedVersion:-1,requests:[],deductions:[],overlays:new Map(),groups:[],groupIds:new Map(),open:new Set(),pages:new Map(),records:[],staffProfiles:[],view:'active',directoryError:''};return state;}
  const current=target=>state===target&&inboxActorKey(w)===target.key;
  function visible(promise){let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('HQ is taking longer than expected. Retry Refresh Inbox; no request was changed.')),timeoutMs);})]).finally(()=>clearTimeout(timer));}
  function share(map,key,work){let physical=map.get(key);if(!physical){physical=Promise.resolve().then(work);map.set(key,physical);const release=()=>{if(map.get(key)===physical)map.delete(key);};physical.then(release,release);}return visible(physical);}
@@ -73,24 +74,41 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
   if(row.photoBase64||row.proofImageUrl||row.imageUrl||row.image)html+='<br><button type="button" onclick="window.ownerInbox.photo('+index+','+state.drawVersion+')">📷 View Photo</button>';
   return html;
  }
+ function mountView(target){
+  let select=node('inboxStaffView');
+  if(!select&&typeof d.createElement==='function'){
+   const anchor=node('inboxTableBody')?.closest?.('table')?.parentElement;if(!anchor)return;
+   const bar=d.createElement('div');bar.className='staff-history-filter';bar.style.cssText='padding:16px 22px;border-bottom:1px solid #dce6df;background:#f5f8f1;display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+   const label=d.createElement('label');label.htmlFor='inboxStaffView';label.textContent='Staff records';select=d.createElement('select');select.id='inboxStaffView';select.style.cssText='min-height:42px;padding:9px 12px;border:1px solid #cadbd0;border-radius:8px;color:#214b39;background:white;font:inherit';
+   for(const [value,text]of [['active','Current staff'],['archived','Archived staff & identity review'],['all','All saved records']]){const option=d.createElement('option');option.value=value;option.textContent=text;select.append(option);}
+   const help=d.createElement('small');help.textContent='Earlier records stay on file. The sidebar badge counts all pending requests, including archived staff.';bar.append(label,select,help);anchor.before(bar);
+  }
+  if(select){select.value=target.view;select.onchange=()=>setView(select.value);}
+ }
+ function setView(view){const target=workspace();if(!target||!['active','archived','all'].includes(view))return false;target.view=view;target.dataVersion++;target.open.clear();return draw(target);}
  function draw(target){
-  if(!current(target)||!target.loaded)return false;
+  if(!current(target)||!target.loaded)return false;mountView(target);
   // Paging an unchanged dataset reuses its exact sorted rows and action indices.
   // A server refresh or confirmed request invalidates this in-memory derivation.
   const changed=target.derivedVersion!==target.dataVersion;let pending='',count=0;
   if(changed){
-   const rows=requestHistory(target.requests.filter(rowAccess),target.deductions.filter(rowAccess));target.records=rows;target.drawVersion=(target.drawVersion||0)+1;const grouped=new Map();
+   const rows=requestHistory(target.requests.filter(rowAccess),target.deductions.filter(rowAccess));target.records=rows;target.drawVersion=(target.drawVersion||0)+1;const grouped=new Map(),resolve=createStaffHistoryResolver(target.staffProfiles);
+   const visible=row=>{const identity=resolve(row);return target.view==='all'||(target.view==='archived'?!identity.active:identity.active);};
+   const label=row=>{const identity=resolve(row);return identity.active?'':identity.status==='archived'?' · Archived staff':' · Employee identity needs review';};
    rows.forEach((row,index)=>{
-   if(row.status!=='Pending'){const name=String(row.staffName||'Unknown');if(!grouped.has(name))grouped.set(name,[]);grouped.get(name).push({row,index});return;}
-   count++;pending+='<tr data-inbox-request="'+escape(row.id)+'"><td style="padding:12px;color:#64748b;">'+escape(dateLabel(row.timestamp))+'</td><td style="padding:12px;font-weight:bold;">'+escape(row.staffName||'Unknown')+'</td><td style="padding:12px;"><span class="badge badge-closed">'+escape(row.branch||'Not recorded')+'</span></td><td style="padding:12px;"><strong>'+escape(row.type||'Request')+'</strong><br><span style="background:#fef9c3;color:#854d0e;font-size:11px;">Pending Review</span></td><td style="padding:12px;max-width:250px;white-space:normal;">'+details(row,index)+'</td><td style="padding:12px;"><button type="button" onclick="window.ownerInbox.review('+index+',\'Approved\','+target.drawVersion+')" style="background:#166653;color:white;padding:7px 12px;border:0;border-radius:5px;margin:3px;">Approve</button><button type="button" onclick="window.ownerInbox.review('+index+',\'Rejected\','+target.drawVersion+')" style="background:#b83c3c;color:white;padding:7px 12px;border:0;border-radius:5px;margin:3px;">Reject</button></td></tr>';
+   if(row.status==='Pending')count++;
+   if(!visible(row))return;
+   if(row.status!=='Pending'){const identity=resolve(row),groupKey=identity.staffId||'legacy:'+String(row.staffName||'Unknown')+'|'+String(row.branch||'');if(!grouped.has(groupKey))grouped.set(groupKey,{name:String(row.staffName||'Unknown')+label(row),entries:[]});grouped.get(groupKey).entries.push({row,index});return;}
+   const actions=resolve(row).active?'<button type="button" onclick="window.ownerInbox.review('+index+',\'Approved\','+target.drawVersion+')" style="background:#166653;color:white;padding:7px 12px;border:0;border-radius:5px;margin:3px;">Approve</button><button type="button" onclick="window.ownerInbox.review('+index+',\'Rejected\','+target.drawVersion+')" style="background:#b83c3c;color:white;padding:7px 12px;border:0;border-radius:5px;margin:3px;">Reject</button>':'<small>Read-only saved request · review the archived employee profile or identity before any further action.</small>';
+   pending+='<tr data-inbox-request="'+escape(row.id)+'"><td style="padding:12px;color:#64748b;">'+escape(dateLabel(row.timestamp))+'</td><td style="padding:12px;font-weight:bold;">'+escape(String(row.staffName||'Unknown')+label(row))+'</td><td style="padding:12px;"><span class="badge badge-closed">'+escape(row.branch||'Not recorded')+'</span></td><td style="padding:12px;"><strong>'+escape(row.type||'Request')+'</strong><br><span style="background:#fef9c3;color:#854d0e;font-size:11px;">Pending Review</span></td><td style="padding:12px;max-width:250px;white-space:normal;">'+details(row,index)+'</td><td style="padding:12px;">'+actions+'</td></tr>';
    });
-   const recent=rows.map((row,index)=>({row,index})).filter(({row})=>row.type==='Early Time Out'&&row.status!=='Pending').slice(0,8);
+   const recent=rows.map((row,index)=>({row,index})).filter(({row})=>visible(row)&&row.type==='Early Time Out'&&row.status!=='Pending').slice(0,8);
    if(recent.length)pending+='<tr><td colspan="6" style="padding:16px;background:#f5f9f4;"><details open><summary style="cursor:pointer;font-weight:700;">Recent time-out request activity · '+recent.length+'</summary><p style="font-size:12px;color:#64748b;">A request leaves Pending Review after normal Time Out, cancellation or a management decision. The saved request remains in Resolved Requests History below.</p>'+recent.map(({row,index})=>'<article style="margin-top:12px;padding-top:12px;border-top:1px solid #dce5dc;"><strong>'+escape(row.staffName)+' · '+escape(row.branch||'Branch not recorded')+'</strong> <span style="color:#17604c;">'+escape(row.status)+'</span><br><small>'+escape(dateLabel(row.timestamp))+'</small><div style="font-size:13px;margin-top:6px;">'+details(row,index)+'</div></article>').join('')+'</details></td></tr>';
-   if(!count)pending='<tr><td colspan="6" style="padding:24px;color:#166653;">No pending requests. Completed reviews remain in the history below.</td></tr>'+pending;
+   if(!rows.some(row=>row.status==='Pending'&&visible(row)))pending='<tr><td colspan="6" style="padding:24px;color:#166653;">No pending requests in this view. Earlier records remain available under Archived staff &amp; identity review or All saved records.</td></tr>'+pending;
    target.groups=[];
-   for(const [name,entries] of grouped){
-    if(!target.groupIds.has(name))target.groupIds.set(name,'history'+target.groupIds.size);
-    target.groups.push({name,id:target.groupIds.get(name),entries});
+   for(const [groupKey,{name,entries}] of grouped){
+    if(!target.groupIds.has(groupKey))target.groupIds.set(groupKey,'history'+target.groupIds.size);
+    target.groups.push({name,id:target.groupIds.get(groupKey),entries});
    }
    target.derivedVersion=target.dataVersion;
   }
@@ -107,7 +125,7 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
   }
   const pendingBody=node('inboxTableBody'),resolved=node('resolvedRequestsBody'),badge=node('inboxBadge');
   if(changed&&pendingBody)pendingBody.innerHTML=pending||'<tr><td colspan="6" style="padding:30px;color:#166653;">No pending requests! 🎉</td></tr>';
-  if(resolved)resolved.innerHTML=history||'<tr><td colspan="5" style="padding:30px;">No resolved history yet.</td></tr>';
+  if(resolved)resolved.innerHTML=(target.directoryError?'<tr><td colspan="5" role="status" style="padding:16px;">'+escape(target.directoryError)+'</td></tr>':'')+(history||'<tr><td colspan="5" style="padding:30px;">No history in this view. Choose Archived staff &amp; identity review or All saved records to inspect earlier records.</td></tr>');
   if(changed&&badge){badge.innerText=count;badge.style.display=count?'inline-block':'none';}
   return true;
  }
@@ -118,10 +136,11 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
   if(!target.loaded)node('inboxTableBody').innerHTML='<tr><td colspan="6">Loading requests…</td></tr>';
   try{return await share(loads,target.key,async()=>{
    const start=sequence,read=w.getDocsFromServer||w.getDocs;if(typeof read!=='function')throw Error('Connect to HQ to load saved requests.');
-   const [requests,deductions]=await Promise.all(['staff_requests','staff_deductions'].map(async table=>{const snapshots=await Promise.all(refs(table,target).map(reference=>read(reference)));const records=new Map();for(const snapshot of snapshots)for(const row of snapshotRows(fresh(snapshot)))if(allowed(row))records.set(row.id,row);return [...records.values()];}));
+   const directory=(async()=>{try{const snapshots=await Promise.all(refs('cashiers').map(reference=>read(reference)));const records=new Map();for(const snapshot of snapshots)for(const row of snapshotRows(fresh(snapshot)))if(allowed(row))records.set(row.id,{...row,staffId:row.id});return {profiles:[...records.values()],error:''};}catch{return {profiles:[],error:'Current employee profiles could not be confirmed. Choose Archived staff & identity review to inspect the saved requests, then Refresh Inbox when connected.'};}})();
+   const [requests,deductions,staff]=await Promise.all([...['staff_requests','staff_deductions'].map(async table=>{const snapshots=await Promise.all(refs(table,target).map(reference=>read(reference)));const records=new Map();for(const snapshot of snapshots)for(const row of snapshotRows(fresh(snapshot)))if(allowed(row))records.set(row.id,row);return [...records.values()];}),directory]);
    if(!current(target))return false;
    const merged=new Map(requests.map(row=>[row.id,row]));for(const [id,overlay] of target.overlays)if(overlay.sequence>start){if(overlay.row)merged.set(id,overlay.row);else merged.delete(id);}else target.overlays.delete(id);
-   target.requests=[...merged.values()];target.deductions=deductions;target.loaded=true;target.dataVersion++;return draw(target);
+   target.requests=[...merged.values()];target.deductions=deductions;target.staffProfiles=staff.profiles;target.directoryError=staff.error;target.loaded=true;target.dataVersion++;return draw(target);
   });}catch(error){if(current(target)){if(!target.loaded)node('inboxTableBody').innerHTML='<tr><td colspan="6" role="alert">'+escape(error.message||'Requests could not load. Retry Refresh Inbox.')+'</td></tr>';else w.ManagerUI?.notify?.('Saved inbox remains visible. '+(error.message||'Refresh could not finish.'));}return false;}
  }
  async function applyConfirmedRequest(id){
@@ -157,8 +176,8 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
  function toggle(id){const target=workspace();if(!target?.loaded||!target.groups.some(group=>group.id===id))return false;if(target.open.has(id))target.open.delete(id);else target.open.add(id);return draw(target);}
  function page(id,value){const target=workspace(),group=target?.groups.find(entry=>entry.id===id);if(!group||!Number.isSafeInteger(value)||value<0||value>=Math.ceil(group.entries.length/size))return false;target.pages.set(id,value);target.open.add(id);return draw(target);}
  function request(id){const target=workspace();return target?.loaded?target.requests.find(row=>row.id===id&&allowed(row))||null:null;}
- function review(index,decision,version){const target=workspace(),row=target?.records[index];if(!row||version!==undefined&&version!==target.drawVersion||row.status!=='Pending'||!allowed(row)||!['Approved','Rejected'].includes(decision))return false;return w.handleRequest?.(row.id,decision,row.type,Number(row.amount)||0,row.staffName||'Unknown');}
+ function review(index,decision,version){const target=workspace(),row=target?.records[index];if(!row||version!==undefined&&version!==target.drawVersion||row.status!=='Pending'||!allowed(row)||!createStaffHistoryResolver(target.staffProfiles)(row).active||!['Approved','Rejected'].includes(decision))return false;return w.handleRequest?.(row.id,decision,row.type,Number(row.amount)||0,row.staffName||'Unknown');}
  function photo(index,version){const target=workspace(),row=target?.records[index];if(!row||version!==undefined&&version!==target.drawVersion||!allowed(row))return false;const url=row.photoBase64||row.proofImageUrl||row.imageUrl||row.image;if(url)w.viewSelfie?.(url,'Attached Photo from '+String(row.staffName||'Staff'));}
  function lateAttendance(index,version){const target=workspace(),row=target?.records[index];if(!row||version!==undefined&&version!==target.drawVersion||!allowed(row))return false;const context=lateRequestRecoveryContext(row);if(!context)return false;if(typeof w.openAttendanceRecovery!=='function'){w.ManagerUI?.notify?.('Open Human Resources → HR review center to review this saved clock-in.');return false;}return w.openAttendanceRecovery(context);}
- const controller={load,applyConfirmedRequest,receivePending,toggle,page,request,review,photo,lateAttendance,clear(){state=null;}};w.ownerInbox=controller;return controller;
+ const controller={load,applyConfirmedRequest,receivePending,toggle,page,setView,request,review,photo,lateAttendance,clear(){state=null;}};w.ownerInbox=controller;return controller;
 }

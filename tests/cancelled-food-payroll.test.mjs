@@ -1,3 +1,4 @@
+import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
 import * as roster from '../takodeal-manager/payroll-roster-model.js';
 import * as rosterUI from '../takodeal-manager/payroll-balance-review.js';
 import * as scheduleFreshness from '../takodeal-manager/payroll-schedule-freshness.js';
@@ -67,7 +68,7 @@ function payrollFixture({deductions=[],frozen=null}={}) {
     api.auth={currentUser:{uid:'sample-payroll-owner',email:OWNER_EMAIL,emailVerified:true}};
     api.sessionUser={uid:'sample-payroll-owner',email:OWNER_EMAIL,isOwner:true,permissions:['all'],allowedBranches:['All']};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>assembleScheduleHistory(schedule),ManagerUI:{notify:message=>errors.push(message)}};
-    const context=vm.createContext({...roster,...rosterUI,...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollLoading,...payrollCompletion,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,resolveScheduleForDate,window,Date,
+    const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollLoading,...payrollCompletion,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,resolveScheduleForDate,window,Date,
         escapeHtml:value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])),
         document:{getElementById:id=>id==='payrollBalanceReview'?null:elements[id]||null},alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
     vm.runInContext(extract('getPayrollPreviewGuard')+'\n'+extract('requirePayrollPreview'),context);
@@ -128,7 +129,7 @@ function paymentFixture(food) {
     const window={...api,loadPayrollScheduleHistory:async()=>paymentHistory,currentPayslipData:{name:'Sample Staff',staffId:staffProfile.staffId,profile:{...staffProfile},branch:'Maa',start:'2026-10-01',end:'2026-10-15',basicPay:500+food,meals:food},
         openPayslipModal(){},downloadPayslipImage(){},ManagerUI:{notify:text=>errors.push(text)}};
     window.currentPayslipData.scheduleEvidenceStamp=scheduleFreshness.payrollScheduleStamp(paymentHistory,window.currentPayslipData);
-    const context=vm.createContext({...roster,...rosterUI,...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollCompletion,finalizeOrdinaryPayroll,canOpenWorkspacePage,escapeHtml:String,window,document:{getElementById:id=>id==='payrollBalanceReview'?null:node(id),querySelectorAll:()=>[]},Date,
+    const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollCompletion,finalizeOrdinaryPayroll,canOpenWorkspacePage,escapeHtml:String,window,document:{getElementById:id=>id==='payrollBalanceReview'?null:node(id),querySelectorAll:()=>[]},Date,
         Swal:{fire:async()=>({value:'0',isConfirmed:true})},console:{error:error=>errors.push(error)}});
     vm.runInContext(extract('getPayrollPreviewGuard')+'\n'+extract('requirePayrollPreview')+'\n'+extract('finalizePayslip'),context);
     const preview=window.currentPayslipData,guard=window.getPayrollPreviewGuard(),token=guard.begin();
@@ -239,7 +240,7 @@ function reportingFixture({resale=true,crossMonth=false,ordinary=true,branch='Ma
         getDocs:async ref=>snapshot((data[ref.table]||[]).filter(row=>(ref.filters||[]).every(f=>!f.field||f.operator==='>='?(!f.field||row[f.field]>=f.value):f.operator==='<='?row[f.field]<=f.value:f.operator==='in'?f.value.includes(row[f.field]):row[f.field]===f.value))),
         setDoc:async()=>writes.push('set'),updateDoc:async()=>writes.push('update'),addDoc:async()=>writes.push('add')};
     const window={...api,sessionUser:{isOwner:true},isBranchAllowed:()=>true};
-    const context=vm.createContext({...roster,...rosterUI,...api,window,escapeHtml,formatMoney:value=>'₱'+Number(value).toFixed(2),document:{getElementById:id=>id==='payrollBalanceReview'?null:node(id),body:{insertAdjacentHTML:(_,html)=>{modalHtml=html;}}},
+    const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...api,window,escapeHtml,formatMoney:value=>'₱'+Number(value).toFixed(2),document:{getElementById:id=>id==='payrollBalanceReview'?null:node(id),body:{insertAdjacentHTML:(_,html)=>{modalHtml=html;}}},
         cachedSnapshot:async table=>snapshot(data[table]||[]),renderFinancialFlow:totals=>{rendered.push(JSON.parse(JSON.stringify(totals)));return '<div>Mock report container</div>';},
         historyLive:{start:()=>({active:()=>true,watch:(query,callback)=>{renderPromise=api.getDocs(query).then(callback);}})},
         Chart:class{destroy(){}},console:{error:(...args)=>errors.push(args.map(String).join(' ')),log:()=>{}},Date});
