@@ -1,0 +1,203 @@
+/* The global reset clears native dialog auto margins. Restore screen placement
+   for Owner dialogs without moving toasts, overlays, or printable documents. */
+@media screen {
+  body.manager-theme dialog {
+    position: fixed;
+    inset: 0;
+    margin: auto;
+    box-sizing: border-box;
+  }
+
+  /* Low-specificity defaults leave each feature's narrower sizing intact. */
+  :where(body.manager-theme) dialog {
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);
+    overflow: auto;
+    overscroll-behavior: contain;
+    overflow-wrap: anywhere;
+  }
+
+  body.manager-theme dialog:not([open]),
+  body.manager-theme dialog[hidden] {
+    display: none !important;
+  }
+
+  body.manager-theme dialog::backdrop {
+    background: #173f3273;
+    backdrop-filter: blur(3px);
+  }
+
+  /* These older forms need a bounded body, with their actions always outside
+     the scrolling content. Other dialog families keep their own layouts. */
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) {
+    max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
+    height: fit-content;
+    overflow: hidden;
+    background: #fff;
+    color: #234237;
+    border: 1px solid #d8e4db;
+    border-radius: 16px;
+    box-shadow: 0 24px 80px #153d2a40;
+    text-align: left;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog)[open] {
+    display: flex;
+    flex-direction: column;
+  }
+
+  body.manager-theme :is(dialog.permits-dialog, dialog.hq-profile-dialog) > form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: inherit;
+    overflow: hidden;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog)
+      :is(.leave-review-body, .salary-date-body, .shift-amendment-body,
+          .permits-dialog-body, .hq-profile-body) {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    overflow-wrap: anywhere;
+    scrollbar-gutter: stable;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) > :is(header, footer),
+  body.manager-theme :is(dialog.permits-dialog, dialog.hq-profile-dialog) > form > :is(header, footer) {
+    position: static;
+    flex: 0 0 auto;
+    min-width: 0;
+    margin: 0;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) > header,
+  body.manager-theme :is(dialog.permits-dialog, dialog.hq-profile-dialog) > form > header {
+    align-items: center;
+    gap: 16px;
+    padding: 20px 24px;
+    background: #173f32;
+    color: #fff;
+    border-bottom: 3px solid #d8b56d;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) header > div {
+    min-width: 0;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) header h2 {
+    margin: 5px 0 0;
+    color: #fff;
+    font-size: 22px;
+    line-height: 1.35;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) header small {
+    color: #c8dacf;
+    font-size: 10px;
+    line-height: 1.5;
+    letter-spacing: .09em;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) header > button {
+    flex: 0 0 auto;
+    min-width: 44px;
+    min-height: 44px;
+    margin: 0;
+    padding: 8px 12px;
+    border: 1px solid #ffffff55;
+    border-radius: 9px;
+    background: #ffffff0d;
+    color: #fff;
+    font-size: 15px;
+    line-height: 1.4;
+    white-space: normal;
+    cursor: pointer;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) header > button[aria-label] {
+    width: 44px;
+    padding: 0;
+    font-size: 24px;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) footer {
+    gap: 12px;
+    padding: 16px 24px;
+    background: #f5f8f1;
+    border-top: 1px solid #dce7df;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) footer button {
+    min-height: 44px;
+    max-width: 100%;
+    white-space: normal;
+  }
+
+  body.manager-theme .leave-review-body > .leave-note {
+    margin: 0 0 16px;
+  }
+
+  body.manager-theme .leave-review-body > .leave-request-reason {
+    margin: 12px 0 18px;
+    padding: 13px 15px;
+    border-left: 3px solid #c6a25e;
+    border-radius: 7px;
+    background: #faf8ef;
+    line-height: 1.65;
+  }
+
+  body.manager-theme .leave-review-body > .leave-reply-label {
+    margin-top: 18px;
+  }
+
+  body.manager-theme dialog :is(button, input, select, textarea, summary):focus-visible {
+    outline: 3px solid #d8b56d;
+    outline-offset: 3px;
+  }
+}
+
+@media screen and (max-width: 600px) {
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) {
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 20px);
+    max-height: calc(100dvh - 20px);
+    border-radius: 13px;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) > header,
+  body.manager-theme :is(dialog.permits-dialog, dialog.hq-profile-dialog) > form > header {
+    padding: 15px 16px;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) header h2 {
+    font-size: 19px;
+  }
+
+  body.manager-theme dialog:is(.leave-review-dialog, .salary-date-dialog,
+      .shift-amendment-dialog, .permits-dialog, .hq-profile-dialog) footer {
+    flex-wrap: wrap;
+    padding: 13px 16px;
+  }
+}
