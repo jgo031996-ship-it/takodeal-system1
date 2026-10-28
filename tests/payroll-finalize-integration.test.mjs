@@ -1,3 +1,4 @@
+import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
 import * as roster from '../takodeal-manager/payroll-roster-model.js';
 import * as rosterUI from '../takodeal-manager/payroll-balance-review.js';
 import test from 'node:test';
@@ -49,7 +50,7 @@ async function fixture(options={}){
  node('payrollStart').value=start;node('payrollEnd').value=end;node('payrollGrandTotalContainer').style.display='flex';
  const state={h,w:h.api,d,node,data,other,ownRow,otherRow,events,notifications,exports,opens,queries,transactions:()=>transactions,recordId:ordinaryPayrollId(staffId,start,end)};
  const Swal={fire:async(...args)=>{events.push(args);const first=args[0];if(first?.title==='💸 Disburse Payroll')return options.confirm?options.confirm(state,first):{isConfirmed:true,value:'0'};return {isConfirmed:false};},showValidationMessage:message=>notifications.push(message)};
- const context=vm.createContext({...roster,...rosterUI,...completion,...preview,...freshness,assertPayrollSalaryFresh,canOpenWorkspacePage,window:h.api,document:d,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value),
+ const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...completion,...preview,...freshness,assertPayrollSalaryFresh,canOpenWorkspacePage,window:h.api,document:d,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value),
   finalizeOrdinaryPayroll:async(api,input)=>{const result=await finalizeOrdinaryPayroll(api,input);await options.afterEngine?.(state,result);return result;},
   finalizeRefundPayroll:()=>assert.fail('This ordinary fixture must use the atomic ordinary-payroll engine'),
   exportPayslipImage:async()=>{exports.push({data:h.api.currentPayslipData,name:node('psName').innerText,isPaid:h.api.currentPayslipData?.isPaid});if(options.imageFailure)throw Error('Synthetic image renderer failure');return {filename:'sample.png'};}

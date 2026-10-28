@@ -1,3 +1,4 @@
+import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -15,7 +16,7 @@ function harness({allowed=true,branchAllowed=true,confirmed=true,fail=false}={})
   collection:(_,name)=>name,query:ref=>ref,where:()=>null,doc:(_,name,id)=>name+'/'+id,serverTimestamp:()=>new Date('2026-10-06T04:00:00Z'),
   runTransaction:async(_,fn)=>{const staged=new Map();const result=await fn({get:async ref=>({exists:()=>records.has(ref),data:()=>records.get(ref)}),set:(ref,data)=>staged.set(ref,data)});if(fail)throw Error('offline');for(const entry of staged){records.set(...entry);writes++;}return result;},
   loadPayrollScheduleHistory:async()=>({}),loadAttendanceLogs:()=>refreshes++,invalidateCache(){}};
- const context={window:api,document:{getElementById:node},Date:FixedDate,crypto:{randomUUID:()=> 'sample-operation-123'},
+ const context={activeStaffProfile,window:api,document:{getElementById:node},Date:FixedDate,crypto:{randomUUID:()=> 'sample-operation-123'},
   canOpenWorkspacePage:()=>allowed,validateManualAttendance:(input,options)=>validateManualAttendance(input,{...options,now:new FixedDate()}),saveManualAttendance:(api,payload,options)=>saveManualAttendance(api,payload,{...options,now:new FixedDate()}),
   scheduleDateKey:()=> '2026-10-06',resolveAttendanceShift:()=>({scheduleSource:'missing-history',needsScheduleReview:true}),
   Swal:{fire:async()=>{confirmations++;return{isConfirmed:confirmed};}},console:{error(){}}};

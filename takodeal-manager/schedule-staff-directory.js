@@ -1,12 +1,11 @@
 // Current HR profiles supply membership. Saved rosters supply only dated names.
 // These helpers never assign a shift, change a home branch, or edit a saved day.
+import {activeStaffProfile,createStaffHistoryResolver} from './staff-lifecycle-model.js';
 const clean=value=>typeof value==='string'?value.trim():'';
 const key=value=>clean(value).normalize('NFKC').replace(/\s+/g,' ').toLowerCase();
 const id=value=>typeof value==='string'&&value.length>0&&!['.','..'].includes(value)&&!/[\/\0]/.test(value)&&new TextEncoder().encode(value).length<=1500?value:null;
 const linked=row=>id(row?.staffId)||id(row?.id);
-const inactive=new Set(['resigned','revoked','terminated','inactive','blocked','disabled','archived','deleted']);
-const eligible=row=>row?.active!==false&&row?.blocked!==true&&row?.archived!==true&&row?.scheduleEligible!==false
-    &&!inactive.has(key(row?.status))&&!['REVOKED','BLOCKED'].includes(clean(row?.pin).toUpperCase());
+const eligible=row=>activeStaffProfile(row)&&row?.scheduleEligible!==false;
 const unique=values=>{const seen=new Set();return values.filter(value=>{const name=clean(value);if(!name||seen.has(name))return false;seen.add(name);return true;});};
 const names=row=>unique([row?.name,row?.fullName,row?.cashierName,row?.scheduleNickname,row?.scheduleName,
     ...(Array.isArray(row?.scheduleAliases)?row.scheduleAliases:[])].map(clean));
@@ -18,7 +17,7 @@ function project(profile,staffId){
     if(!name)return null;
     const output={...(staffId?{staffId}:{}),name,fullName:cashierName||name,cashierName:cashierName||name,
         scheduleNickname,scheduleName:scheduleName||name,branch:clean(profile.branch)||'Unassigned',
-        status:clean(profile.status),active:profile.active!==false,blocked:profile.blocked===true,
+        status:clean(profile.status),active:activeStaffProfile(profile),blocked:profile.blocked===true,
         archived:profile.archived===true,scheduleEligible:eligible(profile)};
     if(/^\d{4}-\d{2}-\d{2}$/.test(clean(profile.dateHired)))output.dateHired=clean(profile.dateHired);
     output.scheduleAliases=unique([...names(profile),...names(output)]);
@@ -41,6 +40,21 @@ function safeAliases(person,evidence,others){
 
 /** Minimal scheduling metadata. The supplied Firestore document ID wins. */
 export function toScheduleEmployee(profile,staffId){return id(staffId)?project(profile,staffId):null;}
+
+/** Current account identity only. Dated roster names never manufacture a current
+ * active profile; missing and ambiguous names remain history for review. */
+export function resolveScheduleEmployeeReference(reference,directory){
+    const identity=createStaffHistoryResolver(Array.isArray(directory)?directory:[])(reference);
+    return identity.active&&identity.profile?.scheduleEligible!==false?identity.profile:null;
+}
+
+/** Current status wins; an exactly ID-bound saved roster may add old aliases.
+ * Inactive accounts remain in the identity index so their names cannot be
+ * silently adopted by a different active employee. */
+export function scheduleIdentityDirectory(directory,savedEmployees=[]){
+    const live=rows(directory),saved=rows(savedEmployees);
+    return live.map(person=>({...person,scheduleAliases:unique([...names(person),...saved.filter(row=>linked(row)&&linked(row)===linked(person)).flatMap(names)])}));
+}
 
 /** Enrich aliases without importing any old snapshot's membership or status. */
 export function mergeScheduleEmployeeAliases(directory,savedEmployees){

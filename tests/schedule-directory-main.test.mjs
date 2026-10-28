@@ -1,3 +1,4 @@
+import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
@@ -19,13 +20,13 @@ function fixture(options={}){
  const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',checked:false,innerHTML:'',style:{}});return nodes.get(id);};
  const staff=options.staff||[employee('existing','Existing'),employee('standby','Standby'),employee('anj@example.test','Anj'),employee('Joana ID','Joana'),employee('other','Other','Cabantian')];
  const schedule=options.schedule||{28:{Maa:day({m1:'Existing',m2:'UNFILLED'},['Standby']),Cabantian:day({m1:'Other',m2:'UNFILLED'})},29:{Maa:day({m1:'Existing',m2:'UNFILLED'},['Standby']),Cabantian:day({m1:'Other',m2:'UNFILLED'})}};
- const w={auth:{currentUser:{uid:'owner',email:'jgo031996@gmail.com',emailVerified:true}},sessionUser:{uid:'owner',email:'jgo031996@gmail.com',isOwner:true,isFranchisee:false,role:'Owner',permissions:['all'],allowedBranches:['All']},employees:staff,scheduleDirectoryProfiles:staff,scheduleMemoryReadOnly:!!options.readonly,
+ const w={db:{},doc:(_db,table,id)=>({table,id}),getDocFromServer:async reference=>{if(options.readProfile)return options.readProfile(reference);const profile=staff.find(row=>row.staffId===reference.id);return {exists:()=>!!profile,data:()=>({...profile}),metadata:{fromCache:false,hasPendingWrites:false}};},auth:{currentUser:{uid:'owner',email:'jgo031996@gmail.com',emailVerified:true}},sessionUser:{uid:'owner',email:'jgo031996@gmail.com',isOwner:true,isFranchisee:false,role:'Owner',permissions:['all'],allowedBranches:['All']},employees:staff,scheduleDirectoryProfiles:staff,scheduleMemoryReadOnly:!!options.readonly,
   isBranchAllowed:branch=>!(options.deniedBranches||[]).includes(branch),ManagerUI:{notify:message=>calls.notices.push(message)},renderConfigUI(){},updateHolidayList(){},renderTables(){calls.renders++;},switchTab(){},updateStaffDisplay(){},updateAvailDropdown(){},updateUnavailabilityList(){},
   reviewOwnedScheduleLeave(date,name){calls.leaveReviews.push({date,name});return options.ownedLeave===name;},
   saveToCloud:async()=>{calls.saves.push(clone(context.currentSchedule));return options.save?options.save():true;}};
  const Swal={fire:async(...args)=>{calls.dialogs.push(args);if(args[0]?.title==='🔄 Reassign / Swap Shift'&&options.autoConfirm)return {isConfirmed:true,value:options.autoConfirm};return {isConfirmed:false};},showValidationMessage:message=>calls.notices.push(message)};
- context=vm.createContext({...directory,availableScheduleReliefStaff,canOpenWorkspacePage,leaveStatus,escapeHtml:esc,window:w,document:{getElementById:node},Swal,employees:staff,currentSchedule:schedule,unavailability:options.unavailability||{},currentYear:2026,currentMonth:10,currentActiveTab:'Maa',branchConfig:{Maa:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}],Cabantian:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}]},swapData:null,monthKey:value=>value.currentYear+'-'+String(value.currentMonth).padStart(2,'0'),console});
- for(const name of ['applyScheduleMemorySnapshot','findEmployeeProfile','openSwapModal','executeSwap'])vm.runInContext(extract(name),context);
+ context=vm.createContext({...directory,activeStaffProfile,availableScheduleReliefStaff,canOpenWorkspacePage,leaveStatus,escapeHtml:esc,window:w,document:{getElementById:node},Swal,employees:staff,currentSchedule:schedule,unavailability:options.unavailability||{},currentYear:2026,currentMonth:10,currentActiveTab:'Maa',branchConfig:{Maa:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}],Cabantian:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}]},swapData:null,monthKey:value=>value.currentYear+'-'+String(value.currentMonth).padStart(2,'0'),console});
+ for(const name of ['applyScheduleMemorySnapshot','findEmployeeProfile','confirmActiveScheduleStaff','openSwapModal','executeSwap'])vm.runInContext(extract(name),context);
  const html=()=>calls.dialogs.filter(args=>args[0]?.title==='🔄 Reassign / Swap Shift').at(-1)?.[0].html||'';
  const optionsFor=()=>[...html().matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)].map(row=>({value:row[1],label:row[2]}));
  return {w,ctx:context,calls,node,html,optionsFor,async open(branch='Maa',shift='m1'){await w.openSwapModal(28,branch,shift);},option(name){return optionsFor().find(row=>row.label.startsWith(name+' '));}};
@@ -65,7 +66,7 @@ for(const mode of ['false','error'])test('unconfirmed '+mode+' save keeps the as
  const f=fixture({save:async()=>{if(mode==='error')throw Error('Synthetic connection failure');return false;}});await f.open();assert.equal(await f.w.executeSwap(f.option('Anj').value,false),false);assert.equal(f.ctx.currentSchedule[28].Maa.scheduled.m1,'Anj');assert.deepEqual(clone(f.ctx.currentSchedule[28].Maa.rest),['Standby','Existing']);assert.equal(f.calls.saves.length,1);assert.equal(successful(f),false);assert.equal(f.calls.dialogs.at(-1)[0],'Assignment not yet confirmed');
 });
 test('pending duplicate assignment cannot start a second save',async()=>{
- const pending=hold(),f=fixture({save:()=>pending.promise});await f.open();const target=f.option('Anj').value,saving=f.w.executeSwap(target,false);assert.equal(f.calls.saves.length,1);assert.equal(await f.w.executeSwap(target,false),false);pending.resolve(true);assert.equal(await saving,true);assert.equal(f.calls.saves.length,1);
+ const pending=hold(),f=fixture({save:()=>pending.promise});await f.open();const target=f.option('Anj').value,saving=f.w.executeSwap(target,false);await new Promise(resolve=>setImmediate(resolve));assert.equal(f.calls.saves.length,1);assert.equal(await f.w.executeSwap(target,false),false);pending.resolve(true);assert.equal(await saving,true);assert.equal(f.calls.saves.length,1);
 });
 test('actual snapshot application joins fresh directory aliases without importing saved membership or editing the roster',async()=>{
  const f=fixture(),saved={currentYear:2026,currentMonth:10,branchConfig:f.ctx.branchConfig,employees:[{staffId:'anj@example.test',name:'Old Anj',branch:'Cabantian'},{staffId:'ghost',name:'Removed Ghost',branch:'Maa'}],currentSchedule:{28:{Maa:day({m1:'Old Anj',m2:'UNFILLED'})}},unavailability:{}};
@@ -82,4 +83,24 @@ test('relief source permission revocation or changed standby provenance rejects 
 });
 test('a late save acknowledgment cannot announce success in a different signed-in account',async()=>{
  const pending=hold(),f=fixture({save:()=>pending.promise});await f.open();const saving=f.w.executeSwap(f.option('Anj').value,false);f.w.auth.currentUser.uid='another-account';pending.resolve(true);await saving;assert.equal(successful(f),false);
+});
+
+test('former and unknown dated roster names are preserved but never offered as active scheduled or standby choices',async()=>{
+ const f=fixture();f.w.scheduleDirectoryProfiles.push(employee('former','Former','Maa',{status:'Offboarded'}));f.ctx.currentSchedule[28].Maa.scheduled.m2='Former';f.ctx.currentSchedule[28].Maa.rest.push('Unknown Legacy');const before=clone(f.ctx.currentSchedule);await f.open();assert.equal(f.optionsFor().some(row=>/Former|Unknown Legacy/.test(row.label)),false);assert.deepEqual(clone(f.ctx.currentSchedule),before);assert.equal(f.calls.saves.length,0);assert.equal(f.w.findEmployeeProfile('Exis'),null,'prefix guessing is disabled');
+});
+
+test('a current employee newly revoked on the server cannot be assigned from a stale open chooser',async()=>{
+ const f=fixture({readProfile:async reference=>({exists:()=>true,data:()=>({cashierName:'Sample Anj',scheduleNickname:'Anj',branch:'Maa',pin:'REVOKED'}),metadata:{fromCache:false,hasPendingWrites:false}})});await f.open();const before=clone(f.ctx.currentSchedule);assert.equal(await f.w.executeSwap(f.option('Anj').value,false),false);assert.deepEqual(clone(f.ctx.currentSchedule),before);assert.equal(f.calls.saves.length,0);
+});
+
+test('a roster or account change during the fresh employee read cannot mutate any day',async()=>{
+ for(const change of ['day','account']){const gate=hold(),f=fixture({readProfile:()=>gate.promise});await f.open();const saving=f.w.executeSwap(f.option('Anj').value,false);if(change==='day')f.ctx.currentSchedule[28].Maa.rest.push('Owner draft change');else f.w.auth.currentUser={...f.w.auth.currentUser,uid:'another-owner'};const before=clone(f.ctx.currentSchedule);gate.resolve({exists:()=>true,data:()=>({cashierName:'Sample Anj',scheduleNickname:'Anj',branch:'Maa'}),metadata:{fromCache:false,hasPendingWrites:false}});assert.equal(await saving,false);assert.deepEqual(clone(f.ctx.currentSchedule),before);assert.equal(f.calls.saves.length,0);}
+});
+
+test('an offboarded current assignee can be replaced but cannot be swapped into another shift',async()=>{
+ const f=fixture();f.ctx.currentSchedule[28].Maa.scheduled.m2='Standby';f.w.scheduleDirectoryProfiles.find(row=>row.staffId==='existing').active=false;await f.open();assert.equal(f.optionsFor().some(row=>row.value==='shift_m2'),false);const before=clone(f.ctx.currentSchedule);assert.equal(await f.w.executeSwap('shift_m2',false),false);assert.deepEqual(clone(f.ctx.currentSchedule),before);assert.equal(f.calls.saves.length,0);
+});
+
+test('a recovered draft cannot reintroduce revoked membership or erase its historical assignment',async()=>{
+ const f=fixture();f.w.scheduleDirectoryProfiles.find(row=>row.staffId==='existing').active=false;const snapshot={currentYear:2026,currentMonth:10,branchConfig:f.ctx.branchConfig,employees:[employee('existing','Existing')],currentSchedule:clone(f.ctx.currentSchedule),unavailability:{}};await f.w.applyScheduleMemorySnapshot(snapshot,{preserveDraftEmployees:true});assert.equal(f.w.employees.some(row=>row.staffId==='existing'),false);assert.equal(f.ctx.currentSchedule[28].Maa.scheduled.m1,'Existing');assert.equal(f.calls.saves.length,0);
 });

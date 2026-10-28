@@ -1,3 +1,4 @@
+import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
 import * as roster from '../takodeal-manager/payroll-roster-model.js';
 import * as rosterUI from '../takodeal-manager/payroll-balance-review.js';
 import test from 'node:test';
@@ -41,7 +42,7 @@ function harness(options={}){
  api.getDocFromServer=async ref=>{if(options.readDoc)return options.readDoc(ref,{records});const row=(records[ref.table]||[]).find(item=>item.id===ref.id||item.staffId===ref.id);return {exists:()=>!!row,data:()=>row,metadata:{fromCache:false,hasPendingWrites:false}};};
  const Swal={fire:async(...args)=>{events.push(args);return options.confirm?options.confirm(...args):{isConfirmed:false};},showValidationMessage:message=>events.push(message)};
  const document={getElementById:id=>id==='payrollBalanceReview'?null:node(id),querySelectorAll:()=>[]};
- const context=vm.createContext({...roster,...rosterUI,...roster,...rosterUI,...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...completion,readPayrollCashShortages,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
+ const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...roster,...rosterUI,...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...completion,readPayrollCashShortages,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
  context.html=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  vm.runInContext(heldRenderer,context);
  for(const name of ['getPayrollPreviewGuard','requirePayrollPreview','loadPayrollGenerator','generateAutoPayslips','openPayslipModal','finalizePayslip'])vm.runInContext(extract(name),context);

@@ -1,5 +1,6 @@
 import {installCashRemittanceReview} from './cash-remittance-review-ui.js';
 import {installDisciplineCases} from './discipline-case-ui.js';
+import {staffLifecycleState,activeStaffProfile} from './staff-lifecycle-model.js';
 import {installStaffSetupCodes} from './staff-setup-codes.js';
 import {installScheduleProposalReview} from './schedule-proposal-review-ui.js';
 import {installMenuOptions} from './menu-options-ui.js';
@@ -49,7 +50,7 @@ import { enhanceScheduleLayout } from './schedule-layout.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
 import {installScheduleMemoryUI} from './schedule-memory-ui.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
-import {toScheduleEmployee,upsertScheduleEmployee,mergeScheduleEmployeeAliases,availableSchedulePoolStaff} from './schedule-staff-directory.js';
+import {toScheduleEmployee,upsertScheduleEmployee,mergeScheduleEmployeeAliases,availableSchedulePoolStaff,resolveScheduleEmployeeReference,scheduleIdentityDirectory} from './schedule-staff-directory.js';
 import {availableScheduleReliefStaff} from './schedule-relief-staff.js';
 import {installOwnerScheduleSync} from './owner-schedule-sync.js';
 import {validateManualAttendance, saveManualAttendance} from './attendance-audit.js';
@@ -441,7 +442,7 @@ window.toggleArchivedStaff = function() {
             btn.style.color = 'white';
             btn.style.borderColor = '#0ea5e9';
         } else {
-            btn.innerHTML = '📁 View Archived / Resigned';
+            btn.innerHTML = '📁 View Archived / Inactive';
             btn.style.background = 'white';
             btn.style.color = '#475569';
             btn.style.borderColor = '#cbd5e1';
@@ -463,7 +464,7 @@ window.loadHRModule = async function() {
     let myBranch = window.sessionUser ? window.sessionUser.branch : null;
     
     hrActor=staffDirectoryActorKey(window,'branches');
-    let staffList=await loadStaffDirectory(window,{page:'branches',assertCurrent,readRates:profile=>archive||profile.status!=='Resigned',allowPartialRates:true});
+    let staffList=await loadStaffDirectory(window,{page:'branches',assertCurrent,readRates:profile=>archive||activeStaffProfile(profile),allowPartialRates:true});
     assertCurrent();
     let html = '';
     const isOwner = window.sessionUser && window.sessionUser.isOwner;
@@ -480,7 +481,7 @@ window.loadHRModule = async function() {
         if (!window.isBranchAllowed(data.branch)) return; // 🔥 SECURITY LOCK
         
         // 📊 Math Tally Engine (Runs on all staff before the visual filter!)
-        if (data.status === 'Resigned') {
+        if (!activeStaffProfile(data)) {
             archivedCount++;
         } else {
             activeCount++;
@@ -488,8 +489,8 @@ window.loadHRModule = async function() {
         }
 
         // 🛑 THE ARCHIVE FILTER (Stops resigned staff from rendering on the screen)
-        if (!window.showArchivedStaff && data.status === 'Resigned') return; 
-        if (window.showArchivedStaff && data.status !== 'Resigned') return;  
+        if (!window.showArchivedStaff && !activeStaffProfile(data)) return;
+        if (window.showArchivedStaff && activeStaffProfile(data)) return;
 
         window.globalStaffData[data.id] = data; 
         
@@ -8304,7 +8305,7 @@ window.loadPayrollScheduleHistory = (from, to) => window.getScheduleHistoryStore
 window.getScheduleMemorySnapshot = () => ({branchConfig, employees, unavailability, currentSchedule, currentYear, currentMonth, holidays:window.scheduleHolidays});
 window.applyScheduleMemorySnapshot = async (snapshot, {preserveDraftEmployees=false}={}) => {
     const data = JSON.parse(JSON.stringify(snapshot));
-    branchConfig=data.branchConfig || {}; employees=preserveDraftEmployees ? (data.employees || []) : (Array.isArray(window.scheduleDirectoryProfiles)?mergeScheduleEmployeeAliases(window.scheduleDirectoryProfiles,data.employees || []):(data.employees || [])); window.employees=employees;
+    branchConfig=data.branchConfig || {}; employees=Array.isArray(window.scheduleDirectoryProfiles)?mergeScheduleEmployeeAliases(window.scheduleDirectoryProfiles,data.employees || []):[]; window.employees=employees;
     unavailability=data.unavailability || {}; currentSchedule=data.currentSchedule || {};
     window.branchConfig=branchConfig;window.currentSchedule=currentSchedule;window.unavailability=unavailability;
     currentYear=data.currentYear; currentMonth=data.currentMonth; window.currentYear=currentYear; window.currentMonth=currentMonth;
@@ -8340,7 +8341,8 @@ window.getOwnerScheduleSync = function() {
         readView:async month=>{
             const [saved,staff]=await Promise.allSettled([loadScheduleMonthView(window,{month,store:window.getScheduleHistoryStore()}),window.getDocsFromServer(window.collection(window.db,'cashiers'))]);
             if(saved.status==='rejected')throw saved.reason;
-            const directory=staff.status==='fulfilled'?staff.value.docs.map(doc=>toScheduleEmployee(doc.data(),doc.id)).filter(employee=>employee?.scheduleEligible):null;
+            if(staff.status==='rejected'||staff.value.metadata?.fromCache||staff.value.metadata?.hasPendingWrites)throw Error('Reconnect to HQ to confirm current staff before opening schedule assignments.');
+            const directory=staff.status==='fulfilled'?staff.value.docs.map(doc=>toScheduleEmployee(doc.data(),doc.id)).filter(Boolean):null;
             return {...saved.value,directory};
         },
         applyView:async view=>{window.scheduleDirectoryProfiles=view.directory;await window.applyScheduleMemorySnapshot(view.editorSnapshot);scheduleMemoryUI?.bindView(view);},
@@ -8665,22 +8667,7 @@ window.removeEmployee = async function(name) {
 };
 
 window.findEmployeeProfile = function(searchName) {
-    if (!window.employees || !searchName) return null;
-    let s = String(searchName).toLowerCase().trim();
-    
-    let exactMatch = window.employees.find(e => [e.name,e.cashierName,e.fullName,e.scheduleNickname,e.scheduleName].some(value=>String(value||"").toLowerCase().trim()===s));
-    if (exactMatch) return exactMatch;
-    
-    let nickMatch = window.employees.find(e => String(e.scheduleNickname || e.scheduleName || "").toLowerCase().trim() === s);
-    if (nickMatch) return nickMatch;
-
-    let partialMatch = window.employees.find(e => {
-        let fName = String(e.name || e.cashierName || "").toLowerCase().trim();
-        return fName.startsWith(s) && s.length >= 3; 
-    });
-    if (partialMatch) return partialMatch;
-
-    return null;
+    return resolveScheduleEmployeeReference(searchName,scheduleIdentityDirectory(window.scheduleDirectoryProfiles,window.employees));
 };
 
 window.updateStaffDisplay = function() {
@@ -8689,7 +8676,7 @@ window.updateStaffDisplay = function() {
     
     let targetBranch = window.currentActiveTab || 'Cabantian';
     let empList = window.employees || employees || [];
-    let branchStaff = empList.filter(e => e.branch === targetBranch);
+    let branchStaff = empList.filter(e => e.branch === targetBranch && activeStaffProfile(e) && e.scheduleEligible!==false);
     
     let empNameInput = document.getElementById('empName');
     let empBranchSelect = document.getElementById('empBranch');
@@ -8718,13 +8705,13 @@ window.updateStaffDisplay = function() {
                 Object.values(dayData.scheduled).forEach(name => {
                     if (name !== "N/A" && name !== "UNFILLED") {
                         let realProfile = window.findEmployeeProfile(name);
-                        if (!realProfile || realProfile.branch !== targetBranch) reliefStaffNames.add(name);
+                        if (realProfile && realProfile.branch !== targetBranch) reliefStaffNames.add(name);
                     }
                 });
                 
                 (dayData.rest || []).forEach(name => {
                     let realProfile = window.findEmployeeProfile(name);
-                    if (!realProfile || realProfile.branch !== targetBranch) reliefStaffNames.add(name);
+                    if (realProfile && realProfile.branch !== targetBranch) reliefStaffNames.add(name);
                 });
             }
         }
@@ -8767,8 +8754,8 @@ window.updateAvailDropdown = function() {
     let targetBranch = window.currentActiveTab || 'Cabantian';
     select.innerHTML = `<option value="">-- Select Staff --</option>`;
     
-    let branchStaff = employees.filter(e => e.branch === targetBranch);
-    let otherStaff = employees.filter(e => e.branch !== targetBranch);
+    let branchStaff = employees.filter(e => e.branch === targetBranch && activeStaffProfile(e) && e.scheduleEligible!==false);
+    let otherStaff = employees.filter(e => e.branch !== targetBranch && activeStaffProfile(e) && e.scheduleEligible!==false);
 
     let optGroupMain = document.createElement('optgroup');
     optGroupMain.label = `📍 ${targetBranch} Staff`;
@@ -9116,6 +9103,18 @@ window.generateSchedule = async function() {
 // ==========================================
 // 🔄 UPGRADED REASSIGN SHIFT MODAL
 // ==========================================
+window.confirmActiveScheduleStaff = async function(reference,{assertCurrent=()=>{}}={}) {
+    const user=window.auth?.currentUser,session=window.sessionUser;
+    const prior=resolveScheduleEmployeeReference(reference,scheduleIdentityDirectory(window.scheduleDirectoryProfiles,window.employees));
+    if(!prior?.staffId||typeof window.getDocFromServer!=='function')throw Error('Confirm the current employee account with HQ before assigning this schedule.');
+    const snap=await window.getDocFromServer(window.doc(window.db,'cashiers',prior.staffId));assertCurrent();
+    if(window.auth?.currentUser!==user||window.sessionUser!==session||!canOpenWorkspacePage(window.sessionUser,'schedule'))throw Error('The schedule-management account changed. Reopen this assignment.');
+    if(!snap.exists()||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('The latest employee profile could not be confirmed. Refresh the staff list.');
+    const fresh=toScheduleEmployee(snap.data(),prior.staffId);
+    if(!fresh?.scheduleEligible||fresh.name!==prior.name||fresh.branch!==prior.branch)throw Error('This employee account is inactive or its saved identity/branch changed. Refresh the staff list.');
+    return fresh;
+};
+
 window.openSwapModal = async function(day, branch, shiftId) {
     let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
     if (!schedObj || !schedObj[day] || !schedObj[day][branch]) return window.ManagerUI.notify("Schedule data error.");
@@ -9140,7 +9139,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
     optionsHtml += '<optgroup label="🔄 Swap with Scheduled Staff">';
     for (let sId in dayData.scheduled) {
         let staff = dayData.scheduled[sId];
-        if (staff !== "N/A" && staff !== "UNFILLED" && staff !== curStaff) {
+        if (staff !== "N/A" && staff !== "UNFILLED" && staff !== curStaff && profileFunc(staff) && (["N/A","UNFILLED"].includes(curStaff)||profileFunc(curStaff))) {
             let shiftName = sId;
             let targetBranchConfig = typeof branchConfig !== 'undefined' ? branchConfig[branch] : window.branchConfig[branch];
             if (targetBranchConfig) {
@@ -9158,7 +9157,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
     if (dayData.rest && dayData.rest.length > 0) {
         optionsHtml += '<optgroup label="☕ Assign from Standby">';
         dayData.rest.forEach((rStaff, index) => {
-            if (rStaff !== curStaff) {
+            if (rStaff !== curStaff && profileFunc(rStaff)) {
                 let realProfile = profileFunc(rStaff) || { scheduleNickname: rStaff };
                 let displayName = realProfile.scheduleNickname || realProfile.cashierName || rStaff;
                 optionsHtml += `<option value="rest_${index}">${displayName} (Standby)</option>`;
@@ -9198,10 +9197,11 @@ window.openSwapModal = async function(day, branch, shiftId) {
         optionsHtml += '<optgroup label="🛏️ Override: Assign from Leave/Off">';
         for (let offStaff in todaysLeaves) {
             if (offStaff !== curStaff) {
-                let realProfile = profileFunc(offStaff) || { scheduleNickname: offStaff };
+                let realProfile = profileFunc(offStaff);
+                if (!realProfile) continue;
                 
                 // Final Ghost check - don't show them if they are resigned!
-                if (realProfile.status === 'Resigned' || realProfile.pin === 'REVOKED') continue;
+                if (!activeStaffProfile(realProfile) || realProfile.scheduleEligible===false) continue;
                 
                 let displayName = realProfile.scheduleNickname || realProfile.cashierName || offStaff;
                 let offStatus = leaveStatus(todaysLeaves[offStaff]);
@@ -9284,6 +9284,9 @@ window.executeSwap = async function(target, markAsSwap) {
     const targetPerson=selectedPoolStaff?.name || selectedReliefStaff?.name || (target.startsWith('unavail_')?target.slice(8):target.startsWith('rest_')?schedObj[day][branch].rest[Number(target.slice(5))]:target.startsWith('shift_')?schedObj[day][branch].scheduled[target.slice(6)]:null);
     if(targetPerson&&window.reviewOwnedScheduleLeave(targetDate,targetPerson))return;
     if(!targetPerson||typeof window.saveToCloud!=='function')return false;
+    const targetReference=selectedPoolStaff||selectedReliefStaff?{staffId:(selectedPoolStaff||selectedReliefStaff).staffId,staffName:targetPerson}:targetPerson;
+    if(!resolveScheduleEmployeeReference(targetReference,scheduleIdentityDirectory(window.scheduleDirectoryProfiles,window.employees))){window.ManagerUI.notify('This staff account is inactive or its identity needs review. Reopen the current staff list.');return false;}
+    try{const guard=()=>{if(!ownsAssignment()||context&&context.dayState!==JSON.stringify(schedObj[day])||window.scheduleMemoryReadOnly||!canOpenWorkspacePage(window.sessionUser,'schedule'))throw Error('This staff list or schedule changed. Reopen the assignment window.');};await window.confirmActiveScheduleStaff(targetReference,{assertCurrent:guard});guard();if(target.startsWith('shift_')&&!["N/A","UNFILLED"].includes(curStaff)){await window.confirmActiveScheduleStaff(curStaff,{assertCurrent:guard});guard();}}catch(error){window.ManagerUI.notify(error.message);return false;}
 
     if (!schedObj[day][branch].swaps) schedObj[day][branch].swaps = {};
 
@@ -9499,6 +9502,7 @@ window.renderTables = function() {
 // 🖱️ MANAGE STANDBY STAFF ENGINE
 // ==========================================
 window.manageStandbyStaff = async function(day, branch, staffName) {
+    if(!window.findEmployeeProfile(staffName))return window.ManagerUI.notify('This dated roster entry belongs to an inactive or unconfirmed employee. Review its saved history; it cannot be assigned as current staff.');
     const managedDate=`${currentYear}-${String(currentMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     if(window.reviewOwnedScheduleLeave(managedDate,staffName))return;
     let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
@@ -9566,6 +9570,7 @@ window.manageStandbyStaff = async function(day, branch, staffName) {
     });
 
     if (formValues) {
+        try{await window.confirmActiveScheduleStaff(staffName);}catch(error){window.ManagerUI.notify(error.message);return;}
         if(window.reviewOwnedScheduleLeave(managedDate,staffName))return;
         // Action 1: Assign to Shift
         if (formValues.shiftId) {
@@ -10366,7 +10371,7 @@ window.loadPayrollGenerator = async function() {
             staffNameById[d.id] = masterName;
             
             // Only active staff can absorb typo logs!
-            if (data.status !== 'Resigned' && data.pin !== 'REVOKED') {
+            if (activeStaffProfile(data)) {
                 activeStaffNames.push(masterName);
             }
         });
@@ -11055,7 +11060,8 @@ window.loadLedger = async function() {
             let staff = docSnap.data();
             
             // 🛑 Hide Resigned or Revoked Staff from the Ledger completely
-            if (staff.status === 'Resigned' || staff.pin === 'REVOKED') return; 
+            const staffView=document.getElementById('ledgerStaffView')?.value||'active';
+            if(staffView==='active'&&!activeStaffProfile(staff)||staffView==='archived'&&activeStaffProfile(staff))return;
             
             staffList.push({ id: docSnap.id, ...staff });
         });
@@ -12737,7 +12743,7 @@ window.openManualAttendanceModal = async function() {
         let staffList = [];
         
         snap.forEach(doc => {
-            if (doc.data().status === 'Resigned') return; // 🛑 ARCHIVE FIX
+            if (!activeStaffProfile(doc.data())) return; // 🛑 ARCHIVE FIX
             staffList.push(doc.data().cashierName);
         });
         
@@ -12769,7 +12775,7 @@ window.submitManualAttendance = async function() {
             remarks:document.getElementById('manAttRemarks').value.trim()
         },{actor,allowed:authorized(),branchAllowed:window.isBranchAllowed});
         const staff = await window.getDocsFromServer(window.query(window.collection(window.db,'cashiers'),window.where('cashierName','==',payload.staffName)));
-        if (staff.docs.length !== 1 || staff.docs[0].data().status === 'Resigned') throw Error('The staff account is missing or duplicated. Check the staff directory before recording attendance.');
+        if (staff.docs.length !== 1 || !activeStaffProfile(staff.docs[0].data())) throw Error('The staff account is missing or duplicated. Check the staff directory before recording attendance.');
         payload.staffId = staff.docs[0].id;
         const confirmation = await Swal.fire({title:'Confirm attendance correction',
             text:`${payload.staffName} · ${payload.branch} · ${payload.type} · ${payload.timestamp.toLocaleString('en-PH',{timeZone:'Asia/Manila'})}. Reason: ${payload.remarks}. This will be recorded under ${actor.email}.`,
@@ -12820,7 +12826,7 @@ window.openManualOvertimeModal = async function() {
 
     try {
         otActor=staffDirectoryActorKey(window,'payroll');
-        const [schedSnap,staffProfiles]=await Promise.all([getDoc(doc(db,'settings','global_schedule')),loadStaffDirectory(window,{page:'payroll',assertCurrent,profileFilter:profile=>profile.status!=='Resigned'&&profile.pin!=='REVOKED'})]);
+        const [schedSnap,staffProfiles]=await Promise.all([getDoc(doc(db,'settings','global_schedule')),loadStaffDirectory(window,{page:'payroll',assertCurrent,profileFilter:activeStaffProfile})]);
         assertCurrent();
         if(schedSnap.exists())window.otCache.schedule=schedSnap.data();
         let html='<option value="">-- Select Staff --</option>',staffList=[];
@@ -16823,7 +16829,7 @@ window.processResignation = async function() {
         try {
             // 1. Revoke their POS Access in Firebase
             await updateDoc(doc(db, "cashiers", docId), {
-                pin: 'REVOKED', // Changes PIN to letters so the Numpad can never log them in again!
+                pin: 'REVOKED', // Offboarding retains all records under this account ID.
                 status: 'Resigned',
                 resignationReason: reason || 'N/A',
                 dateResigned: new Date().toISOString().split('T')[0]
@@ -16832,7 +16838,10 @@ window.processResignation = async function() {
             // 2. Generate and Download the COE Image
             window.generateCOEImage(name, dateHired, role);
             
-            // 3. Refresh the UI
+            // 3. Refresh current membership without rewriting dated schedules.
+            if(window.globalStaffData?.[docId])window.globalStaffData[docId]={...window.globalStaffData[docId],pin:'REVOKED',status:'Resigned'};
+            if(Array.isArray(window.scheduleDirectoryProfiles))window.scheduleDirectoryProfiles=window.scheduleDirectoryProfiles.map(row=>row.staffId===docId?{...row,active:false,status:'Resigned',scheduleEligible:false}:row);
+            if(window.employees){employees=upsertScheduleEmployee(window.employees,{...(window.globalStaffData?.[docId]||{}),cashierName:name,status:'Resigned'},docId);window.employees=employees;window.updateStaffDisplay?.();window.updateAvailDropdown?.();}
             document.getElementById('employeeProfileModal').style.display = 'none';
             if (typeof window.loadHRModule === 'function') window.loadHRModule(); 
             
@@ -18815,7 +18824,7 @@ window.toggleAnnounceTargetFields = async function() {
                 let staffList = [];
                 snap.forEach(doc => {
                     let d = doc.data();
-                    if (d.status !== 'Resigned' && d.pin !== 'REVOKED') {
+                    if (activeStaffProfile(d)) {
                         staffList.push(d.cashierName);
                     }
                 });
@@ -20540,54 +20549,28 @@ window.formatDisplayName = function(realName) {
 };
 
 window.deleteCurrentStaff = async function() {
-    // 🔥 BULLETPROOF EXTRACTOR: Grabs the ID and Name directly from the active modal!
-    const getVal = (id) => {
-        let els = document.querySelectorAll(`[id="${id}"]`);
-        let activeEl = Array.from(els).find(el => {
-            let modal = el.closest('[id="employeeProfileModal"]');
-            return modal && modal.style.display !== 'none';
+    const docId=document.getElementById('empProfileId')?.value,name=document.getElementById('empFullName')?.value?.trim();
+    if(!docId||!name)return window.ManagerUI.notify('Open the saved staff profile before archiving it.');
+    const answer=await Swal.fire({title:'Archive this staff account?',text:'This revokes staff access and hides the account from active lists. Its profile, attendance, paid payslips, deductions and case history stay on file.',input:'text',inputPlaceholder:'Reason for archiving',showCancelButton:true,confirmButtonText:'Archive staff account',inputValidator:value=>String(value||'').trim().length<4?'Add a short reason (at least 4 characters).':undefined});
+    if(!answer.isConfirmed)return;
+    const user=window.auth?.currentUser,session=window.sessionUser;
+    try{
+        if(!user?.uid||session?.uid!==user.uid||!canOpenWorkspacePage(session,'branches'))throw Error('Sign in with approved Staff & Security access.');
+        const saved=await window.runTransaction(window.db,async tx=>{
+            const ref=window.doc(window.db,'cashiers',docId),snap=await tx.get(ref);
+            if(window.auth?.currentUser!==user||window.sessionUser!==session)throw Error('The staff-management account changed. Reopen the profile.');
+            if(!snap.exists())throw Error('This employee profile is missing. Its linked history remains available for review.');
+            const profile=snap.data();if(profile.cashierName!==name||window.isBranchAllowed(profile.branch)!==true)throw Error('The saved employee identity or branch changed. Reopen the profile.');
+            const patch={pin:'REVOKED',status:'Archived',archiveReason:String(answer.value).trim(),archivedAt:window.serverTimestamp(),archivedBy:session.email};
+            tx.update(ref,patch);return {...profile,...patch};
         });
-        return activeEl ? activeEl.value : (els[0] ? els[0].value : '');
-    };
-
-    let docId = getVal('empProfileId');
-    let expectedName = getVal('empFullName').trim();
-
-    if (!docId) {
-        return Swal.fire('Error', 'No profile selected to delete. Please save the profile first.', 'error');
-    }
-
-    // Prompt the user to type the name manually to prevent accidental clicks
-    let typedName = (await window.ManagerUI.prompt(`⚠️ WARNING: This will permanently delete ${expectedName} and remove them from the entire system.\n\nTo confirm, type their exact Full Name:`));
-
-    if (!typedName) return; // User clicked cancel or left it blank
-
-    // Check if the typed name matches the expected name (case-insensitive)
-    if (typedName.trim().toLowerCase() !== expectedName.toLowerCase()) {
-        return window.ManagerUI.notify("❌ Deletion Failed: Staff name did not match exactly.");
-    }
-
-    Swal.fire({title: 'Deleting Staff...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
-    try {
-        // 1. Permanently delete from Firebase Cloud!
-        await deleteDoc(doc(db, "cashiers", docId));
-
-        // 2. Clear them out of the local app memory
-        if (window.globalStaffData && window.globalStaffData[docId]) {
-            delete window.globalStaffData[docId];
-        }
-
-        Swal.fire('✅ Deleted!', `${expectedName} has been permanently removed from the system.`, 'success');
-
-        // 3. Close the modal and instantly refresh the HR table
-        document.querySelectorAll('[id="employeeProfileModal"]').forEach(el => el.style.display = 'none');
-        window.loadHRModule();
-
-    } catch (error) {
-        console.error("Error deleting staff:", error);
-        Swal.fire('Error', 'Failed to delete staff member. Check your internet connection.', 'error');
-    }
+        if(window.auth?.currentUser!==user||window.sessionUser!==session)return;
+        window.globalStaffData ||= {};window.globalStaffData[docId]=saved;
+        if(Array.isArray(window.scheduleDirectoryProfiles))window.scheduleDirectoryProfiles=window.scheduleDirectoryProfiles.map(row=>row.staffId===docId?{...row,active:false,status:'Archived',scheduleEligible:false}:row);
+        if(window.employees){employees=upsertScheduleEmployee(window.employees,saved,docId);window.employees=employees;window.updateStaffDisplay?.();window.updateAvailDropdown?.();}
+        document.getElementById('employeeProfileModal').style.display='none';await window.loadHRModule();
+        await Swal.fire('Staff archived','The archived profile is available in Staff & Security. All linked history and balances remain on file.','success');
+    }catch(error){await Swal.fire('Archive was not confirmed',error.message||'Reconnect and review the saved employee profile.','warning');}
 };
 
 // Link the new Logistics Feed buttons to the Review Modal
@@ -24198,7 +24181,7 @@ window.saveEmployeeProfile = async function() {
             // confirmed HR account, keeping all saved daily assignments intact.
             employees=upsertScheduleEmployee(window.employees,saved.profile,docId,{previousProfile:oldData});
             window.employees=employees;
-            if(Array.isArray(window.scheduleDirectoryProfiles))window.scheduleDirectoryProfiles=upsertScheduleEmployee(window.scheduleDirectoryProfiles,saved.profile,docId,{previousProfile:oldData});
+            if(Array.isArray(window.scheduleDirectoryProfiles)){const projected=toScheduleEmployee(saved.profile,docId);window.scheduleDirectoryProfiles=window.scheduleDirectoryProfiles.filter(row=>row.staffId!==docId);if(projected)window.scheduleDirectoryProfiles.push(projected);}
             
             // Instantly re-render the Schedule UI to show them in the new branch!
             if (typeof window.updateStaffDisplay === 'function') window.updateStaffDisplay();
@@ -24239,7 +24222,7 @@ window.massGenerateStaffIDs = async function() {
         
         snap.forEach(doc => {
             let d = doc.data();
-            if (d.status === 'Resigned' || d.pin === 'REVOKED') return; 
+            if (!activeStaffProfile(d)) return;
             let b = d.branch || 'Unknown';
             if (!staffByBranch[b]) staffByBranch[b] = [];
             staffByBranch[b].push({ id: doc.id, ...d });
@@ -25980,7 +25963,7 @@ window.removeStaffFromBranchPool = async function(staffName) {
 };
 
 window.addStaffToBranchPool = async function(targetBranch) {
-    let otherStaff = window.employees.filter(e => e.branch !== targetBranch);
+    let otherStaff = window.employees.filter(e => e.branch !== targetBranch && activeStaffProfile(e) && e.scheduleEligible!==false);
     if (otherStaff.length === 0) return Swal.fire('No Staff Found', 'There are no other staff members in the system to pull.', 'info');
     
     let optionsHtml = '<option value="">-- Select Staff to Pull --</option>';
@@ -26011,13 +25994,9 @@ window.addStaffToBranchPool = async function(targetBranch) {
     if (isConfirmed && selectedStaff) {
         Swal.fire({title: 'Transferring...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         try {
-            const staffSnap = await window.getDocs(window.collection(window.db, "cashiers"));
-            let docIdToUpdate = null;
-            staffSnap.forEach(d => {
-                let data = d.data();
-                let n = data.scheduleNickname || data.cashierName;
-                if (n === selectedStaff) docIdToUpdate = d.id;
-            });
+            const selectedProfile=await window.confirmActiveScheduleStaff(selectedStaff);
+            const docIdToUpdate=selectedProfile.staffId;
+            if(!window.isBranchAllowed(targetBranch)||!window.isBranchAllowed(selectedProfile.branch))throw Error('This branch transfer is outside your approved branches.');
             
             if (docIdToUpdate) {
                 await window.updateDoc(window.doc(window.db, "cashiers", docIdToUpdate), { branch: targetBranch });
@@ -26117,7 +26096,7 @@ window.openTopPerformerModal = async function() {
         
         snap.forEach(docSnap => {
             let d = docSnap.data();
-            if (d.status !== 'Resigned' && d.pin !== 'REVOKED') staffList.push(d.cashierName);
+            if (activeStaffProfile(d)) staffList.push(d.cashierName);
         });
         
         staffList.sort().forEach(name => html += `<option value="${name}">${name}</option>`);

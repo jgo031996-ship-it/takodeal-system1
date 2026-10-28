@@ -1,18 +1,15 @@
 // Preview classification only. Source balances, punches and paid payslips are
 // retained; this module never changes an amount or an employee's saved record.
+import {staffLifecycleState} from './staff-lifecycle-model.js';
 const text=value=>typeof value==='string'?value.trim().replace(/\s+/g,' '):'';
 const nameKey=value=>text(value).normalize('NFKC').toLocaleLowerCase('en');
-const formerStates=new Set(['resigned','terminated','inactive','disabled','revoked','archived','blocked','deleted','offboarded']);
 const nameOf=profile=>text(profile?.cashierName)||text(profile?.fullName)||text(profile?.name);
 const idOf=profile=>text(profile?.staffId)||text(profile?.id);
 const aliasesOf=profile=>[profile?.cashierName,profile?.fullName,profile?.name,profile?.scheduleNickname,profile?.nickname].map(nameKey).filter(Boolean);
 const positive=value=>typeof value==='number'&&Number.isFinite(value)&&value>0;
 
 export function payrollProfileState(profile){
- if(!profile||typeof profile!=='object')return {active:false,missing:true,status:'Missing profile',reason:'The employee profile is missing from the saved staff directory.'};
- const status=text(profile.status)||text(profile.employmentStatus),pin=text(profile.pin).toUpperCase();
- const inactive=profile.active===false||profile.isActive===false||profile.archived===true||profile.isArchived===true||profile.deleted===true||profile.isDeleted===true||profile.blocked===true||profile.revoked===true||formerStates.has(status.toLowerCase())||['REVOKED','BLOCKED'].includes(pin);
- return {active:!inactive,missing:false,status:status||(inactive?'Inactive':'Active'),reason:inactive?'This employee is inactive, archived or no longer has staff access.':''};
+ return staffLifecycleState(profile);
 }
 
 // An explicit staff ID always wins over a legacy name, but a missing or
