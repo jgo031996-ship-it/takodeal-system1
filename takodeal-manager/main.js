@@ -21,7 +21,7 @@ import {payrollActorKey,loadPayrollAccounts,applyConfirmedPayroll,checkSavedPays
 import {installManagerTableWrapper} from './manager-table-wrapper.js';
 import {payrollScheduleStamp,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
 import {createPayrollPreviewGuard,readPayrollSnapshot} from './payroll-preview-guard.js';
-import {coordinatePayrollLoad,loadPayrollPreviewInputs,loadPayrollSalaryProfiles} from './payroll-loading.js';
+import {coordinatePayrollLoad,loadPayrollPreviewInputs,loadPayrollSalaryProfiles,payrollSalaryForWork,payrollSalaryForPreview} from './payroll-loading.js';
 import {createPayrollRosterResolver,buildPayrollLedgerReview} from './payroll-roster-model.js';
 import {buildPayrollRosterReview,renderPayrollBalanceReview} from './payroll-balance-review.js';
 import {installManagerLeaveUI,leaveRequestSummaryHTML} from './manager-leave-ui.js';
@@ -62,6 +62,17 @@ import {installPaymentReviewScanner} from './payment-review-scanner.js';
 import {installHRReviewCenter,heldPayrollReviewHTML} from './hr-review-ui.js';
 window.openHRReviewCenter = context => {window.hrReviewCenter ||= installHRReviewCenter(window,document);return window.hrReviewCenter.open(context);};
 window.openAttendanceRecovery = context => window.openHRReviewCenter(context);
+window.openPayrollFromHR = function(context={}) {
+ if(!canOpenWorkspacePage(window.sessionUser,'payroll'))return window.ManagerUI.notify('Your account does not have payroll access.');
+ const valid=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
+ const from=context.from,to=context.to;
+ if(!valid(from)||!valid(to)||from>to)return window.ManagerUI.notify('Choose the payroll cutoff dates before opening the payroll list.');
+ const start=document.getElementById('payrollStart'),end=document.getElementById('payrollEnd');
+ if(!start||!end)return window.ManagerUI.notify('Reload the Owner app to open Payroll & Time Feed.');
+ window.hrReviewCenter?.close();start.value=from;end.value=to;
+ window.getPayrollPreviewGuard?.().invalidate?.('Cutoff selected from HR review. Click Generate List to refresh payroll; employment-date reminders are separate.');
+ window.navToHr('Feed');document.getElementById('payrollGeneratorBody')?.closest('.card')?.scrollIntoView?.({block:'start'});
+};
 window.openHRRecoveryProfile = async staffId => {
  const uid=window.auth?.currentUser?.uid;if(!uid||window.sessionUser?.uid!==uid||window.sessionUser?.isOwner!==true||window.sessionUser?.isFranchisee)return;
  const snap=await window.getDocFromServer(window.doc(window.db,'cashiers',staffId));if(!snap.exists()||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('Reconnect to confirm this employee profile.');
@@ -10413,7 +10424,11 @@ window.loadPayrollGenerator = async function() {
                 activeStaffNames.push(masterName);
             }
         });
-        staffDict=await loadPayrollSalaryProfiles(window,staffDict,paidRecords,{assertCurrent:assertPreview});
+        // Only cutoff sources can create an unpaid row. An unrelated account's
+        // private salary history must not prevent these staff records loading.
+        const salaryStaffNames=new Set();
+        for(const snapshot of [attSnap,deductSnap,bonusSnap])snapshot.forEach(row=>{const identity=rosterResolver(row.data());if(identity.status==='matched')salaryStaffNames.add(identity.name);});
+        staffDict=await loadPayrollSalaryProfiles(window,staffDict,paidRecords,{assertCurrent:assertPreview,staffNames:salaryStaffNames});
         
         const ledgerReview=buildPayrollLedgerReview(ledgerSnap.docs.map(row=>({...row.data(),id:row.id})),rosterResolver);
         const ledgerDict=ledgerReview.ledgerDict;
@@ -10440,7 +10455,7 @@ window.loadPayrollGenerator = async function() {
         const attendanceRecords=[];
         attSnap.forEach(docSnap=>attendanceRecords.push({...docSnap.data(),id:docSnap.id}));
         for(const record of attendanceRecords){const identity=rosterResolver(record);if(identity.status!=='matched'||identity.nameCollision){identityProblems.set(identity.name||record.staffName,identity);if(paidRecords[identity.name||record.staffName])unmatchedBalanceRows.push({name:identity.name||record.staffName,branch:record.branch||'Not confirmed',reason:identity.reason,records:[record]});}}
-        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,frozenNames:Object.keys(paidRecords)});
+        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,frozenNames:Object.keys(paidRecords),cutoffStart:trueStartDate,cutoffEnd:trueEndDate});
         payrollPlan.logs.forEach(log => {
             let name = log.payrollStaffName;
             if (!name || paidRecords[name]) return;
@@ -10469,12 +10484,13 @@ window.loadPayrollGenerator = async function() {
                     if(matchedShift?.amendmentNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceLogIds=[...(staffData[name].attendanceLogIds||[]),log.id].filter(Boolean);staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'A shift-time correction conflicts with a reviewed attendance record. HR must confirm it.'];}
                     let { lateMinutes: calcMins, expectedStartHour: expStart, wasScheduled: wasSched } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
                     calcMins = attendanceLateMinutes(log, matchedShift);
-                    const rateProfile=staffProfileForWork(staffDict[name]||{},log,matchedShift);
-                    const late = latePay(calcMins, rateProfile, matchedShift, log.lateExempted === true);
+                    const salary=payrollSalaryForWork(staffDict[name]||{},log,matchedShift),rateProfile=salary.profile;
+                    const late = rateProfile ? latePay(calcMins, rateProfile, matchedShift, log.lateExempted === true) : {hours:0,amount:0};
                     const lateHoursToDeduct = late.hours;
                     const lateAmount = late.amount;
 
                     activeShifts[name] = {
+                        attendanceId:log.id,salaryReviewReason:salary.reason,
                         rateProfile,
                         matchedShift,
                         time: logDate, 
@@ -10512,6 +10528,12 @@ window.loadPayrollGenerator = async function() {
 
                 let isAutoClosed = pType === "TIME OUT (AUTO)";
                 let remark = isAutoClosed ? `<span style="color:#d97706; font-weight:bold;">Auto-Closed (Forgot to punch out)</span>` : `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
+                if(activeShifts[name].salaryReviewReason){
+                    const row=staffData[name],reason=activeShifts[name].salaryReviewReason;row.attendanceReviewRequired=true;row.salaryReviewRequired=true;
+                    row.attendanceReviewReasons=[...new Set([...(row.attendanceReviewReasons||[]),reason])];
+                    row.attendanceLogIds=[...new Set([...(row.attendanceLogIds||[]),activeShifts[name].attendanceId,log.id].filter(Boolean))];
+                    remark+='<br><span style="color:#b45309">'+escapeHtml(reason)+'</span>';
+                }
                 
                 let shiftMultiplier = 1; let thisShiftStraightBonus = 0; 
         
@@ -10554,9 +10576,9 @@ window.loadPayrollGenerator = async function() {
 
                 let logDateStr = staffRateWorkDate({timestamp:timeIn},activeShifts[name].matchedShift);
                 let hType = resolveScheduleForDate(scheduleData,logDateStr)?.holidays?.[logDateStr] ?? holidaysObj[logDateStr];
-                let dailyRate = activeShifts[name].rateProfile.hourlyRate;
-                staffData[name].basicPay=(staffData[name].basicPay||0)+dailyRate*shiftMultiplier;
-                let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
+                const dailyRate = activeShifts[name].rateProfile?.hourlyRate ?? null;
+                if(dailyRate!==null)staffData[name].basicPay=(staffData[name].basicPay||0)+dailyRate*shiftMultiplier;
+                let baseForHoliday = dailyRate===null ? 0 : (dailyRate * shiftMultiplier) + thisShiftNightBonus;
                 let hBonus = 0;
 
                 if (hType === 'Regular') { hBonus = baseForHoliday * 0.50; remark += ` <span style="color:#ea580c; font-weight:bold;">(Reg Hol: +₱${hBonus.toFixed(2)})</span>`; } 
@@ -10599,7 +10621,9 @@ window.loadPayrollGenerator = async function() {
         for (const review of payrollPlan.reviews) {
             const name=review.name;
             const row=staffData[name] ||= {branch:staffDict[name]?.branch||review.records[0]?.branch||'Unknown',totalHours:0,shiftsWorked:0,nightShifts:0,nightBonusTotal:0,holidayPayTotal:0,foodDeductions:0,cashAdvances:0,loans:0,ledgerId:null,sss:0,pagibig:0,philhealth:0,lateDeduction:0,logs:[]};
-            row.attendanceReviewRequired=true;row.attendanceReviewReasons=[review.reason];
+            row.attendanceReviewRequired=true;row.attendanceReviewReasons=[...new Set([...(row.attendanceReviewReasons||[]),review.reason])];
+            row.attendanceLogIds=review.recordIds;row.recordedHours=review.recordedHours;
+            for(const pair of review.recordedPairs||[]){const start=new Date(attendanceMillis(pair.timeIn)),finish=new Date(attendanceMillis(pair.timeOut));row.logs.push({date:start.toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric'}),in:start.toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'}),out:finish.toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'}),hrs:pair.hours.toFixed(2),remark:'<span style="color:#886020">Recorded pair · payroll review pending</span>',needsAttendanceReview:true,attendanceLogIds:pair.attendanceLogIds});}
             const at=review.records.map(log=>attendanceMillis(log.timestamp)).find(Number.isFinite);
             row.logs.push({date:Number.isFinite(at)?new Date(at).toLocaleDateString('en-PH',{month:'short',day:'numeric'}):'Date unavailable',in:'HR REVIEW',out:'HELD',hrs:'0.00',remark:'<span style="color:#b45309;font-weight:bold">'+escapeHtml(review.reason)+'</span>',lateMins:0,needsAttendanceReview:true,attendanceLogIds:review.recordIds});
         }
@@ -10716,6 +10740,8 @@ window.loadPayrollGenerator = async function() {
                     d = paidRecords[name]; isPaid = true; previewCache[name] = d;
                 } else {
                     d = staffData[name]; let profile = staffDict[name] || {};
+                    const salaryPreview=payrollSalaryForPreview(profile,endDateRaw);
+                    if(salaryPreview.reason){d.attendanceReviewRequired=true;d.salaryReviewRequired=true;d.attendanceReviewReasons=[...new Set([...(d.attendanceReviewReasons||[]),salaryPreview.reason])];}
                     d.basicPay = d.basicPay || 0;
 
                     let loanData = ledgerDict[name]; let autoLoanDeduction = 0;
@@ -10736,8 +10762,8 @@ window.loadPayrollGenerator = async function() {
                         name: name, staffId:profile.staffId, cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
-                        logs: staffData[name].logs, profile: payrollSalaryProfile(staffDict[name] || {},endDateRaw), start: startDateRaw, end: endDateRaw,
-                        attendanceReviewRequired:!!d.attendanceReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],attendanceLogIds:d.attendanceLogIds||[],
+                        logs: staffData[name].logs, profile: salaryPreview.profile, start: startDateRaw, end: endDateRaw,
+                        recordedHours:d.recordedHours!==undefined?d.recordedHours:d.totalHours,attendanceReviewRequired:!!d.attendanceReviewRequired,salaryReviewRequired:!!d.salaryReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],payrollReviewReasons:d.attendanceReviewReasons||[],attendanceLogIds:d.attendanceLogIds||[],
                         scheduleEvidenceStamp,
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
@@ -10760,7 +10786,7 @@ window.loadPayrollGenerator = async function() {
         
                 let buttonHtml = isPaid
                     ? `<button onclick="window.openPayslipModal('${name.replace(/'/g, "\\'")}')" style="background:#475569; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">✅ View Paid Payslip</button>`
-                    : `<button onclick="window.openPayslipModal('${name.replace(/'/g, "\\'")}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">🧾 Generate Payslip</button>`;
+                    : `<button onclick="window.openPayslipModal('${name.replace(/'/g, "\\'")}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">${d.attendanceReviewRequired ? "Review payroll details" : "Preview payslip"}</button>`;
 
                 html += `
                     <tr style="border-bottom: 1px dashed #e2e8f0; ${isPaid ? "background: #f8fafc; opacity: 0.85;" : ""}">
@@ -10838,7 +10864,7 @@ window.openPayslipModal = async function(staffName) {
     safeSet('psEnd', data.end || "");
     
     let safeBasicPay = parseFloat(data.basicPay) || 0;
-    safeSet('psBasicPay', safeBasicPay.toLocaleString(undefined, {minimumFractionDigits: 2}));
+    safeSet('psBasicPay', data.salaryReviewRequired&&!data.isPaid&&!window.paidPayrollSnapshots?.has(data)?'Awaiting rate review':safeBasicPay.toLocaleString(undefined, {minimumFractionDigits: 2}));
     
     safeSet('psDaysWorked', data.shiftsWorked || 0);
     safeSet('psDateHired', (data.profile && data.profile.dateHired) ? data.profile.dateHired : "---");
@@ -10971,6 +10997,9 @@ window.recalcPayslip = function() {
     safeSetText('psGross', gross.toLocaleString(undefined, {minimumFractionDigits: 2}));
     safeSetText('psTotalDeduct', deductions.toLocaleString(undefined, {minimumFractionDigits: 2}));
     safeSetText('psNetPay', net.toLocaleString(undefined, {minimumFractionDigits: 2}));
+    if(window.currentPayslipData?.salaryReviewRequired&&!window.currentPayslipData.isPaid&&!window.paidPayrollSnapshots?.has(window.currentPayslipData)){
+        safeSetText('psGross','Awaiting rate review');safeSetText('psNetPay','Awaiting rate review');
+    }
 };
 
 // ========================================================
@@ -11505,7 +11534,11 @@ window.generateAutoPayslips = async function() {
             let stripped = masterName.replace(/,?\s*(jr\.?|sr\.?|i|ii|iii|iv)\b/gi, '').trim().toLowerCase();
             nameMap[stripped] = masterName;
         });
-        staffDict=await loadPayrollSalaryProfiles(window,staffDict,paidRecords,{assertCurrent:assertPreview});
+        // Only cutoff sources can create an unpaid row. An unrelated account's
+        // private salary history must not prevent these staff records loading.
+        const salaryStaffNames=new Set();
+        for(const snapshot of [attSnap,deductSnap,bonusSnap])snapshot.forEach(row=>{const identity=rosterResolver(row.data());if(identity.status==='matched')salaryStaffNames.add(identity.name);});
+        staffDict=await loadPayrollSalaryProfiles(window,staffDict,paidRecords,{assertCurrent:assertPreview,staffNames:salaryStaffNames});
         
         const ledgerReview=buildPayrollLedgerReview(ledgerSnap.docs.map(row=>({...row.data(),id:row.id})),rosterResolver);
         const ledgerDict=ledgerReview.ledgerDict;
@@ -11519,7 +11552,7 @@ window.generateAutoPayslips = async function() {
         const attendanceRecords=[];
         attSnap.forEach(docSnap=>attendanceRecords.push({...docSnap.data(),id:docSnap.id}));
         for(const record of attendanceRecords){const identity=rosterResolver(record);if(identity.status!=='matched'||identity.nameCollision){identityProblems.set(identity.name||record.staffName,identity);if(paidRecords[identity.name||record.staffName])unmatchedBalanceRows.push({name:identity.name||record.staffName,branch:record.branch||'Not confirmed',reason:identity.reason,records:[record]});}}
-        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,frozenNames:Object.keys(paidRecords)});
+        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,frozenNames:Object.keys(paidRecords),cutoffStart:trueStartDate,cutoffEnd:trueEndDate});
         payrollPlan.logs.forEach(log => {
             let rawName = log.staffName;
             if (!rawName) return;
@@ -11549,12 +11582,13 @@ window.generateAutoPayslips = async function() {
                     if(matchedShift?.amendmentNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceLogIds=[...(staffData[name].attendanceLogIds||[]),log.id].filter(Boolean);staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'A shift-time correction conflicts with a reviewed attendance record. HR must confirm it.'];}
                     let { lateMinutes: lateMinutes, expectedStartHour: expectedStartHour, wasScheduled: wasScheduled } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
                     lateMinutes = attendanceLateMinutes(log, matchedShift);
-                    const rateProfile=staffProfileForWork(staffDict[name]||{},log,matchedShift);
-                    const late = latePay(lateMinutes, rateProfile, matchedShift, log.lateExempted === true);
+                    const salary=payrollSalaryForWork(staffDict[name]||{},log,matchedShift),rateProfile=salary.profile;
+                    const late = rateProfile ? latePay(lateMinutes, rateProfile, matchedShift, log.lateExempted === true) : {hours:0,amount:0};
                     const lateHoursToDeduct = late.hours;
                     const lateAmount = late.amount;
 
                     activeShifts[name] = {
+                        attendanceId:log.id,salaryReviewReason:salary.reason,
                         matchedShift,
                         time: logDate, 
                         rateProfile,
@@ -11586,6 +11620,12 @@ window.generateAutoPayslips = async function() {
 
                 let isAutoClosed = log.type === "TIME OUT (AUTO)";
                 let remark = isAutoClosed ? `<span style="color:#d97706; font-weight:bold;">Auto-Closed (Forgot to punch out)</span>` : `<span style="color:#10b981; font-weight:bold;">Complete</span>`;
+                if(activeShifts[name].salaryReviewReason){
+                    const row=staffData[name],reason=activeShifts[name].salaryReviewReason;row.attendanceReviewRequired=true;row.salaryReviewRequired=true;
+                    row.attendanceReviewReasons=[...new Set([...(row.attendanceReviewReasons||[]),reason])];
+                    row.attendanceLogIds=[...new Set([...(row.attendanceLogIds||[]),activeShifts[name].attendanceId,log.id].filter(Boolean))];
+                    remark+='<br><span style="color:#b45309">'+escapeHtml(reason)+'</span>';
+                }
                 
                 let shiftMultiplier = 1; let thisShiftStraightBonus = 0; 
         
@@ -11628,9 +11668,9 @@ window.generateAutoPayslips = async function() {
 
                 let logDateStr = staffRateWorkDate({timestamp:timeIn},activeShifts[name].matchedShift);
                 let hType = resolveScheduleForDate(scheduleData,logDateStr)?.holidays?.[logDateStr] ?? holidaysObj[logDateStr];
-                let dailyRate = activeShifts[name].rateProfile.hourlyRate;
-                staffData[name].basicPay=(staffData[name].basicPay||0)+dailyRate*shiftMultiplier;
-                let baseForHoliday = (dailyRate * shiftMultiplier) + thisShiftNightBonus;
+                const dailyRate = activeShifts[name].rateProfile?.hourlyRate ?? null;
+                if(dailyRate!==null)staffData[name].basicPay=(staffData[name].basicPay||0)+dailyRate*shiftMultiplier;
+                let baseForHoliday = dailyRate===null ? 0 : (dailyRate * shiftMultiplier) + thisShiftNightBonus;
                 let hBonus = 0;
 
                 if (hType === 'Regular') { hBonus = baseForHoliday * 0.50; remark += ` <span style="color:#ea580c; font-weight:bold;">(Reg Hol: +₱${hBonus.toFixed(2)})</span>`; } 
@@ -11673,7 +11713,9 @@ window.generateAutoPayslips = async function() {
         for (const review of payrollPlan.reviews) {
             const name=review.name;
             const row=staffData[name] ||= {branch:staffDict[name]?.branch||review.records[0]?.branch||'Unknown',totalHours:0,shiftsWorked:0,nightShifts:0,nightBonusTotal:0,holidayPayTotal:0,foodDeductions:0,cashAdvances:0,loans:0,ledgerId:null,sss:0,pagibig:0,philhealth:0,lateDeduction:0,logs:[]};
-            row.attendanceReviewRequired=true;row.attendanceReviewReasons=[review.reason];
+            row.attendanceReviewRequired=true;row.attendanceReviewReasons=[...new Set([...(row.attendanceReviewReasons||[]),review.reason])];
+            row.attendanceLogIds=review.recordIds;row.recordedHours=review.recordedHours;
+            for(const pair of review.recordedPairs||[]){const start=new Date(attendanceMillis(pair.timeIn)),finish=new Date(attendanceMillis(pair.timeOut));row.logs.push({date:start.toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric'}),in:start.toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'}),out:finish.toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'}),hrs:pair.hours.toFixed(2),remark:'<span style="color:#886020">Recorded pair · payroll review pending</span>',needsAttendanceReview:true,attendanceLogIds:pair.attendanceLogIds});}
             const at=review.records.map(log=>attendanceMillis(log.timestamp)).find(Number.isFinite);
             row.logs.push({date:Number.isFinite(at)?new Date(at).toLocaleDateString('en-PH',{month:'short',day:'numeric'}):'Date unavailable',in:'HR REVIEW',out:'HELD',hrs:'0.00',remark:'<span style="color:#b45309;font-weight:bold">'+escapeHtml(review.reason)+'</span>',lateMins:0,needsAttendanceReview:true,attendanceLogIds:review.recordIds});
         }
@@ -11775,6 +11817,8 @@ window.generateAutoPayslips = async function() {
                     d = paidRecords[name]; isPaid = true; previewCache[name] = d;
                 } else {
                     d = staffData[name]; let profile = staffDict[name] || {};
+                    const salaryPreview=payrollSalaryForPreview(profile,endInput);
+                    if(salaryPreview.reason){d.attendanceReviewRequired=true;d.salaryReviewRequired=true;d.attendanceReviewReasons=[...new Set([...(d.attendanceReviewReasons||[]),salaryPreview.reason])];}
                     d.basicPay = d.basicPay || 0;
 
                     let loanData = ledgerDict[name]; let autoLoanDeduction = 0;
@@ -11794,8 +11838,8 @@ window.generateAutoPayslips = async function() {
                         name: name, staffId:profile.staffId, cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
-                        logs: staffData[name].logs, profile: payrollSalaryProfile(staffDict[name] || {},endInput), start: startInput, end: endInput,
-                        attendanceReviewRequired:!!d.attendanceReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],attendanceLogIds:d.attendanceLogIds||[],
+                        logs: staffData[name].logs, profile: salaryPreview.profile, start: startInput, end: endInput,
+                        recordedHours:d.recordedHours!==undefined?d.recordedHours:d.totalHours,attendanceReviewRequired:!!d.attendanceReviewRequired,salaryReviewRequired:!!d.salaryReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],payrollReviewReasons:d.attendanceReviewReasons||[],attendanceLogIds:d.attendanceLogIds||[],
                         scheduleEvidenceStamp,
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
@@ -11820,7 +11864,7 @@ window.generateAutoPayslips = async function() {
         
                 let buttonHtml = isPaid
                     ? `<button onclick="window.openPayslipModal('${name.replace(/'/g, "\\'")}')" style="background:#475569; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">✅ View Paid Payslip</button>`
-                    : `<button onclick="window.openPayslipModal('${name.replace(/'/g, "\\'")}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">🧾 Generate Payslip</button>`;
+                    : `<button onclick="window.openPayslipModal('${name.replace(/'/g, "\\'")}')" style="background:#047857; color:white; border:none; padding:6px 12px; border-radius:4px; cursor:pointer; font-size: 12px; font-weight: bold; width: 100%;">${d.attendanceReviewRequired ? "Review payroll details" : "Preview payslip"}</button>`;
 
                 // Ensure all HTML is securely wrapped inside the backticks (`)
                 html += `
