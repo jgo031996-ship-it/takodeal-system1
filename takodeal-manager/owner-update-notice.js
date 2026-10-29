@@ -1,6 +1,6 @@
 import {waitForAppUpdate} from './owner-app-update.js';
 
-export const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v103-overnight-clockout-20261029';
+export const OWNER_DOCUMENT_RELEASE='takodeal-manager-core-v104-schedule-workspace-20261029';
 const installations=new WeakMap();
 const validRelease=value=>typeof value==='string'&&/^takodeal-manager-core-v[1-9]\d{0,5}-[a-z0-9][a-z0-9-]{0,100}$/.test(value);
 const noticeText='App update ready. Save open edits, then reload to use the latest fixes.';

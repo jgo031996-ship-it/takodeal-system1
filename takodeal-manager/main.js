@@ -47,6 +47,7 @@ import { installFranchiseWorkspace } from './franchise-workspace.js';
 import { installMonthlyBills } from './monthly-bills-ui.js';
 import { requestHistory, historyTime } from './request-history.js';
 import { enhanceScheduleLayout } from './schedule-layout.js';
+import {installScheduleWorkspace} from './schedule-workspace.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
 import {installScheduleMemoryUI} from './schedule-memory-ui.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
@@ -76,6 +77,7 @@ window.openScheduleRecovery = async context => {
  const loaded=await window.getOwnerScheduleSync().load({month:day.slice(0,7),manual:true,reason:'attendance-review'});
  if(!loaded&&monthInput)monthInput.value=previousMonth;
  if(loaded&&context.branch&&window.isBranchAllowed(context.branch))window.switchTab(context.branch);
+ if(loaded)window.scheduleWorkspace?.show('roster');
 };
 import {installScheduleSwapReview} from './schedule-swap-review.js';
 import {phDay, noticeIsDue, deductionIsDue, isPenaltyDeduction, suspensionDates} from './sanction-schedule.js';
@@ -8325,6 +8327,8 @@ window.initScheduleMemory = async () => {
         confirmVersionChange:async()=>!window.ownerScheduleSync?.isDirty()||await window.ManagerUI.confirm('View this saved version and discard unsaved edits in this editor?')});
     window.scheduleSwapReview ||= installScheduleSwapReview(window,document);
     window.scheduleProposalReviewUI?.mountAudit();
+    window.scheduleWorkspace ||= installScheduleWorkspace(document);
+    window.scheduleWorkspace?.refresh();
 };
 window.selectScheduleMonth = () => scheduleMemoryUI?.selectMonth();
 window.getOwnerScheduleSync = function() {
@@ -8357,7 +8361,9 @@ window.saveToCloud = async function() {
 };
 window.loadFromCloud = async function() {
     await window.initScheduleMemory();
-    const loaded=await window.getOwnerScheduleSync().load();
+    const controller=window.getOwnerScheduleSync();
+    window.scheduleWorkspace?.refresh();
+    const loaded=await controller.load();
     if(loaded){void window.scheduleSwapReview?.refresh();void window.refreshScheduleSuspensionNotice();void window.scheduleProposalReviewUI?.audit();}
     return loaded;
 };
@@ -8372,6 +8378,7 @@ window.refreshScheduleSuspensionNotice = function() {
         let notice=document.getElementById('scheduleSuspensionNotice');
         if(!notice){notice=document.createElement('p');notice.id='scheduleSuspensionNotice';notice.style.cssText='padding:12px;background:#fff8ed;border:1px solid #efdfc6;border-radius:8px;font-size:13px;';document.getElementById('scheduleMemoryPanel')?.after(notice);}
         notice.hidden=!window.scheduledSuspensions.length;notice.textContent=window.scheduledSuspensions.length?'Scheduled suspensions: '+window.scheduledSuspensions.map(row=>row.staffName+' · '+row.branch+' · '+row.date).join('; ')+'. Review staffing before saving a roster. Clock-in follows the notice effective dates.':'';
+        window.scheduleWorkspace?.refresh();
     }catch(error){console.error('Suspension date review:',error);}})().finally(()=>scheduleSuspensionRead=null);
     return scheduleSuspensionRead;
 };
@@ -8493,7 +8500,7 @@ window.renderConfigUI = function() {
         if (!branchConfig[branch]) return;
         if (!window.isBranchAllowed(branch)) return; // SECURITY LOCK
         
-        html += `<div class="shift-config-box" style="margin-bottom: 15px; border-top: 3px solid #0f766e; background: #f8fafc; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
+        html += `<div class="shift-config-box" data-schedule-branch="${encodeURIComponent(branch)}" style="margin-bottom: 15px; border-top: 3px solid #0f766e; background: #f8fafc; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
                     <h4 style="margin:0 0 15px 0; color:#0f766e; text-transform:uppercase; font-size: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📍 ${branch} Shifts</h4>
                     <div style="flex: 1;">`;
         
@@ -8573,6 +8580,7 @@ window.renderConfigUI = function() {
     });
     
     container.innerHTML = html;
+    window.scheduleWorkspace?.refresh();
 };
 
 window.saveShiftConfigChanges = async function() {
@@ -9387,6 +9395,7 @@ window.switchTab = function(branch) {
     window.updateStaffDisplay(); 
     window.updateAvailDropdown(); 
     window.updateUnavailabilityList();
+    window.scheduleWorkspace?.refresh();
 };
 
 // ==========================================
@@ -9397,7 +9406,8 @@ window.renderTables = function() {
     container.innerHTML = "";
     
     let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
-    if (!schedObj || Object.keys(schedObj).length === 0) return;
+    // Keep permitted branch navigation available while a new month has no rows.
+    schedObj ||= {};
 
     const tabBox = document.createElement("div"); tabBox.className = "tab-container";
     const contentWrap = document.createElement("div");
@@ -9496,6 +9506,7 @@ window.renderTables = function() {
         enhanceScheduleLayout(cBox, branch);
         contentWrap.appendChild(cBox);
     });
+    window.scheduleWorkspace?.refresh();
 };
 
 // ==========================================
@@ -14898,7 +14909,7 @@ window.bulkDeleteInventory = async function() {
 // ==========================================
 window.downloadScheduleImage = function() {
     const schedElement = document.getElementById('scheduleContainer');
-    if (!schedElement || schedElement.innerHTML.trim() === '') {
+    if (!schedElement || !schedElement.querySelector('.sched-table tbody tr')) {
         window.ManagerUI.notify("No schedule has been generated yet!"); return;
     }
     
