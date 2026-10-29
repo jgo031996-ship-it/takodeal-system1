@@ -5,6 +5,7 @@ import {attendanceKind,attendanceMillis} from './attendance-reconcile.js';
 const minute=60000,day=1440*minute;
 const nameKey=value=>String(value||'').trim().replace(/\s+/g,' ').toLowerCase();
 const validId=value=>typeof value==='string'&&value.length>0&&value.length<=150&&!value.includes('/');
+const validWorkDate=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
 const trusted=shift=>{
  const start=attendanceMillis(shift?.expectedStartAt),end=attendanceMillis(shift?.expectedEndAt);
  return shift?.wasScheduled===true&&Number.isFinite(start)&&Number.isFinite(end)&&end>start&&end-start<=18*60*minute
@@ -21,15 +22,24 @@ function directoryConflict(saved,assigned,staffId){
 }
 function capturedFinishBound(start,schedule,original){
  const captured=start.scheduleSnapshot,begin=attendanceMillis(start.timestamp),expected=attendanceMillis(captured?.expectedStartAt),capturedEnd=attendanceMillis(captured?.expectedEndAt);
- if(!captured||!validId(captured.scheduleRevisionId)||!validId(captured.shiftId)||!Number.isFinite(expected))return null;
+ const commonCapture=captured?.shiftId===null&&captured.version===1&&captured.source==='clock-in'&&captured.wasScheduled===false&&captured.needsScheduleReview!==true
+  &&captured.branch===start.branch&&nameKey(captured.staffName)===nameKey(start.staffName)&&Number.isFinite(expected)&&Number.isFinite(capturedEnd)&&capturedEnd-expected>=60*minute&&capturedEnd-expected<=18*60*minute;
+ if(!captured||!validId(captured.scheduleRevisionId)||!Number.isFinite(expected)||!validId(captured.shiftId)&&!commonCapture)return null;
  const workDate=scheduleDateKey(new Date(expected)),workMidnight=midnight(new Date(expected)),month=workDate.slice(0,7),archive=schedule?.historyMonths?.[month];
  const revisions=Array.isArray(archive)?archive:archive?.revisions;
  const linked=Array.isArray(revisions)?revisions.filter(row=>row?.revisionId===captured.scheduleRevisionId):[];
  if(linked.length!==1)return null;
- const revision=linked[0],saved=revision.snapshot,day=revision.daySnapshots?.[workDate];
- if(revision.month!==month||revision.effectiveFrom>workDate||revision.effectiveTo<workDate||day?.configRevisionId!==revision.revisionId||Number(saved?.currentYear)!==Number(workDate.slice(0,4))||Number(saved?.currentMonth)!==Number(workDate.slice(5,7)))return null;
+ const revision=linked[0],saved=revision.snapshot,savedDay=revision.daySnapshots?.[workDate];
+ if(revision.month!==month||revision.effectiveFrom>workDate||revision.effectiveTo<workDate||savedDay?.configRevisionId!==revision.revisionId||Number(saved?.currentYear)!==Number(workDate.slice(0,4))||Number(saved?.currentMonth)!==Number(workDate.slice(5,7)))return null;
+ if(commonCapture&&(revision.schemaVersion!==1||revision.kind!=='schedule-revision'||!validWorkDate(revision.effectiveFrom)||!validWorkDate(revision.effectiveTo)
+  ||revision.effectiveFrom.slice(0,7)!==month||revision.effectiveTo.slice(0,7)!==month||!Number.isFinite(attendanceMillis(revision.savedAt))||attendanceMillis(revision.savedAt)>begin))return null;
  const rules=saved.branchConfig?.[start.branch],weekday=new Date(workMidnight+8*60*minute).getUTCDay();
  if(!Array.isArray(rules)||!rules.length)return null;
+ // A common pair proves only its captured workday. The fallback permits starts
+ // from 240 minutes before through 90 minutes after the punch. If that window
+ // crosses midnight, another dated revision could contain a later finish even
+ // when this revision has no such rule. Keep that case in explicit review.
+ if(commonCapture&&(begin-240*minute<workMidnight||begin+90*minute>=workMidnight+day))return null;
  const ids=new Set(),candidates=[];
  for(const rule of rules){
   if(rule.active===false||Array.isArray(rule.days)&&!rule.days.includes(weekday))continue;
@@ -40,14 +50,25 @@ function capturedFinishBound(start,schedule,original){
   if(distance< -90||distance>=240)continue;
   const duration=endMinute===null?0:(endMinute-startMinute+1440)%1440;
   if(!validId(rule.id)||ids.has(rule.id)||endMinute===null||duration<60||duration>18*60)return null;
-  ids.add(rule.id);candidates.push({shiftId:rule.id,startAt:ruleStart,endAt:ruleStart+duration*minute});
+  ids.add(rule.id);candidates.push({shiftId:rule.id,startAt:ruleStart,endAt:ruleStart+duration*minute,distance:Math.abs(distance),shiftType:shiftType(rule),isNightShift:bonusShift(rule)});
  }
- const anchor=candidates.filter(row=>row.shiftId===captured.shiftId&&row.startAt===expected&&(!Number.isFinite(capturedEnd)||capturedEnd===row.endAt));
- if(anchor.length!==1||!candidates.length)return null;
+ if(!candidates.length)return null;
+ let commonTimePair;
+ if(commonCapture){
+  // Clock-in deliberately omits a slot ID when several nearest saved slots
+  // share exactly one time/category pair. Reproduce that evidence from the
+  // captured immutable revision; a null or missing ID alone is not a finish.
+  const nearestDistance=Math.min(...candidates.map(row=>row.distance)),nearest=candidates.filter(row=>row.distance===nearestDistance);
+  if(nearest.length<2||nearest.some(row=>row.startAt!==expected||row.endAt!==capturedEnd||row.shiftType!==captured.shiftType||row.isNightShift!==captured.isNightShift))return null;
+  commonTimePair={shiftIds:nearest.map(row=>row.shiftId),expectedStartAt:new Date(expected).toISOString(),expectedEndAt:new Date(capturedEnd).toISOString(),shiftType:captured.shiftType,isNightShift:captured.isNightShift};
+ }else{
+  const anchor=candidates.filter(row=>row.shiftId===captured.shiftId&&row.startAt===expected&&(!Number.isFinite(capturedEnd)||capturedEnd===row.endAt));
+  if(anchor.length!==1)return null;
+ }
  const latest=Math.max(...candidates.map(row=>row.endAt));
  return {...original,expectedStartAt:new Date(expected),clockOutCompleteOnly:true,clockOutLatestFinishAt:new Date(latest),clockOutScheduleRecovered:false,
   clockOutScheduleReviewReason:'unassigned-captured-shift',clockOutScheduleEvidence:{schemaVersion:1,source:'captured-revision-finish-bound',staffId:start.staffId,branch:start.branch,
-   workDate,scheduleRevisionId:revision.revisionId,shiftIds:candidates.map(row=>row.shiftId),expectedStartAt:new Date(expected).toISOString(),
+   workDate,scheduleRevisionId:revision.revisionId,shiftIds:candidates.map(row=>row.shiftId),expectedStartAt:new Date(expected).toISOString(),...(commonTimePair?{capturedCommonTimePair:commonTimePair}:{}),
    latestFinishAt:new Date(latest).toISOString(),candidateFinishes:candidates.map(row=>({shiftId:row.shiftId,expectedStartAt:new Date(row.startAt).toISOString(),expectedEndAt:new Date(row.endAt).toISOString()}))}};
 }
 export function resolveClockOutShift(start,schedule,profiles={}){

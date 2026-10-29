@@ -1,7 +1,8 @@
-const CACHE_NAME = 'takodeal-staff-v34-attendance-transaction-20261028';
+const CACHE_NAME = 'takodeal-staff-v35-overnight-clockout-20261029';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./staff-setup-access.js','./staff-setup.css');
 SHELL.push('./sanction-schedule.js');
+SHELL.push('./time-out-request-display.js');
 SHELL.push('./online-refund-pay.js');
 SHELL.push('./payroll-deduction-details.js');
 SHELL.push('./attendance-reconcile.js','./attendance-proof.js');

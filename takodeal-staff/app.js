@@ -1,3 +1,4 @@
+import {timeOutRequestLabel,timeOutRequestDetailsHTML} from './time-out-request-display.js';
 import {createAttendanceMetadataReader} from './attendance-metadata-reader.js';
 import {createStaffPayrollAttendanceReader} from './staff-payroll-reader.js';
 import {getAuth,signInAnonymously,setPersistence,browserLocalPersistence,onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
@@ -1683,6 +1684,7 @@ window.loadInbox = async function() {
                     : `<div style="margin-top:8px; color:#16a34a; font-size:11px; font-weight:bold;">✅ You confirmed this meal.</div>`;
                 detailText = `🍔 ${d.item} <br><span style="color:#dc2626; font-weight:bold;">Deduction: ₱${(parseFloat(d.amount)||0).toFixed(2)}</span>${ackBtn}`;
             }
+            else if (d.type === "Early Time Out") detailText = timeOutRequestDetailsHTML(d);
             else if (d.type === "Reason Letter") detailText = `✉️ ${d.explanationCause || 'Letter'}<br><span style="color:#64748b; font-size:12px;">${d.explanationMessage || ''}</span>`;
             else if (d.type === "Waste Report") detailText = `🗑️ Waste Log (₱${(parseFloat(d.totalValueLost)||0).toFixed(2)})<br><span style="color:#64748b; font-size:12px;">${(d.items || []).length} items submitted</span>`;
             else detailText = d.reason || d.item || "";
@@ -1690,7 +1692,7 @@ window.loadInbox = async function() {
             html += `
                 <div class="req-item-card" style="border-left: 4px solid ${color}; margin-bottom: 15px; padding: 15px; background: white; border-radius: 8px; border-top: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; box-shadow: 0 2px 4px rgba(0,0,0,0.03);">
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px;">
-                        <strong style="color:#0f172a; font-size:15px;">${d.type}</strong>
+                        <strong style="color:#0f172a; font-size:15px;">${d.type === 'Early Time Out' ? timeOutRequestLabel(d) : d.type}</strong>
                         <span style="background:${bg}; color:${color}; font-weight:bold; font-size:11px; padding:4px 8px; border-radius:6px; height: fit-content;">${d.status}</span>
                     </div>
                     <div style="font-size:13px; color:#334155; margin-bottom: 10px; font-weight: 500; line-height: 1.4;">
