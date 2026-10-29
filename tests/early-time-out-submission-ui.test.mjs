@@ -29,3 +29,17 @@ test('only a confirmed server result may produce the sent receipt, and staff-con
 test('Owner, Staff and POS submission forms remain byte-identical',()=>{
  const source=readFileSync(new URL('../Takodeal-POS/early-time-out-ui.js',import.meta.url),'utf8');for(const app of ['takodeal-manager','takodeal-staff'])assert.equal(readFileSync(new URL('../'+app+'/early-time-out-ui.js',import.meta.url),'utf8'),source);
 });
+
+test('unknown pending rechecks and cancellation use schedule-review wording rather than an early-departure finding',async()=>{
+ const pending={unknown:true,scheduleFingerprint:'unverified',request:{id:'early-unknown',status:'Pending',scheduleFingerprint:'unverified',requestedDepartureAt:'2026-10-29T03:06:00+08:00'}};
+ const f=fixture();f.service.inspect=async()=>pending;f.api.Swal.fire=async(...args)=>{f.forms.push(args);return args[0]?.showDenyButton?{isConfirmed:true}:{};};const result=await prepareEarlyTimeOut(f.api,input,{service:f.service});assert.equal(result.proceed,false);assert.equal(f.forms[0][0].confirmButtonText,'Check schedule review');assert.equal(f.forms[0][0].cancelButtonText,'Back to Time Clock');assert.equal(f.forms[1][0],'Schedule review still pending');assert.match(f.forms[1][1],/not a finding of early departure/);assert.doesNotMatch(f.forms[1][0],/approval/);assert.equal(f.calls.length,0);
+ const cancelled=fixture(),cancels=[];cancelled.service.inspect=async()=>pending;cancelled.service.cancel=async value=>cancels.push(value);cancelled.api.Swal.fire=async options=>{cancelled.forms.push(options);if(options.showDenyButton)return {isDenied:true};if(options.input)return {isConfirmed:true,value:'synthetic-pin'};return {};};await prepareEarlyTimeOut(cancelled.api,input,{service:cancelled.service});assert.equal(cancelled.forms[1].titleText,'Cancel schedule review request');assert.equal(cancels.length,1);assert.equal(cancels[0].pin,'synthetic-pin');assert.equal(cancelled.calls.length,0);
+});
+
+test('a fresh proven overnight finish after a pending review proceeds normally without sending or approving a request',async()=>{
+ const f=fixture();let reads=0;f.service.inspect=async()=>++reads===1?{unknown:true,scheduleFingerprint:'unverified',request:{id:'early-existing',status:'Pending',scheduleFingerprint:'unverified'}}:{unknown:false,complete:true,early:false,scheduledEndAt:'2026-10-29T03:00:00+08:00'};f.api.Swal.fire=async options=>{f.forms.push(options);return {isConfirmed:true};};const result=await prepareEarlyTimeOut(f.api,input,{service:f.service});assert.equal(result.proceed,true);assert.equal(reads,2);assert.equal(f.forms.length,1);assert.equal(f.calls.length,0);
+});
+
+test('unknown explanations are bounded without calling the employee early or sending an invalid request',async()=>{
+ const f=fixture();f.values.earlyTimeOutReason.value='x'.repeat(1501);await prepareEarlyTimeOut(f.api,input,{service:f.service});assert.equal(f.calls.length,0);assert.equal(f.forms.length,1);assert.match(f.forms[0].html,/maxlength="1500"/);assert.match(f.messages[0],/assigned shift or clock-out issue/);assert.doesNotMatch(f.messages[0],/finish early/);
+});

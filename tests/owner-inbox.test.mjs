@@ -1,3 +1,4 @@
+import {isTimeOutScheduleReview,timeOutRequestLabel} from '../takodeal-manager/time-out-request-display.js';
 import {createStaffHistoryResolver} from '../takodeal-manager/staff-lifecycle-model.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -99,7 +100,7 @@ test('real main inbox wrappers use the controller, and cached protected types sk
 });
 
 function countedDerivations(){
- let calls=0;const source=readFileSync(new URL('../takodeal-manager/owner-inbox.js',import.meta.url),'utf8').replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,''),context=vm.createContext({canOpenWorkspacePage,createStaffHistoryResolver,OWNER_EMAIL,historyTime,isMealDeduction,leaveRequestSummaryHTML,earlyTimeOutSummaryHTML,lateRequestSummaryHTML,lateRequestRecoveryContext,setTimeout,clearTimeout,requestHistory:(...args)=>{calls++;return requestHistory(...args);}});vm.runInContext(source+'\nglobalThis.testInstall=installOwnerInbox;',context);return {install:context.testInstall,calls:()=>calls};
+ let calls=0;const source=readFileSync(new URL('../takodeal-manager/owner-inbox.js',import.meta.url),'utf8').replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,''),context=vm.createContext({isTimeOutScheduleReview,timeOutRequestLabel,canOpenWorkspacePage,createStaffHistoryResolver,OWNER_EMAIL,historyTime,isMealDeduction,leaveRequestSummaryHTML,earlyTimeOutSummaryHTML,lateRequestSummaryHTML,lateRequestRecoveryContext,setTimeout,clearTimeout,requestHistory:(...args)=>{calls++;return requestHistory(...args);}});vm.runInContext(source+'\nglobalThis.testInstall=installOwnerInbox;',context);return {install:context.testInstall,calls:()=>calls};
 }
 
 test('current staff is the default; archived and orphan history remains accessible unchanged and read-only',async()=>{
@@ -130,4 +131,13 @@ test('only fresh data invalidates derived row indices, retaining confirmed overl
 });
 test('lateness inbox labels the original report and opens its exact HR record without per-row queries or writes',async()=>{
  const letter=row('letter',{type:'Reason Letter',staffId:'crew',attendanceLogId:'original-in',timestamp:new Date('2026-10-23T17:12:00+08:00'),explanationCause:'Tardiness / Late Arrival',explanationMessage:'Clocked in 462 minutes late. Reason: Please review my night start.',lateMinutes:462}),f=fixture({requests:[letter]}),opened=[];f.w.openAttendanceRecovery=context=>opened.push(context);await f.inbox.load();assert.match(f.nodes.inboxTableBody.innerHTML,/Original submission · 462 minutes reported/);assert.match(f.nodes.inboxTableBody.innerHTML,/Review linked attendance/);assert.doesNotMatch(f.nodes.inboxTableBody.innerHTML,/Confirmed dated attendance review/);const version=Number(/lateAttendance\(0,(\d+)\)/.exec(f.nodes.inboxTableBody.innerHTML)[1]);f.inbox.lateAttendance(0,version);assert.equal(opened[0].attendanceLogId,'original-in');assert.equal(opened[0].staffId,'crew');assert.equal(opened[0].from,'2026-10-22');assert.equal(opened[0].to,'2026-10-23');assert.equal(f.calls.many.length,3);assert.equal(f.calls.one.length,0);assert.equal(f.inbox.lateAttendance(0,version-1),false);assert.equal(opened.length,1);f.w.auth.currentUser=null;assert.equal(f.inbox.lateAttendance(0,version),false);assert.equal(opened.length,1);
+});
+
+test('an unknown schedule request uses review wording while preserving its saved type and protected route',async()=>{
+ const saved=row('unknown',{requiresScheduleReview:true,reason:'5:30 PM to 3:00 AM',timestamp:new Date('2026-10-29T03:06:00+08:00')}),before=structuredClone(saved),f=fixture({requests:[saved]});await f.inbox.load();const html=f.nodes.inboxTableBody.innerHTML;assert.match(html,/<strong>Time-out schedule review<\/strong>/);assert.match(html,/>Review schedule<\/button>/);assert.doesNotMatch(html,/>Approve<\/button>|<strong>Early Time Out<\/strong>/);assert.match(html,/does not establish that the staff member left early/);assert.deepEqual(saved,before);
+ f.inbox.review(0,'Approved');assert.deepEqual(f.calls.reviews,[['unknown','Approved','Early Time Out',0,'Sample Crew']]);assert.equal(f.inbox.request('unknown').requiresScheduleReview,true);assert.equal(f.calls.one.length,0);
+});
+
+test('resolved unknown-schedule history keeps its friendly label and actual saved outcome',async()=>{
+ const saved=row('reviewed',{requiresScheduleReview:true,status:'Not Required',managerReply:'The confirmed schedule had already finished.'}),before=structuredClone(saved),f=fixture({requests:[saved]});await f.inbox.load();f.inbox.toggle('history0');const html=f.nodes.resolvedRequestsBody.innerHTML;assert.match(html,/Time-out schedule review/);assert.doesNotMatch(html,/>Early Time Out<\/td>/);assert.match(html,/Not Required/);assert.match(html,/confirmed schedule had already finished/);assert.deepEqual(saved,before);assert.equal(f.calls.reviews.length,0);assert.equal(f.calls.many.length,3);
 });

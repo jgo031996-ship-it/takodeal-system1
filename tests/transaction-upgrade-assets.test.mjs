@@ -31,13 +31,17 @@ test('sanction date decisions are identical across apps',()=>{
 });
 test('upgrade keeps paid receipts, photos and the offline sale ledger through Cashier update',()=>{
     const worker=source('Takodeal-POS/sw.js');
-    assert.match(worker,/const CORE = 'takodeal-pos-core-attendance-transaction-20261028'/);
+    assert.match(worker,/const CORE = 'takodeal-pos-core-overnight-clockout-20261029'/);
     for(const [app,list] of [['Takodeal-POS','required'],['takodeal-staff','SHELL'],['takodeal-manager','CORE_ASSETS']])assert.ok(assets(app,list).includes('clock-out-schedule.js'),app+' can verify a completed shift offline after installation');
     assert.ok(assets('Takodeal-POS','required').includes('checkout-controls.js'),'checkout resets work offline');
     assert.match(worker,/dispatch-restock-model\.js/);
     assert.match(worker,/workspace-access-model\.js/);
     assert.ok(assets('Takodeal-POS','required').includes('printer-logo.js'),'new logo encoder is available offline');
     assert.match(worker,/const PHOTOS = 'takodeal-pos-photos-offline02'/);
+    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v103-overnight-clockout-20261029/);
+    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v103-overnight-clockout-20261029/);
+    assert.match(source('takodeal-staff/sw.js'),/takodeal-staff-v35-overnight-clockout-20261029/);
+    for(const [app,list] of [['takodeal-manager','CORE_ASSETS'],['takodeal-staff','SHELL']])assert.ok(assets(app,list).includes('time-out-request-display.js'),app+' caches schedule-review labels');
     assert.doesNotMatch(worker,/deleteDatabase|localStorage\.clear/);
     assert.match(source('Takodeal-POS/index.html'),/cashier-tablet\.css\?v=tablet-attendance-stock-20261009-r1/);
     assert.match(source('takodeal-manager/auth.js'),/main\.js\?v=staff-pos-repair-20261008-r12/);
