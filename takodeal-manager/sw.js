@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v103-overnight-clockout-20261029';
+const CACHE_NAME = 'takodeal-manager-core-v104-schedule-workspace-20261029';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = ['./', './index.html', './main.js', './franchise-workspace.js', './monthly-bills.js', './monthly-bills-ui.js', './device-fleet.js', './app-update.js', './employee-id.js', './employee-id.css', './payslip.css', './schedule-layout.js', './request-history.js', './schedule-layout.css', './login.css', './login-ui.js', './unlock-gate.js', './device-store.js', './manager-libraries.js', './branch-operations.js', './cash-settlement.js', './shift-close-ui.js', './collection-cache.js', './manager-dialogs.js', './manager-workspace.js', './manager-workspace.css', './dispatch-safety.js', './menu-bulk.js', './pos-safety.js', './recipe-integrity.js', './live-report.js', './payroll-safety.js', './dashboard.js', './dashboard-data.js', './dashboard.css', './manager-theme.css', './manager-theme.js', './manager-scroll.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
@@ -8,6 +8,7 @@ CORE_ASSETS.push('./owner-dialogs.css');
 CORE_ASSETS.push('./staff-lifecycle-model.js');
 CORE_ASSETS.push('./early-time-out-message-templates.js');
 CORE_ASSETS.push('./time-out-request-display.js');
+CORE_ASSETS.push('./schedule-workspace.js','./schedule-workspace.css');
 CORE_ASSETS.push('./logistics-feed.js','./dispatch-restock-model.js','./dispatch-restock-finance.js','./dispatch-restock-ui.js','./dispatch-set-aside.js','./dispatch-request-draft.js','./dispatch-destination-repair.js');
 CORE_ASSETS.push('./franchise-dispatch-pricing.js','./franchise-supply-model.js');
 CORE_ASSETS.push('./staff-rate-changes.js','./staff-document-hq.js','./staff-documents.js','./staff-documents.css','./staff-document-model.js','./staff-document-store.js','./staff-document-firebase.js');
