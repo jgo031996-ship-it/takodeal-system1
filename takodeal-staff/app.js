@@ -29,6 +29,7 @@ import { calculateLateMinutes, resolveScheduledShift, resolveAttendanceShift, ca
 import {phDay, pendingDueNotices, clockInRestriction, startPhilippineDayTimer, noticeIsDue, deductionIsDue, isPenaltyDeduction, acknowledgeSanction, sanctionReviewSummary} from './sanction-schedule.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
+import {renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,staffScheduleDay,renderStaffScheduleConflict} from './attendance-schedule-preview.js';
 import {installScheduleViewSync} from './schedule-view-sync.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
@@ -1276,8 +1277,14 @@ window.punchTime = async function(type) {
     const attendanceRef = doc(collection(db, 'attendance_logs'));
     const lateRequestRef = doc(collection(db, 'staff_requests'));
     let pendingLateRequest = null;
-    let punchScheduleData = null, punchScheduleProfiles = {};
+    let punchScheduleData = null, punchScheduleProfiles = {}, punchSchedulePreview = null;
     let activeTimeIn = null;
+    const assertPunchIdentity=()=>{if(localStorage.getItem('takodeal_staff_id')!==punchStaffId||localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff session changed. Sign in again.');};
+    const readFreshPunchSchedule=async at=>createScheduleHistoryStore({db,doc,getDocFromServer:async reference=>{
+        assertPunchIdentity();const saved=await getDocFromServer(reference);assertPunchIdentity();
+        if(!saved||typeof saved.exists!=='function'||saved.metadata?.fromCache===true||saved.metadata?.hasPendingWrites===true)throw Error('The assigned schedule could not be confirmed with HQ. Reconnect and tap Time In again.');
+        return saved;
+    }}).loadRange(new Date(+at-86400000),new Date(+at+86400000));
 
     try {
         Swal.fire({title: 'Verifying with HQ...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
@@ -1331,20 +1338,25 @@ window.punchTime = async function(type) {
         if (type === "TIME IN") {
             try {
                 let staffProfiles = {}; 
-                const staffDocSnap = await getDoc(doc(db, "cashiers", localStorage.getItem('takodeal_staff_id')));
+                const staffDocSnap = await getDocFromServer(doc(db, "cashiers", punchStaffId));
+                assertPunchIdentity();
                 if (staffDocSnap.exists()) {
-                    staffProfiles[staffName] = staffDocSnap.data();
+                    staffProfiles[staffName] = {...staffDocSnap.data(),id:punchStaffId,staffId:punchStaffId};
                 }
 
                 const clockDate = new Date();
                 punchScheduleProfiles = staffProfiles;
-                punchScheduleData = await createScheduleHistoryStore(window).loadRange(new Date(+clockDate - 86400000), new Date(+clockDate + 86400000));
+                punchScheduleData = await readFreshPunchSchedule(clockDate);
                 {
                     let scheduleData = punchScheduleData;
                     
                     // 🔥 THE UPGRADE: Cross-Branch Universal Matcher Call
                     const snapshot = captureAttendanceSchedule(clockDate, closestBranch, staffName, scheduleData, staffProfiles);
-                    let lateMinutes = snapshot.needsScheduleReview ? 0 : resolveAttendanceShift({staffName, branch:closestBranch, timestamp:clockDate, scheduleSnapshot:snapshot}, scheduleData, staffProfiles)?.lateMinutes || 0;
+                    punchSchedulePreview = snapshot;
+                    const reviewedShift = await Swal.fire({title:'Review your assigned hours',html:renderAttendanceSchedulePreview(snapshot,{staffName,branch:closestBranch,at:clockDate}),showCancelButton:true,
+                        confirmButtonText:'Continue Time In',cancelButtonText:'Back to Clock',allowOutsideClick:false,confirmButtonColor:'#16634e'});
+                    assertPunchIdentity();if(!reviewedShift.isConfirmed)return;
+                    let lateMinutes = snapshot.needsScheduleReview || snapshot.wasScheduled!==true ? 0 : resolveAttendanceShift({staffName, branch:closestBranch, timestamp:clockDate, scheduleSnapshot:snapshot}, scheduleData, staffProfiles)?.lateMinutes || 0;
                     
                     // Trigger Interceptor Letter if they are more than 3 minutes late!
                     if (lateMinutes > 3) {
@@ -1463,10 +1475,18 @@ window.punchTime = async function(type) {
         };
         if (type === 'TIME IN') {
             attendance.faceCheck = faceResult.faceCheck;
+            // Slow proof, HR and camera checks must not save an earlier roster.
+            punchScheduleData = await readFreshPunchSchedule(new Date());
+            assertPunchIdentity();
+            window.assertAttendanceFaceFresh(faceResult);
             const clockDate = new Date();
             attendance.scheduleSnapshot = captureAttendanceSchedule(clockDate, closestBranch, staffName, punchScheduleData, punchScheduleProfiles);
+            assertAttendanceScheduleUnchanged(punchSchedulePreview,attendance.scheduleSnapshot);
+            if(Date.now()-punchLocation.timestamp>60000)throw Error('Location verification expired while checking the schedule. No Time In was saved. Tap Time In again; your selected late-proof draft is kept.');
             const matched = resolveAttendanceShift({...attendance, timestamp:clockDate}, punchScheduleData, punchScheduleProfiles);
-            if (!attendance.scheduleSnapshot.needsScheduleReview && matched) attendance.lateMinutes = matched.lateMinutes;
+            if (!attendance.scheduleSnapshot.needsScheduleReview && attendance.scheduleSnapshot.wasScheduled===true && matched) attendance.lateMinutes = matched.lateMinutes;
+            if(Number(attendance.lateMinutes)>3&&!pendingLateRequest)throw Error('The current Time In now needs a lateness explanation. No punch was saved. Tap Time In again to review the current time and provide your explanation.');
+            if(!(Number(attendance.lateMinutes)>3))pendingLateRequest=null;
         }
         if (type === 'TIME OUT') {
             await earlyClockOut.service.close({start:activeTimeIn,staffId:punchStaffId,staffName,attendance,assertCurrent:assertClockCurrent});
@@ -2820,15 +2840,6 @@ window.loadStaffSchedule = async function() {
             window.cachedSchedProfile = data;
         } else throw new Error('Your staff profile is unavailable. Sign in again or ask HQ to check your account.');
 
-        // 🔥 THE FIX: SMART NAME MATCHER! 
-        let isMatch = (assignedName) => {
-            if (!assignedName || assignedName === "N/A" || assignedName === "UNFILLED") return false;
-            let aName = assignedName.toLowerCase().trim();
-            const aliases = [staffName, nickname, window.cachedSchedProfile?.cashierName, window.cachedSchedProfile?.nickname]
-                .filter(Boolean).map(value => value.toLowerCase().trim());
-            return aliases.includes(aName);
-        };
-
         const monthView = await loadScheduleMonthView(window, {month:selected});
         if (!stillCurrent()) return;
         if (!monthView.hasSavedSchedule) {
@@ -2886,32 +2897,14 @@ window.loadStaffSchedule = async function() {
             let leaveReason = "";
             let assignedToBranch = "";
 
-            // 🔥 THE GLOBAL SCANNER FIX: 
-            // Loop through EVERY SINGLE BRANCH in the company to find their name!
-            let allBranches = Object.keys(dayData);
-
-            for (let b of allBranches) {
-                if (!dayData[b]) continue;
-                
-                let leaveRecord = (dayData[b].unavailable || []).find(u => isMatch(u.name));
-                if (leaveRecord) { 
-                    isLeave = true; leaveReason = leaveRecord.status; assignedToBranch = b; break; 
-                }
-
-                if ((dayData[b].rest || []).some(r => isMatch(r))) {
-                    isStandby = true; assignedToBranch = b; break;
-                }
-
-                let scheduledKeys = Object.keys(dayData[b].scheduled || {});
-                for (let sId of scheduledKeys) {
-                    if (isMatch(dayData[b].scheduled[sId])) {
-                        if (window.cachedScheduleDaySnapshots?.[day]?.branchConfig?.[b] || branchConfig[b]) {
-                            let sConf = (window.cachedScheduleDaySnapshots?.[day]?.branchConfig?.[b] || branchConfig[b]).find(s => s.id === sId);
-                            if (sConf) { shiftFound = sConf; assignedToBranch = b; break; }
-                        }
-                    }
-                }
-                if (shiftFound) break; // Stop scanning once we find them working!
+            const savedDay=staffScheduleDay(dayData,window.cachedScheduleDaySnapshots?.[day]?.branchConfig||branchConfig,
+                [staffName,nickname,window.cachedSchedProfile?.cashierName,window.cachedSchedProfile?.nickname]);
+            if(!savedDay.conflict&&savedDay.assignments.length===1){
+                shiftFound=savedDay.assignments[0].shift;assignedToBranch=savedDay.assignments[0].branch;
+            } else if(!savedDay.assignments.length&&savedDay.unavailable.length){
+                isLeave=true;leaveReason=savedDay.unavailable[0].status;assignedToBranch=savedDay.unavailable[0].branch;
+            } else if(!savedDay.assignments.length&&savedDay.standby.length){
+                isStandby=true;assignedToBranch=savedDay.standby[0].branch;
             }
 
             let holType = window.cachedScheduleDaySnapshots?.[day]?.holidays?.[dStr] ?? holidays[dStr];
@@ -2926,7 +2919,9 @@ window.loadStaffSchedule = async function() {
                 reliefBadge = `<div style="font-size: 10px; color: #b45309; font-weight: bold; background: #fef3c7; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px; border: 1px solid #fde68a;">🌍 Relief: ${assignedToBranch}</div>`;
             }
 
-            if (isLeave) {
+            if (savedDay.conflict) {
+                rowBg = '#fff8e8';statusHtml=renderStaffScheduleConflict(savedDay);hasShifts=true;
+            } else if (isLeave) {
                 rowBg = "#fef2f2";
                 statusHtml = `<span style="background: #fecaca; color: #b91c1c; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">🚫 ${leaveReason}</span>${reliefBadge}`;
                 hasShifts = true;

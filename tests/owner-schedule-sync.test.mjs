@@ -75,6 +75,7 @@ test('a save acknowledgement for another selected month cannot advance that mont
  const db=server(),gate=held(),entered=held();const phone=device(db,{saveSnapshot:async(value,options)=>{entered.resolve();await gate.promise;return db.save(value,options);}});await phone.controller.load();phone.snapshot.currentSchedule[16].Maa.scheduled.n1='Own change';const saving=phone.controller.save();await entered.promise;phone.month='2026-11';gate.resolve();assert.equal(await saving,true);assert.equal(phone.expected,'v1');assert.equal(await phone.controller.save(),false);phone.controller.stop();
 });
 
+const {scheduleShiftHours}=await import('../takodeal-manager/schedule-layout.js');
 const source=await readFile(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 const block=(start,end)=>source.slice(source.indexOf(start),source.indexOf(end,source.indexOf(start)));
 test('actual Save Edits captures edited shift controls before validation and saving; unrelated branches and assignments survive',async()=>{
@@ -95,7 +96,7 @@ test('actual Save Edits rejects invalid controls and never announces success aft
 test('actual calendar render is read-only for full names, unknown profiles, historical branches and swaps',()=>{
  const branchConfig=copy(schedule().branchConfig),currentSchedule=copy(schedule().currentSchedule),before=copy(currentSchedule);
  function element(){return {children:[],innerHTML:'',appendChild(child){this.children.push(child);}};}const container=element();
- const context=vm.createContext({window:{globalActiveBranches:['Maa'],isBranchAllowed:()=>true,employees:[]},branchConfig,currentSchedule,currentYear:2026,currentMonth:10,currentActiveTab:'Maa',document:{getElementById:()=>container,createElement:element},enhanceScheduleLayout(){}});vm.runInContext(block('window.renderTables = function() {','// 🖱️ MANAGE STANDBY STAFF ENGINE'),context);context.window.renderTables();assert.deepEqual(currentSchedule,before);const html=container.children[1].children.map(row=>row.innerHTML).join('');assert.match(html,/Former Full Name/);assert.match(html,/Unknown Staff/);assert.match(html,/Old Full Name/);assert.match(html,/Closed Branch Name/);assert.match(html,/Ana/);
+ const context=vm.createContext({scheduleShiftHours,window:{globalActiveBranches:['Maa'],isBranchAllowed:()=>true,employees:[]},branchConfig,currentSchedule,currentYear:2026,currentMonth:10,currentActiveTab:'Maa',document:{getElementById:()=>container,createElement:element},enhanceScheduleLayout(){}});vm.runInContext(block('window.renderTables = function() {','// 🖱️ MANAGE STANDBY STAFF ENGINE'),context);context.window.renderTables();assert.deepEqual(currentSchedule,before);const html=container.children[1].children.map(row=>row.innerHTML).join('');assert.match(html,/Former Full Name/);assert.match(html,/Unknown Staff/);assert.match(html,/Old Full Name/);assert.match(html,/Closed Branch Name/);assert.match(html,/Ana/);
 });
 
 function fakeDom(){

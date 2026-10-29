@@ -20,7 +20,10 @@ export function stagedReads(api){
  const jobs=[],trace=[],originalDoc=api.getDocFromServer,originalQuery=api.getDocsFromServer,originalTransaction=api.runTransaction;let stage=0,transactions=0;
  const later=(kind,path,work)=>new Promise((resolve,reject)=>{trace.push({kind,path,stage});jobs.push(async()=>{try{resolve(await work());}catch(error){reject(error);}});});
  api.getDocFromServer=ref=>later('doc',ref.path,()=>originalDoc(ref));api.getDocsFromServer=q=>later('query',q.table,()=>originalQuery(q));api.runTransaction=(db,callback)=>{transactions++;return originalTransaction(db,tx=>callback({...tx,get:ref=>later('transaction',ref.path,()=>tx.get(ref))}));};
- return {trace,get stages(){return stage;},get transactions(){return transactions;},async finish(promise){let settled=false,value,failure;promise.then(result=>{value=result;settled=true;},error=>{failure=error;settled=true;});for(let tries=0;!settled&&tries<80;tries++){await tick();await tick();if(jobs.length){stage++;await Promise.all(jobs.splice(0).map(work=>work()));}}if(!settled)throw Error('Synthetic network operation did not settle');if(failure)throw failure;return value;}};
+ // Native crypto may complete after many empty event-loop turns on a busy CI
+ // runner. Bound the harness by a real deadline, not an arbitrary turn count;
+ // remote-stage assertions below still measure dependency depth exactly.
+ return {trace,get stages(){return stage;},get transactions(){return transactions;},async finish(promise){let settled=false,value,failure;const deadline=Date.now()+10000;promise.then(result=>{value=result;settled=true;},error=>{failure=error;settled=true;});while(!settled&&Date.now()<deadline){await tick();await tick();if(jobs.length){stage++;await Promise.all(jobs.splice(0).map(work=>work()));}else if(!settled)await new Promise(resolve=>setTimeout(resolve,1));}if(!settled)throw Error('Synthetic network operation did not settle');if(failure)throw failure;return value;}};
 }
 
 test('a complete fresh preview shares exact request/source reads, performs no SDK transaction and finishes within three remote stages',async()=>{

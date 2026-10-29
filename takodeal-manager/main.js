@@ -46,7 +46,7 @@ import {installMasterEmployeeDocuments} from './staff-document-hq.js';
 import { installFranchiseWorkspace } from './franchise-workspace.js';
 import { installMonthlyBills } from './monthly-bills-ui.js';
 import { requestHistory, historyTime } from './request-history.js';
-import { enhanceScheduleLayout } from './schedule-layout.js';
+import { enhanceScheduleLayout, scheduleShiftHours } from './schedule-layout.js';
 import {installScheduleWorkspace} from './schedule-workspace.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
 import {installScheduleMemoryUI} from './schedule-memory-ui.js';
@@ -8447,26 +8447,33 @@ window.captureTempShiftConfig = function() {
 
 // 🔥 NEW: Instantly adds a new shift slot!
 window.addNewShiftToBranch = function(branch, kind = 'morning') {
-    if (!window.isBranchAllowed(branch)) return;
+    if (window.scheduleMemoryReadOnly || !window.isBranchAllowed(branch) || !['morning','mid','night','other'].includes(kind)) return;
     window.captureTempShiftConfig();
     if (!branchConfig[branch]) branchConfig[branch] = [];
-    const matching = branchConfig[branch].filter(shift => shiftType(shift) === kind);
-    const template = matching[0];
-    const clock = value => value === null ? '' : `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
-    const times = template ? shiftTimes(template) : { start: null, end: null };
+    const label=kind[0].toUpperCase()+kind.slice(1),names=new Set(branchConfig[branch].map(shift=>String(shift.name||'').trim().toLowerCase()));
+    const existingNumbers=branchConfig[branch].map(shift=>String(shift.name||'').match(new RegExp('^'+label+'\\s+(\\d+)\\b','i'))).filter(Boolean).map(match=>Number(match[1]));
+    let number=Math.max(0,...existingNumbers)+1;while(names.has(`${label} ${number}`.toLowerCase()))number++;
     branchConfig[branch].push({ id: 'shift_' + crypto.randomUUID(),
-        name: `${kind[0].toUpperCase() + kind.slice(1)} ${matching.length + 1}`,
-        shiftType: kind, active: true, startTime: clock(times.start), endTime: clock(times.end),
+        name: `${label} ${number}`,
+        shiftType: kind, active: true, startTime: '', endTime: '',
         days: [0, 1, 2, 3, 4, 5, 6] });
     window.renderConfigUI();
+    window.ManagerUI?.notify('New shift added to this draft. Set its exact start and finish, save the shift rules, then assign staff to it.');
 };
 
 // 🔥 NEW: Deletes a shift slot!
 window.removeShiftFromBranch = async function(branch, index) {
-    if (!(await window.ManagerUI.confirm("Are you sure you want to delete this shift?"))) return;
+    if (window.scheduleMemoryReadOnly || !window.isBranchAllowed(branch)) return false;
     window.captureTempShiftConfig();
+    const shift=branchConfig[branch]?.[index];if(!shift)return false;
+    const removalSchedule=currentSchedule;
+    const assigned=()=>Object.values(currentSchedule).some(row=>{const staff=row?.[branch]?.scheduled?.[shift.id];return staff && !['N/A','UNFILLED'].includes(staff);});
+    if(assigned()){window.ManagerUI.notify('This shift still has staff assignments. Keep it for the saved schedule history; reassign its staff before removing this slot.');return false;}
+    if (!(await window.ManagerUI.confirm("Are you sure you want to delete this shift?"))) return;
+    if(window.scheduleMemoryReadOnly || !window.isBranchAllowed(branch) || currentSchedule!==removalSchedule || branchConfig[branch]?.[index]!==shift || assigned())return false;
     branchConfig[branch].splice(index, 1);
     window.renderConfigUI();
+    return true;
 };
 
 // 🔥 NEW: Moves a shift UP or DOWN!
@@ -8502,6 +8509,7 @@ window.renderConfigUI = function() {
         
         html += `<div class="shift-config-box" data-schedule-branch="${encodeURIComponent(branch)}" style="margin-bottom: 15px; border-top: 3px solid #0f766e; background: #f8fafc; padding: 15px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); display: flex; flex-direction: column;">
                     <h4 style="margin:0 0 15px 0; color:#0f766e; text-transform:uppercase; font-size: 15px; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px;">📍 ${branch} Shifts</h4>
+                    <p class="schedule-rule-guidance">Set the exact hours for each slot, then assign staff to that slot in Roster. Morning, Mid and Night are categories; the saved start and finish control attendance. Changes use the effective date above. Earlier punches need a dated HR review.</p>
                     <div style="flex: 1;">`;
         
         branchConfig[branch].forEach((shift, index) => {
@@ -8590,24 +8598,35 @@ window.saveShiftConfigChanges = async function() {
         if (window.isBranchAllowed(branch)) shifts.forEach(shift => validateShiftConfig(shift));
     });
     
-    if (currentSchedule[1]) {
+    if (Object.keys(currentSchedule).length) {
         for (let day in currentSchedule) {
             const dayOfWeek = new Date(currentYear, currentMonth - 1, day).getDay();
             for (const branch in branchConfig) {
+                if (!window.isBranchAllowed(branch)) continue;
                 let bData = currentSchedule[day][branch]; 
                 if (!bData) continue;
-                let newSch = {};
+                const oldSch=bData.scheduled || {},newSch = {};
+                bData.rest ||= [];
                 
                 branchConfig[branch].filter(s => s.active).forEach(s => {
                     if (!s.days.includes(dayOfWeek)) {
                         newSch[s.id] = "N/A";
-                        let old = bData.scheduled ? bData.scheduled[s.id] : null;
-                        if (old && old !== "N/A" && old !== "UNFILLED" && !bData.rest.includes(old)) bData.rest.push(old);
                     } else { 
-                        let oldStaff = bData.scheduled ? bData.scheduled[s.id] : null;
+                        let oldStaff = oldSch[s.id];
                         newSch[s.id] = (oldStaff && oldStaff !== "N/A") ? oldStaff : "UNFILLED"; 
                     }
                 });
+                // Removing, disabling or changing a slot's workdays must not
+                // silently discard the staff member who occupied that slot.
+                // Keep them available for explicit reassignment, without
+                // inventing another shift or overriding dated leave.
+                const isStaff=value=>typeof value==='string'&&value.trim()&&!['N/A','UNFILLED'].includes(value);
+                const assigned=new Set(Object.values(newSch).filter(isStaff));
+                const date=`${currentYear}-${String(currentMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+                const globalUnavailable=typeof unavailability==='object'&&unavailability?unavailability[date]:null;
+                const unavailable=new Set([...(bData.unavailable || []).map(row=>row?.name),...Object.keys(globalUnavailable || {})]);
+                const displaced=[...new Set(Object.values(oldSch).filter(isStaff))].filter(staff=>!assigned.has(staff)&&!unavailable.has(staff));
+                for(const staff of displaced)if(!bData.rest.includes(staff))bData.rest.push(staff);
                 bData.scheduled = newSch;
             }
         }
@@ -9130,6 +9149,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
     let dayData = schedObj[day][branch];
     let curStaff = dayData.scheduled[shiftId];
     if(window.scheduleMemoryReadOnly)return window.ManagerUI.notify('This saved schedule version is read-only. Reload the latest schedule before assigning staff.');
+    window.captureTempShiftConfig?.();
     
     if (typeof swapData !== 'undefined') {
         swapData = { day, branch, shiftId, curStaff }; 
@@ -9152,7 +9172,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
             let targetBranchConfig = typeof branchConfig !== 'undefined' ? branchConfig[branch] : window.branchConfig[branch];
             if (targetBranchConfig) {
                 let foundShift = targetBranchConfig.find(s => s.id === sId);
-                if (foundShift) shiftName = foundShift.name;
+                if (foundShift) shiftName = foundShift.name+' · '+scheduleShiftHours(foundShift);
             }
             let realProfile = profileFunc(staff) || { scheduleNickname: staff };
             let displayName = realProfile.scheduleNickname || realProfile.cashierName || staff;
@@ -9178,6 +9198,8 @@ window.openSwapModal = async function(day, branch, shiftId) {
     let safeYear = typeof currentYear !== 'undefined' ? currentYear : window.currentYear;
     let safeMonth = typeof currentMonth !== 'undefined' ? currentMonth : window.currentMonth;
     let fullDateStr = `${safeYear}-${String(safeMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const assignedSlot=branchConfig[branch]?.find(shift=>shift.id===shiftId);
+    const assignmentContext=`${branch} · ${fullDateStr} (PH) · ${assignedSlot?.name || shiftId} · ${scheduleShiftHours(assignedSlot)}`;
     
     let targetUnavailObj = typeof unavailability !== 'undefined' ? unavailability : window.unavailability;
     const empList=window.employees || (typeof employees!=='undefined'?employees:[]);
@@ -9228,6 +9250,8 @@ window.openSwapModal = async function(day, branch, shiftId) {
         title: '🔄 Reassign / Swap Shift',
         html: `
             <div style="text-align: left; margin-top: 10px;">
+                <p class="schedule-assignment-context">${escapeHtml(assignmentContext)}</p>
+                <p class="schedule-assignment-help">The selected staff member is assigned to these exact hours. The shift category or name does not set a different start time.</p>
                 <div style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; margin-bottom: 15px;">
                     <span style="font-size: 12px; color: #64748b; text-transform: uppercase; font-weight: bold;">Currently Assigned:</span><br>
                     <strong style="color: #0f172a; font-size: 16px;">${currentDisplayName}</strong>
@@ -9406,6 +9430,8 @@ window.renderTables = function() {
     container.innerHTML = "";
     
     let schedObj = typeof currentSchedule !== 'undefined' ? currentSchedule : window.currentSchedule; 
+    const safeText=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+    const effectiveFrom=document.getElementById('scheduleEffectiveFrom')?.value || '';
     // Keep permitted branch navigation available while a new month has no rows.
     schedObj ||= {};
 
@@ -9432,7 +9458,7 @@ window.renderTables = function() {
 
         // 🔥 THE NEW COMPACT TABLE STYLES 🔥
         let tableHTML = `<div class="table-responsive" style="border: 1px solid #cbd5e1; border-radius: 12px; overflow: hidden; margin-top: 15px;"><table class="sched-table"><thead style="background: #f8fafc; border-bottom: 2px solid #cbd5e1;"><tr><th class="date-col">Date</th>`;
-        activeShifts.forEach(s => tableHTML += `<th>${s.name}</th>`);
+        activeShifts.forEach(s => tableHTML += `<th data-shift-name="${safeText(s.name)}" data-shift-hours="${safeText(scheduleShiftHours(s))}">${safeText(s.name)}<br><small class="schedule-shift-hours">${safeText(scheduleShiftHours(s))}</small></th>`);
         tableHTML += `<th style="color: #d97706; background: #fffbeb;">Standby</th><th style="color: #dc2626; background: #fef2f2;">Off / Leave</th><th style="color: #b91c1c; background: #fff1f2;">Suspended</th></tr></thead><tbody>`;
 
         let safeYear = typeof currentYear !== 'undefined' ? currentYear : window.currentYear;
@@ -9441,7 +9467,8 @@ window.renderTables = function() {
         for (let day in schedObj) {
             let fullDateStr = `${safeYear}-${String(safeMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const dStr = new Date(safeYear, safeMonth - 1, day).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-            tableHTML += `<tr><td class="date-col">${dStr}</td>`;
+            const hoursSource=effectiveFrom && fullDateStr<effectiveFrom?'Earlier saved version: review History':effectiveFrom?'Editor hours · from '+effectiveFrom:'Editor hours · check save status';
+            tableHTML += `<tr data-schedule-date-label="${safeText(dStr)}" data-schedule-hours-source="${safeText(hoursSource)}"><td class="date-col">${dStr}<small class="schedule-hours-source">${safeText(hoursSource)}</small></td>`;
 
             let dayData = schedObj[day][branch] || { scheduled: {}, rest: [], unavailable: [], swaps: {} };
 
@@ -9527,7 +9554,7 @@ window.manageStandbyStaff = async function(day, branch, staffName) {
             let sName = sId;
             if (targetBranchConfig) {
                 let f = targetBranchConfig.find(s => s.id === sId);
-                if (f) sName = f.name;
+                if (f) sName = f.name+' · '+scheduleShiftHours(f);
             }
             let currentAssignee = dayData.scheduled[sId];
             let assignText = currentAssignee === "UNFILLED" ? "(Unfilled)" : `(Currently: ${currentAssignee})`;

@@ -24,6 +24,7 @@ function commonNightFixture({startTime='18:30',endTime='03:00',timeIn='18:26',ex
 test('a real null-slot common overnight capture completes only after all immutable plausible finishes',()=>{
  const f=commonNightFixture(),before=structuredClone(f),captured=f.start.scheduleSnapshot;
  assert.equal(captured.shiftId,null);assert.equal(captured.wasScheduled,false);assert.equal(captured.expectedEndAt,'2026-10-28T19:00:00.000Z');
+ assert.equal(captured.needsScheduleReview,true);assert.equal(captured.scheduleReviewReason,'missing-dated-assignment');assert.equal(captured.lateMinutes,0);
  const shift=resolveClockOutShift(f.start,f.schedule,f.profiles);
  assert.equal(shift.clockOutCompleteOnly,true);assert.equal(shift.wasScheduled,false);assert.equal(shift.clockOutScheduleRecovered,false);
  assert.equal(shift.clockOutLatestFinishAt.toISOString(),captured.expectedEndAt);
@@ -64,7 +65,7 @@ test('a different immutable adjacent-day revision cannot be omitted from a commo
 });
 
 test('null-slot recovery rejects missing IDs, incomplete capture provenance and unmatched captured pairs',()=>{
- for(const change of [row=>{delete row.shiftId;},row=>{row.shiftId='';},row=>{row.shiftId='bad/path';},row=>{row.version=2;},row=>{row.source='typed';},row=>{row.branch='Other';},row=>{row.staffName='Other';},row=>{row.needsScheduleReview=true;},row=>{row.expectedEndAt='';},row=>{row.expectedEndAt='2026-10-28T19:15:00.000Z';},row=>{row.expectedStartAt='bad';},row=>{row.shiftType='morning';},row=>{row.isNightShift=false;}]){
+ for(const change of [row=>{delete row.shiftId;},row=>{row.shiftId='';},row=>{row.shiftId='bad/path';},row=>{row.version=2;},row=>{row.source='typed';},row=>{row.branch='Other';},row=>{row.staffName='Other';},row=>{row.needsScheduleReview=true;delete row.scheduleReviewReason;},row=>{row.scheduleReviewReason='conflicting-dated-assignment';},row=>{row.scheduleReviewReason='dated-staff-identity-conflict';},row=>{row.expectedEndAt='';},row=>{row.expectedEndAt='2026-10-28T19:15:00.000Z';},row=>{row.expectedStartAt='bad';},row=>{row.shiftType='morning';},row=>{row.isNightShift=false;}]){
   const f=commonNightFixture();change(f.start.scheduleSnapshot);const shift=resolveClockOutShift(f.start,f.schedule,f.profiles);
   assert.notEqual(shift.clockOutCompleteOnly,true);assert.equal(assessEarlyTimeOut(f.start,shift,new Date('2026-10-29T03:06:00+08:00')).unknown,true);
  }

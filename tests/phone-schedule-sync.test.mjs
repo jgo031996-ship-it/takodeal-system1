@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import {installScheduleViewSync} from '../takodeal-staff/schedule-view-sync.js';
 import {scheduleDateKey, monthKey} from '../takodeal-staff/schedule-history.js';
 import {projectScheduleMonth} from '../takodeal-staff/schedule-sync.js';
+import {staffScheduleDay,renderStaffScheduleConflict} from '../takodeal-staff/attendance-schedule-preview.js';
 
 const tick=()=>new Promise(setImmediate);
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
@@ -67,7 +68,7 @@ function actual(name,loadMonth) {
  const reads=[],window={getDocFromServer:async ref=>{reads.push(ref);return {exists:()=>true,data:()=>({cashierName:'Sample Staff',scheduleNickname:'Sample',branch:'Maa'})};},doc:(_db,table,id)=>table+'/'+id,db:{}};
  class FixedDate extends Date {constructor(...args){super(...(args.length?args:['2026-10-16T19:00:00+08:00']));}static now(){return +new Date('2026-10-16T19:00:00+08:00');}}
  const context={window,localStorage:{getItem:key=>values.get(key)||null},document:{getElementById:node},loadScheduleMonthView:loadMonth,
-  scheduleDateKey,monthKey,structuredClone,Date:FixedDate,console:{error(){}},setTimeout(){}};
+  scheduleDateKey,monthKey,staffScheduleDay,renderStaffScheduleConflict,structuredClone,Date:FixedDate,console:{error(){}},setTimeout(){}};
  const fn=name==='staff'?'loadStaffSchedule':'loadBranchSchedule',text=source[name],start=text.indexOf(`window.${fn} = async function()`);
  assert.ok(start>0);vm.runInNewContext(text.slice(start,text.indexOf('\n};',start)+3),context);
  return {window,nodes,values,reads,node,load:()=>window[fn]()};
@@ -81,6 +82,17 @@ test('actual Staff viewer reads staff by server ID and marks the Philippine date
  const h=actual('staff',async()=>view());await h.load();assert.deepEqual(h.reads,['cashiers/staff-id']);
  assert.match(h.node('scheduleContainer').innerHTML,/TODAY/);assert.match(h.node('scheduleContainer').innerHTML,/7:30 PM to 4:00 AM/);
  assert.equal(h.window.cachedSchedData.currentMonth,10);
+});
+test('actual Staff viewer shows relief work instead of an earlier home-branch standby record',async()=>{
+ const v=view();v.snapshot.currentSchedule[16]={Maa:{scheduled:{},rest:['Sample'],unavailable:[]},Cabantian:{scheduled:{m2:'Sample'},rest:[],unavailable:[]}};
+ v.daySnapshots[16].branchConfig.Cabantian=[{id:'m2',name:'Morning 2 Cashier',startTime:'10:00',endTime:'18:30'}];
+ const h=actual('staff',async()=>v);await h.load();const html=h.node('scheduleContainer').innerHTML;
+ assert.match(html,/Relief: Cabantian/);assert.match(html,/10:00 AM to 6:30 PM/);assert.doesNotMatch(html,/Standby \/ Day Off/);
+});
+test('actual Staff viewer exposes conflicting exact assignments instead of choosing a shift or offering its swap',async()=>{
+ const v=view();v.snapshot.currentSchedule[16].Maa.scheduled.extra='Sample';v.daySnapshots[16].branchConfig.Maa.push({id:'extra',name:'Another night',startTime:'18:30',endTime:'03:00'});
+ const h=actual('staff',async()=>v);await h.load();const html=h.node('scheduleContainer').innerHTML;
+ assert.match(html,/Assigned hours need HQ review/);assert.match(html,/Another night/);assert.match(html,/Night/);assert.doesNotMatch(html,/Request Swap/);
 });
 test('actual Staff held month read cannot populate a different account or selected month',async()=>{
  for(const change of ['account','month']) {const held=deferred(),h=actual('staff',()=>held.promise),pending=h.load();await tick();

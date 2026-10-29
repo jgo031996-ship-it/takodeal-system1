@@ -10,6 +10,7 @@ import {installStaffPhone} from '../takodeal-staff/staff-phone.js';
 import * as payroll from '../takodeal-staff/payroll-safety.js';
 import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
 import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js';
+import * as schedulePreview from '../takodeal-staff/attendance-schedule-preview.js';
 
 const zones={Maa:{lat:7.0786417726231425,lng:125.58344120162646}},time=1800000000000;
 const position=(accuracy=12,stamp=time,offset=0)=>({timestamp:stamp,coords:{latitude:zones.Maa.lat+offset,longitude:zones.Maa.lng,accuracy}});
@@ -164,10 +165,11 @@ test('Profile history and contracts render without the removed public payroll fi
 function punchHarness(fixes){
     let writes=0;const records=[],alerts=[],nodes=new Map();
     const window={getAttendanceLocation:async()=>{const next=fixes.shift();if(next instanceof Error)throw next;return next;},checkActiveSanctions:async()=>false,loadMyAttendance(){},verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1}}),assertAttendanceFaceFresh(){}};
-    const context={...payroll,...reconciliation,createScheduleHistoryStore,window,document:{getElementById:id=>{if(!nodes.has(id))nodes.set(id,{disabled:false,videoWidth:0});return nodes.get(id);}},localStorage:{getItem:key=>key.endsWith('_id')?'staff-id':'Sample Staff'},
-        Swal:{fire:(...args)=>alerts.push(args)},doc:()=>({id:'sample'}),collection:()=>({}),query:()=>({}),where:()=>({}),db:{},getDocs:async()=>({forEach(){}}),getDoc:async()=>({exists:()=>false}),serverTimestamp:()=>null,
+    const context={...payroll,...reconciliation,...schedulePreview,createScheduleHistoryStore,window,document:{getElementById:id=>{if(!nodes.has(id))nodes.set(id,{disabled:false,videoWidth:0});return nodes.get(id);}},localStorage:{getItem:key=>key.endsWith('_id')?'staff-id':'Sample Staff'},
+        Swal:{fire:async(...args)=>{alerts.push(args);return {isConfirmed:true};}},doc:()=>({id:'sample'}),collection:()=>({}),query:()=>({}),where:()=>({}),db:{},getDocs:async()=>({forEach(){}}),getDoc:async()=>({exists:()=>false}),serverTimestamp:()=>null,
         writeBatch:()=>({set:(_,record)=>records.push(record),commit:async()=>writes++}),Date,console:{error(){}}};
-    Object.assign(window,{db:context.db,query:context.query,collection:context.collection,where:context.where,getDocs:context.getDocs,getDocsFromServer:context.getDocs,doc:context.doc,getDoc:context.getDoc});
+    context.getDocFromServer=context.getDoc;
+    Object.assign(window,{db:context.db,query:context.query,collection:context.collection,where:context.where,getDocs:context.getDocs,getDocsFromServer:context.getDocs,doc:context.doc,getDoc:context.getDoc,getDocFromServer:context.getDocFromServer});
     const start=engine.indexOf('window.punchTime = async function'),end=engine.indexOf('// 📥 STAFF REQUESTS & INBOX ENGINE',start);
     vm.runInNewContext(engine.slice(start,end),context);return {window,context,records,alerts,writes:()=>writes};
 }

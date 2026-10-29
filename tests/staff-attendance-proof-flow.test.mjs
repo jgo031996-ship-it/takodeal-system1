@@ -7,6 +7,7 @@ import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
 import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js';
 import {prepareEarlyTimeOut} from '../takodeal-staff/early-time-out-ui.js';
 import {createEarlyTimeOutService} from '../takodeal-staff/early-time-out-actions.js';
+import {renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged} from '../takodeal-staff/attendance-schedule-preview.js';
 
 const source=readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
 const start=source.indexOf('window.punchTime = async function');
@@ -51,7 +52,7 @@ function harness({late=true}={}) {
         captureOptionalAttendancePhoto:()=>'',loadMyAttendance:()=>events.push('refresh'),
         async uploadAttendanceProof(request){events.push('proof:start');uploadCalls.push(request);request.assertCurrent();const result=h.upload?await h.upload(request):{url:proofUrl};events.push('proof:done');return result;}};
     class ClockDate extends Date {constructor(...args){super(...(args.length?args:[clockMs]));}static now(){return clockMs;}}
-    const Swal={async fire(...args){alerts.push(args);const options=args[0];if(options?.title?.includes('You are Late')){
+    const Swal={async fire(...args){alerts.push(args);const options=args[0];if(options?.title==='Review your assigned hours'){events.push('schedule:preview');return {isConfirmed:h.cancelPreview!==true};}if(options?.title?.includes('You are Late')){
             if(h.cancelDialog)return {isConfirmed:false};
             options.didOpen?.();
             if(h.lateForm.reason!==null)node('lateReason').value=h.lateForm.reason;
@@ -61,7 +62,7 @@ function harness({late=true}={}) {
         }return {isConfirmed:true};},close(){},showLoading(){},showValidationMessage(message){events.push('validation');alerts.push(['Validation',message]);}};
     const document={hidden:false,getElementById:node,querySelector:()=>null,querySelectorAll:()=>[]};
     node('view-timeclock').classList={contains:value=>value==='active'};
-    vm.runInNewContext(handler,{...api,...payroll,...reconciliation,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clockMs)})}),window,auth:window.auth,localStorage,document,Swal,Date:ClockDate,console:{error(){},warn(){},log(){}}});
+    vm.runInNewContext(handler,{...api,...payroll,...reconciliation,renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clockMs)})}),window,auth:window.auth,localStorage,document,Swal,Date:ClockDate,console:{error(){},warn(){},log(){}}});
     return Object.assign(h,{window,punch:type=>window.punchTime(type),advance:milliseconds=>{clockMs+=milliseconds;}});
 }
 
@@ -81,6 +82,18 @@ test('actual late Time In preserves required reason and screenshot; cancel or mi
         await h.punch('TIME IN');assertNoAttendance(h);assert.equal(h.uploadCalls.length,0);
         assert.equal(h.events.includes('camera'),false);
     }
+});
+
+test('the exact saved hours are shown before proof or camera and cancelling the preview creates no punch',async()=>{
+    const h=harness();h.cancelPreview=true;await h.punch('TIME IN');assertNoAttendance(h);
+    assert.equal(h.uploadCalls.length,0);assert.equal(h.events.includes('camera'),false);
+    const preview=h.alerts.find(args=>args[0]?.title==='Review your assigned hours')[0];assert.match(preview.html,/9:00\s*AM/i);assert.match(preview.html,/6:00\s*PM/i);
+});
+
+test('HQ changing the exact shift during a slow proof upload cannot save stale attendance or its reason letter',async()=>{
+    const h=harness();h.upload=async()=>{const rules=h.records.get('settings/global_schedule').branchConfig.Maa;rules[0].startTime='10:00';rules[0].endTime='18:30';return {url:proofUrl};};
+    await h.punch('TIME IN');assertNoAttendance(h);assert.equal(h.uploadCalls.length,1);
+    assert.match(h.alerts.at(-1)[1],/HQ updated the assigned schedule/);assert.equal(h.window.staffLateProofDraft.file,screenshot);
 });
 
 test('actual late Time In restores controls after upload timeout, cancellation or unreadable proof; no partial HR letter is saved',async()=>{

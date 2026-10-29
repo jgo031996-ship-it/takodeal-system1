@@ -21,6 +21,7 @@ import { MALL_FLOAT, mallOpeningCash, stockRequestDue, autoRequestId, businessCl
 import { closeShiftAtomic, closeLegacyShiftAtomic, captureShiftCloseIdentity, assertShiftCloseIdentity, resolveShiftCloseIdentity, readBranchPolicy, readMallOpeningCash } from './cash-settlement.js';
 import { createRemittanceAttemptStore, readRemittanceDrawer, submitRemittanceAtomic, readClosedCashCarry, recordOpeningCashReview } from './remittance-safety.js';
 import {captureAttendanceSchedule} from './payroll-safety.js';
+import {renderAttendanceSchedulePreview, assertAttendanceScheduleUnchanged} from './attendance-schedule-preview.js';
 import {prepareEarlyTimeOut} from './early-time-out-ui.js';
 import {createCountSnapshot, stockReportQuantities} from './stock-report-units.js';
 import {createScheduleHistoryStore} from './schedule-history.js';
@@ -3052,7 +3053,7 @@ window.openTimeClockModal = async function() {
         let html = '<option value="">-- Select Your Name --</option>';
         
         snap.forEach(docSnap => {
-            let data = {...docSnap.data(),id:docSnap.id};
+            let data = {...docSnap.data(),id:docSnap.id,staffId:docSnap.id};
             currentBranchStaffCache.push(data); 
             html += `<option value="${data.cashierName}">${data.cashierName}</option>`;
         });
@@ -3127,7 +3128,7 @@ window.submitAttendance = async function(type) {
             const staffSnap = type === 'TIME IN' ? await getDocsFromServer(staffQ) : await getDocs(staffQ);
             
             if (staffSnap.docs.length === 1) {
-                staffProfile = {...staffSnap.docs[0].data(),id:staffSnap.docs[0].id};
+                staffProfile = {...staffSnap.docs[0].data(),id:staffSnap.docs[0].id,staffId:staffSnap.docs[0].id};
             } else {
                 alert(`❌ Error: ${staffName}'s profile could not be found in the database. Please contact the Manager.`);
                 unlockUI();
@@ -3378,8 +3379,28 @@ window.submitAttendance = async function(type) {
     // ==========================================
     // 🌍 GPS GEOFENCING & AUTO-ROUTING
     // ==========================================
+    let timeInSchedule = null, timeInSchedulePreview = null;
+    const readClockSchedule = async at => {
+        const api = {...window, db, doc, getDocFromServer: async reference => {
+            const saved = await getDocFromServer(reference);
+            if (saved.metadata?.fromCache || saved.metadata?.hasPendingWrites) throw Error('Reconnect to HQ to confirm the saved schedule. No Time In was created.');
+            return saved;
+        }};
+        return createScheduleHistoryStore(api).loadRange(new Date(+at - 86400000), new Date(+at + 86400000));
+    };
     if (type === 'TIME IN') {
-        try { await window.prepareAttendanceCamera(); }
+        try {
+            const at = new Date(), branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
+            timeInSchedule = await readClockSchedule(at);
+            timeInSchedulePreview = captureAttendanceSchedule(at, branch, staffName, timeInSchedule, {[staffName]:staffProfile});
+            const choice = await Swal.fire({titleText:'Check your assigned hours',
+                html:renderAttendanceSchedulePreview(timeInSchedulePreview,{staffName,branch,at}),
+                showCancelButton:true,confirmButtonText:'Continue to Time In',cancelButtonText:'Back to Time Clock',
+                confirmButtonColor:'#17604c',allowOutsideClick:false});
+            if(!choice.isConfirmed){unlockUI();return;}
+            if(!clockStillSelected())throw Error('The Time Clock account changed. Choose your account again. No Time In was created.');
+            await window.prepareAttendanceCamera();
+        }
         catch (error) { alert(error.message); unlockUI(); return; }
     }
 
@@ -3446,13 +3467,14 @@ window.submitAttendance = async function(type) {
         }
         
         try {
-            let schedule = null, faceResult = null;
+            let schedule = timeInSchedule, faceResult = null;
             if (type === 'TIME OUT' && (!activeTimeIn || activeTimeIn.branch !== finalBranch)) throw Error(`Your active shift is at ${activeTimeIn?.branch||'another branch'}. Record Time Out from that branch or ask HQ to review the location.`);
             if (type === 'TIME IN') {
-                const scheduleAt = new Date();
-                try { schedule = await createScheduleHistoryStore(window).loadRange(new Date(+scheduleAt - 86400000), new Date(+scheduleAt + 86400000)); }
-                catch (error) { console.warn('Schedule evidence unavailable for this clock-in; payroll review will be required.', error); }
                 faceResult = await window.verifyAttendanceFace();
+                window.assertAttendanceFaceFresh(faceResult);
+                const scheduleAt = new Date();
+                schedule = await readClockSchedule(scheduleAt);
+                assertAttendanceScheduleUnchanged(timeInSchedulePreview,captureAttendanceSchedule(scheduleAt,finalBranch,staffName,schedule,{[staffName]:staffProfile}));
                 window.assertAttendanceFaceFresh(faceResult);
                 if (Date.now() - gpsReceivedAt > 15000) throw Error('Location verification expired during the camera check. Keep Clock open and try Time In again.');
             }
@@ -3482,6 +3504,7 @@ window.submitAttendance = async function(type) {
             if (type === 'TIME IN') {
                 attendance.faceCheck = faceResult.faceCheck;
                 attendance.scheduleSnapshot = captureAttendanceSchedule(attendanceAt, finalBranch, staffName, schedule, {[staffName]:staffProfile});
+                assertAttendanceScheduleUnchanged(timeInSchedulePreview,attendance.scheduleSnapshot);
             }
             if (type === 'TIME OUT') {
                 await earlyClockOut.service.close({start:activeTimeIn,staffId:staffProfile.id,staffName,pin:inputPin,attendance,records:pendingAttendanceRecords,assertCurrent:assertClockCurrent});

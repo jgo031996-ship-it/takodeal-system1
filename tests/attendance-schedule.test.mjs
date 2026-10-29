@@ -11,6 +11,7 @@ import {prepareEarlyTimeOut} from '../Takodeal-POS/early-time-out-ui.js';
 import {createEarlyTimeOutService} from '../Takodeal-POS/early-time-out-actions.js';
 import {createAttendanceMetadataReader} from '../Takodeal-POS/attendance-metadata-reader.js';
 import {metadataFetch} from './helpers/attendance-metadata-fixture.mjs';
+import * as schedulePreview from '../takodeal-staff/attendance-schedule-preview.js';
 
 const staffSource = readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
 const cashierSource = readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8');
@@ -54,12 +55,12 @@ function staffClock(h,clock) {
     const ui=dom(),fix={branch:'Maa',distance:2,accuracy:10,lat:7,lng:125,timestamp:+new Date(clock)};
     const window={...h.api,getAttendanceLocation:async()=>fix,checkActiveSanctions:async()=>false,loadMyAttendance(){},verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1,capturedAt:new Date(clock).toISOString()}}),assertAttendanceFaceFresh(){}};
     Object.assign(window,{Swal:ui.Swal,document:ui.document});
-    const context={...h.api,...ui,...payroll,...reconciliation,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock)};
+    const context={...h.api,...ui,...payroll,...reconciliation,...schedulePreview,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock)};
     const start=staffSource.indexOf('window.punchTime = async function');
     vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('// 📥 STAFF REQUESTS & INBOX ENGINE',start)),context);
     return {...ui,window};
 }
-function cashierClock(h,clock,{cachedProfile=true,lastTimeInHours=null,pin='test-pin'}={}) {
+function cashierClock(h,clock,{cachedProfile=true,lastTimeInHours=null,pin='test-pin',serverProfile={}}={}) {
     const ui=dom();ui.node('clockStaffName').value=profile.cashierName;ui.node('clockStaffPin').value='test-pin';
     ui.node('timeClockModal').style.display='flex';
     let gpsDone;
@@ -67,11 +68,11 @@ function cashierClock(h,clock,{cachedProfile=true,lastTimeInHours=null,pin='test
     const window={...h.api,BRANCH_ZONES:{Maa:{lat:7,lng:125}},getDistanceInMeters:()=>2,prepareAttendanceCamera:async()=>true,verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1,capturedAt:new Date(clock).toISOString()}}),assertAttendanceFaceFresh(){},
         currentBranchStaffCache:cachedProfile?[{...profile,id:'staff-id',pin:'test-pin'}]:null};
     const api={...h.api,getDocs:async q=>{
-        if(q.path==='cashiers'){const d={id:'staff-id',data:()=>({...profile,pin})};return {empty:false,docs:[d],forEach:fn=>fn(d)};}
+        if(q.path==='cashiers'){const d={id:'staff-id',data:()=>({...profile,...serverProfile,pin})};return {empty:false,docs:[d],forEach:fn=>fn(d)};}
         return h.api.getDocs(q);
     }};api.getDocsFromServer=async q=>{if(h.serverError)throw h.serverError;return api.getDocs(q);};Object.assign(window,api);
     Object.assign(window,{Swal:ui.Swal,document:ui.document});
-    const context={...api,...ui,...payroll,...sanctions,...reconciliation,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock),
+    const context={...api,...ui,...payroll,...sanctions,...reconciliation,...schedulePreview,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock),
         navigator:{geolocation:{getCurrentPosition:ok=>{gpsDone=ok({coords:{latitude:7,longitude:125}});}}}};
     const start=cashierSource.indexOf('window.submitAttendance = async function');
     vm.runInNewContext(cashierSource.slice(start,cashierSource.indexOf('// 📥 STAFF REQUEST HUB (WITH INBOX)',start)),context);
@@ -114,6 +115,43 @@ test('missing schedule evidence preserves a Cashier punch as review-required, ra
     const attendance=h.records.get(h.writes.at(-1));assert.equal(attendance.scheduleSnapshot.needsScheduleReview,true);
     assert.equal(attendance.scheduleSnapshot.expectedStartAt,'');assert.equal(attendance.lateMinutes,undefined);
     const match=payroll.resolveAttendanceShift(attendance,null,{[profile.cashierName]:profile});assert.equal(match.needsScheduleReview,true);assert.equal(match.lateMinutes,0);
+});
+
+function morningTwoSchedule(){
+    const saved=schedule('2026-10','09:00','17:30',[29]);saved.branchConfig.Maa[0].name='Morning 1';
+    saved.branchConfig.Maa.push({id:'morning2',name:'Morning 2 Cashier',startTime:'10:00',endTime:'18:30',shiftType:'morning',active:true,days:[0,1,2,3,4,5,6]});
+    saved.currentSchedule[29].Maa.scheduled={morning2:'Sample'};return saved;
+}
+test('actual Cashier and Staff clocks keep a 9:57 arrival assigned to Morning 2 at 10:00 at zero late minutes',async()=>{
+    const clock='2026-10-29T09:57:00+08:00';
+    for(const name of ['cashier','staff']){
+        const h=memory({'settings/global_schedule':morningTwoSchedule(),'cashiers/staff-id':profile});h.clock=clock;
+        const app=name==='cashier'?cashierClock(h,clock):staffClock(h,clock);
+        await (name==='cashier'?app.window.submitAttendance('TIME IN'):app.window.punchTime('TIME IN'));await app.wait?.();
+        assert.equal(h.writes.length,1,name+': '+JSON.stringify(app.alerts));const row=h.records.get(h.writes[0]);
+        assert.equal(row.scheduleSnapshot.shiftId,'morning2');assert.equal(row.scheduleSnapshot.wasScheduled,true);assert.equal(row.scheduleSnapshot.needsScheduleReview,false);
+        assert.equal(row.scheduleSnapshot.expectedStartAt,'2026-10-29T02:00:00.000Z');assert.equal(row.scheduleSnapshot.expectedEndAt,'2026-10-29T10:30:00.000Z');assert.equal(row.scheduleSnapshot.lateMinutes,0);
+        const preview=app.alerts.find(args=>args[0]?.titleText==='Check your assigned hours'||args[0]?.title==='Review your assigned hours')[0];assert.match(preview.html,/10:00\s*AM/i);assert.match(preview.html,/6:30\s*PM/i);
+    }
+});
+test('actual Cashier preview cancellation records nothing and never requests GPS or opens the camera',async()=>{
+    const h=memory({'settings/global_schedule':morningTwoSchedule()}),app=cashierClock(h,'2026-10-29T09:57:00+08:00');let camera=0;
+    app.window.prepareAttendanceCamera=async()=>camera++;const show=app.Swal.fire;app.Swal.fire=async(...args)=>args[0]?.titleText==='Check your assigned hours'?{isConfirmed:false}:show(...args);
+    await app.window.submitAttendance('TIME IN');assert.equal(h.writes.length,0);assert.equal(app.wait(),undefined);assert.equal(camera,0);assert.equal(app.window.isProcessingAttendance,false);
+});
+test('actual Cashier refuses stale assigned hours changed by HQ before its final schedule read',async()=>{
+    const h=memory({'settings/global_schedule':morningTwoSchedule()}),app=cashierClock(h,'2026-10-29T09:57:00+08:00');
+    app.window.verifyAttendanceFace=async()=>{const shift=h.records.get('settings/global_schedule').branchConfig.Maa.find(row=>row.id==='morning2');shift.startTime='10:30';shift.endTime='19:00';return {photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1}};};
+    await app.window.submitAttendance('TIME IN');await app.wait();assert.equal(h.writes.length,0);assert.equal(app.window.isProcessingAttendance,false);assert.match(app.alerts.at(-1)[0],/HQ updated the assigned schedule/);
+});
+test('actual Cashier cannot treat a failed HQ schedule read as successful missing evidence',async()=>{
+    const h=memory({'settings/global_schedule':morningTwoSchedule()});h.api.getDocFromServer=async()=>{throw Error('The assigned schedule server read failed.');};
+    const app=cashierClock(h,'2026-10-29T09:57:00+08:00');await app.window.submitAttendance('TIME IN');assert.equal(h.writes.length,0);assert.equal(app.wait(),undefined);assert.match(app.alerts.at(-1)[0],/schedule server read failed/);
+});
+test('actual Cashier ignores stale stored staff identity fields in favor of the fresh document ID',async()=>{
+    const h=memory({'settings/global_schedule':morningTwoSchedule()}),app=cashierClock(h,'2026-10-29T09:57:00+08:00',{serverProfile:{id:'stale-id',staffId:'different-staff-id'}});
+    app.window.currentBranchStaffCache[0].id='wrong-cache-id';await app.window.submitAttendance('TIME IN');await app.wait();
+    assert.equal(h.writes.length,1);const row=h.records.get(h.writes[0]);assert.equal(row.staffId,'staff-id');assert.equal(row.recordedByStaffId,'staff-id');assert.equal(row.scheduleSnapshot.wasScheduled,true);assert.equal(row.scheduleSnapshot.shiftId,'morning2');
 });
 
 test('Cashier rejects an unsupported manual-edit type before querying identity, GPS or creating a record',async()=>{
@@ -230,7 +268,7 @@ test('actual Staff SOP screen follows an ID-matched Cashier shift instead of a G
 
 function scheduleView(h,selected='2026-11') {
     const ui=dom();ui.node('staffMonthPicker').value=selected;
-    const window={...h.api};const context={...h.api,...ui,window,createScheduleHistoryStore,loadScheduleMonthView,scheduleDateKey,monthKey,resolveScheduleForDate,structuredClone,Date:dateAt(now)};
+    const window={...h.api};const context={...h.api,...ui,...schedulePreview,window,createScheduleHistoryStore,loadScheduleMonthView,scheduleDateKey,monthKey,resolveScheduleForDate,structuredClone,Date:dateAt(now)};
     const start=staffSource.indexOf('window.loadStaffSchedule = async function');
     vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('window.initiateSwapRequest = function',start)),context);
     return {...ui,window,context};

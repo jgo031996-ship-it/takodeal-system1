@@ -7,6 +7,7 @@ import * as directory from '../takodeal-manager/schedule-staff-directory.js';
 import {availableScheduleReliefStaff} from '../takodeal-manager/schedule-relief-staff.js';
 import {canOpenWorkspacePage} from '../takodeal-manager/workspace-access-model.js';
 import {leaveStatus} from '../takodeal-manager/leave-model.js';
+import {scheduleShiftHours} from '../takodeal-manager/schedule-layout.js';
 
 const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 const extract=name=>{const start=source.indexOf('\nwindow.'+name+' = '),end=source.indexOf('\n};',start+1);assert.ok(start>=0&&end>start,name+' source exists');return source.slice(start+1,end+3);};
@@ -25,13 +26,18 @@ function fixture(options={}){
   reviewOwnedScheduleLeave(date,name){calls.leaveReviews.push({date,name});return options.ownedLeave===name;},
   saveToCloud:async()=>{calls.saves.push(clone(context.currentSchedule));return options.save?options.save():true;}};
  const Swal={fire:async(...args)=>{calls.dialogs.push(args);if(args[0]?.title==='🔄 Reassign / Swap Shift'&&options.autoConfirm)return {isConfirmed:true,value:options.autoConfirm};return {isConfirmed:false};},showValidationMessage:message=>calls.notices.push(message)};
- context=vm.createContext({...directory,activeStaffProfile,availableScheduleReliefStaff,canOpenWorkspacePage,leaveStatus,escapeHtml:esc,window:w,document:{getElementById:node},Swal,employees:staff,currentSchedule:schedule,unavailability:options.unavailability||{},currentYear:2026,currentMonth:10,currentActiveTab:'Maa',branchConfig:{Maa:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}],Cabantian:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}]},swapData:null,monthKey:value=>value.currentYear+'-'+String(value.currentMonth).padStart(2,'0'),console});
+ context=vm.createContext({...directory,scheduleShiftHours,activeStaffProfile,availableScheduleReliefStaff,canOpenWorkspacePage,leaveStatus,escapeHtml:esc,window:w,document:{getElementById:node},Swal,employees:staff,currentSchedule:schedule,unavailability:options.unavailability||{},currentYear:2026,currentMonth:10,currentActiveTab:'Maa',branchConfig:{Maa:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}],Cabantian:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}]},swapData:null,monthKey:value=>value.currentYear+'-'+String(value.currentMonth).padStart(2,'0'),console});
  for(const name of ['applyScheduleMemorySnapshot','findEmployeeProfile','confirmActiveScheduleStaff','openSwapModal','executeSwap'])vm.runInContext(extract(name),context);
  const html=()=>calls.dialogs.filter(args=>args[0]?.title==='🔄 Reassign / Swap Shift').at(-1)?.[0].html||'';
  const optionsFor=()=>[...html().matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)].map(row=>({value:row[1],label:row[2]}));
  return {w,ctx:context,calls,node,html,optionsFor,async open(branch='Maa',shift='m1'){await w.openSwapModal(28,branch,shift);},option(name){return optionsFor().find(row=>row.label.startsWith(name+' '));}};
 }
 const successful=f=>f.calls.dialogs.some(args=>args[0]?.icon==='success');
+
+test('actual assignment review names the branch, work date and exact target hours rather than only its Morning category',async()=>{
+ const f=fixture(),slots=f.ctx.branchConfig.Maa;Object.assign(slots[0],{startTime:'09:00',endTime:'17:30'});Object.assign(slots[1],{startTime:'10:00',endTime:'18:30'});const before=clone(f.ctx.currentSchedule);await f.open('Maa','m2');
+ assert.match(f.html(),/Maa · 2026-10-28 \(PH\) · Morning two · 10:00 AM – 6:30 PM/);assert.match(f.html(),/Morning one · 9:00 AM – 5:30 PM/);assert.match(f.html(),/exact hours/);assert.deepEqual(clone(f.ctx.currentSchedule),before);assert.equal(f.calls.saves.length,0);
+});
 
 test('actual swap opening offers new same-branch Anj and Joana by stable ID without changing any saved day',async()=>{
  const f=fixture(),before=clone({schedule:f.ctx.currentSchedule,unavailability:f.ctx.unavailability,staff:f.w.employees});await f.open();
