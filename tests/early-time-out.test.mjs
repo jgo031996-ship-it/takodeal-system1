@@ -79,9 +79,24 @@ test('management can reject unknown or changed schedules using the original pend
 test('malformed request versions and tokens cannot receive protected approval',async()=>{
     for(const change of [{requestVersion:0},{requestVersion:1.5},{requestToken:''},{requestToken:'x'.repeat(121)}]){const f=fixture(),request=await f.request();f.h.put('staff_requests/'+request.id,{...f.h.get('staff_requests/'+request.id),...change});await assert.rejects(f.approve(request.id),/version review/);assert.equal(f.h.get('attendance_time_out_approvals/'+request.id),undefined);}
 });
-test('a timed-out request retains one physical transaction; late acknowledgement is safely reused',async()=>{
-    const f=fixture(),original=f.h.api.runTransaction;let release,calls=0;const gate=new Promise(resolve=>release=resolve);f.h.api.runTransaction=async(...args)=>{calls++;await gate;return original(...args);};const service=createEarlyTimeOutService(f.h.api,{now:()=>new Date(f.clock),makeToken:()=> 'sample-stable-token',timeoutMs:5});
-    const input={...f.input,reason:'Family appointment'};await assert.rejects(service.request(input),/not confirmed/);await assert.rejects(service.request(input),/not confirmed/);assert.equal(calls,1);release();await new Promise(resolve=>setImmediate(resolve));const result=await service.request(input);assert.equal(result.alreadySaved,true);assert.equal([...f.h.docs.keys()].filter(path=>path.startsWith('staff_requests/')).length,1);assert.equal([...f.h.docs.keys()].filter(path=>path.includes('/time-out-')).length,0);
+test('a timed-out request retains one physical transaction; late acknowledgement is safely reused',async t=>{
+    // Control the UI deadline separately from the real asynchronous descriptor
+    // and transaction. A CI event-loop turn is not proof that their late
+    // acknowledgement has finished or that the in-flight entry was released.
+    t.mock.timers.enable({apis:['setTimeout']});
+    const f=fixture(),original=f.h.api.runTransaction;
+    let release,started,calls=0;
+    const gate=new Promise(resolve=>release=resolve),transactionStarted=new Promise(resolve=>started=resolve);
+    f.h.api.runTransaction=async(...args)=>{calls++;started();await gate;return original(...args);};
+    const service=createEarlyTimeOutService(f.h.api,{now:()=>new Date(f.clock),makeToken:()=> 'sample-stable-token',timeoutMs:5});
+    const input={...f.input,reason:'Family appointment'},first=service.request(input);
+    await transactionStarted;t.mock.timers.tick(5);await assert.rejects(first,/not confirmed/);
+    const second=service.request(input);t.mock.timers.tick(5);await assert.rejects(second,/not confirmed/);assert.equal(calls,1);
+    // Subscribe to the same pending operation before releasing its response.
+    // Await its actual result instead of hoping one setImmediate was enough.
+    const lateAcknowledgement=service.request(input);release();
+    assert.equal((await lateAcknowledgement).alreadySaved,false);assert.equal(calls,1);
+    const result=await service.request(input);assert.equal(result.alreadySaved,true);assert.equal([...f.h.docs.keys()].filter(path=>path.startsWith('staff_requests/')).length,1);assert.equal([...f.h.docs.keys()].filter(path=>path.includes('/time-out-')).length,0);
 });
 test('a saved dated shift amendment supplies the corrected end without rewriting the punch snapshot',async()=>{
     const f=fixture({nowAt:iso('17:05')}),plan=end=>({currentYear:2030,currentMonth:1,branchConfig:{[branch]:[{id:'sample-slot',name:'Saved shift',shiftType:'day',startTime:'09:00',endTime:end,active:true}]},currentSchedule:{10:{[branch]:{scheduled:{'sample-slot':name}}}}});
