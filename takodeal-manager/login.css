@@ -56,10 +56,16 @@
 .login-error { font-size:12px; line-height:1.5; color:#a43f35; background:#fff4ef; border:1px solid #efdcd2; border-radius:8px; padding:10px 12px; margin:0 0 13px; }
 .login-progress { min-height:17px; font-size:11px; color:#58715c; margin:0 0 10px; line-height:1.5; }
 .login-device { margin-top:24px; padding-top:16px; border-top:1px solid #e5e9df; }
-.login-device-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-.login-device-row>span { font-size:10px; color:#677e66; }
+.login-device-row { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:10px; min-width:0; }
+.login-device-row>span { flex:1 1 120px; min-width:0; overflow-wrap:anywhere; font-size:10px; color:#677e66; }
+.login-device-actions { flex:1 1 230px; display:flex; flex-wrap:wrap; justify-content:flex-end; align-items:center; gap:8px; min-width:0; }
 .login-device-row button { border:1px solid #dce6d9; background:#f9faf6; color:#376045; border-radius:7px; font-size:10px; font-weight:600; padding:7px 9px; white-space:nowrap; }
+.login-device-row .login-update-button { display:inline-flex; align-items:center; justify-content:center; gap:7px; max-width:100%; min-height:42px; padding:10px 12px; border-color:#cfb472; background:#f5ebcf; color:#234c38; font-size:11px; font-weight:700; line-height:1.4; white-space:normal; }
+.login-device-row .login-update-button:hover { border-color:#bd9e57; background:#eee0b9; }
+.login-update-button>span { font-size:17px; line-height:1; }
 .login-device p { font-size:10px; line-height:1.5; color:#899184; margin:8px 0 0; }
+#loginUpdateStatus.login-update-status { color:#58715c; font-size:11px; line-height:1.6; overflow-wrap:anywhere; }
+#loginUpdateStatus:empty { display:none; }
 .login-install-dialog { max-width:410px; width:calc(100% - 30px); border:1px solid #dce4d8; border-radius:16px; padding:27px; font-family:'Segoe UI',sans-serif; color:#294836; box-shadow:0 20px 60px #133d3129; z-index:100000; }
 .login-install-dialog::backdrop { background:#16372c65; }
 .login-install-dialog h2 { margin:0 0 12px; font-size:23px; }
@@ -77,6 +83,11 @@
   .login-access h2 { font-size:27px; }
   .login-identity { margin:16px 0; }
   .login-device { margin-top:15px; }
+}
+@media (max-width:400px) {
+  .login-device-actions { flex-basis:100%; justify-content:stretch; }
+  .login-device-actions .login-update-button { flex:1 1 155px; }
+  .login-device-actions #installManagerButton { flex:1 1 90px; min-height:42px; }
 }
 @media (prefers-reduced-motion:reduce) { #loginOverlay * { transition:none!important; } }
 @media print { #loginOverlay { display:none!important; } }
