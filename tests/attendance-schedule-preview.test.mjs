@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import {plannedAttendancePreview,renderAttendanceSchedulePreview,attendanceScheduleIdentity,assertAttendanceScheduleUnchanged,staffScheduleDay,renderStaffScheduleConflict} from '../takodeal-staff/attendance-schedule-preview.js';
 
 const source=fs.readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
-const saved=()=>({branch:'Cabantian',staffName:'Princess',shiftId:'morning2',shiftName:'Morning 2 Cashier',shiftType:'morning',expectedStartAt:'2026-10-29T02:00:00.000Z',expectedEndAt:'2026-10-29T10:30:00.000Z',scheduleRevisionId:'roster-1',wasScheduled:true,needsScheduleReview:false,clockInAt:'2026-10-29T01:57:00.000Z',lateMinutes:0});
+const saved=()=>({branch:'Cabantian',staffName:'Toni Sample',shiftId:'morning2',shiftName:'Morning 2 Cashier',shiftType:'morning',expectedStartAt:'2026-10-29T02:00:00.000Z',expectedEndAt:'2026-10-29T10:30:00.000Z',scheduleRevisionId:'roster-1',wasScheduled:true,needsScheduleReview:false,clockInAt:'2026-10-29T01:57:00.000Z',lateMinutes:0});
 test('preview shows the exact Morning 2 assignment rather than its broad morning category',()=>{
  const result=plannedAttendancePreview(saved(),{at:'2026-10-29T01:57:00Z'});
  assert.equal(result.verified,true);assert.equal(result.workDate,'2026-10-29');assert.match(result.start,/10:00\s*AM/i);assert.match(result.finish,/6:30\s*PM/i);
@@ -31,23 +31,23 @@ test('schedule guard ignores elapsed late minutes but stops changed saved instru
  for(const [key,value]of Object.entries({shiftId:'morning1',expectedStartAt:'2026-10-29T01:00:00Z',expectedEndAt:'2026-10-29T09:30:00Z',branch:'Maa',scheduleRevisionId:'roster-2',scheduleReviewReason:'multiple-assignments',needsScheduleReview:true}))assert.throws(()=>assertAttendanceScheduleUnchanged(before,{...before,[key]:value}),/No Time In was saved/);
 });
 test('relief work is visible even if the home branch occurs first with standby',()=>{
- const day=staffScheduleDay({Maa:{rest:['Princess']},Cabantian:{scheduled:{morning2:' Princess '}}},{Cabantian:[{id:'morning2',name:'Morning 2 Cashier'}]},['Princess']);
+ const day=staffScheduleDay({Maa:{rest:['Toni Sample']},Cabantian:{scheduled:{morning2:' Toni Sample '}}},{Cabantian:[{id:'morning2',name:'Morning 2 Cashier'}]},['Toni Sample']);
  assert.equal(day.conflict,false);assert.equal(day.assignments.length,1);assert.equal(day.assignments[0].branch,'Cabantian');assert.equal(day.standby[0].branch,'Maa');
 });
 test('a relief assignment is not hidden by an earlier branch leave entry',()=>{
- const day=staffScheduleDay({Maa:{unavailable:[{name:'Princess',status:'Day Off'}]},Cabantian:{scheduled:{morning2:'Princess'}}},{Cabantian:[{id:'morning2'}]},['Princess']);
+ const day=staffScheduleDay({Maa:{unavailable:[{name:'Toni Sample',status:'Day Off'}]},Cabantian:{scheduled:{morning2:'Toni Sample'}}},{Cabantian:[{id:'morning2'}]},['Toni Sample']);
  assert.equal(day.assignments.length,1);assert.equal(day.assignments[0].branch,'Cabantian');
 });
 test('duplicate assignments, missing rules and same-branch leave conflicts require review',()=>{
- const aliases=['Princess'],rules={Cabantian:[{id:'m1',name:'Morning 1',startTime:'09:00',endTime:'17:30'},{id:'m2',name:'Morning 2',startTime:'10:00',endTime:'18:30'}]};
- for(const data of [{Cabantian:{scheduled:{m1:'Princess',m2:'Princess'}}},{Cabantian:{scheduled:{unknown:'Princess'}}},{Cabantian:{scheduled:{m2:'Princess'},unavailable:[{name:'Princess',status:'Leave'}]}}])assert.equal(staffScheduleDay(data,rules,aliases).conflict,true);
- const html=renderStaffScheduleConflict(staffScheduleDay({Cabantian:{scheduled:{m1:'Princess',m2:'Princess'}}},rules,aliases));assert.match(html,/09:00/);assert.match(html,/10:00/);assert.match(html,/does not choose a shift/);
+ const aliases=['Toni Sample'],rules={Cabantian:[{id:'m1',name:'Morning 1',startTime:'09:00',endTime:'17:30'},{id:'m2',name:'Morning 2',startTime:'10:00',endTime:'18:30'}]};
+ for(const data of [{Cabantian:{scheduled:{m1:'Toni Sample',m2:'Toni Sample'}}},{Cabantian:{scheduled:{unknown:'Toni Sample'}}},{Cabantian:{scheduled:{m2:'Toni Sample'},unavailable:[{name:'Toni Sample',status:'Leave'}]}}])assert.equal(staffScheduleDay(data,rules,aliases).conflict,true);
+ const html=renderStaffScheduleConflict(staffScheduleDay({Cabantian:{scheduled:{m1:'Toni Sample',m2:'Toni Sample'}}},rules,aliases));assert.match(html,/09:00/);assert.match(html,/10:00/);assert.match(html,/does not choose a shift/);
 });
 test('cross-branch directory aliases normalize spacing and case',()=>{
- assert.equal(staffScheduleDay({Maa:{scheduled:{m:' PRINCES  SUMONDONG '}}},{Maa:[{id:'m'}]},['Princes Sumondong']).assignments.length,1);
+ assert.equal(staffScheduleDay({Maa:{scheduled:{m:' SYNTHETIC  CREW '}}},{Maa:[{id:'m'}]},['Synthetic Crew']).assignments.length,1);
 });
 test('Cashier and Staff use the same preview and schedule guard',()=>{
- assert.equal(fs.readFileSync(new URL('../takodeal-pos/attendance-schedule-preview.js',import.meta.url),'utf8'),fs.readFileSync(new URL('../takodeal-staff/attendance-schedule-preview.js',import.meta.url),'utf8'));
+ assert.equal(fs.readFileSync(new URL('../Takodeal-POS/attendance-schedule-preview.js',import.meta.url),'utf8'),fs.readFileSync(new URL('../takodeal-staff/attendance-schedule-preview.js',import.meta.url),'utf8'));
 });
 
 const AsyncFunction=Object.getPrototypeOf(async function(){}).constructor;
@@ -65,7 +65,7 @@ assert.ok(start>0);const finalCode=source.slice(start,source.indexOf(endMarker,s
 async function runFinal({after=saved(),late=0,request=null,locationAge=0}={}){
  const now=Date.parse('2026-10-29T01:57:00Z');class Clock extends Date{constructor(value=now){super(value);}static now(){return now;}}
  let reads=0,guards=0;
- const run=new AsyncFunction('readFreshPunchSchedule','assertPunchIdentity','captureAttendanceSchedule','assertAttendanceScheduleUnchanged','resolveAttendanceShift','Date','punchSchedulePreview','initialRequest','punchLocation',`let punchScheduleData=null,pendingLateRequest=initialRequest;const attendance={},closestBranch='Cabantian',staffName='Princess',punchScheduleProfiles={},window={assertAttendanceFaceFresh(){}},faceResult={};${finalCode};return {attendance,pendingLateRequest};`);
+ const run=new AsyncFunction('readFreshPunchSchedule','assertPunchIdentity','captureAttendanceSchedule','assertAttendanceScheduleUnchanged','resolveAttendanceShift','Date','punchSchedulePreview','initialRequest','punchLocation',`let punchScheduleData=null,pendingLateRequest=initialRequest;const attendance={},closestBranch='Cabantian',staffName='Toni Sample',punchScheduleProfiles={},window={assertAttendanceFaceFresh(){}},faceResult={};${finalCode};return {attendance,pendingLateRequest};`);
  const result=await run(async()=>{reads++;return {};},()=>{guards++;},()=>after,assertAttendanceScheduleUnchanged,()=>({lateMinutes:late}),Clock,saved(),request,{timestamp:now-locationAge});
  return {...result,reads,guards};
 }
@@ -84,6 +84,6 @@ test('actual Staff final-save fragment never silently creates an unexplained lat
 test('Staff does not infer lateness for an unverified assignment',async()=>{
  const before={...saved(),wasScheduled:false,needsScheduleReview:true};
  const changed=source.slice(start,source.indexOf(endMarker,start)+endMarker.length);
- const run=new AsyncFunction('readFreshPunchSchedule','assertPunchIdentity','captureAttendanceSchedule','assertAttendanceScheduleUnchanged','resolveAttendanceShift','punchSchedulePreview',`let punchScheduleData=null,pendingLateRequest=null;const attendance={},closestBranch='Cabantian',staffName='Princess',punchScheduleProfiles={},window={assertAttendanceFaceFresh(){}},faceResult={},punchLocation={timestamp:Date.now()};${changed};return attendance;`);
+ const run=new AsyncFunction('readFreshPunchSchedule','assertPunchIdentity','captureAttendanceSchedule','assertAttendanceScheduleUnchanged','resolveAttendanceShift','punchSchedulePreview',`let punchScheduleData=null,pendingLateRequest=null;const attendance={},closestBranch='Cabantian',staffName='Toni Sample',punchScheduleProfiles={},window={assertAttendanceFaceFresh(){}},faceResult={},punchLocation={timestamp:Date.now()};${changed};return attendance;`);
  const result=await run(async()=>({}),()=>{},()=>before,assertAttendanceScheduleUnchanged,()=>({lateMinutes:57}),before);assert.equal(result.lateMinutes,undefined);
 });
