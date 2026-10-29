@@ -1,5 +1,7 @@
 /* Owner schedule layout only. Print/export and all business controls retain
    their original DOM, values, handlers, IDs and permission state. */
+.schedule-assignment-context { padding:12px; border:1px solid #cbdccf; border-radius:8px; background:#f4f8f1; color:#245b43; font-size:13px; font-weight:700; line-height:1.6; }
+.schedule-assignment-help { margin:10px 0 14px; color:#55705e; font-size:12px; line-height:1.6; }
 @media screen {
   #scheduleEditorRoot.schedule-workspace { width:100%; min-width:0; }
   #scheduleEditorRoot .schedule-workspace-panel { min-width:0; }
@@ -156,6 +158,9 @@
     display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
   }
   #scheduleEditorRoot #shiftConfigGrid .shift-rule-row { min-width:0; margin-bottom:0!important; }
+  #scheduleEditorRoot .schedule-rule-guidance { margin:0 0 14px; color:#55705e; font-size:12px; line-height:1.6; }
+  #scheduleEditorRoot .schedule-shift-hours { display:block; margin:4px 0 8px; color:#245b43; font-size:12px; font-weight:650; line-height:1.5; }
+  #scheduleEditorRoot .schedule-hours-source { display:block; margin-top:8px; color:#796239; font-size:10px; line-height:1.5; text-transform:none; letter-spacing:0; }
   #scheduleEditorRoot #shiftConfigGrid :is(input,select) { min-width:0; max-width:100%; }
   #scheduleEditorRoot #scheduleWorkspacePanel-history>:is(.schedule-memory-panel,.branch-proposal-audit) {
     margin:0 0 16px!important; padding:18px!important; min-width:0;

@@ -56,7 +56,12 @@ test('unknown snapshots, foreign identities, conflicting slots and incomplete so
 test('wrong fallback slots require an explicit audited reconciliation to the exact dated assignment',()=>{
  const h=fixture(),old=plan(),who='Sample One';old.branchConfig[branch].push({id:'kitchen',name:'Mid Kitchen',shiftType:'mid',startTime:'18:30',endTime:'02:30',active:true});
  for(const day of Object.values(old.currentSchedule)){day[branch].scheduled.mid='Another Staff';day[branch].scheduled.kitchen=who;}
- const before=revision(old,'before'),original=assembleScheduleHistory(old,[{month:'2026-10',revisions:[before]}],{enforcedFrom:'2026-10-06'}),at=new Date('2026-10-16T16:57:52+08:00'),snapshot=captureAttendanceSchedule(at,branch,who,original,profiles);
+ const before=revision(old,'before'),original=assembleScheduleHistory(old,[{month:'2026-10',revisions:[before]}],{enforcedFrom:'2026-10-06'}),at=new Date('2026-10-16T16:57:52+08:00');
+ // The correction must continue to repair a preserved old-client fallback.
+ // Fresh capture now requires assignment review instead of producing it.
+ const snapshot={version:1,source:'clock-in',branch,staffName:who,clockInAt:at.toISOString(),capturedAt:at.toISOString(),
+  expectedStartAt:'2026-10-16T05:00:00.000Z',expectedEndAt:'2026-10-16T14:00:00.000Z',shiftId:'mid',shiftName:'Mid',shiftType:'mid',
+  isNightShift:true,wasScheduled:false,lateMinutes:237,needsScheduleReview:false,scheduleRevisionId:before.revisionId};
  assert.equal(snapshot.shiftId,'mid');assert.equal(snapshot.wasScheduled,false);assert.equal(snapshot.lateMinutes,237);
  const event={...h.event,reconcileSavedAssignments:true,changes:[...h.event.changes,{shiftId:'kitchen',beforeStart:'18:30',beforeEnd:'02:30',startTime:'17:00',endTime:'01:00'}]},history=assembleScheduleHistory(old,[{month:'2026-10',revisions:[before],shiftAmendments:[event]}],{enforcedFrom:'2026-10-06'});
  const log={staffId:profiles[who].staffId,staffName:who,branch,type:'TIME IN',timestamp:at,scheduleSnapshot:snapshot,lateMinutes:237},raw=structuredClone(log);

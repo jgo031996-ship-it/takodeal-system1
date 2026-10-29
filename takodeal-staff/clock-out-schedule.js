@@ -22,7 +22,11 @@ function directoryConflict(saved,assigned,staffId){
 }
 function capturedFinishBound(start,schedule,original){
  const captured=start.scheduleSnapshot,begin=attendanceMillis(start.timestamp),expected=attendanceMillis(captured?.expectedStartAt),capturedEnd=attendanceMillis(captured?.expectedEndAt);
- const commonCapture=captured?.shiftId===null&&captured.version===1&&captured.source==='clock-in'&&captured.wasScheduled===false&&captured.needsScheduleReview!==true
+ // New unassigned punches flag payroll review explicitly. The same immutable
+ // common finish can still prove that normal Time Out is no longer early; it
+ // never proves assignment, lateness or an early-departure approval.
+ const commonReview=captured?.needsScheduleReview===true&&captured.scheduleReviewReason==='missing-dated-assignment';
+ const commonCapture=captured?.shiftId===null&&captured.version===1&&captured.source==='clock-in'&&captured.wasScheduled===false&&(captured.needsScheduleReview!==true||commonReview)
   &&captured.branch===start.branch&&nameKey(captured.staffName)===nameKey(start.staffName)&&Number.isFinite(expected)&&Number.isFinite(capturedEnd)&&capturedEnd-expected>=60*minute&&capturedEnd-expected<=18*60*minute;
  if(!captured||!validId(captured.scheduleRevisionId)||!Number.isFinite(expected)||!validId(captured.shiftId)&&!commonCapture)return null;
  const workDate=scheduleDateKey(new Date(expected)),workMidnight=midnight(new Date(expected)),month=workDate.slice(0,7),archive=schedule?.historyMonths?.[month];

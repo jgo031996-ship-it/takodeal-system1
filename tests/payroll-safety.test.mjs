@@ -493,6 +493,9 @@ test('actual Owner Time Feed supplies the authoritative profile ID for correctio
 
 test('future clock-in snapshot freezes its expected time, shift category and bonus threshold despite later edits',()=>{
     const original=schedule(), time=new Date('2026-10-06T15:30:00+08:00');
+    // This case exercises a confirmed new punch, so its actual workday needs
+    // the explicit assignment rather than the helper's October 3 example.
+    original.currentSchedule[6]=structuredClone(original.currentSchedule[3]);
     const snapshot=payroll.captureAttendanceSchedule(time,'Test Branch','Test Staff',assembleScheduleHistory(original),{'Test Staff':profile});
     assert.equal(snapshot.needsScheduleReview,false);assert.equal(snapshot.lateMinutes,0);
     const edited=schedule('21:30','morning');edited.branchConfig['Test Branch'][0].startTime='13:00';
@@ -576,7 +579,8 @@ test('invalid, foreign or intentionally unmatched snapshots remain review-requir
 
 for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
     test(`${name}: the actual future payroll keeps the punch snapshot after a monthly schedule edit`,async()=>{
-        const time=new Date('2026-10-06T15:30:00+08:00'), captured=payroll.captureAttendanceSchedule(time,'Test Branch','Test Staff',schedule(),{'Test Staff':profile});
+        const original=schedule();original.currentSchedule[6]=structuredClone(original.currentSchedule[3]);
+        const time=new Date('2026-10-06T15:30:00+08:00'), captured=payroll.captureAttendanceSchedule(time,'Test Branch','Test Staff',original,{'Test Staff':profile});
         const edited=schedule('21:30','morning');edited.branchConfig['Test Branch'][0].startTime='13:00';
         const logs=[{...attendance(time,{scheduleSnapshot:captured}),timestamp:{toDate:()=>time}},{...attendance('2026-10-06T23:30:00+08:00'),type:'TIME OUT',timestamp:{toDate:()=>new Date('2026-10-06T23:30:00+08:00')}}];
         const h=payrollUi({logs,scheduleData:edited,historyData:preservedHistory(edited),startDate:'2026-10-06',endDate:'2026-10-06'});
@@ -619,7 +623,13 @@ for(const generator of ['loadPayrollGenerator','generateAutoPayslips']) for(cons
 for(const generator of ['loadPayrollGenerator','generateAutoPayslips']) test(generator+': explicit saved-assignment reconciliation repairs an old fallback slot without changing the punch',async()=>{
     const original=schedule('20:30','mid');original.branchConfig['Test Branch']=[{id:'mid-cash',name:'Mid cashier',shiftType:'mid',startTime:'13:00',endTime:'20:30',active:true},{id:'mid-kitchen',name:'Mid kitchen',shiftType:'mid',startTime:'18:30',endTime:'03:00',active:true}];
     original.currentSchedule={16:{'Test Branch':{scheduled:{'mid-cash':'OTHER','mid-kitchen':'TEST'}}}};
-    const revision=savedRevision(original,'sample-assigned-16','2026-10-16'),history=preservedHistory(original,[revision]),time=new Date('2026-10-16T16:57:00+08:00'),snapshot=payroll.captureAttendanceSchedule(time,'Test Branch','Test Staff',history,{'Test Staff':profile});
+    const revision=savedRevision(original,'sample-assigned-16','2026-10-16'),history=preservedHistory(original,[revision]),time=new Date('2026-10-16T16:57:00+08:00');
+    // Preserved pre-upgrade evidence: the old client chose a fallback cashier
+    // slot before the assigned kitchen start was within its matching window.
+    // New capture must not manufacture this obsolete confirmed-fallback shape.
+    const snapshot={version:1,source:'clock-in',branch:'Test Branch',staffName:'Test Staff',clockInAt:time.toISOString(),capturedAt:time.toISOString(),
+        expectedStartAt:'2026-10-16T05:00:00.000Z',expectedEndAt:'2026-10-16T12:30:00.000Z',shiftId:'mid-cash',shiftName:'Mid cashier',shiftType:'mid',
+        isNightShift:true,wasScheduled:false,lateMinutes:237,needsScheduleReview:false,scheduleRevisionId:revision.revisionId};
     assert.equal(snapshot.shiftId,'mid-cash');assert.equal(snapshot.wasScheduled,false);
     history.historyMonths['2026-10'].shiftAmendments=[{id:'sample-roster-reconciliation',branch:'Test Branch',effectiveFrom:'2026-10-16',effectiveTo:'2026-10-31',sourceRevisionId:revision.revisionId,sourceDates:{'2026-10-16':revision.revisionId},reconcileSavedAssignments:true,sequence:1,recordedAt:'2026-10-17T12:00:00Z',reason:'Correct shift times and reconcile the exact saved work-date assignment',changes:[{shiftId:'mid-cash',beforeStart:'13:00',beforeEnd:'20:30',startTime:'14:00',endTime:'21:30'},{shiftId:'mid-kitchen',beforeStart:'18:30',beforeEnd:'03:00',startTime:'17:00',endTime:'01:30'}]}];
     const out=new Date('2026-10-17T01:30:00+08:00'),logs=[{...attendance(time,{scheduleSnapshot:snapshot,lateMinutes:237,lateExempted:false}),timestamp:{toDate:()=>time}},{...attendance(out),type:'TIME OUT',timestamp:{toDate:()=>out}}],raw=JSON.stringify(snapshot);

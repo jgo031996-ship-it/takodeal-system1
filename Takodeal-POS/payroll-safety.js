@@ -292,14 +292,86 @@ export function resolveAttendanceShift(log, schedule, profiles = {}, staffNameOv
 }
 // Capture once when recording TIME IN. The serialized expected timestamps and
 // category keep future schedule edits from changing that attendance's pay math.
+// New punches require an exact dated assignment. The legacy nearest-rule
+// calculator above is retained for preserved records; it is not proof that a
+// newly clocking-in employee was assigned to that rule.
+const captureNameKey = value => nameKey(value).normalize('NFKC');
+const captureProfileId = profile => {
+    const value = profile?.staffId || profile?.id;
+    return typeof value === 'string' && value.trim() && !/[\/\0]/.test(value) ? value.trim() : '';
+};
+const captureAliases = profile => [profile?.name, profile?.fullName, profile?.cashierName,
+    profile?.scheduleNickname, profile?.scheduleName, profile?.nickname,
+    ...(Array.isArray(profile?.scheduleAliases) ? profile.scheduleAliases : [])].filter(value => typeof value === 'string' && value.trim());
+function exactClockInAssignment(actual, branch, staffName, schedule, profiles) {
+    const local = parts(actual), profile = profiles[staffName] || {}, staffId = captureProfileId(profile);
+    if (!local) return {reason:'missing-schedule-history'};
+    const currentNames = [staffName, profile.cashierName, profile.scheduleNickname, profile.scheduleName, profile.nickname].filter(Boolean);
+    const candidates = [], issues = []; let sawSavedDay = false;
+    for (const offset of [-1, 0, 1]) {
+        const midnight = local.midnight + offset * day, workDay = parts(new Date(midnight)), workDate = dateKey(workDay);
+        const archived = schedule?.historyMonths ? resolveScheduleForDate(schedule, workDate) : null;
+        const saved = archived || (+schedule?.currentYear === workDay.year && +schedule?.currentMonth === workDay.month ? schedule : null);
+        if (!saved || +saved.currentYear !== workDay.year || +saved.currentMonth !== workDay.month) continue;
+        sawSavedDay = true;
+        const rules = saved.branchConfig?.[branch], assignments = saved.currentSchedule?.[workDay.date]?.[branch]?.scheduled;
+        if (!Array.isArray(rules) || !assignments || typeof assignments !== 'object' || Array.isArray(assignments)) continue;
+        const savedPeople = Array.isArray(saved.employees) ? saved.employees : [];
+        // Only an explicit same-account link may add an older saved alias.
+        const bound = staffId ? savedPeople.filter(person => captureProfileId(person) === staffId) : [];
+        const names = new Set([...currentNames, ...bound.flatMap(captureAliases)].map(captureNameKey));
+        const own = Object.entries(assignments).filter(([, assigned]) => typeof assigned === 'string' && names.has(captureNameKey(assigned)));
+        if (!own.length) continue;
+        const weekday = new Date(midnight + 8 * 60 * minute).getUTCDay();
+        const slots = own.map(([shiftId, assigned]) => {
+            const matches = rules.filter(rule => String(rule.id) === shiftId), rule = matches.length === 1 ? matches[0] : null;
+            const times = rule ? shiftTimes(rule) : {start:null, end:null};
+            const duration = times.start === null || times.end === null ? 0 : (times.end - times.start + 1440) % 1440;
+            const startAt = times.start === null ? null : new Date(midnight + times.start * minute);
+            const endAt = startAt && duration ? new Date(+startAt + duration * minute) : null;
+            const diff = startAt ? (actual - startAt) / minute : null;
+            const plausible = diff !== null && diff >= -90 && diff < 18 * 60 && (!endAt || actual <= endAt);
+            const conflict = [...savedPeople, ...Object.values(profiles)].some(person => {
+                const otherId = captureProfileId(person);
+                return otherId && (!staffId || otherId !== staffId)
+                    && captureAliases(person).some(alias => captureNameKey(alias) === captureNameKey(assigned));
+            });
+            const reason = conflict ? 'dated-staff-identity-conflict' : !rule || typeof rule.id !== 'string' || !rule.id.trim() || /[\/\0]/.test(rule.id) || duration < 60 || duration > 18 * 60 ? 'invalid-dated-shift'
+                : rule.active === false ? 'inactive-dated-shift' : Array.isArray(rule.days) && !rule.days.includes(weekday) ? 'dated-assignment-disabled-day' : '';
+            return {rule, startAt, endAt, diff, plausible, reason};
+        });
+        // An older completed overnight assignment must not override today's
+        // morning assignment. A second distinct slot on the same plausible
+        // workday, however, must be reviewed rather than selected by proximity.
+        if (!slots.some(slot => slot.plausible) && !(offset === 0 && slots.some(slot => !slot.startAt))) continue;
+        if (slots.some(slot => slot.reason)) { issues.push(slots.find(slot => slot.reason).reason); continue; }
+        const first = slots[0];
+        const same = slots.every(slot => +slot.startAt === +first.startAt && +slot.endAt === +first.endAt
+            && shiftType(slot.rule) === shiftType(first.rule) && bonusShift(slot.rule) === bonusShift(first.rule));
+        if (!same) { issues.push('conflicting-dated-assignment'); continue; }
+        if (!first.plausible) continue;
+        candidates.push({shiftId:slots.length === 1 ? first.rule.id : null,
+            shiftName:slots.length === 1 ? first.rule.name || '' : `${shiftType(first.rule)[0].toUpperCase() + shiftType(first.rule).slice(1)} shift`,
+            shiftType:shiftType(first.rule), expectedStartAt:first.startAt, expectedEndAt:first.endAt,
+            isNightShift:bonusShift(first.rule), lateMinutes:Math.max(0, Math.floor(first.diff)), wasScheduled:true,
+            needsScheduleReview:false, scheduleRevisionId:saved.scheduleRevisionId || saved.revisionId || ''});
+    }
+    if (issues.length) return {reason:issues[0]};
+    if (candidates.length > 1) return {reason:'conflicting-dated-assignment'};
+    return candidates.length ? {matched:candidates[0], reason:''} : {reason:sawSavedDay ? 'missing-dated-assignment' : 'missing-schedule-history'};
+}
 export function captureAttendanceSchedule(logDate, branch, staffName, schedule, profiles = {}) {
-    const actual = asDate(logDate), matched = closestTrustedShift(actual, branch, staffName, schedule, profiles, true);
+    const actual = asDate(logDate), exact = exactClockInAssignment(actual, branch, staffName, schedule, profiles);
+    // Retain inferred timestamps only as evidence for management or a separately
+    // checked completion bound. They cannot establish assignment or lateness.
+    const matched = exact.matched || closestTrustedShift(actual, branch, staffName, schedule, profiles, true);
+    const review = !exact.matched || exact.matched.needsScheduleReview === true;
     const clockInAt = Number.isFinite(+actual) ? actual.toISOString() : '';
     return { version: 1, source: 'clock-in', branch: String(branch || ''), staffName: String(staffName || ''), clockInAt,
         capturedAt: clockInAt, expectedStartAt: matched?.expectedStartAt?.toISOString() || '', expectedEndAt: matched?.expectedEndAt?.toISOString() || '',
         shiftId: matched?.shiftId ?? null, shiftName: matched?.shiftName || '', shiftType: matched?.shiftType || 'other',
-        isNightShift: matched?.isNightShift === true, wasScheduled: matched?.wasScheduled === true,
-        lateMinutes: matched?.lateMinutes ?? 0, needsScheduleReview: !matched || matched.needsScheduleReview === true,
+        isNightShift: matched?.isNightShift === true, wasScheduled: !review && matched?.wasScheduled === true,
+        lateMinutes: review ? 0 : matched?.lateMinutes ?? 0, needsScheduleReview: review, scheduleReviewReason:exact.reason,
         scheduleRevisionId: matched?.scheduleRevisionId || '' };
 }
 export function scheduledShiftForDate(date, branch, staffName, schedule, profiles = {}) {

@@ -1,6 +1,13 @@
 // Presentation only: use the existing schedule cells and their editing actions.
 // No assignments, availability records or payroll rules are changed here.
+import {shiftTimes} from './payroll-safety.js';
 const views = new Map();
+export function scheduleShiftHours(shift) {
+    const {start,end}=shiftTimes(shift || {});
+    if(start===null || end===null)return 'Set start and finish';
+    const clock=value=>`${value%720<60?12:Math.floor(value%720/60)}:${String(value%60).padStart(2,'0')} ${value<720?'AM':'PM'}`;
+    return `${clock(start)} – ${clock(end)}${end<=start?' · next day':''}`;
+}
 function element(tag, className, text) {
     const node = document.createElement(tag);
     node.className = className;
@@ -33,12 +40,15 @@ export function enhanceScheduleLayout(container, branch) {
         const article = element('article', 'schedule-day');
         const date = element('header', 'schedule-day-date');
         date.appendChild(element('small', '', 'WORKDAY'));
-        date.appendChild(element('strong', '', cells[0].textContent));
+        date.appendChild(element('strong', '', row.dataset?.scheduleDateLabel || cells[0].textContent));
+        if(row.dataset?.scheduleHoursSource)date.appendChild(element('small', 'schedule-hours-source', row.dataset.scheduleHoursSource));
         article.appendChild(date);
         const shifts = element('div', 'schedule-shifts');
         for (let i = 1; i < shiftEnd; i++) {
             const shift = element('section', 'schedule-shift');
-            shift.appendChild(element('div', 'schedule-shift-title', headers[i].textContent));
+            shift.appendChild(element('div', 'schedule-shift-title', headers[i].dataset?.shiftName || headers[i].textContent));
+            const hours=headers[i].dataset?.shiftHours;
+            if(hours)shift.appendChild(element('div','schedule-shift-hours',hours));
             shift.appendChild(copyCell(cells[i]));
             shifts.appendChild(shift);
         }
@@ -61,7 +71,7 @@ export function enhanceScheduleLayout(container, branch) {
     grid.setAttribute('role', 'region');
     grid.setAttribute('aria-label', `${branch} monthly schedule. Scroll to see all columns.`);
     const toolbar = element('div', 'schedule-layout-tools');
-    const description = element('p', '', 'Every shift and staff status, with room to read.');
+    const description = element('p', '', 'Check the exact assigned hours. Morning, Mid and Night are shift categories.');
     const choices = element('div', 'schedule-view-buttons');
     const comfortable = element('button', '', 'Comfortable view');
     const month = element('button', '', 'Month grid');
