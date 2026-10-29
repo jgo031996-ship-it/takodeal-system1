@@ -1,12 +1,14 @@
-import {attendanceMillis,attendanceKind} from './attendance-reconcile.js';
+import {attendanceMillis,attendanceKind,linkedAttendanceHistory} from './attendance-reconcile.js';
 
 // Preview-only safety: never rewrite punches or recalculate a frozen payslip.
 // Explicit links that cannot be paid confidently hold that employee's preview.
-export function planPayrollAttendance(records,{resolveName=row=>row.staffName,frozenNames=[],referenceRecords=records}={}) {
+export function planPayrollAttendance(records,{resolveName=row=>row.staffName,frozenNames=[],referenceRecords=records,cutoffStart,cutoffEnd}={}) {
+    const bounded=cutoffStart!==undefined||cutoffEnd!==undefined,from=attendanceMillis(cutoffStart),to=attendanceMillis(cutoffEnd);
+    if(bounded&&(!Number.isFinite(from)||!Number.isFinite(to)||from>to))throw Error('Use valid payroll cutoff boundaries.');
     const normalize=row=>({...row,payrollStaffName:String(resolveName(row)||row.staffName||'').trim()});
     const rows=records.map(normalize),known=[...rows],includedIds=new Set(rows.map(row=>row.id).filter(Boolean));
     for(const record of referenceRecords)if(record.id&&!includedIds.has(record.id))known.push(normalize(record));
-    const byId=new Map(),groups=new Map(),issues=new Map(),normalized=new Set(),foreignClosures=new Set();
+    const byId=new Map(),groups=new Map(),issues=new Map(),normalized=new Set(),foreignClosures=new Set(),cutoffContext=new Set();
     const available=row=>!row.deleted&&!['Voided','Cancelled'].includes(row.status);
     const samePerson=(a,b)=>a.staffId&&b.staffId?a.staffId===b.staffId:String(a.staffName||'').trim().toLowerCase()===String(b.staffName||'').trim().toLowerCase();
     for(const row of known)if(row.id){if(!byId.has(row.id))byId.set(row.id,[]);byId.get(row.id).push(row);}
@@ -25,6 +27,16 @@ export function planPayrollAttendance(records,{resolveName=row=>row.staffName,fr
     for(const row of known.filter(row=>row.timeInLogId&&available(row)))counts.set(row.timeInLogId,(counts.get(row.timeInLogId)||0)+1);
     for(const end of linked){
         const sources=byId.get(end.timeInLogId)||[],begin=sources[0];
+        // Queries include context before/after the cutoff for overnight work.
+        // An already-finished earlier closure or a wholly future linked shift
+        // cannot invalidate this cutoff. Keep the rows as context and retain
+        // all duplicate/overlap checks for shifts which can affect the cutoff.
+        if(bounded){const finish=attendanceMillis(end.timestamp),start=sources.length===1?attendanceMillis(begin.timestamp):NaN;
+            const closure=attendanceKind(end)==='TIME OUT';
+            const earlier=closure&&Number.isFinite(finish)&&finish<from&&(sources.length===0||sources.length===1&&attendanceKind(begin)==='TIME IN'&&Number.isFinite(start)&&start<from);
+            const future=closure&&attendanceKind(begin)==='TIME IN'&&Number.isFinite(start)&&start>to&&Number.isFinite(finish)&&finish>to;
+            if(earlier||future){cutoffContext.add(end);if(future)cutoffContext.add(begin);continue;}
+        }
         if(sources.length!==1 || !available(begin) || attendanceKind(begin)!=='TIME IN' || attendanceKind(end)!=='TIME OUT'){
             hold(end,'Linked Time In is missing or ambiguous; HR must confirm the original shift.');continue;
         }
@@ -76,8 +88,18 @@ export function planPayrollAttendance(records,{resolveName=row=>row.staffName,fr
         }
         bucket.forEach(({index},position)=>ordered[index]=bucket[result[position]].row);
     }
-    const reviews=[...issues].map(([name,reasons])=>{const group=groups.get(name)||[];return {name,staffId:group.find(row=>row.staffId)?.staffId||'',reason:[...reasons].join(' '),recordIds:group.map(row=>row.id).filter(Boolean),records:group};});
+    const reviews=[...issues].map(([name,reasons])=>{
+        const group=groups.get(name)||[],ids=new Set(group.filter(available).map(row=>row.staffId).filter(Boolean)),staffId=ids.size===1?[...ids][0]:'';
+        // Read-only evidence for the review screen, never payable output. Do
+        // not turn an ambiguous employee identity into a sum of their hours.
+        const recordedPairs=ids.size>1?[]:linkedAttendanceHistory(group,staffId,name).filter(pair=>{
+            if(!pair.in||!pair.out||!available(pair.in)||!available(pair.out)||!samePerson(pair.in,pair.out)||pair.in.branch!==pair.out.branch)return false;
+            const start=attendanceMillis(pair.in.timestamp),finish=attendanceMillis(pair.out.timestamp),hours=(finish-start)/3600000;
+            return Number.isFinite(hours)&&hours>0&&hours<=18&&(!bounded||start<=to&&finish>=from);
+        }).map(pair=>({timeIn:pair.in.timestamp,timeOut:pair.out.timestamp,branch:pair.in.branch,hours:(attendanceMillis(pair.out.timestamp)-attendanceMillis(pair.in.timestamp))/3600000,attendanceLogIds:[pair.in.id,pair.out.id].filter(Boolean)}));
+        return {name,staffId,reason:[...reasons].join(' '),recordIds:group.map(row=>row.id).filter(Boolean),records:group,recordedPairs,recordedHours:ids.size>1?null:recordedPairs.reduce((sum,pair)=>sum+pair.hours,0)};
+    });
     const heldNames=new Set(reviews.map(review=>review.name));
-    const logs=ordered.filter(row=>!heldNames.has(row.payrollStaffName) && !foreignClosures.has(row) && !(row.timeInLogId&&!available(row))).map(row=>normalized.has(row)?{...row,type:attendanceKind(row)}:row);
+    const logs=ordered.filter(row=>!heldNames.has(row.payrollStaffName) && !foreignClosures.has(row) && !cutoffContext.has(row) && !(row.timeInLogId&&!available(row))).map(row=>normalized.has(row)?{...row,type:attendanceKind(row)}:row);
     return {logs,reviews,heldNames};
 }

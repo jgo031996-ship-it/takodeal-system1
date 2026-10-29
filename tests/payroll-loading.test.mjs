@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {coordinatePayrollLoad,mapPayrollReads,loadPayrollPreviewInputs,loadPayrollSalaryProfiles,scopePayrollInputs,payrollLoadingScope} from '../takodeal-manager/payroll-loading.js';
+import {coordinatePayrollLoad,mapPayrollReads,loadPayrollPreviewInputs,loadPayrollSalaryProfiles,payrollSalaryForWork,payrollSalaryForPreview,scopePayrollInputs,payrollLoadingScope} from '../takodeal-manager/payroll-loading.js';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 const snap=rows=>({metadata:{fromCache:false,hasPendingWrites:false},docs:rows.map((data,index)=>({id:data.id||String(index),data:()=>data})),forEach(fn){this.docs.forEach(fn);}});
@@ -75,4 +75,19 @@ test('unverified, mismatched, franchise or revoked payroll scope cannot start an
 test('loader helpers reject a late result after identity or branch scope changes even without a caller guard',async()=>{
  const {api}=fixture(),gate=deferred();api.getDocsFromServer=async()=>{await gate.promise;return snap([]);};const pending=loadPayrollPreviewInputs(api,options);api.auth.currentUser={uid:'other',email:'other@example.test',emailVerified:true};api.sessionUser={uid:'other',email:'other@example.test',permissions:['payroll'],allowedBranches:['All']};gate.resolve();await assert.rejects(pending,/account or branch access changed/);
  const next=fixture(),salaryGate=deferred(),calls=[];next.api.getDocFromServer=async ref=>{calls.push(ref.id);await salaryGate.promise;return {exists:()=>true,data:()=>({version:1,staffId:ref.id,branch:'Maa',revision:1,baselineDailyRate:450,rates:{}})};};const profiles=Object.fromEntries(Array.from({length:7},(_,index)=>['Staff '+index,{staffId:'s'+index,branch:'Maa',salaryRateVersion:1}]));const salary=loadPayrollSalaryProfiles(next.api,profiles,{});assert.equal(calls.length,4);next.api.sessionUser.allowedBranches=['Cabantian'];salaryGate.resolve();await assert.rejects(salary,/account or branch access changed/);assert.equal(calls.length,4,'no queued private read starts under changed authority');
+});
+
+test('one failed private salary becomes an employee hold; an explicit fresh retry can clear only that transient state',async()=>{
+ const {api}=fixture(),staff={A:{staffId:'a',cashierName:'A',branch:'Maa',salaryRateVersion:1},B:{staffId:'b',cashierName:'B',branch:'Maa',salaryRateVersion:1}},before=structuredClone(staff);
+ api.getDocFromServer=async ref=>{if(ref.id==='a')throw Error('Unavailable private record');return {exists:()=>true,data:()=>({version:1,staffId:ref.id,branch:'Maa',revision:1,baselineDailyRate:450,rates:{}})};};
+ const held=await loadPayrollSalaryProfiles(api,staff,{});assert.equal(held.A.salaryHistoryUnavailable,true);assert.match(held.A.salaryReviewReason,/payment is held/);assert.equal(held.B.salaryRateTimeline.baselineDailyRate,450);assert.deepEqual(staff,before);
+ api.getDocFromServer=async ref=>({exists:()=>true,data:()=>({version:1,staffId:ref.id,branch:'Maa',revision:1,baselineDailyRate:450,rates:{}})});
+ const fresh=await loadPayrollSalaryProfiles(api,held,{});assert.equal(fresh.A.salaryHistoryUnavailable,undefined);assert.equal(fresh.A.salaryRateTimeline.baselineDailyRate,450);assert.equal(held.A.salaryHistoryUnavailable,true);
+});
+test('a salary failure carries no zero-rate fallback; a deliberately recorded zero daily wage remains valid',()=>{
+ const log={timestamp:new Date('2030-01-16T09:00:00+08:00')};
+ assert.equal(payrollSalaryForWork({hourlyRate:null},log).profile,null);assert.equal(payrollSalaryForPreview({hourlyRate:null},'2030-01-16').profile.hourlyRate,null);
+ const failed={salaryHistoryUnavailable:true,hourlyRate:500,salaryReviewReason:'Wage review required'};
+ assert.deepEqual(payrollSalaryForWork(failed,log),{profile:null,reason:'Wage review required'});assert.equal(payrollSalaryForPreview(failed,'2030-01-16').profile.hourlyRate,null);
+ assert.equal(payrollSalaryForWork({hourlyRate:0},log).profile.hourlyRate,0);assert.equal(payrollSalaryForPreview({hourlyRate:0},'2030-01-16').profile.hourlyRate,0);
 });

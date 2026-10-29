@@ -81,9 +81,38 @@ for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
   await h.w[generator]();const d=h.w.globalPayrollCache['Sample Staff'];assert.equal(d.basicPay,450);assert.equal(d.logs[0].rateWorkDate,'2030-01-16');
  });
  test(generator+': private salary read failure holds unpaid amounts while paid snapshots stay immutable',async()=>{
-  const h=harness({readDoc:()=>{throw Error('Private salary access unavailable');}});datedSalary(h);await h.w[generator]();assert.equal(Object.keys(h.w.globalPayrollCache).length,0);assert.equal(h.writes.length,0);
+  const h=harness({readDoc:()=>{throw Error('Private salary access unavailable');}});datedSalary(h);await h.w[generator]();
+  const held=h.w.globalPayrollCache['Sample Staff'];assert.equal(held.hours,8);assert.equal(held.attendanceReviewRequired,true);assert.equal(held.salaryReviewRequired,true);assert.equal(held.profile.hourlyRate,null);assert.equal(held.isPaid,undefined);assert.equal(h.writes.length,0);
+  assert.match(held.payrollReviewReasons.join(' '),/Daily wage history could not be confirmed/);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱0.00');
+  await h.w.openPayslipModal('Sample Staff');assert.equal(h.node('btnFinalizePayslip').disabled,true);await h.w.finalizePayslip();assert.equal(h.writes.length,0);
   const frozen={name:'Sample Staff',isPaid:true,basicPay:123,shiftsWorked:1,hours:8,start:'2030-01-16',end:'2030-01-16',logs:[],profile:{hourlyRate:123}};
   h.records.payroll_records=[{id:'paid',staffName:'Sample Staff',startDate:'2030-01-16',endDate:'2030-01-16',frozenData:frozen}];await h.w[generator]();assert.equal(h.w.globalPayrollCache['Sample Staff'],frozen);assert.equal(frozen.basicPay,123);assert.equal(h.writes.length,0);
+ });
+ test(generator+': one unavailable private wage retains its hours while another employee remains payable',async()=>{
+  const h=harness({readDoc:()=>{throw Error('Private salary access unavailable');}});datedSalary(h);
+  h.records.cashiers.push({id:'person-b',cashierName:'Other Staff',branch:h.person.branch,hourlyRate:450});
+  h.records.attendance_logs.push(...h.logs(16).map((row,index)=>({...row,id:'other-'+index,staffId:'person-b',staffName:'Other Staff'})));
+  await h.w[generator]();const held=h.w.globalPayrollCache['Sample Staff'],valid=h.w.globalPayrollCache['Other Staff'];
+  assert.equal(held.hours,8);assert.equal(held.attendanceReviewRequired,true);assert.equal(held.profile.hourlyRate,null);
+  assert.equal(valid.hours,8);assert.equal(valid.basicPay,450);assert.equal(valid.attendanceReviewRequired,false);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱450.00');assert.equal(h.writes.length,0);
+ });
+ test(generator+': a workdate before the saved wage baseline holds only that employee without inventing a zero wage',async()=>{
+  const h=harness();datedSalary(h);h.records.staff_salary_rates[0].baselineDailyRate=null;
+  h.records.cashiers.push({id:'person-b',cashierName:'Other Staff',branch:h.person.branch,hourlyRate:450});
+  h.records.attendance_logs.push(...h.logs(16).map((row,index)=>({...row,id:'other-'+index,staffId:'person-b',staffName:'Other Staff'})));
+  await h.w[generator]();const held=h.w.globalPayrollCache['Sample Staff'],valid=h.w.globalPayrollCache['Other Staff'];
+  assert.equal(held.hours,8);assert.equal(held.attendanceReviewRequired,true);assert.equal(held.profile.hourlyRate,null);assert.match(held.payrollReviewReasons.join(' '),/Daily wage is not confirmed for 2030-01-16/);
+  assert.equal(valid.basicPay,450);assert.equal(valid.attendanceReviewRequired,false);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱450.00');assert.equal(h.writes.length,0);
+ });
+ test(generator+': a dated-wage profile with no cutoff source does not launch an unrelated private read',async()=>{
+  const reads=[],h=harness({readDoc:ref=>{reads.push(ref.id);throw Error('Unrelated wage must not be read');}});
+  h.records.cashiers.push({id:'no-cutoff-work',cashierName:'No Cutoff Work',branch:h.person.branch,hourlyRate:500,salaryRateVersion:1,salaryRateRevision:'private'});
+  await h.w[generator]();assert.deepEqual(reads,[]);assert.equal(h.w.globalPayrollCache['Sample Staff'].basicPay,450);assert.equal(Object.hasOwn(h.w.globalPayrollCache,'No Cutoff Work'),false);assert.equal(h.writes.length,0);
+ });
+ test(generator+': established employment and missing start confirmation never erase completed cutoff hours',async()=>{
+  const h=harness();h.person.dateHired='2029-02-25';h.person.onboardingStartConfirmation=null;
+  h.records.attendance_logs.push({...h.logs(17)[0],id:'missing-out',timestamp:stamp('2030-01-16T23:00:00+08:00')});
+  await h.w[generator]();const row=h.w.globalPayrollCache['Sample Staff'];assert.equal(row.hours,8);assert.equal(row.basicPay,450);assert.equal(row.attendanceReviewRequired,false);assert.equal(row.profile.dateHired,'2029-02-25');assert.ok(row.logs.some(item=>item.out==='MISSED'));assert.equal(h.writes.length,0);
  });
 }
 test('actual finalization refuses a changed salary revision before any cash or payroll write',async()=>{
@@ -263,4 +292,11 @@ for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
   let review=[];h.context.renderPayrollBalanceReview=(_document,rows)=>{review=rows;};await h.w[generator]();assert.equal(Object.keys(h.w.globalPayrollCache).length,0);assert.equal(h.node('payrollGrandTotalContainer').style.display,'none');
   assert.equal(review.length,1);assert.equal(review[0].records[0].id,'former-loan');assert.equal(review[0].records[0].amount,750);assert.equal(h.records.staff_ledger[0].totalPaid,250);assert.equal(h.writes.length,0);
  });
+}
+
+for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
+ test(generator+': a buffered earlier orphan cannot erase selected-cutoff hours',async()=>{const h=harness(),valid=h.logs(16);valid[1].timeInLogId=valid[0].id;h.records.attendance_logs=[{...valid[1],id:'old-out',timestamp:stamp('2030-01-15T03:00:00+08:00'),timeInLogId:'unfetched-older-in'},...valid];await h.w[generator]();const data=h.w.globalPayrollCache[h.person.cashierName];assert.equal(data.hours,8);assert.equal(data.basicPay,450);assert.equal(data.attendanceReviewRequired,false);assert.equal(h.writes.length,0);});
+ test(generator+': a future linked closure never creates hours for an unmatched cutoff-ending Time In',async()=>{const h=harness(),base={staffId:h.person.id,staffName:h.person.cashierName,branch:h.person.branch};h.records.attendance_logs=[{...base,id:'selected',type:'TIME IN',timestamp:stamp('2030-01-16T20:00:00+08:00')},{...base,id:'future-in',type:'TIME IN',timestamp:stamp('2030-01-17T01:00:00+08:00')},{...base,id:'future-out',type:'TIME OUT',timeInLogId:'future-in',branch:'Other Branch',timestamp:stamp('2030-01-17T09:00:00+08:00')}];await h.w[generator]();const data=h.w.globalPayrollCache[h.person.cashierName];assert.equal(data?.hours||0,0);assert.equal(data?.basicPay||0,0);assert.equal(h.writes.length,0);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱0.00');});
+ test(generator+': an affected employee retains readable completed pairs while a separate in-cutoff source is held',async()=>{const h=harness(),valid=h.logs(16);valid[1].timeInLogId=valid[0].id;h.records.attendance_logs=[...valid,{...valid[1],id:'unmatched-out',timestamp:stamp('2030-01-16T20:00:00+08:00'),timeInLogId:'missing-source'}];await h.w[generator]();const data=h.w.globalPayrollCache[h.person.cashierName];assert.equal(data.attendanceReviewRequired,true);assert.equal(data.recordedHours,8);assert.equal(data.attendanceLogIds.includes('unmatched-out'),true);assert.equal(data.logs.some(row=>row.hrs==='8.00'&&row.remark.includes('Recorded pair')),true);assert.match(h.node('payrollGeneratorBody').innerHTML,/8.00 recorded paired hrs/);await h.w.openPayslipModal(h.person.cashierName);assert.equal(h.node('btnFinalizePayslip').disabled,true);await h.w.finalizePayslip();assert.equal(h.writes.length,0);});
+ test(generator+': unavailable wage totals are labelled for review instead of a payable zero, while paid snapshots keep their saved net',async()=>{const h=harness({readDoc:()=>{throw Error('Private wage unavailable');}});datedSalary(h);vm.runInContext(extract('recalcPayslip'),h.context);await h.w[generator]();await h.w.openPayslipModal(h.person.cashierName);assert.equal(h.node('psBasicPay').innerText,'Awaiting rate review');assert.equal(h.node('psGross').innerText,'Awaiting rate review');assert.equal(h.node('psNetPay').innerText,'Awaiting rate review');assert.equal(h.node('btnFinalizePayslip').disabled,true);h.w.currentPayslipData={isPaid:true,salaryReviewRequired:true,finalNetPay:123};h.w.recalcPayslip();assert.equal(h.node('psNetPay').innerText,'123.00');assert.equal(h.writes.length,0);});
 }

@@ -1,5 +1,5 @@
 import {readPayrollSnapshot} from './payroll-preview-guard.js';
-import {loadStaffSalaryTimeline} from './staff-rate-model.js';
+import {loadStaffSalaryTimeline,staffProfileForWork,staffRateWorkDate,staffRateForDate,payrollSalaryProfile,dailyStaffRate} from './staff-rate-model.js';
 import {canOpenWorkspacePage,OWNER_EMAIL} from './workspace-access-model.js';
 
 const coordinators=new WeakMap(),references=new WeakMap(),pendingDocuments=new WeakMap(),sessionIds=new WeakMap();let nextSession=0;
@@ -79,8 +79,24 @@ export async function loadPayrollPreviewInputs(api,options){
  const [scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap]=await mapPayrollReads(tasks,{assertCurrent:guard,concurrency});guard();return scopePayrollInputs(api,{scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap});
 }
 
-export async function loadPayrollSalaryProfiles(api,staffDict,paidRecords,{assertCurrent=()=>{},concurrency=4,timeoutMs=25000}={}){
- const guard=readGuard(api,assertCurrent);guard();const scope=payrollLoadingScope(api),entries=Object.entries(staffDict).filter(([name,profile])=>scope.allows(profile.branch)&&!paidRecords[name]&&profile.salaryRateVersion===1),key=accountKey(api);
- const results=await mapPayrollReads(entries.map(([,profile])=>()=>loadStaffSalaryTimeline(api,profile,{read:reference=>{guard();return readBoundedDocument(api,JSON.stringify([key,'salary',profile.staffId,profile.branch,profile.salaryRateRevision]),()=>{guard();return api.getDocFromServer(reference);},{timeoutMs});}})),{assertCurrent:guard,concurrency});
+const salaryReviewMessage='Daily wage history could not be confirmed for this employee. Review Staff & Security salary history, then generate this cutoff again. Recorded attendance is retained; payment is held.';
+export async function loadPayrollSalaryProfiles(api,staffDict,paidRecords,{assertCurrent=()=>{},concurrency=4,timeoutMs=25000,staffNames}={}){
+ const selected=staffNames===undefined?null:new Set(staffNames);
+ const guard=readGuard(api,assertCurrent);guard();const scope=payrollLoadingScope(api),entries=Object.entries(staffDict).filter(([name,profile])=>scope.allows(profile.branch)&&!paidRecords[name]&&profile.salaryRateVersion===1&&(!selected||selected.has(name))),key=accountKey(api);
+ const results=await mapPayrollReads(entries.map(([,profile])=>async()=>{try{const {salaryHistoryUnavailable,salaryReviewReason,...current}=profile;return await loadStaffSalaryTimeline(api,current,{read:reference=>{guard();return readBoundedDocument(api,JSON.stringify([key,'salary',profile.staffId,profile.branch,profile.salaryRateRevision]),()=>{guard();return api.getDocFromServer(reference);},{timeoutMs});}});}catch{guard();return {...profile,salaryHistoryUnavailable:true,salaryReviewReason:salaryReviewMessage};}}),{assertCurrent:guard,concurrency});
  guard();const next=Object.fromEntries(Object.entries(staffDict).filter(([,profile])=>scope.allows(profile.branch)));entries.forEach(([name],index)=>{next[name]=results[index];});return next;
+}
+
+// An employee-specific wage issue never invents a zero wage or discards other
+// employees' confirmed attendance. Callers retain the hours and block payment.
+export function payrollSalaryForWork(profile,log,shift){
+ if(profile?.salaryHistoryUnavailable)return {profile:null,reason:profile.salaryReviewReason||salaryReviewMessage};
+ let date='this work date';try{date=staffRateWorkDate(log,shift);if(profile?.salaryRateVersion!==1&&dailyStaffRate(profile)===null)throw Error('No recorded wage');return {profile:staffProfileForWork(profile,log,shift),reason:''};}
+ catch{return {profile:null,reason:'Daily wage is not confirmed for '+date+'. Review this employee’s saved salary history. Recorded attendance is retained; payment is held.'};}
+}
+export function payrollSalaryForPreview(profile,date){
+ const {salaryRateTimeline,...safe}=profile||{};
+ if(profile?.salaryHistoryUnavailable)return {profile:{...safe,hourlyRate:null},reason:profile.salaryReviewReason||salaryReviewMessage};
+ try{if(staffRateForDate(profile,date)===null)throw Error('No recorded wage');return {profile:payrollSalaryProfile(profile,date),reason:''};}
+ catch{return {profile:{...safe,hourlyRate:null},reason:'The daily wage for the selected cutoff could not be confirmed. Review this employee’s salary history. Recorded attendance is retained; payment is held.'};}
 }
