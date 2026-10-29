@@ -1,7 +1,8 @@
 // This entry renders and handles the keypad without downloading business data.
 import {installOwnerUpdateNotice} from './owner-update-notice.js';
+import {installOwnerLoginUpdate} from './login-update.js';
 const el = id => document.getElementById(id);
-let installPrompt;
+let installPrompt,ownerRegistrationPromise;
 window.ManagerLogin = {
     status(text) { el('loginProgress').textContent = text; },
     error(text) { const box = el('pinErrorMsg'); box.textContent = text || ''; box.hidden = !text; },
@@ -49,14 +50,20 @@ window.installManagerApp = async () => {
     el('loginInstallDialog').showModal();
 };
 storageStatus(matchMedia('(display-mode: standalone)').matches);
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' }).then(async registration => {
+function registerOwnerShell() {
+    if(ownerRegistrationPromise)return ownerRegistrationPromise;
+    const pending=navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });
+    ownerRegistrationPromise=pending;
+    pending.then(async registration => {
         window.ownerUpdateNotice=installOwnerUpdateNotice(window,document,navigator,registration);
         await navigator.serviceWorker.ready;
         el('loginDeviceDescription').textContent = 'App files saved on this device. Live data syncs online.';
         registration.update().catch(() => {});
-    }).catch(() => { el('loginDeviceDescription').textContent = 'Device cache is unavailable. The app will load online.'; });
+    }).catch(() => { if(ownerRegistrationPromise===pending)ownerRegistrationPromise=null;el('loginDeviceDescription').textContent = 'Device cache is unavailable. The app will load online.'; });
+    return pending;
 }
+if ('serviceWorker' in navigator)registerOwnerShell();
+installOwnerLoginUpdate(window,document,navigator,{getRegistration:registerOwnerShell});
 const authTimer = setTimeout(() => {
     if (!window.managerAuthReady) {
         window.ManagerLogin.status('The connection is slow. Reconnect and reload to verify your account.');

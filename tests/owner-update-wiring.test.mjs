@@ -14,11 +14,28 @@ test('the actual login entry installs the notice before a pending service-worker
     const ready=deferred(),calls=[],nodes=new Map(),registration={update:async()=>{calls.push('update');}},installation={check(){}};
     const node=id=>{if(!nodes.has(id))nodes.set(id,{style:{},classList:{toggle(){}},querySelectorAll(){return[];}});return nodes.get(id);};
     const w={addEventListener(){}},d={getElementById:node,addEventListener(){}},nav={onLine:true,serviceWorker:{ready:ready.promise,register:async(...args)=>{calls.push(['register',...args]);return registration;}}};
+    let loginUpdate;
     const context={window:w,document:d,navigator:nav,matchMedia:()=>({matches:false}),setTimeout:()=>1,clearTimeout(){},
+        installOwnerLoginUpdate(...args){assert.equal(args[0],w);assert.equal(args[1],d);assert.equal(args[2],nav);loginUpdate=args[3];},
         installOwnerUpdateNotice(...args){assert.equal(args[0],w);assert.equal(args[1],d);assert.equal(args[2],nav);assert.equal(args[3],registration);calls.push('install-notice');return installation;}};
     assert.match(read('login-ui.js'),/import\s*\{installOwnerUpdateNotice\}\s*from\s*'\.\/owner-update-notice\.js'/);
+    assert.match(read('login-ui.js'),/import\s*\{installOwnerLoginUpdate\}\s*from\s*'\.\/login-update\.js'/);
     vm.runInNewContext(executable(read('login-ui.js')),context);await tick();
-    assert.deepEqual(clone(calls),[['register','./sw.js',{updateViaCache:'none'}],'install-notice']);assert.equal(w.ownerUpdateNotice,installation);
+    assert.deepEqual(clone(calls),[['register','./sw.js',{updateViaCache:'none'}],'install-notice']);assert.equal(w.ownerUpdateNotice,installation);assert.equal(await loginUpdate.getRegistration(),registration,'Login update uses the same registration without awaiting serviceWorker.ready.');
+    ready.resolve(registration);await tick();assert.equal(calls.at(-1),'update');
+});
+test('the actual login entry retries a failed shell registration from its explicit update callback without account reads',async()=>{
+    const first=deferred(),ready=deferred(),calls=[],nodes=new Map(),registration={update:async()=>{calls.push('update');}};let loginUpdate;
+    const node=id=>{if(!nodes.has(id))nodes.set(id,{style:{},classList:{toggle(){}},querySelectorAll(){return[];}});return nodes.get(id);};
+    const w={addEventListener(){}},d={getElementById:node,addEventListener(){}},nav={onLine:true,serviceWorker:{ready:ready.promise,register(...args){calls.push(['register',...args]);return calls.filter(row=>Array.isArray(row)).length===1?first.promise:Promise.resolve(registration);}}};
+    for(const field of ['auth','sessionUser','localStorage','sessionStorage'])Object.defineProperty(w,field,{get(){assert.fail('App-shell retry cannot read '+field);}});
+    const installation={check(){}};
+    vm.runInNewContext(executable(read('login-ui.js')),{window:w,document:d,navigator:nav,matchMedia:()=>({matches:false}),setTimeout:()=>1,clearTimeout(){},
+        installOwnerLoginUpdate(...args){loginUpdate=args[3];},installOwnerUpdateNotice(...args){assert.equal(args[3],registration);calls.push('install-notice');return installation;}});
+    assert.equal(calls.length,1);first.reject(Error('Synthetic first shell registration failed.'));await tick();assert.match(node('loginDeviceDescription').textContent,/Device cache is unavailable/);
+    const retry=loginUpdate.getRegistration(),duplicate=loginUpdate.getRegistration();assert.equal(retry,duplicate,'Concurrent explicit retry callbacks share the same registration promise.');assert.equal(await retry,registration);await tick();
+    assert.deepEqual(clone(calls),[['register','./sw.js',{updateViaCache:'none'}],['register','./sw.js',{updateViaCache:'none'}],'install-notice']);assert.equal(w.ownerUpdateNotice,installation);
+    assert.equal(await loginUpdate.getRegistration(),registration);assert.equal(calls.filter(row=>Array.isArray(row)).length,2,'A successful retry remains the current shell registration.');
     ready.resolve(registration);await tick();assert.equal(calls.at(-1),'update');
 });
 
@@ -59,8 +76,8 @@ test('the actual worker answers only the typed release handshake with its exact 
 });
 
 test('the current worker caches both update modules and every declared Owner dependency exists',()=>{
-    const f=worker(),assets=Array.from(f.context.cachedAssets),required=['./owner-app-update.js','./owner-update-notice.js','./login-ui.js','./device-fleet.js'];
+    const f=worker(),assets=Array.from(f.context.cachedAssets),required=['./owner-app-update.js','./owner-update-notice.js','./login-ui.js','./login-update.js','./device-fleet.js'];
     for(const file of required)assert.equal(assets.filter(asset=>asset===file).length,1,file);
     for(const file of new Set(assets))assert.equal(existsSync(new URL('../takodeal-manager/'+file.replace(/^\.\//,''),import.meta.url)),true,file);
-    for(const file of ['owner-update-notice.js','device-fleet.js'])assert.match(read(file),/from\s*'\.\/owner-app-update\.js'/);
+    for(const file of ['owner-update-notice.js','device-fleet.js','login-update.js'])assert.match(read(file),/from\s*'\.\/owner-app-update\.js'/);
 });
