@@ -2447,11 +2447,17 @@ window.addToDispatchCart = function () {
     window.renderDispatchCart();
 };
 
-window.removeFromDispatchCart = function (index) { 
-    window.dispatchCart.splice(index, 1); 
-    localStorage.setItem('takodeal_dispatch_cart', JSON.stringify(window.dispatchCart));
-    Object.keys(localStorage).forEach(key => { if(key.startsWith('takodeal_draft_qty_')) localStorage.removeItem(key); });
-    window.renderDispatchCart(); 
+window.removeFromDispatchCart = function (index) {
+    if(!Number.isSafeInteger(index)||!Array.isArray(window.dispatchCart)||index<0||index>=window.dispatchCart.length)return false;
+    const remaining=window.dispatchCart.filter((_,position)=>position!==index);
+    // Persist before removing the visible row. A denied device write must not
+    // pretend that the item was removed and then restore it on the next visit.
+    try{localStorage.setItem('takodeal_dispatch_cart',JSON.stringify(remaining));}
+    catch{window.ManagerUI?.notify?.('Unable to save this cart change on this device. Please retry before leaving Dispatch.');return false;}
+    window.dispatchCart=remaining;
+    try{Object.keys(localStorage).forEach(key=>{if(key.startsWith('takodeal_draft_qty_'))localStorage.removeItem(key);});}catch{}
+    window.renderDispatchCart();
+    return true;
 };
 
 window.renderDispatchCart = function() {
@@ -3368,11 +3374,6 @@ window.updateDispatchUomLabel = async function() {
             aiContainer.innerHTML = '<span style="color:#ef4444; font-size:11px;">Error loading AI data.</span>';
         }
     }
-};
-
-window.removeFromDispatchCart = function (index) {
-  dispatchCart.splice(index, 1);
-  renderDispatchCart();
 };
 
 // --- THE MENU EDITOR ENGINE (WITH CUSTOM ARRANGER) ---
