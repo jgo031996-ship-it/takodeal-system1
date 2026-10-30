@@ -1595,20 +1595,23 @@ service cloud.firestore {
         && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','version','id','sourceLossCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']);
     }
     function ownerDeductionChargeReview(before,after,id) {
+      let prior = readData('owner_deduction_reviews',id);
       let row = nextData('owner_deduction_reviews',id);
-      let notice = nextData('staff_deduction_notices',id);
       return ownerDeductionOwner() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(paidKeys())
         && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
         && after.reviewRevision == before.reviewRevision + 1 && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail()
-        && ownerDeductionLinks(row,after,notice,id) && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == reqTime();
+        // A changed source revision forces its authoritative update rule in
+        // this atomic request. That rule checks both complete companion links.
+        && row.revision == prior.revision + 1 && after.reviewRevision == row.revision
+        && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == reqTime();
     }
     function ownerDeductionNoticeReview(before,after,id) {
+      let prior = readData('owner_deduction_reviews',id);
       let row = nextData('owner_deduction_reviews',id);
-      let charge = staffDeductionAfter(id);
       return ownerDeductionOwner() && before.status in ['Pending Review','Approved']
         && after.diff(before).affectedKeys().hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','weeklyLimitConfirmed','updatedAt'])
         && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == reqTime() && after.status == row.status
-        && ownerDeductionLinks(row,charge,after,id) && row.reviewedAt == reqTime()
+        && row.revision == prior.revision + 1 && after.noticeRevision == row.revision && row.reviewedAt == reqTime()
         && (row.status == 'Dismissed' ? after.ownerReply == row.dismissalReason : (after.ownerReply == row.finding && after.lawfulBasis == row.lawfulBasis && after.authorityReference == row.authorityReference && after.finding == row.finding && after.weeklyLimitConfirmed == true));
     }
     function ownerDeductionProtectedPayroll(payroll) {
@@ -1866,12 +1869,13 @@ service cloud.firestore {
       }
       allow create: if selectorStaffDeductionNoticesCreate(newData());
       function selectorStaffDeductionNoticesUpdate(data,before) {
-        return ownerDeductionKind(before,id) || ownerDeductionKind(data,id)
-        ? (data.status == 'Paid' && before.status != 'Paid' ? ownerDeductionCompanionPaid(before,data,id,before.noticeRevision) : (refundNoticeStaffUpdate(before,data) || ownerDeductionNoticeReview(before,data,id)))
+        // The same private Staff reply/read schema applies to every subtype.
+        // Factor that disjunct once; subtype-specific financial rules follow.
+        return refundNoticeStaffUpdate(before,data) || (ownerDeductionKind(before,id) || ownerDeductionKind(data,id)
+        ? (data.status == 'Paid' && before.status != 'Paid' ? ownerDeductionCompanionPaid(before,data,id,before.noticeRevision) : ownerDeductionNoticeReview(before,data,id))
         : cashShortageKind(before,id) || cashShortageKind(data,id)
-        ? (data.status == 'Paid' && before.status != 'Paid' ? cashShortageCompanionPaid(before,data,id,before.noticeRevision) : (refundNoticeStaffUpdate(before,data) || cashShortageNoticeReview(before,data,id)))
-        : refundNoticeStaffUpdate(before,data)
-        || refundNoticeOwnerUpdate(before,data,id) || refundPaid(before,data,id);
+        ? (data.status == 'Paid' && before.status != 'Paid' ? cashShortageCompanionPaid(before,data,id,before.noticeRevision) : cashShortageNoticeReview(before,data,id))
+        : refundNoticeOwnerUpdate(before,data,id) || refundPaid(before,data,id));
       }
       allow update: if selectorStaffDeductionNoticesUpdate(newData(),resource == null ? null : oldData());
       allow delete: if false;

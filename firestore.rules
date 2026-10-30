@@ -1597,20 +1597,23 @@ service cloud.firestore {
         && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','version','id','sourceLossCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']);
     }
     function r4b(before,after,id) {
+      let prior = r5('owner_deduction_reviews',id);
       let row = r6('owner_deduction_reviews',id);
-      let notice = r6('staff_deduction_notices',id);
       return r44() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(re())
         && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
         && after.reviewRevision == before.reviewRevision + 1 && after.reviewedAt == r9() && after.reviewedBy == r8()
-        && r47(row,after,notice,id) && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == r9();
+        // A changed source revision forces its authoritative update rule in
+        // this atomic request. That rule checks both complete companion links.
+        && row.revision == prior.revision + 1 && after.reviewRevision == row.revision
+        && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == r9();
     }
     function r4c(before,after,id) {
+      let prior = r5('owner_deduction_reviews',id);
       let row = r6('owner_deduction_reviews',id);
-      let charge = r4(id);
       return r44() && before.status in ['Pending Review','Approved']
         && after.diff(before).affectedKeys().hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','weeklyLimitConfirmed','updatedAt'])
         && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == r9() && after.status == row.status
-        && r47(row,charge,after,id) && row.reviewedAt == r9()
+        && row.revision == prior.revision + 1 && after.noticeRevision == row.revision && row.reviewedAt == r9()
         && (row.status == 'Dismissed' ? after.ownerReply == row.dismissalReason : (after.ownerReply == row.finding && after.lawfulBasis == row.lawfulBasis && after.authorityReference == row.authorityReference && after.finding == row.finding && after.weeklyLimitConfirmed == true));
     }
     function r4d(payroll) {
@@ -1868,12 +1871,13 @@ service cloud.firestore {
       }
       allow create: if r57(ra());
       function r58(data,before) {
-        return r46(before,id) || r46(data,id)
-        ? (data.status == 'Paid' && before.status != 'Paid' ? r4k(before,data,id,before.noticeRevision) : (r43(before,data) || r4c(before,data,id)))
+        // The same private Staff reply/read schema applies to every subtype.
+        // Factor that disjunct once; subtype-specific financial rules follow.
+        return r43(before,data) || (r46(before,id) || r46(data,id)
+        ? (data.status == 'Paid' && before.status != 'Paid' ? r4k(before,data,id,before.noticeRevision) : r4c(before,data,id))
         : r4p(before,id) || r4p(data,id)
-        ? (data.status == 'Paid' && before.status != 'Paid' ? r51(before,data,id,before.noticeRevision) : (r43(before,data) || r4u(before,data,id)))
-        : r43(before,data)
-        || r42(before,data,id) || r40(before,data,id);
+        ? (data.status == 'Paid' && before.status != 'Paid' ? r51(before,data,id,before.noticeRevision) : r4u(before,data,id))
+        : r42(before,data,id) || r40(before,data,id));
       }
       allow update: if r58(ra(),resource == null ? null : rb());
       allow delete: if false;

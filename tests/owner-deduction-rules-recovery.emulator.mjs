@@ -88,3 +88,81 @@ for(const [field,value]of [['dateAdded',new Date('2000-01-01')],['loggedBy','ano
 for(const dbFactory of [publicDB,anon,staff,manager,()=>wrongOwner('password'),()=>wrongOwner('unverified')])test('recovery: companion dedup cannot bypass verified Google Owner authorization '+dbFactory.name,async()=>{
  await assertFails(createBatch(dbFactory(),pending()).commit());
 });
+
+async function reply(id,message='This is my fictional explanation of the damaged item.'){await updateDoc(doc(staff(),'staff_deduction_notices',id),{staffReply:message,replyRevision:1,repliedAt:serverTimestamp(),repliedByUid:'staff-phone'});}
+function approval(db,row,{amount=90,effectiveDate=plain(),review={},charge={},notice={}}={}){const batch=writeBatch(db),fields={amount,authorizedAmount:amount,effectiveDate};batch.update(doc(db,'owner_deduction_reviews',row.id),{...fields,status:'Approved',revision:2,lawfulBasis:'Legal authority permitting this deduction',authorityReference:'Fictional documented authority reference.',finding:'Fictional review records the established responsibility and permitted amount.',responsibilityConfirmed:true,lawfulAuthorityConfirmed:true,weeklyLimitConfirmed:true,replyRevisionReviewed:1,approvalIntent:'fictional-approval-intent',reviewedAt:serverTimestamp(),reviewedBy:ownerEmail,...review});batch.update(doc(db,'staff_deductions',row.id),{...fields,status:'Unpaid',reviewRevision:2,reviewedAt:serverTimestamp(),reviewedBy:ownerEmail,...charge});batch.update(doc(db,'staff_deduction_notices',row.id),{amount,effectiveDate,status:'Approved',noticeRevision:2,lawfulBasis:'Legal authority permitting this deduction',authorityReference:'Fictional documented authority reference.',finding:'Fictional review records the established responsibility and permitted amount.',ownerReply:'Fictional review records the established responsibility and permitted amount.',weeklyLimitConfirmed:true,updatedAt:serverTimestamp(),...notice});return batch;}
+async function seedApproved(n=1){const row=await seedPending(n);await reply(row.id);await admin(db=>approval(db,row).commit());return row;}
+function payrollBatch(db,rows,{patch={},debit=450-90*rows.length,expense=true,bank=true,omitTable,paidAmount,detailsPatch}={}){const id='payroll-staff-a-'+plain()+'-'+offset(14),batch=writeBatch(db),end=offset(14),tuples=rows.map(row=>({id:row.id,amount:90})),details=rows.map(row=>({id:row.id,type,bucket:'ownerDeductions',amount:90,label:row.charge.label,category:row.charge.category,incidentDate:plain(),effectiveDate:plain(),reviewRevision:2,...detailsPatch})),record={staffId:'staff-a',staffName:profile.cashierName,branch:'Maa',startDate:plain(),endDate:end,frozenData:{staffId:'staff-a',name:profile.cashierName,branch:'Maa',isPaid:true,basicPay:450,ownerDeductions:90*rows.length,ownerDeductionRows:tuples,ownerDeductionDetails:details},finalNetPay:450-90*rows.length,accountId:'bank',accountName:'Fictional bank',ownerDeductionSettlements:Object.fromEntries(tuples.map(row=>[row.id,row.amount])),processedAt:serverTimestamp(),processedBy:ownerEmail,acknowledged:false,...patch};batch.set(doc(db,'payroll_records',id),record);for(const row of rows)for(const table of ['owner_deduction_reviews','staff_deductions','staff_deduction_notices'])if(table!==omitTable)batch.update(doc(db,table,row.id),{status:'Paid',paidAt:serverTimestamp(),payrollRecordId:id,...(paidAmount!==undefined?{amount:paidAmount}:{})});if(bank)batch.update(doc(db,'cash_accounts/bank'),{balance:1000-debit});if(expense)batch.set(doc(db,'expenses',id),{branch:'Main Office',category:'Payroll',amount:record.finalNetPay,account:'Fictional bank',note:'Fictional payroll only',payrollRecordId:id,timestamp:serverTimestamp()});return {batch,id,record};}
+const seedBank=()=>seed('cash_accounts/bank',{branch:'Main Office',name:'Fictional bank',balance:1000});
+
+
+
+const reviewChanges=(revision=3,amount=80)=>({
+ review:{amount,authorizedAmount:amount,effectiveDate:plain(),status:'Approved',revision,replyRevisionReviewed:1,reviewedAt:serverTimestamp(),reviewedBy:ownerEmail},
+ charge:{amount,authorizedAmount:amount,effectiveDate:plain(),status:'Unpaid',reviewRevision:revision,reviewedAt:serverTimestamp(),reviewedBy:ownerEmail},
+ notice:{amount,effectiveDate:plain(),status:'Approved',noticeRevision:revision,updatedAt:serverTimestamp()}
+});
+async function ownerApproved(n=1){const row=await seedPending(n);await reply(row.id);await assertSucceeds(approval(owner(),row).commit());return row;}
+for(const selected of [['staff_deductions','charge'],['staff_deduction_notices','notice'],['staff_deductions','charge','staff_deduction_notices','notice']])test('v2: old Approved source cannot authorize standalone review '+selected.join('/'),async()=>{
+ const row=await ownerApproved(),change=reviewChanges(),db=owner(),batch=writeBatch(db);
+ for(let i=0;i<selected.length;i+=2)batch.update(doc(db,selected[i],row.id),change[selected[i+1]]);
+ await assertFails(batch.commit());
+ assert.equal((await getDocFromServer(doc(db,'owner_deduction_reviews',row.id))).data().revision,2);
+ assert.equal((await getDocFromServer(doc(db,'staff_deductions',row.id))).data().amount,90);
+ assert.equal((await getDocFromServer(doc(db,'staff_deduction_notices',row.id))).data().noticeRevision,2);
+});
+for(const status of ['Pending Review','Approved'])test('v2: source-only '+status+' revision change cannot skip exact companion review',async()=>{
+ const row=status==='Approved'?await ownerApproved():await seedPending();if(status!=='Approved')await reply(row.id);
+ const revision=status==='Approved'?3:2;
+ await assertFails(updateDoc(doc(owner(),'owner_deduction_reviews',row.id),reviewChanges(revision).review));
+});
+test('v2: restamping a previous source without increasing revision cannot authorize companion updates',async()=>{
+ const row=await ownerApproved(),change=reviewChanges(),db=owner(),batch=writeBatch(db);
+ batch.update(doc(db,'owner_deduction_reviews',row.id),{reviewedAt:serverTimestamp(),reviewedBy:ownerEmail});
+ batch.update(doc(db,'staff_deductions',row.id),change.charge);batch.update(doc(db,'staff_deduction_notices',row.id),change.notice);
+ await assertFails(batch.commit());
+});
+test('v2: an attempted revision jump cannot authorize three otherwise matching review updates',async()=>{
+ const row=await seedPending();await reply(row.id);
+ await assertFails(approval(owner(),row,{review:{revision:3},charge:{reviewRevision:3},notice:{noticeRevision:3}}).commit());
+});
+test('v2: actual approval followed by a new Staff reply and monotonic re-review updates all exact links',async()=>{
+ const row=await ownerApproved();await updateDoc(doc(staff(),'staff_deduction_notices',row.id),{staffReply:'A second fictional explanation for the reviewed incident.',replyRevision:2,repliedAt:serverTimestamp(),repliedByUid:'staff-phone'});
+ await assertSucceeds(approval(owner(),row,{amount:80,review:{revision:3,replyRevisionReviewed:2},charge:{reviewRevision:3},notice:{noticeRevision:3}}).commit());
+ const source=(await getDocFromServer(doc(owner(),'owner_deduction_reviews',row.id))).data(),charge=(await getDocFromServer(doc(owner(),'staff_deductions',row.id))).data(),notice=(await getDocFromServer(doc(owner(),'staff_deduction_notices',row.id))).data();
+ assert.equal(source.revision,3);assert.equal(source.replyRevisionReviewed,2);assert.equal(charge.reviewRevision,3);assert.equal(notice.noticeRevision,3);assert.equal(notice.replyRevision,2);assert.equal(charge.amount,80);
+});
+for(const start of ['Pending Review','Approved'])test('v2: correct '+start+' dismissal still updates all companions without a payroll posting',async()=>{
+ const row=start==='Approved'?await ownerApproved():await seedPending(),revision=start==='Approved'?3:2,reason='Fictional review did not establish this proposed charge.',db=owner(),batch=writeBatch(db);
+ batch.update(doc(db,'owner_deduction_reviews',row.id),{status:'Dismissed',amount:0,authorizedAmount:0,revision,dismissalReason:reason,reviewedAt:serverTimestamp(),reviewedBy:ownerEmail});
+ batch.update(doc(db,'staff_deductions',row.id),{status:'Dismissed',amount:0,authorizedAmount:0,reviewRevision:revision,reviewedAt:serverTimestamp(),reviewedBy:ownerEmail});
+ batch.update(doc(db,'staff_deduction_notices',row.id),{status:'Dismissed',amount:0,noticeRevision:revision,ownerReply:reason,updatedAt:serverTimestamp()});
+ await assertSucceeds(batch.commit());for(const table of ['owner_deduction_reviews','staff_deductions','staff_deduction_notices']){const stored=(await getDocFromServer(doc(db,table,row.id))).data();assert.equal(stored.status,'Dismissed');assert.equal(stored.amount,0);assert.equal(stored.payrollRecordId,undefined);}
+});
+for(const key of ['charge','notice'])for(const [field,value]of [['label','A renamed incident'],['staffId','staff-b'],['branch','Cabantian'],['amount',50],['effectiveDate',offset(1)],['sourceReceiptId','another-id']])test('v2: '+key+' review cannot change joined '+field+' while source revision advances',async()=>{
+ const row=await ownerApproved();await assertFails(approval(owner(),row,{review:{revision:3},charge:{reviewRevision:3,...(key==='charge'?{[field]:value}:{})},notice:{noticeRevision:3,...(key==='notice'?{[field]:value}:{})}}).commit());
+ assert.equal((await getDocFromServer(doc(owner(),'owner_deduction_reviews',row.id))).data().revision,2);
+});
+for(const review of [{responsibilityConfirmed:false},{lawfulAuthorityConfirmed:false},{weeklyLimitConfirmed:false},{authorityReference:'bad'},{replyRevisionReviewed:0},{finding:'bad'}])test('v2: companion dedup retains authoritative responsibility, authority and reply review '+Object.keys(review)[0],async()=>{
+ const row=await seedPending();await reply(row.id);await assertFails(approval(owner(),row,{review}).commit());
+});
+for(const kind of ['owner','cash'])for(const status of ['Pending Review','Approved','Paid'])test('v2: hoisted '+kind+' '+status+' notice read/reply belongs only to its approved Staff phone',async()=>{
+ let id,notice;
+ if(kind==='owner'){const row=pending();id=row.id;notice={...row.notice,status,noticeRevision:2,replyRevision:1,staffReply:'The original fictional explanation.',amount:status==='Pending Review'?0:90};}
+ else{const row=approvedCashShortage({shiftId:'fictional-cash',staffId:'staff-a',name:profile.cashierName,branch:'Maa',amount:90,effectiveDate:plain()});id=row.id;notice={...row.notice,status,readRevision:0};}
+ await seed('staff_deduction_notices/'+id,notice);
+ const ownRef=doc(staff(),'staff_deduction_notices',id),foreignRef=doc(otherStaff(),'staff_deduction_notices',id);
+ await assertSucceeds(getDocFromServer(ownRef));await assertFails(getDocFromServer(foreignRef));
+ await assertSucceeds(updateDoc(ownRef,{readRevision:2,readAt:serverTimestamp()}));
+ await assertFails(updateDoc(foreignRef,{readRevision:2,readAt:serverTimestamp()}));
+ await assertSucceeds(updateDoc(ownRef,{staffReply:'My updated fictional explanation, not financial authorization.',replyRevision:2,repliedAt:serverTimestamp(),repliedByUid:'staff-phone'}));
+ await assertFails(updateDoc(foreignRef,{staffReply:'A foreign reply.',replyRevision:3,repliedAt:serverTimestamp(),repliedByUid:'other-phone'}));
+ await assertFails(updateDoc(ownRef,{staffReply:'Cannot combine a reply with an amount change.',replyRevision:3,repliedAt:serverTimestamp(),repliedByUid:'staff-phone',amount:1}));
+ await assertFails(updateDoc(ownRef,{staffId:'staff-b',readRevision:2,readAt:serverTimestamp()}));
+ const stored=(await getDocFromServer(ownRef)).data();assert.equal(stored.amount,notice.amount);assert.equal(stored.status,status);assert.equal(stored.staffId,'staff-a');assert.equal(stored.replyRevision,2);
+});
+test('v2: Paid source cannot be re-reviewed and original linked payroll amount stays immutable',async()=>{
+ const row=await ownerApproved();await seedBank();const {batch,id}=payrollBatch(owner(),[row]);await assertSucceeds(batch.commit());
+ await assertFails(approval(owner(),row,{amount:80,review:{revision:3},charge:{reviewRevision:3},notice:{noticeRevision:3}}).commit());
+ const saved=(await getDocFromServer(doc(owner(),'payroll_records',id))).data();assert.equal(saved.finalNetPay,360);assert.equal(saved.frozenData.ownerDeductions,90);assert.equal((await getDocFromServer(doc(owner(),'owner_deduction_reviews',row.id))).data().status,'Paid');
+});
