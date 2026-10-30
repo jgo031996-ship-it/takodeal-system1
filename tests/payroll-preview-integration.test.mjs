@@ -304,7 +304,7 @@ for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
   const valid=h.logs(16);valid[1].timeInLogId=valid[0].id;original={...valid[0],id:'previous-in',timestamp:stamp('2030-01-15T18:30:00+08:00')};
   h.node('payrollEnd').value='2030-01-31';h.records.attendance_logs=[{...valid[1],id:'previous-out',timeInLogId:'previous-in',timeInAt:'2099-01-01T00:00:00Z',timestamp:stamp('2030-01-16T03:00:00+08:00')},...valid];
   await h.w[generator]();const data=h.w.globalPayrollCache[h.person.cashierName];assert.equal(data.attendanceReviewRequired,false);assert.equal(data.hours,8);assert.equal(data.basicPay,450);assert.equal(data.shiftsWorked,1);assert.equal(data.logs.some(row=>row.in==='HR REVIEW'),false);assert.equal(data.logs.some(row=>row.hrs==='8.50'),false);assert.deepEqual(docReads,[{table:'attendance_logs',id:'previous-in'}]);
-  const query=h.calls.find(ref=>ref.table==='attendance_logs'),from=query.filters.find(filter=>filter.field==='timestamp'&&filter.op==='>=');assert.equal(+from.value,+new Date(generator==='loadPayrollGenerator'?'2030-01-15T00:00:00+08:00':'2030-01-16T00:00:00+08:00'));assert.equal(h.writes.length,0);
+  const query=h.calls.find(ref=>ref.table==='attendance_logs'),from=query.filters.find(filter=>filter.field==='timestamp'&&filter.op==='>=');assert.equal(+from.value,+new Date(generator==='loadPayrollGenerator'?'2030-01-15T00:00:00':'2030-01-16T00:00:00'));assert.equal(h.writes.length,0);
  });
  test(generator+': a real unresolved source identifies its exact issue day and IDs instead of dating the hold from the first valid shift',async()=>{
   const h=harness(),valid=h.logs(16);valid[1].timeInLogId=valid[0].id;h.node('payrollEnd').value='2030-01-31';
