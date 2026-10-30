@@ -48,6 +48,7 @@ import { installMonthlyBills } from './monthly-bills-ui.js';
 import { requestHistory, historyTime } from './request-history.js';
 import { enhanceScheduleLayout, scheduleShiftHours } from './schedule-layout.js';
 import {installScheduleWorkspace} from './schedule-workspace.js';
+import {createMonthlyScheduleController} from './monthly-schedule-integration.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
 import {installScheduleMemoryUI} from './schedule-memory-ui.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
@@ -8353,6 +8354,18 @@ window.initScheduleMemory = async () => {
     window.scheduleWorkspace?.refresh();
 };
 window.selectScheduleMonth = () => scheduleMemoryUI?.selectMonth();
+window.openMonthlySchedule = function() {
+    window.monthlyScheduleController ||= createMonthlyScheduleController(window,document,{
+        getSnapshot:window.getScheduleMemorySnapshot,
+        captureEditor:()=>{window.captureTempShiftConfig();return window.getScheduleMemorySnapshot();},
+        applySnapshot:window.applyScheduleMemorySnapshot,
+        getMonth:()=>document.getElementById('monthSelector')?.value || '',
+        getBranch:()=>currentActiveTab,
+        getEffectiveFrom:()=>scheduleMemoryUI?.effectiveFrom() || '',
+        getSync:()=>window.getOwnerScheduleSync()
+    });
+    return window.monthlyScheduleController.open();
+};
 window.getOwnerScheduleSync = function() {
     if(window.ownerScheduleSync)return window.ownerScheduleSync;
     const actor=()=>({uid:window.auth?.currentUser?.uid,email:window.auth?.currentUser?.email,sessionUid:window.sessionUser?.uid,sessionEmail:window.sessionUser?.email,permissions:window.sessionUser?.permissions,branches:window.sessionUser?.allowedBranches,branch:window.sessionUser?.branch,assignedBranch:window.sessionUser?.assignedBranch,isOwner:window.sessionUser?.isOwner,isFranchisee:window.sessionUser?.isFranchisee,role:window.sessionUser?.role});
@@ -9057,96 +9070,7 @@ window.removeUnavailable = async function(date, emp) {
 };
 
 window.generateSchedule = async function() {
-    if(window.scheduleMemoryReadOnly)return window.ManagerUI.notify('Saved historical versions are read-only. Show the latest current or future month to edit.');
-    const monthVal = document.getElementById("monthSelector").value;
-    if (!monthVal) return Swal.fire('Missing Data', 'Please select a month first.', 'warning');
-    
-    [currentYear, currentMonth] = monthVal.split('-').map(Number);
-    const daysInMonth = new Date(currentYear, currentMonth, 0).getDate();
-    
-    let activeTabBtn = document.querySelector('.tab-container .tab-btn.active');
-    let targetBranch = 'Cabantian'; // Safe fallback
-    if (activeTabBtn) {
-        targetBranch = activeTabBtn.innerText.replace(' Schedule', '').trim();
-    }
-
-    const confirm = await Swal.fire({
-        title: `Reshuffle ${targetBranch}?`,
-        html: `You are about to Auto-Generate the entire month's schedule for <b>${targetBranch}</b>.<br><br><span style="color:#dc2626; font-weight:bold;">Warning: This will overwrite any manual swaps, leaves, or changes you made for this branch this month!</span>`,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc2626',
-        cancelButtonColor: '#64748b',
-        confirmButtonText: 'Yes, Reshuffle It!',
-        customClass: { popup: 'rounded-2xl shadow-xl' }
-    });
-
-    if (!confirm.isConfirmed) return;
-
-    Swal.fire({title: 'Generating...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-    
-    if (Object.keys(currentSchedule).length === 0) {
-        for (let day = 1; day <= daysInMonth; day++) {
-            currentSchedule[day] = {};
-            for (const b in branchConfig) {
-                currentSchedule[day][b] = { scheduled: {}, rest: [], unavailable: [], swaps: {} };
-            }
-        }
-    }
-    
-    for (let day = 1; day <= daysInMonth; day++) {
-        const dStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const dOfWeek = new Date(currentYear, currentMonth - 1, day).getDay();
-        
-        currentSchedule[day] ||= {};
-        if (!currentSchedule[day][targetBranch]) {
-            currentSchedule[day][targetBranch] = { scheduled: {}, rest: [], unavailable: [], swaps: {} };
-        }
-
-        // 🔥 CLEAR OLD SWAP TRACKERS ON RESHUFFLE!
-        currentSchedule[day][targetBranch].swaps = {};
-
-        let pool = employees.filter(e => e.branch === targetBranch).map(e => e.name);
-        let available = [];
-        
-        currentSchedule[day][targetBranch].unavailable = (currentSchedule[day][targetBranch].unavailable||[]).filter(row=>row.leaveRequestId&&row.staffId);
-        
-        pool.forEach(name => {
-            const unavailable=scheduleUnavailable(unavailability[dStr],name,employees);
-            if (unavailable) {
-                const row=leaveUnavailable(name,unavailable);
-                if(!currentSchedule[day][targetBranch].unavailable.some(saved=>row.leaveRequestId?saved.leaveRequestId===row.leaveRequestId&&saved.staffId===row.staffId:saved.name===name))currentSchedule[day][targetBranch].unavailable.push(row);
-            } else {
-                available.push(name);
-            }
-        });
-        
-        let shuffled = available.sort(() => 0.5 - Math.random());
-        
-        currentSchedule[day][targetBranch].scheduled = {};
-        
-        if (branchConfig[targetBranch]) {
-            branchConfig[targetBranch].filter(s => s.active).forEach(shift => {
-                if (!shift.days.includes(dOfWeek)) {
-                    currentSchedule[day][targetBranch].scheduled[shift.id] = "N/A";
-                } else {
-                    currentSchedule[day][targetBranch].scheduled[shift.id] = shuffled.length > 0 ? shuffled.pop() : "UNFILLED";
-                }
-            });
-        }
-        
-        currentSchedule[day][targetBranch].rest = shuffled;
-    }
-    
-    window.renderTables(); 
-    if (await window.saveToCloud() === false) return Swal.fire("Schedule not saved", "Reload the selected month and try again. Your existing saved versions remain available.", "error");
-    
-    Swal.fire({
-        title: `Reshuffled ${targetBranch}!`, 
-        text: `The new schedule for ${targetBranch} has been generated and saved.`,
-        icon: 'success', 
-        customClass: { popup: 'rounded-2xl' }
-    });
+    return window.openMonthlySchedule();
 };
 
 // ==========================================
@@ -9508,7 +9432,10 @@ window.renderTables = function() {
                 }
 
                 if (val === "N/A" || !val) {
-                    tableHTML += `<td style="background:#f8fafc; color:#94a3b8; text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;">-</td>`;
+                    const onWeekday=Array.isArray(s.days)&&s.days.includes(new Date(fullDateStr+'T12:00:00Z').getUTCDay());
+                    const today=new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Manila'});
+                    const canPrepare=onWeekday&&!window.scheduleMemoryReadOnly&&fullDateStr>=today&&(!effectiveFrom||fullDateStr>=effectiveFrom);
+                    tableHTML += canPrepare?`<td style="text-align:center;padding:6px;"><span class="empty-shift" onclick="window.openMonthlySchedule()">Prepare roster</span></td>`:`<td style="background:#f8fafc;color:#94a3b8;text-align:center;padding:6px;">${onWeekday?'Not assigned':'No shift this weekday'}</td>`;
                 }
                 else if (val === "UNFILLED") {
                     tableHTML += `<td style="text-align: center; border-left: 1px solid #e2e8f0; padding: 6px;"><span class="empty-shift" onclick="window.openSwapModal(${day}, '${branch}', '${s.id}')">Needs Staff</span>${swapBadge}</td>`;
