@@ -176,7 +176,7 @@ test('consolidated legacy collections preserve the original GET LIST create upda
  const flat=[
   ['global_addons','P','O','O','O'],['bom','P','O','O','O'],['branches','P','P','P','P'],['menu','P','O','P','O'],
   ['stock_logs','P','P','P','O'],['manager_alerts','P','P','P','H'],['sop_logs','P','P','P','H'],['shift_swaps','P','P','P','H'],
-  ['shifts','P','P','P','O'],['expenses','P','P','P','H'],['remittances','P','P','P','O'],['account_logs','P','P','P','H'],
+  ['shifts','P','P','P','O'],['expenses','P','P','P','H'],['account_logs','P','P','P','H'],
   ['cash_accounts','P','P','P','H'],['inventory','P','P','P','O'],['stock_counts','P','P','P','O'],['dispatch_logs','P','P','P','H'],
   ['parked_orders','P','P','P','P'],['pos_devices','P','P','P','H'],['staff_requests','P','P','P','H'],
   ['staff_ledger','P','H','H','H'],['staff_bonuses','P','H','H','H'],['budgets','H','H','H','H'],['equipment_assets','H','H','H','H'],
@@ -184,7 +184,11 @@ test('consolidated legacy collections preserve the original GET LIST create upda
   ['hq_restocks','H','H','H','H'],['franchise_ledger','P','P','P','H'],['franchise_comms','P','P','P','H'],['riders','H','H','H','H'],['rider_topups','H','H','H','H']
  ];
  const recursive=['customer_app_categories','suppliers','daily_metrics','archived_months','franchise_accounts','franchise_budgets'];
- assert.equal(flat.length,32);assert.equal(recursive.length,6);
+ // Remittances now have a protected cash-count workflow. They are deliberately
+ // outside the old public-create matrix; the dedicated cash-remittance suite
+ // verifies that workflow and this assertion retains its public-write boundary.
+ await assertFails(setDoc(doc(env.unauthenticatedContext().firestore(),'remittances','compat-public-protected-create'),{fixture:'SAMPLE forbidden legacy remittance',amount:100,status:'Pending'}));
+ assert.equal(flat.length,31);assert.equal(recursive.length,6);
  const targets=flat.map(([name,...policy])=>({path:name,policy}));
  for(const name of recursive)for(const path of [name,name+'/compat-parent/compat-children'])targets.push({path,policy:['H','H','H','H']});
  // All of these paths were outside every preceding named grant. A flat legacy
@@ -198,5 +202,5 @@ test('consolidated legacy collections preserve the original GET LIST create upda
   const reference=doc(actor.db,target.path,'compat-'+actor.id+'-'+method),operation=method==='get'?()=>getDocFromServer(reference):method==='list'?()=>getDocsFromServer(collection(actor.db,target.path)):method==='create'?()=>setDoc(reference,{fixture:'SAMPLE new legacy row'}):method==='update'?()=>updateDoc(reference,{compatibilityUpdate:true}):()=>deleteDoc(reference);
   try{if(allowed)await assertSucceeds(operation());else await assertFails(operation());}catch(error){error.message=target.path+' · '+actor.id+' · '+method+' · expected '+(allowed?'allowed':'denied')+': '+error.message;throw error;}operations++;
  }
- assert.equal(operations,735);
+ assert.equal(operations,720);
 });
