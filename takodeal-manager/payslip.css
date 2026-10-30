@@ -1,4 +1,11 @@
 /* Keep all five attendance columns visible in the modal and its exported clone. */
+#payslipModal>div{min-width:0;overflow:hidden;border-radius:12px}
+#payslipModal .payslip-toolbar{flex-wrap:wrap;gap:12px;flex-shrink:0}
+#payslipModal .payslip-toolbar h2{flex:1 1 100%;min-width:0;overflow-wrap:normal;word-break:normal}
+#payslipModal .payslip-toolbar-actions{flex:1 1 100%;flex-wrap:wrap;min-width:0}
+#payslipModal .payslip-toolbar-actions button{flex:1 1 100px;min-width:0;white-space:normal;min-height:40px}
+@media(max-width:500px){#payslipModal .payslip-toolbar{padding:12px!important;gap:10px}#payslipModal .payslip-toolbar-actions{gap:8px!important}#payslipModal .payslip-toolbar-actions button{flex-basis:130px}}
+.payslip-review-panel{flex-shrink:0;padding:16px 20px;background:#fff6df;color:#694d1d;border-bottom:1px solid #e4cc94;font:13px/1.5 Arial,sans-serif;max-height:32vh;overflow-y:auto}.payslip-review-panel[hidden]{display:none}.payslip-review-panel p{margin:7px 0}.payslip-review-reasons{white-space:pre-line;font-weight:600}.payslip-review-panel button,.ps-correction-button{padding:9px 12px;border:1px solid #b8d0be;border-radius:8px;background:#17604c;color:#fff;font:700 12px Arial,sans-serif;cursor:pointer}.ps-correction-button{margin-top:7px;background:#f0f6ed;color:#17604c;white-space:normal}.payslip-review-panel button:focus-visible,.ps-correction-button:focus-visible{outline:3px solid #d5b36a;outline-offset:2px}
 #printablePayslip .payslip-attendance { width:100%!important; min-width:0!important; max-width:100%; table-layout:fixed; font-variant-numeric:tabular-nums; }
 #printablePayslip .payslip-attendance :is(th,td) { white-space:normal!important; overflow-wrap:anywhere; padding:7px 3px!important; line-height:1.35; }
 #printablePayslip .payslip-attendance th { font-size:10px!important; letter-spacing:0; }

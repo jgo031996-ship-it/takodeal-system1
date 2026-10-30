@@ -77,14 +77,17 @@ export function checkSavedPayslipPayment(api,d,{data=api.currentPayslipData,butt
 }
 
 const imageQueues=new WeakMap();
-export function syncPayslipImageButton(api,d){const button=d.getElementById('btnDownloadPayslip');if(button){const pending=imageQueues.get(api)?.active.has(api.currentPayslipData);button.disabled=!!pending;button.innerText=pending?'Preparing payslip image…':'⬇️ Download Image';}}
+const heldUnpaid=(api,data)=>!!data&&!data.isPaid&&!api.paidPayrollSnapshots?.has(data)&&!!(data.attendanceReviewRequired||data.salaryReviewRequired);
+const heldExportError=()=>Object.assign(Error('This payroll is a review draft. Choose Review affected records, resolve its checks and generate a fresh payroll list before downloading a payslip.'),{code:'payroll-review-required'});
+export function syncPayslipImageButton(api,d){const button=d.getElementById('btnDownloadPayslip');if(button){const pending=imageQueues.get(api)?.active.has(api.currentPayslipData),held=heldUnpaid(api,api.currentPayslipData);button.disabled=!!pending||held;button.innerText=pending?'Preparing payslip image…':held?'Review before download':'⬇️ Download Image';}}
 const formStamp=node=>[...node.querySelectorAll('input')].map(input=>[input.id,input.value]).map(value=>JSON.stringify(value)).join('|');
 export function exportPayslipImage(api,d,{load=ensureManagerLibrary,capture}={}){
     let actor;try{actor=payrollActorKey(api);}catch(error){return Promise.reject(error);}
     const data=api.currentPayslipData,original=d.getElementById('printablePayslip');
     if(!data||!original)return Promise.reject(Error('Open a payslip before downloading its image.'));
+    if(heldUnpaid(api,data))return Promise.reject(heldExportError());
     if(!allowed(api,data.branch))return Promise.reject(Error('This payslip is outside your assigned branches.'));
-    const guard=()=>{if(payrollActorKey(api)!==actor)throw Error('The payroll account changed. Download was stopped.');};
+    const guard=()=>{if(payrollActorKey(api)!==actor)throw Error('The payroll account changed. Download was stopped.');if(heldUnpaid(api,data))throw heldExportError();};
     let state=imageQueues.get(api);if(!state){state={tail:Promise.resolve(),active:new Map(),count:0};imageQueues.set(api,state);}
     if(state.active.has(data))return state.active.get(data);
     if(state.count>=4)return Promise.reject(Error('Several payslips are being prepared. Wait for their downloads, then try again.'));
@@ -113,7 +116,7 @@ export function exportPayslipImage(api,d,{load=ensureManagerLibrary,capture}={})
             return {filename:link.download,size:blob.size};
         }finally{
             wrapper.remove();if(canvas){canvas.width=0;canvas.height=0;}if(url)api.URL.revokeObjectURL(url);
-            if(api.currentPayslipData===data&&button){button.innerText='⬇️ Download Image';button.disabled=false;}
+            if(api.currentPayslipData===data&&button){const held=heldUnpaid(api,data);button.innerText=held?'Review before download':'⬇️ Download Image';button.disabled=held;}
         }
     };
     const pending=state.tail.catch(()=>{}).then(work).finally(()=>{state.count--;if(state.active.get(data)===pending)state.active.delete(data);});

@@ -8,7 +8,7 @@ export function planPayrollAttendance(records,{resolveName=row=>row.staffName,fr
     const normalize=row=>({...row,payrollStaffName:String(resolveName(row)||row.staffName||'').trim()});
     const rows=records.map(normalize),known=[...rows],includedIds=new Set(rows.map(row=>row.id).filter(Boolean));
     for(const record of referenceRecords)if(record.id&&!includedIds.has(record.id))known.push(normalize(record));
-    const byId=new Map(),groups=new Map(),issues=new Map(),normalized=new Set(),foreignClosures=new Set(),cutoffContext=new Set();
+    const byId=new Map(),groups=new Map(),issues=new Map(),issueRows=new Map(),normalized=new Set(),foreignClosures=new Set(),cutoffContext=new Set();
     const available=row=>!row.deleted&&!['Voided','Cancelled'].includes(row.status);
     const samePerson=(a,b)=>a.staffId&&b.staffId?a.staffId===b.staffId:String(a.staffName||'').trim().toLowerCase()===String(b.staffName||'').trim().toLowerCase();
     for(const row of known)if(row.id){if(!byId.has(row.id))byId.set(row.id,[]);byId.get(row.id).push(row);}
@@ -16,12 +16,12 @@ export function planPayrollAttendance(records,{resolveName=row=>row.staffName,fr
         if(!groups.has(row.payrollStaffName))groups.set(row.payrollStaffName,[]);
         groups.get(row.payrollStaffName).push(row);
     }
-    const hold=(row,reason)=>{const name=row?.payrollStaffName;if(!name||!groups.has(name))return;if(!issues.has(name))issues.set(name,new Set());issues.get(name).add(reason);};
+    const hold=(row,reason)=>{const name=row?.payrollStaffName;if(!name||!groups.has(name))return;if(!issues.has(name))issues.set(name,new Set());issues.get(name).add(reason);if(!issueRows.has(name))issueRows.set(name,new Map());const rows=issueRows.get(name);if(!rows.has(row))rows.set(row,new Set());rows.get(row).add(reason);};
     const frozenKeys=new Set([...frozenNames].map(String));
     const protectedNames=new Set([...frozenKeys].map(name=>name.trim().toLowerCase()));
     for(const group of groups.values()){
-        if(new Set(group.filter(available).map(row=>row.staffId).filter(Boolean)).size>1)hold(group[0],'This payroll name maps to multiple employee IDs; HR must separate the records.');
-        if(!frozenKeys.has(group[0].payrollStaffName) && group.some(row=>protectedNames.has(String(row.staffName||'').trim().toLowerCase())))hold(group[0],'A saved payslip exists under the original name; HR must confirm its employee identity before another preview is paid.');
+        if(new Set(group.filter(available).map(row=>row.staffId).filter(Boolean)).size>1)for(const row of group.filter(available))hold(row,'This payroll name maps to multiple employee IDs; HR must separate the records.');
+        if(!frozenKeys.has(group[0].payrollStaffName))for(const row of group.filter(row=>protectedNames.has(String(row.staffName||'').trim().toLowerCase())))hold(row,'A saved payslip exists under the original name; HR must confirm its employee identity before another preview is paid.');
     }
     const linked=rows.filter(row=>row.timeInLogId&&available(row)),counts=new Map();
     for(const row of known.filter(row=>row.timeInLogId&&available(row)))counts.set(row.timeInLogId,(counts.get(row.timeInLogId)||0)+1);
@@ -90,6 +90,7 @@ export function planPayrollAttendance(records,{resolveName=row=>row.staffName,fr
     }
     const reviews=[...issues].map(([name,reasons])=>{
         const group=groups.get(name)||[],ids=new Set(group.filter(available).map(row=>row.staffId).filter(Boolean)),staffId=ids.size===1?[...ids][0]:'';
+        const issueRecords=[...(issueRows.get(name)||[])].map(([row,rowReasons])=>({id:row.id,staffId:row.staffId,staffName:row.staffName,branch:row.branch,type:row.type,timestamp:row.timestamp,timeInLogId:row.timeInLogId,reason:[...rowReasons].join(' ')}));
         // Read-only evidence for the review screen, never payable output. Do
         // not turn an ambiguous employee identity into a sum of their hours.
         const recordedPairs=ids.size>1?[]:linkedAttendanceHistory(group,staffId,name).filter(pair=>{
@@ -97,7 +98,7 @@ export function planPayrollAttendance(records,{resolveName=row=>row.staffName,fr
             const start=attendanceMillis(pair.in.timestamp),finish=attendanceMillis(pair.out.timestamp),hours=(finish-start)/3600000;
             return Number.isFinite(hours)&&hours>0&&hours<=18&&(!bounded||start<=to&&finish>=from);
         }).map(pair=>({timeIn:pair.in.timestamp,timeOut:pair.out.timestamp,branch:pair.in.branch,hours:(attendanceMillis(pair.out.timestamp)-attendanceMillis(pair.in.timestamp))/3600000,attendanceLogIds:[pair.in.id,pair.out.id].filter(Boolean)}));
-        return {name,staffId,reason:[...reasons].join(' '),recordIds:group.map(row=>row.id).filter(Boolean),records:group,recordedPairs,recordedHours:ids.size>1?null:recordedPairs.reduce((sum,pair)=>sum+pair.hours,0)};
+        return {name,staffId,reason:[...reasons].join(' '),recordIds:[...new Set(issueRecords.map(row=>row.id).filter(Boolean))],issueRecords,records:group,recordedPairs,recordedHours:ids.size>1?null:recordedPairs.reduce((sum,pair)=>sum+pair.hours,0)};
     });
     const heldNames=new Set(reviews.map(review=>review.name));
     const logs=ordered.filter(row=>!heldNames.has(row.payrollStaffName) && !foreignClosures.has(row) && !cutoffContext.has(row) && !(row.timeInLogId&&!available(row))).map(row=>normalized.has(row)?{...row,type:attendanceKind(row)}:row);

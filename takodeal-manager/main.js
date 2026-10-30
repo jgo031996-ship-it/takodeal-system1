@@ -60,6 +60,16 @@ import {attendanceMillis} from './attendance-reconcile.js';
 import {loadStaffDirectory,staffDirectoryActorKey} from './staff-directory-reader.js';
 import {installPaymentReviewScanner} from './payment-review-scanner.js';
 import {installHRReviewCenter,heldPayrollReviewHTML} from './hr-review-ui.js';
+import {installOwnerTimeOutCorrectionUI} from './owner-time-out-correction-ui.js';
+window.openOwnerTimeOutCorrection = context => (window.ownerTimeOutCorrectionUI ||= installOwnerTimeOutCorrectionUI(window,document)).open(context);
+window.refreshPayrollAfterAttendanceCorrection = async function() {
+ window.invalidateCache?.('attendance_logs');
+ window.getPayrollPreviewGuard?.().invalidate?.('Actual Time Out saved. Refreshing the selected unpaid payroll cutoff.');
+ if(!canOpenWorkspacePage(window.sessionUser,'payroll'))return;
+ await window.loadAttendanceLogs?.();
+ const from=document.getElementById('payrollStart')?.value,to=document.getElementById('payrollEnd')?.value;
+ if(/^\d{4}-\d{2}-\d{2}$/.test(from||'')&&/^\d{4}-\d{2}-\d{2}$/.test(to||'')&&from<=to){await window.generateAutoPayslips?.();window.getPayrollPreviewGuard().requireReady();}
+};
 window.openHRReviewCenter = context => {window.hrReviewCenter ||= installHRReviewCenter(window,document);return window.hrReviewCenter.open(context);};
 window.openAttendanceRecovery = context => window.openHRReviewCenter(context);
 window.openPayrollFromHR = function(context={}) {
@@ -10400,7 +10410,7 @@ window.loadPayrollGenerator = async function() {
     };
 
     try {
-        const {scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap}=await loadPayrollPreviewInputs(window,{start:startDateRaw,end:endDateRaw,fetchStartDate,fetchEndDate,trueStartDate,assertCurrent:assertPreview});
+        const {scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap,attendanceReferenceRecords=[]}=await loadPayrollPreviewInputs(window,{start:startDateRaw,end:endDateRaw,fetchStartDate,fetchEndDate,trueStartDate,assertCurrent:assertPreview});
         assertPreview();
         const scheduleEvidenceStamp=payrollScheduleStamp(scheduleData,{start:startDateRaw,end:endDateRaw});
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
@@ -10456,7 +10466,7 @@ window.loadPayrollGenerator = async function() {
         const attendanceRecords=[];
         attSnap.forEach(docSnap=>attendanceRecords.push({...docSnap.data(),id:docSnap.id}));
         for(const record of attendanceRecords){const identity=rosterResolver(record);if(identity.status!=='matched'||identity.nameCollision){identityProblems.set(identity.name||record.staffName,identity);if(paidRecords[identity.name||record.staffName])unmatchedBalanceRows.push({name:identity.name||record.staffName,branch:record.branch||'Not confirmed',reason:identity.reason,records:[record]});}}
-        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,frozenNames:Object.keys(paidRecords),cutoffStart:trueStartDate,cutoffEnd:trueEndDate});
+        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,frozenNames:Object.keys(paidRecords),referenceRecords:attendanceReferenceRecords,cutoffStart:trueStartDate,cutoffEnd:trueEndDate});
         payrollPlan.logs.forEach(log => {
             let name = log.payrollStaffName;
             if (!name || paidRecords[name]) return;
@@ -10474,7 +10484,7 @@ window.loadPayrollGenerator = async function() {
                     if (activeShifts[name]) {
                         let missedIn = activeShifts[name].time;
                         if (missedIn >= trueStartDate) {
-                            staffData[name].logs.push({ date: missedIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: missedIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: "MISSED", hrs: "0.00", remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>` });
+                            staffData[name].logs.push({ date: missedIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: missedIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: "MISSED", hrs: "0.00", attendanceLogId:activeShifts[name].attendanceId, branch:activeShifts[name].branch, remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>` });
                         }
                     }
 
@@ -10491,7 +10501,7 @@ window.loadPayrollGenerator = async function() {
                     const lateAmount = late.amount;
 
                     activeShifts[name] = {
-                        attendanceId:log.id,salaryReviewReason:salary.reason,
+                        attendanceId:log.id,branch:log.branch,salaryReviewReason:salary.reason,
                         rateProfile,
                         matchedShift,
                         time: logDate, 
@@ -10623,10 +10633,10 @@ window.loadPayrollGenerator = async function() {
             const name=review.name;
             const row=staffData[name] ||= {branch:staffDict[name]?.branch||review.records[0]?.branch||'Unknown',totalHours:0,shiftsWorked:0,nightShifts:0,nightBonusTotal:0,holidayPayTotal:0,foodDeductions:0,cashAdvances:0,loans:0,ledgerId:null,sss:0,pagibig:0,philhealth:0,lateDeduction:0,logs:[]};
             row.attendanceReviewRequired=true;row.attendanceReviewReasons=[...new Set([...(row.attendanceReviewReasons||[]),review.reason])];
-            row.attendanceLogIds=review.recordIds;row.recordedHours=review.recordedHours;
+            row.attendanceLogIds=review.recordIds;row.attendanceIssues=review.issueRecords||[];row.recordedHours=review.recordedHours;
             for(const pair of review.recordedPairs||[]){const start=new Date(attendanceMillis(pair.timeIn)),finish=new Date(attendanceMillis(pair.timeOut));row.logs.push({date:start.toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric'}),in:start.toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'}),out:finish.toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'}),hrs:pair.hours.toFixed(2),remark:'<span style="color:#886020">Recorded pair · payroll review pending</span>',needsAttendanceReview:true,attendanceLogIds:pair.attendanceLogIds});}
-            const at=review.records.map(log=>attendanceMillis(log.timestamp)).find(Number.isFinite);
-            row.logs.push({date:Number.isFinite(at)?new Date(at).toLocaleDateString('en-PH',{month:'short',day:'numeric'}):'Date unavailable',in:'HR REVIEW',out:'HELD',hrs:'0.00',remark:'<span style="color:#b45309;font-weight:bold">'+escapeHtml(review.reason)+'</span>',lateMins:0,needsAttendanceReview:true,attendanceLogIds:review.recordIds});
+            const at=(review.issueRecords||[]).map(log=>attendanceMillis(log.timestamp)).find(Number.isFinite);
+            row.logs.push({date:Number.isFinite(at)?new Date(at).toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric'}):'Date unavailable',in:'HR REVIEW',out:'HELD',hrs:'0.00',remark:'<span style="color:#b45309;font-weight:bold">'+escapeHtml(review.reason)+'</span>',lateMins:0,needsAttendanceReview:true,attendanceLogIds:review.recordIds});
         }
 
         for (let pendingName in activeShifts) {
@@ -10638,7 +10648,7 @@ window.loadPayrollGenerator = async function() {
                      out: "MISSED", 
                      hrs: "0.00", 
                      remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>`, 
-                     lateMins: activeShifts[pendingName].lateMinutes || 0 
+                     attendanceLogId:activeShifts[pendingName].attendanceId,branch:activeShifts[pendingName].branch,lateMins: activeShifts[pendingName].lateMinutes || 0
                  });
             }
         }
@@ -10764,7 +10774,7 @@ window.loadPayrollGenerator = async function() {
                         straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: salaryPreview.profile, start: startDateRaw, end: endDateRaw,
-                        recordedHours:d.recordedHours!==undefined?d.recordedHours:d.totalHours,attendanceReviewRequired:!!d.attendanceReviewRequired,salaryReviewRequired:!!d.salaryReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],payrollReviewReasons:d.attendanceReviewReasons||[],attendanceLogIds:d.attendanceLogIds||[],
+                        recordedHours:d.recordedHours!==undefined?d.recordedHours:d.totalHours,attendanceReviewRequired:!!d.attendanceReviewRequired,salaryReviewRequired:!!d.salaryReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],payrollReviewReasons:d.attendanceReviewReasons||[],attendanceLogIds:d.attendanceLogIds||[],attendanceIssues:d.attendanceIssues||[],
                         scheduleEvidenceStamp,
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
@@ -10830,6 +10840,20 @@ window.openPayslipModal = async function(staffName) {
     catch(error) { window.ManagerUI?.notify?.(error.message); return; }
 
     window.currentPayslipData = data;
+    const paidView=!!(data.isPaid||window.paidPayrollSnapshots?.has(data));
+    const heldView=!paidView&&!!(data.attendanceReviewRequired||data.salaryReviewRequired);
+    const reviewReasons=Array.isArray(data.payrollReviewReasons)&&data.payrollReviewReasons.length?data.payrollReviewReasons:Array.isArray(data.attendanceReviewReasons)?data.attendanceReviewReasons:[];
+    const reviewContext=JSON.parse(JSON.stringify({staffId:data.staffId||data.profile?.staffId||data.profile?.id,staffName:data.name,branch:data.branch,from:data.start,to:data.end,
+        payrollReviewReasons:reviewReasons,attendanceLogId:data.attendanceLogIds?.[0],attendanceLogIds:data.attendanceLogIds||[],attendanceIssues:data.attendanceIssues||[],recordedHours:Object.hasOwn(data,'recordedHours')?data.recordedHours:data.hours}));
+    const reviewPanel=document.getElementById('psReviewPanel');if(reviewPanel)reviewPanel.hidden=!heldView;
+    const reasonsNode=document.getElementById('psReviewReasons');if(reasonsNode)reasonsNode.textContent=reviewReasons.filter(reason=>typeof reason==='string'&&reason.trim()).join('\n')||'The saved payroll needs review before its earnings can be confirmed. Open the affected records for the exact checks.';
+    const hoursNode=document.getElementById('psReviewHours');if(hoursNode)hoursNode.textContent=typeof reviewContext.recordedHours==='number'&&Number.isFinite(reviewContext.recordedHours)?reviewContext.recordedHours.toFixed(2)+' recorded paired hours remain on file. Payable earnings are not confirmed.':'Recorded attendance remains on file. Payable earnings are not confirmed.';
+    const reviewButton=document.getElementById('btnReviewPayslipRecords');if(reviewButton){reviewButton.hidden=!heldView;reviewButton.disabled=false;reviewButton.onclick=()=>{
+        try{window.requirePayrollPreview(data);if(window.currentPayslipData!==data||data.isPaid||window.paidPayrollSnapshots?.has(data))throw Error('The selected payroll changed. Reopen its current details.');
+            if(typeof window.openAttendanceRecovery!=='function')throw Error('Reload the Owner app to open the affected records.');
+            document.getElementById('payslipModal').style.display='none';return window.openAttendanceRecovery(reviewContext);
+        }catch(error){window.ManagerUI?.notify?.(error.message);}
+    };}
     const checkButton=document.getElementById('btnCheckSavedPayslip');if(checkButton){checkButton.disabled=false;checkButton.innerText='Check saved payment';}
     
     let finalizeBtn = document.getElementById('btnFinalizePayslip');
@@ -10839,8 +10863,8 @@ window.openPayslipModal = async function(staffName) {
             finalizeBtn.disabled = true;
             finalizeBtn.style.background = "#16a34a"; 
             finalizeBtn.style.cursor = "not-allowed";
-        } else if (data.attendanceReviewRequired) {
-            finalizeBtn.innerText = 'Attendance review required';
+        } else if (heldView) {
+            finalizeBtn.innerText = 'Payroll review required';
             finalizeBtn.disabled = true;
             finalizeBtn.style.background = '#b45309';
             finalizeBtn.style.cursor = 'not-allowed';
@@ -10865,9 +10889,11 @@ window.openPayslipModal = async function(staffName) {
     safeSet('psEnd', data.end || "");
     
     let safeBasicPay = parseFloat(data.basicPay) || 0;
-    safeSet('psBasicPay', data.salaryReviewRequired&&!data.isPaid&&!window.paidPayrollSnapshots?.has(data)?'Awaiting rate review':safeBasicPay.toLocaleString(undefined, {minimumFractionDigits: 2}));
+    safeSet('psBasicPay', heldView?(data.salaryReviewRequired?'Awaiting rate review':'Review pending'):safeBasicPay.toLocaleString(undefined, {minimumFractionDigits: 2}));
+    safeSet('psDocumentTitle',heldView?'Payroll review draft':'Digital Payslip Generator');
+    safeSet('psDocumentState',heldView?'REVIEW DRAFT · Pay not yet confirmed':'Payslip');
     
-    safeSet('psDaysWorked', data.shiftsWorked || 0);
+    safeSet('psDaysWorked', heldView?'review pending':data.shiftsWorked || 0);
     safeSet('psDateHired', (data.profile && data.profile.dateHired) ? data.profile.dateHired : "---");
     
     let today = new Date();
@@ -10923,7 +10949,7 @@ window.openPayslipModal = async function(staffName) {
 
     let attHtml = '';
     if (data.logs && data.logs.length > 0) {
-        data.logs.forEach(log => {
+        data.logs.forEach((log,logIndex) => {
             // 🔥 THE FIX: Color Sync Engine for In/Out Times
             let inTimeHtml = log.in || '';
             let inColor = '#16a34a'; // Default Green
@@ -10942,7 +10968,7 @@ window.openPayslipModal = async function(staffName) {
                 <td style="padding: 8px 4px; font-weight: bold; color: ${inColor}; text-align: center; vertical-align: middle; word-wrap: break-word;">${inTimeHtml}</td>
                 <td style="padding: 8px 4px; font-weight: bold; color: ${outColor}; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.out || ''}</td>
                 <td style="padding: 8px 4px; font-weight: bold; text-align: center; vertical-align: middle;">${log.hrs || 0}h</td>
-                <td style="padding: 8px 4px; font-size:11px; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.remark || ''}${log.expectedStartAt && log.expectedEndAt ? '<br><span style="color:#557061">Scheduled: '+new Date(log.expectedStartAt).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'})+' → '+new Date(log.expectedEndAt).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'})+'</span>' : ''}</td>
+                <td style="padding: 8px 4px; font-size:11px; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.remark || ''}${log.expectedStartAt && log.expectedEndAt ? '<br><span style="color:#557061">Scheduled: '+new Date(log.expectedStartAt).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'})+' → '+new Date(log.expectedEndAt).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'})+'</span>' : ''}${!paidView&&log.out==='MISSED'&&log.attendanceLogId?'<br><button type="button" class="ps-correction-button" data-payslip-missing-index="'+logIndex+'">Record actual Time Out</button>':''}</td>
             </tr>`;
         });
     } else {
@@ -10951,6 +10977,12 @@ window.openPayslipModal = async function(staffName) {
     
     let attBody = document.getElementById('psAttendanceBody');
     if (attBody) attBody.innerHTML = attHtml;
+    attBody?.querySelectorAll?.('[data-payslip-missing-index]').forEach(button=>{const log=data.logs[Number(button.dataset.payslipMissingIndex)];button.onclick=()=>{
+        try{window.requirePayrollPreview(data);if(window.currentPayslipData!==data||data.isPaid||window.paidPayrollSnapshots?.has(data))throw Error('The selected payroll changed. Reopen its current records.');
+            if(typeof window.openOwnerTimeOutCorrection!=='function')throw Error('Reload the Owner app to open the actual Time Out correction.');
+            document.getElementById('payslipModal').style.display='none';return window.openOwnerTimeOutCorrection({attendanceLogId:log.attendanceLogId,staffId:data.staffId||data.profile?.staffId||data.profile?.id,staffName:data.name,branch:log.branch||data.branch,cutoffStart:data.start,cutoffEnd:data.end});
+        }catch(error){window.ManagerUI?.notify?.(error.message);}
+    };});
 
     if (typeof window.recalcPayslip === 'function') window.recalcPayslip();
     
@@ -10998,8 +11030,8 @@ window.recalcPayslip = function() {
     safeSetText('psGross', gross.toLocaleString(undefined, {minimumFractionDigits: 2}));
     safeSetText('psTotalDeduct', deductions.toLocaleString(undefined, {minimumFractionDigits: 2}));
     safeSetText('psNetPay', net.toLocaleString(undefined, {minimumFractionDigits: 2}));
-    if(window.currentPayslipData?.salaryReviewRequired&&!window.currentPayslipData.isPaid&&!window.paidPayrollSnapshots?.has(window.currentPayslipData)){
-        safeSetText('psGross','Awaiting rate review');safeSetText('psNetPay','Awaiting rate review');
+    if((paidSnapshot?.attendanceReviewRequired||paidSnapshot?.salaryReviewRequired)&&!paidSnapshot.isPaid&&!window.paidPayrollSnapshots?.has(paidSnapshot)){
+        const pendingLabel=paidSnapshot.salaryReviewRequired?'Awaiting rate review':'Review pending';safeSetText('psBasicPay',pendingLabel);safeSetText('psGross',pendingLabel);safeSetText('psNetPay',pendingLabel);safeSetText('psDaysWorked','review pending');
     }
 };
 
@@ -11071,6 +11103,7 @@ window.finalizePayslip = async function() {
         window.payrollPaymentPending=false;
         if(btn&&owns()){
             if(data.isPaid){btn.innerText='✅ Paid & Done!';btn.disabled=true;btn.style.background='#16a34a';}
+            else if(data.attendanceReviewRequired||data.salaryReviewRequired){btn.innerText='Payroll review required';btn.disabled=true;}
             else {try{window.requirePayrollPreview(data);btn.innerText='✅ Mark Paid & Auto-Deduct';btn.disabled=false;}catch{btn.innerText='Regenerate payroll list';btn.disabled=true;}}
         }
     }
@@ -11080,7 +11113,7 @@ window.finalizePayslip = async function() {
 // 📸 PAYSLIP IMAGE DOWNLOADER (SCROLL-BAR FIX)
 // ==========================================
 window.downloadPayslipImage = function() {
-    return exportPayslipImage(window,document).catch(error=>{console.error(error);window.ManagerUI.notify('The payslip image could not be downloaded. Any confirmed payment remains saved; use Download Image to try again.');return null;});
+    return exportPayslipImage(window,document).catch(error=>{console.error(error);window.ManagerUI.notify(error.code==='payroll-review-required'?error.message:'The payslip image could not be downloaded. Any confirmed payment remains saved; use Download Image to try again.');return null;});
 };
 
 // ==========================================
@@ -11511,7 +11544,7 @@ window.generateAutoPayslips = async function() {
     };
 
     try {
-        const {scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap}=await loadPayrollPreviewInputs(window,{start:startInput,end:endInput,fetchStartDate:trueStartDate,fetchEndDate,trueStartDate,assertCurrent:assertPreview});
+        const {scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap,attendanceReferenceRecords=[]}=await loadPayrollPreviewInputs(window,{start:startInput,end:endInput,fetchStartDate:trueStartDate,fetchEndDate,trueStartDate,assertCurrent:assertPreview});
         assertPreview();
         const scheduleEvidenceStamp=payrollScheduleStamp(scheduleData,{start:startInput,end:endInput});
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
@@ -11553,7 +11586,7 @@ window.generateAutoPayslips = async function() {
         const attendanceRecords=[];
         attSnap.forEach(docSnap=>attendanceRecords.push({...docSnap.data(),id:docSnap.id}));
         for(const record of attendanceRecords){const identity=rosterResolver(record);if(identity.status!=='matched'||identity.nameCollision){identityProblems.set(identity.name||record.staffName,identity);if(paidRecords[identity.name||record.staffName])unmatchedBalanceRows.push({name:identity.name||record.staffName,branch:record.branch||'Not confirmed',reason:identity.reason,records:[record]});}}
-        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,frozenNames:Object.keys(paidRecords),cutoffStart:trueStartDate,cutoffEnd:trueEndDate});
+        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,frozenNames:Object.keys(paidRecords),referenceRecords:attendanceReferenceRecords,cutoffStart:trueStartDate,cutoffEnd:trueEndDate});
         payrollPlan.logs.forEach(log => {
             let rawName = log.staffName;
             if (!rawName) return;
@@ -11573,7 +11606,7 @@ window.generateAutoPayslips = async function() {
                 if (log.timestamp.toDate() <= trueEndDate) {
                     if (activeShifts[name]) {
                         let missedIn = activeShifts[name].time;
-                        staffData[name].logs.push({ date: missedIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: missedIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: "MISSED", hrs: "0.00", remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>` });
+                        staffData[name].logs.push({ date: missedIn.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }), in: missedIn.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), out: "MISSED", hrs: "0.00", attendanceLogId:activeShifts[name].attendanceId, branch:activeShifts[name].branch, remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>` });
                     }
 
                     let logDate = log.timestamp.toDate();
@@ -11589,7 +11622,7 @@ window.generateAutoPayslips = async function() {
                     const lateAmount = late.amount;
 
                     activeShifts[name] = {
-                        attendanceId:log.id,salaryReviewReason:salary.reason,
+                        attendanceId:log.id,branch:log.branch,salaryReviewReason:salary.reason,
                         matchedShift,
                         time: logDate, 
                         rateProfile,
@@ -11715,10 +11748,10 @@ window.generateAutoPayslips = async function() {
             const name=review.name;
             const row=staffData[name] ||= {branch:staffDict[name]?.branch||review.records[0]?.branch||'Unknown',totalHours:0,shiftsWorked:0,nightShifts:0,nightBonusTotal:0,holidayPayTotal:0,foodDeductions:0,cashAdvances:0,loans:0,ledgerId:null,sss:0,pagibig:0,philhealth:0,lateDeduction:0,logs:[]};
             row.attendanceReviewRequired=true;row.attendanceReviewReasons=[...new Set([...(row.attendanceReviewReasons||[]),review.reason])];
-            row.attendanceLogIds=review.recordIds;row.recordedHours=review.recordedHours;
+            row.attendanceLogIds=review.recordIds;row.attendanceIssues=review.issueRecords||[];row.recordedHours=review.recordedHours;
             for(const pair of review.recordedPairs||[]){const start=new Date(attendanceMillis(pair.timeIn)),finish=new Date(attendanceMillis(pair.timeOut));row.logs.push({date:start.toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric'}),in:start.toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'}),out:finish.toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'}),hrs:pair.hours.toFixed(2),remark:'<span style="color:#886020">Recorded pair · payroll review pending</span>',needsAttendanceReview:true,attendanceLogIds:pair.attendanceLogIds});}
-            const at=review.records.map(log=>attendanceMillis(log.timestamp)).find(Number.isFinite);
-            row.logs.push({date:Number.isFinite(at)?new Date(at).toLocaleDateString('en-PH',{month:'short',day:'numeric'}):'Date unavailable',in:'HR REVIEW',out:'HELD',hrs:'0.00',remark:'<span style="color:#b45309;font-weight:bold">'+escapeHtml(review.reason)+'</span>',lateMins:0,needsAttendanceReview:true,attendanceLogIds:review.recordIds});
+            const at=(review.issueRecords||[]).map(log=>attendanceMillis(log.timestamp)).find(Number.isFinite);
+            row.logs.push({date:Number.isFinite(at)?new Date(at).toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric'}):'Date unavailable',in:'HR REVIEW',out:'HELD',hrs:'0.00',remark:'<span style="color:#b45309;font-weight:bold">'+escapeHtml(review.reason)+'</span>',lateMins:0,needsAttendanceReview:true,attendanceLogIds:review.recordIds});
         }
 
         for (let pendingName in activeShifts) {
@@ -11730,7 +11763,7 @@ window.generateAutoPayslips = async function() {
                      out: "MISSED", 
                      hrs: "0.00", 
                      remark: `<span style="color:#ef4444; font-weight:bold;">Missed Time Out</span>`, 
-                     lateMins: activeShifts[pendingName].lateMinutes || 0 
+                     attendanceLogId:activeShifts[pendingName].attendanceId,branch:activeShifts[pendingName].branch,lateMins: activeShifts[pendingName].lateMinutes || 0
                  });
             }
         }
@@ -11840,7 +11873,7 @@ window.generateAutoPayslips = async function() {
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: salaryPreview.profile, start: startInput, end: endInput,
-                        recordedHours:d.recordedHours!==undefined?d.recordedHours:d.totalHours,attendanceReviewRequired:!!d.attendanceReviewRequired,salaryReviewRequired:!!d.salaryReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],payrollReviewReasons:d.attendanceReviewReasons||[],attendanceLogIds:d.attendanceLogIds||[],
+                        recordedHours:d.recordedHours!==undefined?d.recordedHours:d.totalHours,attendanceReviewRequired:!!d.attendanceReviewRequired,salaryReviewRequired:!!d.salaryReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],payrollReviewReasons:d.attendanceReviewReasons||[],attendanceLogIds:d.attendanceLogIds||[],attendanceIssues:d.attendanceIssues||[],
                         scheduleEvidenceStamp,
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };

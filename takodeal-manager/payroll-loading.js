@@ -1,6 +1,8 @@
 import {readPayrollSnapshot} from './payroll-preview-guard.js';
 import {loadStaffSalaryTimeline,staffProfileForWork,staffRateWorkDate,staffRateForDate,payrollSalaryProfile,dailyStaffRate} from './staff-rate-model.js';
 import {canOpenWorkspacePage,OWNER_EMAIL} from './workspace-access-model.js';
+import {attendanceKind} from './attendance-reconcile.js';
+import {ATTENDANCE_METADATA_FIELDS} from './attendance-metadata-reader.js';
 
 const coordinators=new WeakMap(),references=new WeakMap(),pendingDocuments=new WeakMap(),sessionIds=new WeakMap();let nextSession=0;
 function accountKey(api){const user=api.auth?.currentUser,session=api.sessionUser;if(session&&typeof session==='object'&&!sessionIds.has(session))sessionIds.set(session,++nextSession);return JSON.stringify([user?.uid,user?.email,user?.emailVerified,sessionIds.get(session),session?.uid,session?.email,session?.role,session?.permissions,session?.allowedBranches,session?.branch,session?.isFranchisee,session?.isOwner]);}
@@ -76,7 +78,35 @@ function previewReferences(api,options){
 export async function loadPayrollPreviewInputs(api,options){
  const {start,end,assertCurrent=()=>{},concurrency=7,timeoutMs=25000}=options,guard=readGuard(api,assertCurrent);guard();const refs=previewReferences(api,options),key=JSON.stringify([accountKey(api),'schedule',start,end]);
  const tasks=[()=>readBoundedDocument(api,key,()=>{guard();return api.loadPayrollScheduleHistory(start,end);},{timeoutMs}),...Object.values(refs).map(reference=>()=>{guard();return readPayrollSnapshot(api,reference,{timeoutMs});})];
- const [scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap]=await mapPayrollReads(tasks,{assertCurrent:guard,concurrency});guard();return scopePayrollInputs(api,{scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap});
+ const [scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap]=await mapPayrollReads(tasks,{assertCurrent:guard,concurrency});guard();
+ const input={scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap},scoped=scopePayrollInputs(api,input);
+ const attendanceReferenceRecords=await loadPayrollAttendanceReferences(api,input,scoped,{guard,timeoutMs});guard();
+ return {...scoped,attendanceReferenceRecords};
+}
+
+// A cutoff query can contain a Time Out whose linked Time In is outside its
+// range. Read only that exact source document as validation evidence; never
+// widen the query, infer a shift, or add historical punches to payable rows.
+async function loadPayrollAttendanceReferences(api,input,scoped,{guard,timeoutMs}){
+ const present=new Set(scoped.attSnap.docs.map(row=>row.id)),ids=new Set();
+ scoped.attSnap.forEach(document=>{const row=document.data(),id=row.timeInLogId;
+  if(attendanceKind(row)==='TIME OUT'&&!row.deleted&&!['Voided','Cancelled'].includes(row.status)&&typeof id==='string'&&id&&id.length<=1500&&!id.includes('/')&&id!=='.'&&id!=='..'&&!present.has(id))ids.add(id);
+ });
+ if(!ids.size||typeof api.getDocFromServer!=='function')return [];
+ const actor=accountKey(api),sources=await mapPayrollReads([...ids].map(id=>async()=>{
+  try{
+   const snapshot=await readBoundedDocument(api,JSON.stringify([actor,'attendance-source',id]),()=>{guard();return api.getDocFromServer(api.doc(api.db,'attendance_logs',id));},{timeoutMs});guard();
+   if(!snapshot||snapshot.id!==id||snapshot.metadata?.fromCache||snapshot.metadata?.hasPendingWrites||typeof snapshot.exists!=='function'||!snapshot.exists())return null;
+   const saved=snapshot.data();if(!saved||typeof saved!=='object'||Array.isArray(saved))return null;
+   // Keep photos and unrelated document fields out of the payroll reference
+   // bundle. The server read remains subject to the same current HQ scope.
+   const row=Object.fromEntries(ATTENDANCE_METADATA_FIELDS.filter(field=>Object.hasOwn(saved,field)).map(field=>[field,saved[field]]));
+   return {id,data:()=>row,metadata:snapshot.metadata};
+  }catch{guard();return null;}
+ }),{assertCurrent:guard,concurrency:4});guard();
+ const docs=sources.filter(Boolean),referenceSnapshot={docs,metadata:{fromCache:false,hasPendingWrites:false},forEach:callback=>docs.forEach(callback)};
+ const allowed=scopePayrollInputs(api,{...input,attSnap:referenceSnapshot}).attSnap;
+ return allowed.docs.map(document=>({...document.data(),id:document.id}));
 }
 
 const salaryReviewMessage='Daily wage history could not be confirmed for this employee. Review Staff & Security salary history, then generate this cutoff again. Recorded attendance is retained; payment is held.';
