@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v38-payroll-timeout-repair-20261030';
+const CACHE_NAME = 'takodeal-staff-v39-owner-deductions-20261030';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./attendance-schedule-preview.js');
 SHELL.push('./staff-setup-access.js','./staff-setup.css');
@@ -50,3 +50,5 @@ SHELL.push('./clock-out-schedule.js');
 SHELL.push('./attendance-schedule-reader.js','./attendance-transaction-reader.js');
 
 SHELL.push('./emergency-shift-model.js');
+
+SHELL.push('./owner-deduction-model.js','./staff-lifecycle-model.js','./staff-owner-deductions.js');

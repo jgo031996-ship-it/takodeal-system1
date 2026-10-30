@@ -1,3 +1,4 @@
+import {isOwnerDeduction} from './owner-deduction-model.js';
 import {escapeHtml as esc} from './staff-privacy.js';
 const money=value=>'₱'+Number(value||0).toFixed(2);
 const readDeadline=promise=>{let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('The Inbox connection is slow. Retry when connected.')),20000);})]).finally(()=>clearTimeout(timer));};
@@ -14,7 +15,7 @@ export async function acknowledgeCashShortagePayslip(vault,{recordId,staffId,sig
         if (!snap.exists()) throw Error('The saved payslip is unavailable. Reopen Pay while connected.');
         const row=snap.data(),frozen=row.frozenData;
         if (row.staffId!==staffId || [frozen?.staffId,frozen?.profile?.staffId].some(id=>id && id!==staffId)) throw Error('This payslip belongs to a different employee.');
-        if (frozen?.isPaid!==true || !(Number(frozen.cashShortages)>0 || Array.isArray(frozen.cashShortageRows) && frozen.cashShortageRows.length>0)) throw Error('Confirm this paid cash-shortage payslip with HQ before signing.');
+        if (frozen?.isPaid!==true || !(Number(frozen.ownerDeductions)>0 || Array.isArray(frozen.ownerDeductionRows) && frozen.ownerDeductionRows.length>0 || Number(frozen.cashShortages)>0 || Array.isArray(frozen.cashShortageRows) && frozen.cashShortageRows.length>0)) throw Error('Confirm this paid reviewed-deduction payslip with HQ before signing.');
         if (row.acknowledged===true) return {alreadySaved:true};
         tx.update(ref,{acknowledged:true,acknowledgedAt:sdk.serverTimestamp(),signatureBase64:signature});
         return {alreadySaved:false};
@@ -35,12 +36,20 @@ export async function sendStaffDeductionReply(vault,{noticeId,staffId,message,st
 }
 const cashShortage = row => row.type === 'Cash Shortage';
 export function staffDeductionReplyMessage(row) {
+    if(isOwnerDeduction(row)&&row.status==='Approved')return 'Response sent. Collection is on hold until the Owner reviews your new response.';
+    if(isOwnerDeduction(row)&&row.status==='Paid')return 'Response sent for review. Your saved payslip remains unchanged.';
     if (cashShortage(row) && row.status === 'Approved') return 'Response sent. Collection is on hold until the Owner reviews your new response.';
     if (cashShortage(row) && row.status === 'Paid') return 'Response sent for review. Your saved payslip remains unchanged.';
     return 'Response sent. The Owner can read it in the incident review.';
 }
 const safeMoney = value => money(Number.isFinite(Number(value)) && Number(value) >= 0 ? value : 0);
+export function ownerCustomDeductionNoticeHTML(row,staffId){
+ if(!staffId||row.staffId!==staffId||!isOwnerDeduction(row))return '';
+ const approved=['Approved','Paid'].includes(row.status),closed=['Dismissed','No Charge'].includes(row.status);
+ return '<article class="deduction-notice deduction-shortage"><strong>One-time deduction review · '+esc(row.reasonLabel||row.label||'Owner adjustment')+'</strong><p>'+esc(row.category||'')+(row.incidentDate?' · Incident date: '+esc(row.incidentDate):'')+'</p><p>'+esc(row.details||'')+'</p><p>Evidence / reference: '+esc(row.evidence||'Not recorded')+'</p><p class="deduction-review-state">'+(approved?'Owner-reviewed payroll amount: <strong>'+safeMoney(row.amount)+'</strong> · '+esc(row.status):closed?'Review closed · No payroll deduction.':'Under review · No payroll deduction has been approved.')+'</p>'+(approved?'<dl class="deduction-review-details"><dt>Payroll date</dt><dd>'+esc(row.effectiveDate||'Confirm with Owner')+'</dd><dt>Owner finding</dt><dd>'+esc(row.finding||row.ownerReply||'')+'</dd><dt>Deduction basis</dt><dd>'+esc(row.lawfulBasis||'')+'</dd><dt>Authority / reference</dt><dd>'+esc(row.authorityReference||'')+'</dd></dl>':row.ownerReply?'<p>Owner reply: '+esc(row.ownerReply)+'</p>':'')+'<label>Your response or dispute<textarea data-reply="'+esc(row.id)+'" maxlength="1500" placeholder="Explain what happened or request a correction">'+esc(row.staffReply||'')+'</textarea></label><p class="deduction-response-help">Reading or replying does not authorize a wage deduction. A new response before payment pauses collection until the Owner reviews it again. A reply after payment requests review; your saved payslip stays unchanged.</p><button type="button" data-send-reply="'+esc(row.id)+'">Send response to Owner</button><p data-reply-status="'+esc(row.id)+'" role="status">'+(row.staffReply?'Your response is saved.':'')+'</p></article>';
+}
 export function deductionNoticeHTML(row, staffId) {
+    if(isOwnerDeduction(row))return ownerCustomDeductionNoticeHTML(row,staffId);
     if (!staffId || row.staffId !== staffId) return '';
     const shortage = cashShortage(row), approved = ['Approved','Paid'].includes(row.status);
     const closed = ['Dismissed','No Charge'].includes(row.status);
@@ -55,12 +64,13 @@ export function deductionNoticeHTML(row, staffId) {
     return `<article class="deduction-notice${shortage ? ' deduction-shortage' : ''}"><strong>${shortage ? 'Cash shortage review · ' : ''}${esc(row.sourcePlatform)} · ${esc(row.sourceReceiptId || row.sourceShiftId)}</strong><p>${esc(row.reasonLabel || (shortage ? 'Z-reading cash variance' : ''))}<br>${esc(row.details)}</p>${reported}${payroll}<p>Evidence / reference: ${esc(row.evidence || '')}</p>${decision}${row.ownerReply && !(shortage && approved) ? `<p>Owner reply: ${esc(row.ownerReply)}</p>` : ''}<label>Your response or dispute<textarea data-reply="${esc(row.id)}" maxlength="1500" placeholder="Explain what happened or ask for a correction">${esc(row.staffReply || '')}</textarea></label>${shortage ? '<p class="deduction-response-help">Opening this notice or sending a response does not authorize a salary deduction. You may explain or dispute the reported shortage here. A new response before payment pauses collection until the Owner reviews it again. Replies after payment request review; your saved payslip remains unchanged.</p>' : ''}<button type="button" data-send-reply="${esc(row.id)}">Send response to Owner</button><p data-reply-status="${esc(row.id)}" role="status">${row.staffReply ? 'Your response is saved.' : ''}</p></article>`;
 }
 export function deductionFallbackHTML(row, staffId) {
+    if(isOwnerDeduction(row))return row.staffId===staffId?'<article class="deduction-notice"><strong>One-time custom deduction review</strong><p>Open your private Inbox to read the record, its amount and status, or send a response. Pending reviews do not reduce pay.</p></article>':'';
     if (!staffId || row.staffId !== staffId) return '';
     if (cashShortage(row)) return `<article class="deduction-notice deduction-shortage"><strong>Cash shortage review</strong><p>Open your private Inbox to see the protected review, any approved amount and to respond. A reported shortage alone is not a payroll deduction.</p></article>`;
     return `<article class="deduction-notice"><strong>${esc(row.type || 'Deduction')}</strong><p>${safeMoney(row.amount)} · ${esc(row.status)}</p><p>${esc(row.remarks || '')}</p></article>`;
 }
 export function installDeductionInbox(w=window,{d=document,createClient}={}){
-    let epoch=0,unsubscribe=null,rows=[],clientPromise=null;const id=()=>w.localStorage.getItem('takodeal_staff_id'),fingerprint=row=>JSON.stringify([row.id,row.status,row.amount,row.noticeRevision||0]);
+    let epoch=0,unsubscribe=null,rows=[],clientPromise=null;const id=()=>w.localStorage.getItem('takodeal_staff_id'),fingerprint=row=>JSON.stringify([row.id,row.status,row.amount,row.noticeRevision||row.reviewRevision||0]);
     const client=()=>clientPromise||(clientPromise=Promise.resolve().then(createClient).catch(e=>{clientPromise=null;throw e;}));
     const seenKey=staffId=>'takodeal_deduction_read_'+staffId;const seen=()=>{try{return JSON.parse(w.localStorage.getItem(seenKey(id())))||[];}catch{return [];}};
     const panel=()=>{let node=d.getElementById('deductionInboxPanel');if(!node){node=d.createElement('section');node.id='deductionInboxPanel';d.getElementById('reqInboxList')?.prepend(node);}return node;};

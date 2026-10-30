@@ -1,3 +1,8 @@
+import {installOwnerDeductionHistory} from './owner-deduction-history.js';
+import {installOwnerDeductions} from './owner-deduction-ui.js';
+import {isOwnerDeduction} from './owner-deduction-model.js';
+import {readPayrollOwnerDeductions,ownerDeductionDisplayRows} from './owner-deduction-payroll.js';
+import {renderPayslipOptionalDeductions,renderRecurringPayslipDeductions} from './payslip-optional-deductions.js';
 import {installCashRemittanceReview} from './cash-remittance-review-ui.js';
 import {installDisciplineCases} from './discipline-case-ui.js';
 import {staffLifecycleState,activeStaffProfile} from './staff-lifecycle-model.js';
@@ -16,7 +21,8 @@ import {finalizeOrdinaryPayroll,readPayrollCashShortages} from './payroll-settle
 import {installCashShortageUI,canReviewCashShortage} from './cash-shortage-ui.js';
 import {isCashShortageDeduction} from './cash-shortage-model.js';
 import {shiftCloserSummaryHTML} from './shift-closer-display.js';
-runManagerDomReady(() => {window.cashShortageUI ||= installCashShortageUI(window,document);});
+runManagerDomReady(() => {window.cashShortageUI ||= installCashShortageUI(window,document);installOwnerDeductionHistory(window,document);window.ownerDeductionsUI ||= installOwnerDeductions(window,document);});
+window.openEmployeeOneTimeDeduction = function(){const staffId=document.getElementById('empProfileId')?.value;if(!staffId)return window.ManagerUI.notify('Save or open an existing staff profile first.');return window.ownerDeductionsUI?.openNew(staffId);};
 import {payrollActorKey,loadPayrollAccounts,applyConfirmedPayroll,checkSavedPayslipPayment,exportPayslipImage,syncPayslipImageButton} from './payroll-completion.js';
 import {installManagerTableWrapper} from './manager-table-wrapper.js';
 import {payrollScheduleStamp,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
@@ -10582,15 +10588,19 @@ window.loadPayrollGenerator = async function() {
 
         const cashShortageInputs=deductSnap.docs.map(row=>({...row.data(),id:row.id})).filter(row=>!paidRecords[staffNameById[row.staffId]||row.staffName]);
         const checkedCashShortages=cashShortageInputs.some(row=>row.type==='Cash Shortage'||row.id.startsWith('cash-shortage-'))?await readPayrollCashShortages(window,cashShortageInputs,endDateRaw):new Map();
+        const checkedOwnerDeductions=cashShortageInputs.some(isOwnerDeduction)?await readPayrollOwnerDeductions(window,cashShortageInputs,endDateRaw):new Map();
         previewGuard.assertCurrent(previewToken);
         deductSnap.forEach(docSnap => {
             let deduct = docSnap.data();
             const cashShortage=deduct.type==='Cash Shortage'||docSnap.id.startsWith('cash-shortage-');
+            const ownerDeduction=isOwnerDeduction({...deduct,id:docSnap.id});
+            if(ownerDeduction&&!checkedOwnerDeductions.has(docSnap.id))return;
             if(cashShortage&&!checkedCashShortages.has(docSnap.id))return;
-            let name = deduct.type==='Online Order Refund'||cashShortage ? staffNameById[deduct.staffId] : resolveStaffName(deduct.staffName);
-            if (!name) {if(cashShortage)throw Error('A cash shortage employee is missing from the saved directory. Resolve it before payroll.');return;}
+            let name = deduct.type==='Online Order Refund'||cashShortage||ownerDeduction ? staffNameById[deduct.staffId] : resolveStaffName(deduct.staffName);
+            if (!name) {if(cashShortage||ownerDeduction)throw Error('A protected deduction employee is missing from the saved directory. Resolve it before payroll.');return;}
 
             if(cashShortage){if(staffDict[name]?.staffId!==deduct.staffId||deduct.staffName!==name||staffDict[name]?.branch!==deduct.branch)throw Error('A cash shortage belongs to an ambiguous employee. Resolve the directory before payroll.');}
+            else if(ownerDeduction){if(staffDict[name]?.staffId!==deduct.staffId||deduct.staffName!==name||staffDict[name]?.branch!==deduct.branch)throw Error('A one-time deduction belongs to an ambiguous employee. Review the staff account before payroll.');}
             else if(isPenaltyDeduction(deduct) && deduct.scheduleVersion===1){if(!deductionIsDue(deduct,endDateRaw))return;}
             else {let dDate=deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();if(dDate>trueEndDate)return;}
             const deductionIdentity=rosterResolver(deduct);
@@ -10604,6 +10614,7 @@ window.loadPayrollGenerator = async function() {
             }
             let amt = parseFloat(deduct.amount) || 0;
             if(cashShortage){staffData[name].cashShortages=(staffData[name].cashShortages||0)+checkedCashShortages.get(docSnap.id).amount;(staffData[name].cashShortageRows ||= []).push({id:docSnap.id,amount:checkedCashShortages.get(docSnap.id).amount});}
+            else if(ownerDeduction){const checked=checkedOwnerDeductions.get(docSnap.id);staffData[name].ownerDeductions=(staffData[name].ownerDeductions||0)+checked.amount;(staffData[name].ownerDeductionRows ||= []).push({id:docSnap.id,amount:checked.amount});(staffData[name].ownerDeductionDetails ||= []).push(...ownerDeductionDisplayRows([checked]));}
             else if(deduct.type==='Online Order Refund'){
                 if(staffDict[name]?.staffId!==deduct.staffId || deduct.staffName!==name)throw Error('An online refund belongs to an ambiguous employee name. Resolve the directory before payroll.');
                 staffData[name].onlineRefunds=(staffData[name].onlineRefunds||0)+amt;
@@ -10697,7 +10708,7 @@ window.loadPayrollGenerator = async function() {
                     
                     // (Around line 1928) Update globalPayrollCache to include the perfBonus
                     previewCache[name] = {
-                        name: name, staffId:profile.staffId, cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
+                        name: name, staffId:profile.staffId, ownerDeductions:d.ownerDeductions||0,ownerDeductionRows:d.ownerDeductionRows||[],ownerDeductionDetails:d.ownerDeductionDetails||[],cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: salaryPreview.profile, start: startDateRaw, end: endDateRaw,
@@ -10708,7 +10719,7 @@ window.loadPayrollGenerator = async function() {
                     d = previewCache[name];
                 }
 
-                let totalDeduct = (d.cashShortages || 0) + (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
+                let totalDeduct = (d.customDeductionsTotal || 0) + (d.ownerDeductions || 0) + (d.cashShortages || 0) + (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
                 let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0 && !d.attendanceReviewRequired) masterPayrollTotal += estNet;
@@ -10731,7 +10742,7 @@ window.loadPayrollGenerator = async function() {
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
                         <td style="padding: 12px; font-weight: bold;">${d.attendanceReviewRequired ? heldPayrollReviewHTML(d) : (d.hours ?? d.totalHours ?? 0).toFixed(2)+' hrs'} ${bonusLabel} ${straightLabel} ${holLabel}</td>
-                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.cashShortages ? '<br><span style="font-size:11px;color:#b45309">-₱'+d.cashShortages.toFixed(2)+' (Owner-reviewed cash shortage)</span>' : ''}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
+                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.cashShortages ? '<br><span style="font-size:11px;color:#b45309">-₱'+d.cashShortages.toFixed(2)+' (Owner-reviewed cash shortage)</span>' : ''}${d.ownerDeductions ? '<br><span style="font-size:11px;color:#b45309">-₱'+d.ownerDeductions.toFixed(2)+' (One-time custom deductions)</span>' : ''}${d.customDeductionsTotal ? '<br><span style="font-size:11px;color:#64756d">-₱'+d.customDeductionsTotal.toFixed(2)+' (Recurring deductions)</span>' : ''}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
                 `;
@@ -10847,32 +10858,12 @@ window.openPayslipModal = async function(staffName) {
     safeSet('psAdvance', data.advances || 0);
     safeSet('psLoans', data.loans || 0);
     safeSet('psFoods', data.meals || 0);
-    let onlineRefundBox=document.getElementById('psOnlineRefunds');
-    if(!onlineRefundBox){const box=document.createElement('div');box.style.cssText='padding:10px;border:1px solid #dce6df;border-radius:8px;margin-top:8px;font-size:12px;';box.innerHTML='<span>ONLINE REFUND ORDERS</span><strong id="psOnlineRefunds" style="float:right">0.00</strong><p style="font-size:11px;margin:6px 0 0;color:#64756d">Confirmed charges are included in net pay. Staff can respond through My Inbox.</p>';document.getElementById('psFoods')?.parentElement?.after(box);onlineRefundBox=document.getElementById('psOnlineRefunds');}
-    onlineRefundBox.textContent=Number(data.onlineRefunds||0).toFixed(2);
-    let cashShortageLine=document.getElementById('psCashShortages');
-    if(!cashShortageLine){const box=document.createElement('div');box.style.cssText='padding:10px;border:1px solid #e7dbc8;border-radius:8px;margin-top:8px;font-size:12px;';box.innerHTML='<span>OWNER-REVIEWED CASH SHORTAGE</span><strong id="psCashShortages" style="float:right">0.00</strong><p style="font-size:11px;margin:6px 0 0;color:#64756d">Approved full amounts are included in net pay from their effective date. Linked records are verified again before payment.</p>';document.getElementById('psFoods')?.parentElement?.after(box);cashShortageLine=document.getElementById('psCashShortages');}
-    cashShortageLine.textContent=Number(data.cashShortages||0).toFixed(2);
+    renderPayslipOptionalDeductions(document,data);
     let penaltyLine=document.getElementById('psPenalties');
     if(!penaltyLine){const wrap=document.createElement('div');wrap.style.cssText='padding:8px;font-size:12px;background:#fff8ed;border:1px solid #efdfc6;';wrap.innerHTML='<span>Scheduled penalties for ledger review: ₱</span><strong id="psPenalties">0.00</strong><br><small>Excluded from calculated net pay. Review and record any collection separately.</small>';document.getElementById('psFoods')?.parentElement?.after(wrap);penaltyLine=document.getElementById('psPenalties');}
     safeSet('psPenalties', data.penalties || 0);
     
-    let dynamicArea = document.getElementById('psDynamicDeductionsArea');
-    if (dynamicArea) {
-        let customHtml = '';
-        if (data.profile && data.profile.customDeductions && data.profile.customDeductions.length > 0) {
-            data.profile.customDeductions.forEach((cd, idx) => {
-                let amt = parseFloat(cd.amount) || 0;
-                customHtml += `
-                    <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 8px; font-size: 13px;">
-                        <span>${cd.name}</span> 
-                        <input type="number" id="psCustomDed_${idx}" class="ps-input ps-dynamic-deduction" value="${amt.toFixed(2)}" oninput="window.recalcPayslip()">
-                    </div>
-                `;
-            });
-        }
-        dynamicArea.innerHTML = customHtml;
-    }
+    renderRecurringPayslipDeductions(document,data);
 
     let attHtml = '';
     if (data.logs && data.logs.length > 0) {
@@ -10949,7 +10940,7 @@ window.recalcPayslip = function() {
     });
 
     let gross = basic + overtime + straightBonus + holiday + perfBonus;
-    let deductions = late + sss + phil + pagibig + advance + loans + foods + getVal('psOnlineRefunds') + Number(window.currentPayslipData?.cashShortages||0) + customDeductionsSum;
+    let deductions = late + sss + phil + pagibig + advance + loans + foods + getVal('psOnlineRefunds') + Number(window.currentPayslipData?.cashShortages||0) + Number(window.currentPayslipData?.ownerDeductions||0) + customDeductionsSum;
     let net = gross - deductions;
     const paidSnapshot=window.currentPayslipData;
     if((paidSnapshot?.isPaid||window.paidPayrollSnapshots?.has(paidSnapshot))&&Number.isFinite(Number(paidSnapshot?.finalNetPay)))net=Number(paidSnapshot.finalNetPay);
@@ -10985,7 +10976,7 @@ window.finalizePayslip = async function() {
         window.liveAccounts=accounts;
         const getVal=id=>{const node=document.getElementById(id);const value=node?.tagName==='INPUT'||node?.tagName==='TEXTAREA'?node.value:node?.innerText;return Number.parseFloat(String(value??'').replace(/,/g,''))||0;};
         const capture=()=>{
-            const custom=[...document.querySelectorAll('.ps-dynamic-deduction')].map((input,index)=>({name:data.profile?.customDeductions?.[index]?.name||'Other deduction',amount:Number.parseFloat(input.value)||0}));
+            const custom=[...document.querySelectorAll('.ps-dynamic-deduction')].map((input,index)=>({name:(data.customDeductions??data.profile?.customDeductions)?.[Number(input.dataset?.deductionIndex??index)]?.name||'Other deduction',amount:Number.parseFloat(input.value)||0}));
             return {...data,loans:getVal('psLoans'),advances:getVal('psAdvance'),meals:getVal('psFoods'),lateDeduction:getVal('psLate'),sss:getVal('psSSS'),philhealth:getVal('psPhil'),pagibig:getVal('psPagibig'),straightBonus:getVal('psStraightBonus'),perfBonus:getVal('psPerfBonus'),sourcePerfBonus:data.perfBonus||0,holidayPayTotal:getVal('psHoliday'),basicPay:getVal('psBasicPay'),nightBonus:getVal('psOvertime'),customDeductions:custom,customDeductionsTotal:Math.round(custom.reduce((sum,row)=>sum+row.amount,0)*100)/100,profile:{...data.profile,customDeductions:custom}};
         };
         const snapshot=capture(),finalNetPay=getVal('psNetPay');
@@ -11697,12 +11688,16 @@ window.generateAutoPayslips = async function() {
 
         const cashShortageInputs=deductSnap.docs.map(row=>({...row.data(),id:row.id})).filter(row=>!paidRecords[staffNameById[row.staffId]||row.staffName]);
         const checkedCashShortages=cashShortageInputs.some(row=>row.type==='Cash Shortage'||row.id.startsWith('cash-shortage-'))?await readPayrollCashShortages(window,cashShortageInputs,endInput):new Map();
+        const checkedOwnerDeductions=cashShortageInputs.some(isOwnerDeduction)?await readPayrollOwnerDeductions(window,cashShortageInputs,endInput):new Map();
         previewGuard.assertCurrent(previewToken);
         deductSnap.forEach(docSnap => {
             let deduct = docSnap.data();const cashShortage=deduct.type==='Cash Shortage'||docSnap.id.startsWith('cash-shortage-');
+            const ownerDeduction=isOwnerDeduction({...deduct,id:docSnap.id});
+            if(ownerDeduction&&!checkedOwnerDeductions.has(docSnap.id))return;
             if(cashShortage&&!checkedCashShortages.has(docSnap.id))return;
-            let name = deduct.type==='Online Order Refund'||cashShortage ? staffNameById[deduct.staffId] : deduct.staffName;
+            let name = deduct.type==='Online Order Refund'||cashShortage||ownerDeduction ? staffNameById[deduct.staffId] : deduct.staffName;
             if(cashShortage){if(!name||staffDict[name]?.staffId!==deduct.staffId||deduct.staffName!==name||staffDict[name]?.branch!==deduct.branch)throw Error('A cash shortage belongs to an ambiguous employee. Resolve the directory before payroll.');}
+            else if(ownerDeduction){if(staffDict[name]?.staffId!==deduct.staffId||deduct.staffName!==name||staffDict[name]?.branch!==deduct.branch)throw Error('A one-time deduction belongs to an ambiguous employee. Review the staff account before payroll.');}
             else if(isPenaltyDeduction(deduct) && deduct.scheduleVersion===1){if(!deductionIsDue(deduct,endInput))return;}
             else {let dDate=deduct.dateAdded ? deduct.dateAdded.toDate() : new Date();if(dDate>trueEndDate)return;}
             const deductionIdentity=rosterResolver(deduct);
@@ -11715,6 +11710,7 @@ window.generateAutoPayslips = async function() {
             }
             let amt = parseFloat(deduct.amount) || 0;
             if(cashShortage){staffData[name].cashShortages=(staffData[name].cashShortages||0)+checkedCashShortages.get(docSnap.id).amount;(staffData[name].cashShortageRows ||= []).push({id:docSnap.id,amount:checkedCashShortages.get(docSnap.id).amount});}
+            else if(ownerDeduction){const checked=checkedOwnerDeductions.get(docSnap.id);staffData[name].ownerDeductions=(staffData[name].ownerDeductions||0)+checked.amount;(staffData[name].ownerDeductionRows ||= []).push({id:docSnap.id,amount:checked.amount});(staffData[name].ownerDeductionDetails ||= []).push(...ownerDeductionDisplayRows([checked]));}
             else if(deduct.type==='Online Order Refund'){
                 if(staffDict[name]?.staffId!==deduct.staffId || deduct.staffName!==name)throw Error('An online refund belongs to an ambiguous employee name. Resolve the directory before payroll.');
                 staffData[name].onlineRefunds=(staffData[name].onlineRefunds||0)+amt;
@@ -11796,7 +11792,7 @@ window.generateAutoPayslips = async function() {
                     let customDeductSum = 0; profileCustomDeducts.forEach(c => customDeductSum += c.amount);
                     
                     previewCache[name] = {
-                        name: name, staffId:profile.staffId, cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
+                        name: name, staffId:profile.staffId, ownerDeductions:d.ownerDeductions||0,ownerDeductionRows:d.ownerDeductionRows||[],ownerDeductionDetails:d.ownerDeductionDetails||[],cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: salaryPreview.profile, start: startInput, end: endInput,
@@ -11807,7 +11803,7 @@ window.generateAutoPayslips = async function() {
                     d = previewCache[name];
                 }
 
-                let totalDeduct = (d.cashShortages || 0) + (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
+                let totalDeduct = (d.customDeductionsTotal || 0) + (d.ownerDeductions || 0) + (d.cashShortages || 0) + (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
                 let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0) + (d.perfBonus || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0 && !d.attendanceReviewRequired) masterPayrollTotal += estNet;
@@ -11833,7 +11829,7 @@ window.generateAutoPayslips = async function() {
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
                         <td style="padding: 12px; font-weight: bold;">${d.attendanceReviewRequired ? heldPayrollReviewHTML(d) : (d.hours ?? d.totalHours ?? 0).toFixed(2)+' hrs'} ${bonusLabel} ${straightLabel} ${holLabel} ${perfLabel}</td>
-                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.cashShortages ? '<br><span style="font-size:11px;color:#b45309">-₱'+d.cashShortages.toFixed(2)+' (Owner-reviewed cash shortage)</span>' : ''}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
+                        <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.cashShortages ? '<br><span style="font-size:11px;color:#b45309">-₱'+d.cashShortages.toFixed(2)+' (Owner-reviewed cash shortage)</span>' : ''}${d.ownerDeductions ? '<br><span style="font-size:11px;color:#b45309">-₱'+d.ownerDeductions.toFixed(2)+' (One-time custom deductions)</span>' : ''}${d.customDeductionsTotal ? '<br><span style="font-size:11px;color:#64756d">-₱'+d.customDeductionsTotal.toFixed(2)+' (Recurring deductions)</span>' : ''}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
                 `;
@@ -24058,9 +24054,10 @@ window.openEmployeeProfile = function(docId) {
             if(d.type==='Online Order Refund')actionHtml=`<button onclick="window.reviewOnlineRefundIncident('${dDoc.id}')" style="min-height:44px;padding:8px 12px;">Review incident</button>`;
             if(d.type==='Cash Shortage'||dDoc.id.startsWith('cash-shortage-'))actionHtml=canReviewCashShortage(window)&&d.sourceShiftId?`<button type="button" data-cash-shortage="${escapeHtml(d.sourceShiftId)}" style="min-height:44px;padding:8px 12px;">Review cash shortage</button>`:'<span style="font-size:11px;color:#64748b">Owner review · protected payroll</span>';
 
-            histHtml += `<tr style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
+            if(isOwnerDeduction({...d,id:dDoc.id}))actionHtml=`<button type="button" data-owner-deduction="${escapeHtml(dDoc.id)}" style="min-height:44px;padding:8px 12px;">Review one-time deduction</button>`;
+            histHtml += `<tr ${isOwnerDeduction({...d,id:dDoc.id})?`data-owner-deduction-history="${escapeHtml(dDoc.id)}"`:""} style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                 <td style="padding:12px 8px; color: #64748b;">${dateStr}</td>
-                <td style="padding:12px 8px; font-weight: bold; color: #334155;">${escapeHtml(d.type)}${d.type==='Online Order Refund' ? `<br><small>${escapeHtml(d.sourcePlatform)} · ${escapeHtml(d.sourceReceiptId)} · Refund reported: ₱${Number(d.proposedAmount||0).toFixed(2)}</small>` : ''}</td>
+                <td style="padding:12px 8px; font-weight: bold; color: #334155;">${escapeHtml(d.type)}${isOwnerDeduction({...d,id:dDoc.id})?`<br><small>${escapeHtml(d.label||'Owner adjustment')} · ${escapeHtml(d.category||'')}<br>${d.effectiveDate?'Payroll date: '+escapeHtml(d.effectiveDate):'Awaiting review'}</small>`:''}${d.type==='Online Order Refund' ? `<br><small>${escapeHtml(d.sourcePlatform)} · ${escapeHtml(d.sourceReceiptId)} · Refund reported: ₱${Number(d.proposedAmount||0).toFixed(2)}</small>` : ''}</td>
                 <td style="padding:12px 8px; font-weight:900; color:#ea580c;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
                 <td style="padding:12px 8px; color:${color}; font-weight:bold;">${d.status}</td>
                 <td style="padding:12px 8px;">
@@ -24316,6 +24313,7 @@ window.massGenerateStaffIDs = async function() {
 };
 
 window.deleteStaffDeduction = async function(docId, staffName, staffDocId) {
+    if(String(docId||'').startsWith('owner-deduction-')){window.ManagerUI.notify('One-time deductions are protected. Open their review; paid records stay on file.');return window.ownerDeductionsUI?.open(docId);}
     if(!(await window.ManagerUI.confirm("Are you sure you want to permanently delete this deduction?"))) return;
     try {
         await window.deleteDoc(window.doc(window.db, "staff_deductions", docId));
@@ -24326,6 +24324,7 @@ window.deleteStaffDeduction = async function(docId, staffName, staffDocId) {
 };
 
 window.forceMarkDeductionPaid = async function(docId, staffName, staffDocId) {
+    if(String(docId||'').startsWith('owner-deduction-')){window.ManagerUI.notify('One-time deductions are protected. Open their review; paid records stay on file.');return window.ownerDeductionsUI?.open(docId);}
      try {
          await window.updateDoc(window.doc(window.db, "staff_deductions", docId), { status: 'Paid', manualOverride: true, paidAt: new Date() });
          Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Marked as Paid!', showConfirmButton: false, timer: 2000});

@@ -5,6 +5,8 @@ import * as scheduleFreshness from '../takodeal-manager/payroll-schedule-freshne
 import * as previewFreshness from '../takodeal-manager/payroll-preview-guard.js';
 import * as payrollLoading from '../takodeal-manager/payroll-loading.js';
 import * as payrollCompletion from '../takodeal-manager/payroll-completion.js';
+import {isOwnerDeduction} from '../takodeal-manager/owner-deduction-model.js';
+import {readPayrollOwnerDeductions,ownerDeductionDisplayRows} from '../takodeal-manager/owner-deduction-payroll.js';
 import {finalizeOrdinaryPayroll} from '../takodeal-manager/payroll-settlement.js';
 import {canOpenWorkspacePage,OWNER_EMAIL} from '../takodeal-manager/workspace-access-model.js';
 import test from 'node:test';
@@ -68,7 +70,7 @@ function payrollFixture({deductions=[],frozen=null}={}) {
     api.auth={currentUser:{uid:'sample-payroll-owner',email:OWNER_EMAIL,emailVerified:true}};
     api.sessionUser={uid:'sample-payroll-owner',email:OWNER_EMAIL,isOwner:true,permissions:['all'],allowedBranches:['All']};
     const window={...api,globalPayrollCache:{},isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>assembleScheduleHistory(schedule),ManagerUI:{notify:message=>errors.push(message)}};
-    const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollLoading,...payrollCompletion,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,resolveScheduleForDate,window,Date,
+    const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...api,...payroll,...scheduleFreshness,...previewFreshness,...payrollLoading,...payrollCompletion,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,canOpenWorkspacePage,...sanctions,planPayrollAttendance,attendanceMillis,resolveScheduleForDate,window,Date,
         escapeHtml:value=>String(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char])),
         document:{getElementById:id=>id==='payrollBalanceReview'?null:elements[id]||null},alert:message=>errors.push(message),console:{error:(...message)=>errors.push(message),log:()=>{}}});
     vm.runInContext(extract('getPayrollPreviewGuard')+'\n'+extract('requirePayrollPreview'),context);

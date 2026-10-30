@@ -5,7 +5,7 @@ const cents=value=>{const n=Number(value??0);return Number.isFinite(n)&&n>=0&&Nu
 const money=value=>'₱'+(cents(value)/100).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
 const escape=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const food=type=>/^(?:cancelled food purchase|(?:staff|manager)\s+meal(?:\s*\(\s*pos\s+auto\s*\))?)$/i.test(clean(type));
-const bucket=row=>row.bucket|| (clean(row.type)==='Cash Advance'?'advances':food(row.type)?'meals':clean(row.type)==='Online Order Refund'?'onlineRefunds':clean(row.type)==='Cash Shortage'?'cashShortages':null);
+const bucket=row=>row.bucket|| (clean(row.type)==='Cash Advance'?'advances':food(row.type)?'meals':clean(row.type)==='Online Order Refund'?'onlineRefunds':clean(row.type)==='Cash Shortage'?'cashShortages':clean(row.type)==='Owner Custom Deduction'?'ownerDeductions':null);
 function items(row){
  const source=row.items||row.purchasedItems||row.selectedItems||row.cart||[];
  return (Array.isArray(source)?source:[]).slice(0,200).flatMap(item=>{
@@ -23,6 +23,7 @@ function items(row){
 function detail(row,amount=row.amount){
  const result={id:clean(row.id),bucket:bucket(row),type:clean(row.type||row.label),amount:cents(amount)/100,items:items(row)};
  for(const key of ['sourcePlatform','sourceReceiptId','sourceSaleId','purchaseId','purchaseReceiptId','receiptId','item','remarks'])if(clean(row[key]))result[key]=clean(row[key]).slice(0,key==='remarks'?1000:600);
+ for(const key of ['label','category','incidentDate','effectiveDate'])if(clean(row[key]))result[key]=clean(row[key]).slice(0,key==='label'?200:key==='category'?120:24);
  if(row.originalAmount!==undefined)result.originalAmount=cents(row.originalAmount)/100;
  if(row.purchaseAmount!==undefined)result.purchaseAmount=cents(row.purchaseAmount)/100;
  if(Number.isFinite(Number(row.discountPct))&&Number(row.discountPct)>=0&&Number(row.discountPct)<=100)result.discountPct=Number(row.discountPct);
@@ -41,7 +42,7 @@ export function snapshotPayrollDeductionRows(rows,allocations){
   seen.add(allocation.id);return detail({...row,id:allocation.id,...(cents(taken)<cents(row.amount)?{purchaseAmount:row.amount}:{})},taken);
  });
 }
-const definitions=[['lateDeduction','Late / undertime'],['sss','SSS'],['philhealth','PhilHealth'],['pagibig','Pag-IBIG'],['advances','Cash advances'],['loans','Company loans'],['meals','Meals and cancelled food purchases'],['onlineRefunds','Online order refunds'],['cashShortages','Approved cash shortages']];
+const definitions=[['lateDeduction','Late / undertime'],['sss','SSS'],['philhealth','PhilHealth'],['pagibig','Pag-IBIG'],['advances','Cash advances'],['loans','Company loans'],['meals','Meals and cancelled food purchases'],['onlineRefunds','Online order refunds'],['cashShortages','Approved cash shortages'],['ownerDeductions','Owner-added one-time deductions']];
 export function payslipDeductionBreakdown(data={}){
  const saved=data.frozenData&&typeof data.frozenData==='object'?data.frozenData:data;
  const frozenDetails=saved.deductionDetailsVersion===1&&Array.isArray(saved.deductionDetails)?saved.deductionDetails:[];
@@ -50,10 +51,11 @@ export function payslipDeductionBreakdown(data={}){
   let source=frozenDetails.filter(row=>bucket(row)===key);
   if(!source.length&&key==='onlineRefunds')source=saved.onlineRefundRows||[];
   if(!source.length&&key==='cashShortages')source=saved.cashShortageRows||[];
+  if(!source.length&&key==='ownerDeductions')source=saved.ownerDeductionDetails||[];
   source=Array.isArray(source)?source:[];
   const entries=source.map(row=>detail({...row,type:row.type||label,bucket:key})).filter(row=>row.amount>0);
   const complete=entries.length>0&&entries.reduce((sum,row)=>sum+cents(row.amount),0)===cents(amount);
-  const needsDetail=amount>0&&['advances','meals','onlineRefunds','cashShortages'].includes(key);
+  const needsDetail=amount>0&&['advances','meals','onlineRefunds','cashShortages','ownerDeductions'].includes(key);
   return {key,label,amount,entries:complete?entries:[],note:needsDetail&&!complete?'This older payslip saved the total without individual receipt details. Ask HQ to review the original records.':''};
  });
  const customSource=saved.customDeductions??saved.profile?.customDeductions??[];
@@ -79,7 +81,8 @@ export function deductionEntryHTML(row){
  const optionsNote=cancelledPurchase&&purchased.some(item=>item.addons?.length)?'<div style="color:#64748b;font-size:11px;line-height:1.5;margin-top:4px">Options describe the original receipt line; quantities shown apply to the selected food.</div>':'';
  const discount=row.discountPct!==undefined&&Number(row.discountPct)>0?` · ${escape(row.discountPct)}% staff discount`:'';
  const allocation=row.purchaseAmount!==undefined&&cents(row.purchaseAmount)>cents(row.amount)?`<div style="color:#64748b;font-size:11px;line-height:1.5;margin-top:4px">Collected this payslip: ${money(row.amount)} of the ${money(row.purchaseAmount)} purchase. Items below describe the original purchase.</div>`:'';
- return `<div style="padding:8px 0;border-top:1px dashed #e2e8f0"><div style="display:flex;justify-content:space-between;gap:12px"><strong>${escape(row.type||row.label||'Receipt deduction')}</strong><strong style="white-space:nowrap">${money(row.amount)}</strong></div>${source?`<div style="color:#64748b;font-size:11px;overflow-wrap:anywhere;margin-top:3px">${source}${discount}</div>`:''}${allocation}${itemText?`<div style="color:#475569;font-size:12px;line-height:1.5;margin-top:4px;overflow-wrap:anywhere">${itemText}</div>`:''}${optionsNote}</div>`;
+ const ownerDetails=bucket(row)==='ownerDeductions'?[row.category,row.incidentDate?'Incident date '+row.incidentDate:'',row.effectiveDate?'Payroll effective '+row.effectiveDate:''].filter(Boolean).map(escape).join(' · '):'';
+ return `<div style="padding:8px 0;border-top:1px dashed #e2e8f0"><div style="display:flex;justify-content:space-between;gap:12px"><strong>${escape(row.label||row.type||'Receipt deduction')}</strong><strong style="white-space:nowrap">${money(row.amount)}</strong></div>${source?`<div style="color:#64748b;font-size:11px;overflow-wrap:anywhere;margin-top:3px">${source}${discount}</div>`:''}${ownerDetails?`<div style="color:#64748b;font-size:11px;overflow-wrap:anywhere;margin-top:3px">${ownerDetails}</div>`:''}${allocation}${itemText?`<div style="color:#475569;font-size:12px;line-height:1.5;margin-top:4px;overflow-wrap:anywhere">${itemText}</div>`:''}${optionsNote}</div>`;
 }
 export function payslipDeductionDetailsHTML(data,{live=false,showTotal=true}={}){
  const result=payslipDeductionBreakdown(data);

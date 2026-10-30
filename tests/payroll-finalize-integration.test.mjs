@@ -1,3 +1,6 @@
+import {renderPayslipOptionalDeductions,renderRecurringPayslipDeductions} from '../takodeal-manager/payslip-optional-deductions.js';
+import {isOwnerDeduction} from '../takodeal-manager/owner-deduction-model.js';
+import {readPayrollOwnerDeductions,ownerDeductionDisplayRows} from '../takodeal-manager/owner-deduction-payroll.js';
 import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
 import * as roster from '../takodeal-manager/payroll-roster-model.js';
 import * as rosterUI from '../takodeal-manager/payroll-balance-review.js';
@@ -19,7 +22,7 @@ function extract(name){const start=source.indexOf('\nwindow.'+name+' = '),end=so
 const held=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return {promise,resolve};};
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 class Node{
- constructor(id,tag='DIV'){this.id=id;this.tagName=tag;this.value='';this.style={};this.disabled=false;this._text='';this.innerHTML='';this.listeners={};}
+ constructor(id,tag='DIV'){this.id=id;this.tagName=tag;this.value='';this.style={};this.parentElement={style:{},querySelector:()=>null};this.disabled=false;this._text='';this.innerHTML='';this.listeners={};}
  get innerText(){return this._text;}set innerText(value){this._text=String(value);}
  get textContent(){return this._text;}set textContent(value){this._text=String(value);}
  addEventListener(event,callback){(this.listeners[event]||=[]).push(callback);}
@@ -50,7 +53,7 @@ async function fixture(options={}){
  node('payrollStart').value=start;node('payrollEnd').value=end;node('payrollGrandTotalContainer').style.display='flex';
  const state={h,w:h.api,d,node,data,other,ownRow,otherRow,events,notifications,exports,opens,queries,transactions:()=>transactions,recordId:ordinaryPayrollId(staffId,start,end)};
  const Swal={fire:async(...args)=>{events.push(args);const first=args[0];if(first?.title==='💸 Disburse Payroll')return options.confirm?options.confirm(state,first):{isConfirmed:true,value:'0'};return {isConfirmed:false};},showValidationMessage:message=>notifications.push(message)};
- const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...completion,...preview,...freshness,assertPayrollSalaryFresh,canOpenWorkspacePage,window:h.api,document:d,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value),
+ const context=vm.createContext({renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,activeStaffProfile,...roster,...rosterUI,...completion,...preview,...freshness,assertPayrollSalaryFresh,canOpenWorkspacePage,window:h.api,document:d,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value),
   finalizeOrdinaryPayroll:async(api,input)=>{const result=await finalizeOrdinaryPayroll(api,input);await options.afterEngine?.(state,result);return result;},
   finalizeRefundPayroll:()=>assert.fail('This ordinary fixture must use the atomic ordinary-payroll engine'),
   exportPayslipImage:async()=>{exports.push({data:h.api.currentPayslipData,name:node('psName').innerText,isPaid:h.api.currentPayslipData?.isPaid});if(options.imageFailure)throw Error('Synthetic image renderer failure');return {filename:'sample.png'};}

@@ -11,9 +11,9 @@ function assets(app,name){
 }
 test('installed shells contain all new recipe and scheduling dependencies',()=>{
     for(const [app,name,required] of [
-        ['takodeal-manager','CORE_ASSETS',['monthly-schedule-model.js','monthly-schedule-ui.js','monthly-schedule-integration.js','monthly-schedule.css','recipe-bulk-model.js','recipe-bulk.js','recipe-changes.js','sanction-actions.js','sanction-schedule.js','sanction-scheduling-ui.js','audit-modal.css','audit-modal-layout.js','owner-time-out-correction.js','owner-time-out-correction-ui.js','owner-time-out-correction.css']],
+        ['takodeal-manager','CORE_ASSETS',['owner-deduction-model.js','owner-deductions.js','owner-deduction-ui.js','owner-deduction.css','owner-deduction-payroll.js','owner-deduction-history.js','payslip-optional-deductions.js','monthly-schedule-model.js','monthly-schedule-ui.js','monthly-schedule-integration.js','monthly-schedule.css','recipe-bulk-model.js','recipe-bulk.js','recipe-changes.js','sanction-actions.js','sanction-schedule.js','sanction-scheduling-ui.js','audit-modal.css','audit-modal-layout.js','owner-time-out-correction.js','owner-time-out-correction-ui.js','owner-time-out-correction.css']],
         ['Takodeal-POS','required',['recipe-feed.js','sanction-schedule.js','franchise-dispatch-pricing.js','franchise-supply-model.js','franchise-cost-model.js','operations-model.js']],
-        ['takodeal-staff','SHELL',['sanction-schedule.js','attendance-proof.js']],
+        ['takodeal-staff','SHELL',['owner-deduction-model.js','staff-lifecycle-model.js','staff-owner-deductions.js','sanction-schedule.js','attendance-proof.js']],
         ['takodeal-franchise','CORE',['sanction-schedule.js','sanction-actions.js','sanction-scheduling-ui.js','workspace-access-model.js']]
     ]){
         const cached=assets(app,name);
@@ -38,10 +38,10 @@ test('upgrade keeps paid receipts, photos and the offline sale ledger through Ca
     assert.match(worker,/workspace-access-model\.js/);
     assert.ok(assets('Takodeal-POS','required').includes('printer-logo.js'),'new logo encoder is available offline');
     assert.match(worker,/const PHOTOS = 'takodeal-pos-photos-offline02'/);
-    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v111-monthly-leave-scope-20261030/);
-    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v111-monthly-leave-scope-20261030/);
+    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v112-owner-deductions-20261030/);
+    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v112-owner-deductions-20261030/);
     for(const file of ['schedule-workspace.js','schedule-workspace.css'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Schedule workspace is available after app update');
-    assert.match(source('takodeal-staff/sw.js'),/takodeal-staff-v38-payroll-timeout-repair-20261030/);
+    assert.match(source('takodeal-staff/sw.js'),/takodeal-staff-v39-owner-deductions-20261030/);
     for(const [app,list] of [['takodeal-manager','CORE_ASSETS'],['takodeal-staff','SHELL']])assert.ok(assets(app,list).includes('time-out-request-display.js'),app+' caches schedule-review labels');
     assert.doesNotMatch(worker,/deleteDatabase|localStorage\.clear/);
     assert.match(source('Takodeal-POS/index.html'),/cashier-tablet\.css\?v=tablet-attendance-stock-20261009-r1/);
@@ -72,3 +72,5 @@ test('attendance speed upgrade installs fresh schedule and transaction readers i
 test('emergency shift evidence installs identically across attendance apps',()=>{for(const [app,list] of [['takodeal-manager','CORE_ASSETS'],['Takodeal-POS','required'],['takodeal-staff','SHELL']]){assert.ok(assets(app,list).includes('emergency-shift-model.js'));assert.equal(source(app+'/emergency-shift-model.js'),source('takodeal-manager/emergency-shift-model.js'));assert.equal(source(app+'/early-time-out-actions.js'),source('takodeal-manager/early-time-out-actions.js'));}});
 
 test('assigned-hour previews install in Staff and Cashier without changing protected ledgers',()=>{for(const [app,list] of [['Takodeal-POS','required'],['takodeal-staff','SHELL']])assert.ok(assets(app,list).includes('attendance-schedule-preview.js'));assert.equal(source('takodeal-staff/attendance-schedule-preview.js'),source('Takodeal-POS/attendance-schedule-preview.js'));});
+
+test('Staff verifies the same one-time deduction schema without importing Owner transaction code',()=>{assert.equal(source('takodeal-staff/owner-deduction-model.js'),source('takodeal-manager/owner-deduction-model.js'));assert.equal(source('takodeal-staff/staff-lifecycle-model.js'),source('takodeal-manager/staff-lifecycle-model.js'));assert.doesNotMatch(source('takodeal-staff/staff-owner-deductions.js'),/setDoc|updateDoc|addDoc|runTransaction/);});

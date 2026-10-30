@@ -1,3 +1,4 @@
+import {isOwnerDeduction} from '../takodeal-manager/owner-deduction-model.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -61,7 +62,7 @@ function fixture({missingId = false, deferredHistory = false} = {}) {
         saves.push({id, payload:structuredClone(payload), options:structuredClone(options),
             finish:() => resolve({profile:{...profiles[id], ...payload}}), fail:() => reject(Error('Simulated old save failure'))});
     });
-    const context = {
+    const context = {isOwnerDeduction,
         window:api, document:{getElementById:node, querySelectorAll:() => deductions},escapeHtml,
         dailyStaffRate, staffProfileOperation, saveStaffProfileAtomic:atomic,
         Swal:{fire:(...args) => notices.push(args)}, installSanctionScheduling() {},

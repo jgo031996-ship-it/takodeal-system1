@@ -5,6 +5,8 @@ import {getAuth,signInAnonymously,setPersistence,browserLocalPersistence,onAuthS
 import {installStaffOnboarding} from './onboarding-ui.js';
 import {onboardingDay} from './onboarding-model.js';
 import {contractOfferFingerprint,reviewedContractRate,signOfferedContract} from './onboarding-service.js';
+import {readStaffOwnerDeductionEstimate} from './staff-owner-deductions.js';
+import {isOwnerDeduction} from './owner-deduction-model.js';
 import {installDeductionInbox,acknowledgeCashShortagePayslip} from './deduction-inbox.js';
 import {installStaffLeaveUI} from './staff-leave-ui.js';
 import {leaveToday} from './leave-model.js';
@@ -2278,16 +2280,21 @@ window.loadPayslipVault = async function() {
         const onlineDueAmount=onlineDue.reduce((sum,row)=>sum+(Number(row.amount)||0),0);
         const profileCharges={sss:staffProfile.sssAmount||0,philhealth:staffProfile.philHealthAmount||0,pagibig:staffProfile.pagibigAmount||0,customDeductions:staffProfile.customDeductions||[]};
         const recurringDeductionTotal=payslipDeductionBreakdown(profileCharges).total;
+        const ownerEstimateInput={rows:[...ownDeductionRows.values()],staffId:onlineStaffId,name:staffProfile.cashierName||staffProfile.fullName||staffName,branch:staffProfile.branch,createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),stillCurrent:stillOpen};
+        const ownerCurrent=await readStaffOwnerDeductionEstimate({...ownerEstimateInput,end:endDateStr});if(!stillOpen())return;
+        const ownerPreviousDetails=ownerCurrent.details.filter(row=>row.effectiveDate<=prevEndStr);
+        const ownerPrevious={...ownerCurrent,total:ownerPreviousDetails.reduce((sum,row)=>sum+Math.round(row.amount*100),0)/100,details:ownerPreviousDetails,rows:ownerPreviousDetails.map(row=>({id:row.id,amount:row.amount}))};
         const estimateDeductionData=(activeRows,late,refundRows)=>({...profileCharges,lateDeduction:late,loans:cutoffLoanDeduction,advances:activeRows.filter(row=>row.type==='Cash Advance').reduce((sum,row)=>sum+(Number(row.amount)||0),0),meals:activeRows.filter(row=>isMealDeduction(row.type)).reduce((sum,row)=>sum+(Number(row.amount)||0),0),onlineRefunds:refundRows.reduce((sum,row)=>sum+(Number(row.amount)||0),0),onlineRefundRows:refundRows,deductionDetailsVersion:1,deductionDetails:snapshotPayrollDeductionRows(activeRows,activeRows.filter(row=>Number(row.amount)>0).map(row=>({id:row.id,taken:Number(row.amount)})))});
-        const currentDeductionDetails=estimateDeductionData(liveActiveDeductions,currentData.totalLatePenalty,onlineDue);
-        let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - liveUnpaidVales - cutoffLoanDeduction - onlineDueAmount - recurringDeductionTotal;
+        const currentDeductionDetails={...estimateDeductionData(liveActiveDeductions,currentData.totalLatePenalty,onlineDue),ownerDeductions:ownerCurrent.total,ownerDeductionRows:ownerCurrent.rows,ownerDeductionDetails:ownerCurrent.details};
+        let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - liveUnpaidVales - cutoffLoanDeduction - onlineDueAmount - recurringDeductionTotal - ownerCurrent.total;
         let refundEstimate=document.getElementById('liveOnlineRefundEstimate');if(!refundEstimate){refundEstimate=document.createElement('p');refundEstimate.id='liveOnlineRefundEstimate';document.getElementById('payslipLiveSection').prepend(refundEstimate);}refundEstimate.textContent='ONLINE REFUND ORDERS: −₱'+onlineDueAmount.toFixed(2);refundEstimate.hidden=!onlineDueAmount;
         let cashReviewHint=document.getElementById('liveCashShortageReviewHint');if(!cashReviewHint){cashReviewHint=document.createElement('p');cashReviewHint.id='liveCashShortageReviewHint';cashReviewHint.style.cssText='padding:10px 12px;border:1px solid #e6d9bd;border-radius:8px;background:#fff9ed;font-size:12px;';document.getElementById('payslipLiveSection').prepend(cashReviewHint);}cashReviewHint.hidden=!hasCashShortageReview;cashReviewHint.textContent='This estimate excludes cash shortage reviews. Open My Inbox for the protected review and your response. Any lawfully approved amount will be itemized on the final payslip.';
 
+        let ownerReviewHint=document.getElementById('liveOwnerDeductionHint');if(!ownerReviewHint){ownerReviewHint=document.createElement('p');ownerReviewHint.id='liveOwnerDeductionHint';ownerReviewHint.style.cssText='padding:10px 12px;border:1px solid #d3dfd3;border-radius:8px;background:#f5f9f1;font-size:12px;';document.getElementById('payslipLiveSection').prepend(ownerReviewHint);}ownerReviewHint.hidden=!ownerCurrent.pending&&!ownerCurrent.held;ownerReviewHint.textContent=ownerCurrent.held?'One-time deduction records could not be verified. '+ownerCurrent.message:'A one-time deduction is under review. It is excluded from this estimate until authorized. Open My Inbox to read or respond.';
         document.getElementById('liveEstGross').innerText = currentData.salaryHistoryUnavailable?'Confirm salary on approved phone':currentData.attendanceHeld ? 'Held for HR review' : '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstLates').innerText = '-₱' + currentData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstVales').innerText = '-₱' + liveUnpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
-        document.getElementById('liveEstNetPay').innerText = currentData.salaryHistoryUnavailable?'Confirm salary on approved phone':currentData.attendanceHeld ? 'Held for HR review' : '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('liveEstNetPay').innerText = ownerCurrent.held?'Confirm deduction records':currentData.salaryHistoryUnavailable?'Confirm salary on approved phone':currentData.attendanceHeld ? 'Held for HR review' : '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
         let penaltyReview=document.getElementById('liveScheduledPenaltyReview');
         if(!penaltyReview){penaltyReview=document.createElement('p');penaltyReview.id='liveScheduledPenaltyReview';penaltyReview.style.cssText='padding:10px;background:#fff8ed;font-size:12px;';document.getElementById('payslipLiveSection').prepend(penaltyReview);}
         penaltyReview.hidden=!scheduledPenaltyReview;
@@ -2400,9 +2407,9 @@ window.loadPayslipVault = async function() {
             
             let prevEstGross = prevData.basicPay;
             const prevOnlineAmount=onlineRows.filter(row=>row.status==='Unpaid'&&(row.dateAdded?.toDate?.()||new Date(row.dateAdded))<=prevCutoffEndTimestamp).reduce((sum,row)=>sum+(Number(row.amount)||0),0);
-            let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - pendingUnpaidVales - cutoffLoanDeduction - prevOnlineAmount - recurringDeductionTotal;
+            let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - pendingUnpaidVales - cutoffLoanDeduction - prevOnlineAmount - recurringDeductionTotal - ownerPrevious.total;
             const previousRefundRows=onlineRows.filter(row=>row.status==='Unpaid'&&(row.dateAdded?.toDate?.()||new Date(row.dateAdded))<=prevCutoffEndTimestamp);
-            const previousDeductionDetails=estimateDeductionData(pendingActiveDeductions,prevData.totalLatePenalty,previousRefundRows);
+            const previousDeductionDetails={...estimateDeductionData(pendingActiveDeductions,prevData.totalLatePenalty,previousRefundRows),ownerDeductions:ownerPrevious.total,ownerDeductionRows:ownerPrevious.rows,ownerDeductionDetails:ownerPrevious.details};
 
             let prevLoanStr = (cutoffLoanDeduction > 0) ? `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Company Loan:</span> <strong style="color:#ef4444;">-₱${cutoffLoanDeduction.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>` : '';
 
@@ -2416,7 +2423,7 @@ window.loadPayslipVault = async function() {
                         </div>
                         <div style="text-align: right; background: white; padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1;">
                             <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold;">Est. Net Pay</div>
-                            <div style="font-size: 18px; font-weight: 900; color: #0f172a;">${prevData.salaryHistoryUnavailable?'Confirm salary on approved phone':prevData.attendanceHeld ? 'Held for HR review' : '₱'+Math.max(0, prevEstNet).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                            <div style="font-size: 18px; font-weight: 900; color: #0f172a;">${ownerPrevious.held?'Confirm deduction records':prevData.salaryHistoryUnavailable?'Confirm salary on approved phone':prevData.attendanceHeld ? 'Held for HR review' : '₱'+Math.max(0, prevEstNet).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
                         </div>
                     </div>
                     
@@ -3703,7 +3710,7 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
         if (res.isConfirmed && signatureCurrent()) {
             Swal.fire({title: 'Saving Signature...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
             try {
-                if (Number(d.cashShortages)>0 || Array.isArray(d.cashShortageRows) && d.cashShortageRows.length>0) {
+                if (Number(d.ownerDeductions)>0 || Array.isArray(d.ownerDeductionRows) && d.ownerDeductionRows.length>0 || Number(d.cashShortages)>0 || Array.isArray(d.cashShortageRows) && d.cashShortageRows.length>0) {
                     const vault=await createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'));
                     if (!signatureCurrent()) return;
                     await acknowledgeCashShortagePayslip(vault,{recordId,staffId:payStaffId,signature:res.value,stillCurrent:signatureCurrent});

@@ -4,6 +4,7 @@ import {dailyStaffRate,validRateDate,validateSalaryTimeline} from './staff-rate-
 import {isMealDeduction} from './payroll-safety.js';
 import {isCashShortageDeduction,validateCashShortageLink,CASH_SHORTAGE_LIMIT} from './cash-shortage-model.js';
 import {snapshotPayrollDeductionRows} from './payroll-deduction-details.js';
+import {payrollOwnerDeductionRows,validatePayrollOwnerDeductionSet,ownerDeductionDisplayRows,ownerDeductionCandidates,isOwnerDeduction,OWNER_DEDUCTION_LIMIT} from './owner-deduction-payroll.js';
 
 export const PAYROLL_SETTLEMENT_LIMITS=Object.freeze({rows:140,queryRows:250,readConcurrency:8,timeoutMs:25000,maxCents:1000000000000,documentBytes:750000});
 const pending=new WeakMap(),text=value=>String(value??'').trim();
@@ -60,7 +61,7 @@ export function validatePayrollCashShortageSet(data,candidates,get){
 export function validateOrdinaryPayrollSnapshot(data,finalNetPay){
  if(!data||!text(data.name)||!text(data.branch)||data.attendanceReviewRequired)throw Error('This unpaid payslip needs HR review before payment.');
  if((data.onlineRefundRows||[]).length||amount(data.onlineRefunds)>0)throw Error('Use the protected refund-payroll workflow for online refund deductions.');
- const frozen=json(data),fields=['basicPay','nightBonus','straightBonus','holidayPayTotal','perfBonus','lateDeduction','sss','philhealth','pagibig','advances','meals','loans','cashShortages'];
+ const frozen=json(data),fields=['basicPay','nightBonus','straightBonus','holidayPayTotal','perfBonus','lateDeduction','sss','philhealth','pagibig','advances','meals','loans','cashShortages','ownerDeductions'];
  for(const key of fields)frozen[key]=amount(data[key])/100;
  const details=data.customDeductions??data.profile?.customDeductions??[];
  if(!Array.isArray(details)||details.length>100)throw Error('Review the custom deduction details before paying.');
@@ -69,7 +70,8 @@ export function validateOrdinaryPayrollSnapshot(data,finalNetPay){
  if(data.customDeductionsTotal!==undefined&&amount(data.customDeductionsTotal)!==customCents)throw Error('Custom deduction details do not match the payslip total.');
  const gross=['basicPay','nightBonus','straightBonus','holidayPayTotal','perfBonus'].reduce((sum,key)=>sum+amount(frozen[key]),0);
  frozen.cashShortageRows=payrollCashShortageRows(data);
- const deducted=['lateDeduction','sss','philhealth','pagibig','advances','meals','loans','cashShortages'].reduce((sum,key)=>sum+amount(frozen[key]),customCents);
+ frozen.ownerDeductionRows=payrollOwnerDeductionRows(data);frozen.ownerDeductionDetails=[];
+ const deducted=['lateDeduction','sss','philhealth','pagibig','advances','meals','loans','cashShortages','ownerDeductions'].reduce((sum,key)=>sum+amount(frozen[key]),customCents);
  const net=amount(finalNetPay);if(gross-deducted!==net)throw Error('The edited payslip total changed. Recalculate it before payment.');
  frozen.profile={...safeProfile(data.profile||{}),customDeductions:custom};frozen.customDeductions=custom;frozen.customDeductionsTotal=customCents/100;frozen.isPaid=true;frozen.finalNetPay=net/100;
  if(new TextEncoder().encode(JSON.stringify(frozen)).length>PAYROLL_SETTLEMENT_LIMITS.documentBytes)throw Error('This payslip is too large for one payment. Ask HQ to review its attendance detail.');
@@ -143,20 +145,28 @@ async function settle(api,input,identity,guard){
  jobs.push(()=>readQuery(query('staff_bonuses',[['staffName',data.name],['status','Unpaid']])));
  jobs.push(()=>amount(data.loans)&&!data.ledgerId?readQuery(query('staff_ledger',[['staffName',data.name]])):[]);
  jobs.push(()=>readQuery(query('staff_deductions',[['staffId',data.staffId],['type','Cash Shortage'],['status','Unpaid']])));
- const [hq,cutoff,byId,byName,directory,expenses,grant,deductions,bonuses,loans,cashById]=await parallel(jobs,guard);
+ jobs.push(()=>readQuery(query('staff_deductions',[['staffId',data.staffId],['type','Owner Custom Deduction'],['status','Unpaid']])));
+ const [hq,cutoff,byId,byName,directory,expenses,grant,deductions,bonuses,loans,cashById,ownerById]=await parallel(jobs,guard);
  authorized(api,identity,hq,grant,[data.branch]);
  if(directory.length!==1||directory[0].id!==data.staffId)throw Error('This payroll name does not identify one saved employee. Ask HR to separate the profiles.');
  const history=[...new Map([...cutoff,...byId,...byName].filter(row=>belongs(row,data)).map(row=>[row.id,row])).values()];
+ // New or changed obligations must not prevent recovery of this cutoff's
+ // already-confirmed immutable payment. The read-only check reauthorizes HQ.
+ if(history.some(row=>row.startDate===data.start&&row.endDate===data.end)){
+  const confirmed=await checkSavedPayrollPayment(api,{data,assertCurrent:guard});guard();if(confirmed.status==='paid'){const {status,...paid}=confirmed;return paid;}
+ }
  const end=Date.parse(data.end+'T23:59:59.999+08:00'),start=Date.parse(data.start+'T00:00:00+08:00');
  const eligibleDeductions=deductions.filter(row=>row.status==='Unpaid'&&millis(row.dateAdded??row.timestamp)<=end&&(row.type==='Cash Advance'||isMealDeduction(row.type))).sort((a,b)=>millis(a.dateAdded??a.timestamp)-millis(b.dateAdded??b.timestamp)||a.id.localeCompare(b.id));
  const cashCandidates=payrollCashShortageCandidates([...new Map([...deductions.filter(isCashShortageDeduction),...cashById].map(row=>[row.id,row])).values()],data.end);
+ const ownerCandidates=ownerDeductionCandidates([...new Map([...deductions.filter(isOwnerDeduction),...ownerById].map(row=>[row.id,row])).values()],data.end);
  const eligibleBonuses=bonuses.filter(row=>row.status==='Unpaid'&&row.type==='Performance Bonus'&&millis(row.dateAdded)>=start&&millis(row.dateAdded)<=end+12*3600000).sort((a,b)=>millis(a.dateAdded)-millis(b.dateAdded)||a.id.localeCompare(b.id));
  for(const row of [...eligibleDeductions,...eligibleBonuses])staffRow(row,data);
- if(eligibleDeductions.length+eligibleBonuses.length+history.length+cashCandidates.length*3>PAYROLL_SETTLEMENT_LIMITS.rows||cashCandidates.length>CASH_SHORTAGE_LIMIT)throw Error('This payroll has too many linked records for one safe payment. Ask HQ to reconcile it.');
+ if(eligibleDeductions.length+eligibleBonuses.length+history.length+(cashCandidates.length+ownerCandidates.length)*3>PAYROLL_SETTLEMENT_LIMITS.rows||cashCandidates.length+ownerCandidates.length>(ownerCandidates.length?OWNER_DEDUCTION_LIMIT:CASH_SHORTAGE_LIMIT))throw Error('This payroll has too many linked records for one safe payment. Ask HQ to reconcile it.');
  const ledgerId=data.ledgerId||loans.length===1&&loans[0].id;
  if(amount(data.loans)&&!ledgerId)throw Error('The company loan ledger is missing or ambiguous.');
  const references=[ref('payroll_records',recordId),ref('payroll_records',refundId(data.staffId,data.start,data.end)),ref('cash_accounts',accountId),ref('cashiers',data.staffId),ref('expenses',recordId),...hq.map(row=>ref('hq_managers',row.id)),...(identity.email!==OWNER_EMAIL?[ref('hq_email_access',identity.email)]:[]),...history.map(row=>ref('payroll_records',row.id)),...expenses.filter(row=>row.category==='Payroll').map(row=>ref('expenses',row.id)),...eligibleDeductions.map(row=>ref('staff_deductions',row.id)),...eligibleBonuses.map(row=>ref('staff_bonuses',row.id)),...(amount(data.loans)?[ref('staff_ledger',id(ledgerId))]:[])];
  for(const row of cashCandidates)references.push(ref('staff_deductions',id(row.id)),ref('cash_shortage_reviews',row.id),ref('staff_deduction_notices',row.id),ref('shifts',id(row.sourceShiftId)));
+ for(const row of ownerCandidates)references.push(ref('staff_deductions',id(row.id)),ref('owner_deduction_reviews',row.id),ref('staff_deduction_notices',row.id));
  const unique=[...new Map(references.map(reference=>[(reference.path||JSON.stringify(reference)),reference])).values()];
  const result=await api.runTransaction(api.db,async tx=>{
   const snapshots=await parallel(unique.map(reference=>()=>tx.get(reference)),guard),saved=new Map(unique.map((reference,index)=>[reference.path||JSON.stringify(reference),snapshots[index]]));
@@ -174,6 +184,7 @@ async function settle(api,input,identity,guard){
   if(exact.length){const row=exact[0];authorized(api,identity,freshHQ,identity.email===OWNER_EMAIL?null:get('hq_email_access',identity.email),[data.branch,row.branch||row.frozenData?.branch||data.branch]);return confirmedPayrollResult(row,{id:row.id,staffId:data.staffId,start:data.start,end:data.end,legacyName:data.name});}
   if(data.isPaid)throw Error('This saved payslip is read-only. Refresh payroll to confirm its payment record.');
   if((cashCandidates.length||amount(data.cashShortages)||(data.cashShortageRows||[]).length)&&identity.email!==OWNER_EMAIL)throw Error('The verified Owner must finalize cash shortage deductions.');
+  if((ownerCandidates.length||amount(data.ownerDeductions)||(data.ownerDeductionRows||[]).length)&&(identity.email!==OWNER_EMAIL||api.sessionUser?.isOwner!==true))throw Error('The verified Owner must finalize owner-added deductions.');
   if(deductions.some(row=>row.status==='Unpaid'&&row.type==='Online Order Refund'&&millis(row.dateAdded??row.timestamp)<=end&&(!row.staffId||row.staffId===data.staffId)))throw Error('Online refund deductions changed. Regenerate payroll and use its protected refund workflow.');
   if(existing.some(row=>!validRateDate(row.startDate)||!validRateDate(row.endDate)||row.startDate<=data.end&&row.endDate>=data.start))throw Error('Saved payroll overlaps these dates or needs HR review. Choose an unpaid cutoff.');
   if(get('expenses',recordId)||expenses.some(row=>row.category==='Payroll'&&get('expenses',row.id)))throw Error('A payroll expense already exists without its confirmed payslip. Ask HQ to review it before paying again.');
@@ -183,7 +194,9 @@ async function settle(api,input,identity,guard){
   if(person.salaryRateVersion===1){const salary=await tx.get(ref('staff_salary_rates',data.staffId));guard();if(data.profile?.salaryRateVersion!==1||person.salaryRateRevision!==data.profile?.salaryRateRevision||!salary.exists())throw Error('Salary dates changed. Regenerate this unpaid payslip.');const timeline=validateSalaryTimeline(salary.data());if(timeline.staffId!==data.staffId||timeline.branch!==data.branch||timeline.revisionId!==person.salaryRateRevision)throw Error('Private salary history needs HQ review.');}
   else if(data.profile?.salaryRateVersion===1||dailyStaffRate(person)!==dailyStaffRate(data.profile))throw Error('The saved daily wage changed. Regenerate this unpaid payslip.');
   const cashSettlements=validatePayrollCashShortageSet(data,cashCandidates,get);
+  const ownerSettlements=validatePayrollOwnerDeductionSet(data,ownerCandidates,get);
   const frozen=validateOrdinaryPayrollSnapshot(data,finalNetPay),freshDeductions=eligibleDeductions.map(row=>{const fresh=get('staff_deductions',row.id);if(!fresh||fresh.status!=='Unpaid'||fresh.type!==row.type||amount(fresh.amount)!==amount(row.amount))throw Error('A meal or advance changed. Regenerate payroll.');staffRow(fresh,data);return {...fresh,id:row.id};});
+  frozen.ownerDeductionDetails=ownerDeductionDisplayRows(ownerSettlements);
   const allocations=[...allocation(freshDeductions.filter(row=>row.type==='Cash Advance'),data.advances,'Cash advances'),...allocation(freshDeductions.filter(row=>isMealDeduction(row.type)),data.meals,'Foods deductions')];
   frozen.deductionDetailsVersion=1;frozen.deductionDetails=snapshotPayrollDeductionRows(freshDeductions,allocations.map(row=>({id:row.id,taken:row.taken/100})));
   if(new TextEncoder().encode(JSON.stringify(frozen)).length>PAYROLL_SETTLEMENT_LIMITS.documentBytes)throw Error('This payslip has too much receipt detail for one safe payment. Ask HQ to reconcile the linked deductions.');
@@ -195,11 +208,12 @@ async function settle(api,input,identity,guard){
   const loan=amount(data.loans)?get('staff_ledger',ledgerId):null;
   if(amount(data.loans)){if(!loan||text(loan.staffName)!==data.name||loan.staffId&&loan.staffId!==data.staffId||loan.branch&&loan.branch!==data.branch||amount(loan.totalLoaned)-amount(loan.totalPaid)<amount(data.loans))throw Error('The company loan balance changed. Regenerate payroll.');}
   guard();const stamp=api.serverTimestamp(),accountBalance=(balance-net)/100,settlements=allocations.map(row=>({id:row.id,amount:row.taken/100}));
-  tx.set(ref('payroll_records',recordId),{staffId:data.staffId,staffName:data.name,branch:data.branch,startDate:data.start,endDate:data.end,frozenData:frozen,finalNetPay:net/100,accountId,accountName:account.name,deductionSettlements:settlements,cashShortageSettlements:Object.fromEntries(cashSettlements.map(row=>[row.id,row.amount])),processedAt:stamp,processedBy:identity.email,acknowledged:false,payrollVersion:2});
+  tx.set(ref('payroll_records',recordId),{staffId:data.staffId,staffName:data.name,branch:data.branch,startDate:data.start,endDate:data.end,frozenData:frozen,finalNetPay:net/100,accountId,accountName:account.name,deductionSettlements:settlements,cashShortageSettlements:Object.fromEntries(cashSettlements.map(row=>[row.id,row.amount])),ownerDeductionSettlements:Object.fromEntries(ownerSettlements.map(row=>[row.id,row.amount])),processedAt:stamp,processedBy:identity.email,acknowledged:false,payrollVersion:2});
   tx.update(ref('cash_accounts',accountId),{balance:accountBalance});
   tx.set(ref('expenses',recordId),{branch:'Main Office',amount:net/100,category:'Payroll',account:account.name,note,staffId:data.staffId,payrollRecordId:recordId,timestamp:stamp});
   for(const row of allocations)tx.update(ref('staff_deductions',row.id),row.remaining?{amount:row.remaining/100}:{status:'Paid',paidAt:stamp,payrollRecordId:recordId});
   for(const row of cashSettlements)for(const table of ['staff_deductions','cash_shortage_reviews','staff_deduction_notices'])tx.update(ref(table,row.id),{status:'Paid',paidAt:stamp,payrollRecordId:recordId});
+  for(const row of ownerSettlements)for(const table of ['staff_deductions','owner_deduction_reviews','staff_deduction_notices'])tx.update(ref(table,row.id),{status:'Paid',paidAt:stamp,payrollRecordId:recordId});
   for(const row of bonusAllocations)tx.update(ref('staff_bonuses',row.id),row.remaining?{amount:row.remaining/100}:{status:'Paid',paidAt:stamp,payrollRecordId:recordId});
   if(loan){tx.update(ref('staff_ledger',ledgerId),{totalPaid:(amount(loan.totalPaid)+amount(data.loans))/100});tx.set(ref('staff_deductions',recordId+'-loan'),{staffId:data.staffId,staffName:data.name,branch:data.branch,type:'Company Loan Payment',amount:amount(data.loans)/100,status:'Paid',dateAdded:stamp,paidAt:stamp,remarks:'Auto-deducted from payslip',payrollRecordId:recordId});}
   return {id:recordId,alreadyPaid:false,frozenData:frozen,finalNetPay:net/100,accountId,accountName:account.name,accountBalance};

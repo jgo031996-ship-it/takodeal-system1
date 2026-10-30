@@ -1078,7 +1078,7 @@ service cloud.firestore {
     }
     match /staff_salary_rates/{staffId} {
       allow read: if request.method == 'get' && resource == null ? r2l()
-        : r2m(rb().branch) || (request.method == 'get' && r5w(staffId));
+        : r2m(rb().branch) || (request.method == 'get' && r6i(staffId));
 
       allow create, update: if r2s(staffId, resource == null ? {} : rb(), ra());
       allow delete: if false;
@@ -1479,17 +1479,18 @@ service cloud.firestore {
     }
     match /payroll_records/{recordId} { allow read: if true;
       function r3v(data) {
-        return r4e(data,recordId)
+        return r4i(data,recordId)
+        && (data.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0 ? r4k(data,recordId) : r50(data,recordId))
         && (recordId.matches('refund-payroll-.*') ? (rk() && data.frozenData.isPaid == true && data.processedAt == r9() && data.processedBy == r8() && data.refundSettlements is map && data.finalNetPay is number && data.finalNetPay >= 0) : rj());
       }
       allow create: if r3v(ra());
       function r3w(data,before) {
-        return r4c(before) || r4c(data)
-        ? r4d(before,data)
+        return r4d(before) || r4d(data) || r4y(before) || r4y(data)
+        ? r4z(before,data)
         : (!recordId.matches('refund-payroll-.*') || (data.diff(before).affectedKeys().hasOnly(['acknowledged']) && data.acknowledged == true));
       }
       allow update: if r3w(ra(),resource == null ? null : rb());
-      allow delete: if !recordId.matches('refund-payroll-.*') && !r4c(rb()) && rj(); }
+      allow delete: if !recordId.matches('refund-payroll-.*') && !r4y(rb()) && !r4d(rb()) && rj(); }
     function r3x(data, id) {
       let row = r6('online_order_incidents',id);
       return rk() && data.type == 'Online Order Refund' && data.amount == 0
@@ -1540,14 +1541,173 @@ service cloud.firestore {
         && after.status == row.status && after.amount == row.amount && after.ownerReply == row.reviewNote && row.reviewedAt == r9();
     }
     function r43(before,after) {
-      return r5w(before.staffId) && (
+      return r6i(before.staffId) && (
         (after.diff(before).affectedKeys().hasOnly(['readRevision','readAt']) && after.readRevision == before.noticeRevision && after.readAt == r9())
         || (after.diff(before).affectedKeys().hasOnly(['staffReply','replyRevision','repliedAt','repliedByUid'])
           && after.staffReply is string && after.staffReply.size() > 0 && after.staffReply.size() <= 1500
           && after.replyRevision == before.replyRevision + 1 && after.repliedAt == r9() && after.repliedByUid == r7()));
     }
-    function r44(data,id) { return data.get('type','') == 'Cash Shortage' || id.matches('^cash-shortage-.*'); }
-    function r45(row,charge,notice,id) {
+    // A one-time Owner review is separate from recurring profile deductions.
+    // Private evidence and staff explanations stay in the protected source/notice.
+    function r44() { return rk() && rc() == 'google.com'; }
+    function r45(id) { return id.matches('^owner-deduction-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'); }
+    function r46(data,id) { return data.get('type','') == 'Owner Custom Deduction' || id.matches('^owner-deduction-.*') || data.keys().hasAny(['ownerDeductionVersion']); }
+    function r47(row,charge,notice,id) {
+      return r45(id) && row.id == id && row.type == 'Owner Custom Deduction' && charge.type == row.type && notice.type == row.type
+        && row.schemaVersion == 1 && charge.ownerDeductionVersion == 1 && notice.version == 1
+        && charge.incidentId == id && notice.id == id && notice.incidentId == id
+        && row.branch == row.staffBranch && charge.branch == row.staffBranch && notice.branch == row.staffBranch
+        && charge.staffId == row.staffId && notice.staffId == row.staffId && charge.staffName == row.staffName && notice.staffName == row.staffName
+        && row.sourcePlatform == 'Owner review' && charge.sourcePlatform == row.sourcePlatform && notice.sourcePlatform == row.sourcePlatform
+        && row.sourceReceiptId == id && charge.sourceReceiptId == id && notice.sourceReceiptId == id
+        && charge.label == row.label && notice.label == row.label && charge.category == row.category && notice.category == row.category
+        && charge.incidentDate == row.incidentDate && notice.incidentDate == row.incidentDate && notice.sourceLossCents == row.sourceLossCents
+        && charge.amount == row.amount && charge.authorizedAmount == row.amount && row.authorizedAmount == row.amount && notice.amount == row.amount
+        && charge.effectiveDate == row.effectiveDate && notice.effectiveDate == row.effectiveDate
+        && charge.reviewRevision == row.revision && notice.noticeRevision == row.revision;
+    }
+    function r48(row) {
+      let staff = r5('cashiers',row.staffId);
+      let incident = row.incidentDate.split('-');
+      return row.staffId is string && row.staffId.matches('^[-A-Za-z0-9_]{1,160}$') && row.staffName == staff.cashierName && row.staffBranch == staff.branch
+        && staff.get('active',true) != false && staff.get('archived',false) != true && staff.get('blocked',false) != true
+        && !(staff.get('status','').lower() in ['blocked','inactive','disabled','revoked','terminated','archived','resigned','deleted'])
+        && !(staff.get('pin','').upper() in ['BLOCKED','REVOKED'])
+        && row.incidentDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && timestamp.date(int(incident[0]),int(incident[1]),int(incident[2])) - duration.value(8,'h') <= r9();
+    }
+    function r49(data,id) {
+      let row = r6('owner_deduction_reviews',id);
+      let notice = r6('staff_deduction_notices',id);
+      return r44() && !exists(/databases/$(database)/documents/owner_deduction_reviews/$(id))
+        && r47(row,data,notice,id) && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
+        && data.dateAdded == r9() && data.loggedBy == r8()
+        && data.remarks == 'Owner custom deduction review only; no payroll charge is authorized.'
+        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','ownerDeductionVersion','authorizedAmount','reviewRevision','dateAdded','loggedBy','remarks']);
+    }
+    function r4a(data,id) {
+      let row = r6('owner_deduction_reviews',id);
+      let charge = r4(id);
+      return r44() && !exists(/databases/$(database)/documents/owner_deduction_reviews/$(id))
+        && r47(row,charge,data,id) && data.status == 'Pending Review' && data.amount == 0
+        && data.details == row.details && data.evidence == row.evidence && data.reasonLabel == row.label
+        && data.replyRevision == 0 && data.readRevision == 0 && data.createdAt == r9() && data.updatedAt == r9()
+        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','version','id','sourceLossCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']);
+    }
+    function r4b(before,after,id) {
+      let row = r6('owner_deduction_reviews',id);
+      let notice = r6('staff_deduction_notices',id);
+      return r44() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(re())
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
+        && after.reviewRevision == before.reviewRevision + 1 && after.reviewedAt == r9() && after.reviewedBy == r8()
+        && r47(row,after,notice,id) && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == r9();
+    }
+    function r4c(before,after,id) {
+      let row = r6('owner_deduction_reviews',id);
+      let charge = r4(id);
+      return r44() && before.status in ['Pending Review','Approved']
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','weeklyLimitConfirmed','updatedAt'])
+        && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == r9() && after.status == row.status
+        && r47(row,charge,after,id) && row.reviewedAt == r9()
+        && (row.status == 'Dismissed' ? after.ownerReply == row.dismissalReason : (after.ownerReply == row.finding && after.lawfulBasis == row.lawfulBasis && after.authorityReference == row.authorityReference && after.finding == row.finding && after.weeklyLimitConfirmed == true));
+    }
+    function r4d(payroll) {
+      return payroll.get('ownerDeductionSettlements',{}).size() > 0 || payroll.get('frozenData',{}).get('ownerDeductions',0) > 0 || payroll.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;
+    }
+    function r4e(item,map,details,recordId) {
+      let row = r6('owner_deduction_reviews',item.id);
+      return item.keys().hasOnly(['id','amount']) && item.id is string && r45(item.id) && item.amount is number && item.amount > 0 && map[item.id] == item.amount
+        && row.status == 'Paid' && row.amount == item.amount && row.payrollRecordId == recordId && row.paidAt == r9();
+    }
+    function r4f(rows,map,details,index,recordId) { return rows.size() <= index || r4e(rows[index],map,details,recordId); }
+    function r4g(value) { return value >= 0 ? int(value * 100 + 0.5) : -int(-value * 100 + 0.5); }
+    function r4h(payroll,recordId) {
+      let before = r5('cash_accounts',payroll.accountId);
+      let after = r6('cash_accounts',payroll.accountId);
+      let expense = r6('expenses',recordId);
+      return payroll.finalNetPay is number && payroll.finalNetPay >= 0 && before.balance is number && after.balance is number
+        && r4g(before.balance) - r4g(after.balance) == r4g(payroll.finalNetPay)
+        && expense.category == 'Payroll' && expense.payrollRecordId == recordId && expense.amount == payroll.finalNetPay && expense.timestamp == r9();
+    }
+    function r4i(payroll,recordId) {
+      let rows = payroll.get('frozenData',{}).get('ownerDeductionRows',[]);
+      let map = payroll.get('ownerDeductionSettlements',{});
+      let details = payroll.get('frozenData',{}).get('ownerDeductionDetails',[]);
+      return rows is list && rows.size() <= 4 && rows.toSet().size() == rows.size() && map is map && map.size() == rows.size()
+        && details is list && details.size() == rows.size()
+        && r4f(rows,map,details,0,recordId) && r4f(rows,map,details,1,recordId) && r4f(rows,map,details,2,recordId) && r4f(rows,map,details,3,recordId)
+        && payroll.get('frozenData',{}).get('ownerDeductions',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (rows.size() > 3 ? rows[3].amount : 0)
+        && (rows.size() == 0 || (r44() && payroll.frozenData.isPaid == true && payroll.processedAt == r9() && payroll.processedBy == r8()
+          && rows.size() + payroll.get('frozenData',{}).get('cashShortageRows',[]).size() + payroll.get('refundSettlements',{}).size() <= 4 && r4h(payroll,recordId)));
+    }
+    function r4j(before,after) {
+      return r44() && before.type == 'Owner Custom Deduction' && before.status in ['Approved','Unpaid'] && before.amount > 0
+        && !before.keys().hasAny(re()) && after.diff(before).affectedKeys().hasOnly(['status','paidAt','payrollRecordId']) && after.status == 'Paid' && after.paidAt == r9();
+    }
+    // A custom-involved payment has at most three other protected rows. Keep
+    // the exact cash source checks, without evaluating six empty tuple slots.
+    function r4k(payroll,recordId) {
+      let rows = payroll.get('frozenData',{}).get('cashShortageRows',[]);
+      let map = payroll.get('cashShortageSettlements',{});
+      return rows is list && rows.size() <= 3 && rows.toSet().size() == rows.size() && map is map && map.size() == rows.size()
+        && r4x(rows,map,0,recordId) && r4x(rows,map,1,recordId) && r4x(rows,map,2,recordId)
+        && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0);
+    }
+    function r4l(before,after,id,revision) {
+      let row = r6('owner_deduction_reviews',id);
+      return r4j(before,after) && row.status == 'Paid' && row.staffId == before.staffId && row.amount == before.amount && row.revision == revision
+        && row.payrollRecordId == after.payrollRecordId && row.paidAt == r9();
+    }
+    match /owner_deduction_reviews/{id} {
+      function r4m(data,id) {
+        let charge = r4(id);
+        let notice = r6('staff_deduction_notices',id);
+        return r44() && r47(data,charge,notice,id) && r48(data)
+          && data.keys().hasOnly(['schemaVersion','id','type','staffId','staffName','staffBranch','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','details','evidence','sourceLossCents','proposedAmount','revision','status','amount','authorizedAmount','effectiveDate','openIntent','createdAt','createdByUid','createdBy'])
+          && data.label is string && data.label.size() >= 3 && data.label.size() <= 120 && data.category in ['Damaged item','Wastage','Other']
+          && data.status == 'Pending Review' && data.amount == 0 && data.revision == 1 && data.effectiveDate == null && charge.status == 'Pending Review' && notice.status == 'Pending Review'
+          && data.sourceLossCents is int && data.sourceLossCents > 0 && data.sourceLossCents <= 100000000000
+          && data.proposedAmount is number && data.proposedAmount > 0 && data.proposedAmount <= data.sourceLossCents / 100.0 && data.proposedAmount == int(data.proposedAmount * 100 + 0.5) / 100.0
+          && data.details is string && data.details.size() >= 8 && data.details.size() <= 1500 && data.evidence is string && data.evidence.size() >= 5 && data.evidence.size() <= 1000
+          && data.openIntent is string && data.openIntent.size() > 0 && data.openIntent.size() <= 12000
+          && data.createdAt == r9() && data.createdByUid == r7() && data.createdBy == r8();
+      }
+      function r4n(before,after,id) {
+        let charge = r4(id);
+        let notice = r6('staff_deduction_notices',id);
+        let response = r5('staff_deduction_notices',id);
+        let due = after.get('effectiveDate','2000-01-01') == null ? ['2000','01','01'] : after.effectiveDate.split('-');
+        return r44() && before.status in ['Pending Review','Approved'] && !before.keys().hasAny(re())
+          && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','revision','lawfulBasis','authorityReference','finding','responsibilityConfirmed','lawfulAuthorityConfirmed','weeklyLimitConfirmed','replyRevisionReviewed','approvalIntent','reviewedAt','reviewedBy','dismissalReason'])
+          && after.revision == before.revision + 1 && after.reviewedAt == r9() && after.reviewedBy == r8() && r47(after,charge,notice,id) && notice.status == after.status
+          && (after.status == 'Dismissed' ? (after.amount == 0 && charge.status == 'Dismissed' && after.dismissalReason is string && after.dismissalReason.size() >= 8 && after.dismissalReason.size() <= 1500)
+            : (after.status == 'Approved' && charge.status == 'Unpaid' && r48(after)
+              && after.amount is number && after.amount > 0 && after.amount <= after.sourceLossCents / 100.0 && after.amount == int(after.amount * 100 + 0.5) / 100.0
+              && after.effectiveDate is string && after.effectiveDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && timestamp.date(int(due[0]),int(due[1]),int(due[2])) + duration.value(16,'h') > r9()
+              && after.lawfulBasis in ['Legal authority permitting this deduction','Court / authorized agency order'] && after.responsibilityConfirmed == true && after.lawfulAuthorityConfirmed == true && after.weeklyLimitConfirmed == true
+              && after.authorityReference is string && after.authorityReference.size() >= 8 && after.authorityReference.size() <= 1500 && after.finding is string && after.finding.size() >= 15 && after.finding.size() <= 1500
+              && after.approvalIntent is string && after.approvalIntent.size() > 0 && after.approvalIntent.size() <= 5000
+              && response.replyRevision is int && response.replyRevision > 0 && response.staffReply is string && response.staffReply.size() > 0 && after.replyRevisionReviewed == response.replyRevision && notice.replyRevision == response.replyRevision));
+      }
+      function r4o(before,after,id) {
+        let charge = r4(id);
+        let notice = r6('staff_deduction_notices',id);
+        let payroll = r6('payroll_records',after.payrollRecordId);
+        return r4j(before,after) && before.status == 'Approved' && charge.status == 'Paid' && notice.status == 'Paid' && charge.amount == before.amount && notice.amount == before.amount
+          && charge.reviewRevision == before.revision && notice.noticeRevision == before.revision && notice.replyRevision == before.replyRevisionReviewed && before.replyRevisionReviewed > 0 && notice.staffReply is string && notice.staffReply.size() > 0
+          && charge.payrollRecordId == after.payrollRecordId && notice.payrollRecordId == after.payrollRecordId && charge.paidAt == r9() && notice.paidAt == r9()
+          && payroll.staffId == before.staffId && payroll.frozenData.branch == before.staffBranch && payroll.frozenData.name == before.staffName && payroll.processedAt == r9() && payroll.frozenData.isPaid == true && before.effectiveDate <= payroll.endDate
+          && payroll.ownerDeductionSettlements[id] == before.amount && {'id':id,'amount':before.amount} in payroll.frozenData.ownerDeductionRows
+          && {'id':id,'type':'Owner Custom Deduction','bucket':'ownerDeductions','amount':before.amount,'label':before.label,'category':before.category,'incidentDate':before.incidentDate,'effectiveDate':before.effectiveDate,'reviewRevision':before.revision} in payroll.frozenData.ownerDeductionDetails;
+      }
+      allow get, list: if r44() || r6i(rb().staffId) || r2m(rb().staffBranch);
+      allow create: if r4m(ra(),id);
+      function r4p(data,before) { return data.status == 'Paid' ? r4o(before,data,id) : r4n(before,data,id); }
+      allow update: if r4p(ra(),resource == null ? null : rb());
+      allow delete: if false;
+    }
+    function r4q(data,id) { return data.get('type','') == 'Cash Shortage' || id.matches('^cash-shortage-.*'); }
+    function r4r(row,charge,notice,id) {
       return row.id == id && row.type == 'Cash Shortage' && charge.type == 'Cash Shortage' && notice.type == 'Cash Shortage'
         && row.schemaVersion == 1 && charge.cashShortageVersion == 1 && notice.version == 1
         && charge.incidentId == id && notice.id == id && notice.incidentId == id
@@ -1560,51 +1720,51 @@ service cloud.firestore {
         && charge.effectiveDate == row.effectiveDate && notice.effectiveDate == row.effectiveDate
         && charge.reviewRevision == row.revision && notice.noticeRevision == row.revision;
     }
-    function r46(data,id) {
+    function r4s(data,id) {
       let row = r6('cash_shortage_reviews',id);
       let notice = r6('staff_deduction_notices',id);
       return rk() && !exists(/databases/$(database)/documents/cash_shortage_reviews/$(id))
-        && r45(row,data,notice,id) && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
+        && r4r(row,data,notice,id) && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
         && data.dateAdded == r9() && data.loggedBy == r8()
         && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourceShiftId','sourceReceiptId','sourcePlatform','amount','effectiveDate','status','cashShortageVersion','sourceBranch','authorizedAmount','reviewRevision','dateAdded','loggedBy','remarks']);
     }
-    function r47(data,id) {
+    function r4t(data,id) {
       let row = r6('cash_shortage_reviews',id);
       let charge = r4(id);
       return rk() && !exists(/databases/$(database)/documents/cash_shortage_reviews/$(id))
-        && r45(row,charge,data,id) && data.status == 'Pending Review' && data.amount == 0
+        && r4r(row,charge,data,id) && data.status == 'Pending Review' && data.amount == 0
         && data.details == row.details && data.evidence == row.evidence && data.sourceShortageCents == row.sourceShortageCents
         && data.replyRevision == 0 && data.readRevision == 0 && data.createdAt == r9() && data.updatedAt == r9()
         && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourceShiftId','sourceReceiptId','sourcePlatform','amount','effectiveDate','status','version','id','sourceShortageCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']);
     }
-    function r48(before,after,id) {
+    function r4u(before,after,id) {
       let row = r6('cash_shortage_reviews',id);
       let notice = r6('staff_deduction_notices',id);
       return rk() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(re())
         && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
         && after.reviewRevision == before.reviewRevision + 1 && after.reviewedAt == r9() && after.reviewedBy == r8()
-        && r45(row,after,notice,id) && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == r9();
+        && r4r(row,after,notice,id) && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == r9();
     }
-    function r49(before,after,id) {
+    function r4v(before,after,id) {
       let row = r6('cash_shortage_reviews',id);
       let charge = r4(id);
       return rk() && before.status in ['Pending Review','Approved']
         && after.diff(before).affectedKeys().hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','updatedAt'])
         && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == r9() && after.status == row.status
-        && r45(row,charge,after,id) && row.reviewedAt == r9()
+        && r4r(row,charge,after,id) && row.reviewedAt == r9()
         && (row.status == 'Dismissed' ? after.ownerReply == row.dismissalReason : (after.ownerReply == row.finding && after.lawfulBasis == row.lawfulBasis && after.authorityReference == row.authorityReference && after.finding == row.finding));
     }
-    function r4a(item,map,recordId) {
+    function r4w(item,map,recordId) {
       let row = r6('cash_shortage_reviews',item.id);
       return item.keys().hasOnly(['id','amount']) && item.id is string && item.amount is number && item.amount > 0 && map[item.id] == item.amount
         && row.status == 'Paid' && row.amount == item.amount && row.payrollRecordId == recordId && row.paidAt == r9();
     }
-    function r4b(rows,map,index,recordId) { return rows.size() <= index || r4a(rows[index],map,recordId); }
-    function r4c(payroll) {
+    function r4x(rows,map,index,recordId) { return rows.size() <= index || r4w(rows[index],map,recordId); }
+    function r4y(payroll) {
       return payroll.get('cashShortageSettlements',{}).size() > 0 || payroll.get('frozenData',{}).get('cashShortages',0) > 0 || payroll.get('frozenData',{}).get('cashShortageRows',[]).size() > 0;
     }
-    function r4d(before,after) {
-      return r5w(before.staffId) && before.get('acknowledged',false) == false
+    function r4z(before,after) {
+      return r6i(before.staffId) && before.get('acknowledged',false) == false
         && after.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])
         && after.acknowledged == true && after.acknowledgedAt == r9()
         && after.signatureBase64 is string && after.signatureBase64.size() >= 64 && after.signatureBase64.size() <= 500000
@@ -1612,27 +1772,27 @@ service cloud.firestore {
         && after.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');
     }
     // Validate the full tuple list once per payroll, not once for each of the three protected case records.
-    function r4e(payroll,recordId) {
+    function r50(payroll,recordId) {
       let rows = payroll.get('frozenData',{}).get('cashShortageRows',[]);
       let map = payroll.get('cashShortageSettlements',{});
       return rows is list && rows.size() <= 6 && rows.toSet().size() == rows.size()
         && map is map && map.size() == rows.size()
-        && r4b(rows,map,0,recordId) && r4b(rows,map,1,recordId) && r4b(rows,map,2,recordId) && r4b(rows,map,3,recordId) && r4b(rows,map,4,recordId) && r4b(rows,map,5,recordId)
+        && r4x(rows,map,0,recordId) && r4x(rows,map,1,recordId) && r4x(rows,map,2,recordId) && r4x(rows,map,3,recordId) && r4x(rows,map,4,recordId) && r4x(rows,map,5,recordId)
         && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (rows.size() > 3 ? rows[3].amount : 0) + (rows.size() > 4 ? rows[4].amount : 0) + (rows.size() > 5 ? rows[5].amount : 0)
         && (rows.size() == 0 || (rk() && payroll.frozenData.isPaid == true && payroll.processedAt == r9() && payroll.processedBy == r8() && rows.size() + payroll.get('refundSettlements',{}).size() <= 6));
     }
-    function r4f(before,after) {
+    function r51(before,after) {
       return rk() && before.type == 'Cash Shortage' && before.status in ['Approved','Unpaid'] && before.amount > 0
         && !before.keys().hasAny(re())
         && after.diff(before).affectedKeys().hasOnly(['status','paidAt','payrollRecordId']) && after.status == 'Paid' && after.paidAt == r9();
     }
-    function r4g(before,after,id,revision) {
+    function r52(before,after,id,revision) {
       let row = r6('cash_shortage_reviews',id);
-      return r4f(before,after) && row.status == 'Paid' && row.staffId == before.staffId && row.amount == before.amount && row.revision == revision
+      return r51(before,after) && row.status == 'Paid' && row.staffId == before.staffId && row.amount == before.amount && row.revision == revision
         && row.payrollRecordId == after.payrollRecordId && row.paidAt == r9();
     }
     match /cash_shortage_reviews/{id} {
-      function r4h(data,id) {
+      function r53(data,id) {
         let shift = r5('shifts',data.sourceShiftId);
         let staff = r5('cashiers',data.staffId);
         return id == 'cash-shortage-' + data.sourceShiftId && data.sourceShiftId.matches('^[-A-Za-z0-9_]{1,160}$')
@@ -1648,10 +1808,10 @@ service cloud.firestore {
           && data.sourceReceiptId == data.sourceShiftId && data.sourcePlatform == 'Z-reading'
           && data.sourceFingerprint is string && data.sourceFingerprint.size() > 0 && data.sourceFingerprint.size() <= 30000;
       }
-      function r4i(data,id) {
+      function r54(data,id) {
         let charge = r4(id);
         let notice = r6('staff_deduction_notices',id);
-        return rk() && r4h(data,id) && r45(data,charge,notice,id)
+        return rk() && r53(data,id) && r4r(data,charge,notice,id)
           && data.keys().hasOnly(['schemaVersion','id','type','sourceShiftId','sourceReceiptId','sourcePlatform','branch','staffId','staffName','staffBranch','expectedCash','declaredCash','sourceShortage','sourceShortageCents','sourceFingerprint','details','evidence','revision','status','amount','authorizedAmount','effectiveDate','openIntent','createdAt','createdByUid','createdBy'])
           && data.status == 'Pending Review' && data.amount == 0 && data.revision == 1 && data.effectiveDate == null
           && charge.status == 'Pending Review' && notice.status == 'Pending Review' && notice.replyRevision == 0 && notice.readRevision == 0
@@ -1660,7 +1820,7 @@ service cloud.firestore {
           && data.openIntent is string && data.openIntent.size() > 0 && data.openIntent.size() <= 40000
           && data.createdAt == r9() && data.createdByUid == r7() && data.createdBy == r8();
       }
-      function r4j(before,after,id) {
+      function r55(before,after,id) {
         let charge = r4(id);
         let notice = r6('staff_deduction_notices',id);
         let response = r5('staff_deduction_notices',id);
@@ -1668,9 +1828,9 @@ service cloud.firestore {
         return rk() && before.status in ['Pending Review','Approved'] && !before.keys().hasAny(re())
           && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','revision','lawfulBasis','authorityReference','finding','responsibilityConfirmed','lawfulAuthorityConfirmed','replyRevisionReviewed','approvalIntent','reviewedAt','reviewedBy','dismissalReason'])
           && after.revision == before.revision + 1 && after.reviewedAt == r9() && after.reviewedBy == r8()
-          && r45(after,charge,notice,id) && notice.status == after.status
+          && r4r(after,charge,notice,id) && notice.status == after.status
           && (after.status == 'Dismissed' ? (after.amount == 0 && charge.status == 'Dismissed' && after.dismissalReason is string && after.dismissalReason.size() >= 8 && after.dismissalReason.size() <= 1500)
-            : (after.status == 'Approved' && charge.status == 'Unpaid' && r4h(after,id)
+            : (after.status == 'Approved' && charge.status == 'Unpaid' && r53(after,id)
               && after.amount is number && after.amount > 0 && after.amount <= after.sourceShortageCents / 100.0 && after.amount == int(after.amount * 100 + 0.5) / 100.0
               && after.effectiveDate is string && after.effectiveDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
               && timestamp.date(int(due[0]),int(due[1]),int(due[2])) + duration.value(16,'h') > r9()
@@ -1681,12 +1841,12 @@ service cloud.firestore {
               && response.replyRevision is int && response.replyRevision > 0 && response.staffReply is string && response.staffReply.size() > 0
               && after.replyRevisionReviewed == response.replyRevision && notice.replyRevision == response.replyRevision));
       }
-      function r4k(before,after,id) {
+      function r56(before,after,id) {
         let charge = r4(id);
         let notice = r6('staff_deduction_notices',id);
         let payroll = r6('payroll_records',after.payrollRecordId);
         // Links and all financial/source fields were established at authorization and are immutable in this transition.
-        return r4f(before,after) && before.status == 'Approved'
+        return r51(before,after) && before.status == 'Approved'
           && charge.status == 'Paid' && notice.status == 'Paid' && charge.amount == before.amount && notice.amount == before.amount
           && charge.reviewRevision == before.revision && notice.noticeRevision == before.revision
           && notice.replyRevision == before.replyRevisionReviewed && before.replyRevisionReviewed > 0 && notice.staffReply is string && notice.staffReply.size() > 0
@@ -1697,31 +1857,33 @@ service cloud.firestore {
       }
 
       allow get, list: if rk() || r2m(rb().staffBranch);
-      allow create: if r4i(ra(),id);
-      function r4l(data,before) {
-        return data.status == 'Paid' ? r4k(before,data,id) : r4j(before,data,id);
+      allow create: if r54(ra(),id);
+      function r57(data,before) {
+        return data.status == 'Paid' ? r56(before,data,id) : r55(before,data,id);
       }
-      allow update: if r4l(ra(),resource == null ? null : rb());
+      allow update: if r57(ra(),resource == null ? null : rb());
       allow delete: if false;
     }
     match /staff_deduction_notices/{id} {
-      allow get, list: if rk() || r5w(rb().staffId) || (r44(rb(),id) && r2m(rb().branch));
-      function r4m(data) {
-        return r44(data,id) ? r47(data,id) : r41(data,id);
+      allow get, list: if rk() || r6i(rb().staffId) || ((r4q(rb(),id) || r46(rb(),id)) && r2m(rb().branch));
+      function r58(data) {
+        return r46(data,id) ? r4a(data,id) : r4q(data,id) ? r4t(data,id) : r41(data,id);
       }
-      allow create: if r4m(ra());
-      function r4n(data,before) {
-        return r44(before,id) || r44(data,id)
-        ? (data.status == 'Paid' && before.status != 'Paid' ? r4g(before,data,id,before.noticeRevision) : (r43(before,data) || r49(before,data,id)))
+      allow create: if r58(ra());
+      function r59(data,before) {
+        return r46(before,id) || r46(data,id)
+        ? (data.status == 'Paid' && before.status != 'Paid' ? r4l(before,data,id,before.noticeRevision) : (r43(before,data) || r4c(before,data,id)))
+        : r4q(before,id) || r4q(data,id)
+        ? (data.status == 'Paid' && before.status != 'Paid' ? r52(before,data,id,before.noticeRevision) : (r43(before,data) || r4v(before,data,id)))
         : r43(before,data)
         || r42(before,data,id) || r40(before,data,id);
       }
-      allow update: if r4n(ra(),resource == null ? null : rb());
+      allow update: if r59(ra(),resource == null ? null : rb());
       allow delete: if false;
     }
 
     match /online_order_incidents/{id} {
-      function r4o(data, id) {
+      function r5a(data, id) {
         let sale = r2(data.sourceSaleId);
         let staff = r5('cashiers',data.staffId);
         let charge = r4(id);
@@ -1746,7 +1908,7 @@ service cloud.firestore {
           && charge.staffId == data.staffId && charge.staffName == data.staffName
           && charge.proposedAmount == data.refundAmount && charge.status == data.status && charge.amount == 0;
       }
-      function r4p(before, after, id) {
+      function r5b(before, after, id) {
         let charge = r4(id);
         return rk() && before.status == 'Pending Review' && before.amount == 0
           && after.diff(before).affectedKeys().hasOnly(['status','staffResponse','reviewNote','reviewedAt','reviewedBy','reviewRevision'])
@@ -1757,7 +1919,7 @@ service cloud.firestore {
           && charge.status == after.status && charge.amount == 0
           && charge.responseRecorded == true && charge.reviewedAt == r9();
       }
-      function r4q(data, id) {
+      function r5c(data, id) {
         let sale = r2(data.sourceSaleId);
         let staff = r5('cashiers',data.staffId);
         let charge = r4(id);
@@ -1785,7 +1947,7 @@ service cloud.firestore {
           && charge.amount == data.amount && charge.status == data.status && charge.authorizedAmount == data.amount
           && notice.id == id && notice.incidentId == id && notice.staffId == data.staffId && notice.amount == data.amount && notice.status == data.status;
       }
-      function r4r(before,after,id) {
+      function r5d(before,after,id) {
         let charge = r4(id);
         let notice = r6('staff_deduction_notices',id);
         return rk() && before.status in ['Pending Review','Unpaid']
@@ -1802,27 +1964,30 @@ service cloud.firestore {
       }
 
       allow get, list: if rk();
-      allow create: if r4o(ra(), id) || r4q(ra(),id);
-      function r4s(data,before) {
-        return r4p(before, data, id) || r4r(before,data,id) || r40(before,data,id);
+      allow create: if r5a(ra(), id) || r5c(ra(),id);
+      function r5e(data,before) {
+        return r5b(before, data, id) || r5d(before,data,id) || r40(before,data,id);
       }
-      allow update: if r4s(ra(),resource == null ? null : rb());
+      allow update: if r5e(ra(),resource == null ? null : rb());
       allow delete: if false;
     }
     match /staff_deductions/{deductId} {
       allow read: if true;
-      function r4t(data) {
-        return r44(data,deductId) ? r46(data,deductId)
+      function r5f(data) {
+        return r46(data,deductId) ? r49(data,deductId)
+        : r4q(data,deductId) ? r4s(data,deductId)
         : data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
         ? (r3x(data, deductId) || r3y(data,deductId))
         : data.get('type', '') == 'Cancelled Food Purchase'
         ? ry(data, deductId)
         : rj();
       }
-      allow create: if r4t(ra());
-      function r4u(data,before) {
-        return r44(before,deductId) || r44(data,deductId)
-        ? (data.status == 'Paid' ? r4g(before,data,deductId,before.reviewRevision) : r48(before,data,deductId))
+      allow create: if r5f(ra());
+      function r5g(data,before) {
+        return r46(before,deductId) || r46(data,deductId)
+        ? (data.status == 'Paid' ? r4l(before,data,deductId,before.reviewRevision) : r4b(before,data,deductId))
+        : r4q(before,deductId) || r4q(data,deductId)
+        ? (data.status == 'Paid' ? r52(before,data,deductId,before.reviewRevision) : r4u(before,data,deductId))
         : before.get('type', '') == 'Online Order Refund' || data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
         ? (rk() && before.type == 'Online Order Refund' && data.amount == 0
           && before.status == 'Pending Review'
@@ -1834,100 +1999,100 @@ service cloud.firestore {
         : before.get('type', '') == 'Cancelled Food Purchase'
         ? rn(before.branch) : rj();
       }
-      allow update: if r4u(ra(),resource == null ? null : rb());
-      function r4v(before) {
-        return !r44(before,deductId) && before.get('type', '') != 'Online Order Refund'
+      allow update: if r5g(ra(),resource == null ? null : rb());
+      function r5h(before) {
+        return !r46(before,deductId) && !r4q(before,deductId) && before.get('type', '') != 'Online Order Refund'
         && (before.get('type', '') == 'Cancelled Food Purchase' ? rn(before.branch) : rj());
       }
-      allow delete: if r4v(resource == null ? null : rb());
+      allow delete: if r5h(resource == null ? null : rb());
     }
     // Owner compliance records are independent of payroll and bank postings.
-    function r4w() {
+    function r5i() {
       return rk() && rc() == 'google.com';
     }
-    function r4x(value, maximum) { return value is string && value.size() <= maximum; }
-    function r4y(value) { return value is string && value.matches('^[A-Za-z0-9_-]{1,180}$'); }
-    function r4z(value) { return value is string && value.matches('^2[01][0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
-    function r50(value) { return value is string && value.matches('^2[01][0-9]{2}-(0[1-9]|1[0-2])$'); }
-    function r51(value) { return value is string && value.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
-    function r52(value) { return value is int && value >= 0 && value <= 1000000000; }
-    function r53(value, kind, recordId) {
+    function r5j(value, maximum) { return value is string && value.size() <= maximum; }
+    function r5k(value) { return value is string && value.matches('^[A-Za-z0-9_-]{1,180}$'); }
+    function r5l(value) { return value is string && value.matches('^2[01][0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
+    function r5m(value) { return value is string && value.matches('^2[01][0-9]{2}-(0[1-9]|1[0-2])$'); }
+    function r5n(value) { return value is string && value.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
+    function r5o(value) { return value is int && value >= 0 && value <= 1000000000; }
+    function r5p(value, kind, recordId) {
       return value is map && value.keys().hasOnly(['id','kind','recordId','fileName','contentType','size','sha256','chunkCount'])
         && value.id is string && value.id.matches('^[a-fA-F0-9-]{36}$') && value.kind == kind && value.recordId == recordId
-        && r4x(value.fileName,160) && value.fileName.size() > 0
+        && r5j(value.fileName,160) && value.fileName.size() > 0
         && value.contentType in ['application/pdf','image/jpeg','image/png']
         && value.size is int && value.size > 0 && value.size <= 2097152
         && value.sha256 is string && value.sha256.matches('^[a-f0-9]{64}$')
         && value.chunkCount is int && value.chunkCount >= 1 && value.chunkCount <= 15
         && value.chunkCount == int(math.ceil(value.size / 147456.0));
     }
-    function r54(value, kind, recordId) {
-      return value == null || (r53(value,kind,recordId)
+    function r5q(value, kind, recordId) {
+      return value == null || (r5p(value,kind,recordId)
         && r6('owner_record_files',value.id).diff(value).affectedKeys().hasOnly([
           'schemaVersion','chunkSize','operationId','createdAt','createdByUid','createdByEmail']));
     }
-    function r55(data) {
+    function r5r(data) {
       return {'branch':data.branch,'permitType':data.permitType,'permitName':data.permitName,'agency':data.agency,
         'permitNumber':data.permitNumber,'issueDate':data.issueDate,'expiryDate':data.expiryDate,'renewalStatus':data.renewalStatus,
         'notes':data.notes,'attachment':data.attachment,'archived':data.archived};
     }
-    function r56(data, id) {
+    function r5s(data, id) {
       return data.keys().hasOnly(['schemaVersion','recordId','branch','permitType','permitName','agency','permitNumber','issueDate','expiryDate','renewalStatus','notes','attachment','archived','revision','createdAt','createdByUid','createdByEmail','updatedAt','updatedByUid','updatedByEmail','lastChangeId'])
-        && data.schemaVersion == 1 && data.recordId == id && r4y(id)
-        && r4x(data.branch,120) && data.branch.size() > 0
-        && r4x(data.permitType,80) && data.permitType.size() > 0
-        && r4x(data.permitName,160) && data.permitName.size() > 0
-        && r4x(data.agency,160) && r4x(data.permitNumber,120)
-        && (data.issueDate == '' || r51(data.issueDate)) && (data.expiryDate == '' || r51(data.expiryDate))
+        && data.schemaVersion == 1 && data.recordId == id && r5k(id)
+        && r5j(data.branch,120) && data.branch.size() > 0
+        && r5j(data.permitType,80) && data.permitType.size() > 0
+        && r5j(data.permitName,160) && data.permitName.size() > 0
+        && r5j(data.agency,160) && r5j(data.permitNumber,120)
+        && (data.issueDate == '' || r5n(data.issueDate)) && (data.expiryDate == '' || r5n(data.expiryDate))
         && (data.issueDate == '' || data.expiryDate == '' || data.expiryDate >= data.issueDate)
         && data.renewalStatus in ['Not started','Preparing','Submitted','Completed','Not required']
-        && r4x(data.notes,4000) && data.archived is bool && data.revision is int && data.revision > 0
-        && r54(data.attachment,'government_permit',id) && r4y(data.lastChangeId)
+        && r5j(data.notes,4000) && data.archived is bool && data.revision is int && data.revision > 0
+        && r5q(data.attachment,'government_permit',id) && r5k(data.lastChangeId)
         && data.updatedAt == r9() && data.updatedByUid == r7() && data.updatedByEmail == r8();
     }
-    function r57(data,id,before,action) {
+    function r5t(data,id,before,action) {
       let event = getAfter(/databases/$(database)/documents/government_permits/$(id)/changes/$(data.lastChangeId)).data;
       return event.schemaVersion == 1 && event.operationId == data.lastChangeId && event.recordId == id
-        && event.revision == data.revision && event.action == action && event.before == before && event.after == r55(data)
+        && event.revision == data.revision && event.action == action && event.before == before && event.after == r5r(data)
         && event.recordedAt == r9() && event.recordedByUid == r7() && event.recordedByEmail == r8();
     }
     match /government_permits/{id} {
-      allow read: if r4w();
-      function r58(data,before) {
-        return r4w() && r56(data,id)
+      allow read: if r5i();
+      function r5u(data,before) {
+        return r5i() && r5s(data,id)
         && data.revision == (resource == null ? 1 : before.revision + 1)
         && data.createdAt == (resource == null ? r9() : before.createdAt)
         && data.createdByUid == (resource == null ? r7() : before.createdByUid)
         && data.createdByEmail == (resource == null ? r8() : before.createdByEmail)
         && (resource == null || data.lastChangeId != before.lastChangeId)
-        && r57(data,id,resource == null ? null : r55(before),
+        && r5t(data,id,resource == null ? null : r5r(before),
           resource == null ? 'Created' : data.archived != before.archived
           ? (data.archived ? 'Archived' : 'Restored') : 'Updated');
       }
-      allow create, update: if r58(ra(),resource == null ? null : rb());
+      allow create, update: if r5u(ra(),resource == null ? null : rb());
       allow delete: if false;
       match /changes/{changeId} {
-        allow read: if r4w();
-        function r59(data) {
-          return r4w() && data.keys().hasOnly(['schemaVersion','operationId','recordId','revision','action','before','after','reason','recordedAt','recordedByUid','recordedByEmail','intent'])
+        allow read: if r5i();
+        function r5v(data) {
+          return r5i() && data.keys().hasOnly(['schemaVersion','operationId','recordId','revision','action','before','after','reason','recordedAt','recordedByUid','recordedByEmail','intent'])
           && data.schemaVersion == 1 && data.operationId == changeId
           && data.recordId == id && data.revision is int
           && data.action in ['Created','Updated','Archived','Restored']
-          && r4x(data.reason,1000) && data.intent.matches('^[a-f0-9]{64}$')
+          && r5j(data.reason,1000) && data.intent.matches('^[a-f0-9]{64}$')
           && data.recordedAt == r9() && data.recordedByUid == r7() && data.recordedByEmail == r8()
           && r6('government_permits',id).lastChangeId == changeId
           && r6('government_permits',id).revision == data.revision
-          && data.after == r55(r6('government_permits',id));
+          && data.after == r5r(r6('government_permits',id));
         }
-        allow create: if r59(ra());
+        allow create: if r5v(ra());
         allow update, delete: if false;
       }
     }
-    function r5a(value) {
+    function r5w(value) {
       return value is number && value >= 0 ? math.round(value * 100)
         : value is string && value.matches('^[0-9]+([.][0-9]{1,2})?$') ? math.round(float(value) * 100) : -1;
     }
-    function r5b(row,staffId,staffName) {
+    function r5x(row,staffId,staffName) {
       let saved = r5('payroll_records',row.payrollRecordId);
       let frozen = saved.frozenData;
       let net = saved.get('finalNetPay',null);
@@ -1936,41 +2101,41 @@ service cloud.firestore {
       let start = row.startDate;
       let end = row.endDate;
       return [saved.startDate,saved.endDate,frozen.get('start',start),frozen.get('end',end)] == [start,end,start,end]
-        && start <= end && r4z(start) && r4z(end)
+        && start <= end && r5l(start) && r5l(end)
         && ids.toSet().hasOnly(['',staffId]) && (staffId in ids
           || (saved.get('staffName','') == staffName && frozen.get('name',staffName) == staffName))
         && frozen is map && saved.get('isPaid',true) != false && frozen.get('isPaid',true) != false
         && !(saved.get('status','').lower() in ['draft','unpaid','pending','cancelled','canceled','voided','failed'])
-        && r5a(net) >= 0 && (frozenNet == net || r5a(frozenNet) == r5a(net))
-        && r5a(frozen.get('sss',null)) == row.deductedCents;
+        && r5w(net) >= 0 && (frozenNet == net || r5w(frozenNet) == r5w(net))
+        && r5w(frozen.get('sss',null)) == row.deductedCents;
     }
-    function r5c(rows) {
+    function r5y(rows) {
       let n = rows.size();
       return [n>0?rows[0].payrollRecordId:'',n>1?rows[1].payrollRecordId:''];
     }
-    function r5d(rows) {
+    function r5z(rows) {
       let n = rows.size();
       return (n>0?rows[0].amountCents:0)+(n>1?rows[1].amountCents:0);
     }
-    function r5e(rows,at,staffId,staffName) {
-      return rows.size()<=at || r5b(rows[at],staffId,staffName);
+    function r60(rows,at,staffId,staffName) {
+      return rows.size()<=at || r5x(rows[at],staffId,staffName);
     }
-    function r5f(row,staffId,staffName,before,after) {
+    function r61(row,staffId,staffName,before,after) {
       let id = row.payrollRecordId;
       let old = before.get(id,0);
       let next = after.get(id,0);
       let amount = row.amountCents;
       let deducted = row.deductedCents;
       return row.keys().hasOnly(['payrollRecordId','startDate','endDate','deductedCents','amountCents'])
-        && r4y(id) && r52(deducted) && r52(amount)
+        && r5k(id) && r5o(deducted) && r5o(amount)
         && amount > 0 && amount <= deducted
         && old is int && old >= 0 && next == old + amount && next <= deducted && next > 0;
     }
-    function r5g(rows,at,staffId,staffName,before,after) {
-      return rows.size()<=at || (r5f(rows[at],staffId,staffName,before,after)
-        && (at<1 || r5b(rows[at],staffId,staffName)));
+    function r62(rows,at,staffId,staffName,before,after) {
+      return rows.size()<=at || (r61(rows[at],staffId,staffName,before,after)
+        && (at<1 || r5x(rows[at],staffId,staffName)));
     }
-    function r5h(data,id) {
+    function r63(data,id) {
       let staff = r5('cashiers',data.staffId);
       let ledger = r6('staff_sss_allocation_totals',data.staffId);
       let rows = data.allocations;
@@ -1979,27 +2144,27 @@ service cloud.firestore {
       let ec = data.ecShareCents;
       let total = data.totalCents;
       return data.keys().hasOnly(['version','recordId','staffId','staffName','branch','contributionMonth','remittedDate','employeeShareCents','employerShareCents','ecShareCents','totalCents','reference','referenceKey','notes','evidenceReference','allocations','proof','intent','recordedAt','recordedByUid','recordedBy'])
-        && data.version == 1 && data.recordId == id && id.matches('^sss-[a-f0-9]{64}$') && r4y(data.staffId)
+        && data.version == 1 && data.recordId == id && id.matches('^sss-[a-f0-9]{64}$') && r5k(data.staffId)
         && data.staffName == staff.get('cashierName',staff.get('fullName',staff.get('name',''))) && data.branch == staff.branch
-        && r50(data.contributionMonth) && r4z(data.remittedDate)
-        && r4x(data.reference,120) && data.reference.size() >= 3 && r4x(data.referenceKey,240) && data.referenceKey.size()>0
-        && r4x(data.notes,1500) && r4x(data.evidenceReference,500) && r4x(data.intent,30000)
-        && r52(employee) && r52(employer) && r52(ec)
-        && r52(total) && total > 0 && total == employee+employer+ec
+        && r5m(data.contributionMonth) && r5l(data.remittedDate)
+        && r5j(data.reference,120) && data.reference.size() >= 3 && r5j(data.referenceKey,240) && data.referenceKey.size()>0
+        && r5j(data.notes,1500) && r5j(data.evidenceReference,500) && r5j(data.intent,30000)
+        && r5o(employee) && r5o(employer) && r5o(ec)
+        && r5o(total) && total > 0 && total == employee+employer+ec
         && rows is list && rows.size() <= 2
         // One monthly remittance can link the two payroll cutoffs. Split the
         // immutable frozen proofs across the required atomic pair to stay within
         // Firestore's expression limit without trusting the client allocation.
-        && r5e(rows,0,data.staffId,data.staffName)
-        && employee == r5d(rows)
-        && r54(data.proof,'sss_remittance',id) && ledger.lastRemittanceId == id
+        && r60(rows,0,data.staffId,data.staffName)
+        && employee == r5z(rows)
+        && r5q(data.proof,'sss_remittance',id) && ledger.lastRemittanceId == id
         && ledger.updatedAt == r9() && ledger.updatedByUid == r7()
         && data.recordedAt == r9() && data.recordedByUid == r7() && data.recordedBy == r8();
     }
-    function r5i(data,staffId,before,revision) {
+    function r64(data,staffId,before,revision) {
       let record = r6('staff_sss_remittances',data.lastRemittanceId);
       let rows = record.allocations;
-      let ids = r5c(rows);
+      let ids = r5y(rows);
       let totals = data.allocatedCentsByPayroll;
       return data.keys().hasOnly(['version','staffId','revision','allocatedCentsByPayroll','lastRemittanceId','updatedAt','updatedByUid'])
         && data.version == 1 && data.staffId == staffId && data.revision == revision+1
@@ -2009,69 +2174,69 @@ service cloud.firestore {
         && record.recordId == data.lastRemittanceId && record.staffId == staffId && record.recordedAt == r9()
         && rows.size() <= 2 && ids.toSet().size() == rows.size() + (rows.size()<2?1:0)
         && totals.diff(before).affectedKeys().hasOnly(ids)
-        && r5g(rows,0,staffId,record.staffName,before,totals) && r5g(rows,1,staffId,record.staffName,before,totals)
+        && r62(rows,0,staffId,record.staffName,before,totals) && r62(rows,1,staffId,record.staffName,before,totals)
         && data.updatedAt == r9() && data.updatedByUid == r7();
     }
     match /staff_sss_remittances/{id} {
-      allow read: if r4w();
-      allow create: if r4w() && r5h(ra(),id);
+      allow read: if r5i();
+      allow create: if r5i() && r63(ra(),id);
       allow update, delete: if false;
     }
     match /staff_sss_allocation_totals/{staffId} {
-      allow read: if r4w();
-      function r5j(data,before) {
-        return r4w() && r5i(data,staffId,resource == null ? {} : before.allocatedCentsByPayroll,resource == null ? 0 : before.revision);
+      allow read: if r5i();
+      function r65(data,before) {
+        return r5i() && r64(data,staffId,resource == null ? {} : before.allocatedCentsByPayroll,resource == null ? 0 : before.revision);
       }
-      allow create, update: if r5j(ra(),resource == null ? null : rb());
+      allow create, update: if r65(ra(),resource == null ? null : rb());
       allow delete: if false;
     }
     match /bookkeeper_payments/{id} {
-      allow read: if r4w();
-      function r5k(data) {
-        return r4w() && data.keys().hasOnly(['schemaVersion','recordId','payee','branch','serviceMonth','paidDate','amountCents','paymentMethod','reference','notes','attachment','intent','recordedAt','recordedByUid','recordedByEmail'])
+      allow read: if r5i();
+      function r66(data) {
+        return r5i() && data.keys().hasOnly(['schemaVersion','recordId','payee','branch','serviceMonth','paidDate','amountCents','paymentMethod','reference','notes','attachment','intent','recordedAt','recordedByUid','recordedByEmail'])
           && data.schemaVersion == 1 && data.recordId == id && id.matches('^bookkeeper-[a-f0-9]{64}$')
-          && r4x(data.payee,120) && data.payee.size()>0
-          && r4x(data.branch,100) && data.branch.size()>0
-          && r50(data.serviceMonth) && r4z(data.paidDate)
+          && r5j(data.payee,120) && data.payee.size()>0
+          && r5j(data.branch,100) && data.branch.size()>0
+          && r5m(data.serviceMonth) && r5l(data.paidDate)
           && data.amountCents is int && data.amountCents>0 && data.amountCents<=99999999999
           && data.paymentMethod in ['Cash','Bank transfer','GCash','Other']
-          && r4x(data.reference,120) && data.reference.size()>0
-          && r4x(data.notes,1500) && r4x(data.intent,10000)
-          && r54(data.attachment,'bookkeeper_payment',id)
+          && r5j(data.reference,120) && data.reference.size()>0
+          && r5j(data.notes,1500) && r5j(data.intent,10000)
+          && r5q(data.attachment,'bookkeeper_payment',id)
           && data.recordedAt==r9() && data.recordedByUid==r7() && data.recordedByEmail==r8();
       }
-      allow create: if r5k(ra());
+      allow create: if r66(ra());
       allow update, delete: if false;
     }
-    function r5l(data,id) {
+    function r67(data,id) {
       let parent = data.kind == 'government_permit'
         ? r6('government_permits',data.recordId)
         : data.kind == 'sss_remittance' ? r6('staff_sss_remittances',data.recordId)
         : r6('bookkeeper_payments',data.recordId);
       return (data.kind == 'sss_remittance' ? parent.proof.id : parent.attachment.id) == id;
     }
-    function r5m(data) {
+    function r68(data) {
       return {'id':data.id,'kind':data.kind,'recordId':data.recordId,'fileName':data.fileName,'contentType':data.contentType,'size':data.size,'sha256':data.sha256,'chunkCount':data.chunkCount};
     }
     match /owner_record_files/{id} {
-      allow get: if r4w();
+      allow get: if r5i();
       allow list, update, delete: if false;
-      function r5n(data) {
-        return r4w() && data.keys().hasOnly(['schemaVersion','id','kind','recordId','fileName','contentType','size','sha256','chunkCount','chunkSize','operationId','createdAt','createdByUid','createdByEmail'])
+      function r69(data) {
+        return r5i() && data.keys().hasOnly(['schemaVersion','id','kind','recordId','fileName','contentType','size','sha256','chunkCount','chunkSize','operationId','createdAt','createdByUid','createdByEmail'])
           && data.schemaVersion == 1 && data.id == id
           && data.kind in ['government_permit','sss_remittance','bookkeeper_payment']
-          && r53(r5m(data),data.kind,data.recordId)
-          && data.chunkSize == 147456 && r4y(data.operationId)
+          && r5p(r68(data),data.kind,data.recordId)
+          && data.chunkSize == 147456 && r5k(data.operationId)
           && data.createdAt == r9() && data.createdByUid == r7() && data.createdByEmail == r8()
-          && r5l(data,id);
+          && r67(data,id);
       }
-      allow create: if r5n(ra());
+      allow create: if r69(ra());
       match /chunks/{chunkId} {
-        allow get: if r4w();
+        allow get: if r5i();
         allow list, update, delete: if false;
-        function r5o(data) {
+        function r6a(data) {
           let manifestPath = /databases/$(database)/documents/owner_record_files/$(id);
-          let eligible = r4w() && data.keys().hasOnly(['schemaVersion','fileId','index','size','sha256','data'])
+          let eligible = r5i() && data.keys().hasOnly(['schemaVersion','fileId','index','size','sha256','data'])
             && data.schemaVersion == 1 && data.fileId == id
             && data.index is int && data.index>=0 && data.index<15
             && chunkId == (data.index<10 ? '000'+string(data.index) : '00'+string(data.index))
@@ -2084,31 +2249,31 @@ service cloud.firestore {
           return eligible && data.index<manifest.chunkCount
             && manifest.createdAt==r9();
         }
-        allow create: if r5o(ra());
+        allow create: if r6a(ra());
       }
     }
 
     // Private Staff document vault. These new collections never use the legacy
     // isHQUser() helper or public cashiers/branches/settings as authority.
-    function r5p() { return rk(); }
-    function r5q() {
+    function r6b() { return rk(); }
+    function r6c() {
       return r0() && rc() == 'anonymous';
     }
-    function r5r(value) {
+    function r6d(value) {
       return value is string && value.matches('^[A-Za-z0-9_-]{1,128}$');
     }
-    function r5s(value) { return value in ['valid_id', 'health_card', 'clearance']; }
-    function r5t() {
+    function r6e(value) { return value in ['valid_id', 'health_card', 'clearance']; }
+    function r6f() {
       let path = /databases/$(database)/documents/staff_document_config/current;
       let present = exists(path);
       let config = present ? get(path).data : {};
       return present && config.enabled == true && config.policyVersion == 2
         && config.brokerEndpoint == 'https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker';
     }
-    function r5u(branch) {
+    function r6g(branch) {
       let email = r0() ? request.auth.token.get('email', '') : '';
       let path = /databases/$(database)/documents/hq_email_access/$(email);
-      let owner = r5p();
+      let owner = r6b();
       let eligible = !owner && r0() && rd() == true && email != '';
       let grant = eligible && exists(path) ? get(path).data : {};
       return owner || (grant.get('active', false) == true
@@ -2117,10 +2282,10 @@ service cloud.firestore {
         && grant.get('allowedBranches', []) is list
         && grant.get('allowedBranches', []).hasAny(['All', branch]));
     }
-    function r5v() {
+    function r6h() {
       let email = r0() ? request.auth.token.get('email', '') : '';
       let path = /databases/$(database)/documents/hq_email_access/$(email);
-      let owner = r5p();
+      let owner = r6b();
       let eligible = !owner && r0() && rd() == true && email != '';
       let grant = eligible && exists(path) ? get(path).data : {};
       return owner || (grant.get('active', false) == true
@@ -2129,26 +2294,26 @@ service cloud.firestore {
         && grant.get('allowedBranches', []) is list
         && 'All' in grant.get('allowedBranches', []));
     }
-    function r5w(staffId) {
+    function r6i(staffId) {
       let uid = r0() ? r7() : '__unauthenticated__';
       let path = /databases/$(database)/documents/staff_document_devices/$(uid);
-      let present = r5q() && exists(path);
+      let present = r6c() && exists(path);
       let binding = present ? get(path).data : {};
       return present && binding.uid == r7()
         && binding.active == true && binding.staffId == staffId;
     }
-    function r5x(staffId) {
+    function r6j(staffId) {
       let path = /databases/$(database)/documents/staff_private_documents/$(staffId);
-      let global = r5v();
+      let global = r6h();
       let present = !global && exists(path);
       let profile = present ? get(path).data : {};
-      return global || (present && profile.staffId == staffId && r5u(profile.branch));
+      return global || (present && profile.staffId == staffId && r6g(profile.branch));
     }
-    function r5y(uid, data) {
+    function r6k(uid, data) {
       let path = /databases/$(database)/documents/staff_document_devices/$(uid);
-      let eligible = r5t() && r5q() && r7() == uid
+      let eligible = r6f() && r6c() && r7() == uid
         && data.keys().hasOnly(['uid', 'staffId', 'deviceId', 'deviceName', 'status', 'requestedAt'])
-        && data.uid == uid && r5r(data.staffId)
+        && data.uid == uid && r6d(data.staffId)
         && data.deviceId is string && data.deviceId.size() <= 128
         && data.deviceName is string && data.deviceName.size() > 0 && data.deviceName.size() <= 80
         && data.status == 'pending' && data.requestedAt == r9();
@@ -2156,10 +2321,10 @@ service cloud.firestore {
       let binding = present ? get(path).data : {};
       return eligible && (!present || (binding.staffId == data.staffId && binding.active == false));
     }
-    function r5z(uid, data) {
-      return r5r(uid) && data.keys().hasOnly(['uid', 'staffId', 'branch', 'active',
+    function r6l(uid, data) {
+      return r6d(uid) && data.keys().hasOnly(['uid', 'staffId', 'branch', 'active',
           'deviceId', 'deviceName', 'approvedAt', 'approvedByUid', 'updatedAt', 'updatedByUid', 'audit'])
-        && data.uid == uid && r5r(data.staffId)
+        && data.uid == uid && r6d(data.staffId)
         && data.branch is string && data.branch.size() > 0 && data.branch.size() <= 128
         && data.active is bool && data.approvedAt is timestamp && data.approvedByUid is string
         && data.updatedAt == r9() && data.updatedByUid == r7()
@@ -2168,14 +2333,14 @@ service cloud.firestore {
         && data.audit is map && data.audit.size() > 0 && data.audit.size() <= 100
         && data.audit.values().hasAny([{'active': data.active, 'actorUid': r7(), 'recordedAt': r9()}]);
     }
-    function r60(staffId, kind, data) {
-      return r5t() && r5w(staffId) && r5s(kind)
+    function r6m(staffId, kind, data) {
+      return r6f() && r6i(staffId) && r6e(kind)
         && data.keys().hasOnly(['staffId', 'branch', 'group', 'uploadId', 'uploadedByUid',
           'storagePath', 'contentType', 'size', 'sha256', 'clearanceType', 'expiresOn', 'status',
           'reviewNote', 'version', 'uploadedAt', 'updatedAt'])
         && data.staffId == staffId
         && data.branch == r5('staff_document_devices',r7()).branch && data.group == kind
-        && r5r(data.uploadId) && data.uploadedByUid == r7()
+        && r6d(data.uploadId) && data.uploadedByUid == r7()
         && data.storagePath == 'staff_private_documents/' + r7() + '/' + staffId + '/' + kind + '/' + data.uploadId + '.jpg'
         && data.contentType == 'image/jpeg' && data.size is int && data.size > 0 && data.size <= 2097152
         && data.sha256 is string && data.sha256.matches('^[a-f0-9]{64}$')
@@ -2187,13 +2352,13 @@ service cloud.firestore {
         && data.version is int && data.version > 0
         && data.uploadedAt == r9() && data.updatedAt == r9();
     }
-    function r61(staffId, kind, before, after) {
+    function r6n(staffId, kind, before, after) {
       let audit = getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/reviews/$(after.reviewId)).data;
-      return r5u(before.branch) && r5s(kind)
+      return r6g(before.branch) && r6e(kind)
         && before.staffId == staffId && before.group == kind
         && after.diff(before).affectedKeys().hasOnly(['status', 'reviewId', 'reviewNote',
           'reviewedByUid', 'reviewedAt', 'updatedAt', 'version'])
-        && after.status in ['approved', 'rejected'] && r5r(after.reviewId)
+        && after.status in ['approved', 'rejected'] && r6d(after.reviewId)
         && after.reviewNote is string && after.reviewNote.size() <= 300
         && (after.status != 'rejected' || after.reviewNote.size() >= 3)
         && after.reviewedByUid == r7() && after.reviewedAt == r9()
@@ -2206,22 +2371,22 @@ service cloud.firestore {
     match /staff_document_config/{id} {
       allow get: if id == 'current';
       allow list, delete: if false;
-      function r62(data) {
-        return id == 'current' && r5p()
+      function r6o(data) {
+        return id == 'current' && r6b()
         && data.keys().hasOnly(['enabled', 'policyVersion', 'brokerEndpoint'])
         && data.enabled is bool && data.policyVersion == 2
         && data.brokerEndpoint == 'https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker';
       }
-      allow create, update: if r62(ra());
+      allow create, update: if r6o(ra());
     }
     match /staff_document_requests/{uid} {
-      allow read: if (request.method == 'get' && r0() && request.auth.uid == uid) || r5v();
+      allow read: if (request.method == 'get' && r0() && request.auth.uid == uid) || r6h();
 
-      allow create: if r5y(uid, ra());
-      function r63(data,before) {
-        return (r5y(uid, data)
+      allow create: if r6k(uid, ra());
+      function r6p(data,before) {
+        return (r6k(uid, data)
           && before.uid == uid && data.staffId == before.staffId)
-        || (r5v()
+        || (r6h()
           && data.diff(before).affectedKeys().hasOnly(['status', 'reviewedAt', 'reviewedByUid', 'reviewNote'])
           && data.status in ['approved', 'rejected']
           && data.reviewedAt == r9() && data.reviewedByUid == r7()
@@ -2230,15 +2395,15 @@ service cloud.firestore {
             || (r6('staff_document_devices',uid).active == true
               && r6('staff_document_devices',uid).staffId == before.staffId)));
       }
-      allow update: if r63(ra(),resource == null ? null : rb());
+      allow update: if r6p(ra(),resource == null ? null : rb());
       allow delete: if false;
     }
     match /staff_document_devices/{uid} {
-      allow read: if (request.method == 'get' && r0() && request.auth.uid == uid) || r5v();
+      allow read: if (request.method == 'get' && r0() && request.auth.uid == uid) || r6h();
 
-      function r64(data) {
+      function r6q(data) {
           let requestPath = /databases/$(database)/documents/staff_document_requests/$(uid);
-        let eligible = r5v() && r5z(uid, data)
+        let eligible = r6h() && r6l(uid, data)
           && data.active == true && data.approvedAt == r9()
           && data.audit.size() == 1
           && data.approvedByUid == r7();
@@ -2248,74 +2413,74 @@ service cloud.firestore {
           && getAfter(requestPath).data.status == 'approved'
           && r6('staff_private_documents',data.staffId).branch == data.branch;
       }
-      allow create: if r64(ra());
-      function r65(data,before) {
-        return r5v() && r5z(uid, data)
+      allow create: if r6q(ra());
+      function r6r(data,before) {
+        return r6h() && r6l(uid, data)
           && data.diff(before).affectedKeys().hasOnly(['active', 'updatedAt', 'updatedByUid', 'audit'])
           && data.audit.diff(before.audit).changedKeys().size() == 0
           && data.audit.diff(before.audit).removedKeys().size() == 0
           && data.audit.diff(before.audit).addedKeys().size() == 1;
       }
-      allow update: if r65(ra(),resource == null ? null : rb());
+      allow update: if r6r(ra(),resource == null ? null : rb());
       allow delete: if false;
     }
     match /staff_private_documents/{staffId} {
-      allow get: if r5w(staffId) || r5x(staffId);
-      allow list: if r5v();
-      function r66(data,before) {
-        return r5v()
+      allow get: if r6i(staffId) || r6j(staffId);
+      allow list: if r6h();
+      function r6s(data,before) {
+        return r6h()
           && data.keys().hasOnly(['staffId', 'branch', 'version', 'updatedAt', 'updatedByUid'])
-          && data.staffId == staffId && r5r(staffId)
+          && data.staffId == staffId && r6d(staffId)
           && data.branch is string && data.branch.size() > 0 && data.branch.size() <= 128
           && data.version == 1 && data.updatedAt == r9()
           && data.updatedByUid == r7()
           && (before == null || (data.staffId == before.staffId && data.branch == before.branch));
       }
-      allow create, update: if r66(ra(),resource == null ? null : rb());
+      allow create, update: if r6s(ra(),resource == null ? null : rb());
       allow delete: if false;
       match /files/{kind} {
-        allow get, list: if r5w(staffId) || r5x(staffId);
-        function r67(data) {
-          return r60(staffId, kind, data)
+        allow get, list: if r6i(staffId) || r6j(staffId);
+        function r6t(data) {
+          return r6m(staffId, kind, data)
             && data.version == 1
             && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/versions/$(data.uploadId)).data == data;
         }
-        allow create: if r67(ra());
-        function r68(data,before) {
-          return (r60(staffId, kind, data)
+        allow create: if r6t(ra());
+        function r6u(data,before) {
+          return (r6m(staffId, kind, data)
               && data.version == before.version + 1 && data.uploadId != before.uploadId
               && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/versions/$(data.uploadId)).data == data)
-            || (r61(staffId, kind, before, data)
+            || (r6n(staffId, kind, before, data)
               && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/versions/$(before.uploadId)).data == data);
         }
-        allow update: if r68(ra(),resource == null ? null : rb());
+        allow update: if r6u(ra(),resource == null ? null : rb());
         allow delete: if false;
       }
       match /versions/{uploadId} {
-        allow read: if r5w(staffId) || ((request.method == 'list' || resource != null) && r5u(rb().branch));
+        allow read: if r6i(staffId) || ((request.method == 'list' || resource != null) && r6g(rb().branch));
 
-        function r69(data) {
-          return r60(staffId, data.group, data)
+        function r6v(data) {
+          return r6m(staffId, data.group, data)
             && uploadId == data.uploadId
             && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/files/$(data.group)).data == data;
         }
-        allow create: if r69(ra());
-        function r6a(data,before) {
-          return r61(staffId, before.group, before, data)
+        allow create: if r6v(ra());
+        function r6w(data,before) {
+          return r6n(staffId, before.group, before, data)
             && uploadId == before.uploadId
             && getAfter(/databases/$(database)/documents/staff_private_documents/$(staffId)/files/$(before.group)).data == data;
         }
-        allow update: if r6a(ra(),resource == null ? null : rb());
+        allow update: if r6w(ra(),resource == null ? null : rb());
         allow delete: if false;
       }
       match /reviews/{reviewId} {
-        allow read: if r5w(staffId) || ((request.method == 'list' || resource != null) && r5u(rb().branch));
+        allow read: if r6i(staffId) || ((request.method == 'list' || resource != null) && r6g(rb().branch));
 
-        function r6b(data) {
-          let eligible = r5r(reviewId)
+        function r6x(data) {
+          let eligible = r6d(reviewId)
             && data.keys().hasOnly(['staffId', 'branch', 'recordVersion', 'group', 'uploadId', 'status', 'note', 'actorUid', 'recordedAt']) && data.size() == 9
-            && data.staffId == staffId && r5u(data.branch)
-            && r5s(data.group) && r5r(data.uploadId)
+            && data.staffId == staffId && r6g(data.branch)
+            && r6e(data.group) && r6d(data.uploadId)
             && data.status in ['approved', 'rejected']
             && data.note is string && data.note.size() <= 300
             && data.actorUid == r7() && data.recordedAt == r9();
@@ -2325,7 +2490,7 @@ service cloud.firestore {
             && saved.branch == data.branch
             && saved.uploadId == data.uploadId;
         }
-        allow create: if r6b(ra());
+        allow create: if r6x(ra());
         allow update, delete: if false;
       }
     }
