@@ -1478,7 +1478,7 @@ service cloud.firestore {
     match /payroll_records/{recordId} { allow read: if true;
       function selectorPayrollRecordsCreate(data) {
         return ownerDeductionPayrollMetadata(data,recordId)
-        && (data.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0 ? ownerDeductionCashMetadata(data,recordId) : cashShortagePayrollMetadata(data,recordId))
+        && cashShortagePayrollMetadata(data,recordId)
         && (recordId.matches('refund-payroll-.*') ? (offlineOwner() && data.frozenData.isPaid == true && data.processedAt == reqTime() && data.processedBy == reqEmail() && data.refundSettlements is map && data.finalNetPay is number && data.finalNetPay >= 0) : isHQUser());
       }
       allow create: if selectorPayrollRecordsCreate(newData());
@@ -1576,37 +1576,42 @@ service cloud.firestore {
     }
     function ownerDeductionChargeCreate(data,id) {
       let row = nextData('owner_deduction_reviews',id);
-      let notice = nextData('staff_deduction_notices',id);
+      // The source must be newly created in this atomic request. Its create
+      // rule validates all three exact links; keep this public schema strict.
       return ownerDeductionOwner() && !exists(/databases/$(database)/documents/owner_deduction_reviews/$(id))
-        && ownerDeductionLinks(row,data,notice,id) && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
+        && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
         && data.dateAdded == reqTime() && data.loggedBy == reqEmail()
         && data.remarks == 'Owner custom deduction review only; no payroll charge is authorized.'
         && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','ownerDeductionVersion','authorizedAmount','reviewRevision','dateAdded','loggedBy','remarks']);
     }
     function ownerDeductionNoticeCreate(data,id) {
       let row = nextData('owner_deduction_reviews',id);
-      let charge = staffDeductionAfter(id);
+      // As above, before-absence plus getAfter presence forces source creation
+      // and therefore its full three-record link validation in this request.
       return ownerDeductionOwner() && !exists(/databases/$(database)/documents/owner_deduction_reviews/$(id))
-        && ownerDeductionLinks(row,charge,data,id) && data.status == 'Pending Review' && data.amount == 0
+        && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
         && data.details == row.details && data.evidence == row.evidence && data.reasonLabel == row.label
         && data.replyRevision == 0 && data.readRevision == 0 && data.createdAt == reqTime() && data.updatedAt == reqTime()
         && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','version','id','sourceLossCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']);
     }
     function ownerDeductionChargeReview(before,after,id) {
+      let prior = readData('owner_deduction_reviews',id);
       let row = nextData('owner_deduction_reviews',id);
-      let notice = nextData('staff_deduction_notices',id);
       return ownerDeductionOwner() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(paidKeys())
         && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
         && after.reviewRevision == before.reviewRevision + 1 && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail()
-        && ownerDeductionLinks(row,after,notice,id) && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == reqTime();
+        // A changed source revision forces its authoritative update rule in
+        // this atomic request. That rule checks both complete companion links.
+        && row.revision == prior.revision + 1 && after.reviewRevision == row.revision
+        && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == reqTime();
     }
     function ownerDeductionNoticeReview(before,after,id) {
+      let prior = readData('owner_deduction_reviews',id);
       let row = nextData('owner_deduction_reviews',id);
-      let charge = staffDeductionAfter(id);
       return ownerDeductionOwner() && before.status in ['Pending Review','Approved']
         && after.diff(before).affectedKeys().hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','weeklyLimitConfirmed','updatedAt'])
         && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == reqTime() && after.status == row.status
-        && ownerDeductionLinks(row,charge,after,id) && row.reviewedAt == reqTime()
+        && row.revision == prior.revision + 1 && after.noticeRevision == row.revision && row.reviewedAt == reqTime()
         && (row.status == 'Dismissed' ? after.ownerReply == row.dismissalReason : (after.ownerReply == row.finding && after.lawfulBasis == row.lawfulBasis && after.authorityReference == row.authorityReference && after.finding == row.finding && after.weeklyLimitConfirmed == true));
     }
     function ownerDeductionProtectedPayroll(payroll) {
@@ -1641,15 +1646,6 @@ service cloud.firestore {
     function ownerDeductionPaidChange(before,after) {
       return ownerDeductionOwner() && before.type == 'Owner Custom Deduction' && before.status in ['Approved','Unpaid'] && before.amount > 0
         && !before.keys().hasAny(paidKeys()) && after.diff(before).affectedKeys().hasOnly(['status','paidAt','payrollRecordId']) && after.status == 'Paid' && after.paidAt == reqTime();
-    }
-    // A custom-involved payment has at most three other protected rows. Keep
-    // the exact cash source checks, without evaluating six empty tuple slots.
-    function ownerDeductionCashMetadata(payroll,recordId) {
-      let rows = payroll.get('frozenData',{}).get('cashShortageRows',[]);
-      let map = payroll.get('cashShortageSettlements',{});
-      return rows is list && rows.size() <= 3 && rows.toSet().size() == rows.size() && map is map && map.size() == rows.size()
-        && cashShortageRow(rows,map,0,recordId) && cashShortageRow(rows,map,1,recordId) && cashShortageRow(rows,map,2,recordId)
-        && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0);
     }
     function ownerDeductionCompanionPaid(before,after,id,revision) {
       let row = nextData('owner_deduction_reviews',id);
@@ -1773,11 +1769,15 @@ service cloud.firestore {
     function cashShortagePayrollMetadata(payroll,recordId) {
       let rows = payroll.get('frozenData',{}).get('cashShortageRows',[]);
       let map = payroll.get('cashShortageSettlements',{});
-      return rows is list && rows.size() <= 6 && rows.toSet().size() == rows.size()
+      let custom = payroll.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;
+      // Owner custom metadata already proves Owner, paid stamps and combined
+      // maximum four. It leaves room for at most three other protected rows.
+      return rows is list && rows.size() <= (custom ? 3 : 6) && rows.toSet().size() == rows.size()
         && map is map && map.size() == rows.size()
-        && cashShortageRow(rows,map,0,recordId) && cashShortageRow(rows,map,1,recordId) && cashShortageRow(rows,map,2,recordId) && cashShortageRow(rows,map,3,recordId) && cashShortageRow(rows,map,4,recordId) && cashShortageRow(rows,map,5,recordId)
-        && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (rows.size() > 3 ? rows[3].amount : 0) + (rows.size() > 4 ? rows[4].amount : 0) + (rows.size() > 5 ? rows[5].amount : 0)
-        && (rows.size() == 0 || (offlineOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail() && rows.size() + payroll.get('refundSettlements',{}).size() <= 6));
+        && cashShortageRow(rows,map,0,recordId) && cashShortageRow(rows,map,1,recordId) && cashShortageRow(rows,map,2,recordId)
+        && (custom || (cashShortageRow(rows,map,3,recordId) && cashShortageRow(rows,map,4,recordId) && cashShortageRow(rows,map,5,recordId)))
+        && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (custom ? 0 : (rows.size() > 3 ? rows[3].amount : 0) + (rows.size() > 4 ? rows[4].amount : 0) + (rows.size() > 5 ? rows[5].amount : 0))
+        && (custom || rows.size() == 0 || (offlineOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail() && rows.size() + payroll.get('refundSettlements',{}).size() <= 6));
     }
     function cashShortagePaidChange(before,after) {
       return offlineOwner() && before.type == 'Cash Shortage' && before.status in ['Approved','Unpaid'] && before.amount > 0
@@ -1869,12 +1869,13 @@ service cloud.firestore {
       }
       allow create: if selectorStaffDeductionNoticesCreate(newData());
       function selectorStaffDeductionNoticesUpdate(data,before) {
-        return ownerDeductionKind(before,id) || ownerDeductionKind(data,id)
-        ? (data.status == 'Paid' && before.status != 'Paid' ? ownerDeductionCompanionPaid(before,data,id,before.noticeRevision) : (refundNoticeStaffUpdate(before,data) || ownerDeductionNoticeReview(before,data,id)))
+        // The same private Staff reply/read schema applies to every subtype.
+        // Factor that disjunct once; subtype-specific financial rules follow.
+        return refundNoticeStaffUpdate(before,data) || (ownerDeductionKind(before,id) || ownerDeductionKind(data,id)
+        ? (data.status == 'Paid' && before.status != 'Paid' ? ownerDeductionCompanionPaid(before,data,id,before.noticeRevision) : ownerDeductionNoticeReview(before,data,id))
         : cashShortageKind(before,id) || cashShortageKind(data,id)
-        ? (data.status == 'Paid' && before.status != 'Paid' ? cashShortageCompanionPaid(before,data,id,before.noticeRevision) : (refundNoticeStaffUpdate(before,data) || cashShortageNoticeReview(before,data,id)))
-        : refundNoticeStaffUpdate(before,data)
-        || refundNoticeOwnerUpdate(before,data,id) || refundPaid(before,data,id);
+        ? (data.status == 'Paid' && before.status != 'Paid' ? cashShortageCompanionPaid(before,data,id,before.noticeRevision) : cashShortageNoticeReview(before,data,id))
+        : refundNoticeOwnerUpdate(before,data,id) || refundPaid(before,data,id));
       }
       allow update: if selectorStaffDeductionNoticesUpdate(newData(),resource == null ? null : oldData());
       allow delete: if false;
