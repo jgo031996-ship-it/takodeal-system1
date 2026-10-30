@@ -11,7 +11,7 @@ function assets(app,name){
 }
 test('installed shells contain all new recipe and scheduling dependencies',()=>{
     for(const [app,name,required] of [
-        ['takodeal-manager','CORE_ASSETS',['recipe-bulk-model.js','recipe-bulk.js','recipe-changes.js','sanction-actions.js','sanction-schedule.js','sanction-scheduling-ui.js','audit-modal.css','audit-modal-layout.js','owner-time-out-correction.js','owner-time-out-correction-ui.js','owner-time-out-correction.css']],
+        ['takodeal-manager','CORE_ASSETS',['monthly-schedule-model.js','monthly-schedule-ui.js','monthly-schedule-integration.js','monthly-schedule.css','recipe-bulk-model.js','recipe-bulk.js','recipe-changes.js','sanction-actions.js','sanction-schedule.js','sanction-scheduling-ui.js','audit-modal.css','audit-modal-layout.js','owner-time-out-correction.js','owner-time-out-correction-ui.js','owner-time-out-correction.css']],
         ['Takodeal-POS','required',['recipe-feed.js','sanction-schedule.js','franchise-dispatch-pricing.js','franchise-supply-model.js','franchise-cost-model.js','operations-model.js']],
         ['takodeal-staff','SHELL',['sanction-schedule.js','attendance-proof.js']],
         ['takodeal-franchise','CORE',['sanction-schedule.js','sanction-actions.js','sanction-scheduling-ui.js','workspace-access-model.js']]
@@ -38,8 +38,8 @@ test('upgrade keeps paid receipts, photos and the offline sale ledger through Ca
     assert.match(worker,/workspace-access-model\.js/);
     assert.ok(assets('Takodeal-POS','required').includes('printer-logo.js'),'new logo encoder is available offline');
     assert.match(worker,/const PHOTOS = 'takodeal-pos-photos-offline02'/);
-    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v109-payroll-timeout-repair-20261030/);
-    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v109-payroll-timeout-repair-20261030/);
+    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v110-monthly-schedule-20261030/);
+    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v110-monthly-schedule-20261030/);
     for(const file of ['schedule-workspace.js','schedule-workspace.css'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Schedule workspace is available after app update');
     assert.match(source('takodeal-staff/sw.js'),/takodeal-staff-v38-payroll-timeout-repair-20261030/);
     for(const [app,list] of [['takodeal-manager','CORE_ASSETS'],['takodeal-staff','SHELL']])assert.ok(assets(app,list).includes('time-out-request-display.js'),app+' caches schedule-review labels');
