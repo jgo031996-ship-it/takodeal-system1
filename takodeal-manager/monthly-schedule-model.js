@@ -24,10 +24,47 @@ function identityIndex(directory){
  const names=new Map(),byId=new Map();for(const person of directory){const id=person.staffId;if(!byId.has(id))byId.set(id,person);for(const name of aliases(person)){const key=nameKey(name);if(!key)continue;if(!names.has(key))names.set(key,new Set());names.get(key).add(id);}}
  const ids=reference=>{if(object(reference)&&reference.staffId)return byId.has(reference.staffId)?[reference.staffId]:[];const name=object(reference)?reference.name||reference.staffName||reference.cashierName:reference;if(byId.has(name))return [name];return [...(names.get(nameKey(name))||[])];};return {ids,byId};
 }
-function protectedDates({approvedLeaves,sanctions,directory,month}){
- const byDate=new Map(),index=identityIndex(directory),add=(date,row)=>{if(date.slice(0,7)!==month)return;const list=byDate.get(date)||[];list.push(row);byDate.set(date,list);};
- for(const row of approvedLeaves){if(row.type!=='Leave'||row.status!=='Approved')continue;const dates=activeLeaveDates(row),ids=index.ids(row);if(!row.staffId&&ids.length!==1)throw Error('An approved leave has an unclear employee identity. Review it before creating the month.');for(const date of dates)for(const id of row.staffId?[row.staffId]:ids){const person=index.byId.get(id);if(person)add(date,{name:person.name,staffId:id,status:row.leaveType||'Leave',...(row.id?{leaveRequestId:row.id}:{})});}}
- for(const row of sanctions){const dates=suspensionDates(row);if(!dates.length)continue;const ids=index.ids(row);if(!row.staffId&&ids.length!==1)throw Error('A suspension has an unclear employee identity. Review it before creating the month.');for(const date of dates)for(const id of row.staffId?[row.staffId]:ids){const person=index.byId.get(id);if(person)add(date,{name:person.name,staffId:id,status:'Suspended',...(row.id?{sanctionId:row.id}:{})});}}
+const boundedText=(value,length)=>typeof value==='string'?value.trim().slice(0,length):'';
+const sourceRecordId=value=>typeof value==='string'&&value.length>0&&new TextEncoder().encode(value).length<=1500&&!/[\/\0]/.test(value)?value:'';
+function protectionIssue(kind,row,dates,reason){
+ const details={kind,id:sourceRecordId(row.id),staffName:boundedText(row.staffName||row.name,200),branch:boundedText(row.branch,120),dates:(dates||[]).slice(0,31).map(date=>boundedText(date,24)),reason};
+ const error=Error((kind==='leave'?'Approved leave':'Suspension')+' needs review: '+(details.staffName||'Staff name not recorded')+' · '+(details.branch||'Branch not recorded')+' · '+(details.dates.join(', ')||'Date details need review')+' · Reference: '+(details.id||'not recorded')+'. '+reason);error.scheduleReviewIssue=details;return error;
+}
+function outsideLeaveWindow(row,from,to){
+ if(row.activeLeaveDates!==undefined)return Array.isArray(row.activeLeaveDates)&&(row.activeLeaveDates.length===0||row.activeLeaveDates.every(date=>validDate(date)&&(date<from||date>to)));
+ if(/^cancelled$|^canceled$/i.test(String(row.leaveState||'').trim()))return true;
+ return validDate(row.startDate)&&validDate(row.endDate)&&row.startDate<=row.endDate&&(row.endDate<from||row.startDate>to);
+}
+function protectedDates({approvedLeaves,sanctions,directory,snapshot,branch,from,to}){
+ const byDate=new Map(),index=identityIndex(directory),refs=new Map(),selectedBranch=nameKey(branch),knownBranches=new Set([...Object.keys(snapshot.branchConfig||{}),...directory.map(person=>person.branch)].map(nameKey).filter(name=>name&&!['unassigned','unknown','all','all branches'].includes(name)));
+ const add=(date,row)=>{const list=byDate.get(date)||[];list.push(row);byDate.set(date,list);};
+ for(let at=new Date(from+'T12:00:00Z');at.toISOString().slice(0,10)<=to;at.setUTCDate(at.getUTCDate()+1)){
+  const date=at.toISOString().slice(0,10),day=snapshot.currentSchedule?.[Number(date.slice(-2))]?.[branch],ids=new Set(),names=new Set();
+  const take=value=>{index.ids(value).forEach(id=>ids.add(id));const name=object(value)?value.name||value.staffName||value.cashierName:value;if(named(name))names.add(nameKey(name));};
+  Object.values(day?.scheduled||{}).forEach(take);(day?.rest||[]).forEach(take);(day?.unavailable||[]).forEach(take);refs.set(date,{ids,names});
+ }
+ const selectedDates=[...refs.keys()],eligible=person=>person?.scheduleEligible===true&&person.active!==false;
+ function recipient(kind,row,dates){
+  const nameIds=index.ids({staffName:row.staffName||row.name}),hasId=row.staffId!==undefined&&row.staffId!==null&&row.staffId!=='',person=hasId?index.byId.get(row.staffId):null,candidates=hasId?(person?[person]:[]):nameIds.map(id=>index.byId.get(id)).filter(Boolean);
+  const working=dates.length?dates:selectedDates,dated=(candidate,rawName=row.staffName||row.name)=>working.some(date=>{const ref=refs.get(date);return ref&&(candidate&&ref.ids.has(candidate.staffId)||rawName&&ref.names.has(nameKey(rawName))||candidate&&aliases(candidate).some(name=>ref.names.has(nameKey(name))));});
+  // A known inactive recipient must never be rebound to a newer namesake.
+  if(person&&!eligible(person)){if(!dated(person))return null;throw protectionIssue(kind,row,working,'This archived or inactive employee is still referenced in the selected roster. Review that dated assignment; no recipient was guessed.');}
+  if(!hasId&&candidates.length&&candidates.every(candidate=>!eligible(candidate))){if(!candidates.some(candidate=>dated(candidate)))return null;throw protectionIssue(kind,row,working,'Only archived or inactive accounts match a name still used in the selected roster. Review that dated assignment.');}
+  const touchesSelected=candidate=>eligible(candidate)&&(nameKey(candidate.branch)===selectedBranch||dated(candidate));
+  const savedBranch=nameKey(row.branch),definitelyOther=savedBranch&&savedBranch!==selectedBranch&&knownBranches.has(savedBranch);
+  const relevant=candidates.some(touchesSelected)||nameIds.some(id=>touchesSelected(index.byId.get(id)))||dated(null)||!candidates.length&&!definitelyOther;
+  if(!relevant)return null;
+  if(hasId&&!person)throw protectionIssue(kind,row,working,'The saved employee ID is missing from the current directory. Link the original employee record; a same-named active account was not selected.');
+  if(hasId&&nameIds.length&&!nameIds.includes(person.staffId))throw protectionIssue(kind,row,working,'The saved employee ID and staff name point to different accounts. Confirm the original leave or suspension identity.');
+  if(!hasId&&candidates.length!==1)throw protectionIssue(kind,row,working,'The saved name does not identify exactly one employee account. Confirm the original record before preparing these work dates.');
+  return hasId?person:candidates[0];
+ }
+ for(const row of approvedLeaves){
+  if(row.type!=='Leave'||row.status!=='Approved'||outsideLeaveWindow(row,from,to))continue;
+  let dates;try{dates=activeLeaveDates(row).filter(date=>date>=from&&date<=to);}catch{if(recipient('leave',row,[]))throw protectionIssue('leave',row,[row.startDate,row.endDate].filter(value=>typeof value==='string'),'The active leave dates cannot be verified. Review the saved dates before preparing this roster.');continue;}
+  if(!dates.length)continue;const person=recipient('leave',row,dates);if(!person)continue;for(const date of dates)add(date,{name:person.name,staffId:person.staffId,status:row.leaveType||'Leave',...(row.id?{leaveRequestId:row.id}:{})});
+ }
+ for(const row of sanctions){const dates=suspensionDates(row).filter(date=>date>=from&&date<=to);if(!dates.length)continue;const person=recipient('suspension',row,dates);if(!person)continue;for(const date of dates)add(date,{name:person.name,staffId:person.staffId,status:'Suspended',...(row.id?{sanctionId:row.id}:{})});}
  return byDate;
 }
 
@@ -39,7 +76,7 @@ export function buildMonthlySchedulePlan({snapshot,month,branch,staffProfiles,ap
  const from=effectiveFrom||[today,selected+'-01'].sort().at(-1);scheduleDateKey(from);if(from.slice(0,7)!==selected||from<today)throw Error('Choose an effective date in this month, today or later.');
  const count=new Date(Date.UTC(Number(selected.slice(0,4)),Number(selected.slice(5,7)),0)).getUTCDate();if(count<28||count>31)throw Error('Choose a valid schedule month.');const to=selected+'-'+String(count).padStart(2,'0'),rules=rulesFor(snapshot,branch);
  const profiles=validateRows(staffProfiles,'current staff directory',2000),directory=scheduleIdentityDirectory(profiles,snapshot.employees||[]),index=identityIndex(directory);validateRows(approvedLeaves,'approved leave records');validateRows(sanctions,'reviewed suspension records');
- const protection=protectedDates({approvedLeaves,sanctions,directory,month:selected}),output=copy(snapshot);output.currentSchedule||={};output.employees=mergeScheduleEmployeeAliases(profiles,snapshot.employees||[]);const assignments=[],warnings=[],conflicts=[],days=[],counts={datesPrepared:0,slotsCreated:0,slotsActivated:0,existingAssignments:0,autoAssigned:0,unfilled:0,standby:0,unavailable:0,untouchedPastDates:0};
+ const protection=protectedDates({approvedLeaves,sanctions,directory,snapshot,branch,from,to}),output=copy(snapshot);output.currentSchedule||={};output.employees=mergeScheduleEmployeeAliases(profiles,snapshot.employees||[]);const assignments=[],warnings=[],conflicts=[],days=[],counts={datesPrepared:0,slotsCreated:0,slotsActivated:0,existingAssignments:0,autoAssigned:0,unfilled:0,standby:0,unavailable:0,untouchedPastDates:0};
  const warning=text=>{if(warnings.length<40&&!warnings.includes(text))warnings.push(text);},loads=new Map();
  for(const branches of Object.values(snapshot.currentSchedule||{}))for(const name of Object.values(branches?.[branch]?.scheduled||{})){const person=named(name)&&resolveScheduleEmployeeReference(name,directory);if(person)loads.set(person.staffId,(loads.get(person.staffId)||0)+1);}
  for(let number=1;number<=count;number++){
