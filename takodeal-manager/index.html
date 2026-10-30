@@ -462,6 +462,7 @@
   <link rel="stylesheet" href="manager-mobile.css?v=20261010-r1">
     <link rel="stylesheet" href="./online-refunds.css">
 <link rel="stylesheet" href="hr-review.css?v=20261021">
+<link rel="stylesheet" href="owner-time-out-correction.css?v=20261030">
   <link rel="stylesheet" href="dispatch-cart.css?v=20261021">
   <link rel="stylesheet" href="government-permits.css?v=20261021">
   <link rel="stylesheet" href="bookkeeper-payments.css?v=20261021">
@@ -5856,9 +5857,9 @@
   <div id="payslipModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); z-index: 10000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
       <div style="background: white; width: 650px; max-width: 95%; max-height: 95vh; display: flex; flex-direction: column; box-shadow: 0 25px 50px rgba(0,0,0,0.5);">
           
-          <div style="background: #1e293b; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;" class="no-print">
-              <h2 style="margin: 0; font-size: 16px; color: white;">Digital Payslip Generator</h2>
-              <div style="display: flex; gap: 10px;">
+          <div style="background: #1e293b; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center;" class="no-print payslip-toolbar">
+              <h2 id="psDocumentTitle" style="margin: 0; font-size: 16px; color: white;">Digital Payslip Generator</h2>
+              <div style="display: flex; gap: 10px;" class="payslip-toolbar-actions">
                   <button type="button" onclick="window.checkCurrentSavedPayroll()" id="btnCheckSavedPayslip" style="background:#fff;color:#14594b;border:1px solid #cdded1;padding:8px 15px;border-radius:6px;font-weight:bold;cursor:pointer">Check saved payment</button>
                   <button onclick="window.finalizePayslip()" id="btnFinalizePayslip" style="background: #3b82f6; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.3s;">✅ Mark Paid & Auto-Deduct</button>
                   <button onclick="window.downloadPayslipImage()" id="btnDownloadPayslip" style="background: #10b981; color: white; border: none; padding: 8px 15px; border-radius: 4px; font-weight: bold; cursor: pointer;">⬇️ Download Image</button>
@@ -5866,6 +5867,13 @@
               </div>
           </div>
 
+          <section id="psReviewPanel" class="payslip-review-panel no-print" hidden>
+              <strong>Payroll review pending</strong>
+              <p id="psReviewHours"></p>
+              <p id="psReviewReasons" class="payslip-review-reasons"></p>
+              <p>Deductions below are saved reference amounts. Basic pay, gross income and net pay are not confirmed. Reviewing employment dates alone does not release payroll.</p>
+              <button id="btnReviewPayslipRecords" type="button">Review affected records →</button>
+          </section>
           <div id="printablePayslip" style="padding: 30px; background: white; color: black; overflow-y: auto; flex: 1; font-family: 'Segoe UI', Arial, sans-serif;">
               
               <div style="border: 3px solid black; padding: 2px;">
@@ -5878,7 +5886,7 @@
                           </div>
                           <div style="text-align: center; flex: 1;">
                               <h1 style="margin: 0; font-size: 32px; letter-spacing: 2px;">TAKODEÁL</h1>
-                              <p style="margin: 5px 0 0 0; font-size: 16px;">Payslip</p>
+                              <p id="psDocumentState" style="margin: 5px 0 0 0; font-size: 16px;">Payslip</p>
                           </div>
                       </div>
 

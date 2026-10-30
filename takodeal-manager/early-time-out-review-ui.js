@@ -1,4 +1,5 @@
 import {createEarlyTimeOutReviewService,canReviewEarlyTimeOut} from './early-time-out-review.js';
+import {canCorrectOwnerTimeOut} from './owner-time-out-correction.js';
 import {EARLY_TIME_OUT_MESSAGE_TEMPLATES,earlyTimeOutMessageTemplate} from './early-time-out-message-templates.js';
 const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const date=value=>{if(value==null||value==='')return 'Needs schedule review';const at=value?.toDate?.()||new Date(value);return Number.isFinite(+at)?at.toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'})+' (PH)':'Needs schedule review';};
@@ -8,7 +9,7 @@ const phDate=value=>{const at=value?.toDate?.()||new Date(value);if(!Number.isFi
 function validWorkDate(value){if(!/^\d{4}-\d{2}-\d{2}$/.test(value))return false;const at=new Date(value+'T00:00:00Z');return Number.isFinite(+at)&&at.toISOString().slice(0,10)===value;}
 const wallMinutes=value=>/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value)?Number(value.slice(0,2))*60+Number(value.slice(3)):null;
 export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutReviewService(w)}={}){
- let generation=0,currentDialog=null;
+ let generation=0,currentDialog=null;const correctionDrafts=new Map();
  const identity=()=>JSON.stringify([w.auth?.currentUser?.uid,w.auth?.currentUser?.email,w.auth?.currentUser?.emailVerified,w.sessionUser?.uid,w.sessionUser?.email,w.sessionUser?.role,w.sessionUser?.permissions,w.sessionUser?.allowedBranches]);
  async function review(requestId,decision){
   if(!['Approved','Rejected'].includes(decision)||!canReviewEarlyTimeOut(w))return w.Swal.fire('Approval access required','Sign in with Request Inbox access for this staff branch.','warning');
@@ -22,6 +23,8 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
   const shiftPanel=dialog.querySelector('[data-shift-panel]'),shiftDate=dialog.querySelector('[data-shift-date]'),shiftStart=dialog.querySelector('[data-shift-start]'),shiftEnd=dialog.querySelector('[data-shift-end]'),shiftName=dialog.querySelector('[data-shift-name]'),shiftReason=dialog.querySelector('[data-shift-reason]'),shiftStatus=dialog.querySelector('[data-shift-status]'),shiftConfirm=dialog.querySelector('[data-shift-confirm]'),shiftTitle=dialog.querySelector('[data-shift-title]'),shiftFields=[shiftDate,shiftStart,shiftEnd,shiftName];
   const shiftPreview=dialog.querySelector('[data-shift-preview]');
   const openAttendance=dialog.querySelector('[data-open-attendance]'),openSchedule=dialog.querySelector('[data-open-schedule]'),openReplacement=dialog.querySelector('[data-open-replacement]');
+  const correctTimeOut=d.createElement('button');correctTimeOut.type='button';correctTimeOut.textContent='Review / record actual Time Out';correctTimeOut.hidden=true;correctTimeOut.setAttribute('data-correct-timeout','');openReplacement.parentElement.append(correctTimeOut);
+  const draftKey=key+'|'+requestId,savedDraft=correctionDrafts.get(draftKey);if(savedDraft){reply.value=savedDraft.reply;messageTemplate.value=savedDraft.template;for(const [index,field]of shiftFields.entries())field.value=savedDraft.fields[index]||'';}
   let busy=false,loading=false,row=null,navigationRow=null,inspection=null,timer,shiftOperation=null,lastShiftIntent=null,confirmedReplacement=false,acknowledgedShift=null,completionAttempt=null,chainBlocked=false,editingReplacement=false,completionHeld=false;
   const current=()=>token===generation&&dialog.open&&identity()===key;
   function previewShiftDates(){
@@ -45,6 +48,7 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
   const replacementReady=()=>validWorkDate(shiftDate.value)&&wallMinutes(shiftStart.value)!==null&&wallMinutes(shiftEnd.value)!==null&&reply.value.trim().length>=8&&reply.value.trim().length<=1500;
   const controls=()=>{
    const repairing=replacementAction(),continuing=!!acknowledgedShift||!!completionAttempt;
+   const canCorrect=!!recoveryContext()&&typeof w.openOwnerTimeOutCorrection==='function'&&canCorrectOwnerTimeOut(w,(row||navigationRow)?.branch);correctTimeOut.hidden=!canCorrect;correctTimeOut.disabled=busy||loading||!current()||!canCorrect;
    confirm.textContent=completionAttempt?'Retry finish review':acknowledgedShift?(completionHeld&&!completingReview()?'Review pending':'Retry finish review'):repairing?'Save hours & finish review':completingReview()?'Confirm review':decision==='Approved'?'Approve early time-out':'Reject request';
    confirm.disabled=busy||loading||!current()||chainBlocked||!(completionAttempt||continuing&&(!completionHeld||completingReview())||repairing&&replacementReady()||!repairing&&(eligible()||completingReview()));
    dismiss.hidden=!dismissible()||completingReview()||continuing;dismiss.disabled=busy||loading||!current()||!dismissible()||chainBlocked;
@@ -100,6 +104,7 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
     else if(checked.scheduleChanged){status.textContent='The verified saved schedule differs from this request. Review the verified scheduled finish shown here; the old request cannot authorize early Time Out.';status.setAttribute('role','alert');guidance.textContent=checked.emergencyShift?'Ask staff to refresh and reopen Time Out to submit a request for the confirmed replacement shift. If they are still leaving early, review that new request separately. Actual attendance and worked hours remain on file.':'Staff should retry Time Out using the current saved schedule. Actual attendance and worked hours remain on file.';}
     else if(checked.early){status.textContent='The saved schedule confirms that this shift has not reached its scheduled finish. Review the staff member and reason before confirming.';guidance.textContent='Approval permits early clock-out for up to 30 minutes. It does not end the shift. Staff must tap Time Out when they finish; actual recorded hours remain on file.';}
     else{inspection={...checked,unknown:true};status.textContent='The saved schedule result could not confirm whether early approval is needed. Retry the schedule check.';status.setAttribute('role','alert');retry.hidden=false;}
+    if(!checked.closed)guidance.textContent+=' No Time Out is saved for this Time In. Closing this request alone leaves the punch missing. The Owner can use Review / record actual Time Out after verifying when the employee left.';
     dismiss.hidden=!dismissible()||completingReview();
     if(afterConfirmation)status.textContent='Replacement shift saved. '+status.textContent;
     return true;
@@ -150,7 +155,7 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
     const input=frozenInput||{requestId,reviewNote:acknowledgedShift?.message??reply.value.trim(),expectedRequestVersion:row.requestVersion,expectedRequestToken:row.requestToken,expectedScheduleFingerprint:inspection.scheduleFingerprint};
     if(owned&&!completionAttempt)completionAttempt={isDismiss,input:{...input},branch:row.branch};
     const result=isDismiss?await service.dismiss(input):await service.review({...input,decision});
-    if(!current())return;dialog.close();if(identity()!==key)return;
+    if(!current())return;correctionDrafts.delete(draftKey);dialog.close();if(identity()!==key)return;
     // The transaction has confirmed the decision. Updating the list must not
     // delay that confirmation or turn a later refresh failure into a save error.
     try{const refresh=typeof w.applyConfirmedInboxRequest==='function'?w.applyConfirmedInboxRequest(requestId):w.loadInbox?.();Promise.resolve(refresh).catch(()=>{if(identity()===key)w.ManagerUI?.notify?.('The decision is saved. Refresh Request Inbox to see its latest row.');});}catch{if(identity()===key)w.ManagerUI?.notify?.('The decision is saved. Refresh Request Inbox to see its latest row.');}
@@ -159,6 +164,7 @@ export function installManagerEarlyTimeOutUI(w,d,{service=createEarlyTimeOutRevi
    finally{busy=false;if(dialog.open)controls();}
   }
   confirm.onclick=()=>acknowledgedShift||completionAttempt||replacementAction()?saveReplacementAndFinish():save(completingReview());dismiss.onclick=()=>save(true);retry.onclick=()=>completionAttempt?saveReplacementAndFinish():inspect();
+  correctTimeOut.onclick=()=>{if(busy||loading||!current()||!recoveryContext()||!canCorrectOwnerTimeOut(w,(row||navigationRow).branch)||typeof w.openOwnerTimeOutCorrection!=='function')return;const saved=recoveryContext();correctionDrafts.set(draftKey,{reply:reply.value,template:messageTemplate.value,fields:shiftFields.map(field=>field.value)});while(correctionDrafts.size>20)correctionDrafts.delete(correctionDrafts.keys().next().value);dialog.close();return w.openOwnerTimeOutCorrection({...saved,onReturn:()=>identity()===key?review(requestId,decision):undefined});};
   openAttendance.onclick=()=>navigate('attendance');openSchedule.onclick=()=>navigate('schedule');openReplacement.onclick=()=>{if(busy||loading||!current()||!replacementEligible())return;shiftPanel.open=true;editingReplacement=!!inspection?.emergencyShift;controls();shiftPanel.scrollIntoView?.({block:'nearest'});shiftPanel.querySelector('summary')?.focus?.();};
   await inspect();
  }

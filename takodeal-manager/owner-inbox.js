@@ -1,4 +1,5 @@
 import {isTimeOutScheduleReview,timeOutRequestLabel} from './time-out-request-display.js';
+import {canCorrectOwnerTimeOut} from './owner-time-out-correction.js';
 import {createStaffHistoryResolver} from './staff-lifecycle-model.js';
 import {canOpenWorkspacePage,OWNER_EMAIL} from './workspace-access-model.js';
 import {requestHistory,historyTime} from './request-history.js';
@@ -67,7 +68,7 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
   let html='';
   if(row.historySource==='deduction')html='<strong style="color:#0f766e;">'+escape(row.item||'POS meal deduction')+'</strong><br><span style="color:var(--danger);font-weight:bold;">Deduct: ₱'+money(row.amount)+'</span><br><small style="color:#64748b;">Recorded automatically by POS'+(row.receiptId?' · Receipt '+escape(row.receiptId):'')+'</small>';
   else if(row.type==='Leave'||row.type==='Leave Change')html=leaveRequestSummaryHTML(row);
-  else if(row.type==='Early Time Out')html=earlyTimeOutSummaryHTML(row);
+  else if(row.type==='Early Time Out'){html=earlyTimeOutSummaryHTML(row);if(row.timeInLogId&&row.staffId&&typeof w.openOwnerTimeOutCorrection==='function'&&canCorrectOwnerTimeOut(w,row.branch)&&createStaffHistoryResolver(state.staffProfiles)(row).active)html+='<br><button type="button" onclick="window.ownerInbox.timeOutCorrection('+index+','+state.drawVersion+')">Review / record actual Time Out</button>';}
   else if(row.type==='Cash Advance')html='<strong style="color:var(--danger);font-size:15px;">₱'+money(row.amount)+'</strong><br><small>'+escape(row.reason||'No reason provided')+'</small>';
   else if(row.type==='Reason Letter'){html=lateRequestSummaryHTML(row);const context=lateRequestRecoveryContext(row);if(context)html+='<button type="button" onclick="window.ownerInbox.lateAttendance('+index+','+state.drawVersion+')">'+(context.attendanceLogId?'Review linked attendance →':'Find clock-in for review →')+'</button>';}
   else if(isMealDeduction(row.type))html='<strong style="color:#0f766e;">🍔 '+escape(row.item||'Food Item').replace(/ \| /g,'<br>')+'</strong><br><span style="color:var(--danger);font-weight:bold;">Deduct: ₱'+money(row.amount)+'</span>';
@@ -180,5 +181,6 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
  function review(index,decision,version){const target=workspace(),row=target?.records[index];if(!row||version!==undefined&&version!==target.drawVersion||row.status!=='Pending'||!allowed(row)||!createStaffHistoryResolver(target.staffProfiles)(row).active||!['Approved','Rejected'].includes(decision))return false;return w.handleRequest?.(row.id,decision,row.type,Number(row.amount)||0,row.staffName||'Unknown');}
  function photo(index,version){const target=workspace(),row=target?.records[index];if(!row||version!==undefined&&version!==target.drawVersion||!allowed(row))return false;const url=row.photoBase64||row.proofImageUrl||row.imageUrl||row.image;if(url)w.viewSelfie?.(url,'Attached Photo from '+String(row.staffName||'Staff'));}
  function lateAttendance(index,version){const target=workspace(),row=target?.records[index];if(!row||version!==undefined&&version!==target.drawVersion||!allowed(row))return false;const context=lateRequestRecoveryContext(row);if(!context)return false;if(typeof w.openAttendanceRecovery!=='function'){w.ManagerUI?.notify?.('Open Human Resources → HR review center to review this saved clock-in.');return false;}return w.openAttendanceRecovery(context);}
- const controller={load,applyConfirmedRequest,receivePending,toggle,page,setView,request,review,photo,lateAttendance,clear(){state=null;}};w.ownerInbox=controller;return controller;
+ function timeOutCorrection(index,version){const target=workspace(),row=target?.records[index];if(!row||version!==target.drawVersion||!allowed(row)||row.type!=='Early Time Out'||!row.timeInLogId||!row.staffId||!createStaffHistoryResolver(target.staffProfiles)(row).active||!canCorrectOwnerTimeOut(w,row.branch)||typeof w.openOwnerTimeOutCorrection!=='function')return false;return w.openOwnerTimeOutCorrection({requestId:row.id,attendanceLogId:row.timeInLogId,staffId:row.staffId,staffName:row.staffName,branch:row.branch});}
+ const controller={load,applyConfirmedRequest,receivePending,toggle,page,setView,request,review,photo,lateAttendance,timeOutCorrection,clear(){state=null;}};w.ownerInbox=controller;return controller;
 }

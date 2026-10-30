@@ -6,7 +6,7 @@ const punch=(id,type,time,extra={})=>({id,staffId:'one',staffName:'Staff One',br
 const start=punch('in','TIME IN','2026-10-06T22:00:00+08:00');
 const end=punch('out','TIME OUT','2026-10-07T06:00:00+08:00',{timeInLogId:'in'});
 test('shared payroll planner and attendance reconciler are identical across their consuming apps',()=>{
-    for(const app of ['takodeal-staff','takodeal-franchise'])assert.equal(readFileSync(new URL('../'+app+'/payroll-attendance.js',import.meta.url),'utf8'),readFileSync(new URL('../takodeal-manager/payroll-attendance.js',import.meta.url),'utf8'));
+    for(const app of ['takodeal-staff','takodeal-franchise','Takodeal-POS'])assert.equal(readFileSync(new URL('../'+app+'/payroll-attendance.js',import.meta.url),'utf8'),readFileSync(new URL('../takodeal-manager/payroll-attendance.js',import.meta.url),'utf8'));
     for(const app of ['takodeal-staff','takodeal-franchise','Takodeal-POS'])assert.equal(readFileSync(new URL('../'+app+'/attendance-reconcile.js',import.meta.url),'utf8'),readFileSync(new URL('../takodeal-manager/attendance-reconcile.js',import.meta.url),'utf8'));
 });
 test('valid exact linked pairs remain usable and the original punches are immutable',()=>{
@@ -19,7 +19,10 @@ test('legacy unlinked order and values are preserved without new holds or inferr
 });
 test('a linked older shift overlapping a newer Time In holds that employee instead of inventing payable hours',()=>{
     const newer=punch('newer','TIME IN','2026-10-07T02:00:00+08:00'),other=punch('other','TIME IN','2026-10-07T09:00:00+08:00',{staffId:'two',staffName:'Other Staff'}),plan=planPayrollAttendance([start,newer,end,other]);
-    assert.deepEqual(plan.logs.map(row=>row.id),['other']);assert.ok(plan.heldNames.has('Staff One'));assert.match(plan.reviews[0].reason,/overlap/);assert.deepEqual(plan.reviews[0].recordIds,['in','newer','out']);
+    assert.deepEqual(plan.logs.map(row=>row.id),['other']);assert.ok(plan.heldNames.has('Staff One'));assert.match(plan.reviews[0].reason,/overlap/);
+    // The exact failed closure is the review target; the whole employee group
+    // remains available separately as evidence and remains withheld from pay.
+    assert.deepEqual(plan.reviews[0].recordIds,['out']);assert.deepEqual(plan.reviews[0].records.map(row=>row.id),['in','newer','out']);
 });
 test('missing, wrong-person, wrong-branch, duplicate and impossible explicit closures require review without new deductions',()=>{
     const changes=[{timeInLogId:'missing'},{staffId:'two'},{branch:'Citygate'},{timestamp:null},{timestamp:new Date('2026-10-06T21:00:00+08:00')},{timestamp:new Date('2026-10-08T22:00:00+08:00')}];
