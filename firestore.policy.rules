@@ -1477,17 +1477,18 @@ service cloud.firestore {
     }
     match /payroll_records/{recordId} { allow read: if true;
       function selectorPayrollRecordsCreate(data) {
-        return cashShortagePayrollMetadata(data,recordId)
+        return ownerDeductionPayrollMetadata(data,recordId)
+        && (data.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0 ? ownerDeductionCashMetadata(data,recordId) : cashShortagePayrollMetadata(data,recordId))
         && (recordId.matches('refund-payroll-.*') ? (offlineOwner() && data.frozenData.isPaid == true && data.processedAt == reqTime() && data.processedBy == reqEmail() && data.refundSettlements is map && data.finalNetPay is number && data.finalNetPay >= 0) : isHQUser());
       }
       allow create: if selectorPayrollRecordsCreate(newData());
       function selectorPayrollRecordsUpdate(data,before) {
-        return cashShortageProtectedPayroll(before) || cashShortageProtectedPayroll(data)
+        return ownerDeductionProtectedPayroll(before) || ownerDeductionProtectedPayroll(data) || cashShortageProtectedPayroll(before) || cashShortageProtectedPayroll(data)
         ? cashShortageSignedAcknowledgment(before,data)
         : (!recordId.matches('refund-payroll-.*') || (data.diff(before).affectedKeys().hasOnly(['acknowledged']) && data.acknowledged == true));
       }
       allow update: if selectorPayrollRecordsUpdate(newData(),resource == null ? null : oldData());
-      allow delete: if !recordId.matches('refund-payroll-.*') && !cashShortageProtectedPayroll(oldData()) && isHQUser(); }
+      allow delete: if !recordId.matches('refund-payroll-.*') && !cashShortageProtectedPayroll(oldData()) && !ownerDeductionProtectedPayroll(oldData()) && isHQUser(); }
     function onlineIncidentCharge(data, id) {
       let row = nextData('online_order_incidents',id);
       return offlineOwner() && data.type == 'Online Order Refund' && data.amount == 0
@@ -1543,6 +1544,165 @@ service cloud.firestore {
         || (after.diff(before).affectedKeys().hasOnly(['staffReply','replyRevision','repliedAt','repliedByUid'])
           && after.staffReply is string && after.staffReply.size() > 0 && after.staffReply.size() <= 1500
           && after.replyRevision == before.replyRevision + 1 && after.repliedAt == reqTime() && after.repliedByUid == reqUid()));
+    }
+    // A one-time Owner review is separate from recurring profile deductions.
+    // Private evidence and staff explanations stay in the protected source/notice.
+    function ownerDeductionOwner() { return offlineOwner() && reqProvider() == 'google.com'; }
+    function ownerDeductionId(id) { return id.matches('^owner-deduction-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'); }
+    function ownerDeductionKind(data,id) { return data.get('type','') == 'Owner Custom Deduction' || id.matches('^owner-deduction-.*') || data.keys().hasAny(['ownerDeductionVersion']); }
+    function ownerDeductionLinks(row,charge,notice,id) {
+      return ownerDeductionId(id) && row.id == id && row.type == 'Owner Custom Deduction' && charge.type == row.type && notice.type == row.type
+        && row.schemaVersion == 1 && charge.ownerDeductionVersion == 1 && notice.version == 1
+        && charge.incidentId == id && notice.id == id && notice.incidentId == id
+        && row.branch == row.staffBranch && charge.branch == row.staffBranch && notice.branch == row.staffBranch
+        && charge.staffId == row.staffId && notice.staffId == row.staffId && charge.staffName == row.staffName && notice.staffName == row.staffName
+        && row.sourcePlatform == 'Owner review' && charge.sourcePlatform == row.sourcePlatform && notice.sourcePlatform == row.sourcePlatform
+        && row.sourceReceiptId == id && charge.sourceReceiptId == id && notice.sourceReceiptId == id
+        && charge.label == row.label && notice.label == row.label && charge.category == row.category && notice.category == row.category
+        && charge.incidentDate == row.incidentDate && notice.incidentDate == row.incidentDate && notice.sourceLossCents == row.sourceLossCents
+        && charge.amount == row.amount && charge.authorizedAmount == row.amount && row.authorizedAmount == row.amount && notice.amount == row.amount
+        && charge.effectiveDate == row.effectiveDate && notice.effectiveDate == row.effectiveDate
+        && charge.reviewRevision == row.revision && notice.noticeRevision == row.revision;
+    }
+    function ownerDeductionStaff(row) {
+      let staff = readData('cashiers',row.staffId);
+      let incident = row.incidentDate.split('-');
+      return row.staffId is string && row.staffId.matches('^[-A-Za-z0-9_]{1,160}$') && row.staffName == staff.cashierName && row.staffBranch == staff.branch
+        && staff.get('active',true) != false && staff.get('archived',false) != true && staff.get('blocked',false) != true
+        && !(staff.get('status','').lower() in ['blocked','inactive','disabled','revoked','terminated','archived','resigned','deleted'])
+        && !(staff.get('pin','').upper() in ['BLOCKED','REVOKED'])
+        && row.incidentDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && timestamp.date(int(incident[0]),int(incident[1]),int(incident[2])) - duration.value(8,'h') <= reqTime();
+    }
+    function ownerDeductionChargeCreate(data,id) {
+      let row = nextData('owner_deduction_reviews',id);
+      let notice = nextData('staff_deduction_notices',id);
+      return ownerDeductionOwner() && !exists(/databases/$(database)/documents/owner_deduction_reviews/$(id))
+        && ownerDeductionLinks(row,data,notice,id) && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
+        && data.dateAdded == reqTime() && data.loggedBy == reqEmail()
+        && data.remarks == 'Owner custom deduction review only; no payroll charge is authorized.'
+        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','ownerDeductionVersion','authorizedAmount','reviewRevision','dateAdded','loggedBy','remarks']);
+    }
+    function ownerDeductionNoticeCreate(data,id) {
+      let row = nextData('owner_deduction_reviews',id);
+      let charge = staffDeductionAfter(id);
+      return ownerDeductionOwner() && !exists(/databases/$(database)/documents/owner_deduction_reviews/$(id))
+        && ownerDeductionLinks(row,charge,data,id) && data.status == 'Pending Review' && data.amount == 0
+        && data.details == row.details && data.evidence == row.evidence && data.reasonLabel == row.label
+        && data.replyRevision == 0 && data.readRevision == 0 && data.createdAt == reqTime() && data.updatedAt == reqTime()
+        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','version','id','sourceLossCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']);
+    }
+    function ownerDeductionChargeReview(before,after,id) {
+      let row = nextData('owner_deduction_reviews',id);
+      let notice = nextData('staff_deduction_notices',id);
+      return ownerDeductionOwner() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(paidKeys())
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
+        && after.reviewRevision == before.reviewRevision + 1 && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail()
+        && ownerDeductionLinks(row,after,notice,id) && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == reqTime();
+    }
+    function ownerDeductionNoticeReview(before,after,id) {
+      let row = nextData('owner_deduction_reviews',id);
+      let charge = staffDeductionAfter(id);
+      return ownerDeductionOwner() && before.status in ['Pending Review','Approved']
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','weeklyLimitConfirmed','updatedAt'])
+        && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == reqTime() && after.status == row.status
+        && ownerDeductionLinks(row,charge,after,id) && row.reviewedAt == reqTime()
+        && (row.status == 'Dismissed' ? after.ownerReply == row.dismissalReason : (after.ownerReply == row.finding && after.lawfulBasis == row.lawfulBasis && after.authorityReference == row.authorityReference && after.finding == row.finding && after.weeklyLimitConfirmed == true));
+    }
+    function ownerDeductionProtectedPayroll(payroll) {
+      return payroll.get('ownerDeductionSettlements',{}).size() > 0 || payroll.get('frozenData',{}).get('ownerDeductions',0) > 0 || payroll.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;
+    }
+    function ownerDeductionPayrollRow(item,map,details,recordId) {
+      let row = nextData('owner_deduction_reviews',item.id);
+      return item.keys().hasOnly(['id','amount']) && item.id is string && ownerDeductionId(item.id) && item.amount is number && item.amount > 0 && map[item.id] == item.amount
+        && row.status == 'Paid' && row.amount == item.amount && row.payrollRecordId == recordId && row.paidAt == reqTime();
+    }
+    function ownerDeductionTuple(rows,map,details,index,recordId) { return rows.size() <= index || ownerDeductionPayrollRow(rows[index],map,details,recordId); }
+    function ownerDeductionBankCents(value) { return value >= 0 ? int(value * 100 + 0.5) : -int(-value * 100 + 0.5); }
+    function ownerDeductionBankProof(payroll,recordId) {
+      let before = readData('cash_accounts',payroll.accountId);
+      let after = nextData('cash_accounts',payroll.accountId);
+      let expense = nextData('expenses',recordId);
+      return payroll.finalNetPay is number && payroll.finalNetPay >= 0 && before.balance is number && after.balance is number
+        && ownerDeductionBankCents(before.balance) - ownerDeductionBankCents(after.balance) == ownerDeductionBankCents(payroll.finalNetPay)
+        && expense.category == 'Payroll' && expense.payrollRecordId == recordId && expense.amount == payroll.finalNetPay && expense.timestamp == reqTime();
+    }
+    function ownerDeductionPayrollMetadata(payroll,recordId) {
+      let rows = payroll.get('frozenData',{}).get('ownerDeductionRows',[]);
+      let map = payroll.get('ownerDeductionSettlements',{});
+      let details = payroll.get('frozenData',{}).get('ownerDeductionDetails',[]);
+      return rows is list && rows.size() <= 4 && rows.toSet().size() == rows.size() && map is map && map.size() == rows.size()
+        && details is list && details.size() == rows.size()
+        && ownerDeductionTuple(rows,map,details,0,recordId) && ownerDeductionTuple(rows,map,details,1,recordId) && ownerDeductionTuple(rows,map,details,2,recordId) && ownerDeductionTuple(rows,map,details,3,recordId)
+        && payroll.get('frozenData',{}).get('ownerDeductions',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (rows.size() > 3 ? rows[3].amount : 0)
+        && (rows.size() == 0 || (ownerDeductionOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail()
+          && rows.size() + payroll.get('frozenData',{}).get('cashShortageRows',[]).size() + payroll.get('refundSettlements',{}).size() <= 4 && ownerDeductionBankProof(payroll,recordId)));
+    }
+    function ownerDeductionPaidChange(before,after) {
+      return ownerDeductionOwner() && before.type == 'Owner Custom Deduction' && before.status in ['Approved','Unpaid'] && before.amount > 0
+        && !before.keys().hasAny(paidKeys()) && after.diff(before).affectedKeys().hasOnly(['status','paidAt','payrollRecordId']) && after.status == 'Paid' && after.paidAt == reqTime();
+    }
+    // A custom-involved payment has at most three other protected rows. Keep
+    // the exact cash source checks, without evaluating six empty tuple slots.
+    function ownerDeductionCashMetadata(payroll,recordId) {
+      let rows = payroll.get('frozenData',{}).get('cashShortageRows',[]);
+      let map = payroll.get('cashShortageSettlements',{});
+      return rows is list && rows.size() <= 3 && rows.toSet().size() == rows.size() && map is map && map.size() == rows.size()
+        && cashShortageRow(rows,map,0,recordId) && cashShortageRow(rows,map,1,recordId) && cashShortageRow(rows,map,2,recordId)
+        && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0);
+    }
+    function ownerDeductionCompanionPaid(before,after,id,revision) {
+      let row = nextData('owner_deduction_reviews',id);
+      return ownerDeductionPaidChange(before,after) && row.status == 'Paid' && row.staffId == before.staffId && row.amount == before.amount && row.revision == revision
+        && row.payrollRecordId == after.payrollRecordId && row.paidAt == reqTime();
+    }
+    match /owner_deduction_reviews/{id} {
+      function ownerDeductionCreate(data,id) {
+        let charge = staffDeductionAfter(id);
+        let notice = nextData('staff_deduction_notices',id);
+        return ownerDeductionOwner() && ownerDeductionLinks(data,charge,notice,id) && ownerDeductionStaff(data)
+          && data.keys().hasOnly(['schemaVersion','id','type','staffId','staffName','staffBranch','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','details','evidence','sourceLossCents','proposedAmount','revision','status','amount','authorizedAmount','effectiveDate','openIntent','createdAt','createdByUid','createdBy'])
+          && data.label is string && data.label.size() >= 3 && data.label.size() <= 120 && data.category in ['Damaged item','Wastage','Other']
+          && data.status == 'Pending Review' && data.amount == 0 && data.revision == 1 && data.effectiveDate == null && charge.status == 'Pending Review' && notice.status == 'Pending Review'
+          && data.sourceLossCents is int && data.sourceLossCents > 0 && data.sourceLossCents <= 100000000000
+          && data.proposedAmount is number && data.proposedAmount > 0 && data.proposedAmount <= data.sourceLossCents / 100.0 && data.proposedAmount == int(data.proposedAmount * 100 + 0.5) / 100.0
+          && data.details is string && data.details.size() >= 8 && data.details.size() <= 1500 && data.evidence is string && data.evidence.size() >= 5 && data.evidence.size() <= 1000
+          && data.openIntent is string && data.openIntent.size() > 0 && data.openIntent.size() <= 12000
+          && data.createdAt == reqTime() && data.createdByUid == reqUid() && data.createdBy == reqEmail();
+      }
+      function ownerDeductionReview(before,after,id) {
+        let charge = staffDeductionAfter(id);
+        let notice = nextData('staff_deduction_notices',id);
+        let response = readData('staff_deduction_notices',id);
+        let due = after.get('effectiveDate','2000-01-01') == null ? ['2000','01','01'] : after.effectiveDate.split('-');
+        return ownerDeductionOwner() && before.status in ['Pending Review','Approved'] && !before.keys().hasAny(paidKeys())
+          && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','revision','lawfulBasis','authorityReference','finding','responsibilityConfirmed','lawfulAuthorityConfirmed','weeklyLimitConfirmed','replyRevisionReviewed','approvalIntent','reviewedAt','reviewedBy','dismissalReason'])
+          && after.revision == before.revision + 1 && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail() && ownerDeductionLinks(after,charge,notice,id) && notice.status == after.status
+          && (after.status == 'Dismissed' ? (after.amount == 0 && charge.status == 'Dismissed' && after.dismissalReason is string && after.dismissalReason.size() >= 8 && after.dismissalReason.size() <= 1500)
+            : (after.status == 'Approved' && charge.status == 'Unpaid' && ownerDeductionStaff(after)
+              && after.amount is number && after.amount > 0 && after.amount <= after.sourceLossCents / 100.0 && after.amount == int(after.amount * 100 + 0.5) / 100.0
+              && after.effectiveDate is string && after.effectiveDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && timestamp.date(int(due[0]),int(due[1]),int(due[2])) + duration.value(16,'h') > reqTime()
+              && after.lawfulBasis in ['Legal authority permitting this deduction','Court / authorized agency order'] && after.responsibilityConfirmed == true && after.lawfulAuthorityConfirmed == true && after.weeklyLimitConfirmed == true
+              && after.authorityReference is string && after.authorityReference.size() >= 8 && after.authorityReference.size() <= 1500 && after.finding is string && after.finding.size() >= 15 && after.finding.size() <= 1500
+              && after.approvalIntent is string && after.approvalIntent.size() > 0 && after.approvalIntent.size() <= 5000
+              && response.replyRevision is int && response.replyRevision > 0 && response.staffReply is string && response.staffReply.size() > 0 && after.replyRevisionReviewed == response.replyRevision && notice.replyRevision == response.replyRevision));
+      }
+      function ownerDeductionCasePaid(before,after,id) {
+        let charge = staffDeductionAfter(id);
+        let notice = nextData('staff_deduction_notices',id);
+        let payroll = nextData('payroll_records',after.payrollRecordId);
+        return ownerDeductionPaidChange(before,after) && before.status == 'Approved' && charge.status == 'Paid' && notice.status == 'Paid' && charge.amount == before.amount && notice.amount == before.amount
+          && charge.reviewRevision == before.revision && notice.noticeRevision == before.revision && notice.replyRevision == before.replyRevisionReviewed && before.replyRevisionReviewed > 0 && notice.staffReply is string && notice.staffReply.size() > 0
+          && charge.payrollRecordId == after.payrollRecordId && notice.payrollRecordId == after.payrollRecordId && charge.paidAt == reqTime() && notice.paidAt == reqTime()
+          && payroll.staffId == before.staffId && payroll.frozenData.branch == before.staffBranch && payroll.frozenData.name == before.staffName && payroll.processedAt == reqTime() && payroll.frozenData.isPaid == true && before.effectiveDate <= payroll.endDate
+          && payroll.ownerDeductionSettlements[id] == before.amount && {'id':id,'amount':before.amount} in payroll.frozenData.ownerDeductionRows
+          && {'id':id,'type':'Owner Custom Deduction','bucket':'ownerDeductions','amount':before.amount,'label':before.label,'category':before.category,'incidentDate':before.incidentDate,'effectiveDate':before.effectiveDate,'reviewRevision':before.revision} in payroll.frozenData.ownerDeductionDetails;
+      }
+      allow get, list: if ownerDeductionOwner() || docVaultOwn(oldData().staffId) || staffRateHQ(oldData().staffBranch);
+      allow create: if ownerDeductionCreate(newData(),id);
+      function selectorOwnerDeductionReviewsUpdate(data,before) { return data.status == 'Paid' ? ownerDeductionCasePaid(before,data,id) : ownerDeductionReview(before,data,id); }
+      allow update: if selectorOwnerDeductionReviewsUpdate(newData(),resource == null ? null : oldData());
+      allow delete: if false;
     }
     function cashShortageKind(data,id) { return data.get('type','') == 'Cash Shortage' || id.matches('^cash-shortage-.*'); }
     function cashShortageLinks(row,charge,notice,id) {
@@ -1703,13 +1863,15 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /staff_deduction_notices/{id} {
-      allow get, list: if offlineOwner() || docVaultOwn(oldData().staffId) || (cashShortageKind(oldData(),id) && staffRateHQ(oldData().branch));
+      allow get, list: if offlineOwner() || docVaultOwn(oldData().staffId) || ((cashShortageKind(oldData(),id) || ownerDeductionKind(oldData(),id)) && staffRateHQ(oldData().branch));
       function selectorStaffDeductionNoticesCreate(data) {
-        return cashShortageKind(data,id) ? cashShortageNoticeCreate(data,id) : refundNoticeCreate(data,id);
+        return ownerDeductionKind(data,id) ? ownerDeductionNoticeCreate(data,id) : cashShortageKind(data,id) ? cashShortageNoticeCreate(data,id) : refundNoticeCreate(data,id);
       }
       allow create: if selectorStaffDeductionNoticesCreate(newData());
       function selectorStaffDeductionNoticesUpdate(data,before) {
-        return cashShortageKind(before,id) || cashShortageKind(data,id)
+        return ownerDeductionKind(before,id) || ownerDeductionKind(data,id)
+        ? (data.status == 'Paid' && before.status != 'Paid' ? ownerDeductionCompanionPaid(before,data,id,before.noticeRevision) : (refundNoticeStaffUpdate(before,data) || ownerDeductionNoticeReview(before,data,id)))
+        : cashShortageKind(before,id) || cashShortageKind(data,id)
         ? (data.status == 'Paid' && before.status != 'Paid' ? cashShortageCompanionPaid(before,data,id,before.noticeRevision) : (refundNoticeStaffUpdate(before,data) || cashShortageNoticeReview(before,data,id)))
         : refundNoticeStaffUpdate(before,data)
         || refundNoticeOwnerUpdate(before,data,id) || refundPaid(before,data,id);
@@ -1810,7 +1972,8 @@ service cloud.firestore {
     match /staff_deductions/{deductId} {
       allow read: if true;
       function selectorStaffDeductionsCreate(data) {
-        return cashShortageKind(data,deductId) ? cashShortageChargeCreate(data,deductId)
+        return ownerDeductionKind(data,deductId) ? ownerDeductionChargeCreate(data,deductId)
+        : cashShortageKind(data,deductId) ? cashShortageChargeCreate(data,deductId)
         : data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
         ? (onlineIncidentCharge(data, deductId) || directIncidentCharge(data,deductId))
         : data.get('type', '') == 'Cancelled Food Purchase'
@@ -1819,7 +1982,9 @@ service cloud.firestore {
       }
       allow create: if selectorStaffDeductionsCreate(newData());
       function selectorStaffDeductionsUpdate(data,before) {
-        return cashShortageKind(before,deductId) || cashShortageKind(data,deductId)
+        return ownerDeductionKind(before,deductId) || ownerDeductionKind(data,deductId)
+        ? (data.status == 'Paid' ? ownerDeductionCompanionPaid(before,data,deductId,before.reviewRevision) : ownerDeductionChargeReview(before,data,deductId))
+        : cashShortageKind(before,deductId) || cashShortageKind(data,deductId)
         ? (data.status == 'Paid' ? cashShortageCompanionPaid(before,data,deductId,before.reviewRevision) : cashShortageChargeReview(before,data,deductId))
         : before.get('type', '') == 'Online Order Refund' || data.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
         ? (offlineOwner() && before.type == 'Online Order Refund' && data.amount == 0
@@ -1834,7 +1999,7 @@ service cloud.firestore {
       }
       allow update: if selectorStaffDeductionsUpdate(newData(),resource == null ? null : oldData());
       function selectorStaffDeductionsDelete(before) {
-        return !cashShortageKind(before,deductId) && before.get('type', '') != 'Online Order Refund'
+        return !ownerDeductionKind(before,deductId) && !cashShortageKind(before,deductId) && before.get('type', '') != 'Online Order Refund'
         && (before.get('type', '') == 'Cancelled Food Purchase' ? verifiedHQ(before.branch) : isHQUser());
       }
       allow delete: if selectorStaffDeductionsDelete(resource == null ? null : oldData());

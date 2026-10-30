@@ -1,3 +1,6 @@
+import {renderPayslipOptionalDeductions,renderRecurringPayslipDeductions} from '../takodeal-manager/payslip-optional-deductions.js';
+import {isOwnerDeduction} from '../takodeal-manager/owner-deduction-model.js';
+import {readPayrollOwnerDeductions,ownerDeductionDisplayRows} from '../takodeal-manager/owner-deduction-payroll.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -9,17 +12,18 @@ const copy=value=>JSON.parse(JSON.stringify(value));
 Object.defineProperty(ReviewElement.prototype,'innerText',{get(){return this.textContent;},set(value){this.textContent=value;}});
 const extract=name=>{const from=source.indexOf('window.'+name+' = '),end=source.indexOf('\n};',from);assert.ok(from>=0&&end>from);return source.slice(from,end+3);};
 function fixture(extra={}){
- const d=new ReviewDocument(),calls={reviews:[],corrections:[],notifications:[],writes:0,downloads:0,captures:0};
+ const d=new ReviewDocument(),create=d.createElement.bind(d);d.createElement=tag=>{const n=create(tag);n.style={};n.after=function(node){node.parentElement=this.parentElement;this.parentElement.children.splice(this.parentElement.children.indexOf(this)+1,0,node);};return n;};const calls={reviews:[],corrections:[],notifications:[],writes:0,downloads:0,captures:0};
  const inputIds=new Set(['psPayDistributed','psOvertime','psStraightBonus','psHoliday','psPerfBonus','psLate','psSSS','psPhil','psPagibig','psAdvance','psLoans','psFoods']);
  const ids=['payslipModal','printablePayslip','psDocumentTitle','psDocumentState','psReviewPanel','psReviewReasons','psReviewHours','btnReviewPayslipRecords','btnCheckSavedPayslip','btnFinalizePayslip','btnDownloadPayslip','psName','psBranch','psStart','psEnd','psBasicPay','psDaysWorked','psDateHired','psScheduleMemory','psOnlineRefunds','psCashShortages','psPenalties','psDynamicDeductionsArea','psAttendanceBody','psGross','psTotalDeduct','psNetPay',...inputIds];
  for(const id of ids){const node=d.createElement(inputIds.has(id)?'input':id==='psAttendanceBody'?'tbody':id.startsWith('btn')?'button':'div');node.setAttribute('id',id);node.style={};d.body.appendChild(node);}
+ for(const id of ['psFoods','psOnlineRefunds','psCashShortages']){const el=d.getElementById(id),wrap=d.createElement('div');d.body.children=d.body.children.filter(n=>n!==el);wrap.append(el);d.body.append(wrap);}
  d.querySelectorAll=selector=>selector==='.ps-dynamic-deduction'?d.body.querySelectorAll('input').filter(node=>(node.attributes.class||'').split(' ').includes('ps-dynamic-deduction')):d.body.querySelectorAll(selector);
  const data={name:'Fictional Crew',staffId:'fictional-crew',branch:'Maa',start:'2026-10-16',end:'2026-10-31',profile:{staffId:'fictional-crew',dateHired:'2026-02-25'},attendanceReviewRequired:true,salaryReviewRequired:false,recordedHours:16.75,hours:0,basicPay:0,shiftsWorked:0,meals:530.25,
   payrollReviewReasons:['Linked Time In is missing; confirm the affected original shift.'],attendanceLogIds:['affected-out'],attendanceIssues:[{id:'affected-out',type:'TIME OUT',timestamp:'2026-10-24T17:00:00+08:00',timeInLogId:'missing-original'}],
   logs:[{date:'Oct 16',in:'09:00 AM',out:'05:00 PM',hrs:'8.00',remark:'Recorded pair · payroll review pending'}],...extra};
  const w={globalPayrollCache:{[data.name]:data},currentPayslipData:null,paidPayrollSnapshots:new WeakSet(),requirePayrollPreview(value){if(w.stale||!value||value!==w.globalPayrollCache[value.name])throw Error('Refresh payroll for the selected cutoff.');return 'confirmed-preview';},ManagerUI:{notify:message=>calls.notifications.push(message)},openAttendanceRecovery:value=>calls.reviews.push(copy(value)),openOwnerTimeOutCorrection:value=>calls.corrections.push(copy(value)),auth:{currentUser:{uid:'owner',email:'jgo031996@gmail.com',emailVerified:true}},sessionUser:{uid:'owner',email:'jgo031996@gmail.com',permissions:['all'],allowedBranches:['All']}};
  const deny=()=>{calls.writes++;assert.fail('Preview and navigation must not write business records.');};
- const context=vm.createContext({window:w,document:d,syncPayslipImageButton,exportPayslipImage,console:{error(){}},Date,addDoc:deny,setDoc:deny,updateDoc:deny,deleteDoc:deny,runTransaction:deny,writeBatch:deny});
+ const context=vm.createContext({renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,window:w,document:d,syncPayslipImageButton,exportPayslipImage,console:{error(){}},Date,addDoc:deny,setDoc:deny,updateDoc:deny,deleteDoc:deny,runTransaction:deny,writeBatch:deny});
  for(const name of ['openPayslipModal','recalcPayslip','downloadPayslipImage'])vm.runInContext(extract(name),context);
  return {w,d,data,calls,node:id=>d.getElementById(id),open:()=>w.openPayslipModal(data.name)};
 }

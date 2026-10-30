@@ -12,6 +12,8 @@ import {createScheduleHistoryStore,scheduleDateKey,createScheduleRevision,assemb
 import {installStaffRatePrivacy} from '../takodeal-staff/staff-rate-privacy.js';
 import {onlineRefundReviewHTML} from '../takodeal-staff/online-refund-pay.js';
 import * as deductionDetails from '../takodeal-staff/payroll-deduction-details.js';
+import {readStaffOwnerDeductionEstimate} from '../takodeal-staff/staff-owner-deductions.js';
+import {isOwnerDeduction} from '../takodeal-staff/owner-deduction-model.js';
 
 test('separate PIN verifier uses unique salts and rejects incorrect, malformed and unsafe input', async () => {
     const a = await createPinVerifier('246810', webcrypto), b = await createPinVerifier('246810', webcrypto);
@@ -63,7 +65,7 @@ test('unlocked Staff estimates include the same POS meals in current and pending
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:ref=>ref,where:()=>({}),orderBy:()=>({}),
         getDocFromServer:async ref=>({exists:()=>ref.table==='cashiers',data:()=>ref.table==='cashiers'?{hourlyRate:450,scheduleNickname:'TEST'}:{}}),
         getDocs:async ref=>snapshot(ref.table==='staff_deductions'?deductions:[])};
-    const context={...api,...payroll,...sanctions,...reconciliation,...deductionDetails,planPayrollAttendance,onlineRefundReviewHTML,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},
+    const context={...api,...payroll,...sanctions,...reconciliation,...deductionDetails,planPayrollAttendance,onlineRefundReviewHTML,readStaffOwnerDeductionEstimate,isOwnerDeduction,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},
         window:{...api,readStaffPayrollAttendance:async()=>snapshot([]),staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
     const start=engine.indexOf('window.loadPayslipVault = async function() {'),end=engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',start);
     vm.runInNewContext(engine.slice(start,end),context);await context.window.loadPayslipVault();
@@ -174,7 +176,7 @@ function staffLinkedEstimate(logs,{profileName='Test Staff',clock='2026-10-08T12
     const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:(ref,...filters)=>({...ref,filters}),where:(key,op,value)=>({key,op,value}),orderBy:()=>({}),
         getDoc:async ref=>({exists:()=>ref.table==='cashiers',data:()=>({hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST'})}),getDocFromServer:async ref=>{if(profileUnavailable&&ref.table==='cashiers')throw Error('Sample profile offline');if(privateDenied&&ref.table==='staff_salary_rates')throw Error('Sample private access denied');return {exists:()=>ref.table==='cashiers'||ref.table==='staff_salary_rates'&&!!timeline,data:()=>ref.table==='cashiers'?{hourlyRate:450,cashierName:profileName,scheduleNickname:'TEST',...profile}:timeline};},getDocs:async ref=>{queries.push(ref);return snapshot(ref.table==='attendance_logs'||ref.table==='staff_deductions'?(ref.table==='attendance_logs'?logs:deductionRows).filter(row=>ref.filters.every(filter=>filter.op==='in'?filter.value.includes(row[filter.key]):row[filter.key]===filter.value)):ref.table==='payroll_records'?paidRecords:[]);}};
     const readStaffPayrollAttendance=async input=>{input.assertCurrent?.();attendanceCalls.push(input);return snapshot(logs.filter(row=>row.staffId===input.staffId||input.names.includes(row.staffName)));};
-    const context={...api,...payroll,...sanctions,...reconciliation,...deductionDetails,planPayrollAttendance,onlineRefundReviewHTML,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},window:{...api,readStaffPayrollAttendance,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
+    const context={...api,...payroll,...sanctions,...reconciliation,...deductionDetails,planPayrollAttendance,onlineRefundReviewHTML,readStaffOwnerDeductionEstimate,isOwnerDeduction,createScheduleHistoryStore,Date:FixedDate,console:{error:(...e)=>errors.push(e)},window:{...api,readStaffPayrollAttendance,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?'sample':'Test Staff'},document:{getElementById:node}};
     const at=engine.indexOf('window.loadPayslipVault = async function() {');vm.runInNewContext(engine.slice(at,engine.indexOf('// 🧾 THE UPGRADED PAYSLIP UI ENGINE',at)),context);return {node,errors,queries,attendanceCalls,window:context.window};
 }
 test('actual unlocked Staff estimate holds overlapping linked punches without inferred pay or lateness',async()=>{

@@ -21,7 +21,7 @@ export function payrollEstimate(data){
     if(data.isPaid&&Number.isFinite(Number(data.finalNetPay)))return Math.max(0,Number(data.finalNetPay));
     // This is the same cutoff estimate used by the generator; paid rows use the
     // exact confirmed net amount, including any edits made in their payslip.
-    return Math.max(0,amount(data.basicPay)+amount(data.nightBonus??data.nightBonusTotal)+amount(data.straightBonus)+amount(data.holidayPayTotal)+amount(data.perfBonus)-['cashShortages','onlineRefunds','meals','advances','loans','sss','pagibig','philhealth','lateDeduction'].reduce((sum,key)=>sum+amount(data[key]),0));
+    return Math.max(0,amount(data.basicPay)+amount(data.nightBonus??data.nightBonusTotal)+amount(data.straightBonus)+amount(data.holidayPayTotal)+amount(data.perfBonus)-['cashShortages','ownerDeductions','onlineRefunds','meals','advances','loans','sss','pagibig','philhealth','lateDeduction'].reduce((sum,key)=>sum+amount(data[key]),amount(data.customDeductionsTotal)));
 }
 export function applyConfirmedPayroll(api,d,data,saved,{actorKey}={}){
     const frozen={...(saved.frozenData||data)},identity=Object.fromEntries(['name','staffId','branch','start','end'].map(key=>[key,data[key]]));
@@ -42,7 +42,7 @@ export function applyConfirmedPayroll(api,d,data,saved,{actorKey}={}){
         row.style.background='#f8fafc';row.style.opacity='0.85';
         const button=row.querySelector('button');if(button){button.textContent='✅ View Paid Payslip';button.style.background='#475569';}
         if(row.cells?.[2])row.cells[2].textContent=amount(data.hours??data.totalHours).toFixed(2)+' hrs'+(amount(data.nightBonus)?' · ₱'+amount(data.nightBonus).toFixed(2)+' Mid/Night Bonus':'')+(amount(data.perfBonus)?' · ₱'+amount(data.perfBonus).toFixed(2)+' Reward':'');
-        if(row.cells?.[3]){const deduct=['cashShortages','onlineRefunds','meals','advances','loans','sss','pagibig','philhealth','lateDeduction'].reduce((sum,key)=>sum+amount(data[key]),0);row.cells[3].textContent='Total: ₱'+deduct.toFixed(2)+' · Paid and saved';}
+        if(row.cells?.[3]){const deduct=['ownerDeductions','cashShortages','onlineRefunds','meals','advances','loans','sss','pagibig','philhealth','lateDeduction'].reduce((sum,key)=>sum+amount(data[key]),amount(data.customDeductionsTotal));row.cells[3].textContent='Total: ₱'+deduct.toFixed(2)+' · Paid and saved';}
     }
     const total=d.getElementById('payrollGrandTotalAmount');
     if(total)total.innerText='₱'+Object.values(api.globalPayrollCache).reduce((sum,item)=>sum+payrollEstimate(item),0).toLocaleString(undefined,{minimumFractionDigits:2});

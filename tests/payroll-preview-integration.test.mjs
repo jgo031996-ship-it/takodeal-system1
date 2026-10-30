@@ -1,3 +1,6 @@
+import {renderPayslipOptionalDeductions,renderRecurringPayslipDeductions} from '../takodeal-manager/payslip-optional-deductions.js';
+import {isOwnerDeduction} from '../takodeal-manager/owner-deduction-model.js';
+import {readPayrollOwnerDeductions,ownerDeductionDisplayRows} from '../takodeal-manager/owner-deduction-payroll.js';
 import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
 import * as roster from '../takodeal-manager/payroll-roster-model.js';
 import * as rosterUI from '../takodeal-manager/payroll-balance-review.js';
@@ -31,7 +34,7 @@ const held=()=>{let resolve;const promise=new Promise(yes=>resolve=yes);return {
 const stamp=value=>({toDate:()=>new Date(value)});
 function harness(options={}){
  const nodes=new Map(),events=[],writes=[],calls=[];
- const node=id=>{if(!nodes.has(id)){const listeners={};nodes.set(id,{id,value:'',innerText:'0',textContent:'',innerHTML:'',style:{},tagName:'DIV',disabled:false,addEventListener:(name,fn)=>{(listeners[name]||=[]).push(fn);},emit:name=>{for(const fn of listeners[name]||[])fn({target:node(id)});}});}return nodes.get(id);};
+ const node=id=>{if(!nodes.has(id)){const listeners={};nodes.set(id,{id,value:'',innerText:'0',textContent:'',innerHTML:'',style:{},parentElement:{style:{},querySelector:()=>null},tagName:'DIV',disabled:false,addEventListener:(name,fn)=>{(listeners[name]||=[]).push(fn);},emit:name=>{for(const fn of listeners[name]||[])fn({target:node(id)});}});}return nodes.get(id);};
  node('payrollStart').value=node('payrollEnd').value='2030-01-16';node('payrollGrandTotalContainer').style.display='flex';node('payrollGrandTotalAmount').innerText='₱1,234.56';node('payslipModal').style.display='block';
  const person={id:'person-a',cashierName:'Sample Staff',scheduleNickname:'SAMPLE',branch:'Sample Branch',hourlyRate:450,nightDiffRate:0},owner={uid:'owner-a',email:'owner@example.test',emailVerified:true};
  const plan={currentYear:2030,currentMonth:1,branchConfig:{'Sample Branch':[{id:'day',name:'Day',startTime:'09:00',endTime:'17:00',shiftType:'morning',active:true}]},currentSchedule:{16:{'Sample Branch':{scheduled:{day:'SAMPLE'}}},17:{'Sample Branch':{scheduled:{day:'SAMPLE'}}}}};
@@ -42,7 +45,7 @@ function harness(options={}){
  api.getDocFromServer=async ref=>{if(options.readDoc)return options.readDoc(ref,{records});const row=(records[ref.table]||[]).find(item=>item.id===ref.id||item.staffId===ref.id);return {exists:()=>!!row,data:()=>row,metadata:{fromCache:false,hasPendingWrites:false}};};
  const Swal={fire:async(...args)=>{events.push(args);return options.confirm?options.confirm(...args):{isConfirmed:false};},showValidationMessage:message=>events.push(message)};
  const document={getElementById:id=>id==='payrollBalanceReview'?null:node(id),querySelectorAll:()=>[]};
- const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...roster,...rosterUI,...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...completion,readPayrollCashShortages,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
+ const context=vm.createContext({renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,activeStaffProfile,...roster,...rosterUI,...roster,...rosterUI,...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...completion,readPayrollCashShortages,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
  context.html=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  vm.runInContext(heldRenderer,context);
  for(const name of ['getPayrollPreviewGuard','requirePayrollPreview','loadPayrollGenerator','generateAutoPayslips','openPayslipModal','finalizePayslip'])vm.runInContext(extract(name),context);
@@ -327,4 +330,12 @@ test('the actual attendance correction refresh callback reports an unsuccessful 
  const h=harness();await h.w.generateAutoPayslips();vm.runInContext(extract('refreshPayrollAfterAttendanceCorrection'),h.context);
  h.w.getDocsFromServer=async()=>{throw Error('Fictional connection unavailable');};
  await assert.rejects(h.w.refreshPayrollAfterAttendanceCorrection());assert.throws(()=>h.w.getPayrollPreviewGuard().requireReady());assert.equal(h.writes.length,0);
+});
+
+for(const generator of ['loadPayrollGenerator','generateAutoPayslips'])test(generator+': actual generation itemizes due one-time custom deductions and excludes future records without changing profile recurring settings',async()=>{
+ const h=harness(),id='owner-deduction-00000000-0000-4000-8000-000000000001',futureId='owner-deduction-00000000-0000-4000-8000-000000000002';h.w.auth.currentUser.email=OWNER_EMAIL;h.w.auth.currentUser.providerData=[{providerId:'google.com'}];h.w.sessionUser.email=OWNER_EMAIL;h.context.console.error=e=>h.events.push(e?.message||String(e));const guard=h.w.getPayrollPreviewGuard(),fail=guard.fail;guard.fail=(token,error)=>{h.events.push(error.message);return fail(token,error);};
+ const common={id,type:'Owner Custom Deduction',staffId:h.person.id,staffName:h.person.cashierName,branch:h.person.branch,sourcePlatform:'Owner review',sourceReceiptId:id,label:'Damaged cup',category:'Damaged item',incidentDate:'2030-01-15',amount:35,effectiveDate:'2030-01-16'};
+ const review={...common,schemaVersion:1,staffBranch:h.person.branch,status:'Approved',revision:2,authorizedAmount:35,proposedAmount:35,sourceLossCents:3500,responsibilityConfirmed:true,lawfulAuthorityConfirmed:true,weeklyLimitConfirmed:true,lawfulBasis:'Legal authority permitting this deduction',authorityReference:'PRIVATE authority reference',finding:'PRIVATE responsibility finding',details:'PRIVATE incident details',evidence:'PRIVATE evidence',replyRevisionReviewed:1};
+ const charge={...common,incidentId:id,ownerDeductionVersion:1,status:'Unpaid',reviewRevision:2,authorizedAmount:35,dateAdded:stamp('2030-02-01T09:00:00+08:00')},notice={...common,incidentId:id,version:1,status:'Approved',noticeRevision:2,replyRevision:1,staffReply:'PRIVATE staff response',sourceLossCents:3500,weeklyLimitConfirmed:true,lawfulBasis:review.lawfulBasis,authorityReference:review.authorityReference,finding:review.finding,ownerReply:review.finding,details:review.details,evidence:review.evidence};
+ h.records.staff_deductions=[charge,{...charge,id:futureId,incidentId:futureId,sourceReceiptId:futureId,effectiveDate:'2030-02-01'}];h.records.owner_deduction_reviews=[review];h.records.staff_deduction_notices=[notice];await h.w[generator]();const data=h.w.globalPayrollCache[h.person.cashierName];assert.ok(data,JSON.stringify({events:h.events,status:h.node('payrollPreviewStatus').textContent,keys:Object.keys(h.w.globalPayrollCache),body:h.node('payrollGeneratorBody').innerHTML}));assert.equal(data.ownerDeductions,35);assert.equal(data.ownerDeductionRows.length,1);assert.equal(data.ownerDeductionRows[0].id,id);assert.equal(data.ownerDeductionDetails[0].label,'Damaged cup');assert.doesNotMatch(JSON.stringify(data.ownerDeductionDetails),/PRIVATE/);assert.equal(h.node('payrollGrandTotalAmount').innerText,'₱415.00');assert.equal(h.writes.length,0);assert.equal(h.person.customDeductions,undefined);
 });

@@ -464,6 +464,7 @@
 <link rel="stylesheet" href="hr-review.css?v=20261021">
 <link rel="stylesheet" href="owner-time-out-correction.css?v=20261030">
 <link rel="stylesheet" href="monthly-schedule.css?v=20261030">
+    <link rel="stylesheet" href="owner-deduction.css?v=20261030">
   <link rel="stylesheet" href="dispatch-cart.css?v=20261021">
   <link rel="stylesheet" href="government-permits.css?v=20261021">
   <link rel="stylesheet" href="bookkeeper-payments.css?v=20261021">
@@ -5745,9 +5746,9 @@
             </div>
 
             <div style="border-top: 1px dashed #cbd5e1; padding-top: 20px;">
-                <label style="font-size: 11px; font-weight: 800; color: #64748b; display: block; margin-bottom: 10px; text-transform: uppercase;">Other Custom Deductions (Wi-Fi, Uniforms, etc.)</label>
+                <label style="font-size: 11px; font-weight: 800; color: #64748b; display: block; margin-bottom: 10px; text-transform: uppercase;">Recurring Deductions (Wi-Fi, Uniforms, etc.)</label>
                 <div id="customDeductionsContainer" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px;"></div>
-                <button type="button" onclick="window.addCustomDeductionRow()" style="background: #f8fafc; color: #0ea5e9; border: 1px dashed #0ea5e9; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; width: 100%; transition: 0.2s;">+ Add Custom Deduction</button>
+                <button type="button" onclick="window.addCustomDeductionRow()" style="background: #f8fafc; color: #0ea5e9; border: 1px dashed #0ea5e9; padding: 12px; border-radius: 8px; font-size: 13px; font-weight: bold; cursor: pointer; width: 100%; transition: 0.2s;">+ Add Recurring Deduction</button>
             </div>
         </div>
 
@@ -5755,6 +5756,8 @@
         <link rel="stylesheet" href="./staff-sss.css">
         <div style="background: white; border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
             <h3 style="margin-top: 0; color: #334155; font-size: 16px; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px; text-transform: uppercase;">📜 Advances & Deductions History</h3>
+            <button type="button" id="btnEmployeeOneTimeDeduction" onclick="window.openEmployeeOneTimeDeduction()" style="margin-bottom:14px;min-height:44px;padding:10px 16px;border:0;border-radius:9px;background:#17624d;color:#fff;font-weight:700;cursor:pointer;">Add one-time deduction</button>
+            <p style="font-size:12px;color:#64756d;">For a specific incident or item. Pending reviews do not reduce pay. Recurring charges such as Wi-Fi remain above.</p>
             <table style="width: 100%; border-collapse: collapse; font-size: 13px; text-align: left;">
                 <thead style="background: #f8fafc; color: #475569; border-bottom: 2px solid #e2e8f0;">
                     <tr>
