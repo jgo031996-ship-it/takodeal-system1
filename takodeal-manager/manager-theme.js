@@ -13,7 +13,7 @@ export const MANAGER_PAGES = Object.freeze({
     payables: ['Finance', 'Supplier Payables', 'Track suppliers, payment terms, and outstanding balances.'],
     devices: ['Operations', 'Device Fleet', 'Review Staff and Cashier phones, pending requests, and approval status.'],
     payroll: ['Human resources', 'Payroll & Time Feed', 'Prepare payslips and review staff attendance.'],
-    schedule: ['Human resources', 'Schedule Manager', 'Plan branch staffing and configure Morning, Mid, and Night shifts.'],
+    schedule: ['Human resources', 'Schedule Manager', 'Plan shifts, then save the shared schedule. Owners and authorized co-owners save directly; no separate HQ approval is required.'],
     ledger: ['Human resources', 'Loans & Ledger', 'Review staff accounts, loans, and repayments.'],
     inbox: ['Human resources', 'Request Inbox', 'Review staff requests and keep decisions documented.'],
     branches: ['People', 'Staff & Security', 'Manage employment details and branch assignments.'],
