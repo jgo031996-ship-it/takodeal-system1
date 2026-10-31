@@ -1,12 +1,13 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-single-approval-20261031';
+const CORE = 'takodeal-pos-core-appearance-20261031';
 
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
 const required = ['./', './index.html', './meal-checkout.js','./meal-checkout.css','./pos-config-model.js','./hq-account-model.js','./main.js', './branch-operations.js','./cash-settlement.js','./shift-close-ui.js', './shift-close-draft.js', './shift-sales.js', './printer-connection.js', './dispatch-safety.js','./dispatch-restock-model.js','./workspace-access-model.js', './pos-checkout.js', './pos-safety.js', './pos-ui-v2.css', './pos-ui-v2.js', './manifest.json','./cashier-pos-base.css','./cashier-theme.css','./cashier-tablet.css','./cashier-pos-ui.js','./cashier-workspace.js','./cashier-data.js'];
 const sdk = 'https://www.gstatic.com/firebasejs/10.8.1/';
 required.push('./cashier-device-setup.js');
+required.push('./cashier-startup.js','./cashier-startup.css','./cashier-appearance-model.js','./cashier-appearance.js','./cashier-appearance-boot.js','./cashier-appearance.css');
 required.push('./attendance-schedule-preview.js');
 required.push('./cart-layout.js','./remittance-safety.js','./schedule-history.js','./payroll-safety.js');
 required.push('./recipe-feed.js','./sanction-schedule.js');
@@ -37,7 +38,8 @@ async function prepareApp() {
   async function load(url) {
     if (seen.has(url)) return;
     seen.add(url);
-    if (seen.size > 100) throw new Error('Unexpected dependency graph');
+    // App-shell files are explicit; allow up to 32 additional nested Firebase modules.
+    if (seen.size > required.length + libraries.length + 32) throw new Error('Unexpected dependency graph');
     const response = await fetchRequired(cache, url);
     if (url.startsWith(sdk) && /\.js(?:\?|$)/.test(url)) {
       const source = await response.text();

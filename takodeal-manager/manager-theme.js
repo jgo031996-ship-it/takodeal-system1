@@ -1,3 +1,4 @@
+import {installCashierAppearanceOwner} from './cashier-appearance-owner.js';
 import { initManagerScroll } from './manager-scroll.js';
 import { initAIHub } from './ai-hub.js';
 import { initAccessWorkspace } from './access-workspace.js';
@@ -70,6 +71,7 @@ export function initManagerTheme({ document: d = document, window: w = window, o
     const link = d.createElement('link'); link.rel = 'stylesheet'; link.href = './pos-config-workspace.css'; d.head.append(link);
     installHQProfile({document:d,window:w});
     initPosConfigWorkspace({document:d,window:w});
+    installCashierAppearanceOwner({document:d,window:w});
     const originalGrant = w.addHqManager;
     w.addHqManager = (...args) => { if (String(w.auth?.currentUser?.email || '').toLowerCase() !== 'jgo031996@gmail.com') { w.ManagerUI?.notify?.('Only the main owner can grant HQ access.'); return; } return originalGrant?.(...args); };
     const accessWorkspace = initAccessWorkspace({ document:d, window:w, pages:MANAGER_PAGES });

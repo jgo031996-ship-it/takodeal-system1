@@ -205,17 +205,9 @@ function installTheme(){
   banner.querySelector('span:first-child').textContent='!';
   const count=el('unverifiedCountText');count.parentElement.replaceChildren(document.createTextNode('Payment review pending · '),count,document.createTextNode(' payments'));
   banner.querySelector(':scope > div > div:last-child').textContent='A manager must verify these digital payments in HQ before the shift can close.';
-  const login=el('loginOverlay'), card=login.querySelector(':scope > div:last-child');card.classList.add('cashier-login-card');
-  const brand=document.createElement('header');brand.className='cashier-login-brand';
-  const identity=document.createElement('div');identity.className='cashier-login-identity';
-  const logo=card.firstElementChild, heading=card.querySelector('h2'), branch=el('loginBranchDisplay');
-  brand.append(logo,identity);identity.append(heading);heading.insertAdjacentHTML('afterend','<p class="cashier-login-subtitle">Cashier workspace</p>');identity.append(branch);card.prepend(brand);
-  const update=card.querySelector('[onclick="window.manualHardUpdate()"]');if(update){update.classList.add('cashier-login-update');update.setAttribute('role','button');update.tabIndex=0;update.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key)){event.preventDefault();update.click();}});}
-  const loginActions=document.createElement('div');loginActions.className='cashier-login-actions';if(update)loginActions.append(update);loginActions.append(el('ownerAccessBtnContainer'));card.append(loginActions);el('ownerAccessBtnContainer').style.position='static';
-  const ranking=el('loginRankingWidget'), aside=document.createElement('aside'), details=document.createElement('details'), summary=document.createElement('summary');
-  aside.className='cashier-login-ranking';aside.setAttribute('aria-label','Daily branch ranking');summary.textContent="Today's branch ranking";details.append(summary,ranking);aside.append(details);login.append(aside);
-  const rankingMedia=matchMedia('(min-width:850px) and (min-height:520px)');const rankingLayout=()=>{details.open=rankingMedia.matches;};rankingMedia.addEventListener('change',rankingLayout);rankingLayout();
-  const rankingVisibility=()=>{aside.hidden=ranking.style.display==='none';};new MutationObserver(rankingVisibility).observe(ranking,{attributes:true,attributeFilter:['style']});rankingVisibility();
+  const login=el('loginOverlay'),card=el('cashierLoginCard'),ranking=el('loginRankingWidget'),aside=login.querySelector('.cashier-login-ranking'),details=aside?.querySelector('details');
+  // The login DOM is already styled before the app or images finish loading.
+  if(aside&&details&&ranking){const media=matchMedia('(min-width:850px) and (min-height:520px)'),layout=()=>{details.open=media.matches;};media.addEventListener('change',layout);layout();const visible=()=>{aside.hidden=ranking.style.display==='none';};new MutationObserver(visible).observe(ranking,{attributes:true,attributeFilter:['style']});visible();}
   el('loginPasswordInput').setAttribute('aria-label','Security PIN or password');
   el('btnSubmitPin').textContent='Sign in securely';
   const printerNav=el('nav-printer')?.querySelector('.nav-item-text');if(printerNav)printerNav.textContent='Printer Hub';

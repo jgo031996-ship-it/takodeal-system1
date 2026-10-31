@@ -43,7 +43,7 @@ const freshSnapshot=snapshot=>{if(!snapshot||snapshot.metadata?.fromCache||snaps
 export function createScheduleProposalDeviceGate({api,auth,signInAnonymously,timeoutMs=20000,Controller,delay,cancelDelay}={}){
  const deadline={timeoutMs,...(Controller?{Controller}:{}),...(delay?{delay}:{}),...(cancelDelay?{cancelDelay}:{})};
  const bindingData=(value,uid,permit)=>{
-  if(!object(value)||value.uid!==uid||value.deviceId!==permit.deviceId||value.branch!==permit.branch||!codeKey(value.legacyDeviceDocId))throw Error('This secure tablet record does not match the selected branch and device. Ask the Owner to check Device Fleet.');
+  if(!object(value)||value.uid!==uid||value.deviceId!==permit.deviceId||value.branch!==permit.branch||!codeKey(value.legacyDeviceDocId)){const problem=Error('This secure tablet record does not match the selected branch and device. Ask the Owner to check Device Fleet.');if(object(value)&&value.uid===uid&&value.deviceId===permit.deviceId&&typeof value.branch==='string'&&value.branch&&value.branch!==permit.branch&&codeKey(value.legacyDeviceDocId)&&value.status==='Active')problem.code='device-branch-mismatch';throw problem;}
   if(!['Pending','Active'].includes(value.status))throw Error('This tablet’s secure approval was revoked or blocked. Ask the Owner to review Device Fleet; it cannot request approval again.');
   return value;
  };
@@ -65,7 +65,7 @@ export function createScheduleProposalDeviceGate({api,auth,signInAnonymously,tim
    if(!request)return {status:'Missing',uid:user.uid};
    const rows=freshSnapshot(await api.getDocsFromServer(api.query(api.collection(api.db,'pos_devices'),api.where('deviceId','==',permit.deviceId),api.limit(10))));current();
    const matches=rows.docs.filter(row=>fleetData(row.data(),permit,stagePendingFleet));
-   if(rows.docs.length>=10||matches.length!==1)throw Error(stagePendingFleet?'HQ must confirm one matching Cashier registration for this tablet and branch in Device Fleet.':'HQ must confirm one active Cashier registration for this tablet and branch in Device Fleet before secure approval can be requested.');
+   if(rows.docs.length>=10||matches.length!==1){const problem=Error(stagePendingFleet?'Owner must confirm one matching Cashier registration for this Device ID and branch in Device Fleet. Open the setup details below and match this tablet; no device approval was changed.':'HQ must confirm one active Cashier registration for this tablet and branch in Device Fleet before secure approval can be requested.');problem.code=rows.docs.length>=10||matches.length>1?'device-registration-ambiguous':'device-registration-missing';problem.deviceUid=user.uid;throw problem;}
    const mirror=matches[0];if(!codeKey(mirror.id))throw Error('The saved tablet registration needs HQ review.');
    const name=String(mirror.data().deviceName||'Branch tablet').trim().slice(0,120)||'Branch tablet';
    await api.runTransaction(api.db,async transaction=>{
