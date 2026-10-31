@@ -10,7 +10,7 @@ import {once} from 'node:events';
 import {createConnection} from 'node:net';
 import {webcrypto} from 'node:crypto';
 import {createPaymentReconciliationService} from '../takodeal-manager/payment-reconciliation-service.js';
-import {createStockCountEngine} from '../takodeal-pos/stock-count-engine.js';
+import {createStockCountEngine} from '../Takodeal-POS/stock-count-engine.js';
 const host='127.0.0.1',port=8816,projectId='demo-stock-audit-payment-rules',endpoint=host+':'+port;
 if(process.env.FIRESTORE_EMULATOR_HOST&&process.env.FIRESTORE_EMULATOR_HOST!==endpoint)throw Error('Refusing a non-test Firestore endpoint.');
 process.env.FIRESTORE_EMULATOR_HOST=endpoint;
