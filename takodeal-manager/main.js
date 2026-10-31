@@ -1,3 +1,4 @@
+import {createCashierFleetApproval,isCashierFleetDevice} from './cashier-device-approval.js';
 import {installPaymentReconciliation} from './payment-reconciliation-ui.js';
 import {installOwnerStockAudits} from './owner-stock-audits.js';
 import {installPendingPaymentReader} from './pending-payment-reader.js';
@@ -7001,22 +7002,37 @@ window.smartImportCSV = function (event) {
 // 💻 ULTRA-FAST DEVICE FLEET MANAGER ENGINE
 // ========================================================
 // The live fleet view is installed below; cloud approvals retain their existing actions.
-window.toggleDeviceStatus = async function (deviceId, newStatus) {
-  if (!(await window.ManagerUI.confirm(`Are you sure you want to change this device to ${newStatus}?`))) return;
-  try {
-    if(!window.staffSetupCodes)throw Error('Device controls are loading. Reopen the device list.');
-    await window.staffSetupCodes.routeDeviceChange(deviceId,newStatus==='Active'?'unblock':'block',()=>updateDoc(doc(db,"pos_devices",deviceId),{status:newStatus}));
-    window.loadDeviceFleet();
-  } catch (e) { window.ManagerUI.notify(e.message || "Failed to update status."); }
+let cashierFleetControls;
+const cashierFleet=()=>cashierFleetControls ||= createCashierFleetApproval(window);
+window.approveCashierFleetDevice=async function(deviceId,uid){
+ try{await cashierFleet().approve(deviceId,uid);window.loadDeviceFleet?.();}catch(error){window.ManagerUI.notify(error.message||'Tablet approval could not be confirmed.');}
 };
-
-window.deleteDevice = async function (deviceId) {
-  if (!(await window.ManagerUI.confirm("Delete this device registration? Protected Staff phones lose access at their next verification. Disable the employee’s personal setup code too if you need to prevent activation on a new or reset phone."))) return;
-  try {
-    if(!window.staffSetupCodes)throw Error('Device controls are loading. Reopen the device list.');
-    await window.staffSetupCodes.routeDeviceChange(deviceId,'delete',()=>deleteDoc(doc(db,"pos_devices",deviceId)));
-    window.loadDeviceFleet();
-  } catch (e) { window.ManagerUI.notify(e.message || "Failed to delete device."); }
+async function legacyFleetChange(deviceId,action,{confirmed=false}={}){
+ const snap=await window.getDocFromServer(window.doc(window.db,'pos_devices',deviceId));
+ if(snap.metadata?.fromCache||snap.metadata?.hasPendingWrites||!snap.exists())throw Error('Reconnect and refresh the saved device before changing it.');
+ if(isCashierFleetDevice(snap.data())){
+  if(action==='unblock')return cashierFleet().approve(deviceId);
+  if(!confirmed&&!await window.ManagerUI.confirm(action==='delete'?'Delete this Cashier registration and revoke its linked secure access? Keep tablet records for reconciliation.':'Block this Cashier tablet and revoke its linked secure access?'))return;
+  return cashierFleet().change(deviceId,action);
+ }
+ if(!confirmed&&!await window.ManagerUI.confirm(action==='delete'?'Delete this device registration? Protected Staff phones lose access at their next verification. Disable the employee’s personal setup code too if you need to prevent activation on a new or reset phone.':'Are you sure you want to change this device to '+(action==='unblock'?'Active':'Blocked')+'?'))return;
+ return action==='delete'?window.deleteDoc(window.doc(window.db,'pos_devices',deviceId)):window.updateDoc(window.doc(window.db,'pos_devices',deviceId),{status:action==='unblock'?'Active':'Blocked'});
+}
+const confirmProtectedStaffChange=(deviceId,action)=>window.ManagerUI.confirm(action==='delete'?'Delete this protected Staff phone registration? The phone loses access at its next verification. Its personal setup code remains separate.':'Are you sure you want to '+(action==='unblock'?'unblock':'block')+' this Staff phone?');
+window.toggleDeviceStatus = async function (deviceId, newStatus) {
+ try {
+  if(!window.staffSetupCodes)throw Error('Device controls are loading. Reopen the device list.');
+  const action=newStatus==='Active'?'unblock':'block';
+  await window.staffSetupCodes.routeDeviceChange(deviceId,action,()=>legacyFleetChange(deviceId,action),()=>confirmProtectedStaffChange(deviceId,action));
+  window.loadDeviceFleet();
+ } catch(e){window.ManagerUI.notify(e.message||'Failed to update status.');}
+};
+window.deleteDevice = async function(deviceId){
+ try{
+  if(!window.staffSetupCodes)throw Error('Device controls are loading. Reopen the device list.');
+  await window.staffSetupCodes.routeDeviceChange(deviceId,'delete',()=>legacyFleetChange(deviceId,'delete'),()=>confirmProtectedStaffChange(deviceId,'delete'));
+  window.loadDeviceFleet();
+ }catch(e){window.ManagerUI.notify(e.message||'Failed to delete device.');}
 };
 
 window.toggleAllDeviceCheckboxes = function(source) {
@@ -7049,7 +7065,7 @@ window.bulkDeleteDevices = async function() {
         let promises = [];
         if(!window.staffSetupCodes)throw Error('Device controls are loading. Reopen the device list.');
         checkboxes.forEach(cb => {
-            promises.push(window.staffSetupCodes.routeDeviceChange(cb.value,'delete',()=>deleteDoc(doc(db,"pos_devices",cb.value))));
+            promises.push(window.staffSetupCodes.routeDeviceChange(cb.value,'delete',()=>legacyFleetChange(cb.value,'delete',{confirmed:true})));
         });
 
         await Promise.all(promises);
@@ -26578,19 +26594,9 @@ function tkReconcileSale(record, targetShift, inventory, effects, owner, note) {
     } finally { starting = false; }
   }
   async function approveEnrollment(uid) {
-    if (!owner()) throw new Error('Owner approval required');
-    const bindingRef = window.doc(window.db, 'pos_bindings', uid);
-    const snap = await window.getDoc(bindingRef);
-    if (!snap.exists() || snap.data().status !== 'Pending') throw new Error('No pending enrollment for this UID');
-    const binding = snap.data();
-    const legacy = await window.getDoc(window.doc(window.db, 'pos_devices', binding.legacyDeviceDocId));
-    if (!legacy.exists() || legacy.data().status !== 'Active' || legacy.data().deviceId !== binding.deviceId || legacy.data().branch !== binding.branch)
-      throw new Error('Device and branch do not match. Review the physical tablet first.');
-    const result = await window.Swal.fire({ title: 'Approve this Cashier tablet?',
-      text: 'Match UID ' + uid + ' on the physical tablet. Branch: ' + binding.branch + '. Device: ' + binding.deviceName + ' (' + binding.deviceId + ').',
-      icon: 'question', showCancelButton: true, confirmButtonText: 'Approve matched tablet' });
-    if (!result.isConfirmed) return;
-    await window.updateDoc(bindingRef, { status: 'Active', approvedAt: window.serverTimestamp(), approvedBy: window.auth.currentUser.email });
+    const snap=await window.getDocFromServer(window.doc(window.db,'pos_bindings',uid));
+    if(snap.metadata?.fromCache||snap.metadata?.hasPendingWrites||!snap.exists())throw Error('Refresh this tablet setup before approving.');
+    return cashierFleet().approve(snap.data().legacyDeviceDocId,uid);
   }
   async function grantMonitorAccess(managerId) {
     if (!owner()) throw new Error('Only the owner can grant monitor access');
@@ -26815,60 +26821,13 @@ const tkOwnerTransaction=(...args)=>window.runTransaction(...args),
       throw new Error('This earlier batch has no frozen ingredient plan. Reconstruct it from original evidence or use a fresh reconciled physical count. Approving this placeholder cannot restore ingredients.');
     return originalCommit(record, adapter, resolution);
   };
-  const owner = () => window.auth?.currentUser?.email === 'jgo031996@gmail.com' && window.auth.currentUser.emailVerified === true;
-  const make = (tag, value) => { const node = document.createElement(tag); node.textContent = value; return node; };
-  const style = 'min-height:48px;padding:12px 16px;margin:6px;border:1px solid #e5d8bd;border-radius:10px;background:#fff4d9;color:#27231f;font-weight:700;cursor:pointer';
-  let panel, list, busy = false;
-  async function refresh() {
-    if (!owner()) throw new Error('Verified Owner account required');
-    if (busy) return; busy = true;
-    list.replaceChildren(make('p', 'Loading device approvals…'));
-    try {
-      const snapshots = await tkOwnerDocs(window.collection(window.db, 'pos_bindings'));
-      list.replaceChildren();
-      for (const snap of snapshots.docs) {
-        const data = snap.data(), card = make('article', '');
-        card.style.cssText = 'padding:16px;margin:12px 0;border:1px solid #e8dfd3;border-radius:14px;background:#faf8f4';
-        card.append(make('h3', data.branch + ' · ' + (data.deviceName || data.deviceId)), make('p', 'Status: ' + data.status),
-          make('p', 'Device ID: ' + data.deviceId), make('p', 'Approval UID: ' + snap.id));
-        const action = (label, work) => {
-          const button = make('button', label); button.style.cssText = style;
-          button.onclick = async () => {
-            if (!owner()) return; button.disabled = true;
-            try { await work(); } catch (error) { await window.Swal.fire('Device approval held', error.message, 'warning'); }
-            finally { button.disabled = false; await refresh(); }
-          }; card.append(button);
-        };
-        if (data.status === 'Pending') action('Approve matched tablet', () => window.TKCashierStatus.approveEnrollment(snap.id));
-        if (data.status === 'Active') action('Revoke this tablet', async () => {
-          const answer = await window.Swal.fire({ title: 'Revoke this device?', text: 'It loses server access. Keep its tablet records for reconciliation; an offline tablet sees revocation when it reconnects.', showCancelButton: true, confirmButtonText: 'Revoke device' });
-          if (!answer.isConfirmed) return;
-          await window.updateDoc(window.doc(window.db, 'pos_bindings', snap.id), { status: 'Revoked', revokedAt: window.serverTimestamp(), revokedBy: window.auth.currentUser.email });
-        });
-        list.append(card);
-      }
-      if (snapshots.empty) list.append(make('p', 'Request approval from Device preparation on each Cashier tablet first.'));
-    } catch (error) { list.replaceChildren(make('p', 'Device setup could not load: ' + error.message)); }
-    finally { busy = false; }
-  }
-  async function open() {
-    if (!owner()) throw new Error('Verified Owner account required');
-    if (!panel) {
-      panel = document.createElement('dialog'); panel.id = 'tk03OwnerDevices';
-      panel.style.cssText = 'width:min(780px,94vw);max-height:85dvh;overflow:auto;border:1px solid #e8dfd3;border-radius:20px;padding:22px;background:#fff;color:#27231f';
-      const close = make('button', 'Close'); close.style.cssText = style; close.onclick = () => panel.close();
-      const reload = make('button', 'Refresh requests'); reload.style.cssText = style; reload.onclick = refresh;
-      list = make('div', '');
-      panel.append(make('h2', 'Cashier device approvals'), make('p', 'Compare the branch, Device ID and Approval UID with the physical tablet before approval.'), close, reload, list);
-      document.body.append(panel);
-    }
-    if (!panel.open) panel.showModal(); await refresh();
-  }
-  window.TKDeviceAdmin = { open, refresh };
-  window.openCashierDeviceApprovals=async()=>{
-    if(!owner()||window.sessionUser?.isOwner!==true||window.sessionUser.uid!==window.auth.currentUser.uid)return window.ManagerUI.notify('Unlock the verified Owner account to approve Cashier tablets.');
-    try{await open();}catch(error){window.ManagerUI.notify(error.message||'Cashier approvals could not load.');}
+  const open=async()=>{
+    const user=window.auth?.currentUser;
+    if(user?.email?.toLowerCase()!=='jgo031996@gmail.com'||user.emailVerified!==true||window.sessionUser?.uid!==user.uid||window.sessionUser.isOwner!==true)throw Error('Unlock the verified Owner account to approve Cashier tablets.');
+    window.switchView('devices');window.loadDeviceFleet();
   };
+  window.TKDeviceAdmin={open,refresh:()=>window.loadDeviceFleet()};
+  window.openCashierDeviceApprovals=async()=>{try{await open();}catch(error){window.ManagerUI.notify(error.message||'Device Fleet could not load.');}};
 
 })();
 

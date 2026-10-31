@@ -47,8 +47,8 @@ export function createScheduleProposalDeviceGate({api,auth,signInAnonymously,tim
   if(!['Pending','Active'].includes(value.status))throw Error('This tablet’s secure approval was revoked or blocked. Ask the Owner to review Device Fleet; it cannot request approval again.');
   return value;
  };
- const fleetData=(value,permit)=>object(value)&&value.deviceId===permit.deviceId&&value.branch===permit.branch&&value.status==='Active'&&String(value.appType||'').trim().toLowerCase()!=='staff';
- return {async check({permit,request=false,assertCurrent=()=>{}}){
+ const fleetData=(value,permit,allowPending=false)=>object(value)&&value.deviceId===permit.deviceId&&value.branch===permit.branch&&(value.status==='Active'||allowPending&&value.status==='Pending')&&String(value.appType||'').trim().toLowerCase()!=='staff';
+ return {async check({permit,request=false,stagePendingFleet=false,assertCurrent=()=>{}}){
   return withScheduleProposalDeadline(async({guard})=>{
    permit.assertCurrent();if(typeof auth?.authStateReady==='function')await auth.authStateReady();guard();permit.assertCurrent();
    let user=auth?.currentUser;
@@ -59,18 +59,18 @@ export function createScheduleProposalDeviceGate({api,auth,signInAnonymously,tim
    if(saved.exists()){
     const binding=bindingData(saved.data(),user.uid,permit);
     const fleet=freshSnapshot(await api.getDocFromServer(api.doc(api.db,'pos_devices',binding.legacyDeviceDocId)));current();
-    if(!fleet.exists()||!fleetData(fleet.data(),permit))throw Error('The original branch tablet registration is no longer active. Ask the Owner to check Device Fleet.');
+    if(!fleet.exists()||!fleetData(fleet.data(),permit,stagePendingFleet&&binding.status==='Pending'))throw Error('The original branch tablet registration is no longer active. Ask the Owner to check Device Fleet.');
     return {status:binding.status,uid:user.uid,deviceName:binding.deviceName||'Branch tablet'};
    }
    if(!request)return {status:'Missing',uid:user.uid};
    const rows=freshSnapshot(await api.getDocsFromServer(api.query(api.collection(api.db,'pos_devices'),api.where('deviceId','==',permit.deviceId),api.limit(10))));current();
-   const matches=rows.docs.filter(row=>fleetData(row.data(),permit));
-   if(rows.docs.length>=10||matches.length!==1)throw Error('HQ must confirm one active Cashier registration for this tablet and branch in Device Fleet before secure approval can be requested.');
+   const matches=rows.docs.filter(row=>fleetData(row.data(),permit,stagePendingFleet));
+   if(rows.docs.length>=10||matches.length!==1)throw Error(stagePendingFleet?'HQ must confirm one matching Cashier registration for this tablet and branch in Device Fleet.':'HQ must confirm one active Cashier registration for this tablet and branch in Device Fleet before secure approval can be requested.');
    const mirror=matches[0];if(!codeKey(mirror.id))throw Error('The saved tablet registration needs HQ review.');
    const name=String(mirror.data().deviceName||'Branch tablet').trim().slice(0,120)||'Branch tablet';
    await api.runTransaction(api.db,async transaction=>{
     current();const prior=await transaction.get(reference);current();if(prior.exists()){bindingData(prior.data(),user.uid,permit);return;}
-    const live=await transaction.get(api.doc(api.db,'pos_devices',mirror.id));current();if(!live.exists()||!fleetData(live.data(),permit))throw Error('The branch tablet registration changed. Ask the Owner to check Device Fleet.');
+    const live=await transaction.get(api.doc(api.db,'pos_devices',mirror.id));current();if(!live.exists()||!fleetData(live.data(),permit,stagePendingFleet))throw Error('The branch tablet registration changed. Ask the Owner to check Device Fleet.');
     transaction.set(reference,{uid:user.uid,deviceId:permit.deviceId,deviceName:name,branch:permit.branch,legacyDeviceDocId:mirror.id,status:'Pending',requestedAt:api.serverTimestamp()});
    });current();
    const confirmed=freshSnapshot(await api.getDocFromServer(reference));current();if(!confirmed.exists())throw Error('HQ has not confirmed this approval request. Check the saved approval before retrying.');
@@ -110,13 +110,13 @@ export function installCashierScheduleProposals(w,d,{primaryAuth,signInAnonymous
  const dialog=element('dialog',undefined,'schedule-proposal-dialog');dialog.setAttribute('aria-labelledby','scheduleProposalTitle');
  dialog.innerHTML='<form class="schedule-proposal-form"><header><div><small>BRANCH SCHEDULE · OWNER REVIEW</small><h2 id="scheduleProposalTitle">Propose schedule changes</h2><p data-proposal-identity></p></div><button type="button" data-proposal-close aria-label="Close schedule proposal">×</button></header><div class="schedule-proposal-body"><p class="schedule-proposal-help">HQ shift times and approved leave stay as saved. Assign staff to existing shifts, Standby or Day Off. No Time In, Time Out or pay record is changed by this request.</p><div class="schedule-proposal-dates"><label>From<input type="date" data-proposal-from required></label><label>To<input type="date" data-proposal-to required></label><button type="button" data-proposal-load>Load saved roster</button></div><p data-proposal-status role="status" aria-live="polite"></p><div data-proposal-days></div><label>Reason for the change<textarea data-proposal-reason maxlength="1500" rows="3" placeholder="For example, emergency cover for a staff member who is sick." required></textarea></label><label>Your staff PIN<input type="password" data-proposal-pin inputmode="numeric" autocomplete="off" maxlength="100" placeholder="Confirm with your current Cashier PIN" required></label><p class="schedule-proposal-help">Submit as yourself. Your PIN is checked by HQ and is not saved with the proposal.</p></div><footer><button type="button" data-proposal-close>Cancel</button><button type="submit" data-proposal-submit disabled>Send for Owner review</button></footer></form>';
  d.body.append(dialog);const find=selector=>dialog.querySelector(selector),form=find('form'),from=find('[data-proposal-from]'),to=find('[data-proposal-to]'),pin=find('[data-proposal-pin]'),reason=find('[data-proposal-reason]'),daysNode=find('[data-proposal-days]'),send=find('[data-proposal-submit]'),load=find('[data-proposal-load]'),status=find('[data-proposal-status]');
- const approval=element('section',undefined,'schedule-proposal-approval'),approvalText=element('p'),approvalUid=element('p',undefined,'schedule-proposal-help'),requestApproval=element('button','Request secure tablet approval'),checkApproval=element('button','Check approval');requestApproval.type=checkApproval.type='button';approval.append(approvalText,approvalUid,requestApproval,checkApproval);find('.schedule-proposal-body').prepend(approval);approval.hidden=true;
+ const approval=element('section',undefined,'schedule-proposal-approval'),approvalText=element('p'),approvalUid=element('p',undefined,'schedule-proposal-help'),checkApproval=element('button','Check approval');checkApproval.type='button';approval.append(approvalText,approvalUid,checkApproval);find('.schedule-proposal-body').prepend(approval);approval.hidden=true;
  let epoch=0,permit=null,preAuth=null,deviceReady=false,view=null,context=null,busy=false,pending=null,selectors=new Map(),timer;
  const freshId=()=>{if(typeof w.crypto?.randomUUID!=='function')throw Error('This device needs a current browser before submitting schedules.');return w.crypto.randomUUID();};
  function state(message){status.textContent=message;}
  function clear(){epoch++;pin.value='';context=null;view=null;pending=null;deviceReady=false;preAuth=null;selectors.clear();daysNode.replaceChildren();send.disabled=true;busy=false;clearInterval(timer);}
  function assert(token){permit?.assertCurrent();if(!permit||token!==epoch||!dialog.open)throw Error('This schedule review closed. Reopen it before continuing.');}
- function controls(){from.disabled=to.disabled=reason.disabled=load.disabled=busy||Boolean(pending)||!deviceReady;send.disabled=busy||!context||!deviceReady;pin.disabled=busy||!deviceReady;requestApproval.disabled=checkApproval.disabled=busy;for(const input of selectors.values())input.disabled=busy||Boolean(pending)||!deviceReady;}
+ function controls(){from.disabled=to.disabled=reason.disabled=load.disabled=busy||Boolean(pending)||!deviceReady;send.disabled=busy||!context||!deviceReady;pin.disabled=busy||!deviceReady;checkApproval.disabled=busy;for(const input of selectors.values())input.disabled=busy||Boolean(pending)||!deviceReady;}
  function close(){clear();permit=null;dialog.close();}
  function showDays(){daysNode.replaceChildren();selectors.clear();
   for(const day of context.days){const card=element('article',undefined,'schedule-proposal-day');card.append(element('h3',new Date(day.date+'T12:00:00+08:00').toLocaleDateString('en-PH',{timeZone:'Asia/Manila',weekday:'long',month:'short',day:'numeric'})));
@@ -142,17 +142,18 @@ export function installCashierScheduleProposals(w,d,{primaryAuth,signInAnonymous
   }catch(error){value='';if(token===epoch&&dialog.open){state((error.message||failure)+(pending?' Retry keeps the same proposal number and prevents a duplicate. Enter your PIN again.':''));}}
   finally{value='';if(token===epoch){busy=false;controls();}}
  }
- async function verifyDevice(request=false){if(busy||!preAuth)return;const token=epoch;busy=true;deviceReady=false;permit=null;pin.value='';controls();state('Confirming this tablet’s secure HQ approval…');
+ async function verifyDevice(){if(busy||!preAuth)return;const token=epoch;busy=true;deviceReady=false;permit=null;pin.value='';controls();state('Checking this tablet’s saved Device Fleet approval…');
   try{const setupCurrent=()=>{preAuth?.assertCurrent();if(token!==epoch||!dialog.open)throw Error('This setup closed. Reopen Branch Schedule.');};
+   if(typeof w.prepareCashierDeviceApproval==='function')await w.prepareCashierDeviceApproval();setupCurrent();
    if(deviceContext){if(typeof deviceContext.resolve!=='function')throw Error('Secure tablet setup is unavailable. Ask HQ to update the Cashier app.');const selected=await deviceContext.resolve({assertCurrent:setupCurrent});setupCurrent();if(!selected?.auth||!selected.deviceApi)throw Error('Secure tablet setup could not be confirmed. Check approval again.');selectedAuth=selected.auth;session=createScheduleProposalSession(w,selectedAuth);transport=createScheduleProposalTransport({auth:selectedAuth,fetcher,timeoutMs});gate=deviceGate||createScheduleProposalDeviceGate({api:selected.deviceApi,auth:selectedAuth,signInAnonymously,timeoutMs});}
-   const result=await gate.check({permit:preAuth,request,assertCurrent:setupCurrent});preAuth.assertCurrent();if(token!==epoch||!dialog.open)return;
-   if(result.status==='Active'){permit=session.capture();if(permit.uid!==result.uid)throw Error('The tablet account changed. Reopen Branch Schedule.');deviceReady=true;approval.hidden=true;state('Choose the dates to change, then load the saved roster.');}
-   else{approval.hidden=false;requestApproval.hidden=result.status!=='Missing';approvalText.textContent=result.status==='Missing'?'This tablet needs the Owner’s secure approval before it can send schedule proposals. Request approval, then ask the Owner to open Device Fleet → Cashier device approvals.':'Approval requested. Ask the Owner to open Device Fleet → Cashier device approvals and approve this tablet. This does not change the branch roster.';approvalUid.textContent='Secure tablet ID: '+result.uid;state('Schedule proposals are locked until the Owner approves this secure tablet ID.');}
-  }catch(error){if(token===epoch&&dialog.open){approval.hidden=false;requestApproval.hidden=true;approvalText.textContent=error.message||'This tablet could not be confirmed. Reconnect and check approval.';approvalUid.textContent='';state('No schedule proposal was sent. Check the saved approval or ask the Owner to review Device Fleet.');}}
+   const result=await gate.check({permit:preAuth,request:false,assertCurrent:setupCurrent});preAuth.assertCurrent();if(token!==epoch||!dialog.open)return;
+   if(result.status==='Active'){permit=session.capture();if(permit.uid!==result.uid)throw Error('The tablet account changed. Reopen Branch Schedule.');deviceReady=true;approval.hidden=true;state('Tablet approved. Choose the dates to change, then load the saved roster.');}
+   else{approval.hidden=false;approvalText.textContent='Ask the Owner to approve this tablet once in Device Fleet. That approval covers all Cashier features. This does not change the branch roster.';approvalUid.textContent='Approval UID: '+result.uid;state('Schedule proposals are locked until the Owner approves this tablet.');}
+  }catch(error){if(token===epoch&&dialog.open){approval.hidden=false;approvalText.textContent=error.message||'This tablet could not be confirmed. Reconnect and check approval.';approvalUid.textContent='';state('No schedule proposal was sent. Check the saved approval or ask the Owner to review Device Fleet.');}}
   finally{if(token===epoch){busy=false;controls();}}
  }
  function open(){clear();try{preAuth=staffSession.captureStaff();const today=scheduleDateKey(now());from.min=to.min=today;from.value=to.value=today;reason.value='';find('[data-proposal-identity]').textContent=preAuth.name+' · '+preAuth.branch;approval.hidden=true;dialog.showModal();controls();timer=w.setInterval(()=>{try{(permit||preAuth)?.assertCurrent();}catch{close();}},1000);void verifyDevice();}catch(error){permit=null;preAuth=null;w.Swal?.fire?.('Branch schedule',error.message,'info');}}
- requestApproval.onclick=()=>void verifyDevice(true);checkApproval.onclick=()=>void verifyDevice(false);
+ checkApproval.onclick=()=>void verifyDevice();
  openButton.onclick=open;load.onclick=()=>void loadRoster();form.addEventListener('submit',submit);for(const button of dialog.querySelectorAll('[data-proposal-close]'))button.onclick=close;dialog.addEventListener('cancel',event=>{event.preventDefault();close();});dialog.addEventListener('close',()=>{if(permit){clear();permit=null;}});
  const changed=()=>{if(context&&!pending){context=null;view=null;daysNode.replaceChildren();send.disabled=true;state('The dates changed. Load the saved roster again before editing.');}};from.addEventListener('change',changed);to.addEventListener('change',changed);
  w.addEventListener('pagehide',()=>{if(dialog.open)close();});w.addEventListener('pageshow',event=>{if(event.persisted&&dialog.open)close();});

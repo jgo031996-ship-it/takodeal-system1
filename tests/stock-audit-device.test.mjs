@@ -35,7 +35,7 @@ test('existing default anonymous approval stays in the default database without 
  const f=fixture({provider:'anonymous'}),result=await f.resolve();assert.equal(result.actorUid,'primary-user');assert.equal(result.api.auth,f.primaryAuth);assert.equal(result.api.db,f.primaryDb);assert.deepEqual(f.signIns,[]);assert.equal(f.writes.length,0);
 });
 test('checking a missing approval does not create a Pending or Active binding',async()=>{
- const f=fixture({binding:null});await assert.rejects(f.resolve({action:'check'}),/Request tablet approval/);assert.equal(f.writes.length,0);assert.equal(f.records.has('pos_bindings/isolated-device'),false);assert.equal(f.primaryAuth.currentUser,f.primaryUser);
+ const f=fixture({binding:null});await assert.rejects(f.resolve({action:'check'}),error=>/review Device Fleet/.test(error.message)&&/One approval covers all Cashier features/.test(error.message)&&/Approval UID: isolated-device/.test(error.message)&&!/Request tablet approval/.test(error.message));assert.equal(f.writes.length,0);assert.equal(f.records.has('pos_bindings/isolated-device'),false);assert.equal(f.primaryAuth.currentUser,f.primaryUser);
 });
 test('an explicit request may create only Pending approval and never returns a stock-writing API',async()=>{
  const f=fixture({binding:null});await assert.rejects(f.resolve({action:'request'}),/approval is pending/);assert.equal(f.writes.length,1);assert.equal(f.writes[0].path,'pos_bindings/isolated-device');assert.equal(f.writes[0].app,CASHIER_DEVICE_APP_NAME);assert.equal(f.writes[0].value.status,'Pending');assert.equal(f.primaryAuth.currentUser,f.primaryUser);assert.equal([...f.records.keys()].some(path=>path.startsWith('stock_counts/')||path.startsWith('inventory_audit_reports/')),false);
