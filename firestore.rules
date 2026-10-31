@@ -23,7 +23,7 @@ service cloud.firestore {
     function rf() { return ['Blocked', 'Revoked', 'Terminated', 'Resigned', 'Inactive', 'Disabled', 'Archived', 'Deleted']; }
     function rg() { return ['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision']; }
     function rh() { return ['dispatchInvoice','deliveryReceipt','supplyInvoice','requestedByEmail']; }
-    function ri(a) { return a.matches('^(account_logs|archived_months|bom|branches|budgets|cash_accounts|customer_app_categories|daily_metrics|dispatch_logs|equipment_assets|expenses|foodpanda_payouts|franchise_accounts|franchise_budgets|franchise_comms|franchise_ledger|global_addons|grab_payouts|hq_restocks|inventory|manager_alerts|menu|parked_orders|payables|pos_devices|rider_topups|riders|shift_swaps|shifts|sop_logs|staff_bonuses|staff_ledger|staff_requests|stock_counts|stock_logs|suppliers|yield_logs)$'); }
+    function ri(a) { return a.matches('^(account_logs|archived_months|bom|branches|budgets|cash_accounts|customer_app_categories|daily_metrics|dispatch_logs|equipment_assets|expenses|foodpanda_payouts|franchise_accounts|franchise_budgets|franchise_comms|franchise_ledger|global_addons|grab_payouts|hq_restocks|inventory|manager_alerts|menu|parked_orders|payables|pos_devices|rider_topups|riders|shift_swaps|shifts|sop_logs|staff_bonuses|staff_ledger|staff_requests|stock_logs|suppliers|yield_logs)$'); }
     function rj() { return r0(); }
     function rk() {
       return r0() && request.auth.token.get('email', '') == 'jgo031996@gmail.com'
@@ -514,17 +514,17 @@ service cloud.firestore {
     }
     // Exact legacy one-document policies. No default grant or recursive path.
     match /{legacyCollection}/{legacyDocument} {
-      allow read: if ri(legacyCollection) && (legacyCollection != 'stock_counts' || request.method == 'get' && (resource == null || rb().get('version',0) != 3) || r2f(rb().get('branch',''))) && ((legacyCollection in ['account_logs','bom','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','global_addons','grab_payouts','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests','stock_counts','stock_logs'])
+      allow read: if ri(legacyCollection) && ((legacyCollection in ['account_logs','bom','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','global_addons','grab_payouts','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','yield_logs'] && rj()));
-      allow create: if ri(legacyCollection) && (legacyCollection != 'stock_counts' || ra().get('version',0) != 3 || r2g(ra(),legacyDocument)) && r1n(legacyCollection,legacyDocument,ra()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_counts','stock_logs'])
+      allow create: if ri(legacyCollection) && r1n(legacyCollection,legacyDocument,ra()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && rj())
         || (legacyCollection in ['bom','global_addons','menu'] && r1()));
-      allow update: if ri(legacyCollection) && (legacyCollection != 'stock_counts' || rb().get('version',0) != 3 && ra().get('version',0) != 3) && r1o(legacyCollection,legacyDocument,rb(),ra()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_counts','stock_logs'])
+      allow update: if ri(legacyCollection) && r1o(legacyCollection,legacyDocument,rb(),ra()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','foodpanda_payouts','grab_payouts','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && rj())
         || (legacyCollection in ['bom','global_addons'] && r1()));
-      allow delete: if ri(legacyCollection) && (legacyCollection != 'stock_counts' || rb().get('version',0) != 3) && r1o(legacyCollection,legacyDocument,rb(),{}) && ((legacyCollection in ['branches','parked_orders'])
+      allow delete: if ri(legacyCollection) && r1o(legacyCollection,legacyDocument,rb(),{}) && ((legacyCollection in ['branches','parked_orders'])
         || (legacyCollection in ['account_logs','budgets','cash_accounts','dispatch_logs','equipment_assets','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','hq_restocks','manager_alerts','payables','pos_devices','rider_topups','riders','shift_swaps','sop_logs','staff_bonuses','staff_ledger','staff_requests','yield_logs'] && rj())
-        || (legacyCollection in ['bom','global_addons','inventory','menu','shifts','stock_counts','stock_logs'] && r1()));
+        || (legacyCollection in ['bom','global_addons','inventory','menu','shifts','stock_logs'] && r1()));
     }
     // Exact six-tree legacy HQ whitelist, retaining all preceding descendants.
     match /{legacyTree}/{legacyTail=**} {
@@ -864,6 +864,15 @@ service cloud.firestore {
         && d.get('active',true) != false && d.get('archived',false) != true && d.get('blocked',false) != true
         && !(d.get('status','').lower() in ['blocked','inactive','disabled','revoked','terminated','archived','resigned','deleted'])
         && (!(d.get('pin','') is string) || !(d.get('pin','').upper() in ['REVOKED','BLOCKED']));
+    }
+    // Exact stock-count rules keep the legacy v2 authority separate from the
+    // frozen v3 report. Their unrelated staff-setup guards are tautologies here.
+    match /stock_counts/{id} {
+      allow get: if resource == null || rb().get('version',0) != 3 || r2f(rb().get('branch',''));
+      allow list: if r2f(rb().get('branch',''));
+      allow create: if ra().get('version',0) != 3 || r2g(ra(),id);
+      allow update: if rb().get('version',0) != 3 && ra().get('version',0) != 3;
+      allow delete: if r1() && rb().get('version',0) != 3;
     }
     match /inventory_audit_reports/{id} {
       allow get: if resource == null ? r28() || rq() : r2f(rb().branch);

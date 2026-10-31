@@ -110,33 +110,38 @@ test('legacy operational authority remains while new rate metadata is protected'
         'franchise_accounts','franchise_budgets','franchise_comms','franchise_ledger','global_addons','grab_payouts',
         'hq_restocks','inventory','manager_alerts','menu','parked_orders','payables','pos_devices',
         'rider_topups','riders','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests',
-        'stock_counts','stock_logs','suppliers','yield_logs'];
+        'stock_logs','suppliers','yield_logs'];
     const literalNames = [...new Set([flatLegacy, treeLegacy].flatMap(text => [...text.matchAll(/\[([^\]]+)\]/g)]
         .flatMap(list => [...list[1].matchAll(/'([^']+)'/g)].map(name => name[1]))))].sort();
-    assert.equal(expectedLegacyNames.length, 37);
-    assert.deepEqual(literalNames, expectedLegacyNames, 'Only the 37 non-remittance legacy roots may enter these literal clauses');
+    assert.equal(expectedLegacyNames.length, 36);
+    assert.deepEqual(literalNames, expectedLegacyNames, 'Only the 36 non-remittance/non-count legacy roots may enter these literal clauses');
     const remittances = body(legacy, 'match /remittances/{remittanceId}');
     assert.match(remittances, /allow read: if true;/);
     assert.match(remittances, /allow create: if mallHandover\(newData\(\)\);/);
     assert.doesNotMatch(remittances, /allow (?:update|delete|write)/);
     assert.equal(body(legacy, 'function legacyCandidate(').trim(), `return root.matches('^(${expectedLegacyNames.join('|')})$');`);
-    // The legacy literal authority unions are unchanged. Their new deny-only
-    // count guard keeps ordinary point reads of old counts, while every count
-    // LIST and every v3 point read require scoped inventory authority. V3 count
-    // creation must pair its immutable report; updates/deletes cannot bypass it.
+    // Counts have the same authority in an exact block rather than duplicating
+    // heavy report checks through the generic wildcard's legacy alternatives.
+    // Old non-v3 point GET stays public; all LIST/v3GET require branch scope,
+    // v3 creation pairs its report, and v3 history cannot change or be deleted.
+    const counts = body(legacy, 'match /stock_counts/{id}');
     const countGuards = {
-        read: "(legacyCollection != 'stock_counts' || request.method == 'get' && (resource == null || oldData().get('version',0) != 3) || stockAuditReader(oldData().get('branch',''))) && ",
-        create: "(legacyCollection != 'stock_counts' || newData().get('version',0) != 3 || stockAuditSourceCreate(newData(),legacyDocument)) && ",
-        update: "(legacyCollection != 'stock_counts' || oldData().get('version',0) != 3 && newData().get('version',0) != 3) && ",
-        delete: "(legacyCollection != 'stock_counts' || oldData().get('version',0) != 3) && "
+        get: "resource == null || oldData().get('version',0) != 3 || stockAuditReader(oldData().get('branch',''))",
+        list: "stockAuditReader(oldData().get('branch',''))",
+        create: "newData().get('version',0) != 3 || stockAuditSourceCreate(newData(),id)",
+        update: "oldData().get('version',0) != 3 && newData().get('version',0) != 3",
+        delete: "isOwner() && oldData().get('version',0) != 3"
     };
+    assert.equal((counts.match(/\ballow\b/g) || []).length, 5);
+    for (const [method, expected] of Object.entries(countGuards))
+        assert.equal(new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(counts)?.[1], expected);
     for (const method of ['read', 'create', 'update', 'delete']) {
         const expression = new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(flatLegacy)?.[1];
         assert.ok(expression, `Missing legacy ${method} policy`);
         const setupGuard = method === 'read' ? '' : method === 'create'
             ? 'staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && '
             : `staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),${method === 'delete' ? '{}' : 'newData()'}) && `;
-        const prefix = 'legacyCandidate(legacyCollection) && ' + countGuards[method] + setupGuard + '(';
+        const prefix = 'legacyCandidate(legacyCollection) && ' + setupGuard + '(';
         assert.ok(expression.startsWith(prefix) && expression.endsWith(')'), 'Every legacy method must retain the exact deny-only prefix');
         const union = expression.slice(prefix.length, -1);
         const clause = /\(legacyCollection in \[([^\]]+)\](?: && (isHQUser|isOwner)\(\))?\)/g;
