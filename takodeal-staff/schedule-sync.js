@@ -35,13 +35,19 @@ export function projectScheduleMonth({month, current = null, archive = null, now
     if (archive?.month && archive.month !== selected || archive?.latestRevisionId && (!latest || !isMonth(latest.snapshot,selected))) {
         throw new Error('The saved schedule version is incomplete. Refresh this month before using it.');
     }
+    const historicalLeave = revision => revision?.source === 'approved-leave' && revision.historicalLeaveReview?.schemaVersion === 1;
+    // A reviewed historical leave freezes one work date, not a replacement
+    // monthly editor. Keep the most recent complete plan as the editor base.
+    const editorRevision = historicalLeave(latest) ? revisions.filter(revision => !historicalLeave(revision))
+        .sort((a,b) => (Number(b.sequence)||0)-(Number(a.sequence)||0) || b.savedAt.localeCompare(a.savedAt) || b.revisionId.localeCompare(a.revisionId))[0] : latest;
+    if (historicalLeave(latest) && !editorRevision) throw new Error('The historical leave has no saved monthly editor source. Refresh Schedule Manager.');
     const headPreserved = sameHeadMonth && revisions.some(revision => revision.revisionId === current.scheduleRevisionId
         && scheduleSignature(revision.snapshot) === scheduleSignature(current));
     // Old clients may still save an unarchived current head. Respect that head
     // unless a future plan was explicitly saved for this selected month.
-    const useUnarchivedHead = sameHeadMonth && !headPreserved && !(latest?.effectiveFrom > today);
+    const useUnarchivedHead = sameHeadMonth && !headPreserved && !(editorRevision?.effectiveFrom > today);
     const source = useUnarchivedHead ? 'live-unarchived' : latest ? 'saved-month' : sameHeadMonth ? 'live-head' : 'missing-month';
-    const base = useUnarchivedHead ? current : latest?.snapshot || (sameHeadMonth ? current : null);
+    const base = useUnarchivedHead ? current : editorRevision?.snapshot || (sameHeadMonth ? current : null);
     const empty = {...copy(current || {}), currentYear:year, currentMonth:monthNumber, currentSchedule:{}, holidays:{}, unavailability:{}};
     delete empty.scheduleRevisionId; delete empty.scheduleEffectiveFrom;
     let editorSnapshot = copy(base || empty);
@@ -49,9 +55,9 @@ export function projectScheduleMonth({month, current = null, archive = null, now
     editorSnapshot.currentSchedule ||= {};
     const history = assembleScheduleHistory(current, [{...archive,month:selected, revisions}]);
     const monthEnd=selected+'-'+String(new Date(Date.UTC(year,monthNumber,0)).getUTCDate()).padStart(2,'0');
-    const editorDate=selected===today.slice(0,7)?[today,latest?.effectiveFrom||''].sort().at(-1):selected<today.slice(0,7)?monthEnd:latest?.effectiveFrom||selected+'-01';
+    const editorDate=selected===today.slice(0,7)?[today,editorRevision?.effectiveFrom||''].sort().at(-1):selected<today.slice(0,7)?monthEnd:editorRevision?.effectiveFrom||selected+'-01';
     const editorAmendments=amendmentsForDate(history,editorDate);
-    if(base&&editorAmendments.length)editorSnapshot=applyShiftAmendments({...editorSnapshot,scheduleRevisionId:useUnarchivedHead?'':latest?.revisionId||current?.scheduleRevisionId||''},editorAmendments,editorDate);
+    if(base&&editorAmendments.length)editorSnapshot=applyShiftAmendments({...editorSnapshot,scheduleRevisionId:useUnarchivedHead?'':editorRevision?.revisionId||current?.scheduleRevisionId||''},editorAmendments,editorDate);
     const snapshot = copy(editorSnapshot), daySnapshots = {}, dayRevisions = {}, unverifiedDays = [];
     snapshot.currentSchedule = {};
     if (base) {
@@ -64,12 +70,22 @@ export function projectScheduleMonth({month, current = null, archive = null, now
             const headOverride = useUnarchivedHead && date >= today;
             let daySource = !headOverride && dated ? dated : null;
             if (!daySource) {
-                const fallback = !headOverride && latest?.effectiveFrom > date && sameHeadMonth ? current : editorSnapshot;
+                const fallback = !headOverride && editorRevision?.effectiveFrom > date && sameHeadMonth ? current : editorSnapshot;
                 daySource = {...copy(fallback), currentYear:year, currentMonth:monthNumber,
                     currentSchedule:{[day]:copy(fallback.currentSchedule?.[day] || {})}, snapshotDate:date,
                     scheduleRevisionId:'', scheduleSource:'unverified'};
                 unverifiedDays.push(day);
             } else dayRevisions[day] = daySource.scheduleRevisionId;
+            if (historicalLeave(revisions.find(revision => revision.revisionId === daySource.scheduleRevisionId))) {
+                // Later full-month plans may predate this explicit review. Overlay
+                // only its winning day so they cannot resurrect the old assignment.
+                editorSnapshot.currentSchedule[day] = copy(daySource.currentSchedule[day] || {});
+                for (const target of [editorSnapshot,snapshot]) {
+                    target.unavailability ||= {};
+                    if (daySource.unavailability?.[date] !== undefined) target.unavailability[date] = copy(daySource.unavailability[date]);
+                    else delete target.unavailability[date];
+                }
+            }
             const scoped = scopeSnapshot(daySource,visible);
             daySnapshots[day] = scoped;
             snapshot.currentSchedule[day] = copy(scoped.currentSchedule[day] || {});
