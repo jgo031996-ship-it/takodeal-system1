@@ -110,3 +110,19 @@ function actualRoster({year=2026,month=11,weekday=true,readOnly=false}={}){
 }
 test('actual blank active future roster cells open the planner for review without assigning or saving',()=>{const f=actualRoster();assert.match(f.html,/>Prepare roster<\/span>/);assert.doesNotMatch(f.html,/Disabled shift/);const action=/onclick="([^"]+)"[^>]*>Prepare roster<\/span>/.exec(f.html)?.[1];assert.equal(action,'window.openMonthlySchedule()');vm.runInContext(action,f.context);assert.equal(f.calls.opened,1);assert.equal(f.calls.saves,0);});
 test('actual blank past, disabled-weekday and saved-history roster cells expose no monthly creation action',()=>{for(const options of [{year:2026,month:10},{weekday:false},{readOnly:true}]){const f=actualRoster(options);assert.doesNotMatch(f.html,/Prepare roster|window\.openMonthlySchedule\(\)/);assert.match(f.html,options.weekday===false?/No shift this weekday/:/Not assigned/);assert.equal(f.calls.opened,0);assert.equal(f.calls.saves,0);}});
+
+for(const state of ['Rejected','missing'])test('a stale marker source becoming active after review invalidates the proposal: '+state,async()=>{
+ const f=fixture(),marker={name:'Ann',status:'Leave',staffId:'staff-a',leaveRequestId:'synthetic-source'};f.state.snapshot.currentSchedule[2]={Maa:{...day(),unavailable:[marker]}};
+ f.state.evidence.leaveSources=[{id:'synthetic-source',record:state==='missing'?null:{type:'Leave',status:state,staffId:'staff-a',staffName:'Sample Ann'}}];
+ await f.controller.open();const {captured,plan}=f.proposal(),before=copy(f.state.snapshot);assert.equal(plan.releasedLeaveMarkers.length,1);
+ f.state.evidence.leaveSources[0].record={type:'Leave',status:'Approved',staffId:'staff-a',staffName:'Sample Ann',startDate:'2026-11-02',endDate:'2026-11-02'};
+ await assert.rejects(f.hooks.commit(plan,captured),/changed/);assert.deepEqual(f.state.snapshot,before);assert.equal(f.calls.applied.length,0);assert.equal(f.calls.businessWrites,0);
+});
+test('default evidence confirms exact linked source IDs freshly, including rejected and deleted requests, without reading private fields',async()=>{
+ const f=fixture({useDefaultRead:true}),marker={name:'Ann',status:'Leave',staffId:'staff-a',leaveRequestId:'rejected-source'},reads=[];
+ f.state.snapshot.currentSchedule[2]={Maa:{...day(),unavailable:[marker,{...marker,leaveRequestId:'missing-source'}]}};
+ f.w.doc=(_db,table,id)=>({table,id});f.w.getDocFromServer=async ref=>{reads.push(ref);return {exists:()=>ref.id!=='missing-source',data:()=>({type:'Leave',status:'Rejected',staffId:'staff-a',staffName:'Sample Ann',reason:'PRIVATE'}),metadata:{fromCache:false,hasPendingWrites:false}};};
+ const result=await readMonthlyScheduleEvidence(f.w,{snapshot:f.state.snapshot,branch:'Maa',month:'2026-11',effectiveFrom:'2026-11-01'});
+ assert.deepEqual(reads.map(row=>row.id),['missing-source','rejected-source']);assert.equal(result.leaveSources.find(row=>row.id==='missing-source').record,null);assert.equal(result.leaveSources.find(row=>row.id==='rejected-source').record.reason,undefined);assert.equal(f.calls.businessWrites,0);
+ f.w.getDocFromServer=async()=>({exists:()=>false,metadata:{fromCache:true}});assert.equal(await f.controller.open(),false);assert.equal(f.calls.uiOpen,0);assert.equal(f.calls.applied.length,0);
+});

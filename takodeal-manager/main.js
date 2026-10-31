@@ -36,6 +36,7 @@ import {buildPayrollRosterReview,renderPayrollBalanceReview} from './payroll-bal
 import {installManagerLeaveUI,leaveRequestSummaryHTML} from './manager-leave-ui.js';
 import {installManagerEarlyTimeOutUI,earlyTimeOutSummaryHTML} from './early-time-out-review-ui.js';
 import {leaveStatus,leaveUnavailable,ownedScheduleLeave,scheduleUnavailable,leaveToday} from './leave-model.js';
+import {openSavedScheduleLeave} from './schedule-leave-markers.js';
 window.getManagerLeaveUI = () => window.managerLeaveUI || installManagerLeaveUI(window,document);
 window.getManagerEarlyTimeOutUI = () => window.managerEarlyTimeOutUI || (window.managerEarlyTimeOutUI=installManagerEarlyTimeOutUI(window,document));
 runManagerDomReady(() => window.getManagerLeaveUI());
@@ -44,7 +45,10 @@ window.reviewOwnedScheduleLeave = function(date,name) {
     if(!marker?.leaveRequestId)return false;
     if(!marker)return false;
     if(date<leaveToday())window.ManagerUI.notify('Earlier approved leave stays in schedule history. Review current or future dates in Request Inbox.');
-    else void window.getManagerLeaveUI().change(marker.leaveRequestId,'Cancel',{date});
+    else {
+        const user=window.auth?.currentUser,session=window.sessionUser,year=currentYear,month=currentMonth,state=JSON.stringify({unavailability,currentSchedule});
+        void openSavedScheduleLeave(window,{marker,date,isCurrent:()=>window.auth?.currentUser===user&&window.sessionUser===session&&currentYear===year&&currentMonth===month&&!window.scheduleMemoryReadOnly&&canOpenWorkspacePage(window.sessionUser,'schedule')&&JSON.stringify({unavailability,currentSchedule})===state});
+    }
     return true;
 };
 import {reportDetailsHTML,purchaseQuantity,escapeStock} from './stock-cycle.js';
@@ -8436,14 +8440,14 @@ window.addHoliday = function() {
     if (!date) return window.ManagerUI.notify("Select a date.");
     window.scheduleHolidays[date] = type;
     window.updateHolidayList();
-    window.saveToCloud(); // Auto-save to Firebase
+    window.markScheduleDraftEdited();
 };
 
 window.removeHoliday = async function(date) {
     if (!(await window.ManagerUI.confirm(`Remove holiday on ${date}?`))) return;
     delete window.scheduleHolidays[date];
     window.updateHolidayList();
-    window.saveToCloud();
+    window.markScheduleDraftEdited();
 };
 
 window.updateHolidayList = function() {
@@ -8677,10 +8681,15 @@ window.saveShiftConfigChanges = async function() {
         window.renderTables();
     }
     
-    if (await window.saveToCloud() === false) throw new Error(document.getElementById('ownerScheduleSyncStatus')?.textContent || 'HQ has not confirmed this save. Your edits remain in this editor.');
+    window.markScheduleDraftEdited();
     const msg = document.getElementById("configSaveMsg");
     if(msg) { msg.style.display = "inline"; setTimeout(() => msg.style.display = "none", 2000); }
     return true;
+};
+
+window.markScheduleDraftEdited = function() {
+    window.getOwnerScheduleSync().markDirty();
+    window.scheduleWorkspace?.refresh();
 };
 
 window.saveManualSchedule = async function() {
@@ -8717,7 +8726,7 @@ window.addEmployee = function() {
             }
         }
     }
-    window.updateStaffDisplay(); window.updateAvailDropdown(); window.renderTables(); window.saveToCloud();
+    window.updateStaffDisplay(); window.updateAvailDropdown(); window.renderTables(); window.markScheduleDraftEdited();
 };
 
 window.removeEmployee = async function(name) {
@@ -8734,7 +8743,7 @@ window.removeEmployee = async function(name) {
         }
     }
     for (let date in unavailability) { if (unavailability[date][name] && !unavailability[date][name]?.leaveRequestId) delete unavailability[date][name]; if (Object.keys(unavailability[date]).length === 0) delete unavailability[date]; }
-    window.updateStaffDisplay(); window.updateAvailDropdown(); window.updateUnavailabilityList(); window.renderTables(); window.saveToCloud();
+    window.updateStaffDisplay(); window.updateAvailDropdown(); window.updateUnavailabilityList(); window.renderTables(); window.markScheduleDraftEdited();
 };
 
 window.findEmployeeProfile = function(searchName) {
@@ -9025,7 +9034,7 @@ window.markUnavailable = function() {
     // Refresh the UI once the loop finishes
     window.updateUnavailabilityList();
     if (currentSchedule[1]) window.renderTables();
-    window.saveToCloud();
+    window.markScheduleDraftEdited();
     
     document.getElementById('availDate').value = ''; // Reset the box
     Swal.fire({
@@ -9074,7 +9083,7 @@ window.removeUnavailable = async function(date, emp) {
             window.renderTables();
         }
     }
-    window.saveToCloud();
+    window.markScheduleDraftEdited();
     Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Removed!', showConfirmButton: false, timer: 1500});
 };
 
@@ -9339,19 +9348,16 @@ window.executeSwap = async function(target, markAsSwap) {
     if (typeof window.updateStaffDisplay === 'function') window.updateStaffDisplay();
     if (typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
     if (typeof window.updateUnavailabilityList === 'function') window.updateUnavailabilityList();
-    try{
-        const saved=await window.saveToCloud();
-        if(!ownsAssignment())return false;
-        if(saved!==true){await Swal.fire('Assignment not yet confirmed','Your edit remains in this schedule draft. Keep the editor open and use Save or the recovery controls to confirm it with HQ.','warning');return false;}
-        await Swal.fire({toast:true,position:'top-end',icon:'success',title:'Shift assignment saved to HQ',showConfirmButton:false,timer:2000});return true;
-    }catch(error){if(!ownsAssignment())return false;await Swal.fire('Assignment not yet confirmed','Keep this schedule draft open and check the save status before retrying. '+String(error.message || ''),'warning');return false;}
+    window.markScheduleDraftEdited();
+    await Swal.fire({toast:true,position:'top-end',icon:'success',title:'Assignment ready in local draft · use Save Edits',showConfirmButton:false,timer:2000});
+    return true;
 };
 
 window.clearSwapBadge = function() {
     const { day, branch, shiftId } = swapData; // 🔥 THE FIX: Removed window prefix
     if (currentSchedule[day] && currentSchedule[day][branch] && currentSchedule[day][branch].swaps) {
         delete currentSchedule[day][branch].swaps[shiftId];
-        window.saveToCloud();
+        window.markScheduleDraftEdited();
         window.renderTables();
         Swal.close();
         Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Badge Cleared!', showConfirmButton: false, timer: 2000});
@@ -9602,7 +9608,7 @@ window.manageStandbyStaff = async function(day, branch, staffName) {
         }
         
         window.renderTables();
-        if (typeof window.saveToCloud === 'function') window.saveToCloud();
+        if (typeof window.saveToCloud === 'function') window.markScheduleDraftEdited();
     }
 };
 
@@ -19139,11 +19145,11 @@ setTimeout(() => {
     // 2. Override the button to add the new Non-Destructive Magic!
     window.saveShiftConfigChanges = async function() {
         let btn = document.querySelector('button[onclick="saveShiftConfigChanges()"]');
-        let origText = btn ? btn.innerText : "💾 Save Shift Rules";
-        if (btn) { btn.innerText = "Saving shift rules…"; btn.disabled = true; }
+        let origText = btn ? btn.innerText : "Apply Shift Rules to Draft";
+        if (btn) { btn.innerText = "Applying shift rules…"; btn.disabled = true; }
 
         try {
-            // Run your original save function so the database updates properly
+            // Apply the reviewed rules to the local editor draft.
             if (typeof originalSaveShiftRules === 'function') {
                 let result = originalSaveShiftRules();
                 if (result instanceof Promise) result = await result;
@@ -19152,8 +19158,8 @@ setTimeout(() => {
 
             // Display a success message letting you know the staff were protected
             Swal.fire({
-                title: 'Shift rules saved',
-                text: 'HQ confirmed the updated shift rules.',
+                title: 'Shift rules ready in draft',
+                text: 'Review the staff assignments, then use Save Edits to send the roster and rules to HQ.',
                 icon: 'success',
                 timer: 3000,
                 showConfirmButton: false,
@@ -25979,36 +25985,25 @@ window.removeStaffFromBranchPool = async function(staffName) {
     if(confirmMsg.isConfirmed) {
         Swal.fire({title: 'Removing...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         try {
-            // 1. Update in Firestore Database instantly
-            const staffSnap = await window.getDocs(window.collection(window.db, "cashiers"));
-            let docIdToUpdate = null;
-            staffSnap.forEach(d => {
-                let data = d.data();
-                let n = data.scheduleNickname || data.cashierName;
-                if (n === staffName) docIdToUpdate = d.id;
-            });
-            
-            if (docIdToUpdate) {
-                await window.updateDoc(window.doc(window.db, "cashiers", docIdToUpdate), { branch: 'Unassigned' });
-            }
-            
-            // 2. Safely update local memory without deleting them completely!
-            let emp = window.employees.find(e => e.name === staffName);
-            if (emp) emp.branch = 'Unassigned';
-            
+            const selectedProfile=await window.confirmActiveScheduleStaff(staffName);
+            if(!window.isBranchAllowed(selectedProfile.branch))throw Error('This branch transfer is outside your approved branches.');
+            await window.updateDoc(window.doc(window.db, 'cashiers', selectedProfile.staffId), {branch:'Unassigned'});
+            const emp=window.employees.find(person=>person.staffId===selectedProfile.staffId);
+            if(emp)emp.branch='Unassigned';
+            window.scheduleDirectoryProfiles=(window.scheduleDirectoryProfiles||[]).map(person=>person.staffId===selectedProfile.staffId?{...person,branch:'Unassigned'}:person);
             window.updateStaffDisplay();
             if(typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
             
             Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Moved to Unassigned!', showConfirmButton: false, timer: 2000});
         } catch(e) {
             console.error(e);
-            Swal.fire('Error', 'Failed to remove staff.', 'error');
+            Swal.fire('Staff transfer not confirmed', e.message || 'Reconnect and refresh the current staff list.', 'warning');
         }
     }
 };
 
 window.addStaffToBranchPool = async function(targetBranch) {
-    let otherStaff = window.employees.filter(e => e.branch !== targetBranch && activeStaffProfile(e) && e.scheduleEligible!==false);
+    let otherStaff = window.employees.filter(e => e.staffId && e.branch !== targetBranch && activeStaffProfile(e) && e.scheduleEligible!==false);
     if (otherStaff.length === 0) return Swal.fire('No Staff Found', 'There are no other staff members in the system to pull.', 'info');
     
     let optionsHtml = '<option value="">-- Select Staff to Pull --</option>';
@@ -26016,7 +26011,7 @@ window.addStaffToBranchPool = async function(targetBranch) {
         let profileFunc = window.findEmployeeProfile || function() { return null; };
         let realProfile = profileFunc(e.name) || e;
         let displayName = realProfile.scheduleNickname || realProfile.cashierName || e.name;
-        optionsHtml += `<option value="${e.name}">${displayName} (Current: ${e.branch})</option>`;
+        optionsHtml += `<option value="${escapeHtml(encodeURIComponent(e.staffId))}">${escapeHtml(displayName)} (Current: ${escapeHtml(e.branch)})</option>`;
     });
 
     const { value: selectedStaff, isConfirmed } = await Swal.fire({
@@ -26039,7 +26034,7 @@ window.addStaffToBranchPool = async function(targetBranch) {
     if (isConfirmed && selectedStaff) {
         Swal.fire({title: 'Transferring...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         try {
-            const selectedProfile=await window.confirmActiveScheduleStaff(selectedStaff);
+            const selectedProfile=await window.confirmActiveScheduleStaff({staffId:decodeURIComponent(selectedStaff)});
             const docIdToUpdate=selectedProfile.staffId;
             if(!window.isBranchAllowed(targetBranch)||!window.isBranchAllowed(selectedProfile.branch))throw Error('This branch transfer is outside your approved branches.');
             
@@ -26047,8 +26042,9 @@ window.addStaffToBranchPool = async function(targetBranch) {
                 await window.updateDoc(window.doc(window.db, "cashiers", docIdToUpdate), { branch: targetBranch });
             }
             
-            let emp = window.employees.find(e => e.name === selectedStaff);
+            let emp = window.employees.find(e => e.staffId === selectedProfile.staffId);
             if (emp) emp.branch = targetBranch;
+            window.scheduleDirectoryProfiles=(window.scheduleDirectoryProfiles||[]).map(person=>person.staffId===selectedProfile.staffId?{...person,branch:targetBranch}:person);
             
             window.updateStaffDisplay();
             if(typeof window.updateAvailDropdown === 'function') window.updateAvailDropdown();
@@ -26056,7 +26052,7 @@ window.addStaffToBranchPool = async function(targetBranch) {
             Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'Staff Pulled Successfully!', showConfirmButton: false, timer: 2000});
         } catch(e) {
             console.error(e);
-            Swal.fire('Error', 'Failed to pull staff.', 'error');
+            Swal.fire('Staff transfer not confirmed', e.message || 'Reconnect and refresh the current staff list.', 'warning');
         }
     }
 };

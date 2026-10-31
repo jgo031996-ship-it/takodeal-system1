@@ -3,6 +3,7 @@ import {buildMonthlySchedulePlan} from './monthly-schedule-model.js';
 import {toScheduleEmployee} from './schedule-staff-directory.js';
 import {canOpenWorkspacePage} from './workspace-access-model.js';
 import {monthKey,scheduleDateKey} from './schedule-history.js';
+import {scheduleLeaveMarkerIds} from './schedule-leave-markers.js';
 
 const copy=value=>JSON.parse(JSON.stringify(value));
 const fingerprint=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
@@ -17,21 +18,31 @@ const fresh=snapshot=>{
 
 // Read scheduling metadata only on an explicit month-creation action. No
 // background subscriptions or business writes are introduced here.
-export async function readMonthlyScheduleEvidence(w){
+export async function readMonthlyScheduleEvidence(w,captured={}){
     const collection=table=>w.collection(w.db,table);
     const [people,leaves,sanctions]=await Promise.all([
         w.getDocsFromServer(collection('cashiers')),
         w.getDocsFromServer(w.query(collection('staff_requests'),w.where('type','==','Leave'),w.where('status','==','Approved'))),
         w.getDocsFromServer(collection('hr_sanctions'))
     ]);
+    const from=captured.effectiveFrom,to=captured.month+'-31',ids=scheduleLeaveMarkerIds(captured.snapshot,{branch:captured.branch,from,to}),leaveSources=[];
+    for(let at=0;at<ids.length;at+=15){
+        const batch=await Promise.all(ids.slice(at,at+15).map(async id=>{
+            if(typeof w.getDocFromServer!=='function')throw Error('Reconnect to verify the original saved leave markers.');
+            const row=await w.getDocFromServer(w.doc(w.db,'staff_requests',id));
+            if(row.metadata?.fromCache||row.metadata?.hasPendingWrites)throw Error('Reconnect to verify the original saved leave markers.');
+            return {id,record:row.exists()?pick(row.data(),leaveFields):null};
+        }));leaveSources.push(...batch);
+    }
     return {
+        leaveSources,
         staffProfiles:fresh(people).map(row=>toScheduleEmployee(row,row.id)).filter(Boolean),
         approvedLeaves:fresh(leaves).filter(row=>row.type==='Leave'&&row.status==='Approved').map(row=>({...pick(row,leaveFields),id:row.id})),
         sanctions:fresh(sanctions).map(row=>({...pick(row,sanctionFields),id:row.id}))
     };
 }
 
-export function createMonthlyScheduleController(w,d,{getSnapshot,applySnapshot,getBranch,getMonth,getEffectiveFrom,getSync,captureEditor,readEvidence=()=>readMonthlyScheduleEvidence(w),now=()=>new Date(),installUI=installMonthlyScheduleUI,timeoutMs=25000}={}){
+export function createMonthlyScheduleController(w,d,{getSnapshot,applySnapshot,getBranch,getMonth,getEffectiveFrom,getSync,captureEditor,readEvidence=captured=>readMonthlyScheduleEvidence(w,captured),now=()=>new Date(),installUI=installMonthlyScheduleUI,timeoutMs=25000}={}){
     let evidence=null,opening=null,evidenceFlight=null,ui=null,applying=false,reviewEpoch=0;
     const actor=()=>{
         const user=w.auth?.currentUser,session=w.sessionUser;

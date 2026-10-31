@@ -3,6 +3,7 @@ import {availableSchedulePoolStaff,scheduleIdentityDirectory,resolveScheduleEmpl
 import {activeLeaveDates,leaveStatus} from './leave-model.js';
 import {suspensionDates} from './sanction-schedule.js';
 import {validateShiftConfig} from './payroll-safety.js';
+import {reconcileScheduleLeaveMarkers} from './schedule-leave-markers.js';
 
 const copy=value=>JSON.parse(JSON.stringify(value));
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
@@ -12,6 +13,20 @@ const aliases=row=>[row?.name,row?.cashierName,row?.fullName,row?.scheduleNickna
 const nameKey=value=>String(value||'').normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase();
 const validDate=value=>{try{return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;}catch{return false;}};
 const freeze=value=>{if(value&&typeof value==='object'){Object.values(value).forEach(freeze);Object.freeze(value);}return value;};
+const shiftInterval=(date,shift)=>{
+ if(!/^\d{2}:\d{2}$/.test(shift?.startTime)||!/^\d{2}:\d{2}$/.test(shift?.endTime))return null;
+ const minutes=value=>Number(value.slice(0,2))*60+Number(value.slice(3)),start=Date.parse(date+'T00:00:00Z')+minutes(shift.startTime)*60000;
+ let end=Date.parse(date+'T00:00:00Z')+minutes(shift.endTime)*60000;if(end<=start)end+=86400000;return {start,end};
+};
+function datedAssignments(snapshot,index){
+ const result=[];
+ for(const [day,branches]of Object.entries(snapshot.currentSchedule||{}))for(const [branch,row]of Object.entries(branches||{}))for(const [shiftId,name]of Object.entries(row?.scheduled||{})){
+  if(!named(name))continue;const date=monthKey(snapshot)+'-'+String(day).padStart(2,'0'),shift=snapshot.branchConfig?.[branch]?.find(shift=>shift.id===shiftId);
+  result.push({date,branch,shiftId,name,ids:index.ids(name),interval:shiftInterval(date,shift)});
+ }
+ return result;
+}
+const overlaps=(a,b)=>a&&b&&a.start<b.end&&b.start<a.end;
 export const monthlyScheduleFingerprint=value=>JSON.stringify(value,(_key,item)=>object(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
 
 function validateRows(value,label,max=5000){if(!Array.isArray(value)||value.length>max||value.some(row=>!object(row)))throw Error('Reload the '+label+' before creating this month.');return value;}
@@ -71,19 +86,21 @@ function protectedDates({approvedLeaves,sanctions,directory,snapshot,branch,from
 /** Local draft only. Named assignments, existing swap notes, other branches and
  * earlier work dates are never replaced. IDs remain in the review plan even
  * though existing roster consumers use a saved schedule-name string. */
-export function buildMonthlySchedulePlan({snapshot,month,branch,staffProfiles,approvedLeaves=[],sanctions=[],today=scheduleDateKey(new Date()),effectiveFrom,mode='prepare'}={}){
+export function buildMonthlySchedulePlan({snapshot,month,branch,staffProfiles,approvedLeaves=[],sanctions=[],leaveSources=[],today=scheduleDateKey(new Date()),effectiveFrom,mode='prepare'}={}){
  const selected=monthKey(month);if(scheduleDateKey(today)!==today)throw Error('Use the current Philippine work date.');if(!object(snapshot)||monthKey(snapshot)!==selected||!object(snapshot.currentSchedule||{}))throw Error('Load the selected month before creating its roster.');if(selected<today.slice(0,7))throw Error('Earlier schedule months stay in history. Choose the current or a future month.');if(typeof branch!=='string'||!branch.trim()||branch==='Main Office')throw Error('Choose a store branch first.');if(!['prepare','auto'].includes(mode))throw Error('Choose Prepare empty slots or Fill empty slots.');
  const from=effectiveFrom||[today,selected+'-01'].sort().at(-1);scheduleDateKey(from);if(from.slice(0,7)!==selected||from<today)throw Error('Choose an effective date in this month, today or later.');
  const count=new Date(Date.UTC(Number(selected.slice(0,4)),Number(selected.slice(5,7)),0)).getUTCDate();if(count<28||count>31)throw Error('Choose a valid schedule month.');const to=selected+'-'+String(count).padStart(2,'0'),rules=rulesFor(snapshot,branch);
  const profiles=validateRows(staffProfiles,'current staff directory',2000),directory=scheduleIdentityDirectory(profiles,snapshot.employees||[]),index=identityIndex(directory);validateRows(approvedLeaves,'approved leave records');validateRows(sanctions,'reviewed suspension records');
- const protection=protectedDates({approvedLeaves,sanctions,directory,snapshot,branch,from,to}),output=copy(snapshot);output.currentSchedule||={};output.employees=mergeScheduleEmployeeAliases(profiles,snapshot.employees||[]);const assignments=[],warnings=[],conflicts=[],days=[],counts={datesPrepared:0,slotsCreated:0,slotsActivated:0,existingAssignments:0,autoAssigned:0,unfilled:0,standby:0,unavailable:0,untouchedPastDates:0};
+ const recovered=reconcileScheduleLeaveMarkers({snapshot,branch,from,to,staffProfiles:profiles,leaveSources});
+ const protection=protectedDates({approvedLeaves,sanctions,directory,snapshot:recovered.snapshot,branch,from,to}),output=recovered.snapshot;output.currentSchedule||={};output.employees=mergeScheduleEmployeeAliases(profiles,snapshot.employees||[]);const assignments=[],warnings=[],conflicts=[],days=[],counts={datesPrepared:0,slotsCreated:0,slotsActivated:0,existingAssignments:0,autoAssigned:0,unfilled:0,standby:0,unavailable:0,untouchedPastDates:0};
  const warning=text=>{if(warnings.length<40&&!warnings.includes(text))warnings.push(text);},loads=new Map();
+ for(const release of recovered.released)warning(release.date+': '+release.staffName+' · '+release.reason+' · Reference: '+release.leaveRequestId+'. The linked marker will be released only in this local draft.');
  for(const branches of Object.values(snapshot.currentSchedule||{}))for(const name of Object.values(branches?.[branch]?.scheduled||{})){const person=named(name)&&resolveScheduleEmployeeReference(name,directory);if(person)loads.set(person.staffId,(loads.get(person.staffId)||0)+1);}
  for(let number=1;number<=count;number++){
   const date=selected+'-'+String(number).padStart(2,'0');if(date<from){counts.untouchedPastDates++;continue;}
   const oldBranches=output.currentSchedule[number]||{},old=oldBranches[branch];if(old!==undefined&&!object(old))throw Error(date+': the saved branch row needs review.');
   const row=old?copy(old):{scheduled:{},rest:[],unavailable:[],swaps:{}};if(!object(row.scheduled||{})||Object.values(row.scheduled||{}).some(value=>value!=null&&typeof value!=='string')||!Array.isArray(row.rest||[])||(row.rest||[]).some(value=>typeof value!=='string')||!Array.isArray(row.unavailable||[])||(row.unavailable||[]).some(value=>!object(value))||!object(row.swaps||{}))throw Error(date+': the saved roster details need review.');row.scheduled||={};row.rest||=[];row.unavailable||=[];row.swaps||={};
-  const flags=snapshot.unavailability?.[date]||{};if(!object(flags))throw Error(date+': the saved time-off flags need review.');
+  const flags=output.unavailability?.[date]||{};if(!object(flags))throw Error(date+': the saved time-off flags need review.');
   const blocked=new Set();const take=reference=>index.ids(reference).forEach(id=>blocked.add(id));
   for(const branches of Object.values(oldBranches))for(const entry of branches?.unavailable||[])take(entry);
   for(const [name,marker]of Object.entries(flags)){if(!marker)continue;take(object(marker)?{...marker,name:marker.name||name}:name);}
@@ -95,7 +112,8 @@ export function buildMonthlySchedulePlan({snapshot,month,branch,staffProfiles,ap
   let pool=availableSchedulePoolStaff({employees:directory,branch,dayData:{...row,rest:[]},dayBranches:Object.fromEntries(Object.entries(oldBranches).filter(([name])=>name!==branch)),unavailability:flags}).filter(person=>!blocked.has(person.staffId));
   pool=pool.filter(person=>{if(person.dateHired&&!validDate(person.dateHired)){warning('A staff hire date needs review; that account is excluded from automatic assignment.');return mode!=='auto';}return !person.dateHired||person.dateHired<=date;});
   if(mode==='auto'){
-   for(const shift of rules){if(row.scheduled[shift.id]!=='UNFILLED')continue;pool.sort((a,b)=>(loads.get(a.staffId)||0)-(loads.get(b.staffId)||0)||a.staffId.localeCompare(b.staffId));const person=pool.shift();if(!person)break;row.scheduled[shift.id]=person.name;loads.set(person.staffId,(loads.get(person.staffId)||0)+1);const assignment={date,shiftId:shift.id,shiftName:shift.name||shift.id,staffId:person.staffId,staffName:person.name,startTime:shift.startTime,endTime:shift.endTime};assignments.push(assignment);summary.autoAssignments.push(assignment);counts.autoAssigned++;row.rest=row.rest.filter(name=>!index.ids(name).includes(person.staffId));}
+   const existing=datedAssignments(output,index);
+   for(const shift of rules){if(row.scheduled[shift.id]!=='UNFILLED')continue;pool.sort((a,b)=>(loads.get(a.staffId)||0)-(loads.get(b.staffId)||0)||a.staffId.localeCompare(b.staffId));const interval=shiftInterval(date,shift),at=pool.findIndex(person=>!existing.some(saved=>saved.ids.includes(person.staffId)&&(overlaps(saved.interval,interval)||!saved.interval&&Math.abs(Date.parse(saved.date)-Date.parse(date))<=86400000)));if(at<0)continue;const [person]=pool.splice(at,1);row.scheduled[shift.id]=person.name;loads.set(person.staffId,(loads.get(person.staffId)||0)+1);const assignment={date,shiftId:shift.id,shiftName:shift.name||shift.id,staffId:person.staffId,staffName:person.name,startTime:shift.startTime,endTime:shift.endTime};assignments.push(assignment);summary.autoAssignments.push(assignment);counts.autoAssigned++;row.rest=row.rest.filter(name=>!index.ids(name).includes(person.staffId));}
   }
   const assignedIds=new Set(Object.values(row.scheduled).filter(named).flatMap(index.ids));
   row.rest=row.rest.filter(name=>{const ids=index.ids(name);return !ids.some(id=>assignedIds.has(id)||blocked.has(id));});
@@ -103,6 +121,12 @@ export function buildMonthlySchedulePlan({snapshot,month,branch,staffProfiles,ap
   for(const shift of rules){const value=row.scheduled[shift.id];if(value==='UNFILLED')counts.unfilled++;summary.slots.push({shiftId:shift.id,shiftName:shift.name||shift.id,startTime:shift.startTime,endTime:shift.endTime,value});}
   summary.standby=row.rest.length;counts.standby+=row.rest.length;counts.unavailable+=row.unavailable.length;counts.datesPrepared++;output.currentSchedule[number]={...oldBranches,[branch]:row};days.push(summary);
  }
- if(conflicts.length)warning('Some preserved assignments conflict with saved leave or suspension. Review those dates before saving the draft.');
- return freeze({version:1,mode,month:selected,branch,from,to,snapshot:output,counts,days,assignments,warnings,conflicts,sourceFingerprint:monthlyScheduleFingerprint(snapshot)});
+ const dated=datedAssignments(output,index);
+ for(let at=0;at<dated.length;at++)for(const other of dated.slice(at+1)){
+  const saved=dated[at],selected=[saved,other].find(row=>row.branch===branch&&row.date>=from&&row.date<=to);
+  if(!selected||!saved.ids.some(id=>other.ids.includes(id)))continue;
+  if(saved.date===other.date||overlaps(saved.interval,other.interval))conflicts.push({date:selected.date,shiftId:selected.shiftId,staffName:selected.name,reason:'Preserved assignments duplicate a staff account or overlap another shift ('+saved.branch+' '+saved.date+' / '+other.branch+' '+other.date+').'});
+ }
+ if(conflicts.length)warning('Some preserved assignments conflict with saved leave, suspension or other shifts. Review those dates before saving the draft.');
+ return freeze({version:1,mode,month:selected,branch,from,to,snapshot:output,counts,days,assignments,warnings,conflicts,releasedLeaveMarkers:recovered.released,sourceFingerprint:monthlyScheduleFingerprint(snapshot)});
 }
