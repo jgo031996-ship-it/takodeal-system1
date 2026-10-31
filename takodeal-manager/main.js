@@ -1,3 +1,6 @@
+import {installPaymentReconciliation} from './payment-reconciliation-ui.js';
+import {installOwnerStockAudits} from './owner-stock-audits.js';
+import {installPendingPaymentReader} from './pending-payment-reader.js';
 import {installOwnerDeductionHistory} from './owner-deduction-history.js';
 import {installOwnerDeductions} from './owner-deduction-ui.js';
 import {isOwnerDeduction} from './owner-deduction-model.js';
@@ -10072,7 +10075,7 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
                         await window.updateDoc(invRef, { currentStock: newStock });
                         
                         await window.addDoc(window.collection(window.db, "stock_logs"), {
-                            branch: reqData.branch, item: item.name, uom: item.uom,
+                            branch: reqData.branch, inventoryId: item.id, item: item.name, uom: item.uom,
                             oldQty: currentStock, newQty: newStock, variance: -item.qty,
                             type: "Waste / Spoilage (HQ Approved)", 
                             note: `Reason: ${item.reason} | Appv. by: ${window.sessionUser ? window.sessionUser.cashierName : 'HQ'}`,
@@ -26934,3 +26937,6 @@ installCashRemittanceReview(window,document);
 
 // Explicit store/HQ cost basis replaces the legacy highest-branch cost scan.
 installRecipeCostUI({window,document,setCosts:costs=>{globalInventoryCosts=costs;}});
+
+// These scoped readers replace legacy broad audit/payment loading after all wrappers.
+runManagerDomReady(()=>{window.ownerStockAudits ||= installOwnerStockAudits(window,document);installPendingPaymentReader(window,document);installPaymentReconciliation(window,document);});

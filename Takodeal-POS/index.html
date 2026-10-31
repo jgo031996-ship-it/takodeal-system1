@@ -3611,6 +3611,8 @@ function selectRealVariant(realName, price, btn) { window.selectRealVariant(real
         globalDiscountReason: dReason,
         netTotal: window.finalCheckoutAmount ?? window.currentGrandTotal,
         customerName: custName,
+        ...(window.selectedPaymentMethod==='GCash'?{paymentReference:custName}:{}),
+        ...(['Grab','Foodpanda'].includes(window.selectedPaymentMethod)?{platformOrderId:custName}:{}),
         amountReceived: window.isMealDiscount(dType) ? (window.finalCheckoutAmount ?? window.currentGrandTotal) : window.amountReceivedStr,
         cart: window.cart,
         resumeRecoveryId: window.parkedRecovery?.activeId() || null,

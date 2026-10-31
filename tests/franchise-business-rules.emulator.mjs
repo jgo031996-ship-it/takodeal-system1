@@ -198,7 +198,12 @@ test('consolidated legacy collections preserve the original GET LIST create upda
  await admin(async db=>{const batch=writeBatch(db);for(const target of targets)for(const actor of actors)for(const method of ['get','update','delete'])batch.set(doc(db,target.path,'compat-'+actor.id+'-'+method),{fixture:'SAMPLE legacy permission equivalence',actor:actor.id});await batch.commit();});
  let operations=0;
  for(const target of targets)for(const actor of actors)for(const [method,column]of [['get',0],['list',0],['create',1],['update',2],['delete',3]]){
-  const rule=target.policy[column],allowed=rule==='P'||rule==='H'&&actor.signed||rule==='O'&&actor.owner;
+  // New immutable v3 audit counts share this collection. An unscoped LIST
+  // cannot retain its preceding public grant without exposing those records.
+  // These fixtures have no branch and this HQ actor has no inventory grant;
+  // only the verified Owner can list them. Legacy point GET and writes retain
+  // the matrix above; dedicated stock tests prove assigned-branch queries.
+  const rule=target.policy[column],allowed=target.path==='stock_counts'&&method==='list'?actor.owner:rule==='P'||rule==='H'&&actor.signed||rule==='O'&&actor.owner;
   const reference=doc(actor.db,target.path,'compat-'+actor.id+'-'+method),operation=method==='get'?()=>getDocFromServer(reference):method==='list'?()=>getDocsFromServer(collection(actor.db,target.path)):method==='create'?()=>setDoc(reference,{fixture:'SAMPLE new legacy row'}):method==='update'?()=>updateDoc(reference,{compatibilityUpdate:true}):()=>deleteDoc(reference);
   try{if(allowed)await assertSucceeds(operation());else await assertFails(operation());}catch(error){error.message=target.path+' · '+actor.id+' · '+method+' · expected '+(allowed?'allowed':'denied')+': '+error.message;throw error;}operations++;
  }

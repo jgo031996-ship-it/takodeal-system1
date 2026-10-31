@@ -120,13 +120,23 @@ test('legacy operational authority remains while new rate metadata is protected'
     assert.match(remittances, /allow create: if mallHandover\(newData\(\)\);/);
     assert.doesNotMatch(remittances, /allow (?:update|delete|write)/);
     assert.equal(body(legacy, 'function legacyCandidate(').trim(), `return root.matches('^(${expectedLegacyNames.join('|')})$');`);
+    // The legacy literal authority unions are unchanged. Their new deny-only
+    // count guard keeps ordinary point reads of old counts, while every count
+    // LIST and every v3 point read require scoped inventory authority. V3 count
+    // creation must pair its immutable report; updates/deletes cannot bypass it.
+    const countGuards = {
+        read: "(legacyCollection != 'stock_counts' || request.method == 'get' && (resource == null || oldData().get('version',0) != 3) || stockAuditReader(oldData().get('branch',''))) && ",
+        create: "(legacyCollection != 'stock_counts' || newData().get('version',0) != 3 || stockAuditSourceCreate(newData(),legacyDocument)) && ",
+        update: "(legacyCollection != 'stock_counts' || oldData().get('version',0) != 3 && newData().get('version',0) != 3) && ",
+        delete: "(legacyCollection != 'stock_counts' || oldData().get('version',0) != 3) && "
+    };
     for (const method of ['read', 'create', 'update', 'delete']) {
         const expression = new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(flatLegacy)?.[1];
         assert.ok(expression, `Missing legacy ${method} policy`);
         const setupGuard = method === 'read' ? '' : method === 'create'
             ? 'staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && '
             : `staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),${method === 'delete' ? '{}' : 'newData()'}) && `;
-        const prefix = 'legacyCandidate(legacyCollection) && ' + setupGuard + '(';
+        const prefix = 'legacyCandidate(legacyCollection) && ' + countGuards[method] + setupGuard + '(';
         assert.ok(expression.startsWith(prefix) && expression.endsWith(')'), 'Every legacy method must retain the exact deny-only prefix');
         const union = expression.slice(prefix.length, -1);
         const clause = /\(legacyCollection in \[([^\]]+)\](?: && (isHQUser|isOwner)\(\))?\)/g;

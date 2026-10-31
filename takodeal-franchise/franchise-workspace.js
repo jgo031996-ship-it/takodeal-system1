@@ -19,16 +19,17 @@ import {buildFranchisePayslip} from './franchise-payroll-model.js';
 import {installFranchisePayslipUI} from './franchise-payslip-ui.js';
 import {installFranchiseItemPicker} from './franchise-item-picker.js';
 import {installFranchisePayrollControls} from './franchise-payroll-controls.js';
+import {installStockAudits} from './stock-audit-ui.js';
 
 export function installFranchiseWorkspace(api) {
  const $=id=>document.getElementById(id),state={route:'dashboard',generation:0,loaded:new Map(),inventory:new Map(),cart:[],cartBranch:'',pending:0,schedule:null,charts:[]};
- let payslips,payslipScope,payrollControls;
+ let payslips,payslipScope,payrollControls,stockAudits;
  const session=()=>{const s=api.sessionUser;if (!s || !s.allowedBranches?.includes(s.branch)) throw new Error('Sign in and select an assigned branch.');return s;};
  const accountScope=()=>{const s=session();return JSON.stringify([api.auth?.currentUser?.uid,s.email,s.branch,s.cashierName,s.allowedBranches,s.permissions]);};
  const payrollContext=()=>JSON.stringify([accountScope(),payrollControls.getRange()]);
  const reader=createFranchiseReads(api,{scope:accountScope});
  const hq=installFranchiseHQUI(api,{document,session,getRoute:()=>state.route,read:(...args)=>read(...args),refresh:route=>api.switchView(route),onError:showActionError});api.franchiseHQ=hq;
- api.clearFranchiseReadRequests=()=>{reader.reset();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();payrollControls?.reset();};
+ api.clearFranchiseReadRequests=()=>{reader.reset();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();stockAudits?.dispose();payrollControls?.reset();};
  const selectedRange=()=>range($('globalStartDate').value,$('globalEndDate').value);
  const element=(tag,cls,text)=>{const el=document.createElement(tag);el.className=cls || '';if(text!=null)el.textContent=text;return el;};
  function button(text,action,cls='secondary-button') {const el=element('button',cls,text);el.type='button';el.addEventListener('click',()=>Promise.resolve(action()).catch(showActionError));return el;}
@@ -90,10 +91,10 @@ export function installFranchiseWorkspace(api) {
  api.switchView=async route=>{
   if(!ROUTES[route])throw new Error('This page is unavailable.');if(!canVisit(api.sessionUser,route))throw new Error('This page is outside your assigned access.');
   if(state.schedule?.dirty && route!=='schedule' && state.route==='schedule') {const answer=await Swal.fire({title:'Keep unsaved schedule?',text:'Stay here to save your changes, or leave without saving.',showCancelButton:true,confirmButtonText:'Stay and save',cancelButtonText:'Leave without saving'});if(answer.isConfirmed)return;state.schedule=null;}
-  if(state.route!==route){if(state.pending)throw Error('Wait for the current save to finish before changing pages.');hq.stop();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();}state.route=route;
+  if(state.route!==route){if(state.pending)throw Error('Wait for the current save to finish before changing pages.');hq.stop();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();stockAudits?.dispose();}state.route=route;
   for(const [key,meta] of Object.entries(ROUTES)){$('view-'+key).classList.toggle('active',key===route);const nav=$('nav-'+key);nav.classList.toggle('active',key===route);nav.setAttribute('aria-current',key===route?'page':'false');}
   for(const group of ['hr','inventory']) {const active=ROUTES[route][4]===group;$('nav-'+group).classList.toggle('active',active);$(group+'Submenu').classList.toggle('open',active);$('nav-'+group).setAttribute('aria-expanded',String(active));if(active)$('sidebar').classList.remove('collapsed');}
-  $('pageTitle').textContent=ROUTES[route][0];$('pageDescription').textContent=ROUTES[route][1];$('headingBranch').textContent='/ '+session().branch;$('globalDateControls').hidden=route==='payroll'||!ROUTES[route][3];
+  $('pageTitle').textContent=ROUTES[route][0];$('pageDescription').textContent=ROUTES[route][1];$('headingBranch').textContent='/ '+session().branch;$('globalDateControls').hidden=route==='payroll'||route==='inv-audits'||!ROUTES[route][3];
   $('sidebar').classList.remove('show-mobile');$('drawerBackdrop').hidden=true;
   await api[ROUTES[route][2]]();hq.start();
  };
@@ -188,7 +189,12 @@ export function installFranchiseWorkspace(api) {
   const rows=(await inventory()).sort((a,b)=>itemName(a).localeCompare(itemName(b))),c=table(r,'Live stock levels',['Item','Category','Current stock','Status']);
   tools(c,'inv-overview',rows,i=>'<tr>'+cell(`<strong>${esc(itemName(i))}</strong>`)+cell(esc(i.category || 'Uncategorized'))+cell(`<strong class="${stockQty(i)<0?'negative':''}">${stockQty(i).toLocaleString('en-PH',{maximumFractionDigits:3})}</strong> ${esc(i.uom || 'units')}`)+cell(badge(lowStock(i)?'Low stock':'In stock',lowStock(i)?'warning':''))+'</tr>',{category:true});
  });
- for(const [route,type] of [['inv-audits','Audit'],['inv-waste','Waste']])define(route,async r=>{
+ define('inv-audits',async r=>{
+  const host=element('section');state.auditHost=host;r.append(host);stockAudits ||= installStockAudits(api,document,{container:()=>state.auditHost,scope:accountScope,authorize:branch=>session().branch===branch&&canVisit(session(),'inv-audits')});
+  const branch=session().branch,previous=stockAudits.current;await stockAudits.load({branch,...(previous?.branch===branch?{cycle:previous.cycle,from:previous.from,to:previous.to}:{cycle:'Weekly'})});
+  const legacy=element('section','card-body');legacy.append(element('h3','', 'Earlier single-item audit tool'),element('p','notice','Use Cashier Stock Report for shared Weekly or Monthly count reports. This older tool records one inventory adjustment; find its history under All cycles & earlier counts.'),button('Record a single-item adjustment · legacy',()=>api.openAuditModal()));r.append(legacy);
+ });
+ for(const [route,type] of [['inv-waste','Waste']])define(route,async r=>{
   const rows=(await read('inventory_logs',{time:'timestamp',...selectedRange()})).filter(e=>e.type===type).sort((a,b)=>ms(b.timestamp)-ms(a.timestamp));
   const c=table(r,type==='Audit'?'Physical stock audits':'Waste records',type==='Audit'?['Date','Item','System count','Actual count','Variance','Audited by']:['Date','Item','Quantity wasted','Reason','Logged by']);c.head.append(button(type==='Audit'?'Perform audit':'Log waste',()=>type==='Audit'?api.openAuditModal():api.openWasteModal(), 'primary-button'));
   tools(c,route,rows,e=>'<tr>'+cell(esc(dateText(e.timestamp)))+cell(esc(e.itemName))+ (type==='Audit'?cell(esc(e.systemQty)+' '+esc(e.unit))+cell(esc(e.actualQty)+' '+esc(e.unit))+cell(esc(e.variance)):cell(esc(e.qtyWasted)+' '+esc(e.unit))+cell(esc(e.reason)))+cell(esc(e.loggedBy))+'</tr>');
