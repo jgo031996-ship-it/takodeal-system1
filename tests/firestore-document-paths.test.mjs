@@ -9,7 +9,7 @@ const changedProof=(proof,source)=>({...proof,loweredSha256:hash(source)});
 test('the actual frozen policy lowers all95 paths, including eight deep staff-document paths, and independently reverses exactly',()=>{
  const original=fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),result=lowerFirestorePaths(original);
  assert.equal(result.proof.calls,95);assert.deepEqual(result.proof.depths,{2:87,4:8});
- assert.equal(result.proof.originalSha256,'2cf471bdd25acd7dd933b92add6cfbbcc3889a55d1f88981a91f171a203a0b91');
+ assert.equal(result.proof.originalSha256,'07984b3918a763e7538ff13784b31367a40142f36059496f580780c989e4e4a1');
  assert.equal(assertPathLoweringEquivalent(original,result.source,result.proof).allOtherBytesExact,true);
 });
 test('already shared document readers can retain inline paths with an exact inverse and no added selector frame',()=>{

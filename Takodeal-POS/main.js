@@ -2,6 +2,8 @@ import {createStockAuditDeviceResolver} from './stock-audit-device.js';
 import {installCashRemittance} from './cash-remittance-ui.js';
 import {createCashierDeviceAuthContext} from './cashier-device-auth.js';
 import {installCashierDeviceSetup} from './cashier-device-setup.js';
+import {createCashierBranchRecovery,beginCashierOwnerPreview,refreshCashierBranchLabel,cashierStartupBusy,hasCashierOwnerPreview} from './cashier-startup.js';
+import {installCashierAppearance} from './cashier-appearance.js';
 import {installCycleCounts} from './stock-count-ui.js';
 import {installCashierScheduleProposals} from './cashier-schedule-proposals.js';
 import {installPOSSettingsHub} from './pos-settings-hub.js';
@@ -63,7 +65,9 @@ window.mobileOrderFirebaseUid = () => auth.currentUser?.uid || '';
 const provider = new GoogleAuthProvider();
 window.installPOSSettings = () => {
     window.posLeaveRequests ||= installPOSLeaveRequests(window,document,{primaryAuth:auth});
-    return installPOSSettingsHub(window,document,{primaryAuth:auth});
+    const result=installPOSSettingsHub(window,document,{primaryAuth:auth});
+    window.mountCashierAppearanceSettings?.();
+    return result;
 };
 // ========================================================
 // 🌍 GLOBAL GPS GEOFENCING CONFIGURATION
@@ -5300,24 +5304,8 @@ window.toggleMobileOrderingStatus = async function() {
 // ==========================================
 // 📍 UI INITIALIZATION: LOGIN SCREEN BRANCH DISPLAY
 // ==========================================
-document.addEventListener("DOMContentLoaded", () => {
-    // 🔥 THE FIX: Tell it to look for the exact memory key your Setup Engine uses!
-    let savedBranch = localStorage.getItem("takodeal_device_branch");
-    
-    let branchDisplay = document.getElementById("loginBranchDisplay");
-    
-    if (branchDisplay) {
-        if (savedBranch) {
-            // It found the branch! Display it and remove the red warning color.
-            branchDisplay.innerText = `📍 ${savedBranch}`;
-            branchDisplay.style.color = "#fca5a5"; // A nice soft red/orange to match your UI
-        } else {
-            // If the tablet hasn't been registered to a branch yet
-            branchDisplay.innerText = `📍 Unassigned Device`;
-            branchDisplay.style.color = "#ef4444"; // Turns bright red to alert you!
-        }
-    }
-});
+function initializeSavedCashierBranch(){refreshCashierBranchLabel(window,document);}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initializeSavedCashierBranch,{once:true});else initializeSavedCashierBranch();
 
 // ========================================================
 // 🤖 ULTRA AI: AUTONOMOUS 7-DAY FORECASTER & RESTOCK ENGINE
@@ -8143,12 +8131,14 @@ window.submitSignature = async function(announcementId) {
 // ========================================================
 // 🏆 LIVE GAMIFICATION LEADERBOARD (LOGIN SCREEN)
 // ========================================================
-window.fetchLoginRanking = async function() {
+let cashierLoginRankingPending=null,cashierLoginRankingCache={scope:'',at:0,retryAfter:0};
+window.fetchLoginRanking = function() {
     let widget = document.getElementById('loginRankingWidget');
     let listEl = document.getElementById('loginRankingList');
     let quoteEl = document.getElementById('loginRankingQuote');
     
     if (!widget || !listEl || !quoteEl) return;
+    if(document.documentElement.dataset.cashierRanking!=='true'){widget.style.display='none';return Promise.resolve({skipped:true});}
 
     let myBranch = localStorage.getItem('takodeal_device_branch');
     if (!myBranch) return; // Hide widget if device isn't registered yet
@@ -8157,6 +8147,12 @@ window.fetchLoginRanking = async function() {
     let loginOverlay = document.getElementById('loginOverlay');
     if (loginOverlay && loginOverlay.style.display === 'none') return;
 
+    const rankingScope=myBranch+'|'+new Date(Date.now()+8*3600000).toISOString().slice(0,10),now=Date.now();
+    if(cashierLoginRankingPending)return cashierLoginRankingPending;
+    if(cashierLoginRankingCache.scope===rankingScope&&(cashierLoginRankingCache.at>0&&now-cashierLoginRankingCache.at<10*60*1000||now<cashierLoginRankingCache.retryAfter))return Promise.resolve({cached:true});
+    const current=()=>document.documentElement.dataset.cashierRanking==='true'&&localStorage.getItem('takodeal_device_branch')===myBranch&&loginOverlay?.style.display!=='none'&&rankingScope===myBranch+'|'+new Date(Date.now()+8*3600000).toISOString().slice(0,10);
+    cashierLoginRankingCache={scope:rankingScope,at:0,retryAfter:0};
+    const promise=(async()=>{
     widget.style.display = 'block';
 
     try {
@@ -8177,6 +8173,7 @@ window.fetchLoginRanking = async function() {
         const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 5000));
         
         const snap = await Promise.race([fetchPromise, timeoutPromise]);
+        if(!current())return;
 
         // Ensure this branch is always on the board, even if sales are 0
         let salesByBranch = {};
@@ -8241,16 +8238,21 @@ window.fetchLoginRanking = async function() {
             quoteEl.style.color = "#bae6fd";
         }
 
+        cashierLoginRankingCache.at=Date.now();
     } catch (e) {
+        if(!current())return;cashierLoginRankingCache.retryAfter=Date.now()+60000;
         // 🔥 THE FIX 3: Fail gracefully if the timeout hits!
         console.warn("Leaderboard paused due to slow network:", e);
         listEl.innerHTML = '<div style="font-size: 13px; color: #fca5a5; font-weight: bold; text-align: center; padding: 10px 0;">Leaderboard syncing...</div>';
         quoteEl.innerHTML = "Keep pushing!";
     }
+    })().finally(()=>{if(cashierLoginRankingPending===promise)cashierLoginRankingPending=null;});
+    cashierLoginRankingPending=promise;return promise;
 };
+window.refreshLoginRankingPreference=()=>{const widget=document.getElementById('loginRankingWidget');if(document.documentElement.dataset.cashierRanking!=='true'){if(widget)widget.style.display='none';return Promise.resolve({skipped:true});}return window.fetchLoginRanking();};
 
 // Start the Leaderboard Engine
-setTimeout(window.fetchLoginRanking, 2000); // Run once on boot
+setTimeout(()=>{window.cashierLoginRankingBootChecked=true;window.refreshLoginRankingPreference();},2000); // Opt-in only; never query hidden rankings.
 
 // ==========================================
 // 🔪 KITCHEN PREP ENGINE & CART SYSTEM (UNIFIED)
@@ -9241,22 +9243,26 @@ document.addEventListener("DOMContentLoaded", () => {
 window.ownerBypassLogin = async function() {
     try {
         // 1. Trigger Google Login
-        provider.setCustomParameters({ prompt: 'select_account' });
+        if(cashierStartupBusy(window))throw Error('Finish or park the order and sign out before opening Owner Access. Keep pending cash handovers on this tablet.');
+        const ownerAppName='takodeal-pos-owner-preview-v1';
+        const ownerApp=getApps().find(app=>app.name===ownerAppName)||initializeApp(firebaseConfig,ownerAppName);
+        if(['projectId','appId','apiKey','authDomain'].some(key=>ownerApp.options?.[key]!==firebaseConfig[key]))throw Error('Owner Access belongs to a different project. Ask HQ to review the app.');
+        const ownerAuth=getAuth(ownerApp),ownerDb=getFirestore(ownerApp),ownerProvider=new GoogleAuthProvider();
+        ownerProvider.setCustomParameters({prompt:'select_account'});
         Swal.fire({title: 'Authenticating Master Key...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         
-        const result = await signInWithPopup(auth, provider);
+        const result = await signInWithPopup(ownerAuth, ownerProvider);
         const user = result.user;
         
         // 2. Strict Security Check: Only YOUR email is allowed through this backdoor
-        if (user.email !== 'jgo031996@gmail.com') {
-            await auth.signOut();
+        if (user.email !== 'jgo031996@gmail.com' || user.emailVerified !== true) {
             return Swal.fire('Access Denied', 'This Google account does not have Master Key privileges.', 'error');
         }
 
         // 3. SUCCESS! Fetch active branches to let the Owner choose where to "teleport"
         Swal.fire({title: 'Fetching Network...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
         
-        const bSnap = await window.getDocs(window.query(window.collection(window.db, "branches")));
+        const bSnap = await window.getDocs(window.query(window.collection(ownerDb, "branches")));
         let branchOptions = {};
         
         bSnap.forEach(doc => {
@@ -9287,18 +9293,21 @@ window.ownerBypassLogin = async function() {
             }
         });
 
-        // If you clicked cancel, sign out and stop.
+        // If the dialog is cancelled, keep both saved accounts signed in.
         if (!selectedBranch) {
-            await auth.signOut();
             return;
         }
 
-        // 5. Setup the test credentials & Teleport!
+        // Recheck the exact Owner identity after the branch dialog before
+        // changing any local preview state. Cashier sign-in is kept separate.
+        if(ownerAuth.currentUser!==user||user.email!=='jgo031996@gmail.com'||user.emailVerified!==true)throw Error('The Owner account changed. Reopen Owner Access before starting a branch preview.');
+        // 5. Save the original tablet branch before entering the preview.
+        beginCashierOwnerPreview(window,selectedBranch);
+        refreshCashierBranchLabel(window,document);
         localStorage.setItem('cashierName', 'Owner (System Test)');
-        localStorage.setItem('takodeal_device_branch', selectedBranch); // 🔥 Overwrites the tablet's location!
         
         // 6. Forcefully destroy the login screen UI
-        let loginScreen = document.getElementById('loginScreen') || document.querySelector('.login-container');
+        let loginScreen = document.getElementById('loginOverlay');
         let pinOverlay = document.getElementById('pinOverlay');
         
         if (loginScreen) loginScreen.style.display = 'none';
@@ -9909,7 +9918,11 @@ window.compressImage = function(file, maxWidth = 800, maxHeight = 800, quality =
 // Keep legacy close controls on the same atomic settlement path.
 window.submitComprehensiveCloseShift = (...args) => window.MASTER_CloseShift(...args);
 
-installCashierDeviceSetup(window,document,{deviceContext:cashierDeviceContext,signInAnonymously});
+const cashierStartupRecovery=createCashierBranchRecovery(window,document,{deviceContext:cashierDeviceContext});
+window.restoreCashierPhysicalBranch=options=>cashierStartupRecovery.recover(options);
+installCashierDeviceSetup(window,document,{deviceContext:cashierDeviceContext,signInAnonymously,beforePrepare:window.restoreCashierPhysicalBranch,repairBranchMismatch:()=>window.restoreCashierPhysicalBranch({force:true})});
+installCashierAppearance(window,document,{getDocFromServer,doc,db});
+(hasCashierOwnerPreview(window)?window.restoreCashierPhysicalBranch():Promise.resolve()).catch(()=>{}).finally(()=>{refreshCashierBranchLabel(window,document);window.cashierStartupReady=true;const button=document.getElementById('btnSubmitPin');if(button){button.disabled=hasCashierOwnerPreview(window);button.removeAttribute('aria-busy');}document.querySelectorAll('[data-cashier-startup-lock]').forEach(control=>{control.disabled=false;});const note=document.getElementById('cashierStartupStatus');if(note){note.hidden=!hasCashierOwnerPreview(window);note.textContent=note.hidden?'':'Reconnect to end the Owner branch preview before staff sign in. Owner Access remains available.';}});
 installCycleCounts(window,document);
 installCashierScheduleProposals(window,document,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext,projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey});
 window.cashierScheduleSync = installScheduleViewSync(window, {window, document,
