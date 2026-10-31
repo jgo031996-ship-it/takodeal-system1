@@ -302,6 +302,7 @@ export function createSaleEngine(api) {
                 tx.set(saleRef, {
                     ...sale, timestamp: new Date(payload.localTimestamp),
                     inventoryState: deferred ? 'deferred' : 'applied',
+                    inventoryAppliedAt: deferred ? null : serverTimestamp(),
                     inventoryIssues: issues, recipeIssues, inventoryReviewRequired: issues.length > 0 || recipeIssues.length > 0,
                     ballsCounted, statsApplied: true
                 });
@@ -400,7 +401,7 @@ export function createSaleEngine(api) {
                 for (const row of rows) {
                     tx.update(row.inventoryRef, { currentStock: increment(row.movement.quantity) });
                     tx.set(ref('stock_logs', safeId(saleRef.id + '-void-' + row.movement.inventoryId)), {
-                        branch, item: row.movement.ingredientName, uom: row.snapshot.data().uom || 'units',
+                        branch, inventoryId:row.movement.inventoryId, sourceSaleId:saleRef.id, sourceReceiptId:receiptId, operationId:'void-'+saleRef.id, item: row.movement.ingredientName, uom: row.snapshot.data().baseUom || row.snapshot.data().uom || 'units',
                         oldQty: row.stock, newQty: row.stock + row.movement.quantity, variance: row.movement.quantity,
                         type: 'Transaction Voided', note: `Receipt ${receiptId} voided by ${cashier}`,
                         user: cashier, timestamp: serverTimestamp()

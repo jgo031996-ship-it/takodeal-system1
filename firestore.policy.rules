@@ -19,9 +19,9 @@ service cloud.firestore {
     function reqVerified() { return request.auth.token.get('email_verified', false); }
     function paidKeys() { return ['paidAt','payrollRecordId','partialPaid','amountPaid','payrollFrozen']; }
     function inactiveStaff() { return ['Blocked', 'Revoked', 'Terminated', 'Resigned', 'Inactive', 'Disabled', 'Archived', 'Deleted']; }
-    function rateKeys() { return ['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision']; }
-    function privatePoKeys() { return ['dispatchInvoice','deliveryReceipt','supplyInvoice','requestedByEmail']; }
-    function legacyCandidate(root) { return root.matches('^(account_logs|archived_months|bom|branches|budgets|cash_accounts|customer_app_categories|daily_metrics|dispatch_logs|equipment_assets|expenses|foodpanda_payouts|franchise_accounts|franchise_budgets|franchise_comms|franchise_ledger|global_addons|grab_payouts|hq_restocks|inventory|manager_alerts|menu|parked_orders|payables|pos_devices|rider_topups|riders|shift_swaps|shifts|sop_logs|staff_bonuses|staff_ledger|staff_requests|stock_counts|stock_logs|suppliers|yield_logs)$'); }
+
+
+    function legacyCandidate(root) { return root.matches('^(account_logs|archived_months|bom|branches|budgets|cash_accounts|customer_app_categories|daily_metrics|dispatch_logs|equipment_assets|expenses|foodpanda_payouts|franchise_accounts|franchise_budgets|franchise_comms|franchise_ledger|global_addons|grab_payouts|hq_restocks|inventory|manager_alerts|menu|parked_orders|payables|pos_devices|rider_topups|riders|shift_swaps|shifts|sop_logs|staff_bonuses|staff_ledger|staff_requests|stock_logs|suppliers|yield_logs)$'); }
     function isHQUser() { return isSignedIn(); }
     function offlineOwner() {
       return isSignedIn() && request.auth.token.get('email', '') == 'jgo031996@gmail.com'
@@ -67,40 +67,10 @@ service cloud.firestore {
       let path = /databases/$(database)/documents/pos_bindings/$(uid);
       return eligible && exists(path) && get(path).data.status == 'Active';
     }
-    function freshCashier(branch) {
-      let lease = readData('cashier_leases',branch);
-      return lease.get('seenAt', null) is timestamp
-        && lease.seenAt <= reqTime()
-        && reqTime() < lease.seenAt + duration.value(3, 'm')
-        && approvedUID(lease.get('uid', ''), branch);
-    }
-    function admittedCustomer(data) {
-      let branch = data.get('branch', '');
-      let state = get(/databases/$(database)/documents/settings/$('status_' + branch)).data;
-      return isSignedIn() && reqVerified() == true
-        && data.get('customerEmail', '') == request.auth.token.get('email', '')
-        && data.get('status', '') == 'mobile_queue'
-        && data.get('paymentStatus', 'unpaid') != 'paid'
-        && data.get('totalAmount', -1) is number && data.totalAmount >= 0
-        && data.get('items', []) is list && data.items.size() > 0
-        && state.get('mobileOrdersActive', true) == true && freshCashier(branch);
-    }
-    function incomingCreate(data) {
-      let branch = data.get('branch', '');
-      return !offlineGate(branch) || trustedPOS(branch) || verifiedHQ(branch) || admittedCustomer(data);
-    }
-    function incomingUpdate(before, after) {
-      let oldBranch = before.get('branch', '');
-      let newBranch = after.get('branch', '');
-      return (!offlineGate(oldBranch) && !offlineGate(newBranch))
-        || (oldBranch == newBranch && (trustedPOS(oldBranch) || verifiedHQ(oldBranch)
-          || !after.diff(before).affectedKeys().hasAny([
-            'branch', 'items', 'totalAmount', 'customerEmail', 'customerName',
-            'orderCode', 'orderType', 'contactNumber', 'deliveryAddress', 'mapLink',
-            'preferredTime', 'paymentMode', 'paymentReference', 'changeFor',
-            'deliveryFee', 'timestamp'
-          ])));
-    }
+
+
+
+
     // Sale-safety compatibility. Keep the existing staged branch policy.
     function saleWriter(branch) {
       return branch is string && branch.size() > 0
@@ -118,143 +88,17 @@ service cloud.firestore {
       return value is number ? value
         : value is string && value.trim().matches('^[+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$') ? float(value.trim()) : -1;
     }
-    function cancelledFoodChargeLink(data, id) {
-      let purchase = transactionAfter(id);
-      // The receipt create rule validates both this charge and its source
-      // transition atomically. A prior receipt cannot authorize a new charge.
-      return data.purchaseId == id && !exists(/databases/$(database)/documents/transactions/$(id))
-        && purchase.get('cancelledFoodSourceId', '') != ''
-        && purchase.branch == data.branch && purchase.cancelledFoodStaffId == data.staffId
-        && purchase.customerName == data.staffName && purchase.netTotal == data.amount
-        && (purchase.get('cancelledFoodPortionVersion',0) != 1 || data.purchasedItems == purchase.cart);
-    }
+
     // One serialized allocation map per original receipt makes concurrent
     // partial purchases mutually exclusive without re-consuming ingredients.
-    function portionLine(source, purchase, prior, next, slot, percent) {
-      let chosen = purchase.cancelledFoodSelection[slot];
-      let original = source.cart[chosen.lineIndex];
-      let item = purchase.cart[slot];
-      let quantity = original.qty;
-      let key = string(chosen.lineIndex);
-      let previous = prior.get(key, 0);
-      let total = original.get('lineTotalFinal', null) != null ? math.round(original.lineTotalFinal * 100)
-        : math.round(original.get('price', original.get('variantPrice', original.get('basePrice', 0))) * original.qty * 100);
-      let start = math.round(total * previous / quantity);
-      let end = math.round(total * (previous + chosen.qty) / quantity);
-      return chosen == {'lineIndex':chosen.lineIndex,'qty':chosen.qty,'allocationId':source.saleId,
-          'priorPurchasedQty':previous,'baseCents':end-start,
-          'discountCents':math.round(end * percent / 100.0)-math.round(start * percent / 100.0)}
-        && chosen.lineIndex is int && chosen.lineIndex >= 0
-        && (slot == 0 || chosen.lineIndex > purchase.cancelledFoodSelection[slot - 1].lineIndex)
-        && quantity is int && quantity > 0 && quantity <= 100000
-        && chosen.qty is int && chosen.qty > 0 && previous is int && previous >= 0
-        && previous + chosen.qty <= quantity && next.get(key, 0) == previous + chosen.qty
-        && total >= 0 && total <= 10000000000
-        && item.diff(original).affectedKeys().hasOnly(['qty','lineTotalFinal','sourceLineIndex','sourceOriginalQty','baseAmount','discountAmount','amount'])
-        && item.qty == chosen.qty && item.lineTotalFinal == chosen.baseCents / 100.0
-        && item.sourceLineIndex == chosen.lineIndex
-        && item.sourceOriginalQty == quantity
-        && item.baseAmount == item.lineTotalFinal
-        && item.discountAmount == chosen.discountCents / 100.0
-        && item.amount == (chosen.baseCents-chosen.discountCents) / 100.0;
-    }
-    function portionProof(purchase, slot) {
-      return getAfter(/databases/$(database)/documents/cancelled_food_purchase_lines/$(purchase.saleId+'--'+string(slot))).data
-        == {'purchaseId':purchase.saleId,'sourceSaleId':purchase.cancelledFoodSourceId,'selectionSlot':slot};
-    }
-    function portionLines(source, purchase, prior, next) {
-      let selection = purchase.cancelledFoodSelection;
-      return selection is list && selection.size() > 0 && selection.size() <= 6
-        && purchase.cart is list && purchase.cart.size() == selection.size()
-        && next.diff(prior).affectedKeys().hasOnly([
-          string(selection[0].lineIndex),
-          selection.size() > 1 ? string(selection[1].lineIndex) : string(selection[0].lineIndex),
-          selection.size() > 2 ? string(selection[2].lineIndex) : string(selection[0].lineIndex),
-          selection.size() > 3 ? string(selection[3].lineIndex) : string(selection[0].lineIndex),
-          selection.size() > 4 ? string(selection[4].lineIndex) : string(selection[0].lineIndex),
-          selection.size() > 5 ? string(selection[5].lineIndex) : string(selection[0].lineIndex)])
-        && portionProof(purchase,0)
-        && (selection.size() < 2 || portionProof(purchase,1))
-        && (selection.size() < 3 || portionProof(purchase,2))
-        && (selection.size() < 4 || portionProof(purchase,3))
-        && (selection.size() < 5 || portionProof(purchase,4))
-        && (selection.size() < 6 || portionProof(purchase,5));
-    }
-    function cancelledPortionProof(data, id) {
-      let purchase=transactionAfter(data.purchaseId);
-      let source=transactionBefore(data.sourceSaleId);
-      let prior=exists(/databases/$(database)/documents/cancelled_food_allocations/$(data.sourceSaleId))
-        ? readData('cancelled_food_allocations',data.sourceSaleId).purchasedQuantities : {};
-      let ledger=nextData('cancelled_food_allocations',data.sourceSaleId);
-      let config=exists(/databases/$(database)/documents/settings/global_pos_config)
-        ? get(/databases/$(database)/documents/settings/global_pos_config).data : {};
-      return data.keys().hasOnly(['purchaseId','sourceSaleId','selectionSlot'])
-        && data.selectionSlot is int && data.selectionSlot>=0 && data.selectionSlot<6
-        && id==data.purchaseId+'--'+string(data.selectionSlot)
-        && !exists(/databases/$(database)/documents/transactions/$(data.purchaseId))
-        && purchase.cancelledFoodSourceId==data.sourceSaleId && purchase.cancelledFoodPortionVersion==1
-        && ledger.lastPurchaseId==data.purchaseId
-        && portionLine(source,purchase,prior,ledger.purchasedQuantities,data.selectionSlot,cancelledDiscount(config));
-    }
-    function cancelledPortionAllocation(data, sourceId) {
-      let source = transactionBefore(sourceId);
-      let purchase = transactionAfter(data.lastPurchaseId);
-      let prior = resource == null ? {} : oldData().purchasedQuantities;
-      return data.keys().hasOnly(['sourceSaleId','sourceReceiptId','branch','shiftId','purchasedQuantities','lastPurchaseId','updatedAt'])
-        && data.sourceSaleId == sourceId && data.sourceReceiptId == source.receiptId
-        && data.branch == source.branch && data.shiftId == source.shiftId && data.updatedAt == reqTime()
-        && data.purchasedQuantities is map && data.lastPurchaseId is string
-        && !exists(/databases/$(database)/documents/transactions/$(data.lastPurchaseId))
-        && purchase.cancelledFoodSourceId == sourceId && purchase.cancelledFoodPortionVersion == 1
-        && source.get('cancelledFoodPurchaseId', '') == '' && source.status == 'Voided'
-        && source.get('preparedCancellation', {}).get('prepared', false) == true
-        && portionLines(source,purchase,prior,data.purchasedQuantities);
-    }
-    function cancelledPolicyWrite(id, before, after) {
-      // Protect only this feature's policy fields. Existing unrelated settings
-      // and staged branch policy behavior remain compatible.
-      return id != 'global_pos_config'
-        || !after.diff(before).affectedKeys().hasAny(['cancelledFoodPurchaseEnabled', 'cancelledFoodDiscountPct'])
-        || ((offlineOwner() || verifiedHQ('All'))
-          && (!after.keys().hasAny(['cancelledFoodPurchaseEnabled']) || after.cancelledFoodPurchaseEnabled is bool)
-          && (!after.keys().hasAny(['cancelledFoodDiscountPct'])
-            || (after.cancelledFoodDiscountPct is number && after.cancelledFoodDiscountPct >= 0 && after.cancelledFoodDiscountPct <= 100)));
-    }
-    function saleCounterWrite() {
-      let after = newData();
-      let id = after.get('lastSaleId', '');
-      let branch = after.get('lastSaleBranch', '');
-      let direction = after.get('lastSaleDirection', 0);
-      let sale = transactionAfter(id);
-      let marker = nextData('pos_sale_commits',id);
-      let prior = exists(/databases/$(database)/documents/settings/global_stats) ? oldData() : {};
-      let beforeSale = exists(/databases/$(database)/documents/transactions/$(id))
-        ? transactionBefore(id) : {};
-      return saleWriter(branch) && id is string && id.size() > 0 && direction in [1, -1]
-        && sale.get('saleVersion', 0) == 2 && sale.saleId == id && sale.branch == branch
-        && marker.saleId == id && marker.branch == branch && marker.receiptId == sale.receiptId
-        && sale.ballsCounted is number && sale.ballsCounted > 0
-        && after.diff(prior).affectedKeys().hasOnly([
-          'totalTakoyakiBalls', 'balls_' + branch, 'lastSaleId', 'lastSaleBranch', 'lastSaleDirection'])
-        && after.totalTakoyakiBalls == prior.get('totalTakoyakiBalls', 0) + direction * sale.ballsCounted
-        && after.get('balls_' + branch, 0) == prior.get('balls_' + branch, 0) + direction * sale.ballsCounted
-        && ((direction == 1 && !exists(/databases/$(database)/documents/transactions/$(id))
-              && sale.get('status', '') != 'Voided')
-          || (direction == -1 && beforeSale.get('saleVersion', 0) == 2
-              && beforeSale.get('saleId', '') == id && beforeSale.get('branch', '') == branch
-              && beforeSale.get('ballsCounted', 0) == sale.ballsCounted
-              && beforeSale.get('status', '') != 'Voided' && sale.get('status', '') == 'Voided'));
-    }
-    function saleAuditWrite(id) {
-      let data = newData();
-      let branch = data.get('branch', '');
-      // The present branch names use ASCII letters, spaces, dots and hyphens.
-      // Other names keep the existing signed-in settings path.
-      return branch is string && branch.matches('[A-Za-z0-9 _.-]+')
-        && id == 'audit_' + branch.replace(' ', '%20').replace('[.]', '%2E')
-        && saleWriter(branch) && data.keys().hasOnly(['active', 'branch', 'updatedBy', 'updatedAt'])
-        && data.active is bool && data.updatedBy is string && data.updatedAt == reqTime();
-    }
+
+
+
+
+
+
+
+
     match /pos_sale_commits/{id} {
       // Missing markers must be readable before the first atomic sale commit.
       // Existing legacy-branch receipts already have public reads in this policy.
@@ -387,6 +231,54 @@ service cloud.firestore {
 
     match /hq_managers/{managerId} { allow read: if isSignedIn(); allow write: if isOwner(); }
     match /settings/{docId} {
+      function cancelledPolicyWrite(id, before, after) {
+      // Protect only this feature's policy fields. Existing unrelated settings
+      // and staged branch policy behavior remain compatible.
+      return id != 'global_pos_config'
+        || !after.diff(before).affectedKeys().hasAny(['cancelledFoodPurchaseEnabled', 'cancelledFoodDiscountPct'])
+        || ((offlineOwner() || verifiedHQ('All'))
+          && (!after.keys().hasAny(['cancelledFoodPurchaseEnabled']) || after.cancelledFoodPurchaseEnabled is bool)
+          && (!after.keys().hasAny(['cancelledFoodDiscountPct'])
+            || (after.cancelledFoodDiscountPct is number && after.cancelledFoodDiscountPct >= 0 && after.cancelledFoodDiscountPct <= 100)));
+    }
+
+      function saleCounterWrite() {
+      let after = newData();
+      let id = after.get('lastSaleId', '');
+      let branch = after.get('lastSaleBranch', '');
+      let direction = after.get('lastSaleDirection', 0);
+      let sale = transactionAfter(id);
+      let marker = nextData('pos_sale_commits',id);
+      let prior = exists(/databases/$(database)/documents/settings/global_stats) ? oldData() : {};
+      let beforeSale = exists(/databases/$(database)/documents/transactions/$(id))
+        ? transactionBefore(id) : {};
+      return saleWriter(branch) && id is string && id.size() > 0 && direction in [1, -1]
+        && sale.get('saleVersion', 0) == 2 && sale.saleId == id && sale.branch == branch
+        && marker.saleId == id && marker.branch == branch && marker.receiptId == sale.receiptId
+        && sale.ballsCounted is number && sale.ballsCounted > 0
+        && after.diff(prior).affectedKeys().hasOnly([
+          'totalTakoyakiBalls', 'balls_' + branch, 'lastSaleId', 'lastSaleBranch', 'lastSaleDirection'])
+        && after.totalTakoyakiBalls == prior.get('totalTakoyakiBalls', 0) + direction * sale.ballsCounted
+        && after.get('balls_' + branch, 0) == prior.get('balls_' + branch, 0) + direction * sale.ballsCounted
+        && ((direction == 1 && !exists(/databases/$(database)/documents/transactions/$(id))
+              && sale.get('status', '') != 'Voided')
+          || (direction == -1 && beforeSale.get('saleVersion', 0) == 2
+              && beforeSale.get('saleId', '') == id && beforeSale.get('branch', '') == branch
+              && beforeSale.get('ballsCounted', 0) == sale.ballsCounted
+              && beforeSale.get('status', '') != 'Voided' && sale.get('status', '') == 'Voided'));
+    }
+
+      function saleAuditWrite(id) {
+      let data = newData();
+      let branch = data.get('branch', '');
+      // The present branch names use ASCII letters, spaces, dots and hyphens.
+      // Other names keep the existing signed-in settings path.
+      return branch is string && branch.matches('[A-Za-z0-9 _.-]+')
+        && id == 'audit_' + branch.replace(' ', '%20').replace('[.]', '%2E')
+        && saleWriter(branch) && data.keys().hasOnly(['active', 'branch', 'updatedBy', 'updatedAt'])
+        && data.active is bool && data.updatedBy is string && data.updatedAt == reqTime();
+    }
+
       function disciplinePolicyFields(level) { return level.keys().hasOnly(['id','label','suspensionDays']) && level.size() == 3; }
       function disciplineLevels(levels) {
         let size = levels.size();
@@ -444,42 +336,14 @@ service cloud.firestore {
     // Staff setup credentials and bindings are server-owned. A public fleet
     // mirror never grants activation; the immutable private device index also
     // reserves deleted IDs so removing public markers cannot reopen a write.
-    function staffSetupProtected(id, data) {
-      return data.keys().hasAny(['setupVersion','setupUid'])
-        || exists(/databases/$(database)/documents/staff_app_device_index/$(id));
-    }
+
     // Cash handovers and receipt postings are service-owned. These guards only
     // restrict legacy writes; they do not grant additional financial access.
-    function protectedCashRecord(root, id, data) {
-      return root in ['expenses','account_logs'] && (
-        id.matches('remittance-manual-v4-.*') || data.get('cashPolicyVersion',0) == 4
-        || data.get('remittanceVersion',0) == 4 || data.get('receiptPolicyVersion',0) == 4
-        || (root == 'expenses' && ((data.get('remittanceId','') != '' && data.get('remittanceId','') != null)
-          || (data.get('cashMovement','') is string && data.get('cashMovement','').trim().lower() == 'remittance')
-          || (data.get('category','') is string && data.get('category','').trim().lower() == 'cash remittance')
-          || (data.get('description','') is string && data.get('description','').matches('^\\[REMITTANCE TO HQ\\].*')))));
-    }
-    function cashShiftCreate(data) {
-      return !data.keys().hasAny(['expectedRetainedCash','lastCashRemittanceId','cashReconciliationVersion','cashRemittanceRevision','manualRemittanceCashOut']);
-    }
-    function cashShiftChange(before, after) {
-      return !after.diff(before).affectedKeys().hasAny(['expectedRetainedCash','lastCashRemittanceId','cashReconciliationVersion','cashRemittanceRevision','manualRemittanceCashOut'])
-        && (before.get('cashReconciliationVersion',0) != 4 || (before.get('active',false) == true
-          && !after.diff(before).affectedKeys().hasAny(['branch','startTime','startingCash'])));
-    }
-    function staffSetupCreateAllowed(root, id, data) {
-      return !protectedCashRecord(root,id,data) && (root != 'shifts' || cashShiftCreate(data))
-        && (root != 'pos_devices' || (!staffSetupProtected(id, data)
-        && !(data.get('appType','') == 'Staff'
-          && exists(/databases/$(database)/documents/staff_app_setup_config/current)
-          && readData('staff_app_setup_config','current').get('enabled',false) == true)));
-    }
-    function staffSetupExistingAllowed(root, id, before, after) {
-      return !protectedCashRecord(root,id,before) && !protectedCashRecord(root,id,after)
-        && (root != 'shifts' || cashShiftChange(before,after))
-        && (root != 'pos_devices' || (!staffSetupProtected(id, before)
-          && !staffSetupProtected(id, after)));
-    }
+
+
+
+
+
 
     // The verification service alone submits and decides proposals. Approval
     // and the canonical dated revision are committed in one server transaction.
@@ -512,17 +376,57 @@ service cloud.firestore {
     }
     // Exact legacy one-document policies. No default grant or recursive path.
     match /{legacyCollection}/{legacyDocument} {
-      allow read: if legacyCandidate(legacyCollection) && ((legacyCollection in ['account_logs','bom','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','global_addons','grab_payouts','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests','stock_counts','stock_logs'])
+      function staffSetupProtected(id, data) {
+      return data.keys().hasAny(['setupVersion','setupUid'])
+        || exists(/databases/$(database)/documents/staff_app_device_index/$(id));
+    }
+
+      function protectedCashRecord(root, id, data) {
+      return root in ['expenses','account_logs'] && (
+        id.matches('remittance-manual-v4-.*') || data.get('cashPolicyVersion',0) == 4
+        || data.get('remittanceVersion',0) == 4 || data.get('receiptPolicyVersion',0) == 4
+        || (root == 'expenses' && ((data.get('remittanceId','') != '' && data.get('remittanceId','') != null)
+          || (data.get('cashMovement','') is string && data.get('cashMovement','').trim().lower() == 'remittance')
+          || (data.get('category','') is string && data.get('category','').trim().lower() == 'cash remittance')
+          || (data.get('description','') is string && data.get('description','').matches('^\\[REMITTANCE TO HQ\\].*')))));
+    }
+
+      function cashShiftCreate(data) {
+      return !data.keys().hasAny(['expectedRetainedCash','lastCashRemittanceId','cashReconciliationVersion','cashRemittanceRevision','manualRemittanceCashOut']);
+    }
+
+      function cashShiftChange(before, after) {
+      return !after.diff(before).affectedKeys().hasAny(['expectedRetainedCash','lastCashRemittanceId','cashReconciliationVersion','cashRemittanceRevision','manualRemittanceCashOut'])
+        && (before.get('cashReconciliationVersion',0) != 4 || (before.get('active',false) == true
+          && !after.diff(before).affectedKeys().hasAny(['branch','startTime','startingCash'])));
+    }
+
+      function staffSetupCreateAllowed(root, id, data) {
+      return !protectedCashRecord(root,id,data) && (root != 'shifts' || cashShiftCreate(data))
+        && (root != 'pos_devices' || (!staffSetupProtected(id, data)
+        && !(data.get('appType','') == 'Staff'
+          && exists(/databases/$(database)/documents/staff_app_setup_config/current)
+          && readData('staff_app_setup_config','current').get('enabled',false) == true)));
+    }
+
+      function staffSetupExistingAllowed(root, id, before, after) {
+      return !protectedCashRecord(root,id,before) && !protectedCashRecord(root,id,after)
+        && (root != 'shifts' || cashShiftChange(before,after))
+        && (root != 'pos_devices' || (!staffSetupProtected(id, before)
+          && !staffSetupProtected(id, after)));
+    }
+
+      allow read: if legacyCandidate(legacyCollection) && ((legacyCollection in ['account_logs','bom','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','global_addons','grab_payouts','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','yield_logs'] && isHQUser()));
-      allow create: if legacyCandidate(legacyCollection) && staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_counts','stock_logs'])
+      allow create: if legacyCandidate(legacyCollection) && staffSetupCreateAllowed(legacyCollection,legacyDocument,newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isHQUser())
         || (legacyCollection in ['bom','global_addons','menu'] && isOwner()));
-      allow update: if legacyCandidate(legacyCollection) && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_counts','stock_logs'])
+      allow update: if legacyCandidate(legacyCollection) && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),newData()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','foodpanda_payouts','grab_payouts','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && isHQUser())
         || (legacyCollection in ['bom','global_addons'] && isOwner()));
       allow delete: if legacyCandidate(legacyCollection) && staffSetupExistingAllowed(legacyCollection,legacyDocument,oldData(),{}) && ((legacyCollection in ['branches','parked_orders'])
         || (legacyCollection in ['account_logs','budgets','cash_accounts','dispatch_logs','equipment_assets','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','hq_restocks','manager_alerts','payables','pos_devices','rider_topups','riders','shift_swaps','sop_logs','staff_bonuses','staff_ledger','staff_requests','yield_logs'] && isHQUser())
-        || (legacyCollection in ['bom','global_addons','inventory','menu','shifts','stock_counts','stock_logs'] && isOwner()));
+        || (legacyCollection in ['bom','global_addons','inventory','menu','shifts','stock_logs'] && isOwner()));
     }
     // Exact six-tree legacy HQ whitelist, retaining all preceding descendants.
     match /{legacyTree}/{legacyTail=**} {
@@ -754,12 +658,97 @@ service cloud.firestore {
       allow delete: if selectorTransactionsDelete(resource == null ? null : oldData());
     }
     match /cancelled_food_allocations/{sourceId} {
+      function portionProof(purchase, slot) {
+      return getAfter(/databases/$(database)/documents/cancelled_food_purchase_lines/$(purchase.saleId+'--'+string(slot))).data
+        == {'purchaseId':purchase.saleId,'sourceSaleId':purchase.cancelledFoodSourceId,'selectionSlot':slot};
+    }
+
+      function portionLines(source, purchase, prior, next) {
+      let selection = purchase.cancelledFoodSelection;
+      return selection is list && selection.size() > 0 && selection.size() <= 6
+        && purchase.cart is list && purchase.cart.size() == selection.size()
+        && next.diff(prior).affectedKeys().hasOnly([
+          string(selection[0].lineIndex),
+          selection.size() > 1 ? string(selection[1].lineIndex) : string(selection[0].lineIndex),
+          selection.size() > 2 ? string(selection[2].lineIndex) : string(selection[0].lineIndex),
+          selection.size() > 3 ? string(selection[3].lineIndex) : string(selection[0].lineIndex),
+          selection.size() > 4 ? string(selection[4].lineIndex) : string(selection[0].lineIndex),
+          selection.size() > 5 ? string(selection[5].lineIndex) : string(selection[0].lineIndex)])
+        && portionProof(purchase,0)
+        && (selection.size() < 2 || portionProof(purchase,1))
+        && (selection.size() < 3 || portionProof(purchase,2))
+        && (selection.size() < 4 || portionProof(purchase,3))
+        && (selection.size() < 5 || portionProof(purchase,4))
+        && (selection.size() < 6 || portionProof(purchase,5));
+    }
+
+      function cancelledPortionAllocation(data, sourceId) {
+      let source = transactionBefore(sourceId);
+      let purchase = transactionAfter(data.lastPurchaseId);
+      let prior = resource == null ? {} : oldData().purchasedQuantities;
+      return data.keys().hasOnly(['sourceSaleId','sourceReceiptId','branch','shiftId','purchasedQuantities','lastPurchaseId','updatedAt'])
+        && data.sourceSaleId == sourceId && data.sourceReceiptId == source.receiptId
+        && data.branch == source.branch && data.shiftId == source.shiftId && data.updatedAt == reqTime()
+        && data.purchasedQuantities is map && data.lastPurchaseId is string
+        && !exists(/databases/$(database)/documents/transactions/$(data.lastPurchaseId))
+        && purchase.cancelledFoodSourceId == sourceId && purchase.cancelledFoodPortionVersion == 1
+        && source.get('cancelledFoodPurchaseId', '') == '' && source.status == 'Voided'
+        && source.get('preparedCancellation', {}).get('prepared', false) == true
+        && portionLines(source,purchase,prior,data.purchasedQuantities);
+    }
+
       allow read: if true;
       // A fresh companion receipt authorizes the writer in its own create rule.
       allow create, update: if cancelledPortionAllocation(newData(),sourceId);
       allow delete: if false;
     }
     match /cancelled_food_purchase_lines/{lineId} {
+      function portionLine(source, purchase, prior, next, slot, percent) {
+      let chosen = purchase.cancelledFoodSelection[slot];
+      let original = source.cart[chosen.lineIndex];
+      let item = purchase.cart[slot];
+      let quantity = original.qty;
+      let key = string(chosen.lineIndex);
+      let previous = prior.get(key, 0);
+      let total = original.get('lineTotalFinal', null) != null ? math.round(original.lineTotalFinal * 100)
+        : math.round(original.get('price', original.get('variantPrice', original.get('basePrice', 0))) * original.qty * 100);
+      let start = math.round(total * previous / quantity);
+      let end = math.round(total * (previous + chosen.qty) / quantity);
+      return chosen == {'lineIndex':chosen.lineIndex,'qty':chosen.qty,'allocationId':source.saleId,
+          'priorPurchasedQty':previous,'baseCents':end-start,
+          'discountCents':math.round(end * percent / 100.0)-math.round(start * percent / 100.0)}
+        && chosen.lineIndex is int && chosen.lineIndex >= 0
+        && (slot == 0 || chosen.lineIndex > purchase.cancelledFoodSelection[slot - 1].lineIndex)
+        && quantity is int && quantity > 0 && quantity <= 100000
+        && chosen.qty is int && chosen.qty > 0 && previous is int && previous >= 0
+        && previous + chosen.qty <= quantity && next.get(key, 0) == previous + chosen.qty
+        && total >= 0 && total <= 10000000000
+        && item.diff(original).affectedKeys().hasOnly(['qty','lineTotalFinal','sourceLineIndex','sourceOriginalQty','baseAmount','discountAmount','amount'])
+        && item.qty == chosen.qty && item.lineTotalFinal == chosen.baseCents / 100.0
+        && item.sourceLineIndex == chosen.lineIndex
+        && item.sourceOriginalQty == quantity
+        && item.baseAmount == item.lineTotalFinal
+        && item.discountAmount == chosen.discountCents / 100.0
+        && item.amount == (chosen.baseCents-chosen.discountCents) / 100.0;
+    }
+
+      function cancelledPortionProof(data, id) {
+      let purchase=transactionAfter(data.purchaseId);
+      let source=transactionBefore(data.sourceSaleId);
+      let prior=exists(/databases/$(database)/documents/cancelled_food_allocations/$(data.sourceSaleId))
+        ? readData('cancelled_food_allocations',data.sourceSaleId).purchasedQuantities : {};
+      let ledger=nextData('cancelled_food_allocations',data.sourceSaleId);
+      let config=exists(/databases/$(database)/documents/settings/global_pos_config)
+        ? get(/databases/$(database)/documents/settings/global_pos_config).data : {};
+      return data.keys().hasOnly(['purchaseId','sourceSaleId','selectionSlot'])
+        && data.selectionSlot is int && data.selectionSlot>=0 && data.selectionSlot<6
+        && id==data.purchaseId+'--'+string(data.selectionSlot)
+        && !exists(/databases/$(database)/documents/transactions/$(data.purchaseId))
+        && purchase.cancelledFoodSourceId==data.sourceSaleId && purchase.cancelledFoodPortionVersion==1
+        && ledger.lastPurchaseId==data.purchaseId
+        && portionLine(source,purchase,prior,ledger.purchasedQuantities,data.selectionSlot,cancelledDiscount(config));
+    }
+
       allow read: if true;
       allow create: if cancelledPortionProof(newData(),lineId);
       allow update,delete: if false;
@@ -797,7 +786,9 @@ service cloud.firestore {
         && audit.exempt == marker.exempt && audit.reason == marker.reason && audit.actorUid == marker.actorUid
         && audit.actorEmail == marker.actorEmail && audit.reviewedAt == marker.reviewedAt;
     }
-    function amendmentReviewAudit(data, auditId) {
+
+    match /attendance_amendment_reviews/{auditId} {
+      function amendmentReviewAudit(data, auditId) {
       let path = /databases/$(database)/documents/attendance_logs/$(data.attendanceId);
       let before = get(path).data;
       let after = getAfter(path).data;
@@ -809,7 +800,7 @@ service cloud.firestore {
         && after.get('scheduleAmendmentReview',null) != before.get('scheduleAmendmentReview',null)
         && amendmentReviewMarker(after.scheduleAmendmentReview,before,data.attendanceId);
     }
-    match /attendance_amendment_reviews/{auditId} {
+
       allow read: if protectedHROwner();
       allow create: if amendmentReviewAudit(newData(),auditId);
       allow update, delete: if false;
@@ -826,6 +817,149 @@ service cloud.firestore {
       allow delete: if isHQUser() && !oldData().keys().hasAny(['scheduleAmendmentReview']);
     }
     match /store_use_logs/{document=**} { allow read, create, update: if true; allow delete: if isHQUser(); }
+    // These immutable reports retain the original count; opening a period view
+    // never writes another inventory adjustment. The operator is identified by
+    // the approved tablet session, not attested by a server PIN challenge.
+
+    // Exact stock-count rules keep the legacy v2 authority separate from the
+    // frozen v3 report. Their unrelated staff-setup guards are tautologies here.
+    match /stock_counts/{id} {
+      function stockCountReader(branch) {
+      let owner = protectedHROwner();
+      let email = isSignedIn() ? request.auth.token.get('email','') : '';
+      let path = /databases/$(database)/documents/hq_email_access/$(email);
+      let eligible = !owner && isSignedIn() && reqVerified() == true && reqProvider() == 'google.com';
+      let grant = eligible && exists(path) ? get(path).data : {};
+      return owner || trustedPOS(branch) || (grant.get('active',false) == true
+        && grant.get('permissions',[]).hasAny(['all','inventory','audits']) && grant.get('allowedBranches',[]).hasAny(['All',branch]));
+    }
+
+      function stockAuditSourceCreate(data,id) {
+        let report = nextData('inventory_audit_reports',id);
+        return !exists(/databases/$(database)/documents/inventory_audit_reports/$(id))
+          && report.version == 3 && report.id == id && data.get('source',null) == null && report.timestamp == reqTime();
+      }
+
+      allow get: if resource == null || oldData().get('version',0) != 3 || stockCountReader(oldData().get('branch',''));
+      allow list: if stockCountReader(oldData().get('branch',''));
+      allow create: if newData().get('version',0) != 3 || stockAuditSourceCreate(newData(),id);
+      allow update: if oldData().get('version',0) != 3 && newData().get('version',0) != 3;
+      allow delete: if isOwner() && oldData().get('version',0) != 3;
+    }
+    match /inventory_audit_reports/{id} {
+      function stockReportReader(branch) {
+      let owner = protectedHROwner();
+      let email = isSignedIn() ? request.auth.token.get('email','') : '';
+      let path = /databases/$(database)/documents/hq_email_access/$(email);
+      let eligible = !owner && isSignedIn() && reqVerified() == true && reqProvider() == 'google.com';
+      let grant = eligible && exists(path) ? get(path).data : {};
+      return owner || trustedPOS(branch) || (grant.get('active',false) == true
+        && grant.get('permissions',[]).hasAny(['all','inventory','audits']) && grant.get('allowedBranches',[]).hasAny(['All',branch]));
+    }
+
+      function stockAuditCreate(data,id) {
+        let source = nextData('stock_counts',id);
+        let staff = readData('cashiers',data.staffId);
+        let start = data.periodStart.split('-');
+        let end = data.periodEnd.split('-');
+        return (protectedHROwner() || trustedPOS(data.branch)) && protectedHRId(id) && protectedHRId(data.staffId)
+          && !exists(/databases/$(database)/documents/stock_counts/$(id)) && data.version == 3 && data.id == id
+          && data.keys().hasOnly(['version','id','intent','branch','cashier','staffId','actorUid','selectedCycle','periodStart','periodEnd','counts','timestamp','cutoff','source'])
+          && data.source == 'Cashier cycle count' && data.diff(source).affectedKeys().hasOnly(['source']) && !source.keys().hasAny(['source'])
+          && data.actorUid == reqUid() && data.timestamp == reqTime() && data.cutoff == reqTime()
+          && data.intent is string && data.intent.size() > 0 && data.intent.size() <= 500000
+          && data.counts is list && data.counts.size() > 0 && data.counts.size() <= 150
+          && data.selectedCycle in ['Weekly','Monthly','Daily','As Needed'] && protectedHRDate(data.periodStart) && protectedHRDate(data.periodEnd)
+          && data.periodStart <= data.periodEnd && timestamp.date(int(start[0]),int(start[1]),int(start[2])) - duration.value(8,'h') <= reqTime()
+          && timestamp.date(int(end[0]),int(end[1]),int(end[2])) + duration.value(16,'h') > reqTime()
+          && data.cashier == staff.cashierName && data.branch == staff.branch
+          && staff.get('active',true) != false && staff.get('archived',false) != true && staff.get('blocked',false) != true
+          && !(staff.get('status','').lower() in ['blocked','inactive','disabled','revoked','terminated','archived','resigned','deleted'])
+          && (!(staff.get('pin','') is string) || !(staff.get('pin','').upper() in ['REVOKED','BLOCKED']));
+      }
+
+      allow get: if resource == null ? protectedHROwner() || ownTrustedDevice() : stockReportReader(oldData().branch);
+      allow list: if stockReportReader(oldData().branch);
+      allow create: if stockAuditCreate(newData(),id);
+      allow update, delete: if false;
+    }
+
+    match /payment_reconciliation_settings/{id} {
+      function reconciliationProvider(data) {
+        return data.keys().hasOnly(['orderPrefixes','referencePrefixes','timeToleranceMinutes'])
+          && data.orderPrefixes is list && data.orderPrefixes.size() <= 10 && data.referencePrefixes is list && data.referencePrefixes.size() <= 10
+          && data.timeToleranceMinutes is int && data.timeToleranceMinutes >= 0 && data.timeToleranceMinutes <= 120;
+      }
+
+      function reconciliationSettings(data,before) {
+        return id == 'main' && protectedHROwner() && data.keys().hasOnly(['schemaVersion','revision','branchAliases','providers','updatedAt','updatedByUid','updatedByEmail'])
+          && data.schemaVersion == 1 && data.revision is int && data.revision == before.get('revision',0) + 1
+          && data.branchAliases is list && data.branchAliases.size() <= 60 && data.providers is map && data.providers.keys().hasOnly(['GCash','Grab','Foodpanda'])
+          && reconciliationProvider(data.providers.GCash) && reconciliationProvider(data.providers.Grab) && reconciliationProvider(data.providers.Foodpanda)
+          && data.updatedAt == reqTime() && data.updatedByUid == reqUid() && data.updatedByEmail == reqEmail();
+      }
+      allow get: if id == 'main' && protectedHROwner();
+      allow create, update: if reconciliationSettings(newData(),resource == null ? {} : oldData());
+      allow list, delete: if false;
+    }
+    match /payment_reconciliation_imports/{id} {
+      function reconciliationImportHash(value) { return value is string && value.matches('^[a-f0-9]{64}$'); }
+
+      allow read: if protectedHROwner();
+      allow create: if protectedHROwner() && reconciliationImportHash(id) && newData().keys().hasOnly(['schemaVersion','fileSha256','rowCount','createdAt','createdByUid','createdByEmail'])
+        && newData().schemaVersion == 1 && newData().fileSha256 == id && newData().rowCount is int && newData().rowCount > 0 && newData().rowCount <= 5000
+        && newData().createdAt == reqTime() && newData().createdByUid == reqUid() && newData().createdByEmail == reqEmail();
+      allow update, delete: if false;
+    }
+    match /payment_reconciliation_receipts/{id} {
+      function reconciliationReceiptHash(value) { return value is string && value.matches('^[a-f0-9]{64}$'); }
+
+      function reconciliationReceipt(data,id) {
+        let before = transactionBefore(id);
+        let after = transactionAfter(id);
+        let settings = readData('payment_reconciliation_settings','main');
+        let imported = nextData('payment_reconciliation_imports',data.fileSha256);
+        let day = data.day.split('-');
+        let midnight = timestamp.date(int(day[0]),int(day[1]),int(day[2])) - duration.value(8,'h');
+        return protectedHROwner() && protectedHRId(id) && data.transactionId == id && reconciliationReceiptHash(data.claimId) && reconciliationReceiptHash(data.fileSha256)
+          && data.keys().hasOnly(['schemaVersion','claimId','transactionId','fileSha256','provider','branch','day','grossCents','statementAt','sourceAt','sourceFingerprint','settingsRevision','verifiedAt','verifiedByUid','verifiedByEmail'])
+          && data.schemaVersion == 1 && data.provider in ['GCash','Grab','Foodpanda'] && reconciliationReceiptHash(data.sourceFingerprint)
+          && data.settingsRevision == settings.revision && imported.schemaVersion == 1 && imported.fileSha256 == data.fileSha256
+          && !exists(/databases/$(database)/documents/payment_reconciliation_rows/$(data.claimId)) && nextData('payment_reconciliation_rows',data.claimId) == data
+          && data.verifiedAt == reqTime() && data.verifiedByUid == reqUid() && data.verifiedByEmail == reqEmail()
+          && before.get('paymentVerified',false) != true && before.branch == data.branch && before.timestamp == data.sourceAt
+          && before.netTotal is number && before.netTotal > 0 && data.grossCents is int && data.grossCents == int(before.netTotal * 100 + 0.5)
+          && before.netTotal == data.grossCents / 100.0 && (data.provider == 'Foodpanda' ? before.paymentMethod.trim().lower() in ['foodpanda','food panda','panda'] : before.paymentMethod.trim().lower() == data.provider.lower())
+          && before.get('status','').trim().lower() in ['paid','complete','completed','settled','received']
+          && (before.get('paymentStatus',null) == null || before.paymentStatus.trim().lower() in ['paid','complete','completed','settled','received']) && before.get('isPendingSync',false) != true
+          && before.get('cancelledFoodSourceId','') == '' && before.get('preparedCancellation',null) == null
+          && before.get('cancelled',false) != true && before.get('canceled',false) != true && before.get('refunded',false) != true && before.get('refundAmount',0) <= 0
+          && (before.get('splitDetails',null) == null || before.splitDetails is list && before.splitDetails.size() == 0)
+          && (!exists(/databases/$(database)/documents/online_order_incidents/$('online-refund-' + id))
+            || readData('online_order_incidents','online-refund-' + id).status == 'Dismissed')
+          && data.statementAt is timestamp && data.sourceAt is timestamp && protectedHRDate(data.day)
+          && data.sourceAt >= midnight && data.sourceAt < midnight + duration.value(1,'d') && data.statementAt >= midnight && data.statementAt < midnight + duration.value(1,'d')
+          && data.statementAt >= data.sourceAt - duration.value(settings.providers[data.provider].timeToleranceMinutes,'m')
+          && data.statementAt <= data.sourceAt + duration.value(settings.providers[data.provider].timeToleranceMinutes,'m')
+          && after.diff(before).affectedKeys().hasOnly(['paymentVerified','verifiedBy','verifiedAt','paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile'])
+          && after.paymentVerified == true && after.verifiedBy == reqEmail() && after.verifiedAt == reqTime()
+          && after.paymentReconciliationVersion == 1 && after.paymentReconciliationId == data.claimId && after.paymentReconciliationFile == data.fileSha256;
+      }
+
+      allow read: if protectedHROwner();
+      allow create: if reconciliationReceipt(newData(),id);
+      allow update, delete: if false;
+    }
+    match /payment_reconciliation_rows/{id} {
+      function reconciliationRowHash(value) { return value is string && value.matches('^[a-f0-9]{64}$'); }
+
+      allow read: if protectedHROwner();
+      // A fresh reciprocal receipt invokes its full validation in this request.
+      allow create: if protectedHROwner() && reconciliationRowHash(id) && newData().claimId == id
+        && !exists(/databases/$(database)/documents/payment_reconciliation_receipts/$(newData().transactionId))
+        && nextData('payment_reconciliation_receipts',newData().transactionId) == newData();
+      allow update, delete: if false;
+    }
     match /inventory_logs/{document=**} { allow read, create, update: if true; allow delete: if isHQUser(); }
     function supplyAuthority(branch) {
       let owner = protectedHROwner();
@@ -886,6 +1020,8 @@ service cloud.firestore {
     // Existing POS stock-request history remains compatible. New priced orders
     // expose only a price-free logistics stub; invoices and signatures live above.
     match /purchase_orders/{poId} {
+      function privatePoKeys() { return ['dispatchInvoice','deliveryReceipt','supplyInvoice','requestedByEmail']; }
+
       function supplyStubCreate(data) {
         let full = nextData('franchise_supply_orders',poId);
         return supplyAuthority(data.branch) && data.keys().hasOnly(['quoteVersion','branch','status','type','requestedBy','timestamp','items'])
@@ -910,6 +1046,44 @@ service cloud.firestore {
       allow delete: if oldData().get('quoteVersion',0) != 2 && isHQUser();
     }
     match /incoming_orders/{orderId} {
+      function freshCashier(branch) {
+      let lease = readData('cashier_leases',branch);
+      return lease.get('seenAt', null) is timestamp
+        && lease.seenAt <= reqTime()
+        && reqTime() < lease.seenAt + duration.value(3, 'm')
+        && approvedUID(lease.get('uid', ''), branch);
+    }
+
+      function admittedCustomer(data) {
+      let branch = data.get('branch', '');
+      let state = get(/databases/$(database)/documents/settings/$('status_' + branch)).data;
+      return isSignedIn() && reqVerified() == true
+        && data.get('customerEmail', '') == request.auth.token.get('email', '')
+        && data.get('status', '') == 'mobile_queue'
+        && data.get('paymentStatus', 'unpaid') != 'paid'
+        && data.get('totalAmount', -1) is number && data.totalAmount >= 0
+        && data.get('items', []) is list && data.items.size() > 0
+        && state.get('mobileOrdersActive', true) == true && freshCashier(branch);
+    }
+
+      function incomingCreate(data) {
+      let branch = data.get('branch', '');
+      return !offlineGate(branch) || trustedPOS(branch) || verifiedHQ(branch) || admittedCustomer(data);
+    }
+
+      function incomingUpdate(before, after) {
+      let oldBranch = before.get('branch', '');
+      let newBranch = after.get('branch', '');
+      return (!offlineGate(oldBranch) && !offlineGate(newBranch))
+        || (oldBranch == newBranch && (trustedPOS(oldBranch) || verifiedHQ(oldBranch)
+          || !after.diff(before).affectedKeys().hasAny([
+            'branch', 'items', 'totalAmount', 'customerEmail', 'customerName',
+            'orderCode', 'orderType', 'contactNumber', 'deliveryAddress', 'mapLink',
+            'preferredTime', 'paymentMode', 'paymentReference', 'changeFor',
+            'deliveryFee', 'timestamp'
+          ])));
+    }
+
       allow read: if true;
       allow create: if incomingCreate(newData());
       allow update: if incomingUpdate(oldData(), newData());
@@ -971,44 +1145,8 @@ service cloud.firestore {
         && data.projectionDailyRate == (data.appliesNow ? legacy.toDailyRate : legacy.fromDailyRate)
         && after.diff(before).affectedKeys().hasOnly(['hourlyRate','staffRateAuditId','latestRateRaise','salaryRateVersion','salaryRateRevision']);
     }
-    function staffSalaryWrite(id, before, after) {
-      let auditId = after.revisionId;
-      let auditPath = /databases/$(database)/documents/staff_rate_changes/$(auditId);
-      let audit = getAfter(auditPath).data;
-      let profilePath = /databases/$(database)/documents/cashiers/$(id);
-      let priorRate = exists(profilePath) ? staffRateValue(get(profilePath).data) : null;
-      let oldRates = before.get('rates', {});
-      return after.keys().hasOnly(['version','staffId','branch','baselineDailyRate','rates','revision','revisionId','updatedAt','updatedByUid'])
-        && after.version == 1 && after.staffId == id && staffRateHQ(after.branch)
-        && (!before.keys().hasAny(['branch']) || before.branch == after.branch || staffRateHQ(before.branch))
-        && staffRateValid(after.baselineDailyRate)
-        && (audit.keys().hasAny(['legacyAuditId'])
-          ? (!before.keys().hasAny(['version']) && staffRateLegacyCorrection(audit,get(profilePath).data,getAfter(profilePath).data) && after.baselineDailyRate == audit.fromDailyRate)
-          : after.baselineDailyRate == before.get('baselineDailyRate',priorRate))
-        && after.revision is int && after.revision == before.get('revision',0) + 1
-        && after.revisionId is string && after.revisionId.matches('^[A-Za-z0-9_-]{1,128}$')
-        && after.rates is map && after.rates.size() <= 500
-        && !exists(auditPath) && audit.version == 2 && audit.staffId == id && audit.branch == after.branch
-        && audit.rateRevision == after.revision && audit.actorUid == reqUid() && audit.recordedAt == reqTime()
-        && (audit.rateChange ? (!oldRates.keys().hasAny([auditId]) && after.rates.size() == oldRates.size() + 1
-          && after.rates.diff(oldRates).affectedKeys().hasOnly([auditId])
-          && after.rates[auditId] == {'dailyRate':audit.toDailyRate,'effectiveDate':audit.effectiveDate,'sequence':after.revision}) : after.rates == oldRates)
-        && after.updatedAt == reqTime() && after.updatedByUid == reqUid();
-    }
-    function staffRateProfileLink(id, before, after) {
-      let auditId = after.get('staffRateAuditId', '');
-      let path = /databases/$(database)/documents/staff_rate_changes/$(auditId);
-      let audit = getAfter(path).data;
-      return auditId is string && auditId.matches('^[A-Za-z0-9_-]{1,128}$')
-        && !exists(path) && staffRateHQ(after.get('branch', ''))
-        && (!before.keys().hasAny(['branch']) || before.branch == after.branch || staffRateHQ(before.branch))
-        && audit.staffId == id && audit.branch == after.branch
-        && audit.actorUid == reqUid() && audit.recordedAt == reqTime()
-        && (audit.get('version',0) == 2
-          ? (after.get('salaryRateVersion',0) == 1 && after.salaryRateRevision == auditId
-            && after.get('latestRateRaise',null) == staffRateDatedMarker(before,audit,auditId))
-          : after.get('salaryRateVersion',0) != 1 && after.get('latestRateRaise', null) == staffRateMarker(before, audit.eventType, auditId));
-    }
+
+
     match /staff_rate_changes/{auditId} {
       function staffRateEvent(before, after) {
         return before == null || before == 0 ? 'baseline'
@@ -1075,13 +1213,43 @@ service cloud.firestore {
       allow update, delete: if false;
     }
     match /staff_salary_rates/{staffId} {
+      function staffSalaryWrite(id, before, after) {
+      let auditId = after.revisionId;
+      let auditPath = /databases/$(database)/documents/staff_rate_changes/$(auditId);
+      let audit = getAfter(auditPath).data;
+      let profilePath = /databases/$(database)/documents/cashiers/$(id);
+      let priorRate = exists(profilePath) ? staffRateValue(get(profilePath).data) : null;
+      let oldRates = before.get('rates', {});
+      return after.keys().hasOnly(['version','staffId','branch','baselineDailyRate','rates','revision','revisionId','updatedAt','updatedByUid'])
+        && after.version == 1 && after.staffId == id && staffRateHQ(after.branch)
+        && (!before.keys().hasAny(['branch']) || before.branch == after.branch || staffRateHQ(before.branch))
+        && staffRateValid(after.baselineDailyRate)
+        && (audit.keys().hasAny(['legacyAuditId'])
+          ? (!before.keys().hasAny(['version']) && staffRateLegacyCorrection(audit,get(profilePath).data,getAfter(profilePath).data) && after.baselineDailyRate == audit.fromDailyRate)
+          : after.baselineDailyRate == before.get('baselineDailyRate',priorRate))
+        && after.revision is int && after.revision == before.get('revision',0) + 1
+        && after.revisionId is string && after.revisionId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && after.rates is map && after.rates.size() <= 500
+        && !exists(auditPath) && audit.version == 2 && audit.staffId == id && audit.branch == after.branch
+        && audit.rateRevision == after.revision && audit.actorUid == reqUid() && audit.recordedAt == reqTime()
+        && (audit.rateChange ? (!oldRates.keys().hasAny([auditId]) && after.rates.size() == oldRates.size() + 1
+          && after.rates.diff(oldRates).affectedKeys().hasOnly([auditId])
+          && after.rates[auditId] == {'dailyRate':audit.toDailyRate,'effectiveDate':audit.effectiveDate,'sequence':after.revision}) : after.rates == oldRates)
+        && after.updatedAt == reqTime() && after.updatedByUid == reqUid();
+    }
+
       allow read: if request.method == 'get' && resource == null ? staffRateHQAny()
         : staffRateHQ(oldData().branch) || (request.method == 'get' && docVaultOwn(staffId));
 
       allow create, update: if staffSalaryWrite(staffId, resource == null ? {} : oldData(), newData());
       allow delete: if false;
     }
-    function onboardingResult(data, before, after, staffId) {
+
+
+
+
+    match /staff_onboarding_reviews/{auditId} {
+      function onboardingResult(data, before, after, staffId) {
       let start = data.action == 'confirm-start';
       let result = data.result;
       let prior = start ? before.get('onboardingStartConfirmation',null) : before.get('contractTerms',{}).get('initial',null);
@@ -1104,7 +1272,8 @@ service cloud.firestore {
             && after.contractTerms.diff(before.get('contractTerms',{})).affectedKeys().hasOnly(['initial'])
             && after.diff(before).affectedKeys().hasOnly(['contractTerms','contractStatus'])));
     }
-    function onboardingSource(data) {
+
+      function onboardingSource(data) {
       let source = readData('attendance_logs',data.sourceAttendanceId);
       let at = source.get('timestamp',null);
       let date = data.action == 'confirm-start' ? data.result.date : data.result.startDate;
@@ -1114,7 +1283,8 @@ service cloud.firestore {
         && (at + duration.value(8,'h')).year() == int(parts[0])
         && (at + duration.value(8,'h')).month() == int(parts[1]) && (at + duration.value(8,'h')).day() == int(parts[2]);
     }
-    function onboardingAudit(data,auditId) {
+
+      function onboardingAudit(data,auditId) {
       let path = /databases/$(database)/documents/cashiers/$(data.staffId);
       let before = get(path).data;
       let after = getAfter(path).data;
@@ -1128,7 +1298,30 @@ service cloud.firestore {
         && data.recordedAt == reqTime() && data.recordedByUid == reqUid() && data.recordedBy == reqEmail()
         && onboardingResult(data,before,after,data.staffId);
     }
-    function onboardingProfileLink(id,before,after) {
+
+      allow read: if protectedHROwner();
+      allow create: if onboardingAudit(newData(),auditId);
+      allow update, delete: if false;
+    }
+    match /cashiers/{cashierId} {
+      function rateKeys() { return ['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision']; }
+
+      function staffRateProfileLink(id, before, after) {
+      let auditId = after.get('staffRateAuditId', '');
+      let path = /databases/$(database)/documents/staff_rate_changes/$(auditId);
+      let audit = getAfter(path).data;
+      return auditId is string && auditId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && !exists(path) && staffRateHQ(after.get('branch', ''))
+        && (!before.keys().hasAny(['branch']) || before.branch == after.branch || staffRateHQ(before.branch))
+        && audit.staffId == id && audit.branch == after.branch
+        && audit.actorUid == reqUid() && audit.recordedAt == reqTime()
+        && (audit.get('version',0) == 2
+          ? (after.get('salaryRateVersion',0) == 1 && after.salaryRateRevision == auditId
+            && after.get('latestRateRaise',null) == staffRateDatedMarker(before,audit,auditId))
+          : after.get('salaryRateVersion',0) != 1 && after.get('latestRateRaise', null) == staffRateMarker(before, audit.eventType, auditId));
+    }
+
+      function onboardingProfileLink(id,before,after) {
       let start = after.diff(before).affectedKeys().hasAny(['onboardingStartConfirmation']);
       let result = start ? after.onboardingStartConfirmation : after.contractTerms.initial;
       let path = /databases/$(database)/documents/staff_onboarding_reviews/$(result.auditId);
@@ -1139,12 +1332,7 @@ service cloud.firestore {
         && audit.action == (start ? 'confirm-start' : 'initial-contract')
         && audit.recordedAt == reqTime() && audit.recordedByUid == reqUid() && audit.recordedBy == reqEmail();
     }
-    match /staff_onboarding_reviews/{auditId} {
-      allow read: if protectedHROwner();
-      allow create: if onboardingAudit(newData(),auditId);
-      allow update, delete: if false;
-    }
-    match /cashiers/{cashierId} {
+
       allow read: if true;
       function selectorCashiersCreate(data) {
         return isHQUser() && !data.keys().hasAny(['rateHistory','onboardingStartConfirmation','contractTerms'])
@@ -1175,56 +1363,10 @@ service cloud.firestore {
         && grant.get('allowedBranches', []) is list
         && grant.allowedBranches.hasAny(['All', branch]));
     }
-    function earlyTimeOutApproval(data, id) {
-      let pending = readData('staff_requests',id);
-      let reviewed = nextData('staff_requests',id);
-      let start = readData('attendance_logs',data.timeInLogId);
-      let person = readData('cashiers',data.staffId);
-      return earlyTimeOutHQ(data.branch)
-        && data.keys().hasOnly(['schemaVersion', 'requestId', 'requestVersion', 'requestToken', 'decision',
-          'staffId', 'staffName', 'branch', 'timeInLogId', 'timeInAt', 'scheduledEndAt', 'scheduleFingerprint',
-          'requestedDepartureAt', 'reviewedByUid', 'reviewedByEmail', 'reviewedAt', 'validUntil', 'reviewNote'])
-        && data.schemaVersion == 1 && data.requestId == id && id.matches('^early-[a-f0-9]{64}$')
-        && data.requestVersion is int && data.requestVersion > 0
-        && data.requestToken is string && data.requestToken.matches('^[A-Za-z0-9_-]{8,120}$')
-        && data.decision in ['Approved', 'Rejected'] && pending.type == 'Early Time Out'
-        && pending.status == 'Pending' && reviewed.status == data.decision
-        && data.requestVersion == pending.requestVersion && data.requestToken == pending.requestToken
-        && data.staffId == pending.staffId && data.staffName == pending.staffName && data.branch == pending.branch
-        && data.timeInLogId == pending.timeInLogId && data.timeInAt == pending.timeInAt
-        && data.scheduledEndAt == pending.scheduledEndAt && data.scheduleFingerprint == pending.scheduleFingerprint
-        && data.requestedDepartureAt == pending.requestedDepartureAt
-        && reviewed.diff(pending).affectedKeys().hasOnly(['status', 'processedAt', 'processedBy', 'managerReply', 'staffAcknowledged'])
-        && reviewed.processedAt == reqTime() && reviewed.processedBy == reqEmail()
-        && reviewed.managerReply == data.reviewNote && reviewed.staffAcknowledged == false
-        && data.staffId is string && data.staffName is string && data.branch is string
-        && data.timeInLogId is string && data.timeInAt is string && data.scheduleFingerprint is string
-        && start.type == 'TIME IN' && start.branch == data.branch && start.timestamp is timestamp
-        && start.get('deleted', false) != true && !(start.get('status', '') in ['Voided', 'Cancelled'])
-        && (start.get('staffId', '') == data.staffId || (start.get('staffId', '') == '' && start.staffName == person.cashierName))
-        && person.cashierName == data.staffName && person.get('active', true) != false
-        && person.get('archived', false) != true && person.get('blocked', false) != true
-        && !(person.get('status', '') in inactiveStaff())
-        && data.reviewedByUid == reqUid() && data.reviewedByEmail == reqEmail()
-        && data.reviewedAt == reqTime() && data.reviewNote is string && data.reviewNote.size() <= 1500
-        && (data.decision == 'Rejected' ? data.validUntil == null
-          : data.scheduledEndAt is string && data.validUntil is timestamp && data.validUntil > reqTime()
-            && data.validUntil <= reqTime() + duration.value(30, 'm')
-            && data.validUntil <= start.timestamp + duration.value(24, 'h'));
-    }
+
     // PIN-based attendance clients may read only a known request's decision.
     // They cannot manufacture an authoritative HQ approval through staff_requests.
-    function emergencyShiftHQAny() {
-      let email = isSignedIn() ? request.auth.token.get('email', '') : '';
-      let path = /databases/$(database)/documents/hq_email_access/$(email);
-      let owner = offlineOwner();
-      let eligible = !owner && isSignedIn() && reqVerified() == true;
-      let grant = eligible && exists(path) ? get(path).data : {};
-      return owner || (grant.get('active', false) == true
-        && grant.get('permissions', []) is list
-        && grant.permissions.hasAny(['all', 'payroll', 'inbox'])
-        && grant.get('allowedBranches', []) is list && grant.allowedBranches.size() > 0);
-    }
+
     function emergencyShiftOrigin(data, id) {
       let start = readData('attendance_logs',id);
       let person = readData('cashiers',data.staffId);
@@ -1261,7 +1403,12 @@ service cloud.firestore {
         && data.reviewedByUid == reqUid() && data.reviewedByEmail == request.auth.token.get('email', '').lower()
         && data.reviewedAt == reqTime() && earlyTimeOutHQ(data.branch) && emergencyShiftOrigin(data, id);
     }
-    function emergencyShiftWrite(id, before, after) {
+
+
+    // Staff/POS need only the minimal confirmation for their known Time In.
+    // Detailed emergency reasons remain private in the immutable HQ audit.
+    match /attendance_shift_confirmations/{timeInId} {
+      function emergencyShiftWrite(id, before, after) {
       let eventPath = /databases/$(database)/documents/attendance_shift_confirmation_events/$(after.revisionId);
       let event = getAfter(eventPath).data;
       return emergencyShiftHead(after, id) && !exists(eventPath) && event.head == after
@@ -1272,7 +1419,25 @@ service cloud.firestore {
           && after.timeInLogId == before.timeInLogId && after.timeInAt == before.timeInAt
           && after.sourceFingerprint == before.sourceFingerprint && after.revisionId != before.revisionId));
     }
-    function emergencyShiftEvent(data, id) {
+
+      allow get: if true;
+      allow list, delete: if false;
+      allow create, update: if emergencyShiftWrite(timeInId, resource == null ? {} : oldData(), newData());
+    }
+    match /attendance_shift_confirmation_events/{revisionId} {
+      function emergencyShiftHQAny() {
+      let email = isSignedIn() ? request.auth.token.get('email', '') : '';
+      let path = /databases/$(database)/documents/hq_email_access/$(email);
+      let owner = offlineOwner();
+      let eligible = !owner && isSignedIn() && reqVerified() == true;
+      let grant = eligible && exists(path) ? get(path).data : {};
+      return owner || (grant.get('active', false) == true
+        && grant.get('permissions', []) is list
+        && grant.permissions.hasAny(['all', 'payroll', 'inbox'])
+        && grant.get('allowedBranches', []) is list && grant.allowedBranches.size() > 0);
+    }
+
+      function emergencyShiftEvent(data, id) {
       let headPath = /databases/$(database)/documents/attendance_shift_confirmations/$(data.head.timeInLogId);
       let pending = readData('staff_requests',data.requestId);
       let outId = data.requestId.replace('^early-', 'time-out-');
@@ -1291,19 +1456,50 @@ service cloud.firestore {
         && pending.timeInLogId == data.head.timeInLogId
         && !exists(/databases/$(database)/documents/attendance_logs/$(outId));
     }
-    // Staff/POS need only the minimal confirmation for their known Time In.
-    // Detailed emergency reasons remain private in the immutable HQ audit.
-    match /attendance_shift_confirmations/{timeInId} {
-      allow get: if true;
-      allow list, delete: if false;
-      allow create, update: if emergencyShiftWrite(timeInId, resource == null ? {} : oldData(), newData());
-    }
-    match /attendance_shift_confirmation_events/{revisionId} {
+
       allow get: if resource == null ? emergencyShiftHQAny() : earlyTimeOutHQ(oldData().head.branch);
       allow list, update, delete: if false;
       allow create: if emergencyShiftEvent(newData(), revisionId);
     }
     match /attendance_time_out_approvals/{requestId} {
+      function earlyTimeOutApproval(data, id) {
+      let pending = readData('staff_requests',id);
+      let reviewed = nextData('staff_requests',id);
+      let start = readData('attendance_logs',data.timeInLogId);
+      let person = readData('cashiers',data.staffId);
+      return earlyTimeOutHQ(data.branch)
+        && data.keys().hasOnly(['schemaVersion', 'requestId', 'requestVersion', 'requestToken', 'decision',
+          'staffId', 'staffName', 'branch', 'timeInLogId', 'timeInAt', 'scheduledEndAt', 'scheduleFingerprint',
+          'requestedDepartureAt', 'reviewedByUid', 'reviewedByEmail', 'reviewedAt', 'validUntil', 'reviewNote'])
+        && data.schemaVersion == 1 && data.requestId == id && id.matches('^early-[a-f0-9]{64}$')
+        && data.requestVersion is int && data.requestVersion > 0
+        && data.requestToken is string && data.requestToken.matches('^[A-Za-z0-9_-]{8,120}$')
+        && data.decision in ['Approved', 'Rejected'] && pending.type == 'Early Time Out'
+        && pending.status == 'Pending' && reviewed.status == data.decision
+        && data.requestVersion == pending.requestVersion && data.requestToken == pending.requestToken
+        && data.staffId == pending.staffId && data.staffName == pending.staffName && data.branch == pending.branch
+        && data.timeInLogId == pending.timeInLogId && data.timeInAt == pending.timeInAt
+        && data.scheduledEndAt == pending.scheduledEndAt && data.scheduleFingerprint == pending.scheduleFingerprint
+        && data.requestedDepartureAt == pending.requestedDepartureAt
+        && reviewed.diff(pending).affectedKeys().hasOnly(['status', 'processedAt', 'processedBy', 'managerReply', 'staffAcknowledged'])
+        && reviewed.processedAt == reqTime() && reviewed.processedBy == reqEmail()
+        && reviewed.managerReply == data.reviewNote && reviewed.staffAcknowledged == false
+        && data.staffId is string && data.staffName is string && data.branch is string
+        && data.timeInLogId is string && data.timeInAt is string && data.scheduleFingerprint is string
+        && start.type == 'TIME IN' && start.branch == data.branch && start.timestamp is timestamp
+        && start.get('deleted', false) != true && !(start.get('status', '') in ['Voided', 'Cancelled'])
+        && (start.get('staffId', '') == data.staffId || (start.get('staffId', '') == '' && start.staffName == person.cashierName))
+        && person.cashierName == data.staffName && person.get('active', true) != false
+        && person.get('archived', false) != true && person.get('blocked', false) != true
+        && !(person.get('status', '') in inactiveStaff())
+        && data.reviewedByUid == reqUid() && data.reviewedByEmail == reqEmail()
+        && data.reviewedAt == reqTime() && data.reviewNote is string && data.reviewNote.size() <= 1500
+        && (data.decision == 'Rejected' ? data.validUntil == null
+          : data.scheduledEndAt is string && data.validUntil is timestamp && data.validUntil > reqTime()
+            && data.validUntil <= reqTime() + duration.value(30, 'm')
+            && data.validUntil <= start.timestamp + duration.value(24, 'h'));
+    }
+
       allow get: if true;
       allow list, delete: if false;
       function selectorAttendanceTimeOutApprovalsCreateUpdate(data,before) {
@@ -1475,7 +1671,77 @@ service cloud.firestore {
       allow update: if selectorHrSanctionsUpdate(request.resource.data,resource == null ? null : resource.data);
       allow delete: if oldData().get('caseVersion',0) != 2 && isHQUser();
     }
-    match /payroll_records/{recordId} { allow read: if true;
+    match /payroll_records/{recordId} {
+      function ownerDeductionProtectedPayroll(payroll) {
+      return payroll.get('ownerDeductionSettlements',{}).size() > 0 || payroll.get('frozenData',{}).get('ownerDeductions',0) > 0 || payroll.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;
+    }
+
+      function ownerDeductionPayrollRow(item,map,details,recordId) {
+      let row = nextData('owner_deduction_reviews',item.id);
+      return item.keys().hasOnly(['id','amount']) && item.id is string && ownerDeductionId(item.id) && item.amount is number && item.amount > 0 && map[item.id] == item.amount
+        && row.status == 'Paid' && row.amount == item.amount && row.payrollRecordId == recordId && row.paidAt == reqTime();
+    }
+
+      function ownerDeductionTuple(rows,map,details,index,recordId) { return rows.size() <= index || ownerDeductionPayrollRow(rows[index],map,details,recordId); }
+
+      function ownerDeductionBankCents(value) { return value >= 0 ? int(value * 100 + 0.5) : -int(-value * 100 + 0.5); }
+
+      function ownerDeductionBankProof(payroll,recordId) {
+      let before = readData('cash_accounts',payroll.accountId);
+      let after = nextData('cash_accounts',payroll.accountId);
+      let expense = nextData('expenses',recordId);
+      return payroll.finalNetPay is number && payroll.finalNetPay >= 0 && before.balance is number && after.balance is number
+        && ownerDeductionBankCents(before.balance) - ownerDeductionBankCents(after.balance) == ownerDeductionBankCents(payroll.finalNetPay)
+        && expense.category == 'Payroll' && expense.payrollRecordId == recordId && expense.amount == payroll.finalNetPay && expense.timestamp == reqTime();
+    }
+
+      function ownerDeductionPayrollMetadata(payroll,recordId) {
+      let rows = payroll.get('frozenData',{}).get('ownerDeductionRows',[]);
+      let map = payroll.get('ownerDeductionSettlements',{});
+      let details = payroll.get('frozenData',{}).get('ownerDeductionDetails',[]);
+      return rows is list && rows.size() <= 4 && rows.toSet().size() == rows.size() && map is map && map.size() == rows.size()
+        && details is list && details.size() == rows.size()
+        && ownerDeductionTuple(rows,map,details,0,recordId) && ownerDeductionTuple(rows,map,details,1,recordId) && ownerDeductionTuple(rows,map,details,2,recordId) && ownerDeductionTuple(rows,map,details,3,recordId)
+        && payroll.get('frozenData',{}).get('ownerDeductions',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (rows.size() > 3 ? rows[3].amount : 0)
+        && (rows.size() == 0 || (ownerDeductionOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail()
+          && rows.size() + payroll.get('frozenData',{}).get('cashShortageRows',[]).size() + payroll.get('refundSettlements',{}).size() <= 4 && ownerDeductionBankProof(payroll,recordId)));
+    }
+
+      function cashShortagePayrollRow(item,map,recordId) {
+      let row = nextData('cash_shortage_reviews',item.id);
+      return item.keys().hasOnly(['id','amount']) && item.id is string && item.amount is number && item.amount > 0 && map[item.id] == item.amount
+        && row.status == 'Paid' && row.amount == item.amount && row.payrollRecordId == recordId && row.paidAt == reqTime();
+    }
+
+      function cashShortageRow(rows,map,index,recordId) { return rows.size() <= index || cashShortagePayrollRow(rows[index],map,recordId); }
+
+      function cashShortageProtectedPayroll(payroll) {
+      return payroll.get('cashShortageSettlements',{}).size() > 0 || payroll.get('frozenData',{}).get('cashShortages',0) > 0 || payroll.get('frozenData',{}).get('cashShortageRows',[]).size() > 0;
+    }
+
+      function cashShortageSignedAcknowledgment(before,after) {
+      return docVaultOwn(before.staffId) && before.get('acknowledged',false) == false
+        && after.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])
+        && after.acknowledged == true && after.acknowledgedAt == reqTime()
+        && after.signatureBase64 is string && after.signatureBase64.size() >= 64 && after.signatureBase64.size() <= 500000
+        && (after.signatureBase64.size() - 22) % 4 == 0
+        && after.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');
+    }
+
+      function cashShortagePayrollMetadata(payroll,recordId) {
+      let rows = payroll.get('frozenData',{}).get('cashShortageRows',[]);
+      let map = payroll.get('cashShortageSettlements',{});
+      let custom = payroll.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;
+      // Owner custom metadata already proves Owner, paid stamps and combined
+      // maximum four. It leaves room for at most three other protected rows.
+      return rows is list && rows.size() <= (custom ? 3 : 6) && rows.toSet().size() == rows.size()
+        && map is map && map.size() == rows.size()
+        && cashShortageRow(rows,map,0,recordId) && cashShortageRow(rows,map,1,recordId) && cashShortageRow(rows,map,2,recordId)
+        && (custom || (cashShortageRow(rows,map,3,recordId) && cashShortageRow(rows,map,4,recordId) && cashShortageRow(rows,map,5,recordId)))
+        && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (custom ? 0 : (rows.size() > 3 ? rows[3].amount : 0) + (rows.size() > 4 ? rows[4].amount : 0) + (rows.size() > 5 ? rows[5].amount : 0))
+        && (custom || rows.size() == 0 || (offlineOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail() && rows.size() + payroll.get('refundSettlements',{}).size() <= 6));
+    }
+ allow read: if true;
       function selectorPayrollRecordsCreate(data) {
         return ownerDeductionPayrollMetadata(data,recordId)
         && cashShortagePayrollMetadata(data,recordId)
@@ -1489,34 +1755,11 @@ service cloud.firestore {
       }
       allow update: if selectorPayrollRecordsUpdate(newData(),resource == null ? null : oldData());
       allow delete: if !recordId.matches('refund-payroll-.*') && !cashShortageProtectedPayroll(oldData()) && !ownerDeductionProtectedPayroll(oldData()) && isHQUser(); }
-    function onlineIncidentCharge(data, id) {
-      let row = nextData('online_order_incidents',id);
-      return offlineOwner() && data.type == 'Online Order Refund' && data.amount == 0
-        && data.category == 'Online Order Refunds' && data.status == 'Pending Review'
-        && data.incidentId == id && row.id == id && row.status == data.status
-        && data.staffId == row.staffId && data.staffName == row.staffName
-        && data.sourceSaleId == row.sourceSaleId && data.sourceReceiptId == row.sourceReceiptId
-        && data.sourcePlatform == row.sourcePlatform && data.proposedAmount == row.refundAmount
-        && data.dateAdded == reqTime() && data.loggedBy == reqEmail();
-    }
+
     // Owner-confirmed charges under the reviewed policy. Staff can respond only
     // through their existing approved private device; ledger amounts are immutable to Staff.
-    function directIncidentCharge(data,id) {
-      let row = nextData('online_order_incidents',id);
-      return offlineOwner() && row.version == 2 && data.type == 'Online Order Refund' && data.category == 'Online Order Refunds'
-        && data.incidentId == id && data.staffId == row.staffId && data.staffName == row.staffName
-        && data.branch == row.staffBranch && data.sourceBranch == row.branch && data.sourceSaleId == row.sourceSaleId
-        && data.sourceReceiptId == row.sourceReceiptId && data.sourcePlatform == row.sourcePlatform
-        && data.status == row.status && data.amount == row.amount && data.authorizedAmount == row.amount
-        && data.proposedAmount == row.refundAmount && data.noticeRevision == 1 && data.dateAdded == reqTime() && data.loggedBy == reqEmail();
-    }
-    function directChargeReview(before,after,id) {
-      let row = nextData('online_order_incidents',id);
-      return offlineOwner() && before.type == 'Online Order Refund' && before.status in ['Pending Review','Unpaid']
-        && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','noticeRevision','responseRecorded','reviewedAt','reviewedBy'])
-        && after.status == row.status && after.amount == row.amount && after.authorizedAmount == row.amount
-        && after.noticeRevision == before.get('noticeRevision',0) + 1 && row.reviewedAt == reqTime() && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail() && after.responseRecorded == true;
-    }
+
+
     function refundPaid(before,after,id) {
       let payroll = nextData('payroll_records',after.payrollRecordId);
       return offlineOwner() && before.status == 'Unpaid' && after.status == 'Paid' && before.amount > 0
@@ -1524,33 +1767,37 @@ service cloud.firestore {
         && after.payrollRecordId.matches('refund-payroll-.*') && payroll.staffId == before.staffId
         && payroll.refundSettlements[id] == before.amount && payroll.frozenData.isPaid == true;
     }
-    function refundNoticeCreate(data,id) {
-      let row = nextData('online_order_incidents',id);
-      return offlineOwner() && data.version == 1 && data.id == id && data.incidentId == id && data.staffId == row.staffId
-        && data.staffName == row.staffName && data.sourceReceiptId == row.sourceReceiptId && data.sourcePlatform == row.sourcePlatform
-        && data.type == 'Online Order Refund' && data.reasonLabel == row.reasonLabel && data.details == row.details && data.evidence == row.evidence
-        && data.amount == row.amount && data.status == row.status && data.noticeRevision == 1 && data.readRevision == 0 && data.replyRevision == 0
-        && data.createdAt == reqTime() && data.updatedAt == reqTime();
-    }
-    function refundNoticeOwnerUpdate(before,after,id) {
-      let row = nextData('online_order_incidents',id);
-      return offlineOwner() && after.diff(before).affectedKeys().hasOnly(['status','amount','ownerReply','noticeRevision','updatedAt'])
-        && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == reqTime()
-        && after.status == row.status && after.amount == row.amount && after.ownerReply == row.reviewNote && row.reviewedAt == reqTime();
-    }
-    function refundNoticeStaffUpdate(before,after) {
-      return docVaultOwn(before.staffId) && (
-        (after.diff(before).affectedKeys().hasOnly(['readRevision','readAt']) && after.readRevision == before.noticeRevision && after.readAt == reqTime())
-        || (after.diff(before).affectedKeys().hasOnly(['staffReply','replyRevision','repliedAt','repliedByUid'])
-          && after.staffReply is string && after.staffReply.size() > 0 && after.staffReply.size() <= 1500
-          && after.replyRevision == before.replyRevision + 1 && after.repliedAt == reqTime() && after.repliedByUid == reqUid()));
-    }
+
+
+
     // A one-time Owner review is separate from recurring profile deductions.
     // Private evidence and staff explanations stay in the protected source/notice.
     function ownerDeductionOwner() { return offlineOwner() && reqProvider() == 'google.com'; }
     function ownerDeductionId(id) { return id.matches('^owner-deduction-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'); }
     function ownerDeductionKind(data,id) { return data.get('type','') == 'Owner Custom Deduction' || id.matches('^owner-deduction-.*') || data.keys().hasAny(['ownerDeductionVersion']); }
-    function ownerDeductionLinks(row,charge,notice,id) {
+
+
+
+
+
+
+
+
+
+
+
+
+    function ownerDeductionPaidChange(before,after) {
+      return ownerDeductionOwner() && before.type == 'Owner Custom Deduction' && before.status in ['Approved','Unpaid'] && before.amount > 0
+        && !before.keys().hasAny(paidKeys()) && after.diff(before).affectedKeys().hasOnly(['status','paidAt','payrollRecordId']) && after.status == 'Paid' && after.paidAt == reqTime();
+    }
+    function ownerDeductionCompanionPaid(before,after,id,revision) {
+      let row = nextData('owner_deduction_reviews',id);
+      return ownerDeductionPaidChange(before,after) && row.status == 'Paid' && row.staffId == before.staffId && row.amount == before.amount && row.revision == revision
+        && row.payrollRecordId == after.payrollRecordId && row.paidAt == reqTime();
+    }
+    match /owner_deduction_reviews/{id} {
+      function ownerDeductionLinks(row,charge,notice,id) {
       return ownerDeductionId(id) && row.id == id && row.type == 'Owner Custom Deduction' && charge.type == row.type && notice.type == row.type
         && row.schemaVersion == 1 && charge.ownerDeductionVersion == 1 && notice.version == 1
         && charge.incidentId == id && notice.id == id && notice.incidentId == id
@@ -1564,7 +1811,8 @@ service cloud.firestore {
         && charge.effectiveDate == row.effectiveDate && notice.effectiveDate == row.effectiveDate
         && charge.reviewRevision == row.revision && notice.noticeRevision == row.revision;
     }
-    function ownerDeductionStaff(row) {
+
+      function ownerDeductionStaff(row) {
       let staff = readData('cashiers',row.staffId);
       let incident = row.incidentDate.split('-');
       return row.staffId is string && row.staffId.matches('^[-A-Za-z0-9_]{1,160}$') && row.staffName == staff.cashierName && row.staffBranch == staff.branch
@@ -1574,85 +1822,7 @@ service cloud.firestore {
         && row.incidentDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && timestamp.date(int(incident[0]),int(incident[1]),int(incident[2])) - duration.value(8,'h') <= reqTime();
     }
-    function ownerDeductionChargeCreate(data,id) {
-      let row = nextData('owner_deduction_reviews',id);
-      // The source must be newly created in this atomic request. Its create
-      // rule validates all three exact links; keep this public schema strict.
-      return ownerDeductionOwner() && !exists(/databases/$(database)/documents/owner_deduction_reviews/$(id))
-        && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
-        && data.dateAdded == reqTime() && data.loggedBy == reqEmail()
-        && data.remarks == 'Owner custom deduction review only; no payroll charge is authorized.'
-        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','ownerDeductionVersion','authorizedAmount','reviewRevision','dateAdded','loggedBy','remarks']);
-    }
-    function ownerDeductionNoticeCreate(data,id) {
-      let row = nextData('owner_deduction_reviews',id);
-      // As above, before-absence plus getAfter presence forces source creation
-      // and therefore its full three-record link validation in this request.
-      return ownerDeductionOwner() && !exists(/databases/$(database)/documents/owner_deduction_reviews/$(id))
-        && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
-        && data.details == row.details && data.evidence == row.evidence && data.reasonLabel == row.label
-        && data.replyRevision == 0 && data.readRevision == 0 && data.createdAt == reqTime() && data.updatedAt == reqTime()
-        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','version','id','sourceLossCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']);
-    }
-    function ownerDeductionChargeReview(before,after,id) {
-      let prior = readData('owner_deduction_reviews',id);
-      let row = nextData('owner_deduction_reviews',id);
-      return ownerDeductionOwner() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(paidKeys())
-        && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
-        && after.reviewRevision == before.reviewRevision + 1 && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail()
-        // A changed source revision forces its authoritative update rule in
-        // this atomic request. That rule checks both complete companion links.
-        && row.revision == prior.revision + 1 && after.reviewRevision == row.revision
-        && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == reqTime();
-    }
-    function ownerDeductionNoticeReview(before,after,id) {
-      let prior = readData('owner_deduction_reviews',id);
-      let row = nextData('owner_deduction_reviews',id);
-      return ownerDeductionOwner() && before.status in ['Pending Review','Approved']
-        && after.diff(before).affectedKeys().hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','weeklyLimitConfirmed','updatedAt'])
-        && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == reqTime() && after.status == row.status
-        && row.revision == prior.revision + 1 && after.noticeRevision == row.revision && row.reviewedAt == reqTime()
-        && (row.status == 'Dismissed' ? after.ownerReply == row.dismissalReason : (after.ownerReply == row.finding && after.lawfulBasis == row.lawfulBasis && after.authorityReference == row.authorityReference && after.finding == row.finding && after.weeklyLimitConfirmed == true));
-    }
-    function ownerDeductionProtectedPayroll(payroll) {
-      return payroll.get('ownerDeductionSettlements',{}).size() > 0 || payroll.get('frozenData',{}).get('ownerDeductions',0) > 0 || payroll.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;
-    }
-    function ownerDeductionPayrollRow(item,map,details,recordId) {
-      let row = nextData('owner_deduction_reviews',item.id);
-      return item.keys().hasOnly(['id','amount']) && item.id is string && ownerDeductionId(item.id) && item.amount is number && item.amount > 0 && map[item.id] == item.amount
-        && row.status == 'Paid' && row.amount == item.amount && row.payrollRecordId == recordId && row.paidAt == reqTime();
-    }
-    function ownerDeductionTuple(rows,map,details,index,recordId) { return rows.size() <= index || ownerDeductionPayrollRow(rows[index],map,details,recordId); }
-    function ownerDeductionBankCents(value) { return value >= 0 ? int(value * 100 + 0.5) : -int(-value * 100 + 0.5); }
-    function ownerDeductionBankProof(payroll,recordId) {
-      let before = readData('cash_accounts',payroll.accountId);
-      let after = nextData('cash_accounts',payroll.accountId);
-      let expense = nextData('expenses',recordId);
-      return payroll.finalNetPay is number && payroll.finalNetPay >= 0 && before.balance is number && after.balance is number
-        && ownerDeductionBankCents(before.balance) - ownerDeductionBankCents(after.balance) == ownerDeductionBankCents(payroll.finalNetPay)
-        && expense.category == 'Payroll' && expense.payrollRecordId == recordId && expense.amount == payroll.finalNetPay && expense.timestamp == reqTime();
-    }
-    function ownerDeductionPayrollMetadata(payroll,recordId) {
-      let rows = payroll.get('frozenData',{}).get('ownerDeductionRows',[]);
-      let map = payroll.get('ownerDeductionSettlements',{});
-      let details = payroll.get('frozenData',{}).get('ownerDeductionDetails',[]);
-      return rows is list && rows.size() <= 4 && rows.toSet().size() == rows.size() && map is map && map.size() == rows.size()
-        && details is list && details.size() == rows.size()
-        && ownerDeductionTuple(rows,map,details,0,recordId) && ownerDeductionTuple(rows,map,details,1,recordId) && ownerDeductionTuple(rows,map,details,2,recordId) && ownerDeductionTuple(rows,map,details,3,recordId)
-        && payroll.get('frozenData',{}).get('ownerDeductions',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (rows.size() > 3 ? rows[3].amount : 0)
-        && (rows.size() == 0 || (ownerDeductionOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail()
-          && rows.size() + payroll.get('frozenData',{}).get('cashShortageRows',[]).size() + payroll.get('refundSettlements',{}).size() <= 4 && ownerDeductionBankProof(payroll,recordId)));
-    }
-    function ownerDeductionPaidChange(before,after) {
-      return ownerDeductionOwner() && before.type == 'Owner Custom Deduction' && before.status in ['Approved','Unpaid'] && before.amount > 0
-        && !before.keys().hasAny(paidKeys()) && after.diff(before).affectedKeys().hasOnly(['status','paidAt','payrollRecordId']) && after.status == 'Paid' && after.paidAt == reqTime();
-    }
-    function ownerDeductionCompanionPaid(before,after,id,revision) {
-      let row = nextData('owner_deduction_reviews',id);
-      return ownerDeductionPaidChange(before,after) && row.status == 'Paid' && row.staffId == before.staffId && row.amount == before.amount && row.revision == revision
-        && row.payrollRecordId == after.payrollRecordId && row.paidAt == reqTime();
-    }
-    match /owner_deduction_reviews/{id} {
+
       function ownerDeductionCreate(data,id) {
         let charge = staffDeductionAfter(id);
         let notice = nextData('staff_deduction_notices',id);
@@ -1714,71 +1884,16 @@ service cloud.firestore {
         && charge.effectiveDate == row.effectiveDate && notice.effectiveDate == row.effectiveDate
         && charge.reviewRevision == row.revision && notice.noticeRevision == row.revision;
     }
-    function cashShortageChargeCreate(data,id) {
-      let row = nextData('cash_shortage_reviews',id);
-      let notice = nextData('staff_deduction_notices',id);
-      return offlineOwner() && !exists(/databases/$(database)/documents/cash_shortage_reviews/$(id))
-        && cashShortageLinks(row,data,notice,id) && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
-        && data.dateAdded == reqTime() && data.loggedBy == reqEmail()
-        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourceShiftId','sourceReceiptId','sourcePlatform','amount','effectiveDate','status','cashShortageVersion','sourceBranch','authorizedAmount','reviewRevision','dateAdded','loggedBy','remarks']);
-    }
-    function cashShortageNoticeCreate(data,id) {
-      let row = nextData('cash_shortage_reviews',id);
-      let charge = staffDeductionAfter(id);
-      return offlineOwner() && !exists(/databases/$(database)/documents/cash_shortage_reviews/$(id))
-        && cashShortageLinks(row,charge,data,id) && data.status == 'Pending Review' && data.amount == 0
-        && data.details == row.details && data.evidence == row.evidence && data.sourceShortageCents == row.sourceShortageCents
-        && data.replyRevision == 0 && data.readRevision == 0 && data.createdAt == reqTime() && data.updatedAt == reqTime()
-        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourceShiftId','sourceReceiptId','sourcePlatform','amount','effectiveDate','status','version','id','sourceShortageCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']);
-    }
-    function cashShortageChargeReview(before,after,id) {
-      let row = nextData('cash_shortage_reviews',id);
-      let notice = nextData('staff_deduction_notices',id);
-      return offlineOwner() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(paidKeys())
-        && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
-        && after.reviewRevision == before.reviewRevision + 1 && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail()
-        && cashShortageLinks(row,after,notice,id) && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == reqTime();
-    }
-    function cashShortageNoticeReview(before,after,id) {
-      let row = nextData('cash_shortage_reviews',id);
-      let charge = staffDeductionAfter(id);
-      return offlineOwner() && before.status in ['Pending Review','Approved']
-        && after.diff(before).affectedKeys().hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','updatedAt'])
-        && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == reqTime() && after.status == row.status
-        && cashShortageLinks(row,charge,after,id) && row.reviewedAt == reqTime()
-        && (row.status == 'Dismissed' ? after.ownerReply == row.dismissalReason : (after.ownerReply == row.finding && after.lawfulBasis == row.lawfulBasis && after.authorityReference == row.authorityReference && after.finding == row.finding));
-    }
-    function cashShortagePayrollRow(item,map,recordId) {
-      let row = nextData('cash_shortage_reviews',item.id);
-      return item.keys().hasOnly(['id','amount']) && item.id is string && item.amount is number && item.amount > 0 && map[item.id] == item.amount
-        && row.status == 'Paid' && row.amount == item.amount && row.payrollRecordId == recordId && row.paidAt == reqTime();
-    }
-    function cashShortageRow(rows,map,index,recordId) { return rows.size() <= index || cashShortagePayrollRow(rows[index],map,recordId); }
-    function cashShortageProtectedPayroll(payroll) {
-      return payroll.get('cashShortageSettlements',{}).size() > 0 || payroll.get('frozenData',{}).get('cashShortages',0) > 0 || payroll.get('frozenData',{}).get('cashShortageRows',[]).size() > 0;
-    }
-    function cashShortageSignedAcknowledgment(before,after) {
-      return docVaultOwn(before.staffId) && before.get('acknowledged',false) == false
-        && after.diff(before).affectedKeys().hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])
-        && after.acknowledged == true && after.acknowledgedAt == reqTime()
-        && after.signatureBase64 is string && after.signatureBase64.size() >= 64 && after.signatureBase64.size() <= 500000
-        && (after.signatureBase64.size() - 22) % 4 == 0
-        && after.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');
-    }
+
+
+
+
+
+
+
+
     // Validate the full tuple list once per payroll, not once for each of the three protected case records.
-    function cashShortagePayrollMetadata(payroll,recordId) {
-      let rows = payroll.get('frozenData',{}).get('cashShortageRows',[]);
-      let map = payroll.get('cashShortageSettlements',{});
-      let custom = payroll.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;
-      // Owner custom metadata already proves Owner, paid stamps and combined
-      // maximum four. It leaves room for at most three other protected rows.
-      return rows is list && rows.size() <= (custom ? 3 : 6) && rows.toSet().size() == rows.size()
-        && map is map && map.size() == rows.size()
-        && cashShortageRow(rows,map,0,recordId) && cashShortageRow(rows,map,1,recordId) && cashShortageRow(rows,map,2,recordId)
-        && (custom || (cashShortageRow(rows,map,3,recordId) && cashShortageRow(rows,map,4,recordId) && cashShortageRow(rows,map,5,recordId)))
-        && payroll.get('frozenData',{}).get('cashShortages',0) == (rows.size() > 0 ? rows[0].amount : 0) + (rows.size() > 1 ? rows[1].amount : 0) + (rows.size() > 2 ? rows[2].amount : 0) + (custom ? 0 : (rows.size() > 3 ? rows[3].amount : 0) + (rows.size() > 4 ? rows[4].amount : 0) + (rows.size() > 5 ? rows[5].amount : 0))
-        && (custom || rows.size() == 0 || (offlineOwner() && payroll.frozenData.isPaid == true && payroll.processedAt == reqTime() && payroll.processedBy == reqEmail() && rows.size() + payroll.get('refundSettlements',{}).size() <= 6));
-    }
+
     function cashShortagePaidChange(before,after) {
       return offlineOwner() && before.type == 'Cash Shortage' && before.status in ['Approved','Unpaid'] && before.amount > 0
         && !before.keys().hasAny(paidKeys())
@@ -1863,6 +1978,71 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /staff_deduction_notices/{id} {
+      function refundNoticeCreate(data,id) {
+      let row = nextData('online_order_incidents',id);
+      return offlineOwner() && data.version == 1 && data.id == id && data.incidentId == id && data.staffId == row.staffId
+        && data.staffName == row.staffName && data.sourceReceiptId == row.sourceReceiptId && data.sourcePlatform == row.sourcePlatform
+        && data.type == 'Online Order Refund' && data.reasonLabel == row.reasonLabel && data.details == row.details && data.evidence == row.evidence
+        && data.amount == row.amount && data.status == row.status && data.noticeRevision == 1 && data.readRevision == 0 && data.replyRevision == 0
+        && data.createdAt == reqTime() && data.updatedAt == reqTime();
+    }
+
+      function refundNoticeOwnerUpdate(before,after,id) {
+      let row = nextData('online_order_incidents',id);
+      return offlineOwner() && after.diff(before).affectedKeys().hasOnly(['status','amount','ownerReply','noticeRevision','updatedAt'])
+        && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == reqTime()
+        && after.status == row.status && after.amount == row.amount && after.ownerReply == row.reviewNote && row.reviewedAt == reqTime();
+    }
+
+      function refundNoticeStaffUpdate(before,after) {
+      return docVaultOwn(before.staffId) && (
+        (after.diff(before).affectedKeys().hasOnly(['readRevision','readAt']) && after.readRevision == before.noticeRevision && after.readAt == reqTime())
+        || (after.diff(before).affectedKeys().hasOnly(['staffReply','replyRevision','repliedAt','repliedByUid'])
+          && after.staffReply is string && after.staffReply.size() > 0 && after.staffReply.size() <= 1500
+          && after.replyRevision == before.replyRevision + 1 && after.repliedAt == reqTime() && after.repliedByUid == reqUid()));
+    }
+
+      function ownerDeductionNoticeCreate(data,id) {
+      let row = nextData('owner_deduction_reviews',id);
+      // As above, before-absence plus getAfter presence forces source creation
+      // and therefore its full three-record link validation in this request.
+      return ownerDeductionOwner() && !exists(/databases/$(database)/documents/owner_deduction_reviews/$(id))
+        && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
+        && data.details == row.details && data.evidence == row.evidence && data.reasonLabel == row.label
+        && data.replyRevision == 0 && data.readRevision == 0 && data.createdAt == reqTime() && data.updatedAt == reqTime()
+        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','version','id','sourceLossCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']);
+    }
+
+      function ownerDeductionNoticeReview(before,after,id) {
+      let prior = readData('owner_deduction_reviews',id);
+      let row = nextData('owner_deduction_reviews',id);
+      return ownerDeductionOwner() && before.status in ['Pending Review','Approved']
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','weeklyLimitConfirmed','updatedAt'])
+        && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == reqTime() && after.status == row.status
+        && row.revision == prior.revision + 1 && after.noticeRevision == row.revision && row.reviewedAt == reqTime()
+        && (row.status == 'Dismissed' ? after.ownerReply == row.dismissalReason : (after.ownerReply == row.finding && after.lawfulBasis == row.lawfulBasis && after.authorityReference == row.authorityReference && after.finding == row.finding && after.weeklyLimitConfirmed == true));
+    }
+
+      function cashShortageNoticeCreate(data,id) {
+      let row = nextData('cash_shortage_reviews',id);
+      let charge = staffDeductionAfter(id);
+      return offlineOwner() && !exists(/databases/$(database)/documents/cash_shortage_reviews/$(id))
+        && cashShortageLinks(row,charge,data,id) && data.status == 'Pending Review' && data.amount == 0
+        && data.details == row.details && data.evidence == row.evidence && data.sourceShortageCents == row.sourceShortageCents
+        && data.replyRevision == 0 && data.readRevision == 0 && data.createdAt == reqTime() && data.updatedAt == reqTime()
+        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourceShiftId','sourceReceiptId','sourcePlatform','amount','effectiveDate','status','version','id','sourceShortageCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']);
+    }
+
+      function cashShortageNoticeReview(before,after,id) {
+      let row = nextData('cash_shortage_reviews',id);
+      let charge = staffDeductionAfter(id);
+      return offlineOwner() && before.status in ['Pending Review','Approved']
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','updatedAt'])
+        && after.noticeRevision == before.noticeRevision + 1 && after.updatedAt == reqTime() && after.status == row.status
+        && cashShortageLinks(row,charge,after,id) && row.reviewedAt == reqTime()
+        && (row.status == 'Dismissed' ? after.ownerReply == row.dismissalReason : (after.ownerReply == row.finding && after.lawfulBasis == row.lawfulBasis && after.authorityReference == row.authorityReference && after.finding == row.finding));
+    }
+
       allow get, list: if offlineOwner() || docVaultOwn(oldData().staffId) || ((cashShortageKind(oldData(),id) || ownerDeductionKind(oldData(),id)) && staffRateHQ(oldData().branch));
       function selectorStaffDeductionNoticesCreate(data) {
         return ownerDeductionKind(data,id) ? ownerDeductionNoticeCreate(data,id) : cashShortageKind(data,id) ? cashShortageNoticeCreate(data,id) : refundNoticeCreate(data,id);
@@ -1971,6 +2151,87 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /staff_deductions/{deductId} {
+      function cancelledFoodChargeLink(data, id) {
+      let purchase = transactionAfter(id);
+      // The receipt create rule validates both this charge and its source
+      // transition atomically. A prior receipt cannot authorize a new charge.
+      return data.purchaseId == id && !exists(/databases/$(database)/documents/transactions/$(id))
+        && purchase.get('cancelledFoodSourceId', '') != ''
+        && purchase.branch == data.branch && purchase.cancelledFoodStaffId == data.staffId
+        && purchase.customerName == data.staffName && purchase.netTotal == data.amount
+        && (purchase.get('cancelledFoodPortionVersion',0) != 1 || data.purchasedItems == purchase.cart);
+    }
+
+      function onlineIncidentCharge(data, id) {
+      let row = nextData('online_order_incidents',id);
+      return offlineOwner() && data.type == 'Online Order Refund' && data.amount == 0
+        && data.category == 'Online Order Refunds' && data.status == 'Pending Review'
+        && data.incidentId == id && row.id == id && row.status == data.status
+        && data.staffId == row.staffId && data.staffName == row.staffName
+        && data.sourceSaleId == row.sourceSaleId && data.sourceReceiptId == row.sourceReceiptId
+        && data.sourcePlatform == row.sourcePlatform && data.proposedAmount == row.refundAmount
+        && data.dateAdded == reqTime() && data.loggedBy == reqEmail();
+    }
+
+      function directIncidentCharge(data,id) {
+      let row = nextData('online_order_incidents',id);
+      return offlineOwner() && row.version == 2 && data.type == 'Online Order Refund' && data.category == 'Online Order Refunds'
+        && data.incidentId == id && data.staffId == row.staffId && data.staffName == row.staffName
+        && data.branch == row.staffBranch && data.sourceBranch == row.branch && data.sourceSaleId == row.sourceSaleId
+        && data.sourceReceiptId == row.sourceReceiptId && data.sourcePlatform == row.sourcePlatform
+        && data.status == row.status && data.amount == row.amount && data.authorizedAmount == row.amount
+        && data.proposedAmount == row.refundAmount && data.noticeRevision == 1 && data.dateAdded == reqTime() && data.loggedBy == reqEmail();
+    }
+
+      function directChargeReview(before,after,id) {
+      let row = nextData('online_order_incidents',id);
+      return offlineOwner() && before.type == 'Online Order Refund' && before.status in ['Pending Review','Unpaid']
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','noticeRevision','responseRecorded','reviewedAt','reviewedBy'])
+        && after.status == row.status && after.amount == row.amount && after.authorizedAmount == row.amount
+        && after.noticeRevision == before.get('noticeRevision',0) + 1 && row.reviewedAt == reqTime() && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail() && after.responseRecorded == true;
+    }
+
+      function ownerDeductionChargeCreate(data,id) {
+      let row = nextData('owner_deduction_reviews',id);
+      // The source must be newly created in this atomic request. Its create
+      // rule validates all three exact links; keep this public schema strict.
+      return ownerDeductionOwner() && !exists(/databases/$(database)/documents/owner_deduction_reviews/$(id))
+        && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
+        && data.dateAdded == reqTime() && data.loggedBy == reqEmail()
+        && data.remarks == 'Owner custom deduction review only; no payroll charge is authorized.'
+        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','ownerDeductionVersion','authorizedAmount','reviewRevision','dateAdded','loggedBy','remarks']);
+    }
+
+      function ownerDeductionChargeReview(before,after,id) {
+      let prior = readData('owner_deduction_reviews',id);
+      let row = nextData('owner_deduction_reviews',id);
+      return ownerDeductionOwner() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(paidKeys())
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
+        && after.reviewRevision == before.reviewRevision + 1 && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail()
+        // A changed source revision forces its authoritative update rule in
+        // this atomic request. That rule checks both complete companion links.
+        && row.revision == prior.revision + 1 && after.reviewRevision == row.revision
+        && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == reqTime();
+    }
+
+      function cashShortageChargeCreate(data,id) {
+      let row = nextData('cash_shortage_reviews',id);
+      let notice = nextData('staff_deduction_notices',id);
+      return offlineOwner() && !exists(/databases/$(database)/documents/cash_shortage_reviews/$(id))
+        && cashShortageLinks(row,data,notice,id) && row.status == 'Pending Review' && data.status == 'Pending Review' && data.amount == 0
+        && data.dateAdded == reqTime() && data.loggedBy == reqEmail()
+        && data.keys().hasOnly(['incidentId','type','staffId','staffName','branch','sourceShiftId','sourceReceiptId','sourcePlatform','amount','effectiveDate','status','cashShortageVersion','sourceBranch','authorizedAmount','reviewRevision','dateAdded','loggedBy','remarks']);
+    }
+
+      function cashShortageChargeReview(before,after,id) {
+      let row = nextData('cash_shortage_reviews',id);
+      let notice = nextData('staff_deduction_notices',id);
+      return offlineOwner() && before.status in ['Pending Review','Unpaid'] && !before.keys().hasAny(paidKeys())
+        && after.diff(before).affectedKeys().hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
+        && after.reviewRevision == before.reviewRevision + 1 && after.reviewedAt == reqTime() && after.reviewedBy == reqEmail()
+        && cashShortageLinks(row,after,notice,id) && after.status == (row.status == 'Approved' ? 'Unpaid' : 'Dismissed') && row.reviewedAt == reqTime();
+    }
+
       allow read: if true;
       function selectorStaffDeductionsCreate(data) {
         return ownerDeductionKind(data,deductId) ? ownerDeductionChargeCreate(data,deductId)
@@ -2013,7 +2274,7 @@ service cloud.firestore {
     function complianceId(value) { return value is string && value.matches('^[A-Za-z0-9_-]{1,180}$'); }
     function complianceDay(value) { return value is string && value.matches('^2[01][0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
     function complianceMonth(value) { return value is string && value.matches('^2[01][0-9]{2}-(0[1-9]|1[0-2])$'); }
-    function permitRecordDay(value) { return value is string && value.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
+
     function complianceCents(value) { return value is int && value >= 0 && value <= 1000000000; }
     function complianceFileDescriptor(value, kind, recordId) {
       return value is map && value.keys().hasOnly(['id','kind','recordId','fileName','contentType','size','sha256','chunkCount'])
@@ -2035,7 +2296,12 @@ service cloud.firestore {
         'permitNumber':data.permitNumber,'issueDate':data.issueDate,'expiryDate':data.expiryDate,'renewalStatus':data.renewalStatus,
         'notes':data.notes,'attachment':data.attachment,'archived':data.archived};
     }
-    function permitShape(data, id) {
+
+
+    match /government_permits/{id} {
+      function permitRecordDay(value) { return value is string && value.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
+
+      function permitShape(data, id) {
       return data.keys().hasOnly(['schemaVersion','recordId','branch','permitType','permitName','agency','permitNumber','issueDate','expiryDate','renewalStatus','notes','attachment','archived','revision','createdAt','createdByUid','createdByEmail','updatedAt','updatedByUid','updatedByEmail','lastChangeId'])
         && data.schemaVersion == 1 && data.recordId == id && complianceId(id)
         && complianceText(data.branch,120) && data.branch.size() > 0
@@ -2049,13 +2315,14 @@ service cloud.firestore {
         && complianceAttachment(data.attachment,'government_permit',id) && complianceId(data.lastChangeId)
         && data.updatedAt == reqTime() && data.updatedByUid == reqUid() && data.updatedByEmail == reqEmail();
     }
-    function permitChange(data,id,before,action) {
+
+      function permitChange(data,id,before,action) {
       let event = getAfter(/databases/$(database)/documents/government_permits/$(id)/changes/$(data.lastChangeId)).data;
       return event.schemaVersion == 1 && event.operationId == data.lastChangeId && event.recordId == id
         && event.revision == data.revision && event.action == action && event.before == before && event.after == permitBusiness(data)
         && event.recordedAt == reqTime() && event.recordedByUid == reqUid() && event.recordedByEmail == reqEmail();
     }
-    match /government_permits/{id} {
+
       allow read: if complianceOwner();
       function selectorGovernmentPermitsCreateUpdate(data,before) {
         return complianceOwner() && permitShape(data,id)
@@ -2108,33 +2375,24 @@ service cloud.firestore {
         && sssFrozenCents(net) >= 0 && (frozenNet == net || sssFrozenCents(frozenNet) == sssFrozenCents(net))
         && sssFrozenCents(frozen.get('sss',null)) == row.deductedCents;
     }
-    function sssAllocationIds(rows) {
-      let n = rows.size();
-      return [n>0?rows[0].payrollRecordId:'',n>1?rows[1].payrollRecordId:''];
-    }
-    function sssAllocationSum(rows) {
+
+
+
+
+
+
+
+    match /staff_sss_remittances/{id} {
+      function sssAllocationSum(rows) {
       let n = rows.size();
       return (n>0?rows[0].amountCents:0)+(n>1?rows[1].amountCents:0);
     }
-    function sssPayrollAt(rows,at,staffId,staffName) {
+
+      function sssPayrollAt(rows,at,staffId,staffName) {
       return rows.size()<=at || sssSavedPayroll(rows[at],staffId,staffName);
     }
-    function sssLedgerAllocation(row,staffId,staffName,before,after) {
-      let id = row.payrollRecordId;
-      let old = before.get(id,0);
-      let next = after.get(id,0);
-      let amount = row.amountCents;
-      let deducted = row.deductedCents;
-      return row.keys().hasOnly(['payrollRecordId','startDate','endDate','deductedCents','amountCents'])
-        && complianceId(id) && complianceCents(deducted) && complianceCents(amount)
-        && amount > 0 && amount <= deducted
-        && old is int && old >= 0 && next == old + amount && next <= deducted && next > 0;
-    }
-    function sssLedgerAt(rows,at,staffId,staffName,before,after) {
-      return rows.size()<=at || (sssLedgerAllocation(rows[at],staffId,staffName,before,after)
-        && (at<1 || sssSavedPayroll(rows[at],staffId,staffName)));
-    }
-    function sssRecord(data,id) {
+
+      function sssRecord(data,id) {
       let staff = readData('cashiers',data.staffId);
       let ledger = nextData('staff_sss_allocation_totals',data.staffId);
       let rows = data.allocations;
@@ -2160,7 +2418,35 @@ service cloud.firestore {
         && ledger.updatedAt == reqTime() && ledger.updatedByUid == reqUid()
         && data.recordedAt == reqTime() && data.recordedByUid == reqUid() && data.recordedBy == reqEmail();
     }
-    function sssLedgerWrite(data,staffId,before,revision) {
+
+      allow read: if complianceOwner();
+      allow create: if complianceOwner() && sssRecord(newData(),id);
+      allow update, delete: if false;
+    }
+    match /staff_sss_allocation_totals/{staffId} {
+      function sssAllocationIds(rows) {
+      let n = rows.size();
+      return [n>0?rows[0].payrollRecordId:'',n>1?rows[1].payrollRecordId:''];
+    }
+
+      function sssLedgerAllocation(row,staffId,staffName,before,after) {
+      let id = row.payrollRecordId;
+      let old = before.get(id,0);
+      let next = after.get(id,0);
+      let amount = row.amountCents;
+      let deducted = row.deductedCents;
+      return row.keys().hasOnly(['payrollRecordId','startDate','endDate','deductedCents','amountCents'])
+        && complianceId(id) && complianceCents(deducted) && complianceCents(amount)
+        && amount > 0 && amount <= deducted
+        && old is int && old >= 0 && next == old + amount && next <= deducted && next > 0;
+    }
+
+      function sssLedgerAt(rows,at,staffId,staffName,before,after) {
+      return rows.size()<=at || (sssLedgerAllocation(rows[at],staffId,staffName,before,after)
+        && (at<1 || sssSavedPayroll(rows[at],staffId,staffName)));
+    }
+
+      function sssLedgerWrite(data,staffId,before,revision) {
       let record = nextData('staff_sss_remittances',data.lastRemittanceId);
       let rows = record.allocations;
       let ids = sssAllocationIds(rows);
@@ -2176,12 +2462,7 @@ service cloud.firestore {
         && sssLedgerAt(rows,0,staffId,record.staffName,before,totals) && sssLedgerAt(rows,1,staffId,record.staffName,before,totals)
         && data.updatedAt == reqTime() && data.updatedByUid == reqUid();
     }
-    match /staff_sss_remittances/{id} {
-      allow read: if complianceOwner();
-      allow create: if complianceOwner() && sssRecord(newData(),id);
-      allow update, delete: if false;
-    }
-    match /staff_sss_allocation_totals/{staffId} {
+
       allow read: if complianceOwner();
       function selectorStaffSssAllocationTotalsCreateUpdate(data,before) {
         return complianceOwner() && sssLedgerWrite(data,staffId,resource == null ? {} : before.allocatedCentsByPayroll,resource == null ? 0 : before.revision);
@@ -2207,17 +2488,21 @@ service cloud.firestore {
       allow create: if bookkeeperPaymentCreate(newData());
       allow update, delete: if false;
     }
-    function complianceFileParent(data,id) {
+
+
+    match /owner_record_files/{id} {
+      function complianceFileParent(data,id) {
       let parent = data.kind == 'government_permit'
         ? nextData('government_permits',data.recordId)
         : data.kind == 'sss_remittance' ? nextData('staff_sss_remittances',data.recordId)
         : nextData('bookkeeper_payments',data.recordId);
       return (data.kind == 'sss_remittance' ? parent.proof.id : parent.attachment.id) == id;
     }
-    function complianceFileMeta(data) {
+
+      function complianceFileMeta(data) {
       return {'id':data.id,'kind':data.kind,'recordId':data.recordId,'fileName':data.fileName,'contentType':data.contentType,'size':data.size,'sha256':data.sha256,'chunkCount':data.chunkCount};
     }
-    match /owner_record_files/{id} {
+
       allow get: if complianceOwner();
       allow list, update, delete: if false;
       function ownerRecordManifestCreate(data) {
@@ -2308,30 +2593,8 @@ service cloud.firestore {
       let profile = present ? get(path).data : {};
       return global || (present && profile.staffId == staffId && docVaultHQ(profile.branch));
     }
-    function docVaultRequest(uid, data) {
-      let path = /databases/$(database)/documents/staff_document_devices/$(uid);
-      let eligible = docVaultEnabled() && docVaultAnonymous() && reqUid() == uid
-        && data.keys().hasOnly(['uid', 'staffId', 'deviceId', 'deviceName', 'status', 'requestedAt'])
-        && data.uid == uid && docVaultId(data.staffId)
-        && data.deviceId is string && data.deviceId.size() <= 128
-        && data.deviceName is string && data.deviceName.size() > 0 && data.deviceName.size() <= 80
-        && data.status == 'pending' && data.requestedAt == reqTime();
-      let present = eligible && exists(path);
-      let binding = present ? get(path).data : {};
-      return eligible && (!present || (binding.staffId == data.staffId && binding.active == false));
-    }
-    function docVaultBinding(uid, data) {
-      return docVaultId(uid) && data.keys().hasOnly(['uid', 'staffId', 'branch', 'active',
-          'deviceId', 'deviceName', 'approvedAt', 'approvedByUid', 'updatedAt', 'updatedByUid', 'audit'])
-        && data.uid == uid && docVaultId(data.staffId)
-        && data.branch is string && data.branch.size() > 0 && data.branch.size() <= 128
-        && data.active is bool && data.approvedAt is timestamp && data.approvedByUid is string
-        && data.updatedAt == reqTime() && data.updatedByUid == reqUid()
-        && data.get('deviceId', '') is string && data.get('deviceId', '').size() <= 128
-        && data.get('deviceName', '') is string && data.get('deviceName', '').size() <= 80
-        && data.audit is map && data.audit.size() > 0 && data.audit.size() <= 100
-        && data.audit.values().hasAny([{'active': data.active, 'actorUid': reqUid(), 'recordedAt': reqTime()}]);
-    }
+
+
     function docVaultUpload(staffId, kind, data) {
       return docVaultEnabled() && docVaultOwn(staffId) && docVaultKind(kind)
         && data.keys().hasOnly(['staffId', 'branch', 'group', 'uploadId', 'uploadedByUid',
@@ -2379,6 +2642,19 @@ service cloud.firestore {
       allow create, update: if selectorStaffDocumentConfigCreateUpdate(newData());
     }
     match /staff_document_requests/{uid} {
+      function docVaultRequest(uid, data) {
+      let path = /databases/$(database)/documents/staff_document_devices/$(uid);
+      let eligible = docVaultEnabled() && docVaultAnonymous() && reqUid() == uid
+        && data.keys().hasOnly(['uid', 'staffId', 'deviceId', 'deviceName', 'status', 'requestedAt'])
+        && data.uid == uid && docVaultId(data.staffId)
+        && data.deviceId is string && data.deviceId.size() <= 128
+        && data.deviceName is string && data.deviceName.size() > 0 && data.deviceName.size() <= 80
+        && data.status == 'pending' && data.requestedAt == reqTime();
+      let present = eligible && exists(path);
+      let binding = present ? get(path).data : {};
+      return eligible && (!present || (binding.staffId == data.staffId && binding.active == false));
+    }
+
       allow read: if (request.method == 'get' && isSignedIn() && request.auth.uid == uid) || docVaultHQAll();
 
       allow create: if docVaultRequest(uid, newData());
@@ -2398,6 +2674,19 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /staff_document_devices/{uid} {
+      function docVaultBinding(uid, data) {
+      return docVaultId(uid) && data.keys().hasOnly(['uid', 'staffId', 'branch', 'active',
+          'deviceId', 'deviceName', 'approvedAt', 'approvedByUid', 'updatedAt', 'updatedByUid', 'audit'])
+        && data.uid == uid && docVaultId(data.staffId)
+        && data.branch is string && data.branch.size() > 0 && data.branch.size() <= 128
+        && data.active is bool && data.approvedAt is timestamp && data.approvedByUid is string
+        && data.updatedAt == reqTime() && data.updatedByUid == reqUid()
+        && data.get('deviceId', '') is string && data.get('deviceId', '').size() <= 128
+        && data.get('deviceName', '') is string && data.get('deviceName', '').size() <= 80
+        && data.audit is map && data.audit.size() > 0 && data.audit.size() <= 100
+        && data.audit.values().hasAny([{'active': data.active, 'actorUid': reqUid(), 'recordedAt': reqTime()}]);
+    }
+
       allow read: if (request.method == 'get' && isSignedIn() && request.auth.uid == uid) || docVaultHQAll();
 
       function docVaultDeviceCreate(data) {

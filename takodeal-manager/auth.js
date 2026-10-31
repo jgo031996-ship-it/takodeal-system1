@@ -108,12 +108,12 @@ window.loginWithGoogle = async () => {
 };
 window.cancelLoginAndSignOut = async () => {
     if (workspaceLoading) return;
-    gate.reset(); window.clearManagerMemoryCache?.();
+    gate.reset(); window.clearManagerMemoryCache?.(); window.paymentReconciliationUI?.dispose(); window.ownerStockAudits?.dispose(); window.pendingPaymentReader?.dispose?.();
     await signOut(window.auth);
 };
 onAuthStateChanged(window.auth, user => {
     // Stop the previous workspace and all its timers when the signed-in account changes.
-    if (runtimeLoaded || workspaceLoading) { gate.reset(); window.clearManagerMemoryCache?.(); location.reload(); return; }
+    if (runtimeLoaded || workspaceLoading) { gate.reset(); window.clearManagerMemoryCache?.(); window.paymentReconciliationUI?.dispose(); window.ownerStockAudits?.dispose(); window.pendingPaymentReader?.dispose?.(); location.reload(); return; }
     gate.identify(user);
 });
 window.managerAuthReady = true;

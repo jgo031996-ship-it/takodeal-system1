@@ -23,6 +23,8 @@ service cloud.firestore {
   }
 }`;
 const buildFile=fileURLToPath(new URL('../tools/build-firestore-rules.mjs',import.meta.url));
+let actual;
+const actualBuild=()=>actual??=( ()=>{const policy=readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),generated=readFileSync(new URL('../firestore.rules',import.meta.url),'utf8');return {policy,generated,built:buildFirestoreRules(policy)};} )();
 function tempFixture(callback){
  const directory=mkdtempSync(join(tmpdir(),'takodeal-rule-build-'));
  try{return callback(directory);}finally{
@@ -150,17 +152,18 @@ test('inverse proof rejects changed binding edges, local capture, map keys, type
   built.source.replace('/documents/map/$('+id+')','/documents/map/$(database)')
  ];for(const altered of mutations){assert.notEqual(altered,built.source);assert.throws(()=>assertRuleBuildEquivalent(policy,altered,built.mapping),/Rules build/);}
 });
-test('actual generated Rules exactly match the readable source and round-trip every non-binding token',()=>{
- const policy=readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),generated=readFileSync(new URL('../firestore.rules',import.meta.url),'utf8'),built=buildFirestoreRules(policy),proof=assertRuleBuildEquivalent(policy,generated,built.mapping);
+test('actual generated Rules match the deterministic build and every selector and binding round-trips to the readable policy',()=>{
+ const {policy,generated,built}=actualBuild(),proof=assertRuleBuildEquivalent(policy,generated,built.mapping);
  assert.equal(generated,built.source);assert.ok(proof.helpers>200);assert.ok(proof.replacements>1000);assert.ok(built.statistics.identifierBytesSaved>12000);assert.ok(Buffer.byteLength(generated)<Buffer.byteLength(policy));
  assert.ok(proof.bindings>700);assert.ok(proof.localReplacements>4500);assert.ok(built.statistics.identifierBytesSaved>34000);
- const originalTokens=tokenizeRules(policy),outputTokens=tokenizeRules(generated.slice(GENERATED_RULES_HEADER.length));assert.deepEqual(outputTokens.filter(token=>['comment','string','whitespace','punctuation'].includes(token.type)).map(token=>[token.type,token.text]),originalTokens.filter(token=>['comment','string','whitespace','punctuation'].includes(token.type)).map(token=>[token.type,token.text]));
+ assert.equal(proof.selectorSharing.exactInverseBytes,true);assert.equal(proof.selectorSharing.passes,7);
+ const originalTokens=tokenizeRules(built.loweredPolicy),outputTokens=tokenizeRules(generated.slice(GENERATED_RULES_HEADER.length));assert.deepEqual(outputTokens.filter(token=>['comment','string','whitespace','punctuation'].includes(token.type)).map(token=>[token.type,token.text]),originalTokens.filter(token=>['comment','string','whitespace','punctuation'].includes(token.type)).map(token=>[token.type,token.text]));
  const beforePrepared=originalTokens.filter(token=>token.type==='identifier'&&token.text==='preparedCancellation'),afterPrepared=outputTokens.filter(token=>token.type==='identifier'&&token.text==='preparedCancellation');assert.equal(beforePrepared.length-afterPrepared.length,2);assert.equal(afterPrepared.length,2);
 });
 test('private cash, Staff and payroll document paths and all permission literals survive generation unchanged',()=>{
- const policy=readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),generated=readFileSync(new URL('../firestore.rules',import.meta.url),'utf8');
+ const {policy,generated,built}=actualBuild();
  for(const path of ['/remittances/{remittanceId}','/branch_schedule_proposals/{proposalId}','/staff_private_documents/{staffId}','/staff_document_config/{id}','/payroll_records/{recordId}','/cash_shortage_reviews/{id}']){assert.ok(policy.includes(path),path);assert.ok(generated.includes(path),path);}
- assert.deepEqual(tokenizeRules(generated.slice(GENERATED_RULES_HEADER.length)).filter(token=>token.type==='string').map(token=>token.text),tokenizeRules(policy).filter(token=>token.type==='string').map(token=>token.text));
+ assert.deepEqual(tokenizeRules(generated.slice(GENERATED_RULES_HEADER.length)).filter(token=>token.type==='string').map(token=>token.text),tokenizeRules(built.loweredPolicy).filter(token=>token.type==='string').map(token=>token.text));
 });
 test('CLI builds deterministically and check mode detects a stale policy or edited generated file without repairing it',()=>tempFixture(directory=>{
  const policy=join(directory,'policy.rules'),output=join(directory,'generated.rules');writeFileSync(policy,fixture);const args=['--policy',policy,'--out',output];

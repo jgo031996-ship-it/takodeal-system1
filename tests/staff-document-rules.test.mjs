@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import {tokenizeRules} from '../tools/build-firestore-rules.mjs';
 
 // Structural policy regression checks, NOT a Firebase Rules interpreter. A real
 // emulator/Rules compile and unauthorized access tests remain release prerequisites.
@@ -110,16 +111,63 @@ test('legacy operational authority remains while new rate metadata is protected'
         'franchise_accounts','franchise_budgets','franchise_comms','franchise_ledger','global_addons','grab_payouts',
         'hq_restocks','inventory','manager_alerts','menu','parked_orders','payables','pos_devices',
         'rider_topups','riders','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests',
-        'stock_counts','stock_logs','suppliers','yield_logs'];
-    const literalNames = [...new Set([flatLegacy, treeLegacy].flatMap(text => [...text.matchAll(/\[([^\]]+)\]/g)]
+        'stock_logs','suppliers','yield_logs'];
+    // Collection-specific validators may be nested in this match. Inspect its
+    // authority clauses themselves so a validator's field-name lists cannot be
+    // mistaken for a legacy collection grant. Every method is still pinned.
+    const grants = text => {
+        const tokens = tokenizeRules(text).filter(token => !['whitespace', 'comment'].includes(token.type));
+        const clauses = [];
+        for (let i = 0; i < tokens.length; i++) {
+            if (tokens[i].type !== 'identifier' || tokens[i].text !== 'allow') continue;
+            const start = i;
+            while (i < tokens.length && tokens[i].text !== ';') i++;
+            assert.ok(i < tokens.length, 'Every allow statement must terminate');
+            clauses.push(tokens.slice(start, i + 1).map(token => token.text).join(' '));
+        }
+        return clauses;
+    };
+    const flatGrants = grants(flatLegacy), treeGrants = grants(treeLegacy);
+    assert.deepEqual(flatGrants.map(text => /^allow (\w+) :/.exec(text)?.[1]).sort(), ['create','delete','read','update']);
+    assert.equal(treeGrants.length, 1);
+    const literalNames = [...new Set([...flatGrants, ...treeGrants].flatMap(text => [...text.matchAll(/\[([^\]]+)\]/g)]
         .flatMap(list => [...list[1].matchAll(/'([^']+)'/g)].map(name => name[1]))))].sort();
-    assert.equal(expectedLegacyNames.length, 37);
-    assert.deepEqual(literalNames, expectedLegacyNames, 'Only the 37 non-remittance legacy roots may enter these literal clauses');
+    assert.equal(expectedLegacyNames.length, 36);
+    assert.deepEqual(literalNames, expectedLegacyNames, 'Only the 36 non-remittance/non-count legacy roots may enter these literal clauses');
     const remittances = body(legacy, 'match /remittances/{remittanceId}');
     assert.match(remittances, /allow read: if true;/);
     assert.match(remittances, /allow create: if mallHandover\(newData\(\)\);/);
     assert.doesNotMatch(remittances, /allow (?:update|delete|write)/);
     assert.equal(body(legacy, 'function legacyCandidate(').trim(), `return root.matches('^(${expectedLegacyNames.join('|')})$');`);
+    // Counts have the same authority in an exact block rather than duplicating
+    // heavy report checks through the generic wildcard's legacy alternatives.
+    // Old non-v3 point GET stays public; all LIST/v3GET require branch scope,
+    // v3 creation pairs its report, and v3 history cannot change or be deleted.
+    const counts = body(legacy, 'match /stock_counts/{id}');
+    const expectedStockReader = [
+        "let owner = protectedHROwner();",
+        "let email = isSignedIn() ? request.auth.token.get('email','') : '';",
+        "let path = /databases/$(database)/documents/hq_email_access/$(email);",
+        "let eligible = !owner && isSignedIn() && reqVerified() == true && reqProvider() == 'google.com';",
+        "let grant = eligible && exists(path) ? get(path).data : {};",
+        "return owner || trustedPOS(branch) || (grant.get('active',false) == true",
+        "&& grant.get('permissions',[]).hasAny(['all','inventory','audits']) && grant.get('allowedBranches',[]).hasAny(['All',branch]));"
+    ].join('\n');
+    const codeTokens = text => tokenizeRules(text).filter(token => !['whitespace', 'comment'].includes(token.type)).map(token => token.text);
+    for (const [scope, name] of [[counts, 'stockCountReader'], [body(legacy, 'match /inventory_audit_reports/{id}'), 'stockReportReader']]) {
+        assert.equal((firestore.match(new RegExp('\\bfunction ' + name + '\\(branch\\)', 'g')) || []).length, 1);
+        assert.deepEqual(codeTokens(body(scope, 'function ' + name + '(')), codeTokens(expectedStockReader), 'Scoped readers retain every original authority predicate');
+    }
+    const countGuards = {
+        get: "resource == null || oldData().get('version',0) != 3 || stockCountReader(oldData().get('branch',''))",
+        list: "stockCountReader(oldData().get('branch',''))",
+        create: "newData().get('version',0) != 3 || stockAuditSourceCreate(newData(),id)",
+        update: "oldData().get('version',0) != 3 && newData().get('version',0) != 3",
+        delete: "isOwner() && oldData().get('version',0) != 3"
+    };
+    assert.equal((counts.match(/\ballow\b/g) || []).length, 5);
+    for (const [method, expected] of Object.entries(countGuards))
+        assert.equal(new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(counts)?.[1], expected);
     for (const method of ['read', 'create', 'update', 'delete']) {
         const expression = new RegExp(`allow ${method}: if ([\\s\\S]*?);`).exec(flatLegacy)?.[1];
         assert.ok(expression, `Missing legacy ${method} policy`);

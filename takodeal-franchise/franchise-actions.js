@@ -38,8 +38,8 @@ export async function adjustInventory(api,{id,branch,itemId,type,quantity,reason
   if (type==='Waste' && Number(quantity)>before) throw new Error('Waste exceeds the current stock. Reload the item.');
   const after=type==='Audit'?Number(quantity):before-Number(quantity),variance=after-before;
   tx.update(stock,{currentStock:after,quantity:after});
-  tx.set(log,{branch,itemId,type,itemName:item.name || item.itemName,systemQty:before,actualQty:after,variance,qtyWasted:type==='Waste'?Number(quantity):0,inputQuantity:Number(quantity),reason:reason || '',unit:item.uom || 'units',loggedBy:actor,timestamp:api.serverTimestamp()});
-  tx.set(reference(api,'stock_logs',id),{branch,item:item.name || item.itemName,oldQty:before,newQty:after,variance,type:type==='Audit'?'Franchise Stock Audit':'Franchise Waste',uom:item.uom || 'units',note:reason || '',user:actor,timestamp:api.serverTimestamp()});
+  tx.set(log,{branch,itemId,inventoryId:itemId,operationId:id,type,itemName:item.name || item.itemName,systemQty:before,actualQty:after,variance,qtyWasted:type==='Waste'?Number(quantity):0,inputQuantity:Number(quantity),reason:reason || '',unit:item.uom || 'units',loggedBy:actor,timestamp:api.serverTimestamp()});
+  tx.set(reference(api,'stock_logs',id),{branch,inventoryId:itemId,operationId:id,inventoryLogId:id,item:item.name || item.itemName,oldQty:before,newQty:after,variance,type:type==='Audit'?'Franchise Stock Audit':'Franchise Waste',uom:item.uom || 'units',note:reason || '',user:actor,timestamp:api.serverTimestamp()});
   return 'saved';
  });
 }

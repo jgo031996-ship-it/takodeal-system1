@@ -1,4 +1,4 @@
-const CACHE = 'takodeal-franchise-payroll-timeout-repair-v7-20261030';
+const CACHE = 'takodeal-franchise-stock-audit-v8-20261031';
 const CORE=['./','index.html','style.css','main_franchise.js','auth.js','franchise-data.js','franchise-actions.js','franchise-workspace.js','payroll-safety.js','schedule-history.js','dispatch-safety.js','unlock-gate.js','hq-account-model.js','manifest.json','logo.jpg','icon-192.png','icon-512.png'];
 CORE.push('franchise-reads.js','franchise-item-picker.js','franchise-item-picker.css','franchise-payroll-controls.js','franchise-payroll-controls.css');
 CORE.push('attendance-reconcile.js','payroll-attendance.js');
@@ -26,3 +26,4 @@ CORE.push('staff-rate-model.js');
 CORE.push('discipline-case-model.js','franchise-discipline-model.js','franchise-discipline-actions.js','franchise-discipline-ui.js','franchise-discipline.css','franchise-payroll-model.js','franchise-payslip-ui.js','franchise-supply-model.js','franchise-supply-ui.js','franchise-supply.css');
 CORE.push('franchise-dispatch-pricing.js');
 CORE.push('dispatch-restock-model.js');
+CORE.push('stock-audit-model.js','stock-audit-reader.js','stock-audit-ui.js','stock-audit-ui.css');

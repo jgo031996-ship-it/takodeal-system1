@@ -1,3 +1,4 @@
+import {createStockAuditDeviceResolver} from './stock-audit-device.js';
 import {installCashRemittance} from './cash-remittance-ui.js';
 import {createCashierDeviceAuthContext} from './cashier-device-auth.js';
 import {installCycleCounts} from './stock-count-ui.js';
@@ -114,6 +115,7 @@ window.setDoc = setDoc;
 // Device approvals use their own matching auth/database context when Google is signed in.
 const cashierDeviceContext = createCashierDeviceAuthContext(window,{primaryAuth:auth,primaryDb:db,firebaseConfig,initializeApp,getApps,getAuth,getFirestore});
 window.installCashRemittance = () => installCashRemittance(window,document,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
+window.ensureStockAuditDevice = createStockAuditDeviceResolver(window,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext});
 
 // =======================================================
 // 🧠 TAKODEAL INVENTORY CACHE - BRANCH SAFE
@@ -2656,7 +2658,7 @@ window.submitExpenseCart = async function() {
                     });
 
                     await addDoc(collection(db, "stock_logs"), {
-                        branch: branch, item: item.dbName, uom: item.uom, oldQty: currentStock, newQty: newTotalStock, variance: item.baseQty,
+                        branch: branch, inventoryId: item.id, item: item.dbName, uom: item.uom, oldQty: currentStock, newQty: newTotalStock, variance: item.baseQty,
                         type: "Store Restock (Expense)", note: `Purchased ${item.displayQty} ${item.displayUom} for ₱${item.cost}`, user: cashier, timestamp: serverTimestamp()
                     });
                 }
@@ -6952,7 +6954,7 @@ window.undoKitchenPrep = async function(logId, itemName, varianceAmount) {
 
                     // Log the replenishment in the ledger for the Manager
                     await addDoc(collection(db, "stock_logs"), {
-                        branch: branch, item: rawIngredient, uom: rawData.uom || 'units',
+                        branch: branch, inventoryId: rawRef.id, item: rawIngredient, uom: rawData.uom || 'units',
                         oldQty: currentRawStock, newQty: currentRawStock + amountToReturn,
                         variance: amountToReturn,
                         type: "Kitchen Prep Undone",
@@ -7180,6 +7182,7 @@ window.submitConsumablesCart = async function() {
                 // 🔥 Fix: Using JS Date to avoid the Firebase serverTimestamp glitch!
                 await window.addDoc(window.collection(window.db, "stock_logs"), {
                     branch: branch,
+                    inventoryId: item.id,
                     item: item.name,
                     uom: item.uom,
                     oldQty: stock,
@@ -8459,7 +8462,7 @@ window.confirmPrepCart = async function() {
                         if (!rawSnap.empty) {
                             let rawRef = rawSnap.docs[0].ref;
                             let rawCurrentStock = rawSnap.docs[0].data().currentStock || 0;
-                            await updateDoc(rawRef, { currentStock: rawCurrentStock - totalAmountToDeduct });
+                            const rawBatch=writeBatch(db);rawBatch.update(rawRef,{currentStock:rawCurrentStock-totalAmountToDeduct});rawBatch.set(doc(collection(db,'stock_logs')),{branch:item.branch,inventoryId:rawRef.id,item:rawIngredient,uom:rawSnap.docs[0].data().baseUom||rawSnap.docs[0].data().uom||'',variance:-totalAmountToDeduct,type:'Kitchen Prep Ingredient',note:'Ingredient used for '+item.name,user:safeCashierName,timestamp:serverTimestamp()});await rawBatch.commit();
                         } else {
                             if (!missingItems.includes(rawIngredient)) missingItems.push(rawIngredient);
                         }
@@ -8467,7 +8470,7 @@ window.confirmPrepCart = async function() {
                 }
 
                 await addDoc(collection(db, "stock_logs"), {
-                    branch: item.branch, item: item.name, variance: baseQtyToAdd, uom: item.baseUom,
+                    branch: item.branch, inventoryId: item.id, item: item.name, variance: baseQtyToAdd, uom: item.baseUom,
                     purchUom: item.purchUom, purchQty: item.purchQty, 
                     type: "End-of-Shift Kitchen Prep", 
                     note: `Prepared ${item.purchQty} ${item.purchUom}(s) by ${safeCashierName}`, 
@@ -9515,7 +9518,7 @@ window.submitOpenShift = async function() {
                     let invDoc = invSnap.docs[0];
                     await window.updateDoc(invDoc.ref, { currentStock: d.newCount });
                     await window.addDoc(window.collection(window.db, "stock_logs"), {
-                        branch: branch, item: d.name, uom: d.uom,
+                        branch: branch, inventoryId: invDoc.id, item: d.name, uom: d.uom,
                         oldQty: d.prevCount, newQty: d.newCount, variance: d.variance,
                         type: d.variance < 0 ? "Audit Adjustment (Penalty)" : "Audit Adjustment (Recovery)", 
                         note: `Disputed Handover by ${shiftName}. ${prevCashier} claimed ${d.prevCount}, actual is ${d.newCount}.`,
