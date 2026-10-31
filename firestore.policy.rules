@@ -838,34 +838,15 @@ service cloud.firestore {
       return owner || trustedPOS(branch) || (grant.get('active',false) == true
         && grant.get('permissions',[]).hasAny(['all','inventory','audits']) && grant.get('allowedBranches',[]).hasAny(['All',branch]));
     }
-    function stockAuditSourceCreate(data,id) {
-      let report = nextData('inventory_audit_reports',id);
-      return !exists(/databases/$(database)/documents/inventory_audit_reports/$(id))
-        && report.version == 3 && report.id == id && data.get('source',null) == null && report.timestamp == reqTime();
-    }
-    function stockAuditCreate(data,id) {
-      let source = nextData('stock_counts',id);
-      let staff = readData('cashiers',data.staffId);
-      let start = data.periodStart.split('-');
-      let end = data.periodEnd.split('-');
-      return (protectedHROwner() || trustedPOS(data.branch)) && protectedHRId(id) && protectedHRId(data.staffId)
-        && !exists(/databases/$(database)/documents/stock_counts/$(id)) && data.version == 3 && data.id == id
-        && data.keys().hasOnly(['version','id','intent','branch','cashier','staffId','actorUid','selectedCycle','periodStart','periodEnd','counts','timestamp','cutoff','source'])
-        && data.source == 'Cashier cycle count' && data.diff(source).affectedKeys().hasOnly(['source']) && !source.keys().hasAny(['source'])
-        && data.actorUid == reqUid() && data.timestamp == reqTime() && data.cutoff == reqTime()
-        && data.intent is string && data.intent.size() > 0 && data.intent.size() <= 500000
-        && data.counts is list && data.counts.size() > 0 && data.counts.size() <= 150
-        && data.selectedCycle in ['Weekly','Monthly','Daily','As Needed'] && protectedHRDate(data.periodStart) && protectedHRDate(data.periodEnd)
-        && data.periodStart <= data.periodEnd && timestamp.date(int(start[0]),int(start[1]),int(start[2])) - duration.value(8,'h') <= reqTime()
-        && timestamp.date(int(end[0]),int(end[1]),int(end[2])) + duration.value(16,'h') > reqTime()
-        && data.cashier == staff.cashierName && data.branch == staff.branch
-        && staff.get('active',true) != false && staff.get('archived',false) != true && staff.get('blocked',false) != true
-        && !(staff.get('status','').lower() in ['blocked','inactive','disabled','revoked','terminated','archived','resigned','deleted'])
-        && (!(staff.get('pin','') is string) || !(staff.get('pin','').upper() in ['REVOKED','BLOCKED']));
-    }
     // Exact stock-count rules keep the legacy v2 authority separate from the
     // frozen v3 report. Their unrelated staff-setup guards are tautologies here.
     match /stock_counts/{id} {
+      function stockAuditSourceCreate(data,id) {
+        let report = nextData('inventory_audit_reports',id);
+        return !exists(/databases/$(database)/documents/inventory_audit_reports/$(id))
+          && report.version == 3 && report.id == id && data.get('source',null) == null && report.timestamp == reqTime();
+      }
+
       allow get: if resource == null || oldData().get('version',0) != 3 || stockAuditReader(oldData().get('branch',''));
       allow list: if stockAuditReader(oldData().get('branch',''));
       allow create: if newData().get('version',0) != 3 || stockAuditSourceCreate(newData(),id);
@@ -873,18 +854,40 @@ service cloud.firestore {
       allow delete: if isOwner() && oldData().get('version',0) != 3;
     }
     match /inventory_audit_reports/{id} {
+      function stockAuditCreate(data,id) {
+        let source = nextData('stock_counts',id);
+        let staff = readData('cashiers',data.staffId);
+        let start = data.periodStart.split('-');
+        let end = data.periodEnd.split('-');
+        return (protectedHROwner() || trustedPOS(data.branch)) && protectedHRId(id) && protectedHRId(data.staffId)
+          && !exists(/databases/$(database)/documents/stock_counts/$(id)) && data.version == 3 && data.id == id
+          && data.keys().hasOnly(['version','id','intent','branch','cashier','staffId','actorUid','selectedCycle','periodStart','periodEnd','counts','timestamp','cutoff','source'])
+          && data.source == 'Cashier cycle count' && data.diff(source).affectedKeys().hasOnly(['source']) && !source.keys().hasAny(['source'])
+          && data.actorUid == reqUid() && data.timestamp == reqTime() && data.cutoff == reqTime()
+          && data.intent is string && data.intent.size() > 0 && data.intent.size() <= 500000
+          && data.counts is list && data.counts.size() > 0 && data.counts.size() <= 150
+          && data.selectedCycle in ['Weekly','Monthly','Daily','As Needed'] && protectedHRDate(data.periodStart) && protectedHRDate(data.periodEnd)
+          && data.periodStart <= data.periodEnd && timestamp.date(int(start[0]),int(start[1]),int(start[2])) - duration.value(8,'h') <= reqTime()
+          && timestamp.date(int(end[0]),int(end[1]),int(end[2])) + duration.value(16,'h') > reqTime()
+          && data.cashier == staff.cashierName && data.branch == staff.branch
+          && staff.get('active',true) != false && staff.get('archived',false) != true && staff.get('blocked',false) != true
+          && !(staff.get('status','').lower() in ['blocked','inactive','disabled','revoked','terminated','archived','resigned','deleted'])
+          && (!(staff.get('pin','') is string) || !(staff.get('pin','').upper() in ['REVOKED','BLOCKED']));
+      }
+
       allow get: if resource == null ? protectedHROwner() || ownTrustedDevice() : stockAuditReader(oldData().branch);
       allow list: if stockAuditReader(oldData().branch);
       allow create: if stockAuditCreate(newData(),id);
       allow update, delete: if false;
     }
     function reconciliationHash(value) { return value is string && value.matches('^[a-f0-9]{64}$'); }
-    function reconciliationProvider(data) {
-      return data.keys().hasOnly(['orderPrefixes','referencePrefixes','timeToleranceMinutes'])
-        && data.orderPrefixes is list && data.orderPrefixes.size() <= 10 && data.referencePrefixes is list && data.referencePrefixes.size() <= 10
-        && data.timeToleranceMinutes is int && data.timeToleranceMinutes >= 0 && data.timeToleranceMinutes <= 120;
-    }
     match /payment_reconciliation_settings/{id} {
+      function reconciliationProvider(data) {
+        return data.keys().hasOnly(['orderPrefixes','referencePrefixes','timeToleranceMinutes'])
+          && data.orderPrefixes is list && data.orderPrefixes.size() <= 10 && data.referencePrefixes is list && data.referencePrefixes.size() <= 10
+          && data.timeToleranceMinutes is int && data.timeToleranceMinutes >= 0 && data.timeToleranceMinutes <= 120;
+      }
+
       function reconciliationSettings(data,before) {
         return id == 'main' && protectedHROwner() && data.keys().hasOnly(['schemaVersion','revision','branchAliases','providers','updatedAt','updatedByUid','updatedByEmail'])
           && data.schemaVersion == 1 && data.revision is int && data.revision == before.get('revision',0) + 1
@@ -903,38 +906,39 @@ service cloud.firestore {
         && newData().createdAt == reqTime() && newData().createdByUid == reqUid() && newData().createdByEmail == reqEmail();
       allow update, delete: if false;
     }
-    function reconciliationReceipt(data,id) {
-      let before = transactionBefore(id);
-      let after = transactionAfter(id);
-      let settings = readData('payment_reconciliation_settings','main');
-      let imported = nextData('payment_reconciliation_imports',data.fileSha256);
-      let day = data.day.split('-');
-      let midnight = timestamp.date(int(day[0]),int(day[1]),int(day[2])) - duration.value(8,'h');
-      return protectedHROwner() && protectedHRId(id) && data.transactionId == id && reconciliationHash(data.claimId) && reconciliationHash(data.fileSha256)
-        && data.keys().hasOnly(['schemaVersion','claimId','transactionId','fileSha256','provider','branch','day','grossCents','statementAt','sourceAt','sourceFingerprint','settingsRevision','verifiedAt','verifiedByUid','verifiedByEmail'])
-        && data.schemaVersion == 1 && data.provider in ['GCash','Grab','Foodpanda'] && reconciliationHash(data.sourceFingerprint)
-        && data.settingsRevision == settings.revision && imported.schemaVersion == 1 && imported.fileSha256 == data.fileSha256
-        && !exists(/databases/$(database)/documents/payment_reconciliation_rows/$(data.claimId)) && nextData('payment_reconciliation_rows',data.claimId) == data
-        && data.verifiedAt == reqTime() && data.verifiedByUid == reqUid() && data.verifiedByEmail == reqEmail()
-        && before.get('paymentVerified',false) != true && before.branch == data.branch && before.timestamp == data.sourceAt
-        && before.netTotal is number && before.netTotal > 0 && data.grossCents is int && data.grossCents == int(before.netTotal * 100 + 0.5)
-        && before.netTotal == data.grossCents / 100.0 && (data.provider == 'Foodpanda' ? before.paymentMethod.trim().lower() in ['foodpanda','food panda','panda'] : before.paymentMethod.trim().lower() == data.provider.lower())
-        && before.get('status','').trim().lower() in ['paid','complete','completed','settled','received']
-        && (before.get('paymentStatus',null) == null || before.paymentStatus.trim().lower() in ['paid','complete','completed','settled','received']) && before.get('isPendingSync',false) != true
-        && before.get('cancelledFoodSourceId','') == '' && before.get('preparedCancellation',null) == null
-        && before.get('cancelled',false) != true && before.get('canceled',false) != true && before.get('refunded',false) != true && before.get('refundAmount',0) <= 0
-        && (before.get('splitDetails',null) == null || before.splitDetails is list && before.splitDetails.size() == 0)
-        && (!exists(/databases/$(database)/documents/online_order_incidents/$('online-refund-' + id))
-          || readData('online_order_incidents','online-refund-' + id).status == 'Dismissed')
-        && data.statementAt is timestamp && data.sourceAt is timestamp && protectedHRDate(data.day)
-        && data.sourceAt >= midnight && data.sourceAt < midnight + duration.value(1,'d') && data.statementAt >= midnight && data.statementAt < midnight + duration.value(1,'d')
-        && data.statementAt >= data.sourceAt - duration.value(settings.providers[data.provider].timeToleranceMinutes,'m')
-        && data.statementAt <= data.sourceAt + duration.value(settings.providers[data.provider].timeToleranceMinutes,'m')
-        && after.diff(before).affectedKeys().hasOnly(['paymentVerified','verifiedBy','verifiedAt','paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile'])
-        && after.paymentVerified == true && after.verifiedBy == reqEmail() && after.verifiedAt == reqTime()
-        && after.paymentReconciliationVersion == 1 && after.paymentReconciliationId == data.claimId && after.paymentReconciliationFile == data.fileSha256;
-    }
     match /payment_reconciliation_receipts/{id} {
+      function reconciliationReceipt(data,id) {
+        let before = transactionBefore(id);
+        let after = transactionAfter(id);
+        let settings = readData('payment_reconciliation_settings','main');
+        let imported = nextData('payment_reconciliation_imports',data.fileSha256);
+        let day = data.day.split('-');
+        let midnight = timestamp.date(int(day[0]),int(day[1]),int(day[2])) - duration.value(8,'h');
+        return protectedHROwner() && protectedHRId(id) && data.transactionId == id && reconciliationHash(data.claimId) && reconciliationHash(data.fileSha256)
+          && data.keys().hasOnly(['schemaVersion','claimId','transactionId','fileSha256','provider','branch','day','grossCents','statementAt','sourceAt','sourceFingerprint','settingsRevision','verifiedAt','verifiedByUid','verifiedByEmail'])
+          && data.schemaVersion == 1 && data.provider in ['GCash','Grab','Foodpanda'] && reconciliationHash(data.sourceFingerprint)
+          && data.settingsRevision == settings.revision && imported.schemaVersion == 1 && imported.fileSha256 == data.fileSha256
+          && !exists(/databases/$(database)/documents/payment_reconciliation_rows/$(data.claimId)) && nextData('payment_reconciliation_rows',data.claimId) == data
+          && data.verifiedAt == reqTime() && data.verifiedByUid == reqUid() && data.verifiedByEmail == reqEmail()
+          && before.get('paymentVerified',false) != true && before.branch == data.branch && before.timestamp == data.sourceAt
+          && before.netTotal is number && before.netTotal > 0 && data.grossCents is int && data.grossCents == int(before.netTotal * 100 + 0.5)
+          && before.netTotal == data.grossCents / 100.0 && (data.provider == 'Foodpanda' ? before.paymentMethod.trim().lower() in ['foodpanda','food panda','panda'] : before.paymentMethod.trim().lower() == data.provider.lower())
+          && before.get('status','').trim().lower() in ['paid','complete','completed','settled','received']
+          && (before.get('paymentStatus',null) == null || before.paymentStatus.trim().lower() in ['paid','complete','completed','settled','received']) && before.get('isPendingSync',false) != true
+          && before.get('cancelledFoodSourceId','') == '' && before.get('preparedCancellation',null) == null
+          && before.get('cancelled',false) != true && before.get('canceled',false) != true && before.get('refunded',false) != true && before.get('refundAmount',0) <= 0
+          && (before.get('splitDetails',null) == null || before.splitDetails is list && before.splitDetails.size() == 0)
+          && (!exists(/databases/$(database)/documents/online_order_incidents/$('online-refund-' + id))
+            || readData('online_order_incidents','online-refund-' + id).status == 'Dismissed')
+          && data.statementAt is timestamp && data.sourceAt is timestamp && protectedHRDate(data.day)
+          && data.sourceAt >= midnight && data.sourceAt < midnight + duration.value(1,'d') && data.statementAt >= midnight && data.statementAt < midnight + duration.value(1,'d')
+          && data.statementAt >= data.sourceAt - duration.value(settings.providers[data.provider].timeToleranceMinutes,'m')
+          && data.statementAt <= data.sourceAt + duration.value(settings.providers[data.provider].timeToleranceMinutes,'m')
+          && after.diff(before).affectedKeys().hasOnly(['paymentVerified','verifiedBy','verifiedAt','paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile'])
+          && after.paymentVerified == true && after.verifiedBy == reqEmail() && after.verifiedAt == reqTime()
+          && after.paymentReconciliationVersion == 1 && after.paymentReconciliationId == data.claimId && after.paymentReconciliationFile == data.fileSha256;
+      }
+
       allow read: if protectedHROwner();
       allow create: if reconciliationReceipt(newData(),id);
       allow update, delete: if false;

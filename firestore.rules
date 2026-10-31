@@ -840,34 +840,15 @@ service cloud.firestore {
       return b || rp(a) || (f.get('active',false) == true
         && f.get('permissions',[]).hasAny(['all','inventory','audits']) && f.get('allowedBranches',[]).hasAny(['All',a]));
     }
-    function r2g(a,b) {
-      let c = r6('inventory_audit_reports',b);
-      return !exists(/databases/$(database)/documents/inventory_audit_reports/$(b))
-        && c.version == 3 && c.id == b && a.get('source',null) == null && c.timestamp == r9();
-    }
-    function r2h(a,b) {
-      let c = r6('stock_counts',b);
-      let d = r5('cashiers',a.staffId);
-      let e = a.periodStart.split('-');
-      let f = a.periodEnd.split('-');
-      return (r28() || rp(a.branch)) && r29(b) && r29(a.staffId)
-        && !exists(/databases/$(database)/documents/stock_counts/$(b)) && a.version == 3 && a.id == b
-        && a.keys().hasOnly(['version','id','intent','branch','cashier','staffId','actorUid','selectedCycle','periodStart','periodEnd','counts','timestamp','cutoff','source'])
-        && a.source == 'Cashier cycle count' && a.diff(c).affectedKeys().hasOnly(['source']) && !c.keys().hasAny(['source'])
-        && a.actorUid == r7() && a.timestamp == r9() && a.cutoff == r9()
-        && a.intent is string && a.intent.size() > 0 && a.intent.size() <= 500000
-        && a.counts is list && a.counts.size() > 0 && a.counts.size() <= 150
-        && a.selectedCycle in ['Weekly','Monthly','Daily','As Needed'] && r2b(a.periodStart) && r2b(a.periodEnd)
-        && a.periodStart <= a.periodEnd && timestamp.date(int(e[0]),int(e[1]),int(e[2])) - duration.value(8,'h') <= r9()
-        && timestamp.date(int(f[0]),int(f[1]),int(f[2])) + duration.value(16,'h') > r9()
-        && a.cashier == d.cashierName && a.branch == d.branch
-        && d.get('active',true) != false && d.get('archived',false) != true && d.get('blocked',false) != true
-        && !(d.get('status','').lower() in ['blocked','inactive','disabled','revoked','terminated','archived','resigned','deleted'])
-        && (!(d.get('pin','') is string) || !(d.get('pin','').upper() in ['REVOKED','BLOCKED']));
-    }
     // Exact stock-count rules keep the legacy v2 authority separate from the
     // frozen v3 report. Their unrelated staff-setup guards are tautologies here.
     match /stock_counts/{id} {
+      function r2g(a,b) {
+        let c = r6('inventory_audit_reports',b);
+        return !exists(/databases/$(database)/documents/inventory_audit_reports/$(b))
+          && c.version == 3 && c.id == b && a.get('source',null) == null && c.timestamp == r9();
+      }
+
       allow get: if resource == null || rb().get('version',0) != 3 || r2f(rb().get('branch',''));
       allow list: if r2f(rb().get('branch',''));
       allow create: if ra().get('version',0) != 3 || r2g(ra(),id);
@@ -875,18 +856,40 @@ service cloud.firestore {
       allow delete: if r1() && rb().get('version',0) != 3;
     }
     match /inventory_audit_reports/{id} {
+      function r2h(a,b) {
+        let c = r6('stock_counts',b);
+        let d = r5('cashiers',a.staffId);
+        let e = a.periodStart.split('-');
+        let f = a.periodEnd.split('-');
+        return (r28() || rp(a.branch)) && r29(b) && r29(a.staffId)
+          && !exists(/databases/$(database)/documents/stock_counts/$(b)) && a.version == 3 && a.id == b
+          && a.keys().hasOnly(['version','id','intent','branch','cashier','staffId','actorUid','selectedCycle','periodStart','periodEnd','counts','timestamp','cutoff','source'])
+          && a.source == 'Cashier cycle count' && a.diff(c).affectedKeys().hasOnly(['source']) && !c.keys().hasAny(['source'])
+          && a.actorUid == r7() && a.timestamp == r9() && a.cutoff == r9()
+          && a.intent is string && a.intent.size() > 0 && a.intent.size() <= 500000
+          && a.counts is list && a.counts.size() > 0 && a.counts.size() <= 150
+          && a.selectedCycle in ['Weekly','Monthly','Daily','As Needed'] && r2b(a.periodStart) && r2b(a.periodEnd)
+          && a.periodStart <= a.periodEnd && timestamp.date(int(e[0]),int(e[1]),int(e[2])) - duration.value(8,'h') <= r9()
+          && timestamp.date(int(f[0]),int(f[1]),int(f[2])) + duration.value(16,'h') > r9()
+          && a.cashier == d.cashierName && a.branch == d.branch
+          && d.get('active',true) != false && d.get('archived',false) != true && d.get('blocked',false) != true
+          && !(d.get('status','').lower() in ['blocked','inactive','disabled','revoked','terminated','archived','resigned','deleted'])
+          && (!(d.get('pin','') is string) || !(d.get('pin','').upper() in ['REVOKED','BLOCKED']));
+      }
+
       allow get: if resource == null ? r28() || rq() : r2f(rb().branch);
       allow list: if r2f(rb().branch);
       allow create: if r2h(ra(),id);
       allow update, delete: if false;
     }
     function r2i(a) { return a is string && a.matches('^[a-f0-9]{64}$'); }
-    function r2j(a) {
-      return a.keys().hasOnly(['orderPrefixes','referencePrefixes','timeToleranceMinutes'])
-        && a.orderPrefixes is list && a.orderPrefixes.size() <= 10 && a.referencePrefixes is list && a.referencePrefixes.size() <= 10
-        && a.timeToleranceMinutes is int && a.timeToleranceMinutes >= 0 && a.timeToleranceMinutes <= 120;
-    }
     match /payment_reconciliation_settings/{id} {
+      function r2j(a) {
+        return a.keys().hasOnly(['orderPrefixes','referencePrefixes','timeToleranceMinutes'])
+          && a.orderPrefixes is list && a.orderPrefixes.size() <= 10 && a.referencePrefixes is list && a.referencePrefixes.size() <= 10
+          && a.timeToleranceMinutes is int && a.timeToleranceMinutes >= 0 && a.timeToleranceMinutes <= 120;
+      }
+
       function r2k(a,b) {
         return id == 'main' && r28() && a.keys().hasOnly(['schemaVersion','revision','branchAliases','providers','updatedAt','updatedByUid','updatedByEmail'])
           && a.schemaVersion == 1 && a.revision is int && a.revision == b.get('revision',0) + 1
@@ -905,38 +908,39 @@ service cloud.firestore {
         && ra().createdAt == r9() && ra().createdByUid == r7() && ra().createdByEmail == r8();
       allow update, delete: if false;
     }
-    function r2l(a,b) {
-      let c = r2(b);
-      let d = r3(b);
-      let e = r5('payment_reconciliation_settings','main');
-      let f = r6('payment_reconciliation_imports',a.fileSha256);
-      let g = a.day.split('-');
-      let h = timestamp.date(int(g[0]),int(g[1]),int(g[2])) - duration.value(8,'h');
-      return r28() && r29(b) && a.transactionId == b && r2i(a.claimId) && r2i(a.fileSha256)
-        && a.keys().hasOnly(['schemaVersion','claimId','transactionId','fileSha256','provider','branch','day','grossCents','statementAt','sourceAt','sourceFingerprint','settingsRevision','verifiedAt','verifiedByUid','verifiedByEmail'])
-        && a.schemaVersion == 1 && a.provider in ['GCash','Grab','Foodpanda'] && r2i(a.sourceFingerprint)
-        && a.settingsRevision == e.revision && f.schemaVersion == 1 && f.fileSha256 == a.fileSha256
-        && !exists(/databases/$(database)/documents/payment_reconciliation_rows/$(a.claimId)) && r6('payment_reconciliation_rows',a.claimId) == a
-        && a.verifiedAt == r9() && a.verifiedByUid == r7() && a.verifiedByEmail == r8()
-        && c.get('paymentVerified',false) != true && c.branch == a.branch && c.timestamp == a.sourceAt
-        && c.netTotal is number && c.netTotal > 0 && a.grossCents is int && a.grossCents == int(c.netTotal * 100 + 0.5)
-        && c.netTotal == a.grossCents / 100.0 && (a.provider == 'Foodpanda' ? c.paymentMethod.trim().lower() in ['foodpanda','food panda','panda'] : c.paymentMethod.trim().lower() == a.provider.lower())
-        && c.get('status','').trim().lower() in ['paid','complete','completed','settled','received']
-        && (c.get('paymentStatus',null) == null || c.paymentStatus.trim().lower() in ['paid','complete','completed','settled','received']) && c.get('isPendingSync',false) != true
-        && c.get('cancelledFoodSourceId','') == '' && c.get('preparedCancellation',null) == null
-        && c.get('cancelled',false) != true && c.get('canceled',false) != true && c.get('refunded',false) != true && c.get('refundAmount',0) <= 0
-        && (c.get('splitDetails',null) == null || c.splitDetails is list && c.splitDetails.size() == 0)
-        && (!exists(/databases/$(database)/documents/online_order_incidents/$('online-refund-' + b))
-          || r5('online_order_incidents','online-refund-' + b).status == 'Dismissed')
-        && a.statementAt is timestamp && a.sourceAt is timestamp && r2b(a.day)
-        && a.sourceAt >= h && a.sourceAt < h + duration.value(1,'d') && a.statementAt >= h && a.statementAt < h + duration.value(1,'d')
-        && a.statementAt >= a.sourceAt - duration.value(e.providers[a.provider].timeToleranceMinutes,'m')
-        && a.statementAt <= a.sourceAt + duration.value(e.providers[a.provider].timeToleranceMinutes,'m')
-        && d.diff(c).affectedKeys().hasOnly(['paymentVerified','verifiedBy','verifiedAt','paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile'])
-        && d.paymentVerified == true && d.verifiedBy == r8() && d.verifiedAt == r9()
-        && d.paymentReconciliationVersion == 1 && d.paymentReconciliationId == a.claimId && d.paymentReconciliationFile == a.fileSha256;
-    }
     match /payment_reconciliation_receipts/{id} {
+      function r2l(a,b) {
+        let c = r2(b);
+        let d = r3(b);
+        let e = r5('payment_reconciliation_settings','main');
+        let f = r6('payment_reconciliation_imports',a.fileSha256);
+        let g = a.day.split('-');
+        let h = timestamp.date(int(g[0]),int(g[1]),int(g[2])) - duration.value(8,'h');
+        return r28() && r29(b) && a.transactionId == b && r2i(a.claimId) && r2i(a.fileSha256)
+          && a.keys().hasOnly(['schemaVersion','claimId','transactionId','fileSha256','provider','branch','day','grossCents','statementAt','sourceAt','sourceFingerprint','settingsRevision','verifiedAt','verifiedByUid','verifiedByEmail'])
+          && a.schemaVersion == 1 && a.provider in ['GCash','Grab','Foodpanda'] && r2i(a.sourceFingerprint)
+          && a.settingsRevision == e.revision && f.schemaVersion == 1 && f.fileSha256 == a.fileSha256
+          && !exists(/databases/$(database)/documents/payment_reconciliation_rows/$(a.claimId)) && r6('payment_reconciliation_rows',a.claimId) == a
+          && a.verifiedAt == r9() && a.verifiedByUid == r7() && a.verifiedByEmail == r8()
+          && c.get('paymentVerified',false) != true && c.branch == a.branch && c.timestamp == a.sourceAt
+          && c.netTotal is number && c.netTotal > 0 && a.grossCents is int && a.grossCents == int(c.netTotal * 100 + 0.5)
+          && c.netTotal == a.grossCents / 100.0 && (a.provider == 'Foodpanda' ? c.paymentMethod.trim().lower() in ['foodpanda','food panda','panda'] : c.paymentMethod.trim().lower() == a.provider.lower())
+          && c.get('status','').trim().lower() in ['paid','complete','completed','settled','received']
+          && (c.get('paymentStatus',null) == null || c.paymentStatus.trim().lower() in ['paid','complete','completed','settled','received']) && c.get('isPendingSync',false) != true
+          && c.get('cancelledFoodSourceId','') == '' && c.get('preparedCancellation',null) == null
+          && c.get('cancelled',false) != true && c.get('canceled',false) != true && c.get('refunded',false) != true && c.get('refundAmount',0) <= 0
+          && (c.get('splitDetails',null) == null || c.splitDetails is list && c.splitDetails.size() == 0)
+          && (!exists(/databases/$(database)/documents/online_order_incidents/$('online-refund-' + b))
+            || r5('online_order_incidents','online-refund-' + b).status == 'Dismissed')
+          && a.statementAt is timestamp && a.sourceAt is timestamp && r2b(a.day)
+          && a.sourceAt >= h && a.sourceAt < h + duration.value(1,'d') && a.statementAt >= h && a.statementAt < h + duration.value(1,'d')
+          && a.statementAt >= a.sourceAt - duration.value(e.providers[a.provider].timeToleranceMinutes,'m')
+          && a.statementAt <= a.sourceAt + duration.value(e.providers[a.provider].timeToleranceMinutes,'m')
+          && d.diff(c).affectedKeys().hasOnly(['paymentVerified','verifiedBy','verifiedAt','paymentReconciliationVersion','paymentReconciliationId','paymentReconciliationFile'])
+          && d.paymentVerified == true && d.verifiedBy == r8() && d.verifiedAt == r9()
+          && d.paymentReconciliationVersion == 1 && d.paymentReconciliationId == a.claimId && d.paymentReconciliationFile == a.fileSha256;
+      }
+
       allow read: if r28();
       allow create: if r2l(ra(),id);
       allow update, delete: if false;
