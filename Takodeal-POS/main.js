@@ -1,6 +1,7 @@
 import {createStockAuditDeviceResolver} from './stock-audit-device.js';
 import {installCashRemittance} from './cash-remittance-ui.js';
 import {createCashierDeviceAuthContext} from './cashier-device-auth.js';
+import {installCashierDeviceSetup} from './cashier-device-setup.js';
 import {installCycleCounts} from './stock-count-ui.js';
 import {installCashierScheduleProposals} from './cashier-schedule-proposals.js';
 import {installPOSSettingsHub} from './pos-settings-hub.js';
@@ -305,10 +306,13 @@ window.smartDeviceRegistration = async function() {
         localStorage.setItem('takodeal_device_branch', targetBranch);
         localStorage.setItem('takodeal_device_id', deviceId);
         localStorage.setItem('takodeal_device_name', deviceName);
+        // Prepare the private UID with the registration, rather than asking
+        // again from each protected feature. This never activates the UID.
+        const approval = await window.prepareCashierDeviceApproval().catch(error => ({status:'Unavailable',message:error.message}));
         
         Swal.fire({
-            title: '✅ Device Activated!',
-            text: `Welcome, ${managerData.fullName || user.displayName}! This tablet is now securely locked to ${targetBranch} and fully activated.`,
+            title: approval.status === 'Active' ? 'Device ready' : 'Tablet registration saved',
+            text: approval.status === 'Active' ? `This tablet is approved for ${targetBranch}.` : `This tablet is assigned to ${targetBranch}. The Owner approves its shared Cashier access once in Device Fleet. ${approval.uid ? 'Approval UID: '+approval.uid : 'Reopen the app and check its saved device approval. '+(approval.message||'')}`,
             icon: 'success',
             timer: 3000,
             showConfirmButton: false
@@ -343,8 +347,8 @@ window.lockDeviceToBranch = async function () {
       registeredAt: serverTimestamp(),
       lastSeen: serverTimestamp()
     });
-
-    alert(`⏳ Device Registered!\n\nPlease tell the Manager to approve "${deviceName}" in the HQ Control Center before you can log in.`);
+    const approval = await window.prepareCashierDeviceApproval().catch(error => ({status:'Unavailable',message:error.message}));
+    alert(`Device registered!\n\nAsk the Owner to approve "${deviceName}" once in Device Fleet. That approval covers the Cashier features.\n${approval.uid ? 'Approval UID: '+approval.uid : 'The tablet setup is saved. Reopen the app and check its saved device approval. '+(approval.message||'')}`);
     location.reload();
   } catch (e) {
     console.error("Registration Error:", e);
@@ -9905,6 +9909,7 @@ window.compressImage = function(file, maxWidth = 800, maxHeight = 800, quality =
 // Keep legacy close controls on the same atomic settlement path.
 window.submitComprehensiveCloseShift = (...args) => window.MASTER_CloseShift(...args);
 
+installCashierDeviceSetup(window,document,{deviceContext:cashierDeviceContext,signInAnonymously});
 installCycleCounts(window,document);
 installCashierScheduleProposals(window,document,{primaryAuth:auth,signInAnonymously,deviceContext:cashierDeviceContext,projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey});
 window.cashierScheduleSync = installScheduleViewSync(window, {window, document,
