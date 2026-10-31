@@ -8698,8 +8698,13 @@ window.saveManualSchedule = async function() {
         window.captureTempShiftConfig();
         Object.entries(window.getScheduleMemorySnapshot().branchConfig).forEach(([branch,shifts])=>{if(window.isBranchAllowed(branch))shifts.forEach(shift=>validateShiftConfig(shift));});
         Swal.fire({title:'Saving schedule…',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
-        if(await window.saveToCloud()===false)throw Error(document.getElementById('ownerScheduleSyncStatus')?.textContent || 'Schedule was not saved.');
-        await Swal.fire({title:'Schedule saved',text:'Your edits were saved to HQ. Phone schedules can now load this saved version.',icon:'success',customClass:{popup:'rounded-2xl'}});
+        if(await window.saveToCloud()===false){
+            const sync=window.getOwnerScheduleSync?.();
+            if(sync?.lastError?.()?.code==='schedule/calendar-review-needed'){Swal.close();await window.openMonthlySchedule();return false;}
+            if(/another session/.test(sync?.lastError?.()?.message||''))throw Error('Another owner or co-owner saved a newer schedule. Your local draft is kept. Download the draft, reload the latest saved schedule, then review your changes before saving again. No separate HQ approval is required.');
+            throw Error(document.getElementById('ownerScheduleSyncStatus')?.textContent || 'Schedule was not saved.');
+        }
+        await Swal.fire({title:'Schedule saved',text:'Your schedule is shared with the other Owner devices and staff apps. No separate HQ approval is needed.',icon:'success',customClass:{popup:'rounded-2xl'}});
         return true;
     } catch(error) {
         await Swal.fire({title:window.managerCloudHealth?.isFailed()?'Reconnect the Owner app':'Schedule save not confirmed',text:error.message || 'HQ has not confirmed this save. Keep your edits and review the saved status before retrying.',icon:'warning'});

@@ -126,3 +126,18 @@ test('default evidence confirms exact linked source IDs freshly, including rejec
  assert.deepEqual(reads.map(row=>row.id),['missing-source','rejected-source']);assert.equal(result.leaveSources.find(row=>row.id==='missing-source').record,null);assert.equal(result.leaveSources.find(row=>row.id==='rejected-source').record.reason,undefined);assert.equal(f.calls.businessWrites,0);
  f.w.getDocFromServer=async()=>({exists:()=>false,metadata:{fromCache:true}});assert.equal(await f.controller.open(),false);assert.equal(f.calls.uiOpen,0);assert.equal(f.calls.applied.length,0);
 });
+
+for(const result of ['saved','failed','closed','changed'])test('calendar repair requires a preserved original and a current review: '+result,async()=>{
+ const f=fixture(),raw={Maa:day({'morning-1':'Synthetic Extra Day'})};f.state.snapshot.currentSchedule[31]=raw;let backups=0;
+ f.sync.preserveCalendarBackup=async()=>{backups++;if(result==='closed')f.controller.close();if(result==='changed')f.state.snapshot.currentSchedule[3]={Maa:day({'morning-1':'New edit'})};return result!=='failed';};
+ await f.controller.open();const {captured,plan}=f.proposal(),before=copy(f.state.snapshot);assert.equal(plan.calendarRepair.excluded[0].key,'31');assert.deepEqual(f.state.snapshot,before);assert.equal(backups,0);
+ if(result==='saved'){assert.equal((await f.hooks.commit(plan,captured)).prepared,true);assert.equal(f.state.snapshot.currentSchedule[31],undefined);assert.equal(backups,1);assert.equal(f.calls.applied.length,1);}
+ else{await assert.rejects(f.hooks.commit(plan,captured));assert.equal(f.calls.applied.length,0);assert.deepEqual(f.state.snapshot.currentSchedule[31],raw);assert.equal(f.calls.dirty,0);}
+ assert.equal(f.calls.businessWrites,0);
+});
+test('an authorized co-owner can review and apply a local roster without a separate Owner or HQ approval',async()=>{
+ const f=fixture();f.w.auth.currentUser={uid:'synthetic-coowner',email:'coowner@example.test',emailVerified:true};f.w.sessionUser={uid:'synthetic-coowner',email:'coowner@example.test',role:'Co-Owner',isOwner:false,isFranchisee:false,permissions:['schedule'],allowedBranches:['Maa']};await f.controller.open();const {captured,plan}=f.proposal();assert.equal((await f.hooks.commit(plan,captured)).prepared,true);assert.equal(f.calls.applied.length,1);assert.equal(f.calls.businessWrites,0);
+});
+test('calendar repair cannot alter extra rows of a branch outside the current co-owner permissions',async()=>{
+ const f=fixture();f.state.snapshot.currentSchedule[31]={Restricted:day()};f.w.isBranchAllowed=branch=>branch!=='Restricted';f.sync.preserveCalendarBackup=()=>assert.fail('No backup or repair should start for an unauthorized branch');await f.controller.open();const {captured,plan}=f.proposal();await assert.rejects(f.hooks.commit(plan,captured),/authorized owner/);assert.equal(f.calls.applied.length,0);assert.equal(f.calls.businessWrites,0);
+});

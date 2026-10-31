@@ -4,6 +4,7 @@ import {activeLeaveDates,leaveStatus} from './leave-model.js';
 import {suspensionDates} from './sanction-schedule.js';
 import {validateShiftConfig} from './payroll-safety.js';
 import {reconcileScheduleLeaveMarkers} from './schedule-leave-markers.js';
+import {planScheduleCalendar,calendarReviewWarnings} from './schedule-calendar.js';
 
 const copy=value=>JSON.parse(JSON.stringify(value));
 const object=value=>!!value&&typeof value==='object'&&!Array.isArray(value);
@@ -91,9 +92,11 @@ export function buildMonthlySchedulePlan({snapshot,month,branch,staffProfiles,ap
  const from=effectiveFrom||[today,selected+'-01'].sort().at(-1);scheduleDateKey(from);if(from.slice(0,7)!==selected||from<today)throw Error('Choose an effective date in this month, today or later.');
  const count=new Date(Date.UTC(Number(selected.slice(0,4)),Number(selected.slice(5,7)),0)).getUTCDate();if(count<28||count>31)throw Error('Choose a valid schedule month.');const to=selected+'-'+String(count).padStart(2,'0'),rules=rulesFor(snapshot,branch);
  const profiles=validateRows(staffProfiles,'current staff directory',2000),directory=scheduleIdentityDirectory(profiles,snapshot.employees||[]),index=identityIndex(directory);validateRows(approvedLeaves,'approved leave records');validateRows(sanctions,'reviewed suspension records');
+ const originalSnapshot=snapshot,calendarRepair=planScheduleCalendar(snapshot);snapshot=calendarRepair.snapshot;
  const recovered=reconcileScheduleLeaveMarkers({snapshot,branch,from,to,staffProfiles:profiles,leaveSources});
  const protection=protectedDates({approvedLeaves,sanctions,directory,snapshot:recovered.snapshot,branch,from,to}),output=recovered.snapshot;output.currentSchedule||={};output.employees=mergeScheduleEmployeeAliases(profiles,snapshot.employees||[]);const assignments=[],warnings=[],conflicts=[],days=[],counts={datesPrepared:0,slotsCreated:0,slotsActivated:0,existingAssignments:0,autoAssigned:0,unfilled:0,standby:0,unavailable:0,untouchedPastDates:0};
  const warning=text=>{if(warnings.length<40&&!warnings.includes(text))warnings.push(text);},loads=new Map();
+ for(const text of calendarReviewWarnings(calendarRepair))warning(text);
  for(const release of recovered.released)warning(release.date+': '+release.staffName+' · '+release.reason+' · Reference: '+release.leaveRequestId+'. The linked marker will be released only in this local draft.');
  for(const branches of Object.values(snapshot.currentSchedule||{}))for(const name of Object.values(branches?.[branch]?.scheduled||{})){const person=named(name)&&resolveScheduleEmployeeReference(name,directory);if(person)loads.set(person.staffId,(loads.get(person.staffId)||0)+1);}
  for(let number=1;number<=count;number++){
@@ -128,5 +131,5 @@ export function buildMonthlySchedulePlan({snapshot,month,branch,staffProfiles,ap
   if(saved.date===other.date||overlaps(saved.interval,other.interval))conflicts.push({date:selected.date,shiftId:selected.shiftId,staffName:selected.name,reason:'Preserved assignments duplicate a staff account or overlap another shift ('+saved.branch+' '+saved.date+' / '+other.branch+' '+other.date+').'});
  }
  if(conflicts.length)warning('Some preserved assignments conflict with saved leave, suspension or other shifts. Review those dates before saving the draft.');
- return freeze({version:1,mode,month:selected,branch,from,to,snapshot:output,counts,days,assignments,warnings,conflicts,releasedLeaveMarkers:recovered.released,sourceFingerprint:monthlyScheduleFingerprint(snapshot)});
+ return freeze({version:1,mode,month:selected,branch,from,to,snapshot:output,counts,days,assignments,warnings,conflicts,releasedLeaveMarkers:recovered.released,calendarRepair,sourceFingerprint:monthlyScheduleFingerprint(originalSnapshot)});
 }

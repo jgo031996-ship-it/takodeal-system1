@@ -1,4 +1,5 @@
 import {createScheduleRecoveryDraftStore,scheduleRecoveryScope,scheduleDraftSnapshot,scheduleDraftKey,scheduleSnapshotFingerprint,planScheduleDraftRecovery} from './schedule-recovery-draft.js';
+import {planScheduleCalendar,scheduleCalendarError} from './schedule-calendar.js';
 const clone=value=>structuredClone(value);
 const fingerprint=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
 /** Owns only the editor's read/save lifecycle. It never changes schedule rules. */
@@ -7,19 +8,30 @@ export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth
  captureEditor=getSnapshot,applyRecoveredSnapshot,setEffectiveFrom=()=>{},draftStore=createScheduleRecoveryDraftStore(),onRecovery=()=>{},health={},now=()=>new Date(),saveTimeoutMs=timeoutMs,editorId='editor-'+crypto.randomUUID()}={}){
  let loaded=null,loadedIdentity=null,baseline=null,uiDirty=false,history=false,epoch=0,watchStop=null,watchKey='',saveFlight=null,queuedSave=null,headStamp,requestId=null,followUp=false;const reads=new Map();
  let baselineEffectiveFrom=null,backupQueue=Promise.resolve(),lastBackup=null,backupError='',recoveryCandidates=[],recoveryPlan=null,recoveryEpoch=0,requiresReload=false,lastError=null;
- const scopes=new Map(),restoredSources=new Set();
+ const scopes=new Map(),restoredSources=new Set(),calendarBackups=new Map();
  const identity=()=>fingerprint(getIdentity()),dirty=()=>uiDirty||baseline!==null&&(fingerprint(getSnapshot())!==baseline||baselineEffectiveFrom!==null&&getEffectiveFrom()!==baselineEffectiveFrom);
  const status=(message,error=false)=>onStatus(message,error);
  const failed=()=>health.isFailed?.()===true;
  const report=error=>{lastError=error;try{health.report?.(error);}catch{}};
  const stop=()=>{const finish=watchStop;watchStop=null;watchKey='';headStamp=undefined;followUp=false;try{finish?.();}catch(error){report(error);}};
- const recoveryState=()=>({preserved:!!lastBackup&&authorize()&&lastBackup.actor===identity()&&lastBackup.month===getMonth()&&scheduleSnapshotFingerprint(getSnapshot())===scheduleSnapshotFingerprint(lastBackup.record.editorSnapshot)&&getEffectiveFrom()===lastBackup.record.effectiveFrom&&(requestId?.id??null)===(lastBackup.record.pending?.revisionId??null),backupError,hasDraft:dirty()||!!requestId,candidates:recoveryCandidates.map(row=>({key:row.key,savedAt:row.savedAt,month:row.month,unconfirmed:!!row.pending})),plan:recoveryPlan?{kind:recoveryPlan.kind,reason:recoveryPlan.reason}:null,failed:failed()});
+ const recoveryState=()=>({preserved:!!lastBackup&&authorize()&&lastBackup.actor===identity()&&lastBackup.month===getMonth()&&scheduleSnapshotFingerprint(getSnapshot())===scheduleSnapshotFingerprint(lastBackup.record.editorSnapshot)&&getEffectiveFrom()===lastBackup.record.effectiveFrom&&(requestId?.id??null)===(lastBackup.record.pending?.revisionId??null),backupError,hasDraft:dirty()||!!requestId,candidates:recoveryCandidates.map(row=>({key:row.key,savedAt:row.savedAt,month:row.month,unconfirmed:!!row.pending,calendarBackup:row.editorId.startsWith('calendar-')})),plan:recoveryPlan?{kind:recoveryPlan.kind,reason:recoveryPlan.reason}:null,failed:failed()});
  const publishRecovery=()=>onRecovery(recoveryState());
  function scope(actor=identity(),value=getIdentity()){let pending=scopes.get(actor);if(!pending){pending=scheduleRecoveryScope(value).catch(error=>{scopes.delete(actor);throw error;});scopes.set(actor,pending);}return pending;}
  const current=(actor,month)=>actor===identity()&&month===getMonth()&&authorize();
  const localBase=()=>({revisionId:getExpectedRevision()??null,snapshotFingerprint:scheduleSnapshotFingerprint(loaded?.editorSnapshot||getSnapshot())});
  async function makeRecord({snapshot=captureEditor(),effectiveFrom=getEffectiveFrom(),pending=requestId?.payload||null,base=localBase(),actor=identity(),actorValue=getIdentity(),month=getMonth()}={}){
   const bound=await scope(actor,actorValue);return {schemaVersion:1,...bound,month,editorId,key:scheduleDraftKey(bound,month,editorId),savedAt:now().toISOString(),editorSnapshot:scheduleDraftSnapshot(snapshot),effectiveFrom,base:clone(base),pending:pending?clone(pending):null};
+ }
+ async function preserveCalendarBackup(){
+  if(!authorize()||!loaded||loadedIdentity!==identity()||loaded.month!==getMonth()||saveFlight)return false;
+  const actor=identity(),month=getMonth(),snapshot=clone(captureEditor()),effectiveFrom=getEffectiveFrom(),key=fingerprint({actor,month,snapshot,effectiveFrom});
+  try{
+   if(calendarBackups.has(key))return true;
+   const record=await makeRecord({snapshot,effectiveFrom,pending:null,actor,month});
+   record.editorId='calendar-'+crypto.randomUUID();record.key=scheduleDraftKey(record,month,record.editorId);
+   const write=backupQueue.catch(()=>{}).then(()=>draftStore.write(record));backupQueue=write;await write;
+   calendarBackups.set(key,record.key);return current(actor,month);
+  }catch(error){report(error);status('The original calendar draft could not be preserved. Keep the editor open or download it before trying the repair again.',true);return false;}
  }
  function storeRecord(record,actor){
   const write=backupQueue.catch(()=>{}).then(()=>draftStore.write(record));backupQueue=write;
@@ -100,6 +112,11 @@ export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth
   let snapshot;try{snapshot=clone(captureEditor());}catch(error){status(error.message||'The editor could not be captured. Keep it open.',true);return Promise.resolve(false);}
   const key=fingerprint({actor:identity(),snapshot,effectiveFrom:getEffectiveFrom()});
   if(saveFlight){if(saveFlight.key===key)return saveFlight.promise;if(saveFlight.timedOut){status('The original save is still awaiting confirmation. No duplicate save was started. Your newer edits remain in this editor.',true);void preserveDraft();return Promise.resolve(false);}if(!queuedSave)queuedSave=saveFlight.physical.then(saved=>{queuedSave=null;return saved===true?save():false;},()=>{queuedSave=null;return false;});return queuedSave;}
+  let calendar;try{calendar=planScheduleCalendar(snapshot);if(calendar.month!==getMonth())throw Error('The editor month differs from the selected month. Preserve this draft and reload the selected saved schedule before saving.');}catch(error){report(error);status(error.message,true);return Promise.resolve(false);}
+  if(calendar.changed){const error=scheduleCalendarError(calendar);report(error);status(error.message,true);return Promise.resolve(false);}
+  // A known invalid calendar payload cannot have produced a valid archived
+  // revision. Do not keep replaying an old rejected payload after local repair.
+  if(requestId&&planScheduleCalendar(requestId.payload.snapshot).changed)requestId=null;
   const actor=identity(),month=getMonth(),actorValue=clone(getIdentity()),effectiveFrom=getEffectiveFrom();
   // An unconfirmed operation is retried unchanged, even if the editor acquired
   // more changes. Those later edits stay separate until the first save is known.
@@ -124,7 +141,7 @@ export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth
     if(latestRevision!==pending.revisionId){requiresReload=true;status('The original save is confirmed at HQ. A newer saved schedule also exists; your local draft is kept for comparison.',true);publishRecovery();return true;}
     setExpectedRevision(result.latestRevisionId??result.revision?.revisionId??null);
     baseline=before;baselineEffectiveFrom=pending.effectiveFrom;uiDirty=more;history=false;loaded={...loaded,editorSnapshot:clone(acknowledged),expectedRevisionId:latestRevision,month};
-    await onSaved(result);status(uiDirty?'Saved to HQ. Additional unsaved edits remain in this editor.':'Saved to HQ. Phone schedules will refresh to this saved version.');return true;
+    await onSaved(result);status(uiDirty?'Saved to shared schedule. Additional unsaved edits remain in this editor.':'Saved to shared schedule. Other Owner devices and staff apps can now load this version.');return true;
    }catch(error){report(error);if(entry.cloudConfirmed){requestId=null;if(actor===identity()&&month===getMonth()){const result=entry.cloudConfirmed,latestRevision=result.latestRevisionId??result.revision?.revisionId??pending.revisionId;if(latestRevision===pending.revisionId){setExpectedRevision(latestRevision);baseline=before;baselineEffectiveFrom=pending.effectiveFrom;uiDirty=fingerprint(getSnapshot())!==before||getEffectiveFrom()!==pending.effectiveFrom;loaded={...loaded,editorSnapshot:clone(result.revision?.snapshot||pending.snapshot),expectedRevisionId:latestRevision,month};}else requiresReload=true;status('The original save is confirmed at HQ. The local backup or screen refresh needs attention; keep any additional edits in this editor.',true);publishRecovery();}return true;}if(!entry.cloudStarted&&requestId?.id===pending.revisionId)requestId=null;if(actor===identity()){if(entry.record){try{const latest=month===getMonth()?clone(captureEditor()):entry.record.editorSnapshot,effective=month===getMonth()?getEffectiveFrom():entry.record.effectiveFrom;await storeRecord({...entry.record,savedAt:now().toISOString(),editorSnapshot:scheduleDraftSnapshot(latest),effectiveFrom:effective,pending:entry.cloudStarted?pending:null},actor);}catch{}}
      status(failed()?'HQ connection stopped. Save confirmation is unavailable. Your draft must be preserved before reloading.':!entry.cloudStarted?'Save was not started because the local backup or connection was not confirmed. Keep this editor open or download the draft.':'Schedule save was not confirmed: '+error.message+(backupError?' Local draft backup also needs attention; keep this editor open.':''),true);publishRecovery();}return false;}
    finally{if(saveFlight===entry)saveFlight=null;publishRecovery();flushFollowUp();}
@@ -132,7 +149,7 @@ export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth
   let timer;entry.promise=Promise.race([entry.physical,new Promise(resolve=>{entry.failUI=()=>{entry.timedOut=true;resolve(false);};timer=setTimeoutFn(()=>{entry.timedOut=true;status('Schedule save confirmation is taking longer than expected. The original operation remains pending; no duplicate save will be started.',true);void preserveDraft();resolve(false);},saveTimeoutMs);})]).finally(()=>clearTimeoutFn(timer));return entry.promise;
  }
  async function cloudFailed(){stop();saveFlight?.failUI?.();status('HQ connection stopped. Save confirmation is unavailable. Preserve or download the draft before reloading.',true);await preserveDraft();publishRecovery();}
- return {load,save,start:watch,stop,markDirty(){uiDirty=true;lastBackup=null;publishRecovery();void preserveDraft();},preserveDraft,recoverDraft,checkRecovery,exportDraft,cloudFailed,recoveryState,lastError:()=>lastError,isDirty:dirty,isSaving:()=>!!saveFlight,isLoaded:()=>!!loaded,
+ return {load,save,start:watch,stop,preserveCalendarBackup,markDirty(){uiDirty=true;lastBackup=null;publishRecovery();void preserveDraft();},preserveDraft,recoverDraft,checkRecovery,exportDraft,cloudFailed,recoveryState,lastError:()=>lastError,isDirty:dirty,isSaving:()=>!!saveFlight,isLoaded:()=>!!loaded,
   setHistory(value){history=value===true;},baseline:()=>loaded,
   invalidate(){++epoch;++recoveryEpoch;stop();loaded=null;loadedIdentity=null;baseline=null;baselineEffectiveFrom=null;uiDirty=false;history=false;requestId=null;lastBackup=null;recoveryCandidates=[];recoveryPlan=null;publishRecovery();}};
 }
@@ -151,7 +168,7 @@ export function installOwnerScheduleSync(w,d,options){
  recovery.append(recoveryMessage,selection,controls);panel?.append(recovery);let recoveryBusy=false;
  const cloudHealth={isFailed:()=>w.managerCloudHealth?.isFailed?.()===true,report:error=>w.managerCloudHealth?.report?.(error),assertReady:()=>w.managerCloudHealth?.assertReady?.()};
  function paintRecovery(state){
-  const selected=selection.value;selection.replaceChildren(...state.candidates.map(row=>{const option=d.createElement('option');option.value=row.key;option.textContent=row.month+' · '+new Date(row.savedAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'})+(row.unconfirmed?' · unconfirmed save':' · local edits');return option;}));if(state.candidates.some(row=>row.key===selected))selection.value=selected;
+  const selected=selection.value;selection.replaceChildren(...state.candidates.map(row=>{const option=d.createElement('option');option.value=row.key;option.textContent=row.month+' · '+new Date(row.savedAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'})+(row.calendarBackup?' · original calendar backup':row.unconfirmed?' · unconfirmed save':' · local edits');return option;}));if(state.candidates.some(row=>row.key===selected))selection.value=selected;
   selection.hidden=!state.candidates.length;restore.disabled=recoveryBusy||state.failed||!state.candidates.length||controller.isDirty()||controller.isSaving();restart.hidden=!state.failed;restart.disabled=recoveryBusy||!state.preserved;download.disabled=recoveryBusy||!controller.isLoaded();
   recoveryMessage.textContent=state.failed?(state.preserved?'HQ connection stopped. A local draft is preserved. Reload to check HQ and recover it. Restoring never sends another save.':'HQ connection stopped. Local backup has not been confirmed. Keep this editor open or download its draft before reloading.'):state.plan?.kind==='conflict'?state.plan.reason:state.candidates.length?'A local recovery draft is available. Restore checks the latest HQ version first and never saves automatically.':state.backupError?'Local backup is unavailable: '+state.backupError:state.preserved?'Your unsaved schedule draft is preserved on this device.':'Schedule recovery keeps unsaved edits separate from saved HQ versions.';
   options.onRecovery?.(state);

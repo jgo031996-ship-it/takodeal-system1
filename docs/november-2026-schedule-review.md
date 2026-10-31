@@ -9,7 +9,7 @@ Audited `main` at `9cff72c942c51adbf123489068dc37cc86e77798` on October 31, 2026
 3. **Branch-pool identity and refresh:** removal previously searched a cached staff list and picked the last matching name. Pulling staff used a name as its selection value, and transfers could leave the scheduling identity directory stale. Pool actions now confirm the current staff ID, update both local directories after a confirmed transfer, and show the actual error. Permanent pool transfers still have their own explicit confirmation; they do not assign or alter roster dates.
 4. **Conflicting shifts:** automatic assignment now avoids overlapping overnight shifts present in the loaded month. Preserved duplicate/overlapping assignments are reported for review and are not silently replaced. The planner does not retrieve adjacent months, so cross-month overnight conflicts require separate review.
 
-The Owner service-worker and document release advance together to `takodeal-manager-core-v114-roster-leave-recovery-20261031`, including the new module in offline assets.
+The Owner service-worker and document release advance together to `takodeal-manager-core-v115-calendar-owner-save-20261031`, including the new module in offline assets.
 
 ## Create and review November
 
@@ -34,7 +34,22 @@ For a one-day visit to another branch, use the dated relief-staff assignment. **
 ## Validation
 
 - Synthetic Maa and Agdao cases cover empty months, deliberate autofill, the November 5 opening date, weekdays, inactive shifts, exact and overnight hours, approved/rejected/cancelled/historical/deleted leave, overlapping leave, manual flags, transfers, ambiguous identities, missing/conflicting IDs, duplicate assignments, and conflicts.
-- **585 scheduling and leave regression tests passed.** Actual Owner functions and dialog controls are exercised with mocked data. Review/Cancel make no business writes, applying a draft makes no HQ save, and changes to the evidence invalidate reviewed proposals. Existing Save Edits and revision/recovery tests continue to run.
+- **604 scheduling and leave regression tests passed.** Actual Owner functions and dialog controls are exercised with mocked data. Review/Cancel make no business writes, applying a draft makes no HQ save, and changes to the evidence invalidate reviewed proposals. Existing Save Edits and revision/recovery tests continue to run.
 - All three locked Firebase SDK checks passed with network and credential access blocked. Generated security rules match the readable policy. Workspace JavaScript syntax checks and `git diff --check` passed.
-- Full regression run: **5,077 passed; 2 failed; 0 skipped**. Both failures also reproduce on unchanged `main`: `loadPayrollGenerator` and `generateAutoPayslips`, in the case “established employment and missing start confirmation never erase completed cutoff hours” (`tests/payroll-preview-integration.test.mjs`). Both expect a `MISSED` preview row. Payroll code and tests were not changed to hide or repair these unrelated baseline failures.
+- Full regression run: **5,096 passed; 2 failed; 0 skipped**. Both failures also reproduce on unchanged `main`: `loadPayrollGenerator` and `generateAutoPayslips`, in the case “established employment and missing start confirmation never erase completed cutoff hours” (`tests/payroll-preview-integration.test.mjs`). Both expect a `MISSED` preview row. Payroll code and tests were not changed to hide or repair these unrelated baseline failures.
 - A reusable synthetic browser fixture is at `tests/fixtures/owner-november-schedule.html`. Visual verification was blocked because the cloud browser could not reach the local HTTP server (`ERR_CONNECTION_REFUSED`). Actual November rosters, live HQ data, installed Owner tablets and the user's home PC remain unverified.
+
+
+## Follow-up: month validation and Owner/co-owner saves
+
+The supplied phone screenshots show the older assignment autosave message and the exact error “A schedule day does not belong to the selected month.” PR #137 was still open when inspected, so its changes were not in main. The screenshots alone do not reveal the invalid key in the user's actual saved records.
+
+A synthetic November snapshot containing day 31 reproduces that exact error. The editor previously retained such legacy rows, and monthly creation prepared days 1–30 without removing the extra row, so even later Save Edits still failed. The new calendar proposal detects extra/malformed/duplicate day keys, normalizes unambiguous padded day keys, and lists excluded rows with their branch/staff details. It never guesses a replacement date. All valid day rows retain their contents during calendar normalization.
+
+Before applying a reviewed repair, Schedule Manager must preserve the complete original draft as a separate private local recovery record. That copy has a distinct key, so applying the repaired draft and subsequently saving cannot overwrite it. It appears as **original calendar backup** in the recovery choices and remains downloadable. A backup failure, changed editor/account, closed review, or missing branch permission blocks the repair. Review and Cancel do not change the editor or saved schedule.
+
+Save Edits now checks calendar validity before starting a database save. If repair is needed it opens the monthly review directly, instead of showing a generic failed-save loop. After checking **Calendar rows to repair**, choose **Use this local draft**, then **Save Edits**. Existing valid assignments are retained in Prepare mode. Extra-day assignments stay in the original backup until an authorized manager deliberately plots them on a real date.
+
+**HQ means the shared database, not an additional approver.** Owners and co-owners with Schedule Manager and branch permission use the same direct save/version-check path. The heading and monthly dialog explain this. Success says **Saved to shared schedule**. A simultaneous-edit rejection explains that another owner/co-owner saved a newer version, keeps the local draft, and directs the user to download it and reload/compare before another save. Permissions are not expanded and concurrent changes are never silently overwritten.
+
+Additional tests cover the supplied error, Cabantian extra-day assignments, November/October and leap/non-leap February, padded/duplicate/malformed day keys, complete backup retention after saving, backup failure, changed review state, unauthorized branches, mismatched editor months, direct authorized co-owner editing and stale concurrent Owner/co-owner saves. Validation totals above include these tests. No actual staff records or schedules were accessed to reproduce the failure.

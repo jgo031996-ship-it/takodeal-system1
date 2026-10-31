@@ -82,6 +82,11 @@ export function createMonthlyScheduleController(w,d,{getSnapshot,applySnapshot,g
             const current=surface();if(fingerprint(current)!==fingerprint(pick(before,['snapshot','month','branch','actorKey','effectiveFrom','today','readOnly']))||fingerprint(latest)!==fingerprint(evidence))throw Error('Staff, leave, suspension dates or the selected roster changed. Reopen Create Monthly Schedule to review the latest records.');
             const verified=buildMonthlySchedulePlan({...current,...latest,mode:plan.mode});
             if(fingerprint(verified)!==fingerprint(plan))throw Error('The roster proposal changed. Review it again before preparing the draft.');
+            if(verified.calendarRepair.changed){
+                for(const row of [...verified.calendarRepair.excluded,...verified.calendarRepair.renamed.map(row=>({rows:captured.snapshot.currentSchedule[row.from]}))])for(const branch of Object.keys(row.rows||{}))if(w.isBranchAllowed?.(branch)!==true)throw Error('An extra calendar row includes another branch. An authorized owner must review all affected branches.');
+                if(await getSync().preserveCalendarBackup?.()!==true)throw Error('The original calendar backup could not be preserved. Keep this draft open or download it; no repair was applied.');
+                if(epoch!==reviewEpoch||!isCurrent()||fingerprint(getContext())!==fingerprint(captured))throw Error('The editor or account changed while preserving the calendar backup. Review again; no repair was applied.');
+            }
             const previousDirectory=w.scheduleDirectoryProfiles;
             const installedDirectory=copy(latest.staffProfiles);w.scheduleDirectoryProfiles=installedDirectory;
             try{await applySnapshot(copy(verified.snapshot));}catch(error){let owns=false;try{owns=actor()===captured.actorKey&&getMonth()===captured.month&&getBranch()===captured.branch;}catch{}if(owns&&w.scheduleDirectoryProfiles===installedDirectory)w.scheduleDirectoryProfiles=previousDirectory;throw error;}

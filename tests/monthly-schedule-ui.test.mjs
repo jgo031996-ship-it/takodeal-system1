@@ -31,3 +31,7 @@ test('review and Cancel show a stale leave release proposal but leave the editor
  f.context.snapshot.currentSchedule[1]={Maa:{scheduled:{},rest:[],unavailable:[marker],swaps:{}}};f.context.leaveSources=[{id:'synthetic-rejected',record:{type:'Leave',status:'Rejected',staffId:'fiction-a',staffName:'Fictional Alice'}}];
  const before=clone(f.context.snapshot);await f.open();f.review();assert.match(f.node('[data-review]').textContent,/Inactive leave markers to release/);assert.match(f.node('[data-review]').textContent,/synthetic-rejected/);assert.equal(f.calls.commits.length,0);f.node('[data-close]').click();assert.deepEqual(f.context.snapshot,before);assert.equal(f.calls.cloudWrites,0);
 });
+
+test('November extra-day repair shows the exact row and staff for review; Cancel changes nothing',async()=>{
+ const f=fixture();f.context.snapshot.currentSchedule[31]={Maa:{scheduled:{m1:'Synthetic Extra Staff'},rest:[],unavailable:[],swaps:{m1:'Synthetic Prior'}}};const before=clone(f.context.snapshot);await f.open();f.review();assert.match(f.node('[data-review]').textContent,/Calendar rows to repair/);assert.match(f.node('[data-review]').textContent,/Extra calendar row 31/);assert.match(f.node('[data-review]').textContent,/Synthetic Extra Staff/);assert.match(f.node('dialog').textContent,/No separate HQ approval is required/);f.node('[data-close]').click();assert.deepEqual(f.context.snapshot,before);assert.equal(f.calls.commits.length,0);assert.equal(f.calls.cloudWrites,0);
+});
