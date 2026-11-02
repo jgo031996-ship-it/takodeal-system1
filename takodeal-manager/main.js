@@ -1,3 +1,4 @@
+import {installSecurityAlertLinks,escapeSecurityAlertText} from './security-alert-links.js';
 import {createCashierFleetApproval,isCashierFleetDevice} from './cashier-device-approval.js';
 import {installPaymentReconciliation} from './payment-reconciliation-ui.js';
 import {installOwnerStockAudits} from './owner-stock-audits.js';
@@ -710,11 +711,12 @@ window.renderSecurityFeed = function() {
             let ageInDays = (nowMs - alertMs) / (1000 * 60 * 60 * 24);
 
             if (data.isRead && ageInDays > 7) {
-                deleteDoc(doc(db, "manager_alerts", data.id)).catch(e => console.log(e));
+                // Keep resolved records on file; this display filter never deletes alerts.
                 return; 
             }
 
-            let alertMsg = data.message || "Unknown Alert";
+            let alertMsg = String(data.message || "Unknown Alert");
+            const safeAlertId=escapeSecurityAlertText(data.id),safeAlertArg=escapeSecurityAlertText(JSON.stringify(String(data.id)));
             let dupKey = `${data.branch}_${alertMsg}`;
             if (recentAlerts.has(dupKey)) return; 
             recentAlerts.add(dupKey);
@@ -737,16 +739,17 @@ window.renderSecurityFeed = function() {
             html += `
               <tr style="background: ${rowBg}; opacity: ${data.isRead ? '0.6' : '1'}; transition: 0.2s;">
                 <td style="padding: 12px; text-align: center; vertical-align: middle;">
-                    <input type="checkbox" class="alert-bulk-cb" value="${data.id}" style="cursor: pointer; width: 16px; height: 16px;">
+                    <input type="checkbox" class="alert-bulk-cb" value="${safeAlertId}" style="cursor: pointer; width: 16px; height: 16px;">
                 </td>
-                <td style="font-size: 12px; color: var(--text-muted); font-family: monospace; padding: 12px; vertical-align: middle;">${timeStr}</td>
-                <td style="padding: 12px; vertical-align: middle;"><strong>📍 ${data.branch}</strong></td>
-                <td style="padding: 12px; vertical-align: middle;"><span style="color: ${textColor}; font-weight: ${data.isRead ? 'normal' : 'bold'};">${icon} ${alertMsg}</span></td>
+                <td style="font-size: 12px; color: var(--text-muted); font-family: monospace; padding: 12px; vertical-align: middle;">${escapeSecurityAlertText(timeStr)}</td>
+                <td style="padding: 12px; vertical-align: middle;"><strong>📍 ${escapeSecurityAlertText(data.branch)}</strong></td>
+                <td style="padding: 12px; vertical-align: middle;"><span style="color: ${textColor}; font-weight: ${data.isRead ? 'normal' : 'bold'};">${icon} ${escapeSecurityAlertText(alertMsg)}</span></td>
                 <td style="padding: 12px; text-align: right; white-space: nowrap; vertical-align: middle;">
+                  <button type="button" class="security-open-issue" data-alert-issue="${safeAlertId}">Open issue</button>
                   ${!data.isRead
-                    ? `<button class="btn-refresh" style="color: var(--success); border-color: var(--success); background: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-right: 5px;" onclick="dismissAlert('${data.id}')">✓ Resolve</button>`
+                    ? `<button class="btn-refresh" style="color: var(--success); border-color: var(--success); background: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer; margin-right: 5px;" onclick="dismissAlert(${safeAlertArg})">✓ Resolve</button>`
                     : '<span style="color: var(--success); font-weight: bold; font-size: 13px; margin-right: 15px;">✓ Resolved</span>'}
-                  <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger); background: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="deleteSingleAlert('${data.id}')">🗑️ Delete</button>
+                  <button class="btn-refresh" style="color: var(--danger); border-color: var(--danger); background: white; padding: 4px 10px; border-radius: 4px; font-weight: bold; cursor: pointer;" onclick="deleteSingleAlert(${safeAlertArg})">🗑️ Delete</button>
                 </td>
               </tr>
             `;
@@ -754,7 +757,7 @@ window.renderSecurityFeed = function() {
     }
 
     const tbody = document.getElementById('alertsTableBody');
-    if (tbody) tbody.innerHTML = html;
+    if (tbody) { tbody.innerHTML = html; installSecurityAlertLinks(window,document).bind(tbody); }
 
     const navAlerts = document.getElementById('nav-alerts');
     if (navAlerts) {
