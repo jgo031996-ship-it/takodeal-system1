@@ -1,3 +1,5 @@
+import {resolveReliefScheduleReview} from './relief-schedule-review-model.js';
+import {validEmergencyReliefMarker} from './relief-attendance-model.js';
 // Shared attendance math for Manager payroll and the Staff estimate.
 // Times in Schedule Manager are Philippine wall-clock times, independent of device timezone.
 import { resolveScheduleForDate, amendmentsForDate } from './schedule-history.js';
@@ -276,6 +278,9 @@ function manualLatenessReview(log) {
 // work-date revision, never another month's current rules.
 export function resolveAttendanceShift(log, schedule, profiles = {}, staffNameOverride = log?.staffName) {
     if (!log || !staffNameOverride) return emptyAttendanceShift(log || {}, 'missing-history');
+    const relief = resolveReliefScheduleReview(log, profiles[staffNameOverride], staffNameOverride);
+    if (relief) return relief;
+    if (validEmergencyReliefMarker(log.emergencyRelief,log.branch)) return {...emptyAttendanceShift(log,'emergency-relief-review'),reliefNeedsReview:true,needsScheduleReview:true,lateMinutes:0};
     const amended = resolveAttendanceAmendment(log, schedule, profiles, staffNameOverride);
     if (amended) return amended;
     const snapshot = clockInSnapshotShift(log, staffNameOverride);
@@ -390,7 +395,9 @@ export function nightRate(profile = {}) {
     return Number.isFinite(amount) ? Math.max(0, amount) : 0;
 }
 export function latePay(minutesLate, profile = {}, shift, exempt = false) {
-    if(shift?.amendmentReviewVerified===true)exempt=shift.amendmentLateExempted===true;
+    if(shift?.reliefNeedsReview===true)return {hours:0,ratePerHour:0,amount:0};
+    if(shift?.reliefReviewVerified===true)exempt=shift.reliefLateExempted===true;
+    else if(shift?.amendmentReviewVerified===true)exempt=shift.amendmentLateExempted===true;
     const minutes = Math.max(0, Number(minutesLate) || 0);
     const hours = Math.ceil(minutes / 60);
     const daily = Math.max(0, Number(staffRateForDate(profile,shift?.expectedStartAt || profile.salaryWorkDate || new Date())) || 0);
@@ -402,6 +409,8 @@ export function earnedNightBonus(profile, shift, timeOut) {
 }
 export function attendanceLateMinutes(log, calculated = 0) {
     if (calculated && typeof calculated === 'object') {
+        if(calculated.reliefNeedsReview===true)return 0;
+        if(calculated.reliefReviewVerified===true)return Math.max(0,Number(calculated.lateMinutes)||0);
         if(calculated.amendmentReviewVerified===true)return Math.max(0,Number(calculated.lateMinutes)||0);
         if (calculated.attendanceCorrectionVerified === true && !calculated.amendmentNeedsReview
             && !manualLatenessReview(log)) return Math.max(0,Number(calculated.correctedLateMinutes)||0);

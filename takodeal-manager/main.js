@@ -77,6 +77,8 @@ import {loadStaffDirectory,staffDirectoryActorKey} from './staff-directory-reade
 import {installPaymentReviewScanner} from './payment-review-scanner.js';
 import {installHRReviewCenter,heldPayrollReviewHTML} from './hr-review-ui.js';
 import {installOwnerTimeOutCorrectionUI} from './owner-time-out-correction-ui.js';
+import {installReliefScheduleReviewUI} from './relief-schedule-review-ui.js';
+window.openReliefScheduleReview = context => (window.reliefScheduleReviewUI ||= installReliefScheduleReviewUI(window,document)).open(context);
 window.openOwnerTimeOutCorrection = context => (window.ownerTimeOutCorrectionUI ||= installOwnerTimeOutCorrectionUI(window,document)).open(context);
 window.refreshPayrollAfterAttendanceCorrection = async function() {
  window.invalidateCache?.('attendance_logs');
@@ -9925,6 +9927,7 @@ window.openLateRequestAttendance = function() {
 };
 window.handleRequest = async function(docId, action, type, amount, staffName) {
     const cachedRequest = window.ownerInbox?.request(docId);
+    if(cachedRequest?.type==='Early Time Out'&&cachedRequest.emergencyRelief?.version===1&&cachedRequest.timeOutLogId)return window.openAttendanceRecovery({staffId:cachedRequest.staffId,staffName:cachedRequest.staffName,branch:cachedRequest.branch,attendanceLogId:cachedRequest.timeInLogId,workDate:scheduleDateKey(cachedRequest.timeInAt),requestId:docId});
     if(cachedRequest?.type==='Early Time Out')return window.getManagerEarlyTimeOutUI().review(docId,action);
     if(cachedRequest?.type==='Leave'||cachedRequest?.type==='Leave Change')return window.getManagerLeaveUI().review(docId,action);
     let req;
@@ -9934,6 +9937,7 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
         req = snap.data();
         if(req.type==='Waste Report'){window.switchView('inventory');window.switchInvTab('Waste');return window.openInventoryWasteReport?.(docId);}
         if(req.type==='Leave'||req.type==='Leave Change')return window.getManagerLeaveUI().review(docId,action);
+        if(req.type==='Early Time Out'&&req.emergencyRelief?.version===1&&req.timeOutLogId)return window.openAttendanceRecovery({staffId:req.staffId,staffName:req.staffName,branch:req.branch,attendanceLogId:req.timeInLogId,workDate:scheduleDateKey(req.timeInAt),requestId:docId});
         if(req.type==='Early Time Out')return window.getManagerEarlyTimeOutUI().review(docId,action);
         if (req.status !== 'Pending') throw new Error('This request was already reviewed. Refresh the inbox.');
         if (!window.isBranchAllowed(req.branch)) throw new Error('This branch is outside your access.');
@@ -10447,6 +10451,7 @@ window.loadPayrollGenerator = async function() {
                     
                     // 🔥 THE FIX: Safe variable aliases (calcMins, expStart) prevent crashes with leftover code!
                     const matchedShift = resolveAttendanceShift(log, scheduleData, staffDict, name);
+                    if(matchedShift?.reliefNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceLogIds=[...(staffData[name].attendanceLogIds||[]),log.id].filter(Boolean);staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'Emergency branch cover: Owner HR must confirm assigned hours. Actual Time In and Time Out remain recorded.'];}
                     if(matchedShift?.amendmentNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceLogIds=[...(staffData[name].attendanceLogIds||[]),log.id].filter(Boolean);staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'A shift-time correction conflicts with a reviewed attendance record. HR must confirm it.'];}
                     let { lateMinutes: calcMins, expectedStartHour: expStart, wasScheduled: wasSched } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
                     calcMins = attendanceLateMinutes(log, matchedShift);
@@ -10462,7 +10467,7 @@ window.loadPayrollGenerator = async function() {
                         time: logDate, 
                         lateMinutes: calcMins, 
                         lateAmount: lateAmount, 
-                        lateExempted: matchedShift?.amendmentReviewVerified ? matchedShift.amendmentLateExempted : log.lateExempted || false,
+                        lateExempted: matchedShift?.reliefReviewVerified ? matchedShift.reliefLateExempted : matchedShift?.amendmentReviewVerified ? matchedShift.amendmentLateExempted : log.lateExempted || false,
                         lateHoursToDeduct: lateHoursToDeduct,
                         manualPenalty: manualPenalty,
                         wasScheduled: wasSched 
@@ -11553,6 +11558,7 @@ window.generateAutoPayslips = async function() {
                     
                     // 🔥 UPGRADE: Use the Universal Shift Matcher Engine for Payroll!
                     const matchedShift = resolveAttendanceShift(log, scheduleData, staffDict, name);
+                    if(matchedShift?.reliefNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceLogIds=[...(staffData[name].attendanceLogIds||[]),log.id].filter(Boolean);staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'Emergency branch cover: Owner HR must confirm assigned hours. Actual Time In and Time Out remain recorded.'];}
                     if(matchedShift?.amendmentNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceLogIds=[...(staffData[name].attendanceLogIds||[]),log.id].filter(Boolean);staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'A shift-time correction conflicts with a reviewed attendance record. HR must confirm it.'];}
                     let { lateMinutes: lateMinutes, expectedStartHour: expectedStartHour, wasScheduled: wasScheduled } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
                     lateMinutes = attendanceLateMinutes(log, matchedShift);
@@ -11568,7 +11574,7 @@ window.generateAutoPayslips = async function() {
                         rateProfile,
                         lateMinutes: lateMinutes, 
                         lateAmount: lateAmount, 
-                        lateExempted: matchedShift?.amendmentReviewVerified ? matchedShift.amendmentLateExempted : log.lateExempted || false,
+                        lateExempted: matchedShift?.reliefReviewVerified ? matchedShift.reliefLateExempted : matchedShift?.amendmentReviewVerified ? matchedShift.amendmentLateExempted : log.lateExempted || false,
                         lateHoursToDeduct: lateHoursToDeduct,
                         manualPenalty: manualPenalty,
                         wasScheduled: wasScheduled 

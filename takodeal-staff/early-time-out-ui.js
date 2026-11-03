@@ -5,6 +5,14 @@ const services=new WeakMap();
 function currentService(api){if(!services.has(api))services.set(api,createEarlyTimeOutService(api));return services.get(api);}
 export async function prepareEarlyTimeOut(api,input,{service=currentService(api)}={}){
     const ctx=await service.inspect(input);input.assertCurrent?.();
+    if(ctx.provisionalRelief===true&&!ctx.closed){
+        const cover=ctx.emergencyRelief||{},result=await api.Swal.fire({titleText:'Emergency branch cover · record actual Time Out',
+            html:'<p style="text-align:left"><strong>'+escape(input.staffName)+'</strong><br>'+escape(input.start?.branch||ctx.branch)+' · covering from '+escape(cover.homeBranch||'another branch')+'</p>'
+                +'<p>Your Time In is saved. The assigned hours still need Owner confirmation. You can record your actual departure now and HR will review this pair afterward.</p>'
+                +'<p>This does not infer lateness or early departure, approve a schedule change, or change your recorded Time In. Any attendance or pay adjustment needs management review.</p>',
+            icon:'info',showCancelButton:true,confirmButtonText:'Record Time Out for HR review',cancelButtonText:'Back to Time Clock',confirmButtonColor:'#17644f',allowOutsideClick:false});
+        input.assertCurrent?.();return {proceed:result.isConfirmed===true,service,reliefForReview:result.isConfirmed===true};
+    }
     if(ctx.closed||ctx.complete||ctx.approved)return {proceed:true,service};
     const currentPending=ctx.request?.status==='Pending'&&ctx.request.scheduleFingerprint===ctx.scheduleFingerprint;
     const scheduled=ctx.unknown?'The saved roster does not confirm your assigned finish. <strong>This does not mean you are leaving early.</strong> Ask management to confirm your actual shift.':'Your shift is scheduled to finish at <strong>'+escape(time(ctx.scheduledEndAt))+'</strong>. You are asking to finish '+ctx.minutesEarly+' minutes early.';

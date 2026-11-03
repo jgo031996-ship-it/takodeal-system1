@@ -1,6 +1,6 @@
 // Full reconciliation evidence without downloading every historical attendance photo.
 // This is a fresh Firestore Rules-authorized query, never a cache or privileged backend.
-export const ATTENDANCE_METADATA_FIELDS=Object.freeze(['staffId','staffName','branch','type','timestamp','status','deleted','isManual','source','timeInLogId','timeInAt','attendanceVersion','scheduleSnapshot','lateMinutes','originalLateMinutes','reviewedLateMinutes','lateExempted','lateReviewRequestId','lateDecision','lateReviewedAt','lateReviewedBy','lateReviewHistory','lateAmendmentReview','scheduleAmendmentReview','reviewedScheduleAmendmentId']);
+export const ATTENDANCE_METADATA_FIELDS=Object.freeze(['staffId','staffName','branch','type','timestamp','status','deleted','isManual','source','timeInLogId','timeInAt','attendanceVersion','scheduleSnapshot','lateMinutes','originalLateMinutes','reviewedLateMinutes','lateExempted','lateReviewRequestId','lateDecision','lateReviewedAt','lateReviewedBy','lateReviewHistory','lateAmendmentReview','scheduleAmendmentReview','emergencyRelief','reliefRequestId','reliefScheduleReview','reviewedScheduleAmendmentId']);
 const problem=(message,code)=>Object.assign(Error(message),{code});
 function valueOf(value){
  if(!value||typeof value!=='object'||Array.isArray(value))throw problem('HQ returned an invalid attendance value.','attendance/read-invalid');

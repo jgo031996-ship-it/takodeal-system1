@@ -25,7 +25,7 @@ import { MALL_FLOAT, mallOpeningCash, stockRequestDue, autoRequestId, businessCl
 import { closeShiftAtomic, closeLegacyShiftAtomic, captureShiftCloseIdentity, assertShiftCloseIdentity, resolveShiftCloseIdentity, readBranchPolicy, readMallOpeningCash } from './cash-settlement.js';
 import { createRemittanceAttemptStore, readRemittanceDrawer, submitRemittanceAtomic, readClosedCashCarry, recordOpeningCashReview } from './remittance-safety.js';
 import {captureAttendanceSchedule} from './payroll-safety.js';
-import {renderAttendanceSchedulePreview, assertAttendanceScheduleUnchanged} from './attendance-schedule-preview.js';
+import {renderAttendanceSchedulePreview, assertAttendanceScheduleUnchanged, emergencyReliefForClockIn, emergencyReliefTimeOutNotice} from './attendance-schedule-preview.js';
 import {prepareEarlyTimeOut} from './early-time-out-ui.js';
 import {createCountSnapshot, stockReportQuantities} from './stock-report-units.js';
 import {createScheduleHistoryStore} from './schedule-history.js';
@@ -3403,8 +3403,9 @@ window.submitAttendance = async function(type) {
             const at = new Date(), branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
             timeInSchedule = await readClockSchedule(at);
             timeInSchedulePreview = captureAttendanceSchedule(at, branch, staffName, timeInSchedule, {[staffName]:staffProfile});
-            const choice = await Swal.fire({titleText:'Check your assigned hours',
-                html:renderAttendanceSchedulePreview(timeInSchedulePreview,{staffName,branch,at}),
+            const reliefPreview=emergencyReliefForClockIn(timeInSchedulePreview,staffProfile,branch);
+            const choice = await Swal.fire({titleText:reliefPreview?'Emergency branch cover':'Check your assigned hours',
+                html:renderAttendanceSchedulePreview(timeInSchedulePreview,{staffName,branch,at,emergencyRelief:reliefPreview}),
                 showCancelButton:true,confirmButtonText:'Continue to Time In',cancelButtonText:'Back to Time Clock',
                 confirmButtonColor:'#17604c',allowOutsideClick:false});
             if(!choice.isConfirmed){unlockUI();return;}
@@ -3489,7 +3490,7 @@ window.submitAttendance = async function(type) {
                 if (Date.now() - gpsReceivedAt > 15000) throw Error('Location verification expired during the camera check. Keep Clock open and try Time In again.');
             }
             if (document.getElementById('clockStaffName').value !== staffName || document.getElementById('clockStaffPin').value.trim() !== inputPin || (localStorage.getItem('takodeal_device_branch') || 'Unknown') !== deviceBranch || document.getElementById('timeClockModal').style.display !== 'flex') throw Error('The Time Clock or selected account changed. Open Clock and record attendance again.');
-            let earlyClockOut=null;
+            let earlyClockOut=null,timeOutResult=null;
             const assertClockCurrent=()=>{if(document.getElementById('clockStaffName').value!==staffName || document.getElementById('clockStaffPin').value.trim()!==inputPin || document.getElementById('timeClockModal').style.display!=='flex' || localStorage.getItem('takodeal_device_branch')!==deviceBranch)throw Error('The Time Clock account changed. Record attendance again.');};
             if(type==='TIME OUT'){
                 earlyClockOut=await prepareEarlyTimeOut(window,{start:activeTimeIn,staffId:staffProfile.id,staffName,pin:inputPin,assertCurrent:assertClockCurrent});
@@ -3515,9 +3516,11 @@ window.submitAttendance = async function(type) {
                 attendance.faceCheck = faceResult.faceCheck;
                 attendance.scheduleSnapshot = captureAttendanceSchedule(attendanceAt, finalBranch, staffName, schedule, {[staffName]:staffProfile});
                 assertAttendanceScheduleUnchanged(timeInSchedulePreview,attendance.scheduleSnapshot);
+                const emergencyRelief=emergencyReliefForClockIn(attendance.scheduleSnapshot,staffProfile,finalBranch);
+                if(emergencyRelief){attendance.emergencyRelief=emergencyRelief;attendance.lateMinutes=0;}
             }
             if (type === 'TIME OUT') {
-                await earlyClockOut.service.close({start:activeTimeIn,staffId:staffProfile.id,staffName,pin:inputPin,attendance,records:pendingAttendanceRecords,assertCurrent:assertClockCurrent});
+                timeOutResult=await earlyClockOut.service.close({start:activeTimeIn,staffId:staffProfile.id,staffName,pin:inputPin,attendance,records:pendingAttendanceRecords,reliefForReview:earlyClockOut.reliefForReview===true,assertCurrent:assertClockCurrent});
                 assertClockCurrent();
             } else if (pendingAttendanceRecords.length) {
                 const batch=writeBatch(db);
@@ -3530,7 +3533,7 @@ window.submitAttendance = async function(type) {
             
             Swal.fire({
                 title: '✅ Success!',
-                text: `${type} SUCCESS at ${finalBranch}!\nIdentity and Location Verified.`,
+                text: emergencyReliefTimeOutNotice(timeOutResult,finalBranch)||`${type} SUCCESS at ${finalBranch}!\nIdentity and Location Verified.`,
                 icon: 'success',
                 timer: 2500,
                 showConfirmButton: false,

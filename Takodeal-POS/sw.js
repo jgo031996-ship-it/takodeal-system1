@@ -1,6 +1,6 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-waste-routing-20261103';
+const CORE = 'takodeal-pos-core-emergency-relief-20261103';
 
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
@@ -56,6 +56,7 @@ async function prepareApp() {
 }
 required.push('./stock-cycle.js','./stock-count-engine.js','./stock-count-ui.js','./stock-count-ui.css');
 required.push('./attendance-amendment-review-model.js','./attendance-metadata-reader.js');
+required.push("./relief-attendance-model.js","./relief-schedule-review-model.js");
 self.addEventListener('install', event => {
   // A failed dependency download leaves the preceding worker in use.
   event.waitUntil(prepareApp());

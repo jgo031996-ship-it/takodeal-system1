@@ -1,4 +1,5 @@
 // Display saved attendance evidence only. This preview never assigns a shift.
+import {emergencyReliefMarker,validEmergencyReliefMarker} from './relief-attendance-model.js';
 const minute=60000;
 const text=value=>String(value??'');
 const escape=value=>text(value).replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
@@ -7,16 +8,29 @@ const dayKey=date=>{const parts=Object.fromEntries(new Intl.DateTimeFormat('en-C
 const dayLabel=date=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',year:'numeric',month:'short',day:'numeric'}).format(date);
 const timeLabel=date=>new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',hour:'numeric',minute:'2-digit',hour12:true}).format(date);
 
-export function plannedAttendancePreview(snapshot={}, {staffName=snapshot.staffName,branch=snapshot.branch,at=new Date()}={}) {
+// This is descriptive punch metadata, never an assignment or an approval.
+export function emergencyReliefForClockIn(snapshot={},profile={},branch=snapshot.branch) {
+ if(snapshot.wasScheduled===true&&snapshot.needsScheduleReview!==true)return null;
+ if(snapshot.branch&&snapshot.branch!==branch)return null;
+ profile=profile||{};
+ return emergencyReliefMarker({type:'TIME IN',staffName:snapshot.staffName,staffId:profile.staffId||profile.id,branch,scheduleSnapshot:snapshot},profile);
+}
+
+export function emergencyReliefTimeOutNotice(result,branch) {
+ return result?.provisionalRelief===true?`Actual Time Out recorded at ${text(branch)}. HR will confirm the emergency cover hours afterward. No early-out decision was inferred.`:'';
+}
+
+export function plannedAttendancePreview(snapshot={}, {staffName=snapshot.staffName,branch=snapshot.branch,at=new Date(),emergencyRelief=null}={}) {
  const start=instant(snapshot.expectedStartAt),finish=instant(snapshot.expectedEndAt),actual=instant(at);
  const hasTimes=Boolean(start&&finish&&finish>start&&finish-start>=60*minute&&finish-start<=18*60*minute);
  const verified=hasTimes&&snapshot.needsScheduleReview!==true&&snapshot.wasScheduled===true;
+ const reliefMarker=validEmergencyReliefMarker(emergencyRelief,branch),relief=!verified&&!!reliefMarker;
  const workDate=start?dayKey(start):actual?dayKey(actual):'';
  return {staffName:text(staffName),branch:text(branch),shiftName:text(snapshot.shiftName),workDate,
-  verified,hasTimes,nextDay:hasTimes&&dayKey(start)!==dayKey(finish),
+  verified,hasTimes,emergencyRelief:!!relief,homeBranch:relief?reliefMarker.homeBranch:'',nextDay:hasTimes&&dayKey(start)!==dayKey(finish),
   start:hasTimes?`${dayLabel(start)}, ${timeLabel(start)}`:'Needs schedule review',
   finish:hasTimes?`${dayLabel(finish)}, ${timeLabel(finish)}`:'Needs schedule review',
-  notice:verified?'These are your saved assigned hours. Time In records your actual arrival; it does not change the schedule.':'HQ could not confirm one assigned shift for this punch. Time In can still record your actual arrival for management review; no lateness is inferred from an unverified assignment.'};
+  notice:verified?'These are your saved assigned hours. Time In records your actual arrival; it does not change the schedule.':relief?'Actual Time In and Time Out can be recorded for this branch cover. HR will confirm the assigned hours afterward; no lateness or early-out decision is inferred from these reference hours.':'HQ could not confirm one assigned shift for this punch. Time In can still record your actual arrival for management review; no lateness is inferred from an unverified assignment.'};
 }
 
 // Ignore elapsed time and late-minute calculation; compare the schedule evidence
@@ -52,5 +66,5 @@ export function renderStaffScheduleConflict(day) {
 
 export function renderAttendanceSchedulePreview(snapshot,options={}) {
  const planned=plannedAttendancePreview(snapshot,options);
- return `<div class="attendance-schedule-preview" style="text-align:left;font-size:14px;line-height:1.55"><p><strong>${escape(planned.staffName)}</strong><br>${escape(planned.branch)} · Philippine time</p><div style="padding:14px;border:1px solid #cbded2;border-radius:12px;background:#f4f8f1"><strong>${planned.verified?'Saved assigned shift':'Schedule review needed'}</strong><div>${escape(planned.shiftName||'No confirmed assignment')}</div><div>Work date: ${escape(planned.workDate||'Unconfirmed')}</div>${planned.hasTimes?`${planned.verified?'':'<div><strong>Unverified reference hours</strong></div>'}<div>Start: <strong>${escape(planned.start)}</strong></div><div>Finish: <strong>${escape(planned.finish)}</strong>${planned.nextDay?' · next day':''}</div>`:''}</div><p>${escape(planned.notice)}</p></div>`;
+ return `<div class="attendance-schedule-preview" style="text-align:left;font-size:14px;line-height:1.55"><p><strong>${escape(planned.staffName)}</strong><br>${escape(planned.branch)} · Philippine time${planned.emergencyRelief?`<br>Temporary cover · home branch: ${escape(planned.homeBranch)}`:''}</p><div style="padding:14px;border:1px solid #cbded2;border-radius:12px;background:#f4f8f1"><strong>${planned.verified?'Saved assigned shift':planned.emergencyRelief?'Emergency branch cover':'Schedule review needed'}</strong><div>${escape(planned.shiftName||'Assigned hours pending HR review')}</div><div>Work date: ${escape(planned.workDate||'Unconfirmed')}</div>${planned.hasTimes?`${planned.verified?'':`<div><strong>${planned.emergencyRelief?'Reference hours for HR review':'Unverified reference hours'}</strong></div>`}<div>Start: <strong>${escape(planned.start)}</strong></div><div>Finish: <strong>${escape(planned.finish)}</strong>${planned.nextDay?' · next day':''}</div>`:''}</div><p>${escape(planned.notice)}</p></div>`;
 }

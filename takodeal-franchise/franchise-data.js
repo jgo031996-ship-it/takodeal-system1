@@ -133,6 +133,7 @@ export function attendanceEstimate({logs,referenceLogs=logs,profiles,deductions=
    const late=latePay(attendanceLateMinutes(entry,matched),profile,matched,entry.lateExempted===true).amount+n(entry.penaltyAmount)+n(log.penaltyAmount);
    p.hours+=hours;p.shifts+=multiplier;p.basic+=basic;p.bonus+=night+straight+holidayBonus;p.late+=late;
    if(matched.needsScheduleReview)p.review++;
+   if(matched.reliefNeedsReview){p.attendanceHeld=true;p.attendanceReviewRequired=true;p.attendanceReviewReasons=[...(p.attendanceReviewReasons||[]),'Emergency branch cover: Owner HR must confirm assigned hours. Actual arrival and departure remain recorded.'];}
    if(matched.amendmentNeedsReview){p.attendanceHeld=true;p.attendanceReviewRequired=true;p.attendanceReviewReasons=['A dated shift correction conflicts with a saved manual lateness review. HQ must confirm it before payment.'];}
    p.logs.push({in:entry.timestamp,out:log.timestamp,hours,basic,dailyRate:profile.hourlyRate,rateWorkDate:workDate,bonus:night+straight+holidayBonus,late,remark:(type.includes('AUTO')?'Auto closed; review attendance':'Complete')+(matched.needsScheduleReview?' · Schedule reference needs review':'')});
   }

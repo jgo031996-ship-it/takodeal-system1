@@ -824,16 +824,39 @@ service cloud.firestore {
       allow create: if amendmentReviewAudit(newData(),auditId);
       allow update, delete: if false;
     }
+    // Trusted relief reviews are written only by the existing review server.
+    // Clients can read the private evidence only as the verified Google Owner.
+    match /attendance_relief_reviews/{auditId} {
+      allow read: if protectedHROwner();
+      allow write: if false;
+    }
     match /attendance_logs/{logId} {
       allow read: if true;
-      allow create: if !newData().keys().hasAny(['scheduleAmendmentReview']);
+      allow create: if !newData().keys().hasAny(['scheduleAmendmentReview','reliefScheduleReview']);
+      // Follow the original OUT link, never a caller's proposed replacement.
+      // getAfter also protects the pair during the atomic Owner review itself.
+      function reliefLinkedStartReviewed(timeInId) {
+        let path = /databases/$(database)/documents/attendance_logs/$(timeInId);
+        return existsAfter(path) && getAfter(path).data.keys().hasAny(['reliefScheduleReview']);
+      }
+      function reliefLinkedOut(before) {
+        let timeInId = before.get('timeInLogId','');
+        return before.get('type','') == 'TIME OUT' && protectedHRId(timeInId)
+          && reliefLinkedStartReviewed(timeInId);
+      }
+      function reliefOriginalSourceUnchanged(data,before) {
+        return !(before.keys().hasAny(['reliefScheduleReview']) || reliefLinkedOut(before))
+          || !data.diff(before).affectedKeys().hasAny(['timestamp','type','staffId','staffName','branch','timeInLogId','timeInAt','scheduleSnapshot','status','deleted']);
+      }
       function selectorAttendanceLogsUpdate(data,before) {
-        return !data.diff(before).affectedKeys().hasAny(['scheduleAmendmentReview'])
+        return !data.diff(before).affectedKeys().hasAny(['scheduleAmendmentReview','reliefScheduleReview'])
         || (data.diff(before).affectedKeys().hasOnly(['scheduleAmendmentReview'])
           && amendmentReviewMarker(data.scheduleAmendmentReview,before,logId));
       }
-      allow update: if selectorAttendanceLogsUpdate(newData(),resource == null ? null : oldData());
-      allow delete: if isHQUser() && !oldData().keys().hasAny(['scheduleAmendmentReview']);
+      allow update: if selectorAttendanceLogsUpdate(newData(),resource == null ? null : oldData())
+        && reliefOriginalSourceUnchanged(newData(),oldData());
+      allow delete: if isHQUser() && !oldData().keys().hasAny(['scheduleAmendmentReview','reliefScheduleReview'])
+        && !reliefLinkedOut(oldData());
     }
     match /store_use_logs/{document=**} { allow read, create, update: if true; allow delete: if isHQUser(); }
     // These immutable reports retain the original count; opening a period view

@@ -18,6 +18,7 @@ import { requestHistory, historyTime } from '../takodeal-manager/request-history
 import * as payroll from '../takodeal-manager/payroll-safety.js';
 import {planPayrollAttendance} from '../takodeal-manager/payroll-attendance.js';
 import {attendanceMillis} from '../takodeal-manager/attendance-reconcile.js';
+import {reliefScheduleSourceFingerprint} from '../takodeal-manager/relief-schedule-review-model.js';
 import * as sanctions from '../takodeal-manager/sanction-schedule.js';
 import { firestoreHarness } from './helpers/firestore-harness.mjs';
 import { assembleScheduleHistory, createScheduleRevision, resolveScheduleForDate } from '../takodeal-manager/schedule-history.js';
@@ -27,6 +28,12 @@ const hrReviewURL=new URL('../takodeal-manager/hr-review-ui.js',import.meta.url)
 const {heldPayrollReviewHTML}=await import('data:text/javascript;base64,'+Buffer.from(hrReviewSource).toString('base64'));
 
 const profile = { id: 'one', cashierName: 'Test Staff', scheduleNickname: 'TEST', branch: 'Test Branch', hourlyRate: 450, nightDiffRate: 50 };
+for(const generator of ['loadPayrollGenerator','generateAutoPayslips'])test(generator+': emergency relief keeps actual hours held until protected Owner review, including an old unmarked Time In',async()=>{
+    const start=new Date('2026-10-03T15:30:00+08:00'),end=new Date('2026-10-04T00:00:00+08:00'),stamp=value=>({toDate:()=>value}),marker={version:1,homeBranch:'Other Branch',branch:'Test Branch',requiresReview:true},begin={id:'relief-in',staffId:'one',staffName:'Test Staff',branch:'Test Branch',type:'TIME IN',timestamp:stamp(start),scheduleSnapshot:{version:1,needsScheduleReview:true},lateMinutes:480},out={id:'relief-out',staffId:'one',staffName:'Test Staff',branch:'Test Branch',type:'TIME OUT',timeInLogId:begin.id,timestamp:stamp(end),emergencyRelief:marker,reliefRequestId:'relief-request'};
+    const pending=payrollUi({logs:[begin,out]});vm.runInContext(extract(generator),pending.context);await pending.window[generator]();assert.deepEqual(pending.errors,[]);const held=pending.window.globalPayrollCache['Test Staff'];assert.equal(held.attendanceReviewRequired,true);assert.match(held.attendanceReviewReasons.join(' '),/Emergency branch cover/);assert.equal(held.recordedHours,8.5);
+    const review={version:1,revision:1,auditId:'relief-relief-in-1',sourceFingerprint:reliefScheduleSourceFingerprint(begin),workDate:'2026-10-03',expectedStartAt:start,expectedEndAt:end,shiftName:'Emergency cover',shiftType:'night',isNightShift:true,lateMinutes:0,exempt:false,actorUid:'fiction-owner',actorEmail:OWNER_EMAIL,reviewedAt:new Date('2026-10-05T12:00:00+08:00')};
+    const confirmed=payrollUi({logs:[{...begin,reliefScheduleReview:review},out]});vm.runInContext(extract(generator),confirmed.context);await confirmed.window[generator]();assert.deepEqual(confirmed.errors,[]);const ready=confirmed.window.globalPayrollCache['Test Staff'];assert.equal(ready.attendanceReviewRequired,false);assert.equal(ready.basicPay,450);assert.equal(ready.nightBonus,50);assert.equal(ready.lateDeduction,0);
+});
 test('manual and POS meal labels share one Foods category, excluding other deductions', () => {
     for (const type of ['Staff Meal','Staff Meal (POS Auto)','Manager Meal','Manager Meal (POS Auto)',' staff meal (pos auto) ']) {
         assert.equal(payroll.isMealDeduction(type), true, type);
