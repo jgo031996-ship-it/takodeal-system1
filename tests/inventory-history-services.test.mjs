@@ -45,6 +45,17 @@ test('one waste source failure is shown as partial data rather than a false zero
  const h=readFixture(),read=h.api.getDocsFromServer;h.put('stock_logs/a',{branch:'Maa',timestamp:stamp,item:'Bowl',type:'Waste',variance:-1});h.api.getDocsFromServer=q=>q.table==='inventory_logs'?Promise.reject(Object.assign(Error('Denied'),{code:'permission-denied'})):read(q);
  const report=await readInventoryHistory(h.api,{...options,kind:'Waste'});assert.equal(report.rows.length,1);assert.equal(report.partial,true);assert.equal(report.errors.length,1);assert.match(historyReadError(report.errors[0].error),/did not allow/);
 });
+
+test('waste review loads saved request documents by bounded period and saved branch scope, without HR rows',async()=>{
+ const h=readFixture({owner:false,branches:'Maa'});h.put('staff_requests/waste',{type:'Waste Report',branch:'Maa',timestamp:stamp,status:'Pending',staffName:'Fictional Cashier',items:[{name:'Bowl',qty:2,uom:'piece',reason:'Damaged'}]});h.put('staff_requests/other',{type:'Waste Report',branch:'Agdao',timestamp:stamp,status:'Pending',items:[]});h.put('staff_requests/leave',{type:'Leave',branch:'Maa',timestamp:stamp,status:'Pending'});
+ const report=await readInventoryHistory(h.api,{...options,kind:'Waste'});assert.deepEqual(report.rows.map(row=>row.id),['waste']);assert.equal(report.rows[0].items[0].quantity,2);const request=h.calls.find(query=>query.table==='staff_requests');assert.ok(request.filters.some(filter=>filter.key==='branch'&&filter.value==='Maa'));assert.ok(request.filters.some(filter=>filter.key==='timestamp'&&filter.op==='>='));assert.ok(request.filters.some(filter=>filter.kind==='limit'&&filter.value===501));assert.equal(request.filters.some(filter=>filter.key==='type'),false);
+});
+
+test('pending waste remains reachable after pages of other HR records, and a failed request source is partial',async()=>{
+ const h=readFixture();for(let index=0;index<501;index++)h.put('staff_requests/hr-'+String(index).padStart(4,'0'),{type:'Leave',branch:'Maa',timestamp:stamp,status:'Pending'});h.put('staff_requests/z-waste',{type:'Waste Report',branch:'Maa',timestamp:stamp,status:'Pending',items:[]});
+ const first=await readInventoryHistory(h.api,{...options,kind:'Waste'});assert.equal(first.rows.length,0);assert.equal(first.partial,true);assert.equal(first.hasMore,true);const next=await readInventoryHistory(h.api,{...options,kind:'Waste',more:true});assert.equal(next.rows[0].id,'z-waste');assert.equal(next.partial,false);
+ const failed=readFixture(),read=failed.api.getDocsFromServer;failed.api.getDocsFromServer=query=>query.table==='staff_requests'?Promise.reject(Object.assign(Error('Denied'),{code:'permission-denied'})):read(query);const report=await readInventoryHistory(failed.api,{...options,kind:'Waste'});assert.equal(report.rows.length,0);assert.equal(report.partial,true);assert.equal(report.errors[0].table,'staff_requests');
+});
 test('quota failures do not trigger collection fallback queries or automatic retry loops',async()=>{
  const h=readFixture(),read=h.api.getDocsFromServer;let attempts=0;h.api.getDocsFromServer=q=>q.table==='stock_logs'?(attempts++,Promise.reject(Object.assign(Error('Quota exceeded'),{code:'resource-exhausted'}))):read(q);
  await assert.rejects(readInventoryHistory(h.api,options),/Quota/);await assert.rejects(readInventoryHistory(h.api,{...options,refresh:true}),/quota/i);assert.equal(attempts,1);assert.match(historyReadError({code:'resource-exhausted'}),/quota is exhausted/);

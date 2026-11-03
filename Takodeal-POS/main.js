@@ -4990,7 +4990,7 @@ window.submitWasteCart = async function() {
             });
         }
 
-        // 2. Submit to the Manager's Staff Request Inbox
+        // 2. Save the compatible report source for the Owner inventory review.
         // One request ID survives retries. Never reset an approved report to Pending.
         let newRequestRef = window.doc(window.db, "staff_requests", window.wasteSubmissionId);
         
@@ -5000,6 +5000,7 @@ window.submitWasteCart = async function() {
             staffName: cashier,
             items: uploadedItems,
             totalValueLost: totalValueLost,
+            reviewWorkspace: "inventory-waste",
             status: "Pending",
             timestamp: window.serverTimestamp ? window.serverTimestamp() : new Date()
         };
@@ -5010,7 +5011,7 @@ window.submitWasteCart = async function() {
 
         Swal.fire({
             title: '✅ Submitted for Approval', 
-            text: `Sent ${window.wasteCart.length} item(s) and photos to the Manager App. Inventory will update once approved!`, 
+            text: `Sent ${window.wasteCart.length} item(s) and photos to Live Inventory → Waste & Spoilage in the Owner app. Stock changes only after approval.`,
             icon: 'success', 
             customClass: { popup: 'rounded-2xl' }
         });

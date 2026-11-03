@@ -43,7 +43,7 @@ export async function readInventoryHistory(api,{kind,from,to,branch='All',refres
  if(!scopes.length)throw Error('No branch is assigned to this account. Ask the Owner to review access.');
  const key=recipeFingerprint({identity,kind,from,to,scopes,legacy});let state=cache.reports.get(key);
  if(refresh||!state||now-state.at>TTL&&!more){
-  const tables=kind==='Invoices'?['hq_restocks']:kind==='Waste'?['stock_logs','inventory_logs']:['stock_logs'];
+  const tables=kind==='Invoices'?['hq_restocks']:kind==='Waste'?['stock_logs','inventory_logs','staff_requests']:['stock_logs'];
   state={at:now,loadedAt:null,sources:tables.flatMap(table=>scopes.map(scope=>({table,scope,docs:[],cursor:null,more:true,error:null}))),pending:null,legacy};cache.reports.set(key,state);
   while(cache.reports.size>6)cache.reports.delete(cache.reports.keys().next().value);
  }

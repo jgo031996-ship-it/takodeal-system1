@@ -64,7 +64,7 @@ test('Owner and co-owner save directly through the same version check; a stale s
 
 test('actual Save Edits opens calendar review on a known calendar error without announcing a successful save',async()=>{
  const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),start=source.indexOf('window.saveManualSchedule = '),end=source.indexOf('\n};',start),alerts=[];let opened=0,closed=0;
- const w={captureTempShiftConfig(){},getScheduleMemorySnapshot:()=>({branchConfig:{}}),saveToCloud:async()=>false,getOwnerScheduleSync:()=>({lastError:()=>({code:'schedule/calendar-review-needed'})}),openMonthlySchedule:async()=>opened++};
+ const w={captureTempShiftConfig(){},getScheduleMemorySnapshot:()=>({branchConfig:{}}),saveToCloud:async()=>false,getOwnerScheduleSync:()=>({lastError:()=>({code:'schedule/calendar-review-needed'})}),openScheduleCalendarReview:async()=>opened++,openMonthlySchedule:async()=>assert.fail('Save Edits must open direct repair, not the unrelated monthly generator.')};
  vm.runInNewContext(source.slice(start,end+4),{window:w,document:{getElementById:()=>null},Swal:{fire:async value=>alerts.push(value),close:()=>closed++,showLoading(){}},validateShiftConfig(){}});
  assert.equal(await w.saveManualSchedule(),false);assert.equal(opened,1);assert.equal(closed,1);assert.equal(alerts.some(row=>row.icon==='success'),false);
 });

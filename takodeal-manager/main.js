@@ -63,7 +63,7 @@ import { installMonthlyBills } from './monthly-bills-ui.js';
 import { requestHistory, historyTime } from './request-history.js';
 import { enhanceScheduleLayout, scheduleShiftHours } from './schedule-layout.js';
 import {installScheduleWorkspace} from './schedule-workspace.js';
-import {createMonthlyScheduleController} from './monthly-schedule-integration.js';
+import {createMonthlyScheduleController,createScheduleCalendarReviewController} from './monthly-schedule-integration.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
 import {installScheduleMemoryUI} from './schedule-memory-ui.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
@@ -8398,6 +8398,19 @@ window.openMonthlySchedule = function() {
     });
     return window.monthlyScheduleController.open();
 };
+window.openScheduleCalendarReview = function() {
+    window.scheduleCalendarReviewController ||= createScheduleCalendarReviewController(window,document,{
+        getSnapshot:window.getScheduleMemorySnapshot,
+        captureEditor:()=>{window.captureTempShiftConfig();return window.getScheduleMemorySnapshot();},
+        applySnapshot:snapshot=>{currentSchedule=structuredClone(snapshot.currentSchedule);window.currentSchedule=currentSchedule;window.renderTables();},
+        getMonth:()=>document.getElementById('monthSelector')?.value || '',
+        getBranch:()=>currentActiveTab,
+        getEffectiveFrom:()=>scheduleMemoryUI?.effectiveFrom() || '',
+        getSync:()=>window.getOwnerScheduleSync(),
+        save:()=>window.saveToCloud()
+    });
+    return window.scheduleCalendarReviewController.open();
+};
 window.getOwnerScheduleSync = function() {
     if(window.ownerScheduleSync)return window.ownerScheduleSync;
     const actor=()=>({uid:window.auth?.currentUser?.uid,email:window.auth?.currentUser?.email,sessionUid:window.sessionUser?.uid,sessionEmail:window.sessionUser?.email,permissions:window.sessionUser?.permissions,branches:window.sessionUser?.allowedBranches,branch:window.sessionUser?.branch,assignedBranch:window.sessionUser?.assignedBranch,isOwner:window.sessionUser?.isOwner,isFranchisee:window.sessionUser?.isFranchisee,role:window.sessionUser?.role});
@@ -8719,7 +8732,7 @@ window.saveManualSchedule = async function() {
         Swal.fire({title:'Saving schedule…',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
         if(await window.saveToCloud()===false){
             const sync=window.getOwnerScheduleSync?.();
-            if(sync?.lastError?.()?.code==='schedule/calendar-review-needed'){Swal.close();await window.openMonthlySchedule();return false;}
+            if(sync?.lastError?.()?.code==='schedule/calendar-review-needed'){Swal.close();await window.openScheduleCalendarReview();return false;}
             if(/another session/.test(sync?.lastError?.()?.message||''))throw Error('Another owner or co-owner saved a newer schedule. Your local draft is kept. Download the draft, reload the latest saved schedule, then review your changes before saving again. No separate HQ approval is required.');
             throw Error(document.getElementById('ownerScheduleSyncStatus')?.textContent || 'Schedule was not saved.');
         }
@@ -9919,6 +9932,7 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
         const snap = await tkOwnerDoc(window.doc(window.db, 'staff_requests', docId));
         if (!snap.exists()) throw new Error('This request no longer exists. Refresh the inbox.');
         req = snap.data();
+        if(req.type==='Waste Report'){window.switchView('inventory');window.switchInvTab('Waste');return window.openInventoryWasteReport?.(docId);}
         if(req.type==='Leave'||req.type==='Leave Change')return window.getManagerLeaveUI().review(docId,action);
         if(req.type==='Early Time Out')return window.getManagerEarlyTimeOutUI().review(docId,action);
         if (req.status !== 'Pending') throw new Error('This request was already reviewed. Refresh the inbox.');
@@ -10023,6 +10037,7 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
             document.getElementById('dynamicReplyModal')?.remove();
             return window.getManagerEarlyTimeOutUI().review(docId,action);
         }
+        if(originalRequest.data().type==='Waste Report'){document.getElementById('dynamicReplyModal')?.remove();window.switchView('inventory');window.switchInvTab('Waste');return window.openInventoryWasteReport?.(docId);}
         if (!window.isBranchAllowed(originalRequest.data().branch)) throw new Error('This branch is outside your access.');
         const context = window.lateRequestContext;
         if (isLatenessRequest(originalRequest.data())) {
@@ -10090,34 +10105,8 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
             penaltyCharged: penaltyAmt
         });
 
-        // 3. 🗑️ INVENTORY DEDUCTION (WASTE APPROVALS)
-        if (action === "Approved" && type === "Waste Report") {
-            if (reqData.items) {
-                for (let item of reqData.items) {
-                    if (!item.id) continue;
-                    const invRef = window.doc(window.db, "inventory", item.id);
-                    const invSnap = await window.getDoc(invRef);
-                    
-                    if (invSnap.exists()) {
-                        let currentStock = parseFloat(invSnap.data().currentStock) || 0;
-                        let newStock = currentStock - item.qty;
-                        
-                        await window.updateDoc(invRef, { currentStock: newStock });
-                        
-                        await window.addDoc(window.collection(window.db, "stock_logs"), {
-                            branch: reqData.branch, inventoryId: item.id, item: item.name, uom: item.uom,
-                            oldQty: currentStock, newQty: newStock, variance: -item.qty,
-                            type: "Waste / Spoilage (HQ Approved)", 
-                            note: `Reason: ${item.reason} | Appv. by: ${window.sessionUser ? window.sessionUser.cashierName : 'HQ'}`,
-                            user: reqData.staffName, 
-                            timestamp: originalDate, // 🔥 THE FIX: Logs on the exact day it spoiled!
-                            photoUrl: item.photoUrl 
-                        });
-                    }
-                }
-            }
-        }
-      
+        // Waste reports are reviewed atomically in Live Inventory → Waste & Spoilage.
+
         // 4. STANDARD DEDUCTIONS (Advances & Meals)
         // 🔥 THE FIX: Uses .includes("Meal") so Manager Meals are successfully deducted from payroll!
         if (action === "Approved" && (type === "Cash Advance" || type.includes("Meal"))) {

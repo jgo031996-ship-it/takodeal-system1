@@ -1,3 +1,4 @@
+import {isWasteReport} from '../takodeal-manager/waste-report-model.js';
 import {isTimeOutScheduleReview,timeOutRequestLabel} from '../takodeal-manager/time-out-request-display.js';
 import {createStaffHistoryResolver} from '../takodeal-manager/staff-lifecycle-model.js';
 import test from 'node:test';
@@ -100,7 +101,7 @@ test('real main inbox wrappers use the controller, and cached protected types sk
 });
 
 function countedDerivations(){
- let calls=0;const source=readFileSync(new URL('../takodeal-manager/owner-inbox.js',import.meta.url),'utf8').replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,''),context=vm.createContext({isTimeOutScheduleReview,timeOutRequestLabel,canOpenWorkspacePage,createStaffHistoryResolver,OWNER_EMAIL,historyTime,isMealDeduction,leaveRequestSummaryHTML,earlyTimeOutSummaryHTML,lateRequestSummaryHTML,lateRequestRecoveryContext,setTimeout,clearTimeout,requestHistory:(...args)=>{calls++;return requestHistory(...args);}});vm.runInContext(source+'\nglobalThis.testInstall=installOwnerInbox;',context);return {install:context.testInstall,calls:()=>calls};
+ let calls=0;const source=readFileSync(new URL('../takodeal-manager/owner-inbox.js',import.meta.url),'utf8').replace(/^import[^\n]*\n/gm,'').replace(/^export /gm,''),context=vm.createContext({isWasteReport,isTimeOutScheduleReview,timeOutRequestLabel,canOpenWorkspacePage,createStaffHistoryResolver,OWNER_EMAIL,historyTime,isMealDeduction,leaveRequestSummaryHTML,earlyTimeOutSummaryHTML,lateRequestSummaryHTML,lateRequestRecoveryContext,setTimeout,clearTimeout,requestHistory:(...args)=>{calls++;return requestHistory(...args);}});vm.runInContext(source+'\nglobalThis.testInstall=installOwnerInbox;',context);return {install:context.testInstall,calls:()=>calls};
 }
 
 test('current staff is the default; archived and orphan history remains accessible unchanged and read-only',async()=>{

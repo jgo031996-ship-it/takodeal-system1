@@ -151,6 +151,7 @@ export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth
  }
  async function cloudFailed(){stop();saveFlight?.failUI?.();status('HQ connection stopped. Save confirmation is unavailable. Preserve or download the draft before reloading.',true);await preserveDraft();publishRecovery();}
  return {load,save,start:watch,stop,preserveCalendarBackup,markDirty(){uiDirty=true;lastBackup=null;publishRecovery();void preserveDraft();},preserveDraft,recoverDraft,checkRecovery,exportDraft,cloudFailed,recoveryState,lastError:()=>lastError,isDirty:dirty,isSaving:()=>!!saveFlight,isLoaded:()=>!!loaded,
+  calendarRepairStatus(){return {pendingConfirmation:!!requestId&&!planScheduleCalendar(requestId.payload.snapshot).excluded.some(row=>row.reason==='Outside selected month')};},
   setHistory(value){history=value===true;},baseline:()=>loaded,
   invalidate(){++epoch;++recoveryEpoch;stop();loaded=null;loadedIdentity=null;baseline=null;baselineEffectiveFrom=null;uiDirty=false;history=false;requestId=null;lastBackup=null;recoveryCandidates=[];recoveryPlan=null;publishRecovery();}};
 }
