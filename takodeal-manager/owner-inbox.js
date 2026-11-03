@@ -7,6 +7,7 @@ import {isMealDeduction} from './payroll-safety.js';
 import {leaveRequestSummaryHTML} from './manager-leave-ui.js';
 import {earlyTimeOutSummaryHTML} from './early-time-out-review-ui.js';
 import {lateRequestSummaryHTML,lateRequestRecoveryContext} from './late-request-summary.js';
+import {isWasteReport} from './waste-report-model.js';
 
 const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const email=value=>String(value||'').trim().toLowerCase();
@@ -34,7 +35,7 @@ export function installInboxBadge(w,d){
    const filters=[w.where('status','==','Pending')];if(branch)filters.push(w.where('branch','==',branch));
    const unsubscribe=w.onSnapshot(w.query(w.collection(w.db,'staff_requests'),...filters),snapshot=>{
     if(version!==generation)return;if(inboxActorKey(w)!==key){refresh();return;}
-    const rows=snapshotRows(snapshot).filter(row=>row.status==='Pending'&&(all||branches.includes(row.branch)));counts.set(branch,new Set(rows.map(row=>row.id)));
+    const rows=snapshotRows(snapshot).filter(row=>!isWasteReport(row)&&row.status==='Pending'&&(all||branches.includes(row.branch)));counts.set(branch,new Set(rows.map(row=>row.id)));
     // Reuse the live badge's branch-scoped server snapshot. Newly saved
     // requests must also appear in an already-open inbox without another full
     // history download. Cached or locally pending snapshots never enter it.
@@ -58,7 +59,7 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
   const branches=Array.isArray(session.allowedBranches)?session.allowedBranches:[];
   return branches.includes('All')||!!row.branch&&branches.includes(row.branch);
  };
- const allowed=row=>!!inboxActorKey(w)&&rowAccess(row);
+ const allowed=row=>!isWasteReport(row)&&!!inboxActorKey(w)&&rowAccess(row);
  function workspace(){w.refreshOwnerInboxBadge?.();const key=inboxActorKey(w);if(!key){state=null;return null;}if(state?.key!==key)state={key,loaded:false,dataVersion:0,derivedVersion:-1,requests:[],deductions:[],overlays:new Map(),groups:[],groupIds:new Map(),open:new Set(),pages:new Map(),records:[],staffProfiles:[],view:'active',directoryError:''};return state;}
  const current=target=>state===target&&inboxActorKey(w)===target.key;
  function visible(promise){let timer;return Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('HQ is taking longer than expected. Retry Refresh Inbox; no request was changed.')),timeoutMs);})]).finally(()=>clearTimeout(timer));}
@@ -83,7 +84,7 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
    const bar=d.createElement('div');bar.className='staff-history-filter';bar.style.cssText='padding:16px 22px;border-bottom:1px solid #dce6df;background:#f5f8f1;display:flex;gap:12px;align-items:center;flex-wrap:wrap';
    const label=d.createElement('label');label.htmlFor='inboxStaffView';label.textContent='Staff records';select=d.createElement('select');select.id='inboxStaffView';select.style.cssText='min-height:42px;padding:9px 12px;border:1px solid #cadbd0;border-radius:8px;color:#214b39;background:white;font:inherit';
    for(const [value,text]of [['active','Current staff'],['archived','Archived staff & identity review'],['all','All saved records']]){const option=d.createElement('option');option.value=value;option.textContent=text;select.append(option);}
-   const help=d.createElement('small');help.textContent='Earlier records stay on file. The sidebar badge counts all pending requests, including archived staff.';bar.append(label,select,help);anchor.before(bar);
+   const help=d.createElement('small');help.textContent='Earlier HR records stay on file. The badge counts pending HR requests, including archived staff. Waste reports are in Live Inventory → Waste & Spoilage.';bar.append(label,select,help);anchor.before(bar);
   }
   if(select){select.value=target.view;select.onchange=()=>setView(select.value);}
  }
@@ -94,7 +95,7 @@ export function installOwnerInbox(w,d,{timeoutMs=25000,pageSize=50}={}){
   // A server refresh or confirmed request invalidates this in-memory derivation.
   const changed=target.derivedVersion!==target.dataVersion;let pending='',count=0;
   if(changed){
-   const rows=requestHistory(target.requests.filter(rowAccess),target.deductions.filter(rowAccess));target.records=rows;target.drawVersion=(target.drawVersion||0)+1;const grouped=new Map(),resolve=createStaffHistoryResolver(target.staffProfiles);
+   const rows=requestHistory(target.requests.filter(allowed),target.deductions.filter(allowed));target.records=rows;target.drawVersion=(target.drawVersion||0)+1;const grouped=new Map(),resolve=createStaffHistoryResolver(target.staffProfiles);
    const visible=row=>{const identity=resolve(row);return target.view==='all'||(target.view==='archived'?!identity.active:identity.active);};
    const label=row=>{const identity=resolve(row);return identity.active?'':identity.status==='archived'?' · Archived staff':' · Employee identity needs review';};
    rows.forEach((row,index)=>{

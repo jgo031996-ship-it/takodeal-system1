@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v118-calendar-recovery-20261103';
+const CACHE_NAME = 'takodeal-manager-core-v119-schedule-waste-20261103';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = ['./', './index.html', './main.js', './franchise-workspace.js', './monthly-bills.js', './monthly-bills-ui.js', './device-fleet.js', './app-update.js', './employee-id.js', './employee-id.css', './payslip.css', './schedule-layout.js', './request-history.js', './schedule-layout.css', './login.css', './login-ui.js', './unlock-gate.js', './device-store.js', './manager-libraries.js', './branch-operations.js', './cash-settlement.js', './shift-close-ui.js', './collection-cache.js', './manager-dialogs.js', './manager-workspace.js', './manager-workspace.css', './dispatch-safety.js', './menu-bulk.js', './pos-safety.js', './recipe-integrity.js', './live-report.js', './payroll-safety.js', './dashboard.js', './dashboard-data.js', './dashboard.css', './manager-theme.css', './manager-theme.js', './manager-scroll.js', './firebase-core.js', './auth.js', './style.css', './manifest.json'];
@@ -55,7 +55,7 @@ CORE_ASSETS.push('./financial-flow-model.js','./financial-flow-ui.js','./financi
 CORE_ASSETS.push('./inventory-editor.js','./inventory-editor-actions.js','./inventory-item-edit-model.js','./inventory-overview.js','./inventory-editor.css');
 CORE_ASSETS.push('./inventory-stock-forms.js','./inventory-stock-forms.css','./inventory-stock-form-model.js','./inventory-stock-form-actions.js','./inventory-yield.js','./inventory-workspace.css','./inventory-intelligence.js','./inventory-intelligence-model.js','./inventory-intelligence-reader.js','./inventory-history-workspace.js','./inventory-history-workspace.css','./inventory-history-model.js','./inventory-history-services.js');
 CORE_ASSETS.push('./inventory-intelligence.css');
-CORE_ASSETS.push('./inventory-waste-form.js');
+CORE_ASSETS.push('./inventory-waste-form.js','./waste-report-model.js','./inventory-waste-review.js','./inventory-waste-review-ui.js');
 CORE_ASSETS.push('./schedule-sync.js','./owner-schedule-sync.js');
 CORE_ASSETS.push('./schedule-staff-directory.js','./schedule-relief-staff.js','./late-request-summary.js','./late-request-resolution.js');
 CORE_ASSETS.push('./payroll-preview-guard.js');

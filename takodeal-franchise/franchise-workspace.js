@@ -20,6 +20,8 @@ import {installFranchisePayslipUI} from './franchise-payslip-ui.js';
 import {installFranchiseItemPicker} from './franchise-item-picker.js';
 import {installFranchisePayrollControls} from './franchise-payroll-controls.js';
 import {installStockAudits} from './stock-audit-ui.js';
+import {wasteRows} from './operations-model.js';
+const isWasteRequest=row=>String(row?.type||'').trim().toLowerCase()==='waste report';
 
 export function installFranchiseWorkspace(api) {
  const $=id=>document.getElementById(id),state={route:'dashboard',generation:0,loaded:new Map(),inventory:new Map(),cart:[],cartBranch:'',pending:0,schedule:null,charts:[]};
@@ -195,9 +197,11 @@ export function installFranchiseWorkspace(api) {
   const legacy=element('section','card-body');legacy.append(element('h3','', 'Earlier single-item audit tool'),element('p','notice','Use Cashier Stock Report for shared Weekly or Monthly count reports. This older tool records one inventory adjustment; find its history under All cycles & earlier counts.'),button('Record a single-item adjustment · legacy',()=>api.openAuditModal()));r.append(legacy);
  });
  for(const [route,type] of [['inv-waste','Waste']])define(route,async r=>{
-  const rows=(await read('inventory_logs',{time:'timestamp',...selectedRange()})).filter(e=>e.type===type).sort((a,b)=>ms(b.timestamp)-ms(a.timestamp));
+  const [stock,legacy,requests]=await Promise.all(['stock_logs','inventory_logs','staff_requests'].map(name=>read(name,{time:'timestamp',...selectedRange()}))),rows=wasteRows(stock,legacy);
   const c=table(r,type==='Audit'?'Physical stock audits':'Waste records',type==='Audit'?['Date','Item','System count','Actual count','Variance','Audited by']:['Date','Item','Quantity wasted','Reason','Logged by']);c.head.append(button(type==='Audit'?'Perform audit':'Log waste',()=>type==='Audit'?api.openAuditModal():api.openWasteModal(), 'primary-button'));
-  tools(c,route,rows,e=>'<tr>'+cell(esc(dateText(e.timestamp)))+cell(esc(e.itemName))+ (type==='Audit'?cell(esc(e.systemQty)+' '+esc(e.unit))+cell(esc(e.actualQty)+' '+esc(e.unit))+cell(esc(e.variance)):cell(esc(e.qtyWasted)+' '+esc(e.unit))+cell(esc(e.reason)))+cell(esc(e.loggedBy))+'</tr>');
+  tools(c,route,rows,e=>'<tr>'+cell(esc(dateText(e.timestamp)))+cell(esc(e.name))+cell(esc(e.quantity)+' '+esc(e.unit))+cell(esc(e.reason))+cell(esc(e.actor))+'</tr>');
+  const reports=table(r,'Cashier waste reports · HQ inventory review',['Submitted','Staff','Reported items','Review status','Management reply']);reports.head.append(element('p','notice','Reports are reviewed in the Owner app under Live Inventory → Waste & Spoilage. Pending and rejected reports do not change stock or payroll; approved stock movements appear above.'));
+  tools(reports,'inventory-waste-reports',requests.filter(isWasteRequest).sort((a,b)=>ms(b.timestamp)-ms(a.timestamp)),row=>'<tr>'+cell(esc(dateText(row.timestamp)))+cell(esc(row.staffName))+cell((Array.isArray(row.items)?row.items:[]).map(item=>'<p><strong>'+esc(item.name)+'</strong> · '+esc(item.qty)+' '+esc(item.uom||item.baseUom||'')+'<br>'+esc(item.reason||'Reason not recorded')+(/^https:\/\//i.test(item.photoUrl||'')?'<br><a target="_blank" rel="noopener noreferrer" href="'+esc(item.photoUrl)+'">View proof</a>':'')+'</p>').join('')||'Original item details need review')+cell(badge(row.status||'Recorded',row.status==='Pending'?'warning':row.status==='Rejected'?'danger':''))+cell(esc(row.managerReply||''))+'</tr>',{status:true});
  });
  for(const route of ['inv-prep','inv-logs'])define(route,async r=>{
   let rows=await read('stock_logs',{time:'timestamp',...selectedRange()});if(route==='inv-prep')rows=rows.filter(e=>/prep|prepared|production/i.test(e.type || ''));rows.sort((a,b)=>ms(b.timestamp)-ms(a.timestamp));
@@ -285,14 +289,14 @@ export function installFranchiseWorkspace(api) {
  api.openAddBranchStaff=async()=>{const branch=session().branch,id=uniqueId('staff');if(!canVisit(session(),'staff'))throw Error('Your saved payroll permission is required.');const result=await form('Add staff · '+branch,'<p>Branch: <strong>'+esc(branch)+'</strong></p>'+field('staffName','Full staff name')+selectField('staffRole','Role',[['Crew','Crew'],['Store Manager','Store Manager']])+field('staffPin','Unique staff PIN','password','','inputmode="numeric" autocomplete="new-password" minlength="4" maxlength="12"')+field('staffRate','Daily rate (₱)','number','','min="0.01" step="0.01"')+field('staffPhone','Phone (optional)','tel')+field('staffHired','Hire date (optional)','date'),async selected=>{if(selected!==branch)throw Error('The branch changed. Reopen Add branch staff.');await addFranchiseStaff(api,{id,name:$('form-staffName').value,pin:$('form-staffPin').value,role:$('form-staffRole').value,dailyRate:$('form-staffRate').value,phone:$('form-staffPhone').value,dateHired:$('form-staffHired').value});return true;},{confirm:'Add branch staff'});if(result.isConfirmed)await api.loadBranchStaff();};
 
  define('inbox',async r=>{
-  const rows=(await read('staff_requests')).sort((a,b)=>ms(b.timestamp)-ms(a.timestamp));const pending=table(r,'Pending staff requests',['Submitted','Staff','Type','Details','Actions']),resolved=table(r,'Resolved request history',['Submitted','Staff','Type','Status','Manager reply']);
+  const rows=(await read('staff_requests')).filter(row=>!isWasteRequest(row)).sort((a,b)=>ms(b.timestamp)-ms(a.timestamp));const pending=table(r,'Pending staff requests',['Submitted','Staff','Type','Details','Actions']),resolved=table(r,'Resolved request history',['Submitted','Staff','Type','Status','Manager reply']);
   tools(pending,'inbox',rows.filter(a=>a.status==='Pending'),a=>'<tr>'+cell(esc(dateText(a.timestamp)))+cell(esc(a.staffName))+cell(esc(a.type))+cell(esc(a.explanationMessage || a.reason || a.item || a.details || '')+`<small>${n(a.amount)?money(a.amount):''}</small>`)+cell(`<div class="button-row"><button class="table-action" data-request="${esc(a.id)}" data-decision="Approved">Approve</button><button class="danger-button" data-request="${esc(a.id)}" data-decision="Rejected">Reject</button></div>`)+'</tr>');
   tools(resolved,'inbox-resolved',rows.filter(a=>a.status!=='Pending'),a=>'<tr>'+cell(esc(dateText(a.timestamp)))+cell(esc(a.staffName))+cell(esc(a.type))+cell(badge(a.status || 'Recorded',a.status==='Rejected'?'danger':''))+cell(esc(a.managerReply || a.processedBy || ''))+'</tr>',{status:true});
   pending.body.addEventListener('click',e=>{const btn=e.target.closest('[data-request]');if(btn)api.handleRequest(btn.dataset.request,btn.dataset.decision).catch(showActionError);});
  });
  api.handleRequest=async(id,action)=>{
   const snapshot=await api.getDocFromServer(api.doc(api.db,'staff_requests',id));if(!snapshot.exists() || snapshot.data().branch!==session().branch)throw new Error('This request is outside your branch.');
-  const request=snapshot.data(),late=isLatenessRequest(request);let candidates=[];
+  const request=snapshot.data(),late=isLatenessRequest(request);if(isWasteRequest(request)){await api.switchView('inv-waste');return;}let candidates=[];
   if(late){if(request.attendanceLogId){const punch=await api.getDocFromServer(api.doc(api.db,'attendance_logs',request.attendanceLogId));if(punch.exists() && punch.data().branch===session().branch)candidates=[{...punch.data(),id:punch.id}];}else candidates=legacyAttendanceCandidates(request,await read('attendance_logs'));}
   const html=field('reply','Message to staff')+(late?selectField('attendance','Clock-in linked to this letter',candidates.map(a=>[a.id,a.staffName+' · '+dateText(a.timestamp)])):'');
   const result=await form(action==='Approved'?'Approve staff request':'Reject staff request',html,async branch=>{

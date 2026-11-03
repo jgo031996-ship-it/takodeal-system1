@@ -22,18 +22,19 @@ export function planScheduleCalendar(snapshot){
 
 export function scheduleCalendarError(plan){
  const keys=[...plan.excluded.map(row=>row.key),...plan.renamed.map(row=>row.from)];
- const error=Error(plan.month+' has '+plan.count+' days. Review calendar rows '+keys.join(', ')+' in Create Monthly Schedule, then use the corrected local draft and Save Edits. Your current draft has been kept.');
+ const error=Error(plan.month+' has '+plan.count+' days. Review the calendar repair for rows '+keys.join(', ')+' before saving. Your current draft has been kept.');
  error.code='schedule/calendar-review-needed';return error;
 }
 
 export function calendarReviewWarnings(plan){
  if(!plan.changed)return [];
+ const detailsFor=value=>Object.entries(plain(value)?value:{}).map(([branch,row])=>{
+  const names=[...Object.values(row?.scheduled||{}),...(row?.rest||[]),...(row?.unavailable||[]).map(item=>item?.name)].filter(name=>typeof name==='string'&&name&&!['N/A','UNFILLED'].includes(name));
+  return branch+(names.length?': '+[...new Set(names)].join(', '):': no named staff');
+ }).join(' · ');
  const rows=plan.excluded.map(row=>{
-  const details=Object.entries(plain(row.rows)?row.rows:{}).map(([branch,value])=>{
-   const names=[...Object.values(value?.scheduled||{}),...(value?.rest||[]),...(value?.unavailable||[]).map(item=>item?.name)].filter(name=>typeof name==='string'&&name&&!['N/A','UNFILLED'].includes(name));
-   return branch+(names.length?': '+[...new Set(names)].join(', '):': no named staff');
-  }).join(' · ');
-  return 'Extra calendar row '+row.key+' ('+row.reason+'): '+(details||'Saved row details retained in backup')+'. It cannot be placed on a real date in this month; no replacement date will be guessed.';
+  const details=detailsFor(row.rows),suffix=row.reason==='Duplicate day key'?'The existing day '+Number(row.key)+' row is kept: '+(detailsFor(plan.snapshot.currentSchedule[String(Number(row.key))])||'Saved row retained')+'. The duplicate row stays in the original backup; its staff assignments will not be merged automatically.':'It cannot be placed on a real date in this month; no replacement date will be guessed.';
+  return 'Extra calendar row '+row.key+' ('+row.reason+'): '+(details||'Saved row details retained in backup')+'. '+suffix;
  });
  return [plan.month+' has '+plan.count+' days. Before applying this calendar repair, the complete original draft will be preserved as a separate local recovery copy. Valid work dates stay unchanged by the calendar repair.',...rows,...plan.renamed.map(row=>'Calendar key '+row.from+' will use day '+row.to+' with the same saved assignments.')];
 }

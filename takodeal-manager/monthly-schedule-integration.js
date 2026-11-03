@@ -1,9 +1,10 @@
-import {installMonthlyScheduleUI} from './monthly-schedule-ui.js';
+import {installMonthlyScheduleUI,installScheduleCalendarReviewUI} from './monthly-schedule-ui.js';
 import {buildMonthlySchedulePlan} from './monthly-schedule-model.js';
 import {toScheduleEmployee} from './schedule-staff-directory.js';
 import {canOpenWorkspacePage} from './workspace-access-model.js';
 import {monthKey,scheduleDateKey} from './schedule-history.js';
 import {scheduleLeaveMarkerIds} from './schedule-leave-markers.js';
+import {planScheduleCalendar} from './schedule-calendar.js';
 
 const copy=value=>JSON.parse(JSON.stringify(value));
 const fingerprint=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
@@ -111,4 +112,52 @@ export function createMonthlyScheduleController(w,d,{getSnapshot,applySnapshot,g
         return opening;
     }
     return {open,close:()=>{++reviewEpoch;ui?.close();},getContext,commit,isApplying:()=>applying};
+}
+
+// Calendar repair is independent of creating a roster: no HR evidence reads,
+// generated assignments or effective-date changes are needed to remove a day
+// that cannot exist in the selected month. The original rows remain backed up.
+export function createScheduleCalendarReviewController(w,d,{getSnapshot,captureEditor=getSnapshot,applySnapshot,getMonth,getBranch=()=>w.currentActiveTab||'',getEffectiveFrom,getSync,save=()=>w.saveToCloud(),installUI=installScheduleCalendarReviewUI}={}){
+    let ui=null,applying=false,epoch=0;
+    function surface(){
+        const user=w.auth?.currentUser,session=w.sessionUser,sync=getSync(),month=getMonth();
+        if(!user?.uid||user.emailVerified!==true||session?.uid!==user.uid||String(session.email||'').toLowerCase()!==String(user.email||'').toLowerCase()||session.isFranchisee===true||!canOpenWorkspacePage(session,'schedule'))throw Error('Sign in with your approved Schedule Manager account.');
+        if(w.scheduleMemoryReadOnly||!sync?.isLoaded?.()||sync.baseline?.()?.month!==month)throw Error('Load the latest selected month before reviewing its calendar. Saved historical versions are read-only.');
+        if(sync.isSaving?.())throw Error('The schedule save is still waiting for HQ. Confirm its result before another save.');
+        const snapshot=copy(captureEditor()),effectiveFrom=getEffectiveFrom(),branch=getBranch();
+        if(monthKey(snapshot)!==month)throw Error('The selected month changed. Reopen the calendar review.');
+        const actorKey=fingerprint([user.uid,user.email,session.uid,session.email,session.role,session.isOwner,session.isFranchisee,session.permissions,session.allowedBranches,session.branch,session.assignedBranch]);
+        const plan=planScheduleCalendar(snapshot);
+        if(plan.changed&&sync.calendarRepairStatus?.()?.pendingConfirmation===true)throw Error('An earlier schedule save still needs confirmation. Download your current draft, then reload the saved schedule and review Draft recovery before repairing this calendar. Its original save reference has been kept.');
+        for(const row of [...plan.excluded,...plan.renamed.map(row=>({rows:snapshot.currentSchedule[row.from]}))])for(const branch of Object.keys(row.rows||{}))if(w.isBranchAllowed?.(branch)!==true)throw Error('An extra calendar row includes another branch. An authorized owner must review all affected branches.');
+        return {snapshot,month,branch,effectiveFrom,actorKey,plan};
+    }
+    async function commit(captured,{isCurrent=()=>true}={}){
+        if(applying)throw Error('This calendar repair is already being saved.');
+        applying=true;
+        try{
+            const token=epoch;
+            if(!isCurrent()||fingerprint(surface())!==fingerprint(captured))throw Error('The account, month or draft changed. Reopen the calendar review before saving.');
+            if(!captured.plan.changed)throw Error('This calendar no longer needs repair. Close the review and use Save Edits.');
+            if(await getSync().preserveCalendarBackup?.()!==true)throw Error('The original calendar backup could not be preserved. Keep this draft open or download it; no repair was applied.');
+            if(token!==epoch||!isCurrent()||fingerprint(surface())!==fingerprint(captured))throw Error('The account, month or draft changed while preserving its backup. No calendar repair was applied.');
+            await applySnapshot(copy(captured.plan.snapshot));
+            // A late callback must not save a different account or month.
+            const applied=surface();
+            if(token!==epoch||!isCurrent()||applied.actorKey!==captured.actorKey||applied.month!==captured.month||applied.branch!==captured.branch||applied.effectiveFrom!==captured.effectiveFrom||fingerprint(applied.snapshot)!==fingerprint(captured.plan.snapshot))throw Error('The editor changed during calendar repair. Its local draft was kept; review it before saving.');
+            getSync().markDirty();
+            const result=await save();
+            if(result!==true)return {saved:false,repaired:true,message:getSync().lastError?.()?.message||d.getElementById('ownerScheduleSyncStatus')?.textContent||'HQ has not confirmed the save.'};
+            if(getSync().isDirty?.()===true||getSync().isSaving?.()===true)return {saved:false,repaired:true,confirmed:true,message:'HQ confirmed the original save, but this editor still has additional unsaved changes. Keep the draft and retry Save Edits after reviewing them.'};
+            return {saved:true,repaired:true};
+        }finally{applying=false;}
+    }
+    function open(){
+        try{
+            const captured=surface();
+            if(!captured.plan.changed){w.ManagerUI?.notify?.('The calendar is valid. Use Save Edits to save your current draft.');return false;}
+            ++epoch;ui||=installUI(w,d,{getContext:surface,commit});return ui.open(captured);
+        }catch(error){w.ManagerUI?.notify?.(error.message);return false;}
+    }
+    return {open,commit,getContext:surface,isApplying:()=>applying,close:()=>{++epoch;ui?.close();}};
 }

@@ -1,6 +1,7 @@
 import {buildMonthlySchedulePlan,monthlyScheduleFingerprint} from './monthly-schedule-model.js';
 import {scheduleDateKey} from './schedule-history.js';
 import {scheduleShiftHours} from './schedule-layout.js';
+import {calendarReviewWarnings} from './schedule-calendar.js';
 const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const clone=value=>JSON.parse(JSON.stringify(value));
 const period=month=>new Date(month+'-01T12:00:00+08:00').toLocaleDateString('en-PH',{timeZone:'Asia/Manila',month:'long',year:'numeric'});
@@ -32,4 +33,34 @@ export function installMonthlyScheduleUI(w,d,{getContext,commit,now=()=>new Date
   return node;
  }
  return {open,close:()=>dialog?.close()};
+}
+
+/** Save Edits opens this focused review directly when a legacy calendar has
+ * extra rows. It does not prepare empty shifts or choose employees. */
+export function installScheduleCalendarReviewUI(w,d,{getContext,commit}={}){
+ let dialog=null,generation=0;
+ function open(captured){
+  const before=clone(captured),stamp=monthlyScheduleFingerprint(before);dialog?.close();dialog?.remove();
+  const token=++generation,node=d.createElement('dialog');dialog=node;node.className='monthly-schedule-dialog';node.id='scheduleCalendarReviewDialog';node.setAttribute('aria-labelledby','scheduleCalendarReviewTitle');let busy=false;
+  const plan=before.plan,validRows=Object.keys(plan.snapshot.currentSchedule).length;
+  node.innerHTML='<header><div><small>SCHEDULE MANAGER · SAVE REPAIR</small><h2 id="scheduleCalendarReviewTitle">Review calendar repair</h2><p>'+escape(period(before.month))+'</p></div><button type="button" data-close aria-label="Close calendar review">×</button></header><div class="monthly-schedule-body"><p class="monthly-schedule-note">This month has <strong>'+plan.count+' days</strong>. An older draft contains an extra or duplicate calendar row. Review the rows below, then save the corrected calendar here.</p><section class="monthly-schedule-summary"><h3>Your valid schedule stays as entered</h3><p>'+validRows+' valid calendar rows are kept with their existing staff assignments, shifts and swap notes. No staff are reassigned and no replacement date is guessed.</p></section><aside class="monthly-schedule-warning">'+calendarReviewWarnings(plan).map(text=>'<p>'+escape(text)+'</p>').join('')+'</aside><p class="monthly-schedule-note">The complete original draft, including every extra row, will be kept in <strong>Draft recovery</strong> as an original calendar backup. The save uses the existing shared-schedule version check.</p><p data-status role="status" aria-live="polite">Nothing has changed. Cancel keeps your draft exactly as it is.</p></div><footer><button type="button" data-close>Cancel</button><button type="button" data-confirm>Repair calendar and save</button></footer>';
+  d.body.append(node);node.showModal();const status=node.querySelector('[data-status]'),confirm=node.querySelector('[data-confirm]'),closeButtons=node.querySelectorAll('[data-close]');
+  const current=()=>{try{return dialog===node&&node.open&&token===generation&&getContext().actorKey===before.actorKey;}catch{return false;}};
+  const message=(text,error=false)=>{status.textContent=text;status.dataset.tone=error?'warning':'';};
+  closeButtons.forEach(button=>button.onclick=()=>{if(!busy)node.close();});node.addEventListener('cancel',event=>{if(busy)event.preventDefault();});node.addEventListener('close',()=>{if(dialog===node)dialog=null;node.remove();});
+  confirm.onclick=async()=>{
+   if(busy||!current())return;
+   try{
+    if(monthlyScheduleFingerprint(getContext())!==stamp)throw Error('The account, month or draft changed. Close this window and use Save Edits to review the latest draft.');
+    busy=true;confirm.disabled=true;closeButtons.forEach(button=>button.disabled=true);message('Preserving the original draft, then saving the reviewed calendar…');
+    const result=await commit(clone(before),{isCurrent:current});if(!current())return;
+    if(result?.saved!==true&&result?.repaired!==true)throw Error('The calendar repair was not confirmed. Keep your draft and review its saved status.');
+    confirm.hidden=true;closeButtons.forEach(button=>button.textContent=button.getAttribute?.('aria-label')?'×':'Close');
+    message(result.saved?'Schedule saved. The corrected calendar is shared with the other Owner devices and staff apps. The original calendar backup remains in Draft recovery.':result.confirmed?'Calendar draft repaired. '+result.message:'Calendar draft repaired and preserved. HQ has not confirmed the save. Close this window, keep the draft, then retry Save Edits. '+(result.message||''),!result.saved);
+   }catch(error){if(current())message(error.message||'The calendar repair could not be saved. Your draft has been kept.',true);}
+   finally{busy=false;if(current()){confirm.disabled=false;closeButtons.forEach(button=>button.disabled=false);}else if(dialog===node&&token===generation)node.close();}
+  };
+  return node;
+ }
+ return {open,close:()=>{++generation;dialog?.close();}};
 }
