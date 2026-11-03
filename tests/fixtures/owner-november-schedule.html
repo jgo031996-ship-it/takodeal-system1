@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Synthetic November roster review</title>
+<link rel="stylesheet" href="../../takodeal-manager/monthly-schedule.css">
+<style>body{font:16px system-ui;max-width:960px;margin:24px auto;padding:16px;background:#fffaf6;color:#242424}button,select{font:inherit;padding:12px;margin:6px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:white;padding:16px;border:1px solid #ccc}h1{font-size:24px}</style>
+<h1>TAKODEÁL · November 2026 synthetic roster</h1><p>Local test fixture. No Firebase, employee, attendance, leave or payroll writes are connected.</p>
+<label>Branch <select id="branch"><option>Cabantian</option><option>Maa</option><option>Agdao</option></select></label>
+<label>Scenario <select id="scenario"><option value="empty">Empty month</option><option value="calendar">November contains extra day 31</option><option value="rejected">Rejected leave marker</option><option value="approved">Active approved leave</option><option value="historical">Historical leave</option><option value="ambiguous">Ambiguous staff identity</option></select></label>
+<p id="dates"></p><button id="create">Create Monthly Schedule</button><button id="save">Save Edits (synthetic only)</button><p id="status" role="status"></p><pre id="evidence"></pre>
+<script type="module">
+import {installMonthlyScheduleUI} from '../../takodeal-manager/monthly-schedule-ui.js';
+import {buildMonthlySchedulePlan,monthlyScheduleFingerprint} from '../../takodeal-manager/monthly-schedule-model.js';
+let context,saved,applications=0,saves=0;const $=id=>document.getElementById(id),copy=value=>structuredClone(value);
+function reset(){
+ const branch=$('branch').value,scenario=$('scenario').value,person={staffId:'synthetic-alice',name:'Synthetic Alice',cashierName:'Synthetic Alice',branch,active:true,scheduleEligible:true};
+ context={actorKey:'synthetic-owner',month:'2026-11',branch,effectiveFrom:branch==='Agdao'?'2026-11-05':'2026-11-01',today:'2026-10-31',staffProfiles:[person,{...person,staffId:'synthetic-bea',name:'Synthetic Bea',cashierName:'Synthetic Bea'}],approvedLeaves:[],sanctions:[],leaveSources:[],snapshot:{currentYear:2026,currentMonth:11,branchConfig:{[branch]:[{id:'morning',name:'Morning',active:true,days:[0,1,2,3,4,5,6],startTime:'09:00',endTime:'17:30'}]},employees:[],currentSchedule:{},unavailability:{},holidays:{}}};
+ const date=context.effectiveFrom,day=Number(date.slice(-2)),record={id:'synthetic-leave',type:'Leave',status:scenario==='rejected'?'Rejected':'Approved',staffId:person.staffId,staffName:person.name,branch,startDate:date,endDate:date};
+ if(scenario==='calendar')context.snapshot.currentSchedule[31]={[branch]:{scheduled:{morning:'Synthetic Extra Day'},rest:[],unavailable:[],swaps:{}}};
+ if(scenario==='historical'){record.startDate='2026-05-01';record.endDate='2026-05-02';record.staffName='Former Synthetic Staff';delete record.staffId;context.approvedLeaves=[record];}
+ if(['rejected','approved','ambiguous'].includes(scenario)){context.snapshot.currentSchedule[day]={[branch]:{scheduled:{},rest:[],unavailable:[{name:person.name,staffId:person.staffId,status:'Leave',leaveRequestId:record.id}],swaps:{}}};context.leaveSources=[{id:record.id,record}];if(scenario!=='rejected')context.approvedLeaves=[record];}
+ if(scenario==='ambiguous'){context.staffProfiles.push({...person,staffId:'another-synthetic-alice'});delete record.staffId;}
+ saved=copy(context.snapshot);applications=saves=0;$('status').textContent='Ready. Nothing has changed.';$('dates').textContent='Work dates start '+date;render();
+}
+function render(){$('evidence').textContent=JSON.stringify({localDraftApplications:applications,explicitSavedWrites:saves,savedStillOriginal:monthlyScheduleFingerprint(saved)===monthlyScheduleFingerprint(context.snapshot),draftFirstDay:context.snapshot.currentSchedule[Number(context.effectiveFrom.slice(-2))]||null,savedFirstDay:saved.currentSchedule[Number(context.effectiveFrom.slice(-2))]||null},null,2);}
+const w={ManagerUI:{notify:message=>$('status').textContent=message}},ui=installMonthlyScheduleUI(w,document,{getContext:()=>context,now:()=>new Date('2026-10-31T04:00:00Z'),commit:async(plan,captured)=>{if(monthlyScheduleFingerprint(context)!==monthlyScheduleFingerprint(captured))throw Error('Context changed');const fresh=buildMonthlySchedulePlan({...context,mode:plan.mode});if(monthlyScheduleFingerprint(fresh)!==monthlyScheduleFingerprint(plan))throw Error('Proposal changed');context.snapshot=copy(plan.snapshot);applications++;render();return {prepared:true,backupConfirmed:true};}});
+$('branch').onchange=$('scenario').onchange=()=>{ui.close();reset();};$('create').onclick=()=>ui.open();$('save').onclick=()=>{saved=copy(context.snapshot);saves++;$('status').textContent='Explicit synthetic Save Edits completed.';render();};reset();
+</script></html>

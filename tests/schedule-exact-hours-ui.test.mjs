@@ -49,7 +49,7 @@ function saveRulesFixture({day=1,unavailable=[],globalUnavailable={}}={}){
  const active=morning('active','Morning 1'),inactive={...morning('inactive','Morning 2','10:00','18:30'),active:false},disabled={...morning('weekday','Weekday'),days:[]};
  const branchConfig={Cabantian:[active,inactive,disabled],Other:[{...morning('other','Other morning'),active:false}]};
  const currentSchedule={[day]:{Cabantian:{scheduled:{active:'Bea',inactive:'Mika',weekday:'Ren',removed:'Ari',duplicate:'Bea'},rest:['Mika'],unavailable,swaps:{active:'Former'},customReview:{keep:true}},Other:{scheduled:{other:'Toni'},rest:[],unavailable:[],customReview:{keep:true}}}};
- let saved;const window={captureTempShiftConfig(){},isBranchAllowed:branch=>branch==='Cabantian',renderTables(){},saveToCloud:async()=>{saved=clone(currentSchedule);return true;}};
+ let saved;const window={captureTempShiftConfig(){},isBranchAllowed:branch=>branch==='Cabantian',renderTables(){},saveToCloud:()=>assert.fail('Applying rules must wait for explicit Save Edits'),markScheduleDraftEdited:()=>{saved=clone(currentSchedule);}};
  const unavailability={[`2026-10-${String(day).padStart(2,'0')}`]:globalUnavailable};
  vm.runInNewContext(extract('saveShiftConfigChanges'),{window,branchConfig,currentSchedule,currentYear:2026,currentMonth:10,unavailability,validateShiftConfig,document:{getElementById:()=>null},setTimeout(){}});
  return {window,branchConfig,currentSchedule,saved:()=>saved};

@@ -110,3 +110,34 @@ function actualRoster({year=2026,month=11,weekday=true,readOnly=false}={}){
 }
 test('actual blank active future roster cells open the planner for review without assigning or saving',()=>{const f=actualRoster();assert.match(f.html,/>Prepare roster<\/span>/);assert.doesNotMatch(f.html,/Disabled shift/);const action=/onclick="([^"]+)"[^>]*>Prepare roster<\/span>/.exec(f.html)?.[1];assert.equal(action,'window.openMonthlySchedule()');vm.runInContext(action,f.context);assert.equal(f.calls.opened,1);assert.equal(f.calls.saves,0);});
 test('actual blank past, disabled-weekday and saved-history roster cells expose no monthly creation action',()=>{for(const options of [{year:2026,month:10},{weekday:false},{readOnly:true}]){const f=actualRoster(options);assert.doesNotMatch(f.html,/Prepare roster|window\.openMonthlySchedule\(\)/);assert.match(f.html,options.weekday===false?/No shift this weekday/:/Not assigned/);assert.equal(f.calls.opened,0);assert.equal(f.calls.saves,0);}});
+
+for(const state of ['Rejected','missing'])test('a stale marker source becoming active after review invalidates the proposal: '+state,async()=>{
+ const f=fixture(),marker={name:'Ann',status:'Leave',staffId:'staff-a',leaveRequestId:'synthetic-source'};f.state.snapshot.currentSchedule[2]={Maa:{...day(),unavailable:[marker]}};
+ f.state.evidence.leaveSources=[{id:'synthetic-source',record:state==='missing'?null:{type:'Leave',status:state,staffId:'staff-a',staffName:'Sample Ann'}}];
+ await f.controller.open();const {captured,plan}=f.proposal(),before=copy(f.state.snapshot);assert.equal(plan.releasedLeaveMarkers.length,1);
+ f.state.evidence.leaveSources[0].record={type:'Leave',status:'Approved',staffId:'staff-a',staffName:'Sample Ann',startDate:'2026-11-02',endDate:'2026-11-02'};
+ await assert.rejects(f.hooks.commit(plan,captured),/changed/);assert.deepEqual(f.state.snapshot,before);assert.equal(f.calls.applied.length,0);assert.equal(f.calls.businessWrites,0);
+});
+test('default evidence confirms exact linked source IDs freshly, including rejected and deleted requests, without reading private fields',async()=>{
+ const f=fixture({useDefaultRead:true}),marker={name:'Ann',status:'Leave',staffId:'staff-a',leaveRequestId:'rejected-source'},reads=[];
+ f.state.snapshot.currentSchedule[2]={Maa:{...day(),unavailable:[marker,{...marker,leaveRequestId:'missing-source'}]}};
+ f.w.doc=(_db,table,id)=>({table,id});f.w.getDocFromServer=async ref=>{reads.push(ref);return {exists:()=>ref.id!=='missing-source',data:()=>({type:'Leave',status:'Rejected',staffId:'staff-a',staffName:'Sample Ann',reason:'PRIVATE'}),metadata:{fromCache:false,hasPendingWrites:false}};};
+ const result=await readMonthlyScheduleEvidence(f.w,{snapshot:f.state.snapshot,branch:'Maa',month:'2026-11',effectiveFrom:'2026-11-01'});
+ assert.deepEqual(reads.map(row=>row.id),['missing-source','rejected-source']);assert.equal(result.leaveSources.find(row=>row.id==='missing-source').record,null);assert.equal(result.leaveSources.find(row=>row.id==='rejected-source').record.reason,undefined);assert.equal(f.calls.businessWrites,0);
+ f.w.getDocFromServer=async()=>({exists:()=>false,metadata:{fromCache:true}});assert.equal(await f.controller.open(),false);assert.equal(f.calls.uiOpen,0);assert.equal(f.calls.applied.length,0);
+});
+
+for(const result of ['saved','failed','closed','changed'])test('calendar repair requires a preserved original and a current review: '+result,async()=>{
+ const f=fixture(),raw={Maa:day({'morning-1':'Synthetic Extra Day'})};f.state.snapshot.currentSchedule[31]=raw;let backups=0;
+ f.sync.preserveCalendarBackup=async()=>{backups++;if(result==='closed')f.controller.close();if(result==='changed')f.state.snapshot.currentSchedule[3]={Maa:day({'morning-1':'New edit'})};return result!=='failed';};
+ await f.controller.open();const {captured,plan}=f.proposal(),before=copy(f.state.snapshot);assert.equal(plan.calendarRepair.excluded[0].key,'31');assert.deepEqual(f.state.snapshot,before);assert.equal(backups,0);
+ if(result==='saved'){assert.equal((await f.hooks.commit(plan,captured)).prepared,true);assert.equal(f.state.snapshot.currentSchedule[31],undefined);assert.equal(backups,1);assert.equal(f.calls.applied.length,1);}
+ else{await assert.rejects(f.hooks.commit(plan,captured));assert.equal(f.calls.applied.length,0);assert.deepEqual(f.state.snapshot.currentSchedule[31],raw);assert.equal(f.calls.dirty,0);}
+ assert.equal(f.calls.businessWrites,0);
+});
+test('an authorized co-owner can review and apply a local roster without a separate Owner or HQ approval',async()=>{
+ const f=fixture();f.w.auth.currentUser={uid:'synthetic-coowner',email:'coowner@example.test',emailVerified:true};f.w.sessionUser={uid:'synthetic-coowner',email:'coowner@example.test',role:'Co-Owner',isOwner:false,isFranchisee:false,permissions:['schedule'],allowedBranches:['Maa']};await f.controller.open();const {captured,plan}=f.proposal();assert.equal((await f.hooks.commit(plan,captured)).prepared,true);assert.equal(f.calls.applied.length,1);assert.equal(f.calls.businessWrites,0);
+});
+test('calendar repair cannot alter extra rows of a branch outside the current co-owner permissions',async()=>{
+ const f=fixture();f.state.snapshot.currentSchedule[31]={Restricted:day()};f.w.isBranchAllowed=branch=>branch!=='Restricted';f.sync.preserveCalendarBackup=()=>assert.fail('No backup or repair should start for an unauthorized branch');await f.controller.open();const {captured,plan}=f.proposal();await assert.rejects(f.hooks.commit(plan,captured),/authorized owner/);assert.equal(f.calls.applied.length,0);assert.equal(f.calls.businessWrites,0);
+});
