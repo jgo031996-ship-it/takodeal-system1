@@ -86,12 +86,17 @@ test('legacy operational authority remains while new rate metadata is protected'
     const attendance = expandVerifiedAliases(body(legacy, 'match /attendance_logs/{logId}'));
     const attendanceUpdate = body(attendance, 'function selectorAttendanceLogsUpdate(');
     assert.match(attendance, /allow read: if true;/);
-    assert.match(attendance, /allow create: if !request\.resource\.data\.keys\(\)\.hasAny\(\['scheduleAmendmentReview'\]\);/);
-    assert.match(attendance, /allow update: if selectorAttendanceLogsUpdate\(request\.resource\.data,resource == null \? null : resource\.data\);/);
-    assert.match(attendanceUpdate, /return !data\.diff\(before\)\.affectedKeys\(\)\.hasAny\(\['scheduleAmendmentReview'\]\)/);
+    assert.match(attendance, /allow create: if !request\.resource\.data\.keys\(\)\.hasAny\(\['scheduleAmendmentReview','reliefScheduleReview'\]\);/);
+    assert.match(attendance, /allow update: if selectorAttendanceLogsUpdate\(request\.resource\.data,resource == null \? null : resource\.data\)\s*&& reliefOriginalSourceUnchanged\(request\.resource\.data,resource\.data\);/);
+    assert.match(attendanceUpdate, /return !data\.diff\(before\)\.affectedKeys\(\)\.hasAny\(\['scheduleAmendmentReview','reliefScheduleReview'\]\)/);
     assert.match(attendanceUpdate, /data\.diff\(before\)\.affectedKeys\(\)\.hasOnly\(\['scheduleAmendmentReview'\]\)/);
     assert.match(attendanceUpdate, /amendmentReviewMarker\(data\.scheduleAmendmentReview,before,logId\)/);
-    assert.match(attendance, /allow delete: if isHQUser\(\) && !resource\.data\.keys\(\)\.hasAny\(\['scheduleAmendmentReview'\]\);/);
+    assert.doesNotMatch(attendanceUpdate, /reliefReviewMarker/);
+    assert.match(attendance, /allow delete: if isHQUser\(\) && !resource\.data\.keys\(\)\.hasAny\(\['scheduleAmendmentReview','reliefScheduleReview'\]\)\s*&& !reliefLinkedOut\(resource\.data\);/);
+    assert.match(body(attendance, 'function reliefOriginalSourceUnchanged('), /'timestamp','type','staffId','staffName','branch','timeInLogId','timeInAt','scheduleSnapshot','status','deleted'/);
+    const reliefAudit = body(legacy, 'match /attendance_relief_reviews/{auditId}');
+    assert.match(reliefAudit, /allow read: if protectedHROwner\(\);/);
+    assert.match(reliefAudit, /allow write: if false;/);
     // Ordinary legacy edits still pass. Only the new audit/history fields add
     // authorization and atomic-link requirements; they must not inherit the
     // preceding unrestricted update grant.

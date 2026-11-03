@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v40-late-leave-20261031';
+const CACHE_NAME = 'takodeal-staff-v41-emergency-relief-20261103';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./attendance-schedule-preview.js');
 SHELL.push('./staff-setup-access.js','./staff-setup.css');
@@ -15,6 +15,7 @@ SHELL.push('./deduction-inbox.js','./deduction-inbox.css');
 SHELL.push('./schedule-sync.js','./schedule-view-sync.js');
 SHELL.push('./leave-model.js','./leave-request-actions.js','./staff-leave-ui.js','./leave-ui.css');
 SHELL.push('./attendance-amendment-review-model.js','./attendance-metadata-reader.js','./onboarding-model.js','./onboarding-service.js','./onboarding-ui.js','./onboarding.css');
+SHELL.push("./relief-attendance-model.js","./relief-schedule-review-model.js");
 self.addEventListener('install', event => {
     event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting()));
 });

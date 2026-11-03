@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
-import {isTimeOutScheduleReview,timeOutRequestLabel,timeOutRequestDetailsHTML} from '../takodeal-staff/time-out-request-display.js';
+import {isTimeOutScheduleReview,timeOutRequestLabel,timeOutRequestDetailsHTML,hasConfirmedReliefReview} from '../takodeal-staff/time-out-request-display.js';
 
 const row=(extra={})=>({type:'Early Time Out',status:'Pending',requiresScheduleReview:true,staffId:'sample-staff',staffName:'Sample Crew',branch:'Sample Branch',reason:'Night shift finished at 3 AM.',timestamp:new Date('2026-10-29T03:06:00+08:00'),...extra});
 
@@ -33,3 +33,5 @@ test('the actual Staff history retains Not Required and normal Time Out outcomes
 test('Owner and Staff use identical display helpers with no clock-out, payroll or storage dependency',()=>{
  const owner=readFileSync(new URL('../takodeal-manager/time-out-request-display.js',import.meta.url),'utf8'),staff=readFileSync(new URL('../takodeal-staff/time-out-request-display.js',import.meta.url),'utf8');assert.equal(owner,staff);assert.doesNotMatch(staff,/^import|localStorage|indexedDB|runTransaction|updateDoc|setDoc/m);
 });
+
+test('a resolved linked relief audit clearly confirms assigned hours while pending or unlinked rows do not claim confirmation',async()=>{const saved=row({status:'Not Required',timeInLogId:'fiction-in',timeOutLogId:'time-out-'+('a'.repeat(64)),emergencyRelief:{version:1},reliefReviewAuditId:'relief-fiction-in-1'}),before=structuredClone(saved);assert.equal(hasConfirmedReliefReview(saved),true);assert.match(timeOutRequestDetailsHTML(saved),/Owner confirmed your assigned hours/);assert.doesNotMatch(timeOutRequestDetailsHTML(saved),/waiting for Owner HR review/);const staff=actualStaffInbox([saved]);await staff.window.loadInbox();assert.match(staff.panel.innerHTML,/Owner confirmed your assigned hours/);assert.deepEqual(saved,before);for(const patch of [{status:'Pending'},{status:'Rejected'},{reliefReviewAuditId:null},{reliefReviewAuditId:'relief-another-in-1'},{reliefReviewAuditId:'relief-fiction-in-0'},{timeOutLogId:'not-linked'}])assert.equal(hasConfirmedReliefReview({...saved,...patch}),false);assert.match(timeOutRequestDetailsHTML({...saved,status:'Pending'}),/Assigned hours are waiting for Owner HR review. No lateness or early departure was inferred/);});
