@@ -254,7 +254,25 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
 
     match /hq_managers/{managerId} { allow read: if rf(); allow write: if rg(); }
     match /settings/{docId} {
-      function r1f(a, b, c) {
+      function r1f(a, b) {
+        let c = a.appearance;
+        return rx()
+          && r8((a),(['schemaVersion','revision','appearance','updatedAt','updatedByUid','updatedByEmail'])) && a.size() == 6
+          && a.schemaVersion == 1 && r42(b) && r42(a.revision) && a.revision == b + 1
+          && a.updatedAt == request.time && a.updatedByUid == request.auth.uid && a.updatedByEmail == request.auth.token.email
+          && c is map && r8((c),(['theme','primary','accent','background','message','decorations','density','largeText','showRanking','scheduled','startDate','endDate'])) && c.size() == 12
+          && c.theme in ['everyday','halloween','christmas','new-year','custom']
+          && c.primary is string && c.primary.matches('^#[0-9a-fA-F]{6}$')
+          && c.accent is string && c.accent.matches('^#[0-9a-fA-F]{6}$')
+          && c.background is string && c.background.matches('^#[0-9a-fA-F]{6}$')
+          && (r2((c.message),(120))) && c.decorations is bool
+          && c.density in ['comfortable','compact'] && c.largeText is bool && c.showRanking is bool && c.scheduled is bool
+          && c.startDate is string && c.endDate is string
+          && (c.scheduled
+            ? (r2k(c.startDate) && r2k(c.endDate) && c.startDate >= '2000-01-01' && c.endDate <= '2099-12-31' && c.startDate <= c.endDate)
+            : (c.startDate == '' && c.endDate == ''));
+      }
+      function r1g(a, b, c) {
       // Protect only this feature's policy fields. Existing unrelated settings
       // and staged branch policy behavior remain compatible.
       return a != 'global_pos_config'
@@ -265,7 +283,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
             || (c.cancelledFoodDiscountPct is number && c.cancelledFoodDiscountPct >= 0 && c.cancelledFoodDiscountPct <= 100)));
     }
 
-      function r1g() {
+      function r1h() {
       let a = rp();
       let b = a.get('lastSaleId', '');
       let c = a.get('lastSaleBranch', '');
@@ -291,7 +309,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
               && h.get('status', '') != 'Voided' && e.get('status', '') == 'Voided'));
     }
 
-      function r1h(a) {
+      function r1i(a) {
       let b = rp();
       let c = b.get('branch', '');
       // The present branch names use ASCII letters, spaces, dots and hyphens.
@@ -302,8 +320,8 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && b.active is bool && b.updatedBy is string && (r6(b.updatedAt));
     }
 
-      function r1i(a) { return r8((a),(['id','label','suspensionDays'])) && a.size() == 3; }
-      function r1j(a) {
+      function r1j(a) { return r8((a),(['id','label','suspensionDays'])) && a.size() == 3; }
+      function r1k(a) {
         let b = a.size();
         let c = [b>0?a[0].id:'',b>1?a[1].id:'',b>2?a[2].id:'',b>3?a[3].id:'',b>4?a[4].id:'',
           b>5?a[5].id:'',b>6?a[6].id:'',b>7?a[7].id:'',b>8?a[8].id:'',b>9?a[9].id:'',
@@ -311,44 +329,45 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           b>15?a[15].id:'',b>16?a[16].id:'',b>17?a[17].id:'',b>18?a[18].id:'',b>19?a[19].id:''];
         return a is list && b >= 1 && b <= 20
           && c.removeAll(['']).toSet().size() == a.size()
-          && r1i(a[0]) && (b<2||r1i(a[1])) && (b<3||r1i(a[2])) && (b<4||r1i(a[3])) && (b<5||r1i(a[4])) && (b<6||r1i(a[5])) && (b<7||r1i(a[6])) && (b<8||r1i(a[7])) && (b<9||r1i(a[8])) && (b<10||r1i(a[9])) && (b<11||r1i(a[10])) && (b<12||r1i(a[11])) && (b<13||r1i(a[12])) && (b<14||r1i(a[13])) && (b<15||r1i(a[14])) && (b<16||r1i(a[15])) && (b<17||r1i(a[16])) && (b<18||r1i(a[17])) && (b<19||r1i(a[18])) && (b<20||r1i(a[19]));
+          && r1j(a[0]) && (b<2||r1j(a[1])) && (b<3||r1j(a[2])) && (b<4||r1j(a[3])) && (b<5||r1j(a[4])) && (b<6||r1j(a[5])) && (b<7||r1j(a[6])) && (b<8||r1j(a[7])) && (b<9||r1j(a[8])) && (b<10||r1j(a[9])) && (b<11||r1j(a[10])) && (b<12||r1j(a[11])) && (b<13||r1j(a[12])) && (b<14||r1j(a[13])) && (b<15||r1j(a[14])) && (b<16||r1j(a[15])) && (b<17||r1j(a[16])) && (b<18||r1j(a[17])) && (b<19||r1j(a[18])) && (b<20||r1j(a[19]));
       }
-      function r1k(a,b) {
-        return r2g() && r8((a),(['version','revision','levels','changeId','intent','updatedAt','updatedByUid','updatedByEmail']))
-          && a.version == 1 && r41(b) && r41(a.revision) && a.revision == b + 1
+      function r1l(a,b) {
+        return r2h() && r8((a),(['version','revision','levels','changeId','intent','updatedAt','updatedByUid','updatedByEmail']))
+          && a.version == 1 && r42(b) && r42(a.revision) && a.revision == b + 1
           && a.changeId is string && a.changeId.matches('^[A-Za-z0-9_-]{1,128}$')
-          && r42(a.intent,1,20000) && a.updatedAt == request.time
+          && r43(a.intent,1,20000) && a.updatedAt == request.time
           && a.updatedByUid == request.auth.uid && a.updatedByEmail == request.auth.token.email
-          && r1j(a.levels);
+          && r1k(a.levels);
       }
-      function r1l(a,b,c) {
+      function r1m(a,b,c) {
         let d = r9('hr_sanctions',(a.lastCaseId));
         let e = getAfter(d).data;
-        return r40(a.branch) && r8((a),(['version','staffId','staffName','branch','lastCaseNumber','lastCaseId','seededLegacyCount','updatedAt','updatedByUid','updatedByEmail']))
-          && a.version == 1 && r2h(a.staffId) && c == 'discipline_case_' + a.staffId
-          && r44(a.staffId,a.staffName,a.branch) && r2h(a.lastCaseId)
-          && r41(a.lastCaseNumber) && a.lastCaseNumber > 0 && r41(a.seededLegacyCount)
+        return r41(a.branch) && r8((a),(['version','staffId','staffName','branch','lastCaseNumber','lastCaseId','seededLegacyCount','updatedAt','updatedByUid','updatedByEmail']))
+          && a.version == 1 && r2i(a.staffId) && c == 'discipline_case_' + a.staffId
+          && r45(a.staffId,a.staffName,a.branch) && r2i(a.lastCaseId)
+          && r42(a.lastCaseNumber) && a.lastCaseNumber > 0 && r42(a.seededLegacyCount)
           && (b.size() == 0 ? a.lastCaseNumber > a.seededLegacyCount
             : b.version == 1 && a.staffId == b.staffId && a.seededLegacyCount == b.seededLegacyCount && a.lastCaseNumber == b.lastCaseNumber + 1)
-          && r43(a,'updatedAt','updatedByUid','updatedByEmail') && !exists(d)
+          && r44(a,'updatedAt','updatedByUid','updatedByEmail') && !exists(d)
           && e.caseVersion == 2 && e.caseKey == a.staffId && e.staffId == a.staffId
           && e.staffName == a.staffName && e.branch == a.branch && e.caseNumber == a.lastCaseNumber
           && e.issuedByUid == request.auth.uid && e.issuedAt == request.time;
       }
 
       allow read: if true;
-      allow create: if !docId.matches('discipline_.*') && (rw() || docId.matches("status_.*"))
-        && r1f(docId, {}, rp());
-      allow update: if !docId.matches('discipline_.*') && (rw() || docId.matches("status_.*"))
-        && r1f(docId, rq(), rp());
-      allow delete: if !docId.matches('discipline_.*') && (rw() || docId.matches("status_.*"))
-        && r1f(docId, rq(), {});
+      allow create: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (rw() || docId.matches("status_.*"))
+        && r1g(docId, {}, rp());
+      allow update: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (rw() || docId.matches("status_.*"))
+        && r1g(docId, rq(), rp());
+      allow delete: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (rw() || docId.matches("status_.*"))
+        && r1g(docId, rq(), {});
       // PIN-only legacy Cashiers can update counters only with their atomic sale
       // or first void, with exact deltas. No general settings write is opened.
-      allow create, update: if docId == 'global_stats' && r1g();
-      allow create, update: if docId.matches('audit_.*') && r1h(docId);
-      allow create, update: if docId == 'discipline_policy' && r1k(request.resource.data, resource == null ? 0 : resource.data.revision);
-      allow create, update: if docId.matches('discipline_case_.*') && r1l(request.resource.data, resource == null ? {} : resource.data, docId);
+      allow create, update: if docId == 'global_stats' && r1h();
+      allow create, update: if docId == 'cashier_appearance' && r1f(rp(), resource == null ? 0 : resource.data.revision);
+      allow create, update: if docId.matches('audit_.*') && r1i(docId);
+      allow create, update: if docId == 'discipline_policy' && r1l(request.resource.data, resource == null ? 0 : resource.data.revision);
+      allow create, update: if docId.matches('discipline_case_.*') && r1m(request.resource.data, resource == null ? {} : resource.data, docId);
     }
     match /announcements/{document=**} { allow read, write: if true; }
     match /acknowledgments/{document=**} { allow read, write: if true; }
@@ -371,7 +390,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
     // The verification service alone submits and decides proposals. Approval
     // and the canonical dated revision are committed in one server transaction.
     match /branch_schedule_proposals/{proposalId} {
-      allow read: if r2g();
+      allow read: if r2h();
     }
     // No client write grants exist for proposals or their private submission,
     // review-operation and attempt collections; all remain default-denied.
@@ -381,7 +400,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
     // transition may create this older automatic handover. All manual creates,
     // later edits and receipts are recorded by the verification service.
     match /remittances/{remittanceId} {
-      function r1m(a) {
+      function r1n(a) {
         let b = rk('shifts',a.shiftId);
         let c = rl('shifts',a.shiftId);
         return r8((a),(['branch','shiftId','cashierName','amount','retainedCash','type','channel','status','dateStr','timestamp','cashPolicyVersion']))
@@ -395,16 +414,16 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && c.remittedCash == a.amount && c.retainedCash == a.retainedCash;
       }
       allow read: if true;
-      allow create: if r1m(rp());
+      allow create: if r1n(rp());
     }
     // Exact legacy one-document policies. No default grant or recursive path.
     match /{legacyCollection}/{legacyDocument} {
-      function r1n(a, b) {
+      function r1o(a, b) {
       return b.keys().hasAny(['setupVersion','setupUid'])
         || exists(r9('staff_app_device_index',(a)));
     }
 
-      function r1o(a, b, c) {
+      function r1p(a, b, c) {
       return a in ['expenses','account_logs'] && (
         b.matches('remittance-manual-v4-.*') || c.get('cashPolicyVersion',0) == 4
         || c.get('remittanceVersion',0) == 4 || c.get('receiptPolicyVersion',0) == 4
@@ -414,40 +433,40 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           || (c.get('description','') is string && c.get('description','').matches('^\\[REMITTANCE TO HQ\\].*')))));
     }
 
-      function r1p(a) {
+      function r1q(a) {
       return !a.keys().hasAny((rb()));
     }
 
-      function r1q(a, b) {
+      function r1r(a, b) {
       return !r7((b),(a)).hasAny((rb()))
         && (a.get('cashReconciliationVersion',0) != 4 || (a.get('active',false) == true
           && !r7((b),(a)).hasAny(['branch','startTime','startingCash'])));
     }
 
-      function r1r(a, b, c) {
-      return !r1o(a,b,c) && (a != 'shifts' || r1p(c))
-        && (a != 'pos_devices' || (!r1n(b, c)
+      function r1s(a, b, c) {
+      return !r1p(a,b,c) && (a != 'shifts' || r1q(c))
+        && (a != 'pos_devices' || (!r1o(b, c)
         && !(c.get('appType','') == 'Staff'
           && exists(r9('staff_app_setup_config','current'))
           && rk('staff_app_setup_config','current').get('enabled',false) == true)));
     }
 
-      function r1s(a, b, c, d) {
-      return !r1o(a,b,c) && !r1o(a,b,d)
-        && (a != 'shifts' || r1q(c,d))
-        && (a != 'pos_devices' || (!r1n(b, c)
-          && !r1n(b, d)));
+      function r1t(a, b, c, d) {
+      return !r1p(a,b,c) && !r1p(a,b,d)
+        && (a != 'shifts' || r1r(c,d))
+        && (a != 'pos_devices' || (!r1o(b, c)
+          && !r1o(b, d)));
     }
 
       allow read: if rv(legacyCollection) && ((legacyCollection in ['account_logs','bom','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','global_addons','grab_payouts','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_bonuses','staff_ledger','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','yield_logs'] && rw()));
-      allow create: if rv(legacyCollection) && r1r(legacyCollection,legacyDocument,rp()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
+      allow create: if rv(legacyCollection) && r1s(legacyCollection,legacyDocument,rp()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','inventory','manager_alerts','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && rw())
         || (legacyCollection in ['bom','global_addons','menu'] && rg()));
-      allow update: if rv(legacyCollection) && r1s(legacyCollection,legacyDocument,rq(),rp()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
+      allow update: if rv(legacyCollection) && r1t(legacyCollection,legacyDocument,rq(),rp()) && ((legacyCollection in ['account_logs','branches','cash_accounts','dispatch_logs','expenses','franchise_comms','franchise_ledger','inventory','manager_alerts','menu','parked_orders','pos_devices','shift_swaps','shifts','sop_logs','staff_requests','stock_logs'])
         || (legacyCollection in ['budgets','equipment_assets','foodpanda_payouts','grab_payouts','hq_restocks','payables','rider_topups','riders','staff_bonuses','staff_ledger','yield_logs'] && rw())
         || (legacyCollection in ['bom','global_addons'] && rg()));
-      allow delete: if rv(legacyCollection) && r1s(legacyCollection,legacyDocument,rq(),{}) && ((legacyCollection in ['branches','parked_orders'])
+      allow delete: if rv(legacyCollection) && r1t(legacyCollection,legacyDocument,rq(),{}) && ((legacyCollection in ['branches','parked_orders'])
         || (legacyCollection in ['account_logs','budgets','cash_accounts','dispatch_logs','equipment_assets','expenses','foodpanda_payouts','franchise_comms','franchise_ledger','grab_payouts','hq_restocks','manager_alerts','payables','pos_devices','rider_topups','riders','shift_swaps','sop_logs','staff_bonuses','staff_ledger','staff_requests','yield_logs'] && rw())
         || (legacyCollection in ['bom','global_addons','inventory','menu','shifts','stock_logs'] && rg()));
     }
@@ -456,19 +475,19 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
       allow read, write: if rv(legacyTree) && (legacyTree in ['archived_months','customer_app_categories','daily_metrics','franchise_accounts','franchise_budgets','suppliers'] && rw());
     }
     match /transactions/{txId} {
-      function r1t(a) {
+      function r1u(a) {
         return rf() && (rr() == 'anonymous'
           ? (exists(r9('pos_bindings',(rm())))
             ? r11(rm(), a) : !rz(a) && !ry(a))
           : r10(a));
       }
-      function r1u(a, b) {
+      function r1v(a, b) {
         let c = rk('shifts',a.shiftId);
         let d = rl('shifts',a.shiftId);
         return c.branch == a.branch && c.active == true && c.get('status', '') != 'Closed'
           && d.active == true && d.get('salesRevision', 0) == c.get('salesRevision', 0) + 1;
       }
-      function r1v(a, b, c) {
+      function r1w(a, b, c) {
         let d = b.get('preparedCancellation', {});
         return a.get('saleVersion', 0) == 2 && a.get('saleId', '') == c
           && a.get('paymentMethod', '') is string
@@ -482,13 +501,13 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && d.label == (d.reason == 'customer' ? 'Prepared but customer cancelled' : 'Prepared but rider cancelled')
           && d.platform == (a.paymentMethod.trim().lower() == 'grab' ? 'Grab' : 'Foodpanda')
           && r7((b),(a)).hasOnly(['status','voidTime','voidedBy','preparedCancellation'])
-          && r1u(a, b);
+          && r1v(a, b);
       }
-      function r1w(a) {
+      function r1x(a) {
         let b = a.get('pin', null);
         return b == null || b == '' ? string(a.get('securityPin', '')) : string(b);
       }
-      function r1x(a, b, c) {
+      function r1y(a, b, c) {
         let d = rk('pos_sale_commits',b);
         return a.get('saleVersion', 0) == 2 && a.get('saleId', '') == b
           && a.get('paymentMethod', '') is string
@@ -499,14 +518,14 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && d.saleId == b && d.branch == a.branch && d.receiptId == a.receiptId
           && d.fingerprint == c;
       }
-      function r1y(a, b) {
-        return r1w(a).trim().upper() != 'REVOKED'
+      function r1z(a, b) {
+        return r1x(a).trim().upper() != 'REVOKED'
           && a.get('active',true) != false && a.get('archived',false) != true
           && !string(a.get('status','')).lower().matches('.*(blocked|inactive|terminated|archived|resigned|deleted).*')
           && a.get('role','Staff').trim().lower() in ['staff','staff crew','crew','cashier','manager']
           && a.get('cashierName',a.get('fullName',a.get('name',''))) == b;
       }
-      function r1z(a, b, c, d) {
+      function r20(a, b, c, d) {
         return b.diff({
           'staffId':a.cancelledFoodStaffId,'staffName':a.customerName,'branch':a.branch,
           'type':'Cancelled Food Purchase','category':'Foods','status':'Unpaid','amount':a.netTotal,
@@ -517,7 +536,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           'dateAdded':ro(),'loggedBy':a.cashier
         }).affectedKeys().hasOnly(['purchasedItems','cancelledFoodSelection']);
       }
-      function r20(a, b) {
+      function r21(a, b) {
         let c = rh(a.cancelledFoodSourceId);
         let d = ri(a.cancelledFoodSourceId);
         let e = exists(r9('settings','global_pos_config'))
@@ -529,23 +548,23 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         let j = a.cancelledFoodQuote;
         return b.matches('cancelled-food-.+') && !exists(r9('transactions',(b)))
           && e.get('cancelledFoodPurchaseEnabled',true) == true
-          && r1x(c,a.cancelledFoodSourceId,j.fingerprint)
+          && r1y(c,a.cancelledFoodSourceId,j.fingerprint)
           && c.status == 'Voided' && c.preparedCancellation.prepared == true
           && c.get('cancelledFoodPurchaseId','') == '' && c.get('cancelledFoodAllocationVersion',0) == 0
           && r7((d),(c)).hasOnly(['cancelledFoodPurchaseId']) && d.cancelledFoodPurchaseId == b
           && [a.branch,a.shiftId,a.saleId,a.saleVersion,a.status,a.paymentMethod,a.paymentVerified,a.inventoryState,a.globalDiscountType,a.cancelledFoodSourceReceiptId,a.receiptId]
             == [d.branch,d.shiftId,b,2,'Paid','Salary Deduction',true,'applied','cancelled_food',d.receiptId,'CF-'+d.receiptId]
-          && r1u(d,d) && a.cart == d.cart && a.inventoryMovements == [] && a.amountReceived == 0
+          && r1v(d,d) && a.cart == d.cart && a.inventoryMovements == [] && a.amountReceived == 0
           && (r6(a.timestamp)) && f is number && f >= 0 && g >= 0 && g <= 100
           && a.globalDiscountValue == g && a.subTotalBeforeDiscount == h / 100.0
           && a.globalDiscountAmount == i / 100.0 && a.netTotal == (h-i) / 100.0
           && j == {'sourceSaleId':d.saleId,'branch':a.branch,'shiftId':a.shiftId,'sourceReceiptId':d.receiptId,
             'platform':d.paymentMethod.trim().lower() == 'grab' ? 'Grab' : 'Foodpanda','baseAmount':a.subTotalBeforeDiscount,
             'discountPct':a.globalDiscountValue,'discountAmount':a.globalDiscountAmount,'amount':a.netTotal,'fingerprint':j.fingerprint}
-          && r1y(rk('cashiers',a.cancelledFoodStaffId),a.customerName)
-          && r1z(a,rj(b),b,d);
+          && r1z(rk('cashiers',a.cancelledFoodStaffId),a.customerName)
+          && r20(a,rj(b),b,d);
       }
-      function r21(a, b, c) {
+      function r22(a, b, c) {
         let d = b.get('cancelledFoodPurchaseId', '');
         return a.get('saleVersion', 0) == 2 && a.get('saleId', '') == c
           && a.get('preparedCancellation', {}).get('prepared', false) == true && a.status == 'Voided'
@@ -557,7 +576,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && !exists(r9('transactions',(d)))
           && ri(d).cancelledFoodSourceId == c;
       }
-      function r22(a, b) {
+      function r23(a, b) {
         return a[0][b]
           + (a.size() > 1 ? a[1][b] : 0)
           + (a.size() > 2 ? a[2][b] : 0)
@@ -565,21 +584,21 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           + (a.size() > 4 ? a[4][b] : 0)
           + (a.size() > 5 ? a[5][b] : 0);
       }
-      function r23(a, b) {
+      function r24(a, b) {
         let c = rh(a.cancelledFoodSourceId);
         let d = rl('cancelled_food_allocations',a.cancelledFoodSourceId);
         let e = exists(r9('settings','global_pos_config'))
           ? get(r9('settings','global_pos_config')).data : {};
         let f = a.cancelledFoodQuote;
         let g = a.cancelledFoodSelection;
-        let h = r22(g,'baseCents');
-        let i = r22(g,'discountCents');
+        let h = r23(g,'baseCents');
+        let i = r23(g,'discountCents');
         let j = r16(e);
         let k = rj(b);
         return b.matches('^cancelled-food-.+-portion-'+f.operationId+'$')
           && f.operationId.matches('^[a-f0-9]{32}$') && !exists(r9('transactions',(b)))
           && e.get('cancelledFoodPurchaseEnabled',true) == true
-          && r1x(c,a.cancelledFoodSourceId,f.fingerprint)
+          && r1y(c,a.cancelledFoodSourceId,f.fingerprint)
           && c.status == 'Voided' && c.preparedCancellation.prepared == true && c.get('cancelledFoodPurchaseId','') == ''
           && ri(a.cancelledFoodSourceId).cancelledFoodLastPurchaseId == b
           && [d.lastPurchaseId,d.sourceSaleId,d.branch,d.shiftId,d.updatedAt]
@@ -596,10 +615,10 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
             'platform':c.paymentMethod.trim().lower() == 'grab' ? 'Grab' : 'Foodpanda',
             'baseAmount':a.subTotalBeforeDiscount,'discountPct':a.globalDiscountValue,
             'discountAmount':a.globalDiscountAmount,'amount':a.netTotal,'fingerprint':f.fingerprint}
-          && r1y(rk('cashiers',a.cancelledFoodStaffId),a.customerName)
-          && r1z(a,k,b,c) && k.cancelledFoodSelection==g;
+          && r1z(rk('cashiers',a.cancelledFoodStaffId),a.customerName)
+          && r20(a,k,b,c) && k.cancelledFoodSelection==g;
       }
-      function r24(a, b, c) {
+      function r25(a, b, c) {
         let d = b.get('cancelledFoodLastPurchaseId', '');
         let e = ri(d);
         return a.get('saleVersion', 0) == 2 && a.get('saleId', '') == c
@@ -610,10 +629,10 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && b.cancelledFoodAllocationVersion == 1
           && !exists(r9('transactions',(d)))
           && e.cancelledFoodSourceId == c && e.cancelledFoodPortionVersion == 1
-          && b.cancelledFoodPurchasedUnits == a.get('cancelledFoodPurchasedUnits',0) + r22(e.cancelledFoodSelection,'qty')
-          && r1u(a,b);
+          && b.cancelledFoodPurchasedUnits == a.get('cancelledFoodPurchasedUnits',0) + r23(e.cancelledFoodSelection,'qty')
+          && r1v(a,b);
       }
-      function r25(a, b, c) {
+      function r26(a, b, c) {
         return a.get('preparedCancellation',{}).get('prepared',false) == true
           ? (a.inventoryState == 'deferred' && b.inventoryState == 'applied'
             && (r6(b.inventoryAppliedAt))
@@ -623,9 +642,9 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           || (a.get('branch','') == b.get('branch','')
             && (r10(a.get('branch','')) || (r12(a.get('branch',''))
               && ((a.get('inventoryState','') == 'audit_pending' && b.get('inventoryState','') == 'applied'
-                && r7((b),(a)).hasOnly(['inventoryState'])) || r26(a,b,c)))));
+                && r7((b),(a)).hasOnly(['inventoryState'])) || r27(a,b,c)))));
       }
-      function r26(a, b, c) {
+      function r27(a, b, c) {
         let d = r7((b),(a));
         return a.get('saleVersion', 0) == 2 && a.get('saleId', '') == c
           && (
@@ -638,10 +657,10 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
               && (r6(b.voidTime))
               && b.get('inventoryState', '') == (a.inventoryState == 'applied' ? 'reversed' : 'cancelled')
               && d.hasOnly(['status', 'voidedBy', 'voidTime', 'inventoryState']))
-            || r1v(a, b, c) || r21(a, b, c)
+            || r1w(a, b, c) || r22(a, b, c)
           );
       }
-      function r27(a, b) {
+      function r28(a, b) {
         let c = a.get('parkedOrderId', '');
         return (r3((c),(0))) && b == 'parked-delete-' + c
           && a.get('status', '') == 'Voided' && a.get('inventoryState', '') == 'none'
@@ -652,41 +671,41 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
       }
 
       allow read: if true;
-      function r28(a) {
+      function r29(a) {
         return a.get('cancelledFoodSourceId', '') != ''
-        ? (r1t(a.branch)
+        ? (r1u(a.branch)
           && (a.get('cancelledFoodPortionVersion',0) == 1
-            ? r23(a,txId) : r20(a, txId))
+            ? r24(a,txId) : r21(a, txId))
           && r15(a, txId))
         : (!rz(a.get('branch', ''))
         || r10(a.get('branch', ''))
         || (r12(a.get('branch', ''))
           && ((a.get('localSaleId', '') == txId && a.get('syncVersion', 0) == 2)
-            || r15(a, txId) || r27(a, txId))));
+            || r15(a, txId) || r28(a, txId))));
       }
-      allow create: if r28(rp());
-      function r29(a,b) {
+      allow create: if r29(rp());
+      function r2a(a,b) {
         return r7((a),(b)).hasAny(['cancelledFoodPurchaseId','cancelledFoodAllocationVersion','cancelledFoodLastPurchaseId','cancelledFoodPurchasedUnits'])
         ? (b.branch == a.branch
           && (a.get('cancelledFoodAllocationVersion',0) == 1
-            ? r24(b,a,txId) : r21(b,a,txId)))
-        : r25(b,a,txId);
+            ? r25(b,a,txId) : r22(b,a,txId)))
+        : r26(b,a,txId);
       }
-      allow update: if r29(rp(),resource == null ? null : rq());
-      function r2a(a) {
+      allow update: if r2a(rp(),resource == null ? null : rq());
+      function r2b(a) {
         return a.get('preparedCancellation',{}).get('prepared',false) != true
         && a.get('cancelledFoodSourceId','') == ''
         && ((!rz(a.get('branch', '')) && rw()) || rg());
       }
-      allow delete: if r2a(resource == null ? null : rq());
+      allow delete: if r2b(resource == null ? null : rq());
     }
     match /cancelled_food_allocations/{sourceId} {
-      function r2b(a, b) {
+      function r2c(a, b) {
       return getAfter(r9('cancelled_food_purchase_lines',(a.saleId+'--'+string(b)))).data
         == {'purchaseId':a.saleId,'sourceSaleId':a.cancelledFoodSourceId,'selectionSlot':b};
     }
 
-      function r2c(a, b, c, d) {
+      function r2d(a, b, c, d) {
       let e = b.cancelledFoodSelection;
       return e is list && e.size() > 0 && e.size() <= 6
         && b.cart is list && b.cart.size() == e.size()
@@ -697,15 +716,15 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           e.size() > 3 ? string(e[3].lineIndex) : string(e[0].lineIndex),
           e.size() > 4 ? string(e[4].lineIndex) : string(e[0].lineIndex),
           e.size() > 5 ? string(e[5].lineIndex) : string(e[0].lineIndex)])
-        && r2b(b,0)
-        && (e.size() < 2 || r2b(b,1))
-        && (e.size() < 3 || r2b(b,2))
-        && (e.size() < 4 || r2b(b,3))
-        && (e.size() < 5 || r2b(b,4))
-        && (e.size() < 6 || r2b(b,5));
+        && r2c(b,0)
+        && (e.size() < 2 || r2c(b,1))
+        && (e.size() < 3 || r2c(b,2))
+        && (e.size() < 4 || r2c(b,3))
+        && (e.size() < 5 || r2c(b,4))
+        && (e.size() < 6 || r2c(b,5));
     }
 
-      function r2d(a, b) {
+      function r2e(a, b) {
       let c = rh(b);
       let d = ri(a.lastPurchaseId);
       let e = resource == null ? {} : rq().purchasedQuantities;
@@ -717,16 +736,16 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && d.cancelledFoodSourceId == b && d.cancelledFoodPortionVersion == 1
         && c.get('cancelledFoodPurchaseId', '') == '' && c.status == 'Voided'
         && c.get('preparedCancellation', {}).get('prepared', false) == true
-        && r2c(c,d,e,a.purchasedQuantities);
+        && r2d(c,d,e,a.purchasedQuantities);
     }
 
       allow read: if true;
       // A fresh companion receipt authorizes the writer in its own create rule.
-      allow create, update: if r2d(rp(),sourceId);
+      allow create, update: if r2e(rp(),sourceId);
          
     }
     match /cancelled_food_purchase_lines/{lineId} {
-      function r2e(a, b, c, d, e, f) {
+      function r2f(a, b, c, d, e, f) {
       let g = b.cancelledFoodSelection[e];
       let h = a.cart[g.lineIndex];
       let i = b.cart[e];
@@ -755,7 +774,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && i.amount == (g.baseCents-g.discountCents) / 100.0;
     }
 
-      function r2f(a, b) {
+      function r2g(a, b) {
       let c=ri(a.purchaseId);
       let d=rh(a.sourceSaleId);
       let e=exists(r9('cancelled_food_allocations',(a.sourceSaleId)))
@@ -769,37 +788,37 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && !exists(r9('transactions',(a.purchaseId)))
         && c.cancelledFoodSourceId==a.sourceSaleId && c.cancelledFoodPortionVersion==1
         && f.lastPurchaseId==a.purchaseId
-        && r2e(d,c,e,f.purchasedQuantities,a.selectionSlot,r16(g));
+        && r2f(d,c,e,f.purchasedQuantities,a.selectionSlot,r16(g));
     }
 
       allow read: if true;
-      allow create: if r2f(rp(),lineId);
+      allow create: if r2g(rp(),lineId);
          
     }
     // Only the verified Google Owner may issue these reviewed HR markers.
     // Existing ordinary profile/attendance fields retain their preceding policy.
-    function r2g() {
+    function r2h() {
       return rx() && request.auth.token.firebase.sign_in_provider == 'google.com';
     }
-    function r2h(a) { return a is string && a.matches('^[-A-Za-z0-9_]{1,180}$'); }
-    function r2i(a) { return a is string && a.trim().size() >= 8 && a.size() <= 1500; }
-    function r2j(a) {
+    function r2i(a) { return a is string && a.matches('^[-A-Za-z0-9_]{1,180}$'); }
+    function r2j(a) { return a is string && a.trim().size() >= 8 && a.size() <= 1500; }
+    function r2k(a) {
       return a is string && a.matches('^[1-9][0-9]{3}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$');
     }
-    function r2k(a, b, c) {
+    function r2l(a, b, c) {
       let d = b.get('scheduleAmendmentReview', {});
       let e = r9('attendance_amendment_reviews',(a.auditId));
       let f = getAfter(e).data;
-      return r2g() && a is map
+      return r2h() && a is map
         && r8((a),(['version','revision','auditId','sourceFingerprint','choice','lateMinutes','exempt','reason','actorUid','actorEmail','reviewedAt']))
-        && b.type == 'TIME IN' && r2h(b.staffId)
+        && b.type == 'TIME IN' && r2i(b.staffId)
         && a.version == 1 && a.revision is int && a.revision == d.get('revision',0) + 1
         && a.auditId == 'amendment-' + c + '-' + string(a.revision)
         && (r0((a.sourceFingerprint),(0),(30000)))
         && a.choice in ['Keep saved lateness decision','Use corrected schedule minutes','Waive lateness']
         && a.lateMinutes is int && a.lateMinutes >= 0 && a.lateMinutes <= 1080 && a.exempt is bool
         && (a.choice != 'Waive lateness' || a.lateMinutes == 0 && a.exempt == true)
-        && r2i(a.reason) && (r4(a.actorUid))
+        && r2j(a.reason) && (r4(a.actorUid))
         && (r5(a.actorEmail)) && (r6(a.reviewedAt))
         && !exists(e) && f.attendanceId == c && f.staffId == b.staffId
         && f.staffName == b.staffName && f.branch == b.branch
@@ -811,32 +830,32 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
     }
 
     match /attendance_amendment_reviews/{auditId} {
-      function r2l(a, b) {
+      function r2m(a, b) {
       let c = r9('attendance_logs',(a.attendanceId));
       let d = get(c).data;
       let e = getAfter(c).data;
       let f = {'lateMinutes':d.get('lateMinutes',null),'reviewedLateMinutes':d.get('reviewedLateMinutes',null),'lateExempted':d.get('lateExempted',false) == true,'lateDecision':d.get('lateDecision',null),'lateReviewRequestId':d.get('lateReviewRequestId',null)};
-      return r2g() && r2h(a.attendanceId)
+      return r2h() && r2i(a.attendanceId)
         && r8((a),(['version','revision','auditId','sourceFingerprint','choice','lateMinutes','exempt','reason','actorUid','actorEmail','reviewedAt','attendanceId','staffId','staffName','branch','workDate','previousReview','previousDecision']))
-        && a.auditId == b && r2j(a.workDate) && a.previousDecision == f
+        && a.auditId == b && r2k(a.workDate) && a.previousDecision == f
         && r7((e),(d)).hasOnly(['scheduleAmendmentReview'])
         && e.get('scheduleAmendmentReview',null) != d.get('scheduleAmendmentReview',null)
-        && r2k(e.scheduleAmendmentReview,d,a.attendanceId);
+        && r2l(e.scheduleAmendmentReview,d,a.attendanceId);
     }
 
-      allow read: if r2g();
-      allow create: if r2l(rp(),auditId);
+      allow read: if r2h();
+      allow create: if r2m(rp(),auditId);
           
     }
     match /attendance_logs/{logId} {
       allow read: if true;
       allow create: if !rp().keys().hasAny(['scheduleAmendmentReview']);
-      function r2m(a,b) {
+      function r2n(a,b) {
         return !r7((a),(b)).hasAny(['scheduleAmendmentReview'])
         || (r7((a),(b)).hasOnly(['scheduleAmendmentReview'])
-          && r2k(a.scheduleAmendmentReview,b,logId));
+          && r2l(a.scheduleAmendmentReview,b,logId));
       }
-      allow update: if r2m(rp(),resource == null ? null : rq());
+      allow update: if r2n(rp(),resource == null ? null : rq());
       allow delete: if rw() && !rq().keys().hasAny(['scheduleAmendmentReview']);
     }
     match /store_use_logs/{document=**} { allow read, create, update: if true; allow delete: if rw(); }
@@ -847,8 +866,8 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
     // Exact stock-count rules keep the legacy v2 authority separate from the
     // frozen v3 report. Their unrelated staff-setup guards are tautologies here.
     match /stock_counts/{id} {
-      function r2n(a) {
-      let b = r2g();
+      function r2o(a) {
+      let b = r2h();
       let c = rf() ? request.auth.token.get('email','') : '';
       
       let d = !b && rf() && rs() == true && rr() == 'google.com';
@@ -857,21 +876,21 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && e.get('permissions',[]).hasAny(['all','inventory','audits']) && e.get('allowedBranches',[]).hasAny(['All',a]));
     }
 
-      function r2o(a,b) {
+      function r2p(a,b) {
         let c = rl('inventory_audit_reports',b);
         return !exists(r9('inventory_audit_reports',(b)))
           && c.version == 3 && c.id == b && a.get('source',null) == null && (r6(c.timestamp));
       }
 
-      allow get: if resource == null || rq().get('version',0) != 3 || r2n(rq().get('branch',''));
-      allow list: if r2n(rq().get('branch',''));
-      allow create: if rp().get('version',0) != 3 || r2o(rp(),id);
+      allow get: if resource == null || rq().get('version',0) != 3 || r2o(rq().get('branch',''));
+      allow list: if r2o(rq().get('branch',''));
+      allow create: if rp().get('version',0) != 3 || r2p(rp(),id);
       allow update: if rq().get('version',0) != 3 && rp().get('version',0) != 3;
       allow delete: if rg() && rq().get('version',0) != 3;
     }
     match /inventory_audit_reports/{id} {
-      function r2p(a) {
-      let b = r2g();
+      function r2q(a) {
+      let b = r2h();
       let c = rf() ? request.auth.token.get('email','') : '';
       
       let d = !b && rf() && rs() == true && rr() == 'google.com';
@@ -880,19 +899,19 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && e.get('permissions',[]).hasAny(['all','inventory','audits']) && e.get('allowedBranches',[]).hasAny(['All',a]));
     }
 
-      function r2q(a,b) {
+      function r2r(a,b) {
         let c = rl('stock_counts',b);
         let d = rk('cashiers',a.staffId);
         let e = a.periodStart.split('-');
         let f = a.periodEnd.split('-');
-        return (r2g() || r12(a.branch)) && r2h(b) && r2h(a.staffId)
+        return (r2h() || r12(a.branch)) && r2i(b) && r2i(a.staffId)
           && !exists(r9('stock_counts',(b))) && a.version == 3 && a.id == b
           && r8((a),(['version','id','intent','branch','cashier','staffId','actorUid','selectedCycle','periodStart','periodEnd','counts','timestamp','cutoff','source']))
           && a.source == 'Cashier cycle count' && r7((a),(c)).hasOnly(['source']) && !c.keys().hasAny(['source'])
           && (r4(a.actorUid)) && (r6(a.timestamp)) && (r6(a.cutoff))
           && (r0((a.intent),(0),(500000)))
           && a.counts is list && a.counts.size() > 0 && a.counts.size() <= 150
-          && a.selectedCycle in ['Weekly','Monthly','Daily','As Needed'] && r2j(a.periodStart) && r2j(a.periodEnd)
+          && a.selectedCycle in ['Weekly','Monthly','Daily','As Needed'] && r2k(a.periodStart) && r2k(a.periodEnd)
           && a.periodStart <= a.periodEnd && timestamp.date(int(e[0]),int(e[1]),int(e[2])) - duration.value(8,'h') <= ro()
           && timestamp.date(int(f[0]),int(f[1]),int(f[2])) + duration.value(16,'h') > ro()
           && a.cashier == d.cashierName && a.branch == d.branch
@@ -901,52 +920,52 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && (!(d.get('pin','') is string) || !(d.get('pin','').upper() in ['REVOKED','BLOCKED']));
       }
 
-      allow get: if resource == null ? r2g() || r13() : r2p(rq().branch);
-      allow list: if r2p(rq().branch);
-      allow create: if r2q(rp(),id);
+      allow get: if resource == null ? r2h() || r13() : r2q(rq().branch);
+      allow list: if r2q(rq().branch);
+      allow create: if r2r(rp(),id);
           
     }
 
     match /payment_reconciliation_settings/{id} {
-      function r2r(a) {
+      function r2s(a) {
         return r8((a),(['orderPrefixes','referencePrefixes','timeToleranceMinutes']))
           && a.orderPrefixes is list && a.orderPrefixes.size() <= 10 && a.referencePrefixes is list && a.referencePrefixes.size() <= 10
           && a.timeToleranceMinutes is int && a.timeToleranceMinutes >= 0 && a.timeToleranceMinutes <= 120;
       }
 
-      function r2s(a,b) {
-        return id == 'main' && r2g() && r8((a),(['schemaVersion','revision','branchAliases','providers','updatedAt','updatedByUid','updatedByEmail']))
+      function r2t(a,b) {
+        return id == 'main' && r2h() && r8((a),(['schemaVersion','revision','branchAliases','providers','updatedAt','updatedByUid','updatedByEmail']))
           && a.schemaVersion == 1 && a.revision is int && a.revision == b.get('revision',0) + 1
           && a.branchAliases is list && a.branchAliases.size() <= 60 && a.providers is map && r8((a.providers),(['GCash','Grab','Foodpanda']))
-          && r2r(a.providers.GCash) && r2r(a.providers.Grab) && r2r(a.providers.Foodpanda)
+          && r2s(a.providers.GCash) && r2s(a.providers.Grab) && r2s(a.providers.Foodpanda)
           && (r6(a.updatedAt)) && (r4(a.updatedByUid)) && (r5(a.updatedByEmail));
       }
-      allow get: if id == 'main' && r2g();
-      allow create, update: if r2s(rp(),resource == null ? {} : rq());
+      allow get: if id == 'main' && r2h();
+      allow create, update: if r2t(rp(),resource == null ? {} : rq());
           
     }
     match /payment_reconciliation_imports/{id} {
-      function r2t(a) { return a is string && a.matches('^[a-f0-9]{64}$'); }
+      function r2u(a) { return a is string && a.matches('^[a-f0-9]{64}$'); }
 
-      allow read: if r2g();
-      allow create: if r2g() && r2t(id) && r8((rp()),(['schemaVersion','fileSha256','rowCount','createdAt','createdByUid','createdByEmail']))
+      allow read: if r2h();
+      allow create: if r2h() && r2u(id) && r8((rp()),(['schemaVersion','fileSha256','rowCount','createdAt','createdByUid','createdByEmail']))
         && rp().schemaVersion == 1 && rp().fileSha256 == id && rp().rowCount is int && rp().rowCount > 0 && rp().rowCount <= 5000
         && rp().createdAt == ro() && rp().createdByUid == rm() && rp().createdByEmail == rn();
           
     }
     match /payment_reconciliation_receipts/{id} {
-      function r2u(a) { return a is string && a.matches('^[a-f0-9]{64}$'); }
+      function r2v(a) { return a is string && a.matches('^[a-f0-9]{64}$'); }
 
-      function r2v(a,b) {
+      function r2w(a,b) {
         let c = rh(b);
         let d = ri(b);
         let e = rk('payment_reconciliation_settings','main');
         let f = rl('payment_reconciliation_imports',a.fileSha256);
         let g = a.day.split('-');
         let h = timestamp.date(int(g[0]),int(g[1]),int(g[2])) - duration.value(8,'h');
-        return r2g() && r2h(b) && a.transactionId == b && r2u(a.claimId) && r2u(a.fileSha256)
+        return r2h() && r2i(b) && a.transactionId == b && r2v(a.claimId) && r2v(a.fileSha256)
           && r8((a),(['schemaVersion','claimId','transactionId','fileSha256','provider','branch','day','grossCents','statementAt','sourceAt','sourceFingerprint','settingsRevision','verifiedAt','verifiedByUid','verifiedByEmail']))
-          && a.schemaVersion == 1 && a.provider in ['GCash','Grab','Foodpanda'] && r2u(a.sourceFingerprint)
+          && a.schemaVersion == 1 && a.provider in ['GCash','Grab','Foodpanda'] && r2v(a.sourceFingerprint)
           && a.settingsRevision == e.revision && f.schemaVersion == 1 && f.fileSha256 == a.fileSha256
           && !exists(r9('payment_reconciliation_rows',(a.claimId))) && rl('payment_reconciliation_rows',a.claimId) == a
           && (r6(a.verifiedAt)) && (r4(a.verifiedByUid)) && (r5(a.verifiedByEmail))
@@ -960,7 +979,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && (c.get('splitDetails',null) == null || c.splitDetails is list && c.splitDetails.size() == 0)
           && (!exists(r9('online_order_incidents',('online-refund-' + b)))
             || rk('online_order_incidents','online-refund-' + b).status == 'Dismissed')
-          && a.statementAt is timestamp && a.sourceAt is timestamp && r2j(a.day)
+          && a.statementAt is timestamp && a.sourceAt is timestamp && r2k(a.day)
           && a.sourceAt >= h && a.sourceAt < h + duration.value(1,'d') && a.statementAt >= h && a.statementAt < h + duration.value(1,'d')
           && a.statementAt >= a.sourceAt - duration.value(e.providers[a.provider].timeToleranceMinutes,'m')
           && a.statementAt <= a.sourceAt + duration.value(e.providers[a.provider].timeToleranceMinutes,'m')
@@ -969,23 +988,23 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && d.paymentReconciliationVersion == 1 && d.paymentReconciliationId == a.claimId && d.paymentReconciliationFile == a.fileSha256;
       }
 
-      allow read: if r2g();
-      allow create: if r2v(rp(),id);
+      allow read: if r2h();
+      allow create: if r2w(rp(),id);
           
     }
     match /payment_reconciliation_rows/{id} {
-      function r2w(a) { return a is string && a.matches('^[a-f0-9]{64}$'); }
+      function r2x(a) { return a is string && a.matches('^[a-f0-9]{64}$'); }
 
-      allow read: if r2g();
+      allow read: if r2h();
       // A fresh reciprocal receipt invokes its full validation in this request.
-      allow create: if r2g() && r2w(id) && rp().claimId == id
+      allow create: if r2h() && r2x(id) && rp().claimId == id
         && !exists(r9('payment_reconciliation_receipts',(rp().transactionId)))
         && rl('payment_reconciliation_receipts',rp().transactionId) == rp();
           
     }
     match /inventory_logs/{document=**} { allow read, create, update: if true; allow delete: if rw(); }
-    function r2x(a) {
-      let b = r2g();
+    function r2y(a) {
+      let b = r2h();
       let c = !b && rf() && request.auth.token.get('email_verified',false)
         && rr() == 'google.com';
       let d = r9('hq_email_access',(rf() ? request.auth.token.get('email','') : ''));
@@ -998,9 +1017,9 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
       // New priced requests keep the customer's quote and HQ's delivery invoice
       // immutable. Signing records the assigned recipient's delivery attestation;
       // the receiving service verifies every saved delivery line before signing.
-      function r2y(a) {
+      function r2z(a) {
         let b = rl('purchase_orders',poId);
-        return r2x(a.branch) && a.quoteVersion == 2
+        return r2y(a.branch) && a.quoteVersion == 2
           && r8((a),(['branch','items','status','type','requestedBy','requestedByUid','requestedByEmail','quoteVersion','quoteRecordedAt','timestamp','supplyInvoice','sourceOrderId','dispatchItems']))
           && a.status == 'Pending' && a.type == 'Franchise Order'
           && a.items is list && a.items.size() > 0 && a.items.size() <= 80
@@ -1010,11 +1029,11 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && (r0((a.requestedBy),(0),(200)))
           && (r4(a.requestedByUid)) && (r5(a.requestedByEmail)) && (r6(a.timestamp)) && (r6(a.quoteRecordedAt))
           && a.supplyInvoice.version == 1 && a.supplyInvoice.currency == 'PHP'
-          && (a.get('sourceOrderId','') == '' || r2x('Main Office') && (r2((a.sourceOrderId),(180))) && a.sourceOrderId != poId);
+          && (a.get('sourceOrderId','') == '' || r2y('Main Office') && (r2((a.sourceOrderId),(180))) && a.sourceOrderId != poId);
       }
-      function r2z(a,b) {
+      function r30(a,b) {
         let c = b.dispatchInvoice;
-        return r2x('Main Office') && r2x(a.branch) && a.get('dispatchInvoice',null) == null
+        return r2y('Main Office') && r2y(a.branch) && a.get('dispatchInvoice',null) == null
           && r7((b),(a)).hasOnly(['status','dispatchBatchId','dispatchLogIds','completedAt','dispatchInvoice'])
           && b.status == 'Completed' && (r6(b.completedAt))
           && rl('purchase_orders',poId).status == 'Completed' && rl('purchase_orders',poId).dispatchBatchId == b.dispatchBatchId
@@ -1023,9 +1042,9 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && b.dispatchLogIds is list && b.dispatchLogIds.size() == c.lines.size()
           && (r4(c.approvedByUid)) && (r5(c.approvedByEmail)) && (r6(c.recordedAt));
       }
-      function r30(a,b) {
+      function r31(a,b) {
         let c = b.deliveryReceipt;
-        return r2x(a.branch) && a.get('deliveryReceipt',null) == null && a.dispatchInvoice.version == 1
+        return r2y(a.branch) && a.get('deliveryReceipt',null) == null && a.dispatchInvoice.version == 1
           && r7((b),(a)).hasOnly(['deliveryReceipt'])
           && r8((c),(['version','branch','dispatchBatchId','dispatchLogIds','receivedByUid','receivedByEmail','receivedByName','signaturePng','recordedAt','verification']))
           && c.version == 1 && c.branch == a.branch && c.dispatchBatchId == a.dispatchBatchId
@@ -1034,42 +1053,42 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && (r0((c.receivedByName),(0),(200)))
           && (r1((c.signaturePng),(80),(200000))) && c.signaturePng.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]*={0,2}$');
       }
-      allow read: if request.method == 'get' && resource == null ? rf() : r2x('Main Office') || r2x(rq().branch);
+      allow read: if request.method == 'get' && resource == null ? rf() : r2y('Main Office') || r2y(rq().branch);
 
-      allow create: if r2y(rp());
-      allow update: if r2z(rq(),rp()) || r30(rq(),rp());
+      allow create: if r2z(rp());
+      allow update: if r30(rq(),rp()) || r31(rq(),rp());
          
     }
     // Existing POS stock-request history remains compatible. New priced orders
     // expose only a price-free logistics stub; invoices and signatures live above.
     match /purchase_orders/{poId} {
-      function r31() { return ['dispatchInvoice','deliveryReceipt','supplyInvoice','requestedByEmail']; }
+      function r32() { return ['dispatchInvoice','deliveryReceipt','supplyInvoice','requestedByEmail']; }
 
-      function r32(a) {
+      function r33(a) {
         let b = rl('franchise_supply_orders',poId);
-        return r2x(a.branch) && r8((a),(['quoteVersion','branch','status','type','requestedBy','timestamp','items']))
+        return r2y(a.branch) && r8((a),(['quoteVersion','branch','status','type','requestedBy','timestamp','items']))
           && a.quoteVersion == 2 && a.status == 'Pending' && a.type == 'Franchise Order' && (r6(a.timestamp))
           && b.quoteVersion == 2 && b.branch == a.branch && b.status == 'Pending' && b.dispatchItems == a.items
           && (r4(b.requestedByUid)) && b.requestedBy == a.requestedBy;
       }
-      function r33(a,b) {
+      function r34(a,b) {
         let c = rl('franchise_supply_orders',poId);
-        return r2x('Main Office') && r2x(a.branch) && a.quoteVersion == 2 && b.quoteVersion == 2
+        return r2y('Main Office') && r2y(a.branch) && a.quoteVersion == 2 && b.quoteVersion == 2
           && r7((b),(a)).hasOnly(['status','dispatchBatchId','completedAt'])
           && (b.status in ['Pending','Drafting','Approved','Delayed','Cancelled'] && c.get('dispatchInvoice',null) == null
             || b.status == 'Completed' && (r6(b.completedAt)) && c.status == 'Completed' && c.completedAt == b.completedAt
               && c.dispatchBatchId == b.dispatchBatchId && c.dispatchInvoice.orderId == poId);
       }
       allow read: if true;
-      allow create: if !rp().keys().hasAny(r31())
-        && (rp().get('quoteVersion',0) == 2 ? r32(rp()) : true);
-      allow update: if !rp().keys().hasAny(r31())
+      allow create: if !rp().keys().hasAny(r32())
+        && (rp().get('quoteVersion',0) == 2 ? r33(rp()) : true);
+      allow update: if !rp().keys().hasAny(r32())
         && (rq().get('quoteVersion',0) == 2 || rp().get('quoteVersion',0) == 2
-          ? r33(rq(),rp()) : true);
+          ? r34(rq(),rp()) : true);
       allow delete: if rq().get('quoteVersion',0) != 2 && rw();
     }
     match /incoming_orders/{orderId} {
-      function r34(a) {
+      function r35(a) {
       let b = rk('cashier_leases',a);
       return b.get('seenAt', null) is timestamp
         && b.seenAt <= ro()
@@ -1077,7 +1096,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && r11(b.get('uid', ''), a);
     }
 
-      function r35(a) {
+      function r36(a) {
       let b = a.get('branch', '');
       let c = get(r9('settings',('status_' + b))).data;
       return rf() && rs() == true
@@ -1086,15 +1105,15 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && a.get('paymentStatus', 'unpaid') != 'paid'
         && a.get('totalAmount', -1) is number && a.totalAmount >= 0
         && a.get('items', []) is list && a.items.size() > 0
-        && c.get('mobileOrdersActive', true) == true && r34(b);
+        && c.get('mobileOrdersActive', true) == true && r35(b);
     }
 
-      function r36(a) {
+      function r37(a) {
       let b = a.get('branch', '');
-      return !ry(b) || r12(b) || r10(b) || r35(a);
+      return !ry(b) || r12(b) || r10(b) || r36(a);
     }
 
-      function r37(a, b) {
+      function r38(a, b) {
       let c = a.get('branch', '');
       let d = b.get('branch', '');
       return (!ry(c) && !ry(d))
@@ -1108,13 +1127,13 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
     }
 
       allow read: if true;
-      allow create: if r36(rp());
-      allow update: if r37(rq(), rp());
+      allow create: if r37(rp());
+      allow update: if r38(rq(), rp());
       allow delete: if (!ry(rq().get('branch', '')) && rw()) || r10(rq().get('branch', ''));
     }
     // Daily-rate audit is private and immutable. Public legacy profile fields
     // remain compatible, but cannot issue or replace an audited raise marker.
-    function r38() {
+    function r39() {
       let a = rf() ? request.auth.token.get('email', '') : '';
       let b = /databases/$(database)/documents/hq_email_access/$(a);
       let c = rx();
@@ -1126,31 +1145,31 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && e.get('allowedBranches', []) is list
         && e.allowedBranches.size() > 0);
     }
-    function r39(a) {
+    function r3a(a) {
       let b = rf() ? request.auth.token.get('email', '') : '';
       let c = /databases/$(database)/documents/hq_email_access/$(b);
-      return rx() || (a is string && r38()
+      return rx() || (a is string && r39()
         && get(c).data.allowedBranches.hasAny(['All', a]));
     }
-    function r3a(a) {
+    function r3b(a) {
       let b = a.get('hourlyRate', null) != null ? a.hourlyRate : a.get('dailyRate', null);
       return b == null || (b is string && b.trim() == '') ? null
         : b is number ? b
         : b is string && b.trim().matches('^[+]?([0-9]+([.][0-9]*)?|[.][0-9]+)([eE][+-]?[0-9]+)?$') ? float(b.trim()) : -1;
     }
-    function r3b(a) {
+    function r3c(a) {
       return a == null || (a is number && a >= 0 && a - a == 0);
     }
-    function r3c(a, b, c) {
+    function r3d(a, b, c) {
       return b == 'increase' ? {'eventId': c, 'version': 1}
         : b == 'unchanged' ? a.get('latestRateRaise', null) : null;
     }
-    function r3d(a, b, c) {
+    function r3e(a, b, c) {
       return b.appliesNow
         ? (b.eventType == 'increase' ? {'eventId': c, 'version': 1} : null)
         : a.get('latestRateRaise', null);
     }
-    function r3e(a, b, c) {
+    function r3f(a, b, c) {
       let d = a.get('legacyAuditId','__no_legacy__');
       let e = /databases/$(database)/documents/staff_rate_changes/$(d);
       let f = exists(e) ? get(e).data : {};
@@ -1160,9 +1179,9 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && b.get('salaryRateVersion',0) == 0 && b.get('salaryRateRevision',null) == null && !exists(g)
         && b.get('staffRateAuditId','') == d && b.get('latestRateRaise',null) == {'eventId':d,'version':1}
         && f.staffId == a.staffId && f.staffName == b.cashierName && f.branch == b.branch
-        && f.fromDailyRate is number && f.fromDailyRate > 0 && r3b(f.fromDailyRate)
-        && f.toDailyRate is number && f.toDailyRate > f.fromDailyRate && r3b(f.toDailyRate)
-        && r3a(b) == f.toDailyRate && a.fromDailyRate == f.fromDailyRate && a.toDailyRate == f.toDailyRate
+        && f.fromDailyRate is number && f.fromDailyRate > 0 && r3c(f.fromDailyRate)
+        && f.toDailyRate is number && f.toDailyRate > f.fromDailyRate && r3c(f.toDailyRate)
+        && r3b(b) == f.toDailyRate && a.fromDailyRate == f.fromDailyRate && a.toDailyRate == f.toDailyRate
         && a.eventType == 'increase' && a.rateChange == true && a.rateRevision == 1
         && a.appliesNow == (a.effectiveDate <= a.projectionDate)
         && a.projectionDailyRate == (a.appliesNow ? f.toDailyRate : f.fromDailyRate)
@@ -1171,36 +1190,36 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
 
 
     match /staff_rate_changes/{auditId} {
-      function r3f(a, b) {
+      function r3g(a, b) {
         return a == null || a == 0 ? 'baseline'
           : b > a ? 'increase' : b < a ? 'decrease' : 'unchanged';
       }
-      function r3g(a, b) {
+      function r3h(a, b) {
         let c = /databases/$(database)/documents/cashiers/$(a.staffId);
         let d = exists(c) ? get(c).data : {};
         let e = getAfter(c).data;
-        let f = r3a(d);
-        let g = r3a(e);
+        let f = r3b(d);
+        let g = r3b(e);
         return a.keys().hasOnly(['version', 'staffId', 'staffName', 'branch', 'previousBranch', 'eventType',
             'fromDailyRate', 'toDailyRate', 'inputHash', 'actorUid', 'actorEmail', 'actorName', 'recordedAt'])
           && b.matches('^[A-Za-z0-9_-]{1,128}$') && a.version == 1
           && e.get('salaryRateVersion', 0) != 1
           && a.staffId is string && a.staffId.matches('^[A-Za-z0-9_-]{1,128}$')
-          && r39(a.branch) && (!exists(c) || d.get('branch','') == a.branch || r39(d.get('branch', '')))
+          && r3a(a.branch) && (!exists(c) || d.get('branch','') == a.branch || r3a(d.get('branch', '')))
           && a.staffName == e.cashierName && a.branch == e.branch
           && a.previousBranch == d.get('branch', '')
-          && r3b(f) && r3b(g) && g != null
+          && r3c(f) && r3c(g) && g != null
           && a.fromDailyRate == f && a.toDailyRate == g
-          && a.eventType == r3f(f, g)
+          && a.eventType == r3g(f, g)
           && e.get('staffRateAuditId', '') == b
-          && e.get('latestRateRaise', null) == r3c(d, a.eventType, b)
+          && e.get('latestRateRaise', null) == r3d(d, a.eventType, b)
           && a.actorUid == rm()
           && a.actorEmail == request.auth.token.get('email', '').lower()
           && a.actorName is string && a.actorName.size() > 0 && a.actorName.size() <= 256
           && a.inputHash is string && a.inputHash.matches('^[a-f0-9]{64}$')
           && a.recordedAt == ro();
       }
-      function r3h(a, b) {
+      function r3i(a, b) {
         let c = /databases/$(database)/documents/cashiers/$(a.staffId);
         let d = exists(c) ? get(c).data : {};
         let e = getAfter(c).data;
@@ -1208,47 +1227,47 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         return a.keys().hasOnly(['version','staffId','staffName','branch','previousBranch','eventType','fromDailyRate','toDailyRate','effectiveDate','rateChange','appliesNow','rateRevision','projectionDate','projectionDailyRate','inputHash','actorUid','actorEmail','actorName','recordedAt','legacyAuditId'])
           && a.version == 2 && b.matches('^[A-Za-z0-9_-]{1,128}$')
           && a.staffId is string && a.staffId.matches('^[A-Za-z0-9_-]{1,128}$')
-          && r39(a.branch) && (!exists(c) || d.get('branch','') == a.branch || r39(d.get('branch','')))
+          && r3a(a.branch) && (!exists(c) || d.get('branch','') == a.branch || r3a(d.get('branch','')))
           && a.staffName == e.cashierName && a.branch == e.branch && a.previousBranch == d.get('branch','')
-          && r3b(a.fromDailyRate) && r3b(a.toDailyRate) && a.toDailyRate != null
+          && r3c(a.fromDailyRate) && r3c(a.toDailyRate) && a.toDailyRate != null
           && (a.keys().hasAny(['legacyAuditId'])
-            ? r3e(a,d,e)
-            : d.get('salaryRateVersion',0) == 1 || a.fromDailyRate == r3a(d))
-          && a.rateChange is bool && a.eventType == (a.rateChange ? r3f(a.fromDailyRate,a.toDailyRate) : 'unchanged')
+            ? r3f(a,d,e)
+            : d.get('salaryRateVersion',0) == 1 || a.fromDailyRate == r3b(d))
+          && a.rateChange is bool && a.eventType == (a.rateChange ? r3g(a.fromDailyRate,a.toDailyRate) : 'unchanged')
           && a.appliesNow is bool && (!a.appliesNow || a.rateChange && a.projectionDailyRate == a.toDailyRate)
           && a.effectiveDate is string && a.effectiveDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
           && a.projectionDate is string && a.projectionDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-          && a.projectionDailyRate is number && r3b(a.projectionDailyRate) && r3a(e) == a.projectionDailyRate
+          && a.projectionDailyRate is number && r3c(a.projectionDailyRate) && r3b(e) == a.projectionDailyRate
           && e.salaryRateVersion == 1 && e.salaryRateRevision == b && e.staffRateAuditId == b
-          && e.get('latestRateRaise',null) == r3d(d,a,b)
+          && e.get('latestRateRaise',null) == r3e(d,a,b)
           && f.staffId == a.staffId && f.branch == a.branch && f.revisionId == b && f.revision == a.rateRevision
           && a.actorUid == rm() && a.actorEmail == request.auth.token.get('email','').lower()
           && a.actorName is string && a.actorName.size() > 0 && a.actorName.size() <= 256
           && a.inputHash is string && a.inputHash.matches('^[a-f0-9]{64}$') && a.recordedAt == ro();
       }
-      function r3i(a, b) {
-        return a.get('version',0) == 2 ? r3h(a,b) : r3g(a,b);
+      function r3j(a, b) {
+        return a.get('version',0) == 2 ? r3i(a,b) : r3h(a,b);
       }
 
-      allow read: if request.method == 'get' && resource == null ? r38() : r39(rq().branch);
+      allow read: if request.method == 'get' && resource == null ? r39() : r3a(rq().branch);
 
-      allow create: if r3i(rp(), auditId);
+      allow create: if r3j(rp(), auditId);
           
     }
     match /staff_salary_rates/{staffId} {
-      function r3j(a, b, c) {
+      function r3k(a, b, c) {
       let d = c.revisionId;
       let e = r9('staff_rate_changes',(d));
       let f = getAfter(e).data;
       let g = r9('cashiers',(a));
-      let h = exists(g) ? r3a(get(g).data) : null;
+      let h = exists(g) ? r3b(get(g).data) : null;
       let i = b.get('rates', {});
       return r8((c),(['version','staffId','branch','baselineDailyRate','rates','revision','revisionId','updatedAt','updatedByUid']))
-        && c.version == 1 && c.staffId == a && r39(c.branch)
-        && (!b.keys().hasAny(['branch']) || b.branch == c.branch || r39(b.branch))
-        && r3b(c.baselineDailyRate)
+        && c.version == 1 && c.staffId == a && r3a(c.branch)
+        && (!b.keys().hasAny(['branch']) || b.branch == c.branch || r3a(b.branch))
+        && r3c(c.baselineDailyRate)
         && (f.keys().hasAny(['legacyAuditId'])
-          ? (!b.keys().hasAny(['version']) && r3e(f,get(g).data,getAfter(g).data) && c.baselineDailyRate == f.fromDailyRate)
+          ? (!b.keys().hasAny(['version']) && r3f(f,get(g).data,getAfter(g).data) && c.baselineDailyRate == f.fromDailyRate)
           : c.baselineDailyRate == b.get('baselineDailyRate',h))
         && c.revision is int && c.revision == b.get('revision',0) + 1
         && c.revisionId is string && c.revisionId.matches('^[A-Za-z0-9_-]{1,128}$')
@@ -1261,10 +1280,10 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && (r6(c.updatedAt)) && (r4(c.updatedByUid));
     }
 
-      allow read: if request.method == 'get' && resource == null ? r38()
-        : r39(rq().branch) || (request.method == 'get' && r76(staffId));
+      allow read: if request.method == 'get' && resource == null ? r39()
+        : r3a(rq().branch) || (request.method == 'get' && r77(staffId));
 
-      allow create, update: if r3j(staffId, resource == null ? {} : rq(), rp());
+      allow create, update: if r3k(staffId, resource == null ? {} : rq(), rp());
          
     }
 
@@ -1272,21 +1291,21 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
 
 
     match /staff_onboarding_reviews/{auditId} {
-      function r3k(a, b, c, d) {
+      function r3l(a, b, c, d) {
       let e = a.action == 'confirm-start';
       let f = a.result;
       let g = e ? b.get('onboardingStartConfirmation',null) : b.get('contractTerms',{}).get('initial',null);
       return f is map && f.version == 1 && (r2((f.auditId),(340)))
         && f.auditId.matches('^onboarding-' + d + '-[-A-Za-z0-9_]{1,160}$')
         && a.previous == g && f.revision is int && f.revision == (g == null ? 0 : g.get('revision',0)) + 1
-        && r2i(f.reason)
+        && r2j(f.reason)
         && (e
           ? (r8((f),(['version','revision','auditId','reason','confirmedAt','confirmedByUid','confirmedBy','date','sourceAttendanceId']))
-            && r2j(f.date) && f.sourceAttendanceId == a.sourceAttendanceId
+            && r2k(f.date) && f.sourceAttendanceId == a.sourceAttendanceId
             && (r6(f.confirmedAt)) && (r4(f.confirmedByUid)) && (r5(f.confirmedBy))
             && c.onboardingStartConfirmation == f && r7((c),(b)).hasOnly(['onboardingStartConfirmation']))
           : (r8((f),(['version','revision','startDate','endDate','remindOn','auditId','reason','issuedAt','issuedByUid','issuedBy']))
-            && r2j(f.startDate) && r2j(f.endDate) && r2j(f.remindOn)
+            && r2k(f.startDate) && r2k(f.endDate) && r2k(f.remindOn)
             && f.startDate <= f.remindOn && f.remindOn <= f.endDate && f.startDate < f.endDate
             && (r6(f.issuedAt)) && (r4(f.issuedByUid)) && (r5(f.issuedBy))
             && b.get('signedContracts',{}).get('initial',null) == null && b.get('signedContracts',{}).get('extension',null) == null && b.get('signedContracts',{}).get('regularization',null) == null
@@ -1296,7 +1315,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
             && r7((c),(b)).hasOnly(['contractTerms','contractStatus'])));
     }
 
-      function r3l(a) {
+      function r3m(a) {
       let b = rk('attendance_logs',a.sourceAttendanceId);
       let c = b.get('timestamp',null);
       let d = a.action == 'confirm-start' ? a.result.date : a.result.startDate;
@@ -1307,74 +1326,74 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && (c + duration.value(8,'h')).month() == int(e[1]) && (c + duration.value(8,'h')).day() == int(e[2]);
     }
 
-      function r3m(a,b) {
+      function r3n(a,b) {
       let c = r9('cashiers',(a.staffId));
       let d = get(c).data;
       let e = getAfter(c).data;
-      return r2g() && r2h(a.staffId)
+      return r2h() && r2i(a.staffId)
         && r8((a),(['version','action','staffId','staffName','branch','intent','sourceAttendanceId','previous','result','recordedAt','recordedByUid','recordedBy']))
         && a.version == 1 && a.action in ['confirm-start','initial-contract'] && a.result.auditId == b
         && a.staffName == d.cashierName && a.branch == d.branch && e.cashierName == d.cashierName && e.branch == d.branch
         && d.get('active',true) != false && d.get('archived',false) != true
         && (r0((a.intent),(0),(5000)))
-        && (a.sourceAttendanceId == null || r2h(a.sourceAttendanceId) && r3l(a))
+        && (a.sourceAttendanceId == null || r2i(a.sourceAttendanceId) && r3m(a))
         && (r6(a.recordedAt)) && (r4(a.recordedByUid)) && (r5(a.recordedBy))
-        && r3k(a,d,e,a.staffId);
+        && r3l(a,d,e,a.staffId);
     }
 
-      allow read: if r2g();
-      allow create: if r3m(rp(),auditId);
+      allow read: if r2h();
+      allow create: if r3n(rp(),auditId);
           
     }
     match /cashiers/{cashierId} {
-      function r3n() { return ['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision']; }
+      function r3o() { return ['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision']; }
 
-      function r3o(a, b, c) {
+      function r3p(a, b, c) {
       let d = c.get('staffRateAuditId', '');
       let e = /databases/$(database)/documents/staff_rate_changes/$(d);
       let f = getAfter(e).data;
       return d is string && d.matches('^[A-Za-z0-9_-]{1,128}$')
-        && !exists(e) && r39(c.get('branch', ''))
-        && (!b.keys().hasAny(['branch']) || b.branch == c.branch || r39(b.branch))
+        && !exists(e) && r3a(c.get('branch', ''))
+        && (!b.keys().hasAny(['branch']) || b.branch == c.branch || r3a(b.branch))
         && f.staffId == a && f.branch == c.branch
         && f.actorUid == rm() && f.recordedAt == ro()
         && (f.get('version',0) == 2
           ? (c.get('salaryRateVersion',0) == 1 && c.salaryRateRevision == d
-            && c.get('latestRateRaise',null) == r3d(b,f,d))
-          : c.get('salaryRateVersion',0) != 1 && c.get('latestRateRaise', null) == r3c(b, f.eventType, d));
+            && c.get('latestRateRaise',null) == r3e(b,f,d))
+          : c.get('salaryRateVersion',0) != 1 && c.get('latestRateRaise', null) == r3d(b, f.eventType, d));
     }
 
-      function r3p(a,b,c) {
+      function r3q(a,b,c) {
       let d = r7((c),(b)).hasAny(['onboardingStartConfirmation']);
       let e = d ? c.onboardingStartConfirmation : c.contractTerms.initial;
       let f = r9('staff_onboarding_reviews',(e.auditId));
       let g = getAfter(f).data;
       // The new audit's create rule performs the full before/after validation.
       // Link exactly once here to stay within Firestore's expression budget.
-      return r2g() && !exists(f) && g.staffId == a && g.result == e
+      return r2h() && !exists(f) && g.staffId == a && g.result == e
         && g.action == (d ? 'confirm-start' : 'initial-contract')
         && (r6(g.recordedAt)) && (r4(g.recordedByUid)) && (r5(g.recordedBy));
     }
 
       allow read: if true;
-      function r3q(a) {
+      function r3r(a) {
         return rw() && !a.keys().hasAny(['rateHistory','onboardingStartConfirmation','contractTerms'])
-        && (!a.keys().hasAny(r3n())
-          || r3o(cashierId, {}, a));
+        && (!a.keys().hasAny(r3o())
+          || r3p(cashierId, {}, a));
       }
-      allow create: if r3q(rp());
-      function r3r(a,b) {
+      allow create: if r3r(rp());
+      function r3s(a,b) {
         return !r7((a),(b)).hasAny(['rateHistory'])
         && (!r7((a),(b)).hasAny(['onboardingStartConfirmation','contractTerms'])
-          || r3p(cashierId,b,a))
-        && (!(r7((a),(b)).hasAny(r3n())
+          || r3q(cashierId,b,a))
+        && (!(r7((a),(b)).hasAny(r3o())
           || (b.get('salaryRateVersion',0) == 1 && r7((a),(b)).hasAny(['hourlyRate','dailyRate','branch'])))
-          || r3o(cashierId, b, a));
+          || r3p(cashierId, b, a));
       }
-      allow update: if r3r(rp(),resource == null ? null : rq());
+      allow update: if r3s(rp(),resource == null ? null : rq());
       allow delete: if rw() && !rq().keys().hasAny(['onboardingStartConfirmation','contractTerms']);
     }
-    function r3s(a) {
+    function r3t(a) {
       let b = rf() ? request.auth.token.get('email', '') : '';
       
       let c = rx();
@@ -1390,7 +1409,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
     // PIN-based attendance clients may read only a known request's decision.
     // They cannot manufacture an authoritative HQ approval through staff_requests.
 
-    function r3t(a, b) {
+    function r3u(a, b) {
       let c = rk('attendance_logs',b);
       let d = rk('cashiers',a.staffId);
       let e = a.workDate.split('-');
@@ -1410,7 +1429,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && a.expectedEndAt <= a.expectedStartAt + duration.value(18, 'h')
         && a.expectedEndAt > c.timestamp && a.expectedEndAt <= c.timestamp + duration.value(24, 'h');
     }
-    function r3u(a, b) {
+    function r3v(a, b) {
       return r8((a),(['schemaVersion','status','revisionId','version','staffId','staffName','branch','timeInLogId','timeInAt','expectedStartAt','expectedEndAt','workDate','shiftName','sourceFingerprint','reviewedByUid','reviewedByEmail','reviewedAt']))
         && a.schemaVersion == 1 && a.status == 'Confirmed'
         && (r0((b),(0),(150)))
@@ -1424,17 +1443,17 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && a.shiftName is string && a.shiftName.trim().size() > 0 && a.shiftName.size() <= 160
         && (r0((a.sourceFingerprint),(0),(30000)))
         && (r4(a.reviewedByUid)) && a.reviewedByEmail == request.auth.token.get('email', '').lower()
-        && (r6(a.reviewedAt)) && r3s(a.branch) && r3t(a, b);
+        && (r6(a.reviewedAt)) && r3t(a.branch) && r3u(a, b);
     }
 
 
     // Staff/POS need only the minimal confirmation for their known Time In.
     // Detailed emergency reasons remain private in the immutable HQ audit.
     match /attendance_shift_confirmations/{timeInId} {
-      function r3v(a, b, c) {
+      function r3w(a, b, c) {
       let d = r9('attendance_shift_confirmation_events',(c.revisionId));
       let e = getAfter(d).data;
-      return r3u(c, a) && !exists(d) && e.head == c
+      return r3v(c, a) && !exists(d) && e.head == c
         && e.previousRevisionId == b.get('revisionId', null)
         && c.version == b.get('version', 0) + 1
         && (!b.keys().hasAny(['version']) || (
@@ -1445,10 +1464,10 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
 
       allow get: if true;
           
-      allow create, update: if r3v(timeInId, resource == null ? {} : rq(), rp());
+      allow create, update: if r3w(timeInId, resource == null ? {} : rq(), rp());
     }
     match /attendance_shift_confirmation_events/{revisionId} {
-      function r3w() {
+      function r3x() {
       let a = rf() ? request.auth.token.get('email', '') : '';
       
       let b = rx();
@@ -1460,13 +1479,13 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && d.get('allowedBranches', []) is list && d.allowedBranches.size() > 0);
     }
 
-      function r3x(a, b) {
+      function r3y(a, b) {
       let c = r9('attendance_shift_confirmations',(a.head.timeInLogId));
       let d = rk('staff_requests',a.requestId);
       let e = a.requestId.replace('^early-', 'time-out-');
       return r8((a),(['schemaVersion','head','reason','previousRevisionId','requestId','requestVersion','requestToken','reviewedScheduleFingerprint']))
         && a.schemaVersion == 1 && b == a.head.revisionId
-        && getAfter(c).data == a.head && r3u(a.head, a.head.timeInLogId)
+        && getAfter(c).data == a.head && r3v(a.head, a.head.timeInLogId)
         && a.previousRevisionId == (exists(c) ? get(c).data.revisionId : null)
         && a.previousRevisionId != b
         && a.reason is string && a.reason.trim().size() >= 8 && a.reason.size() <= 1500
@@ -1480,17 +1499,17 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && !exists(r9('attendance_logs',(e)));
     }
 
-      allow get: if resource == null ? r3w() : r3s(rq().head.branch);
+      allow get: if resource == null ? r3x() : r3t(rq().head.branch);
            
-      allow create: if r3x(rp(), revisionId);
+      allow create: if r3y(rp(), revisionId);
     }
     match /attendance_time_out_approvals/{requestId} {
-      function r3y(a, b) {
+      function r3z(a, b) {
       let c = rk('staff_requests',b);
       let d = rl('staff_requests',b);
       let e = rk('attendance_logs',a.timeInLogId);
       let f = rk('cashiers',a.staffId);
-      return r3s(a.branch)
+      return r3t(a.branch)
         && r8((a),(['schemaVersion', 'requestId', 'requestVersion', 'requestToken', 'decision',
           'staffId', 'staffName', 'branch', 'timeInLogId', 'timeInAt', 'scheduledEndAt', 'scheduleFingerprint',
           'requestedDepartureAt', 'reviewedByUid', 'reviewedByEmail', 'reviewedAt', 'validUntil', 'reviewNote']))
@@ -1525,21 +1544,21 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
 
       allow get: if true;
           
-      function r3z(a,b) {
-        return r3y(a, requestId)
+      function r40(a,b) {
+        return r3z(a, requestId)
         && (resource == null || (a.requestVersion > b.requestVersion
           && a.staffId == b.staffId
           && a.branch == b.branch
           && a.timeInLogId == b.timeInLogId));
       }
-      allow create, update: if r3z(rp(),resource == null ? null : rq());
+      allow create, update: if r40(rp(),resource == null ? null : rq());
     }
     // Version-two cases distinguish an allegation, a finding and a reviewed
     // action. The legacy notice path keeps its preceding compatibility policy.
-    function r40(a) {
+    function r41(a) {
       let b = rf() ? request.auth.token.get('email','') : '';
       
-      let c = r2g();
+      let c = r2h();
       let d = !c && rf() && request.auth.token.get('email_verified',false) == true
         && request.auth.token.firebase.sign_in_provider == 'google.com';
       let e = rd(d,b);
@@ -1549,23 +1568,23 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && e.get('allowedBranches',[]) is list
         && e.allowedBranches.hasAny(['All',a]));
     }
-    function r41(a) { return a is int && a >= 0 && a <= 9007199254740991; }
-    function r42(a,b,c) { return a is string && a.trim().size() >= b && a.size() <= c; }
+    function r42(a) { return a is int && a >= 0 && a <= 9007199254740991; }
+    function r43(a,b,c) { return a is string && a.trim().size() >= b && a.size() <= c; }
     // Catalogue writes are Owner-only. Full plain-text/day validation is applied
     // to every chosen action below; bounding every map here keeps all 20 future
     // choices within Firestore's expression budget. The app validates all rows.
-    function r43(a,b,c,d) {
+    function r44(a,b,c,d) {
       return a[b] == request.time && a[c] == request.auth.uid && a[d] == request.auth.token.email;
     }
-    function r44(a,b,c) {
+    function r45(a,b,c) {
       let d = get(r9('cashiers',(a))).data;
-      return r2h(a) && d.cashierName == b && d.branch == c;
+      return r2i(a) && d.cashierName == b && d.branch == c;
     }
     match /hr_sanctions/{sanctionId} {
-      function r45() {
+      function r46() {
         let a = rf() ? request.auth.token.get('email','') : '';
         let b = /databases/$(database)/documents/hq_email_access/$(a);
-        let c = r2g();
+        let c = r2h();
         let d = c || exists(b);
         let e = !c && d ? get(b).data : {};
         return c ? ['All'] : rf() && request.auth.token.get('email_verified',false) == true
@@ -1574,18 +1593,18 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && e.permissions.hasAny(['all','payroll','sanctions']) && e.get('allowedBranches',[]) is list
           ? e.allowedBranches : [];
       }
-      function r46(a,b) {
+      function r47(a,b) {
         return (a + '\n' + b).matches('^[A-Za-z0-9_-]{1,64}\\n[^<>\\x00-\\x20\\x7F\\x{202A}-\\x{202E}\\x{2066}-\\x{2069}][^<>\\x00-\\x1F\\x7F\\x{202A}-\\x{202E}\\x{2066}-\\x{2069}]{0,119}$');
       }
-      function r47(a) {
+      function r48(a) {
         let b = a.id;
         let c = a.label;
         let d = a.suspensionDays;
         return r8((a),(['id','label','suspensionDays']))
-          && r46(b,c)
+          && r47(b,c)
           && d is int && d >= 0 && d <= 366;
       }
-      function r48(a,b) {
+      function r49(a,b) {
         let c = /databases/$(database)/documents/settings/discipline_policy;
         let d = a.id;
         return (existsAfter(c)
@@ -1598,47 +1617,47 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
             : d == 'suspension-14' ? a == {'id':d,'label':'14 days suspension','suspensionDays':14}
             : d == 'hr-review' && a == {'id':d,'label':'Further HR review','suspensionDays':0}));
       }
-      function r49(a) {
+      function r4a(a) {
         let b = /databases/$(database)/documents/settings/discipline_policy;
         return existsAfter(b) ? getAfter(b).data.revision == a : a == 0;
       }
-      function r4a(a) {
+      function r4b(a) {
         let b = a.split('-');
         let c = timestamp.date(int(b[0]),int(b[1]),int(b[2]));
-        return r2j(a) && c.day() == int(b[2]) && c + duration.value(16,'h') > request.time;
+        return r2k(a) && c.day() == int(b[2]) && c + duration.value(16,'h') > request.time;
       }
-      function r4b(a,b) {
+      function r4c(a,b) {
         let c = r9('settings',('discipline_case_' + a.staffId));
         let d = getAfter(c).data;
-        return r40(a.branch) && r8((a),(['staffId','staffName','branch','type','details','evidencePhoto','caseVersion','caseKey','caseNumber','finding','severity','proposedSeverity','policyRevisionAtIssue','decisionRevision','issueIntent','status','issuedBy','issuedByUid','issuedByEmail','timestamp','issuedAt','effectiveDate','scheduleRevision','scheduleAudit']))
-          && a.caseVersion == 2 && a.caseKey == a.staffId && r41(a.caseNumber) && a.caseNumber > 0
-          && r44(a.staffId,a.staffName,a.branch)
-          && r42(a.type,1,200) && r42(a.details,8,10000) && (r2((a.evidencePhoto),(600000)))
+        return r41(a.branch) && r8((a),(['staffId','staffName','branch','type','details','evidencePhoto','caseVersion','caseKey','caseNumber','finding','severity','proposedSeverity','policyRevisionAtIssue','decisionRevision','issueIntent','status','issuedBy','issuedByUid','issuedByEmail','timestamp','issuedAt','effectiveDate','scheduleRevision','scheduleAudit']))
+          && a.caseVersion == 2 && a.caseKey == a.staffId && r42(a.caseNumber) && a.caseNumber > 0
+          && r45(a.staffId,a.staffName,a.branch)
+          && r43(a.type,1,200) && r43(a.details,8,10000) && (r2((a.evidencePhoto),(600000)))
           && a.finding == 'Pending' && a.status == 'Pending Reply' && a.severity == 'Pending management review'
-          && a.decisionRevision == 0 && r41(a.policyRevisionAtIssue) && r49(a.policyRevisionAtIssue)
-          && (a.proposedSeverity == null || r47(a.proposedSeverity) && r48(a.proposedSeverity,a.policyRevisionAtIssue))
-          && r42(a.issueIntent,1,700000) && r42(a.issuedBy,1,200)
-          && r43(a,'issuedAt','issuedByUid','issuedByEmail') && a.timestamp == request.time
-          && r4a(a.effectiveDate) && a.scheduleRevision == 1
+          && a.decisionRevision == 0 && r42(a.policyRevisionAtIssue) && r4a(a.policyRevisionAtIssue)
+          && (a.proposedSeverity == null || r48(a.proposedSeverity) && r49(a.proposedSeverity,a.policyRevisionAtIssue))
+          && r43(a.issueIntent,1,700000) && r43(a.issuedBy,1,200)
+          && r44(a,'issuedAt','issuedByUid','issuedByEmail') && a.timestamp == request.time
+          && r4b(a.effectiveDate) && a.scheduleRevision == 1
           && a.scheduleAudit == {'issued':{'oldDate':null,'newDate':a.effectiveDate,'reason':'Notice issued','actorUid':request.auth.uid,'actorEmail':request.auth.token.email,'at':request.time}}
           && d.version == 1 && d.staffId == a.staffId && d.lastCaseNumber == a.caseNumber && d.lastCaseId == b
           && d.updatedByUid == request.auth.uid && d.updatedAt == request.time
           && (!exists(c) || a.caseNumber == get(c).data.lastCaseNumber + 1);
       }
-      function r4c(a,b) {
+      function r4d(a,b) {
         return rf() && a.status == 'Pending Reply' && a.finding == 'Pending' && a.decisionRevision == 0
           && r7((b),(a)).hasOnly(['staffReply','signatureBase64','status','repliedAt','replyByStaffId','replyScheduleRevision'])
-          && b.status == 'Replied' && r42(b.staffReply,15,10000)
-          && r42(b.signatureBase64,1,600000) && b.repliedAt == request.time
+          && b.status == 'Replied' && r43(b.staffReply,15,10000)
+          && r43(b.signatureBase64,1,600000) && b.repliedAt == request.time
           && b.replyByStaffId == a.staffId && b.replyScheduleRevision == a.scheduleRevision;
       }
-      function r4d(a) {
+      function r4e(a) {
         let b = a.suspensionDays;
         return a is map && a.keys().hasOnly(['id','label','suspensionDays','effectiveDate','policyRevision'])
-          && r46(a.id,a.label)
-          && b is int && b >= 0 && b <= 366 && r4a(a.effectiveDate);
+          && r47(a.id,a.label)
+          && b is int && b >= 0 && b <= 366 && r4b(a.effectiveDate);
       }
-      function r4e(a,b,c) {
+      function r4f(a,b,c) {
         return a.caseVersion == 2 && a.caseKey == b && a.staffId == b && a.finding == 'Confirmed'
           && a.status in ['Reviewed','Archived']
           // A v2 Reviewed/Archived finding is immutable and its action was already
@@ -1646,14 +1665,14 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           // Revalidate source identity/scope rather than five entire snapshots.
           && c.hasAny(['All',a.branch]);
       }
-      function r4f(a,b,c,d,e) {
+      function r4g(a,b,c,d,e) {
         return a.size() <= b || (a[b].matches('^[-A-Za-z0-9_]{1,180}$') && a[b] != d
-          && r4e(get(/databases/$(database)/documents/hr_sanctions/$(a[b])).data,c,e));
+          && r4f(get(/databases/$(database)/documents/hr_sanctions/$(a[b])).data,c,e));
       }
-      function r4g(a,b,c) {
+      function r4h(a,b,c) {
         let d = get(/databases/$(database)/documents/cashiers/$(a.staffId)).data;
         let e = b.reviewedAction;
-        let f = r45();
+        let f = r46();
         return f.hasAny(['All',a.branch]) && f.hasAny(['All',d.branch]) && a.status == 'Replied' && a.finding == 'Pending'
           && !a.keys().hasAny(['reviewedAt','reviewChangeId']) && a.replyByStaffId == a.staffId
           // Replied can only be reached through the protected explanation/signature
@@ -1661,89 +1680,89 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && a.repliedAt is timestamp
           && b.diff(a).affectedKeys().hasOnly(['status','finding','reviewedAction','reviewReason','reviewedByUid','reviewedByEmail','reviewedAt','decisionRevision','reviewChangeId','reviewIntent','relatedCaseIds'])
           && b.status == 'Reviewed' && b.finding in ['Confirmed','Not established']
-          && r41(b.decisionRevision) && b.decisionRevision == a.decisionRevision + 1
-          && r2i(b.reviewReason) && r43(b,'reviewedAt','reviewedByUid','reviewedByEmail')
-          && b.reviewChangeId is string && b.reviewChangeId.matches('^[A-Za-z0-9_-]{1,128}$') && r42(b.reviewIntent,1,20000)
-          && r4d(e)
-          && (b.finding == 'Confirmed' ? r48({'id':e.id,'label':e.label,'suspensionDays':e.suspensionDays},e.policyRevision)
+          && r42(b.decisionRevision) && b.decisionRevision == a.decisionRevision + 1
+          && r2j(b.reviewReason) && r44(b,'reviewedAt','reviewedByUid','reviewedByEmail')
+          && b.reviewChangeId is string && b.reviewChangeId.matches('^[A-Za-z0-9_-]{1,128}$') && r43(b.reviewIntent,1,20000)
+          && r4e(e)
+          && (b.finding == 'Confirmed' ? r49({'id':e.id,'label':e.label,'suspensionDays':e.suspensionDays},e.policyRevision)
             : e.id == 'none' && e.label == 'No disciplinary action' && e.suspensionDays == 0
-              && r49(e.policyRevision))
+              && r4a(e.policyRevision))
           && b.relatedCaseIds is list && b.relatedCaseIds.size() <= 5 && b.relatedCaseIds.toSet().size() == b.relatedCaseIds.size()
-          && r4f(b.relatedCaseIds,0,a.staffId,c,f) && r4f(b.relatedCaseIds,1,a.staffId,c,f)
-          && r4f(b.relatedCaseIds,2,a.staffId,c,f) && r4f(b.relatedCaseIds,3,a.staffId,c,f) && r4f(b.relatedCaseIds,4,a.staffId,c,f);
+          && r4g(b.relatedCaseIds,0,a.staffId,c,f) && r4g(b.relatedCaseIds,1,a.staffId,c,f)
+          && r4g(b.relatedCaseIds,2,a.staffId,c,f) && r4g(b.relatedCaseIds,3,a.staffId,c,f) && r4g(b.relatedCaseIds,4,a.staffId,c,f);
       }
-      function r4h(a,b) {
+      function r4i(a,b) {
         let c = get(r9('cashiers',(a.staffId))).data;
-        return r40(a.branch) && (c.branch == a.branch || r40(c.branch)) && a.status in ['Pending Reply','Replied','Reviewed']
+        return r41(a.branch) && (c.branch == a.branch || r41(c.branch)) && a.status in ['Pending Reply','Replied','Reviewed']
           && r7((b),(a)).hasOnly(['status','decisionRevision','cancelChangeId','cancelIntent','cancelReason','cancelledAt','cancelledByUid','cancelledByEmail'])
           && b.status == (a.status == 'Reviewed' ? 'Archived' : 'Cancelled')
-          && r41(b.decisionRevision) && b.decisionRevision == a.decisionRevision + 1
+          && r42(b.decisionRevision) && b.decisionRevision == a.decisionRevision + 1
           && b.cancelChangeId is string && b.cancelChangeId.matches('^[A-Za-z0-9_-]{1,128}$')
-          && r42(b.cancelIntent,1,20000) && r2i(b.cancelReason)
-          && r43(b,'cancelledAt','cancelledByUid','cancelledByEmail');
+          && r43(b.cancelIntent,1,20000) && r2j(b.cancelReason)
+          && r44(b,'cancelledAt','cancelledByUid','cancelledByEmail');
       }
 
       allow read: if true;
-      allow create: if request.resource.data.get('caseVersion',0) == 2 ? r4b(request.resource.data,sanctionId) : true;
-      function r4i(a,b) {
+      allow create: if request.resource.data.get('caseVersion',0) == 2 ? r4c(request.resource.data,sanctionId) : true;
+      function r4j(a,b) {
         return b.get('caseVersion',0) == 2 || a.get('caseVersion',0) == 2
-        ? b.get('caseVersion',0) == 2 && (a.status == 'Replied' ? r4c(b,a)
-          : a.status == 'Reviewed' ? r4g(b,a,sanctionId)
-          : a.status in ['Cancelled','Archived'] && r4h(b,a)) : true;
+        ? b.get('caseVersion',0) == 2 && (a.status == 'Replied' ? r4d(b,a)
+          : a.status == 'Reviewed' ? r4h(b,a,sanctionId)
+          : a.status in ['Cancelled','Archived'] && r4i(b,a)) : true;
       }
-      allow update: if r4i(request.resource.data,resource == null ? null : resource.data);
+      allow update: if r4j(request.resource.data,resource == null ? null : resource.data);
       allow delete: if rq().get('caseVersion',0) != 2 && rw();
     }
     match /payroll_records/{recordId} {
-      function r4j(a) {
+      function r4k(a) {
       return a.get('ownerDeductionSettlements',{}).size() > 0 || a.get('frozenData',{}).get('ownerDeductions',0) > 0 || a.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;
     }
 
-      function r4k(a,b,c,d) {
+      function r4l(a,b,c,d) {
       let e = rl('owner_deduction_reviews',a.id);
-      return r8((a),(['id','amount'])) && a.id is string && r4y(a.id) && a.amount is number && a.amount > 0 && b[a.id] == a.amount
+      return r8((a),(['id','amount'])) && a.id is string && r4z(a.id) && a.amount is number && a.amount > 0 && b[a.id] == a.amount
         && e.status == 'Paid' && e.amount == a.amount && e.payrollRecordId == d && (r6(e.paidAt));
     }
 
-      function r4l(a,b,c,d,e) { return a.size() <= d || r4k(a[d],b,c,e); }
+      function r4m(a,b,c,d,e) { return a.size() <= d || r4l(a[d],b,c,e); }
 
-      function r4m(a) { return a >= 0 ? int(a * 100 + 0.5) : -int(-a * 100 + 0.5); }
+      function r4n(a) { return a >= 0 ? int(a * 100 + 0.5) : -int(-a * 100 + 0.5); }
 
-      function r4n(a,b) {
+      function r4o(a,b) {
       let c = rk('cash_accounts',a.accountId);
       let d = rl('cash_accounts',a.accountId);
       let e = rl('expenses',b);
       return a.finalNetPay is number && a.finalNetPay >= 0 && c.balance is number && d.balance is number
-        && r4m(c.balance) - r4m(d.balance) == r4m(a.finalNetPay)
+        && r4n(c.balance) - r4n(d.balance) == r4n(a.finalNetPay)
         && e.category == 'Payroll' && e.payrollRecordId == b && e.amount == a.finalNetPay && (r6(e.timestamp));
     }
 
-      function r4o(a,b) {
+      function r4p(a,b) {
       let c = a.get('frozenData',{}).get('ownerDeductionRows',[]);
       let d = a.get('ownerDeductionSettlements',{});
       let e = a.get('frozenData',{}).get('ownerDeductionDetails',[]);
       return c is list && c.size() <= 4 && c.toSet().size() == c.size() && d is map && d.size() == c.size()
         && e is list && e.size() == c.size()
-        && r4l(c,d,e,0,b) && r4l(c,d,e,1,b) && r4l(c,d,e,2,b) && r4l(c,d,e,3,b)
+        && r4m(c,d,e,0,b) && r4m(c,d,e,1,b) && r4m(c,d,e,2,b) && r4m(c,d,e,3,b)
         && a.get('frozenData',{}).get('ownerDeductions',0) == (c.size() > 0 ? c[0].amount : 0) + (c.size() > 1 ? c[1].amount : 0) + (c.size() > 2 ? c[2].amount : 0) + (c.size() > 3 ? c[3].amount : 0)
-        && (c.size() == 0 || (r4x() && a.frozenData.isPaid == true && (r6(a.processedAt)) && (r5(a.processedBy))
-          && c.size() + a.get('frozenData',{}).get('cashShortageRows',[]).size() + a.get('refundSettlements',{}).size() <= 4 && r4n(a,b)));
+        && (c.size() == 0 || (r4y() && a.frozenData.isPaid == true && (r6(a.processedAt)) && (r5(a.processedBy))
+          && c.size() + a.get('frozenData',{}).get('cashShortageRows',[]).size() + a.get('refundSettlements',{}).size() <= 4 && r4o(a,b)));
     }
 
-      function r4p(a,b,c) {
+      function r4q(a,b,c) {
       let d = rl('cash_shortage_reviews',a.id);
       return a.keys().hasOnly(['id','amount']) && a.id is string && a.amount is number && a.amount > 0 && b[a.id] == a.amount
         && d.status == 'Paid' && d.amount == a.amount && d.payrollRecordId == c && (r6(d.paidAt));
     }
 
-      function r4q(a,b,c,d) { return a.size() <= c || r4p(a[c],b,d); }
+      function r4r(a,b,c,d) { return a.size() <= c || r4q(a[c],b,d); }
 
-      function r4r(a) {
+      function r4s(a) {
       return a.get('cashShortageSettlements',{}).size() > 0 || a.get('frozenData',{}).get('cashShortages',0) > 0 || a.get('frozenData',{}).get('cashShortageRows',[]).size() > 0;
     }
 
-      function r4s(a,b) {
-      return r76(a.staffId) && a.get('acknowledged',false) == false
+      function r4t(a,b) {
+      return r77(a.staffId) && a.get('acknowledged',false) == false
         && r7((b),(a)).hasOnly(['acknowledged','acknowledgedAt','signatureBase64'])
         && b.acknowledged == true && (r6(b.acknowledgedAt))
         && (r1((b.signatureBase64),(64),(500000)))
@@ -1751,7 +1770,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && b.signatureBase64.matches('^data:image/png;base64,iVBORw0KGgo[A-Za-z0-9+/]+={0,2}$');
     }
 
-      function r4t(a,b) {
+      function r4u(a,b) {
       let c = a.get('frozenData',{}).get('cashShortageRows',[]);
       let d = a.get('cashShortageSettlements',{});
       let e = a.get('frozenData',{}).get('ownerDeductionRows',[]).size() > 0;
@@ -1759,31 +1778,31 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
       // maximum four. It leaves room for at most three other protected rows.
       return c is list && c.size() <= (e ? 3 : 6) && c.toSet().size() == c.size()
         && d is map && d.size() == c.size()
-        && r4q(c,d,0,b) && r4q(c,d,1,b) && r4q(c,d,2,b)
-        && (e || (r4q(c,d,3,b) && r4q(c,d,4,b) && r4q(c,d,5,b)))
+        && r4r(c,d,0,b) && r4r(c,d,1,b) && r4r(c,d,2,b)
+        && (e || (r4r(c,d,3,b) && r4r(c,d,4,b) && r4r(c,d,5,b)))
         && a.get('frozenData',{}).get('cashShortages',0) == (c.size() > 0 ? c[0].amount : 0) + (c.size() > 1 ? c[1].amount : 0) + (c.size() > 2 ? c[2].amount : 0) + (e ? 0 : (c.size() > 3 ? c[3].amount : 0) + (c.size() > 4 ? c[4].amount : 0) + (c.size() > 5 ? c[5].amount : 0))
         && (e || c.size() == 0 || (rx() && a.frozenData.isPaid == true && (r6(a.processedAt)) && (r5(a.processedBy)) && c.size() + a.get('refundSettlements',{}).size() <= 6));
     }
  allow read: if true;
-      function r4u(a) {
-        return r4o(a,recordId)
-        && r4t(a,recordId)
+      function r4v(a) {
+        return r4p(a,recordId)
+        && r4u(a,recordId)
         && (recordId.matches('refund-payroll-.*') ? (rx() && a.frozenData.isPaid == true && (r6(a.processedAt)) && (r5(a.processedBy)) && a.refundSettlements is map && a.finalNetPay is number && a.finalNetPay >= 0) : rw());
       }
-      allow create: if r4u(rp());
-      function r4v(a,b) {
-        return r4j(b) || r4j(a) || r4r(b) || r4r(a)
-        ? r4s(b,a)
+      allow create: if r4v(rp());
+      function r4w(a,b) {
+        return r4k(b) || r4k(a) || r4s(b) || r4s(a)
+        ? r4t(b,a)
         : (!recordId.matches('refund-payroll-.*') || (r7((a),(b)).hasOnly(['acknowledged']) && a.acknowledged == true));
       }
-      allow update: if r4v(rp(),resource == null ? null : rq());
-      allow delete: if !recordId.matches('refund-payroll-.*') && !r4r(rq()) && !r4j(rq()) && rw(); }
+      allow update: if r4w(rp(),resource == null ? null : rq());
+      allow delete: if !recordId.matches('refund-payroll-.*') && !r4s(rq()) && !r4k(rq()) && rw(); }
 
     // Owner-confirmed charges under the reviewed policy. Staff can respond only
     // through their existing approved private device; ledger amounts are immutable to Staff.
 
 
-    function r4w(a,b,c) {
+    function r4x(a,b,c) {
       let d = rl('payroll_records',b.payrollRecordId);
       return rx() && a.status == 'Unpaid' && b.status == 'Paid' && a.amount > 0
         && r7((b),(a)).hasOnly(['status','paidAt','payrollRecordId']) && (r6(b.paidAt))
@@ -1795,9 +1814,9 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
 
     // A one-time Owner review is separate from recurring profile deductions.
     // Private evidence and staff explanations stay in the protected source/notice.
-    function r4x() { return rx() && rr() == 'google.com'; }
-    function r4y(a) { return a.matches('^owner-deduction-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'); }
-    function r4z(a,b) { return a.get('type','') == 'Owner Custom Deduction' || b.matches('^owner-deduction-.*') || a.keys().hasAny(['ownerDeductionVersion']); }
+    function r4y() { return rx() && rr() == 'google.com'; }
+    function r4z(a) { return a.matches('^owner-deduction-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'); }
+    function r50(a,b) { return a.get('type','') == 'Owner Custom Deduction' || b.matches('^owner-deduction-.*') || a.keys().hasAny(['ownerDeductionVersion']); }
 
 
 
@@ -1810,18 +1829,18 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
 
 
 
-    function r50(a,b) {
-      return r4x() && a.type == 'Owner Custom Deduction' && a.status in ['Approved','Unpaid'] && a.amount > 0
+    function r51(a,b) {
+      return r4y() && a.type == 'Owner Custom Deduction' && a.status in ['Approved','Unpaid'] && a.amount > 0
         && !a.keys().hasAny(rt()) && r7((b),(a)).hasOnly(['status','paidAt','payrollRecordId']) && b.status == 'Paid' && (r6(b.paidAt));
     }
-    function r51(a,b,c,d) {
+    function r52(a,b,c,d) {
       let e = rl('owner_deduction_reviews',c);
-      return r50(a,b) && e.status == 'Paid' && e.staffId == a.staffId && e.amount == a.amount && e.revision == d
+      return r51(a,b) && e.status == 'Paid' && e.staffId == a.staffId && e.amount == a.amount && e.revision == d
         && e.payrollRecordId == b.payrollRecordId && (r6(e.paidAt));
     }
     match /owner_deduction_reviews/{id} {
-      function r52(a,b,c,d) {
-      return r4y(d) && a.id == d && a.type == 'Owner Custom Deduction' && b.type == a.type && c.type == a.type
+      function r53(a,b,c,d) {
+      return r4z(d) && a.id == d && a.type == 'Owner Custom Deduction' && b.type == a.type && c.type == a.type
         && a.schemaVersion == 1 && b.ownerDeductionVersion == 1 && c.version == 1
         && b.incidentId == d && c.id == d && c.incidentId == d
         && a.branch == a.staffBranch && b.branch == a.staffBranch && c.branch == a.staffBranch
@@ -1835,7 +1854,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && b.reviewRevision == a.revision && c.noticeRevision == a.revision;
     }
 
-      function r53(a) {
+      function r54(a) {
       let b = rk('cashiers',a.staffId);
       let c = a.incidentDate.split('-');
       return a.staffId is string && a.staffId.matches('^[-A-Za-z0-9_]{1,160}$') && a.staffName == b.cashierName && a.staffBranch == b.branch
@@ -1846,10 +1865,10 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && timestamp.date(int(c[0]),int(c[1]),int(c[2])) - duration.value(8,'h') <= ro();
     }
 
-      function r54(a,b) {
+      function r55(a,b) {
         let c = rj(b);
         let d = rl('staff_deduction_notices',b);
-        return r4x() && r52(a,c,d,b) && r53(a)
+        return r4y() && r53(a,c,d,b) && r54(a)
           && r8((a),(['schemaVersion','id','type','staffId','staffName','staffBranch','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','details','evidence','sourceLossCents','proposedAmount','revision','status','amount','authorizedAmount','effectiveDate','openIntent','createdAt','createdByUid','createdBy']))
           && (r1((a.label),(3),(120))) && a.category in ['Damaged item','Wastage','Other']
           && a.status == 'Pending Review' && a.amount == 0 && a.revision == 1 && a.effectiveDate == null && c.status == 'Pending Review' && d.status == 'Pending Review'
@@ -1859,16 +1878,16 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && (r0((a.openIntent),(0),(12000)))
           && (r6(a.createdAt)) && (r4(a.createdByUid)) && (r5(a.createdBy));
       }
-      function r55(a,b,c) {
+      function r56(a,b,c) {
         let d = rj(c);
         let e = rl('staff_deduction_notices',c);
         let f = rk('staff_deduction_notices',c);
         let g = b.get('effectiveDate','2000-01-01') == null ? ['2000','01','01'] : b.effectiveDate.split('-');
-        return r4x() && a.status in ['Pending Review','Approved'] && !a.keys().hasAny(rt())
+        return r4y() && a.status in ['Pending Review','Approved'] && !a.keys().hasAny(rt())
           && r7((b),(a)).hasOnly(['status','amount','authorizedAmount','effectiveDate','revision','lawfulBasis','authorityReference','finding','responsibilityConfirmed','lawfulAuthorityConfirmed','weeklyLimitConfirmed','replyRevisionReviewed','approvalIntent','reviewedAt','reviewedBy','dismissalReason'])
-          && b.revision == a.revision + 1 && (r6(b.reviewedAt)) && (r5(b.reviewedBy)) && r52(b,d,e,c) && e.status == b.status
+          && b.revision == a.revision + 1 && (r6(b.reviewedAt)) && (r5(b.reviewedBy)) && r53(b,d,e,c) && e.status == b.status
           && (b.status == 'Dismissed' ? (b.amount == 0 && d.status == 'Dismissed' && (r1((b.dismissalReason),(8),(1500))))
-            : (b.status == 'Approved' && d.status == 'Unpaid' && r53(b)
+            : (b.status == 'Approved' && d.status == 'Unpaid' && r54(b)
               && b.amount is number && b.amount > 0 && b.amount <= b.sourceLossCents / 100.0 && b.amount == int(b.amount * 100 + 0.5) / 100.0
               && b.effectiveDate is string && b.effectiveDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') && timestamp.date(int(g[0]),int(g[1]),int(g[2])) + duration.value(16,'h') > ro()
               && b.lawfulBasis in ['Legal authority permitting this deduction','Court / authorized agency order'] && b.responsibilityConfirmed == true && b.lawfulAuthorityConfirmed == true && b.weeklyLimitConfirmed == true
@@ -1876,25 +1895,25 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
               && (r0((b.approvalIntent),(0),(5000)))
               && f.replyRevision is int && f.replyRevision > 0 && (r3((f.staffReply),(0))) && b.replyRevisionReviewed == f.replyRevision && e.replyRevision == f.replyRevision));
       }
-      function r56(a,b,c) {
+      function r57(a,b,c) {
         let d = rj(c);
         let e = rl('staff_deduction_notices',c);
         let f = rl('payroll_records',b.payrollRecordId);
-        return r50(a,b) && a.status == 'Approved' && d.status == 'Paid' && e.status == 'Paid' && d.amount == a.amount && e.amount == a.amount
+        return r51(a,b) && a.status == 'Approved' && d.status == 'Paid' && e.status == 'Paid' && d.amount == a.amount && e.amount == a.amount
           && d.reviewRevision == a.revision && e.noticeRevision == a.revision && e.replyRevision == a.replyRevisionReviewed && a.replyRevisionReviewed > 0 && (r3((e.staffReply),(0)))
           && d.payrollRecordId == b.payrollRecordId && e.payrollRecordId == b.payrollRecordId && (r6(d.paidAt)) && (r6(e.paidAt))
           && f.staffId == a.staffId && f.frozenData.branch == a.staffBranch && f.frozenData.name == a.staffName && (r6(f.processedAt)) && f.frozenData.isPaid == true && a.effectiveDate <= f.endDate
           && f.ownerDeductionSettlements[c] == a.amount && {'id':c,'amount':a.amount} in f.frozenData.ownerDeductionRows
           && {'id':c,'type':'Owner Custom Deduction','bucket':'ownerDeductions','amount':a.amount,'label':a.label,'category':a.category,'incidentDate':a.incidentDate,'effectiveDate':a.effectiveDate,'reviewRevision':a.revision} in f.frozenData.ownerDeductionDetails;
       }
-      allow get, list: if r4x() || r76(rq().staffId) || r39(rq().staffBranch);
-      allow create: if r54(rp(),id);
-      function r57(a,b) { return a.status == 'Paid' ? r56(b,a,id) : r55(b,a,id); }
-      allow update: if r57(rp(),resource == null ? null : rq());
+      allow get, list: if r4y() || r77(rq().staffId) || r3a(rq().staffBranch);
+      allow create: if r55(rp(),id);
+      function r58(a,b) { return a.status == 'Paid' ? r57(b,a,id) : r56(b,a,id); }
+      allow update: if r58(rp(),resource == null ? null : rq());
          
     }
-    function r58(a,b) { return a.get('type','') == 'Cash Shortage' || b.matches('^cash-shortage-.*'); }
-    function r59(a,b,c,d) {
+    function r59(a,b) { return a.get('type','') == 'Cash Shortage' || b.matches('^cash-shortage-.*'); }
+    function r5a(a,b,c,d) {
       return a.id == d && a.type == 'Cash Shortage' && b.type == 'Cash Shortage' && c.type == 'Cash Shortage'
         && a.schemaVersion == 1 && b.cashShortageVersion == 1 && c.version == 1
         && b.incidentId == d && c.id == d && c.incidentId == d
@@ -1917,18 +1936,18 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
 
     // Validate the full tuple list once per payroll, not once for each of the three protected case records.
 
-    function r5a(a,b) {
+    function r5b(a,b) {
       return rx() && a.type == 'Cash Shortage' && a.status in ['Approved','Unpaid'] && a.amount > 0
         && !a.keys().hasAny(rt())
         && r7((b),(a)).hasOnly(['status','paidAt','payrollRecordId']) && b.status == 'Paid' && (r6(b.paidAt));
     }
-    function r5b(a,b,c,d) {
+    function r5c(a,b,c,d) {
       let e = rl('cash_shortage_reviews',c);
-      return r5a(a,b) && e.status == 'Paid' && e.staffId == a.staffId && e.amount == a.amount && e.revision == d
+      return r5b(a,b) && e.status == 'Paid' && e.staffId == a.staffId && e.amount == a.amount && e.revision == d
         && e.payrollRecordId == b.payrollRecordId && (r6(e.paidAt));
     }
     match /cash_shortage_reviews/{id} {
-      function r5c(a,b) {
+      function r5d(a,b) {
         let c = rk('shifts',a.sourceShiftId);
         let d = rk('cashiers',a.staffId);
         return b == 'cash-shortage-' + a.sourceShiftId && a.sourceShiftId.matches('^[-A-Za-z0-9_]{1,160}$')
@@ -1944,10 +1963,10 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && a.sourceReceiptId == a.sourceShiftId && a.sourcePlatform == 'Z-reading'
           && (r0((a.sourceFingerprint),(0),(30000)));
       }
-      function r5d(a,b) {
+      function r5e(a,b) {
         let c = rj(b);
         let d = rl('staff_deduction_notices',b);
-        return rx() && r5c(a,b) && r59(a,c,d,b)
+        return rx() && r5d(a,b) && r5a(a,c,d,b)
           && r8((a),(['schemaVersion','id','type','sourceShiftId','sourceReceiptId','sourcePlatform','branch','staffId','staffName','staffBranch','expectedCash','declaredCash','sourceShortage','sourceShortageCents','sourceFingerprint','details','evidence','revision','status','amount','authorizedAmount','effectiveDate','openIntent','createdAt','createdByUid','createdBy']))
           && a.status == 'Pending Review' && a.amount == 0 && a.revision == 1 && a.effectiveDate == null
           && c.status == 'Pending Review' && d.status == 'Pending Review' && d.replyRevision == 0 && d.readRevision == 0
@@ -1956,7 +1975,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && (r0((a.openIntent),(0),(40000)))
           && (r6(a.createdAt)) && (r4(a.createdByUid)) && (r5(a.createdBy));
       }
-      function r5e(a,b,c) {
+      function r5f(a,b,c) {
         let d = rj(c);
         let e = rl('staff_deduction_notices',c);
         let f = rk('staff_deduction_notices',c);
@@ -1964,9 +1983,9 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         return rx() && a.status in ['Pending Review','Approved'] && !a.keys().hasAny(rt())
           && r7((b),(a)).hasOnly(['status','amount','authorizedAmount','effectiveDate','revision','lawfulBasis','authorityReference','finding','responsibilityConfirmed','lawfulAuthorityConfirmed','replyRevisionReviewed','approvalIntent','reviewedAt','reviewedBy','dismissalReason'])
           && b.revision == a.revision + 1 && (r6(b.reviewedAt)) && (r5(b.reviewedBy))
-          && r59(b,d,e,c) && e.status == b.status
+          && r5a(b,d,e,c) && e.status == b.status
           && (b.status == 'Dismissed' ? (b.amount == 0 && d.status == 'Dismissed' && (r1((b.dismissalReason),(8),(1500))))
-            : (b.status == 'Approved' && d.status == 'Unpaid' && r5c(b,c)
+            : (b.status == 'Approved' && d.status == 'Unpaid' && r5d(b,c)
               && b.amount is number && b.amount > 0 && b.amount <= b.sourceShortageCents / 100.0 && b.amount == int(b.amount * 100 + 0.5) / 100.0
               && b.effectiveDate is string && b.effectiveDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
               && timestamp.date(int(g[0]),int(g[1]),int(g[2])) + duration.value(16,'h') > ro()
@@ -1977,12 +1996,12 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
               && f.replyRevision is int && f.replyRevision > 0 && (r3((f.staffReply),(0)))
               && b.replyRevisionReviewed == f.replyRevision && e.replyRevision == f.replyRevision));
       }
-      function r5f(a,b,c) {
+      function r5g(a,b,c) {
         let d = rj(c);
         let e = rl('staff_deduction_notices',c);
         let f = rl('payroll_records',b.payrollRecordId);
         // Links and all financial/source fields were established at authorization and are immutable in this transition.
-        return r5a(a,b) && a.status == 'Approved'
+        return r5b(a,b) && a.status == 'Approved'
           && d.status == 'Paid' && e.status == 'Paid' && d.amount == a.amount && e.amount == a.amount
           && d.reviewRevision == a.revision && e.noticeRevision == a.revision
           && e.replyRevision == a.replyRevisionReviewed && a.replyRevisionReviewed > 0 && (r3((e.staffReply),(0)))
@@ -1992,16 +2011,16 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && f.cashShortageSettlements[c] == a.amount && {'id':c,'amount':a.amount} in f.frozenData.cashShortageRows;
       }
 
-      allow get, list: if rx() || r39(rq().staffBranch);
-      allow create: if r5d(rp(),id);
-      function r5g(a,b) {
-        return a.status == 'Paid' ? r5f(b,a,id) : r5e(b,a,id);
+      allow get, list: if rx() || r3a(rq().staffBranch);
+      allow create: if r5e(rp(),id);
+      function r5h(a,b) {
+        return a.status == 'Paid' ? r5g(b,a,id) : r5f(b,a,id);
       }
-      allow update: if r5g(rp(),resource == null ? null : rq());
+      allow update: if r5h(rp(),resource == null ? null : rq());
          
     }
     match /staff_deduction_notices/{id} {
-      function r5h(a,b) {
+      function r5i(a,b) {
       let c = rl('online_order_incidents',b);
       return rx() && a.version == 1 && a.id == b && a.incidentId == b && a.staffId == c.staffId
         && a.staffName == c.staffName && a.sourceReceiptId == c.sourceReceiptId && a.sourcePlatform == c.sourcePlatform
@@ -2010,82 +2029,82 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && (r6(a.createdAt)) && (r6(a.updatedAt));
     }
 
-      function r5i(a,b,c) {
+      function r5j(a,b,c) {
       let d = rl('online_order_incidents',c);
       return rx() && r7((b),(a)).hasOnly(['status','amount','ownerReply','noticeRevision','updatedAt'])
         && b.noticeRevision == a.noticeRevision + 1 && (r6(b.updatedAt))
         && b.status == d.status && b.amount == d.amount && b.ownerReply == d.reviewNote && (r6(d.reviewedAt));
     }
 
-      function r5j(a,b) {
-      return r76(a.staffId) && (
+      function r5k(a,b) {
+      return r77(a.staffId) && (
         (r7((b),(a)).hasOnly(['readRevision','readAt']) && b.readRevision == a.noticeRevision && (r6(b.readAt)))
         || (r7((b),(a)).hasOnly(['staffReply','replyRevision','repliedAt','repliedByUid'])
           && (r0((b.staffReply),(0),(1500)))
           && b.replyRevision == a.replyRevision + 1 && (r6(b.repliedAt)) && (r4(b.repliedByUid))));
     }
 
-      function r5k(a,b) {
+      function r5l(a,b) {
       let c = rl('owner_deduction_reviews',b);
       // As above, before-absence plus getAfter presence forces source creation
       // and therefore its full three-record link validation in this request.
-      return r4x() && !exists(r9('owner_deduction_reviews',(b)))
+      return r4y() && !exists(r9('owner_deduction_reviews',(b)))
         && c.status == 'Pending Review' && a.status == 'Pending Review' && a.amount == 0
         && a.details == c.details && a.evidence == c.evidence && a.reasonLabel == c.label
         && a.replyRevision == 0 && a.readRevision == 0 && (r6(a.createdAt)) && (r6(a.updatedAt))
         && r8((a),(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','version','id','sourceLossCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']));
     }
 
-      function r5l(a,b,c) {
+      function r5m(a,b,c) {
       let d = rk('owner_deduction_reviews',c);
       let e = rl('owner_deduction_reviews',c);
-      return r4x() && a.status in ['Pending Review','Approved']
+      return r4y() && a.status in ['Pending Review','Approved']
         && r7((b),(a)).hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','weeklyLimitConfirmed','updatedAt'])
         && b.noticeRevision == a.noticeRevision + 1 && (r6(b.updatedAt)) && b.status == e.status
         && e.revision == d.revision + 1 && b.noticeRevision == e.revision && (r6(e.reviewedAt))
         && (e.status == 'Dismissed' ? b.ownerReply == e.dismissalReason : (b.ownerReply == e.finding && b.lawfulBasis == e.lawfulBasis && b.authorityReference == e.authorityReference && b.finding == e.finding && b.weeklyLimitConfirmed == true));
     }
 
-      function r5m(a,b) {
+      function r5n(a,b) {
       let c = rl('cash_shortage_reviews',b);
       let d = rj(b);
       return rx() && !exists(r9('cash_shortage_reviews',(b)))
-        && r59(c,d,a,b) && a.status == 'Pending Review' && a.amount == 0
+        && r5a(c,d,a,b) && a.status == 'Pending Review' && a.amount == 0
         && a.details == c.details && a.evidence == c.evidence && a.sourceShortageCents == c.sourceShortageCents
         && a.replyRevision == 0 && a.readRevision == 0 && (r6(a.createdAt)) && (r6(a.updatedAt))
         && r8((a),(['incidentId','type','staffId','staffName','branch','sourceShiftId','sourceReceiptId','sourcePlatform','amount','effectiveDate','status','version','id','sourceShortageCents','reasonLabel','details','evidence','noticeRevision','readRevision','replyRevision','createdAt','updatedAt']));
     }
 
-      function r5n(a,b,c) {
+      function r5o(a,b,c) {
       let d = rl('cash_shortage_reviews',c);
       let e = rj(c);
       return rx() && a.status in ['Pending Review','Approved']
         && r7((b),(a)).hasOnly(['status','amount','effectiveDate','noticeRevision','lawfulBasis','authorityReference','finding','ownerReply','updatedAt'])
         && b.noticeRevision == a.noticeRevision + 1 && (r6(b.updatedAt)) && b.status == d.status
-        && r59(d,e,b,c) && (r6(d.reviewedAt))
+        && r5a(d,e,b,c) && (r6(d.reviewedAt))
         && (d.status == 'Dismissed' ? b.ownerReply == d.dismissalReason : (b.ownerReply == d.finding && b.lawfulBasis == d.lawfulBasis && b.authorityReference == d.authorityReference && b.finding == d.finding));
     }
 
-      allow get, list: if rx() || r76(rq().staffId) || ((r58(rq(),id) || r4z(rq(),id)) && r39(rq().branch));
-      function r5o(a) {
-        return r4z(a,id) ? r5k(a,id) : r58(a,id) ? r5m(a,id) : r5h(a,id);
+      allow get, list: if rx() || r77(rq().staffId) || ((r59(rq(),id) || r50(rq(),id)) && r3a(rq().branch));
+      function r5p(a) {
+        return r50(a,id) ? r5l(a,id) : r59(a,id) ? r5n(a,id) : r5i(a,id);
       }
-      allow create: if r5o(rp());
-      function r5p(a,b) {
+      allow create: if r5p(rp());
+      function r5q(a,b) {
         // The same private Staff reply/read schema applies to every subtype.
         // Factor that disjunct once; subtype-specific financial rules follow.
-        return r5j(b,a) || (r4z(b,id) || r4z(a,id)
-        ? (a.status == 'Paid' && b.status != 'Paid' ? r51(b,a,id,b.noticeRevision) : r5l(b,a,id))
-        : r58(b,id) || r58(a,id)
-        ? (a.status == 'Paid' && b.status != 'Paid' ? r5b(b,a,id,b.noticeRevision) : r5n(b,a,id))
-        : r5i(b,a,id) || r4w(b,a,id));
+        return r5k(b,a) || (r50(b,id) || r50(a,id)
+        ? (a.status == 'Paid' && b.status != 'Paid' ? r52(b,a,id,b.noticeRevision) : r5m(b,a,id))
+        : r59(b,id) || r59(a,id)
+        ? (a.status == 'Paid' && b.status != 'Paid' ? r5c(b,a,id,b.noticeRevision) : r5o(b,a,id))
+        : r5j(b,a,id) || r4x(b,a,id));
       }
-      allow update: if r5p(rp(),resource == null ? null : rq());
+      allow update: if r5q(rp(),resource == null ? null : rq());
          
     }
 
     match /online_order_incidents/{id} {
-      function r5q(a, b) {
+      function r5r(a, b) {
         let c = rh(a.sourceSaleId);
         let d = rk('cashiers',a.staffId);
         let e = rj(b);
@@ -2110,7 +2129,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && e.staffId == a.staffId && e.staffName == a.staffName
           && e.proposedAmount == a.refundAmount && e.status == a.status && e.amount == 0;
       }
-      function r5r(a, b, c) {
+      function r5s(a, b, c) {
         let d = rj(c);
         return rx() && a.status == 'Pending Review' && a.amount == 0
           && r7((b),(a)).hasOnly(['status','staffResponse','reviewNote','reviewedAt','reviewedBy','reviewRevision'])
@@ -2121,7 +2140,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && d.status == b.status && d.amount == 0
           && d.responseRecorded == true && (r6(d.reviewedAt));
       }
-      function r5s(a, b) {
+      function r5t(a, b) {
         let c = rh(a.sourceSaleId);
         let d = rk('cashiers',a.staffId);
         let e = rj(b);
@@ -2149,7 +2168,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && e.amount == a.amount && e.status == a.status && e.authorizedAmount == a.amount
           && f.id == b && f.incidentId == b && f.staffId == a.staffId && f.amount == a.amount && f.status == a.status;
       }
-      function r5t(a,b,c) {
+      function r5u(a,b,c) {
         let d = rj(c);
         let e = rl('staff_deduction_notices',c);
         return rx() && a.status in ['Pending Review','Unpaid']
@@ -2166,15 +2185,15 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
       }
 
       allow get, list: if rx();
-      allow create: if r5q(rp(), id) || r5s(rp(),id);
-      function r5u(a,b) {
-        return r5r(b, a, id) || r5t(b,a,id) || r4w(b,a,id);
+      allow create: if r5r(rp(), id) || r5t(rp(),id);
+      function r5v(a,b) {
+        return r5s(b, a, id) || r5u(b,a,id) || r4x(b,a,id);
       }
-      allow update: if r5u(rp(),resource == null ? null : rq());
+      allow update: if r5v(rp(),resource == null ? null : rq());
          
     }
     match /staff_deductions/{deductId} {
-      function r5v(a, b) {
+      function r5w(a, b) {
       let c = ri(b);
       // The receipt create rule validates both this charge and its source
       // transition atomically. A prior receipt cannot authorize a new charge.
@@ -2185,7 +2204,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && (c.get('cancelledFoodPortionVersion',0) != 1 || a.purchasedItems == c.cart);
     }
 
-      function r5w(a, b) {
+      function r5x(a, b) {
       let c = rl('online_order_incidents',b);
       return rx() && a.type == 'Online Order Refund' && a.amount == 0
         && a.category == 'Online Order Refunds' && a.status == 'Pending Review'
@@ -2196,7 +2215,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && (r6(a.dateAdded)) && (r5(a.loggedBy));
     }
 
-      function r5x(a,b) {
+      function r5y(a,b) {
       let c = rl('online_order_incidents',b);
       return rx() && c.version == 2 && a.type == 'Online Order Refund' && a.category == 'Online Order Refunds'
         && a.incidentId == b && a.staffId == c.staffId && a.staffName == c.staffName
@@ -2206,7 +2225,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && a.proposedAmount == c.refundAmount && a.noticeRevision == 1 && (r6(a.dateAdded)) && (r5(a.loggedBy));
     }
 
-      function r5y(a,b,c) {
+      function r5z(a,b,c) {
       let d = rl('online_order_incidents',c);
       return rx() && a.type == 'Online Order Refund' && a.status in ['Pending Review','Unpaid']
         && r7((b),(a)).hasOnly(['status','amount','authorizedAmount','noticeRevision','responseRecorded','reviewedAt','reviewedBy'])
@@ -2214,21 +2233,21 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && b.noticeRevision == a.get('noticeRevision',0) + 1 && (r6(d.reviewedAt)) && (r6(b.reviewedAt)) && (r5(b.reviewedBy)) && b.responseRecorded == true;
     }
 
-      function r5z(a,b) {
+      function r60(a,b) {
       let c = rl('owner_deduction_reviews',b);
       // The source must be newly created in this atomic request. Its create
       // rule validates all three exact links; keep this public schema strict.
-      return r4x() && !exists(r9('owner_deduction_reviews',(b)))
+      return r4y() && !exists(r9('owner_deduction_reviews',(b)))
         && c.status == 'Pending Review' && a.status == 'Pending Review' && a.amount == 0
         && (r6(a.dateAdded)) && (r5(a.loggedBy))
         && a.remarks == 'Owner custom deduction review only; no payroll charge is authorized.'
         && r8((a),(['incidentId','type','staffId','staffName','branch','sourcePlatform','sourceReceiptId','label','category','incidentDate','amount','effectiveDate','status','ownerDeductionVersion','authorizedAmount','reviewRevision','dateAdded','loggedBy','remarks']));
     }
 
-      function r60(a,b,c) {
+      function r61(a,b,c) {
       let d = rk('owner_deduction_reviews',c);
       let e = rl('owner_deduction_reviews',c);
-      return r4x() && a.status in ['Pending Review','Unpaid'] && !a.keys().hasAny(rt())
+      return r4y() && a.status in ['Pending Review','Unpaid'] && !a.keys().hasAny(rt())
         && r7((b),(a)).hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
         && b.reviewRevision == a.reviewRevision + 1 && (r6(b.reviewedAt)) && (r5(b.reviewedBy))
         // A changed source revision forces its authoritative update rule in
@@ -2237,40 +2256,40 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && b.status == (e.status == 'Approved' ? 'Unpaid' : 'Dismissed') && (r6(e.reviewedAt));
     }
 
-      function r61(a,b) {
+      function r62(a,b) {
       let c = rl('cash_shortage_reviews',b);
       let d = rl('staff_deduction_notices',b);
       return rx() && !exists(r9('cash_shortage_reviews',(b)))
-        && r59(c,a,d,b) && c.status == 'Pending Review' && a.status == 'Pending Review' && a.amount == 0
+        && r5a(c,a,d,b) && c.status == 'Pending Review' && a.status == 'Pending Review' && a.amount == 0
         && (r6(a.dateAdded)) && (r5(a.loggedBy))
         && r8((a),(['incidentId','type','staffId','staffName','branch','sourceShiftId','sourceReceiptId','sourcePlatform','amount','effectiveDate','status','cashShortageVersion','sourceBranch','authorizedAmount','reviewRevision','dateAdded','loggedBy','remarks']));
     }
 
-      function r62(a,b,c) {
+      function r63(a,b,c) {
       let d = rl('cash_shortage_reviews',c);
       let e = rl('staff_deduction_notices',c);
       return rx() && a.status in ['Pending Review','Unpaid'] && !a.keys().hasAny(rt())
         && r7((b),(a)).hasOnly(['status','amount','authorizedAmount','effectiveDate','reviewRevision','reviewedAt','reviewedBy'])
         && b.reviewRevision == a.reviewRevision + 1 && (r6(b.reviewedAt)) && (r5(b.reviewedBy))
-        && r59(d,b,e,c) && b.status == (d.status == 'Approved' ? 'Unpaid' : 'Dismissed') && (r6(d.reviewedAt));
+        && r5a(d,b,e,c) && b.status == (d.status == 'Approved' ? 'Unpaid' : 'Dismissed') && (r6(d.reviewedAt));
     }
 
       allow read: if true;
-      function r63(a) {
-        return r4z(a,deductId) ? r5z(a,deductId)
-        : r58(a,deductId) ? r61(a,deductId)
+      function r64(a) {
+        return r50(a,deductId) ? r60(a,deductId)
+        : r59(a,deductId) ? r62(a,deductId)
         : a.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
-        ? (r5w(a, deductId) || r5x(a,deductId))
+        ? (r5x(a, deductId) || r5y(a,deductId))
         : a.get('type', '') == 'Cancelled Food Purchase'
-        ? r5v(a, deductId)
+        ? r5w(a, deductId)
         : rw();
       }
-      allow create: if r63(rp());
-      function r64(a,b) {
-        return r4z(b,deductId) || r4z(a,deductId)
-        ? (a.status == 'Paid' ? r51(b,a,deductId,b.reviewRevision) : r60(b,a,deductId))
-        : r58(b,deductId) || r58(a,deductId)
-        ? (a.status == 'Paid' ? r5b(b,a,deductId,b.reviewRevision) : r62(b,a,deductId))
+      allow create: if r64(rp());
+      function r65(a,b) {
+        return r50(b,deductId) || r50(a,deductId)
+        ? (a.status == 'Paid' ? r52(b,a,deductId,b.reviewRevision) : r61(b,a,deductId))
+        : r59(b,deductId) || r59(a,deductId)
+        ? (a.status == 'Paid' ? r5c(b,a,deductId,b.reviewRevision) : r63(b,a,deductId))
         : b.get('type', '') == 'Online Order Refund' || a.get('type', '') == 'Online Order Refund' || deductId.matches('online-refund-.*')
         ? (rx() && b.type == 'Online Order Refund' && a.amount == 0
           && b.status == 'Pending Review'
@@ -2278,43 +2297,43 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && a.responseRecorded == true
           && a.status in ['Pending Review','Dismissed']
           && a.status == rl('online_order_incidents',deductId).status
-          && (r6(a.reviewedAt)) && (r5(a.reviewedBy))) || (b.get('type','') == 'Online Order Refund' && (r5y(b,a,deductId) || r4w(b,a,deductId)))
+          && (r6(a.reviewedAt)) && (r5(a.reviewedBy))) || (b.get('type','') == 'Online Order Refund' && (r5z(b,a,deductId) || r4x(b,a,deductId)))
         : b.get('type', '') == 'Cancelled Food Purchase'
         ? r10(b.branch) : rw();
       }
-      allow update: if r64(rp(),resource == null ? null : rq());
-      function r65(a) {
-        return !r4z(a,deductId) && !r58(a,deductId) && a.get('type', '') != 'Online Order Refund'
+      allow update: if r65(rp(),resource == null ? null : rq());
+      function r66(a) {
+        return !r50(a,deductId) && !r59(a,deductId) && a.get('type', '') != 'Online Order Refund'
         && (a.get('type', '') == 'Cancelled Food Purchase' ? r10(a.branch) : rw());
       }
-      allow delete: if r65(resource == null ? null : rq());
+      allow delete: if r66(resource == null ? null : rq());
     }
     // Owner compliance records are independent of payroll and bank postings.
-    function r66() {
+    function r67() {
       return rx() && rr() == 'google.com';
     }
-    function r67(a, b) { return a is string && a.size() <= b; }
-    function r68(a) { return a is string && a.matches('^[A-Za-z0-9_-]{1,180}$'); }
-    function r69(a) { return a is string && a.matches('^2[01][0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
-    function r6a(a) { return a is string && a.matches('^2[01][0-9]{2}-(0[1-9]|1[0-2])$'); }
+    function r68(a, b) { return a is string && a.size() <= b; }
+    function r69(a) { return a is string && a.matches('^[A-Za-z0-9_-]{1,180}$'); }
+    function r6a(a) { return a is string && a.matches('^2[01][0-9]{2}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
+    function r6b(a) { return a is string && a.matches('^2[01][0-9]{2}-(0[1-9]|1[0-2])$'); }
 
-    function r6b(a) { return a is int && a >= 0 && a <= 1000000000; }
-    function r6c(a, b, c) {
+    function r6c(a) { return a is int && a >= 0 && a <= 1000000000; }
+    function r6d(a, b, c) {
       return a is map && r8((a),(['id','kind','recordId','fileName','contentType','size','sha256','chunkCount']))
         && a.id is string && a.id.matches('^[a-fA-F0-9-]{36}$') && a.kind == b && a.recordId == c
-        && r67(a.fileName,160) && a.fileName.size() > 0
+        && r68(a.fileName,160) && a.fileName.size() > 0
         && a.contentType in ['application/pdf','image/jpeg','image/png']
         && a.size is int && a.size > 0 && a.size <= 2097152
         && a.sha256 is string && a.sha256.matches('^[a-f0-9]{64}$')
         && a.chunkCount is int && a.chunkCount >= 1 && a.chunkCount <= 15
         && a.chunkCount == int(math.ceil(a.size / 147456.0));
     }
-    function r6d(a, b, c) {
-      return a == null || (r6c(a,b,c)
+    function r6e(a, b, c) {
+      return a == null || (r6d(a,b,c)
         && rl('owner_record_files',a.id).diff(a).affectedKeys().hasOnly([
           'schemaVersion','chunkSize','operationId','createdAt','createdByUid','createdByEmail']));
     }
-    function r6e(a) {
+    function r6f(a) {
       return {'branch':a.branch,'permitType':a.permitType,'permitName':a.permitName,'agency':a.agency,
         'permitNumber':a.permitNumber,'issueDate':a.issueDate,'expiryDate':a.expiryDate,'renewalStatus':a.renewalStatus,
         'notes':a.notes,'attachment':a.attachment,'archived':a.archived};
@@ -2322,66 +2341,66 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
 
 
     match /government_permits/{id} {
-      function r6f(a) { return a is string && a.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
+      function r6g(a) { return a is string && a.matches('^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'); }
 
-      function r6g(a, b) {
+      function r6h(a, b) {
       return r8((a),(['schemaVersion','recordId','branch','permitType','permitName','agency','permitNumber','issueDate','expiryDate','renewalStatus','notes','attachment','archived','revision','createdAt','createdByUid','createdByEmail','updatedAt','updatedByUid','updatedByEmail','lastChangeId']))
-        && a.schemaVersion == 1 && a.recordId == b && r68(b)
-        && r67(a.branch,120) && a.branch.size() > 0
-        && r67(a.permitType,80) && a.permitType.size() > 0
-        && r67(a.permitName,160) && a.permitName.size() > 0
-        && r67(a.agency,160) && r67(a.permitNumber,120)
-        && (a.issueDate == '' || r6f(a.issueDate)) && (a.expiryDate == '' || r6f(a.expiryDate))
+        && a.schemaVersion == 1 && a.recordId == b && r69(b)
+        && r68(a.branch,120) && a.branch.size() > 0
+        && r68(a.permitType,80) && a.permitType.size() > 0
+        && r68(a.permitName,160) && a.permitName.size() > 0
+        && r68(a.agency,160) && r68(a.permitNumber,120)
+        && (a.issueDate == '' || r6g(a.issueDate)) && (a.expiryDate == '' || r6g(a.expiryDate))
         && (a.issueDate == '' || a.expiryDate == '' || a.expiryDate >= a.issueDate)
         && a.renewalStatus in ['Not started','Preparing','Submitted','Completed','Not required']
-        && r67(a.notes,4000) && a.archived is bool && a.revision is int && a.revision > 0
-        && r6d(a.attachment,'government_permit',b) && r68(a.lastChangeId)
+        && r68(a.notes,4000) && a.archived is bool && a.revision is int && a.revision > 0
+        && r6e(a.attachment,'government_permit',b) && r69(a.lastChangeId)
         && (r6(a.updatedAt)) && (r4(a.updatedByUid)) && (r5(a.updatedByEmail));
     }
 
-      function r6h(a,b,c,d) {
+      function r6i(a,b,c,d) {
       let e = getAfter(ra('government_permits',(b),'changes',(a.lastChangeId))).data;
       return e.schemaVersion == 1 && e.operationId == a.lastChangeId && e.recordId == b
-        && e.revision == a.revision && e.action == d && e.before == c && e.after == r6e(a)
+        && e.revision == a.revision && e.action == d && e.before == c && e.after == r6f(a)
         && (r6(e.recordedAt)) && (r4(e.recordedByUid)) && (r5(e.recordedByEmail));
     }
 
-      allow read: if r66();
-      function r6i(a,b) {
-        return r66() && r6g(a,id)
+      allow read: if r67();
+      function r6j(a,b) {
+        return r67() && r6h(a,id)
         && a.revision == (resource == null ? 1 : b.revision + 1)
         && a.createdAt == (resource == null ? ro() : b.createdAt)
         && a.createdByUid == (resource == null ? rm() : b.createdByUid)
         && a.createdByEmail == (resource == null ? rn() : b.createdByEmail)
         && (resource == null || a.lastChangeId != b.lastChangeId)
-        && r6h(a,id,resource == null ? null : r6e(b),
+        && r6i(a,id,resource == null ? null : r6f(b),
           resource == null ? 'Created' : a.archived != b.archived
           ? (a.archived ? 'Archived' : 'Restored') : 'Updated');
       }
-      allow create, update: if r6i(rp(),resource == null ? null : rq());
+      allow create, update: if r6j(rp(),resource == null ? null : rq());
          
       match /changes/{changeId} {
-        allow read: if r66();
-        function r6j(a) {
-          return r66() && r8((a),(['schemaVersion','operationId','recordId','revision','action','before','after','reason','recordedAt','recordedByUid','recordedByEmail','intent']))
+        allow read: if r67();
+        function r6k(a) {
+          return r67() && r8((a),(['schemaVersion','operationId','recordId','revision','action','before','after','reason','recordedAt','recordedByUid','recordedByEmail','intent']))
           && a.schemaVersion == 1 && a.operationId == changeId
           && a.recordId == id && a.revision is int
           && a.action in ['Created','Updated','Archived','Restored']
-          && r67(a.reason,1000) && a.intent.matches('^[a-f0-9]{64}$')
+          && r68(a.reason,1000) && a.intent.matches('^[a-f0-9]{64}$')
           && (r6(a.recordedAt)) && (r4(a.recordedByUid)) && (r5(a.recordedByEmail))
           && rl('government_permits',id).lastChangeId == changeId
           && rl('government_permits',id).revision == a.revision
-          && a.after == r6e(rl('government_permits',id));
+          && a.after == r6f(rl('government_permits',id));
         }
-        allow create: if r6j(rp());
+        allow create: if r6k(rp());
             
       }
     }
-    function r6k(a) {
+    function r6l(a) {
       return a is number && a >= 0 ? math.round(a * 100)
         : a is string && a.matches('^[0-9]+([.][0-9]{1,2})?$') ? math.round(float(a) * 100) : -1;
     }
-    function r6l(a,b,c) {
+    function r6m(a,b,c) {
       let d = rk('payroll_records',a.payrollRecordId);
       let e = d.frozenData;
       let f = d.get('finalNetPay',null);
@@ -2390,13 +2409,13 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
       let i = a.startDate;
       let j = a.endDate;
       return [d.startDate,d.endDate,e.get('start',i),e.get('end',j)] == [i,j,i,j]
-        && i <= j && r69(i) && r69(j)
+        && i <= j && r6a(i) && r6a(j)
         && h.toSet().hasOnly(['',b]) && (b in h
           || (d.get('staffName','') == c && e.get('name',c) == c))
         && e is map && d.get('isPaid',true) != false && e.get('isPaid',true) != false
         && !(d.get('status','').lower() in ['draft','unpaid','pending','cancelled','canceled','voided','failed'])
-        && r6k(f) >= 0 && (g == f || r6k(g) == r6k(f))
-        && r6k(e.get('sss',null)) == a.deductedCents;
+        && r6l(f) >= 0 && (g == f || r6l(g) == r6l(f))
+        && r6l(e.get('sss',null)) == a.deductedCents;
     }
 
 
@@ -2406,16 +2425,16 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
 
 
     match /staff_sss_remittances/{id} {
-      function r6m(a) {
+      function r6n(a) {
       let b = a.size();
       return (b>0?a[0].amountCents:0)+(b>1?a[1].amountCents:0);
     }
 
-      function r6n(a,b,c,d) {
-      return a.size()<=b || r6l(a[b],c,d);
+      function r6o(a,b,c,d) {
+      return a.size()<=b || r6m(a[b],c,d);
     }
 
-      function r6o(a,b) {
+      function r6p(a,b) {
       let c = rk('cashiers',a.staffId);
       let d = rl('staff_sss_allocation_totals',a.staffId);
       let e = a.allocations;
@@ -2424,55 +2443,55 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
       let h = a.ecShareCents;
       let i = a.totalCents;
       return r8((a),(['version','recordId','staffId','staffName','branch','contributionMonth','remittedDate','employeeShareCents','employerShareCents','ecShareCents','totalCents','reference','referenceKey','notes','evidenceReference','allocations','proof','intent','recordedAt','recordedByUid','recordedBy']))
-        && a.version == 1 && a.recordId == b && b.matches('^sss-[a-f0-9]{64}$') && r68(a.staffId)
+        && a.version == 1 && a.recordId == b && b.matches('^sss-[a-f0-9]{64}$') && r69(a.staffId)
         && a.staffName == c.get('cashierName',c.get('fullName',c.get('name',''))) && a.branch == c.branch
-        && r6a(a.contributionMonth) && r69(a.remittedDate)
-        && r67(a.reference,120) && a.reference.size() >= 3 && r67(a.referenceKey,240) && a.referenceKey.size()>0
-        && r67(a.notes,1500) && r67(a.evidenceReference,500) && r67(a.intent,30000)
-        && r6b(f) && r6b(g) && r6b(h)
-        && r6b(i) && i > 0 && i == f+g+h
+        && r6b(a.contributionMonth) && r6a(a.remittedDate)
+        && r68(a.reference,120) && a.reference.size() >= 3 && r68(a.referenceKey,240) && a.referenceKey.size()>0
+        && r68(a.notes,1500) && r68(a.evidenceReference,500) && r68(a.intent,30000)
+        && r6c(f) && r6c(g) && r6c(h)
+        && r6c(i) && i > 0 && i == f+g+h
         && e is list && e.size() <= 2
         // One monthly remittance can link the two payroll cutoffs. Split the
         // immutable frozen proofs across the required atomic pair to stay within
         // Firestore's expression limit without trusting the client allocation.
-        && r6n(e,0,a.staffId,a.staffName)
-        && f == r6m(e)
-        && r6d(a.proof,'sss_remittance',b) && d.lastRemittanceId == b
+        && r6o(e,0,a.staffId,a.staffName)
+        && f == r6n(e)
+        && r6e(a.proof,'sss_remittance',b) && d.lastRemittanceId == b
         && (r6(d.updatedAt)) && (r4(d.updatedByUid))
         && (r6(a.recordedAt)) && (r4(a.recordedByUid)) && (r5(a.recordedBy));
     }
 
-      allow read: if r66();
-      allow create: if r66() && r6o(rp(),id);
+      allow read: if r67();
+      allow create: if r67() && r6p(rp(),id);
           
     }
     match /staff_sss_allocation_totals/{staffId} {
-      function r6p(a) {
+      function r6q(a) {
       let b = a.size();
       return [b>0?a[0].payrollRecordId:'',b>1?a[1].payrollRecordId:''];
     }
 
-      function r6q(a,b,c,d,e) {
+      function r6r(a,b,c,d,e) {
       let f = a.payrollRecordId;
       let g = d.get(f,0);
       let h = e.get(f,0);
       let i = a.amountCents;
       let j = a.deductedCents;
       return r8((a),(['payrollRecordId','startDate','endDate','deductedCents','amountCents']))
-        && r68(f) && r6b(j) && r6b(i)
+        && r69(f) && r6c(j) && r6c(i)
         && i > 0 && i <= j
         && g is int && g >= 0 && h == g + i && h <= j && h > 0;
     }
 
-      function r6r(a,b,c,d,e,f) {
-      return a.size()<=b || (r6q(a[b],c,d,e,f)
-        && (b<1 || r6l(a[b],c,d)));
+      function r6s(a,b,c,d,e,f) {
+      return a.size()<=b || (r6r(a[b],c,d,e,f)
+        && (b<1 || r6m(a[b],c,d)));
     }
 
-      function r6s(a,b,c,d) {
+      function r6t(a,b,c,d) {
       let e = rl('staff_sss_remittances',a.lastRemittanceId);
       let f = e.allocations;
-      let g = r6p(f);
+      let g = r6q(f);
       let h = a.allocatedCentsByPayroll;
       return r8((a),(['version','staffId','revision','allocatedCentsByPayroll','lastRemittanceId','updatedAt','updatedByUid']))
         && a.version == 1 && a.staffId == b && a.revision == d+1
@@ -2482,39 +2501,39 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && e.recordId == a.lastRemittanceId && e.staffId == b && (r6(e.recordedAt))
         && f.size() <= 2 && g.toSet().size() == f.size() + (f.size()<2?1:0)
         && r7((h),(c)).hasOnly(g)
-        && r6r(f,0,b,e.staffName,c,h) && r6r(f,1,b,e.staffName,c,h)
+        && r6s(f,0,b,e.staffName,c,h) && r6s(f,1,b,e.staffName,c,h)
         && (r6(a.updatedAt)) && (r4(a.updatedByUid));
     }
 
-      allow read: if r66();
-      function r6t(a,b) {
-        return r66() && r6s(a,staffId,resource == null ? {} : b.allocatedCentsByPayroll,resource == null ? 0 : b.revision);
+      allow read: if r67();
+      function r6u(a,b) {
+        return r67() && r6t(a,staffId,resource == null ? {} : b.allocatedCentsByPayroll,resource == null ? 0 : b.revision);
       }
-      allow create, update: if r6t(rp(),resource == null ? null : rq());
+      allow create, update: if r6u(rp(),resource == null ? null : rq());
          
     }
     match /bookkeeper_payments/{id} {
-      allow read: if r66();
-      function r6u(a) {
-        return r66() && r8((a),(['schemaVersion','recordId','payee','branch','serviceMonth','paidDate','amountCents','paymentMethod','reference','notes','attachment','intent','recordedAt','recordedByUid','recordedByEmail']))
+      allow read: if r67();
+      function r6v(a) {
+        return r67() && r8((a),(['schemaVersion','recordId','payee','branch','serviceMonth','paidDate','amountCents','paymentMethod','reference','notes','attachment','intent','recordedAt','recordedByUid','recordedByEmail']))
           && a.schemaVersion == 1 && a.recordId == id && id.matches('^bookkeeper-[a-f0-9]{64}$')
-          && r67(a.payee,120) && a.payee.size()>0
-          && r67(a.branch,100) && a.branch.size()>0
-          && r6a(a.serviceMonth) && r69(a.paidDate)
+          && r68(a.payee,120) && a.payee.size()>0
+          && r68(a.branch,100) && a.branch.size()>0
+          && r6b(a.serviceMonth) && r6a(a.paidDate)
           && a.amountCents is int && a.amountCents>0 && a.amountCents<=99999999999
           && a.paymentMethod in ['Cash','Bank transfer','GCash','Other']
-          && r67(a.reference,120) && a.reference.size()>0
-          && r67(a.notes,1500) && r67(a.intent,10000)
-          && r6d(a.attachment,'bookkeeper_payment',id)
+          && r68(a.reference,120) && a.reference.size()>0
+          && r68(a.notes,1500) && r68(a.intent,10000)
+          && r6e(a.attachment,'bookkeeper_payment',id)
           && (r6(a.recordedAt)) && (r4(a.recordedByUid)) && (r5(a.recordedByEmail));
       }
-      allow create: if r6u(rp());
+      allow create: if r6v(rp());
           
     }
 
 
     match /owner_record_files/{id} {
-      function r6v(a,b) {
+      function r6w(a,b) {
       let c = a.kind == 'government_permit'
         ? rl('government_permits',a.recordId)
         : a.kind == 'sss_remittance' ? rl('staff_sss_remittances',a.recordId)
@@ -2522,28 +2541,28 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
       return (a.kind == 'sss_remittance' ? c.proof.id : c.attachment.id) == b;
     }
 
-      function r6w(a) {
+      function r6x(a) {
       return {'id':a.id,'kind':a.kind,'recordId':a.recordId,'fileName':a.fileName,'contentType':a.contentType,'size':a.size,'sha256':a.sha256,'chunkCount':a.chunkCount};
     }
 
-      allow get: if r66();
+      allow get: if r67();
            
-      function r6x(a) {
-        return r66() && r8((a),(['schemaVersion','id','kind','recordId','fileName','contentType','size','sha256','chunkCount','chunkSize','operationId','createdAt','createdByUid','createdByEmail']))
+      function r6y(a) {
+        return r67() && r8((a),(['schemaVersion','id','kind','recordId','fileName','contentType','size','sha256','chunkCount','chunkSize','operationId','createdAt','createdByUid','createdByEmail']))
           && a.schemaVersion == 1 && a.id == id
           && a.kind in ['government_permit','sss_remittance','bookkeeper_payment']
-          && r6c(r6w(a),a.kind,a.recordId)
-          && a.chunkSize == 147456 && r68(a.operationId)
+          && r6d(r6x(a),a.kind,a.recordId)
+          && a.chunkSize == 147456 && r69(a.operationId)
           && (r6(a.createdAt)) && (r4(a.createdByUid)) && (r5(a.createdByEmail))
-          && r6v(a,id);
+          && r6w(a,id);
       }
-      allow create: if r6x(rp());
+      allow create: if r6y(rp());
       match /chunks/{chunkId} {
-        allow get: if r66();
+        allow get: if r67();
              
-        function r6y(a) {
+        function r6z(a) {
           let b = r9('owner_record_files',(id));
-          let c = r66() && r8((a),(['schemaVersion','fileId','index','size','sha256','data']))
+          let c = r67() && r8((a),(['schemaVersion','fileId','index','size','sha256','data']))
             && a.schemaVersion == 1 && a.fileId == id
             && a.index is int && a.index>=0 && a.index<15
             && chunkId == (a.index<10 ? '000'+string(a.index) : '00'+string(a.index))
@@ -2556,31 +2575,31 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           return c && a.index<d.chunkCount
             && (r6(d.createdAt));
         }
-        allow create: if r6y(rp());
+        allow create: if r6z(rp());
       }
     }
 
     // Private Staff document vault. These new collections never use the legacy
     // isHQUser() helper or public cashiers/branches/settings as authority.
-    function r6z() { return rx(); }
-    function r70() {
+    function r70() { return rx(); }
+    function r71() {
       return rf() && rr() == 'anonymous';
     }
-    function r71(a) {
+    function r72(a) {
       return a is string && a.matches('^[A-Za-z0-9_-]{1,128}$');
     }
-    function r72(a) { return a in ['valid_id', 'health_card', 'clearance']; }
-    function r73() {
+    function r73(a) { return a in ['valid_id', 'health_card', 'clearance']; }
+    function r74() {
       let a = r9('staff_document_config','current');
       let b = exists(a);
       let c = re(b,a);
       return b && c.enabled == true && c.policyVersion == 2
         && c.brokerEndpoint == 'https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker';
     }
-    function r74(a) {
+    function r75(a) {
       let b = rf() ? request.auth.token.get('email', '') : '';
       
-      let c = r6z();
+      let c = r70();
       let d = !c && rf() && rs() == true && b != '';
       let e = rd(d,b);
       return c || (e.get('active', false) == true
@@ -2589,10 +2608,10 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && e.get('allowedBranches', []) is list
         && e.get('allowedBranches', []).hasAny(['All', a]));
     }
-    function r75() {
+    function r76() {
       let a = rf() ? request.auth.token.get('email', '') : '';
       
-      let b = r6z();
+      let b = r70();
       let c = !b && rf() && rs() == true && a != '';
       let d = rd(c,a);
       return b || (d.get('active', false) == true
@@ -2601,31 +2620,31 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && d.get('allowedBranches', []) is list
         && 'All' in d.get('allowedBranches', []));
     }
-    function r76(a) {
+    function r77(a) {
       let b = rf() ? rm() : '__unauthenticated__';
       let c = r9('staff_document_devices',(b));
-      let d = r70() && exists(c);
+      let d = r71() && exists(c);
       let e = re(d,c);
       return d && (r4(e.uid))
         && e.active == true && e.staffId == a;
     }
-    function r77(a) {
+    function r78(a) {
       let b = r9('staff_private_documents',(a));
-      let c = r75();
+      let c = r76();
       let d = !c && exists(b);
       let e = re(d,b);
-      return c || (d && e.staffId == a && r74(e.branch));
+      return c || (d && e.staffId == a && r75(e.branch));
     }
 
 
-    function r78(a, b, c) {
-      return r73() && r76(a) && r72(b)
+    function r79(a, b, c) {
+      return r74() && r77(a) && r73(b)
         && r8((c),(['staffId', 'branch', 'group', 'uploadId', 'uploadedByUid',
           'storagePath', 'contentType', 'size', 'sha256', 'clearanceType', 'expiresOn', 'status',
           'reviewNote', 'version', 'uploadedAt', 'updatedAt']))
         && c.staffId == a
         && c.branch == rk('staff_document_devices',rm()).branch && c.group == b
-        && r71(c.uploadId) && (r4(c.uploadedByUid))
+        && r72(c.uploadId) && (r4(c.uploadedByUid))
         && c.storagePath == 'staff_private_documents/' + rm() + '/' + a + '/' + b + '/' + c.uploadId + '.jpg'
         && c.contentType == 'image/jpeg' && c.size is int && c.size > 0 && c.size <= 2097152
         && c.sha256 is string && c.sha256.matches('^[a-f0-9]{64}$')
@@ -2637,13 +2656,13 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && c.version is int && c.version > 0
         && (r6(c.uploadedAt)) && (r6(c.updatedAt));
     }
-    function r79(a, b, c, d) {
+    function r7a(a, b, c, d) {
       let e = getAfter(ra('staff_private_documents',(a),'reviews',(d.reviewId))).data;
-      return r74(c.branch) && r72(b)
+      return r75(c.branch) && r73(b)
         && c.staffId == a && c.group == b
         && r7((d),(c)).hasOnly(['status', 'reviewId', 'reviewNote',
           'reviewedByUid', 'reviewedAt', 'updatedAt', 'version'])
-        && d.status in ['approved', 'rejected'] && r71(d.reviewId)
+        && d.status in ['approved', 'rejected'] && r72(d.reviewId)
         && (r2((d.reviewNote),(300)))
         && (d.status != 'rejected' || d.reviewNote.size() >= 3)
         && (r4(d.reviewedByUid)) && (r6(d.reviewedAt))
@@ -2656,20 +2675,20 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
     match /staff_document_config/{id} {
       allow get: if id == 'current';
           
-      function r7a(a) {
-        return id == 'current' && r6z()
+      function r7b(a) {
+        return id == 'current' && r70()
         && r8((a),(['enabled', 'policyVersion', 'brokerEndpoint']))
         && a.enabled is bool && a.policyVersion == 2
         && a.brokerEndpoint == 'https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker';
       }
-      allow create, update: if r7a(rp());
+      allow create, update: if r7b(rp());
     }
     match /staff_document_requests/{uid} {
-      function r7b(a, b) {
+      function r7c(a, b) {
       let c = r9('staff_document_devices',(a));
-      let d = r73() && r70() && rm() == a
+      let d = r74() && r71() && rm() == a
         && r8((b),(['uid', 'staffId', 'deviceId', 'deviceName', 'status', 'requestedAt']))
-        && b.uid == a && r71(b.staffId)
+        && b.uid == a && r72(b.staffId)
         && (r2((b.deviceId),(128)))
         && (r0((b.deviceName),(0),(80)))
         && b.status == 'pending' && (r6(b.requestedAt));
@@ -2678,13 +2697,13 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
       return d && (!e || (f.staffId == b.staffId && f.active == false));
     }
 
-      allow read: if (request.method == 'get' && rf() && request.auth.uid == uid) || r75();
+      allow read: if (request.method == 'get' && rf() && request.auth.uid == uid) || r76();
 
-      allow create: if r7b(uid, rp());
-      function r7c(a,b) {
-        return (r7b(uid, a)
+      allow create: if r7c(uid, rp());
+      function r7d(a,b) {
+        return (r7c(uid, a)
           && b.uid == uid && a.staffId == b.staffId)
-        || (r75()
+        || (r76()
           && r7((a),(b)).hasOnly(['status', 'reviewedAt', 'reviewedByUid', 'reviewNote'])
           && a.status in ['approved', 'rejected']
           && (r6(a.reviewedAt)) && (r4(a.reviewedByUid))
@@ -2693,14 +2712,14 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
             || (rl('staff_document_devices',uid).active == true
               && rl('staff_document_devices',uid).staffId == b.staffId)));
       }
-      allow update: if r7c(rp(),resource == null ? null : rq());
+      allow update: if r7d(rp(),resource == null ? null : rq());
          
     }
     match /staff_document_devices/{uid} {
-      function r7d(a, b) {
-      return r71(a) && r8((b),(['uid', 'staffId', 'branch', 'active',
+      function r7e(a, b) {
+      return r72(a) && r8((b),(['uid', 'staffId', 'branch', 'active',
           'deviceId', 'deviceName', 'approvedAt', 'approvedByUid', 'updatedAt', 'updatedByUid', 'audit']))
-        && b.uid == a && r71(b.staffId)
+        && b.uid == a && r72(b.staffId)
         && (r0((b.branch),(0),(128)))
         && b.active is bool && b.approvedAt is timestamp && b.approvedByUid is string
         && (r6(b.updatedAt)) && (r4(b.updatedByUid))
@@ -2710,11 +2729,11 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         && b.audit.values().hasAny([{'active': b.active, 'actorUid': rm(), 'recordedAt': ro()}]);
     }
 
-      allow read: if (request.method == 'get' && rf() && request.auth.uid == uid) || r75();
+      allow read: if (request.method == 'get' && rf() && request.auth.uid == uid) || r76();
 
-      function r7e(a) {
+      function r7f(a) {
           let b = r9('staff_document_requests',(uid));
-        let c = r75() && r7d(uid, a)
+        let c = r76() && r7e(uid, a)
           && a.active == true && (r6(a.approvedAt))
           && a.audit.size() == 1
           && (r4(a.approvedByUid));
@@ -2724,74 +2743,74 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
           && getAfter(b).data.status == 'approved'
           && rl('staff_private_documents',a.staffId).branch == a.branch;
       }
-      allow create: if r7e(rp());
-      function r7f(a,b) {
-        return r75() && r7d(uid, a)
+      allow create: if r7f(rp());
+      function r7g(a,b) {
+        return r76() && r7e(uid, a)
           && r7((a),(b)).hasOnly(['active', 'updatedAt', 'updatedByUid', 'audit'])
           && a.audit.diff(b.audit).changedKeys().size() == 0
           && a.audit.diff(b.audit).removedKeys().size() == 0
           && a.audit.diff(b.audit).addedKeys().size() == 1;
       }
-      allow update: if r7f(rp(),resource == null ? null : rq());
+      allow update: if r7g(rp(),resource == null ? null : rq());
          
     }
     match /staff_private_documents/{staffId} {
-      allow get: if r76(staffId) || r77(staffId);
-      allow list: if r75();
-      function r7g(a,b) {
-        return r75()
+      allow get: if r77(staffId) || r78(staffId);
+      allow list: if r76();
+      function r7h(a,b) {
+        return r76()
           && r8((a),(['staffId', 'branch', 'version', 'updatedAt', 'updatedByUid']))
-          && a.staffId == staffId && r71(staffId)
+          && a.staffId == staffId && r72(staffId)
           && (r0((a.branch),(0),(128)))
           && a.version == 1 && (r6(a.updatedAt))
           && (r4(a.updatedByUid))
           && (b == null || (a.staffId == b.staffId && a.branch == b.branch));
       }
-      allow create, update: if r7g(rp(),resource == null ? null : rq());
+      allow create, update: if r7h(rp(),resource == null ? null : rq());
          
       match /files/{kind} {
-        allow get, list: if r76(staffId) || r77(staffId);
-        function r7h(a) {
-          return r78(staffId, kind, a)
+        allow get, list: if r77(staffId) || r78(staffId);
+        function r7i(a) {
+          return r79(staffId, kind, a)
             && a.version == 1
             && getAfter(ra('staff_private_documents',(staffId),'versions',(a.uploadId))).data == a;
         }
-        allow create: if r7h(rp());
-        function r7i(a,b) {
-          return (r78(staffId, kind, a)
+        allow create: if r7i(rp());
+        function r7j(a,b) {
+          return (r79(staffId, kind, a)
               && a.version == b.version + 1 && a.uploadId != b.uploadId
               && getAfter(ra('staff_private_documents',(staffId),'versions',(a.uploadId))).data == a)
-            || (r79(staffId, kind, b, a)
+            || (r7a(staffId, kind, b, a)
               && getAfter(ra('staff_private_documents',(staffId),'versions',(b.uploadId))).data == a);
         }
-        allow update: if r7i(rp(),resource == null ? null : rq());
+        allow update: if r7j(rp(),resource == null ? null : rq());
            
       }
       match /versions/{uploadId} {
-        allow read: if r76(staffId) || ((request.method == 'list' || resource != null) && r74(rq().branch));
+        allow read: if r77(staffId) || ((request.method == 'list' || resource != null) && r75(rq().branch));
 
-        function r7j(a) {
-          return r78(staffId, a.group, a)
+        function r7k(a) {
+          return r79(staffId, a.group, a)
             && uploadId == a.uploadId
             && getAfter(ra('staff_private_documents',(staffId),'files',(a.group))).data == a;
         }
-        allow create: if r7j(rp());
-        function r7k(a,b) {
-          return r79(staffId, b.group, b, a)
+        allow create: if r7k(rp());
+        function r7l(a,b) {
+          return r7a(staffId, b.group, b, a)
             && uploadId == b.uploadId
             && getAfter(ra('staff_private_documents',(staffId),'files',(b.group))).data == a;
         }
-        allow update: if r7k(rp(),resource == null ? null : rq());
+        allow update: if r7l(rp(),resource == null ? null : rq());
            
       }
       match /reviews/{reviewId} {
-        allow read: if r76(staffId) || ((request.method == 'list' || resource != null) && r74(rq().branch));
+        allow read: if r77(staffId) || ((request.method == 'list' || resource != null) && r75(rq().branch));
 
-        function r7l(a) {
-          let b = r71(reviewId)
+        function r7m(a) {
+          let b = r72(reviewId)
             && r8((a),(['staffId', 'branch', 'recordVersion', 'group', 'uploadId', 'status', 'note', 'actorUid', 'recordedAt'])) && a.size() == 9
-            && a.staffId == staffId && r74(a.branch)
-            && r72(a.group) && r71(a.uploadId)
+            && a.staffId == staffId && r75(a.branch)
+            && r73(a.group) && r72(a.uploadId)
             && a.status in ['approved', 'rejected']
             && (r2((a.note),(300)))
             && (r4(a.actorUid)) && (r6(a.recordedAt));
@@ -2801,7 +2820,7 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
             && c.branch == a.branch
             && c.uploadId == a.uploadId;
         }
-        allow create: if r7l(rp());
+        allow create: if r7m(rp());
             
       }
     }

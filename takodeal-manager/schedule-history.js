@@ -79,13 +79,84 @@ function snapshotData(input, {legacy = false} = {}) {
     }
     return output;
 }
-export function createScheduleRevision(input, {revisionId, effectiveFrom, effectiveTo, savedAt = new Date(), actor = '', source = 'manager-save', cutover} = {}) {
+function historicalLeaveAudit(snapshot, {review, revisionId, from, to, savedAt, actor, source, today}) {
+    const fail = () => { throw new Error('Historical leave requires a reviewed one-day saved schedule source. No past shift rules were reconstructed.'); };
+    const validId = (value, maximum = 120) => typeof value === 'string' && value.length <= maximum && /^[A-Za-z0-9_-]+$/.test(value);
+    const nameKey = value => String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    if (!review || typeof review !== 'object' || Array.isArray(review) || source !== 'approved-leave' || from !== to || from >= today
+        || !validId(review.staffId) || !validId(review.requestId) || !validId(review.operationId, 80)
+        || typeof review.reason !== 'string' || review.reason.trim().length < 3 || review.reason.trim().length > 1500
+        || typeof actor !== 'string' || !actor.trim() || actor.length > 320
+        || !Array.isArray(review.staffNames) || !review.staffNames.length || review.staffNames.length > 20
+        || review.staffNames.some(name => typeof name !== 'string' || !name.trim() || name.length > 200)
+        || new Set(review.staffNames.map(nameKey)).size !== review.staffNames.length) fail();
+    const staffNames = new Set(review.staffNames.map(nameKey)), isStaffName = name => typeof name === 'string' && staffNames.has(nameKey(name));
+    const basis = review.basis;
+    if (!basis || typeof basis !== 'object' || basis.snapshotDate !== from || !validId(basis.scheduleRevisionId, 100)
+        || basis.scheduleRevisionId === revisionId || typeof basis.scheduleSource !== 'string' || !basis.scheduleSource.trim()
+        || basis.scheduleSource.trim().toLowerCase() === 'unverified' || !basis.scheduleEffectiveFrom || !basis.scheduleEffectiveTo) fail();
+    const basisFrom = scheduleDateKey(basis.scheduleEffectiveFrom), basisTo = scheduleDateKey(basis.scheduleEffectiveTo);
+    if (basisFrom > from || basisTo < from || basisFrom.slice(0, 7) !== from.slice(0, 7) || basisTo.slice(0, 7) !== from.slice(0, 7)
+        || monthKey(basis) !== from.slice(0, 7) || instant(savedAt) < instant(from + 'T00:00:00+08:00')) fail();
+    const original = snapshotData(basis), day = String(Number(from.slice(-2)));
+    if (signature(Object.keys(original.currentSchedule).sort()) !== signature([day])
+        || signature(Object.keys(snapshot.currentSchedule).sort()) !== signature([day])) fail();
+    // Historical leave changes availability only. The real dated source keeps
+    // every shift rule, employee, holiday and other configuration unchanged.
+    for (const key of SNAPSHOT_KEYS.filter(key => !['currentSchedule', 'unavailability'].includes(key))) {
+        if (signature(original[key]) !== signature(snapshot[key])) fail();
+    }
+    const owns = row => row && typeof row === 'object' && row.staffId === review.staffId && row.leaveRequestId === review.requestId;
+    const flags = value => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const oldFlags = flags(original.unavailability?.[from]), newFlags = flags(snapshot.unavailability?.[from]);
+    if ([...Object.entries(oldFlags), ...Object.entries(newFlags)].some(([name, row]) => owns(row) && !isStaffName(name))) fail();
+    if (signature(Object.fromEntries(Object.entries(original.unavailability || {}).filter(([date]) => date !== from)))
+        !== signature(Object.fromEntries(Object.entries(snapshot.unavailability || {}).filter(([date]) => date !== from)))) fail();
+    if (signature(Object.fromEntries(Object.entries(oldFlags).filter(([, row]) => !owns(row))))
+        !== signature(Object.fromEntries(Object.entries(newFlags).filter(([, row]) => !owns(row))))) fail();
+    const before = original.currentSchedule?.[day] || {}, after = snapshot.currentSchedule?.[day] || {};
+    if (Object.keys(before).some(branch => !Object.hasOwn(after, branch))) fail();
+    for (const [branch, next] of Object.entries(after)) {
+        const previous = before[branch] || {scheduled: {}, rest: [], unavailable: [], swaps: {}};
+        if (!before[branch] && !Object.hasOwn(original.branchConfig, branch)) fail();
+        if (!next || typeof next !== 'object' || Array.isArray(next)) fail();
+        const other = row => Object.fromEntries(Object.entries(row).filter(([key]) => !['scheduled', 'rest', 'unavailable', 'swaps'].includes(key)));
+        if (signature(other(previous)) !== signature(other(next))) fail();
+        const oldScheduled = previous.scheduled || {}, newScheduled = next.scheduled || {};
+        if (signature(Object.keys(oldScheduled).sort()) !== signature(Object.keys(newScheduled).sort())) fail();
+        const released = new Set();
+        for (const [shiftId, name] of Object.entries(oldScheduled)) {
+            if (signature(name) === signature(newScheduled[shiftId])) continue;
+            if (!isStaffName(name) || newScheduled[shiftId] !== 'UNFILLED') fail();
+            released.add(shiftId);
+        }
+        const oldRows = previous.unavailable || [], newRows = next.unavailable || [], oldRest = previous.rest || [], newRest = next.rest || [];
+        if (![oldRows, newRows, oldRest, newRest].every(Array.isArray)
+            || signature(oldRows.filter(row => !owns(row))) !== signature(newRows.filter(row => !owns(row)))) fail();
+        const ownedRows = [...oldRows, ...newRows].filter(owns);
+        if (ownedRows.some(row => !isStaffName(row.name)) || oldRest.some(name => !newRest.includes(name) && !isStaffName(name))) fail();
+        const addedRest = newRest.filter(name => !oldRest.includes(name));
+        if (addedRest.some(name => typeof name !== 'string' || !name.trim() || name.length > 200)
+            || addedRest.some(name => !isStaffName(name))) fail();
+        const oldSwaps = previous.swaps || {}, newSwaps = next.swaps || {};
+        if (Object.entries(newSwaps).some(([shiftId, value]) => !Object.hasOwn(oldSwaps, shiftId) || signature(value) !== signature(oldSwaps[shiftId]))
+            || Object.keys(oldSwaps).some(shiftId => !Object.hasOwn(newSwaps, shiftId) && !released.has(shiftId))) fail();
+        if (!ownedRows.length && signature(previous) !== signature(next)) fail();
+    }
+    const amendments = basis.scheduleAmendments || [];
+    if (!Array.isArray(amendments) || amendments.some(row => !validId(row?.id, 100))) fail();
+    return {schemaVersion: 1, workDate: from, recordedAt: instant(savedAt).toISOString(), basisRevisionId: basis.scheduleRevisionId,
+        basisSource: basis.scheduleSource, staffId: review.staffId, requestId: review.requestId, operationId: review.operationId,
+        reason: review.reason.trim(), ...(amendments.length ? {basisAmendmentIds: [...new Set(amendments.map(row => row.id))]} : {})};
+}
+export function createScheduleRevision(input, {revisionId, effectiveFrom, effectiveTo, savedAt = new Date(), actor = '', source = 'manager-save', cutover, historicalLeaveReview} = {}) {
     if (typeof revisionId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(revisionId)) throw new Error('A valid schedule revision ID is required.');
     const legacy = source === 'legacy-capture', snapshot = snapshotData(input, {legacy}), month = monthKey(snapshot);
     const from = scheduleDateKey(effectiveFrom || defaultScheduleEffectiveFrom(snapshot, savedAt));
     const to = scheduleDateKey(effectiveTo || monthEnd(month)), today = scheduleDateKey(savedAt);
     if (!legacy && (from.slice(0, 7) !== month || to.slice(0, 7) !== month || from > to)) throw new Error('The effective dates must belong to the selected schedule month.');
-    if (!legacy && from < today) throw new Error('Schedule history starts with future changes. Past dates cannot be reconstructed from the current shift rules.');
+    const leaveAudit = historicalLeaveReview === undefined ? null : historicalLeaveAudit(snapshot, {review: historicalLeaveReview, revisionId, from, to, savedAt, actor, source, today});
+    if (!legacy && from < today && !leaveAudit) throw new Error('Schedule history starts with future changes. Past dates cannot be reconstructed from the current shift rules.');
     const daySnapshots = {};
     for (let date = from > `${month}-01` ? from : `${month}-01`; date <= to && date.slice(0, 7) === month; date = nextDate(date)) {
         const day = String(Number(date.slice(-2)));
@@ -93,7 +164,8 @@ export function createScheduleRevision(input, {revisionId, effectiveFrom, effect
     }
     const revision = {schemaVersion: 1, kind: 'schedule-revision', month, revisionId, effectiveFrom: from, effectiveTo: to,
         savedAt: instant(savedAt).toISOString(), actor: String(actor || ''), source,
-        payrollHistoryEnforcedFrom: scheduleDateKey(cutover || savedAt), snapshot, daySnapshots};
+        payrollHistoryEnforcedFrom: scheduleDateKey(cutover || savedAt), snapshot, daySnapshots,
+        ...(leaveAudit ? {historicalLeaveReview: leaveAudit} : {})};
     if (new TextEncoder().encode(JSON.stringify(revision)).length > 950000) throw new Error('This schedule month is too large to archive safely. Reduce the schedule size before saving.');
     return revision;
 }

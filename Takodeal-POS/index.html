@@ -349,10 +349,13 @@
 <link rel="stylesheet" href="cashier-theme.css?v=tablet-attendance-stock-20261009-r1">
 <link rel="stylesheet" href="pos-settings.css">
 <link rel="stylesheet" href="cashier-tablet.css?v=tablet-attendance-stock-20261009-r1">
+<link rel="stylesheet" href="cashier-startup.css">
   <link rel="stylesheet" href="attendance-camera.css?v=tablet-attendance-stock-20261009-r1">
 <link rel="stylesheet" href="cancelled-orders.css">
 <link rel="stylesheet" href="stock-count-ui.css">
 <link rel="stylesheet" href="cash-remittance.css?v=20261026">
+<script src="cashier-appearance-boot.js"></script>
+<link rel="stylesheet" href="cashier-appearance.css">
 </head>
 
 <body class="cashier-orange">
@@ -541,10 +544,11 @@
   </script>
 
   <!-- 🔥 PORTRAIT LAYOUT FIX: 'justify-content' is 'flex-start' so it flows naturally, and margin:auto perfectly centers the box! -->
-  <div class="login-overlay" id="loginOverlay" style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.95)), url('logo.jpg') center/cover no-repeat; z-index: 10000; display: flex; flex-direction: column; justify-content: flex-start; align-items: center; padding: 20px; box-sizing: border-box; backdrop-filter: blur(8px); overflow-y: auto;">
+  <div class="login-overlay cashier-login-shell" id="loginOverlay" role="region" aria-label="Cashier sign in">
+    <section class="cashier-welcome-panel" aria-label="Cashier welcome"><p class="cashier-welcome-eyebrow">TAKODEÁL · YOUR BRANCH WORKSPACE</p><h1>Ready for a good shift.</h1><p data-cashier-welcome>A good day starts with a good team.</p><span class="cashier-season-motif" data-cashier-motif aria-hidden="true">✦ · ✦</span><small>Your team. Your orders. One clear workspace.</small></section>
     
     <!-- 🏆 LIVE LEADERBOARD WIDGET (Forced Fixed Position!) -->
-    <div id="loginRankingWidget" style="position: fixed; top: 15px; left: 15px; background: rgba(255, 255, 255, 0.1); padding: 15px 20px; border-radius: 16px; color: white; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(12px); z-index: 30; display: none; min-width: 260px; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
+    <aside class="cashier-login-ranking" aria-label="Daily branch ranking" hidden><details><summary>Today’s branch ranking</summary><div id="loginRankingWidget" style="display:none">
         <div style="font-size: 11px; font-weight: 900; color: #fcd34d; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
             <span style="font-size: 16px; animation: pulse 2s infinite;">🔥</span> Live Daily Ranking
         </div>
@@ -554,17 +558,12 @@
         <div id="loginRankingQuote" style="font-size: 12px; font-style: italic; font-weight: bold; border-top: 1px dashed rgba(255,255,255,0.2); padding-top: 12px; line-height: 1.4;">
             Loading motivation...
         </div>
-    </div>
+    </div></details></aside>
 
     <!-- 🔐 NEW LOGIN BOX (margin:auto perfectly centers it in the flexbox) -->
-    <div style="background: rgba(255, 255, 255, 0.95); padding: 30px 25px; border-radius: 24px; text-align: center; box-shadow: 0 25px 50px rgba(0,0,0,0.5); width: 100%; max-width: 380px; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.2); backdrop-filter: blur(10px); position: relative; z-index: 20; margin: auto;">
+    <div id="cashierLoginCard" class="cashier-login-card" aria-labelledby="cashierLoginHeading">
         
-        <div style="position: relative; display: inline-block; margin-bottom: 15px;">
-            <img src="logo.jpg" alt="Logo" style="width: 80px; height: 80px; border-radius: 20px; object-fit: cover; border: 3px solid #0ea5e9; box-shadow: 0 6px 15px rgba(14, 165, 233, 0.2);">
-        </div>
-
-        <h2 style="margin: 0 0 5px 0; color: #0f172a; font-size: 26px; font-weight: 900; letter-spacing: 1.5px;">TAKODEÁL</h2>
-        <h3 id="loginBranchDisplay" style="margin: 0 0 25px 0; color: #0ea5e9; font-size: 15px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase;">📍 Loading Location...</h3>
+        <header class="cashier-login-brand"><div class="cashier-login-logo"><img src="logo.jpg" alt="TAKODEÁL" width="58" height="58"></div><div class="cashier-login-identity"><h2 id="cashierLoginHeading">TAKODEÁL</h2><p class="cashier-login-subtitle">Cashier workspace</p><h3 id="loginBranchDisplay" aria-live="polite">Select a branch to set up</h3></div></header>
 
         <style>
           /* 🔥 THE FIX: We use a class with !important so the mobile auto-stacker ignores it! */
@@ -603,13 +602,20 @@
             <button class="numpad-btn-action" onclick="window.backspaceCashierPin()">⌫</button>
         </div>
      
-        <button onclick="submitLoginPin()" id="btnSubmitPin" style="width: 100%; padding: 18px; margin-top: 25px; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); color: white; border: none; border-radius: 12px; font-weight: 900; font-size: 16px; cursor: pointer; box-shadow: 0 6px 15px rgba(14, 165, 233, 0.4); transition: transform 0.2s, box-shadow 0.2s;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 8px 20px rgba(14, 165, 233, 0.5)';" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 6px 15px rgba(14, 165, 233, 0.4)';">🔓 Secure Login</button>
+        <button type="button" onclick="submitLoginPin()" id="btnSubmitPin" disabled aria-busy="true">Sign in securely</button>
 
-        <div style="margin-top: 20px; font-size: 13px; color: #475569; cursor: pointer; font-weight: 900; padding: 14px; border: 1px dashed #cbd5e1; border-radius: 10px; background: #f8fafc; transition: 0.2s;" onmouseover="this.style.background='#f1f5f9';" onmouseout="this.style.background='#f8fafc';" onclick="window.manualHardUpdate()">
-            🔄 Check for updates
-        </div>
+        <p id="cashierStartupStatus" class="cashier-startup-status" role="status">Preparing sign-in tools…</p><div class="cashier-login-actions"><button type="button" class="cashier-login-update" onclick="window.manualHardUpdate()">↻ Check for updates</button><div id="ownerAccessBtnContainer">
+    <button type="button" onclick="window.ownerBypassLogin()" disabled data-cashier-startup-lock>
+        Owner Access
+    </button>
+</div></div>
     </div>
   </div>
+
+  <script>
+  // The saved branch is local display data. It never grants device or staff access.
+  (function(){var label=document.getElementById('loginBranchDisplay');try{var saved=localStorage.getItem('takodeal_device_branch');if(label&&typeof saved==='string'&&saved.trim()&&saved.length<=120)label.textContent='📍 '+saved;}catch(error){if(label)label.textContent='Tablet storage unavailable';}window.paintCashierAppearanceText?.();})();
+  </script>
 
   <div class="sidebar" id="mainSidebar">
     <div class="sidebar-header">
@@ -4656,11 +4662,7 @@ window.showMobileOrders = function() {
   </div>
 
 <!-- 🛡️ SECRET OWNER BYPASS BUTTON -->
-<div id="ownerAccessBtnContainer" style="position: fixed; bottom: 15px; right: 15px; z-index: 99999;">
-    <button onclick="window.ownerBypassLogin()" style="background: rgba(15, 23, 42, 0.4); color: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.2); padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: bold; cursor: pointer; transition: all 0.2s ease; backdrop-filter: blur(4px);" onmouseover="this.style.background='rgba(15, 23, 42, 0.9)'; this.style.color='white';" onmouseout="this.style.background='rgba(15, 23, 42, 0.4)'; this.style.color='rgba(255,255,255,0.6)';">
-        🛡️ Owner Access
-    </button>
-</div>
+
 
   <!-- 🗂️ ULTRA TACTILE CATEGORY MODAL -->
   <div class="overlay" id="categoryModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.85); z-index: 100000; justify-content: center; align-items: center; backdrop-filter: blur(8px);">

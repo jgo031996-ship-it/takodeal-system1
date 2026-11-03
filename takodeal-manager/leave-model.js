@@ -24,13 +24,13 @@ export function normalizeLeaveInput(input,{today=leaveToday(),future=true}={}){
  if(future&&dates[0]<today)throw Error('Choose today or a future leave date. Earlier attendance stays on file.');if(reason.length<3||reason.length>1500||!leaveType||leaveType.length>80)throw Error('Enter a short leave type and reason.');
  return {id,startDate:dates[0],endDate:dates.at(-1),reason,leaveType};
 }
-export function proposedLeaveDates(parent,input,today=leaveToday()){
+export function proposedLeaveDates(parent,input,today=leaveToday(),{historical=false}={}){
  const before=activeLeaveDates(parent),future=before.filter(date=>date>=today);
  if(input.kind==='Cancel'){
-  const cancel=input.cancelDates===undefined?future:[...new Set(input.cancelDates.map(leaveDate))].sort();if(!cancel.length||cancel.some(date=>date<today||!future.includes(date)))throw Error('Choose current or future dates from this approved leave.');return {before,after:before.filter(date=>!cancel.includes(date)),removed:cancel,added:[]};
+  const eligible=historical?before:future,cancel=input.cancelDates===undefined?eligible:[...new Set(input.cancelDates.map(leaveDate))].sort();if(!cancel.length||cancel.some(date=>!eligible.includes(date)))throw Error(historical?'Choose dates from this approved leave.':'Choose current or future dates from this approved leave.');return {before,after:before.filter(date=>!cancel.includes(date)),removed:cancel,added:[]};
  }
- if(input.kind!=='Dates')throw Error('Choose cancellation or a date change.');const dates=leaveDates(input.startDate,input.endDate);if(dates[0]<today)throw Error('New leave dates must start today or later. Earlier dates stay on file.');
- const after=[...new Set([...before.filter(date=>date<today),...dates])].sort(),removed=before.filter(date=>!after.includes(date)),added=after.filter(date=>!before.includes(date));if(!removed.length&&!added.length)throw Error('The proposed dates are unchanged.');return {before,after,removed,added};
+ if(input.kind!=='Dates')throw Error('Choose cancellation or a date change.');const dates=leaveDates(input.startDate,input.endDate);if(!historical&&dates[0]<today)throw Error('New leave dates must start today or later. Earlier dates stay on file.');
+ const after=[...new Set([...(historical?[]:before.filter(date=>date<today)),...dates])].sort(),removed=before.filter(date=>!after.includes(date)),added=after.filter(date=>!before.includes(date));if(!removed.length&&!added.length)throw Error('The proposed dates are unchanged.');return {before,after,removed,added};
 }
 export function describeLeaveDates(dates){const groups=[];for(const date of [...new Set(dates)].sort()){const last=groups.at(-1),previous=last?.at(-1),next=previous&&new Date(previous+'T00:00:00Z');if(next)next.setUTCDate(next.getUTCDate()+1);if(last&&next.toISOString().slice(0,10)===date)last.push(date);else groups.push([date]);}return groups.map(group=>group.length===1?group[0]:group[0]+' to '+group.at(-1)).join(' · ')||'No active dates';}
 

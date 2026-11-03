@@ -121,9 +121,9 @@ test('forged output/proof cannot change type, method, order, inclusivity, litera
  }
  const proof=structuredClone(result.proof);proof.sites[0].bounds[0]='1';assert.throws(()=>assertBoundedTextSharingEquivalent(source,result.source,proof),/bound/);
 });
-test('frozen app policy gives44 two-bound sites and60 with explicitly enabled single bounds',()=>{
+test('frozen app policy gives44 two-bound sites and61 with explicitly enabled single bounds',()=>{
  const source=fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),ranges=shareBoundedText(source),all=shareBoundedText(source,{includeSingleBounds:true});
- assert.equal(ranges.proof.sites.length,44);assert.equal(ranges.proof.helpers.length,2);assert.equal(all.proof.sites.length,60);assert.equal(all.proof.helpers.length,4);
+ assert.equal(ranges.proof.sites.length,44);assert.equal(ranges.proof.helpers.length,2);assert.equal(all.proof.sites.length,61);assert.equal(all.proof.helpers.length,4);
  assert.deepEqual(ranges.statistics.byKind,{exclusiveRange:31,inclusiveRange:13,inclusiveMaximum:0,exclusiveMinimum:0});assertRequestIndependent(source,ranges);assertRequestIndependent(source,all);
  assert.equal(fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),source);
 });

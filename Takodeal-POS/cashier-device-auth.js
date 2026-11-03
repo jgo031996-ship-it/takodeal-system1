@@ -33,7 +33,10 @@ export function createCashierDeviceAuthContext(w,{primaryAuth,primaryDb,firebase
    if(raw!==null){try{marker=JSON.parse(raw);}catch{throw Error('This tablet’s saved secure setup needs HQ review. Keep its app data and contact the Owner.');}
     if(!object(marker)||Object.keys(marker).sort().join('|')!=='appName|branch|deviceId|kind|version'||marker.version!==1||marker.kind!=='isolated'||marker.appName!==CASHIER_DEVICE_APP_NAME||marker.branch!==device.branch||marker.deviceId!==device.deviceId)throw Error('This tablet’s saved secure setup does not match this branch and device. Ask the Owner to review it.');
    }
-   if(!marker&&(!primaryUser||primaryUser.isAnonymous===true))return {auth:primaryAuth,deviceApi:adapter(primaryAuth,primaryDb),kind:'default'};
+   // Retain an existing anonymous tablet identity. New installations use the
+   // named device app even before Google signs in, so registration and every
+   // protected feature keep the same UID after Google setup or an app restart.
+   if(!marker&&primaryUser?.isAnonymous===true)return {auth:primaryAuth,deviceApi:adapter(primaryAuth,primaryDb),kind:'default'};
    if(!firebaseConfig?.projectId||!firebaseConfig?.appId||!firebaseConfig?.apiKey||![initializeApp,getApps,getAuth,getFirestore].every(value=>typeof value==='function'))throw Error('The separate Cashier device setup is unavailable. Ask HQ to update this app. Your Google account remains signed in.');
    const apps=getApps();if(!Array.isArray(apps))throw Error(failure);const matches=apps.filter(app=>app?.name===CASHIER_DEVICE_APP_NAME);if(matches.length>1)throw Error('The separate Cashier device setup needs HQ review.');
    let app=matches[0];if(app&&['projectId','appId','apiKey','authDomain'].some(field=>app.options?.[field]!==firebaseConfig[field]))throw Error('The separate Cashier device setup belongs to a different project. Ask HQ to review it.');

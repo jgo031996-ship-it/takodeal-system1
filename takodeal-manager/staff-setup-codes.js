@@ -130,7 +130,7 @@ export function installStaffSetupCodes(api=window,d=document,{request=createSetu
         }catch(error){if(token===policyEpoch&&key===actorKey(api)){if(error.status===409){pendingPolicy=null;await loadPolicy();}else text('staffSetupPolicyStatus',error.message||'No setup requirement change was confirmed.');}}
         finally{if(token===policyEpoch&&key===actorKey(api)){policyBusy=false;policyControls();}}
     }
-    async function routeDeviceChange(deviceId,action,legacyAction){
+    async function routeDeviceChange(deviceId,action,legacyAction,confirmProtected=async()=>true){
         if(!['block','unblock','delete'].includes(action))throw Error('Unsupported device action.');
         const key=actorKey(api),pendingKey=JSON.stringify([key,deviceId,action]);
         // A confirmed delete can lose its HTTP response after removing the
@@ -145,6 +145,8 @@ export function installStaffSetupCodes(api=window,d=document,{request=createSetu
         const data=snap.data(),protectedStaff=data.setupVersion===1||typeof data.setupUid==='string'&&!!data.setupUid;
         if(!protectedStaff)return legacyAction();
         if(data.appType!=='Staff')throw Error('The protected device record needs HQ review.');
+        if(!await confirmProtected())return {cancelled:true};
+        if(actorKey(api)!==key)throw Error('Your account changed. Reopen the device list.');
         const operation={deviceId,action,operationId:operationID(cryptoAPI)};devicePending.set(pendingKey,operation);
         try{const result=await request('device-action',operation);if(actorKey(api)!==key)throw Error('Your account changed. Refresh the device list.');devicePending.delete(pendingKey);return result;}
         catch(error){if(error.status===409){devicePending.delete(pendingKey);if(actorKey(api)===key)api.loadDeviceFleet?.();}throw error;}

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {scheduleDateKey,monthKey,defaultScheduleEffectiveFrom,createScheduleRevision,resolveScheduleForDate,assembleScheduleHistory,createScheduleHistoryStore} from '../takodeal-manager/schedule-history.js';
+import {leavePerson,projectLeaveDay} from '../takodeal-manager/leave-model.js';
 
 const now = new Date('2026-10-05T18:00:00Z'); // October 6 in the Philippines.
 const copy = value => structuredClone(value);
@@ -143,4 +144,86 @@ test('old-client changes are recaptured from today while previously archived rul
     await app.store.captureCurrent();const history=await app.store.loadRange('2026-10-06','2026-10-07');
     assert.equal(resolveScheduleForDate(history,'2026-10-06').branchConfig.Maa[0].startTime,'09:00');assert.equal(resolveScheduleForDate(history,'2026-10-07').branchConfig.Maa[0].startTime,'12:00');
     assert.equal(app.documents.get(`settings/schedule_revision_${first.latestRevisionId}`).snapshot.branchConfig.Maa[0].startTime,'09:00');
+});
+
+function historicalLeaveFixture() {
+    const workDate='2026-10-01',original=createScheduleRevision(schedule(),{revisionId:'dated-source',effectiveFrom:workDate,savedAt:'2026-10-01T00:00:00Z'});
+    const basis=resolveScheduleForDate({month:'2026-10',revisions:[original]},workDate),person=leavePerson({cashierName:'Ana',branch:'Maa',pin:'0420'},'staff_ana');
+    const projected=projectLeaveDay(basis,workDate,{person,requestId:'leave-request'}).snapshot;
+    const options={revisionId:'late-leave-review',effectiveFrom:workDate,effectiveTo:workDate,savedAt:now,actor:'owner@example.test',source:'approved-leave',historicalLeaveReview:{basis,staffId:'staff_ana',staffNames:['Ana'],requestId:'leave-request',operationId:'late-operation',reason:'Reviewed the delayed leave request'}};
+    return {workDate,original,basis,person,projected,options};
+}
+
+test('a one-day historical leave review records the real approval time and keeps the dated source immutable',()=>{
+    const f=historicalLeaveFixture(),before=copy(f.original),saved=createScheduleRevision(f.projected,f.options);
+    assert.equal(saved.savedAt,now.toISOString());assert.equal(saved.effectiveFrom,f.workDate);assert.equal(saved.effectiveTo,f.workDate);
+    assert.deepEqual(Object.keys(saved.daySnapshots),[f.workDate]);assert.deepEqual(saved.snapshot.branchConfig,f.basis.branchConfig);
+    assert.equal(saved.snapshot.currentSchedule[1].Maa.scheduled.morning,'UNFILLED');assert.deepEqual(f.original,before);
+    assert.deepEqual(saved.historicalLeaveReview,{schemaVersion:1,workDate:f.workDate,recordedAt:now.toISOString(),basisRevisionId:'dated-source',basisSource:'manager-save',staffId:'staff_ana',requestId:'leave-request',operationId:'late-operation',reason:'Reviewed the delayed leave request'});
+    f.options.historicalLeaveReview.reason='Changed caller note';f.projected.branchConfig.Maa[0].startTime='12:00';
+    assert.equal(saved.historicalLeaveReview.reason,'Reviewed the delayed leave request');assert.equal(saved.snapshot.branchConfig.Maa[0].startTime,'09:00');
+});
+
+test('the historical option cannot enable a normal save, broad date range, fake current source or missing audit identity',()=>{
+    for(const mutate of [
+        f=>{delete f.options.historicalLeaveReview;},f=>{f.options.source='manager-save';},f=>{f.options.source='legacy-capture';},
+        f=>{f.options.effectiveTo='2026-10-02';},f=>{f.options.actor='';},f=>{f.options.historicalLeaveReview.reason='ok';},
+        f=>{f.options.historicalLeaveReview.staffId='../staff';},f=>{f.options.historicalLeaveReview.operationId='';},
+        f=>{delete f.options.historicalLeaveReview.staffNames;},f=>{f.options.historicalLeaveReview.staffNames=[];},
+        f=>{f.options.historicalLeaveReview.staffNames=['Ana',' ANA '];},f=>{f.options.historicalLeaveReview.staffNames=['x'.repeat(201)];},
+        f=>{f.options.historicalLeaveReview.basis.scheduleSource='unverified';},f=>{f.options.historicalLeaveReview.basis.scheduleRevisionId='';},
+        f=>{f.options.historicalLeaveReview.basis.snapshotDate='2026-10-02';},f=>{f.options.historicalLeaveReview.basis.scheduleEffectiveFrom='2026-10-02';},
+        f=>{f.options.historicalLeaveReview.basis.scheduleEffectiveTo='2026-09-30';},f=>{f.options.savedAt='2026-09-30T00:00:00Z';}
+    ]){const f=historicalLeaveFixture();mutate(f);assert.throws(()=>createScheduleRevision(f.projected,f.options),/Past dates|Historical leave|selected schedule month/);}
+});
+
+test('historical leave never substitutes edited shift rules, employee membership or holiday configuration',()=>{
+    for(const mutate of [f=>{f.projected.branchConfig.Maa[0].startTime='10:00';},f=>{f.projected.employees.push({name:'New Person',branch:'Maa'});},f=>{f.projected.holidays['2026-10-01']='Regular';},f=>{f.projected.currentMonth=9;}]){
+        const f=historicalLeaveFixture();mutate(f);assert.throws(()=>createScheduleRevision(f.projected,f.options),/Historical leave|selected schedule month/);
+    }
+});
+
+test('historical leave guards preserve other staff flags and prohibit new assignments or unrelated swap changes',()=>{
+    for(const mutate of [
+        f=>{f.projected.currentSchedule[1].Maa.scheduled.morning='Bea';},
+        f=>{f.projected.currentSchedule[1].Maa.scheduled.added='Someone Else';},
+        f=>{f.projected.currentSchedule[1].Maa.unavailable.push({name:'Bea',status:'Leave',staffId:'other',leaveRequestId:'other'});},
+        f=>{f.projected.unavailability[f.workDate].Bea={status:'Leave',staffId:'other',leaveRequestId:'other'};},
+        f=>{f.projected.currentSchedule[1].Maa.swaps.morning='Different swap';},
+        f=>{f.projected.currentSchedule[2]={Maa:{scheduled:{morning:'Someone Else'},rest:[],unavailable:[],swaps:{}}};},
+        f=>{f.projected.unavailability['2026-10-02']={Ana:{status:'Leave',staffId:'staff_ana',leaveRequestId:'leave-request'}};},
+        f=>{f.projected.currentSchedule[1].Unknown={scheduled:{},rest:[],unavailable:[],swaps:{}};}
+    ]){const f=historicalLeaveFixture();mutate(f);assert.throws(()=>createScheduleRevision(f.projected,f.options),/Historical leave/);}
+});
+
+test('a reviewed historical cancellation releases only the request-linked leave and retains its earlier approval revision',()=>{
+    const f=historicalLeaveFixture(),approved=createScheduleRevision(f.projected,f.options),basis=resolveScheduleForDate({month:'2026-10',revisions:[f.original,approved]},f.workDate);
+    const cancelled=projectLeaveDay(basis,f.workDate,{person:f.person,requestId:'leave-request',activate:false}).snapshot;
+    const saved=createScheduleRevision(cancelled,{...f.options,revisionId:'late-leave-cancel',historicalLeaveReview:{...f.options.historicalLeaveReview,basis,operationId:'cancel-operation',reason:'Reviewed the corrected leave dates'}});
+    assert.deepEqual(saved.snapshot.currentSchedule[1].Maa.rest,['Bea','Ana']);assert.deepEqual(saved.snapshot.currentSchedule[1].Maa.unavailable,[]);
+    assert.equal(approved.snapshot.currentSchedule[1].Maa.unavailable[0].staffId,'staff_ana');assert.equal(saved.historicalLeaveReview.basisRevisionId,'late-leave-review');
+});
+
+test('historical leave keeps previously applied amendment rules and their provenance rather than today’s editor rules',()=>{
+    const f=historicalLeaveFixture();f.basis.branchConfig.Maa[0].startTime='10:00';f.basis.scheduleAmendments=[{id:'earlier-amendment'}];
+    f.projected=projectLeaveDay(f.basis,f.workDate,{person:f.person,requestId:'leave-request'}).snapshot;
+    const saved=createScheduleRevision(f.projected,f.options);assert.equal(saved.snapshot.branchConfig.Maa[0].startTime,'10:00');assert.deepEqual(saved.historicalLeaveReview.basisAmendmentIds,['earlier-amendment']);
+});
+
+test('historical leave cannot release another staff member’s shift or remove their standby entry beside its own leave marker',()=>{
+    for(const kind of ['assignment','standby','owned-marker']){
+        const f=historicalLeaveFixture();
+        if(kind==='assignment'){f.basis.currentSchedule[1].Maa.scheduled.other='Bea';f.projected.currentSchedule[1].Maa.scheduled.other='UNFILLED';}
+        if(kind==='standby')f.projected.currentSchedule[1].Maa.rest=[];
+        if(kind==='owned-marker')f.projected.currentSchedule[1].Maa.unavailable[0].name='Bea';
+        assert.throws(()=>createScheduleRevision(f.projected,f.options),/Historical leave/);
+    }
+});
+
+test('historical leave accepts a verified former nickname alongside the staff’s current full name',()=>{
+    const f=historicalLeaveFixture();f.options.historicalLeaveReview.staffNames=['Ana','Ana Example'];
+    const person=leavePerson({cashierName:'Ana Example',scheduleNickname:'Ana',branch:'Maa',pin:'0420'},'staff_ana');
+    f.projected=projectLeaveDay(f.basis,f.workDate,{person,requestId:'leave-request'}).snapshot;
+    const saved=createScheduleRevision(f.projected,f.options);assert.equal(saved.snapshot.currentSchedule[1].Maa.scheduled.morning,'UNFILLED');assert.equal(saved.snapshot.currentSchedule[1].Maa.unavailable[0].name,'Ana Example');
+    assert.deepEqual(saved.snapshot.currentSchedule[1].Maa.rest,['Bea']);
 });

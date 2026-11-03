@@ -7,10 +7,10 @@ import {createStaffLeaveService} from '../takodeal-manager/leave-request-actions
 import {leavePerson,projectLeaveDay,leaveUnavailable,leaveDates,leaveStatus} from '../takodeal-manager/leave-model.js';
 const now=new Date('2030-01-18T03:00:00Z'),branch='Branch One',relief='Branch Two',name='Sample Person',staffId='sample-person',pin='0420',copy=value=>structuredClone(value);
 function schedule(){return {currentYear:2030,currentMonth:1,branchConfig:{[branch]:[{id:'m',name:'Morning',startTime:'09:00',endTime:'17:30',active:true}],[relief]:[{id:'b',name:'Kitchen',startTime:'10:00',endTime:'18:30',active:true}]},employees:[{name,branch},{name:'Other Person',branch:relief}],unavailability:{},holidays:{},currentSchedule:Object.fromEntries(Array.from({length:31},(_,i)=>[i+1,{[branch]:{scheduled:{m:name},rest:[],unavailable:[],swaps:{}},[relief]:{scheduled:{b:'Other Person'},rest:[],unavailable:[],swaps:{}}}]))};}
-function fixture(){const h=firestoreHarness();h.api.getDocFromServer=async reference=>({id:reference.id,exists:()=>h.docs.has(reference.path),data:()=>copy(h.get(reference.path))});h.api.auth={currentUser:{uid:'reviewer',email:'reviewer@example.test'}};h.api.sessionUser={uid:'reviewer',email:'reviewer@example.test',cashierName:'Approved Reviewer',permissions:['inbox','schedule'],allowedBranches:['All'],isOwner:true,isFranchisee:false};h.api.isBranchAllowed=()=>true;
+function fixture({at=now}={}){let clock=new Date(at);const h=firestoreHarness();h.api.serverTimestamp=()=>clock.toISOString();h.api.getDocFromServer=async reference=>({id:reference.id,exists:()=>h.docs.has(reference.path),data:()=>copy(h.get(reference.path))});h.api.auth={currentUser:{uid:'reviewer',email:'reviewer@example.test'}};h.api.sessionUser={uid:'reviewer',email:'reviewer@example.test',cashierName:'Approved Reviewer',permissions:['inbox','schedule'],allowedBranches:['All'],isOwner:true,isFranchisee:false};h.api.isBranchAllowed=()=>true;
  h.put('cashiers/'+staffId,{cashierName:name,branch,pin,status:'Active'});h.put('cashiers/other',{cashierName:'Other Person',branch:relief,pin:'5555',status:'Active'});
  const base=createScheduleRevision(schedule(),{revisionId:'original',savedAt:'2030-01-01T01:00:00Z',effectiveFrom:'2030-01-01',cutover:'2030-01-01'});base.sequence=1;h.put('settings/schedule_revision_original',base);h.put('settings/schedule_month_2030_01',{schemaVersion:1,kind:'schedule-month',month:'2030-01',revisionIds:['original'],latestRevisionId:'original',payrollHistoryEnforcedFrom:'2030-01-01'});h.put('settings/global_schedule',{...copy(base.snapshot),scheduleRevisionId:'original',scheduleEffectiveFrom:'2030-01-01',payrollHistoryEnforcedFrom:'2030-01-01'});h.put('settings/schedule_history_policy',{schemaVersion:1,payrollHistoryEnforcedFrom:'2030-01-01'});
- const manager=createLeaveScheduleService(h.api,{now:()=>now}),staff=createStaffLeaveService(h.api,{getIdentity:()=>({staffId,staffName:name}),now:()=>now}),store=createScheduleHistoryStore(h.api,{now:()=>now});return {...h,manager,staff,store,base,async submit(id='leave-one',startDate='2030-01-21',endDate='2030-01-23'){return staff.submit({id,startDate,endDate,reason:'Family appointment',leaveType:'Leave',pin});},async approve(id='leave-one',operationId='review-one'){return manager.review({requestId:id,action:'Approved',reply:'Approved dates confirmed',operationId});}};
+ const currentTime=()=>new Date(clock),manager=createLeaveScheduleService(h.api,{now:currentTime}),staff=createStaffLeaveService(h.api,{getIdentity:()=>({staffId,staffName:name}),now:currentTime}),store=createScheduleHistoryStore(h.api,{now:currentTime});return {...h,manager,staff,store,base,setNow(value){clock=new Date(value);},async submit(id='leave-one',startDate='2030-01-21',endDate='2030-01-23'){return staff.submit({id,startDate,endDate,reason:'Family appointment',leaveType:'Leave',pin});},async approve(id='leave-one',operationId='review-one',options={}){return manager.review({requestId:id,action:'Approved',reply:'Approved dates confirmed',operationId,...options});}};
 }
 test('date validation and status normalization produce readable request-linked leave markers',()=>{assert.throws(()=>leaveDates('2030-02-30','2030-03-01'),/valid/);assert.throws(()=>leaveDates('2030-01-23','2030-01-21'),/End date/);assert.throws(()=>leaveDates('2030-01-01','2030-05-01'),/93/);assert.deepEqual(leaveUnavailable(name,{status:'Leave',leaveRequestId:'one',staffId}),{name,status:'Leave',leaveRequestId:'one',staffId});assert.equal(leaveStatus('Day Off'),'Day Off');});
 test('approval commits request, provenance and dated schedule together while retaining original assignments and paid/punch documents',async()=>{const h=fixture();h.put('attendance_logs/earlier',{staffId,staffName:name,branch,type:'TIME IN',timestamp:'2030-01-10T09:00:00+08:00'});h.put('payroll_records/earlier',{staffName:name,startDate:'2030-01-01',endDate:'2030-01-15',frozenData:{hours:80,net:4500}});await h.submit();const originals=copy(h.base),paid=copy(h.get('payroll_records/earlier')),punch=copy(h.get('attendance_logs/earlier'));const result=await h.approve();assert.equal(result.status,'Approved');assert.deepEqual(result.changedDates,['2030-01-21','2030-01-22','2030-01-23']);assert.deepEqual(h.get('settings/schedule_revision_original'),originals);assert.deepEqual(h.get('payroll_records/earlier'),paid);assert.deepEqual(h.get('attendance_logs/earlier'),punch);
@@ -30,3 +30,151 @@ test('lost acknowledgement and repeated management transitions do not duplicate 
 test('existing approved requests require explicit future sync and unique profile identity; past leave is not reconstructed',async()=>{const h=fixture();h.put('staff_requests/legacy-leave',{type:'Leave',staffName:name,startDate:'2030-01-17',endDate:'2030-01-21',reason:'Previously approved',status:'Approved'});const head=copy(h.get('settings/global_schedule'));assert.equal(head.currentSchedule[21][branch].scheduled.m,name);await h.manager.sync({requestId:'legacy-leave',reply:'Reviewed original approval',operationId:'legacy-sync'});const row=h.get('staff_requests/legacy-leave');assert.equal(row.staffId,staffId);assert.equal(row.branch,branch);assert.deepEqual(row.leaveScheduleSync.skippedHistoricalDates,['2030-01-17']);const history=await h.store.loadRange('2030-01-17','2030-01-21');assert.equal(resolveScheduleForDate(history,'2030-01-17').currentSchedule[17][branch].scheduled.m,name);assert.equal(resolveScheduleForDate(history,'2030-01-21').currentSchedule[21][branch].unavailable[0].leaveRequestId,'legacy-leave');
  const duplicate=fixture();duplicate.put('cashiers/duplicate',{cashierName:name,branch,pin:'9999',status:'Active'});duplicate.put('staff_requests/legacy',{type:'Leave',staffName:name,startDate:'2030-01-21',endDate:'2030-01-21',status:'Approved'});await assert.rejects(duplicate.manager.sync({requestId:'legacy',operationId:'duplicate-sync'}),/duplicated/);});
 test('PIN-verified staff may withdraw pending requests or request changes, but never approve or write schedule',async()=>{const h=fixture();await h.submit();const head=copy(h.get('settings/global_schedule'));await assert.rejects(h.staff.withdraw({requestId:'leave-one',pin:'wrong'}),/correct staff PIN/);await h.staff.withdraw({requestId:'leave-one',pin});assert.equal(h.get('staff_requests/leave-one').status,'Withdrawn');assert.deepEqual(h.get('settings/global_schedule'),head);await h.submit('leave-two');await h.approve('leave-two','review-two');const approved=copy(h.get('settings/global_schedule'));await h.staff.requestChange({id:'staff-cancel',requestId:'leave-two',kind:'Cancel',reason:'Cancel my leave',pin});assert.equal(h.get('staff_requests/staff-cancel').status,'Pending');assert.equal(h.get('staff_requests/leave-two').status,'Approved');assert.deepEqual(h.get('settings/global_schedule'),approved);await h.staff.withdraw({requestId:'staff-cancel',pin});assert.equal(h.get('staff_requests/leave-two').pendingLeaveChangeId,null);assert.deepEqual(h.get('settings/global_schedule'),approved);});
+
+test('a delayed initial leave approval requires explicit historical confirmation and a review note',async()=>{
+ for(const options of [{},{confirmHistorical:true,reply:''},{confirmHistorical:true,reply:'ok'}]){
+  const h=fixture();await h.submit();h.setNow('2030-01-24T03:00:00Z');const before=copy([...h.docs]);
+  await assert.rejects(h.approve('leave-one','late-review',options),/confirm|historical|earlier|reason|note/i);assert.deepEqual([...h.docs],before);
+ }
+});
+
+test('a late pending leave creates dated corrections with the real review time and preserves original work and payment documents',async()=>{
+ const h=fixture();await h.submit();const originalRequest=copy(h.get('staff_requests/leave-one')),originalRevision=copy(h.get('settings/schedule_revision_original'));
+ h.put('attendance_logs/unrelated',{staffId,staffName:name,branch,type:'TIME IN',timestamp:'2030-01-17T09:00:00+08:00'});
+ h.put('payroll_records/paid-earlier',{staffId,staffName:name,startDate:'2030-01-01',endDate:'2030-01-15',frozenData:{hours:80,net:4500}});
+ const punch=copy(h.get('attendance_logs/unrelated')),paid=copy(h.get('payroll_records/paid-earlier'));h.setNow('2030-01-24T03:00:00Z');
+ const result=await h.approve('leave-one','late-initial',{confirmHistorical:true,reply:'Reviewed the delayed request and actual leave dates'});
+ assert.deepEqual(result.changedDates,['2030-01-21','2030-01-22','2030-01-23']);assert.equal(result.status,'Approved');
+ const saved=h.get('staff_requests/leave-one');assert.deepEqual(saved.activeLeaveDates,['2030-01-21','2030-01-22','2030-01-23']);assert.equal(saved.leaveState,'Completed');assert.equal(saved.processedAt,'2030-01-24T03:00:00.000Z');assert.equal(saved.timestamp,originalRequest.timestamp);assert.equal(saved.reason,originalRequest.reason);
+ assert.equal(saved.leaveActions.at(-1).at,'2030-01-24T03:00:00.000Z');assert.deepEqual(h.get('settings/schedule_revision_original'),originalRevision);assert.deepEqual(h.get('attendance_logs/unrelated'),punch);assert.deepEqual(h.get('payroll_records/paid-earlier'),paid);
+ const history=await h.store.loadRange('2030-01-20','2030-01-24');assert.equal(resolveScheduleForDate(history,'2030-01-20').currentSchedule[20][branch].scheduled.m,name);
+ for(const date of result.changedDates){const day=Number(date.slice(-2)),view=resolveScheduleForDate(history,date);assert.equal(view.currentSchedule[day][branch].scheduled.m,'UNFILLED');assert.equal(view.currentSchedule[day][branch].unavailable[0].leaveRequestId,'leave-one');const revision=h.get('settings/schedule_revision_'+view.scheduleRevisionId);assert.equal(revision.savedAt,'2030-01-24T03:00:00.000Z');assert.equal(revision.effectiveFrom,date);assert.equal(revision.effectiveTo,date);}
+});
+
+test('a date change requested before the dates start remains approvable when management reviews it late',async()=>{
+ const h=fixture();await h.submit('leave-one','2030-01-23','2030-01-25');await h.approve();const firstApproval=copy(h.get('staff_requests/leave-one').originalLeaveApproval);
+ h.setNow('2030-01-20T03:00:00Z');await h.staff.requestChange({id:'delayed-change',requestId:'leave-one',kind:'Dates',startDate:'2030-01-22',endDate:'2030-01-24',reason:'Correct the wrong dates originally selected',pin});
+ const proposed=copy(h.get('staff_requests/delayed-change'));h.setNow('2030-01-23T03:00:00Z');
+ const result=await h.manager.review({requestId:'delayed-change',action:'Approved',operationId:'delayed-date-review',confirmHistorical:true,reply:'Checked and approved the corrected leave dates'});
+ const parent=h.get('staff_requests/leave-one');assert.deepEqual(parent.activeLeaveDates,proposed.requestedActiveDates);assert.deepEqual(parent.activeLeaveDates,['2030-01-22','2030-01-23','2030-01-24']);assert.deepEqual(parent.originalLeaveApproval,firstApproval);assert.equal(parent.pendingLeaveChangeId,null);assert.equal(h.get('staff_requests/delayed-change').status,'Approved');assert.equal(h.get('staff_requests/delayed-change').timestamp,proposed.timestamp);assert.ok(result.changedDates.includes('2030-01-22'));assert.ok(result.changedDates.includes('2030-01-25'));
+ const history=await h.store.loadRange('2030-01-22','2030-01-25');assert.equal(resolveScheduleForDate(history,'2030-01-22').currentSchedule[22][branch].unavailable[0].leaveRequestId,'leave-one');assert.deepEqual(resolveScheduleForDate(history,'2030-01-25').currentSchedule[25][branch].rest,[name]);
+});
+
+test('late date-change review retains the parent dates that were already historical when staff submitted the change',async()=>{
+ const h=fixture();await h.submit('leave-one','2030-01-19','2030-01-24');await h.approve();h.setNow('2030-01-21T03:00:00Z');
+ await h.staff.requestChange({id:'keep-earlier-dates',requestId:'leave-one',kind:'Dates',startDate:'2030-01-23',endDate:'2030-01-24',reason:'Only amend the remaining approved dates',pin});
+ assert.deepEqual(h.get('staff_requests/keep-earlier-dates').requestedActiveDates,['2030-01-19','2030-01-20','2030-01-23','2030-01-24']);
+ const earlierClaims=copy(h.get('settings/schedule_leave_staff_'+staffId).dates);h.setNow('2030-01-25T03:00:00Z');
+ await h.manager.review({requestId:'keep-earlier-dates',action:'Approved',operationId:'keep-earlier-review',confirmHistorical:true,reply:'Reviewed the change against the original submission date'});
+ const saved=h.get('staff_requests/leave-one');assert.deepEqual(saved.activeLeaveDates,['2030-01-19','2030-01-20','2030-01-23','2030-01-24']);assert.equal(saved.leaveState,'Completed');for(const date of ['2030-01-19','2030-01-20'])assert.deepEqual(h.get('settings/schedule_leave_staff_'+staffId).dates[date],earlierClaims[date]);
+ const history=await h.store.loadRange('2030-01-19','2030-01-24');for(const date of ['2030-01-19','2030-01-20'])assert.equal(resolveScheduleForDate(history,date).currentSchedule[Number(date.slice(-2))][branch].unavailable[0].leaveRequestId,'leave-one');
+});
+
+test('a cancellation requested on time can be reviewed after its selected date without canceling other dates',async()=>{
+ const h=fixture();await h.submit();await h.approve();h.setNow('2030-01-20T03:00:00Z');await h.staff.requestChange({id:'delayed-cancel',requestId:'leave-one',kind:'Cancel',cancelDates:['2030-01-21'],reason:'No leave needed on this date',pin});h.setNow('2030-01-24T03:00:00Z');
+ await h.manager.review({requestId:'delayed-cancel',action:'Approved',operationId:'delayed-cancel-review',confirmHistorical:true,reply:'Reviewed the delayed cancellation request'});
+ assert.deepEqual(h.get('staff_requests/leave-one').activeLeaveDates,['2030-01-22','2030-01-23']);assert.equal(h.get('staff_requests/leave-one').leaveState,'Completed');assert.equal(h.get('settings/schedule_leave_staff_'+staffId).dates['2030-01-21'],undefined);
+ const history=await h.store.loadRange('2030-01-21','2030-01-23');assert.deepEqual(resolveScheduleForDate(history,'2030-01-21').currentSchedule[21][branch].rest,[name]);assert.equal(resolveScheduleForDate(history,'2030-01-22').currentSchedule[22][branch].unavailable[0].leaveRequestId,'leave-one');
+});
+
+test('late approvals cannot replace a historical recorded shift or an affected paid cutoff',async()=>{
+ for(const mode of ['punch-id','punch-alias','paid']){
+  const h=fixture();await h.submit();h.setNow('2030-01-24T03:00:00Z');
+  if(mode==='paid')h.put('payroll_records/paid-affected',{staffId,staffName:name,startDate:'2030-01-16',endDate:'2030-01-31',frozenData:{hours:100,net:5000}});
+  else h.put('attendance_logs/worked',{...(mode==='punch-id'?{staffId}:{staffName:name}),branch,type:'TIME IN',timestamp:'2030-01-21T09:00:00+08:00'});
+  const before=copy([...h.docs]);await assert.rejects(h.approve('leave-one','unsafe-late-'+mode,{confirmHistorical:true,reply:'Reviewed late request'}),/attendance|recorded|shift|paid|payslip|worked/i);assert.deepEqual([...h.docs],before);
+ }
+});
+
+test('the linked work date of an overnight Time Out is checked instead of treating the next calendar day as another worked shift',async()=>{
+ const h=fixture();await h.submit('leave-one','2030-01-21','2030-01-21');h.setNow('2030-01-22T03:00:00Z');
+ h.put('attendance_logs/prior-night-in',{staffId,staffName:name,branch,type:'TIME IN',timestamp:'2030-01-20T18:30:00+08:00',scheduleSnapshot:{expectedStartAt:'2030-01-20T18:30:00+08:00'}});
+ h.put('attendance_logs/prior-night-out',{staffId,staffName:name,branch,type:'TIME OUT',timestamp:'2030-01-21T03:06:00+08:00',timeInLogId:'prior-night-in'});
+ const prior=copy(h.get('attendance_logs/prior-night-in')),out=copy(h.get('attendance_logs/prior-night-out'));await h.approve('leave-one','overnight-date-review',{confirmHistorical:true,reply:'Leave starts after the previous overnight work date'});assert.deepEqual(h.get('attendance_logs/prior-night-in'),prior);assert.deepEqual(h.get('attendance_logs/prior-night-out'),out);assert.equal(h.get('staff_requests/leave-one').status,'Approved');
+});
+
+test('a late approval for a previous month updates only its dated archive and does not move the live month backwards',async()=>{
+ const h=fixture();await h.submit('leave-one','2030-01-30','2030-01-31');const later=schedule();later.branchConfig[branch][0].startTime='10:00';later.branchConfig[branch][0].endTime='18:30';await h.store.save(later,{revisionId:'jan-later-rule',effectiveFrom:'2030-01-25',expectedRevisionId:'original',publishCurrent:false});const original=copy(h.get('settings/schedule_revision_original')),dated=copy(h.get('settings/schedule_revision_jan-later-rule'));
+ const feb={...copy(h.get('settings/global_schedule')),currentYear:2030,currentMonth:2,currentSchedule:{1:{[branch]:{scheduled:{m:name},rest:[],unavailable:[],swaps:{}}}},unavailability:{},scheduleRevisionId:'feb-live',scheduleEffectiveFrom:'2030-02-01'};h.put('settings/global_schedule',feb);h.setNow('2030-02-02T03:00:00Z');
+ await h.approve('leave-one','previous-month-review',{confirmHistorical:true,reply:'Reviewed the prior month leave request'});assert.deepEqual(h.get('settings/global_schedule'),feb);const archive=await h.store.loadMonth('2030-01'),view=projectScheduleMonth({month:'2030-01',current:feb,archive,now:new Date('2030-02-02T03:00:00Z')});assert.equal(Object.keys(view.editorSnapshot.currentSchedule).length,31);assert.equal(view.editorSnapshot.currentSchedule[1][branch].scheduled.m,name);assert.equal(view.editorSnapshot.currentSchedule[29][branch].scheduled.m,name);for(const day of [30,31]){assert.equal(view.editorSnapshot.currentSchedule[day][branch].scheduled.m,'UNFILLED');assert.equal(view.editorSnapshot.currentSchedule[day][branch].unavailable[0].leaveRequestId,'leave-one');assert.equal(view.editorSnapshot.unavailability['2030-01-'+day][name].leaveRequestId,'leave-one');}
+ assert.equal(view.daySnapshots[24].branchConfig[branch][0].startTime,'09:00');assert.equal(view.daySnapshots[25].branchConfig[branch][0].startTime,'10:00');assert.equal(archive.latestRevisionId,'jan-later-rule');assert.equal(Object.keys(archive.latestRevision.snapshot.currentSchedule).length,31);assert.deepEqual(h.get('settings/schedule_revision_original'),original);assert.deepEqual(h.get('settings/schedule_revision_jan-later-rule'),dated);assert.equal(h.get('staff_requests/leave-one').leaveState,'Completed');
+});
+
+test('historical approval refuses to reconstruct missing dated schedule history from the current rules',async()=>{
+ const h=fixture();await h.submit();h.docs.delete('settings/schedule_month_2030_01');h.docs.delete('settings/schedule_revision_original');h.setNow('2030-01-24T03:00:00Z');const before=copy([...h.docs]);
+ await assert.rejects(h.approve('leave-one','missing-history-review',{confirmHistorical:true,reply:'Reviewed late request'}),/history|memory|saved|dated|original/i);assert.deepEqual([...h.docs],before);
+});
+
+test('a lost acknowledgement of a late approval can be retried without duplicating dated revisions or claims',async()=>{
+ const h=fixture();await h.submit();h.setNow('2030-01-24T03:00:00Z');const options={confirmHistorical:true,reply:'Reviewed the actual leave after a delayed approval'};h.loseNextAck();await assert.rejects(h.approve('leave-one','late-recovery',options),/lost after commit/);const before=copy([...h.docs]);h.setNow('2030-01-25T03:00:00Z');const result=await h.approve('leave-one','late-recovery',options);assert.equal(result.alreadySaved,true);assert.deepEqual([...h.docs],before);assert.equal(h.get('staff_requests/leave-one').leaveActions.filter(action=>action.id==='late-recovery').length,1);
+});
+
+test('staff cannot use management historical-confirmation fields to submit or change dates in the past',async()=>{
+ const h=fixture();const before=copy([...h.docs]);await assert.rejects(h.staff.submit({id:'past-submission',startDate:'2030-01-17',endDate:'2030-01-17',leaveType:'Leave',reason:'Past date',pin,confirmHistorical:true}),/today|future|earlier/i);assert.deepEqual([...h.docs],before);await h.submit();await h.approve();h.setNow('2030-01-22T03:00:00Z');const approved=copy([...h.docs]);await assert.rejects(h.staff.requestChange({id:'staff-past-change',requestId:'leave-one',kind:'Dates',startDate:'2030-01-20',endDate:'2030-01-21',reason:'Try earlier dates',pin,confirmHistorical:true}),/today|later|earlier/i);assert.deepEqual([...h.docs],approved);
+});
+
+test('late change review rejects inconsistent saved proposed dates or an unverifiable submission date atomically',async()=>{
+ for(const mode of ['tampered-dates','missing-time']){
+  const h=fixture();await h.submit();await h.approve();h.setNow('2030-01-20T03:00:00Z');await h.staff.requestChange({id:'unsafe-change',requestId:'leave-one',kind:'Dates',startDate:'2030-01-22',endDate:'2030-01-24',reason:'Correct the requested dates',pin});const row=copy(h.get('staff_requests/unsafe-change'));if(mode==='tampered-dates')row.requestedActiveDates=['2030-01-20','2030-01-24'];else delete row.timestamp;h.put('staff_requests/unsafe-change',row);h.setNow('2030-01-25T03:00:00Z');const before=copy([...h.docs]);await assert.rejects(h.manager.review({requestId:'unsafe-change',action:'Approved',operationId:'unsafe-review',confirmHistorical:true,reply:'Reviewed late request'}),/inconsistent|submission|submitted|date|history|request/i);assert.deepEqual([...h.docs],before);
+ }
+});
+
+test('management can explicitly correct historical approved dates without retaining the old removed dates or changing the original approval',async()=>{
+ const h=fixture();await h.submit();await h.approve();const first=copy(h.get('staff_requests/leave-one').originalLeaveApproval);h.setNow('2030-01-24T03:00:00Z');
+ await h.manager.change({requestId:'leave-one',kind:'Dates',startDate:'2030-01-20',endDate:'2030-01-22',confirmHistorical:true,reason:'Correct dates after checking the original leave record',reply:'Correct dates after checking the original leave record',operationId:'management-historical-dates'});
+ const parent=h.get('staff_requests/leave-one');assert.deepEqual(parent.activeLeaveDates,['2030-01-20','2030-01-21','2030-01-22']);assert.deepEqual(parent.originalLeaveApproval,first);assert.equal(parent.leaveState,'Completed');assert.equal(h.get('settings/schedule_leave_staff_'+staffId).dates['2030-01-23'],undefined);
+ const history=await h.store.loadRange('2030-01-20','2030-01-23');assert.equal(resolveScheduleForDate(history,'2030-01-20').currentSchedule[20][branch].unavailable[0].leaveRequestId,'leave-one');assert.deepEqual(resolveScheduleForDate(history,'2030-01-23').currentSchedule[23][branch].rest,[name]);
+});
+
+test('an explicit historical sync can backfill an earlier date skipped by the original future-only leave sync',async()=>{
+ const h=fixture();h.put('staff_requests/legacy-leave',{type:'Leave',staffName:name,startDate:'2030-01-17',endDate:'2030-01-21',reason:'Previously approved',status:'Approved'});
+ await h.manager.sync({requestId:'legacy-leave',reply:'Reviewed original approval',operationId:'legacy-first-sync'});assert.deepEqual(h.get('staff_requests/legacy-leave').leaveScheduleSync.skippedHistoricalDates,['2030-01-17']);const original=copy(h.get('settings/schedule_revision_original'));h.setNow('2030-01-22T03:00:00Z');
+ const result=await h.manager.sync({requestId:'legacy-leave',reply:'Checked the archived schedule and earlier approved leave',confirmHistorical:true,operationId:'legacy-historical-sync'});
+ assert.ok(result.changedDates.includes('2030-01-17'));assert.deepEqual(h.get('staff_requests/legacy-leave').leaveScheduleSync.skippedHistoricalDates,[]);assert.equal(h.get('settings/schedule_leave_staff_'+staffId).dates['2030-01-17'].requestId,'legacy-leave');assert.deepEqual(h.get('settings/schedule_revision_original'),original);
+ const history=await h.store.loadRange('2030-01-17','2030-01-17');assert.equal(resolveScheduleForDate(history,'2030-01-17').currentSchedule[17][branch].unavailable[0].leaveRequestId,'legacy-leave');
+});
+
+test('a committed late staff date-change review recovers after lost acknowledgement and a day change without replaying the new parent dates',async()=>{
+ const h=fixture();await h.submit();await h.approve();h.setNow('2030-01-20T03:00:00Z');await h.staff.requestChange({id:'late-change-recovery',requestId:'leave-one',kind:'Dates',startDate:'2030-01-22',endDate:'2030-01-24',reason:'Correct the originally requested leave dates',pin});h.setNow('2030-01-25T03:00:00Z');
+ const input={requestId:'late-change-recovery',action:'Approved',operationId:'late-child-recovery',confirmHistorical:true,reply:'Reviewed and confirmed the delayed date correction'};
+ h.loseNextAck();await assert.rejects(h.manager.review(input),/lost after commit/);const before=copy([...h.docs]);h.setNow('2030-01-26T03:00:00Z');const result=await h.manager.review(input);assert.equal(result.alreadySaved,true);assert.deepEqual([...h.docs],before);assert.equal(h.get('staff_requests/leave-one').leaveActions.filter(action=>action.id===input.operationId).length,1);
+ await assert.rejects(h.manager.review({...input,reply:'Different details on the same operation'}),/different saved details/);assert.deepEqual([...h.docs],before);
+});
+
+test('a committed direct historical date correction recovers after lost acknowledgement without treating the saved target range as a new change',async()=>{
+ const h=fixture();await h.submit();await h.approve();h.setNow('2030-01-25T03:00:00Z');
+ const input={requestId:'leave-one',kind:'Dates',startDate:'2030-01-20',endDate:'2030-01-22',operationId:'late-manager-recovery',confirmHistorical:true,reason:'Correct dates after reviewing the original leave',reply:'Correct dates after reviewing the original leave'};
+ h.loseNextAck();await assert.rejects(h.manager.change(input),/lost after commit/);const before=copy([...h.docs]);h.setNow('2030-01-26T03:00:00Z');const result=await h.manager.change(input);assert.equal(result.alreadySaved,true);assert.deepEqual([...h.docs],before);assert.equal(h.get('staff_requests/leave-one').leaveActions.filter(action=>action.id===input.operationId).length,1);
+ await assert.rejects(h.manager.change({...input,reply:'Changed review details on the same operation'}),/different saved details/);assert.deepEqual([...h.docs],before);
+});
+
+test('a paid payroll saved under an earlier staff name still blocks historical leave by the stable staff ID',async()=>{
+ const h=fixture();await h.submit();h.put('payroll_records/older-name',{staffId,staffName:'Former staff name absent from the current profile',startDate:'2030-01-16',endDate:'2030-01-31',frozenData:{hours:100,net:5000}});h.setNow('2030-01-24T03:00:00Z');const before=copy([...h.docs]);
+ await assert.rejects(h.approve('leave-one','paid-stable-id-review',{confirmHistorical:true,reply:'Checked delayed leave and the payroll cutoff'}),/paid|payslip|payroll/i);assert.deepEqual([...h.docs],before);
+});
+
+test('an unrelated old orphan Time Out does not block a later leave review or get changed by it',async()=>{
+ const h=fixture();await h.submit();h.put('attendance_logs/old-orphan',{staffId,staffName:name,branch,type:'TIME OUT',timestamp:'2030-01-10T03:00:00+08:00',timeInLogId:'unavailable-old-time-in'});const orphan=copy(h.get('attendance_logs/old-orphan'));h.setNow('2030-01-24T03:00:00Z');
+ const result=await h.approve('leave-one','unrelated-orphan-review',{confirmHistorical:true,reply:'Reviewed the requested leave dates'});assert.equal(result.status,'Approved');assert.deepEqual(h.get('attendance_logs/old-orphan'),orphan);
+});
+
+test('a relevant Time Out linked to a different branch, an impossibly old shift or a later Time In holds historical approval atomically',async()=>{
+ for(const [mode,started,startBranch]of [['branch','2030-01-20T18:30:00+08:00',relief],['old','2030-01-17T18:30:00+08:00',branch],['after','2030-01-22T18:30:00+08:00',branch]]){
+  const h=fixture();await h.submit('leave-one','2030-01-21','2030-01-21');h.put('attendance_logs/linked-in',{staffId,staffName:name,branch:startBranch,type:'TIME IN',timestamp:started});h.put('attendance_logs/relevant-out',{staffId,staffName:name,branch,type:'TIME OUT',timestamp:'2030-01-21T03:06:00+08:00',timeInLogId:'linked-in'});h.setNow('2030-01-24T03:00:00Z');const before=copy([...h.docs]);
+  await assert.rejects(h.approve('leave-one','invalid-link-'+mode,{confirmHistorical:true,reply:'Reviewed the delayed request'}),/linked|conflicting|attendance|shift/i);assert.deepEqual([...h.docs],before);
+ }
+});
+
+test('historical leave keeps a complete current-month plan pointer when the canonical head still belongs to the previous month',async()=>{
+ const h=fixture();await h.submit('leave-one','2030-02-01','2030-02-01');const feb=schedule();feb.currentMonth=2;feb.currentSchedule=Object.fromEntries(Object.entries(feb.currentSchedule).filter(([day])=>Number(day)<=28));feb.branchConfig[branch][0].startTime='10:00';feb.branchConfig[branch][0].endTime='18:30';
+ const full=createScheduleRevision(feb,{revisionId:'feb-full-plan',effectiveFrom:'2030-02-01',savedAt:'2030-01-18T03:00:00Z',cutover:'2030-01-01'});full.sequence=1;h.put('settings/schedule_revision_feb-full-plan',full);h.put('settings/schedule_month_2030_02',{schemaVersion:1,kind:'schedule-month',month:'2030-02',revisionIds:['feb-full-plan'],latestRevisionId:'feb-full-plan',payrollHistoryEnforcedFrom:'2030-01-01'});const januaryHead=copy(h.get('settings/global_schedule'));h.setNow('2030-02-02T03:00:00Z');
+ await h.approve('leave-one','stale-head-late-review',{confirmHistorical:true,reply:'Reviewed February leave against the saved February plan'});
+ assert.deepEqual(h.get('settings/global_schedule'),januaryHead);assert.deepEqual(h.get('settings/schedule_revision_feb-full-plan'),full);const index=h.get('settings/schedule_month_2030_02');assert.equal(index.latestRevisionId,'feb-full-plan');assert.ok(index.revisionIds.includes('stale-head-late-review-20300201'));
+ const archive=await h.store.loadMonth('2030-02'),view=projectScheduleMonth({month:'2030-02',current:januaryHead,archive,now:new Date('2030-02-02T03:00:00Z')});assert.equal(Object.keys(archive.latestRevision.snapshot.currentSchedule).length,28);assert.equal(Object.keys(view.editorSnapshot.currentSchedule).length,28);assert.equal(view.editorSnapshot.currentSchedule[1][branch].scheduled.m,'UNFILLED');assert.equal(view.editorSnapshot.currentSchedule[1][branch].unavailable[0].leaveRequestId,'leave-one');assert.equal(view.daySnapshots[1].currentSchedule[1][branch].unavailable[0].leaveRequestId,'leave-one');
+ for(let day=2;day<=28;day++){assert.deepEqual(view.editorSnapshot.currentSchedule[day],full.snapshot.currentSchedule[day]);assert.deepEqual(view.daySnapshots[day].currentSchedule[day],full.snapshot.currentSchedule[day]);assert.equal(view.daySnapshots[day].branchConfig[branch][0].startTime,'10:00');}assert.equal(view.expectedRevisionId,'feb-full-plan');
+});
+
+test('an approved legacy leave under the current schedule nickname prevents a second overlapping late approval even without plot or claim markers',async()=>{
+ const h=fixture();await h.submit();h.put('cashiers/'+staffId,{...copy(h.get('cashiers/'+staffId)),scheduleNickname:'SAMPLE'});h.put('staff_requests/legacy-nickname-leave',{type:'Leave',staffName:'SAMPLE',branch,startDate:'2030-01-21',endDate:'2030-01-21',reason:'Approved under the saved schedule nickname',status:'Approved'});assert.equal(h.get('settings/schedule_leave_staff_'+staffId),undefined);assert.deepEqual(h.get('settings/global_schedule').unavailability,{});h.setNow('2030-01-24T03:00:00Z');const before=copy([...h.docs]);
+ await assert.rejects(h.approve('leave-one','nickname-overlap-review',{confirmHistorical:true,reply:'Reviewed the delayed leave request'}),/Another approved leave overlaps/);assert.deepEqual([...h.docs],before);assert.equal(h.get('staff_requests/leave-one').status,'Pending');
+});

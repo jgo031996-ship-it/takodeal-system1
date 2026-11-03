@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {createScheduleRecoveryDraftStore,scheduleRecoveryScope,scheduleDraftSnapshot,scheduleDraftKey,scheduleSnapshotFingerprint,validateScheduleDraft,planScheduleDraftRecovery,SCHEDULE_RECOVERY_DB} from '../takodeal-manager/schedule-recovery-draft.js';
 import {createOwnerScheduleSync,installOwnerScheduleSync} from '../takodeal-manager/owner-schedule-sync.js';
 import {createScheduleRevision} from '../takodeal-manager/schedule-history.js';
+import {planScheduleCalendar} from '../takodeal-manager/schedule-calendar.js';
 const copy=value=>structuredClone(value),tick=()=>new Promise(resolve=>setImmediate(resolve)),now=()=>new Date('2026-10-25T04:00:00.000Z');
 const held=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};};
 const initial=()=>({currentYear:2026,currentMonth:10,branchConfig:{Maa:[{id:'m1',name:'Morning',startTime:'09:00',endTime:'17:30',active:true,days:[0,1,2,3,4,5,6]}]},employees:[{staffId:'staff-one',name:'Sample staff',branch:'Maa'}],currentSchedule:{25:{Maa:{scheduled:{m1:'Sample staff'},rest:[],swaps:{}}}},unavailability:{},holidays:{}});
@@ -11,6 +12,24 @@ async function record(overrides={}){const scope=await scheduleRecoveryScope(acto
 function memoryStore(){const rows=new Map();return{rows,write:async value=>{const safe=validateScheduleDraft(value);rows.set(safe.key,copy(safe));return copy(safe);},list:async(scope,month)=>[...rows.values()].filter(row=>row.ownerUid===scope.ownerUid&&row.scopeHash===scope.scopeHash&&row.month===month).map(copy).sort((a,b)=>b.savedAt.localeCompare(a.savedAt)),remove:async key=>{rows.delete(key);}};}
 function server(){let revision='base-v1',snapshot=initial(),writes=0;const revisions=[];return{get writes(){return writes;},get revision(){return revision;},async view(){return{month:'2026-10',expectedRevisionId:revision,editorSnapshot:copy(snapshot),hasSavedSchedule:true,archive:{month:'2026-10',revisions:copy(revisions)}};},async save(value,options){const previous=revisions.find(row=>row.revisionId===options.revisionId);if(previous)return{revision:copy(previous),latestRevisionId:revision,alreadySaved:true};assert.equal(options.expectedRevisionId,revision);const row=createScheduleRevision(value,{revisionId:options.revisionId,effectiveFrom:options.effectiveFrom,savedAt:now(),cutover:'2026-10-25'});snapshot=copy(row.snapshot);revision=row.revisionId;revisions.push(row);writes++;return{revision:copy(row),latestRevisionId:revision};},remote(value){snapshot=copy(value);revision='remote-v2';}};}
 function editor(db,store,extra={}){let value=initial(),expected,effective='2026-10-25',identity=actor(),count=0;const messages=[];const options={readView:db.view,applyView:view=>{value=copy(view.editorSnapshot);},applyRecoveredSnapshot:snapshot=>{value=copy(snapshot);},getSnapshot:()=>value,getMonth:()=>`${value.currentYear}-${String(value.currentMonth).padStart(2,'0')}`,getIdentity:()=>identity,getExpectedRevision:()=>expected,setExpectedRevision:id=>{expected=id;},getEffectiveFrom:()=>effective,setEffectiveFrom:day=>{effective=day;},saveSnapshot:db.save,makeId:()=>String(++count),editorId:'new-editor',draftStore:store,onStatus:(text,error)=>messages.push({text,error}),now,...extra};const controller=createOwnerScheduleSync(options);return{controller,options,messages,get value(){return value;},set value(next){value=next;},get expected(){return expected;},set effective(next){effective=next;},set identity(next){identity=next;}};}
+
+test('restoring and repairing an original calendar backup never consumes that source copy on save',async()=>{
+ const db=server(),store=memoryStore(),first=editor(db,store,{editorId:'first-editor'});await first.controller.load();
+ first.value.currentSchedule[32]=copy(first.value.currentSchedule[25]);assert.equal(await first.controller.preserveCalendarBackup(),true);
+ const backup=[...store.rows.values()].find(row=>row.editorId.startsWith('calendar-')),original=copy(backup.editorSnapshot);
+ const next=editor(db,store);await next.controller.load();await next.controller.checkRecovery();assert.equal(await next.controller.recoverDraft(backup.key),true);
+ next.value=planScheduleCalendar(next.value).snapshot;next.controller.markDirty();assert.equal(await next.controller.save(),true);
+ assert.equal(db.writes,1);assert.deepEqual(store.rows.get(backup.key).editorSnapshot,original);assert.equal(store.rows.get(backup.key).editorSnapshot.currentSchedule[32].Maa.scheduled.m1,'Sample staff');
+ first.controller.stop();next.controller.stop();
+});
+
+test('a valid but padded unconfirmed operation keeps its retry ID after local normalization',async()=>{
+ const db=server(),store=memoryStore(),draft=await record(),pendingSnapshot=copy(initial());pendingSnapshot.currentSchedule['01']=copy(pendingSnapshot.currentSchedule[25]);
+ draft.editorSnapshot=copy(pendingSnapshot);draft.pending={revisionId:'old-padded-operation',expectedRevisionId:'base-v1',effectiveFrom:'2026-10-25',snapshot:copy(pendingSnapshot)};await store.write(draft);
+ const attempts=[],next=editor(db,store,{saveSnapshot:async(value,options)=>{attempts.push(copy(options));return db.save(value,options);}});await next.controller.load();await next.controller.checkRecovery();assert.equal(await next.controller.recoverDraft(draft.key),true);
+ next.value=planScheduleCalendar(next.value).snapshot;next.controller.markDirty();assert.equal(await next.controller.save(),true);
+ assert.equal(attempts[0].revisionId,'old-padded-operation');assert.equal(db.writes,1);assert.equal(next.controller.isDirty(),true,'normalization remains a separate unsaved change until the original operation is acknowledged');next.controller.stop();
+});
 
 test('draft schema preserves exact schedule values but refuses authentication fields and unknown envelope keys',async()=>{
  const draft=await record();draft.editorSnapshot.branchConfig.Maa[0].name='  Edited label  ';draft.editorSnapshot.branchConfig.Maa[0].endTime='';assert.equal(validateScheduleDraft(draft).editorSnapshot.branchConfig.Maa[0].name,'  Edited label  ');assert.equal(validateScheduleDraft(draft).editorSnapshot.branchConfig.Maa[0].endTime,'');

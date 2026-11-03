@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v39-owner-deductions-20261030';
+const CACHE_NAME = 'takodeal-staff-v40-late-leave-20261031';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./attendance-schedule-preview.js');
 SHELL.push('./staff-setup-access.js','./staff-setup.css');

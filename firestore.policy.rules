@@ -231,6 +231,24 @@ service cloud.firestore {
 
     match /hq_managers/{managerId} { allow read: if isSignedIn(); allow write: if isOwner(); }
     match /settings/{docId} {
+      function cashierAppearanceWrite(data, priorRevision) {
+        let look = data.appearance;
+        return offlineOwner()
+          && data.keys().hasOnly(['schemaVersion','revision','appearance','updatedAt','updatedByUid','updatedByEmail']) && data.size() == 6
+          && data.schemaVersion == 1 && disciplineInt(priorRevision) && disciplineInt(data.revision) && data.revision == priorRevision + 1
+          && data.updatedAt == request.time && data.updatedByUid == request.auth.uid && data.updatedByEmail == request.auth.token.email
+          && look is map && look.keys().hasOnly(['theme','primary','accent','background','message','decorations','density','largeText','showRanking','scheduled','startDate','endDate']) && look.size() == 12
+          && look.theme in ['everyday','halloween','christmas','new-year','custom']
+          && look.primary is string && look.primary.matches('^#[0-9a-fA-F]{6}$')
+          && look.accent is string && look.accent.matches('^#[0-9a-fA-F]{6}$')
+          && look.background is string && look.background.matches('^#[0-9a-fA-F]{6}$')
+          && look.message is string && look.message.size() <= 120 && look.decorations is bool
+          && look.density in ['comfortable','compact'] && look.largeText is bool && look.showRanking is bool && look.scheduled is bool
+          && look.startDate is string && look.endDate is string
+          && (look.scheduled
+            ? (protectedHRDate(look.startDate) && protectedHRDate(look.endDate) && look.startDate >= '2000-01-01' && look.endDate <= '2099-12-31' && look.startDate <= look.endDate)
+            : (look.startDate == '' && look.endDate == ''));
+      }
       function cancelledPolicyWrite(id, before, after) {
       // Protect only this feature's policy fields. Existing unrelated settings
       // and staged branch policy behavior remain compatible.
@@ -314,15 +332,16 @@ service cloud.firestore {
       }
 
       allow read: if true;
-      allow create: if !docId.matches('discipline_.*') && (isHQUser() || docId.matches("status_.*"))
+      allow create: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (isHQUser() || docId.matches("status_.*"))
         && cancelledPolicyWrite(docId, {}, newData());
-      allow update: if !docId.matches('discipline_.*') && (isHQUser() || docId.matches("status_.*"))
+      allow update: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (isHQUser() || docId.matches("status_.*"))
         && cancelledPolicyWrite(docId, oldData(), newData());
-      allow delete: if !docId.matches('discipline_.*') && (isHQUser() || docId.matches("status_.*"))
+      allow delete: if docId != 'cashier_appearance' && !docId.matches('discipline_.*') && (isHQUser() || docId.matches("status_.*"))
         && cancelledPolicyWrite(docId, oldData(), {});
       // PIN-only legacy Cashiers can update counters only with their atomic sale
       // or first void, with exact deltas. No general settings write is opened.
       allow create, update: if docId == 'global_stats' && saleCounterWrite();
+      allow create, update: if docId == 'cashier_appearance' && cashierAppearanceWrite(newData(), resource == null ? 0 : resource.data.revision);
       allow create, update: if docId.matches('audit_.*') && saleAuditWrite(docId);
       allow create, update: if docId == 'discipline_policy' && disciplinePolicyWrite(request.resource.data, resource == null ? 0 : resource.data.revision);
       allow create, update: if docId.matches('discipline_case_.*') && disciplineCounter(request.resource.data, resource == null ? {} : resource.data, docId);

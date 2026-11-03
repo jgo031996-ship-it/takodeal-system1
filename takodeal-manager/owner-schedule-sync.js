@@ -62,7 +62,8 @@ export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth
    await applyView(view);baseline=fingerprint(getSnapshot());baselineEffectiveFrom=getEffectiveFrom();loaded=view;loadedIdentity=actor;setExpectedRevision(view.expectedRevisionId??null);
    if(typeof applyRecoveredSnapshot==='function')await applyRecoveredSnapshot(clone(candidate.editorSnapshot));else await applyView({...view,editorSnapshot:clone(candidate.editorSnapshot)});
    if(!current(actor,selected))return false;setEffectiveFrom(candidate.effectiveFrom);uiDirty=dirty();history=false;requiresReload=false;
-   requestId=pending?{id:pending.revisionId,key:null,payload:clone(pending)}:null;restoredSources.add(candidate.key);
+   requestId=pending?{id:pending.revisionId,key:null,payload:clone(pending)}:null;
+   if(!candidate.editorId.startsWith('calendar-'))restoredSources.add(candidate.key);
    status(plan.kind==='committed'?'The original save is confirmed at HQ. The local editor was restored for review; additional edits have not been saved.':'Local edits restored. Nothing was sent to HQ. Review them before choosing Save.',false);publishRecovery();watch();return true;
   }catch(error){report(error);status(error.message||'The draft could not be restored. It remains on this device.',true);publishRecovery();return false;}
  }
@@ -116,7 +117,7 @@ export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth
   if(calendar.changed){const error=scheduleCalendarError(calendar);report(error);status(error.message,true);return Promise.resolve(false);}
   // A known invalid calendar payload cannot have produced a valid archived
   // revision. Do not keep replaying an old rejected payload after local repair.
-  if(requestId&&planScheduleCalendar(requestId.payload.snapshot).changed)requestId=null;
+  if(requestId&&planScheduleCalendar(requestId.payload.snapshot).excluded.some(row=>row.reason==='Outside selected month'))requestId=null;
   const actor=identity(),month=getMonth(),actorValue=clone(getIdentity()),effectiveFrom=getEffectiveFrom();
   // An unconfirmed operation is retried unchanged, even if the editor acquired
   // more changes. Those later edits stay separate until the first save is known.

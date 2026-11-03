@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createCashierCashClient,createCashRemittanceAttempts,createCashRemittanceDeviceSession,CASH_REMITTANCE_ENDPOINT,assertCashRecordsReady,hasPendingCashRemittance} from '../Takodeal-POS/cash-remittance-client.js';
 import {installCashRemittance} from '../Takodeal-POS/cash-remittance-ui.js';
-import {ReviewDocument} from './helpers/review-dom.mjs';
+import {ReviewDocument,drain} from './helpers/review-dom.mjs';
 const held=()=>{let resolve;const promise=new Promise(done=>resolve=done);return{promise,resolve};};
 const identity=()=>({uid:'sample-pos',staffId:'sample-staff',branch:'Sample Branch'});
 const memory=()=>{const rows=new Map();return{rows,getItem:k=>rows.get(k)??null,setItem:(k,v)=>rows.set(k,v),removeItem:k=>rows.delete(k),key:i=>[...rows.keys()][i]??null,get length(){return rows.size;}};};
@@ -100,23 +100,44 @@ function uiFixture(){
 }
 
 test('the cash UI uses the selected approval database and device token for a verified quote without changing Google',async()=>{
- const f=uiFixture();f.ui.open();f.d.getElementById('cashRemitPin').value='SAMPLE-ONLY';await f.ui.loadQuote();
- assert.equal(f.calls.length,1);assert.ok(f.calls[0].url.endsWith('/quote'));assert.equal(f.calls[0].options.headers.Authorization,'Bearer SAMPLE_NAMED_POS_TOKEN_123456');assert.equal(f.reads.length,2);assert.equal(f.primaryAuth.currentUser,f.google);assert.equal(f.w.cashierCashCountActive,true);
+ const f=uiFixture();await f.ui.open();f.d.getElementById('cashRemitPin').value='SAMPLE-ONLY';await f.ui.loadQuote();
+ assert.equal(f.calls.length,1);assert.ok(f.calls[0].url.endsWith('/quote'));assert.equal(f.calls[0].options.headers.Authorization,'Bearer SAMPLE_NAMED_POS_TOKEN_123456');assert.equal(f.reads.length,4);assert.equal(f.primaryAuth.currentUser,f.google);assert.equal(f.w.cashierCashCountActive,true);
 });
 
 test('the cash UI blocks a fresh quote for a foreign durable attempt and keeps the checkout pause after reopen',async()=>{
  const f=uiFixture(),attempts=createCashRemittanceAttempts(f.w.localStorage,{makeId:()=>'old-default-operation'}),oldActor={...identity(),uid:'old-default-pos'};attempts.prepare(oldActor,input(),f.snapshot);const before=[...f.w.localStorage.rows];
- f.ui.open();assert.equal(f.w.cashierCashCountActive,true);f.d.getElementById('cashRemitPin').value='SAMPLE-ONLY';await f.ui.loadQuote();
- assert.equal(f.calls.length,0);assert.match(f.d.body.textContent,/another staff or tablet account/);assert.deepEqual([...f.w.localStorage.rows],before);assert.equal(f.primaryAuth.currentUser,f.google);f.ui.open();assert.equal(f.w.cashierCashCountActive,true);
+ await f.ui.open();assert.equal(f.w.cashierCashCountActive,true);f.d.getElementById('cashRemitPin').value='SAMPLE-ONLY';await f.ui.loadQuote();
+ assert.equal(f.calls.length,0);assert.match(f.d.body.textContent,/another staff or tablet account/);assert.deepEqual([...f.w.localStorage.rows],before);assert.equal(f.primaryAuth.currentUser,f.google);await f.ui.open();assert.equal(f.w.cashierCashCountActive,true);
 });
 
 test('a foreign attempt appearing after the quote blocks the new handover before any submit or local migration',async()=>{
- const f=uiFixture();f.ui.open();f.d.getElementById('cashRemitPin').value='SAMPLE-ONLY';await f.ui.loadQuote();
+ const f=uiFixture();await f.ui.open();f.d.getElementById('cashRemitPin').value='SAMPLE-ONLY';await f.ui.loadQuote();
  const attempts=createCashRemittanceAttempts(f.w.localStorage,{makeId:()=>'other-cashier-operation'}),other={...identity(),staffId:'other-staff'};attempts.prepare(other,{...input(),staffId:other.staffId},f.snapshot);const before=[...f.w.localStorage.rows];
  await f.w.submitRemittance();assert.equal(f.calls.length,1);assert.match(f.d.body.textContent,/another staff or tablet account/);assert.deepEqual([...f.w.localStorage.rows],before);assert.equal(f.w.cashierCashCountActive,true);
 });
 
 test('an original selected-UID attempt retries the same handover and never asks for a replacement quote',async()=>{
- const f=uiFixture(),attempts=createCashRemittanceAttempts(f.w.localStorage,{makeId:()=>'original-operation'}),saved=attempts.prepare(identity(),input(),f.snapshot);f.ui.open();f.d.getElementById('cashRemitPin').value='SAMPLE-ONLY';await f.ui.loadQuote();assert.equal(f.calls.length,0);
+ const f=uiFixture(),attempts=createCashRemittanceAttempts(f.w.localStorage,{makeId:()=>'original-operation'}),saved=attempts.prepare(identity(),input(),f.snapshot);await f.ui.open();f.d.getElementById('cashRemitPin').value='SAMPLE-ONLY';await f.ui.loadQuote();assert.equal(f.calls.length,0);
  await f.w.submitRemittance();assert.equal(f.calls.length,1);assert.ok(f.calls[0].url.endsWith('/submit'));const body=JSON.parse(f.calls[0].options.body);assert.equal(body.operationId,saved.operationId);assert.equal(body.quoteId,saved.body.quoteId);assert.equal(f.calls[0].options.headers.Authorization,'Bearer SAMPLE_NAMED_POS_TOKEN_123456');assert.equal(attempts.pending(identity()).operationId,saved.operationId);assert.equal(f.w.cashierCashCountActive,true);assert.equal(f.primaryAuth.currentUser,f.google);
+});
+
+test('remittance checks the shared approval on open without another request or a cash operation, and pending approval can be retried',async()=>{
+ const f=uiFixture(),selected=await f.deviceContext.resolve({assertCurrent(){}}),original=selected.deviceApi.getDocFromServer;let state='Pending',preparations=0;
+ selected.deviceApi.getDocFromServer=async ref=>{const saved=await original(ref);return ref.table==='pos_bindings'?{...saved,data:()=>({...saved.data(),status:state})}:saved;};
+ f.w.prepareCashierDeviceApproval=async()=>{preparations++;};await f.ui.open();
+ const buttons=f.d.body.querySelectorAll('button'),check=buttons.find(button=>button.textContent==='Check tablet approval');
+ assert.ok(!buttons.some(button=>/Request.*approval/.test(button.textContent)));assert.equal(check.hidden,false);assert.match(f.d.body.textContent,/covers all Cashier features|cover all Cashier features/);assert.match(f.d.body.textContent,/sample-pos/);assert.equal(f.calls.length,0);
+ f.d.getElementById('cashRemitAmount').value='500';f.d.getElementById('cashRemitPin').value='SAMPLE-ONLY';state='Active';check.click();await drain();
+ assert.equal(check.hidden,true);assert.match(f.d.body.textContent,/Tablet approved/);assert.equal(f.d.getElementById('cashRemitAmount').value,'500');assert.equal(f.d.getElementById('cashRemitPin').value,'SAMPLE-ONLY');assert.equal(f.calls.length,0);assert.equal(preparations,2);assert.equal(f.primaryAuth.currentUser,f.google);
+});
+
+test('a late shared setup cannot check or authorize cash after the signed-in staff changed',async()=>{
+ const f=uiFixture(),late=held();f.w.prepareCashierDeviceApproval=()=>late.promise;const work=f.ui.open();f.w.sessionUser={...f.w.sessionUser,staffId:'different-staff'};late.resolve();await work;
+ assert.equal(f.reads.length,0);assert.equal(f.calls.length,0);assert.equal(f.d.getElementById('cashRemitAmount').value,'');assert.match(f.d.body.textContent,/cashier or remittance view changed/);
+});
+
+test('a failed fresh approval check disables an earlier cash actor without erasing its saved handover',async()=>{
+ const f=uiFixture(),attempts=createCashRemittanceAttempts(f.w.localStorage,{makeId:()=>'original-operation'}),saved=attempts.prepare(identity(),input(),f.snapshot);await f.ui.open();f.d.getElementById('cashRemitPin').value='SAMPLE-ONLY';await f.ui.loadQuote();const before=[...f.w.localStorage.rows];
+ f.w.prepareCashierDeviceApproval=async()=>{throw Error('HQ connection unavailable');};await f.ui.loadQuote();const submit=f.d.body.querySelectorAll('button').find(button=>button.textContent==='Submit counted remittance');assert.equal(submit.disabled,true);await f.w.submitRemittance();
+ assert.equal(f.calls.length,0);assert.deepEqual([...f.w.localStorage.rows],before);assert.equal(attempts.pending(identity()).operationId,saved.operationId);assert.equal(f.w.cashierCashCountActive,true);assert.match(f.d.body.textContent,/Load the verified drawer first/);
 });

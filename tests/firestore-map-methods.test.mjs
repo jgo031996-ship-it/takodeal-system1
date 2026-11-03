@@ -2,9 +2,9 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 import {lowerFirestoreMapMethods,assertMapMethodLoweringEquivalent}from'../tools/firestore-selector-sharing/map-methods.mjs';
 const wrap=body=>"rules_version='2'; service cloud.firestore { match /databases/{database}/documents { "+body+' } }';
 const hash=value=>createHash('sha256').update(value).digest('hex'),changed=(proof,source)=>({...proof,loweredSha256:hash(source)});
-test('actual frozen policy factors116 eligible chains and independently restores every original byte',()=>{
+test('actual frozen policy factors118 eligible chains and independently restores every original byte',()=>{
  const original=fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),result=lowerFirestoreMapMethods(original);
- assert.equal(result.proof.calls,116);assert.deepEqual(result.proof.counts,{affectedKeys:58,changedKeys:1,addedKeys:1,removedKeys:1,keysOnly:58});
+ assert.equal(result.proof.calls,118);assert.deepEqual(result.proof.counts,{affectedKeys:58,changedKeys:1,addedKeys:1,removedKeys:1,keysOnly:60});
  assert.equal(assertMapMethodLoweringEquivalent(original,result.source,result.proof).allOtherBytesExact,true);
 });
 test('shared per-row validators retain their original inline map checks without an extra selector call',()=>{

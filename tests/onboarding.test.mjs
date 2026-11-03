@@ -101,13 +101,17 @@ test('new contract acceptance rejects missing/stale private wages and private-ac
  for(const mode of ['missing','changed','unknown','unapproved']){const f=contractFixture(),{person,timeline}=datedContract(f);f.input.expectedFingerprint=contractOfferFingerprint(person,'Initial');if(mode==='missing')f.h.docs.delete('staff_salary_rates/'+staffId);if(mode==='changed')f.h.put('staff_salary_rates/'+staffId,{...timeline,rates:{...timeline.rates,first:{...timeline.rates.first,dailyRate:501}}});if(mode==='unknown')f.input.expectedDailyRate=undefined;if(mode==='unapproved')f.api.auth.currentUser=null;const before=structuredClone([...f.h.docs]);await assert.rejects(signOfferedContract(f.api,f.input));assert.deepEqual([...f.h.docs],before);}
  const f=contractFixture();const run=f.api.runTransaction;f.api.runTransaction=(db,callback)=>run(db,tx=>callback({...tx,get:async ref=>{const value=await tx.get(ref);f.api.auth.currentUser={uid:'another-private-phone'};return value;}}));await assert.rejects(signOfferedContract(f.api,f.input),/profile changed/);assert.equal(f.h.get('cashiers/'+staffId).contractSignature,undefined);
 });
-test('actual onboarding contract action requires the privacy unlock and loads private wages before exposing signing',async()=>{
+test('actual onboarding contract action requires the privacy unlock and loads private wages before exposing signing',async t=>{
+ // This fixture reviews an October offer before its separate November salary increase.
+ t.mock.timers.enable({apis:['Date'],now:now.getTime()});
  const f=contractFixture(),{person}=datedContract(f),calls=[],window={...f.api,getDocFromServer:async()=>({exists:()=>true,data:()=>person,metadata:{fromCache:false}}),addEventListener(){},ensureStaffRateUnlocked:async()=>{calls.push('unlock');return true;},staffRateSession:{allows:id=>id===staffId},loadPrivateStaffSalaryProfile:async value=>{calls.push('private salary');return loadStaffSalaryTimeline(f.api,value);},showContractUI:(id,data,type)=>calls.push({id,data,type})},document={addEventListener(){}};
  installStaffOnboarding(window,document,{service:{reset(){},load:async()=>null}});await window.staffOnboarding.reviewContract();assert.deepEqual(calls.slice(0,2),['unlock','private salary']);assert.equal(calls.at(-1).data.contractDailyRate,500);assert.equal(calls.at(-1).type,'Initial');assert.equal(profileDailyRate(calls.at(-1).data),500);
  calls.length=0;window.ensureStaffRateUnlocked=async()=>false;await window.staffOnboarding.reviewContract();assert.deepEqual(calls,[]);
 });
 
-test('actual private contract salary provider uses the approved binding and private database and rejects switches',async()=>{
+test('actual private contract salary provider uses the approved binding and private database and rejects switches',async t=>{
+ // Keep the current-profile wage assertion anchored to the October fixture date.
+ t.mock.timers.enable({apis:['Date'],now:now.getTime()});
  const f=contractFixture(),{person}=datedContract(f),source=readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8'),privateDb={},calls=[];let currentId=staffId;
  const sdk={...f.api,doc:(db,table,id)=>{assert.equal(db,privateDb);return f.api.doc(db,table,id);}},client={db:privateDb,auth:f.api.auth,sdk,store:{binding:async()=>calls.push('approved own binding')}},window={};const context={window,localStorage:{getItem:()=>currentId},firebaseConfig:{projectId:'sample'},createStaffDocumentFirebase:async()=>client,loadStaffSalaryTimeline};
  for(const name of ['staffContractPrivateAPI','loadPrivateStaffSalaryProfile']){const start=source.indexOf('window.'+name+' ='),end=source.indexOf('\n};',start)+3;vm.runInNewContext(source.slice(start,end),context);}

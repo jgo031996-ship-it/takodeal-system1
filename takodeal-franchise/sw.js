@@ -1,4 +1,4 @@
-const CACHE = 'takodeal-franchise-stock-audit-v8-20261031';
+const CACHE = 'takodeal-franchise-late-leave-v9-20261031';
 const CORE=['./','index.html','style.css','main_franchise.js','auth.js','franchise-data.js','franchise-actions.js','franchise-workspace.js','payroll-safety.js','schedule-history.js','dispatch-safety.js','unlock-gate.js','hq-account-model.js','manifest.json','logo.jpg','icon-192.png','icon-512.png'];
 CORE.push('franchise-reads.js','franchise-item-picker.js','franchise-item-picker.css','franchise-payroll-controls.js','franchise-payroll-controls.css');
 CORE.push('attendance-reconcile.js','payroll-attendance.js');
