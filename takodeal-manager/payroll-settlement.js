@@ -61,7 +61,11 @@ export function validatePayrollCashShortageSet(data,candidates,get){
 export function validateOrdinaryPayrollSnapshot(data,finalNetPay){
  if(!data||!text(data.name)||!text(data.branch)||data.attendanceReviewRequired)throw Error('This unpaid payslip needs HR review before payment.');
  if((data.onlineRefundRows||[]).length||amount(data.onlineRefunds)>0)throw Error('Use the protected refund-payroll workflow for online refund deductions.');
- const frozen=json(data),fields=['basicPay','nightBonus','straightBonus','holidayPayTotal','perfBonus','lateDeduction','sss','philhealth','pagibig','advances','meals','loans','cashShortages','ownerDeductions'];
+ // The full schedule stamp guards the unpaid preview before payment. The paid
+ // snapshot retains its figures, attendance and revision links, without copying
+ // every branch's schedule history into each employee's saved document.
+ const {scheduleEvidenceStamp,...savedData}=data;
+ const frozen=json(savedData),fields=['basicPay','nightBonus','straightBonus','holidayPayTotal','perfBonus','lateDeduction','sss','philhealth','pagibig','advances','meals','loans','cashShortages','ownerDeductions'];
  for(const key of fields)frozen[key]=amount(data[key])/100;
  const details=data.customDeductions??data.profile?.customDeductions??[];
  if(!Array.isArray(details)||details.length>100)throw Error('Review the custom deduction details before paying.');
