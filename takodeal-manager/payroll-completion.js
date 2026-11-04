@@ -21,7 +21,7 @@ export function payrollEstimate(data){
     if(data.isPaid&&Number.isFinite(Number(data.finalNetPay)))return Math.max(0,Number(data.finalNetPay));
     // This is the same cutoff estimate used by the generator; paid rows use the
     // exact confirmed net amount, including any edits made in their payslip.
-    return Math.max(0,amount(data.basicPay)+amount(data.nightBonus??data.nightBonusTotal)+amount(data.straightBonus)+amount(data.holidayPayTotal)+amount(data.perfBonus)-['cashShortages','ownerDeductions','onlineRefunds','meals','advances','loans','sss','pagibig','philhealth','lateDeduction'].reduce((sum,key)=>sum+amount(data[key]),amount(data.customDeductionsTotal)));
+    return Math.max(0,amount(data.basicPay)+amount(data.nightBonus??data.nightBonusTotal)+amount(data.straightBonus)+amount(data.holidayPayTotal)+amount(data.perfBonus)+amount(data.payrollAdjustments)-['cashShortages','ownerDeductions','onlineRefunds','meals','advances','loans','sss','pagibig','philhealth','lateDeduction'].reduce((sum,key)=>sum+amount(data[key]),amount(data.customDeductionsTotal)));
 }
 export function applyConfirmedPayroll(api,d,data,saved,{actorKey}={}){
     const frozen={...(saved.frozenData||data)},identity=Object.fromEntries(['name','staffId','branch','start','end'].map(key=>[key,data[key]]));

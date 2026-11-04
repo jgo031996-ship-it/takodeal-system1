@@ -12,6 +12,9 @@ export function payrollOwnerDeductionRows(data){
  if(rows.reduce((sum,row)=>sum+cents(row.amount),0)!==cents(data.ownerDeductions))throw Error('Owner-added deduction details do not match the payslip total.');return rows;
 }
 export function ownerDeductionDisplayRows(rows){return rows.map(row=>({id:row.id,type:OWNER_DEDUCTION_TYPE,bucket:'ownerDeductions',amount:cents(row.amount)/100,label:row.label,category:row.category,incidentDate:row.incidentDate,effectiveDate:row.effectiveDate,reviewRevision:row.revision}));}
+// The existing Rules require the exact base detail maps above. Keep recovery
+// source facts in a separate frozen list without changing that protected tuple.
+export function ownerDeductionRecoveryRows(rows){return rows.filter(row=>row.payrollRecovery).map(row=>({id:row.id,amount:cents(row.amount)/100,...row.payrollRecovery}));}
 export function validatePayrollOwnerDeductionSet(data,candidates,get){
  const expected=payrollOwnerDeductionRows(data),due=ownerDeductionCandidates(candidates,data.end);
  if(due.length>OWNER_DEDUCTION_LIMIT||due.length!==expected.length)throw changed();

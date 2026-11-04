@@ -9,6 +9,7 @@ import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
 import {payrollActorKey,syncPayslipImageButton} from '../takodeal-manager/payroll-completion.js';
 import {readPayrollSnapshot} from '../takodeal-manager/payroll-preview-guard.js';
 import {renderPayslipOptionalDeductions,renderRecurringPayslipDeductions} from '../takodeal-manager/payslip-optional-deductions.js';
+import {payrollAdjustmentDetailsHTML} from '../takodeal-manager/payroll-adjustment-model.js';
 const main=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),index=readFileSync(new URL('../takodeal-manager/index.html',import.meta.url),'utf8');
 const extract=name=>{const from=main.indexOf('\nwindow.'+name+' = '),to=main.indexOf('\n};',from+1);assert.ok(from>=0&&to>from);return main.slice(from+1,to+3);};
 const part=(start,end)=>index.slice(index.indexOf(start),index.indexOf(end,index.indexOf(start)));
@@ -32,7 +33,7 @@ function fixture(options={}){
  const readMany=h.api.getDocsFromServer;h.api.getDocsFromServer=async query=>{reads.push(query.table);return readMany(query);};
  for(const name of ['runTransaction','addDoc','setDoc','updateDoc','deleteDoc'])h.api[name]=async()=>{writes.push(name);assert.fail('Profile document actions must not write business records.');};
  const Swal={fire:async(...args)=>{dialogs.push(args[0]);const value=args[0];if(value?.html)h.popup=value.html;return{};},close:()=>{h.popup='';h.closed=(h.closed||0)+1;},showLoading(){}};
- const context=vm.createContext({window:h.api,document:d,Swal,staffDirectoryActorKey,payrollActorKey,activeStaffProfile,readPayrollSnapshot,renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,syncPayslipImageButton,Date,console,escapeHtml:value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),html2canvas:async()=>{captures.push(Object.fromEntries(['coeName','coeRole','coeDateHired','coeDateToday','coeEmploymentStatus','coeServiceVerb'].map(id=>[id,node(id).innerText])));if(options.capture)await options.capture();return {toDataURL:()=>signature};}});
+ const context=vm.createContext({window:h.api,document:d,Swal,staffDirectoryActorKey,payrollActorKey,activeStaffProfile,readPayrollSnapshot,renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,payrollAdjustmentDetailsHTML,syncPayslipImageButton,Date,console,escapeHtml:value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),html2canvas:async()=>{captures.push(Object.fromEntries(['coeName','coeRole','coeDateHired','coeDateToday','coeEmploymentStatus','coeServiceVerb'].map(id=>[id,node(id).innerText])));if(options.capture)await options.capture();return {toDataURL:()=>signature};}});
  const documentsStart=main.indexOf('const signedPayslipSnapshots=');vm.runInContext(main.slice(documentsStart,main.indexOf('\nwindow.viewReceiptDetails =',documentsStart)),context);
  for(const name of ['openPayslipModal','recalcPayslip','generateCOEImage'])vm.runInContext(extract(name),context);
  const click=async button=>{assert.ok(button);return vm.runInContext(button.attributes.onclick,context);};

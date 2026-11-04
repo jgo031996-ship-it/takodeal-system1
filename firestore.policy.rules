@@ -407,7 +407,11 @@ service cloud.firestore {
         || (root == 'expenses' && ((data.get('remittanceId','') != '' && data.get('remittanceId','') != null)
           || (data.get('cashMovement','') is string && data.get('cashMovement','').trim().lower() == 'remittance')
           || (data.get('category','') is string && data.get('category','').trim().lower() == 'cash remittance')
-          || (data.get('description','') is string && data.get('description','').matches('^\\[REMITTANCE TO HQ\\].*')))));
+          || (data.get('description','') is string && data.get('description','').matches('^\\[REMITTANCE TO HQ\\].*')))))
+        || (root == 'staff_bonuses' && (id.matches('payroll-adjustment-.*') || data.get('type','') == 'Payroll Adjustment')
+          && !(ownerDeductionOwner() && (resource == null || (oldData().status == 'Unpaid'
+            && newData().status.matches('Paid|Cancelled') && newData().diff(oldData()).affectedKeys().hasOnly(
+              ['status','payrollRecordId','cancel','at'])))));
     }
 
       function cashShiftCreate(data) {

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 import {dailyStaffRate, staffProfileOperation} from '../takodeal-manager/staff-rate-changes.js';
 import {escapeHTML as escapeHtml} from '../takodeal-manager/access-workspace-model.js';
+import {normalizeStaffMessengerUrl} from '../takodeal-manager/staff-messenger-link.js';
 
 const main = fs.readFileSync(new URL('../takodeal-manager/main.js', import.meta.url), 'utf8');
 function actualFunction(name) {
@@ -62,7 +63,7 @@ function fixture({missingId = false, deferredHistory = false} = {}) {
         saves.push({id, payload:structuredClone(payload), options:structuredClone(options),
             finish:() => resolve({profile:{...profiles[id], ...payload}}), fail:() => reject(Error('Simulated old save failure'))});
     });
-    const context = {isOwnerDeduction,
+    const context = {isOwnerDeduction,normalizeStaffMessengerUrl,
         window:api, document:{getElementById:node, querySelectorAll:() => deductions},escapeHtml,
         dailyStaffRate, staffProfileOperation, saveStaffProfileAtomic:atomic,
         Swal:{fire:(...args) => notices.push(args)}, installSanctionScheduling() {},

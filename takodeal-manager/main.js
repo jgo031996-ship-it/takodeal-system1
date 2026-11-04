@@ -1,3 +1,9 @@
+import {isPayrollAdjustment,payrollAdjustmentPreview,payrollAdjustmentDetailsHTML} from './payroll-adjustment-model.js';
+import {installPayrollAdjustmentUI} from './payroll-adjustment-ui.js';
+import {normalizeStaffMessengerUrl} from './staff-messenger-link.js';
+import {installPayrollMessenger} from './payroll-messenger.js';
+import {staffShiftProposalHTML,inspectStaffShiftProposal} from './saved-shift-proposal.js';
+import {resolveEmergencyShift} from './emergency-shift-model.js';
 import {installSecurityAlertLinks,escapeSecurityAlertText} from './security-alert-links.js';
 import {createCashierFleetApproval,isCashierFleetDevice} from './cashier-device-approval.js';
 import {installPaymentReconciliation} from './payment-reconciliation-ui.js';
@@ -6,7 +12,7 @@ import {installPendingPaymentReader} from './pending-payment-reader.js';
 import {installOwnerDeductionHistory} from './owner-deduction-history.js';
 import {installOwnerDeductions} from './owner-deduction-ui.js';
 import {isOwnerDeduction} from './owner-deduction-model.js';
-import {readPayrollOwnerDeductions,ownerDeductionDisplayRows} from './owner-deduction-payroll.js';
+import {readPayrollOwnerDeductions,ownerDeductionDisplayRows,ownerDeductionRecoveryRows} from './owner-deduction-payroll.js';
 import {renderPayslipOptionalDeductions,renderRecurringPayslipDeductions} from './payslip-optional-deductions.js';
 import {installCashRemittanceReview} from './cash-remittance-review-ui.js';
 import {installDisciplineCases} from './discipline-case-ui.js';
@@ -17,7 +23,7 @@ import {installMenuOptions} from './menu-options-ui.js';
 import {installProductEditorLayout} from './product-editor-layout.js';
 import {installProductAddonDrafts,readProductAddonRows} from './product-options-draft.js';
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
-runManagerDomReady(() => {installStaffSetupCodes(window,document);installScheduleProposalReview(window,document);});
+runManagerDomReady(() => {installStaffSetupCodes(window,document);installScheduleProposalReview(window,document);installPayrollAdjustmentUI(window,document);installPayrollMessenger(window,document,{presentSaved:async(saved,context)=>{context.assertCurrent();const frozen={...saved.frozenData,name:saved.frozenData?.name||context.name,staffId:context.staffId,branch:saved.frozenData?.branch||context.branch,start:context.start,end:context.end,isPaid:true,finalNetPay:saved.finalNetPay,...(saved.processedAt?{processedAt:saved.processedAt}:{}),...(saved.staffSignature?{staffSignature:saved.staffSignature}:{})};signedPayslipSnapshots.set(frozen,context.assertCurrent);await window.openPayslipModal(frozen.name,frozen);context.assertCurrent();return frozen;}});});
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {lateRequestSummary,lateRequestSummaryHTML,lateRequestRecoveryContext} from './late-request-summary.js';
 import {resolveCorrectedLateRequest,lateRequestResolutionFingerprint,reviewOriginalLateRequest} from './late-request-resolution.js';
@@ -138,7 +144,7 @@ import {installRecipeCostUI} from './recipe-cost-ui.js';
 import { loadRecipeState, createRecipeBatch, operationFor, recipePlan, saveRecipePlan, readRecipeRevision, recipeOperationApplied, loadInventoryDeletionState, inventoryDeletionPlan } from './recipe-changes.js';
 
 import { legacyRemittanceDuplicates } from './remittance-review.js';
-import { canOpenWorkspacePage,configuredPermissions } from './workspace-access-model.js';
+import { OWNER_EMAIL,canOpenWorkspacePage,configuredPermissions } from './workspace-access-model.js';
 import {installGovernmentPermits} from './government-permits.js';
 import {installBookkeeperPayments} from './bookkeeper-payments.js';
 import { createLogisticsFeed } from './logistics-feed.js';
@@ -9911,6 +9917,16 @@ window.updateLateRequestPreview = function() {
         if(button){button.disabled=!zero;button.innerText=zero?'Close reviewed zero-lateness letter':'Review dated attendance first';}
         target.innerHTML+='<p>'+ (zero?'The verified dated attendance has zero late minutes. Closing this letter keeps the original submission and the saved attendance review intact.':'Complete the dated attendance review before closing this letter. The original reported minutes will not overwrite the corrected review.')+'</p>';return;
     }
+    if(context.action==='Approved'&&context.request.staffShiftProposal){
+        const decision=document.getElementById('replyStaffShiftDecision')?.value,
+            owner=window.auth?.currentUser?.email?.toLowerCase()===OWNER_EMAIL&&window.sessionUser?.isOwner===true&&window.sessionUser?.isFranchisee!==true,
+            keep=decision==='Keep original assigned hours'&&owner&&shift?.wasScheduled===true&&shift.needsScheduleReview!==true&&shift.amendmentNeedsReview!==true&&document.getElementById('replyMessage')?.value.trim().length>=8,
+            reviewed=context.proposalHoursReviewed===true&&!context.proposalReferenceError&&context.request.attendanceLogId===attendance.id;
+        if(decision==='Keep original assigned hours'?!keep:!reviewed){
+            if(button){button.disabled=true;button.innerText='Review proposed hours first';}
+            target.innerHTML+='<p>Open linked attendance to confirm the assigned hours first. The Owner may instead keep verified original hours and enter a reason of at least 8 characters. This selection alone does not change the schedule or waive lateness.</p>';return;
+        }
+    }
     const rateProfile=staffProfileForWork(context.profile,attendance,shift);
     if(context.action==='Rejected'&&!(Number(staffRateForDate(rateProfile,rateProfile.salaryWorkDate))>0)){target.innerHTML+='<p>Set the Daily Rate effective on this work date before calculating a deduction.</p>';if(button)button.disabled=true;return;}
     const minutes=requestLateMinutes(context.request,attendance),late=latePay(minutes,rateProfile,shift,context.action==='Approved');
@@ -9926,6 +9942,8 @@ window.openLateRequestAttendance = function() {
     return window.openAttendanceRecovery(recovery);
 };
 window.handleRequest = async function(docId, action, type, amount, staffName) {
+    const openingUser=window.auth?.currentUser,openingSession=window.sessionUser,openingToken=Symbol('request review');window.lateRequestOpenToken=openingToken;
+    const assertOpening=()=>{if(window.auth?.currentUser!==openingUser||window.sessionUser!==openingSession||window.lateRequestOpenToken!==openingToken)throw Error('The open request or account changed. Reopen this letter.');};
     const cachedRequest = window.ownerInbox?.request(docId);
     if(cachedRequest?.type==='Early Time Out'&&cachedRequest.emergencyRelief?.version===1&&cachedRequest.timeOutLogId)return window.openAttendanceRecovery({staffId:cachedRequest.staffId,staffName:cachedRequest.staffName,branch:cachedRequest.branch,attendanceLogId:cachedRequest.timeInLogId,workDate:scheduleDateKey(cachedRequest.timeInAt),requestId:docId});
     if(cachedRequest?.type==='Early Time Out')return window.getManagerEarlyTimeOutUI().review(docId,action);
@@ -9966,8 +9984,20 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
             }
             if (!logs.length) throw new Error('No matching clock-in was found for this letter. Check the staff member’s attendance before reviewing it.');
             const minutes = requestLateMinutes(req, logs[0]);
-            window.lateRequestContext = { requestId: docId,request:{...req,id:docId}, action, logs, minutes, profile,
-                schedule: scheduleSnap };
+            let proposalHoursReviewed=false,proposalReferenceError='',proposalActualTimeInAt='';
+            if(req.staffShiftProposal){
+                try{
+                    const inspected=await inspectStaffShiftProposal(window,req,{assertCurrent:assertOpening});assertOpening();
+                    logs=logs.map(log=>log.id===inspected.start.id?inspected.start:log);proposalActualTimeInAt=inspected.actualTimeInAt;
+                    const head=await window.getDocFromServer(window.doc(window.db,'attendance_shift_confirmations',inspected.start.id));assertOpening();
+                    if(!head||head.metadata?.fromCache||head.metadata?.hasPendingWrites)throw Error('Reconnect to confirm the saved assigned-hours review.');
+                    const confirmed=resolveEmergencyShift(inspected.start,{...profile,id:profile.staffId,staffId:profile.staffId},head.exists()?head.data():null);
+                    const shift=resolveAttendanceShift(inspected.start,scheduleSnap,{[inspected.start.staffName]:profile});
+                    proposalHoursReviewed=confirmed?.emergencyShiftConfirmed===true||shift?.reliefReviewVerified===true;
+                }catch(error){assertOpening();proposalReferenceError=error.message||'The saved proposed shift needs a fresh review.';}
+            }
+            assertOpening();window.lateRequestContext = { requestId: docId,request:{...req,id:docId}, action, logs, minutes, profile,
+                schedule: scheduleSnap,proposalHoursReviewed,proposalReferenceError,proposalActualTimeInAt };
         }
     } catch (error) { return Swal.fire('Check request', error.message, 'warning'); }
     const isLateLetter = isLatenessRequest(req);
@@ -9979,8 +10009,9 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
                 <h3 style="margin-top: 0; color: #0f172a;">${action === 'Approved' ? '✅ Approve' : '❌ Reject'} Request</h3>
                 <p style="font-size: 13px; color: #64748b; margin-bottom: 15px;">Send a message to <strong>${requestEscape(staffName)}</strong> regarding this ${requestEscape(type)}.</p>
 
+                ${isLateLetter&&req.staffShiftProposal ? staffShiftProposalHTML(req.staffShiftProposal)+(window.lateRequestContext?.proposalReferenceError?'<p role="status" style="color:#a14124">'+requestEscape(window.lateRequestContext.proposalReferenceError)+'</p>':'<p>Saved plotted reference checked with HQ. Original Time In: '+requestEscape(new Date(window.lateRequestContext.proposalActualTimeInAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'}))+' (PH). The proposed hours still require a separate authorized review.</p>')+'<label for="replyStaffShiftDecision">Proposed schedule review</label><select id="replyStaffShiftDecision" onchange="window.updateLateRequestPreview()" style="width:100%;padding:10px;margin:8px 0"><option value="">Review proposed hours on linked attendance first</option><option value="Keep original assigned hours">Keep original assigned hours; review the explanation separately</option></select>' : ''}
                 <label style="font-size: 12px; font-weight: bold; color: #334155;">Manager Reply / Reason:</label>
-                <textarea id="replyMessage" placeholder="Type your explanation or instructions here..." style="width: 100%; height: 80px; padding: 10px; margin-top: 5px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-family: inherit; resize: none;"></textarea>
+                <textarea id="replyMessage" oninput="window.updateLateRequestPreview()" placeholder="Type your explanation or instructions here..." style="width: 100%; height: 80px; padding: 10px; margin-top: 5px; margin-bottom: 15px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-family: inherit; resize: none;"></textarea>
 
                 ${action === 'Approved' && !isLateLetter ? `
                 <label style="font-size: 12px; font-weight: bold; color: #334155;">Proof of Payment (Screenshot):</label>
@@ -10059,6 +10090,7 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
             const result = await reviewOriginalLateRequest(window, {
                 requestId: docId, attendanceId: document.getElementById('replyAttendanceLog').value,
                 profileId:context.profile.staffId || context.profile.id,
+                proposalDecision:document.getElementById('replyStaffShiftDecision')?.value||undefined,
                 action, reply: replyMsg, actor: window.sessionUser?.cashierName || 'Manager'
             });
             if(!ownsLateReply())return;
@@ -10641,7 +10673,7 @@ window.loadPayrollGenerator = async function() {
             }
             let amt = parseFloat(deduct.amount) || 0;
             if(cashShortage){staffData[name].cashShortages=(staffData[name].cashShortages||0)+checkedCashShortages.get(docSnap.id).amount;(staffData[name].cashShortageRows ||= []).push({id:docSnap.id,amount:checkedCashShortages.get(docSnap.id).amount});}
-            else if(ownerDeduction){const checked=checkedOwnerDeductions.get(docSnap.id);staffData[name].ownerDeductions=(staffData[name].ownerDeductions||0)+checked.amount;(staffData[name].ownerDeductionRows ||= []).push({id:docSnap.id,amount:checked.amount});(staffData[name].ownerDeductionDetails ||= []).push(...ownerDeductionDisplayRows([checked]));}
+            else if(ownerDeduction){const checked=checkedOwnerDeductions.get(docSnap.id);staffData[name].ownerDeductions=(staffData[name].ownerDeductions||0)+checked.amount;(staffData[name].ownerDeductionRows ||= []).push({id:docSnap.id,amount:checked.amount});(staffData[name].ownerDeductionDetails ||= []).push(...ownerDeductionDisplayRows([checked]));(staffData[name].payrollRecoveryRows ||= []).push(...ownerDeductionRecoveryRows([checked]));}
             else if(deduct.type==='Online Order Refund'){
                 if(staffDict[name]?.staffId!==deduct.staffId || deduct.staffName!==name)throw Error('An online refund belongs to an ambiguous employee name. Resolve the directory before payroll.');
                 staffData[name].onlineRefunds=(staffData[name].onlineRefunds||0)+amt;
@@ -10654,6 +10686,15 @@ window.loadPayrollGenerator = async function() {
 
         bonusSnap.forEach(docSnap => {
             let b = docSnap.data();
+            if(isPayrollAdjustment({...b,id:docSnap.id})){
+                const creditName=staffNameById[b.staffId],profile=creditName&&staffDict[creditName];
+                if(!profile){unmatchedBalanceRows.push({name:b.staffName||'Employee identity needs review',branch:b.branch||'Not confirmed',reason:'Confirm the saved employee for this previous payroll credit.',records:[{...b,id:docSnap.id}]});return;}
+                const credit=payrollAdjustmentPreview([{...b,id:docSnap.id}],{staffId:profile.staffId,name:creditName,branch:profile.branch,start:startDateRaw,end:endDateRaw});
+                if(!credit.amount)return;
+                const row=staffData[creditName] ||= {branch:profile.branch,totalHours:0,shiftsWorked:0,nightShifts:0,nightBonusTotal:0,holidayPayTotal:0,foodDeductions:0,cashAdvances:0,loans:0,ledgerId:null,sss:0,pagibig:0,philhealth:0,lateDeduction:0,logs:[]};
+                row.payrollAdjustments=Math.round(((row.payrollAdjustments||0)+credit.amount)*100)/100;(row.payrollAdjustmentRows ||= []).push(...credit.rows);
+                const sources=balanceSources.get(creditName)||[];sources.push({...b,id:docSnap.id});balanceSources.set(creditName,sources);return;
+            }
             const bonusIdentity=rosterResolver(b);
             if(bonusIdentity.status!=='matched'||bonusIdentity.nameCollision){unmatchedBalanceRows.push({name:b.staffName||'Employee identity needs review',branch:b.branch||'Not confirmed',reason:bonusIdentity.reason,records:[{...b,id:docSnap.id,type:'Earned bonus · '+(b.type||'Bonus')}]});return;}
             let name=bonusIdentity.name;
@@ -10735,7 +10776,7 @@ window.loadPayrollGenerator = async function() {
                     
                     // (Around line 1928) Update globalPayrollCache to include the perfBonus
                     previewCache[name] = {
-                        name: name, staffId:profile.staffId, ownerDeductions:d.ownerDeductions||0,ownerDeductionRows:d.ownerDeductionRows||[],ownerDeductionDetails:d.ownerDeductionDetails||[],cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
+                        name: name, staffId:profile.staffId, payrollAdjustments:d.payrollAdjustments||0,payrollAdjustmentRows:d.payrollAdjustmentRows||[], ownerDeductions:d.ownerDeductions||0,ownerDeductionRows:d.ownerDeductionRows||[],ownerDeductionDetails:d.ownerDeductionDetails||[],payrollRecoveryRows:d.payrollRecoveryRows||[],cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, perfBonus: d.perfBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: salaryPreview.profile, start: startDateRaw, end: endDateRaw,
@@ -10747,11 +10788,12 @@ window.loadPayrollGenerator = async function() {
                 }
 
                 let totalDeduct = (d.customDeductionsTotal || 0) + (d.ownerDeductions || 0) + (d.cashShortages || 0) + (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
-                let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0);
+                let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0) + (d.payrollAdjustments || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0 && !d.attendanceReviewRequired) masterPayrollTotal += estNet;
                 
                 const displayedNightBonus = d.nightBonus ?? d.nightBonusTotal ?? 0;
+                let adjustmentLabel = d.payrollAdjustments > 0 ? '<br><span style="font-size:11px;color:#166534">+₱'+d.payrollAdjustments.toFixed(2)+' (Previous payroll credits)</span>' : '';
                 let bonusLabel = displayedNightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${displayedNightBonus} Mid/Night Bonus</span>` : '';
                 let straightLabel = (d.straightBonus || 0) > 0 ? `<br><span style="font-size:11px; color:#8b5cf6; font-weight:bold;">+₱${d.straightBonus.toFixed(2)} Straight Bonus</span>` : '';
                 let holLabel = d.holidayPayTotal > 0 ? `<br><span style="font-size:11px; color:#ea580c; font-weight:bold;">+₱${d.holidayPayTotal.toFixed(2)} Holiday Pay</span>` : '';
@@ -10768,7 +10810,7 @@ window.loadPayrollGenerator = async function() {
                     <tr style="border-bottom: 1px dashed #e2e8f0; ${isPaid ? "background: #f8fafc; opacity: 0.85;" : ""}">
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
-                        <td style="padding: 12px; font-weight: bold;">${d.attendanceReviewRequired ? heldPayrollReviewHTML(d) : (d.hours ?? d.totalHours ?? 0).toFixed(2)+' hrs'} ${bonusLabel} ${straightLabel} ${holLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">${d.attendanceReviewRequired ? heldPayrollReviewHTML(d) : (d.hours ?? d.totalHours ?? 0).toFixed(2)+' hrs'} ${bonusLabel} ${straightLabel} ${holLabel} ${adjustmentLabel}</td>
                         <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.cashShortages ? '<br><span style="font-size:11px;color:#b45309">-₱'+d.cashShortages.toFixed(2)+' (Owner-reviewed cash shortage)</span>' : ''}${d.ownerDeductions ? '<br><span style="font-size:11px;color:#b45309">-₱'+d.ownerDeductions.toFixed(2)+' (One-time custom deductions)</span>' : ''}${d.customDeductionsTotal ? '<br><span style="font-size:11px;color:#64756d">-₱'+d.customDeductionsTotal.toFixed(2)+' (Recurring deductions)</span>' : ''}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
@@ -10856,7 +10898,7 @@ window.openPayslipModal = async function(staffName, savedHistoryData = null) {
     
     let safeBasicPay = parseFloat(data.basicPay) || 0;
     safeSet('psBasicPay', heldView?(data.salaryReviewRequired?'Awaiting rate review':'Review pending'):safeBasicPay.toLocaleString(undefined, {minimumFractionDigits: 2}));
-    safeSet('psDocumentTitle',savedHistoryData?'Signed payslip · saved record':heldView?'Payroll review draft':'Digital Payslip Generator');
+    safeSet('psDocumentTitle',savedHistoryData?(data.staffSignature?'Signed payslip · saved record':'Payslip · saved record'):heldView?'Payroll review draft':'Digital Payslip Generator');
     safeSet('psDocumentState',heldView?'REVIEW DRAFT · Pay not yet confirmed':'Payslip');
     
     safeSet('psDaysWorked', heldView?'review pending':data.shiftsWorked || 0);
@@ -10871,6 +10913,9 @@ window.openPayslipModal = async function(staffName, savedHistoryData = null) {
     safeSet('psStraightBonus', data.straightBonus || 0); 
     safeSet('psHoliday', data.holidayPayTotal || 0);
     safeSet('psPerfBonus', data.perfBonus || 0); // 🔥 Add this!
+    safeSet('psPayrollAdjustments',Number(data.payrollAdjustments||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2}));
+    const creditBox=document.getElementById('psPayrollAdjustmentIncome');if(creditBox){creditBox.hidden=!(Number(data.payrollAdjustments)>0);creditBox.style.display=creditBox.hidden?'none':'flex';}
+    const creditDetails=document.getElementById('psPayrollAdjustmentDetails');if(creditDetails)creditDetails.innerHTML=payrollAdjustmentDetailsHTML(data,{live:!paidView});
     
     let memoryNotice=document.getElementById('psScheduleMemory');
     if(!memoryNotice){memoryNotice=document.createElement('div');memoryNotice.id='psScheduleMemory';memoryNotice.className='payslip-schedule-memory';document.getElementById('psAttendanceBody')?.closest('table')?.before(memoryNotice);}
@@ -10940,6 +10985,7 @@ window.openPayslipModal = async function(staffName, savedHistoryData = null) {
     let modal = document.getElementById('payslipModal');
     if(modal){modal.style.zIndex=savedHistoryData?'11000':'10000';modal.style.display='flex';}
     syncPayslipImageButton(window,document);
+    const messengerButton=document.getElementById('btnPreparePayrollMessenger');if(messengerButton){messengerButton.hidden=!paidView;messengerButton.disabled=!paidView;}
 };
 
 window.recalcPayslip = function() {
@@ -10972,7 +11018,7 @@ window.recalcPayslip = function() {
         customDeductionsSum += (parseFloat(inp.value) || 0);
     });
 
-    let gross = basic + overtime + straightBonus + holiday + perfBonus;
+    let gross = basic + overtime + straightBonus + holiday + perfBonus + Number(window.currentPayslipData?.payrollAdjustments||0);
     let deductions = late + sss + phil + pagibig + advance + loans + foods + getVal('psOnlineRefunds') + Number(window.currentPayslipData?.cashShortages||0) + Number(window.currentPayslipData?.ownerDeductions||0) + customDeductionsSum;
     let net = gross - deductions;
     const paidSnapshot=window.currentPayslipData;
@@ -11013,7 +11059,7 @@ window.finalizePayslip = async function() {
             return {...data,loans:getVal('psLoans'),advances:getVal('psAdvance'),meals:getVal('psFoods'),lateDeduction:getVal('psLate'),sss:getVal('psSSS'),philhealth:getVal('psPhil'),pagibig:getVal('psPagibig'),straightBonus:getVal('psStraightBonus'),perfBonus:getVal('psPerfBonus'),sourcePerfBonus:data.perfBonus||0,holidayPayTotal:getVal('psHoliday'),basicPay:getVal('psBasicPay'),nightBonus:getVal('psOvertime'),customDeductions:custom,customDeductionsTotal:Math.round(custom.reduce((sum,row)=>sum+row.amount,0)*100)/100,profile:{...data.profile,customDeductions:custom}};
         };
         const snapshot=capture(),finalNetPay=getVal('psNetPay');
-        const intent=row=>JSON.stringify(['loans','advances','meals','lateDeduction','sss','philhealth','pagibig','straightBonus','perfBonus','holidayPayTotal','basicPay','nightBonus','customDeductionsTotal','customDeductions'].map(key=>row[key]));
+        const intent=row=>JSON.stringify(['loans','advances','meals','lateDeduction','sss','philhealth','pagibig','straightBonus','perfBonus','holidayPayTotal','basicPay','nightBonus','payrollAdjustments','payrollAdjustmentRows','customDeductionsTotal','customDeductions'].map(key=>row[key]));
         const capturedIntent=intent(snapshot);
         const currentIntent=()=>{current();if(intent(capture())!==capturedIntent||getVal('psNetPay')!==finalNetPay)throw Error('Payslip amounts changed while payment was being prepared. Review them and confirm payment again.');};
         const optionsHtml=accounts.map((account,index)=>'<option value="'+index+'">'+escapeHtml(account.name)+' (Bal: ₱'+Number(account.balance).toLocaleString(undefined,{minimumFractionDigits:2})+')</option>').join('');
@@ -11042,6 +11088,7 @@ window.finalizePayslip = async function() {
         }
         let sameActor=false;try{sameActor=payrollActorKey(window)===actorKey;}catch{}
         if(sameActor)Swal.fire({toast:true,position:'top-end',icon:'success',title:saved.alreadyPaid?'Payroll was already saved':'Payroll paid and saved',text:saved.alreadyPaid?'Saved payslip confirmed. No new deduction.':'₱'+saved.finalNetPay.toLocaleString(undefined,{minimumFractionDigits:2})+' · '+(saved.accountName||account.name),timer:3500,showConfirmButton:false});
+        if(sameActor&&!saved.alreadyPaid)void window.offerPayrollMessenger?.(data);
     }catch(error){
         console.error(error);
         let sameActor=false;try{sameActor=payrollActorKey(window)===actorKey;}catch{}
@@ -11744,7 +11791,7 @@ window.generateAutoPayslips = async function() {
             }
             let amt = parseFloat(deduct.amount) || 0;
             if(cashShortage){staffData[name].cashShortages=(staffData[name].cashShortages||0)+checkedCashShortages.get(docSnap.id).amount;(staffData[name].cashShortageRows ||= []).push({id:docSnap.id,amount:checkedCashShortages.get(docSnap.id).amount});}
-            else if(ownerDeduction){const checked=checkedOwnerDeductions.get(docSnap.id);staffData[name].ownerDeductions=(staffData[name].ownerDeductions||0)+checked.amount;(staffData[name].ownerDeductionRows ||= []).push({id:docSnap.id,amount:checked.amount});(staffData[name].ownerDeductionDetails ||= []).push(...ownerDeductionDisplayRows([checked]));}
+            else if(ownerDeduction){const checked=checkedOwnerDeductions.get(docSnap.id);staffData[name].ownerDeductions=(staffData[name].ownerDeductions||0)+checked.amount;(staffData[name].ownerDeductionRows ||= []).push({id:docSnap.id,amount:checked.amount});(staffData[name].ownerDeductionDetails ||= []).push(...ownerDeductionDisplayRows([checked]));(staffData[name].payrollRecoveryRows ||= []).push(...ownerDeductionRecoveryRows([checked]));}
             else if(deduct.type==='Online Order Refund'){
                 if(staffDict[name]?.staffId!==deduct.staffId || deduct.staffName!==name)throw Error('An online refund belongs to an ambiguous employee name. Resolve the directory before payroll.');
                 staffData[name].onlineRefunds=(staffData[name].onlineRefunds||0)+amt;
@@ -11757,6 +11804,15 @@ window.generateAutoPayslips = async function() {
 
         bonusSnap.forEach(docSnap => {
             let b = docSnap.data();
+            if(isPayrollAdjustment({...b,id:docSnap.id})){
+                const creditName=staffNameById[b.staffId],profile=creditName&&staffDict[creditName];
+                if(!profile){unmatchedBalanceRows.push({name:b.staffName||'Employee identity needs review',branch:b.branch||'Not confirmed',reason:'Confirm the saved employee for this previous payroll credit.',records:[{...b,id:docSnap.id}]});return;}
+                const credit=payrollAdjustmentPreview([{...b,id:docSnap.id}],{staffId:profile.staffId,name:creditName,branch:profile.branch,start:startInput,end:endInput});
+                if(!credit.amount)return;
+                const row=staffData[creditName] ||= {branch:profile.branch,totalHours:0,shiftsWorked:0,nightShifts:0,nightBonusTotal:0,holidayPayTotal:0,foodDeductions:0,cashAdvances:0,loans:0,ledgerId:null,sss:0,pagibig:0,philhealth:0,lateDeduction:0,logs:[]};
+                row.payrollAdjustments=Math.round(((row.payrollAdjustments||0)+credit.amount)*100)/100;(row.payrollAdjustmentRows ||= []).push(...credit.rows);
+                const sources=balanceSources.get(creditName)||[];sources.push({...b,id:docSnap.id});balanceSources.set(creditName,sources);return;
+            }
             const bonusIdentity=rosterResolver(b);
             if(bonusIdentity.status!=='matched'||bonusIdentity.nameCollision){unmatchedBalanceRows.push({name:b.staffName||'Employee identity needs review',branch:b.branch||'Not confirmed',reason:bonusIdentity.reason,records:[{...b,id:docSnap.id,type:'Earned bonus · '+(b.type||'Bonus')}]});return;}
             let name=bonusIdentity.name;
@@ -11826,7 +11882,7 @@ window.generateAutoPayslips = async function() {
                     let customDeductSum = 0; profileCustomDeducts.forEach(c => customDeductSum += c.amount);
                     
                     previewCache[name] = {
-                        name: name, staffId:profile.staffId, ownerDeductions:d.ownerDeductions||0,ownerDeductionRows:d.ownerDeductionRows||[],ownerDeductionDetails:d.ownerDeductionDetails||[],cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
+                        name: name, staffId:profile.staffId, payrollAdjustments:d.payrollAdjustments||0,payrollAdjustmentRows:d.payrollAdjustmentRows||[], ownerDeductions:d.ownerDeductions||0,ownerDeductionRows:d.ownerDeductionRows||[],ownerDeductionDetails:d.ownerDeductionDetails||[],payrollRecoveryRows:d.payrollRecoveryRows||[],cashShortages:d.cashShortages||0, cashShortageRows:d.cashShortageRows||[], onlineRefunds:d.onlineRefunds||0, onlineRefundRows:d.onlineRefundRows||[], branch: d.branch, hours: d.totalHours, nightBonus: d.nightBonusTotal, holidayPayTotal: d.holidayPayTotal,
                         straightBonus: d.straightDutyBonusTotal || 0, advances: d.cashAdvances, meals: d.foodDeductions, loans: d.loans, ledgerId: d.ledgerId,
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: salaryPreview.profile, start: startInput, end: endInput,
@@ -11838,11 +11894,12 @@ window.generateAutoPayslips = async function() {
                 }
 
                 let totalDeduct = (d.customDeductionsTotal || 0) + (d.ownerDeductions || 0) + (d.cashShortages || 0) + (d.onlineRefunds || 0) + (d.meals || 0) + (d.advances || 0) + (d.loans || 0) + (d.sss || 0) + (d.pagibig || 0) + (d.philhealth || 0) + (d.lateDeduction || 0);
-                let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0) + (d.perfBonus || 0);
+                let estGross = d.basicPay + (d.nightBonus ?? d.nightBonusTotal ?? 0) + (d.straightBonus || 0) + (d.holidayPayTotal || 0) + (d.perfBonus || 0) + (d.payrollAdjustments || 0);
                 let estNet = estGross - totalDeduct;
                 if (estNet > 0 && !d.attendanceReviewRequired) masterPayrollTotal += estNet;
                 
                 const displayedNightBonus = d.nightBonus ?? d.nightBonusTotal ?? 0;
+                let adjustmentLabel = d.payrollAdjustments > 0 ? '<br><span style="font-size:11px;color:#166534">+₱'+d.payrollAdjustments.toFixed(2)+' (Previous payroll credits)</span>' : '';
                 let bonusLabel = displayedNightBonus > 0 ? `<br><span style="font-size:11px; color:#f59e0b; font-weight:bold;">+₱${displayedNightBonus} Mid/Night Bonus</span>` : '';
                 let straightLabel = (d.straightBonus || 0) > 0 ? `<br><span style="font-size:11px; color:#8b5cf6; font-weight:bold;">+₱${d.straightBonus.toFixed(2)} Straight Bonus</span>` : '';
                 let holLabel = d.holidayPayTotal > 0 ? `<br><span style="font-size:11px; color:#ea580c; font-weight:bold;">+₱${d.holidayPayTotal.toFixed(2)} Holiday Pay</span>` : '';
@@ -11862,7 +11919,7 @@ window.generateAutoPayslips = async function() {
                     <tr style="border-bottom: 1px dashed #e2e8f0; ${isPaid ? "background: #f8fafc; opacity: 0.85;" : ""}">
                         <td style="padding: 12px; font-weight: bold; color: #1e293b;">${name}</td>
                         <td style="padding: 12px; color: #64748b;">${d.branch}</td>
-                        <td style="padding: 12px; font-weight: bold;">${d.attendanceReviewRequired ? heldPayrollReviewHTML(d) : (d.hours ?? d.totalHours ?? 0).toFixed(2)+' hrs'} ${bonusLabel} ${straightLabel} ${holLabel} ${perfLabel}</td>
+                        <td style="padding: 12px; font-weight: bold;">${d.attendanceReviewRequired ? heldPayrollReviewHTML(d) : (d.hours ?? d.totalHours ?? 0).toFixed(2)+' hrs'} ${bonusLabel} ${straightLabel} ${holLabel} ${adjustmentLabel} ${perfLabel}</td>
                         <td style="padding: 12px; font-weight: bold;">Total: ₱${totalDeduct.toFixed(2)} ${foodLabel} ${valeLabel} ${loanLabel} ${lateLabel}${d.cashShortages ? '<br><span style="font-size:11px;color:#b45309">-₱'+d.cashShortages.toFixed(2)+' (Owner-reviewed cash shortage)</span>' : ''}${d.ownerDeductions ? '<br><span style="font-size:11px;color:#b45309">-₱'+d.ownerDeductions.toFixed(2)+' (One-time custom deductions)</span>' : ''}${d.customDeductionsTotal ? '<br><span style="font-size:11px;color:#64756d">-₱'+d.customDeductionsTotal.toFixed(2)+' (Recurring deductions)</span>' : ''}${d.penalties ? '<br>Scheduled penalties for review: ₱'+d.penalties.toFixed(2)+' (excluded from net pay)' : ''}</td>
                         <td style="padding: 12px;">${buttonHtml}</td>
                     </tr>
@@ -23962,6 +24019,7 @@ window.addNewStaff = function() {
     setVal('empGcashNum', '');
     setVal('empGotymeName', '');
     setVal('empGotymeNum', '');
+    setVal('empMessengerUrl','');setCheck('empMessengerPayslipPrompt',false);
     setVal('empSSS', '');
     setVal('empPhilhealth', '');
     setVal('empPagibig', '');
@@ -24015,6 +24073,7 @@ window.openEmployeeProfile = function(docId) {
     setVal('empGcashNum', data.gcashNum || '');
     setVal('empGotymeName', data.gotymeName || '');
     setVal('empGotymeNum', data.gotymeNum || '');
+    setVal('empMessengerUrl',data.messengerUrl||'');setCheck('empMessengerPayslipPrompt',data.messengerPayslipPrompt===true);
     setVal('empSSS', data.sss || '');
     setVal('empPhilhealth', data.philhealth || '');
     setVal('empPagibig', data.pagibig || '');
@@ -24149,6 +24208,7 @@ window.saveEmployeeProfile = async function() {
     let branch = document.getElementById('empBranchAssign').value;
     let rate = Number(document.getElementById('empHourlyRate').value);
     const effectiveDate=salaryDateField.value;
+    let messengerUrl;try{messengerUrl=normalizeStaffMessengerUrl(document.getElementById('empMessengerUrl')?.value||'');}catch(error){return window.ManagerUI.notify(error.message);}
     let newRole = document.getElementById('empRole').value.trim();
     let isWorkingStudent = document.getElementById('staffWorkingStudent').checked;
     let pin = document.getElementById('empPin').value.trim();
@@ -24205,6 +24265,7 @@ window.saveEmployeeProfile = async function() {
         gcashNum: document.getElementById('empGcashNum').value.trim(),
         gotymeName: document.getElementById('empGotymeName').value.trim(),
         gotymeNum: document.getElementById('empGotymeNum').value.trim(),
+        messengerUrl,messengerPayslipPrompt:!!document.getElementById('empMessengerPayslipPrompt')?.checked,
         sss: document.getElementById('empSSS').value.trim(),
         philhealth: document.getElementById('empPhilhealth').value.trim(),
         pagibig: document.getElementById('empPagibig').value.trim(),
