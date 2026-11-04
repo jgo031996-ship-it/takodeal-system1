@@ -1,5 +1,6 @@
 // Display only the values saved with a payslip. Never consult today's profile
 // to reconstruct an older payment or infer receipts from an equal total.
+import {payrollRecoveryDetails} from './payroll-recovery-model.js';
 const clean=value=>String(value??'').trim();
 const cents=value=>{const n=Number(value??0);return Number.isFinite(n)&&n>=0&&Number.isSafeInteger(Math.round(n*100))?Math.round(n*100):0;};
 const money=value=>'₱'+(cents(value)/100).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -24,6 +25,7 @@ function detail(row,amount=row.amount){
  const result={id:clean(row.id),bucket:bucket(row),type:clean(row.type||row.label),amount:cents(amount)/100,items:items(row)};
  for(const key of ['sourcePlatform','sourceReceiptId','sourceSaleId','purchaseId','purchaseReceiptId','receiptId','item','remarks'])if(clean(row[key]))result[key]=clean(row[key]).slice(0,key==='remarks'?1000:600);
  for(const key of ['label','category','incidentDate','effectiveDate'])if(clean(row[key]))result[key]=clean(row[key]).slice(0,key==='label'?200:key==='category'?120:24);
+ if(row.payrollRecovery)result.payrollRecovery=payrollRecoveryDetails(row.payrollRecovery);
  if(row.originalAmount!==undefined)result.originalAmount=cents(row.originalAmount)/100;
  if(row.purchaseAmount!==undefined)result.purchaseAmount=cents(row.purchaseAmount)/100;
  if(Number.isFinite(Number(row.discountPct))&&Number(row.discountPct)>=0&&Number(row.discountPct)<=100)result.discountPct=Number(row.discountPct);
@@ -53,7 +55,7 @@ export function payslipDeductionBreakdown(data={}){
   if(!source.length&&key==='cashShortages')source=saved.cashShortageRows||[];
   if(!source.length&&key==='ownerDeductions')source=saved.ownerDeductionDetails||[];
   source=Array.isArray(source)?source:[];
-  const entries=source.map(row=>detail({...row,type:row.type||label,bucket:key})).filter(row=>row.amount>0);
+  const entries=source.map(row=>{const recovery=key==='ownerDeductions'&&Array.isArray(saved.payrollRecoveryRows)?saved.payrollRecoveryRows.find(item=>item.id===row.id&&cents(item.amount)===cents(row.amount)):null;return detail({...row,...(recovery?{payrollRecovery:recovery}:{}),type:row.type||label,bucket:key});}).filter(row=>row.amount>0);
   const complete=entries.length>0&&entries.reduce((sum,row)=>sum+cents(row.amount),0)===cents(amount);
   const needsDetail=amount>0&&['advances','meals','onlineRefunds','cashShortages','ownerDeductions'].includes(key);
   return {key,label,amount,entries:complete?entries:[],note:needsDetail&&!complete?'This older payslip saved the total without individual receipt details. Ask HQ to review the original records.':''};
@@ -82,7 +84,9 @@ export function deductionEntryHTML(row){
  const discount=row.discountPct!==undefined&&Number(row.discountPct)>0?` · ${escape(row.discountPct)}% staff discount`:'';
  const allocation=row.purchaseAmount!==undefined&&cents(row.purchaseAmount)>cents(row.amount)?`<div style="color:#64748b;font-size:11px;line-height:1.5;margin-top:4px">Collected this payslip: ${money(row.amount)} of the ${money(row.purchaseAmount)} purchase. Items below describe the original purchase.</div>`:'';
  const ownerDetails=bucket(row)==='ownerDeductions'?[row.category,row.incidentDate?'Incident date '+row.incidentDate:'',row.effectiveDate?'Payroll effective '+row.effectiveDate:''].filter(Boolean).map(escape).join(' · '):'';
- return `<div style="padding:8px 0;border-top:1px dashed #e2e8f0"><div style="display:flex;justify-content:space-between;gap:12px"><strong>${escape(row.label||row.type||'Receipt deduction')}</strong><strong style="white-space:nowrap">${money(row.amount)}</strong></div>${source?`<div style="color:#64748b;font-size:11px;overflow-wrap:anywhere;margin-top:3px">${source}${discount}</div>`:''}${ownerDetails?`<div style="color:#64748b;font-size:11px;overflow-wrap:anywhere;margin-top:3px">${ownerDetails}</div>`:''}${allocation}${itemText?`<div style="color:#475569;font-size:12px;line-height:1.5;margin-top:4px;overflow-wrap:anywhere">${itemText}</div>`:''}${optionsNote}</div>`;
+ const recovery=row.payrollRecovery?payrollRecoveryDetails(row.payrollRecovery):null;
+ const recoveryDetails=recovery?'<div style="margin-top:6px;font-size:11px;line-height:1.5;color:#6b5428">Previous payroll recovery · Original cutoff '+escape(recovery.originalStart)+' to '+escape(recovery.originalEnd)+'<br>Original paid payslip '+escape(recovery.sourcePayrollRecordId)+' · Saved net '+money(recovery.sourceNetPay)+'. This receiving payslip includes only the reviewed recovery amount above.'+(recovery.reason?'<br>Reason: '+escape(recovery.reason):'')+'</div>':'';
+ return `<div style="padding:8px 0;border-top:1px dashed #e2e8f0"><div style="display:flex;justify-content:space-between;gap:12px"><strong>${escape(row.label||row.type||'Receipt deduction')}</strong><strong style="white-space:nowrap">${money(row.amount)}</strong></div>${source?`<div style="color:#64748b;font-size:11px;overflow-wrap:anywhere;margin-top:3px">${source}${discount}</div>`:''}${ownerDetails?`<div style="color:#64748b;font-size:11px;overflow-wrap:anywhere;margin-top:3px">${ownerDetails}</div>`:''}${recoveryDetails}${allocation}${itemText?`<div style="color:#475569;font-size:12px;line-height:1.5;margin-top:4px;overflow-wrap:anywhere">${itemText}</div>`:''}${optionsNote}</div>`;
 }
 export function payslipDeductionDetailsHTML(data,{live=false,showTotal=true}={}){
  const result=payslipDeductionBreakdown(data);

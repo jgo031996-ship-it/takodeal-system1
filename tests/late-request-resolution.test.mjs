@@ -6,6 +6,7 @@ import {resolveCorrectedLateRequest,lateRequestResolutionFingerprint,reviewOrigi
 import {createFirestoreHealth,guardFirestoreOperations} from '../takodeal-manager/firestore-health.js';
 import {attendanceLateMinutes,resolveAttendanceShift} from '../takodeal-manager/payroll-safety.js';
 import {lateRequestSummary} from '../takodeal-manager/late-request-summary.js';
+import {loadSavedShiftChoices,makeSavedShiftProposal} from '../takodeal-manager/saved-shift-proposal.js';
 const requestId='sample-letter',state=f=>structuredClone([...f.docs]);
 async function fixture({confirmed=true}={}){
  const f=await amendmentFixture();f.api.isBranchAllowed=branch=>branch===f.branch;
@@ -45,6 +46,26 @@ async function originalFixture(){
  const input={requestId,attendanceId:f.attendanceId,profileId:f.staffId,action:'Rejected',reply:'Reviewed the original saved clock-in.',actor:'Synthetic HQ Manager'};
  return Object.assign(f,{legacyInput:input,restoreCorrection(){for(const [path,row]of saved)f.put(path,row);},legacy:patch=>reviewOriginalLateRequest(f.api,{...input,...patch})});
 }
+
+test('a staff-selected saved slot cannot by itself approve a lateness letter or rewrite its original assigned hours',async()=>{
+ const f=await originalFixture(),input={start:f.withId(),staffId:f.staffId,staffName:f.name},loaded=await loadSavedShiftChoices(f.api,input);
+ assert.ok(loaded.choices.length);const chosen=loaded.choices[0];f.get('staff_requests/'+requestId).staffShiftProposal=makeSavedShiftProposal(loaded.history,input,{key:chosen.key,sourceFingerprint:chosen.sourceFingerprint});
+ const before=state(f);await assert.rejects(f.legacy({action:'Approved'}),/Review this proposed shift/);assert.deepEqual(state(f),before);
+});
+
+test('verified Owner may explicitly reject a proposal and approve the explanation with the original assigned hours retained',async()=>{
+ const f=await originalFixture();Object.assign(f.api.auth.currentUser,{email:'jgo031996@gmail.com'});Object.assign(f.api.sessionUser,{email:'jgo031996@gmail.com',isOwner:true,role:'Owner',permissions:['all'],allowedBranches:['All']});
+ f.get('staff_requests/'+requestId).staffShiftProposal={unverified:'This rejected client proposal must not set hours.'};
+ const original=structuredClone(f.withId().scheduleSnapshot),paid=structuredClone(f.get('payroll_records/sample-paid'));
+ await f.legacy({action:'Approved',proposalDecision:'Keep original assigned hours',reply:'Reject the proposed schedule; excuse reviewed against the original assigned hours.',actor:'Sample Owner'});
+ assert.equal(f.get('attendance_logs/'+f.attendanceId).lateExempted,true);assert.deepEqual(f.withId().scheduleSnapshot,original);assert.deepEqual(f.get('payroll_records/sample-paid'),paid);
+ assert.equal(f.get('staff_requests/'+requestId).staffShiftProposalReview.decision,'Rejected - original assigned hours retained');
+});
+
+test('a non-Owner cannot bypass the proposed-hours review through the keep-original decision',async()=>{
+ const f=await originalFixture();f.get('staff_requests/'+requestId).staffShiftProposal={referenceOnly:true};const before=state(f);
+ await assert.rejects(f.legacy({action:'Approved',proposalDecision:'Keep original assigned hours'}),/verified Owner/);assert.deepEqual(state(f),before);
+});
 test('ordinary Manager legacy review retains existing behavior using one health-wrapped transaction and one physical read per linked record',async()=>{
  const f=await originalFixture(),reads=new Map(),run=f.api.runTransaction;let transactions=0,queries=0;
  f.api.runTransaction=(db,callback)=>{transactions++;return run(db,tx=>callback({...tx,get:reference=>{reads.set(reference.path,(reads.get(reference.path)||0)+1);return tx.get(reference);}}));};f.api.getDocsFromServer=async()=>{queries++;throw Error('Legacy review must use the existing account/Rules flow without extra account queries.');};

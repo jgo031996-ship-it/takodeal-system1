@@ -430,7 +430,11 @@ function rc() { return ['blocked','inactive','disabled','revoked','terminated','
         || (a == 'expenses' && ((c.get('remittanceId','') != '' && c.get('remittanceId','') != null)
           || (c.get('cashMovement','') is string && c.get('cashMovement','').trim().lower() == 'remittance')
           || (c.get('category','') is string && c.get('category','').trim().lower() == 'cash remittance')
-          || (c.get('description','') is string && c.get('description','').matches('^\\[REMITTANCE TO HQ\\].*')))));
+          || (c.get('description','') is string && c.get('description','').matches('^\\[REMITTANCE TO HQ\\].*')))))
+        || (a == 'staff_bonuses' && (b.matches('payroll-adjustment-.*') || c.get('type','') == 'Payroll Adjustment')
+          && !(r51() && (resource == null || (rq().status == 'Unpaid'
+            && rp().status.matches('Paid|Cancelled') && r7((rp()),(rq())).hasOnly(
+              ['status','payrollRecordId','cancel','at'])))));
     }
 
       function r1q(a) {

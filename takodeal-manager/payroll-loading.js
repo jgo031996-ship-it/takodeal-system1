@@ -3,6 +3,7 @@ import {loadStaffSalaryTimeline,staffProfileForWork,staffRateWorkDate,staffRateF
 import {canOpenWorkspacePage,OWNER_EMAIL} from './workspace-access-model.js';
 import {attendanceKind} from './attendance-reconcile.js';
 import {ATTENDANCE_METADATA_FIELDS} from './attendance-metadata-reader.js';
+import {PAYROLL_ADJUSTMENT_TYPE} from './payroll-adjustment-model.js';
 
 const coordinators=new WeakMap(),references=new WeakMap(),pendingDocuments=new WeakMap(),sessionIds=new WeakMap();let nextSession=0;
 function accountKey(api){const user=api.auth?.currentUser,session=api.sessionUser;if(session&&typeof session==='object'&&!sessionIds.has(session))sessionIds.set(session,++nextSession);return JSON.stringify([user?.uid,user?.email,user?.emailVerified,sessionIds.get(session),session?.uid,session?.email,session?.role,session?.permissions,session?.allowedBranches,session?.branch,session?.isFranchisee,session?.isOwner]);}
@@ -71,14 +72,18 @@ function previewReferences(api,options){
  const {start,end,fetchStartDate,fetchEndDate,trueStartDate}=options,key=JSON.stringify([accountKey(api),start,end,+fetchStartDate,+fetchEndDate,+trueStartDate]);
  if(cache.has(key))return cache.get(key);
  const c=table=>api.collection(api.db,table),q=api.query,w=api.where;
- const result={payroll: q(c('payroll_records'),w('startDate','==',start),w('endDate','==',end)),staff:c('cashiers'),ledger:c('staff_ledger'),attendance:q(c('attendance_logs'),w('timestamp','>=',fetchStartDate),w('timestamp','<=',fetchEndDate),api.orderBy('timestamp','asc')),deductions:q(c('staff_deductions'),w('status','==','Unpaid')),bonuses:q(c('staff_bonuses'),w('dateAdded','>=',trueStartDate),w('dateAdded','<=',fetchEndDate))};
+ const result={payroll: q(c('payroll_records'),w('startDate','==',start),w('endDate','==',end)),staff:c('cashiers'),ledger:c('staff_ledger'),attendance:q(c('attendance_logs'),w('timestamp','>=',fetchStartDate),w('timestamp','<=',fetchEndDate),api.orderBy('timestamp','asc')),deductions:q(c('staff_deductions'),w('status','==','Unpaid')),bonuses:q(c('staff_bonuses'),w('dateAdded','>=',trueStartDate),w('dateAdded','<=',fetchEndDate)),adjustments:q(c('staff_bonuses'),w('type','==',PAYROLL_ADJUSTMENT_TYPE),w('status','==','Unpaid'))};
  cache.set(key,result);if(cache.size>32)cache.delete(cache.keys().next().value);return result;
 }
 
 export async function loadPayrollPreviewInputs(api,options){
- const {start,end,assertCurrent=()=>{},concurrency=7,timeoutMs=25000}=options,guard=readGuard(api,assertCurrent);guard();const refs=previewReferences(api,options),key=JSON.stringify([accountKey(api),'schedule',start,end]);
+ const {start,end,assertCurrent=()=>{},concurrency=8,timeoutMs=25000}=options,guard=readGuard(api,assertCurrent);guard();const refs=previewReferences(api,options),key=JSON.stringify([accountKey(api),'schedule',start,end]);
  const tasks=[()=>readBoundedDocument(api,key,()=>{guard();return api.loadPayrollScheduleHistory(start,end);},{timeoutMs}),...Object.values(refs).map(reference=>()=>{guard();return readPayrollSnapshot(api,reference,{timeoutMs});})];
- const [scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap]=await mapPayrollReads(tasks,{assertCurrent:guard,concurrency});guard();
+ const [scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,datedBonuses,adjustments]=await mapPayrollReads(tasks,{assertCurrent:guard,concurrency});guard();
+ // Old unpaid credits must carry forward even when created before this cutoff.
+ // Keep the existing dated rewards/OT query and merge only this distinct type.
+ const docs=[...new Map([...datedBonuses.docs,...adjustments.docs].map(row=>[row.id,row])).values()];
+ const bonusSnap={docs,metadata:{fromCache:false,hasPendingWrites:false},empty:!docs.length,size:docs.length,forEach:callback=>docs.forEach(callback)};
  const input={scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap},scoped=scopePayrollInputs(api,input);
  const attendanceReferenceRecords=await loadPayrollAttendanceReferences(api,input,scoped,{guard,timeoutMs});guard();
  return {...scoped,attendanceReferenceRecords};

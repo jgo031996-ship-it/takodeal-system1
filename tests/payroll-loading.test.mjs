@@ -38,15 +38,21 @@ test('a failed or stale read stops queued SDK dispatch and never returns a parti
  for(const stale of [false,true]){const gates=[deferred(),deferred()],started=[];let current=true;const pending=mapPayrollReads(Array.from({length:5},(_,index)=>async()=>{started.push(index);if(index<2)await gates[index].promise;return index;}),{concurrency:2,assertCurrent:()=>{if(!current)throw Error('Changed account');}});if(stale){current=false;gates[0].resolve();}else gates[0].reject(Error('Server failed'));await tick();gates[1].resolve();await assert.rejects(pending,/Changed account|Server failed/);assert.deepEqual(started,[0,1]);}
 });
 
-test('all six collections and schedule dispatch together instead of waiting for each previous snapshot',async()=>{
+test('the dated sources, overdue payroll credits and schedule dispatch together instead of waiting for each previous snapshot',async()=>{
  const {api}=fixture(),gates=[],started=[];api.getDocsFromServer=ref=>{started.push(ref.table);const gate=deferred();gates.push(gate);return gate.promise;};api.loadPayrollScheduleHistory=()=>{started.push('schedule');const gate=deferred();gates.push(gate);return gate.promise;};
- const pending=loadPayrollPreviewInputs(api,options);assert.equal(started.length,7);assert.deepEqual(new Set(started),new Set(['schedule','payroll_records','cashiers','staff_ledger','attendance_logs','staff_deductions','staff_bonuses']));gates.forEach((gate,index)=>gate.resolve(index? snap([]):{historyMonths:{}}));assert.ok((await pending).scheduleData.historyMonths);
+ const pending=loadPayrollPreviewInputs(api,options);assert.equal(started.length,8);assert.deepEqual(new Set(started),new Set(['schedule','payroll_records','cashiers','staff_ledger','attendance_logs','staff_deductions','staff_bonuses']));gates.forEach((gate,index)=>gate.resolve(index? snap([]):{historyMonths:{}}));assert.ok((await pending).scheduleData.historyMonths);
 });
 
 test('deadline retries cannot stack another physical same-scope SDK read while the first response is pending',async()=>{
  const {api}=fixture(),gates=[];let calls=0;api.getDocsFromServer=()=>{calls++;const gate=deferred();gates.push(gate);return gate.promise;};api.loadPayrollScheduleHistory=()=>{calls++;const gate=deferred();gates.push(gate);return gate.promise;};
- await assert.rejects(loadPayrollPreviewInputs(api,{...options,timeoutMs:5}),/too long/);assert.equal(calls,7);await assert.rejects(loadPayrollPreviewInputs(api,{...options,timeoutMs:5}),/too long/);assert.equal(calls,7);
- gates.forEach((gate,index)=>gate.resolve(index?snap([]):{historyMonths:{}}));await tick();api.getDocsFromServer=async()=>{calls++;return snap([]);};api.loadPayrollScheduleHistory=async()=>{calls++;return {historyMonths:{}};};await loadPayrollPreviewInputs(api,options);assert.equal(calls,14,'a new completed refresh reads all sources again');
+ await assert.rejects(loadPayrollPreviewInputs(api,{...options,timeoutMs:5}),/too long/);assert.equal(calls,8);await assert.rejects(loadPayrollPreviewInputs(api,{...options,timeoutMs:5}),/too long/);assert.equal(calls,8);
+ gates.forEach((gate,index)=>gate.resolve(index?snap([]):{historyMonths:{}}));await tick();api.getDocsFromServer=async()=>{calls++;return snap([]);};api.loadPayrollScheduleHistory=async()=>{calls++;return {historyMonths:{}};};await loadPayrollPreviewInputs(api,options);assert.equal(calls,16,'a new completed refresh reads all sources again');
+});
+
+test('an older unpaid payroll adjustment is merged once without replacing dated reward and overtime sources',async()=>{
+ const {api}=fixture(),credit={id:'old-credit',staffId:'s',staffName:'Sample',branch:'Maa',type:'Payroll Adjustment',status:'Unpaid',effectiveDate:'2029-12-01'},reward={id:'new-reward',type:'Performance Bonus',staffName:'Sample',amount:10};
+ api.getDocsFromServer=async ref=>ref.table!=='staff_bonuses'?snap([]):ref.filters.some(filter=>filter.field==='type')?snap([credit]):snap([reward,credit]);
+ const result=await loadPayrollPreviewInputs(api,options);assert.deepEqual(result.bonusSnap.docs.map(row=>row.id),['new-reward','old-credit']);assert.equal(result.bonusSnap.docs.find(row=>row.id==='old-credit').data().effectiveDate,'2029-12-01');
 });
 
 test('scope filtering excludes foreign records and ambiguous nameless branch rows before salary reads, retaining Owner legacy records',()=>{

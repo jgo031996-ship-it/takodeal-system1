@@ -1,0 +1,19 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readStaffPayrollAdjustments,staffPayrollAdjustmentEstimate} from '../takodeal-staff/staff-payroll-adjustments.js';
+import {payrollAdjustmentHistoryHTML} from '../takodeal-staff/payroll-adjustment-model.js';
+const staffId='synthetic-staff',name='Fictional Staff',branch='Synthetic Branch',id='payroll-adjustment-'+String('b').repeat(64);
+const row=extra=>({id,staffId,staffName:name,branch,type:'Payroll Adjustment',payrollAdjustmentVersion:1,amount:125,originalStart:'2029-12-01',originalEnd:'2029-12-15',effectiveDate:'2030-01-01',sourcePayrollRecordId:'original-paid',reason:'The old payroll allowance was not included.',createdByUid:'synthetic-owner',createdByEmail:'owner@example.invalid',status:'Unpaid',...extra});
+function api(rows,metadata={}){const calls=[];return {calls,db:{},collection:(_,table)=>({table}),where:(field,op,value)=>({field,op,value}),query:(reference,...filters)=>({...reference,filters}),getDocsFromServer:async reference=>{calls.push(reference);return {metadata,docs:rows.map(data=>({id:data.id,metadata:{},data:()=>data}))};}};}
+const selection={staffId,name,branch,start:'2030-02-01',end:'2030-02-15'};
+test('Staff reads adjustments by stable ID and itemizes an overdue credit without counting rewards or cancelled credits',async()=>{
+ const source=api([row(),{id:'reward',staffId,type:'Performance Bonus',amount:999},row({id:'payroll-adjustment-'+String('c').repeat(64),status:'Cancelled'})]),before=structuredClone(row()),checked=await readStaffPayrollAdjustments(source,{staffId}),estimate=staffPayrollAdjustmentEstimate(checked,selection);
+ assert.equal(checked.held,false);assert.equal(checked.rows.length,2);assert.equal(estimate.held,false);assert.equal(estimate.amount,125);assert.equal(estimate.rows[0].sourcePayrollRecordId,'original-paid');assert.deepEqual(source.calls[0].filters,[{field:'staffId',op:'==',value:staffId}]);assert.match(payrollAdjustmentHistoryHTML(checked.rows),/Cancelled before payment/);assert.deepEqual(checked.rows[0],before);
+});
+for(const mode of ['cached','pending','foreign-id','invalid-amount','wrong-branch','session','network'])test('Staff estimate remains held for '+mode+' without inventing payable credit totals',async()=>{
+ const source=api([row(mode==='foreign-id'?{staffId:'other'}:mode==='invalid-amount'?{amount:-1}:mode==='wrong-branch'?{branch:'Other Branch'}:{})],mode==='cached'?{fromCache:true}:mode==='pending'?{hasPendingWrites:true}:{});if(mode==='network')source.getDocsFromServer=async()=>{throw Error('Synthetic network failure');};let current=true;if(mode==='session'){const read=source.getDocsFromServer;source.getDocsFromServer=async reference=>{const result=await read(reference);current=false;return result;};}const checked=await readStaffPayrollAdjustments(source,{staffId,stillCurrent:()=>current}),estimate=staffPayrollAdjustmentEstimate(checked,selection);assert.equal(estimate.held,true);assert.equal(estimate.amount,0);assert.deepEqual(estimate.rows,[]);
+});
+test('future and paid credits stay visible in history but do not increase a live unpaid estimate',async()=>{
+ const checked=await readStaffPayrollAdjustments(api([row({effectiveDate:'2030-03-01'}),row({id:'payroll-adjustment-'+String('d').repeat(64),status:'Paid',payrollRecordId:'paid-current'})]),{staffId}),estimate=staffPayrollAdjustmentEstimate(checked,selection);assert.equal(estimate.held,false);assert.equal(estimate.amount,0);assert.equal(checked.rows.length,2);assert.match(payrollAdjustmentHistoryHTML(checked.rows),/Included in paid payslip/);
+ for(const detail of [{cancel:'Reviewed <img> correction',at:{seconds:1}},{cancelReason:'Reviewed <img> correction',cancelledAt:{seconds:1}}]){const history=payrollAdjustmentHistoryHTML([row({status:'Cancelled',...detail})]);assert.match(history,/Cancellation: Reviewed &lt;img&gt; correction/);assert.doesNotMatch(history,/<img>/);}
+});

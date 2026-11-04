@@ -4,6 +4,7 @@ import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import * as payroll from '../takodeal-staff/payroll-safety.js';
 import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
+import * as savedShiftProposals from '../takodeal-staff/saved-shift-proposal.js';
 import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js';
 import {prepareEarlyTimeOut} from '../takodeal-staff/early-time-out-ui.js';
 import {createEarlyTimeOutService} from '../takodeal-staff/early-time-out-actions.js';
@@ -62,7 +63,7 @@ function harness({late=true}={}) {
         }return {isConfirmed:true};},close(){},showLoading(){},showValidationMessage(message){events.push('validation');alerts.push(['Validation',message]);}};
     const document={hidden:false,getElementById:node,querySelector:()=>null,querySelectorAll:()=>[]};
     node('view-timeclock').classList={contains:value=>value==='active'};
-    vm.runInNewContext(handler,{...api,...payroll,...reconciliation,renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,emergencyReliefForClockIn,emergencyReliefTimeOutNotice,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clockMs)})}),window,auth:window.auth,localStorage,document,Swal,Date:ClockDate,console:{error(){},warn(){},log(){}}});
+    vm.runInNewContext(handler,{...api,...payroll,...reconciliation,...savedShiftProposals,renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,emergencyReliefForClockIn,emergencyReliefTimeOutNotice,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clockMs)})}),window,auth:window.auth,localStorage,document,Swal,Date:ClockDate,console:{error(){},warn(){},log(){}}});
     return Object.assign(h,{window,punch:type=>window.punchTime(type),advance:milliseconds=>{clockMs+=milliseconds;}});
 }
 
