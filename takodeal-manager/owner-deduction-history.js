@@ -1,4 +1,5 @@
 import {isOwnerDeduction,OWNER_DEDUCTION_TYPE} from './owner-deduction-model.js';
+import {formatStaffDeductionHistory} from './staff-deduction-history.js';
 const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function ownerDeductionHistoryRow(row){
  const at=row.dateAdded?.toDate?.()||new Date(row.dateAdded),date=Number.isFinite(+at)?at.toLocaleDateString('en-PH',{timeZone:'Asia/Manila'}):'Date not recorded';
@@ -15,7 +16,7 @@ export function installOwnerDeductionHistory(w,d){
   const rows=snap.docs.map(doc=>({...doc.data(),id:doc.id})).filter(row=>row.staffId===staffId&&isOwnerDeduction(row));
   for(const node of body.querySelectorAll('[data-owner-deduction-history]'))node.remove();
   if(rows.length){if(!body.querySelector('button')&&/No deduction history|Loading/.test(body.textContent))body.replaceChildren();rows.sort((a,b)=>String(b.effectiveDate||'').localeCompare(String(a.effectiveDate||''))||a.id.localeCompare(b.id));body.insertAdjacentHTML('afterbegin',rows.map(ownerDeductionHistoryRow).join(''));}
-  return true;
+  formatStaffDeductionHistory(body);return true;
  };
  return w.refreshEmployeeOneTimeDeductionRows;
 }

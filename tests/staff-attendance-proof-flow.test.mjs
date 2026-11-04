@@ -9,6 +9,7 @@ import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js'
 import {prepareEarlyTimeOut} from '../takodeal-staff/early-time-out-ui.js';
 import {createEarlyTimeOutService} from '../takodeal-staff/early-time-out-actions.js';
 import {renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,emergencyReliefForClockIn,emergencyReliefTimeOutNotice} from '../takodeal-staff/attendance-schedule-preview.js';
+import {createLocationSession} from '../takodeal-staff/staff-location.js';
 
 const source=readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
 const start=source.indexOf('window.punchTime = async function');
@@ -195,4 +196,22 @@ test('normal scheduled Staff Time Out does not upload a late proof or require a 
     await h.punch('TIME OUT');assert.equal(h.uploadCalls.length,0);assert.equal(h.batches.length,0);assert.equal(h.transactions.length,2);assert.equal(h.transactions[0].length,0);assert.equal(h.writes.length,1);assert.equal([...h.records.keys()].some(path=>path.startsWith('staff_requests/')),false);
     const ended=h.records.get(h.writes[0]);assert.equal(ended.type,'TIME OUT');assert.equal(ended.timeInLogId,'cashier-start');assert.equal(ended.sourceApp,'staff');assert.equal(ended.photoBase64,'');
     await h.punch('TIME OUT');assert.equal(h.writes.length,1);assert.equal(h.alerts.at(-1)[0],'Already Timed Out');
+});
+
+test('the actual Time In reuses one visible GPS watch through a proof delay and saves its newly captured location in the original atomic batch',async()=>{
+ const h=harness();let now=Date.parse(clock),watchCalls=0,quickCalls=0,watch;const cleared=[];
+ const session=createLocationSession({geolocation:{watchPosition(ok,fail){watchCalls++;if(watchCalls>1)fail({code:1});else watch=ok;return watchCalls;},getCurrentPosition(){quickCalls++;},clearWatch:id=>cleared.push(id)},zones:{Maa:{lat:7,lng:125}},keepWatching:true,now:()=>now});
+ const position=()=>({timestamp:now,coords:{latitude:7.00001,longitude:125,accuracy:7}}),ready=session.acquire();watch(position());await ready;
+ h.location=async()=>{const state=await session.acquire();if(state.state!=='verified')throw Object.assign(Error(state.title+' '+state.hint),{code:'attendance/location-'+state.state});return state;};
+ h.upload=async()=>{now+=70000;h.advance(70000);watch(position());return{url:proofUrl};};h.beforeCommit=()=>assert.equal(h.alerts.at(-1)[0].title,'Saving attendance…');
+ try{await h.punch('TIME IN');assert.equal(watchCalls,1);assert.equal(quickCalls,1);assert.equal(h.events.filter(event=>event==='gps').length,3);assert.equal(h.batches.length,1);assert.equal(h.batches[0].length,2);const attendance=h.records.get('attendance_logs/auto-1');assert.equal(attendance.locationCapturedAt,new Date(now).toISOString());assert.equal(attendance.locationLat,7.00001);assert.equal(attendance.locationAccuracyMeters,7);assert.equal(attendance.distanceMeters,1);assert.equal(attendance.staffId,'staff-id');assert.ok(attendance.faceCheck);assert.equal(attendance.lateReasonRequestId,'auto-2');assert.equal(cleared.length,0);}finally{session.stop();}assert.equal(cleared.length,1);
+});
+test('a proof delay without a new GPS sample cannot reuse expired coordinates or save attendance when permission is lost',async()=>{
+ const h=harness();let now=Date.parse(clock),watchCalls=0,watch;
+ const session=createLocationSession({geolocation:{watchPosition(ok,fail){watchCalls++;if(watchCalls===1)watch=ok;else fail({code:1});return watchCalls;},getCurrentPosition(){},clearWatch(){}},zones:{Maa:{lat:7,lng:125}},keepWatching:true,now:()=>now});
+ const ready=session.acquire();watch({timestamp:now,coords:{latitude:7,longitude:125,accuracy:10}});await ready;h.location=async()=>{const state=await session.acquire();if(state.state!=='verified')throw Object.assign(Error(state.title+' '+state.hint),{code:'attendance/location-'+state.state});return state;};h.upload=async()=>{now+=70000;h.advance(70000);return{url:proofUrl};};
+ try{await h.punch('TIME IN');assertNoAttendance(h);assert.equal(watchCalls,2);assert.equal(h.uploadCalls.length,1);assert.equal(h.alerts.at(-1)[0],'Location needs attention');assert.match(h.alerts.at(-1)[1],/Allow Location.*Refresh location/);assert.equal(h.window.staffLateProofDraft.file,screenshot);}finally{session.stop();}
+});
+test('the actual Time In names GPS, camera, final schedule and save phases without changing the guarded save order',async()=>{
+ const h=harness();await h.punch('TIME IN');const titles=h.alerts.map(args=>args[0]?.title).filter(Boolean),expected=['Checking your branch location…','Review your assigned hours','Rechecking your branch location…','Checking your current camera photo…','Confirming your branch location…','Preparing attendance…','Confirming your saved shift…','Saving attendance…'];let previous=-1;for(const title of expected){const index=titles.indexOf(title);assert.ok(index>previous,title+' follows its real guarded phase');previous=index;}assert.equal(h.batches.length,1);assert.equal(h.events.indexOf('camera')>h.events.indexOf('proof:done'),true);assert.equal(h.events.indexOf('commit:start')>h.events.lastIndexOf('fresh'),true);assert.equal(h.writes.length,2);
 });
