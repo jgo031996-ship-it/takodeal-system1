@@ -1,6 +1,7 @@
 // An unpaid preview must be rebuilt when its dated schedule evidence changes.
 // Paid payslips keep their frozen figures; this check never writes payroll data.
 import {canOpenWorkspacePage} from './workspace-access-model.js';
+import {assertPayrollShiftConfirmationsFresh} from './payroll-confirmed-shifts.js';
 const canonical = value => Array.isArray(value) ? value.map(canonical)
     : value instanceof Date ? value.toISOString()
     : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
@@ -93,7 +94,7 @@ export function payrollScheduleStamp(schedule,dates) {
     // Pre-history punches can still use the current legacy shift fallback.
     // Keep its rules and relevant dated roster protected; ignore future days.
     const legacy=(!cutover||range.first<cutover)?{currentYear:schedule.currentYear,currentMonth:schedule.currentMonth,branchConfig:schedule.branchConfig||{},currentSchedule:legacyDays}:null;
-    return JSON.stringify(canonical({version:2,start:range.start,end:range.end,months,legacy,holidays:datedEntries(schedule.holidays,range),payrollHistoryEnforcedFrom:cutover}));
+    return JSON.stringify(canonical({version:2,start:range.start,end:range.end,months,legacy,holidays:datedEntries(schedule.holidays,range),payrollHistoryEnforcedFrom:cutover,...(schedule.payrollShiftConfirmationEvidence?.length?{payrollConfirmations:schedule.payrollShiftConfirmationEvidence}:{})}));
 }
 export async function assertPayrollScheduleFresh(api, data) {
     if (data?.isPaid || api.paidPayrollSnapshots?.has(data)) return;
@@ -114,6 +115,11 @@ export async function assertPayrollScheduleFresh(api, data) {
     };
     const actor = identity();
     const schedule = await api.loadPayrollScheduleHistory(data.start, data.end);
-    if (actor !== identity() || payrollScheduleStamp(schedule,{start:data.start,end:data.end}) !== data.scheduleEvidenceStamp)
+    // Per-punch confirmations are loaded by the payroll reader, rather than
+    // by the common schedule-history reader. Compare the same immutable dated
+    // schedule, then separately verify this employee's exact source records.
+    const current={...schedule,...(stamp.payrollConfirmations?{payrollShiftConfirmationEvidence:stamp.payrollConfirmations}:{})};
+    if (actor !== identity() || payrollScheduleStamp(current,{start:data.start,end:data.end}) !== data.scheduleEvidenceStamp)
         throw Error('The saved shift times changed. Regenerate this unpaid payslip and reopen it before payment.');
+    await assertPayrollShiftConfirmationsFresh(api,data,stamp.payrollConfirmations,{assertCurrent:()=>{if(actor!==identity())throw Error('The payroll account changed. Generate this unpaid payroll again.');}});
 }

@@ -1,4 +1,4 @@
-import { resolveAttendanceShift, attendanceLateMinutes, latePay, earnedNightBonus } from './payroll-safety.js';
+import { resolveAttendanceShift, attendanceLateMinutes, latePay, calculateShiftEarnings } from './payroll-safety.js';
 import { resolveScheduleForDate } from './schedule-history.js';
 import {isPenaltyDeduction, deductionIsDue} from './sanction-schedule.js';
 import {planPayrollAttendance} from './payroll-attendance.js';
@@ -110,7 +110,8 @@ export function attendanceEstimate({logs,referenceLogs=logs,profiles,deductions=
  const bounds=range(start,end),from=calendarCutoff?new Date(start+'T00:00:00+08:00'):bounds.start,to=calendarCutoff?new Date(addDays(end,1)+'T00:00:00+08:00'):bounds.end,active=new Map(),people=new Map();
  const profileMap=Object.fromEntries(profiles.map(p=>[p.cashierName,p]));
  const profileIds=new Map(profiles.filter(p=>p.id).map(p=>[p.id,p]));
- const plan=planPayrollAttendance(logs.filter(log=>log.branch===branch),{resolveName:log=>profileIds.get(log.staffId)?.cashierName || log.staffName,referenceRecords:referenceLogs.filter(log=>log.branch===branch)});
+ const shiftFor=log=>{const linked=profileIds.get(log.staffId),sourceProfiles=linked?{...profileMap,[log.staffName]:linked}:profileMap;return resolveAttendanceShift(log,schedule,sourceProfiles);};
+ const plan=planPayrollAttendance(logs.filter(log=>log.branch===branch),{resolveName:log=>profileIds.get(log.staffId)?.cashierName || log.staffName,resolveShift:shiftFor,referenceRecords:referenceLogs.filter(log=>log.branch===branch)});
  const person=name=>{if (!people.has(name)) people.set(name,{name,hours:0,shifts:0,basic:0,bonus:0,late:0,meals:0,advances:0,scheduledPenaltyReview:0,logs:[],review:0});return people.get(name);};
  for(const review of plan.reviews) {
   if(!profileMap[review.name])continue;
@@ -126,16 +127,17 @@ export function attendanceEstimate({logs,referenceLogs=logs,profiles,deductions=
   } else if (type.startsWith('TIME OUT') && active.has(name)) {
    const entry=active.get(name),hours=(at-ms(entry.timestamp))/3600000;active.delete(name);
    if (hours<=0 || hours>18 || (hours<1 && type!=='TIME OUT (AUTO)')) {p.review++;p.logs.push({in:entry.timestamp,out:log.timestamp,remark:'Invalid attendance duration; review required'});continue;}
-   const matched=resolveAttendanceShift(entry,schedule,profileMap),profile=staffProfileForWork(profileMap[name],entry,matched);
-   const multiplier=hours>=13.5?2:1,night=earnedNightBonus(profile,matched,new Date(at));
-   const basic=n(profile.hourlyRate)*multiplier,straight=hours>=13.5?50:0;
+   const matched=shiftFor(entry),profile=staffProfileForWork(profileMap[name],entry,matched);
+   const earnings=calculateShiftEarnings(profile,matched,entry.timestamp,log.timestamp,{autoClosed:type.includes('AUTO')}),multiplier=earnings.shiftMultiplier,night=earnings.nightBonus;
+   const basic=earnings.basicPay??0,straight=earnings.straightBonus;
    const workDate=staffRateWorkDate(entry,matched),holiday=resolveScheduleForDate(schedule,workDate)?.holidays?.[workDate] ?? holidays[workDate],holidayBonus=(basic+night)*(holiday==='Regular'?0.5:holiday==='Special'?0.1:0);
    const late=latePay(attendanceLateMinutes(entry,matched),profile,matched,entry.lateExempted===true).amount+n(entry.penaltyAmount)+n(log.penaltyAmount);
    p.hours+=hours;p.shifts+=multiplier;p.basic+=basic;p.bonus+=night+straight+holidayBonus;p.late+=late;
    if(matched.needsScheduleReview)p.review++;
    if(matched.reliefNeedsReview){p.attendanceHeld=true;p.attendanceReviewRequired=true;p.attendanceReviewReasons=[...(p.attendanceReviewReasons||[]),'Emergency branch cover: Owner HR must confirm assigned hours. Actual arrival and departure remain recorded.'];}
    if(matched.amendmentNeedsReview){p.attendanceHeld=true;p.attendanceReviewRequired=true;p.attendanceReviewReasons=['A dated shift correction conflicts with a saved manual lateness review. HQ must confirm it before payment.'];}
-   p.logs.push({in:entry.timestamp,out:log.timestamp,hours,basic,dailyRate:profile.hourlyRate,rateWorkDate:workDate,bonus:night+straight+holidayBonus,late,remark:(type.includes('AUTO')?'Auto closed; review attendance':'Complete')+(matched.needsScheduleReview?' · Schedule reference needs review':'')});
+   const remark=(type.includes('AUTO')?'Auto closed; review attendance':earnings.shortHours>0?'Short duty ('+hours.toFixed(2)+'h worked; '+earnings.shortHours.toFixed(2)+'h below 8h) · full daily pay retained':'Complete')+(matched.needsScheduleReview?' · Schedule reference needs review':'')+(earnings.straightApprovalRequired?' · Over 16h recorded; Owner straight-duty review pending. One daily rate shown.':'')+(earnings.bonusReviewRequired?' · Mid/Night bonus needs the approved shift category.':'');
+   p.logs.push({in:entry.timestamp,out:log.timestamp,hours,basic,dailyRate:profile.hourlyRate,rateWorkDate:workDate,bonus:night+straight+holidayBonus,late,shortHours:earnings.shortHours,straightApprovalRequired:earnings.straightApprovalRequired,bonusReviewRequired:earnings.bonusReviewRequired,remark});
   }
  }
  for (const [name,log] of active) {const p=person(name);p.review++;p.logs.push({in:log.timestamp,out:null,remark:'Missing time out; review required'});}

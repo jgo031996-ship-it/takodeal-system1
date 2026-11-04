@@ -4,12 +4,16 @@ import {canOpenWorkspacePage,OWNER_EMAIL} from './workspace-access-model.js';
 import {attendanceKind} from './attendance-reconcile.js';
 import {ATTENDANCE_METADATA_FIELDS} from './attendance-metadata-reader.js';
 import {PAYROLL_ADJUSTMENT_TYPE} from './payroll-adjustment-model.js';
+import {loadPayrollShiftConfirmations} from './payroll-confirmed-shifts.js';
 
-const coordinators=new WeakMap(),references=new WeakMap(),pendingDocuments=new WeakMap(),sessionIds=new WeakMap();let nextSession=0;
+const coordinators=new WeakMap(),references=new WeakMap(),pendingDocuments=new WeakMap(),sessionIds=new WeakMap(),sourceGenerations=new WeakMap();let nextSession=0;
+// A confirmed correction supersedes reads dispatched before that write. Keep
+// ordinary concurrent Generate clicks shared, but queue a fresh post-save run.
+export function invalidatePayrollLoad(api){sourceGenerations.set(api,(sourceGenerations.get(api)||0)+1);}
 function accountKey(api){const user=api.auth?.currentUser,session=api.sessionUser;if(session&&typeof session==='object'&&!sessionIds.has(session))sessionIds.set(session,++nextSession);return JSON.stringify([user?.uid,user?.email,user?.emailVerified,sessionIds.get(session),session?.uid,session?.email,session?.role,session?.permissions,session?.allowedBranches,session?.branch,session?.isFranchisee,session?.isOwner]);}
-function requestKey(api,options){const dates=options.getDates?.()||options;return JSON.stringify([accountKey(api),options.kind,dates.start,dates.end]);}
+function requestKey(api,options){const dates=options.getDates?.()||options;return JSON.stringify([accountKey(api),sourceGenerations.get(api)||0,options.kind,dates.start,dates.end]);}
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
-function readGuard(api,assertCurrent){const actor=accountKey(api);return()=>{assertCurrent();if(accountKey(api)!==actor)throw Error('The payroll account or branch access changed. Generate the list again.');payrollLoadingScope(api);};}
+function readGuard(api,assertCurrent){const actor=accountKey(api),generation=sourceGenerations.get(api)||0;return()=>{assertCurrent();if(accountKey(api)!==actor)throw Error('The payroll account or branch access changed. Generate the list again.');if((sourceGenerations.get(api)||0)!==generation)throw Error('Attendance changed while this payroll was loading. Generate the list again.');payrollLoadingScope(api);};}
 
 export function payrollLoadingScope(api){
  const user=api.auth?.currentUser,session=api.sessionUser,email=String(user?.email||'').trim().toLowerCase();
@@ -69,7 +73,7 @@ function readBoundedDocument(api,key,read,{timeoutMs=25000}={}){
 }
 function previewReferences(api,options){
  let cache=references.get(api);if(!cache){cache=new Map();references.set(api,cache);}
- const {start,end,fetchStartDate,fetchEndDate,trueStartDate}=options,key=JSON.stringify([accountKey(api),start,end,+fetchStartDate,+fetchEndDate,+trueStartDate]);
+ const {start,end,fetchStartDate,fetchEndDate,trueStartDate}=options,key=JSON.stringify([accountKey(api),sourceGenerations.get(api)||0,start,end,+fetchStartDate,+fetchEndDate,+trueStartDate]);
  if(cache.has(key))return cache.get(key);
  const c=table=>api.collection(api.db,table),q=api.query,w=api.where;
  const result={payroll: q(c('payroll_records'),w('startDate','==',start),w('endDate','==',end)),staff:c('cashiers'),ledger:c('staff_ledger'),attendance:q(c('attendance_logs'),w('timestamp','>=',fetchStartDate),w('timestamp','<=',fetchEndDate),api.orderBy('timestamp','asc')),deductions:q(c('staff_deductions'),w('status','==','Unpaid')),bonuses:q(c('staff_bonuses'),w('dateAdded','>=',trueStartDate),w('dateAdded','<=',fetchEndDate)),adjustments:q(c('staff_bonuses'),w('type','==',PAYROLL_ADJUSTMENT_TYPE),w('status','==','Unpaid'))};
@@ -77,7 +81,7 @@ function previewReferences(api,options){
 }
 
 export async function loadPayrollPreviewInputs(api,options){
- const {start,end,assertCurrent=()=>{},concurrency=8,timeoutMs=25000}=options,guard=readGuard(api,assertCurrent);guard();const refs=previewReferences(api,options),key=JSON.stringify([accountKey(api),'schedule',start,end]);
+ const {start,end,assertCurrent=()=>{},concurrency=8,timeoutMs=25000}=options,guard=readGuard(api,assertCurrent);guard();const refs=previewReferences(api,options),key=JSON.stringify([accountKey(api),sourceGenerations.get(api)||0,'schedule',start,end]);
  const tasks=[()=>readBoundedDocument(api,key,()=>{guard();return api.loadPayrollScheduleHistory(start,end);},{timeoutMs}),...Object.values(refs).map(reference=>()=>{guard();return readPayrollSnapshot(api,reference,{timeoutMs});})];
  const [scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,datedBonuses,adjustments]=await mapPayrollReads(tasks,{assertCurrent:guard,concurrency});guard();
  // Old unpaid credits must carry forward even when created before this cutoff.
@@ -86,7 +90,9 @@ export async function loadPayrollPreviewInputs(api,options){
  const bonusSnap={docs,metadata:{fromCache:false,hasPendingWrites:false},empty:!docs.length,size:docs.length,forEach:callback=>docs.forEach(callback)};
  const input={scheduleData,prSnap,staffSnap,ledgerSnap,attSnap,deductSnap,bonusSnap},scoped=scopePayrollInputs(api,input);
  const attendanceReferenceRecords=await loadPayrollAttendanceReferences(api,input,scoped,{guard,timeoutMs});guard();
- return {...scoped,attendanceReferenceRecords};
+ const actor=accountKey(api),generation=sourceGenerations.get(api)||0;
+ const confirmedSchedule=await loadPayrollShiftConfirmations(api,scoped,{from:start,to:end,assertCurrent:guard,mapReads:mapPayrollReads,readDocument:reference=>readBoundedDocument(api,JSON.stringify([actor,generation,'payroll-shift-confirmation',reference.id]),()=>{guard();return api.getDocFromServer(reference);},{timeoutMs})});guard();
+ return {...scoped,scheduleData:confirmedSchedule,attendanceReferenceRecords};
 }
 
 // A cutoff query can contain a Time Out whose linked Time In is outside its
@@ -100,7 +106,7 @@ async function loadPayrollAttendanceReferences(api,input,scoped,{guard,timeoutMs
  if(!ids.size||typeof api.getDocFromServer!=='function')return [];
  const actor=accountKey(api),sources=await mapPayrollReads([...ids].map(id=>async()=>{
   try{
-   const snapshot=await readBoundedDocument(api,JSON.stringify([actor,'attendance-source',id]),()=>{guard();return api.getDocFromServer(api.doc(api.db,'attendance_logs',id));},{timeoutMs});guard();
+   const snapshot=await readBoundedDocument(api,JSON.stringify([actor,sourceGenerations.get(api)||0,'attendance-source',id]),()=>{guard();return api.getDocFromServer(api.doc(api.db,'attendance_logs',id));},{timeoutMs});guard();
    if(!snapshot||snapshot.id!==id||snapshot.metadata?.fromCache||snapshot.metadata?.hasPendingWrites||typeof snapshot.exists!=='function'||!snapshot.exists())return null;
    const saved=snapshot.data();if(!saved||typeof saved!=='object'||Array.isArray(saved))return null;
    // Keep photos and unrelated document fields out of the payroll reference

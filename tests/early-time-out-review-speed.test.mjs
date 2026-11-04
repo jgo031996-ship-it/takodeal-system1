@@ -49,10 +49,21 @@ test('a changed account or saved foreign branch cannot expose a verified request
  for(const kind of ['identity','scope']){const f=await fixture(),query=f.api.getDocsFromServer,seen=[];f.api.getDocsFromServer=async ref=>{const result=await query(ref);if(kind==='identity')f.api.auth.currentUser.uid='changed';else f.get('staff_requests/'+f.request.id).branch='Other Branch';return result;};await assert.rejects(f.review.inspect({requestId:f.request.id,onVerifiedRequest:row=>seen.push(row)}));assert.equal(seen.length,0);}
 });
 
-test('the whole preview deadline covers a hung schedule read and repeated retry does not launch another physical operation',async()=>{
- const f=await fixture(),gate=deferred(),get=f.api.getDocFromServer;let reads=0,lateCallbacks=0;f.api.getDocFromServer=async ref=>{reads++;return ref.path==='settings/global_schedule'?gate.promise:get(ref);};const review=createEarlyTimeOutReviewService(f.api,{now:()=>clock,timeoutMs:15});await assert.rejects(review.inspect({requestId:f.request.id,onVerifiedRequest:()=>lateCallbacks++}),/not confirmed/);const count=reads;await new Promise(resolve=>setTimeout(resolve,40));await assert.rejects(review.inspect({requestId:f.request.id}),/not confirmed/);assert.equal(reads,count);gate.resolve(await get(f.ref('settings','global_schedule')));await tick();await tick();assert.equal(lateCallbacks,1);assert.equal(f.get('staff_requests/'+f.request.id).status,'Pending');await review.inspect({requestId:f.request.id});assert.ok(reads>count);
+test('the whole preview deadline covers a hung schedule read and repeated retry does not launch another physical operation',async t=>{
+ const f=await fixture(),gate=deferred(),started=deferred(),get=f.api.getDocFromServer;let reads=0,lateCallbacks=0;
+ // Drive only the intended deadline after the actual schedule read starts.
+ // Real crypto completion and a later successful refresh must not race a
+ // fifteen-millisecond wall clock on a busy CI worker.
+ t.mock.timers.enable({apis:['setTimeout']});
+ f.api.getDocFromServer=async ref=>{reads++;if(ref.path==='settings/global_schedule'){started.resolve();return gate.promise;}return get(ref);};
+ const review=createEarlyTimeOutReviewService(f.api,{now:()=>clock,timeoutMs:15}),expired=assert.rejects(review.inspect({requestId:f.request.id,onVerifiedRequest:()=>lateCallbacks++}),/not confirmed/);
+ await started.promise;assert.equal(lateCallbacks,1);t.mock.timers.tick(15);await expired;const count=reads;
+ t.mock.timers.tick(40);await assert.rejects(review.inspect({requestId:f.request.id}),/not confirmed/);assert.equal(reads,count);
+ gate.resolve(await get(f.ref('settings','global_schedule')));await tick();await tick();assert.equal(lateCallbacks,1);assert.equal(f.get('staff_requests/'+f.request.id).status,'Pending');await review.inspect({requestId:f.request.id});assert.ok(reads>count);
 });
 
-test('the whole write deadline prevents a delayed transaction from making a decision after timeout',async()=>{
- const f=await fixture(),gate=deferred(),run=f.api.runTransaction;f.api.runTransaction=async(...args)=>{await gate.promise;return run(...args);};const review=createEarlyTimeOutReviewService(f.api,{now:()=>clock,timeoutMs:15});await assert.rejects(review.review({requestId:f.request.id,decision:'Approved'}),/not confirmed/);gate.resolve();await tick();await tick();assert.equal(f.get('staff_requests/'+f.request.id).status,'Pending');assert.equal(f.get('attendance_time_out_approvals/'+f.request.id),undefined);
+test('the whole write deadline prevents a delayed transaction from making a decision after timeout',async t=>{
+ const f=await fixture(),gate=deferred(),started=deferred(),run=f.api.runTransaction;t.mock.timers.enable({apis:['setTimeout']});
+ f.api.runTransaction=async(...args)=>{started.resolve();await gate.promise;return run(...args);};const review=createEarlyTimeOutReviewService(f.api,{now:()=>clock,timeoutMs:15}),expired=assert.rejects(review.review({requestId:f.request.id,decision:'Approved'}),/not confirmed/);
+ await started.promise;t.mock.timers.tick(15);await expired;gate.resolve();await tick();await tick();assert.equal(f.get('staff_requests/'+f.request.id).status,'Pending');assert.equal(f.get('attendance_time_out_approvals/'+f.request.id),undefined);
 });
