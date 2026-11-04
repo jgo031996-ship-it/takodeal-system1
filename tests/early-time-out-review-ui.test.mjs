@@ -43,6 +43,33 @@ const replacement=(dialog,change={})=>{for(const [key,value]of Object.entries({d
 const unknownState={unknown:true,early:false,complete:false,closed:false,scheduledEndAt:null,scheduleFingerprint:'unknown-v1',scheduleChanged:false,emergencyShiftVersion:0,emergencyShiftRevisionId:null,emergencyShiftSourceFingerprint:'verified-source-v1'};
 const shiftHead={version:1,revisionId:'replacement-v1',workDate:'2026-10-19',expectedStartAt:'2026-10-19T09:30:00+08:00',expectedEndAt:'2026-10-19T18:00:00+08:00',shiftName:'Replacement cashier',reviewedByEmail:'manager@example.test'};
 
+test('a verified staff saved-slot proposal is shown as reference-only and prefills read-only exact hours until Owner confirmation',async()=>{
+ const proposal={schemaVersion:1,referenceOnly:true,shiftName:'Saved Morning 2',branch:'Sample Branch',workDate:'2026-10-19',expectedStartAt:'2026-10-19T09:30:00+08:00',expectedEndAt:'2026-10-19T18:00:00+08:00',sourceFingerprint:'saved-reference-v1'};
+ const f=fixture({row:{staffShiftProposal:proposal},state:{...unknownState,actualTimeInAt:'2026-10-19T09:57:00+08:00',staffShiftProposal:proposal,staffShiftProposalError:''}}),dialog=await f.open();
+ assert.equal(node(dialog,'proposal-choice').hidden,false);assert.equal(node(dialog,'proposal-mode').value,'Use proposed shift');
+ assert.equal(node(dialog,'shift-date').value,'2026-10-19');assert.equal(node(dialog,'shift-start').value,'09:30');assert.equal(node(dialog,'shift-end').value,'18:00');
+ assert.equal(node(dialog,'shift-start').readOnly,true);assert.match(node(dialog,'details').textContent,/reference|confirmation required/i);
+ const actualLine=node(dialog,'details').textContent.split('Original recorded Time In:')[1].split('(PH)')[0];assert.match(actualLine,/9:57/);assert.doesNotMatch(actualLine,/9:30/);
+ assert.equal(f.calls.confirmShift.length,0);node(dialog,'reply').value='Saved shift assignment checked with the branch.';await node(dialog,'confirm').onclick();
+ assert.equal(f.calls.confirmShift.length,1);assert.equal(f.calls.confirmShift[0].staffShiftProposalDecision,'Use proposed shift');assert.equal(f.calls.confirmShift[0].staffShiftProposalFingerprint,'saved-reference-v1');
+});
+
+test('an explicit Owner proposal override unlocks checked hours and sends its separate review decision',async()=>{
+ const proposal={referenceOnly:true,shiftName:'Saved Morning 2',branch:'Sample Branch',workDate:'2026-10-19',expectedStartAt:'2026-10-19T09:30:00+08:00',expectedEndAt:'2026-10-19T18:00:00+08:00',sourceFingerprint:'saved-reference-v1'};
+ const f=fixture({row:{staffShiftProposal:proposal},state:{...unknownState,staffShiftProposal:proposal}});f.api.sessionUser.isOwner=true;
+ const dialog=await f.open();node(dialog,'proposal-mode').value='Owner-confirmed hours';node(dialog,'proposal-mode').emit('change');
+ assert.equal(node(dialog,'shift-start').readOnly,false);replacement(dialog,{start:'10:00',end:'18:30',name:'Actual Owner-verified hours',reason:'Rejected the proposed slot after checking actual branch instructions.'});await node(dialog,'confirm').onclick();
+ assert.equal(f.calls.confirmShift.length,1);assert.equal(f.calls.confirmShift[0].staffShiftProposalDecision,'Owner-confirmed hours');assert.equal(f.calls.confirmShift[0].startTime,'10:00');
+});
+
+test('a stale saved proposal cannot enable acceptance, while an Owner may explicitly verify different hours',async()=>{
+ const proposal={referenceOnly:true,shiftName:'Old slot',branch:'Sample Branch',workDate:'2026-10-19',expectedStartAt:'2026-10-19T09:30:00+08:00',expectedEndAt:'2026-10-19T18:00:00+08:00'};
+ const f=fixture({row:{staffShiftProposal:proposal},state:{...unknownState,staffShiftProposal:null,staffShiftProposalError:'The saved slot changed.'}});f.api.sessionUser.isOwner=true;
+ const dialog=await f.open();assert.equal(node(dialog,'confirm').disabled,true);assert.match(node(dialog,'details').textContent,/saved slot changed/);
+ node(dialog,'proposal-mode').value='Owner-confirmed hours';node(dialog,'proposal-mode').emit('change');replacement(dialog);await node(dialog,'confirm').onclick();
+ assert.equal(f.calls.confirmShift.length,1);assert.equal(f.calls.confirmShift[0].staffShiftProposalDecision,'Owner-confirmed hours');
+});
+
 test('Owner can review an actual departure without losing an unsent schedule-review message or changing its decision',async()=>{const f=fixture({state:unknownState}),opened=[];Object.assign(f.api.auth.currentUser,{email:'jgo031996@gmail.com',providerData:[{providerId:'google.com'}]});Object.assign(f.api.sessionUser,{email:'jgo031996@gmail.com',isOwner:true,permissions:['all']});f.api.openOwnerTimeOutCorrection=context=>opened.push(context);const first=await f.open();replacement(first,{date:'2026-10-19',start:'17:30',end:'02:30',name:'Fictional night shift',reason:'Verified schedule note remains an unsent draft.'});await node(first,'correct-timeout').onclick();assert.equal(first.open,false);assert.equal(opened.length,1);assert.equal(opened[0].attendanceLogId,'sample-time-in');assert.equal(f.calls.review.length+f.calls.dismiss.length+f.calls.confirmShift.length,0);await opened[0].onReturn();const reopened=f.dialog();assert.equal(node(reopened,'reply').value,'Verified schedule note remains an unsent draft.');assert.equal(node(reopened,'shift-start').value,'17:30');assert.equal(node(reopened,'shift-end').value,'02:30');assert.equal(f.calls.review.length+f.calls.dismiss.length+f.calls.confirmShift.length,0);});
 
 for(const kind of ['attendance','schedule'])test(`unknown schedule has a direct ${kind} action for the exact saved workday without making any decision`,async()=>{

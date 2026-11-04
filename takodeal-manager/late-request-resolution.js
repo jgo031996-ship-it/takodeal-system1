@@ -4,6 +4,8 @@ import {loadClockOutSchedule} from './attendance-schedule-reader.js';
 import {resolveAttendanceShift,attendanceLateMinutes,isLatenessRequest,requestLateMinutes,legacyAttendanceCandidates,reviewLateRequest} from './payroll-safety.js';
 import {attendanceAmendmentReviewFingerprint} from './attendance-amendment-review-model.js';
 import {memoizedAttendanceTransaction} from './attendance-transaction-reader.js';
+import {inspectStaffShiftProposal} from './saved-shift-proposal.js';
+import {resolveEmergencyShift} from './emergency-shift-model.js';
 
 const idEncoder=new TextEncoder();
 const validId=value=>typeof value==='string'&&value.length>0&&value!=='.'&&value!=='..'&&!/[\/\u0000-\u001f\u007f-\u009f]/u.test(value)&&idEncoder.encode(value).length<=1500;
@@ -44,28 +46,42 @@ export async function resolveCorrectedLateRequest(api,{requestId,attendanceId,ex
   }
   if(existing)throw Error('A dated resolution is already saved for this letter. Refresh its history before any further review.');
   const stamp=api.serverTimestamp(),marker={version:1,attendanceId,sourceFingerprint:fingerprint,currentReviewedLateMinutes:0,originalLateMinutes:requestLateMinutes(request,log),scheduleAmendmentIds:[...shift.scheduleAmendmentIds],scheduleReviewAuditId:log.scheduleAmendmentReview?.auditId||'',expectedStartAt:new Date(instant(shift.expectedStartAt)).toISOString(),actorUid:user.uid,actorEmail:OWNER_EMAIL,recordedAt:stamp};guard();
-  tx.update(reqRef,{status:action,managerReply:message,processedAt:stamp,processedBy:OWNER_EMAIL,currentReviewedLateMinutes:0,originalSubmissionPreserved:true,datedLateResolution:marker});
+  tx.update(reqRef,{status:action,managerReply:message,processedAt:stamp,processedBy:OWNER_EMAIL,currentReviewedLateMinutes:0,originalSubmissionPreserved:true,datedLateResolution:marker,...(request.staffShiftProposal?{staffShiftProposalReview:{schemaVersion:1,decision:'Dated hours reviewed separately',attendanceId,reviewedByUid:user.uid,reviewedByEmail:OWNER_EMAIL,reviewedAt:stamp,reason:message}}:{})});
   return {resolved:true,requestId,attendanceId,lateMinutes:0};
  });
 }
 // The original decision path remains available to approved HQ managers. Its
 // schedule guard runs in the very same transaction as the unchanged legacy
 // attendance updates, so a correction arriving after preview cannot be missed.
-export async function reviewOriginalLateRequest(api,{requestId,attendanceId,profileId,action,reply='',actor}){
+export async function reviewOriginalLateRequest(api,{requestId,attendanceId,profileId,action,reply='',actor,proposalDecision}){
  if(!validId(requestId)||!validId(attendanceId)||!validId(profileId)||!['Approved','Rejected'].includes(action)||typeof reply!=='string'||reply.length>1500||typeof actor!=='string'||!actor.trim()||actor.length>200)throw Error('Reopen the original attendance letter and its exact employee profile.');
  const identity=()=>{const user=api.auth?.currentUser,session=api.sessionUser;if(!user?.uid||!user.email||user.emailVerified!==true||!user.providerData?.some(row=>row.providerId==='google.com')||session?.uid!==user.uid||key(session.email)!==key(user.email)||session.isFranchisee===true||!canOpenWorkspacePage(session,'inbox'))throw Error('Sign in with approved HQ Request Inbox access to review this letter.');return JSON.stringify([user.uid,user.email,session.uid,session.email,session.role,session.isOwner,session.isFranchisee,session.permissions,session.allowedBranches,session.branch]);};
  const user=api.auth?.currentUser,session=api.sessionUser,captured=identity(),current=()=>{if(api.auth?.currentUser!==user||api.sessionUser!==session||identity()!==captured)throw Error('The signed-in HQ account changed. Reopen the attendance letter.');};
  const guardedAPI={db:api.db,doc:api.doc,serverTimestamp:api.serverTimestamp,runTransaction:(db,callback)=>api.runTransaction(db,async original=>{
-  const transaction=memoizedAttendanceTransaction(original);let branch;
+  const transaction=memoizedAttendanceTransaction(original);let branch,proposalReview=null;
   const guard=()=>{current();if(branch&&(key(user.email)!==OWNER_EMAIL&&!session.allowedBranches?.includes('All')&&!session.allowedBranches?.includes(branch)||branch&&typeof api.isBranchAllowed==='function'&&!api.isBranchAllowed(branch)))throw Error('This attendance branch is outside your Request Inbox access.');};
   const read=reference=>{guard();return transaction.get(reference).then(snapshot=>{guard();return fresh(snapshot);});};
-  const bound=Object.freeze({get:read,set(...args){guard();transaction.set(...args);return bound;},update(...args){guard();transaction.update(...args);return bound;},delete(...args){guard();transaction.delete(...args);return bound;}});
+  const bound=Object.freeze({get:read,set(...args){guard();transaction.set(...args);return bound;},update(reference,patch){guard();transaction.update(reference,proposalReview&&(reference.path||JSON.stringify(reference))===(api.doc(db,'staff_requests',requestId).path||JSON.stringify(api.doc(db,'staff_requests',requestId)))?{...patch,staffShiftProposalReview:proposalReview}:patch);return bound;},delete(...args){guard();transaction.delete(...args);return bound;}});
   const reference=(table,id)=>api.doc(db,table,id),[reqSnap,logSnap,personSnap]=await Promise.all([read(reference('staff_requests',requestId)),read(reference('attendance_logs',attendanceId)),read(reference('cashiers',profileId))]);
   if(!reqSnap.exists()||!logSnap.exists()||!personSnap.exists())throw Error('The letter, original Time In or exact employee profile is missing.');
   const request={...reqSnap.data(),id:requestId},log={...logSnap.data(),id:attendanceId},person=personSnap.data();branch=log.branch;guard();
   if(!isLatenessRequest(request)||!branch||request.branch!==branch||key(request.staffName)!==key(log.staffName)||key(person.cashierName)!==key(log.staffName)||request.staffId&&request.staffId!==profileId||log.staffId&&log.staffId!==profileId||String(log.type).toUpperCase()!=='TIME IN'||log.deleted||['Voided','Cancelled','Canceled','Deleted'].includes(log.status)||request.attendanceLogId&&request.attendanceLogId!==attendanceId||!request.attendanceLogId&&!legacyAttendanceCandidates(request,[log]).length)throw Error('The selected letter, Time In and employee profile do not match. Reopen the exact record.');
   const history=await loadClockOutSchedule({db:api.db,doc:api.doc},log,{...person,id:profileId,staffId:profileId},{read,assertCurrent:guard}),shift=resolveAttendanceShift(log,history,{[log.staffName]:{...person,staffId:profileId}},log.staffName);guard();
   if(shift?.attendanceCorrectionVerified===true||shift?.amendmentNeedsReview===true||shift?.assignmentReconciliationRequired===true)throw Error('A dated schedule correction now applies to this attendance. Open its HR review before resolving the original letter.');
+  if(request.staffShiftProposal&&action==='Approved'){
+   const message='Review this proposed shift on linked attendance first or reject the proposed schedule; original records stay on file.';
+   if(proposalDecision==='Keep original assigned hours'){
+    authority(api);
+    if(shift?.wasScheduled!==true||shift.needsScheduleReview===true||shift.amendmentNeedsReview===true)throw Error(message);
+    if(reply.trim().length<8)throw Error('Explain the Owner decision to reject the proposed schedule and keep the original assigned hours (at least 8 characters).');
+    proposalReview={schemaVersion:1,decision:'Rejected - original assigned hours retained',attendanceId,reviewedByUid:user.uid,reviewedByEmail:key(user.email),reviewedAt:api.serverTimestamp(),reason:reply.trim()};
+   }else{
+    await inspectStaffShiftProposal(api,request,{read,assertCurrent:guard});
+    const headSnap=await read(reference('attendance_shift_confirmations',attendanceId)),confirmed=headSnap.exists()?resolveEmergencyShift(log,{...person,id:profileId,staffId:profileId},headSnap.data()):null;
+    if(!confirmed&&shift?.reliefReviewVerified!==true)throw Error(message);
+    proposalReview={schemaVersion:1,decision:'Assigned hours reviewed separately',attendanceId,confirmationRevisionId:headSnap.exists()?headSnap.data().revisionId:null,reviewedByUid:user.uid,reviewedByEmail:key(user.email),reviewedAt:api.serverTimestamp(),reason:reply.trim()};
+   }
+  }
   return callback(bound);
  })};
  current();return reviewLateRequest(guardedAPI,{requestId,attendanceId,action,reply,actor});

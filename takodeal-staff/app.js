@@ -14,6 +14,8 @@ window.getStaffLeaveUI=()=>window.staffLeaveUI||installStaffLeaveUI(window,docum
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>window.getStaffLeaveUI(),{once:true});else queueMicrotask(()=>window.getStaffLeaveUI());
 import {onlineRefundReviewHTML} from './online-refund-pay.js';
 import {payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,snapshotPayrollDeductionRows} from './payroll-deduction-details.js';
+import {isPayrollAdjustment,payrollAdjustmentDetailsHTML,payrollAdjustmentHistoryHTML} from './payroll-adjustment-model.js';
+import {readStaffPayrollAdjustments,staffPayrollAdjustmentEstimate} from './staff-payroll-adjustments.js';
 import { installStaffLocation } from './staff-location.js';
 import { installAttendanceCamera } from './attendance-camera.js';
 import { installAttendanceProofUploader } from './attendance-proof.js';
@@ -33,6 +35,7 @@ import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleFo
 import {loadScheduleMonthView} from './schedule-sync.js';
 import {renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,staffScheduleDay,renderStaffScheduleConflict,emergencyReliefForClockIn,emergencyReliefTimeOutNotice} from './attendance-schedule-preview.js';
 import {installScheduleViewSync} from './schedule-view-sync.js';
+import {savedShiftChoices,savedShiftChoicesHTML,selectedSavedShiftChoice,makeSavedShiftProposal} from './saved-shift-proposal.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 // 🔥 UPGRADE: Imported the Offline Cache Engines!
@@ -1278,7 +1281,7 @@ window.punchTime = async function(type) {
 
     const attendanceRef = doc(collection(db, 'attendance_logs'));
     const lateRequestRef = doc(collection(db, 'staff_requests'));
-    let pendingLateRequest = null;
+    let pendingLateRequest = null, pendingStaffShiftChoice = null;
     let punchScheduleData = null, punchScheduleProfiles = {}, punchSchedulePreview = null;
     let activeTimeIn = null;
     const assertPunchIdentity=()=>{if(localStorage.getItem('takodeal_staff_id')!==punchStaffId||localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff session changed. Sign in again.');};
@@ -1367,6 +1370,7 @@ window.punchTime = async function(type) {
 
                         const savedProof = window.staffLateProofDraft;
                         const lateDraft = savedProof?.staffId === punchStaffId && savedProof.branch === closestBranch && Date.now() - savedProof.savedAt < 30 * 60000 ? savedProof : null;
+                        const lateShiftChoices=savedShiftChoices(scheduleData,{start:{id:attendanceRef.id,type:'TIME IN',staffId:punchStaffId,staffName,branch:closestBranch,timestamp:clockDate},staffId:punchStaffId,staffName});
                         if (!lateDraft) window.staffLateProofDraft = null;
                         const { value: lateForm, isConfirmed } = await Swal.fire({
                             title: '⏰ You are Late!',
@@ -1375,7 +1379,8 @@ window.punchTime = async function(type) {
                                     You are <b>${lateMinutes} minutes late</b> for your shift.<br><br>
                                     You are strictly required to provide a valid reason and attach a screenshot of your message sent to the Owner, Manager, or HR.
                                 </div>
-                                <textarea id="lateReason" placeholder="Enter your valid reason here..." style="width: 100%; padding: 12px; border: 2px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; font-family: inherit; resize: none; outline: none; font-weight: bold; box-sizing: border-box;"></textarea>
+                                ${savedShiftChoicesHTML(lateShiftChoices,{id:'lateSavedShiftChoice'})}
+                                <textarea id="lateReason" placeholder="Explain what happened; the saved shift choice above is only a reference for Owner review." style="width: 100%; padding: 12px; border: 2px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; font-family: inherit; resize: none; outline: none; font-weight: bold; box-sizing: border-box;"></textarea>
                                 <label style="font-size: 12px; font-weight: bold; color: #dc2626; display: block; margin-bottom: 5px; text-align: left;">Upload Screenshot Proof 📸 *</label>
                                 <p id="lateProofKept" style="font-size:13px;color:#0f766e"></p>
                                 <p style="font-size:13px;color:#64748b">Choose a JPG, PNG or WebP screenshot. The app reduces its size for slow connections.</p>
@@ -1390,6 +1395,7 @@ window.punchTime = async function(type) {
                             customClass: { popup: 'rounded-2xl shadow-xl border border-red-100' },
                             didOpen: () => {
                                 if (lateDraft) {document.getElementById('lateReason').value = lateDraft.reason;document.getElementById('lateProofKept').textContent = 'Selected screenshot kept: ' + (lateDraft.file.name || 'Screenshot') + '. Choose another image to replace it.';}
+                                if(lateDraft?.staffShiftChoice&&lateShiftChoices.some(row=>row.key===lateDraft.staffShiftChoice.key&&row.sourceFingerprint===lateDraft.staffShiftChoice.sourceFingerprint)){const select=document.getElementById('lateSavedShiftChoice');if(select)select.value=lateDraft.staffShiftChoice.key;}
                             },
                             preConfirm: () => {
                                 let reason = document.getElementById('lateReason').value.trim();
@@ -1398,13 +1404,14 @@ window.punchTime = async function(type) {
                                     Swal.showValidationMessage("Both a reason and a screenshot proof are strictly required to time in.");
                                     return false;
                                 }
-                                return { reason, file };
+                                try{return {reason,file,staffShiftChoice:selectedSavedShiftChoice(lateShiftChoices,document.getElementById('lateSavedShiftChoice')?.value||'')};}catch(error){Swal.showValidationMessage(error.message);return false;}
                             }
                         });
 
                         if (!isConfirmed) return; 
 
-                        window.staffLateProofDraft = {staffId:punchStaffId, branch:closestBranch, reason:lateForm.reason, file:lateForm.file, savedAt:Date.now()};
+                        window.staffLateProofDraft = {staffId:punchStaffId, branch:closestBranch, reason:lateForm.reason, file:lateForm.file, staffShiftChoice:lateForm.staffShiftChoice, savedAt:Date.now()};
+                        pendingStaffShiftChoice=lateForm.staffShiftChoice;
                         const proof = await window.uploadAttendanceProof({
                             file:lateForm.file, path:`staff_requests/late_${attendanceRef.id}.jpg`,
                             assertCurrent:()=>{
@@ -1415,6 +1422,7 @@ window.punchTime = async function(type) {
 
                         pendingLateRequest = {
                             attendanceLogId: attendanceRef.id,
+                            staffId:punchStaffId,
                             lateMinutes,
                             type: "Reason Letter",
                             staffName: staffName,
@@ -1490,6 +1498,7 @@ window.punchTime = async function(type) {
             if (!attendance.scheduleSnapshot.needsScheduleReview && attendance.scheduleSnapshot.wasScheduled===true && matched) attendance.lateMinutes = matched.lateMinutes;
             if(Number(attendance.lateMinutes)>3&&!pendingLateRequest)throw Error('The current Time In now needs a lateness explanation. No punch was saved. Tap Time In again to review the current time and provide your explanation.');
             if(!(Number(attendance.lateMinutes)>3))pendingLateRequest=null;
+            if(pendingLateRequest&&pendingStaffShiftChoice)pendingLateRequest.staffShiftProposal=makeSavedShiftProposal(punchScheduleData,{start:{id:attendanceRef.id,type:'TIME IN',staffId:punchStaffId,staffName,branch:closestBranch,timestamp:clockDate},staffId:punchStaffId,staffName},pendingStaffShiftChoice);
             const emergencyRelief=emergencyReliefForClockIn(attendance.scheduleSnapshot,punchScheduleProfiles[staffName],closestBranch);
             if(emergencyRelief){attendance.emergencyRelief=emergencyRelief;attendance.lateMinutes=0;pendingLateRequest=null;}
         }
@@ -2080,6 +2089,11 @@ window.loadPayslipVault = async function() {
         const bonusQ = query(collection(db, "staff_bonuses"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10)));
         const bonusSnap = await getDocs(bonusQ);
         if (!stillOpen()) return;
+        const payrollAdjustmentHistory=await readStaffPayrollAdjustments({db,collection,query,where,getDocsFromServer},{staffId,stillCurrent:stillOpen});
+        if (!stillOpen()) return;
+        const adjustmentIdentity={staffId,name:staffProfile.cashierName||staffProfile.fullName||staffName,branch:staffProfile.branch};
+        const currentAdjustments=staffPayrollAdjustmentEstimate(payrollAdjustmentHistory,{...adjustmentIdentity,start:startDateStr,end:endDateStr});
+        const previousAdjustments=staffPayrollAdjustmentEstimate(payrollAdjustmentHistory,{...adjustmentIdentity,start:prevStartStr,end:prevEndStr});
 
         const analyzeCutoff = (startT, endT) => {
             if(salaryHistoryUnavailable)return {shiftsWorked:0,basicPay:0,totalLatePenalty:0,totalBonuses:0,shiftPairs:[],scheduleReviews:0,amendmentReviews:0,attendanceHeld:true,salaryHistoryUnavailable:true};
@@ -2109,6 +2123,7 @@ window.loadPayslipVault = async function() {
             let tBonuses = 0; let fBonuses = [];
             bonusSnap.forEach(docSnap => {
                 let b = docSnap.data();
+                if(isPayrollAdjustment({...b,id:docSnap.id}))return;
                 if (b.dateAdded && isMatch(b.staffName)) {
                     let t = safeDate(b.dateAdded);
                     if (t >= startT && t <= endT) { tBonuses += (parseFloat(b.amount) || 0); fBonuses.push(b); }
@@ -2288,8 +2303,8 @@ window.loadPayslipVault = async function() {
         const ownerPreviousDetails=ownerCurrent.details.filter(row=>row.effectiveDate<=prevEndStr);
         const ownerPrevious={...ownerCurrent,total:ownerPreviousDetails.reduce((sum,row)=>sum+Math.round(row.amount*100),0)/100,details:ownerPreviousDetails,rows:ownerPreviousDetails.map(row=>({id:row.id,amount:row.amount}))};
         const estimateDeductionData=(activeRows,late,refundRows)=>({...profileCharges,lateDeduction:late,loans:cutoffLoanDeduction,advances:activeRows.filter(row=>row.type==='Cash Advance').reduce((sum,row)=>sum+(Number(row.amount)||0),0),meals:activeRows.filter(row=>isMealDeduction(row.type)).reduce((sum,row)=>sum+(Number(row.amount)||0),0),onlineRefunds:refundRows.reduce((sum,row)=>sum+(Number(row.amount)||0),0),onlineRefundRows:refundRows,deductionDetailsVersion:1,deductionDetails:snapshotPayrollDeductionRows(activeRows,activeRows.filter(row=>Number(row.amount)>0).map(row=>({id:row.id,taken:Number(row.amount)})))});
-        const currentDeductionDetails={...estimateDeductionData(liveActiveDeductions,currentData.totalLatePenalty,onlineDue),ownerDeductions:ownerCurrent.total,ownerDeductionRows:ownerCurrent.rows,ownerDeductionDetails:ownerCurrent.details};
-        let estNet = (estGross + currentData.totalBonuses) - currentData.totalLatePenalty - liveUnpaidVales - cutoffLoanDeduction - onlineDueAmount - recurringDeductionTotal - ownerCurrent.total;
+        const currentDeductionDetails={...estimateDeductionData(liveActiveDeductions,currentData.totalLatePenalty,onlineDue),ownerDeductions:ownerCurrent.total,ownerDeductionRows:ownerCurrent.rows,ownerDeductionDetails:ownerCurrent.details,payrollRecoveryRows:ownerCurrent.payrollRecoveryRows||[]};
+        let estNet = (estGross + currentData.totalBonuses + currentAdjustments.amount) - currentData.totalLatePenalty - liveUnpaidVales - cutoffLoanDeduction - onlineDueAmount - recurringDeductionTotal - ownerCurrent.total;
         let refundEstimate=document.getElementById('liveOnlineRefundEstimate');if(!refundEstimate){refundEstimate=document.createElement('p');refundEstimate.id='liveOnlineRefundEstimate';document.getElementById('payslipLiveSection').prepend(refundEstimate);}refundEstimate.textContent='ONLINE REFUND ORDERS: −₱'+onlineDueAmount.toFixed(2);refundEstimate.hidden=!onlineDueAmount;
         let cashReviewHint=document.getElementById('liveCashShortageReviewHint');if(!cashReviewHint){cashReviewHint=document.createElement('p');cashReviewHint.id='liveCashShortageReviewHint';cashReviewHint.style.cssText='padding:10px 12px;border:1px solid #e6d9bd;border-radius:8px;background:#fff9ed;font-size:12px;';document.getElementById('payslipLiveSection').prepend(cashReviewHint);}cashReviewHint.hidden=!hasCashShortageReview;cashReviewHint.textContent='This estimate excludes cash shortage reviews. Open My Inbox for the protected review and your response. Any lawfully approved amount will be itemized on the final payslip.';
 
@@ -2297,7 +2312,9 @@ window.loadPayslipVault = async function() {
         document.getElementById('liveEstGross').innerText = currentData.salaryHistoryUnavailable?'Confirm salary on approved phone':currentData.attendanceHeld ? 'Held for HR review' : '₱' + estGross.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstLates').innerText = '-₱' + currentData.totalLatePenalty.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstVales').innerText = '-₱' + liveUnpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
-        document.getElementById('liveEstNetPay').innerText = ownerCurrent.held?'Confirm deduction records':currentData.salaryHistoryUnavailable?'Confirm salary on approved phone':currentData.attendanceHeld ? 'Held for HR review' : '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
+        document.getElementById('liveEstNetPay').innerText = currentAdjustments.held?'Confirm adjustment records':ownerCurrent.held?'Confirm deduction records':currentData.salaryHistoryUnavailable?'Confirm salary on approved phone':currentData.attendanceHeld ? 'Held for HR review' : '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
+        let adjustmentPanel=document.getElementById('staffPayrollAdjustmentHistory');if(!adjustmentPanel){adjustmentPanel=document.createElement('div');adjustmentPanel.id='staffPayrollAdjustmentHistory';document.getElementById('payslipLiveSection').appendChild(adjustmentPanel);}
+        adjustmentPanel.innerHTML=(currentAdjustments.held?'<p style="padding:12px;border:1px solid #e6d9bd;border-radius:8px;background:#fffbef;font-size:12px;color:#92400e">Previous payroll adjustments need confirmation. Reconnect or ask the Owner to review them before relying on the live estimate. Saved paid payslips below stay unchanged.</p>':payrollAdjustmentDetailsHTML({payrollAdjustments:currentAdjustments.amount,payrollAdjustmentRows:currentAdjustments.rows},{live:true}))+payrollAdjustmentHistoryHTML(payrollAdjustmentHistory.rows);
         let penaltyReview=document.getElementById('liveScheduledPenaltyReview');
         if(!penaltyReview){penaltyReview=document.createElement('p');penaltyReview.id='liveScheduledPenaltyReview';penaltyReview.style.cssText='padding:10px;background:#fff8ed;font-size:12px;';document.getElementById('payslipLiveSection').prepend(penaltyReview);}
         penaltyReview.hidden=!scheduledPenaltyReview;
@@ -2410,9 +2427,9 @@ window.loadPayslipVault = async function() {
             
             let prevEstGross = prevData.basicPay;
             const prevOnlineAmount=onlineRows.filter(row=>row.status==='Unpaid'&&(row.dateAdded?.toDate?.()||new Date(row.dateAdded))<=prevCutoffEndTimestamp).reduce((sum,row)=>sum+(Number(row.amount)||0),0);
-            let prevEstNet = (prevEstGross + prevData.totalBonuses) - prevData.totalLatePenalty - pendingUnpaidVales - cutoffLoanDeduction - prevOnlineAmount - recurringDeductionTotal - ownerPrevious.total;
+            let prevEstNet = (prevEstGross + prevData.totalBonuses + previousAdjustments.amount) - prevData.totalLatePenalty - pendingUnpaidVales - cutoffLoanDeduction - prevOnlineAmount - recurringDeductionTotal - ownerPrevious.total;
             const previousRefundRows=onlineRows.filter(row=>row.status==='Unpaid'&&(row.dateAdded?.toDate?.()||new Date(row.dateAdded))<=prevCutoffEndTimestamp);
-            const previousDeductionDetails={...estimateDeductionData(pendingActiveDeductions,prevData.totalLatePenalty,previousRefundRows),ownerDeductions:ownerPrevious.total,ownerDeductionRows:ownerPrevious.rows,ownerDeductionDetails:ownerPrevious.details};
+            const previousDeductionDetails={...estimateDeductionData(pendingActiveDeductions,prevData.totalLatePenalty,previousRefundRows),ownerDeductions:ownerPrevious.total,ownerDeductionRows:ownerPrevious.rows,ownerDeductionDetails:ownerPrevious.details,payrollRecoveryRows:(ownerPrevious.payrollRecoveryRows||[]).filter(row=>ownerPrevious.rows.some(item=>item.id===row.id))};
 
             let prevLoanStr = (cutoffLoanDeduction > 0) ? `<div style="display: flex; justify-content: space-between; margin-bottom: 4px;"><span>Company Loan:</span> <strong style="color:#ef4444;">-₱${cutoffLoanDeduction.toLocaleString(undefined, {minimumFractionDigits:2})}</strong></div>` : '';
 
@@ -2426,7 +2443,7 @@ window.loadPayslipVault = async function() {
                         </div>
                         <div style="text-align: right; background: white; padding: 8px 12px; border-radius: 8px; border: 1px solid #cbd5e1;">
                             <div style="font-size: 10px; color: #64748b; text-transform: uppercase; font-weight: bold;">Est. Net Pay</div>
-                            <div style="font-size: 18px; font-weight: 900; color: #0f172a;">${ownerPrevious.held?'Confirm deduction records':prevData.salaryHistoryUnavailable?'Confirm salary on approved phone':prevData.attendanceHeld ? 'Held for HR review' : '₱'+Math.max(0, prevEstNet).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                            <div style="font-size: 18px; font-weight: 900; color: #0f172a;">${previousAdjustments.held?'Confirm adjustment records':ownerPrevious.held?'Confirm deduction records':prevData.salaryHistoryUnavailable?'Confirm salary on approved phone':prevData.attendanceHeld ? 'Held for HR review' : '₱'+Math.max(0, prevEstNet).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
                         </div>
                     </div>
                     
@@ -2439,6 +2456,7 @@ window.loadPayslipVault = async function() {
                         ${recurringDeductionTotal?'<div style="display:flex;justify-content:space-between;gap:12px"><span>Government / recurring deductions:</span><strong style="color:#ef4444">−₱'+recurringDeductionTotal.toFixed(2)+'</strong></div>':''}
                     </div>
                     ${payslipDeductionDetailsHTML(previousDeductionDetails,{live:true})}
+                    ${payrollAdjustmentDetailsHTML({payrollAdjustments:previousAdjustments.amount,payrollAdjustmentRows:previousAdjustments.rows},{live:true})}
                     ${hasCashShortageReview?'<p style="font-size:12px;color:#7a5a21;line-height:1.5">This estimate excludes cash shortage reviews. Check My Inbox; any lawfully approved amount is itemized on the final payslip.</p>':''}
                     
                     ${prevData.salaryHistoryUnavailable?'<p style="font-size:12px;color:#92400e;line-height:1.5">Use your approved Staff phone and reconnect to confirm the daily wage for each work date.</p>':prevData.reliefReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Your actual emergency-cover punches are recorded. Assigned hours are waiting for Owner HR review before this estimate is finalized.</p>' : prevData.amendmentReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">A dated shift correction needs HQ review of a saved lateness decision. This attendance estimate is held until that review is complete.</p>' : prevData.attendanceHeld ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Linked punches conflict or overlap. The attendance estimate is held for HR review; no payable hours or lateness penalty have been inferred.</p>' : prevData.scheduleReviews ? '<p style="font-size:12px;color:#92400e;line-height:1.5">Saved schedule evidence is missing for some clock-ins in this estimate. Review the attendance details before payroll approval.</p>' : ''}
@@ -2542,8 +2560,9 @@ window.viewPastPayslip = function(encodedData) {
     let holPay = parseFloat(d.holidayPayTotal || d.holiday || 0).toFixed(2);
     // 🔥 Added Performance Bonus
     let perfBonus = parseFloat(d.perfBonus ?? d.performanceBonus ?? 0).toFixed(2);
+    let payrollAdjustmentPay = parseFloat(d.payrollAdjustments || 0).toFixed(2);
     
-    let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay) + parseFloat(perfBonus)).toFixed(2);
+    let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay) + parseFloat(perfBonus) + parseFloat(payrollAdjustmentPay)).toFixed(2);
 
     let lateDeduct = parseFloat(d.lateDeduction || 0).toFixed(2);
     let sss = parseFloat(d.sss || 0).toFixed(2);
@@ -2683,6 +2702,7 @@ window.viewPastPayslip = function(encodedData) {
                                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid black; color: #16a34a; font-weight: bold;">
                                     <span>Performance Bonus</span> <span>${perfBonus}</span>
                                 </div>
+                                ${Number(payrollAdjustmentPay)>0?'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-bottom:1px solid black;color:#166534;font-weight:bold"><span>Previous payroll credits</span><span>'+payrollAdjustmentPay+'</span></div>':''}
                                 <div style="display: flex; justify-content: space-between; padding: 12px 8px; font-weight: bold; font-size: 16px;">
                                     <span>GROSS INCOME</span> <span>${grossIncome}</span>
                                 </div>
@@ -2706,6 +2726,7 @@ window.viewPastPayslip = function(encodedData) {
                         </div>
 
                         ${payslipDeductionDetailsHTML(d,{showTotal:false})}
+                        ${payrollAdjustmentDetailsHTML(d)}
                         <!-- 🔥 ATTENDANCE SUMMARY TABLE -->
                         <div style="margin-top: 35px;">
                             <div style="border-top: 2px dashed #0f172a; margin-bottom: 20px;"></div>
@@ -3624,7 +3645,8 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
     let straightPay = parseFloat(d.straightBonus || 0).toFixed(2);
     let holPay = parseFloat(d.holidayPayTotal || d.holiday || 0).toFixed(2);
     let perfBonus = parseFloat(d.perfBonus ?? d.performanceBonus ?? 0).toFixed(2);
-    let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay) + parseFloat(perfBonus)).toFixed(2);
+    let payrollAdjustmentPay = parseFloat(d.payrollAdjustments || 0).toFixed(2);
+    let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay) + parseFloat(perfBonus) + parseFloat(payrollAdjustmentPay)).toFixed(2);
 
     let lateDeduct = parseFloat(d.lateDeduction || 0).toFixed(2);
     let sss = parseFloat(d.sss || 0).toFixed(2);
@@ -3648,6 +3670,7 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
                         <div style="font-weight:bold; color:#16a34a; border-bottom: 1px solid #e2e8f0; margin-bottom: 6px; padding-bottom: 2px;">INCOME</div>
                         <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Basic:</span> <span>₱${basicPay}</span></div>
                         <div style="display:flex; justify-content:space-between; margin-bottom: 4px;"><span>Bonus/OT:</span> <span>₱${(parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay) + parseFloat(perfBonus)).toFixed(2)}</span></div>
+                        ${Number(payrollAdjustmentPay)>0?'<div style="display:flex;justify-content:space-between;margin-bottom:4px"><span>Previous payroll credits:</span><span>₱'+payrollAdjustmentPay+'</span></div>':''}
                         <div style="display:flex; justify-content:space-between; font-weight:bold; margin-top:8px; color:#15803d; border-top: 1px dashed #cbd5e1; padding-top: 4px;"><span>GROSS:</span> <span>₱${grossIncome}</span></div>
                     </div>
                     <div>
@@ -3660,6 +3683,7 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
                     NET PAY: <span style="color: #16a34a;">₱${netPayFmt}</span>
                 </div>
                 ${payslipDeductionDetailsHTML(d,{showTotal:false})}
+                ${payrollAdjustmentDetailsHTML(d)}
                 <div style="text-align: center; margin-top: 15px;">
                     <button type="button" onclick="window.viewPastPayslip('${encodedData}')" style="background: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; padding: 8px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 12px; transition: 0.2s;">🔍 View Full Detailed Payslip</button>
                 </div>

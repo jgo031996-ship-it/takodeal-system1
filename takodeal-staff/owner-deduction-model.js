@@ -1,5 +1,6 @@
 import {phDay} from './sanction-schedule.js';
 import {activeStaffProfile} from './staff-lifecycle-model.js';
+import {payrollRecoveryFromReview} from './payroll-recovery-model.js';
 export const OWNER_DEDUCTION_TYPE='Owner Custom Deduction';
 export const OWNER_DEDUCTION_COLLECTION='owner_deduction_reviews';
 export const OWNER_DEDUCTION_LIMIT=4;
@@ -21,5 +22,6 @@ export function validateOwnerDeductionLink(charge,review,notice,{staffId,name,br
  const amount=ownerDeductionCents(review.amount);if(!amount||amount>review.sourceLossCents||[review.authorizedAmount,charge.amount,charge.authorizedAmount,notice.amount].some(value=>ownerDeductionCents(value)!==amount)||ownerDeductionCents(review.proposedAmount)<=0||ownerDeductionCents(review.proposedAmount)>review.sourceLossCents||review.responsibilityConfirmed!==true||review.lawfulAuthorityConfirmed!==true||review.weeklyLimitConfirmed!==true||notice.weeklyLimitConfirmed!==true||!OWNER_DEDUCTION_BASES.includes(review.lawfulBasis)||String(review.authorityReference||'').trim().length<8||String(review.finding||'').trim().length<15)return fail();
  if(!Number.isSafeInteger(review.replyRevisionReviewed)||review.replyRevisionReviewed<1||notice.replyRevision!==review.replyRevisionReviewed||!String(notice.staffReply||'').trim()||notice.lawfulBasis!==review.lawfulBasis||notice.authorityReference!==review.authorityReference||notice.finding!==review.finding||notice.ownerReply!==review.finding||notice.details!==review.details||notice.evidence!==review.evidence)return fail();
  const effectiveDate=phDay(review.effectiveDate);if(!review.effectiveDate||charge.effectiveDate!==effectiveDate||notice.effectiveDate!==effectiveDate)return fail();if(end&&effectiveDate>phDay(end))return null;
- return {id,amount:amount/100,effectiveDate,revision:review.revision,label:review.label,category:review.category,incidentDate:review.incidentDate};
+ const payrollRecovery=payrollRecoveryFromReview(review);
+ return {id,amount:amount/100,effectiveDate,revision:review.revision,label:review.label,category:review.category,incidentDate:review.incidentDate,...(payrollRecovery?{payrollRecovery}:{})};
 }

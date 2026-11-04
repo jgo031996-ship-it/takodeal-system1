@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {snapshotPayrollDeductionRows,payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,deductionEntryHTML} from '../takodeal-staff/payroll-deduction-details.js';
+import {payrollAdjustmentDetailsHTML} from '../takodeal-staff/payroll-adjustment-model.js';
 const legacy=()=>({name:'Sample Staff',staffId:'sample-staff',start:'2030-01-01',end:'2030-01-15',basicPay:4000,nightBonus:350,meals:534.5,customDeductionsTotal:218,profile:{customDeductions:[{name:'Wi-Fi',amount:50},{name:'Cancelled Orders',amount:168}]},isPaid:true,finalNetPay:3597.5});
 test('an older paid snapshot separates meals, Wi-Fi and cancelled orders without altering the total or borrowing current charges',()=>{
  const saved=legacy(),before=structuredClone(saved),breakdown=payslipDeductionBreakdown(saved);
@@ -48,7 +49,7 @@ test('invalid, duplicate and missing allocations cannot create a frozen receipt 
 async function actualPayslipFunction(name,endMarker){
  const app=await readFile(new URL('../takodeal-staff/app.js',import.meta.url),'utf8'),start=app.indexOf(`window.${name} = function`),end=app.indexOf(endMarker,start);
  assert.ok(start>0&&end>start);const script=app.slice(start,end);let shown;
- const sandbox={window:{staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:()=> 'sample-staff'},document:{},payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,Swal:{fire:options=>{shown=options;return Promise.resolve({isConfirmed:false});}},console};
+ const sandbox={window:{staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:()=> 'sample-staff'},document:{},payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,payrollAdjustmentDetailsHTML,Swal:{fire:options=>{shown=options;return Promise.resolve({isConfirmed:false});}},console};
  vm.runInNewContext(script,sandbox);return {call:async data=>{await sandbox.window[name]('id',encodeURIComponent(JSON.stringify(data)));return shown;},view:async data=>{await sandbox.window[name](encodeURIComponent(JSON.stringify(data)));return shown;}};
 }
 test('the actual acknowledgment dialog presents saved custom names and preserves the paid net amount',async()=>{
@@ -60,3 +61,8 @@ test('the actual full payslip includes readable saved detail and receipt items r
  assert.match(result.html,/Wi-Fi/);assert.match(result.html,/Cancelled Orders/);assert.match(result.html,/3,597\.50/);assert.match(result.html,/4375\.00/);assert.doesNotMatch(result.html,/Foods \/ Penalties/);
 });
 test('Staff and HQ freeze the same public deduction-detail schema',async()=>{assert.equal(await readFile(new URL('../takodeal-staff/payroll-deduction-details.js',import.meta.url),'utf8'),await readFile(new URL('../takodeal-manager/payroll-deduction-details.js',import.meta.url),'utf8'));});
+
+for(const [name,endMarker]of [['viewPastPayslip','// 🔥 NEW: DEDICATED IMAGE DOWNLOADER'],['openPayslipSignatureModal','// ========================================================\n// 💳 STAFF APP: MY LOAN LEDGER VIEWER']])test('actual '+name+' presents a separate saved previous-payroll credit with its old cutoff and reason',async()=>{
+ const fn=await actualPayslipFunction(name,endMarker),data={...legacy(),perfBonus:25,payrollAdjustments:125,payrollAdjustmentRows:[{id:'payroll-adjustment-'+String('a').repeat(64),amount:125,originalStart:'2029-12-16',originalEnd:'2029-12-31',effectiveDate:'2030-01-01',reason:'The previous night allowance was missed.',sourcePayrollRecordId:'original-paid-cutoff'}],finalNetPay:3747.5},before=structuredClone(data),result=name==='viewPastPayslip'?await fn.view(data):await fn.call(data);
+ assert.match(result.html,/Previous payroll credits/);assert.match(result.html,/2029-12-16/);assert.match(result.html,/2029-12-31/);assert.match(result.html,/night allowance was missed/);assert.match(result.html,/original-paid-cutoff/);assert.match(result.html,/3,747\.50/);assert.match(result.html,/4500\.00/);assert.deepEqual(data,before);
+});

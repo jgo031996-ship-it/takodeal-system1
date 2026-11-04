@@ -420,8 +420,19 @@ service cloud.firestore {
           && !after.diff(before).affectedKeys().hasAny(['branch','startTime','startingCash'])));
     }
 
+      // Previous-payroll credits are Owner-reviewed money. Their type and ID
+      // both reserve the record so stripping either marker cannot reopen the
+      // legacy signed-in bonus write permission.
+      function payrollCreditWrite(root, id, before, after) {
+      return root != 'staff_bonuses' || !(id.matches('payroll-adjustment-.*')
+        || before.get('type','') == 'Payroll Adjustment' || after.get('type','') == 'Payroll Adjustment')
+        || (ownerDeductionOwner() && (request.method == 'create' || (request.method == 'update'
+          && before.status == 'Unpaid' && after.status in ['Paid','Cancelled']
+          && after.diff(before).affectedKeys().hasOnly(['status','paidAt','payrollRecordId','cancelReason','cancelledAt','cancelledByUid','cancelledByEmail']))));
+    }
+
       function staffSetupCreateAllowed(root, id, data) {
-      return !protectedCashRecord(root,id,data) && (root != 'shifts' || cashShiftCreate(data))
+      return payrollCreditWrite(root,id,{},data) && !protectedCashRecord(root,id,data) && (root != 'shifts' || cashShiftCreate(data))
         && (root != 'pos_devices' || (!staffSetupProtected(id, data)
         && !(data.get('appType','') == 'Staff'
           && exists(/databases/$(database)/documents/staff_app_setup_config/current)
@@ -429,7 +440,7 @@ service cloud.firestore {
     }
 
       function staffSetupExistingAllowed(root, id, before, after) {
-      return !protectedCashRecord(root,id,before) && !protectedCashRecord(root,id,after)
+      return payrollCreditWrite(root,id,before,after) && !protectedCashRecord(root,id,before) && !protectedCashRecord(root,id,after)
         && (root != 'shifts' || cashShiftChange(before,after))
         && (root != 'pos_devices' || (!staffSetupProtected(id, before)
           && !staffSetupProtected(id, after)));

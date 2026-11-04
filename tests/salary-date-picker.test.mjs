@@ -5,6 +5,7 @@ import vm from 'node:vm';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {dailyStaffRate,staffProfileOperation,saveStaffProfileAtomic} from '../takodeal-manager/staff-rate-changes.js';
 import * as salary from '../takodeal-manager/staff-rate-model.js';
+import {normalizeStaffMessengerUrl} from '../takodeal-manager/staff-messenger-link.js';
 
 const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 const start=source.indexOf('window.saveEmployeeProfile = async function()'),end=source.indexOf('\n};',start)+3;
@@ -26,7 +27,7 @@ function fixture({date='2099-01-01',missingDate=false,newProfile=false,rate='500
  const originalTransaction=api.runTransaction;api.runTransaction=(...args)=>{activity.push('transaction');return originalTransaction(...args);};
  const values={empProfileId:newProfile?'':'sample-staff',empFullName:'Sample Staff',empBranchAssign:'Sample Branch',empHourlyRate:rate,empRole:'Crew',empPin:'1111',empNightDiffRate:'0',profEmpId:'S001',empPhone:'After',empRateEffectiveDate:date};for(const[id,value]of Object.entries(values))if(element(id))element(id).value=value;
  const document={getElementById:element,querySelectorAll:()=>[]};
- const context={window:api,document,...salary,dailyStaffRate,staffProfileOperation,saveStaffProfileAtomic,Swal:{fire:(...args)=>alerts.push(args)},console:{error(){}},Date};
+ const context={window:api,document,...salary,dailyStaffRate,staffProfileOperation,saveStaffProfileAtomic,normalizeStaffMessengerUrl,Swal:{fire:(...args)=>alerts.push(args)},console:{error(){}},Date};
  vm.runInNewContext(handler,context);
  return {...h,api,element,alerts,activity,save:()=>api.saveEmployeeProfile()};
 }
