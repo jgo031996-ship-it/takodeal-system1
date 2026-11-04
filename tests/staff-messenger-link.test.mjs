@@ -5,6 +5,7 @@ test('optional empty contact stays empty and supported direct HTTPS recipients n
  for(const value of ['',null,undefined,'   '])assert.equal(normalizeStaffMessengerUrl(value),'');
  for(const [value,expected]of [
   [' https://www.facebook.com/messages/t/0012345/ ','https://facebook.com/messages/t/0012345'],
+  [' https://www.facebook.com/messages/e2ee/t/009876543210/ ','https://facebook.com/messages/e2ee/t/009876543210'],
   ['https://www.messenger.com/t/0012345','https://messenger.com/t/0012345'],
   ['https://m.me/sample.employee','https://m.me/sample.employee'],
   ['https://www.facebook.com/profile.php?id=0012345','https://facebook.com/profile.php?id=0012345'],
@@ -26,4 +27,8 @@ test('unexpected queries, fragments, encoded path tricks and dot-segment changes
   'https://facebook.com/sample.employee#','https://facebook.com/messages/t/old/../other','https://facebook.com/messages/t/%2e%2e/other',
   'https://facebook.com/messages/t/123%2F456','https://facebook.com/sample.employee\\other','https://facebook.com/sam\nple.employee']
  )assert.throws(()=>normalizeStaffMessengerUrl(value),/direct HTTPS/);
+});
+
+test('encrypted conversation support remains limited to the exact Facebook numeric-thread route',()=>{
+ for(const value of ['https://facebook.com/messages/e2ee/t/name','https://facebook.com/messages/e2ee/t/123/forward','https://facebook.com/messages/e2ee/t/123?next=https://example.test','https://messenger.com/messages/e2ee/t/123','https://facebook.com.evil.test/messages/e2ee/t/123','https://facebook.com/messages/e2ee/t/%31%32%33','https://facebook.com/messages/e2ee/t/123#redirect','https://facebook.com/messages/e2ee/t/'+ '1'.repeat(41)])assert.throws(()=>normalizeStaffMessengerUrl(value),/direct HTTPS/);
 });

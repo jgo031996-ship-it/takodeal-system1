@@ -6,6 +6,7 @@ import vm from 'node:vm';
 import {dailyStaffRate, staffProfileOperation} from '../takodeal-manager/staff-rate-changes.js';
 import {escapeHTML as escapeHtml} from '../takodeal-manager/access-workspace-model.js';
 import {normalizeStaffMessengerUrl} from '../takodeal-manager/staff-messenger-link.js';
+import {formatStaffDeductionHistory} from '../takodeal-manager/staff-deduction-history.js';
 
 const main = fs.readFileSync(new URL('../takodeal-manager/main.js', import.meta.url), 'utf8');
 function actualFunction(name) {
@@ -63,7 +64,7 @@ function fixture({missingId = false, deferredHistory = false} = {}) {
         saves.push({id, payload:structuredClone(payload), options:structuredClone(options),
             finish:() => resolve({profile:{...profiles[id], ...payload}}), fail:() => reject(Error('Simulated old save failure'))});
     });
-    const context = {isOwnerDeduction,normalizeStaffMessengerUrl,
+    const context = {isOwnerDeduction,normalizeStaffMessengerUrl,formatStaffDeductionHistory,
         window:api, document:{getElementById:node, querySelectorAll:() => deductions},escapeHtml,
         dailyStaffRate, staffProfileOperation, saveStaffProfileAtomic:atomic,
         Swal:{fire:(...args) => notices.push(args)}, installSanctionScheduling() {},
@@ -76,6 +77,14 @@ function fixture({missingId = false, deferredHistory = false} = {}) {
         assert.equal(saves.length, count, 'captured save reached transport');
     }};
 }
+
+test('the actual profile save accepts a direct encrypted Messenger thread and saves its canonical recipient without changing the opt-in',async()=>{
+ const f=fixture();f.api.openEmployeeProfile('A');f.node('empMessengerUrl').value='https://www.facebook.com/messages/e2ee/t/009876543210/';f.node('empMessengerPayslipPrompt').checked=true;
+ const pending=f.api.saveEmployeeProfile();await f.waitForSave();assert.equal(f.saves[0].payload.messengerUrl,'https://facebook.com/messages/e2ee/t/009876543210');assert.equal(f.saves[0].payload.messengerPayslipPrompt,true);assert.equal(f.saves[0].id,'A');f.saves[0].finish();await pending;assert.equal(f.node('employeeProfileModal').style.display,'none');
+});
+test('unsafe encrypted-thread links stop the actual profile save before transport and preserve the entered profile',async()=>{
+ for(const link of ['https://facebook.com.example.test/messages/e2ee/t/009876543210','https://facebook.com/messages/e2ee/t/009876543210?next=other']){const f=fixture();f.api.openEmployeeProfile('A');f.node('empMessengerUrl').value=link;await f.api.saveEmployeeProfile();assert.equal(f.saves.length,0);assert.equal(f.node('employeeProfileModal').style.display,'flex');assert.equal(f.node('empMessengerUrl').value,link);assert.match(f.notices.at(-1),/direct HTTPS/);}
+});
 
 test('confirmed employee profile updates and new staff saves close their own editor after acknowledgement', async () => {
     for(const isNew of [false, true]) {

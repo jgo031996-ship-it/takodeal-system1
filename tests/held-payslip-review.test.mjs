@@ -7,6 +7,7 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {ReviewDocument,ReviewElement,deferred} from './helpers/review-dom.mjs';
 import {exportPayslipImage,syncPayslipImageButton} from '../takodeal-manager/payroll-completion.js';
+import * as bonusReview from '../takodeal-manager/payroll-bonus-review-hint.js';
 const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 const copy=value=>JSON.parse(JSON.stringify(value));
 Object.defineProperty(ReviewElement.prototype,'innerText',{get(){return this.textContent;},set(value){this.textContent=value;}});
@@ -23,7 +24,7 @@ function fixture(extra={}){
   logs:[{date:'Oct 16',in:'09:00 AM',out:'05:00 PM',hrs:'8.00',remark:'Recorded pair · payroll review pending'}],...extra};
  const w={globalPayrollCache:{[data.name]:data},currentPayslipData:null,paidPayrollSnapshots:new WeakSet(),requirePayrollPreview(value){if(w.stale||!value||value!==w.globalPayrollCache[value.name])throw Error('Refresh payroll for the selected cutoff.');return 'confirmed-preview';},ManagerUI:{notify:message=>calls.notifications.push(message)},openAttendanceRecovery:value=>calls.reviews.push(copy(value)),openOwnerTimeOutCorrection:value=>calls.corrections.push(copy(value)),auth:{currentUser:{uid:'owner',email:'jgo031996@gmail.com',emailVerified:true}},sessionUser:{uid:'owner',email:'jgo031996@gmail.com',permissions:['all'],allowedBranches:['All']}};
  const deny=()=>{calls.writes++;assert.fail('Preview and navigation must not write business records.');};
- const context=vm.createContext({renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,window:w,document:d,syncPayslipImageButton,exportPayslipImage,console:{error(){}},Date,addDoc:deny,setDoc:deny,updateDoc:deny,deleteDoc:deny,runTransaction:deny,writeBatch:deny});
+ const context=vm.createContext({...bonusReview,renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,window:w,document:d,syncPayslipImageButton,exportPayslipImage,console:{error(){}},Date,addDoc:deny,setDoc:deny,updateDoc:deny,deleteDoc:deny,runTransaction:deny,writeBatch:deny});
  for(const name of ['openPayslipModal','recalcPayslip','downloadPayslipImage'])vm.runInContext(extract(name),context);
  return {w,d,data,calls,node:id=>d.getElementById(id),open:()=>w.openPayslipModal(data.name)};
 }

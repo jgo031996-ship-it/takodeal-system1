@@ -1,4 +1,4 @@
-// A bounded location session: network fixes can arrive quickly while GPS refines them.
+// Bounded location waits; one visible Clock watch keeps verified fixes current.
 export const LOCATION_MAX_AGE = 60000;
 export function distanceMeters(a, b) {
     const radians = x => x * Math.PI / 180;
@@ -21,13 +21,18 @@ export function locationError(code) {
     if (code === 2) return {state:'unavailable', title:'Your phone cannot find its location yet', hint:'Turn on phone Location and Wi-Fi scanning, then try near a window or the entrance.'};
     return {state:'timeout', title:'Location is taking longer than usual', hint:'Keep this screen open near a window. Check phone Location and Wi-Fi, then tap Refresh location.'};
 }
-export function createLocationSession({geolocation, zones, radius = 50, now = Date.now, delay = setTimeout, cancelDelay = clearTimeout, onState = () => {}, duration = 45000}) {
-    let active = null, current = null;
-    const stop = () => { current = null; if (active) active.finish({state:'cancelled'}); };
+export function createLocationSession({geolocation, zones, radius = 50, now = Date.now, delay = setTimeout, cancelDelay = clearTimeout, onState = () => {}, duration = 45000, keepWatching = false}) {
+    let active = null, retained = null, current = null, latest = null;
+    const cached = () => current && locationAssessment(current,zones,radius,now()).state === 'verified' ? locationAssessment(current,zones,radius,now()) : null;
+    const clearRetained = () => {const session=retained;retained=null;if(session?.watch!=null)geolocation.clearWatch(session.watch);};
+    const stop = () => { current = latest = null; if (active) active.finish({state:'cancelled'}); clearRetained(); };
     const acquire = ({force = false} = {}) => {
+        // A background refresh must not make an already valid, fresh fix wait
+        // for another provider response. Never extend its original timestamp.
+        const ready=!force&&cached();if(ready){onState(ready);return Promise.resolve(ready);}
+        if(!force&&retained&&latest){const state=locationAssessment(latest,zones,radius,now());if(state.state==='outside'){onState(state);return Promise.resolve(state);}}
         if (active) return active.promise;
-        if (!force && current && locationAssessment(current, zones, radius, now()).state === 'verified') return Promise.resolve(locationAssessment(current, zones, radius, now()));
-        current = null;
+        clearRetained();
         if (!geolocation) { const state={state:'unsupported',title:'Location is unavailable in this browser',hint:'Use an updated supported browser with phone Location enabled.'}; onState(state); return Promise.resolve(state); }
         let resolve;
         const promise = new Promise(r => { resolve = r; });
@@ -35,18 +40,32 @@ export function createLocationSession({geolocation, zones, radius = 50, now = Da
         session.finish = state => {
             if (session.done) return;
             session.done = true;
-            if (session.watch !== null) geolocation.clearWatch(session.watch);
+            const tracking=keepWatching&&!['cancelled','permission','unsupported'].includes(state.state);
+            if(tracking)retained=session;else if(session.watch!==null)geolocation.clearWatch(session.watch);
+            if(state.state==='permission')current=latest=null;
             cancelDelay(session.timer);
             if (active === session) active = null;
             if (state.state !== 'cancelled') onState(state);
             resolve(state);
         };
         active = session;
-        onState({state:'searching',title:'Finding your branch location',hint:'Keep Clock open. Older phones may need up to 45 seconds for an accurate fix.'});
+        onState({state:'searching',title:'Finding your branch location',hint:'Checking GPS and Wi-Fi location. Keep Clock open near a window while accuracy improves.'});
         const success = position => {
-            if (session.done) return;
+            if(session.done&&retained!==session)return;
             const result = locationAssessment(position, zones, radius, now());
             if (result.state === 'invalid' || result.state === 'stale') return;
+            const previous=latest&&locationAssessment(latest,zones,radius,now()),decisive=previous&&['verified','outside'].includes(previous.state);
+            if(decisive&&result.timestamp<Number(latest.timestamp))return;
+            // An approximate response cannot replace newer accurate outside
+            // evidence, or prevent a fresh accurate cached sample from arriving.
+            if(result.state!=='refining'||!decisive)latest=position;
+            if(session.done){
+                if(result.state==='verified')current=position;
+                else if(result.state==='outside')current=null;
+                // A coarse update cannot erase a still-fresh accurate sample.
+                // An accurate outside fix or permission denial always does.
+                onState(result.state==='refining'&&cached()?cached():result);return;
+            }
             if (session.best && result.accuracy > session.best.accuracy) return;
             session.best = result;
             if (result.state === 'verified' || result.state === 'outside') {
@@ -55,7 +74,7 @@ export function createLocationSession({geolocation, zones, radius = 50, now = Da
             } else onState(result);
         };
         const error = e => {
-            if (session.done) return;
+            if(session.done){if(retained!==session)return;if(e.code===1){current=latest=null;clearRetained();onState(locationError(1));}else if(!cached())onState(locationError(e.code));return;}
             session.lastError = e.code;
             if (e.code === 1) session.finish(locationError(1));
             // A transient provider timeout is not proof of a weak GPS receiver.
@@ -64,9 +83,9 @@ export function createLocationSession({geolocation, zones, radius = 50, now = Da
         try {
             const id = geolocation.watchPosition(success, error, {enableHighAccuracy:true,maximumAge:15000,timeout:30000});
             session.watch = id;
-            if (session.done) geolocation.clearWatch(id);
-            if (!session.done) geolocation.getCurrentPosition(success, error, {enableHighAccuracy:false,maximumAge:15000,timeout:10000});
-        } catch (e) { session.finish(locationError(e.code || 2)); }
+            if (session.done&&retained!==session) geolocation.clearWatch(id);
+            if (!session.done) geolocation.getCurrentPosition(success, error, {enableHighAccuracy:false,maximumAge:LOCATION_MAX_AGE,timeout:10000});
+        } catch (e) { session.finish(locationError(['SecurityError','NotAllowedError'].includes(e.name)?1:e.code||2)); }
         return promise;
     };
     return {acquire,stop};
@@ -117,7 +136,7 @@ export function installStaffLocation() {
         badge.textContent = state.title || (state.state === 'verified' ? `${state.branch} verified · ${distance} m away` : state.state === 'outside' ? `${state.branch} is ${distance} m away` : `Improving location accuracy · ±${accuracy} m`);
         if (hint) hint.textContent = state.hint || (state.state === 'verified' ? `Accuracy ±${accuracy} m. Location is checked again before attendance is saved.` : state.state === 'outside' ? `Clock in or out within ${window.ALLOWED_RADIUS_METERS} m of the branch. Refresh when you arrive.` : `Your phone has a location, but it is too approximate for attendance. Try near a window. Required accuracy: ${window.ALLOWED_RADIUS_METERS} m or better.`);
     };
-    const gps = createLocationSession({geolocation:navigator.geolocation,zones:window.BRANCH_ZONES,radius:window.ALLOWED_RADIUS_METERS,onState:show});
+    const gps = createLocationSession({geolocation:navigator.geolocation,zones:window.BRANCH_ZONES,radius:window.ALLOWED_RADIUS_METERS,onState:show,keepWatching:true});
     const camera = createClockCamera({mediaDevices:navigator.mediaDevices,onStream:stream => {window.invalidateAttendanceCamera?.();window.cameraStream = stream; if (el('clockVideo')) {el('clockVideo').srcObject = stream;if(stream)el('clockVideo').play?.()?.catch?.(()=>{});}},onStatus:(text,ready) => {const node=el('cameraStatus');if(node){node.textContent=text;node.style.background=ready?'#23744f':'#677a70';}}});
     window.refreshGPS = () => gps.acquire({force:true});
     window.startCameraAndGPS = () => { if (!clockVisible()) return; window.refreshGPS(); window.prepareAttendanceCamera?.().catch(()=>{}); return camera.start(); };
@@ -126,7 +145,12 @@ export function installStaffLocation() {
     window.getAttendanceLocation = async () => {
         if (!clockVisible()) throw Error('Open Clock and keep the app visible while recording attendance.');
         const fix = await gps.acquire();
-        if (fix.state !== 'verified') throw Error(fix.title || (fix.state === 'outside' ? `You must be within ${window.ALLOWED_RADIUS_METERS} m of ${fix.branch}.` : 'An accurate location is needed. Try near a window and refresh location.'));
+        if(!clockVisible())throw Error('Open Clock and keep the app visible while recording attendance.');
+        if(fix.state==='verified'&&locationAssessment({timestamp:fix.timestamp,coords:{latitude:fix.lat,longitude:fix.lng,accuracy:fix.accuracy}},window.BRANCH_ZONES,window.ALLOWED_RADIUS_METERS).state!=='verified')throw Object.assign(Error('Location verification expired. Tap Refresh location and wait for the branch to be verified again.'),{code:'attendance/location-expired',locationState:'stale'});
+        if (fix.state !== 'verified') {
+            const problem=fix.title?fix:fix.state==='outside'?{title:`You must be within ${window.ALLOWED_RADIUS_METERS} m of ${fix.branch}.`,hint:'Return to the recorded branch and wait for the verified location badge before trying again.'}:{title:'An accurate location is needed.',hint:'Keep Clock open near a window. Turn on phone Location and Wi-Fi, then tap Refresh location.'};
+            throw Object.assign(Error(problem.title+' '+(problem.hint||'')),{code:'attendance/location-'+fix.state,locationState:fix.state});
+        }
         return fix;
     };
     window.startLiveClock = () => {

@@ -16,6 +16,7 @@ export function normalizeStaffMessengerUrl(value){
  }
  if(url.search||raw.includes('?'))throw invalid();
  const direct=host==='facebook.com'&&parts.length===3&&parts[0]==='messages'&&parts[1]==='t'&&recipient(parts[2])||
+  host==='facebook.com'&&parts.length===4&&parts[0]==='messages'&&parts[1]==='e2ee'&&parts[2]==='t'&&/^\d{1,40}$/.test(parts[3])||
   host==='messenger.com'&&parts.length===2&&parts[0]==='t'&&recipient(parts[1])||
   host==='m.me'&&parts.length===1&&recipient(parts[0])||
   host==='facebook.com'&&parts.length===1&&recipient(parts[0])&&!reserved.has(parts[0].toLowerCase());

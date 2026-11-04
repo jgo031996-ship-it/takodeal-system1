@@ -1336,6 +1336,7 @@ window.punchTime = async function(type) {
         }
 
         // Confirm a fresh, accurate location without changing the branch radius.
+        Swal.fire({title:'Checking your branch location…',text:'Keep Clock open while GPS and Wi-Fi confirm your location.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
         let punchLocation = await window.getAttendanceLocation();
         let closestBranch = punchLocation.branch, minDistance = punchLocation.distance;
         if (type === 'TIME OUT' && activeTimeIn.branch !== closestBranch) throw Error(`Your active shift is at ${activeTimeIn.branch||'an unrecorded branch'}. Record Time Out from that branch or ask HQ to review the location.`);
@@ -1449,6 +1450,7 @@ window.punchTime = async function(type) {
         }
 
         // Proof uploads and HR checks can take minutes; check location and identity again.
+        Swal.fire({title:'Rechecking your branch location…',text:'A recent verified location is reused while GPS keeps updating.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
         const latestLocation = await window.getAttendanceLocation();
         if (latestLocation.branch !== closestBranch) throw Error('Your branch changed during verification. Please record attendance again.');
         if (localStorage.getItem('takodeal_staff_id') !== punchStaffId) throw Error('Your staff session changed. Sign in again before recording attendance.');
@@ -1458,7 +1460,9 @@ window.punchTime = async function(type) {
         let faceResult = null;
         if (type === 'TIME IN') {
             if (typeof window.verifyAttendanceFace !== 'function') throw Error('The camera check is unavailable. Refresh while online before Time In.');
+            Swal.fire({title:'Checking your current camera photo…',text:'Keep your face in the camera frame.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
             faceResult = await window.verifyAttendanceFace();
+            Swal.fire({title:'Confirming your branch location…',text:'Checking the location saved with this attendance.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
             const finalLocation = await window.getAttendanceLocation();
             if (finalLocation.branch !== closestBranch) throw Error('Your branch changed. Please record attendance again.');
             if (localStorage.getItem('takodeal_staff_id') !== punchStaffId || localStorage.getItem('takodeal_staff_name') !== staffName) throw Error('Your staff session changed. Sign in again.');
@@ -1474,7 +1478,7 @@ window.punchTime = async function(type) {
         }
         const photoBase64 = faceResult ? faceResult.photoBase64 : (window.captureOptionalAttendancePhoto?.() || '');
 
-        Swal.fire({title: 'Saving attendance…', text: 'Keep this screen open until HQ confirms your attendance.', allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false, didOpen: () => Swal.showLoading()});
+        Swal.fire({title: 'Preparing attendance…', text: 'Keep this screen open while the final checks finish.', allowOutsideClick: false, allowEscapeKey: false, showConfirmButton: false, didOpen: () => Swal.showLoading()});
 
         // 6. 💾 SAVE TO FIREBASE
         const attendance = {
@@ -1488,6 +1492,7 @@ window.punchTime = async function(type) {
         if (type === 'TIME IN') {
             attendance.faceCheck = faceResult.faceCheck;
             // Slow proof, HR and camera checks must not save an earlier roster.
+            Swal.fire({title:'Confirming your saved shift…',text:'Checking the latest assigned hours before HQ saves attendance.',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
             punchScheduleData = await readFreshPunchSchedule(new Date());
             assertPunchIdentity();
             window.assertAttendanceFaceFresh(faceResult);
@@ -1503,6 +1508,7 @@ window.punchTime = async function(type) {
             const emergencyRelief=emergencyReliefForClockIn(attendance.scheduleSnapshot,punchScheduleProfiles[staffName],closestBranch);
             if(emergencyRelief){attendance.emergencyRelief=emergencyRelief;attendance.lateMinutes=0;pendingLateRequest=null;}
         }
+        Swal.fire({title:'Saving attendance…',text:'Keep this screen open until HQ confirms your attendance.',allowOutsideClick:false,allowEscapeKey:false,showConfirmButton:false,didOpen:()=>Swal.showLoading()});
         if (type === 'TIME OUT') {
             timeOutResult=await earlyClockOut.service.close({start:activeTimeIn,staffId:punchStaffId,staffName,attendance,reliefForReview:earlyClockOut.reliefForReview===true,assertCurrent:assertClockCurrent});
             assertClockCurrent();
@@ -1528,7 +1534,7 @@ window.punchTime = async function(type) {
 
     } catch(e) { 
         console.error(e); 
-        Swal.fire('Attendance not saved', e.message || 'Check your connection and location, then try again.', 'warning'); 
+        Swal.fire(String(e.code||'').startsWith('attendance/location-')?'Location needs attention':'Attendance not saved', e.message || 'Check your connection and location, then try again.', 'warning');
     } 
     finally { 
         window.staffPunchBusy = false;

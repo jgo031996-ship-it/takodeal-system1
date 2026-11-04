@@ -1,5 +1,6 @@
 import {renderPayslipOptionalDeductions,renderRecurringPayslipDeductions} from '../takodeal-manager/payslip-optional-deductions.js';
 import {isOwnerDeduction} from '../takodeal-manager/owner-deduction-model.js';
+import {formatStaffDeductionHistory} from '../takodeal-manager/staff-deduction-history.js';
 import {readPayrollOwnerDeductions,ownerDeductionDisplayRows,ownerDeductionRecoveryRows} from '../takodeal-manager/owner-deduction-payroll.js';
 import {activeStaffProfile} from '../takodeal-manager/staff-lifecycle-model.js';
 import * as adjustments from '../takodeal-manager/payroll-adjustment-model.js';
@@ -17,6 +18,7 @@ import * as freshness from '../takodeal-manager/payroll-schedule-freshness.js';
 import * as preview from '../takodeal-manager/payroll-preview-guard.js';
 import * as loading from '../takodeal-manager/payroll-loading.js';
 import * as completion from '../takodeal-manager/payroll-completion.js';
+import * as bonusReview from '../takodeal-manager/payroll-bonus-review-hint.js';
 import {canOpenWorkspacePage,OWNER_EMAIL} from '../takodeal-manager/workspace-access-model.js';
 import {planPayrollAttendance} from '../takodeal-manager/payroll-attendance.js';
 import {attendanceMillis} from '../takodeal-manager/attendance-reconcile.js';
@@ -50,7 +52,7 @@ function harness(options={}){
  api.getDocFromServer=async ref=>{if(options.readDoc){const saved=await options.readDoc(ref,{records});return saved?{id:ref.id,...saved}:saved;}const row=(records[ref.table]||[]).find(item=>item.id===ref.id||item.staffId===ref.id);return {id:ref.id,exists:()=>!!row,data:()=>row,metadata:{fromCache:false,hasPendingWrites:false}};};
  const Swal={fire:async(...args)=>{events.push(args);return options.confirm?options.confirm(...args):{isConfirmed:false};},showValidationMessage:message=>events.push(message)};
  const document={getElementById:id=>id==='payrollBalanceReview'?null:node(id),querySelectorAll:()=>[]};
- const context=vm.createContext({renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,ownerDeductionRecoveryRows,activeStaffProfile,...adjustments,...roster,...rosterUI,...roster,...rosterUI,...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...completion,readPayrollCashShortages,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
+ const context=vm.createContext({formatStaffDeductionHistory,renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,ownerDeductionRecoveryRows,activeStaffProfile,...adjustments,...roster,...rosterUI,...roster,...rosterUI,...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...completion,...bonusReview,readPayrollCashShortages,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
  context.html=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  vm.runInContext(heldRenderer,context);
  for(const name of ['getPayrollPreviewGuard','requirePayrollPreview','loadPayrollGenerator','generateAutoPayslips','openPayslipModal','finalizePayslip'])vm.runInContext(extract(name),context);
@@ -365,11 +367,11 @@ for(const generator of ['loadPayrollGenerator','generateAutoPayslips']){
 }
 
 import {emergencyShiftSourceFingerprint} from '../takodeal-manager/emergency-shift-model.js';
-function earningsPreview({start='2030-01-16T09:00:00+08:00',finish='2030-01-16T11:38:00+08:00',slot='day',dailyRate=450,nightDiffRate=50,ownerStraight=false}={}){
+function earningsPreview({start='2030-01-16T09:00:00+08:00',finish='2030-01-16T11:38:00+08:00',slot='day',dailyRate=450,nightDiffRate=50,ownerStraight=false,dayEnd='17:00'}={}){
  let h,head=null;h=harness({readDoc:ref=>{const row=ref.table==='attendance_shift_confirmations'?head:(h.records[ref.table]||[]).find(row=>row.id===ref.id||row.staffId===ref.id);return{id:ref.id,exists:()=>!!row,data:()=>row,metadata:{fromCache:false,hasPendingWrites:false}};}});
  Object.assign(h.person,{hourlyRate:dailyRate,nightDiffRate});h.node('payrollEnd').value='2030-01-17';
  const rule=(id,startTime,endTime,shiftType)=>({id,name:id,startTime,endTime,shiftType,active:true,days:[0,1,2,3,4,5,6]});
- const current={currentYear:2030,currentMonth:1,employees:[{id:h.person.id,name:h.person.cashierName,nickname:'SAMPLE'}],branchConfig:{[h.person.branch]:[rule('day','09:00','17:00','morning'),rule('mid','16:00','00:30','mid'),rule('night','19:30','04:00','night')]},currentSchedule:{16:{[h.person.branch]:{scheduled:{[slot]:'SAMPLE'},rest:[],unavailable:[],swaps:{}}}},holidays:{},unavailability:{}};
+ const current={currentYear:2030,currentMonth:1,employees:[{id:h.person.id,name:h.person.cashierName,nickname:'SAMPLE'}],branchConfig:{[h.person.branch]:[rule('day','09:00',dayEnd,'morning'),rule('mid','16:00','00:30','mid'),rule('night','19:30','04:00','night')]},currentSchedule:{16:{[h.person.branch]:{scheduled:{[slot]:'SAMPLE'},rest:[],unavailable:[],swaps:{}}}},holidays:{},unavailability:{}};
  const revision=schedule.createScheduleRevision(current,{revisionId:'fictional-preview-shifts',effectiveFrom:'2030-01-01',savedAt:new Date('2030-01-01T00:00:00+08:00')});
  const saved=schedule.assembleScheduleHistory(current,[{month:'2030-01',revisions:[revision]}]),person={...h.person,staffId:h.person.id};
  const begin={id:'earnings-original-in',staffId:h.person.id,staffName:h.person.cashierName,branch:h.person.branch,type:'TIME IN',timestamp:stamp(start),lateMinutes:0,scheduleSnapshot:payroll.captureAttendanceSchedule(new Date(start),h.person.branch,h.person.cashierName,saved,{[h.person.cashierName]:person})};
@@ -422,4 +424,23 @@ test('the actual payslip straight-duty button adds its audit once while retainin
  const opens=[],open=h.w.openPayslipModal;h.w.openPayslipModal=async(...args)=>{opens.push(args);return open(...args);};await h.w.openPayslipModal(data.name);assert.equal(h.node('psCustomDed_0').value,'9.00');h.node('psSSS').value='37';h.node('psPayDistributed').value='2030-01-19';h.node('psCustomDed_0').value='27';h.node('psOvertime').value='100';h.node('psStraightBonus').value='20';h.node('psHoliday').value='30';
  const button=cell.children.find(node=>node.tagName==='BUTTON'&&/approve straight duty/.test(node.textContent));assert.ok(button,'the real attendance-row action is rendered');await button.onclick();
  assert.equal(data.basicPay,900);assert.equal(data.shiftsWorked,2);assert.equal(data.straightBonus,50);assert.equal(data.nightBonus,50);assert.equal(data.straightDutyApprovals.length,1);const audit=data.straightDutyApprovals[0];assert.equal(audit.extraBasicPay,450);assert.equal(audit.straightBonus,50);assert.equal(audit.extraNightBonus,50);assert.equal(audit.extraHolidayPay,0);assert.equal(data.logs[0].straightDutyApproval,audit);assert.equal(data.logs[0].straightApprovalRequired,false);assert.equal(opens.length,2);assert.equal(opens[1].length,1,'unpaid reopen must not enter the separately authorized saved-history argument');assert.equal(opens[1][0],data.name);assert.equal(h.node('printablePayslip')['data-saved-history'],'false');assert.equal(Number(h.node('psBasicPay').value),900);assert.equal(Number(h.node('psOvertime').value),150);assert.equal(Number(h.node('psStraightBonus').value),70);assert.equal(Number(h.node('psHoliday').value),30);assert.equal(h.node('psSSS').value,'37');assert.equal(h.node('psPayDistributed').value,'2030-01-19');assert.equal(h.node('psCustomDed_0').value,'27');assert.equal(h.person.customDeductions[0].amount,9);assert.equal(Number(h.node('psGross').innerText.replace(/,/g,'')),1150);assert.equal(Number(h.node('psNetPay').innerText.replace(/,/g,'')),1086);assert.equal(h.node('payslipModal').style.display,'flex');assert.equal(h.w.currentPayslipData,data);assert.equal(h.records.payroll_records.length,0);assert.equal(h.writes.length,0);
+});
+
+async function bonusHintModalFixture({mode='shifted'}={}){
+ const normal=mode==='normal',short=mode==='short';
+ const h=earningsPreview({dayEnd:'17:30',start:normal?'2030-01-16T09:00:00+08:00':'2030-01-16T17:11:00+08:00',finish:normal?'2030-01-16T17:55:00+08:00':short?'2030-01-16T20:06:00+08:00':'2030-01-17T02:06:00+08:00',dailyRate:mode==='inclusive-zero'?500:450,nightDiffRate:mode==='inclusive-zero'?0:50});
+ h.w.auth.currentUser.email=h.w.sessionUser.email=OWNER_EMAIL;h.w.auth.currentUser.providerData=[{providerId:'google.com'}];if(mode!=='inclusive-zero'){delete h.person.nightDiffRate;h.person.eligibleNightDiff=true;}
+ const navigation=[],cell={children:[],appendChild(node){this.children.push(node);}};h.node('psAttendanceBody').querySelectorAll=selector=>selector==='tr'?[{querySelector:()=>cell}]:[];
+ h.context.document.createElement=tag=>({tagName:tag.toUpperCase(),style:{},dataset:{},children:[],appendChild(node){this.children.push(node);}});h.w.openAttendanceRecovery=context=>{navigation.push(context);return 'attendance-opened';};
+ await h.w.generateAutoPayslips();const data=h.w.globalPayrollCache[h.person.cashierName];assert.ok(data,JSON.stringify(h.events));if(mode==='paid')Object.assign(data,{isPaid:true,finalNetPay:450});if(mode==='paid-set')h.w.paidPayrollSnapshots=new WeakSet([data]);
+ const before=JSON.stringify(data),original=emergencyShiftSourceFingerprint(h.begin);await h.w.openPayslipModal(data.name);return{...h,data,cell,navigation,before,original,button:cell.children.find(node=>node.tagName==='BUTTON'&&node.dataset?.payrollBonusReview==='0')};
+}
+test('the actual Owner payslip warns about the shifted 8.92-hour Morning reference and opens its exact original HR record without awarding a bonus',async()=>{
+ const h=await bonusHintModalFixture(),log=h.data.logs[0];assert.equal(log.nightBonus,0);assert.equal(log.bonusReviewRequired,false,'the new presentation covers this existing math-with-no-reference-hint gap');assert.ok(h.button,'an actual attendance-row review button is appended');assert.equal(h.button.textContent,'Review assigned shift');assert.equal(h.cell.children.some(node=>node.innerHTML?.includes('saved work-date assignment may need Owner correction')),true);assert.equal(log.expectedStartAt,'2030-01-16T01:00:00.000Z');assert.equal(log.expectedEndAt,'2030-01-16T09:30:00.000Z');assert.equal(await h.button.onclick(),'attendance-opened');assert.equal(h.navigation.length,1);const context=h.navigation[0];assert.equal(context.staffId,h.person.id);assert.equal(context.staffName,h.person.cashierName);assert.equal(context.branch,h.person.branch);assert.equal(context.attendanceLogId,h.begin.id);assert.deepEqual(Array.from(context.attendanceLogIds),[h.begin.id]);assert.equal(context.workDate,'2030-01-16');assert.equal(context.from,'2030-01-16');assert.equal(context.to,'2030-01-17');assert.equal(JSON.stringify(h.data),h.before);assert.equal(emergencyShiftSourceFingerprint(h.begin),h.original);assert.equal(h.data.nightBonus,0);assert.equal(h.records.payroll_records.length,0);assert.equal(h.writes.length,0);
+});
+for(const mode of ['normal','inclusive-zero','short','paid','paid-set'])test('the actual payslip does not add a shifted-reference hint for '+mode,async()=>{
+ const h=await bonusHintModalFixture({mode});assert.equal(h.button,undefined);assert.equal(h.cell.children.some(node=>node.innerHTML?.includes('Assigned shift check')),false);assert.equal(h.navigation.length,0);assert.equal(JSON.stringify(h.data),h.before);assert.equal(h.writes.length,0);
+});
+test('the actual shifted-reference action rejects a changed row or selected payslip instead of navigating to a different original record',async()=>{
+ for(const mode of ['row','payslip']){const h=await bonusHintModalFixture();if(mode==='row')h.data.logs[0].attendanceLogId='another-original';else h.w.currentPayslipData={name:'Another preview'};await h.button.onclick();assert.equal(h.navigation.length,0);assert.equal(h.data.nightBonus,0);assert.equal(h.writes.length,0);assert.ok(h.events.some(value=>typeof value==='string'&&/changed|Reopen/.test(value)));}
 });

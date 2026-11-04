@@ -1,6 +1,7 @@
 import {isPayrollAdjustment,payrollAdjustmentPreview,payrollAdjustmentDetailsHTML} from './payroll-adjustment-model.js';
 import {installPayrollAdjustmentUI} from './payroll-adjustment-ui.js';
 import {normalizeStaffMessengerUrl} from './staff-messenger-link.js';
+import {renderValeHistoryRows,formatStaffDeductionHistory} from './staff-deduction-history.js';
 import {installPayrollMessenger} from './payroll-messenger.js';
 import {staffShiftProposalHTML,inspectStaffShiftProposal} from './saved-shift-proposal.js';
 import {resolveEmergencyShift} from './emergency-shift-model.js';
@@ -79,6 +80,7 @@ import {installOwnerScheduleSync} from './owner-schedule-sync.js';
 import {validateManualAttendance, saveManualAttendance} from './attendance-audit.js';
 import {prepareManualTimeOut} from './manual-attendance-review.js';
 import {reviewStraightDuty} from './payroll-straight-review.js';
+import {payrollBonusReviewHint,payrollBonusReviewHintHTML,openPayrollBonusReviewHint} from './payroll-bonus-review-hint.js';
 import {planPayrollAttendance} from './payroll-attendance.js';
 import {attendanceMillis} from './attendance-reconcile.js';
 import {loadStaffDirectory,staffDirectoryActorKey} from './staff-directory-reader.js';
@@ -10975,6 +10977,19 @@ window.openPayslipModal = async function(staffName, savedHistoryData = null) {
     let attBody = document.getElementById('psAttendanceBody');
     if (attBody) attBody.innerHTML = attHtml;
     if(!paidView&&attBody)data.logs?.forEach((log,index)=>{
+        const hint=payrollBonusReviewHint(window,data,log);if(!hint)return;
+        const cell=attBody.querySelectorAll?.('tr')?.[index]?.querySelector?.('td:last-child');if(!cell)return;
+        const source=JSON.stringify([log.attendanceLogId,log.timeInAt,log.timeOutAt,log.expectedStartAt,log.expectedEndAt,log.rateWorkDate,log.nightBonus]);
+        const note=document.createElement('div');note.innerHTML=payrollBonusReviewHintHTML(hint);cell.appendChild(note);
+        const button=document.createElement('button');button.type='button';button.className='ps-correction-button';button.textContent=hint.actionLabel;button.dataset.payrollBonusReview=String(index);
+        button.onclick=async()=>{try{
+            window.requirePayrollPreview(data);
+            if(window.currentPayslipData!==data||data.logs?.[index]!==log||source!==JSON.stringify([log.attendanceLogId,log.timeInAt,log.timeOutAt,log.expectedStartAt,log.expectedEndAt,log.rateWorkDate,log.nightBonus]))throw Error('This attendance row changed. Generate a fresh payroll list before reviewing its assigned shift.');
+            return await openPayrollBonusReviewHint(window,data,log);
+        }catch(error){window.ManagerUI?.notify?.(error.message);}};
+        cell.appendChild(button);
+    });
+    if(!paidView&&attBody)data.logs?.forEach((log,index)=>{
         if(!log.attendanceLogId||!log.straightApprovalRequired&&!log.bonusReviewRequired)return;
         const cell=attBody.querySelectorAll?.('tr')?.[index]?.querySelector?.('td:last-child');if(!cell)return;
         const button=document.createElement('button');button.type='button';button.className='ps-correction-button';button.textContent=log.straightApprovalRequired?'Review & approve straight duty':'Review bonus assignment';
@@ -15195,43 +15210,8 @@ window.viewLedgerHistory = async function(staffName) {
         // Sort locally by date (Newest first) so we don't trigger a Firebase Index error!
         historyData.sort((a, b) => (b.dateAdded?.toDate() || 0) - (a.dateAdded?.toDate() || 0));
 
-        let html = '';
-        historyData.forEach(d => {
-            let dateStr = d.dateAdded ? d.dateAdded.toDate().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Unknown Date';
-            let remarks = d.remarks || d.notes || 'None';
-            let type = d.type || 'Deduction';
-            let amount = parseFloat(d.amount) || 0;
-            
-            // Dynamic Badge Styling
-            let statusBadge = '';
-            if (d.status === 'Paid') {
-                statusBadge = '<span style="background: #dcfce7; color: #16a34a; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">Paid</span>';
-            } else if (d.status === 'Unpaid') {
-                statusBadge = '<span style="background: #fee2e2; color: #dc2626; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">Unpaid</span>';
-            } else {
-                statusBadge = `<span style="background: #f1f5f9; color: #475569; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 11px;">${d.status || 'Active'}</span>`;
-            }
-
-            // Dynamic Money Formatting (Green for Payments, Red for Debts)
-            let amountFmt = '';
-            if (type.includes('Payment') || type.includes('Auto-Deduct')) {
-                amountFmt = `<span style="color: #16a34a; font-weight: 900; font-size: 14px;">+ ₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>`;
-            } else {
-                amountFmt = `<span style="color: #dc2626; font-weight: 900; font-size: 14px;">- ₱${amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</span>`;
-            }
-
-            html += `
-                <tr style="border-bottom: 1px solid #f1f5f9;">
-                    <td style="padding: 12px 10px; font-size: 12px; color: #64748b;">${dateStr}${isPenaltyDeduction(d) ? '<br>Effective: '+escapeHtml(d.effectiveDate || 'Original issue date')+(window.penaltyDateAction?.(d) || '') : ''}</td>
-                    <td style="padding: 12px 10px; font-weight: bold; color: #334155;">${type}</td>
-                    <td style="padding: 12px 10px; font-size: 12px; color: #475569;">${remarks}</td>
-                    <td style="padding: 12px 10px;">${statusBadge}</td>
-                    <td style="padding: 12px 10px; text-align: right;">${amountFmt}</td>
-                </tr>
-            `;
-        });
-        
-        tbody.innerHTML = html;
+        tbody.innerHTML = renderValeHistoryRows(historyData,{isPenaltyDeduction,penaltyDateAction:window.penaltyDateAction});
+        formatStaffDeductionHistory(tbody,{kind:'vale'});
     } catch (e) {
         console.error("Ledger History Error:", e);
         tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="padding: 20px; color: #dc2626; font-weight: bold;">Error loading history.</td></tr>';
@@ -24236,6 +24216,7 @@ window.openEmployeeProfile = function(docId) {
         });
 
         if (tbody) tbody.innerHTML = histHtml || '<tr><td colspan="5" style="text-align: center; padding: 15px; color: #94a3b8;">No deduction history.</td></tr>';
+        if(tbody)formatStaffDeductionHistory(tbody);
     }).catch(e => {
         console.error(e);
         if (currentProfile() && tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Error loading history</td></tr>';

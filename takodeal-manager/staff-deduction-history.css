@@ -1,0 +1,26 @@
+.staff-deduction-history-wrap{container:staff-deduction-history/inline-size;min-width:0;max-width:100%}
+table.staff-deduction-history{width:100%!important;min-width:0!important;max-width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px;color:#294b40}
+.staff-deduction-history th,.staff-deduction-history td{min-width:0!important;max-width:none;white-space:normal!important;overflow-wrap:anywhere;word-break:normal;padding:10px 8px!important;vertical-align:top;text-align:left}
+.staff-deduction-history th{font-size:10px;letter-spacing:.04em;color:#60776d;background:#f3f7f2}
+.staff-deduction-history td small{display:block;margin-top:4px;color:#677d73;line-height:1.45}
+.staff-deduction-history .staff-history-amount{font-variant-numeric:tabular-nums;font-weight:800;line-height:1.5}
+.staff-deduction-history-row>.staff-history-type{order:0}.staff-deduction-history-row>.staff-history-amount,.staff-deduction-history-row>.staff-history-status{order:1}.staff-deduction-history-row>.staff-history-date,.staff-deduction-history-row>.staff-history-date-added{order:2;grid-column:1/-1}.staff-deduction-history-row>.staff-history-notes{order:3}.staff-deduction-history-row>.staff-history-action{order:4}
+.staff-deduction-history .staff-history-status{font-weight:700;line-height:1.5}
+.staff-deduction-history span.staff-history-status{display:inline-block;padding:4px 8px;border-radius:6px;background:#edf2ef;color:#4c645a}
+.staff-deduction-history span[data-status=paid]{background:#eaf5ec;color:#217447}.staff-deduction-history span[data-status=unpaid]{background:#fff0ed;color:#b54631}
+.staff-history-money{color:#b54736}.staff-history-money[data-payment=true]{color:#217447}
+.staff-deduction-history .staff-history-action>div{display:flex!important;flex-wrap:wrap;gap:6px!important;align-items:flex-start!important;justify-content:flex-start!important;min-width:0}
+.staff-deduction-history button,.staff-deduction-history .staff-history-action>div>div{width:auto!important;min-width:0;max-width:100%;min-height:36px;white-space:normal;overflow-wrap:anywhere;line-height:1.35}
+.staff-deduction-history[data-history-kind=profile] th:nth-child(1){width:14%}.staff-deduction-history[data-history-kind=profile] th:nth-child(2){width:27%}.staff-deduction-history[data-history-kind=profile] th:nth-child(3){width:18%}.staff-deduction-history[data-history-kind=profile] th:nth-child(4){width:14%}.staff-deduction-history[data-history-kind=profile] th:nth-child(5){width:27%}
+.staff-deduction-history[data-history-kind=vale] th:nth-child(1){width:20%}.staff-deduction-history[data-history-kind=vale] th:nth-child(2){width:23%}.staff-deduction-history[data-history-kind=vale] th:nth-child(3){width:25%}.staff-deduction-history[data-history-kind=vale] th:nth-child(4){width:13%}.staff-deduction-history[data-history-kind=vale] th:nth-child(5){width:19%}
+#ledgerHistoryModal>div{width:760px!important;max-width:calc(100vw - 24px)!important;min-width:0;max-height:90vh!important}#ledgerHistoryModal>div>div:nth-child(2){min-width:0;padding:16px!important}#ledgerHistoryModal>div>div:first-child{background:#17523f!important;gap:12px}
+@container staff-deduction-history (max-width:640px){
+ .staff-deduction-history thead{display:none}.staff-deduction-history tbody{display:block}.staff-deduction-history-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 16px;padding:12px;margin:0 0 10px;border:1px solid #dce7df!important;border-radius:10px;background:#fff}
+ .staff-deduction-history-row>td{display:block;padding:0!important;border:0!important;width:auto!important}.staff-deduction-history-row>td::before{content:attr(data-label);display:block;font-size:10px;line-height:1.4;font-weight:600;letter-spacing:.03em;color:#74877d;margin-bottom:3px}
+ .staff-deduction-history-row>.staff-history-type{grid-column:1/-1}.staff-deduction-history-row>.staff-history-type::before{display:none}.staff-deduction-history-row>.staff-history-notes,.staff-deduction-history-row>.staff-history-action{grid-column:1/-1}.staff-deduction-history-row>.staff-history-amount{font-size:14px}.staff-deduction-history-row>.staff-history-action>div{justify-content:flex-start!important}
+}
+@media(max-width:680px){
+ .staff-deduction-history thead{display:none}.staff-deduction-history tbody{display:block}.staff-deduction-history-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 16px;padding:12px;margin:0 0 10px;border:1px solid #dce7df!important;border-radius:10px;background:#fff}
+ .staff-deduction-history-row>td{display:block;padding:0!important;border:0!important;width:auto!important}.staff-deduction-history-row>td::before{content:attr(data-label);display:block;font-size:10px;line-height:1.4;font-weight:600;letter-spacing:.03em;color:#74877d;margin-bottom:3px}
+ .staff-deduction-history-row>.staff-history-type{grid-column:1/-1}.staff-deduction-history-row>.staff-history-type::before{display:none}.staff-deduction-history-row>.staff-history-notes,.staff-deduction-history-row>.staff-history-action{grid-column:1/-1}.staff-deduction-history-row>.staff-history-amount{font-size:14px}
+}
