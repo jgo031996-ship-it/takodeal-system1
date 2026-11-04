@@ -1,6 +1,7 @@
 import {canCorrectOwnerTimeOut} from './owner-time-out-correction.js';
 import {createOwnerTimeOutClient} from './owner-time-out-client.js';
 import {validateManualAttendance} from './attendance-audit.js';
+import {invalidatePayrollLoad} from './payroll-loading.js';
 const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const when=value=>value?new Date(value).toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'})+' (PH)':'Not recorded';
 const local=value=>{const at=new Date(value);return Number.isFinite(+at)?new Date(+at+8*3600000).toISOString().slice(0,19):'';};
@@ -78,7 +79,9 @@ export function installOwnerTimeOutCorrectionUI(w,d,{service=createOwnerTimeOutC
    const accepted=result.requestStatus?' · Reason accepted.':'';
    const hours=result.requiresScheduleReview?' Assigned hours still need Owner review.':'';
    if(current()){review=null;submitted=null;panel.innerHTML='';view={...view,canSave:false,existingTimeOut:{id:result.id,timestamp:result.timestamp}};form.hidden=true;source.innerHTML='<dl><div><dt>Employee / branch</dt><dd>'+escape(view.staffName)+' · '+escape(view.branch)+'</dd></div><div><dt>Original Time In</dt><dd>'+escape(when(view.timeInAt))+'</dd></div><div><dt>Confirmed actual Time Out</dt><dd>'+escape(when(result.timestamp))+'</dd></div><div><dt>Request result</dt><dd>'+escape(result.requestStatus?(result.requiresScheduleReview?'Reason accepted · assigned hours pending':'Reason accepted'):'Attendance correction saved')+'</dd></div></dl><p class="owner-time-out-note">The previous departure evidence is retained in correction history.</p>';message((result.alreadySaved?'This departure was already saved. ':'Actual Time Out saved. ')+when(result.timestamp)+accepted+hours+' Refreshing unpaid payroll separately…');controls();}
-   let timer;const refreshWork=Promise.resolve().then(()=>{if(typeof w.refreshPayrollAfterAttendanceCorrection==='function')return w.refreshPayrollAfterAttendanceCorrection();w.invalidateCache?.('attendance_logs');w.getPayrollPreviewGuard?.().invalidate?.('Time Out saved. Generate List again to refresh unpaid payroll.');});
+   invalidatePayrollLoad(w);
+   const payrollContext={...view.context,isCurrent:()=>actor()===key};
+   let timer;const refreshWork=Promise.resolve().then(()=>{if(typeof w.refreshPayrollAfterAttendanceCorrection==='function')return w.refreshPayrollAfterAttendanceCorrection(payrollContext);w.invalidateCache?.('attendance_logs');w.getPayrollPreviewGuard?.().invalidate?.('Time Out saved. Generate List again to refresh unpaid payroll.');});
    Promise.race([refreshWork,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Payroll refresh timed out')),refreshTimeoutMs);})]).then(()=>{if(current())message('Actual Time Out saved. '+when(result.timestamp)+accepted+hours+' Payroll was refreshed when available. Other held records may still need review.');},()=>{if(current())message('Actual Time Out saved. '+when(result.timestamp)+accepted+hours+' Payroll refresh could not finish. The Time Out remains saved; use Generate List to refresh payroll.',true);}).finally(()=>clearTimeout(timer));
    if(result.requestStatus){try{Promise.resolve(w.applyConfirmedInboxRequest?.(requestId)||w.loadInbox?.()).catch(()=>{});}catch{}}
   }

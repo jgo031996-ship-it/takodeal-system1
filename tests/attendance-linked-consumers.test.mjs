@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {attendanceRows} from '../Takodeal-POS/cashier-data.js';
-import {attendanceEstimate,money,esc,addDays} from '../takodeal-franchise/franchise-data.js';
+import {attendanceEstimate,money,esc,addDays,canVisit} from '../takodeal-franchise/franchise-data.js';
+import {loadFranchisePayrollShiftConfirmations} from '../takodeal-franchise/franchise-payroll-confirmations.js';
 import {buildFranchisePayslip} from '../takodeal-franchise/franchise-payroll-model.js';
 import {installFranchisePayslipUI} from '../takodeal-franchise/franchise-payslip-ui.js';
 
@@ -71,7 +72,7 @@ test('the actual Franchise payroll view renders held gross/net as review text an
  const payrollControls={getRange:()=>({start:'2026-10-07',end:'2026-10-07'}),queryRange:()=>({startDate:new Date('2026-10-07T00:00:00+08:00'),endDate:new Date('2026-10-08T18:00:00+08:00')})};
  const ctx=vm.createContext({define:(_id,handler)=>{load=handler;},selectedRange:()=>({start:new Date('2026-10-07T00:00:00+08:00'),end:new Date('2026-10-08T00:00:00+08:00')}),
   read:async table=>table==='cashiers'?profiles:[older,newer,oldClose],staffRows:async()=>[],createScheduleHistoryStore:()=>({loadRange:async()=>({})}),
-  api:{},session:()=>({branch:'Maa'}),calendarDay:()=> '2026-10-07',$:()=>({value:'2026-10-07'}),accountScope:()=>scope,payrollContext:()=>scope,payrollControls,payrollRows:async()=>[],state,payslipScope:'',payslips,buildFranchisePayslip,money,esc,addDays,
+  api:{db:{},doc:(_db,table,id)=>({table,id}),getDocFromServer:async ref=>({id:ref.id,exists:()=>false,metadata:{fromCache:false,hasPendingWrites:false}})},session:()=>({branch:'Maa',allowedBranches:['Maa'],permissions:['payroll']}),calendarDay:()=> '2026-10-07',$:()=>({value:'2026-10-07'}),accountScope:()=>scope,payrollContext:()=>scope,payrollControls,payrollRows:async()=>[],state,payslipScope:'',payslips,buildFranchisePayslip,money,esc,addDays,canVisit,loadFranchisePayrollShiftConfirmations,
   Option:function(label,value){const node=element('option','',label);node.value=value;return node;},button:(text,action,cls)=>{const node=element('button',cls,text);node.addEventListener('click',action);return node;},
   table:()=>{const card=element('div'),wrap=element('div'),body=element('tbody');card.append(wrap);body.addEventListener=(_event,handler)=>{click=handler;};return {card,wrap,body};},element,cell:value=>'<td>'+value+'</td>',number:value=>'<td>'+money(value)+'</td>',
   badge:value=>'<span>'+esc(value)+'</span>',tools:(_card,_id,rows,renderer)=>{render=rows.map(renderer).join('');},showActionError:error=>errors.push(error.message)});

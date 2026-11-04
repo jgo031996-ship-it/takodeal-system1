@@ -11,12 +11,14 @@ import * as sanctions from '../takodeal-manager/sanction-schedule.js';
 import * as freshness from '../takodeal-manager/payroll-schedule-freshness.js';
 import * as preview from '../takodeal-manager/payroll-preview-guard.js';
 import * as loading from '../takodeal-manager/payroll-loading.js';
+import * as adjustments from '../takodeal-manager/payroll-adjustment-model.js';
+import * as completion from '../takodeal-manager/payroll-completion.js';
 import {canOpenWorkspacePage} from '../takodeal-manager/workspace-access-model.js';
 import {planPayrollAttendance} from '../takodeal-manager/payroll-attendance.js';
 import {attendanceMillis} from '../takodeal-manager/attendance-reconcile.js';
 import * as leave from '../takodeal-manager/leave-model.js';
 import {isOwnerDeduction} from '../takodeal-manager/owner-deduction-model.js';
-import {readPayrollOwnerDeductions,ownerDeductionDisplayRows} from '../takodeal-manager/owner-deduction-payroll.js';
+import {readPayrollOwnerDeductions,ownerDeductionDisplayRows,ownerDeductionRecoveryRows} from '../takodeal-manager/owner-deduction-payroll.js';
 import {renderPayslipOptionalDeductions,renderRecurringPayslipDeductions} from '../takodeal-manager/payslip-optional-deductions.js';
 
 const source=fs.readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
@@ -34,9 +36,10 @@ function harness(options={}){
  const records={cashiers:[person],staff_ledger:[],payroll_records:[],attendance_logs:logs(16),staff_deductions:[],staff_bonuses:[]};
  const snapshot=(rows,metadata={fromCache:false,hasPendingWrites:false})=>{const docs=rows.map((row,index)=>({id:row.id||String(index),metadata:{fromCache:false,hasPendingWrites:false},data:()=>row}));return {docs,metadata,forEach:fn=>docs.forEach(fn)};};
  const api={db:{},auth:{currentUser:{...owner}},sessionUser:{...owner,isOwner:true,isFranchisee:false,permissions:['all'],allowedBranches:['All']},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),where:(field,op,value)=>({field,op,value}),orderBy:()=>({}),query:(ref,...filters)=>({...ref,filters}),getDocs:async()=>assert.fail('Default cached getDocs must never be called for payroll preview'),getDocsFromServer:async ref=>{calls.push(ref);return options.read?options.read(ref,{snapshot,records,logs}):snapshot(records[ref.table]||[]);},getDoc:async()=>({exists:()=>true,data:()=>plan}),isBranchAllowed:()=>true,loadPayrollScheduleHistory:async()=>schedule.assembleScheduleHistory(plan),ManagerUI:{notify:message=>events.push(message)},liveAccounts:[{id:'sample-account',name:'Sample Cash',balance:5000}],globalPayrollCache:{Old:{name:'Old'}},currentPayslipData:{name:'Old'},updateDoc:async()=>writes.push('update'),addDoc:async()=>writes.push('add')};
+ api.getDocFromServer=async ref=>{const row=(records[ref.table]||[]).find(row=>row.id===ref.id);return{id:ref.id,exists:()=>!!row,data:()=>row,metadata:{fromCache:false,hasPendingWrites:false}};};
  const Swal={fire:async(...args)=>{events.push(args);return options.confirm?options.confirm(...args):{isConfirmed:false};},showValidationMessage:message=>events.push(message)};
  const document={getElementById:id=>id==='payrollBalanceReview'?null:node(id),querySelectorAll:()=>[]};
- const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
+ const context=vm.createContext({activeStaffProfile,...roster,...rosterUI,...api,...payroll,...schedule,...sanctions,...freshness,...preview,...loading,...adjustments,...completion,isOwnerDeduction,readPayrollOwnerDeductions,ownerDeductionDisplayRows,ownerDeductionRecoveryRows,renderPayslipOptionalDeductions,renderRecurringPayslipDeductions,canOpenWorkspacePage,planPayrollAttendance,attendanceMillis,window:api,document,Swal,Date,console:{error(){},log(){}},escapeHtml:value=>String(value)});
  for(const name of ['getPayrollPreviewGuard','requirePayrollPreview','loadPayrollGenerator','generateAutoPayslips','openPayslipModal','finalizePayslip'])vm.runInContext(extract(name),context);
  return {context,w:api,node,nodes,events,writes,calls,records,logs,snapshot,person};
 }

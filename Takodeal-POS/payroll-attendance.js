@@ -1,10 +1,11 @@
 import {attendanceMillis,attendanceKind,linkedAttendanceHistory} from './attendance-reconcile.js';
 import {validEmergencyReliefMarker} from './relief-attendance-model.js';
 import {resolveReliefScheduleReview} from './relief-schedule-review-model.js';
+import {payrollOwnerHoursApproved} from './payroll-safety.js';
 
 // Preview-only safety: never rewrite punches or recalculate a frozen payslip.
 // Explicit links that cannot be paid confidently hold that employee's preview.
-export function planPayrollAttendance(records,{resolveName=row=>row.staffName,frozenNames=[],referenceRecords=records,cutoffStart,cutoffEnd}={}) {
+export function planPayrollAttendance(records,{resolveName=row=>row.staffName,frozenNames=[],referenceRecords=records,cutoffStart,cutoffEnd,resolveShift}={}) {
     const bounded=cutoffStart!==undefined||cutoffEnd!==undefined,from=attendanceMillis(cutoffStart),to=attendanceMillis(cutoffEnd);
     if(bounded&&(!Number.isFinite(from)||!Number.isFinite(to)||from>to))throw Error('Use valid payroll cutoff boundaries.');
     const normalize=row=>({...row,payrollStaffName:String(resolveName(row)||row.staffName||'').trim()});
@@ -67,7 +68,7 @@ export function planPayrollAttendance(records,{resolveName=row=>row.staffName,fr
         // Existing open shifts may predate the Time In relief marker. The
         // linked actual departure is sufficient to route the pair to review,
         // but never to establish assigned hours or release an unpaid payroll.
-        if(validEmergencyReliefMarker(end.emergencyRelief,end.branch)&&end.reliefRequestId&&!resolveReliefScheduleReview(begin)){
+        if(validEmergencyReliefMarker(end.emergencyRelief,end.branch)&&end.reliefRequestId&&!resolveReliefScheduleReview(begin)&&!payrollOwnerHoursApproved(resolveShift?.(begin))){
             hold(begin,'Emergency branch cover: Owner HR must confirm assigned hours. Actual Time In and Time Out remain recorded.');continue;
         }
         normalized.add(begin);normalized.add(end);

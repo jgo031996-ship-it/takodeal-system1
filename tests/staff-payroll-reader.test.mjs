@@ -15,6 +15,7 @@ import {readStaffOwnerDeductionEstimate} from '../takodeal-staff/staff-owner-ded
 import {isOwnerDeduction} from '../takodeal-staff/owner-deduction-model.js';
 import * as payrollAdjustments from '../takodeal-staff/payroll-adjustment-model.js';
 import * as staffPayrollAdjustments from '../takodeal-staff/staff-payroll-adjustments.js';
+import {loadStaffPayrollShiftConfirmations} from '../takodeal-staff/payroll-confirmed-shifts.js';
 import {attendanceAmendmentReviewFingerprint} from '../takodeal-staff/attendance-amendment-review-model.js';
 import {amendmentFixture} from './helpers/attendance-amendment-fixture.mjs';
 
@@ -124,9 +125,9 @@ function runVault(logs,{legacy=false,read,clock='2026-10-08T12:00:00+08:00',staf
  const nodes=new Map(),errors=[],queries=[];const node=id=>{if(!nodes.has(id))nodes.set(id,{innerHTML:'',innerText:'',textContent:'',style:{},parentElement:{insertAdjacentHTML(){},querySelector(){return null;}},appendChild(){},prepend(){}});return nodes.get(id);};
  class FixedDate extends Date{constructor(...args){super(...(args.length?args:[clock]));}}
  const match=(row,filters)=>filters.every(filter=>filter.op==='in'?filter.value.includes(row[filter.key]):row[filter.key]===filter.value);
- const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:(ref,...filters)=>({...ref,filters}),where:(key,op,value)=>({key,op,value}),orderBy:()=>({}),getDocFromServer:async ref=>({exists:()=>ref.table==='cashiers',data:()=>({hourlyRate:450,cashierName:staffName,scheduleNickname:'TEST',branch:'Maa',nightDiffRate:0,...profile})}),getDocs:async ref=>{queries.push(ref);return snapshot(ref.table==='attendance_logs'?logs.filter(row=>match(row,ref.filters)).sort((a,b)=>Buffer.compare(Buffer.from(a.id),Buffer.from(b.id))):[]);}};
+ const api={db:{},doc:(_,table,id)=>({table,id}),collection:(_,table)=>({table}),query:(ref,...filters)=>({...ref,filters}),where:(key,op,value)=>({key,op,value}),orderBy:()=>({}),getDocFromServer:async ref=>({id:ref.id,metadata:{fromCache:false,hasPendingWrites:false},exists:()=>ref.table==='cashiers',data:()=>({hourlyRate:450,cashierName:staffName,scheduleNickname:'TEST',branch:'Maa',nightDiffRate:0,...profile})}),getDocs:async ref=>{queries.push(ref);return snapshot(ref.table==='attendance_logs'?logs.filter(row=>match(row,ref.filters)).sort((a,b)=>Buffer.compare(Buffer.from(a.id),Buffer.from(b.id))):[]);}};
  api.getDocsFromServer=api.getDocs;
- const context={...api,...payroll,...sanctions,...reconciliation,...deductionDetails,...payrollAdjustments,...staffPayrollAdjustments,planPayrollAttendance,onlineRefundReviewHTML,readStaffOwnerDeductionEstimate,isOwnerDeduction,createScheduleHistoryStore:scheduleFactory,Date:FixedDate,console:{error:(...error)=>errors.push(error)},window:{...api,readStaffPayrollAttendance:read,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?staffId:staffName},document:{getElementById:node}};
+ const context={...api,...payroll,...sanctions,...reconciliation,...deductionDetails,...payrollAdjustments,...staffPayrollAdjustments,loadStaffPayrollShiftConfirmations,planPayrollAttendance,onlineRefundReviewHTML,readStaffOwnerDeductionEstimate,isOwnerDeduction,createScheduleHistoryStore:scheduleFactory,Date:FixedDate,console:{error:(...error)=>errors.push(error)},window:{...api,readStaffPayrollAttendance:read,staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:key=>key.endsWith('_id')?staffId:staffName},document:{getElementById:node}};
  vm.runInNewContext(legacy?legacyVault:vault,context);
  return {node,errors,queries,load:()=>context.window.loadPayslipVault(),context,result:()=>Object.fromEntries([...nodes].map(([key,value])=>[key,{text:value.innerText,html:value.innerHTML}]))};
 }

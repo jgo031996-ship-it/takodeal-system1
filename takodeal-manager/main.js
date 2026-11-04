@@ -38,7 +38,7 @@ import {payrollActorKey,loadPayrollAccounts,applyConfirmedPayroll,checkSavedPays
 import {installManagerTableWrapper} from './manager-table-wrapper.js';
 import {payrollScheduleStamp,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
 import {createPayrollPreviewGuard,readPayrollSnapshot} from './payroll-preview-guard.js';
-import {coordinatePayrollLoad,loadPayrollPreviewInputs,loadPayrollSalaryProfiles,payrollSalaryForWork,payrollSalaryForPreview} from './payroll-loading.js';
+import {coordinatePayrollLoad,loadPayrollPreviewInputs,loadPayrollSalaryProfiles,payrollSalaryForWork,payrollSalaryForPreview,invalidatePayrollLoad} from './payroll-loading.js';
 import {createPayrollRosterResolver,buildPayrollLedgerReview} from './payroll-roster-model.js';
 import {buildPayrollRosterReview,renderPayrollBalanceReview} from './payroll-balance-review.js';
 import {installManagerLeaveUI,leaveRequestSummaryHTML} from './manager-leave-ui.js';
@@ -77,6 +77,8 @@ import {toScheduleEmployee,upsertScheduleEmployee,mergeScheduleEmployeeAliases,a
 import {availableScheduleReliefStaff} from './schedule-relief-staff.js';
 import {installOwnerScheduleSync} from './owner-schedule-sync.js';
 import {validateManualAttendance, saveManualAttendance} from './attendance-audit.js';
+import {prepareManualTimeOut} from './manual-attendance-review.js';
+import {reviewStraightDuty} from './payroll-straight-review.js';
 import {planPayrollAttendance} from './payroll-attendance.js';
 import {attendanceMillis} from './attendance-reconcile.js';
 import {loadStaffDirectory,staffDirectoryActorKey} from './staff-directory-reader.js';
@@ -86,13 +88,18 @@ import {installOwnerTimeOutCorrectionUI} from './owner-time-out-correction-ui.js
 import {installReliefScheduleReviewUI} from './relief-schedule-review-ui.js';
 window.openReliefScheduleReview = context => (window.reliefScheduleReviewUI ||= installReliefScheduleReviewUI(window,document)).open(context);
 window.openOwnerTimeOutCorrection = context => (window.ownerTimeOutCorrectionUI ||= installOwnerTimeOutCorrectionUI(window,document)).open(context);
-window.refreshPayrollAfterAttendanceCorrection = async function() {
+window.refreshPayrollAfterAttendanceCorrection = async function(context={}) {
  window.invalidateCache?.('attendance_logs');
- window.getPayrollPreviewGuard?.().invalidate?.('Actual Time Out saved. Refreshing the selected unpaid payroll cutoff.');
- if(!canOpenWorkspacePage(window.sessionUser,'payroll'))return;
- await window.loadAttendanceLogs?.();
+ invalidatePayrollLoad(window);
+ if(!canOpenWorkspacePage(window.sessionUser,'payroll'))return {refreshed:false};
+ const actor=payrollActorKey(window),isCurrent=()=>{context.assertCurrent?.();if(context.isCurrent&&context.isCurrent()===false)throw Error('The attendance review changed. Generate the selected payroll list again.');if(payrollActorKey(window)!==actor)throw Error('The payroll account changed. Generate the selected payroll list again.');};
+ isCurrent();
  const from=document.getElementById('payrollStart')?.value,to=document.getElementById('payrollEnd')?.value;
- if(/^\d{4}-\d{2}-\d{2}$/.test(from||'')&&/^\d{4}-\d{2}-\d{2}$/.test(to||'')&&from<=to){await window.generateAutoPayslips?.();window.getPayrollPreviewGuard().requireReady();}
+ window.getPayrollPreviewGuard?.().invalidate?.('Attendance review saved. Refreshing the selected unpaid payroll cutoff.');
+ await window.loadAttendanceLogs?.();isCurrent();
+ if(from!==document.getElementById('payrollStart')?.value||to!==document.getElementById('payrollEnd')?.value)return {refreshed:false,reason:'cutoff-changed'};
+ if(/^\d{4}-\d{2}-\d{2}$/.test(from||'')&&/^\d{4}-\d{2}-\d{2}$/.test(to||'')&&from<=to){await window.generateAutoPayslips?.();isCurrent();window.getPayrollPreviewGuard().requireReady();return {refreshed:true};}
+ return {refreshed:false};
 };
 window.openHRReviewCenter = context => {window.hrReviewCenter ||= installHRReviewCenter(window,document);return window.hrReviewCenter.open(context);};
 window.openAttendanceRecovery = context => window.openHRReviewCenter(context);
@@ -163,7 +170,7 @@ const globalDashboard = createDashboard();
 import { createSaleEngine } from './pos-safety.js';
 import { recipeProblems, ingredientUses } from './recipe-integrity.js';
 import { createLiveReport } from './live-report.js';
-import { calculateLateMinutes, resolveScheduledShift, scheduledShiftForDate, latePay, nightRate, earnedNightBonus,
+import { calculateLateMinutes, resolveScheduledShift, scheduledShiftForDate, latePay, nightRate, earnedNightBonus, calculateShiftEarnings,
     attendanceLateMinutes, isLatenessRequest, requestLateMinutes, legacyAttendanceCandidates,
     shiftType, shiftTimes, validateShiftConfig, isMealDeduction, resolveAttendanceShift, captureAttendanceSchedule,
     staffRateDate,staffRateWorkDate,staffProfileForWork,loadStaffSalaryTimeline,staffRateForDate,payrollSalaryProfile,assertPayrollSalaryFresh } from './payroll-safety.js';
@@ -10457,7 +10464,7 @@ window.loadPayrollGenerator = async function() {
         const attendanceRecords=[];
         attSnap.forEach(docSnap=>attendanceRecords.push({...docSnap.data(),id:docSnap.id}));
         for(const record of attendanceRecords){const identity=rosterResolver(record);if(identity.status!=='matched'||identity.nameCollision){identityProblems.set(identity.name||record.staffName,identity);if(paidRecords[identity.name||record.staffName])unmatchedBalanceRows.push({name:identity.name||record.staffName,branch:record.branch||'Not confirmed',reason:identity.reason,records:[record]});}}
-        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,frozenNames:Object.keys(paidRecords),referenceRecords:attendanceReferenceRecords,cutoffStart:trueStartDate,cutoffEnd:trueEndDate});
+        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,resolveShift:log=>resolveAttendanceShift(log,scheduleData,staffDict),frozenNames:Object.keys(paidRecords),referenceRecords:attendanceReferenceRecords,cutoffStart:trueStartDate,cutoffEnd:trueEndDate});
         payrollPlan.logs.forEach(log => {
             let name = log.payrollStaffName;
             if (!name || paidRecords[name]) return;
@@ -10484,6 +10491,7 @@ window.loadPayrollGenerator = async function() {
                     // 🔥 THE FIX: Safe variable aliases (calcMins, expStart) prevent crashes with leftover code!
                     const matchedShift = resolveAttendanceShift(log, scheduleData, staffDict, name);
                     if(matchedShift?.reliefNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceLogIds=[...(staffData[name].attendanceLogIds||[]),log.id].filter(Boolean);staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'Emergency branch cover: Owner HR must confirm assigned hours. Actual Time In and Time Out remain recorded.'];}
+                    if(matchedShift?.payrollShiftConfirmationError){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceLogIds=[...(staffData[name].attendanceLogIds||[]),log.id].filter(Boolean);staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),matchedShift.payrollShiftConfirmationError];}
                     if(matchedShift?.amendmentNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceLogIds=[...(staffData[name].attendanceLogIds||[]),log.id].filter(Boolean);staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'A shift-time correction conflicts with a reviewed attendance record. HR must confirm it.'];}
                     let { lateMinutes: calcMins, expectedStartHour: expStart, wasScheduled: wasSched } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
                     calcMins = attendanceLateMinutes(log, matchedShift);
@@ -10538,22 +10546,14 @@ window.loadPayrollGenerator = async function() {
                     remark+='<br><span style="color:#b45309">'+escapeHtml(reason)+'</span>';
                 }
                 
-                let shiftMultiplier = 1; let thisShiftStraightBonus = 0; 
-        
-                if (hoursWorked < 1 && !isAutoClosed) {
-                    shiftMultiplier = 0; remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`;
-                } else if (hoursWorked >= 13.5) {
-                    shiftMultiplier = 2; thisShiftStraightBonus = 50; 
-                    staffData[name].straightDutyBonusTotal = (staffData[name].straightDutyBonusTotal || 0) + thisShiftStraightBonus;
-                    remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty (2 Shifts)</span>`;
-                } else if (hoursWorked < 8 && !isAutoClosed) {
-                    if (wasScheduled) {
-                        let missingHours = (8 - hoursWorked).toFixed(1);
-                        remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
-                    } else {
-                        remark = `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`;
-                    }
-                }
+                const earnings=calculateShiftEarnings(activeShifts[name].rateProfile||staffDict[name],activeShifts[name].matchedShift,timeIn,timeOut,{autoClosed:isAutoClosed});
+                const shiftMultiplier=earnings.shiftMultiplier,thisShiftStraightBonus=earnings.straightBonus;
+                staffData[name].straightDutyBonusTotal=(staffData[name].straightDutyBonusTotal||0)+thisShiftStraightBonus;
+                if(shiftMultiplier===0)remark='<span style="color:#ef4444;font-weight:bold">Misclick (Ignored)</span>';
+                else if(shiftMultiplier===2)remark='<span style="color:#8b5cf6;font-weight:bold">Owner-approved straight duty (2 paid units) · +₱'+thisShiftStraightBonus.toFixed(2)+' straight incentive</span>';
+                else if(earnings.shortHours>0)remark='<span style="color:#b45309;font-weight:bold">Short duty ('+hoursWorked.toFixed(2)+'h worked; '+earnings.shortHours.toFixed(2)+'h below 8h) · full daily pay retained</span>';
+                if(earnings.straightApprovalRequired)remark+='<br><span style="color:#b45309">Over 16h recorded · Owner straight-duty approval needed; one daily rate shown pending review.</span>';
+                if(earnings.bonusReviewRequired)remark+='<br><span style="color:#b45309">Confirm the approved shift category to review its Mid/Night bonus.</span>';
 
                 if (lMins > 0) {
                     if (lExempt) {
@@ -10569,12 +10569,11 @@ window.loadPayrollGenerator = async function() {
                     staffData[name].lateDeduction += totalManualPenaltyForShift;
                 }
 
-                const thisShiftNightBonus = shiftMultiplier > 0
-                    ? earnedNightBonus(staffDict[name], activeShifts[name].matchedShift, timeOut) : 0;
+                const thisShiftNightBonus = earnings.nightBonus;
                 if (thisShiftNightBonus > 0) {
                     staffData[name].nightShifts += 1;
                     staffData[name].nightBonusTotal += thisShiftNightBonus;
-                    remark += `<br><span style="color:#d97706; font-weight:bold;">${activeShifts[name].matchedShift.shiftType === 'night' ? 'Night' : 'Mid'} bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
+                    remark += `<br><span style="color:#d97706; font-weight:bold;">${earnings.bonusShiftType === 'night' ? 'Night' : 'Mid'} bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
                 }
 
                 let logDateStr = staffRateWorkDate({timestamp:timeIn},activeShifts[name].matchedShift);
@@ -10593,6 +10592,12 @@ window.loadPayrollGenerator = async function() {
                     out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
                     hrs: hoursWorked.toFixed(2), 
                     remark: remark,
+                    attendanceLogId:activeShifts[name].attendanceId,branch:activeShifts[name].branch,
+                    timeInAt:timeIn.toISOString(),timeOutAt:timeOut.toISOString(),
+                    candidateNightBonus:earnings.straightReviewNightBonus,candidateNightCoverage:earnings.straightReviewNightCoverage,
+                    holidayMultiplier:hType==='Regular'?0.5:hType==='Special'?0.1:0,
+                    paidUnits:shiftMultiplier,shortHours:earnings.shortHours,straightBonus:thisShiftStraightBonus,nightBonus:thisShiftNightBonus,
+                    straightApprovalRequired:earnings.straightApprovalRequired,bonusReviewRequired:earnings.bonusReviewRequired,
                     dailyRate,rateWorkDate:logDateStr,
                     scheduleSource:activeShifts[name].matchedShift.scheduleSource,
                     scheduleRevisionId:activeShifts[name].matchedShift.scheduleRevisionId,
@@ -10969,6 +10974,23 @@ window.openPayslipModal = async function(staffName, savedHistoryData = null) {
     
     let attBody = document.getElementById('psAttendanceBody');
     if (attBody) attBody.innerHTML = attHtml;
+    if(!paidView&&attBody)data.logs?.forEach((log,index)=>{
+        if(!log.attendanceLogId||!log.straightApprovalRequired&&!log.bonusReviewRequired)return;
+        const cell=attBody.querySelectorAll?.('tr')?.[index]?.querySelector?.('td:last-child');if(!cell)return;
+        const button=document.createElement('button');button.type='button';button.className='ps-correction-button';button.textContent=log.straightApprovalRequired?'Review & approve straight duty':'Review bonus assignment';
+        button.onclick=async()=>{try{window.requirePayrollPreview(data);if(window.currentPayslipData!==data)throw Error('Reopen this employee’s latest payroll.');
+            if(log.straightApprovalRequired)return await reviewStraightDuty(window,data,log,{onApproved:async audit=>{
+                data.basicPay=Math.round((Number(data.basicPay||0)+audit.extraBasicPay)*100)/100;data.shiftsWorked=Number(data.shiftsWorked||0)+1;
+                data.straightBonus=Number(data.straightBonus||0)+audit.straightBonus;data.nightBonus=Number(data.nightBonus||0)+audit.extraNightBonus;data.holidayPayTotal=Math.round((Number(data.holidayPayTotal||0)+audit.extraHolidayPay)*100)/100;
+                data.straightDutyApprovals=[...(data.straightDutyApprovals||[]),audit];log.straightDutyApproval=audit;log.paidUnits=2;log.straightApprovalRequired=false;log.straightBonus=audit.straightBonus;log.nightBonus=Number(log.nightBonus||0)+audit.extraNightBonus;
+                log.remark+='<br><strong style="color:#6d28d9">Owner-approved straight duty · 2 paid units · +₱'+audit.straightBonus.toFixed(2)+' straight incentive'+(audit.extraNightBonus>0?' · +₱'+audit.extraNightBonus.toFixed(2)+' Mid/Night bonus':'')+'</strong>';
+                const additions={psOvertime:audit.extraNightBonus,psStraightBonus:audit.straightBonus,psHoliday:audit.extraHolidayPay};
+                const retained=[...document.querySelectorAll('#printablePayslip input')].filter(input=>input.id!=='psBasicPay').map(input=>({id:input.id,value:Object.hasOwn(additions,input.id)?String(Math.round(((Number(input.value)||0)+additions[input.id])*100)/100):input.value}));
+                await window.openPayslipModal(data.name);for(const field of retained){const input=document.getElementById(field.id);if(input&&!input.disabled)input.value=field.value;}window.recalcPayslip?.();
+            }});
+            document.getElementById('payslipModal').style.display='none';return window.openScheduleRecovery({workDate:log.rateWorkDate,staffId:data.staffId,staffName:data.name,attendanceLogId:log.attendanceLogId,branch:log.branch||data.branch});
+        }catch(error){window.ManagerUI?.notify?.(error.message);}};cell.appendChild(document.createElement('br'));cell.appendChild(button);
+    });
     attBody?.querySelectorAll?.('[data-payslip-missing-index]').forEach(button=>{const log=data.logs[Number(button.dataset.payslipMissingIndex)];button.onclick=()=>{
         try{window.requirePayrollPreview(data);if(window.currentPayslipData!==data||data.isPaid||window.paidPayrollSnapshots?.has(data))throw Error('The selected payroll changed. Reopen its current records.');
             if(typeof window.openOwnerTimeOutCorrection!=='function')throw Error('Reload the Owner app to open the actual Time Out correction.');
@@ -11584,7 +11606,7 @@ window.generateAutoPayslips = async function() {
         const attendanceRecords=[];
         attSnap.forEach(docSnap=>attendanceRecords.push({...docSnap.data(),id:docSnap.id}));
         for(const record of attendanceRecords){const identity=rosterResolver(record);if(identity.status!=='matched'||identity.nameCollision){identityProblems.set(identity.name||record.staffName,identity);if(paidRecords[identity.name||record.staffName])unmatchedBalanceRows.push({name:identity.name||record.staffName,branch:record.branch||'Not confirmed',reason:identity.reason,records:[record]});}}
-        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,frozenNames:Object.keys(paidRecords),referenceRecords:attendanceReferenceRecords,cutoffStart:trueStartDate,cutoffEnd:trueEndDate});
+        const payrollPlan=planPayrollAttendance(attendanceRecords,{resolveName:log=>rosterResolver(log).name||log.staffName,resolveShift:log=>resolveAttendanceShift(log,scheduleData,staffDict),frozenNames:Object.keys(paidRecords),referenceRecords:attendanceReferenceRecords,cutoffStart:trueStartDate,cutoffEnd:trueEndDate});
         payrollPlan.logs.forEach(log => {
             let rawName = log.staffName;
             if (!rawName) return;
@@ -11612,6 +11634,7 @@ window.generateAutoPayslips = async function() {
                     // 🔥 UPGRADE: Use the Universal Shift Matcher Engine for Payroll!
                     const matchedShift = resolveAttendanceShift(log, scheduleData, staffDict, name);
                     if(matchedShift?.reliefNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceLogIds=[...(staffData[name].attendanceLogIds||[]),log.id].filter(Boolean);staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'Emergency branch cover: Owner HR must confirm assigned hours. Actual Time In and Time Out remain recorded.'];}
+                    if(matchedShift?.payrollShiftConfirmationError){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceLogIds=[...(staffData[name].attendanceLogIds||[]),log.id].filter(Boolean);staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),matchedShift.payrollShiftConfirmationError];}
                     if(matchedShift?.amendmentNeedsReview){staffData[name].attendanceReviewRequired=true;staffData[name].attendanceLogIds=[...(staffData[name].attendanceLogIds||[]),log.id].filter(Boolean);staffData[name].attendanceReviewReasons=[...(staffData[name].attendanceReviewReasons||[]),'A shift-time correction conflicts with a reviewed attendance record. HR must confirm it.'];}
                     let { lateMinutes: lateMinutes, expectedStartHour: expectedStartHour, wasScheduled: wasScheduled } = matchedShift || { lateMinutes: 0, expectedStartHour: null, wasScheduled: false };
                     lateMinutes = attendanceLateMinutes(log, matchedShift);
@@ -11660,22 +11683,14 @@ window.generateAutoPayslips = async function() {
                     remark+='<br><span style="color:#b45309">'+escapeHtml(reason)+'</span>';
                 }
                 
-                let shiftMultiplier = 1; let thisShiftStraightBonus = 0; 
-        
-                if (hoursWorked < 1 && !isAutoClosed) {
-                    shiftMultiplier = 0; remark = `<span style="color:#ef4444; font-weight:bold;">Misclick (Ignored)</span>`;
-                } else if (hoursWorked >= 13.5) {
-                    shiftMultiplier = 2; thisShiftStraightBonus = 50; 
-                    staffData[name].straightDutyBonusTotal = (staffData[name].straightDutyBonusTotal || 0) + thisShiftStraightBonus;
-                    remark = `<span style="color:#8b5cf6; font-weight:bold;">Straight Duty (2 Shifts)</span>`;
-                } else if (hoursWorked < 8 && !isAutoClosed) {
-                    if (wasScheduled) {
-                        let missingHours = (8 - hoursWorked).toFixed(1);
-                        remark = `<span style="color:#ef4444; font-weight:bold;">Short (${missingHours}h)</span>`;
-                    } else {
-                        remark = `<span style="color:#10b981; font-weight:bold;">Complete (Unscheduled)</span>`;
-                    }
-                }
+                const earnings=calculateShiftEarnings(activeShifts[name].rateProfile||staffDict[name],activeShifts[name].matchedShift,timeIn,timeOut,{autoClosed:isAutoClosed});
+                const shiftMultiplier=earnings.shiftMultiplier,thisShiftStraightBonus=earnings.straightBonus;
+                staffData[name].straightDutyBonusTotal=(staffData[name].straightDutyBonusTotal||0)+thisShiftStraightBonus;
+                if(shiftMultiplier===0)remark='<span style="color:#ef4444;font-weight:bold">Misclick (Ignored)</span>';
+                else if(shiftMultiplier===2)remark='<span style="color:#8b5cf6;font-weight:bold">Owner-approved straight duty (2 paid units) · +₱'+thisShiftStraightBonus.toFixed(2)+' straight incentive</span>';
+                else if(earnings.shortHours>0)remark='<span style="color:#b45309;font-weight:bold">Short duty ('+hoursWorked.toFixed(2)+'h worked; '+earnings.shortHours.toFixed(2)+'h below 8h) · full daily pay retained</span>';
+                if(earnings.straightApprovalRequired)remark+='<br><span style="color:#b45309">Over 16h recorded · Owner straight-duty approval needed; one daily rate shown pending review.</span>';
+                if(earnings.bonusReviewRequired)remark+='<br><span style="color:#b45309">Confirm the approved shift category to review its Mid/Night bonus.</span>';
 
                 if (lMins > 0) {
                     if (lExempt) {
@@ -11691,12 +11706,11 @@ window.generateAutoPayslips = async function() {
                     staffData[name].lateDeduction += totalManualPenaltyForShift;
                 }
 
-                const thisShiftNightBonus = shiftMultiplier > 0
-                    ? earnedNightBonus(staffDict[name], activeShifts[name].matchedShift, timeOut) : 0;
+                const thisShiftNightBonus = earnings.nightBonus;
                 if (thisShiftNightBonus > 0) {
                     staffData[name].nightShifts += 1;
                     staffData[name].nightBonusTotal += thisShiftNightBonus;
-                    remark += `<br><span style="color:#d97706; font-weight:bold;">${activeShifts[name].matchedShift.shiftType === 'night' ? 'Night' : 'Mid'} bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
+                    remark += `<br><span style="color:#d97706; font-weight:bold;">${earnings.bonusShiftType === 'night' ? 'Night' : 'Mid'} bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
                 }
 
                 let logDateStr = staffRateWorkDate({timestamp:timeIn},activeShifts[name].matchedShift);
@@ -11715,6 +11729,12 @@ window.generateAutoPayslips = async function() {
                     out: timeOut.toLocaleTimeString('en-PH', { hour: '2-digit', minute: '2-digit' }), 
                     hrs: hoursWorked.toFixed(2), 
                     remark: remark,
+                    attendanceLogId:activeShifts[name].attendanceId,branch:activeShifts[name].branch,
+                    timeInAt:timeIn.toISOString(),timeOutAt:timeOut.toISOString(),
+                    candidateNightBonus:earnings.straightReviewNightBonus,candidateNightCoverage:earnings.straightReviewNightCoverage,
+                    holidayMultiplier:hType==='Regular'?0.5:hType==='Special'?0.1:0,
+                    paidUnits:shiftMultiplier,shortHours:earnings.shortHours,straightBonus:thisShiftStraightBonus,nightBonus:thisShiftNightBonus,
+                    straightApprovalRequired:earnings.straightApprovalRequired,bonusReviewRequired:earnings.bonusReviewRequired,
                     dailyRate,rateWorkDate:logDateStr,
                     scheduleSource:activeShifts[name].matchedShift.scheduleSource,
                     scheduleRevisionId:activeShifts[name].matchedShift.scheduleRevisionId,
@@ -12857,8 +12877,14 @@ window.loadProductAnalytics = (start, end, branch, loaded) => globalDashboard.hi
 // ==========================================
 window.openManualAttendanceModal = async function() {
     if (!canOpenWorkspacePage(window.sessionUser,'payroll')) return window.ManagerUI.notify('Your account does not have attendance correction permission.');
+    if (manualAttendanceBusy) return window.ManagerUI.notify('The attendance correction is still saving. Wait for its result before opening another correction.');
+    const sequence=window.manualAttendanceSequence=(window.manualAttendanceSequence||0)+1;
+    const user=window.auth?.currentUser,session=window.sessionUser;
+    const current=()=>sequence===window.manualAttendanceSequence&&window.auth?.currentUser?.uid===user?.uid&&window.auth?.currentUser?.email===user?.email&&window.sessionUser===session&&canOpenWorkspacePage(session,'payroll')&&document.getElementById('manualAttendanceModal').style.display==='flex';
     window.manualAttendanceOperationId = crypto.randomUUID();
     document.getElementById('manualAttendanceModal').style.display = 'flex';
+    document.getElementById('btnSaveManualAtt').disabled=false;
+    document.getElementById('btnSaveManualAtt').innerText='Save correction';
     let select = document.getElementById('manAttStaff');
     select.innerHTML = '<option value="">Loading Staff...</option>';
     
@@ -12868,7 +12894,9 @@ window.openManualAttendanceModal = async function() {
     document.getElementById('manAttRemarks').value = '';
 
     try {
-        const snap = await getDocs(collection(db, "cashiers"));
+        const snap = await window.getDocsFromServer(window.collection(window.db,'cashiers'));
+        if(!current())return;
+        if(snap.metadata?.fromCache||snap.metadata?.hasPendingWrites||snap.docs?.some(row=>row.metadata?.fromCache||row.metadata?.hasPendingWrites))throw Error('Reconnect to confirm the active staff directory.');
         let html = '<option value="">-- Select Staff --</option>';
         let staffList = [];
         
@@ -12878,10 +12906,11 @@ window.openManualAttendanceModal = async function() {
         });
         
         staffList.sort().forEach(name => {
-            html += `<option value="${name}">${name}</option>`;
+            html += `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
         });
         select.innerHTML = html;
     } catch (e) {
+        if(!current())return;
         console.error(e);
         select.innerHTML = '<option value="">Error loading staff</option>';
     }
@@ -12895,8 +12924,15 @@ window.submitManualAttendance = async function() {
     btn.disabled = true;
     const user = window.auth?.currentUser;
     const actor = {uid:user?.uid,email:user?.email,name:window.sessionUser?.cashierName};
-    const authorized = () => window.auth?.currentUser?.uid === actor.uid && window.auth?.currentUser?.email === actor.email && canOpenWorkspacePage(window.sessionUser,'payroll');
+    const session=window.sessionUser,sequence=window.manualAttendanceSequence||0;
+    const sameAccount=()=>window.auth?.currentUser?.uid===actor.uid&&window.auth?.currentUser?.email===actor.email&&window.sessionUser===session;
+    const authorized = () => sameAccount() && canOpenWorkspacePage(window.sessionUser,'payroll');
+    const relevant=()=>sameAccount()&&(window.manualAttendanceSequence||0)===sequence;
+    const fields=()=>JSON.stringify(['manAttStaff','manAttBranch','manAttType','manAttDateTime','manAttRemarks'].map(id=>document.getElementById(id).value));
+    const entered=fields();
+    const assertCurrent=()=>{if(!authorized()||!relevant()||document.getElementById('manualAttendanceModal').style.display!=='flex')throw Error('The attendance form or authorized account changed. Reopen the correction.');if(fields()!==entered)throw Error('The attendance details changed. Review the current form before saving.');};
     try {
+        assertCurrent();
         const payload = validateManualAttendance({
             staffName:document.getElementById('manAttStaff').value,
             branch:document.getElementById('manAttBranch').value,
@@ -12905,33 +12941,52 @@ window.submitManualAttendance = async function() {
             remarks:document.getElementById('manAttRemarks').value.trim()
         },{actor,allowed:authorized(),branchAllowed:window.isBranchAllowed});
         const staff = await window.getDocsFromServer(window.query(window.collection(window.db,'cashiers'),window.where('cashierName','==',payload.staffName)));
+        assertCurrent();
+        if(staff.metadata?.fromCache||staff.metadata?.hasPendingWrites||staff.docs?.some(row=>row.metadata?.fromCache||row.metadata?.hasPendingWrites))throw Error('Reconnect to confirm the selected staff account.');
         if (staff.docs.length !== 1 || !activeStaffProfile(staff.docs[0].data())) throw Error('The staff account is missing or duplicated. Check the staff directory before recording attendance.');
         payload.staffId = staff.docs[0].id;
-        const confirmation = await Swal.fire({title:'Confirm attendance correction',
-            text:`${payload.staffName} · ${payload.branch} · ${payload.type} · ${payload.timestamp.toLocaleString('en-PH',{timeZone:'Asia/Manila'})}. Reason: ${payload.remarks}. This will be recorded under ${actor.email}.`,
-            icon:'question',showCancelButton:true,confirmButtonText:'Save correction'});
+        const profile={...staff.docs[0].data(),id:payload.staffId,staffId:payload.staffId};
+        window.manualAttendanceOperationId ||= crypto.randomUUID();
+        let departure=null;
+        if(payload.type==='TIME IN'){
+            const day=scheduleDateKey(payload.timestamp),history=await window.loadPayrollScheduleHistory(day,day);assertCurrent();
+            // Only a saved work-date archive may establish a historical shift.
+            // Keep the document ID so a saved alias is recognized as this employee.
+            const archived={historyMonths:history?.historyMonths||{},payrollHistoryEnforcedFrom:history?.payrollHistoryEnforcedFrom};
+            payload.scheduleSnapshot={...captureAttendanceSchedule(payload.timestamp,payload.branch,payload.staffName,archived,{[payload.staffName]:profile}),source:'manual-correction'};
+        }else{
+            departure=await prepareManualTimeOut(window,payload,{operationId:window.manualAttendanceOperationId,assertCurrent,chooseReference:async choices=>{
+                const result=await Swal.fire({title:'Choose the original Time In',input:'select',inputOptions:Object.fromEntries(choices.map(row=>[row.id,new Date(attendanceMillis(row.timestamp)).toLocaleString('en-PH',{timeZone:'Asia/Manila'})+' · '+row.branch])),inputPlaceholder:'Select the exact saved Time In',showCancelButton:true,confirmButtonText:'Use this Time In'});
+                return result.isConfirmed?result.value:null;
+            }});assertCurrent();
+        }
+        const reference=departure?' Original Time In: '+new Date(departure.view.timeInAt).toLocaleString('en-PH',{timeZone:'Asia/Manila'})+'. Confirm this is the verified actual departure. Assigned hours and lateness are reviewed separately.'+(departure.view.request?' This also accepts the associated staff reason: '+departure.view.request.reason+'.':''):payload.scheduleSnapshot.needsScheduleReview?' The saved shift needs separate HR review; this correction records the actual punch.':'';
+        const confirmation = await Swal.fire({title:departure?'Confirm actual departure':'Confirm attendance correction',
+            text:`${payload.staffName} · ${payload.branch} · ${payload.type} · ${payload.timestamp.toLocaleString('en-PH',{timeZone:'Asia/Manila'})}. Reason: ${payload.remarks}. This will be recorded under ${actor.email}.${reference}`,
+            icon:'question',showCancelButton:true,confirmButtonText:departure?(departure.view.request?'Accept reason & record Time Out':'Save confirmed actual Time Out'):'Save correction'});
         if (!confirmation.isConfirmed) return;
+        assertCurrent();
         if (!authorized() || !window.isBranchAllowed(payload.branch)) throw Error('Your account access changed. Reopen the correction.');
         btn.innerText = 'Saving correction…';
-        if (payload.type === 'TIME IN') {
-            const day = scheduleDateKey(payload.timestamp);
-            const history = await window.loadPayrollScheduleHistory(day,day);
-            // A correction is historical: use an archived work-date rule only.
-            const shift = resolveAttendanceShift(payload,history,{[payload.staffName]:staff.docs[0].data()});
-            if (shift.scheduleSource === 'history' && !shift.needsScheduleReview) {
-                payload.scheduleSnapshot = {...captureAttendanceSchedule(payload.timestamp,payload.branch,payload.staffName,history,{[payload.staffName]:staff.docs[0].data()}),source:'manual-correction'};
-            }
-        }
-        window.manualAttendanceOperationId ||= crypto.randomUUID();
-        await saveManualAttendance(window,payload,{operationId:window.manualAttendanceOperationId,actor,authorize:authorized});
+        if(departure)await departure.save();
+        else await saveManualAttendance(window,payload,{operationId:window.manualAttendanceOperationId,actor,authorize:()=>{assertCurrent();return true;}});
         window.invalidateCache?.('attendance_logs');
-        document.getElementById('manualAttendanceModal').style.display='none';
-        window.ManagerUI.notify('Attendance correction saved with your account and save time. Refresh payroll to include it.');
-        window.loadAttendanceLogs();
+        if(!relevant())return;
+        const keptDraft=fields()!==entered;
+        if(!keptDraft)document.getElementById('manualAttendanceModal').style.display='none';
+        else window.manualAttendanceOperationId=crypto.randomUUID();
+        let refreshed=true;
+        try{
+            const refreshCurrent=()=>{if(!authorized()||!relevant())throw Error('The attendance account or correction form changed.');};
+            refreshCurrent();
+            if(window.refreshPayrollAfterAttendanceCorrection)await window.refreshPayrollAfterAttendanceCorrection({reason:'manual-attendance',staffId:payload.staffId,branch:payload.branch,workDate:scheduleDateKey(payload.timestamp),assertCurrent:refreshCurrent});
+            else await window.loadAttendanceLogs?.();
+        }catch(error){refreshed=false;console.error('Manual attendance saved; payroll refresh:',error);}
+        if(relevant())window.ManagerUI.notify('Attendance correction saved with your account and save time.'+(keptDraft?' Your newer form entries were kept.':'')+(refreshed?'':' Payroll refresh was not confirmed. Reconnect and refresh the selected cutoff; do not record the correction again.'));
     } catch(error) {
         console.error('Manual attendance correction:',error);
-        window.ManagerUI.notify(error.message || 'The attendance correction was not saved.');
-    } finally {manualAttendanceBusy=false;btn.innerText='Save correction';btn.disabled=false;}
+        if(relevant())window.ManagerUI.notify(error.message || 'The attendance correction was not saved.');
+    } finally {manualAttendanceBusy=false;if(relevant()){btn.innerText='Save correction';btn.disabled=false;}}
 };
 
 window.otCache = { staff: {}, schedule: null };

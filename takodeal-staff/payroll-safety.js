@@ -5,6 +5,9 @@ import {validEmergencyReliefMarker} from './relief-attendance-model.js';
 import { resolveScheduleForDate, amendmentsForDate } from './schedule-history.js';
 import {staffRateForDate} from './staff-rate-model.js';
 import {applyAttendanceAmendmentReview} from './attendance-amendment-review-model.js';
+import {resolveEmergencyShift} from './emergency-shift-model.js';
+import {attendanceMillis} from './attendance-reconcile.js';
+const payrollOwnerEmail='jgo031996@gmail.com';
 export {staffRateDate,staffRateWorkDate,staffProfileForWork,loadStaffSalaryTimeline,staffRateForDate,payrollSalaryProfile,assertPayrollSalaryFresh} from './staff-rate-model.js';
 const minute = 60000;
 const day = 1440 * minute;
@@ -278,22 +281,95 @@ function manualLatenessReview(log) {
 // work-date revision, never another month's current rules.
 export function resolveAttendanceShift(log, schedule, profiles = {}, staffNameOverride = log?.staffName) {
     if (!log || !staffNameOverride) return emptyAttendanceShift(log || {}, 'missing-history');
+    const finish=shift=>rememberPayrollShift(shift,log,schedule,profiles,staffNameOverride);
     const relief = resolveReliefScheduleReview(log, profiles[staffNameOverride], staffNameOverride);
-    if (relief) return relief;
-    if (validEmergencyReliefMarker(log.emergencyRelief,log.branch)) return {...emptyAttendanceShift(log,'emergency-relief-review'),reliefNeedsReview:true,needsScheduleReview:true,lateMinutes:0};
+    const unreviewedRelief=validEmergencyReliefMarker(log.emergencyRelief,log.branch);
     const amended = resolveAttendanceAmendment(log, schedule, profiles, staffNameOverride);
-    if (amended) return amended;
+    const priorReview=relief||amended;
     const snapshot = clockInSnapshotShift(log, staffNameOverride);
-    if (snapshot) return snapshot;
     const actual = asDate(log.timestamp), cutoff = schedule?.payrollHistoryEnforcedFrom;
     const enforced = cutoff ? asDate(typeof cutoff === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(cutoff) ? cutoff + 'T00:00:00+08:00' : cutoff) : null;
     const strict = enforced && Number.isFinite(+enforced) && Number.isFinite(+actual) && actual >= enforced;
     const trusted = closestTrustedShift(log.timestamp, log.branch, staffNameOverride, schedule, profiles);
-    if (trusted) return { ...trusted, lateMinutes: attendanceLateMinutes(log, trusted.lateMinutes) };
-    if (strict) return emptyAttendanceShift(log, 'missing-history');
     const legacy = resolveScheduledShift(log.timestamp, log.branch, staffNameOverride, schedule, profiles);
-    return legacy ? { ...legacy, lateMinutes: attendanceLateMinutes(log, legacy.lateMinutes), needsScheduleReview: true,
-        scheduleSource: 'legacy-unverified', scheduleRevisionId: '' } : emptyAttendanceShift(log, 'legacy-unverified');
+    const original=priorReview || snapshot || (trusted ? {...trusted,lateMinutes:attendanceLateMinutes(log,trusted.lateMinutes)} : strict ? emptyAttendanceShift(log,'missing-history') : legacy ? {...legacy,lateMinutes:attendanceLateMinutes(log,legacy.lateMinutes),needsScheduleReview:true,scheduleSource:'legacy-unverified',scheduleRevisionId:''} : emptyAttendanceShift(log,'legacy-unverified'));
+    const error=schedule?.payrollShiftConfirmationErrors?.[log.id];
+    if(error)return {...emptyAttendanceShift(log,'owner-shift-review'),payrollShiftConfirmationError:String(error)};
+    const heads=schedule?.payrollShiftConfirmations;
+    if(log.id&&heads&&Object.hasOwn(heads,log.id)){
+        try{
+            const head=heads[log.id],confirmed=resolveEmergencyShift(log,profiles[staffNameOverride],head);
+            if(!confirmed||head.reviewedByEmail!==payrollOwnerEmail)throw Error('The saved assigned-hours review is not a verified Owner confirmation.');
+            assertPayrollConfirmationOrder(log,schedule,priorReview,head);
+            const sameBounds=+confirmed.expectedStartAt===+priorReview?.expectedStartAt&&+confirmed.expectedEndAt===+priorReview?.expectedEndAt;
+            const category=sameBounds&&relief?{shiftType:relief.shiftType,isNightShift:relief.isNightShift,bonusCategoryVerified:true}:datedRuleCategory(schedule,log.branch,confirmed.expectedStartAt,confirmed.expectedEndAt);
+            const lateMinutes=original.reliefReviewVerified||original.amendmentReviewVerified?original.lateMinutes:attendanceLateMinutes(log,original);
+            return finish({...original,...confirmed,...category,lateMinutes,payrollHoursConfirmed:true,payrollConfirmationRevisionId:head.revisionId,payrollConfirmationVersion:head.version,amendmentNeedsReview:original.amendmentNeedsReview===true,needsScheduleReview:original.amendmentNeedsReview===true,bonusCategoryVerified:category.bonusCategoryVerified,originalExpectedStartAt:original.expectedStartAt,originalExpectedEndAt:original.expectedEndAt});
+        }catch(error){return {...emptyAttendanceShift(log,'owner-shift-review'),payrollShiftConfirmationError:error.message||'The saved Owner hours need a fresh review.'};}
+    }
+    if(priorReview)return finish(priorReview);
+    if(unreviewedRelief)return {...emptyAttendanceShift(log,'emergency-relief-review'),reliefNeedsReview:true,needsScheduleReview:true,lateMinutes:0};
+    return finish(original);
+}
+function assertPayrollConfirmationOrder(log,schedule,review,head){
+    if(!review||+review.expectedStartAt===attendanceMillis(head.expectedStartAt)&&+review.expectedEndAt===attendanceMillis(head.expectedEndAt))return;
+    let recorded=[];
+    if(review.reliefReviewVerified)recorded=[attendanceMillis(log.reliefScheduleReview?.reviewedAt)];
+    else if(review.attendanceCorrectionVerified){const ids=new Set(review.scheduleAmendmentIds||[]);recorded=Object.values(schedule?.historyMonths||{}).flatMap(month=>month?.shiftAmendments||[]).filter(event=>ids.has(event.id)).map(event=>attendanceMillis(event.recordedAt));if(recorded.length!==ids.size)recorded.push(NaN);}
+    const at=attendanceMillis(head.reviewedAt);
+    if(!recorded.length||recorded.some(value=>!Number.isFinite(value)||value>=at))throw Error('The Owner hours conflict with a later or undated assigned-shift review. Reopen these exact attendance records before payroll.');
+}
+
+// An approval is tied to this freshly resolved object, never to a saved log's
+// similarly named boolean or to a caller-supplied shift label.
+const payrollShiftProofs=new WeakMap();
+export const payrollOwnerHoursApproved=shift=>payrollShiftProofs.get(shift)?.owner===true;
+function datedRules(schedule,branch,at){
+    const local=parts(at);if(!local)return [];
+    const workDate=dateKey(local),saved=resolveScheduleForDate(schedule,workDate),rules=saved?.branchConfig?.[branch];
+    if(!saved?.scheduleRevisionId||!Array.isArray(rules))return [];
+    const weekday=new Date(local.midnight+8*60*minute).getUTCDay();
+    return rules.filter(rule=>rule.active!==false&&(!Array.isArray(rule.days)||rule.days.includes(weekday))).flatMap(rule=>{
+        const times=shiftTimes(rule),duration=times.start===null||times.end===null?0:(times.end-times.start+1440)%1440;
+        return duration<60||duration>1080?[]:[{rule,workDate,saved,start:new Date(local.midnight+times.start*minute),end:new Date(local.midnight+(times.start+duration)*minute)}];
+    });
+}
+function datedRuleCategory(schedule,branch,start,end){
+    const matches=datedRules(schedule,branch,start).filter(row=>+row.start===+start&&+row.end===+end),first=matches[0];
+    if(!first||matches.some(row=>shiftType(row.rule)!==shiftType(first.rule)||bonusShift(row.rule)!==bonusShift(first.rule)))return {shiftType:'other',isNightShift:false,bonusCategoryVerified:false};
+    return {shiftType:shiftType(first.rule),isNightShift:bonusShift(first.rule),bonusCategoryVerified:true,matchingShiftIds:matches.map(row=>row.rule.id)};
+}
+function rememberPayrollShift(shift,log,schedule,profiles,name){
+    const begin=attendanceMillis(shift?.expectedStartAt),end=attendanceMillis(shift?.expectedEndAt),valid=Number.isFinite(begin)&&Number.isFinite(end)&&end>begin&&end-begin<=18*3600000&&!shift.needsScheduleReview&&!shift.amendmentNeedsReview;
+    const owner=valid&&(shift.reliefReviewVerified===true||shift.payrollHoursConfirmed===true),person=profiles[name]||{},personId=person.staffId||person.id;
+    const names=new Set([name,person.cashierName,person.scheduleNickname,person.nickname].filter(Boolean).map(nameKey));
+    const assigned=valid&&(!log.staffId||String(log.staffId)===String(personId))&&datedRules(schedule,log.branch,new Date(begin)).some(row=>+row.start===begin&&+row.end===end&&names.has(nameKey(row.saved.currentSchedule?.[Number(row.workDate.slice(-2))]?.[log.branch]?.scheduled?.[row.rule.id])));
+    const approved=valid&&(owner||assigned),spanHours=valid?(end-begin)/3600000:0;
+    const proof={approved,owner,straightApproved:owner&&spanHours>=16,spanHours,start:begin,end,nightCategoryApproved:valid&&shift.isNightShift===true&&(approved||shift.wasScheduled===true)&&shift.bonusCategoryVerified!==false,coverageContext:{schedule,branch:log.branch,actualStart:attendanceMillis(log.timestamp)},candidateNightCoverage:null,source:owner?shift.scheduleSource:assigned?'dated-assignment':'saved-clock-in',revisionId:shift.payrollConfirmationRevisionId||shift.scheduleRevisionId||''};
+    payrollShiftProofs.set(shift,proof);return shift;
+}
+function payrollNightCoverage(proof){
+    if(!proof)return [];
+    if(proof.candidateNightCoverage)return proof.candidateNightCoverage;
+    const {schedule,branch,actualStart}=proof.coverageContext,rows=[];
+    for(const offset of [-1,0,1])for(const row of datedRules(schedule,branch,new Date(actualStart+offset*day)))if(bonusShift(row.rule))rows.push({shiftId:row.rule.id,shiftType:shiftType(row.rule),start:+row.start,end:+row.end,workDate:row.workDate,revisionId:row.saved.scheduleRevisionId});
+    proof.candidateNightCoverage=rows;return rows;
+}
+
+export function calculateShiftEarnings(profile,shift,timeIn,timeOut,{autoClosed=false}={}){
+    const start=attendanceMillis(timeIn),end=attendanceMillis(timeOut),hoursWorked=(end-start)/3600000;
+    if(!Number.isFinite(hoursWorked)||hoursWorked<0||hoursWorked>18)throw Error('Confirm the linked actual Time In and Time Out before calculating pay.');
+    const ignored=hoursWorked===0||hoursWorked<1&&!autoClosed,proof=payrollShiftProofs.get(shift),over16=hoursWorked>16;
+    const approvedStraight=!ignored&&over16&&proof?.straightApproved===true,shiftMultiplier=ignored?0:approvedStraight?2:1;
+    let rate=null,salaryReviewReason='';
+    try{rate=staffRateForDate(profile,shift?.expectedStartAt||profile?.salaryWorkDate||timeIn);if(rate===null)salaryReviewReason='No confirmed daily wage is available for this work date.';}
+    catch(error){salaryReviewReason=error.message||'The salary history needs review.';}
+    const basicPay=rate===null?null:Math.round(Math.max(0,Number(rate))*shiftMultiplier*100)/100;
+    const coverage=over16?payrollNightCoverage(proof):[],covered=approvedStraight&&coverage.find(row=>row.start>=proof.start&&row.end<=proof.end&&start<=row.start&&end>=row.end),nightEligible=hoursWorked>=8&&(proof?.nightCategoryApproved===true||!!covered);
+    const configuredNightRate=nightRate(profile),nightBonus=!ignored&&nightEligible?configuredNightRate:0;
+    const candidate=over16&&!ignored&&coverage.find(row=>start<=row.start&&end>=row.end);
+    const straightApprovalRequired=!ignored&&over16&&!approvedStraight,bonusReviewRequired=!ignored&&hoursWorked>=8&&configuredNightRate>0&&(!proof||shift?.needsScheduleReview===true||shift?.amendmentNeedsReview===true||shift?.bonusCategoryVerified===false||shift?.isNightShift===true&&!proof.nightCategoryApproved)&&!covered;
+    return {hoursWorked,shiftMultiplier,basicPay,salaryReviewRequired:rate===null,salaryReviewReason,straightBonus:approvedStraight?50:0,nightBonus,bonusShiftType:nightBonus>0?(covered?.shiftType||shift?.shiftType||'night'):null,shortHours:!ignored&&hoursWorked<8?8-hoursWorked:0,straightApprovalRequired,pendingStraightReview:straightApprovalRequired,bonusReviewRequired,ignored,approvalSource:approvedStraight?proof.source:null,approvalRevisionId:approvedStraight?proof.revisionId:null,nightCoverage:covered||null,straightReviewNightBonus:candidate?configuredNightRate:0,straightReviewNightCoverage:candidate||null};
 }
 // Capture once when recording TIME IN. The serialized expected timestamps and
 // category keep future schedule edits from changing that attendance's pay math.
@@ -404,7 +480,8 @@ export function latePay(minutesLate, profile = {}, shift, exempt = false) {
     const ratePerHour = (daily + (shift?.isNightShift ? nightRate(profile) : 0)) / 8;
     return { hours, ratePerHour, amount: exempt ? 0 : Math.round(hours * ratePerHour * 100) / 100 };
 }
-export function earnedNightBonus(profile, shift, timeOut) {
+export function earnedNightBonus(profile, shift, timeOut, timeIn) {
+    if(timeIn!==undefined)return calculateShiftEarnings(profile,shift,timeIn,timeOut).nightBonus;
     return shift?.isNightShift && shift.expectedEndAt && asDate(timeOut) >= shift.expectedEndAt ? nightRate(profile) : 0;
 }
 export function attendanceLateMinutes(log, calculated = 0) {

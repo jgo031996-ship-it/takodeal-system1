@@ -16,6 +16,7 @@ import {installFranchiseHQUI} from './franchise-hq-ui.js';
 import {loadStaffSalaryTimeline,staffRateForDate} from './staff-rate-model.js';
 import {installFranchiseDiscipline} from './franchise-discipline-ui.js';
 import {buildFranchisePayslip} from './franchise-payroll-model.js';
+import {loadFranchisePayrollShiftConfirmations} from './franchise-payroll-confirmations.js';
 import {installFranchisePayslipUI} from './franchise-payslip-ui.js';
 import {installFranchiseItemPicker} from './franchise-item-picker.js';
 import {installFranchisePayrollControls} from './franchise-payroll-controls.js';
@@ -306,13 +307,15 @@ export function installFranchiseWorkspace(api) {
  };
  define('payroll',async r=>{
   const scope=payrollContext(),branch=session().branch,{start,end}=payrollControls.getRange(),{startDate,endDate}=payrollControls.queryRange();
-  const profiles=await Promise.all((await read('cashiers')).map(profile=>profile.salaryRateVersion===1?loadStaffSalaryTimeline(api,profile):profile));
-  const [logs,deductions,bonuses,ledgers,schedule,payrollRecords]=profiles.length?await Promise.all([
+  const profiles=await Promise.all((await read('cashiers')).filter(profile=>profile.branch===branch).map(profile=>profile.salaryRateVersion===1?loadStaffSalaryTimeline(api,profile):profile));
+  const [logs,deductions,bonuses,ledgers,scheduleSource,payrollRecords]=profiles.length?await Promise.all([
    read('attendance_logs',{time:'timestamp',start:new Date(+startDate-18*3600000),end:endDate}),
    staffRows('staff_deductions',profiles),staffRows('staff_bonuses',profiles),staffRows('staff_ledger',profiles),
    createScheduleHistoryStore(api).loadRange(addDays(start,-1),addDays(end,1)),
    payrollRows(profiles,start,end)
   ]):[[],[],[],[],{},[]];
+  if(scope!==payrollContext())throw Error('The account, branch or cutoff changed. Reload payroll.');
+  const schedule=await loadFranchisePayrollShiftConfirmations(api,{schedule:scheduleSource,profiles,logs,payrollRecords,branch,start,end,assertCurrent:()=>{if(scope!==payrollContext()||!canVisit(session(),'payroll'))throw Error('The account, branch or cutoff changed. Reload payroll.');}});
   if(scope!==payrollContext())throw Error('The account, branch or cutoff changed. Reload payroll.');
   const rows=profiles.map(staff=>buildFranchisePayslip({staff,profiles,start,end,branch,logs,deductions,bonuses,ledgers,schedule,holidays:schedule.holidays||{},payrollRecords}));
   state.payrollScope=scope;
