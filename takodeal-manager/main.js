@@ -10799,9 +10799,9 @@ window.loadPayrollGenerator = async function() {
 // ========================================================
 // 🛡️ ABSOLUTE OVERRIDE: CRASH-PROOF PAYSLIP ENGINE
 // ========================================================
-window.openPayslipModal = async function(staffName) {
-    let data = window.globalPayrollCache ? window.globalPayrollCache[staffName] : null;
-    try { window.requirePayrollPreview(data); }
+window.openPayslipModal = async function(staffName, savedHistoryData = null) {
+    let data = savedHistoryData || (window.globalPayrollCache ? window.globalPayrollCache[staffName] : null);
+    try { if(savedHistoryData){const check=signedPayslipSnapshots.get(data);if(!check)throw Error('Reopen Signed Payslips from the saved employee profile.');check();}else window.requirePayrollPreview(data); }
     catch(error) { window.ManagerUI?.notify?.(error.message); return; }
 
     window.currentPayslipData = data;
@@ -10819,10 +10819,11 @@ window.openPayslipModal = async function(staffName) {
             document.getElementById('payslipModal').style.display='none';return window.openAttendanceRecovery(reviewContext);
         }catch(error){window.ManagerUI?.notify?.(error.message);}
     };}
-    const checkButton=document.getElementById('btnCheckSavedPayslip');if(checkButton){checkButton.disabled=false;checkButton.innerText='Check saved payment';}
+    const checkButton=document.getElementById('btnCheckSavedPayslip');if(checkButton){checkButton.hidden=!!savedHistoryData;checkButton.disabled=!!savedHistoryData;checkButton.innerText='Check saved payment';}
     
     let finalizeBtn = document.getElementById('btnFinalizePayslip');
     if (finalizeBtn) {
+        finalizeBtn.hidden=!!savedHistoryData;
         if (data.isPaid || window.paidPayrollSnapshots?.has(data)) {
             finalizeBtn.innerText = "✅ Paid & Done!";
             finalizeBtn.disabled = true;
@@ -10855,7 +10856,7 @@ window.openPayslipModal = async function(staffName) {
     
     let safeBasicPay = parseFloat(data.basicPay) || 0;
     safeSet('psBasicPay', heldView?(data.salaryReviewRequired?'Awaiting rate review':'Review pending'):safeBasicPay.toLocaleString(undefined, {minimumFractionDigits: 2}));
-    safeSet('psDocumentTitle',heldView?'Payroll review draft':'Digital Payslip Generator');
+    safeSet('psDocumentTitle',savedHistoryData?'Signed payslip · saved record':heldView?'Payroll review draft':'Digital Payslip Generator');
     safeSet('psDocumentState',heldView?'REVIEW DRAFT · Pay not yet confirmed':'Payslip');
     
     safeSet('psDaysWorked', heldView?'review pending':data.shiftsWorked || 0);
@@ -10863,6 +10864,7 @@ window.openPayslipModal = async function(staffName) {
     
     let today = new Date();
     let formattedDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') + '-' + String(today.getDate()).padStart(2, '0');
+    if(savedHistoryData){const paidAt=data.processedAt?.toDate?.()||new Date(data.processedAt?.seconds!=null?data.processedAt.seconds*1000:data.processedAt);formattedDate=Number.isFinite(+paidAt)?new Date(+paidAt+8*3600000).toISOString().slice(0,10):'';}
     safeSet('psPayDistributed', formattedDate);
 
     safeSet('psOvertime', data.nightBonus || 0);
@@ -10930,9 +10932,13 @@ window.openPayslipModal = async function(staffName) {
     };});
 
     if (typeof window.recalcPayslip === 'function') window.recalcPayslip();
+    const printablePayslip=document.getElementById('printablePayslip');printablePayslip?.setAttribute?.('data-saved-history',savedHistoryData?'true':'false');
+    printablePayslip?.querySelectorAll?.('input')?.forEach(input=>{input.disabled=!!savedHistoryData;});
+    const signature=document.getElementById('psSavedSignature');
+    if(signature){const original=savedHistoryData&&typeof data.staffSignature==='string'&&/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(data.staffSignature)?data.staffSignature:'';signature.hidden=!original;signature.innerHTML=original?'<strong>Digitally acknowledged &amp; signed</strong><img alt="Original staff acknowledgement signature" src="'+original+'" style="height:60px;max-width:100%;display:block;margin:8px auto 0;">':'';}
     
     let modal = document.getElementById('payslipModal');
-    if(modal) modal.style.display = 'flex';
+    if(modal){modal.style.zIndex=savedHistoryData?'11000':'10000';modal.style.display='flex';}
     syncPayslipImageButton(window,document);
 };
 
@@ -16903,7 +16909,9 @@ window.processResignation = async function() {
             });
             
             // 2. Generate and Download the COE Image
-            window.generateCOEImage(name, dateHired, role);
+            let coeDownloaded=false;
+            try { coeDownloaded=(await window.generateCOEImage(name, dateHired, role))?.downloaded===true; }
+            catch(error) { console.error('Offboarding saved; COE download failed.',error); }
             
             // 3. Refresh current membership without rewriting dated schedules.
             if(window.globalStaffData?.[docId])window.globalStaffData[docId]={...window.globalStaffData[docId],pin:'REVOKED',status:'Resigned'};
@@ -16912,7 +16920,7 @@ window.processResignation = async function() {
             document.getElementById('employeeProfileModal').style.display = 'none';
             if (typeof window.loadHRModule === 'function') window.loadHRModule(); 
             
-            Swal.fire('Success!', `${name} has been successfully offboarded. Their login is revoked, and the COE is downloading!`, 'success');
+            Swal.fire(coeDownloaded?'Success!':'Offboarding saved',coeDownloaded?`${name} has been successfully offboarded. Their login is revoked, and the COE is downloading!`:`${name} has been offboarded and their login is revoked. The COE download failed. Open their saved profile and use Generate COE to try again.`,coeDownloaded?'success':'warning');
         } catch(e) {
             console.error(e);
             Swal.fire('Error', 'Failed to process resignation. Check your internet connection.', 'error');
@@ -16920,7 +16928,8 @@ window.processResignation = async function() {
     }
 };
 
-window.generateCOEImage = function(name, dateHired, role) {
+window.generateCOEImage = async function(name, dateHired, role, employment = {}) {
+    employment.assertCurrent?.();
     let template = document.getElementById('coeTemplate');
     template.style.display = 'block'; // Briefly show it to the camera
     
@@ -16929,21 +16938,24 @@ window.generateCOEImage = function(name, dateHired, role) {
     document.getElementById('coeRole').innerText = role || "Staff Member";
     
     // Format the dates beautifully
-    let hiredDate = dateHired ? new Date(dateHired).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : "their start date";
-    let todayDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    let hiredDate = dateHired ? new Date(dateHired+'T00:00:00+08:00').toLocaleDateString('en-US', { timeZone:'Asia/Manila',year: 'numeric', month: 'long', day: 'numeric' }) : "their start date";
+    let todayDate = employment.active===true?'present':new Date(employment.endDate?employment.endDate+'T00:00:00+08:00':Date.now()).toLocaleDateString('en-US', { timeZone:'Asia/Manila',year: 'numeric', month: 'long', day: 'numeric' });
     
     document.getElementById('coeDateHired').innerText = hiredDate;
     document.getElementById('coeDateToday').innerText = todayDate;
+    document.getElementById('coeEmploymentStatus').innerText=employment.active===true?'is currently employed':'was employed';
+    document.getElementById('coeServiceVerb').innerText=employment.active===true?'They serve':'They served';
     
     // Take the screenshot!
-    html2canvas(template, { scale: 2, backgroundColor: "#ffffff" }).then(canvas => {
+    try {
+        const canvas=await html2canvas(template, { scale: 2, backgroundColor: "#ffffff" });employment.assertCurrent?.();
         let link = document.createElement('a');
-        link.download = `COE_${name.replace(/\s+/g, '_')}.png`;
+        link.download = `COE_${name.replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/\s+/g, '_')}.png`;
         link.href = canvas.toDataURL("image/png");
         link.click();
+        return {downloaded:true};
         
-        template.style.display = 'none'; // Hide it again so it doesn't mess up your screen!
-    });
+    } finally { template.style.display = 'none'; }
 };
 
 // ========================================================
@@ -23724,56 +23736,71 @@ window.issueHandoverPenalty = async function(cashierNames, totalLoss, branch, sh
 // ========================================================
 // 🧾 MANAGER APP: VIEW SIGNED STAFF PAYSLIPS
 // ========================================================
+const signedPayslipSnapshots=new WeakMap();
+let staffSignedPayslipHistory=null;
+function staffProfileDocumentScope({payroll=false}={}){
+    const staffId=document.getElementById('empProfileId')?.value,generation=window.staffProfileFormGeneration,actor=staffDirectoryActorKey(window,'branches'),payrollActor=payroll?payrollActorKey(window):null;
+    if(!staffId)throw Error('Save or open an existing staff profile first.');
+    const assertCurrent=()=>{if(staffDirectoryActorKey(window,'branches')!==actor||payroll&&payrollActorKey(window)!==payrollActor||document.getElementById('empProfileId')?.value!==staffId||window.staffProfileFormGeneration!==generation||document.getElementById('employeeProfileModal')?.style.display==='none')throw Error('The selected employee or account changed. Reopen the saved profile.');};
+    assertCurrent();return {staffId,assertCurrent};
+}
+async function readStaffProfileDocument(scope){
+    scope.assertCurrent();const snap=await window.getDocFromServer(window.doc(window.db,'cashiers',scope.staffId));scope.assertCurrent();
+    if(!snap?.exists()||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('Reconnect to confirm this saved employee profile.');
+    const profile=snap.data();if(!window.isBranchAllowed(profile.branch))throw Error('This saved employee is outside your permitted branches.');
+    return {...profile,id:scope.staffId};
+}
+async function uniqueStaffDocumentName(scope,profile){
+    scope.assertCurrent();const snap=await readPayrollSnapshot(window,window.query(window.collection(window.db,'cashiers'),window.where('cashierName','==',profile.cashierName),window.where('branch','==',profile.branch)));scope.assertCurrent();
+    return snap.docs.length===1&&snap.docs[0].id===scope.staffId;
+}
+function signedProfilePayslip(row,scope,profile,uniqueName){
+    const frozen=row.frozenData;
+    if(row.acknowledged!==true||!frozen||typeof frozen!=='object'||Array.isArray(frozen)||row.isPaid===false||frozen.isPaid===false||/^(draft|unpaid|pending|cancelled|canceled|voided|failed)$/i.test(String(row.status||'')))return null;
+    const links=[row.staffId,frozen.staffId,frozen.profile?.staffId,frozen.profile?.id].filter(value=>value!==undefined&&value!==null&&value!=='');
+    if(links.length?links.some(value=>value!==scope.staffId):!uniqueName||row.staffName!==profile.cashierName||row.branch!==profile.branch)return null;
+    const branch=frozen.branch||row.branch;if(!window.isBranchAllowed(branch))return null;
+    const finalNetPay=row.finalNetPay??frozen.finalNetPay;
+    if(finalNetPay===undefined||finalNetPay===null||!Number.isFinite(Number(finalNetPay)))throw Error('A signed payslip has no confirmed saved net amount. Ask HQ to review its original record.');
+    return {...frozen,name:frozen.name||row.staffName,staffId:scope.staffId,branch,start:frozen.start||row.startDate,end:frozen.end||row.endDate,isPaid:true,finalNetPay:Number(finalNetPay),processedAt:row.processedAt,staffSignature:row.signatureBase64??frozen.staffSignature};
+}
 window.viewStaffSignedPayslips = async function() {
-    let staffName = document.getElementById('empFullName').value;
-    if (!staffName) return;
-
-    Swal.fire({title: 'Fetching Signed Payslips...', allowOutsideClick: false, didOpen: () => Swal.showLoading()});
-
+    let scope;staffSignedPayslipHistory=null;
     try {
-        const q = query(collection(db, "payroll_records"), where("staffName", "==", staffName), where("acknowledged", "==", true));
-        const snap = await getDocs(q);
-        
-        let html = '';
-        let records = [];
-        snap.forEach(doc => records.push({id: doc.id, ...doc.data()}));
-        records.sort((a,b) => b.processedAt.toDate() - a.processedAt.toDate());
-
-        records.forEach(d => {
-            let pd = d.frozenData || {};
-            pd.processedAt = d.processedAt; 
-            pd.staffSignature = d.signatureBase64; // Pass the signature to the viewer!
-            
-            let dateStr = d.processedAt ? d.processedAt.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric', year:'numeric'}) : 'Recently';
-            let signDateStr = d.acknowledgedAt ? d.acknowledgedAt.toDate().toLocaleDateString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Unknown';
-            let safeData = encodeURIComponent(JSON.stringify(pd));
-
-            html += `
-                <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 15px; margin-bottom: 15px; text-align: left; display: flex; justify-content: space-between; align-items: center;">
-                    <div>
-                        <h3 style="margin: 0 0 5px 0; color: #166534; font-size: 15px;">Cutoff: ${d.startDate || '?'} to ${d.endDate || '?'}</h3>
-                        <div style="font-size: 11px; color: #15803d; font-weight: bold;">Signed on: ${signDateStr}</div>
-                        <div style="font-size: 16px; font-weight: 900; color: #16a34a; margin-top: 5px;">Net: ₱${(d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
-                    </div>
-                    <div>
-                        <button onclick="window.viewPastPayslip('${safeData}')" style="background: #16a34a; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);">🔍 View Document</button>
-                    </div>
-                </div>
-            `;
-        });
-
-        Swal.fire({
-            title: `🧾 Signed Payslips for ${staffName}`,
-            html: `<div style="max-height: 50vh; overflow-y: auto; padding-right: 5px;">${html || '<div style="color:#64748b; font-weight:bold; margin-top: 20px;">No signed payslips on file yet.</div>'}</div>`,
-            showConfirmButton: true,
-            confirmButtonText: 'Close',
-            confirmButtonColor: '#3b82f6',
-            width: 500,
-            customClass: { popup: 'rounded-2xl shadow-xl' }
-        });
-    } catch(e) {
-        console.error(e); Swal.fire('Error', 'Failed to fetch payslips.', 'error');
-    }
+        scope=staffProfileDocumentScope({payroll:true});Swal.fire({title:'Fetching Signed Payslips...',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+        const profile=await readStaffProfileDocument(scope);
+        const [byId,byName,uniqueName]=await Promise.all([readPayrollSnapshot(window,window.query(window.collection(window.db,'payroll_records'),window.where('staffId','==',scope.staffId),window.where('acknowledged','==',true))),readPayrollSnapshot(window,window.query(window.collection(window.db,'payroll_records'),window.where('staffName','==',profile.cashierName),window.where('acknowledged','==',true))),uniqueStaffDocumentName(scope,profile)]);scope.assertCurrent();
+        const records=[...new Map([...byId.docs,...byName.docs].map(snap=>[snap.id,{...snap.data(),id:snap.id}])).values()].filter(row=>signedProfilePayslip(row,scope,profile,uniqueName));
+        const time=value=>{const date=value?.toDate?.()||new Date(value?.seconds!=null?value.seconds*1000:value);return Number.isFinite(+date)?+date:0;};
+        records.sort((a,b)=>time(b.processedAt)-time(a.processedAt));staffSignedPayslipHistory={scope,profile,ids:new Set(records.map(row=>row.id))};
+        const html=records.map(row=>{const data=signedProfilePayslip(row,scope,profile,uniqueName),signed=time(row.acknowledgedAt)?new Date(time(row.acknowledgedAt)).toLocaleString('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',hour:'2-digit',minute:'2-digit'}):'Not recorded',id=encodeURIComponent(row.id).replace(/'/g,'%27');return '<article style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:15px;margin-bottom:12px;text-align:left"><strong>Cutoff: '+escapeHtml(data.start||'Not recorded')+' to '+escapeHtml(data.end||'Not recorded')+'</strong><p>Signed on: '+escapeHtml(signed)+'</p><p><strong>Net: ₱'+data.finalNetPay.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})+'</strong></p><button type="button" onclick="window.viewPastPayslip(\''+id+'\')" style="background:#16a34a;color:white;border:0;padding:10px 15px;border-radius:8px;font-weight:bold;cursor:pointer">View Document</button></article>';}).join('');
+        Swal.fire({title:'Signed Payslips for '+profile.cashierName,html:'<div style="max-height:50vh;overflow-y:auto;padding-right:5px">'+(html||'<p>No signed payslips on file yet.</p>')+'</div>',confirmButtonText:'Close',confirmButtonColor:'#3b82f6',width:560,returnFocus:false});
+    }catch(error){try{scope?.assertCurrent();}catch{return;}Swal.fire('Could not open signed payslips',error.message,'error');}
+};
+window.viewPastPayslip = async function(encodedId) {
+    const history=staffSignedPayslipHistory;if(!history)return;
+    try{
+        history.scope.assertCurrent();const id=decodeURIComponent(encodedId);if(!history.ids.has(id))throw Error('Choose a document from this employee’s signed payslips.');
+        const profile=await readStaffProfileDocument(history.scope),snap=await window.getDocFromServer(window.doc(window.db,'payroll_records',id));history.scope.assertCurrent();
+        if(!snap?.exists()||snap.metadata?.fromCache||snap.metadata?.hasPendingWrites)throw Error('Reconnect to confirm this original signed payslip.');
+        const uniqueName=await uniqueStaffDocumentName(history.scope,profile),data=signedProfilePayslip(snap.data(),history.scope,profile,uniqueName);history.scope.assertCurrent();
+        if(!data)throw Error('This signed record no longer matches the selected saved employee. Reopen the history.');
+        signedPayslipSnapshots.set(data,history.scope.assertCurrent);Swal.close();await window.openPayslipModal(data.name,data);
+    }catch(error){try{history.scope.assertCurrent();}catch{return;}Swal.fire('Could not open signed payslip',error.message,'error');}
+};
+window.generateStaffCOE = async function() {
+    if(window.staffCOEGenerating)return;
+    let scope;const button=document.getElementById('btnGenerateStaffCOE');
+    try{
+        scope=staffProfileDocumentScope();window.staffCOEGenerating=true;if(button)button.disabled=true;
+        const profile=await readStaffProfileDocument(scope),active=activeStaffProfile(profile),endDate=active?null:profile.dateResigned;
+        const validDate=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(+new Date(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
+        if(!profile.cashierName||!profile.role||!validDate(profile.dateHired))throw Error('Confirm this employee’s saved name, role and hire date before generating a COE.');
+        if(!active&&!validDate(endDate))throw Error('A recorded employment end date is needed for this former employee’s COE.');
+        const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);if(profile.dateHired>today||endDate&&(endDate<profile.dateHired||endDate>today))throw Error('Review the saved employment dates before generating a COE.');
+        scope.assertCurrent();await window.generateCOEImage(profile.cashierName,profile.dateHired,profile.role,{active,endDate,assertCurrent:scope.assertCurrent});
+    }catch(error){try{scope?.assertCurrent();}catch{return;}Swal.fire('Could not generate COE',error.message,'error');}
+    finally{window.staffCOEGenerating=false;if(button)button.disabled=false;}
 };
 
 window.viewReceiptDetails = function(receiptId, customer, time, payment, total, cartEncoded, docId = null, branch = null, status = 'Paid') {
