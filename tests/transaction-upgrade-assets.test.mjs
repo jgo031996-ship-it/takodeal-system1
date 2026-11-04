@@ -31,15 +31,15 @@ test('sanction date decisions are identical across apps',()=>{
 });
 test('upgrade keeps paid receipts, photos and the offline sale ledger through Cashier update',()=>{
     const worker=source('Takodeal-POS/sw.js');
-    assert.match(worker,/const CORE = 'takodeal-pos-core-emergency-relief-20261103'/);
+    assert.match(worker,/const CORE = 'takodeal-pos-core-expense-fix-20261104'/);
     for(const [app,list] of [['Takodeal-POS','required'],['takodeal-staff','SHELL'],['takodeal-manager','CORE_ASSETS']])assert.ok(assets(app,list).includes('clock-out-schedule.js'),app+' can verify a completed shift offline after installation');
     assert.ok(assets('Takodeal-POS','required').includes('checkout-controls.js'),'checkout resets work offline');
     assert.match(worker,/dispatch-restock-model\.js/);
     assert.match(worker,/workspace-access-model\.js/);
     assert.ok(assets('Takodeal-POS','required').includes('printer-logo.js'),'new logo encoder is available offline');
     assert.match(worker,/const PHOTOS = 'takodeal-pos-photos-offline02'/);
-    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v121-attendance-leave-20261103/);
-    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v121-attendance-leave-20261103/);
+    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v122-staff-documents-20261104/);
+    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v122-staff-documents-20261104/);
     for(const file of ['schedule-calendar.js','schedule-leave-markers.js'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Schedule repair is available after app update');
     for(const file of ['schedule-workspace.js','schedule-workspace.css'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Schedule workspace is available after app update');
     assert.match(source('takodeal-staff/sw.js'),/takodeal-staff-v41-emergency-relief-20261103/);

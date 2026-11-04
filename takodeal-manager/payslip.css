@@ -13,6 +13,28 @@
 #printablePayslip .payslip-attendance :is(th,td):last-child { text-align:left!important; }
 #printablePayslip .payslip-attendance :is(td:nth-child(2),td:nth-child(3)) { white-space:nowrap!important; }
 #printablePayslip .payslip-attendance td:last-child span { display:inline; }
+/* Saved profile history uses compact read-only values inside the original sheet. */
+#printablePayslip[data-saved-history="true"] .payslip-summary-grid,
+#printablePayslip[data-saved-history="true"] .payslip-money-grid { grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important; }
+#printablePayslip[data-saved-history="true"] .payslip-field-grid { grid-template-columns:100px minmax(0,1fr)!important;min-width:0; }
+#printablePayslip[data-saved-history="true"] .payslip-field-grid>* { min-width:0;overflow-wrap:anywhere; }
+#printablePayslip[data-saved-history="true"] #psName { white-space:normal!important;text-overflow:clip!important; }
+#printablePayslip[data-saved-history="true"] .payslip-money-column,
+#printablePayslip[data-saved-history="true"] .payslip-money-column>div { min-width:0;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere; }
+#printablePayslip[data-saved-history="true"] .payslip-money-column>div>span:first-child { min-width:0;flex:1 1 auto; }
+#printablePayslip[data-saved-history="true"] input { box-sizing:border-box;min-width:0;width:76px;max-width:40%;flex:0 1 76px;padding:1px 0;border:0;background:transparent;color:#111;opacity:1;text-align:right;font:600 12px 'Segoe UI',Arial,sans-serif;appearance:textfield; }
+#printablePayslip[data-saved-history="true"] input::-webkit-inner-spin-button,
+#printablePayslip[data-saved-history="true"] input::-webkit-outer-spin-button { appearance:none;margin:0; }
+#printablePayslip[data-saved-history="true"] input[type="date"] { width:100%;max-width:100%;font-size:13px;text-align:left; }
+#printablePayslip[data-saved-history="true"] input[type="date"]::-webkit-calendar-picker-indicator { display:none; }
+#printablePayslip[data-saved-history="true"] :is(#psOnlineRefundsBox,#psCashShortagesBox,#psOwnerDeductionsBox):not([hidden]) { display:grid!important;grid-template-columns:minmax(0,1fr) auto;gap:6px; }
+#printablePayslip[data-saved-history="true"] :is(#psOnlineRefundsBox,#psCashShortagesBox,#psOwnerDeductionsBox)>strong { float:none!important;white-space:nowrap; }
+#printablePayslip[data-saved-history="true"] :is(#psOnlineRefundsBox,#psCashShortagesBox,#psOwnerDeductionsBox)>:is(p,div) { grid-column:1/-1; }
+@media(max-width:560px) {
+  #printablePayslip[data-saved-history="true"] .payslip-summary-grid,
+  #printablePayslip[data-saved-history="true"] .payslip-money-grid { grid-template-columns:minmax(0,1fr)!important; }
+  #printablePayslip[data-saved-history="true"] .payslip-money-column { border-right:0!important; }
+}
 @media(max-width:500px) {
   #printablePayslip { padding:12px!important; }
   #printablePayslip .payslip-attendance :is(th,td) { font-size:10px!important; padding:6px 2px!important; }

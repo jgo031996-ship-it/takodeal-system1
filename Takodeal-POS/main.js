@@ -2596,106 +2596,137 @@ window.renderExpenseCart = function() {
     totalEl.innerText = `₱${total.toFixed(2)}`;
 };
 
-window.submitExpenseCart = async function() {
-    if (window.expenseCart.length === 0) { alert("Cart is empty!"); return; }
-    if (!activeShiftDetails || !activeShiftDetails.logId) { alert("No active shift found to attach these expenses to!"); return; }
-
-    let btn = document.getElementById('btnSubmitExpenseCart');
-    btn.innerText = "⏳ Processing..."; btn.disabled = true;
-
-    let branch = localStorage.getItem('takodeal_device_branch') || 'Unknown';
-    let cashier = localStorage.getItem('cashierName') || 'Unknown';
-    let grandTotal = window.expenseCart.reduce((sum, item) => sum + item.cost, 0);
-
-    try {
-        // 1. 🛡️ UPLOAD PHOTO SAFELY
-        let photoUrl = null;
-        let fileInput = document.getElementById('expenseReceiptPhoto');
-        if (fileInput && fileInput.files.length > 0) {
-            btn.innerText = "⏳ Uploading Photo...";
-            try {
-                const file = fileInput.files[0];
-                const fileExt = file.name.split('.').pop();
-                const storageRef = ref(window.storage, `expenses/${branch}_${Date.now()}.${fileExt}`);
-                const snapshot = await uploadBytes(storageRef, file);
-                photoUrl = await getDownloadURL(snapshot.ref);
-            } catch (err) {
-                console.error("Storage upload failed:", err);
-                alert("⚠️ Photo upload failed (Check Firebase Storage Permissions). The expense will still be saved, but without the photo attached.");
-            }
-        }
-
-        let fundSource = document.getElementById('expFundSource') ? document.getElementById('expFundSource').value : "Drawer";
-
-        // 2. Process each item in cart
-        for (let item of window.expenseCart) {
-            
-            let finalDescription = item.description;
-            if (item.isRestock && item.displayQty > 0) {
-                finalDescription = `${item.description} (Qty: ${item.displayQty} ${item.displayUom})`;
-            }
-
-            await addDoc(collection(db, "expenses"), {
-                branch: branch,
-                shiftId: fundSource === "Drawer" ? activeShiftDetails.logId : "Manager_Fund",
-                cashier: cashier,
-                amount: item.cost,
-                description: finalDescription,
-                receiptPhoto: photoUrl, 
-                paidFrom: fundSource, // 🔥 TELLS THE HQ EXACTLY WHERE THE MONEY CAME FROM!
-                timestamp: serverTimestamp()
+window.submitExpenseCart = function() {
+    if (window.expenseSubmissionFlight) return window.expenseSubmissionFlight;
+    const flight = (async () => {
+        const btn = document.getElementById('btnSubmitExpenseCart');
+        const priorAttempt = window.expenseCartAttempt;
+        let attempted = false;
+        try {
+            if (!window.expenseCart.length) { alert('Cart is empty!'); return; }
+            if (!activeShiftDetails?.logId) throw Error('No active shift found to attach these expenses to.');
+            const branch = localStorage.getItem('takodeal_device_branch');
+            const cashier = localStorage.getItem('cashierName');
+            const shiftId = activeShiftDetails.logId;
+            const session = window.sessionUser, authUid = window.auth?.currentUser?.uid;
+            const fundSource = document.getElementById('expFundSource')?.value || 'Drawer';
+            const assertCurrent = () => {
+                if (localStorage.getItem('takodeal_device_branch') !== branch || localStorage.getItem('cashierName') !== cashier || activeShiftDetails?.logId !== shiftId || window.sessionUser !== session || window.auth?.currentUser?.uid !== authUid) throw Error('The cashier, branch or active shift changed. Reopen Branch expenses before submitting.');
+            };
+            if (!branch || branch === 'Unknown' || !cashier || cashier === 'Unknown' || !['Drawer', 'Manager Fund'].includes(fundSource)) throw Error('Confirm the signed-in cashier, branch and source of funds before submitting expenses.');
+            if (window.expenseCart.length > 80) throw Error('Submit no more than 80 expense items at a time.');
+            // Copy the cart before any upload/read. A retry keeps the same batch
+            // reference, and the transaction either commits every entry or none.
+            const items = window.expenseCart.map(item => {
+                const row = {...item};
+                if (typeof row.description !== 'string' || !row.description.trim() || row.description.length > 1000 || !Number.isFinite(row.cost) || row.cost <= 0 || row.cost > 1e9) throw Error('Each expense needs a description and a valid positive amount.');
+                if (row.isRestock && (typeof row.dbId !== 'string' || !row.dbId || row.dbId.includes('/') || !Number.isFinite(row.baseQty) || row.baseQty <= 0 || !Number.isFinite(row.displayQty) || row.displayQty <= 0)) throw Error('Choose the restock item again and enter a valid quantity.');
+                return row;
             });
-
-            // 3. 🧠 THE AUTO-AVERAGE COSTING & INVENTORY INJECTOR
-            if (item.isRestock && item.dbId && item.baseQty > 0) {
-                const invRef = doc(db, "inventory", item.dbId);
-                const invSnap = await getDoc(invRef);
-                if (invSnap.exists()) {
-                    let d = invSnap.data();
-                    let currentStock = parseFloat(d.currentStock) || 0;
-                    let currentAvgCost = parseFloat(d.cost) || 0;
-                    
-                    let unitCostOfThisPurchase = item.cost / item.baseQty;
-                    let newTotalValue = (currentStock * currentAvgCost) + item.cost;
-                    let newTotalStock = currentStock + item.baseQty;
-                    let newAverageCost = newTotalStock > 0 ? (newTotalValue / newTotalStock) : unitCostOfThisPurchase;
-
-                    await updateDoc(invRef, {
-                        currentStock: newTotalStock,
-                        cost: newAverageCost 
-                    });
-
-                    await addDoc(collection(db, "stock_logs"), {
-                        branch: branch, inventoryId: item.id, item: item.dbName, uom: item.uom, oldQty: currentStock, newQty: newTotalStock, variance: item.baseQty,
-                        type: "Store Restock (Expense)", note: `Purchased ${item.displayQty} ${item.displayUom} for ₱${item.cost}`, user: cashier, timestamp: serverTimestamp()
-                    });
+            const grandTotal = items.reduce((sum, item) => sum + item.cost, 0);
+            if (!Number.isFinite(grandTotal) || grandTotal > 1e10) throw Error('The expense total is invalid. Check the amounts.');
+            const signature = JSON.stringify({branch, cashier, shiftId, fundSource, items});
+            let attempt = window.expenseCartAttempt;
+            if (attempt && attempt.signature !== signature) throw Error('The previous submission has not been confirmed. Restore and retry the same expense cart before changing it.');
+            if (!attempt) {
+                const id = typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : doc(collection(db, 'expenses')).id;
+                attempt = {id, signature};
+                window.expenseCartAttempt = attempt;
+            }
+            if (btn) { btn.innerText = '⏳ Processing...'; btn.disabled = true; }
+            let photoUrl = attempt.photoUrl || null;
+            const fileInput = document.getElementById('expenseReceiptPhoto');
+            if (!photoUrl && fileInput?.files?.length) {
+                if (btn) btn.innerText = '⏳ Uploading Photo...';
+                try {
+                    const file = fileInput.files[0], fileExt = file.name.split('.').pop();
+                    const storageRef = ref(window.storage, `expenses/${branch}_${attempt.id}.${fileExt}`);
+                    const snapshot = await uploadBytes(storageRef, file);
+                    photoUrl = await getDownloadURL(snapshot.ref);
+                    attempt.photoUrl = photoUrl;
+                } catch (error) {
+                    console.error('Storage upload failed:', error);
+                    alert('⚠️ Photo upload failed. The expense can still be saved without the photo.');
                 }
             }
+            assertCurrent();
+            const expenseRefs = items.map((item, index) => doc(db, 'expenses', 'pos-expense-' + attempt.id + '-' + index));
+            const shiftRef = doc(db, 'shifts', shiftId);
+            const inventoryRefs = new Map(items.filter(item => item.isRestock).map(item => [item.dbId, doc(db, 'inventory', item.dbId)]));
+            attempted = true;
+            const result = await runTransaction(db, async tx => {
+                assertCurrent();
+                const saved = await Promise.all(expenseRefs.map(reference => tx.get(reference)));
+                if (saved.some(snapshot => snapshot.exists())) {
+                    if (!saved.every((snapshot, index) => snapshot.exists() && snapshot.data().expenseBatchId === attempt.id && snapshot.data().expenseBatchSignature === signature && snapshot.data().expenseBatchIndex === index && snapshot.data().expenseBatchSize === items.length)) throw Error('The saved expense batch is incomplete or changed. Ask the Owner to review it before retrying.');
+                    return {alreadySaved: true};
+                }
+                const shiftSnap = await tx.get(shiftRef);
+                if (!shiftSnap.exists() || shiftSnap.data().branch !== branch || shiftSnap.data().active === false || shiftSnap.data().status === 'Closed') throw Error('The active shift is missing, closed or belongs to another branch. Reopen Branch expenses.');
+                const stocks = new Map();
+                for (const [id, reference] of inventoryRefs) {
+                    const snapshot = await tx.get(reference);
+                    if (!snapshot.exists() || snapshot.data().branch !== branch) throw Error('A restock item is missing or belongs to another branch. Choose the correct item again.');
+                    const data = snapshot.data(), currentStock = Number(data.currentStock ?? 0), cost = Number(data.cost ?? 0);
+                    if (!Number.isFinite(currentStock) || !Number.isFinite(cost) || cost < 0) throw Error('A restock item has invalid saved stock or cost. Ask the Owner to review it.');
+                    stocks.set(id, {reference, currentStock, cost, name: data.name || '', uom: data.uom || 'units'});
+                }
+                const shift = shiftSnap.data();
+                const currentExp = Number(shift.expenses || shift.cashOut || 0);
+                if (fundSource === 'Drawer' && (!Number.isFinite(currentExp) || currentExp < 0)) throw Error('The shift expense total needs Owner review.');
+                const logs = [];
+                for (let index = 0; index < items.length; index++) {
+                    const item = items[index];
+                    if (!item.isRestock) continue;
+                    const stock = stocks.get(item.dbId), oldQty = stock.currentStock;
+                    const newQty = oldQty + item.baseQty;
+                    const average = newQty > 0 ? (oldQty * stock.cost + item.cost) / newQty : item.cost / item.baseQty;
+                    if (!Number.isFinite(newQty) || !Number.isFinite(average)) throw Error('The restock quantity or computed cost is invalid.');
+                    stock.currentStock = newQty; stock.cost = average;
+                    logs.push({reference: doc(db, 'stock_logs', expenseRefs[index].id + '-stock'), data: {
+                        branch, inventoryId: item.dbId, item: item.dbName || stock.name, uom: item.uom || stock.uom,
+                        oldQty, newQty, variance: item.baseQty, type: 'Store Restock (Expense)',
+                        note: `Purchased ${item.displayQty} ${item.displayUom || stock.uom} for ₱${item.cost}`,
+                        user: cashier, timestamp: serverTimestamp()
+                    }});
+                }
+                assertCurrent();
+                for (let index = 0; index < items.length; index++) {
+                    const item = items[index];
+                    tx.set(expenseRefs[index], {
+                        branch, shiftId: fundSource === 'Drawer' ? shiftId : 'Manager_Fund', cashier,
+                        amount: item.cost, description: item.isRestock ? `${item.description} (Qty: ${item.displayQty} ${item.displayUom || item.uom || 'units'})` : item.description,
+                        receiptPhoto: photoUrl, paidFrom: fundSource, timestamp: serverTimestamp(),
+                        expenseBatchId: attempt.id, expenseBatchSignature: signature, expenseBatchIndex: index, expenseBatchSize: items.length
+                    });
+                }
+                for (const stock of stocks.values()) tx.update(stock.reference, {currentStock: stock.currentStock, cost: stock.cost});
+                for (const log of logs) tx.set(log.reference, log.data);
+                if (fundSource === 'Drawer') tx.update(shiftRef, {expenses: currentExp + grandTotal, cashOut: currentExp + grandTotal});
+                return {saved: true};
+            });
+            assertCurrent();
+            window.expenseCart = [];
+            if (window.expenseCartAttempt === attempt) window.expenseCartAttempt = null;
+            try {
+                window.renderExpenseCart?.();
+                if (fileInput) fileInput.value = '';
+                document.getElementById('expenseModal').style.display = 'none';
+            } catch (error) { console.error('Expense saved; display refresh failed:', error); }
+            alert(result.alreadySaved ? '✅ These expenses were already saved. No additional stock or drawer deduction was made.' : fundSource === 'Drawer' ? `✅ Success! ₱${grandTotal.toFixed(2)} deducted from POS drawer for ${items.length} item(s).` : `✅ Success! Logged ${items.length} item(s). Deducted from Manager's Floating Cash.`);
+            try { if (typeof checkCurrentShift === 'function') Promise.resolve(checkCurrentShift()).catch(error => console.error('Expense saved; shift refresh failed:', error)); } catch (error) { console.error('Expense saved; shift refresh failed:', error); }
+        } catch (error) {
+            console.error('Expense Cart Error:', error);
+            if (!attempted && !priorAttempt) window.expenseCartAttempt = null;
+            alert('❌ Expenses were not confirmed. ' + (error.code ? 'Keep this cart and retry when connected to HQ.' : error.message || 'Keep this cart and retry.'));
+        } finally {
+            if (btn) { btn.innerText = 'Submit All Expenses'; btn.disabled = false; }
         }
-
-        // 🔥 ONLY DEDUCT FROM THE DRAWER IF THEY SELECTED DRAWER!
-        if (fundSource === "Drawer") {
-            const shiftRef = doc(db, "shifts", activeShiftDetails.logId);
-            const shiftSnap = await getDoc(shiftRef);
-            let currentExp = shiftSnap.data().expenses || shiftSnap.data().cashOut || 0;
-            await updateDoc(shiftRef, { expenses: currentExp + grandTotal, cashOut: currentExp + grandTotal });
-            alert(`✅ Success! ₱${grandTotal.toFixed(2)} deducted from POS drawer for ${window.expenseCart.length} item(s).`);
-        } else {
-            alert(`✅ Success! Logged ${window.expenseCart.length} item(s). Deducted from Manager's Floating Cash.`);
-        }
-
-        document.getElementById('expenseModal').style.display = 'none';
-        
-        if (typeof checkCurrentShift === 'function') checkCurrentShift();
-
-    } catch (e) {
-        console.error("Expense Cart Error:", e);
-        alert("❌ Failed to process expenses. Check connection.");
-    } finally {
-        if (btn) { btn.innerText = "Submit All Expenses"; btn.disabled = false; }
-    }
+    })();
+    window.expenseSubmissionFlight = flight;
+    flight.finally(() => { if (window.expenseSubmissionFlight === flight) window.expenseSubmissionFlight = null; }).catch(() => {});
+    return flight;
 };
-
 // --- LIVE CLOCK ENGINE ---
 function startLiveClock() {
   const clockEl = document.getElementById('liveClock');

@@ -5748,6 +5748,7 @@
       <div class="modal-foot" style="display: flex; gap: 10px; padding: 20px 30px; background: #f8fafc; border-top: 1px solid #e2e8f0; align-items: center; flex-wrap: wrap;">
           <button onclick="document.getElementById('employeeProfileModal').style.display='none'" style="flex: 1; padding: 14px; font-weight: bold; border-radius: 8px; font-size: 14px; border: 1px solid #cbd5e1; background: white; color: #475569; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">Cancel</button>
           <button style="flex: 1; background: #3b82f6; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(59, 130, 246, 0.3);" onclick="window.viewStaffSignedPayslips()">🧾 Signed Payslips</button>
+          <button type="button" id="btnGenerateStaffCOE" onclick="window.generateStaffCOE()" style="flex:1;background:#0f766e;color:white;border:0;font-weight:bold;border-radius:8px;cursor:pointer;font-size:14px;padding:14px;">Generate COE</button>
           <button style="flex: 1; background: #10b981; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);" onclick="window.offerOfficialContract()">📄 Issue Contract</button>
           <button style="flex: 1; background: #fff1f2; color: #dc2626; border: 1px solid #fecaca; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s;" onclick="window.processResignation()">📜 Offboard</button>
           <button style="flex: 1; background: #0f172a; color: white; border: none; font-weight: bold; border-radius: 8px; cursor: pointer; font-size: 14px; padding: 14px; transition: 0.2s; box-shadow: 0 4px 6px rgba(15, 23, 42, 0.3);" onclick="window.generateIDCard()">🪪 Download Employee ID</button>
@@ -5859,13 +5860,13 @@
                           </div>
                       </div>
 
-                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 14px;">
-                          <div style="display: grid; grid-template-columns: 120px 1fr; gap: 5px; align-items: end;">
+                      <div class="payslip-summary-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; font-size: 14px;">
+                          <div class="payslip-field-grid" style="display: grid; grid-template-columns: 120px 1fr; gap: 5px; align-items: end;">
                               <strong style="text-align: right; padding-right: 10px;">Employee Name:</strong> <span id="psName" style="border-bottom: 1px solid black; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-bottom: 2px;">Loading...</span>
                               <strong style="text-align: right; padding-right: 10px;">Department:</strong> <span id="psBranch" style="border-bottom: 1px solid black; padding-bottom: 2px;">Loading...</span>
                               <strong style="text-align: right; padding-right: 10px;">Date Hired:</strong> <span id="psDateHired" style="border-bottom: 1px solid black; padding-bottom: 2px;">---</span>
                           </div>
-                          <div style="display: grid; grid-template-columns: 140px 1fr; gap: 5px; align-items: end;">
+                          <div class="payslip-field-grid" style="display: grid; grid-template-columns: 140px 1fr; gap: 5px; align-items: end;">
                               <strong style="text-align: right; padding-right: 10px;">Cutoff Started:</strong> <span id="psStart" style="border-bottom: 1px solid black; padding-bottom: 2px;">---</span>
                               <strong style="text-align: right; padding-right: 10px;">Cutoff Ended:</strong> <span id="psEnd" style="border-bottom: 1px solid black; padding-bottom: 2px;">---</span>
                               <strong style="text-align: right; padding-right: 10px;">Pay Distributed:</strong> 
@@ -5873,9 +5874,9 @@
                           </div>
                       </div>
 
-                      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid black;">
+                      <div class="payslip-money-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0; border: 1px solid black;">
                           
-                          <div style="border-right: 1px solid black;">
+                          <div class="payslip-money-column" style="border-right: 1px solid black;">
                               <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black;">INCOME</div>
                               <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px; border-bottom: 1px dashed #cbd5e1;">
                                   <span>Basic Pay (<span id="psDaysWorked">0</span> days)</span> <span id="psBasicPay" style="font-weight: bold;">0.00</span>
@@ -5898,7 +5899,7 @@
                               </div>
                           </div>
 
-                          <div>
+                          <div class="payslip-money-column">
                               <div style="background: #e2e8f0; padding: 8px; font-weight: bold; border-bottom: 1px solid black;">DEDUCTIONS</div>
                               <div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 8px; font-size: 13px;">
                                   <span>Late/Undertime</span> <input type="number" id="psLate" class="ps-input" value="0.00" oninput="recalcPayslip()">
@@ -5958,6 +5959,7 @@
                                   </tbody>
                           </table>
                       </div>
+                      <div id="psSavedSignature" hidden style="margin-top:25px;padding-top:15px;text-align:center;font-size:12px;color:#166534;"></div>
 
                   </div>
               </div>
@@ -6400,8 +6402,8 @@
       </div>
       <div style="font-size: 18px; line-height: 1.8; color: #1e293b; text-align: justify; margin-bottom: 60px;">
           <p>To Whom It May Concern,</p>
-          <p>This is to certify that <strong id="coeName" style="font-size: 20px; color: #0f172a;">[EMPLOYEE NAME]</strong> has been employed at TAKODEÁL.</p>
-          <p>They served in the capacity of <strong id="coeRole" style="color: #0f172a;">[ROLE]</strong> from <strong id="coeDateHired">[DATE HIRED]</strong> up until <strong id="coeDateToday">[TODAY]</strong>.</p>
+          <p>This is to certify that <strong id="coeName" style="font-size: 20px; color: #0f172a;">[EMPLOYEE NAME]</strong> <span id="coeEmploymentStatus">has been employed</span> at TAKODEÁL.</p>
+          <p><span id="coeServiceVerb">They served</span> in the capacity of <strong id="coeRole" style="color: #0f172a;">[ROLE]</strong> from <strong id="coeDateHired">[DATE HIRED]</strong> up until <strong id="coeDateToday">[TODAY]</strong>.</p>
           <p>This certification is being issued upon the request of the employee for whatever legal purpose it may serve them best.</p>
       </div>
       <div style="margin-top: 80px;">
