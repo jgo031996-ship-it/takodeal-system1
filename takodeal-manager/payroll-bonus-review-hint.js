@@ -15,30 +15,37 @@ function instant(value){
  return attendanceMillis(value);
 }
 
-// A nonblocking comparison of preserved reference hours and actual punches.
-// It neither classifies the actual shift nor awards a bonus from clock time.
+// A read-only route for an unresolved bonus basis. Classification and amounts
+// come from the shared calculator; this hint never changes assigned hours.
 export function payrollBonusReviewHint(api,data,log){
  if(!owner(api)||!data||data.isPaid||api.paidPayrollSnapshots?.has(data)||typeof log?.nightBonus!=='number'||log.nightBonus!==0)return null;
  const staffId=data.staffId||data.profile?.staffId||data.profile?.id,branch=log.branch||data.branch;
  if(!id(staffId)||!id(log.attendanceLogId)||!branch||api.isBranchAllowed?.(branch)===false)return null;
  const configuredBonus=nightRate(data.profile||{});if(!(configuredBonus>0))return null;
  const actualIn=instant(log.timeInAt),actualOut=instant(log.timeOutAt),expectedIn=instant(log.expectedStartAt),expectedOut=instant(log.expectedEndAt),actualHours=(actualOut-actualIn)/3600000,savedHours=(expectedOut-expectedIn)/3600000;
+ if(log.bonusBasis?.status==='qualified')return null;
+ if(log.bonusBasis?.status==='review'&&log.bonusReviewRequired===true){
+  if(![actualIn,actualOut].every(Number.isFinite)||actualHours<8||actualHours>18)return null;
+  const workDate=day(log.rateWorkDate)?log.rateWorkDate:scheduleDateKey(new Date(actualIn));
+  return {blocking:false,actionLabel:'Review actual-work bonus',message:'The recorded work needs a Mid/Night bonus review. '+String(log.bonusReviewReason||'The available branch shift hours do not identify one clear bonus category.')+' Original assigned hours and lateness decisions stay unchanged.',actualHours,configuredBonus,
+   actualIn:new Date(actualIn).toISOString(),actualOut:new Date(actualOut).toISOString(),expectedStartAt:Number.isFinite(expectedIn)?new Date(expectedIn).toISOString():null,expectedEndAt:Number.isFinite(expectedOut)?new Date(expectedOut).toISOString():null,
+   context:{reviewPurpose:'actual-work-bonus',staffId,staffName:data.name,branch,workDate,from:data.start,to:data.end,attendanceLogId:log.attendanceLogId,attendanceLogIds:[log.attendanceLogId]}};
+ }
  if(![actualIn,actualOut,expectedIn,expectedOut].every(Number.isFinite)||actualHours<8||actualHours>18||savedHours<1||savedHours>18||Math.abs(actualIn-expectedIn)>24*3600000)return null;
  const overlap=Math.max(0,Math.min(actualOut,expectedOut)-Math.max(actualIn,expectedIn)),offset=Math.abs(actualIn-expectedIn);
  if(offset<3*3600000||overlap>=Math.min(actualOut-actualIn,expectedOut-expectedIn)*0.5)return null;
  const expectedDay=scheduleDateKey(new Date(expectedIn)),workDate=day(log.rateWorkDate)&&log.rateWorkDate===expectedDay?log.rateWorkDate:expectedDay;
- return {blocking:false,actionLabel:'Review assigned shift',message:'Most recorded hours fall outside the saved shift reference. The saved work-date assignment may need Owner correction; review the original Time In to confirm Mid/Night eligibility.',actualHours,configuredBonus,
+ return {blocking:false,actionLabel:'Review actual-work bonus',message:'Most recorded hours fall outside the scheduled reference. Review the actual-work bonus basis on the original punches. This does not request an assignment or lateness change.',actualHours,configuredBonus,
   actualIn:new Date(actualIn).toISOString(),actualOut:new Date(actualOut).toISOString(),expectedStartAt:new Date(expectedIn).toISOString(),expectedEndAt:new Date(expectedOut).toISOString(),
-  context:{staffId,staffName:data.name,branch,workDate,from:data.start,to:data.end,attendanceLogId:log.attendanceLogId,attendanceLogIds:[log.attendanceLogId]}};
+  context:{reviewPurpose:'actual-work-bonus',staffId,staffName:data.name,branch,workDate,from:data.start,to:data.end,attendanceLogId:log.attendanceLogId,attendanceLogIds:[log.attendanceLogId]}};
 }
 export function payrollBonusReviewHintHTML(hint){
- return hint?'<p class="payroll-bonus-review-hint" style="margin:6px 0;color:#92400e;font-size:12px"><strong>Assigned shift check</strong><br>'+escape(hint.message)+'</p>':'';
+ return hint?'<p class="payroll-bonus-review-hint" style="margin:6px 0;color:#92400e;font-size:12px"><strong>Actual-work bonus check</strong><br>'+escape(hint.message)+'</p>':'';
 }
 export function openPayrollBonusReviewHint(api,data,log){
  const hint=payrollBonusReviewHint(api,data,log);if(!hint)return false;
  if(api.currentPayslipData!==data||api.globalPayrollCache?.[data.name]!==data||typeof api.requirePayrollPreview!=='function')throw Error('Generate this unpaid payroll again and reopen the employee before reviewing its shift.');
  api.requirePayrollPreview(data);
  if(typeof api.openAttendanceRecovery==='function')return api.openAttendanceRecovery(hint.context);
- if(typeof api.openScheduleRecovery==='function')return api.openScheduleRecovery(hint.context);
- throw Error('Open HR review for this original Time In and its saved workday schedule.');
+ throw Error('Open HR attendance review for these original punches and their actual-work bonus basis.');
 }

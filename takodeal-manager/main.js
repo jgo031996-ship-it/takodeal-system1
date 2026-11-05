@@ -37,7 +37,7 @@ runManagerDomReady(() => {window.cashShortageUI ||= installCashShortageUI(window
 window.openEmployeeOneTimeDeduction = function(){const staffId=document.getElementById('empProfileId')?.value;if(!staffId)return window.ManagerUI.notify('Save or open an existing staff profile first.');return window.ownerDeductionsUI?.openNew(staffId);};
 import {payrollActorKey,loadPayrollAccounts,applyConfirmedPayroll,checkSavedPayslipPayment,exportPayslipImage,syncPayslipImageButton} from './payroll-completion.js';
 import {installManagerTableWrapper} from './manager-table-wrapper.js';
-import {payrollScheduleStamp,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
+import {payrollScheduleStamp,payrollBonusBranches,assertPayrollScheduleFresh} from './payroll-schedule-freshness.js';
 import {createPayrollPreviewGuard,readPayrollSnapshot} from './payroll-preview-guard.js';
 import {coordinatePayrollLoad,loadPayrollPreviewInputs,loadPayrollSalaryProfiles,payrollSalaryForWork,payrollSalaryForPreview,invalidatePayrollLoad} from './payroll-loading.js';
 import {createPayrollRosterResolver,buildPayrollLedgerReview} from './payroll-roster-model.js';
@@ -72,6 +72,7 @@ import { enhanceScheduleLayout, scheduleShiftHours } from './schedule-layout.js'
 import {installScheduleWorkspace} from './schedule-workspace.js';
 import {createMonthlyScheduleController,createScheduleCalendarReviewController} from './monthly-schedule-integration.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
+import {createPayrollBonusHistoryStore} from './payroll-bonus-templates.js';
 import {installScheduleMemoryUI} from './schedule-memory-ui.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
 import {toScheduleEmployee,upsertScheduleEmployee,mergeScheduleEmployeeAliases,availableSchedulePoolStaff,resolveScheduleEmployeeReference,scheduleIdentityDirectory} from './schedule-staff-directory.js';
@@ -8375,7 +8376,7 @@ window.scheduleHolidays = {}; // Memory for holidays
 // Schedule history keeps each effective version before another month or rule is saved.
 let scheduleMemoryUI = null, scheduleMemoryExpectedRevision = undefined;
 window.getScheduleHistoryStore = () => window.scheduleHistoryStore ||= createScheduleHistoryStore(window);
-window.loadPayrollScheduleHistory = (from, to) => window.getScheduleHistoryStore().loadRange(scheduleDateKey(new Date(+new Date(from+'T00:00:00+08:00')-86400000)), to);
+window.loadPayrollScheduleHistory = (from, to) => createPayrollBonusHistoryStore(window).loadRange(scheduleDateKey(new Date(+new Date(from+'T00:00:00+08:00')-86400000)), to);
 window.getScheduleMemorySnapshot = () => ({branchConfig, employees, unavailability, currentSchedule, currentYear, currentMonth, holidays:window.scheduleHolidays});
 window.applyScheduleMemorySnapshot = async (snapshot, {preserveDraftEmployees=false}={}) => {
     const data = JSON.parse(JSON.stringify(snapshot));
@@ -10555,7 +10556,7 @@ window.loadPayrollGenerator = async function() {
                 else if(shiftMultiplier===2)remark='<span style="color:#8b5cf6;font-weight:bold">Owner-approved straight duty (2 paid units) · +₱'+thisShiftStraightBonus.toFixed(2)+' straight incentive</span>';
                 else if(earnings.shortHours>0)remark='<span style="color:#b45309;font-weight:bold">Short duty ('+hoursWorked.toFixed(2)+'h worked; '+earnings.shortHours.toFixed(2)+'h below 8h) · full daily pay retained</span>';
                 if(earnings.straightApprovalRequired)remark+='<br><span style="color:#b45309">Over 16h recorded · Owner straight-duty approval needed; one daily rate shown pending review.</span>';
-                if(earnings.bonusReviewRequired)remark+='<br><span style="color:#b45309">Confirm the approved shift category to review its Mid/Night bonus.</span>';
+                if(earnings.bonusReviewRequired)remark+='<br><span style="color:#b45309">Actual-work Mid/Night bonus needs review. '+escapeHtml(earnings.bonusReviewReason||'Confirm the work recorded on these punches.')+'</span>';
 
                 if (lMins > 0) {
                     if (lExempt) {
@@ -10571,11 +10572,13 @@ window.loadPayrollGenerator = async function() {
                     staffData[name].lateDeduction += totalManualPenaltyForShift;
                 }
 
+                const bonusBasis=earnings.bonusBasis||null,bonusWorkType={morning:'Morning',mid:'Mid',night:'Night','mid-night':'Mid/Night',other:'Other'}[bonusBasis?.shiftType];
+                if(bonusWorkType&&['actual-punches','owner-review'].includes(bonusBasis.source)&&Number.isFinite(bonusBasis.workedHours))remark+='<br><span style="color:#557061">Bonus basis: '+(bonusBasis.source==='owner-review'?'Owner-confirmed ':'actual ')+bonusWorkType+' work · '+bonusBasis.workedHours.toFixed(2)+'h recorded'+(bonusBasis.status==='qualified'&&earnings.nightBonus===0?' · no additional Mid/Night bonus configured':bonusBasis.status==='not-qualified'?' · no Mid/Night bonus for this work category':'')+'</span>';
                 const thisShiftNightBonus = earnings.nightBonus;
                 if (thisShiftNightBonus > 0) {
                     staffData[name].nightShifts += 1;
                     staffData[name].nightBonusTotal += thisShiftNightBonus;
-                    remark += `<br><span style="color:#d97706; font-weight:bold;">${earnings.bonusShiftType === 'night' ? 'Night' : 'Mid'} bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
+                    remark += `<br><span style="color:#d97706; font-weight:bold;">${earnings.bonusShiftType === 'night' ? 'Night' : earnings.bonusShiftType === 'mid-night' ? 'Mid/Night' : 'Mid'} bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
                 }
 
                 let logDateStr = staffRateWorkDate({timestamp:timeIn},activeShifts[name].matchedShift);
@@ -10599,6 +10602,7 @@ window.loadPayrollGenerator = async function() {
                     candidateNightBonus:earnings.straightReviewNightBonus,candidateNightCoverage:earnings.straightReviewNightCoverage,
                     holidayMultiplier:hType==='Regular'?0.5:hType==='Special'?0.1:0,
                     paidUnits:shiftMultiplier,shortHours:earnings.shortHours,straightBonus:thisShiftStraightBonus,nightBonus:thisShiftNightBonus,
+                    bonusBasis:bonusBasis?{...bonusBasis,matchingShiftIds:[...(bonusBasis.matchingShiftIds||[])]}:null,bonusReviewReason:earnings.bonusReviewReason||'',
                     straightApprovalRequired:earnings.straightApprovalRequired,bonusReviewRequired:earnings.bonusReviewRequired,
                     dailyRate,rateWorkDate:logDateStr,
                     scheduleSource:activeShifts[name].matchedShift.scheduleSource,
@@ -10788,7 +10792,7 @@ window.loadPayrollGenerator = async function() {
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: salaryPreview.profile, start: startDateRaw, end: endDateRaw,
                         recordedHours:d.recordedHours!==undefined?d.recordedHours:d.totalHours,attendanceReviewRequired:!!d.attendanceReviewRequired,salaryReviewRequired:!!d.salaryReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],payrollReviewReasons:d.attendanceReviewReasons||[],attendanceLogIds:d.attendanceLogIds||[],attendanceIssues:d.attendanceIssues||[],
-                        scheduleEvidenceStamp,
+                        scheduleEvidenceStamp:payrollScheduleStamp(scheduleData,{start:startDateRaw,end:endDateRaw},{bonusBranches:payrollBonusBranches(d.logs,d.branch)}),
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
                     d = previewCache[name];
@@ -10967,7 +10971,7 @@ window.openPayslipModal = async function(staffName, savedHistoryData = null) {
                 <td style="padding: 8px 4px; font-weight: bold; color: ${inColor}; text-align: center; vertical-align: middle; word-wrap: break-word;">${inTimeHtml}</td>
                 <td style="padding: 8px 4px; font-weight: bold; color: ${outColor}; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.out || ''}</td>
                 <td style="padding: 8px 4px; font-weight: bold; text-align: center; vertical-align: middle;">${log.hrs || 0}h</td>
-                <td style="padding: 8px 4px; font-size:11px; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.remark || ''}${log.expectedStartAt && log.expectedEndAt ? '<br><span style="color:#557061">Scheduled: '+new Date(log.expectedStartAt).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'})+' → '+new Date(log.expectedEndAt).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'})+'</span>' : ''}${!paidView&&log.out==='MISSED'&&log.attendanceLogId?'<br><button type="button" class="ps-correction-button" data-payslip-missing-index="'+logIndex+'">Record actual Time Out</button>':''}</td>
+                <td style="padding: 8px 4px; font-size:11px; text-align: center; vertical-align: middle; word-wrap: break-word;">${log.remark || ''}${log.expectedStartAt && log.expectedEndAt ? '<br><span style="color:#557061">'+(paidView?'Scheduled: ':'Scheduled reference: ')+new Date(log.expectedStartAt).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'})+' → '+new Date(log.expectedEndAt).toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'})+'</span>' : ''}${!paidView&&log.out==='MISSED'&&log.attendanceLogId?'<br><button type="button" class="ps-correction-button" data-payslip-missing-index="'+logIndex+'">Record actual Time Out</button>':''}</td>
             </tr>`;
         });
     } else {
@@ -10979,20 +10983,21 @@ window.openPayslipModal = async function(staffName, savedHistoryData = null) {
     if(!paidView&&attBody)data.logs?.forEach((log,index)=>{
         const hint=payrollBonusReviewHint(window,data,log);if(!hint)return;
         const cell=attBody.querySelectorAll?.('tr')?.[index]?.querySelector?.('td:last-child');if(!cell)return;
-        const source=JSON.stringify([log.attendanceLogId,log.timeInAt,log.timeOutAt,log.expectedStartAt,log.expectedEndAt,log.rateWorkDate,log.nightBonus]);
+        const source=JSON.stringify([log.attendanceLogId,log.timeInAt,log.timeOutAt,log.expectedStartAt,log.expectedEndAt,log.rateWorkDate,log.nightBonus,log.bonusBasis,log.bonusReviewReason]);
         const note=document.createElement('div');note.innerHTML=payrollBonusReviewHintHTML(hint);cell.appendChild(note);
         const button=document.createElement('button');button.type='button';button.className='ps-correction-button';button.textContent=hint.actionLabel;button.dataset.payrollBonusReview=String(index);
         button.onclick=async()=>{try{
             window.requirePayrollPreview(data);
-            if(window.currentPayslipData!==data||data.logs?.[index]!==log||source!==JSON.stringify([log.attendanceLogId,log.timeInAt,log.timeOutAt,log.expectedStartAt,log.expectedEndAt,log.rateWorkDate,log.nightBonus]))throw Error('This attendance row changed. Generate a fresh payroll list before reviewing its assigned shift.');
+            if(window.currentPayslipData!==data||data.logs?.[index]!==log||source!==JSON.stringify([log.attendanceLogId,log.timeInAt,log.timeOutAt,log.expectedStartAt,log.expectedEndAt,log.rateWorkDate,log.nightBonus,log.bonusBasis,log.bonusReviewReason]))throw Error('This attendance row changed. Generate a fresh payroll list before reviewing its assigned shift.');
             return await openPayrollBonusReviewHint(window,data,log);
         }catch(error){window.ManagerUI?.notify?.(error.message);}};
         cell.appendChild(button);
     });
     if(!paidView&&attBody)data.logs?.forEach((log,index)=>{
         if(!log.attendanceLogId||!log.straightApprovalRequired&&!log.bonusReviewRequired)return;
+        if(!log.straightApprovalRequired&&payrollBonusReviewHint(window,data,log))return;
         const cell=attBody.querySelectorAll?.('tr')?.[index]?.querySelector?.('td:last-child');if(!cell)return;
-        const button=document.createElement('button');button.type='button';button.className='ps-correction-button';button.textContent=log.straightApprovalRequired?'Review & approve straight duty':'Review bonus assignment';
+        const button=document.createElement('button');button.type='button';button.className='ps-correction-button';button.textContent=log.straightApprovalRequired?'Review & approve straight duty':'Review actual-work bonus';
         button.onclick=async()=>{try{window.requirePayrollPreview(data);if(window.currentPayslipData!==data)throw Error('Reopen this employee’s latest payroll.');
             if(log.straightApprovalRequired)return await reviewStraightDuty(window,data,log,{onApproved:async audit=>{
                 data.basicPay=Math.round((Number(data.basicPay||0)+audit.extraBasicPay)*100)/100;data.shiftsWorked=Number(data.shiftsWorked||0)+1;
@@ -11003,7 +11008,7 @@ window.openPayslipModal = async function(staffName, savedHistoryData = null) {
                 const retained=[...document.querySelectorAll('#printablePayslip input')].filter(input=>input.id!=='psBasicPay').map(input=>({id:input.id,value:Object.hasOwn(additions,input.id)?String(Math.round(((Number(input.value)||0)+additions[input.id])*100)/100):input.value}));
                 await window.openPayslipModal(data.name);for(const field of retained){const input=document.getElementById(field.id);if(input&&!input.disabled)input.value=field.value;}window.recalcPayslip?.();
             }});
-            document.getElementById('payslipModal').style.display='none';return window.openScheduleRecovery({workDate:log.rateWorkDate,staffId:data.staffId,staffName:data.name,attendanceLogId:log.attendanceLogId,branch:log.branch||data.branch});
+            return window.openAttendanceRecovery({reviewPurpose:'actual-work-bonus',workDate:log.rateWorkDate,staffId:data.staffId,staffName:data.name,attendanceLogId:log.attendanceLogId,attendanceLogIds:[log.attendanceLogId],branch:log.branch||data.branch,from:data.start,to:data.end});
         }catch(error){window.ManagerUI?.notify?.(error.message);}};cell.appendChild(document.createElement('br'));cell.appendChild(button);
     });
     attBody?.querySelectorAll?.('[data-payslip-missing-index]').forEach(button=>{const log=data.logs[Number(button.dataset.payslipMissingIndex)];button.onclick=()=>{
@@ -11705,7 +11710,7 @@ window.generateAutoPayslips = async function() {
                 else if(shiftMultiplier===2)remark='<span style="color:#8b5cf6;font-weight:bold">Owner-approved straight duty (2 paid units) · +₱'+thisShiftStraightBonus.toFixed(2)+' straight incentive</span>';
                 else if(earnings.shortHours>0)remark='<span style="color:#b45309;font-weight:bold">Short duty ('+hoursWorked.toFixed(2)+'h worked; '+earnings.shortHours.toFixed(2)+'h below 8h) · full daily pay retained</span>';
                 if(earnings.straightApprovalRequired)remark+='<br><span style="color:#b45309">Over 16h recorded · Owner straight-duty approval needed; one daily rate shown pending review.</span>';
-                if(earnings.bonusReviewRequired)remark+='<br><span style="color:#b45309">Confirm the approved shift category to review its Mid/Night bonus.</span>';
+                if(earnings.bonusReviewRequired)remark+='<br><span style="color:#b45309">Actual-work Mid/Night bonus needs review. '+escapeHtml(earnings.bonusReviewReason||'Confirm the work recorded on these punches.')+'</span>';
 
                 if (lMins > 0) {
                     if (lExempt) {
@@ -11721,11 +11726,13 @@ window.generateAutoPayslips = async function() {
                     staffData[name].lateDeduction += totalManualPenaltyForShift;
                 }
 
+                const bonusBasis=earnings.bonusBasis||null,bonusWorkType={morning:'Morning',mid:'Mid',night:'Night','mid-night':'Mid/Night',other:'Other'}[bonusBasis?.shiftType];
+                if(bonusWorkType&&['actual-punches','owner-review'].includes(bonusBasis.source)&&Number.isFinite(bonusBasis.workedHours))remark+='<br><span style="color:#557061">Bonus basis: '+(bonusBasis.source==='owner-review'?'Owner-confirmed ':'actual ')+bonusWorkType+' work · '+bonusBasis.workedHours.toFixed(2)+'h recorded'+(bonusBasis.status==='qualified'&&earnings.nightBonus===0?' · no additional Mid/Night bonus configured':bonusBasis.status==='not-qualified'?' · no Mid/Night bonus for this work category':'')+'</span>';
                 const thisShiftNightBonus = earnings.nightBonus;
                 if (thisShiftNightBonus > 0) {
                     staffData[name].nightShifts += 1;
                     staffData[name].nightBonusTotal += thisShiftNightBonus;
-                    remark += `<br><span style="color:#d97706; font-weight:bold;">${earnings.bonusShiftType === 'night' ? 'Night' : 'Mid'} bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
+                    remark += `<br><span style="color:#d97706; font-weight:bold;">${earnings.bonusShiftType === 'night' ? 'Night' : earnings.bonusShiftType === 'mid-night' ? 'Mid/Night' : 'Mid'} bonus: +₱${thisShiftNightBonus.toFixed(2)}</span>`;
                 }
 
                 let logDateStr = staffRateWorkDate({timestamp:timeIn},activeShifts[name].matchedShift);
@@ -11749,6 +11756,7 @@ window.generateAutoPayslips = async function() {
                     candidateNightBonus:earnings.straightReviewNightBonus,candidateNightCoverage:earnings.straightReviewNightCoverage,
                     holidayMultiplier:hType==='Regular'?0.5:hType==='Special'?0.1:0,
                     paidUnits:shiftMultiplier,shortHours:earnings.shortHours,straightBonus:thisShiftStraightBonus,nightBonus:thisShiftNightBonus,
+                    bonusBasis:bonusBasis?{...bonusBasis,matchingShiftIds:[...(bonusBasis.matchingShiftIds||[])]}:null,bonusReviewReason:earnings.bonusReviewReason||'',
                     straightApprovalRequired:earnings.straightApprovalRequired,bonusReviewRequired:earnings.bonusReviewRequired,
                     dailyRate,rateWorkDate:logDateStr,
                     scheduleSource:activeShifts[name].matchedShift.scheduleSource,
@@ -11922,7 +11930,7 @@ window.generateAutoPayslips = async function() {
                         basicPay: d.basicPay || 0, isPaid: d.isPaid, shiftsWorked: d.shiftsWorked, lateDeduction: d.lateDeduction || 0, penalties:d.penalties || 0, penaltyRows:d.penaltyRows || [],
                         logs: staffData[name].logs, profile: salaryPreview.profile, start: startInput, end: endInput,
                         recordedHours:d.recordedHours!==undefined?d.recordedHours:d.totalHours,attendanceReviewRequired:!!d.attendanceReviewRequired,salaryReviewRequired:!!d.salaryReviewRequired,attendanceReviewReasons:d.attendanceReviewReasons||[],payrollReviewReasons:d.attendanceReviewReasons||[],attendanceLogIds:d.attendanceLogIds||[],attendanceIssues:d.attendanceIssues||[],
-                        scheduleEvidenceStamp,
+                        scheduleEvidenceStamp:payrollScheduleStamp(scheduleData,{start:startInput,end:endInput},{bonusBranches:payrollBonusBranches(d.logs,d.branch)}),
                         sss: d.sss, philhealth: d.philhealth, pagibig: d.pagibig, customDeductionsTotal: customDeductSum
                     };
                     d = previewCache[name];
