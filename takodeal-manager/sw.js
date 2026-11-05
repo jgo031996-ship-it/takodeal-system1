@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v128-quick-payroll-20261105';
+const CACHE_NAME = 'takodeal-manager-core-v129-duplicate-delete-20261105';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [

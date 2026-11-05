@@ -1,6 +1,7 @@
 import { resolveHQAccount } from './hq-account-model.js';
 import { createWorkspaceSession, canOpenWorkspacePage } from './workspace-access-model.js';
 import { ingredientUses } from './recipe-integrity.js';
+import { inventoryItemIdentity } from './inventory-item-edit-model.js';
 
 export const RECIPE_REVISION_ID = 'recipe_revision';
 export const recipeOperationId = id => 'recipe_operation_' + encodeURIComponent(id);
@@ -39,7 +40,34 @@ export async function loadRecipeState(api) {
     if(!same(actorNow(api),actor) || !same(before,after))throw Error('Recipes changed while loading. Refresh and try again.');
     return {revision:after,documents:Object.fromEntries(tables.map((table,i)=>[table,Object.fromEntries(snapshots[i].docs.map(doc=>[doc.id,doc.data()]))]))};
 }
-export async function loadInventoryDeletionState(api,ids) {
+const deletionUses=(documents,name)=>ingredientUses(new Set([name]),Object.values(documents.bom||{}),Object.values(documents.menu||{}),Object.values(documents.global_addons||{}),documents.settings?.global_mixmatch?.mappings||[]);
+function inventoryDeletionReview(documents,ids) {
+    const selected=new Set(ids),deletionRetainedIds=new Set(),deletionDuplicates=[];
+    for(const id of ids){
+        const item=documents.inventory?.[id];if(!item)throw Error('A stock item changed. Refresh Live Stocks before deleting.');
+        const uses=deletionUses(documents,item.name);if(!uses.length)continue;
+        const remaining=Object.entries(documents.inventory).filter(([key,row])=>!selected.has(key)&&row.name===item.name&&row.branch===item.branch);
+        const recordedZero=(typeof item.currentStock==='number'||typeof item.currentStock==='string'&&item.currentStock.trim()!=='')&&Number(item.currentStock)===0;
+        let identity=null,keptIdentity=null;try{identity=inventoryItemIdentity(item);if(remaining.length===1)keptIdentity=inventoryItemIdentity(remaining[0][1]);}catch{}
+        const keptStock=remaining[0]?.[1]?.currentStock,recordedKeptStock=(typeof keptStock==='number'||typeof keptStock==='string'&&keptStock.trim()!=='')&&Number.isFinite(Number(keptStock));
+        if(!item.name||!item.branch||!recordedZero||!recordedKeptStock||remaining.length!==1||identity===null||identity!==keptIdentity)throw Error('These ingredients are still used. Only an empty duplicate with one matching record remaining in the same branch can be removed.\n\n'+item.name+' · '+item.branch+'\n'+uses.slice(0,8).join('\n'));
+        const [keptId,kept]=remaining[0];deletionRetainedIds.add(keptId);
+        deletionDuplicates.push({id,name:item.name,branch:item.branch,keptId,keptStock:kept.currentStock,uom:kept.baseUom||kept.uom});
+    }
+    return {deletionRetainedIds:[...deletionRetainedIds].sort(),deletionDuplicates};
+}
+export async function loadInventoryDeletionState(api,ids,{timeoutMs=20000}={}) {
+    let timer;
+    try{return await Promise.race([readInventoryDeletionState(api,ids),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Stock and recipe checks took too long. Nothing was deleted. Reconnect and try Delete again.')),timeoutMs);})]);}
+    finally{clearTimeout(timer);}
+}
+export async function inventoryDeletionPreflight(api,ids,{operationId,intent={ids},timeoutMs=20000}={}) {
+    let timer;
+    const read=async()=>await recipeOperationApplied(api,{operationId,intent,route:'inventory'})?{alreadyApplied:true,state:null}:{alreadyApplied:false,state:await readInventoryDeletionState(api,ids)};
+    try{return await Promise.race([read(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Stock and recipe checks took too long. Nothing was changed by this attempt. Reconnect and retry Delete to check its saved result.')),timeoutMs);})]);}
+    finally{clearTimeout(timer);}
+}
+async function readInventoryDeletionState(api,ids) {
     if(!Array.isArray(ids) || !ids.length || ids.length>390 || new Set(ids).size!==ids.length || ids.some(id=>!id))throw Error('Select 1–390 unique stock items to delete safely.');
     const actor=actorNow(api);permitted(api,actor,await accessRecords(api,actor),'inventory');
     const before=await readRecipeRevision(api);
@@ -48,21 +76,36 @@ export async function loadInventoryDeletionState(api,ids) {
         api.getDocsFromServer(api.collection(api.db,'bom')),api.getDocsFromServer(api.collection(api.db,'menu')),
         api.getDocsFromServer(api.collection(api.db,'global_addons')),api.getDocFromServer(reference(api,'settings','global_mixmatch'))
     ]);
+    if(stock.some(row=>!row.exists()))throw Error('A stock item changed. Refresh Live Stocks before deleting.');
+    const entries=rows=>Object.fromEntries(rows.map(row=>[row.id,row.data()]));
+    const documents={inventory:entries(stock),bom:entries(bom.docs),menu:entries(menu.docs),global_addons:entries(addons.docs),settings:mix.exists()?{global_mixmatch:mix.data()}:{} };
+    // Recipes resolve by exact ingredient name within a branch. A referenced
+    // name alone does not make every duplicate stock document indispensable.
+    const linkedNames=[...new Set(stock.map(row=>row.data().name))].filter(name=>deletionUses(documents,name).length);
+    const matches=await Promise.all(linkedNames.map(name=>api.getDocsFromServer(api.query(api.collection(api.db,'inventory'),api.where('name','==',name)))));
+    for(const result of matches)for(const row of result.docs)if(!ids.includes(row.id))documents.inventory[row.id]=row.data();
     const after=await readRecipeRevision(api);
     if(!same(actorNow(api),actor) || !same(before,after))throw Error('Recipe links changed while checking deletion. Refresh and review again.');
-    if(stock.some(row=>!row.exists()))throw Error('A stock item changed. Refresh Live Stocks before deleting.');
-    const uses=ingredientUses(new Set(stock.map(row=>row.data().name)),bom.docs.map(row=>row.data()),menu.docs.map(row=>row.data()),addons.docs.map(row=>row.data()),mix.exists()?mix.data().mappings || []:[]);
-    if(uses.length)throw Error('These ingredients are still used. Replace their recipe/add-on links before deleting stock.\n\n'+uses.slice(0,15).join('\n')+(uses.length>15?'\n…and '+(uses.length-15)+' more links.':''));
-    const entries=rows=>Object.fromEntries(rows.map(row=>[row.id,row.data()]));
-    return {revision:after,documents:{inventory:entries(stock),bom:entries(bom.docs),menu:entries(menu.docs),global_addons:entries(addons.docs),settings:mix.exists()?{global_mixmatch:mix.data()}:{} }};
+    return {revision:after,documents,...inventoryDeletionReview(documents,ids)};
 }
 export function inventoryDeletionPlan(state,ids) {
-    const intent={ids:[...ids].sort()},plan=recipePlan(state,ids.map(id=>({table:'inventory',id,mode:'delete'})),{label:'Delete unused inventory',intent});
+    const review=inventoryDeletionReview(state.documents,ids);
+    const intent={ids:[...ids].sort()},plan=recipePlan(state,ids.map(id=>({table:'inventory',id,mode:'delete'})),{label:review.deletionDuplicates.length?'Remove empty duplicate inventory':'Delete unused inventory',intent});
+    for(const id of review.deletionRetainedIds)plan.expected.push({table:'inventory',id,exists:true,data:state.documents.inventory[id]});
+    plan.deletedInventory=ids.map(id=>({id,record:state.documents.inventory[id]}));
+    plan.retainedInventory=review.deletionDuplicates.map(({id,keptId,name,branch})=>({removedId:id,keptId,name,branch}));
+    if(new TextEncoder().encode(JSON.stringify(plan.deletedInventory)).length>200000)throw Error('Select fewer stock records so their deletion audit can be saved safely.');
     // The revision protects newly added BOM rows. Existing dependency records
     // are also read in the transaction so edits after confirmation are held.
     for(const table of ['bom','menu','global_addons'])for(const [id,data] of Object.entries(state.documents[table] || {}))plan.expected.push({table,id,exists:true,data});
     plan.expected.push({table:'settings',id:'global_mixmatch',exists:Object.hasOwn(state.documents.settings || {},'global_mixmatch'),data:state.documents.settings?.global_mixmatch ?? null});
     return plan;
+}
+export function inventoryDeletionConfirmation(state,ids) {
+    const review=inventoryDeletionReview(state.documents,ids),items=ids.map(id=>state.documents.inventory[id]);
+    const summary=items.slice(0,8).map(item=>item.name+' · '+item.branch+' · '+String(item.currentStock)+' '+(item.baseUom||item.uom||'base units')).join('\n');
+    const kept=review.deletionDuplicates.slice(0,8).map(row=>row.name+' · '+row.branch+': keep '+row.keptStock+' '+row.uom).join('\n');
+    return 'Permanently delete '+ids.length+' selected stock record(s)?\n\n'+summary+(items.length>8?'\n…and '+(items.length-8)+' more.':'')+(kept?'\n\nEmpty duplicate only. Remaining stock is unchanged:\n'+kept:'')+'\n\nRecipe links, receipts and stock history stay on file. Deleted item details are kept in the operation audit. This removes the selected stock record and cannot be undone from this screen.';
 }
 export function recipePlan(state,writes,{label='Recipe change',intent=null}={}) {
     const expected=writes.map(write=>({table:write.table,id:write.id,exists:Object.hasOwn(state.documents[write.table] || {},write.id),
@@ -112,7 +155,7 @@ export async function saveRecipePlan(api,plan,{operationId,route='menu'}={}) {
         for(const write of plan.writes){const ref=reference(api,write.table,write.id);if(write.mode==='delete')tx.delete(ref);else if(write.mode==='update')tx.update(ref,write.data);else tx.set(ref,write.data);}
         const next={version:current.version+1,revisionId:operationId};
         tx.set(revisionRef,{...next,updatedAt:api.serverTimestamp(),updatedByEmail:actor.email,updatedByUid:actor.uid});
-        tx.set(markerRef,{...next,fingerprint:plan.fingerprint,label:plan.label,actorUid:actor.uid,actorEmail:actor.email,recordedAt:api.serverTimestamp()});
+        tx.set(markerRef,{...next,fingerprint:plan.fingerprint,label:plan.label,actorUid:actor.uid,actorEmail:actor.email,recordedAt:api.serverTimestamp(),...(plan.deletedInventory?{deletedInventory:plan.deletedInventory,retainedInventory:plan.retainedInventory}: {})});
         return {status:'saved',...next};
     });
 }
