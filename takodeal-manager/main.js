@@ -174,7 +174,7 @@ import {installRiderManagementViews} from './rider-management-view.js';
 import {renderStockRequestReview} from './stock-request-review.js';
 import {loadStockRequestDraft} from './dispatch-request-draft.js';
 import {installRecipeCostUI} from './recipe-cost-ui.js';
-import { loadRecipeState, createRecipeBatch, operationFor, recipePlan, saveRecipePlan, readRecipeRevision, recipeOperationApplied, loadInventoryDeletionState, inventoryDeletionPlan } from './recipe-changes.js';
+import { loadRecipeState, createRecipeBatch, operationFor, recipePlan, saveRecipePlan, readRecipeRevision, recipeOperationApplied, loadInventoryDeletionState, inventoryDeletionPlan, inventoryDeletionConfirmation, inventoryDeletionPreflight } from './recipe-changes.js';
 
 import { legacyRemittanceDuplicates } from './remittance-review.js';
 import { OWNER_EMAIL,canOpenWorkspacePage,configuredPermissions } from './workspace-access-model.js';
@@ -9704,20 +9704,24 @@ window.deleteInventoryItem = async function(docId, itemName) {
     if (!docId || docId === 'undefined') { window.ManagerUI.notify("❌ Error: Invalid Item ID."); return; }
     if (window.inventoryDeletionBusy) return;
     window.inventoryDeletionBusy = true;
+    let committed=false;
     try {
         const ids=[docId],intent={ids},operationId=operationFor(window,'inventory-delete',intent);
-        if (!await recipeOperationApplied(window,{operationId,intent,route:'inventory'})) {
-            const state=await window.checkInventoryDeletion(ids);
-            if (!(await window.ManagerUI.confirm(`⚠️ Are you sure you want to completely delete "${itemName}"? This cannot be undone!`))) return;
+        const preflight=await inventoryDeletionPreflight(window,ids,{operationId,intent});
+        if (!preflight.alreadyApplied) {
+            const state=preflight.state;
+            if (!(await window.ManagerUI.confirm(inventoryDeletionConfirmation(state,ids)))) return;
             await saveRecipePlan(window,inventoryDeletionPlan(state,ids),{operationId,route:'inventory'});
         }
+        committed=true;
         window.invalidateCache('inventory'); window.invalidateCache('bom');
         window.recipeOperations?.delete('inventory-delete');
         window.ManagerUI.notify(`✅ "${itemName}" has been permanently deleted.`);
-        window.loadInventoryData();
+        void Promise.resolve().then(()=>window.recipeCostUI?.inventoryChanged?.()).catch(()=>{});
+        try{await window.loadInventoryData();}catch{window.ManagerUI.notify('The stock record was deleted. Refresh Live Stocks to load the latest list.');}
     } catch (error) {
         console.error("Error deleting item:", error);
-        window.ManagerUI.notify('Ingredient was not deleted.\n' + error.message);
+        window.ManagerUI.notify((committed?'The stock record was deleted. Refresh Live Stocks to load its saved result.\n':'Deletion was not confirmed. Retry Delete to check its saved result.\n') + error.message);
     } finally {
         window.inventoryDeletionBusy = false;
     }
@@ -15095,33 +15099,42 @@ window.bulkDeleteInventory = async function() {
         return;
     }
 
+    const button=document.querySelector?.('#inventoryTableBody')?.closest('table')?.querySelector('thead button'),buttonLabel=button?.textContent;
+    if(button){button.disabled=true;button.textContent='Checking selected items…';}
     window.inventoryDeletionBusy = true;
+    let committed=false;
     try {
         const ids = [...checkboxes].map(cb => cb.value).sort(),intent={ids},operationId=operationFor(window,'inventory-delete',intent);
-        if (!await recipeOperationApplied(window,{operationId,intent,route:'inventory'})) {
-            const state=await window.checkInventoryDeletion(ids);
-            if (!(await window.ManagerUI.confirm(`⚠️ WARNING: You are about to permanently delete ${ids.length} items from this branch. This cannot be undone. Proceed?`))) return;
+        const preflight=await inventoryDeletionPreflight(window,ids,{operationId,intent});
+        if (!preflight.alreadyApplied) {
+            const state=preflight.state;
+            if(button)button.textContent='Confirm selected items';
+            if (!(await window.ManagerUI.confirm(inventoryDeletionConfirmation(state,ids)))) return;
+            if(button)button.textContent='Deleting selected items…';
             await saveRecipePlan(window,inventoryDeletionPlan(state,ids),{operationId,route:'inventory'});
         }
+        committed=true;
         window.invalidateCache('inventory'); window.invalidateCache('bom');
         window.recipeOperations?.delete('inventory-delete');
         window.ManagerUI.notify(`✅ Successfully deleted ${checkboxes.length} items!`);
-            document.getElementById('selectAllInv').checked = false; // Reset master checkbox
+        void Promise.resolve().then(()=>window.recipeCostUI?.inventoryChanged?.()).catch(()=>{});
+            const allSelected=document.getElementById('selectAllInv');if(allSelected)allSelected.checked = false;
             
             // 🔥 SMART SCROLL MEMORY FIX 🔥
             let scrollContainer = document.querySelector('.main-content');
             let savedScrollPosition = scrollContainer ? scrollContainer.scrollTop : 0;
             
-            await window.loadInventoryData();
+            try{await window.loadInventoryData();}catch{window.ManagerUI.notify('The selected stock records were deleted. Refresh Live Stocks to load the latest list.');}
             
             if (scrollContainer) {
                 setTimeout(() => { scrollContainer.scrollTop = savedScrollPosition; }, 50);
             }
     } catch (error) {
         console.error("Bulk Delete Error:", error);
-        window.ManagerUI.notify('Items were not deleted.\n' + error.message);
+        window.ManagerUI.notify((committed?'The selected stock records were deleted. Refresh Live Stocks to load their saved result.\n':'Deletion was not confirmed. Retry Delete to check its saved result.\n') + error.message);
     } finally {
         window.inventoryDeletionBusy = false;
+        if(button){button.disabled=false;button.textContent=buttonLabel;}
     }
 };
 

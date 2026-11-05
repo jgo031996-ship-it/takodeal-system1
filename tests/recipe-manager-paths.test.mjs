@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import {firestoreHarness} from './helpers/firestore-harness.mjs';
-import {loadRecipeState,createRecipeBatch,operationFor,recipePlan,saveRecipePlan,readRecipeRevision,recipeOperationApplied,loadInventoryDeletionState,inventoryDeletionPlan} from '../takodeal-manager/recipe-changes.js';
+import {loadRecipeState,createRecipeBatch,operationFor,recipePlan,saveRecipePlan,readRecipeRevision,recipeOperationApplied,loadInventoryDeletionState,inventoryDeletionPlan,inventoryDeletionConfirmation,inventoryDeletionPreflight} from '../takodeal-manager/recipe-changes.js';
 import {recipeProblems,ingredientUses} from '../takodeal-manager/recipe-integrity.js';
 import {readProductAddonRows} from '../takodeal-manager/product-options-draft.js';
 import {installRecipeCostUI} from '../takodeal-manager/recipe-cost-ui.js';
@@ -18,7 +18,7 @@ function fixture() {
     api.ManagerUI={notify:text=>notices.push(text),confirm:async()=>true};api.invalidateCache=()=>{};api.loadInventoryData=async()=>{};api.loadMenuEditor=async()=>{};
     const el=id=>{if(!elements.has(id))elements.set(id,{value:'',style:{},disabled:false,checked:false,files:[],classList:{contains:()=>false}});return elements.get(id);};
     const ctx={window:api,document:{getElementById:el,querySelector:()=>null,querySelectorAll:()=>[]},console:{error(){}},Swal:{fire(){}},setTimeout:()=>{},
-        loadRecipeState,createRecipeBatch,operationFor,recipePlan,saveRecipePlan,readRecipeRevision,recipeOperationApplied,loadInventoryDeletionState,inventoryDeletionPlan,recipeProblems,ingredientUses,readProductAddonRows};
+        loadRecipeState,createRecipeBatch,operationFor,recipePlan,saveRecipePlan,readRecipeRevision,recipeOperationApplied,loadInventoryDeletionState,inventoryDeletionPlan,inventoryDeletionConfirmation,inventoryDeletionPreflight,recipeProblems,ingredientUses,readProductAddonRows};
     const route=name=>{const start=main.indexOf('window.'+name+' ='),end=main.indexOf('\n};',start)+3;assert.ok(start>=0 && end>start);vm.runInNewContext(main.slice(start,end),ctx);return api[name];};
     h.put('inventory/maa',{name:'Old Sauce',branch:'Maa',uom:'gram',baseUom:'gram',currentStock:500,maintainingStock:70});
     h.put('inventory/office',{name:'Old Sauce',branch:'Main Office',uom:'gram',baseUom:'gram',currentStock:800,maintainingStock:90});

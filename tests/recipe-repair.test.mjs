@@ -174,7 +174,7 @@ test('failed recipe save retains deletions and a new product stays new; retry co
 test('single and bulk deletion never execute a write when dependency checks fail', async () => {
     let writes = 0, confirmed = 0;
     const context = { console: { error() {} }, alert() {}, confirm: () => { confirmed++; return true; },
-        operationFor:()=> 'refused-delete',recipeOperationApplied:async()=>false,
+        operationFor:()=> 'refused-delete',inventoryDeletionPreflight:async()=>{throw new Error('Ingredient used by A');},
         document: { querySelectorAll: () => [{ value: 'stock-1' }] },
         deleteDoc: async () => writes++, doc() {}, db: {},
         window: { ManagerUI:{notify(){},confirm:()=>{confirmed++;return true;}}, checkInventoryDeletion: async () => { throw new Error('Ingredient used by A'); }, writeBatch: () => { writes++; } } };
