@@ -4,7 +4,7 @@ import {dailyStaffRate,validRateDate,validateSalaryTimeline} from './staff-rate-
 import {isMealDeduction} from './payroll-safety.js';
 import {isCashShortageDeduction,validateCashShortageLink,CASH_SHORTAGE_LIMIT} from './cash-shortage-model.js';
 import {snapshotPayrollDeductionRows} from './payroll-deduction-details.js';
-import {payrollOwnerDeductionRows,validatePayrollOwnerDeductionSet,ownerDeductionDisplayRows,ownerDeductionRecoveryRows,ownerDeductionCandidates,isOwnerDeduction,OWNER_DEDUCTION_LIMIT} from './owner-deduction-payroll.js';
+import {payrollOwnerDeductionRows,validatePayrollOwnerDeductionSet,ownerDeductionDisplayRows,ownerDeductionRecoveryRows,assertPayrollRecoverySources,ownerDeductionCandidates,isOwnerDeduction,OWNER_DEDUCTION_LIMIT} from './owner-deduction-payroll.js';
 import {PAYROLL_ADJUSTMENT_TYPE,isPayrollAdjustment,payrollAdjustmentCandidates,validatePayrollAdjustmentSet,savedPayrollAdjustmentDetails} from './payroll-adjustment-model.js';
 
 export const PAYROLL_SETTLEMENT_LIMITS=Object.freeze({rows:140,queryRows:250,readConcurrency:8,timeoutMs:25000,maxCents:1000000000000,documentBytes:750000});
@@ -207,6 +207,7 @@ async function settle(api,input,identity,guard){
   else if(data.profile?.salaryRateVersion===1||dailyStaffRate(person)!==dailyStaffRate(data.profile))throw Error('The saved daily wage changed. Regenerate this unpaid payslip.');
   const cashSettlements=validatePayrollCashShortageSet(data,cashCandidates,get);
   const ownerSettlements=validatePayrollOwnerDeductionSet(data,ownerCandidates,get);
+  await assertPayrollRecoverySources(ownerSettlements,async sourceId=>{const source=await tx.get(ref('payroll_records',sourceId));return source.exists()?source.data():null;},{crypto:api.crypto});
   const adjustmentSettlements=validatePayrollAdjustmentSet(data,adjustmentCandidates,key=>get('staff_bonuses',key));
   const frozen=validateOrdinaryPayrollSnapshot(data,finalNetPay),freshDeductions=eligibleDeductions.map(row=>{const fresh=get('staff_deductions',row.id);if(!fresh||fresh.status!=='Unpaid'||fresh.type!==row.type||amount(fresh.amount)!==amount(row.amount))throw Error('A meal or advance changed. Regenerate payroll.');staffRow(fresh,data);return {...fresh,id:row.id};});
   frozen.payrollAdjustmentRows=adjustmentSettlements;

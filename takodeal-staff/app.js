@@ -1,3 +1,5 @@
+import {installPayrollVaultFreshness} from './payroll-vault-freshness.js';
+import {payrollRecoveryFromReview} from './payroll-recovery-model.js';
 import {timeOutRequestLabel,timeOutRequestDetailsHTML} from './time-out-request-display.js';
 import {createAttendanceMetadataReader} from './attendance-metadata-reader.js';
 import {createStaffPayrollAttendanceReader} from './staff-payroll-reader.js';
@@ -16,6 +18,7 @@ import {onlineRefundReviewHTML} from './online-refund-pay.js';
 import {payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,snapshotPayrollDeductionRows} from './payroll-deduction-details.js';
 import {isPayrollAdjustment,payrollAdjustmentDetailsHTML,payrollAdjustmentHistoryHTML} from './payroll-adjustment-model.js';
 import {readStaffPayrollAdjustments,staffPayrollAdjustmentEstimate} from './staff-payroll-adjustments.js';
+import {readStaffPayrollRecoveryHistory} from './payroll-adjustment-history.js';
 import { installStaffLocation } from './staff-location.js';
 import { installAttendanceCamera } from './attendance-camera.js';
 import { installAttendanceProofUploader } from './attendance-proof.js';
@@ -2329,7 +2332,8 @@ window.loadPayslipVault = async function() {
         document.getElementById('liveEstVales').innerText = '-₱' + liveUnpaidVales.toLocaleString(undefined, {minimumFractionDigits: 2});
         document.getElementById('liveEstNetPay').innerText = currentAdjustments.held?'Confirm adjustment records':ownerCurrent.held?'Confirm deduction records':currentData.salaryHistoryUnavailable?'Confirm salary on approved phone':currentData.attendanceHeld ? 'Held for HR review' : '₱' + Math.max(0, estNet).toLocaleString(undefined, {minimumFractionDigits: 2});
         let adjustmentPanel=document.getElementById('staffPayrollAdjustmentHistory');if(!adjustmentPanel){adjustmentPanel=document.createElement('div');adjustmentPanel.id='staffPayrollAdjustmentHistory';document.getElementById('payslipLiveSection').appendChild(adjustmentPanel);}
-        adjustmentPanel.innerHTML=(currentAdjustments.held?'<p style="padding:12px;border:1px solid #e6d9bd;border-radius:8px;background:#fffbef;font-size:12px;color:#92400e">Previous payroll adjustments need confirmation. Reconnect or ask the Owner to review them before relying on the live estimate. Saved paid payslips below stay unchanged.</p>':payrollAdjustmentDetailsHTML({payrollAdjustments:currentAdjustments.amount,payrollAdjustmentRows:currentAdjustments.rows},{live:true}))+payrollAdjustmentHistoryHTML(payrollAdjustmentHistory.rows);
+        const recoveryHistory=await readStaffPayrollRecoveryHistory(ownerEstimateInput);if(!stillOpen())return;
+        adjustmentPanel.innerHTML=(currentAdjustments.held?'<p style="padding:12px;border:1px solid #e6d9bd;border-radius:8px;background:#fffbef;font-size:12px;color:#92400e">Previous payroll adjustments need confirmation. Reconnect or ask the Owner to review them before relying on the live estimate. Saved paid payslips below stay unchanged.</p>':payrollAdjustmentDetailsHTML({payrollAdjustments:currentAdjustments.amount,payrollAdjustmentRows:currentAdjustments.rows},{live:true}))+payrollAdjustmentHistoryHTML(payrollAdjustmentHistory.rows)+recoveryHistory.html;
         let penaltyReview=document.getElementById('liveScheduledPenaltyReview');
         if(!penaltyReview){penaltyReview=document.createElement('p');penaltyReview.id='liveScheduledPenaltyReview';penaltyReview.style.cssText='padding:10px;background:#fff8ed;font-size:12px;';document.getElementById('payslipLiveSection').prepend(penaltyReview);}
         penaltyReview.hidden=!scheduledPenaltyReview;
@@ -4104,6 +4108,7 @@ window.acknowledgeMeal = async function(docId) {
 // ==========================================
 installStaffPortal();
 installStaffLocation();
+installPayrollVaultFreshness(window,document);
 let setupAuthUid=staffPrimaryAuth.currentUser?.uid||null;
 installStaffRegistration({projectId:firebaseConfig.projectId,apiKey:firebaseConfig.apiKey,setup:{
     auth:staffPrimaryAuth,

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v127-actual-work-bonus-20261105';
+const CACHE_NAME = 'takodeal-manager-core-v128-quick-payroll-20261105';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
@@ -160,3 +160,7 @@ CORE_ASSETS.push('./platform-price-comparison.js','./platform-payout-summary.js'
 CORE_ASSETS.push('./owner-deduction-model.js','./owner-deductions.js','./owner-deduction-ui.js','./owner-deduction.css','./owner-deduction-payroll.js','./owner-deduction-history.js','./payslip-optional-deductions.js');
 
 CORE_ASSETS.push('./saved-shift-proposal.js','./staff-messenger-link.js','./payroll-messenger.js','./payroll-adjustment-model.js','./payroll-adjustments.js','./payroll-adjustment-ui.js','./payroll-recovery-model.js');
+
+CORE_ASSETS.push('./worked-shift-reference.js');
+
+CORE_ASSETS.push('./worked-shift-correction-model.js','./worked-shift-correction-service.js','./worked-shift-correction-ui.js','./payroll-adjustment-refresh.js','./payroll-recovery-ui.js');

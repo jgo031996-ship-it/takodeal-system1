@@ -4,7 +4,8 @@ import {activeStaffProfile} from './staff-lifecycle-model.js';
 import {readPayrollSnapshot} from './payroll-preview-guard.js';
 import {sameSavedPayrollValue,ordinaryPayrollId} from './payroll-settlement.js';
 import {PAYROLL_ADJUSTMENT_TYPE,payrollAdjustmentInput,payrollAdjustmentId,payrollAdjustmentDetail,validatePayrollAdjustmentRecord} from './payroll-adjustment-model.js';
-import {PAYROLL_RECOVERY_LABEL,payrollRecoveryEvidence,payrollRecoveryFromReview,validatePayrollRecoverySource} from './payroll-recovery-model.js';
+import {PAYROLL_RECOVERY_LABEL,payrollRecoveryEvidence,payrollRecoveryFromReview,validatePayrollRecoverySource,payrollRecoverySourceFingerprint,payrollRecoveryOperationId,assertPayrollRecoveryPeers} from './payroll-recovery-model.js';
+import {payrollAdjustmentCents} from './payroll-adjustment-model.js';
 
 const text=value=>String(value??'').trim();
 const key=value=>{if(typeof value!=='string'||!/^[-A-Za-z0-9_]{1,180}$/.test(value))throw Error('Open the exact saved employee or payroll record.');return value;};
@@ -61,9 +62,11 @@ export function createPayrollAdjustmentService(api,{now=()=>new Date()}={}){
   const normalized=payrollAdjustmentInput(input,{today:phToday(now())}),guard=scope(assertCurrent);guard();if(!normalized.sourcePayrollRecordId)throw Error('Choose a confirmed original paid payslip before reviewing a recovery.');
   const view=await inspect(normalized.staffId,{assertCurrent:guard});guard();if(!view.staff.active)throw Error('Open an active saved employee before requesting a future payroll recovery.');
   const source=view.history.find(row=>row.id===normalized.sourcePayrollRecordId);if(!source)throw Error('The original paid payroll does not belong to this saved employee.');
-  const reference={staffId:normalized.staffId,originalStart:normalized.originalStart,originalEnd:normalized.originalEnd,sourcePayrollRecordId:source.id,sourceNetPay:Number(source.finalNetPay),requestedEffectiveDate:normalized.effectiveDate};validatePayrollRecoverySource(reference,source);
-  if(normalized.amount>reference.sourceNetPay)throw Error('A proposed recovery cannot exceed the confirmed original net amount paid.');
-  const fingerprint=await digest(api,JSON.stringify({...normalized,sourceNetPay:reference.sourceNetPay}));guard();const uuid=[fingerprint.slice(0,8),fingerprint.slice(8,12),fingerprint.slice(12,16),fingerprint.slice(16,20),fingerprint.slice(20,32)].join('-');
+  const basicReference={staffId:normalized.staffId,originalStart:normalized.originalStart,originalEnd:normalized.originalEnd,sourcePayrollRecordId:source.id,sourceNetPay:Number(source.finalNetPay),requestedEffectiveDate:normalized.effectiveDate};validatePayrollRecoverySource(basicReference,source);
+  const peers=assertPayrollRecoveryPeers(view.recoveries,basicReference),corrected=payrollAdjustmentCents(input.correctedNetPay,{zero:true}),overpayment=payrollAdjustmentCents(source.finalNetPay)-corrected;
+  if(overpayment<=0||payrollAdjustmentCents(normalized.amount)!==overpayment)throw Error('The recovery must equal the documented difference between original paid net and corrected net pay.');
+  const reference={...basicReference,correctedNetPay:corrected/100,sourceFingerprint:await payrollRecoverySourceFingerprint(source,api.crypto),recoveryGeneration:peers.filter(row=>row.status==='Dismissed').length};guard();
+  const uuid=await payrollRecoveryOperationId(reference,api.crypto);guard();
   return {operationId:uuid,staffId:normalized.staffId,category:'Other',label:PAYROLL_RECOVERY_LABEL+' · '+normalized.originalStart+' to '+normalized.originalEnd,incidentDate:normalized.originalEnd,details:normalized.reason,evidence:payrollRecoveryEvidence(reference),actualLoss:normalized.amount,proposedAmount:normalized.amount,payrollRecovery:reference};
  }
  function shared(kind,id,intent,work){

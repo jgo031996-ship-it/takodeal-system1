@@ -1,5 +1,6 @@
-const CACHE = 'takodeal-franchise-actual-work-bonus-v13-20261105';
+const CACHE = 'takodeal-franchise-quick-payroll-v14-20261105';
 const CORE=['./','index.html','style.css','main_franchise.js','auth.js','franchise-data.js','franchise-actions.js','franchise-workspace.js','payroll-safety.js','schedule-history.js','dispatch-safety.js','unlock-gate.js','hq-account-model.js','manifest.json','logo.jpg','icon-192.png','icon-512.png'];
+CORE.push('./worked-shift-reference.js');
 CORE.push('emergency-shift-model.js');
 CORE.push('franchise-payroll-confirmations.js','payroll-confirmed-shifts.js','attendance-metadata-reader.js');
 CORE.push('franchise-reads.js','franchise-item-picker.js','franchise-item-picker.css','franchise-payroll-controls.js','franchise-payroll-controls.css');

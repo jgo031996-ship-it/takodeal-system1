@@ -8,6 +8,7 @@ import {availableScheduleReliefStaff} from '../takodeal-manager/schedule-relief-
 import {canOpenWorkspacePage} from '../takodeal-manager/workspace-access-model.js';
 import {leaveStatus} from '../takodeal-manager/leave-model.js';
 import {scheduleShiftHours} from '../takodeal-manager/schedule-layout.js';
+import {scheduleDateKey} from '../takodeal-manager/schedule-history.js';
 
 const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
 const extract=name=>{const start=source.indexOf('\nwindow.'+name+' = '),end=source.indexOf('\n};',start+1);assert.ok(start>=0&&end>start,name+' source exists');return source.slice(start+1,end+3);};
@@ -16,6 +17,9 @@ const esc=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&
 const hold=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 const employee=(id,name,branch='Maa',extra={})=>directory.toScheduleEmployee({cashierName:'Sample '+name,scheduleNickname:name,branch,active:true,...extra},id);
 const day=(scheduled={},rest=[],unavailable=[])=>({scheduled,rest,unavailable,swaps:{}});
+// These are future-draft assignment tests. Pin "today" before their October
+// work dates so the separate historical-correction route is not selected.
+class DraftDate extends Date {constructor(...args){super(...(args.length?args:['2026-10-01T12:00:00+08:00']));}}
 function fixture(options={}){
  const nodes=new Map(),calls={dialogs:[],notices:[],saves:[],drafts:[],renders:0,leaveReviews:[]};let context;
  const node=id=>{if(!nodes.has(id))nodes.set(id,{value:'',checked:false,innerHTML:'',style:{}});return nodes.get(id);};
@@ -27,7 +31,7 @@ function fixture(options={}){
   markScheduleDraftEdited:()=>calls.drafts.push(clone(context.currentSchedule)),
   saveToCloud:async()=>{calls.saves.push(clone(context.currentSchedule));return options.save?options.save():true;}};
  const Swal={fire:async(...args)=>{calls.dialogs.push(args);if(args[0]?.title==='Remove Staff?'&&options.poolConfirm)return {isConfirmed:true};if(args[0]?.title==='➕ Pull Staff to Branch'&&options.poolConfirm)return {isConfirmed:true,value:options.poolConfirm};if(args[0]?.title==='🔄 Reassign / Swap Shift'&&options.autoConfirm)return {isConfirmed:true,value:options.autoConfirm};return {isConfirmed:false};},showValidationMessage:message=>calls.notices.push(message)};
- context=vm.createContext({...directory,scheduleShiftHours,activeStaffProfile,availableScheduleReliefStaff,canOpenWorkspacePage,leaveStatus,escapeHtml:esc,window:w,document:{getElementById:node},Swal,employees:staff,currentSchedule:schedule,unavailability:options.unavailability||{},currentYear:2026,currentMonth:10,currentActiveTab:'Maa',branchConfig:{Maa:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}],Cabantian:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}]},swapData:null,monthKey:value=>value.currentYear+'-'+String(value.currentMonth).padStart(2,'0'),console});
+ context=vm.createContext({...directory,scheduleShiftHours,scheduleDateKey,Date:DraftDate,activeStaffProfile,availableScheduleReliefStaff,canOpenWorkspacePage,leaveStatus,escapeHtml:esc,window:w,document:{getElementById:node},Swal,employees:staff,currentSchedule:schedule,unavailability:options.unavailability||{},currentYear:2026,currentMonth:10,currentActiveTab:'Maa',branchConfig:{Maa:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}],Cabantian:[{id:'m1',name:'Morning one'},{id:'m2',name:'Morning two'}]},swapData:null,monthKey:value=>value.currentYear+'-'+String(value.currentMonth).padStart(2,'0'),console});
  for(const name of ['applyScheduleMemorySnapshot','findEmployeeProfile','confirmActiveScheduleStaff','openSwapModal','executeSwap','removeStaffFromBranchPool','addStaffToBranchPool'])vm.runInContext(extract(name),context);
  const html=()=>calls.dialogs.filter(args=>args[0]?.title==='🔄 Reassign / Swap Shift').at(-1)?.[0].html||'';
  const optionsFor=()=>[...html().matchAll(/<option value="([^"]*)">([^<]*)<\/option>/g)].map(row=>({value:row[1],label:row[2]}));
