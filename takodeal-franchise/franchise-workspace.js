@@ -2,7 +2,7 @@ import { ROUTES, RELEASE, n, money, esc, ms, calendarDay, businessDay, addDays, 
 import { logExpense, adjustInventory, reviewRequest, loadBranchSchedule, saveBranchSchedule } from './franchise-actions.js';
 import { receiveDispatch } from './dispatch-safety.js';
 import { isLatenessRequest, legacyAttendanceCandidates, reviewLateRequest } from './payroll-safety.js';
-import { createScheduleHistoryStore } from './schedule-history.js';
+import {createPayrollBonusHistoryStore} from './payroll-bonus-templates.js';
 import {installScheduleViewSync} from './schedule-view-sync.js';
 import { createFranchiseReads } from './franchise-reads.js';
 import {phDay, noticeIsDue} from './sanction-schedule.js';
@@ -311,7 +311,7 @@ export function installFranchiseWorkspace(api) {
   const [logs,deductions,bonuses,ledgers,scheduleSource,payrollRecords]=profiles.length?await Promise.all([
    read('attendance_logs',{time:'timestamp',start:new Date(+startDate-18*3600000),end:endDate}),
    staffRows('staff_deductions',profiles),staffRows('staff_bonuses',profiles),staffRows('staff_ledger',profiles),
-   createScheduleHistoryStore(api).loadRange(addDays(start,-1),addDays(end,1)),
+   createPayrollBonusHistoryStore(api).loadRange(addDays(start,-1),addDays(end,1)),
    payrollRows(profiles,start,end)
   ]):[[],[],[],[],{},[]];
   if(scope!==payrollContext())throw Error('The account, branch or cutoff changed. Reload payroll.');

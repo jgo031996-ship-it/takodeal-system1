@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import {payrollScheduleStamp,assertPayrollScheduleFresh} from '../takodeal-manager/payroll-schedule-freshness.js';
+import {payrollScheduleStamp,payrollBonusBranches,assertPayrollScheduleFresh} from '../takodeal-manager/payroll-schedule-freshness.js';
 import {createScheduleRevision,resolveScheduleForDate,createScheduleHistoryStore} from '../takodeal-manager/schedule-history.js';
-import {resolveAttendanceShift} from '../takodeal-manager/payroll-safety.js';
+import {captureAttendanceSchedule,resolveAttendanceShift,calculateShiftEarnings} from '../takodeal-manager/payroll-safety.js';
+import {createPayrollBonusHistoryStore,publishedPayrollTemplateEvidence} from '../takodeal-manager/payroll-bonus-templates.js';
 const schedule={historyMonths:{'2030-01':{revisions:[],shiftAmendments:[]}}};
 const range={start:'2030-01-01',end:'2030-01-15'};
 const preview=(history=schedule)=>({...range,scheduleEvidenceStamp:payrollScheduleStamp(history,range)});
@@ -29,10 +30,10 @@ test('account change during read holds the unpaid preview',async()=>{
 });
 test('both Owner generators stamp previews and use shared amendment-aware minutes',()=>{
  const source=fs.readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');
- // Each generator computes the stamp once per fresh run and shares that
- // evidence with its staff rows instead of serializing the schedule per row.
+ // Both routes retain their cutoff check and bind each row's actually used
+ // published fallback branches after its attendance details are calculated.
  assert.equal((source.match(/const scheduleEvidenceStamp=payrollScheduleStamp\(scheduleData,\{start:(?:startDateRaw|startInput),end:(?:endDateRaw|endInput)\}\)/g)||[]).length,2);
- assert.equal((source.match(/^\s+scheduleEvidenceStamp,$/gm)||[]).length,2);
+ assert.equal((source.match(/scheduleEvidenceStamp:payrollScheduleStamp\(scheduleData,\{start:(?:startDateRaw|startInput),end:(?:endDateRaw|endInput)\},\{bonusBranches:payrollBonusBranches\(d\.logs,d\.branch\)\}\)/g)||[]).length,2);
  assert.equal((source.match(/attendanceLateMinutes\(log, matchedShift\)/g)||[]).length,2);
  assert.equal((source.match(/assertPayrollScheduleFresh\(window,data\)/g)||[]).length,2);
  assert.ok(source.includes('attendanceLateMinutes(data, matchedShift)'));
@@ -169,4 +170,58 @@ test('old unscoped previews and changed or malformed cutoff dates require regene
 
 test('matching evidence never authorizes a signed-out or out-of-scope account',async()=>{
  for(const api of [{},{auth:{currentUser:{uid:'owner',email:'owner@example.test'}},sessionUser:{uid:'other',email:'owner@example.test',isOwner:true,permissions:['payroll']}},{auth:{currentUser:{uid:'owner',email:'owner@example.test'}},sessionUser:{uid:'owner',email:'owner@example.test',isOwner:true,permissions:['payroll'],isFranchisee:true}}])await assert.rejects(assertPayrollScheduleFresh({...api,loadPayrollScheduleHistory:async()=>schedule},preview()),/authorized payroll/);
+});
+
+const publishedBranch='Fictional Branch',publishedName='Fictional Crew',publishedStaffId='fictional-staff';
+const publishedRange={start:'2026-10-16',end:'2026-10-31'};
+const selectedBonus={bonusBranches:[publishedBranch]};
+const publishedRule=(extra={})=>({id:'night',name:'Saved duty',shiftType:'night',startTime:'17:30',endTime:'02:00',active:true,days:[0,1,2,3,4,5,6],...extra});
+async function publishedFixture(){
+ const current={currentYear:2026,currentMonth:11,branchConfig:{[publishedBranch]:[publishedRule()]},currentSchedule:{},scheduleRevisionId:'fictional-published-a',payrollHistoryEnforcedFrom:'2026-10-01'};
+ const docs=new Map([['global_schedule',current],['schedule_history_policy',{payrollHistoryEnforcedFrom:'2026-10-01'}]]),reads=[];
+ const api={...apiFor(null),db:{},doc:(_db,table,id)=>({table,id}),getDocFromServer:async reference=>{reads.push(reference);return {id:reference.id,exists:()=>docs.has(reference.id),data:()=>structuredClone(docs.get(reference.id)),metadata:{fromCache:false,hasPendingWrites:false}};}};
+ api.loadPayrollScheduleHistory=(from,to)=>createPayrollBonusHistoryStore(api).loadRange(from,to);
+ const history=await api.loadPayrollScheduleHistory(publishedRange.start,publishedRange.end);
+ return {history,api,docs,reads};
+}
+test('a post-cutover historical fallback binds its actual fresh published templates before payment',async()=>{
+ const {history,api,docs}=await publishedFixture(),profile={id:publishedStaffId,staffId:publishedStaffId,cashierName:publishedName,branch:publishedBranch,hourlyRate:450,nightDiffRate:50};
+ const timeIn=new Date('2026-10-17T17:11:00+08:00'),timeOut=new Date('2026-10-18T02:06:00+08:00'),source={currentYear:2026,currentMonth:10,branchConfig:{[publishedBranch]:[publishedRule({shiftType:'morning'})]},currentSchedule:{17:{[publishedBranch]:{scheduled:{night:publishedName}}}},employees:[{id:publishedStaffId,name:publishedName,branch:publishedBranch}]};
+ const archived=createScheduleRevision(source,{revisionId:'fictional-original',effectiveFrom:'2026-10-01',effectiveTo:'2026-10-31',savedAt:new Date('2026-10-01T00:00:00+08:00')}),original={...source,historyMonths:{'2026-10':{revisions:[archived],shiftAmendments:[]}}};
+ const log={id:'fictional-time-in',staffId:publishedStaffId,staffName:publishedName,branch:publishedBranch,type:'TIME IN',timestamp:timeIn,scheduleSnapshot:captureAttendanceSchedule(timeIn,publishedBranch,publishedName,original,{[publishedName]:profile})};
+ const earn=schedule=>calculateShiftEarnings(profile,resolveAttendanceShift(log,schedule,{[publishedName]:profile}),timeIn,timeOut),data={...publishedRange,staffId:publishedStaffId,name:publishedName,branch:publishedBranch,logs:[{branch:publishedBranch,bonusBasis:earn(history).bonusBasis}],scheduleEvidenceStamp:payrollScheduleStamp(history,publishedRange,selectedBonus)};
+ assert.equal(earn(history).nightBonus,50);assert.equal(JSON.parse(data.scheduleEvidenceStamp).legacy,null);await assertPayrollScheduleFresh(api,data);
+ docs.get('global_schedule').branchConfig[publishedBranch][0].shiftType='morning';
+ const changed=await api.loadPayrollScheduleHistory(publishedRange.start,publishedRange.end);assert.equal(earn(changed).nightBonus,0);assert.notEqual(payrollScheduleStamp(changed,publishedRange,selectedBonus),data.scheduleEvidenceStamp);await assert.rejects(assertPayrollScheduleFresh(api,data),/saved shift times changed/);
+});
+test('same-revision rule edits and revision-only changes both invalidate trusted published evidence',async()=>{
+ const mutations=[row=>{row.branchConfig[publishedBranch][0].startTime='18:30';},row=>{row.branchConfig[publishedBranch][0].endTime='03:00';},row=>{row.branchConfig[publishedBranch][0].days=[0];},row=>{row.branchConfig[publishedBranch][0].active=false;},row=>{row.scheduleRevisionId='fictional-published-b';}];
+ for(const change of mutations){const {history,api,docs}=await publishedFixture(),data={...publishedRange,scheduleEvidenceStamp:payrollScheduleStamp(history,publishedRange,selectedBonus)};change(docs.get('global_schedule'));await assert.rejects(assertPayrollScheduleFresh(api,data),/saved shift times changed/);}
+});
+test('published evidence is captured once from the server, survives a spread and cannot be substituted by draft edits or serialization',async()=>{
+ const {history}=await publishedFixture(),before=payrollScheduleStamp(history,publishedRange,selectedBonus),captured=publishedPayrollTemplateEvidence(history);
+ history.branchConfig[publishedBranch]=[publishedRule({shiftType:'morning'})];history.scheduleRevisionId='draft-only';
+ assert.equal(payrollScheduleStamp({...history},publishedRange,selectedBonus),before);assert.equal(captured.scheduleRevisionId,'fictional-published-a');assert.throws(()=>{captured.branchConfig[publishedBranch][0].shiftType='morning';},TypeError);
+ const copied=JSON.parse(JSON.stringify(history));assert.equal(publishedPayrollTemplateEvidence(copied),null);assert.notEqual(payrollScheduleStamp(copied,publishedRange,selectedBonus),before);
+});
+test('a missing fresh published proof cannot authorize an old proven fallback and paid figures remain frozen',async()=>{
+ const {history,api,reads}=await publishedFixture(),data={...publishedRange,scheduleEvidenceStamp:payrollScheduleStamp(history,publishedRange,selectedBonus)};
+ api.loadPayrollScheduleHistory=async()=>JSON.parse(JSON.stringify(history));await assert.rejects(assertPayrollScheduleFresh(api,data),/saved shift times changed/);
+ const paid={...data,isPaid:true,finalNetPay:500},before=structuredClone(paid),readCount=reads.length;await assertPayrollScheduleFresh(api,paid);assert.deepEqual(paid,before);assert.equal(reads.length,readCount);
+});
+test('fully dated or Owner-reviewed bonus rows do not bind later current planning and unrelated branch config is excluded',async()=>{
+ const {history,api,docs}=await publishedFixture(),logs=[{branch:publishedBranch,bonusBasis:{source:'actual-punches',templateSource:'dated'}},{branch:publishedBranch,bonusBasis:{source:'owner-review',templateSource:'owner-review'}}];
+ const branches=payrollBonusBranches(logs,publishedBranch),data={...publishedRange,branch:publishedBranch,logs,scheduleEvidenceStamp:payrollScheduleStamp(history,publishedRange,{bonusBranches:branches})};assert.deepEqual(branches,[]);
+ const scoped=payrollScheduleStamp(history,publishedRange,selectedBonus);docs.get('global_schedule').branchConfig['Other Fictional Branch']=[publishedRule({shiftType:'morning'})];const other=await api.loadPayrollScheduleHistory(publishedRange.start,publishedRange.end);assert.equal(payrollScheduleStamp(other,publishedRange,selectedBonus),scoped);
+ docs.get('global_schedule').scheduleRevisionId='future-planning';docs.get('global_schedule').branchConfig[publishedBranch][0].shiftType='morning';await assertPayrollScheduleFresh(api,data);
+});
+test('unresolved actual bonus branches are scoped too and an old unscoped fallback preview requires regeneration',async()=>{
+ const {history,api}=await publishedFixture(),logs=[{branch:publishedBranch,bonusBasis:{source:'actual-punches',templateSource:null}},{bonusBasis:{source:'actual-punches',templateSource:'current-published'}},{branch:publishedBranch,bonusBasis:{source:'actual-punches',templateSource:'dated'}}];
+ assert.deepEqual(payrollBonusBranches(logs,publishedBranch),[publishedBranch]);
+ await assert.rejects(assertPayrollScheduleFresh(api,{...publishedRange,branch:publishedBranch,logs,scheduleEvidenceStamp:payrollScheduleStamp(history,publishedRange)}),/Regenerate.*actual-work bonus source/);
+ for(const bonusBranches of ['wrong',[null],[''],[5]])assert.throws(()=>payrollScheduleStamp(history,publishedRange,{bonusBranches}),/actual-work bonus branch/);
+});
+test('a long cutoff can contain more than one hundred fallback duties in one branch without becoming one hundred distinct scopes',()=>{
+ const logs=Array.from({length:150},()=>({branch:publishedBranch,bonusBasis:{source:'actual-punches',templateSource:'current-published'}}));assert.deepEqual(payrollBonusBranches(logs,publishedBranch),[publishedBranch]);
+ assert.throws(()=>payrollBonusBranches([...logs,{branch:null,bonusBasis:{source:'actual-punches',templateSource:null}}]),/actual-work bonus branch/);
 });

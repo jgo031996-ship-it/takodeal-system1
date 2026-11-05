@@ -1,4 +1,4 @@
-const CACHE = 'takodeal-franchise-payroll-shift-earnings-v12-20261104';
+const CACHE = 'takodeal-franchise-actual-work-bonus-v13-20261105';
 const CORE=['./','index.html','style.css','main_franchise.js','auth.js','franchise-data.js','franchise-actions.js','franchise-workspace.js','payroll-safety.js','schedule-history.js','dispatch-safety.js','unlock-gate.js','hq-account-model.js','manifest.json','logo.jpg','icon-192.png','icon-512.png'];
 CORE.push('emergency-shift-model.js');
 CORE.push('franchise-payroll-confirmations.js','payroll-confirmed-shifts.js','attendance-metadata-reader.js');
@@ -10,6 +10,7 @@ CORE.push('schedule-sync.js','schedule-view-sync.js');
 CORE.push('franchise-hq-ui.js','franchise-hq-model.js','franchise-hq-actions.js','franchise-hq.css');
 CORE.push('attendance-amendment-review-model.js');
 CORE.push("relief-attendance-model.js","relief-schedule-review-model.js");
+CORE.push('./payroll-bonus-templates.js');
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(CORE))));
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key.startsWith('takodeal-franchise-') && key!==CACHE).map(key=>caches.delete(key))))));
 self.addEventListener('message',event=>{if(event.data?.type==='SKIP_WAITING')self.skipWaiting();});

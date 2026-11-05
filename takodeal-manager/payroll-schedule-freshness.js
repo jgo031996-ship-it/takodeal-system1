@@ -2,6 +2,7 @@
 // Paid payslips keep their frozen figures; this check never writes payroll data.
 import {canOpenWorkspacePage} from './workspace-access-model.js';
 import {assertPayrollShiftConfirmationsFresh} from './payroll-confirmed-shifts.js';
+import {publishedPayrollTemplateEvidence} from './payroll-bonus-templates.js';
 const canonical = value => Array.isArray(value) ? value.map(canonical)
     : value instanceof Date ? value.toISOString()
     : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])])) : value;
@@ -62,7 +63,23 @@ function selectedVersions(revisions,month,range) {
     // must remain protected even when the stored instants normalize equally.
     return Object.fromEntries([...dates].map(([date,rows])=>[date,rows.sort((a,b)=>b.effectiveFrom.localeCompare(a.effectiveFrom)||(Number(b.sequence)||0)-(Number(a.sequence)||0)||resolverTimestamp(b.savedAt).localeCompare(resolverTimestamp(a.savedAt))||b.revisionId.localeCompare(a.revisionId))[0].revisionId]));
 }
-export function payrollScheduleStamp(schedule,dates) {
+function checkedBonusBranches(branches=[]) {
+    if(!Array.isArray(branches)||branches.some(branch=>typeof branch!=='string'||!branch.trim()||branch.length>200)||new Set(branches).size>100)
+        throw Error('Regenerate this unpaid payslip to confirm its actual-work bonus branch.');
+    return [...new Set(branches)].sort();
+}
+export function payrollBonusBranches(logs,defaultBranch) {
+    return checkedBonusBranches((Array.isArray(logs)?logs:[]).filter(log=>log?.bonusBasis?.source==='actual-punches'&&log.bonusBasis.templateSource!=='dated').map(log=>log.branch||defaultBranch));
+}
+function publishedBonusEvidence(schedule,branches) {
+    if(!branches.length)return undefined;
+    const captured=publishedPayrollTemplateEvidence(schedule);
+    // Only the server capture retained by the payroll wrapper is evidence.
+    // Mutable editor config and serialized data cannot replace this source.
+    return {branches,source:captured?{scheduleRevisionId:captured.scheduleRevisionId,
+        branchConfig:Object.fromEntries(branches.map(branch=>[branch,Object.hasOwn(captured.branchConfig,branch)?captured.branchConfig[branch]:null]))}:null};
+}
+export function payrollScheduleStamp(schedule,dates,{bonusBranches=[]}={}) {
     if (!schedule || !schedule.historyMonths) throw Error('Load saved schedule history before generating payroll.');
     const range=cutoffRange(dates),months={};
     for(const [month,archive]of Object.entries(schedule.historyMonths)) {
@@ -94,7 +111,8 @@ export function payrollScheduleStamp(schedule,dates) {
     // Pre-history punches can still use the current legacy shift fallback.
     // Keep its rules and relevant dated roster protected; ignore future days.
     const legacy=(!cutover||range.first<cutover)?{currentYear:schedule.currentYear,currentMonth:schedule.currentMonth,branchConfig:schedule.branchConfig||{},currentSchedule:legacyDays}:null;
-    return JSON.stringify(canonical({version:2,start:range.start,end:range.end,months,legacy,holidays:datedEntries(schedule.holidays,range),payrollHistoryEnforcedFrom:cutover,...(schedule.payrollShiftConfirmationEvidence?.length?{payrollConfirmations:schedule.payrollShiftConfirmationEvidence}:{})}));
+    const publishedBonusTemplates=publishedBonusEvidence(schedule,checkedBonusBranches(bonusBranches));
+    return JSON.stringify(canonical({version:2,start:range.start,end:range.end,months,legacy,holidays:datedEntries(schedule.holidays,range),payrollHistoryEnforcedFrom:cutover,...(schedule.payrollShiftConfirmationEvidence?.length?{payrollConfirmations:schedule.payrollShiftConfirmationEvidence}:{}),...(publishedBonusTemplates?{publishedBonusTemplates}:{})}));
 }
 export async function assertPayrollScheduleFresh(api, data) {
     if (data?.isPaid || api.paidPayrollSnapshots?.has(data)) return;
@@ -104,6 +122,9 @@ export async function assertPayrollScheduleFresh(api, data) {
     try{stamp=JSON.parse(data.scheduleEvidenceStamp);}catch{}
     if(stamp?.version!==2||stamp.start!==data.start||stamp.end!==data.end)
         throw Error('Regenerate this unpaid payslip once to load its cutoff-specific schedule check before payment.');
+    const bonusBranches=checkedBonusBranches(stamp.publishedBonusTemplates?.branches);
+    if(payrollBonusBranches(data.logs,data.branch).some(branch=>!bonusBranches.includes(branch)))
+        throw Error('Regenerate this unpaid payslip to confirm the current-published actual-work bonus source before payment.');
     const identity = () => {
         const actor = api.auth?.currentUser, session = api.sessionUser;
         if (!actor?.uid || !actor.email || session?.uid !== actor.uid
@@ -119,7 +140,7 @@ export async function assertPayrollScheduleFresh(api, data) {
     // by the common schedule-history reader. Compare the same immutable dated
     // schedule, then separately verify this employee's exact source records.
     const current={...schedule,...(stamp.payrollConfirmations?{payrollShiftConfirmationEvidence:stamp.payrollConfirmations}:{})};
-    if (actor !== identity() || payrollScheduleStamp(current,{start:data.start,end:data.end}) !== data.scheduleEvidenceStamp)
+    if (actor !== identity() || payrollScheduleStamp(current,{start:data.start,end:data.end},{bonusBranches}) !== data.scheduleEvidenceStamp)
         throw Error('The saved shift times changed. Regenerate this unpaid payslip and reopen it before payment.');
     await assertPayrollShiftConfirmationsFresh(api,data,stamp.payrollConfirmations,{assertCurrent:()=>{if(actor!==identity())throw Error('The payroll account changed. Generate this unpaid payroll again.');}});
 }

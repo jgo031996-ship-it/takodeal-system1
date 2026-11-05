@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {buildFranchisePayslip} from '../takodeal-franchise/franchise-payroll-model.js';
 import {attendanceEstimate} from '../takodeal-franchise/franchise-data.js';
+import {createScheduleRevision,assembleScheduleHistory} from '../takodeal-franchise/schedule-history.js';
 const branch='Sample Branch',staff={id:'sample-staff',branch,cashierName:'Sample Crew',hourlyRate:500};
 const at=(day,time)=>`${day}T${time}:00+08:00`;
 function punches(day='2026-10-01',id=staff.id){return [{id:'in-'+day,staffId:id,staffName:staff.cashierName,branch,type:'TIME IN',timestamp:at(day,'09:00'),scheduleSnapshot:{version:1,branch,staffName:staff.cashierName,shiftId:'m',shiftType:'Morning',wasScheduled:true,expectedStartAt:at(day,'09:00'),expectedEndAt:at(day,'17:30')}},{id:'out-'+day,staffId:id,staffName:staff.cashierName,branch,type:'TIME OUT',timeInLogId:'in-'+day,timestamp:at(day,'17:30')}];}
@@ -100,4 +101,17 @@ test('legacy deduction identity needs a unique directory; current staff IDs rema
 test('future effective deductions and scheduled penalties stay outside the current estimate',()=>{
  const model=buildFranchisePayslip(input({deductions:[row('future','Cash Advance',100,{effectiveDate:'2026-10-16'}),row('penalty','Sanction penalty',50,{scheduleVersion:1,effectiveDate:'2026-10-01'})]}));assert.equal(model.kind,'estimate');assert.equal(model.totals.deductions,0);assert.match(model.notes.join(' '),/separate HQ ledger review/);
  assert.equal(buildFranchisePayslip(input({deductions:[row('bad','Cash Advance',50,{effectiveDate:'2026-02-31'})]})).kind,'held');
+});
+
+function actualNightInput(nightDiffRate=50){
+ const person={...staff,hourlyRate:450,nightDiffRate,scheduleNickname:'SAMPLE'},rule=(id,startTime,endTime,shiftType)=>({id,name:id,startTime,endTime,shiftType,days:[0,1,2,3,4,5,6],active:true});
+ const current={currentYear:2026,currentMonth:10,employees:[{id:staff.id,name:staff.cashierName,nickname:'SAMPLE'}],branchConfig:{[branch]:[rule('m','09:00','17:30','morning'),rule('night','17:00','02:00','night')]},currentSchedule:{1:{[branch]:{scheduled:{m:'SAMPLE'},rest:[],unavailable:[],swaps:{}}}},holidays:{},unavailability:{}};
+ const revision=createScheduleRevision(current,{revisionId:'fictional-franchise-actual-work',effectiveFrom:'2026-10-01',savedAt:new Date(at('2026-10-01','00:00'))}),history=assembleScheduleHistory(current,[{month:'2026-10',revisions:[revision]}]);
+ const logs=punches();logs[0].timestamp=at('2026-10-01','17:11');logs[0].lateMinutes=37;logs[1].timestamp=at('2026-10-02','02:06');return input({staff:person,profiles:[person],logs,schedule:history});
+}
+test('actual Franchise payroll carries a bounded actual Night basis and reference hours without changing original punches or Morning lateness',()=>{
+ const source=actualNightInput(),before=structuredClone(source.logs),model=buildFranchisePayslip(source);assert.equal(model.kind,'estimate',JSON.stringify(model.reviewReasons));assert.equal(model.totals.basic,450);assert.equal(model.totals.bonus,50);assert.equal(model.totals.net,443.75);const row=model.attendanceRows[0];assert.equal(row.nightBonus,50);assert.equal(row.bonusBasis.source,'actual-punches');assert.equal(row.bonusBasis.shiftType,'night');assert.equal(row.bonusBasis.status,'qualified');assert.equal(row.expectedStartAt,+new Date(at('2026-10-01','09:00')));assert.equal(row.expectedEndAt,+new Date(at('2026-10-01','17:30')));assert.match(row.remark,/Night bonus: \+₱50\.00/);assert.match(row.remark,/Bonus basis: actual Night work · 8\.92h recorded/);assert.match(row.remark,/Scheduled reference: 09:00 am → 05:30 pm/i);assert.ok(JSON.stringify(row.bonusBasis).length<1500);assert.equal(Object.isFrozen(row.bonusBasis),true);assert.deepEqual(source.logs,before);
+});
+test('actual Night classification keeps an explicitly zero allowance and an older paid Franchise snapshot unchanged',()=>{
+ const source=actualNightInput(0),model=buildFranchisePayslip(source);assert.equal(model.kind,'estimate');assert.equal(model.totals.bonus,0);assert.match(model.attendanceRows[0].remark,/actual Night work.*no additional Mid\/Night bonus configured/);const record=saved(),before=structuredClone(record),paid=buildFranchisePayslip({...source,payrollRecords:[record]});assert.equal(paid.kind,'paid');assert.equal(paid.totals.bonus,350);assert.equal(paid.totals.net,3597.5);assert.deepEqual(record,before);
 });

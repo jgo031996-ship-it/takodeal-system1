@@ -33,6 +33,7 @@ import {loadStaffSalaryTimeline,staffRateForDate,staffProfileForWork,staffRateWo
 import { calculateLateMinutes, resolveScheduledShift, resolveAttendanceShift, captureAttendanceSchedule, latePay, earnedNightBonus, calculateShiftEarnings, attendanceLateMinutes, isMealDeduction } from './payroll-safety.js';
 import {phDay, pendingDueNotices, clockInRestriction, startPhilippineDayTimer, noticeIsDue, deductionIsDue, isPenaltyDeduction, acknowledgeSanction, sanctionReviewSummary} from './sanction-schedule.js';
 import {createScheduleHistoryStore, scheduleDateKey, monthKey, resolveScheduleForDate} from './schedule-history.js';
+import {createPayrollBonusHistoryStore} from './payroll-bonus-templates.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
 import {renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,staffScheduleDay,renderStaffScheduleConflict,emergencyReliefForClockIn,emergencyReliefTimeOutNotice} from './attendance-schedule-preview.js';
 import {installScheduleViewSync} from './schedule-view-sync.js';
@@ -2071,7 +2072,7 @@ window.loadPayslipVault = async function() {
             return n === baseNameLower || n === nickNameLower || n === strippedNameLower;
         };
 
-        let scheduleData = await createScheduleHistoryStore(window).loadRange(prevStartStr, endDateStr);
+        let scheduleData = await createPayrollBonusHistoryStore(window).loadRange(prevStartStr, endDateStr);
         if (!stillOpen()) return;
         let holidaysObj = scheduleData ? (scheduleData.holidays || {}) : {};
 
@@ -2192,15 +2193,18 @@ window.loadPayslipVault = async function() {
                     else if(shiftMultiplier===2)remark='<span style="color:#8b5cf6;font-weight:bold">Owner-approved straight duty · +₱'+earnings.straightBonus.toFixed(2)+' straight incentive</span>';
                     else if(earnings.shortHours>0)remark='<span style="color:#b45309">Short duty ('+hoursWorked.toFixed(2)+'h worked; '+earnings.shortHours.toFixed(2)+'h below 8h) · full daily pay retained</span>';
                     if(earnings.straightApprovalRequired)remark+='<br><span style="color:#b45309">Over 16h recorded · Owner straight-duty review pending.</span>';
-                    if(earnings.bonusReviewRequired)remark+='<br><span style="color:#b45309">Mid/Night bonus needs the approved shift category.</span>';
+                    if(earnings.bonusReviewRequired)remark+='<br><span style="color:#b45309">Actual-work Mid/Night bonus needs HQ review. '+String(earnings.bonusReviewReason||'Confirm the work recorded on these punches.').replace(/[&<>"\']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))+'</span>';
                     if(activeShift.matchedShift?.amendmentNeedsReview)remark+='<br><span style="color:#a16207;font-weight:bold">Shift correction — HQ must review the saved lateness decision.</span>';
                     else if (activeShift.matchedShift?.needsScheduleReview) remark += activeShift.matchedShift.scheduleSource === 'legacy-unverified'
                         ? '<br><span style="color:#a16207;font-weight:bold">Legacy estimate — schedule history was not saved for this date.</span>'
                         : '<br><span style="color:#a16207;font-weight:bold">Schedule history missing — review required; no inferred lateness.</span>';
 
+                    const bonusBasis=earnings.bonusBasis||null,bonusWorkType={morning:'Morning',mid:'Mid',night:'Night','mid-night':'Mid/Night',other:'Other'}[bonusBasis?.shiftType];
+                    if(bonusWorkType&&['actual-punches','owner-review'].includes(bonusBasis.source)&&Number.isFinite(bonusBasis.workedHours))remark+='<br><span style="color:#557061">Bonus basis: '+(bonusBasis.source==='owner-review'?'Owner-confirmed ':'actual ')+bonusWorkType+' work · '+bonusBasis.workedHours.toFixed(2)+'h recorded'+(bonusBasis.status==='qualified'&&earnings.nightBonus===0?' · no additional Mid/Night bonus configured':bonusBasis.status==='not-qualified'?' · no Mid/Night bonus for this work category':'')+'</span>';
+                    if(activeShift.matchedShift.expectedStartAt&&activeShift.matchedShift.expectedEndAt)remark+='<br><span style="color:#557061">Scheduled reference: '+activeShift.matchedShift.expectedStartAt.toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'})+' → '+activeShift.matchedShift.expectedEndAt.toLocaleTimeString('en-PH',{timeZone:'Asia/Manila',hour:'2-digit',minute:'2-digit'})+'</span>';
                     const thisShiftNightBonus = earnings.nightBonus;
                     tBonuses += thisShiftNightBonus;
-                    if(thisShiftNightBonus>0)remark+='<br><span style="color:#b45309">'+(earnings.bonusShiftType==='night'?'Night':'Mid')+' bonus: +₱'+thisShiftNightBonus.toFixed(2)+'</span>';
+                    if(thisShiftNightBonus>0)remark+='<br><span style="color:#b45309">'+(earnings.bonusShiftType==='night'?'Night':earnings.bonusShiftType==='mid-night'?'Mid/Night':'Mid')+' bonus: +₱'+thisShiftNightBonus.toFixed(2)+'</span>';
 
                     let logDateStr = staffRateWorkDate({timestamp:timeIn},activeShift.matchedShift);
                     let hType = holidaysObj[logDateStr];
@@ -2216,7 +2220,7 @@ window.loadPayslipVault = async function() {
                     if (totalManualPenaltyForShift > 0) { remark += `<br><span style="color:#b91c1c; font-weight:900; font-size:10px;">-₱${totalManualPenaltyForShift.toFixed(2)} Manual Penalty</span>`; tLate += totalManualPenaltyForShift; }
 
                     tShifts += shiftMultiplier;
-                    sPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: remark, dailyRate:appliedDailyRate,rateWorkDate:logDateStr,lateMins: (!lExempt && lMins > 0) ? lMins : 0 });
+                    sPairs.push({ dateObj: timeIn, in: timeIn, out: timeOut, hrs: hoursWorked, remark: remark, dailyRate:appliedDailyRate,rateWorkDate:logDateStr,bonusBasis:bonusBasis?{...bonusBasis,matchingShiftIds:[...(bonusBasis.matchingShiftIds||[])]}:null,bonusReviewReason:earnings.bonusReviewReason||'',nightBonus:thisShiftNightBonus,expectedStartAt:activeShift.matchedShift.expectedStartAt?.toISOString()||null,expectedEndAt:activeShift.matchedShift.expectedEndAt?.toISOString()||null,lateMins: (!lExempt && lMins > 0) ? lMins : 0 });
                     activeShift = null;
                 } else if (manualPenalty > 0) {
                     tLate += manualPenalty;

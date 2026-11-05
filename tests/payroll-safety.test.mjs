@@ -601,7 +601,8 @@ for(const name of ['loadPayrollGenerator','generateAutoPayslips']) {
         const time=new Date('2026-10-06T15:30:00+08:00'), captured=payroll.captureAttendanceSchedule(time,'Test Branch','Test Staff',original,{'Test Staff':profile});
         const edited=schedule('21:30','morning');edited.branchConfig['Test Branch'][0].startTime='13:00';
         const logs=[{...attendance(time,{scheduleSnapshot:captured}),timestamp:{toDate:()=>time}},{...attendance('2026-10-06T23:30:00+08:00'),type:'TIME OUT',timestamp:{toDate:()=>new Date('2026-10-06T23:30:00+08:00')}}];
-        const h=payrollUi({logs,scheduleData:edited,historyData:preservedHistory(edited),startDate:'2026-10-06',endDate:'2026-10-06'});
+        const originalRevision=savedRevision(original,'original-workdate-before-future-edit','2026-10-06');
+        const h=payrollUi({logs,scheduleData:edited,historyData:preservedHistory(edited,[originalRevision]),startDate:'2026-10-06',endDate:'2026-10-06'});
         vm.runInContext(extract(name),h.context);await h.window[name]();
         assert.deepEqual(h.errors,[]);const row=h.window.globalPayrollCache['Test Staff'];
         assert.equal(row.basicPay,450);assert.equal(row.lateDeduction,0);assert.equal(row.nightBonus,50);
