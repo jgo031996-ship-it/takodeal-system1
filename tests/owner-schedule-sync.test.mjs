@@ -5,6 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {createOwnerScheduleSync,installOwnerScheduleSync} from '../takodeal-manager/owner-schedule-sync.js';
 import {installScheduleMemoryUI} from '../takodeal-manager/schedule-memory-ui.js';
 import {validateShiftConfig} from '../takodeal-manager/payroll-safety.js';
+import {shiftAmendmentFingerprint} from '../takodeal-manager/schedule-history.js';
 
 const copy=structuredClone, tick=()=>new Promise(resolve=>setImmediate(resolve));
 const held=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
@@ -117,4 +118,38 @@ test('mobile visibility resumes clean data once, ignores cached snapshots and st
  const controller=installOwnerScheduleSync(w,dom.document,{readView:async()=>{reads++;return db.view('2026-10');},applyView:view=>current=copy(view.editorSnapshot),getSnapshot:()=>current,getMonth:()=> '2026-10',getIdentity:()=> 'owner',getExpectedRevision:()=>expected,setExpectedRevision:value=>expected=value,getEffectiveFrom:()=> '2026-10-16',saveSnapshot:db.save.bind(db)});await controller.load();assert.equal(subscribed.length,2);
  const head=subscribed.find(row=>row.id==='global_schedule'),snap=(fromCache,hasPendingWrites=false)=>({exists:()=>true,data:()=>db.snapshot,metadata:{fromCache,hasPendingWrites}});head.fn(snap(true));head.fn(snap(false,true));await tick();assert.equal(reads,1);
  dom.document.hidden=true;dom.listeners.get('visibilitychange')();assert.equal(stops,2);db.remote(schedule('After phone wakes'),'v2');dom.document.hidden=false;dom.listeners.get('visibilitychange')();events.get('pageshow')();events.get('online')();await tick();await tick();assert.equal(network,0);assert.equal(reads,2);assert.equal(current.currentSchedule[16].Maa.scheduled.n1,'After phone wakes');controller.stop();
+});
+
+function indexedOwnerDevice({updatedAt='2026-11-05T01:00:00.000Z'}={}){
+ const dom=fakeDom(),listeners=[],errors=[];let saved=schedule(),current=schedule(),expected,reads=0,actor='owner-one',month='2026-10',discard=false,index={schemaVersion:1,month,revisionIds:['v1'],latestRevisionId:'v1',updatedAt};
+ const w={addEventListener(){},ManagerUI:{confirm:async()=>discard},Swal:{isVisible:()=>false},managerCloudHealth:{report:error=>errors.push(error)},db:{},doc:(_db,_table,id)=>id,onSnapshot:(id,options,next,error)=>{assert.equal(options.includeMetadataChanges,true);const listener={id,next,error};listeners.push(listener);return ()=>listener.stopped=true;}};
+ const controller=installOwnerScheduleSync(w,dom.document,{draftStore:memoryDrafts(),readView:async selected=>{reads++;return {month:selected,editorSnapshot:copy(saved),expectedRevisionId:index.latestRevisionId,hasSavedSchedule:true,archive:{month:selected,revisions:[],latestRevisionId:index.latestRevisionId,indexFingerprint:shiftAmendmentFingerprint({index,durable:null})}};},applyView:view=>current=copy(view.editorSnapshot),getSnapshot:()=>current,getMonth:()=>month,getIdentity:()=>actor,getExpectedRevision:()=>expected,setExpectedRevision:value=>expected=value,getEffectiveFrom:()=>month+'-16',saveSnapshot:async()=>{throw Error('These listener tests must never save.');}});
+ const emit=(value=index,metadata={fromCache:false,hasPendingWrites:false})=>listeners.find(row=>row.id==='schedule_month_2026_10').next({exists:()=>value!==null,data:()=>value,metadata});
+ return {controller,dom,listeners,errors,emit,get reads(){return reads;},get current(){return current;},get expected(){return expected;},get index(){return index;},set index(value){index=value;},set saved(value){saved=value;},set actor(value){actor=value;},set month(value){month=value;},set discard(value){discard=value;}};
+}
+test('the actual Owner subscription reloads a one-day revision append even while the monthly editor head remains unchanged',async()=>{
+ const phone=indexedOwnerDevice();await phone.controller.load();phone.emit();await tick();assert.equal(phone.reads,1,'The already-applied initial server index does not trigger another load.');
+ phone.saved=schedule('Owner-corrected historical assignment');phone.index={...phone.index,revisionIds:['v1','worked-one-day'],updatedAt:'2026-11-05T02:00:00.000Z'};phone.emit();await tick();await tick();
+ assert.equal(phone.reads,2);assert.equal(phone.expected,'v1');assert.equal(phone.current.currentSchedule[16].Maa.scheduled.n1,'Owner-corrected historical assignment');
+ for(let i=0;i<5;i++)phone.emit({...phone.index});await tick();assert.equal(phone.reads,2,'Identical confirmed snapshots do not fan out into reads.');phone.controller.stop();
+});
+test('a revision-list change or updatedAt-only index change is independently observed without replacing the editor head',async()=>{
+ const phone=indexedOwnerDevice();await phone.controller.load();phone.index={...phone.index,revisionIds:['v1','worked-one-day']};phone.saved=schedule('Revision-list update');phone.emit();await tick();await tick();assert.equal(phone.reads,2);assert.equal(phone.expected,'v1');
+ phone.index={...phone.index,updatedAt:'2026-11-05T03:00:00.000Z'};phone.saved=schedule('Updated index evidence');phone.emit();await tick();await tick();assert.equal(phone.reads,3);assert.equal(phone.current.currentSchedule[16].Maa.scheduled.n1,'Updated index evidence');phone.controller.stop();
+});
+test('canonical Firestore timestamp index evidence dedupes the identical initial confirmed snapshot',async()=>{
+ class Stamp{constructor(){this.seconds=1762304400;this.nanoseconds=123000000;}toJSON(){return {type:'firestore/timestamp/1.0',seconds:this.seconds,nanoseconds:this.nanoseconds};}}
+ const phone=indexedOwnerDevice({updatedAt:new Stamp()});await phone.controller.load();phone.emit();await tick();assert.equal(phone.reads,1);phone.controller.stop();
+});
+for(const mode of ['draft','history'])test('a dated correction notification keeps an existing '+mode+' view until an explicit reload',async()=>{
+ const phone=indexedOwnerDevice();await phone.controller.load();if(mode==='draft')phone.current.currentSchedule[16].Maa.scheduled.n1='Unsaved local assignment';else phone.controller.setHistory(true);
+ phone.saved=schedule('New historical correction');phone.index={...phone.index,revisionIds:['v1','worked-one-day'],updatedAt:'2026-11-05T02:00:00.000Z'};phone.emit();await tick();assert.equal(phone.reads,1);assert.equal(phone.current.currentSchedule[16].Maa.scheduled.n1,mode==='draft'?'Unsaved local assignment':'Ana');assert.match(phone.dom.all.get('ownerScheduleSyncStatus').textContent,/Finish your current edits/);
+ phone.emit();await tick();assert.equal(phone.reads,1);phone.discard=true;await phone.controller.load({manual:true});assert.equal(phone.current.currentSchedule[16].Maa.scheduled.n1,'New historical correction');assert.equal(phone.expected,'v1');phone.controller.stop();
+});
+test('a cached, pending or missing-metadata month event cannot claim a confirmed dated correction',async()=>{
+ const phone=indexedOwnerDevice();await phone.controller.load();phone.index={...phone.index,revisionIds:['v1','worked-one-day']};phone.saved=schedule('Confirmed correction');for(const metadata of [{fromCache:true,hasPendingWrites:false},{fromCache:false,hasPendingWrites:true},{}])phone.emit(phone.index,metadata);await tick();assert.equal(phone.reads,1);phone.emit();await tick();await tick();assert.equal(phone.reads,2);phone.controller.stop();
+});
+test('an old actor or month subscription cannot reload or report an error in a newly selected Owner context',async()=>{
+ const phone=indexedOwnerDevice();await phone.controller.load();phone.index={...phone.index,revisionIds:['v1','worked-one-day']};phone.actor='another-owner';phone.emit();phone.listeners[0].error(Error('Old account listener stopped'));await tick();assert.equal(phone.reads,1);assert.equal(phone.errors.length,0);
+ phone.actor='owner-one';phone.month='2026-11';phone.emit();await tick();assert.equal(phone.reads,1);phone.controller.stop();phone.month='2026-10';phone.emit();await tick();assert.equal(phone.reads,1);
 });

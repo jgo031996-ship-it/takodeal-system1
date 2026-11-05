@@ -1,3 +1,7 @@
+import {installWorkedShiftCorrectionUI,workedShiftActionHint} from './worked-shift-correction-ui.js';
+import {projectWorkedShiftCorrections} from './worked-shift-reference.js';
+import {installPayrollAdjustmentRefresh,rememberPayslipInputs} from './payroll-adjustment-refresh.js';
+import {payrollRecoveryFromReview} from './payroll-recovery-model.js';
 import {isPayrollAdjustment,payrollAdjustmentPreview,payrollAdjustmentDetailsHTML} from './payroll-adjustment-model.js';
 import {installPayrollAdjustmentUI} from './payroll-adjustment-ui.js';
 import {normalizeStaffMessengerUrl} from './staff-messenger-link.js';
@@ -10,7 +14,7 @@ import {createCashierFleetApproval,isCashierFleetDevice} from './cashier-device-
 import {installPaymentReconciliation} from './payment-reconciliation-ui.js';
 import {installOwnerStockAudits} from './owner-stock-audits.js';
 import {installPendingPaymentReader} from './pending-payment-reader.js';
-import {installOwnerDeductionHistory} from './owner-deduction-history.js';
+import {installOwnerDeductionHistory,readOwnerPayrollRecoveryHistory,ownerDeductionHistoryRow} from './owner-deduction-history.js';
 import {installOwnerDeductions} from './owner-deduction-ui.js';
 import {isOwnerDeduction} from './owner-deduction-model.js';
 import {readPayrollOwnerDeductions,ownerDeductionDisplayRows,ownerDeductionRecoveryRows} from './owner-deduction-payroll.js';
@@ -24,7 +28,7 @@ import {installMenuOptions} from './menu-options-ui.js';
 import {installProductEditorLayout} from './product-editor-layout.js';
 import {installProductAddonDrafts,readProductAddonRows} from './product-options-draft.js';
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
-runManagerDomReady(() => {installStaffSetupCodes(window,document);installScheduleProposalReview(window,document);installPayrollAdjustmentUI(window,document);installPayrollMessenger(window,document,{presentSaved:async(saved,context)=>{context.assertCurrent();const frozen={...saved.frozenData,name:saved.frozenData?.name||context.name,staffId:context.staffId,branch:saved.frozenData?.branch||context.branch,start:context.start,end:context.end,isPaid:true,finalNetPay:saved.finalNetPay,...(saved.processedAt?{processedAt:saved.processedAt}:{}),...(saved.staffSignature?{staffSignature:saved.staffSignature}:{})};signedPayslipSnapshots.set(frozen,context.assertCurrent);await window.openPayslipModal(frozen.name,frozen);context.assertCurrent();return frozen;}});});
+runManagerDomReady(() => {installStaffSetupCodes(window,document);installScheduleProposalReview(window,document);installPayrollAdjustmentUI(window,document);installPayrollAdjustmentRefresh(window,document);installPayrollMessenger(window,document,{presentSaved:async(saved,context)=>{context.assertCurrent();const frozen={...saved.frozenData,name:saved.frozenData?.name||context.name,staffId:context.staffId,branch:saved.frozenData?.branch||context.branch,start:context.start,end:context.end,isPaid:true,finalNetPay:saved.finalNetPay,...(saved.processedAt?{processedAt:saved.processedAt}:{}),...(saved.staffSignature?{staffSignature:saved.staffSignature}:{})};signedPayslipSnapshots.set(frozen,context.assertCurrent);await window.openPayslipModal(frozen.name,frozen);context.assertCurrent();return frozen;}});});
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {lateRequestSummary,lateRequestSummaryHTML,lateRequestRecoveryContext} from './late-request-summary.js';
 import {resolveCorrectedLateRequest,lateRequestResolutionFingerprint,reviewOriginalLateRequest} from './late-request-resolution.js';
@@ -106,6 +110,25 @@ window.refreshPayrollAfterAttendanceCorrection = async function(context={}) {
 };
 window.openHRReviewCenter = context => {window.hrReviewCenter ||= installHRReviewCenter(window,document);return window.hrReviewCenter.open(context);};
 window.openAttendanceRecovery = context => window.openHRReviewCenter(context);
+window.openPayrollWorkedShift = async function(data,log){
+ const actor=payrollActorKey(window),from=data.start,to=data.end;
+ const assertCurrent=()=>{if(payrollActorKey(window)!==actor||window.currentPayslipData!==data||window.globalPayrollCache?.[data.name]!==data||data.isPaid||window.paidPayrollSnapshots?.has(data))throw Error('Reopen the selected unpaid payslip before applying its worked shift.');};
+ assertCurrent();window.requirePayrollPreview(data);
+ const context={attendanceLogId:log.attendanceLogId,staffId:data.staffId,branch:log.branch||data.branch,from,to};
+ return (window.workedShiftCorrectionUI ||= installWorkedShiftCorrectionUI(window,document)).open(context,{assertCurrent,onApplied:async()=>{
+  window.invalidateCache?.('global_schedule');window.invalidateCollectionCache?.('settings');
+  window.invalidateCache?.('attendance_logs');invalidatePayrollLoad(window);
+  await (window.payrollAdjustmentRefresh ||= installPayrollAdjustmentRefresh(window,document)).refresh({staffId:data.staffId});
+  if(payrollActorKey(window)!==actor)throw Error('The payroll account changed. Reopen the selected cutoff.');
+ }});
+};
+window.applyWorkedShiftFromRoster=async function(day,branch,staffName){
+ const workDate=String(currentYear)+'-'+String(currentMonth).padStart(2,'0')+'-'+String(day).padStart(2,'0'),directory=scheduleIdentityDirectory(window.scheduleDirectoryProfiles||[],employees),actor=payrollActorKey(window);
+ let person=resolveScheduleEmployeeReference(staffName,directory);
+ if(!person){const options=Object.fromEntries(directory.filter(row=>row.scheduleEligible&&row.staffId).map(row=>[row.staffId,row.name+' · '+row.branch]));const answer=await window.Swal.fire({title:'Apply worked shift · '+workDate,input:'select',inputOptions:options,inputPlaceholder:'Choose the employee who worked',showCancelButton:true,confirmButtonText:'Apply worked shift'});if(!answer.isConfirmed||!answer.value)return false;person=directory.find(row=>row.staffId===answer.value);}
+ if(!person)return false;
+ return (window.workedShiftCorrectionUI ||= installWorkedShiftCorrectionUI(window,document)).open({staffId:person.staffId,branch,workDate},{assertCurrent:()=>{if(payrollActorKey(window)!==actor)throw Error('The Owner account changed.');},onApplied:async()=>{const sync=window.getOwnerScheduleSync();if(!sync.isDirty?.())await sync.load({month:workDate.slice(0,7),manual:false,reason:'worked-shift'});}});
+};
 window.openPayrollFromHR = function(context={}) {
  if(!canOpenWorkspacePage(window.sessionUser,'payroll'))return window.ManagerUI.notify('Your account does not have payroll access.');
  const valid=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value+'T00:00:00Z'))&&new Date(value+'T00:00:00Z').toISOString().slice(0,10)===value;
@@ -8445,9 +8468,9 @@ window.getOwnerScheduleSync = function() {
             if(saved.status==='rejected')throw saved.reason;
             if(staff.status==='rejected'||staff.value.metadata?.fromCache||staff.value.metadata?.hasPendingWrites)throw Error('Reconnect to HQ to confirm current staff before opening schedule assignments.');
             const directory=staff.status==='fulfilled'?staff.value.docs.map(doc=>toScheduleEmployee(doc.data(),doc.id)).filter(Boolean):null;
-            return {...saved.value,directory};
+            return {...projectWorkedShiftCorrections(saved.value),directory};
         },
-        applyView:async view=>{window.scheduleDirectoryProfiles=view.directory;await window.applyScheduleMemorySnapshot(view.editorSnapshot);scheduleMemoryUI?.bindView(view);},
+        applyView:async view=>{window.ownerScheduleDatedView=view;window.scheduleDirectoryProfiles=view.directory;await window.applyScheduleMemorySnapshot(view.editorSnapshot);scheduleMemoryUI?.bindView(view);},
         saveSnapshot:(snapshot,options)=>{if(window.scheduleMemoryReadOnly)throw Error('This saved schedule version is read-only.');return window.getScheduleHistoryStore().save(snapshot,{...options,actor:window.sessionUser.email});},
         onSaved:async result=>{scheduleMemoryUI?.recordSaved(result);window.renderTables();}
     });
@@ -9167,7 +9190,7 @@ window.openSwapModal = async function(day, branch, shiftId) {
     
     let dayData = schedObj[day][branch];
     let curStaff = dayData.scheduled[shiftId];
-    if(window.scheduleMemoryReadOnly)return window.ManagerUI.notify('This saved schedule version is read-only. Reload the latest schedule before assigning staff.');
+    if(window.scheduleMemoryReadOnly||String(currentYear)+'-'+String(currentMonth).padStart(2,'0')+'-'+String(day).padStart(2,'0')<scheduleDateKey(new Date()))return window.applyWorkedShiftFromRoster(day,branch,curStaff);
     window.captureTempShiftConfig?.();
     
     if (typeof swapData !== 'undefined') {
@@ -10602,7 +10625,7 @@ window.loadPayrollGenerator = async function() {
                     candidateNightBonus:earnings.straightReviewNightBonus,candidateNightCoverage:earnings.straightReviewNightCoverage,
                     holidayMultiplier:hType==='Regular'?0.5:hType==='Special'?0.1:0,
                     paidUnits:shiftMultiplier,shortHours:earnings.shortHours,straightBonus:thisShiftStraightBonus,nightBonus:thisShiftNightBonus,
-                    bonusBasis:bonusBasis?{...bonusBasis,matchingShiftIds:[...(bonusBasis.matchingShiftIds||[])]}:null,bonusReviewReason:earnings.bonusReviewReason||'',
+                    workedShiftCorrectionId:activeShifts[name].matchedShift.workedShiftCorrectionId||null,bonusBasis:bonusBasis?{...bonusBasis,matchingShiftIds:[...(bonusBasis.matchingShiftIds||[])]}:null,bonusReviewReason:earnings.bonusReviewReason||'',
                     straightApprovalRequired:earnings.straightApprovalRequired,bonusReviewRequired:earnings.bonusReviewRequired,
                     dailyRate,rateWorkDate:logDateStr,
                     scheduleSource:activeShifts[name].matchedShift.scheduleSource,
@@ -10981,21 +11004,21 @@ window.openPayslipModal = async function(staffName, savedHistoryData = null) {
     let attBody = document.getElementById('psAttendanceBody');
     if (attBody) attBody.innerHTML = attHtml;
     if(!paidView&&attBody)data.logs?.forEach((log,index)=>{
-        const hint=payrollBonusReviewHint(window,data,log);if(!hint)return;
+        const hint=workedShiftActionHint(window,data,log);if(!hint)return;
         const cell=attBody.querySelectorAll?.('tr')?.[index]?.querySelector?.('td:last-child');if(!cell)return;
         const source=JSON.stringify([log.attendanceLogId,log.timeInAt,log.timeOutAt,log.expectedStartAt,log.expectedEndAt,log.rateWorkDate,log.nightBonus,log.bonusBasis,log.bonusReviewReason]);
-        const note=document.createElement('div');note.innerHTML=payrollBonusReviewHintHTML(hint);cell.appendChild(note);
-        const button=document.createElement('button');button.type='button';button.className='ps-correction-button';button.textContent=hint.actionLabel;button.dataset.payrollBonusReview=String(index);
+        const note=document.createElement('small');note.textContent='Apply the saved branch shift for this work date.';cell.appendChild(note);
+        const button=document.createElement('button');button.type='button';button.className='ps-correction-button';button.textContent=hint.label;button.dataset.payrollBonusReview=String(index);
         button.onclick=async()=>{try{
             window.requirePayrollPreview(data);
             if(window.currentPayslipData!==data||data.logs?.[index]!==log||source!==JSON.stringify([log.attendanceLogId,log.timeInAt,log.timeOutAt,log.expectedStartAt,log.expectedEndAt,log.rateWorkDate,log.nightBonus,log.bonusBasis,log.bonusReviewReason]))throw Error('This attendance row changed. Generate a fresh payroll list before reviewing its assigned shift.');
-            return await openPayrollBonusReviewHint(window,data,log);
+            return await window.openPayrollWorkedShift(data,log);
         }catch(error){window.ManagerUI?.notify?.(error.message);}};
         cell.appendChild(button);
     });
     if(!paidView&&attBody)data.logs?.forEach((log,index)=>{
         if(!log.attendanceLogId||!log.straightApprovalRequired&&!log.bonusReviewRequired)return;
-        if(!log.straightApprovalRequired&&payrollBonusReviewHint(window,data,log))return;
+        if(!log.straightApprovalRequired&&workedShiftActionHint(window,data,log))return;
         const cell=attBody.querySelectorAll?.('tr')?.[index]?.querySelector?.('td:last-child');if(!cell)return;
         const button=document.createElement('button');button.type='button';button.className='ps-correction-button';button.textContent=log.straightApprovalRequired?'Review & approve straight duty':'Review actual-work bonus';
         button.onclick=async()=>{try{window.requirePayrollPreview(data);if(window.currentPayslipData!==data)throw Error('Reopen this employee’s latest payroll.');
@@ -11018,6 +11041,7 @@ window.openPayslipModal = async function(staffName, savedHistoryData = null) {
         }catch(error){window.ManagerUI?.notify?.(error.message);}
     };});
 
+    if(!paidView)rememberPayslipInputs(data,document);
     if (typeof window.recalcPayslip === 'function') window.recalcPayslip();
     const printablePayslip=document.getElementById('printablePayslip');printablePayslip?.setAttribute?.('data-saved-history',savedHistoryData?'true':'false');
     printablePayslip?.querySelectorAll?.('input')?.forEach(input=>{input.disabled=!!savedHistoryData;});
@@ -11066,9 +11090,9 @@ window.recalcPayslip = function() {
     const paidSnapshot=window.currentPayslipData;
     if((paidSnapshot?.isPaid||window.paidPayrollSnapshots?.has(paidSnapshot))&&Number.isFinite(Number(paidSnapshot?.finalNetPay)))net=Number(paidSnapshot.finalNetPay);
 
-    safeSetText('psGross', gross.toLocaleString(undefined, {minimumFractionDigits: 2}));
-    safeSetText('psTotalDeduct', deductions.toLocaleString(undefined, {minimumFractionDigits: 2}));
-    safeSetText('psNetPay', net.toLocaleString(undefined, {minimumFractionDigits: 2}));
+    safeSetText('psGross', gross.toLocaleString(undefined, {minimumFractionDigits: 2,maximumFractionDigits: 2}));
+    safeSetText('psTotalDeduct', deductions.toLocaleString(undefined, {minimumFractionDigits: 2,maximumFractionDigits: 2}));
+    safeSetText('psNetPay', net.toLocaleString(undefined, {minimumFractionDigits: 2,maximumFractionDigits: 2}));
     if((paidSnapshot?.attendanceReviewRequired||paidSnapshot?.salaryReviewRequired)&&!paidSnapshot.isPaid&&!window.paidPayrollSnapshots?.has(paidSnapshot)){
         const pendingLabel=paidSnapshot.salaryReviewRequired?'Awaiting rate review':'Review pending';safeSetText('psBasicPay',pendingLabel);safeSetText('psGross',pendingLabel);safeSetText('psNetPay',pendingLabel);safeSetText('psDaysWorked','review pending');
     }
@@ -11756,7 +11780,7 @@ window.generateAutoPayslips = async function() {
                     candidateNightBonus:earnings.straightReviewNightBonus,candidateNightCoverage:earnings.straightReviewNightCoverage,
                     holidayMultiplier:hType==='Regular'?0.5:hType==='Special'?0.1:0,
                     paidUnits:shiftMultiplier,shortHours:earnings.shortHours,straightBonus:thisShiftStraightBonus,nightBonus:thisShiftNightBonus,
-                    bonusBasis:bonusBasis?{...bonusBasis,matchingShiftIds:[...(bonusBasis.matchingShiftIds||[])]}:null,bonusReviewReason:earnings.bonusReviewReason||'',
+                    workedShiftCorrectionId:activeShifts[name].matchedShift.workedShiftCorrectionId||null,bonusBasis:bonusBasis?{...bonusBasis,matchingShiftIds:[...(bonusBasis.matchingShiftIds||[])]}:null,bonusReviewReason:earnings.bonusReviewReason||'',
                     straightApprovalRequired:earnings.straightApprovalRequired,bonusReviewRequired:earnings.bonusReviewRequired,
                     dailyRate,rateWorkDate:logDateStr,
                     scheduleSource:activeShifts[name].matchedShift.scheduleSource,
@@ -22519,10 +22543,10 @@ window.calculatePlatformFinancials = async function() {
 
     // 5. Update UI Dashboard Cards
     let grabEl = document.getElementById('dashGrabGross');
-    if (grabEl) grabEl.innerText = `₱${window.platformFinancialData.Grab.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    if (grabEl) grabEl.innerText = `₱${window.platformFinancialData.Grab.gross.toLocaleString(undefined, {minimumFractionDigits: 2,maximumFractionDigits: 2})}`;
     
     let fpEl = document.getElementById('dashFpGross');
-    if (fpEl) fpEl.innerText = `₱${window.platformFinancialData.Foodpanda.gross.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
+    if (fpEl) fpEl.innerText = `₱${window.platformFinancialData.Foodpanda.gross.toLocaleString(undefined, {minimumFractionDigits: 2,maximumFractionDigits: 2})}`;
 
     // 6. Refresh Modal if it happens to be open!
     if (window.currentOpenPlatform && document.getElementById('platformFinanceModal')) {
@@ -24188,15 +24212,18 @@ window.openEmployeeProfile = function(docId) {
 
     Promise.all([
         window.getDocsFromServer(window.query(window.collection(window.db,'staff_deductions'),window.where('staffId','==',docId))),
-        window.getDocsFromServer(window.query(window.collection(window.db,'staff_deductions'),window.where('staffName','==',String(data.cashierName||data.fullName||data.name||''))))
-    ]).then(results=>{
-        const rows=[...new Map(results.flatMap(snap=>snap.docs).map(row=>[row.id,row])).values()].filter(row=>!row.data().staffId||row.data().staffId===docId);
+        window.getDocsFromServer(window.query(window.collection(window.db,'staff_deductions'),window.where('staffName','==',String(data.cashierName||data.fullName||data.name||'')))),
+        window.getDocsFromServer(window.query(window.collection(window.db,'staff_bonuses'),window.where('staffId','==',docId)))
+    ]).then(async results=>{
+        const rows=[...new Map(results.slice(0,2).flatMap(snap=>snap.docs).map(row=>[row.id,row])).values()].filter(row=>!row.data().staffId||row.data().staffId===docId);
         rows.sort((a,b)=>{const date=row=>row.data().dateAdded?.toDate?.()?.getTime()||new Date(row.data().dateAdded||0).getTime()||0;return date(b)-date(a);});
-        const snap={forEach:callback=>rows.slice(0,50).forEach(callback)};
+        const shown=rows.slice(0,50),joined=await readOwnerPayrollRecoveryHistory(window,shown.map(row=>({...row.data(),id:row.id})),{staffId:docId,assertCurrent:()=>{if(!currentProfile())throw Error('The employee profile changed.');}});
+        const snap={forEach:callback=>shown.forEach(callback)};
         if(!currentProfile())return;
         let histHtml = '';
         snap.forEach(dDoc => {
             let d = dDoc.data();
+            if(isOwnerDeduction({...d,id:dDoc.id})){histHtml+=ownerDeductionHistoryRow(joined.get(dDoc.id)||{...d,id:dDoc.id});return;}
             let dateStr = d.dateAdded ? (d.dateAdded.toDate ? d.dateAdded.toDate().toLocaleDateString() : new Date(d.dateAdded).toLocaleDateString()) : '';
             let color = d.status === 'Paid' ? '#16a34a' : '#dc2626';
             installSanctionScheduling(window, document);
@@ -24211,11 +24238,12 @@ window.openEmployeeProfile = function(docId) {
             if(d.type==='Online Order Refund')actionHtml=`<button onclick="window.reviewOnlineRefundIncident('${dDoc.id}')" style="min-height:44px;padding:8px 12px;">Review incident</button>`;
             if(d.type==='Cash Shortage'||dDoc.id.startsWith('cash-shortage-'))actionHtml=canReviewCashShortage(window)&&d.sourceShiftId?`<button type="button" data-cash-shortage="${escapeHtml(d.sourceShiftId)}" style="min-height:44px;padding:8px 12px;">Review cash shortage</button>`:'<span style="font-size:11px;color:#64748b">Owner review · protected payroll</span>';
 
-            if(isOwnerDeduction({...d,id:dDoc.id}))actionHtml=`<button type="button" data-owner-deduction="${escapeHtml(dDoc.id)}" style="min-height:44px;padding:8px 12px;">Review one-time deduction</button>`;
+            const recovery=null;
+            if(isOwnerDeduction({...d,id:dDoc.id}))actionHtml=`<button type="button" ${recovery?'data-payroll-recovery':'data-owner-deduction'}="${escapeHtml(dDoc.id)}" style="min-height:44px;padding:8px 12px;">${recovery?'Open payroll adjustment':'Review one-time deduction'}</button>`;
             histHtml += `<tr ${isOwnerDeduction({...d,id:dDoc.id})?`data-owner-deduction-history="${escapeHtml(dDoc.id)}"`:""} style="border-bottom: 1px solid #f1f5f9; transition: 0.2s;" onmouseover="this.style.background='#f8fafc'" onmouseout="this.style.background='white'">
                 <td style="padding:12px 8px; color: #64748b;">${dateStr}</td>
-                <td style="padding:12px 8px; font-weight: bold; color: #334155;">${escapeHtml(d.type)}${isOwnerDeduction({...d,id:dDoc.id})?`<br><small>${escapeHtml(d.label||'Owner adjustment')} · ${escapeHtml(d.category||'')}<br>${d.effectiveDate?'Payroll date: '+escapeHtml(d.effectiveDate):'Awaiting review'}</small>`:''}${d.type==='Online Order Refund' ? `<br><small>${escapeHtml(d.sourcePlatform)} · ${escapeHtml(d.sourceReceiptId)} · Refund reported: ₱${Number(d.proposedAmount||0).toFixed(2)}</small>` : ''}</td>
-                <td style="padding:12px 8px; font-weight:900; color:#ea580c;">₱${(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2})}</td>
+                <td style="padding:12px 8px; font-weight: bold; color: #334155;">${escapeHtml(recovery?'Previous payroll adjustment':d.type)}${isOwnerDeduction({...d,id:dDoc.id})?`<br><small>${escapeHtml(d.label||'Owner adjustment')} · ${escapeHtml(d.category||'')}<br>${d.effectiveDate?'Payroll date: '+escapeHtml(d.effectiveDate):'Awaiting review'}</small>`:''}${d.type==='Online Order Refund' ? `<br><small>${escapeHtml(d.sourcePlatform)} · ${escapeHtml(d.sourceReceiptId)} · Refund reported: ₱${Number(d.proposedAmount||0).toFixed(2)}</small>` : ''}</td>
+                <td style="padding:12px 8px; font-weight:900; color:#ea580c;">${recovery&&d.status==='Pending Review'?'−₱'+Number(d.proposedAmount||0).toFixed(2)+' proposed · ₱0 applied':'₱'+(d.amount||0).toLocaleString(undefined, {minimumFractionDigits:2,maximumFractionDigits:2})}</td>
                 <td style="padding:12px 8px; color:${color}; font-weight:bold;">${d.status}</td>
                 <td style="padding:12px 8px;">
                     <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">${actionHtml}</div>
@@ -24223,6 +24251,9 @@ window.openEmployeeProfile = function(docId) {
             </tr>`;
         });
 
+        if(!results[2].metadata?.fromCache&&!results[2].metadata?.hasPendingWrites)results[2].docs.map(row=>({...row.data(),id:row.id})).filter(row=>row.staffId===docId&&isPayrollAdjustment(row)).forEach(row=>{
+            histHtml='<tr data-payroll-credit-history="'+escapeHtml(row.id)+'"><td style="padding:12px 8px">'+escapeHtml(row.effectiveDate||'')+'</td><td style="padding:12px 8px"><strong>Previous payroll adjustment</strong><br><small>'+escapeHtml(row.originalStart)+' to '+escapeHtml(row.originalEnd)+'</small></td><td style="padding:12px 8px;color:#166534">+₱'+Number(row.amount||0).toFixed(2)+'</td><td style="padding:12px 8px">'+escapeHtml(row.status)+'</td><td style="padding:12px 8px"><button type="button" data-payroll-credit-open data-payroll-credit-staff="'+escapeHtml(row.staffId)+'" data-payroll-credit-actor="'+escapeHtml(profileActorUid)+'">Open payroll adjustment</button></td></tr>'+histHtml;
+        });
         if (tbody) tbody.innerHTML = histHtml || '<tr><td colspan="5" style="text-align: center; padding: 15px; color: #94a3b8;">No deduction history.</td></tr>';
         if(tbody)formatStaffDeductionHistory(tbody);
     }).catch(e => {

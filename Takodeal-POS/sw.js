@@ -1,6 +1,6 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-actual-work-bonus-20261105';
+const CORE = 'takodeal-pos-core-quick-payroll-20261105';
 
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
@@ -24,6 +24,7 @@ required.push('./pos-settings-model.js','./pos-settings-hub.js','./pos-settings.
 required.push('./cashier-schedule-proposals.js','./cashier-schedule-proposals.css','./schedule-proposal-model.js');
 const libraries = [sdk + 'firebase-app.js', sdk + 'firebase-firestore.js', sdk + 'firebase-auth.js', sdk + 'firebase-storage.js',
   'https://cdn.jsdelivr.net/npm/sweetalert2@11'];
+required.push('./worked-shift-reference.js');
 const trustedLibrary = url => url.startsWith(sdk) || url.startsWith('https://cdn.jsdelivr.net/');
 const MODEL_ROOT = new URL('./vendor/face-models/', ROOT).href;
 const modelNames = ['tiny_face_detector', 'face_landmark_68_tiny'];

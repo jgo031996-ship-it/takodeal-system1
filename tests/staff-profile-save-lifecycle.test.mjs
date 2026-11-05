@@ -1,3 +1,6 @@
+import {readOwnerPayrollRecoveryHistory,ownerDeductionHistoryRow} from '../takodeal-manager/owner-deduction-history.js';
+import {isPayrollAdjustment} from '../takodeal-manager/payroll-adjustment-model.js';
+import {payrollRecoveryEvidence,PAYROLL_RECOVERY_LABEL} from '../takodeal-manager/payroll-recovery-model.js';
 import {isOwnerDeduction} from '../takodeal-manager/owner-deduction-model.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,7 +19,7 @@ function actualFunction(name) {
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-function fixture({missingId = false, deferredHistory = false} = {}) {
+function fixture({missingId = false, deferredHistory = false, deductionRows = [], creditRows = [], recoveryReviews = {}, owner = false} = {}) {
     const nodes = new Map(), saves = [], queries = [], notices = [], histories = [];
     let deductions = [], nextId = 0;
     const profiles = {
@@ -43,6 +46,7 @@ function fixture({missingId = false, deferredHistory = false} = {}) {
         return nodes.get(id);
     };
     const empty = {docs:[],forEach() {}};
+    const snapshot=rows=>({docs:rows.map(row=>({id:row.id,data:()=>row})),metadata:{fromCache:false,hasPendingWrites:false}});
     const api = {
         db:{}, sessionUser:{}, globalStaffData:profiles, crypto,
         auth:{currentUser:{uid:'owner', email:'owner@example.test', emailVerified:true}},
@@ -57,14 +61,16 @@ function fixture({missingId = false, deferredHistory = false} = {}) {
                 finish:type => {const row={id:type,data:()=>({type,status:'Unpaid',amount:10,dateAdded:'2026-10-08'})};resolve({docs:[row],forEach:visit=>visit(row)});},
                 fail:() => reject(Error('Simulated history read failure'))
             });
-        }) : Promise.resolve(empty),
+        }) : Promise.resolve(q.table==='staff_deductions'?snapshot(deductionRows.filter(row=>q.clauses.every(clause=>row[clause.field]===clause.value))):q.table==='staff_bonuses'?snapshot(creditRows):empty),
         addCustomDeductionRow:(name, amount) => deductions.push({querySelector:selector => ({value:selector === '.cd-name' ? name : String(amount)})})
     };
+    if(owner){api.auth.currentUser={uid:'owner',email:'jgo031996@gmail.com',emailVerified:true,providerData:[{providerId:'google.com'}]};api.sessionUser={uid:'owner',email:'jgo031996@gmail.com',isOwner:true,permissions:['all'],allowedBranches:['All']};}
+    api.getDocFromServer=async ref=>({exists:()=>!!recoveryReviews[ref.id],metadata:{fromCache:false,hasPendingWrites:false},data:()=>recoveryReviews[ref.id]});
     const atomic = async (_, id, payload, options) => new Promise((resolve, reject) => {
         saves.push({id, payload:structuredClone(payload), options:structuredClone(options),
             finish:() => resolve({profile:{...profiles[id], ...payload}}), fail:() => reject(Error('Simulated old save failure'))});
     });
-    const context = {isOwnerDeduction,normalizeStaffMessengerUrl,formatStaffDeductionHistory,
+    const context = {isOwnerDeduction,isPayrollAdjustment,readOwnerPayrollRecoveryHistory,ownerDeductionHistoryRow,normalizeStaffMessengerUrl,formatStaffDeductionHistory,
         window:api, document:{getElementById:node, querySelectorAll:() => deductions},escapeHtml,
         dailyStaffRate, staffProfileOperation, saveStaffProfileAtomic:atomic,
         Swal:{fire:(...args) => notices.push(args)}, installSanctionScheduling() {},
@@ -84,6 +90,12 @@ test('the actual profile save accepts a direct encrypted Messenger thread and sa
 });
 test('unsafe encrypted-thread links stop the actual profile save before transport and preserve the entered profile',async()=>{
  for(const link of ['https://facebook.com.example.test/messages/e2ee/t/009876543210','https://facebook.com/messages/e2ee/t/009876543210?next=other']){const f=fixture();f.api.openEmployeeProfile('A');f.node('empMessengerUrl').value=link;await f.api.saveEmployeeProfile();assert.equal(f.saves.length,0);assert.equal(f.node('employeeProfileModal').style.display,'flex');assert.equal(f.node('empMessengerUrl').value,link);assert.match(f.notices.at(-1),/direct HTTPS/);}
+});
+
+test('actual employee profile history joins a sparse protected charge to its Owner review and retains separate positive credits',async()=>{
+ const id='owner-deduction-11111111-1111-4111-8111-111111111111',label=PAYROLL_RECOVERY_LABEL+' · 2026-10-01 to 2026-10-15',charge={id,staffId:'A',staffName:'Employee A',branch:'Maa',type:'Owner Custom Deduction',label,category:'Other',incidentDate:'2026-10-15',status:'Pending Review',amount:0,reviewRevision:1},reference={staffId:'A',originalStart:'2026-10-01',originalEnd:'2026-10-15',sourcePayrollRecordId:'original-paid',sourceNetPay:1000},review={...charge,revision:1,proposedAmount:75,sourceLossCents:10000,evidence:payrollRecoveryEvidence(reference),details:'The original payroll included an unintended duplicate amount.'},credit={id:'payroll-adjustment-'+ 'a'.repeat(64),type:'Payroll Adjustment',staffId:'A',amount:25,status:'Unpaid',originalStart:'2026-09-01',originalEnd:'2026-09-15',effectiveDate:'2026-11-05'};
+ const f=fixture({owner:true,deductionRows:[charge],creditRows:[credit],recoveryReviews:{[id]:review}});f.api.openEmployeeProfile('A');const deadline=Date.now()+5000;while(/Loading/.test(f.node('empProfileHistoryBody').innerHTML)){assert.ok(Date.now()<deadline,'Actual profile history settled');await new Promise(resolve=>setTimeout(resolve,2));}
+ const html=f.node('empProfileHistoryBody').innerHTML;assert.match(html,/−₱75\.00 proposed · ₱0 applied/);assert.match(html,/data-payroll-recovery/);assert.match(html,/original-paid/);assert.match(html,/\+₱25\.00/);assert.doesNotMatch(html,/Error loading history|₱0\.00 proposed|Review one-time deduction/);
 });
 
 test('confirmed employee profile updates and new staff saves close their own editor after acknowledgement', async () => {

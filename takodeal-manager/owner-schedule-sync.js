@@ -1,19 +1,21 @@
 import {createScheduleRecoveryDraftStore,scheduleRecoveryScope,scheduleDraftSnapshot,scheduleDraftKey,scheduleSnapshotFingerprint,planScheduleDraftRecovery} from './schedule-recovery-draft.js';
 import {planScheduleCalendar,scheduleCalendarError} from './schedule-calendar.js';
+import {shiftAmendmentFingerprint} from './schedule-history.js';
 const clone=value=>structuredClone(value);
 const fingerprint=value=>JSON.stringify(value,(_key,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
+const loadedMonthStamp=view=>{try{const saved=JSON.parse(view?.archive?.indexFingerprint);return saved&&Object.hasOwn(saved,'index')?shiftAmendmentFingerprint(saved.index):undefined;}catch{return undefined;}};
 /** Owns only the editor's read/save lifecycle. It never changes schedule rules. */
 export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth,getIdentity,authorize=()=>true,getExpectedRevision,setExpectedRevision,getEffectiveFrom,saveSnapshot,
  isActive=()=>true,isProtected=()=>false,confirmDiscard=async()=>false,subscribe=()=>()=>{},onStatus=()=>{},onSaved=()=>{},onLoading=()=>{},makeId=()=>crypto.randomUUID(),timeoutMs=20000,setTimeoutFn=setTimeout,clearTimeoutFn=clearTimeout,
  captureEditor=getSnapshot,applyRecoveredSnapshot,setEffectiveFrom=()=>{},draftStore=createScheduleRecoveryDraftStore(),onRecovery=()=>{},health={},now=()=>new Date(),saveTimeoutMs=timeoutMs,editorId='editor-'+crypto.randomUUID()}={}){
- let loaded=null,loadedIdentity=null,baseline=null,uiDirty=false,history=false,epoch=0,watchStop=null,watchKey='',saveFlight=null,queuedSave=null,headStamp,requestId=null,followUp=false;const reads=new Map();
+ let loaded=null,loadedIdentity=null,baseline=null,uiDirty=false,history=false,epoch=0,watchStop=null,watchKey='',saveFlight=null,queuedSave=null,headStamp,monthStamp,requestId=null,followUp=false;const reads=new Map();
  let baselineEffectiveFrom=null,backupQueue=Promise.resolve(),lastBackup=null,backupError='',recoveryCandidates=[],recoveryPlan=null,recoveryEpoch=0,requiresReload=false,lastError=null;
  const scopes=new Map(),restoredSources=new Set(),calendarBackups=new Map();
  const identity=()=>fingerprint(getIdentity()),dirty=()=>uiDirty||baseline!==null&&(fingerprint(getSnapshot())!==baseline||baselineEffectiveFrom!==null&&getEffectiveFrom()!==baselineEffectiveFrom);
  const status=(message,error=false)=>onStatus(message,error);
  const failed=()=>health.isFailed?.()===true;
  const report=error=>{lastError=error;try{health.report?.(error);}catch{}};
- const stop=()=>{const finish=watchStop;watchStop=null;watchKey='';headStamp=undefined;followUp=false;try{finish?.();}catch(error){report(error);}};
+ const stop=()=>{const finish=watchStop;watchStop=null;watchKey='';headStamp=undefined;monthStamp=undefined;followUp=false;try{finish?.();}catch(error){report(error);}};
  const recoveryState=()=>({preserved:!!lastBackup&&authorize()&&lastBackup.actor===identity()&&lastBackup.month===getMonth()&&scheduleSnapshotFingerprint(getSnapshot())===scheduleSnapshotFingerprint(lastBackup.record.editorSnapshot)&&getEffectiveFrom()===lastBackup.record.effectiveFrom&&(requestId?.id??null)===(lastBackup.record.pending?.revisionId??null),backupError,hasDraft:dirty()||!!requestId,candidates:recoveryCandidates.map(row=>({key:row.key,savedAt:row.savedAt,month:row.month,unconfirmed:!!row.pending,calendarBackup:row.editorId.startsWith('calendar-')})),plan:recoveryPlan?{kind:recoveryPlan.kind,reason:recoveryPlan.reason}:null,failed:failed()});
  const publishRecovery=()=>onRecovery(recoveryState());
  function scope(actor=identity(),value=getIdentity()){let pending=scopes.get(actor);if(!pending){pending=scheduleRecoveryScope(value).catch(error=>{scopes.delete(actor);throw error;});scopes.set(actor,pending);}return pending;}
@@ -72,10 +74,13 @@ export function createOwnerScheduleSync({readView,applyView,getSnapshot,getMonth
  function watch(){
   if(failed())return stop();
   if(!loaded||loadedIdentity!==identity()||loaded.month!==getMonth()||!isActive())return stop();const key=identity()+'|'+getMonth();if(watchKey===key)return;
-  stop();headStamp=loaded.headSnapshot===undefined?undefined:fingerprint(loaded.headSnapshot);watchKey=key;watchStop=subscribe(getMonth(),event=>{
-   if(key!==watchKey||!isActive())return;
+  stop();headStamp=loaded.headSnapshot===undefined?undefined:fingerprint(loaded.headSnapshot);monthStamp=loadedMonthStamp(loaded);watchKey=key;watchStop=subscribe(getMonth(),event=>{
+   if(key!==watchKey||key!==identity()+'|'+getMonth()||!isActive())return;
    if(event.error){report(event.error);status(failed()?'HQ connection stopped. Save confirmation is unavailable; preserve the draft before reloading.':'Live schedule updates are unavailable. Use Reload saved schedule when connected.',true);publishRecovery();return;}
-   if(event.kind==='month'&&(event.revisionId||null)===(getExpectedRevision()||null))return;
+   if(event.kind==='month'){
+    if(typeof event.stamp==='string'){if(monthStamp===event.stamp)return;monthStamp=event.stamp;}
+    else if((event.revisionId||null)===(getExpectedRevision()||null))return;
+   }
    if(event.kind==='head'){if(headStamp===event.stamp)return;headStamp=event.stamp;}
    if(saveFlight){followUp=true;return;}
    if(reads.has(key)){followUp=true;return;}
@@ -182,7 +187,7 @@ export function installOwnerScheduleSync(w,d,options){
   onStatus:(text,error)=>{if(message){message.textContent=text;message.classList.toggle('is-error',error);message.setAttribute('role',error?'alert':'status');}},
   subscribe:(month,change)=>{
    if(typeof w.onSnapshot!=='function')return ()=>{};const stops=[];
-   for(const [id,kind] of [['schedule_month_'+month.replace('-','_'),'month'],['global_schedule','head']])stops.push(w.onSnapshot(w.doc(w.db,'settings',id),{includeMetadataChanges:true},snap=>{const data=snap.exists()?snap.data():null;if(!snap.metadata?.fromCache&&!snap.metadata?.hasPendingWrites)change(kind==='month'?{kind,revisionId:data?.latestRevisionId||null}:{kind,stamp:fingerprint(data)});},error=>change({error})));
+   for(const [id,kind] of [['schedule_month_'+month.replace('-','_'),'month'],['global_schedule','head']])stops.push(w.onSnapshot(w.doc(w.db,'settings',id),{includeMetadataChanges:true},snap=>{if(snap.metadata?.fromCache!==false||snap.metadata?.hasPendingWrites!==false)return;const data=snap.exists()?snap.data():null;change(kind==='month'?{kind,revisionId:data?.latestRevisionId||null,stamp:shiftAmendmentFingerprint(data)}:{kind,stamp:fingerprint(data)});},error=>change({error})));
    return ()=>stops.forEach(stop=>{try{stop();}catch(error){cloudHealth.report(error);}});
   }});
  reload?.addEventListener('click',()=>void controller.load({manual:true,reason:'reload'}));

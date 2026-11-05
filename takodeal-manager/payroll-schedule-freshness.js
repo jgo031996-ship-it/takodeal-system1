@@ -42,6 +42,10 @@ function savedInstant(value) {
 function datedEntries(object,range) {
     return Object.fromEntries(Object.entries(object||{}).filter(([date])=>date>=range.first&&date<=range.last));
 }
+function workedCorrectionEntries(value,range){
+    if(!value||typeof value!=='object'||Array.isArray(value))return value??null;
+    return Object.fromEntries(Object.entries(value).filter(([,row])=>!row||typeof row.workDate!=='string'||row.workDate>=range.first&&row.workDate<=range.last));
+}
 function overlapping(row,range) {
     if(!row||workDate(row.effectiveFrom)>workDate(row.effectiveTo))throw Error('The saved schedule dates could not be verified. Reload its history.');
     return row.effectiveFrom<=range.last&&row.effectiveTo>=range.first;
@@ -92,7 +96,8 @@ export function payrollScheduleStamp(schedule,dates,{bonusBranches=[]}={}) {
             if(!row.revisionId||ids.has(row.revisionId))throw Error('The saved schedule versions could not be verified. Reload them.');
             ids.add(row.revisionId);const snapshot=row.snapshot||{};
             return {revisionId:row.revisionId,sequence:row.sequence||0,savedAt:savedInstant(row.savedAt),source:row.source||'',effectiveFrom:row.effectiveFrom,effectiveTo:row.effectiveTo,payrollHistoryEnforcedFrom:row.payrollHistoryEnforcedFrom||'',
-                currentYear:snapshot.currentYear,currentMonth:snapshot.currentMonth,branchConfig:snapshot.branchConfig||{},holidays:datedEntries(snapshot.holidays,range),daySnapshots:datedEntries(row.daySnapshots,range)};
+                currentYear:snapshot.currentYear,currentMonth:snapshot.currentMonth,branchConfig:snapshot.branchConfig||{},holidays:datedEntries(snapshot.holidays,range),daySnapshots:datedEntries(row.daySnapshots,range),
+                ...(snapshot.workedShiftCorrections!==undefined?{workedShiftCorrections:workedCorrectionEntries(snapshot.workedShiftCorrections,range)}:{}),...(row.historicalWorkedShiftReview!==undefined?{historicalWorkedShiftReview:row.historicalWorkedShiftReview}:{})};
         }).sort((a,b)=>a.revisionId.localeCompare(b.revisionId)),amendments:relevantAmendments.map(row=>({...row,recordedAt:savedInstant(row.recordedAt),sourceRevisionIds:Array.isArray(row.sourceRevisionIds)?[...row.sourceRevisionIds].sort():row.sourceRevisionIds,sourceDates:datedEntries(row.sourceDates,range)})).sort((a,b)=>String(a.id).localeCompare(String(b.id))),amendmentOrder:[...relevantAmendments].sort((a,b)=>(Number(a.sequence)||0)-(Number(b.sequence)||0)||resolverTimestamp(a.recordedAt).localeCompare(resolverTimestamp(b.recordedAt))||String(a.id).localeCompare(String(b.id))).map(row=>row.id)};
         // An empty added month or a new current head outside the cutoff has no
         // input to these earnings. The latestRevisionId alone is not evidence

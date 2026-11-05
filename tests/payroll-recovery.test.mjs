@@ -4,16 +4,16 @@ import {firestoreHarness} from './helpers/firestore-harness.mjs';
 import {createPayrollAdjustmentService} from '../takodeal-manager/payroll-adjustments.js';
 import {createOwnerDeductionService} from '../takodeal-manager/owner-deductions.js';
 import {OWNER_DEDUCTION_BASES,validateOwnerDeductionLink} from '../takodeal-manager/owner-deduction-model.js';
-import {ownerDeductionDisplayRows} from '../takodeal-manager/owner-deduction-payroll.js';
+import {ownerDeductionDisplayRows,readPayrollOwnerDeductions} from '../takodeal-manager/owner-deduction-payroll.js';
 import {finalizeOrdinaryPayroll,confirmedPayrollResult} from '../takodeal-manager/payroll-settlement.js';
 import {finalizeRefundPayroll} from '../takodeal-manager/refund-payroll.js';
-import {payrollRecoveryEvidence,readPayrollRecoveryEvidence,payrollRecoveryFromReview,PAYROLL_RECOVERY_LABEL} from '../takodeal-manager/payroll-recovery-model.js';
+import {payrollRecoveryEvidence,readPayrollRecoveryEvidence,payrollRecoveryFromReview,payrollRecoverySourceFingerprint,PAYROLL_RECOVERY_LABEL} from '../takodeal-manager/payroll-recovery-model.js';
 import {payslipDeductionDetailsHTML} from '../takodeal-manager/payroll-deduction-details.js';
 import {payslipDeductionDetailsHTML as staffDetailsHTML} from '../takodeal-staff/payroll-deduction-details.js';
 
 const uid='synthetic-recovery-owner',email='jgo031996@gmail.com',staffId='synthetic-recovery-staff',name='Fictional Recovery Crew',branch='Synthetic Recovery Branch',today='2030-02-01';
 const original={staffId,staffName:name,branch,startDate:'2030-01-01',endDate:'2030-01-15',finalNetPay:1000,processedAt:new Date('2030-01-16T00:00:00Z'),signatureBase64:'data:image/png;base64,ORIGINAL',frozenData:{staffId,name,branch,basicPay:1000,isPaid:true,finalNetPay:1000,logs:[{date:'Jan 1',remark:'Original signed payroll'}]}};
-const input=extra=>({staffId,originalStart:'2030-01-01',originalEnd:'2030-01-15',effectiveDate:today,amount:125,reason:'The original payroll paid a duplicate allowance.',sourcePayrollRecordId:'original-paid',...extra});
+const input=extra=>({staffId,originalStart:'2030-01-01',originalEnd:'2030-01-15',effectiveDate:today,amount:125,correctedNetPay:875,reason:'The original payroll paid a duplicate allowance.',sourcePayrollRecordId:'original-paid',...extra});
 function fixture(){
  const h=firestoreHarness();h.api.auth={currentUser:{uid,email,emailVerified:true,providerData:[{providerId:'google.com'}]}};h.api.sessionUser={uid,email,isOwner:true,isFranchisee:false,role:'Owner',permissions:['all'],allowedBranches:['All']};
  h.put('hq_managers/'+uid,{email,role:'System Architect',permissions:['all'],assignedBranch:'All',active:true,pin:'fixture-only'});const profile={staffId,cashierName:name,branch,hourlyRate:450,dateHired:'2029-01-01'};h.put('cashiers/'+staffId,profile);h.put('cash_accounts/bank',{name:'Fictional Bank',branch,balance:5000});h.put('payroll_records/original-paid',structuredClone(original));
@@ -70,4 +70,55 @@ test('refund payroll preserves the same reviewed recovery metadata and settles i
 });
 test('confirmed history exposes original processed date and signature as local result metadata without rewriting its frozen data',()=>{
  const before=structuredClone(original),result=confirmedPayrollResult(original,{id:'original-paid',staffId,start:original.startDate,end:original.endDate});assert.deepEqual(result.processedAt,original.processedAt);assert.equal(result.staffSignature,original.signatureBase64);assert.equal(Object.hasOwn(result.frozenData,'processedAt'),false);assert.deepEqual(original,before);
+});
+
+test('a new recovery binds the full original source, corrected net and exact overpayment without copying private frozen data into its notice',async()=>{
+ const f=fixture(),prefill=await f.service.prepareRecovery(input()),proof=readPayrollRecoveryEvidence(prefill.evidence);assert.equal(proof.version,2);assert.equal(proof.correctedNetPay,875);assert.equal(proof.overpaymentAmount,125);assert.equal(proof.sourceFingerprint,await payrollRecoverySourceFingerprint(original));assert.equal(proof.recoveryGeneration,0);assert.equal(prefill.actualLoss,125);assert.equal(prefill.evidence.includes('Original signed payroll'),false);assert.equal(f.h.get('cash_accounts/bank').balance,5000);
+});
+for(const extra of [{correctedNetPay:undefined},{correctedNetPay:-1},{correctedNetPay:1000},{correctedNetPay:1001},{correctedNetPay:900},{amount:100,correctedNetPay:875}])test('an undocumented or mismatched overpayment is rejected before writes: '+JSON.stringify(extra),async()=>{
+ const f=fixture(),before=state(f);await assert.rejects(f.service.prepareRecovery(input(extra)));assert.deepEqual(state(f),before);
+});
+test('editing amount, reason or requested date cannot create a second economic recovery for a pending original',async()=>{
+ const f=fixture(),first=await f.request(),before=state(f);for(const extra of [{reason:'A changed description for the same past payroll.'},{effectiveDate:'2030-02-02'},{amount:100,correctedNetPay:900}])await assert.rejects(f.service.prepareRecovery(input(extra)),error=>error.code==='payroll-recovery-existing'&&error.recoveryId===first.id);assert.deepEqual(state(f),before);
+});
+test('two independent clients preparing different descriptions contend on the same stable recovery case rather than creating two charges',async()=>{
+ const f=fixture(),a=await f.service.prepareRecovery(input()),b=await f.service.prepareRecovery(input({reason:'A different description of the same duplicate allowance.'}));assert.equal(a.operationId,b.operationId);const other=createOwnerDeductionService(f.h.api,{now:()=>new Date(today+'T00:00:00+08:00')});const results=await Promise.allSettled([f.reviews.create(a),other.create(b)]);assert.equal(results.filter(row=>row.status==='fulfilled').length,1);assert.equal(results.filter(row=>row.status==='rejected').length,1);assert.equal([...f.h.docs.keys()].filter(path=>path.startsWith('owner_deduction_reviews/')).length,1);assert.equal(f.h.get('cash_accounts/bank').balance,5000);
+});
+test('an arbitrary second case ID or inflated actual-loss field cannot bypass the documented recovery identity and cap',async()=>{
+ for(const change of [{operationId:'11111111-1111-4111-8111-111111111111'},{actualLoss:1000},{actualLoss:100,proposedAmount:100}]){const f=fixture(),prefill=await f.service.prepareRecovery(input()),before=state(f);await assert.rejects(f.reviews.create({...prefill,...change}));assert.deepEqual(state(f),before);}
+});
+for(const field of ['basicPay','logs','profile'])test('a same-net original frozen '+field+' change after preparation blocks pending review creation',async()=>{
+ const f=fixture(),prefill=await f.service.prepareRecovery(input()),changed=structuredClone(original);changed.frozenData[field]=field==='basicPay'?999:field==='logs'?[{remark:'Changed original attendance'}]:{cashierName:name,privateDetail:'Changed original profile'};f.h.put('payroll_records/original-paid',changed);const before=state(f);await assert.rejects(f.reviews.create(prefill),/original paid payroll changed/i);assert.deepEqual(state(f),before);
+});
+test('a source change after the Staff reply blocks approval with all three records still pending',async()=>{
+ const f=fixture(),first=await f.request();f.reply(first.id);f.h.put('payroll_records/original-paid',{...structuredClone(original),accountId:'changed-account'});const before=state(f);await assert.rejects(f.approve(first.id),/original paid payroll changed/i);assert.deepEqual(state(f),before);assert.equal(f.h.get('owner_deduction_reviews/'+first.id).revision,1);
+});
+for(const patch of [{pendingSync:true},{paymentStatus:'Pending'},{paymentState:'Failed'},{frozenData:{...original.frozenData,pendingSync:true}}])test('an unconfirmed original payment cannot be recovered even when its net amount is unchanged: '+JSON.stringify(patch),async()=>{
+ const f=fixture();f.h.put('payroll_records/original-paid',{...structuredClone(original),...patch});const before=state(f);await assert.rejects(f.service.prepareRecovery(input()),/original paid payroll/i);assert.deepEqual(state(f),before);
+});
+test('a changed original after approval is rejected both by fresh preview hydration and by ordinary settlement',async()=>{
+ const f=fixture(),first=await f.request();f.reply(first.id);await f.approve(first.id);f.h.put('payroll_records/original-paid',{...structuredClone(original),frozenData:{...original.frozenData,basicPay:999}});const before=state(f),charge={...f.h.get('staff_deductions/'+first.id),id:first.id};await assert.rejects(readPayrollOwnerDeductions(f.h.api,[charge],f.data.end),/original paid payroll changed/i);await assert.rejects(finalizeOrdinaryPayroll(f.h.api,{data:f.data,accountId:'bank',finalNetPay:325}),/original paid payroll changed/i);assert.deepEqual(state(f),before);
+});
+test('refund settlement also rereads the exact original source before any bank or linked-record write',async()=>{
+ const f=fixture(),first=await f.request();f.reply(first.id);await f.approve(first.id);for(const table of ['staff_deductions','online_order_incidents','staff_deduction_notices'])f.h.put(table+'/synthetic-refund',{staffId,staffName:name,branch,type:'Online Order Refund',amount:25,status:'Unpaid',dateAdded:new Date(today+'T00:00:00+08:00')});f.data.onlineRefunds=25;f.data.onlineRefundRows=[{id:'synthetic-refund',amount:25}];f.h.put('payroll_records/original-paid',{...structuredClone(original),frozenData:{...original.frozenData,logs:[]}});const before=state(f);await assert.rejects(finalizeRefundPayroll(f.h.api,{data:f.data,accountId:'bank',finalNetPay:300}),/original paid payroll changed/i);assert.deepEqual(state(f),before);
+});
+test('a source changed after it was read causes transaction retry and no partial payroll payment',async()=>{
+ const f=fixture(),first=await f.request();f.reply(first.id);await f.approve(first.id);const run=f.h.api.runTransaction;let changed=false;f.h.api.runTransaction=(db,callback)=>run(db,tx=>callback({...tx,get:async ref=>{const result=await tx.get(ref);if(!changed&&ref.path==='payroll_records/original-paid'){changed=true;f.h.put(ref.path,{...structuredClone(original),accountId:'source-changed-during-payment'});}return result;}}));await assert.rejects(finalizeOrdinaryPayroll(f.h.api,{data:f.data,accountId:'bank',finalNetPay:325}),/original paid payroll changed|saved payroll record changed/i);assert.equal(f.h.get('cash_accounts/bank').balance,5000);assert.equal([...f.h.docs.keys()].filter(path=>path.startsWith('expenses/')).length,0);assert.equal(f.h.get('staff_deductions/'+first.id).status,'Unpaid');
+});
+test('routine acknowledgment of the original payroll does not change its immutable financial source fingerprint',async()=>{
+ const f=fixture(),first=await f.request(),hash=await payrollRecoverySourceFingerprint(original);f.reply(first.id);const acknowledged={...structuredClone(original),acknowledged:true,acknowledgedAt:new Date(),signatureBase64:'data:image/png;base64,LATER_ACK'};f.h.put('payroll_records/original-paid',acknowledged);assert.equal(await payrollRecoverySourceFingerprint(acknowledged),hash);await f.approve(first.id);await finalizeOrdinaryPayroll(f.h.api,{data:f.data,accountId:'bank',finalNetPay:325});assert.equal(f.h.get('cash_accounts/bank').balance,4675);
+});
+test('source fingerprints preserve nested types, exceptional numbers, array order and nanosecond timestamp evidence',async()=>{
+ const base=structuredClone(original),digest=await payrollRecoverySourceFingerprint(base),reordered={...base,frozenData:Object.fromEntries(Object.entries(base.frozenData).reverse())};assert.equal(await payrollRecoverySourceFingerprint(reordered),digest);
+ const stamp={...base,processedAt:{seconds:Math.floor(+base.processedAt/1000),nanoseconds:0}};assert.equal(await payrollRecoverySourceFingerprint(stamp),digest);stamp.processedAt.nanoseconds=1;assert.notEqual(await payrollRecoverySourceFingerprint(stamp),digest);
+ const nan={...base,frozenData:{...base.frozenData,unknownAmount:NaN}},nil={...base,frozenData:{...base.frozenData,unknownAmount:null}};assert.notEqual(await payrollRecoverySourceFingerprint(nan),await payrollRecoverySourceFingerprint(nil));assert.notEqual(await payrollRecoverySourceFingerprint({...base,finalNetPay:'1000'}),digest);
+});
+test('only an explicitly dismissed recovery can be replaced and the new generation leaves the dismissed history unchanged',async()=>{
+ const f=fixture(),first=await f.request();await f.reviews.dismiss(first.id,{reason:'The proposed recovery was withdrawn before approval.',expectedRevision:1});const dismissed=structuredClone(f.h.get('owner_deduction_reviews/'+first.id)),prefill=await f.service.prepareRecovery(input({amount:100,correctedNetPay:900}));assert.notEqual('owner-deduction-'+prefill.operationId,first.id);assert.equal(readPayrollRecoveryEvidence(prefill.evidence).recoveryGeneration,1);const next=await f.reviews.create(prefill);assert.notEqual(next.id,first.id);assert.deepEqual(f.h.get('owner_deduction_reviews/'+first.id),dismissed);assert.equal(f.h.get('cash_accounts/bank').balance,5000);
+});
+test('a paid recovery prevents another economic charge while payment retries still return the saved receiving payroll before source reallocation',async()=>{
+ const f=fixture(),first=await f.request();f.reply(first.id);await f.approve(first.id);const request={data:f.data,accountId:'bank',finalNetPay:325};await finalizeOrdinaryPayroll(f.h.api,request);await assert.rejects(f.service.prepareRecovery(input({amount:100,correctedNetPay:900})),error=>error.recoveryId===first.id);f.h.put('payroll_records/original-paid',{...structuredClone(original),accountId:'changed-after-receiving-payment'});const before=state(f),retry=await finalizeOrdinaryPayroll(f.h.api,request);assert.equal(retry.alreadyPaid,true);assert.deepEqual(state(f),before);
+});
+test('legacy unfingerprinted recovery history stays readable but cannot be newly approved or collected without a fresh review',async()=>{
+ const f=fixture(),first=await f.request(),legacy=payrollRecoveryEvidence({staffId,originalStart:original.startDate,originalEnd:original.endDate,sourcePayrollRecordId:'original-paid',sourceNetPay:1000,requestedEffectiveDate:today});for(const table of ['owner_deduction_reviews','staff_deduction_notices'])f.h.put(table+'/'+first.id,{...f.h.get(table+'/'+first.id),evidence:legacy});f.reply(first.id);const before=state(f);assert.equal(payrollRecoveryFromReview(f.h.get('owner_deduction_reviews/'+first.id)).sourceNetPay,1000);await assert.rejects(f.approve(first.id),/legacy recovery.*fresh/i);assert.deepEqual(state(f),before);
 });
