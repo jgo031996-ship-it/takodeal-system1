@@ -51,11 +51,17 @@ export function directorById(id) {
   return AI_BOARD_DIRECTORS.find(director => director.id === id) || null;
 }
 
+const validISODate = value => {
+  if (typeof value !== 'string' || value.length !== 10 || value[4] !== '-' || value[7] !== '-') return false;
+  const parsed = new Date(value + 'T00:00:00Z');
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0,10) === value;
+};
+
 export function createAIBoardRequest({ directorId, question, period, branch='All' } = {}) {
   if (!directorById(directorId)) throw new Error('Choose a valid AI Board director.');
   const prompt = String(question ?? '').trim();
   if (!prompt || prompt.length > 4000) throw new Error('Enter a question (up to 4,000 characters).');
-  if (period && (!/^\\d{4}-\\d{2}-\\d{2}$/.test(period.start || '') || !/^\\d{4}-\\d{2}-\\d{2}$/.test(period.end || '') || period.start >= period.end)) {
+  if (period && (!validISODate(period.start) || !validISODate(period.end) || period.start >= period.end)) {
     throw new Error('Choose a valid reporting period.');
   }
   return Object.freeze({
