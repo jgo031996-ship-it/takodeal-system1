@@ -39,8 +39,8 @@ test('upgrade keeps paid receipts, photos and the offline sale ledger through Ca
     assert.match(worker,/workspace-access-model\.js/);
     assert.ok(assets('Takodeal-POS','required').includes('printer-logo.js'),'new logo encoder is available offline');
     assert.match(worker,/const PHOTOS = 'takodeal-pos-photos-offline02'/);
-    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v131-global-swaps-20261107/);
-    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v131-global-swaps-20261107/);
+    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v132-owner-recovery-20261107/);
+    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v132-owner-recovery-20261107/);
     for(const file of ['schedule-calendar.js','schedule-leave-markers.js'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Schedule repair is available after app update');
     for(const file of ['schedule-workspace.js','schedule-workspace.css'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Schedule workspace is available after app update');
     assert.match(source('takodeal-staff/sw.js'),/takodeal-staff-v47-global-swaps-20261107/);

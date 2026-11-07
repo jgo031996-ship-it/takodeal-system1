@@ -10,6 +10,7 @@ import {dailyStaffRate, staffProfileOperation} from '../takodeal-manager/staff-r
 import {escapeHTML as escapeHtml} from '../takodeal-manager/access-workspace-model.js';
 import {normalizeStaffMessengerUrl} from '../takodeal-manager/staff-messenger-link.js';
 import {formatStaffDeductionHistory} from '../takodeal-manager/staff-deduction-history.js';
+import {renderOwnerContractVault} from '../takodeal-manager/owner-contract-print.js';
 
 const main = fs.readFileSync(new URL('../takodeal-manager/main.js', import.meta.url), 'utf8');
 function actualFunction(name) {
@@ -41,6 +42,7 @@ function fixture({missingId = false, deferredHistory = false, deductionRows = []
                 checked:false, disabled:false, hidden:false, isConnected:true,
                 style:{display:'none'}, innerText:'', textContent:'',
                 setAttribute() {}, removeAttribute() {}
+                ,children:[],replaceChildren(){this.children=[];},append(child){this.children.push(child);}
             });
         }
         return nodes.get(id);
@@ -70,7 +72,7 @@ function fixture({missingId = false, deferredHistory = false, deductionRows = []
         saves.push({id, payload:structuredClone(payload), options:structuredClone(options),
             finish:() => resolve({profile:{...profiles[id], ...payload}}), fail:() => reject(Error('Simulated old save failure'))});
     });
-    const context = {isOwnerDeduction,isPayrollAdjustment,readOwnerPayrollRecoveryHistory,ownerDeductionHistoryRow,normalizeStaffMessengerUrl,formatStaffDeductionHistory,
+    const context = {renderOwnerContractVault,isOwnerDeduction,isPayrollAdjustment,readOwnerPayrollRecoveryHistory,ownerDeductionHistoryRow,normalizeStaffMessengerUrl,formatStaffDeductionHistory,
         window:api, document:{getElementById:node, querySelectorAll:() => deductions},escapeHtml,
         dailyStaffRate, staffProfileOperation, saveStaffProfileAtomic:atomic,
         Swal:{fire:(...args) => notices.push(args)}, installSanctionScheduling() {},
