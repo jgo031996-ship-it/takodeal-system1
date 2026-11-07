@@ -51,6 +51,8 @@ Cash outflows can include purchases/transfers and do not establish profit, margi
 
 Missing configuration fails closed. Firebase public web configuration matches the existing app. Vercel preview protection remains enabled. Origins are limited to the Owner domain and exact Vercel deployment/branch system URLs.
 
+Branch/date reads require collection-scope composite indexes on branch ascending, timestamp descending, and document name descending. The two missing indexes for expenses and attendance_logs were added through the Firestore Admin indexing API, preserving existing indexes and operational records. Model output schemas restrict citation IDs to each report's actual evidence and require at least one supporting citation per finding.
+
 ## Test and release gates
 
 Local tests in tests/ai-board-runtime.test.mjs execute real synthetic RSA verification, owner/revocation boundaries, request limits, projected scoped reads, deterministic totals, all seven director pipelines with controlled upstream fixtures, blocked methods/origins/writes, unavailable/capped sources, citation validation, escaping and a real local HTTP integration. Existing regression tests and SDK/rules checks also run. The Owner build copies existing app assets while excluding server source.

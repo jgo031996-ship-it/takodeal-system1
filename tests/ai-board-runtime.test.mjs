@@ -88,6 +88,8 @@ test('all seven directors execute through auth, reads, calculations and structur
     await handler({method:'POST',headers:{authorization:'Bearer '+token(),'content-type':'application/json',origin:'https://takodeal-owner.vercel.app'},body:{...base,directorId}},res);
     assert.equal(res.code,200,directorId+': '+JSON.stringify(res.body));assert.equal(res.body.packet.directorId,directorId);assert.equal(res.body.advisoryOnly,true);
     const modelRequest=JSON.parse(calls.find(c=>c.url.includes('openai.com')).init.body);
+    assert.deepEqual(modelRequest.text.format.schema.properties.findings.items.properties.evidenceIds.items.enum,res.body.packet.evidence.map(e=>e.id));
+    assert.equal(modelRequest.text.format.schema.properties.findings.items.properties.evidenceIds.minItems,1);
     assert.equal(modelRequest.store,false);assert.equal(modelRequest.tools,undefined);assert.doesNotMatch(modelRequest.input,/test-private-key|Bearer|pinned-owner|staffName|customerName/);
     assert.doesNotMatch(JSON.stringify(logs),/test-private-key|Review the evidence|pinned-owner|eyJ/);
     assert.ok(calls.filter(c=>c.url.includes('firestore')).every(c=>c.url.endsWith('documents:runQuery')&&c.init.method==='POST'));
