@@ -36,7 +36,7 @@ function fetchFixture(calls,options={}){return async(url,init={})=>{
   if(url.includes('/metadata/x509/'))return response({test:pem});
   if(url.includes('accounts:lookup'))return response({users:[options.user||owner]});
   if(url.includes('documents:runQuery')){const table=JSON.parse(init.body).structuredQuery.from[0].collectionId;if(options.deny===table)return new Response('{}',{status:403});return response(wire(fixture[table]||[]));}
-  if(url==='https://api.openai.com/v1/responses'){const packet=JSON.parse(JSON.parse(init.body).input).packet;return response({status:'completed',model:'fixture',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(report(packet.evidence.map(e=>e.id)))}]}]});}
+  if(url==='https://api.openai.com/v1/responses'){const request=JSON.parse(init.body),packet=JSON.parse(request.input).packet,r=report(packet.evidence.map(e=>e.id));r.assumptions=[request.text.format.schema.properties.assumptions.items.enum[0]];return response({status:'completed',model:'fixture',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(r)}]}]});}
   throw Error('Unexpected network call: '+url);
 };}
 function fakeResponse(){return {headers:{},status(n){this.code=n;return this;},json(x){this.body=x;return this;},setHeader(k,v){this.headers[k]=v;}};}
@@ -90,6 +90,7 @@ test('all seven directors execute through auth, reads, calculations and structur
     const modelRequest=JSON.parse(calls.find(c=>c.url.includes('openai.com')).init.body);
     assert.deepEqual(modelRequest.text.format.schema.properties.findings.items.properties.evidenceIds.items.enum,res.body.packet.evidence.map(e=>e.id));
     assert.equal(modelRequest.text.format.schema.properties.findings.items.properties.evidenceIds.minItems,1);
+    assert.ok(modelRequest.text.format.schema.properties.assumptions.items.enum.includes(res.body.report.assumptions[0]));
     assert.equal(modelRequest.store,false);assert.equal(modelRequest.tools,undefined);assert.doesNotMatch(modelRequest.input,/test-private-key|Bearer|pinned-owner|staffName|customerName/);
     assert.doesNotMatch(JSON.stringify(logs),/test-private-key|Review the evidence|pinned-owner|eyJ/);
     assert.ok(calls.filter(c=>c.url.includes('firestore')).every(c=>c.url.endsWith('documents:runQuery')&&c.init.method==='POST'));
@@ -147,10 +148,17 @@ test('unclassified provider 429 errors and type-only quota errors stay actionabl
 });
 test('model confidence is bounded by partial coverage and the limited operational evidence set',async()=>{
   for(const [partial,expected]of [[true,'low'],[false,'medium']]){
-    const r={...report(['sales.net']),confidence:'high'};
+    const r={...report(['sales.net']),confidence:'high',assumptions:['Only the provided evidence is available; completeness and causes are unknown.']};
     const result=await interpret({partial,evidence:[{id:'sales.net'}]},validateQuery(base,now),{apiKey:'fixture',fetcher:async()=>response({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(r)}]}]})});
     assert.equal(result.report.confidence,expected);
   }
+});
+
+test('invented completeness assumptions fail closed even when evidence citations are valid',()=>{
+  const r=report(['sales.net']),allowed=['Only uploaded records are visible; completeness is unknown.'];
+  r.assumptions=['No records are missing or offline.'];
+  assert.throws(()=>validateReport(r,[{id:'sales.net'}],allowed),{code:'invalid-report'});
+  r.assumptions=allowed;assert.equal(validateReport(r,[{id:'sales.net'}],allowed),r);
 });
 test('HTTP integration returns private structured reports and rejects unauthenticated requests',async t=>{
   const handler=createBoardHandler({env,fetcher:fetchFixture([]),now:()=>now,log:()=>{}});

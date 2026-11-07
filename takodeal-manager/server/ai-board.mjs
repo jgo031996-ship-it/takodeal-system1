@@ -168,7 +168,7 @@ export function calculateEvidence({data,coverage},q,now=Date.now()) {
   }
   if(data.shifts){
     const closed=data.shifts.filter(s=>s.active===false&&numeric(s.expectedCash)&&numeric(s.declaredCash));
-    add('ops.shifts','Shift records opened in period',data.shifts.length,'count','shifts','Shifts opened before this period are excluded.');
+    add('ops.shifts','Shift records opened in period',data.shifts.length,'count','shifts','Selected by startTime only; shifts opened before this period are excluded. Current closed status does not prove closure within this period; closing dates are not provided.');
     add('ops.overdue','Open shifts older than 16 hours',data.shifts.filter(s=>s.active===true&&now-Date.parse(s.startTime)>16*3600000).length,'count','shifts','A review threshold only, not a verified shift policy. Zero does not establish timely closure, policy compliance or reliable controls.');
     add('audit.cash','Closed-shift cash difference',round(closed.reduce((n,s)=>n+Number(s.declaredCash)-Number(s.expectedCash),0)),'PHP','shifts',`Declared minus expected cash for ${closed.length} shifts with both amounts. Differences can cancel; reconcile individually.`);
   }
@@ -191,13 +191,14 @@ export const REPORT_SCHEMA={type:'object',additionalProperties:false,required:['
   findings:{type:'array',maxItems:8,items:{type:'object',additionalProperties:false,required:['title','explanation','evidenceIds'],properties:{title:reportText,explanation:reportText,evidenceIds:strings}}},
   assumptions:strings,counterargument:reportText,options:strings,recommendation:reportText,nextSteps:strings
 }};
-export function validateReport(r,evidence) {
+export function validateReport(r,evidence,permittedAssumptions) {
   const keys=Object.keys(REPORT_SCHEMA.properties),ids=new Set(evidence.map(e=>e.id));
   const text=v=>typeof v==='string'&&v.trim().length>0&&v.length<=6000;
   const list=v=>Array.isArray(v)&&v.length<=8&&v.every(text);
   if(!r||typeof r!=='object'||keys.some(k=>!(k in r))||Object.keys(r).some(k=>!keys.includes(k))||
     !['low','medium','high'].includes(r.confidence)||!['summary','counterargument','recommendation'].every(k=>text(r[k]))||
-    !['assumptions','options','nextSteps'].every(k=>list(r[k]))||!Array.isArray(r.findings)||r.findings.length>8||
+    !['assumptions','options','nextSteps'].every(k=>list(r[k]))||
+    (permittedAssumptions&&r.assumptions.some(x=>!permittedAssumptions.includes(x)))||!Array.isArray(r.findings)||r.findings.length>8||
     r.findings.some(f=>!f||Object.keys(f).sort().join()!=='evidenceIds,explanation,title'||!text(f.title)||!text(f.explanation)||!list(f.evidenceIds)||!f.evidenceIds.length||f.evidenceIds.some(id=>!ids.has(id))))
     {
       const error=new BoardError(502,'invalid-report','The AI returned a report without valid evidence. Please retry manually.');
@@ -215,6 +216,11 @@ export async function interpret(packet,q,{fetcher=fetch,apiKey,model='gpt-4.1-mi
   // and only rejecting them afterwards. Unavailable sources have no IDs to select.
   const schema=structuredClone(REPORT_SCHEMA);
   schema.properties.findings.items.properties.evidenceIds={type:'array',minItems:1,maxItems:8,items:{type:'string',enum:packet.evidence.map(e=>e.id)}};
+  // Unknowns must be selected from the same source limitations shown to the owner.
+  // The model cannot turn unobserved completeness or causes into an assumption.
+  const permittedAssumptions=[...new Set([...(packet.limitations||[]),...packet.evidence.map(e=>e.note).filter(Boolean)])];
+  if(!permittedAssumptions.length)permittedAssumptions.push('Only the provided evidence is available; completeness and causes are unknown.');
+  schema.properties.assumptions={type:'array',minItems:1,maxItems:8,items:{type:'string',enum:permittedAssumptions}};
   const response=await json(fetcher,'https://api.openai.com/v1/responses',{
     method:'POST',headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},
     body:JSON.stringify({model,store:false,max_output_tokens:3000,
@@ -227,8 +233,9 @@ Distinguish observations, estimates, assumptions and unknowns. Describe capped o
 Recorded sales are not cash collected: digital settlements and bank balances are absent. Never infer net cash inflow, liquidity, available funds or spending capacity from sales minus recorded outflows. Missing payment verification is a review signal, not an established control failure, loss or fraud. Do not assume uploaded records are complete simply because a bounded query finished.
 Inventory quantities are CURRENT at packet.asOf, independent of the selected historical period. Explicitly distinguish current inventory from dated count logs; never describe current stock as stock on the requested historical date. Count logs are not stock movement transactions. Do not suggest theft, wastage or losses as explanations without separate supporting evidence; request reconciliation instead.
 Counts and zeros are descriptive only. Never infer reliable/automated attendance, effective scheduling, adequate staffing, accurate cash handling, good shift closure, policy compliance or effective controls from event counts, no manual flags, no overdue shifts, no duplicates or zero aggregate cash difference. The 16-hour threshold is a review heuristic, not a verified company policy. Cash differences can cancel across shifts; zero aggregate difference is not full reconciliation. Manual attendance flags are not necessarily corrections. State what was recorded and what cannot be concluded.
+Shifts are selected by startTime only. Current active/closed status does not establish when they closed; never claim both opening and closing happened within the selected period. Do not deprioritize costs, marketing or any business concern simply because its evidence is absent.
 Channel figures group the recorded paymentMethod field. They do not measure customer preferences, marketing reach or acquisition channels. Do not infer those from payment mix.
-Do not list unsupported completeness, reliability or causes as assumptions to quietly justify a positive conclusion. Present missing completeness and causal evidence as unknowns. Recommendations to review records must be conditional on owner verification, not claims that staff or existing systems failed.
+Select the assumptions/unknowns ONLY from the exact permitted source limitations in the schema. Do not assume completeness, reliability or causes. Present missing completeness and causal evidence as unknowns. Recommendations to review records must be conditional on owner verification, not claims that staff or existing systems failed.
 For Finance review revenue and outflows with cash/profit limitations. Audit identifies review signals without fraud accusations. Inventory reviews negative/low stock and count variance without ordering stock. HR reviews aggregate attendance process only. Operations reviews branch sales and shifts without claiming SOP compliance. Marketing reviews channel mix and discounts without claiming attribution or campaign ROI.
 For Mentor, integrate the six specialist perspectives supported by evidence, challenge assumptions, give a credible counterargument and options, explicitly recommend proceed/reconsider/wait. For scenarios use only assumptions explicitly supplied by the owner; otherwise request essential inputs. For a decision brief state the objective, constraints and evidence gaps.
 Consultation mode: ${q.consultation}. Return a concise, useful report in the required schema.`,
@@ -237,7 +244,7 @@ Consultation mode: ${q.consultation}. Return a concise, useful report in the req
   if(response.status!=='completed')fail(502,'incomplete-report','The AI did not finish this report. Please retry manually.');
   const output=response.output?.filter(x=>x.type==='message').flatMap(m=>m.content??[]).filter(c=>c.type==='output_text').map(c=>c.text).join('');
   let report;try{report=JSON.parse(output);}catch{fail(502,'invalid-report','The AI returned an unreadable report.');}
-  report=validateReport(report,packet.evidence);
+  report=validateReport(report,packet.evidence,permittedAssumptions);
   // Coverage of uploaded records does not prove complete books, settled cash or
   // causal explanations. Confidence stays conservative for this evidence set.
   report.confidence=packet.partial?'low':report.confidence==='high'?'medium':report.confidence;
