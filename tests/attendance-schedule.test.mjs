@@ -12,6 +12,9 @@ import {createEarlyTimeOutService} from '../Takodeal-POS/early-time-out-actions.
 import {createAttendanceMetadataReader} from '../Takodeal-POS/attendance-metadata-reader.js';
 import {metadataFetch} from './helpers/attendance-metadata-fixture.mjs';
 import * as schedulePreview from '../takodeal-staff/attendance-schedule-preview.js';
+import {activeStaffProfile} from '../takodeal-staff/staff-lifecycle-model.js';
+import {staffSwapAliases} from '../takodeal-staff/staff-swap-request.js';
+import {SWAP_PENDING_STATUS,SWAP_REVIEW_STATUS,SWAP_REQUEST_VERSION} from '../takodeal-staff/schedule-swap-model.js';
 
 const staffSource = readFileSync(new URL('../takodeal-staff/app.js',import.meta.url),'utf8');
 const cashierSource = readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8');
@@ -270,7 +273,7 @@ function scheduleView(h,selected='2026-11') {
     const ui=dom();ui.node('staffMonthPicker').value=selected;
     const window={...h.api};const context={...h.api,...ui,...schedulePreview,window,createScheduleHistoryStore,loadScheduleMonthView,scheduleDateKey,monthKey,resolveScheduleForDate,structuredClone,Date:dateAt(now)};
     const start=staffSource.indexOf('window.loadStaffSchedule = async function');
-    vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('window.initiateSwapRequest = function',start)),context);
+    vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('window.cancelSwapRequest =',start)),context);
     return {...ui,window,context};
 }
 test('Staff month view reads the planned archive and changing to an unsaved month never relabels the active schedule',async()=>{
@@ -297,7 +300,7 @@ test('a slow older month response cannot replace a newer selected month or reviv
 
 function swapApp(h) {
     const ui=dom(),window={loadStaffSchedule(){}};
-    const context={...h.api,...ui,window,scheduleDateKey,monthKey,Date:dateAt(now)};
+    const context={...h.api,...ui,window,scheduleDateKey,monthKey,activeStaffProfile,staffSwapAliases,SWAP_PENDING_STATUS,SWAP_REVIEW_STATUS,SWAP_REQUEST_VERSION,Date:dateAt(now)};
     const start=staffSource.indexOf('window.handleIncomingSwap = async function');
     // Extract this actual callback only. The later contract/onboarding section
     // now installs document listeners which are unrelated to swap acceptance.
@@ -323,4 +326,23 @@ test('Staff rejection updates only the request and an unsupported swap action ch
     const h=memory({'cashiers/staff-id':profile,'shift_swaps/request':request}),app=swapApp(h);
     await app.window.handleIncomingSwap('request','Force Approved');assert.equal(h.writes.length,0);
     await app.window.handleIncomingSwap('request','Rejected');assert.deepEqual(h.writes,['shift_swaps/request']);assert.equal(h.records.get('shift_swaps/request').rejectedByStaffId,'staff-id');
+});
+
+test('cross-branch acceptance is linked to the exact active target account',async()=>{
+    const h=memory({'cashiers/staff-id':profile,'shift_swaps/request':{...request,requestVersion:SWAP_REQUEST_VERSION,status:SWAP_PENDING_STATUS,targetStaffId:'staff-id',targetBranch:'Cabantian'}}),app=swapApp(h);
+    await app.window.handleIncomingSwap('request','Approved');assert.equal(h.records.get('shift_swaps/request').status,SWAP_REVIEW_STATUS);assert.deepEqual(h.writes,['shift_swaps/request']);
+    for(const invalid of [{targetStaffId:'other-account'},{blocked:true},{status:'Terminated'},{archived:true},{active:false},{pin:'BLOCKED'}]){
+        const saved=invalid.targetStaffId?{...request,...invalid}:{...request,targetStaffId:'staff-id'};
+        const person=invalid.targetStaffId?profile:{...profile,...invalid};
+        const blocked=memory({'cashiers/staff-id':person,'shift_swaps/request':saved}),view=swapApp(blocked);
+        await view.window.handleIncomingSwap('request','Approved');assert.equal(blocked.writes.length,0);
+    }
+});
+
+test('versioned requests cannot accept through an older status or missing destination identity',async()=>{
+    for(const invalid of [{status:'Pending'},{requestVersion:1},{targetName:null,targetAssignedName:null}]){
+        const data={...request,requestVersion:SWAP_REQUEST_VERSION,status:SWAP_PENDING_STATUS,...invalid};
+        const h=memory({'cashiers/staff-id':profile,'shift_swaps/request':data}),app=swapApp(h);
+        await app.window.handleIncomingSwap('request','Approved');assert.equal(h.writes.length,0);
+    }
 });

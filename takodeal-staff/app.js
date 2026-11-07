@@ -40,6 +40,9 @@ import {createPayrollBonusHistoryStore} from './payroll-bonus-templates.js';
 import {loadScheduleMonthView} from './schedule-sync.js';
 import {renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,staffScheduleDay,renderStaffScheduleConflict,emergencyReliefForClockIn,emergencyReliefTimeOutNotice} from './attendance-schedule-preview.js';
 import {installScheduleViewSync} from './schedule-view-sync.js';
+import {swapCandidates,SWAP_PENDING_STATUS,SWAP_REVIEW_STATUS,SWAP_REQUEST_VERSION} from './schedule-swap-model.js';
+import {activeStaffProfile} from './staff-lifecycle-model.js';
+import {loadStaffSwapContext,staffSwapAliases,swapCandidateKey,staffSwapContextKey,incomingSwapDetailsHTML,swapEscape} from './staff-swap-request.js';
 import {savedShiftChoices,savedShiftChoicesHTML,selectedSavedShiftChoice,makeSavedShiftProposal} from './saved-shift-proposal.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
@@ -96,6 +99,8 @@ window.disableNetwork = disableNetwork;
 window.staffLiveListenerEpoch = 0;
 window.stopStaffLiveListeners = function() {
     window.staffLiveListenerEpoch++;
+    window.staffSwapRequestGeneration=(window.staffSwapRequestGeneration||0)+1;
+    window.pendingSwapData=null;
     for (const kind of ['Inbox', 'Swap', 'Sanction']) {
         const stop = window['staff' + kind + 'Unsubscribe'];
         window['staff' + kind + 'Unsubscribe'] = null;
@@ -107,7 +112,7 @@ window.stopStaffLiveListeners = function() {
     window.staffSanctionDayStop?.(); window.staffSanctionDayStop = null;
     window.staffSanctionCachedSnapshot = null;
     window.lastUnreadCount = undefined;
-    for (const id of ['navReqBadge', 'navSchedBadge', 'incomingSwapsContainer', 'staffAppSanctionModal']) {
+    for (const id of ['navReqBadge', 'navSchedBadge', 'incomingSwapsContainer', 'staffAppSanctionModal','swapRequestModal']) {
         const element = document.getElementById(id);
         if (element) element.style.display = 'none';
     }
@@ -3025,117 +3030,88 @@ window.loadStaffSchedule = async function() {
     }
 };
 
-window.initiateSwapRequest = function(day, dateStr, branch, myShiftId, myShiftName) {
-    let schedData = window.cachedSchedData;
-    if(!schedData) return Swal.fire('Error', 'Schedule data is missing. Please refresh.', 'error');
+window.cancelSwapRequest = function() {
+    if(window.staffSwapSubmitting)return;
+    window.staffSwapRequestGeneration=(window.staffSwapRequestGeneration||0)+1;
+    window.pendingSwapData=null;
+    const modal=document.getElementById('swapRequestModal');if(modal)modal.style.display='none';
+};
 
-    let dayData = schedData.currentSchedule[day][branch];
-    if(!dayData) return Swal.fire('Error', 'Branch schedule missing for this day.', 'error');
-
-    let select = document.getElementById('swapCandidateSelect');
-    select.innerHTML = '<option value="">-- Choose Co-Worker --</option>';
-
-    let staffName = localStorage.getItem('takodeal_staff_name');
-    
-    // 🔥 THE FIX: The Smart Matcher prevents them from seeing themselves!
-    let isMatch = (assignedName) => {
-        if (!assignedName || assignedName === "N/A" || assignedName === "UNFILLED") return false;
-        let aName = assignedName.toLowerCase().trim();
-        const aliases = [staffName,window.cachedSchedProfile?.cashierName,window.cachedSchedProfile?.scheduleNickname,window.cachedSchedProfile?.nickname].filter(Boolean).map(value=>value.toLowerCase().trim());
-        return aliases.includes(aName);
+window.initiateSwapRequest = async function(day,dateStr,branch,myShiftId,myShiftName) {
+    if(window.staffSwapSubmitting)return Swal.fire('Sending request','Wait for your current request to finish.','info');
+    const staffId=localStorage.getItem('takodeal_staff_id'),staffName=localStorage.getItem('takodeal_staff_name');
+    const scheduleToken=window.staffScheduleSync?.token();
+    const generation=window.staffSwapRequestGeneration=(window.staffSwapRequestGeneration||0)+1;
+    window.pendingSwapData=null;
+    const assertCurrent=()=>{
+        if(window.staffSwapRequestGeneration!==generation||localStorage.getItem('takodeal_staff_id')!==staffId||localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff account or swap selection changed. Open the request again.');
+        if(window.staffScheduleSync&&!window.staffScheduleSync.current(scheduleToken))throw Error('The schedule view changed. Open the request again.');
+        if(document.getElementById('staffMonthPicker')?.value!==monthKey(dateStr))throw Error('The selected schedule month changed. Open the request again.');
     };
-    if (!isMatch(dayData.scheduled?.[myShiftId])) return Swal.fire('Refresh schedule','This assignment does not belong to your staff account. Refresh before requesting a swap.','warning');
-
-    // 1. Co-workers currently scheduled today
-    let optGroupShift = document.createElement('optgroup');
-    optGroupShift.label = "🔄 Swap with Scheduled Staff";
-    for(let sId in dayData.scheduled) {
-        let assignee = dayData.scheduled[sId];
-        // ONLY show if it's NOT them!
-        if(!isMatch(assignee) && assignee !== "N/A" && assignee !== "UNFILLED") {
-            let sConf = (window.cachedScheduleDaySnapshots?.[day]?.branchConfig?.[branch] || schedData.branchConfig[branch]).find(s => s.id === sId);
-            if (sConf) {
-                optGroupShift.innerHTML += `<option value="${assignee}|${sId}|${sConf.name}">${assignee} (Currently: ${sConf.name})</option>`;
-            }
+    try {
+        const date=scheduleDateKey(dateStr);
+        if(Number(day)!==Number(date.slice(-2))||date<scheduleDateKey(new Date()))throw Error('Choose a current or future work date.');
+        Swal.fire({title:'Checking all branch schedules…',allowOutsideClick:false,didOpen:()=>Swal.showLoading()});
+        const context=await loadStaffSwapContext(window,{staffId,staffName,workDate:date,assertCurrent});
+        const candidates=swapCandidates({snapshot:context.snapshot,daySnapshots:context.daySnapshots,workDate:date,requesterBranch:branch,requesterShiftId:myShiftId,requesterAliases:context.requesterAliases,requesterStaffId:staffId});
+        assertCurrent();Swal.close?.();
+        if(!candidates.length)return Swal.fire('No eligible co-workers','No eligible scheduled or standby staff were found across the saved branch schedules for this date. HQ can review missing or conflicting assignments.','info');
+        const select=document.getElementById('swapCandidateSelect'),placeholder=document.createElement('option');
+        placeholder.value='';placeholder.textContent='-- Choose Co-Worker --';select.replaceChildren(placeholder);
+        for(const kind of ['scheduled','standby']){
+            const group=document.createElement('optgroup');group.label=kind==='scheduled'?'🔄 Swap with Scheduled Staff · All Branches':'🛋️ Ask Standby Staff to Cover · All Branches';
+            candidates.forEach((candidate,index)=>{
+                if(candidate.kind!==kind)return;
+                const option=document.createElement('option');option.value=String(index);
+                option.textContent=(candidate.targetName||candidate.targetAssignedName)+' — '+candidate.targetBranch+' · '+(kind==='standby'?'Standby / Day Off':candidate.targetShiftName);
+                group.appendChild(option);
+            });
+            if(group.children.length)select.appendChild(group);
         }
+        const assigned=context.snapshot.currentSchedule[context.day][branch].scheduled[myShiftId];
+        const rule=context.snapshot.branchConfig[branch].find(shift=>shift.id===myShiftId);
+        window.pendingSwapData={day:context.day,dateStr:date,workDate:date,branch,myShiftId,myShiftName:rule.name||myShiftName,sourceScheduleMonth:context.sourceScheduleMonth,sourceRevisionId:context.sourceRevisionId,requesterAssignedName:assigned,staffId,staffName,generation,contextKey:staffSwapContextKey(context),candidates};
+        document.getElementById('swapModalDetails').textContent='You are requesting to trade '+(rule.name||myShiftName)+' at '+branch+' on '+date+'. Branches are shown beside each co-worker.';
+        document.getElementById('swapRequestModal').style.display='flex';
+    }catch(error){
+        if(window.staffSwapRequestGeneration!==generation)return;
+        Swal.fire('Could not prepare swap',error.message,'warning');
     }
-    if (optGroupShift.children.length > 0) select.appendChild(optGroupShift);
-
-    // 2. Co-workers on Standby today
-    let optGroupStandby = document.createElement('optgroup');
-    optGroupStandby.label = "🛋️ Ask Standby Staff to Cover";
-    if(dayData.rest) {
-        dayData.rest.forEach(r => {
-            if(!isMatch(r)) {
-                optGroupStandby.innerHTML += `<option value="${r}|STANDBY|Standby">${r} (Currently: On Standby)</option>`;
-            }
-        });
-    }
-    if (optGroupStandby.children.length > 0) select.appendChild(optGroupStandby);
-
-    if(select.options.length <= 1) {
-        return Swal.fire({title: 'No Candidates', text: 'No one is available to swap with you on this day.', icon: 'info', customClass: { popup: 'rounded-2xl' }});
-    }
-
-    document.getElementById('swapModalDetails').innerHTML = `You are requesting to trade your <b>${myShiftName}</b> shift on <b style="color: #0f172a;">${dateStr}</b>.`;
-    window.pendingSwapData = { day, dateStr, branch, myShiftId, myShiftName,
-        workDate:scheduleDateKey(`${schedData.currentYear}-${String(schedData.currentMonth).padStart(2,'0')}-${String(day).padStart(2,'0')}`),
-        sourceScheduleMonth:monthKey(schedData), sourceRevisionId:window.cachedScheduleDayRevisions?.[day] || schedData.scheduleRevisionId || '',
-        requesterAssignedName:dayData.scheduled[myShiftId] };
-    document.getElementById('swapRequestModal').style.display = 'flex';
 };
 
 window.submitSwapRequest = async function() {
-    let candidateVal = document.getElementById('swapCandidateSelect').value;
-    if(!candidateVal) return Swal.fire('Required', 'Please select someone to swap with.', 'warning');
-
-    let btn = document.getElementById('btnSendSwap');
-    
-    // 🛡️ Lock button immediately to prevent double submissions
-    if (btn) {
-        btn.innerText = "⏳ Sending...";
-        btn.disabled = true;
-    }
-
-    let [targetName, targetShiftId, targetShiftName] = candidateVal.split('|');
-    let requesterName = localStorage.getItem('takodeal_staff_name');
-    let d = window.pendingSwapData;
-
+    const select=document.getElementById('swapCandidateSelect'),selectedValue=select.value,d=window.pendingSwapData,index=Number(selectedValue);
+    if(!d||!selectedValue||!Number.isSafeInteger(index)||String(index)!==selectedValue||!d.candidates[index])return Swal.fire('Required','Please select a co-worker from this request.','warning');
+    if(window.staffSwapSubmitting)return;
+    const candidate=d.candidates[index],button=document.getElementById('btnSendSwap'),cancel=document.getElementById('btnCancelSwap');
+    const assertCurrent=()=>{
+        if(window.pendingSwapData!==d||window.staffSwapRequestGeneration!==d.generation||localStorage.getItem('takodeal_staff_id')!==d.staffId||localStorage.getItem('takodeal_staff_name')!==d.staffName||document.getElementById('staffMonthPicker')?.value!==d.sourceScheduleMonth||select.value!==selectedValue||document.getElementById('swapRequestModal').style.display==='none')throw Error('Your staff account, date or selected co-worker changed. Open the request again.');
+    };
+    window.staffSwapSubmitting=d;if(button){button.disabled=true;button.textContent='Checking and sending…';}if(cancel)cancel.disabled=true;
     try {
-        if (!d?.workDate || scheduleDateKey(d.workDate) < scheduleDateKey(new Date())) throw Error('Choose a current or future work date. Past schedules stay unchanged.');
-        await addDoc(collection(db, "shift_swaps"), {
-            requesterName: requesterName,
-            targetName: targetName,
-            requesterStaffId:localStorage.getItem('takodeal_staff_id'),
-            requesterAssignedName:d.requesterAssignedName, targetAssignedName:targetName,
-            workDate:d.workDate, sourceScheduleMonth:d.sourceScheduleMonth, sourceRevisionId:d.sourceRevisionId,
-            branch: d.branch,
-            dateStr: d.dateStr,
-            dayIndex: d.day,
-            requesterShiftId: d.myShiftId,
-            requesterShiftName: d.myShiftName,
-            targetShiftId: targetShiftId,
-            targetShiftName: targetShiftName,
-            status: "Pending",
-            timestamp: serverTimestamp()
+        assertCurrent();
+        if(d.workDate<scheduleDateKey(new Date()))throw Error('Past schedules stay unchanged. Choose a current or future work date.');
+        const context=await loadStaffSwapContext(window,{staffId:d.staffId,staffName:d.staffName,workDate:d.workDate,assertCurrent});
+        if(staffSwapContextKey(context)!==d.contextKey)throw Error('HQ changed the schedule while this request was open. Refresh and choose again.');
+        const fresh=swapCandidates({snapshot:context.snapshot,daySnapshots:context.daySnapshots,workDate:d.workDate,requesterBranch:d.branch,requesterShiftId:d.myShiftId,requesterAliases:context.requesterAliases,requesterStaffId:d.staffId}).find(row=>swapCandidateKey(row)===swapCandidateKey(candidate));
+        if(!fresh)throw Error('This co-worker is no longer eligible for this swap. Refresh and choose again.');
+        assertCurrent();
+        await addDoc(collection(db,'shift_swaps'),{
+            requesterName:context.requesterName,requesterStaffId:d.staffId,requesterAssignedName:d.requesterAssignedName,
+            targetName:fresh.targetName||fresh.targetAssignedName,targetAssignedName:fresh.targetAssignedName,
+            ...(fresh.targetStaffId?{targetStaffId:fresh.targetStaffId}:{}),
+            branch:d.branch,targetBranch:fresh.targetBranch,workDate:d.workDate,dateStr:d.workDate,dayIndex:d.day,
+            sourceScheduleMonth:d.sourceScheduleMonth,sourceRevisionId:d.sourceRevisionId,
+            requesterShiftId:d.myShiftId,requesterShiftName:d.myShiftName,targetShiftId:fresh.targetShiftId,targetShiftName:fresh.targetShiftName,
+            requestVersion:SWAP_REQUEST_VERSION,status:SWAP_PENDING_STATUS,timestamp:serverTimestamp()
         });
-
-        Swal.fire({
-            title: '✅ Request Sent!', 
-            text: `Swap request sent to ${targetName}. You will be notified when they respond.`, 
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl' }
-        });
-        
-        document.getElementById('swapRequestModal').style.display = 'none';
-    } catch(e) {
-        console.error(e); 
-        Swal.fire('Error', 'Failed to send request.', 'error');
-    } finally { 
-        if (btn) {
-            btn.innerText = "Send Request"; 
-            btn.disabled = false; 
-        }
+        if(window.pendingSwapData!==d||localStorage.getItem('takodeal_staff_id')!==d.staffId)return;
+        document.getElementById('swapRequestModal').style.display='none';window.pendingSwapData=null;
+        Swal.fire('Request sent','Your request was sent to '+(fresh.targetName||fresh.targetAssignedName)+'. The schedule changes only after their acceptance and HQ approval.','success');
+    }catch(error){
+        if(window.pendingSwapData===d&&localStorage.getItem('takodeal_staff_id')===d.staffId)Swal.fire('Could not send request',error.message,'warning');
+    }finally{
+        if(window.staffSwapSubmitting===d){window.staffSwapSubmitting=null;if(button){button.disabled=false;button.textContent='Send Request';}if(cancel)cancel.disabled=false;}
     }
 };
 
@@ -3151,22 +3127,20 @@ window.listenToIncomingSwaps = async function() {
     window.staffSwapListenerKey = key;
     const current = () => epoch === window.staffLiveListenerEpoch && window.staffSwapListenerKey === key && localStorage.getItem('takodeal_staff_id') === staffId && localStorage.getItem('takodeal_staff_name') === staffName;
 
-    let nickname = staffName;
+    let nickname = staffName,swapAliases=[staffName];
     try {
         const docSnap = await getDoc(doc(db, "cashiers", staffId));
-        if(docSnap.exists()) nickname = docSnap.data().scheduleNickname || staffName;
+        if(docSnap.exists()){nickname=docSnap.data().scheduleNickname||staffName;swapAliases=staffSwapAliases(docSnap.data());}
     } catch(e) {}
     if (!current()) return;
 
     let isMatch = (assignedName) => {
         if (!assignedName || assignedName === "N/A" || assignedName === "UNFILLED") return false;
         let aName = assignedName.toLowerCase().trim();
-        let sName = staffName.toLowerCase().trim();
-        let nName = nickname.toLowerCase().trim();
-        return aName === sName || aName === nName;
+        return swapAliases.some(name=>name.toLowerCase().trim()===aName);
     };
 
-    window.staffSwapUnsubscribe = onSnapshot(query(collection(db, "shift_swaps"), where("status", "==", "Pending")), (snap) => {
+    window.staffSwapUnsubscribe = onSnapshot(query(collection(db, "shift_swaps"), where("status", "in", ["Pending",SWAP_PENDING_STATUS])), (snap) => {
         if (!current()) return;
         
         // 🔥 DYNAMIC UI INJECTOR: Ensure the container exists and doesn't get wiped!
@@ -3192,7 +3166,7 @@ window.listenToIncomingSwaps = async function() {
         snap.forEach(docSnap => {
             let d = docSnap.data();
             // Did this request use my short name OR my full name?
-            if (isMatch(d.targetName)) {
+            if (d.targetStaffId ? d.targetStaffId===staffId : isMatch(d.targetAssignedName||d.targetName)) {
                 myPendingSwaps.push({ id: docSnap.id, ...d });
             }
         });
@@ -3211,12 +3185,11 @@ window.listenToIncomingSwaps = async function() {
             html += `
                 <div style="background: #fffbeb; border: 1px solid #fcd34d; padding: 15px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                     <div style="font-size: 13px; color: #b45309; margin-bottom: 12px; line-height: 1.5;">
-                        <strong style="color: #92400e; font-size: 14px;">${d.requesterName}</strong> wants to swap shifts on <strong style="color: #92400e;">${d.dateStr}</strong>.<br>
-                        They will take your <b>${d.targetShiftName}</b>, and you will take their <b>${d.requesterShiftName}</b>.
+                        ${incomingSwapDetailsHTML(d)}
                     </div>
                     <div style="display: flex; gap: 10px;">
-                        <button onclick="window.handleIncomingSwap('${d.id}', 'Approved')" style="flex:1; background: #16a34a; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);">✅ Accept</button>
-                        <button onclick="window.handleIncomingSwap('${d.id}', 'Rejected')" style="flex:1; background: #ef4444; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);">❌ Reject</button>
+                        <button onclick="window.handleIncomingSwap(${swapEscape(JSON.stringify(d.id))}, 'Approved')" style="flex:1; background: #16a34a; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);">✅ Accept</button>
+                        <button onclick="window.handleIncomingSwap(${swapEscape(JSON.stringify(d.id))}, 'Rejected')" style="flex:1; background: #ef4444; color: white; border: none; padding: 10px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(239, 68, 68, 0.2);">❌ Reject</button>
                     </div>
                 </div>
             `;
@@ -3244,17 +3217,21 @@ window.handleIncomingSwap = async function(swapId, action) {
             if (localStorage.getItem('takodeal_staff_id') !== staffId) throw Error('Your staff account changed. Sign in again.');
             if (!request.exists() || !profile.exists()) throw Error('This request or staff profile is no longer available.');
             const data = request.data(), person = profile.data();
-            const key = value => String(value || '').trim().replace(/\s+/g,' ').toLowerCase();
-            const aliases = new Set([person.cashierName, person.scheduleNickname, person.nickname].filter(Boolean).map(key));
-            if (!aliases.has(key(data.targetName)) || person.status === 'Resigned' || person.pin === 'REVOKED') throw Error('This swap is not assigned to your active staff account.');
-            if (data.status === 'Awaiting HQ Approval' && data.acceptedByStaffId === staffId && action === 'Approved') return 'already-accepted';
-            if (data.status !== 'Pending') throw Error('This swap was already processed. Refresh the schedule.');
+            const key = value => String(value || '').normalize('NFKC').trim().replace(/\s+/g,' ').toLowerCase();
+            const aliases = new Set(staffSwapAliases(person).map(key));
+            const targetNames=[data.targetAssignedName,data.targetName].filter(name=>typeof name==='string'&&name.trim());
+            if (data.targetStaffId&&data.targetStaffId!==staffId||!targetNames.length||!targetNames.every(name=>aliases.has(key(name)))||!activeStaffProfile(person)||person.scheduleEligible===false) throw Error('This swap is not assigned to your active staff account.');
+            const versioned=data.requestVersion===SWAP_REQUEST_VERSION;
+            if(data.requestVersion!==undefined&&!versioned||!versioned&&data.targetBranch&&data.targetBranch!==data.branch)throw Error('Ask the requester to resend this swap using the updated Staff app.');
+            const pendingStatus=versioned?SWAP_PENDING_STATUS:'Pending',reviewStatus=versioned?SWAP_REVIEW_STATUS:'Awaiting HQ Approval';
+            if (data.status === reviewStatus && data.acceptedByStaffId === staffId && action === 'Approved') return 'already-accepted';
+            if (data.status !== pendingStatus) throw Error('This swap was already processed or needs an updated request. Refresh the schedule.');
             if (action === 'Rejected') {
                 transaction.update(requestRef,{status:'Rejected',rejectedByStaffId:staffId,rejectedBy:person.cashierName,rejectedAt:serverTimestamp()});
                 return 'rejected';
             }
             if (!data.workDate || scheduleDateKey(data.workDate) < scheduleDateKey(new Date()) || monthKey(data.workDate) !== data.sourceScheduleMonth) throw Error('This request has no current or future work date. Ask the requester to send it again.');
-            transaction.update(requestRef,{status:'Awaiting HQ Approval',acceptedByStaffId:staffId,acceptedBy:person.cashierName,
+            transaction.update(requestRef,{status:reviewStatus,acceptedByStaffId:staffId,acceptedBy:person.cashierName,
                 acceptedAt:serverTimestamp(),acceptanceVersion:1});
             return 'accepted';
         });

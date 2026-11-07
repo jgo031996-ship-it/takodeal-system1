@@ -506,12 +506,13 @@
             <h2 style="margin-top: 0; color: #d97706;">🔄 Request Shift Swap</h2>
             <p id="swapModalDetails" style="font-size: 13px; color: #64748b; margin-bottom: 15px;"></p>
             <div class="form-group" style="text-align: left;">
-                <label style="font-size: 12px; font-weight: bold; color: #475569;">Select Co-Worker to Swap With:</label>
+                <label for="swapCandidateSelect" style="font-size: 12px; font-weight: bold; color: #475569;">Select Co-Worker to Swap With:</label>
                 <select id="swapCandidateSelect" class="input-box" style="width: 100%; padding: 10px; border-radius: 6px; border: 1px solid #cbd5e1; outline: none; margin-top: 5px; font-weight: bold; color: #0f172a; background: #f8fafc;"></select>
+                <p style="font-size:12px;color:#64748b;line-height:1.5">Eligible scheduled and standby staff from all branches are included. Their acceptance and HQ approval are required.</p>
             </div>
             <div style="display: flex; gap: 10px; margin-top: 20px;">
                 <button class="btn-primary" id="btnSendSwap" onclick="window.submitSwapRequest()" style="flex: 1; background: #d97706; box-shadow: 0 4px 6px rgba(217, 119, 6, 0.3);">Send Request</button>
-                <button class="btn-cancel" onclick="document.getElementById('swapRequestModal').style.display='none'" style="flex: 1;">Cancel</button>
+                <button class="btn-cancel" id="btnCancelSwap" onclick="window.cancelSwapRequest()" style="flex: 1;">Cancel</button>
             </div>
         </div>
     </div>

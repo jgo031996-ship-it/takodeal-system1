@@ -10,6 +10,8 @@ import {prepareEarlyTimeOut} from '../Takodeal-POS/early-time-out-ui.js';
 import {riderRuntime} from './helpers/rider-runtime-harness.mjs';
 import {installStaffSetupGate} from '../takodeal-staff/staff-setup-access.js';
 import * as schedulePreview from '../takodeal-staff/attendance-schedule-preview.js';
+import * as staffSwaps from '../takodeal-staff/staff-swap-request.js';
+import * as swapModel from '../takodeal-staff/schedule-swap-model.js';
 
 const staff = readFileSync(new URL('../takodeal-staff/app.js', import.meta.url), 'utf8').replace(/\r\n/g,'\n');
 const customer = readFileSync(new URL('../Customer/index.html', import.meta.url), 'utf8');
@@ -40,7 +42,7 @@ function harness() {
     const addEventListener=(name,callback)=>{if(!events.has(name))events.set(name,[]);events.get(name).push(callback);};
     const window={...api,addEventListener,location:{reload(){}},initStaffAppSignaturePad(){},playNotificationPing(){},loadMyAttendance(){},
         getAttendanceLocation:async()=>({branch:'Maa',distance:1,accuracy:10,lat:7,lng:125,timestamp:Date.now()}),verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1}}),assertAttendanceFaceFresh(){}};
-    const context={...api,...payroll,...sanctions,...reconciliation,...schedulePreview,createScheduleHistoryStore,prepareEarlyTimeOut,window,localStorage,document:{getElementById:node,createElement:()=>({value:'',textContent:''}),addEventListener,querySelector:()=>null,querySelectorAll:()=>[]},
+    const context={...api,...payroll,...sanctions,...reconciliation,...schedulePreview,...staffSwaps,...swapModel,createScheduleHistoryStore,prepareEarlyTimeOut,window,localStorage,document:{getElementById:node,createElement:()=>({value:'',textContent:''}),addEventListener,querySelector:()=>null,querySelectorAll:()=>[]},
         console:{error(){},warn(){},log(){}},Date,
         setInterval:(fn,delay)=>{const id=++sequence;intervals.set(id,{fn,delay});return id;},clearInterval:id=>intervals.delete(id),
         setTimeout:(fn,delay)=>{const id=++sequence;timeouts.set(id,{fn,delay});return id;},clearTimeout:id=>timeouts.delete(id),
