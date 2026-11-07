@@ -125,6 +125,11 @@ test('provider quota failures have safe diagnostics and never echo a key or upst
   try{await interpret({evidence:[{id:'sales.net'}]},q,{apiKey:'private-do-not-log',fetcher:async()=>new Response(JSON.stringify({error:{code:'insufficient_quota',message:'private-do-not-log'}}),{status:429})});assert.fail('Expected quota rejection');}
   catch(error){assert.equal(error.code,'provider-quota');assert.equal(error.service,'openai');assert.equal(error.upstreamStatus,429);assert.equal(error.providerCode,'insufficient_quota');assert.doesNotMatch(error.message,/private-do-not-log/);}
 });
+test('unclassified provider 429 errors and type-only quota errors stay actionable and secret-free',async()=>{
+  for(const [body,code]of [[{error:{code:null,type:'insufficient_quota',message:'sk-proj-private'}},'provider-quota'],[{error:{code:'sk-proj-private',type:'sk-proj-private',message:'secret'}},'provider-limited']]){
+    await assert.rejects(()=>interpret({evidence:[{id:'sales.net'}]},validateQuery(base,now),{apiKey:'test',fetcher:async()=>new Response(JSON.stringify(body),{status:429})}),error=>error.code===code&&!JSON.stringify(error).includes('sk-proj-private'));
+  }
+});
 test('HTTP integration returns private structured reports and rejects unauthenticated requests',async t=>{
   const handler=createBoardHandler({env,fetcher:fetchFixture([]),now:()=>now,log:()=>{}});
   const server=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;try{req.body=raw?JSON.parse(raw):undefined;}catch{res.writeHead(400);res.end();return;}res.status=n=>{res.statusCode=n;return res;};res.json=value=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));};await handler(req,res);});

@@ -16,11 +16,12 @@ const json=async(fetcher,url,options={},timeout=12000)=>{
   catch { fail(503,'upstream-unavailable','A required service is unavailable. Please retry manually.'); }
   if(!response.ok){
     let body;try{body=await response.json();}catch{}
-    const knownCodes=new Set(['insufficient_quota','invalid_api_key','model_not_found','invalid_json_schema','permission_denied','rate_limit_exceeded','unsupported_parameter']);
-    const providerCode=knownCodes.has(body?.error?.code)?body.error.code:'unclassified';
-    const quota=service==='openai'&&providerCode==='insufficient_quota';
-    const error=new BoardError(service==='firebase-auth'&&[400,401].includes(response.status)?401:503,quota?'provider-quota':'upstream-unavailable',quota?'The AI provider has no available API quota. Review API billing or spending limits before retrying.':'A required service rejected this request. No report was generated.');
-    Object.assign(error,{service,upstreamStatus:response.status,providerCode});throw error;
+    const machineCode=v=>typeof v==='string'&&/^[a-z][a-z0-9_]{2,79}$/.test(v)?v:'unclassified';
+    const providerCode=machineCode(body?.error?.code),providerType=machineCode(body?.error?.type);
+    const quota=service==='openai'&&[providerCode,providerType].some(c=>['insufficient_quota','billing_hard_limit_reached','insufficient_credits'].includes(c));
+    const limited=service==='openai'&&response.status===429;
+    const error=new BoardError(service==='firebase-auth'&&[400,401].includes(response.status)?401:503,quota?'provider-quota':limited?'provider-limited':'upstream-unavailable',quota?'The AI provider has no available API quota. Review API billing or spending limits before retrying.':limited?'OpenAI is limiting requests or API quota is unavailable. Review API credit and limits, then retry manually.':'A required service rejected this request. No report was generated.');
+    Object.assign(error,{service,upstreamStatus:response.status,providerCode,providerType});throw error;
   }
   try{return await response.json();}catch{fail(502,'invalid-upstream','A required service returned an invalid response.');}
 };
@@ -250,7 +251,7 @@ export function createBoardHandler({env=process.env,fetcher=fetch,now=Date.now,v
       return send(200,{...result,packet,advisoryOnly:true,requestId});
     }catch(error){
       const status=error instanceof BoardError?error.status:500;
-      log({event:'ai-board-error',requestId,status,code:error instanceof BoardError?error.code:'internal',...(error.service?{service:error.service,upstreamStatus:error.upstreamStatus,providerCode:error.providerCode}:{}),durationMs:now()-started});
+      log({event:'ai-board-error',requestId,status,code:error instanceof BoardError?error.code:'internal',...(error.service?{service:error.service,upstreamStatus:error.upstreamStatus,providerCode:error.providerCode,providerType:error.providerType}:{}),durationMs:now()-started});
       return send(status,{error:{code:error instanceof BoardError?error.code:'internal',message:error instanceof BoardError?error.message:'The report could not be generated.'},requestId});
     }finally{if(acquired)active.delete(uid);}
   };
