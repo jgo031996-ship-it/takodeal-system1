@@ -47,7 +47,7 @@ Cash outflows can include purchases/transfers and do not establish profit, margi
 
 - AI_BOARD_OWNER_UID: trusted UID verified from takodeal-pos Authentication.
 - OPENAI_API_KEY: private key entered directly into Vercel as Sensitive for Preview and Production.
-- AI_BOARD_MODEL: optional; default gpt-4.1-mini, using Responses structured outputs and store:false.
+- AI_BOARD_MODEL: optional; default gpt-5.6-terra with low reasoning effort and a 4,500-token output/reasoning limit, using Responses structured outputs and store:false. The smaller former default did not meet live interpretation-quality checks. Unknowns are constrained to the packet's actual source limitations in the schema and validated again at runtime.
 
 Missing configuration fails closed. Firebase public web configuration matches the existing app. Vercel preview protection remains enabled. Origins are limited to the Owner domain and exact Vercel deployment/branch system URLs.
 

@@ -90,6 +90,7 @@ test('all seven directors execute through auth, reads, calculations and structur
     const modelRequest=JSON.parse(calls.find(c=>c.url.includes('openai.com')).init.body);
     assert.deepEqual(modelRequest.text.format.schema.properties.findings.items.properties.evidenceIds.items.enum,res.body.packet.evidence.map(e=>e.id));
     assert.equal(modelRequest.text.format.schema.properties.findings.items.properties.evidenceIds.minItems,1);
+    assert.equal(modelRequest.model,'gpt-5.6-terra');assert.deepEqual(modelRequest.reasoning,{effort:'low'});assert.equal(modelRequest.max_output_tokens,4500);
     assert.ok(modelRequest.text.format.schema.properties.assumptions.items.enum.includes(res.body.report.assumptions[0]));
     assert.equal(modelRequest.store,false);assert.equal(modelRequest.tools,undefined);assert.doesNotMatch(modelRequest.input,/test-private-key|Bearer|pinned-owner|staffName|customerName/);
     assert.doesNotMatch(JSON.stringify(logs),/test-private-key|Review the evidence|pinned-owner|eyJ/);
