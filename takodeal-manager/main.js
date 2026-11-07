@@ -27072,5 +27072,9 @@ installCashRemittanceReview(window,document);
 // Explicit store/HQ cost basis replaces the legacy highest-branch cost scan.
 installRecipeCostUI({window,document,setCosts:costs=>{globalInventoryCosts=costs;}});
 
+// The Board has its own owner gate and server-authorized read-only endpoint.
+import {installAIBoard} from './ai-board.js';
+runManagerDomReady(()=>installAIBoard(window,document));
+
 // These scoped readers replace legacy broad audit/payment loading after all wrappers.
 runManagerDomReady(()=>{window.ownerStockAudits ||= installOwnerStockAudits(window,document);installPendingPaymentReader(window,document);installPaymentReconciliation(window,document);});

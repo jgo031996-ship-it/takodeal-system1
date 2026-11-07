@@ -1,10 +1,14 @@
 import {WORKSPACE_ROUTES,HR_TABS,INVENTORY_TABS,OWNER_EMAIL,canonicalRoute,configuredPermissions,inventoryPermission,canOpenWorkspacePage,canOpenHrTab,canOpenInventoryTab,workspaceLandingPage} from './workspace-access-model.js';
 import {readHQAccessState,planHQAccessChange,saveHQAccessChange,accessOperation,installHQAccessSync} from './hq-access-sync.js';
 import {resolveHQAccount} from './hq-account-model.js';
+import {isAIBoardSessionOwner} from './ai-board-model.js';
+export const canOpenManagerPage=(w,route)=>route==='ai-board'
+ ? isAIBoardSessionOwner(w.auth?.currentUser,w.sessionUser)
+ : canOpenWorkspacePage(w.sessionUser,route);
 const esc=value=>String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export function applyWorkspacePermissions(w=window,d=document) {
  const user=w.sessionUser,show=(node,allowed)=>{if(node)node.style.display=allowed?'flex':'none';};
- d.querySelectorAll('.sidebar .nav-item').forEach(node=>show(node,canOpenWorkspacePage(user,node.id.replace('nav-',''))));
+ d.querySelectorAll('.sidebar .nav-item').forEach(node=>show(node,canOpenManagerPage(w,node.id.replace('nav-',''))));
  for(const tab of Object.keys(HR_TABS))show(d.getElementById('subnav-'+tab),canOpenHrTab(user,tab));
  for(const tab of INVENTORY_TABS)show(d.getElementById('subnav-'+tab),canOpenInventoryTab(user,tab));
  const hrVisible=Object.keys(HR_TABS).some(tab=>canOpenHrTab(user,tab)) || canOpenWorkspacePage(user,'sop');
@@ -21,7 +25,7 @@ export function installWorkspaceAccess(w=window,d=document) {
  const wrap=(name,check)=>{const original=w[name];if(typeof original!=='function')return;w[name]=function(...args){if(!check(...args))return denied();return original.apply(this,args);};};
  const originalView=w.switchView;
  w.switchView=function(route,...args){
-  route=canonicalRoute(route);if(!canOpenWorkspacePage(user(),route))return denied();
+  route=canonicalRoute(route);if(!canOpenManagerPage(w,route))return denied();
   const result=originalView?.call(this,route,...args);
   if(route==='inventory')w.switchInvTab?.(INVENTORY_TABS.find(tab=>canOpenInventoryTab(user(),tab)));
   if(route==='payroll')w.switchPayrollTab?.(canOpenHrTab(user(),'Feed')?'Feed':'Sanctions');
@@ -60,7 +64,7 @@ function installPermissionEditor(w,d) {
    const catalogue=new Map();
    for(const node of d.querySelectorAll('.sidebar [id^="nav-"],.sidebar .nav-subitem')){
     const id=node.id.replace(/^nav-|^subnav-/,''),key=HR_TABS[id] || (INVENTORY_TABS.includes(id)?inventoryPermission(id):id==='alerts'?'security-alerts':id);
-    if(!key || !WORKSPACE_ROUTES.includes(key) && !Object.values(HR_TABS).includes(key) && !INVENTORY_TABS.map(inventoryPermission).includes(key) && !['products','security-alerts'].includes(key))continue;
+    if(!key || key==='ai-board' || !WORKSPACE_ROUTES.includes(key) && !Object.values(HR_TABS).includes(key) && !INVENTORY_TABS.map(inventoryPermission).includes(key) && !['products','security-alerts'].includes(key))continue;
     if(!catalogue.has(key))catalogue.set(key,(node.querySelector('.nav-text')?.textContent?.trim() || node.textContent.replace(/[0-9▼▲⌄]/g,'').trim()).replace(/\p{Extended_Pictographic}|\uFE0F|\u200D/gu,'').trim());
    }
    catalogue.set('payroll','Human Resources · all HR tabs');catalogue.set('inventory','Live Inventory · all inventory tabs');catalogue.set('franchise','Franchise HQ Hub · Simulator');
