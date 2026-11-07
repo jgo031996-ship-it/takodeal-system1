@@ -95,6 +95,19 @@ test('all seven directors execute through auth, reads, calculations and structur
     assert.ok(calls.filter(c=>c.url.includes('firestore')).every(c=>c.url.endsWith('documents:runQuery')&&c.init.method==='POST'));
   }
 });
+
+test('historical consultations retain current-stock timestamps and count-only control limitations',()=>{
+  const q=validateQuery({...base,directorId:'mentor',period:{start:'2026-11-06',end:'2026-11-06'}},now);
+  const p=calculateEvidence({data:fixture,coverage:Object.keys(fixture).map(source=>({source,complete:true}))},q,now);
+  for(const item of p.evidence.filter(e=>e.source==='inventory')){
+    assert.match(item.label,/Current/);assert.ok(item.note.includes(new Date(now).toISOString()));
+    assert.match(item.note,/NOT stock on the selected historical business days/);
+  }
+  assert.match(p.evidence.find(e=>e.id==='stock.movements').note,/not stock movement transactions/);
+  assert.match(p.evidence.find(e=>e.id==='hr.manual').note,/Zero does not prove automated or reliable capture/);
+  assert.match(p.evidence.find(e=>e.id==='ops.overdue').note,/not a verified shift policy/);
+  assert.match(p.evidence.find(e=>e.id==='audit.cash').note,/Differences can cancel/);
+});
 test('no auth, wrong owner, cross-origin, writes, bad content and missing key cannot trigger data or AI reads',async()=>{
   for(const change of [{headers:{authorization:''}},{headers:{authorization:'Bearer '+token({sub:'other'})}},{headers:{origin:'https://evil.example'}},{method:'DELETE'},{headers:{'content-type':'text/plain'}},{body:{...base,action:'write'}}]){
     const calls=[],handler=createBoardHandler({env,fetcher:fetchFixture(calls),now:()=>now,log:()=>{}}),res=fakeResponse();

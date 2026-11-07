@@ -156,24 +156,25 @@ export function calculateEvidence({data,coverage},q,now=Date.now()) {
   }
   if(data.inventory){
     const valid=data.inventory.filter(r=>numeric(r.currentStock));
-    add('stock.items','Inventory records loaded',data.inventory.length,'count','inventory','Current snapshot only. Units differ: quantities must not be summed across items.');
-    add('stock.negative','Items with negative stock',valid.filter(r=>Number(r.currentStock)<0).length,'count','inventory');
-    add('stock.low','Items at or below reorder level',valid.filter(r=>numeric(r.reorderLevel)&&Number(r.currentStock)<=Number(r.reorderLevel)).length,'count','inventory');
-    add('stock.invalid','Items without a valid stock quantity',data.inventory.length-valid.length,'count','inventory');
+    const snapshot=`Current snapshot as of ${new Date(now).toISOString()}, NOT stock on the selected historical business days. No cause of a stock difference is established.`;
+    add('stock.items','Current inventory records loaded',data.inventory.length,'count','inventory',snapshot+' Units differ: quantities must not be summed across items.');
+    add('stock.negative','Current items with negative stock',valid.filter(r=>Number(r.currentStock)<0).length,'count','inventory',snapshot);
+    add('stock.low','Current items at or below reorder level',valid.filter(r=>numeric(r.reorderLevel)&&Number(r.currentStock)<=Number(r.reorderLevel)).length,'count','inventory',snapshot);
+    add('stock.invalid','Current items without a valid stock quantity',data.inventory.length-valid.length,'count','inventory',snapshot);
   }
   if(data.stock_logs){
-    add('stock.movements','Stock count log records',data.stock_logs.length,'count','stock_logs');
+    add('stock.movements','Stock count log records',data.stock_logs.length,'count','stock_logs','Count log events, not stock movement transactions or a history of stock balances.');
     add('stock.variance','Logs with non-zero recorded variance',data.stock_logs.filter(r=>numeric(r.variance)&&Number(r.variance)!==0).length,'count','stock_logs','Recorded count differences; not a computed wastage rate or evidence of theft.');
   }
   if(data.shifts){
     const closed=data.shifts.filter(s=>s.active===false&&numeric(s.expectedCash)&&numeric(s.declaredCash));
     add('ops.shifts','Shift records opened in period',data.shifts.length,'count','shifts','Shifts opened before this period are excluded.');
-    add('ops.overdue','Open shifts older than 16 hours',data.shifts.filter(s=>s.active===true&&now-Date.parse(s.startTime)>16*3600000).length,'count','shifts');
+    add('ops.overdue','Open shifts older than 16 hours',data.shifts.filter(s=>s.active===true&&now-Date.parse(s.startTime)>16*3600000).length,'count','shifts','A review threshold only, not a verified shift policy. Zero does not establish timely closure, policy compliance or reliable controls.');
     add('audit.cash','Closed-shift cash difference',round(closed.reduce((n,s)=>n+Number(s.declaredCash)-Number(s.expectedCash),0)),'PHP','shifts',`Declared minus expected cash for ${closed.length} shifts with both amounts. Differences can cancel; reconcile individually.`);
   }
   if(data.attendance_logs){
     add('hr.punches','Attendance events',data.attendance_logs.length,'count','attendance_logs','Events are not unique employees, hours worked, lateness or absence. Rosters and approved corrections are not included.');
-    add('hr.manual','Manual attendance events',data.attendance_logs.filter(r=>r.isManual===true).length,'count','attendance_logs','A process review signal; no individual employment decisions or sanctions.');
+    add('hr.manual','Manual attendance events',data.attendance_logs.filter(r=>r.isManual===true).length,'count','attendance_logs','Events flagged isManual; not necessarily corrections. Zero does not prove automated or reliable capture, adequate staffing or no missing events. No individual employment decisions or sanctions.');
   }
   return {directorId:q.directorId,branch:q.branch,period:q.period,dateBasis:'Philippine business days: 08:30 to 08:30 (UTC+8); end date inclusive',asOf:new Date(now).toISOString(),
     coverage,evidence,partial:coverage.some(c=>!c.complete),limitations:[
@@ -224,6 +225,10 @@ Use ONLY the provided deterministic evidence for factual company claims and figu
 Discuss unavailable sources and missing evidence in assumptions; never invent an evidence ID or create a finding without a supporting citation.
 Distinguish observations, estimates, assumptions and unknowns. Describe capped or unavailable sources and lower confidence when incomplete. Missing data is not zero. Do not claim profit from cash outflows, ROI from channel sales, lateness from attendance counts, or wastage from count variance.
 Recorded sales are not cash collected: digital settlements and bank balances are absent. Never infer net cash inflow, liquidity, available funds or spending capacity from sales minus recorded outflows. Missing payment verification is a review signal, not an established control failure, loss or fraud. Do not assume uploaded records are complete simply because a bounded query finished.
+Inventory quantities are CURRENT at packet.asOf, independent of the selected historical period. Explicitly distinguish current inventory from dated count logs; never describe current stock as stock on the requested historical date. Count logs are not stock movement transactions. Do not suggest theft, wastage or losses as explanations without separate supporting evidence; request reconciliation instead.
+Counts and zeros are descriptive only. Never infer reliable/automated attendance, effective scheduling, adequate staffing, accurate cash handling, good shift closure, policy compliance or effective controls from event counts, no manual flags, no overdue shifts, no duplicates or zero aggregate cash difference. The 16-hour threshold is a review heuristic, not a verified company policy. Cash differences can cancel across shifts; zero aggregate difference is not full reconciliation. Manual attendance flags are not necessarily corrections. State what was recorded and what cannot be concluded.
+Channel figures group the recorded paymentMethod field. They do not measure customer preferences, marketing reach or acquisition channels. Do not infer those from payment mix.
+Do not list unsupported completeness, reliability or causes as assumptions to quietly justify a positive conclusion. Present missing completeness and causal evidence as unknowns. Recommendations to review records must be conditional on owner verification, not claims that staff or existing systems failed.
 For Finance review revenue and outflows with cash/profit limitations. Audit identifies review signals without fraud accusations. Inventory reviews negative/low stock and count variance without ordering stock. HR reviews aggregate attendance process only. Operations reviews branch sales and shifts without claiming SOP compliance. Marketing reviews channel mix and discounts without claiming attribution or campaign ROI.
 For Mentor, integrate the six specialist perspectives supported by evidence, challenge assumptions, give a credible counterargument and options, explicitly recommend proceed/reconsider/wait. For scenarios use only assumptions explicitly supplied by the owner; otherwise request essential inputs. For a decision brief state the objective, constraints and evidence gaps.
 Consultation mode: ${q.consultation}. Return a concise, useful report in the required schema.`,
