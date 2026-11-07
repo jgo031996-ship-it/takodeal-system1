@@ -11,7 +11,7 @@ import {captureAttendanceSchedule,resolveAttendanceShift,isLatenessRequest,reque
 import {savedShiftChoices,makeSavedShiftProposal,inspectStaffShiftProposal,staffShiftProposalHTML} from '../takodeal-manager/saved-shift-proposal.js';
 import {emergencyShiftBounds,emergencyShiftSourceFingerprint,resolveEmergencyShift} from '../takodeal-manager/emergency-shift-model.js';
 import {lateRequestSummary,lateRequestSummaryHTML} from '../takodeal-manager/late-request-summary.js';
-import {lateRequestResolutionFingerprint} from '../takodeal-manager/late-request-resolution.js';
+import {lateRequestResolutionFingerprint,verifiedWorkedShiftProposal} from '../takodeal-manager/late-request-resolution.js';
 import {OWNER_EMAIL} from '../takodeal-manager/workspace-access-model.js';
 
 // Execute the deployed handlers rather than mirroring their proposal decision.
@@ -24,7 +24,7 @@ function install(api){
  ReviewElement.prototype.remove ||= function(){this.parentElement.children=this.parentElement.children.filter(node=>node!==this);};
  const context=vm.createContext({window:api,document,console,Date,Symbol,OWNER_EMAIL,requestEscape,
   resolveAttendanceShift,isLatenessRequest,requestLateMinutes,legacyAttendanceCandidates,staffProfileForWork,staffRateForDate,latePay,loadStaffSalaryTimeline,
-  inspectStaffShiftProposal,staffShiftProposalHTML,resolveEmergencyShift,lateRequestSummary,lateRequestSummaryHTML,lateRequestResolutionFingerprint,scheduleDateKey,
+  inspectStaffShiftProposal,staffShiftProposalHTML,resolveEmergencyShift,lateRequestSummary,lateRequestSummaryHTML,lateRequestResolutionFingerprint,verifiedWorkedShiftProposal,scheduleDateKey,
   tkOwnerDoc:ref=>api.getDocFromServer(ref),tkOwnerDocs:q=>api.getDocsFromServer(q),Swal:{fire:(...args)=>warnings.push(args)}});
  vm.runInContext(handler('updateLateRequestPreview')+'\n'+handler('handleRequest'),context);
  return {api,document,warnings,button:()=>document.getElementById('btnSubmitReply'),calculation:()=>document.getElementById('replyLateCalculation'),

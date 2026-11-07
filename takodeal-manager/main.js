@@ -14,6 +14,8 @@ import {createCashierFleetApproval,isCashierFleetDevice} from './cashier-device-
 import {installPaymentReconciliation} from './payment-reconciliation-ui.js';
 import {installOwnerStockAudits} from './owner-stock-audits.js';
 import {installPendingPaymentReader} from './pending-payment-reader.js';
+import {installOwnerContractPrinting,renderOwnerContractVault} from './owner-contract-print.js';
+import {reviewLateRequestWorkedShift,reviewLateRequestDatedAttendance} from './late-request-worked-shift-ui.js';
 import {installOwnerDeductionHistory,readOwnerPayrollRecoveryHistory,ownerDeductionHistoryRow} from './owner-deduction-history.js';
 import {installOwnerDeductions} from './owner-deduction-ui.js';
 import {isOwnerDeduction} from './owner-deduction-model.js';
@@ -31,7 +33,7 @@ const runManagerDomReady = fn => document.readyState === "loading" ? document.ad
 runManagerDomReady(() => {installStaffSetupCodes(window,document);installScheduleProposalReview(window,document);installPayrollAdjustmentUI(window,document);installPayrollAdjustmentRefresh(window,document);installPayrollMessenger(window,document,{presentSaved:async(saved,context)=>{context.assertCurrent();const frozen={...saved.frozenData,name:saved.frozenData?.name||context.name,staffId:context.staffId,branch:saved.frozenData?.branch||context.branch,start:context.start,end:context.end,isPaid:true,finalNetPay:saved.finalNetPay,...(saved.processedAt?{processedAt:saved.processedAt}:{}),...(saved.staffSignature?{staffSignature:saved.staffSignature}:{})};signedPayslipSnapshots.set(frozen,context.assertCurrent);await window.openPayslipModal(frozen.name,frozen);context.assertCurrent();return frozen;}});});
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {lateRequestSummary,lateRequestSummaryHTML,lateRequestRecoveryContext} from './late-request-summary.js';
-import {resolveCorrectedLateRequest,lateRequestResolutionFingerprint,reviewOriginalLateRequest} from './late-request-resolution.js';
+import {resolveCorrectedLateRequest,lateRequestResolutionFingerprint,reviewOriginalLateRequest,verifiedWorkedShiftProposal} from './late-request-resolution.js';
 import {finalizeRefundPayroll} from './refund-payroll.js';
 import {finalizeOrdinaryPayroll,readPayrollCashShortages} from './payroll-settlement.js';
 import {installCashShortageUI,canReviewCashShortage} from './cash-shortage-ui.js';
@@ -9961,7 +9963,7 @@ window.updateLateRequestPreview = function() {
             reviewed=context.proposalHoursReviewed===true&&!context.proposalReferenceError&&context.request.attendanceLogId===attendance.id;
         if(decision==='Keep original assigned hours'?!keep:!reviewed){
             if(button){button.disabled=true;button.innerText='Review proposed hours first';}
-            target.innerHTML+='<p>Open linked attendance to confirm the assigned hours first. The Owner may instead keep verified original hours and enter a reason of at least 8 characters. This selection alone does not change the schedule or waive lateness.</p>';return;
+            target.innerHTML+='<p><strong>Step 1: review the proposed worked shift.</strong> The Owner must confirm the assigned hours using the exact saved shift before this letter can be approved.</p><button type="button" onclick="window.openLateRequestAttendance()" style="padding:11px 15px;background:#176552;color:white;border:0;border-radius:7px;font-weight:bold">Review proposed worked shift →</button><p>If this shift is still in progress, keep the letter pending until its actual Time Out is recorded. Then return to review the worked shift. The original punches, paid payslips and lateness decisions stay on file. After a dated correction, complete its linked attendance review before closing the letter.</p><p>Use “Keep original assigned hours” only when the proposed shift is wrong and the original hours have been verified; add a reason of at least 8 characters. This selection alone does not change the schedule or waive lateness.</p>';return;
         }
     }
     const rateProfile=staffProfileForWork(context.profile,attendance,shift);
@@ -9974,7 +9976,9 @@ window.openLateRequestAttendance = function() {
     const context=window.lateRequestContext;if(!context?.request)return;
     const selected=document.getElementById('replyAttendanceLog')?.value,attendance=context.logs.find(log=>log.id===selected),recovery=lateRequestRecoveryContext(context.request);
     if(!recovery||!attendance)return window.ManagerUI.notify('Choose the linked Time In before opening attendance review.');
+    if(context.request.staffShiftProposal&&context.selectedLatePreview?.corrected!==true&&context.proposalHoursReviewed!==true)return reviewLateRequestWorkedShift(window,document,context,attendance);
     recovery.attendanceLogId=attendance.id;if(attendance.staffId)recovery.staffId=attendance.staffId;
+    if(context.request.staffShiftProposal)return reviewLateRequestDatedAttendance(window,document,context,recovery);
     document.getElementById('dynamicReplyModal')?.remove();window.lateRequestContext=null;
     return window.openAttendanceRecovery(recovery);
 };
@@ -10001,7 +10005,7 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
         if (isLatenessRequest(req)) {
             const [profileSnap, scheduleSnap] = await Promise.all([
                 tkOwnerDocs(window.query(window.collection(window.db, 'cashiers'), window.where('cashierName', '==', staffName))),
-                window.loadPayrollScheduleHistory(scheduleDateKey(req.timestamp?.toDate?.() || req.timestamp),scheduleDateKey(req.timestamp?.toDate?.() || req.timestamp))
+                window.loadPayrollScheduleHistory(scheduleDateKey(new Date(+(req.timestamp?.toDate?.() || new Date(req.timestamp))-86400000)),scheduleDateKey(new Date(+(req.timestamp?.toDate?.() || new Date(req.timestamp))+86400000)))
             ]);
             if (profileSnap.docs.length !== 1) throw new Error('The staff profile is missing or duplicated. Check Payroll & Rates first.');
             const profile = await loadStaffSalaryTimeline(window,{...profileSnap.docs[0].data(),staffId:profileSnap.docs[0].id});
@@ -10024,13 +10028,18 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
             let proposalHoursReviewed=false,proposalReferenceError='',proposalActualTimeInAt='';
             if(req.staffShiftProposal){
                 try{
-                    const inspected=await inspectStaffShiftProposal(window,req,{assertCurrent:assertOpening});assertOpening();
-                    logs=logs.map(log=>log.id===inspected.start.id?inspected.start:log);proposalActualTimeInAt=inspected.actualTimeInAt;
-                    const head=await window.getDocFromServer(window.doc(window.db,'attendance_shift_confirmations',inspected.start.id));assertOpening();
-                    if(!head||head.metadata?.fromCache||head.metadata?.hasPendingWrites)throw Error('Reconnect to confirm the saved assigned-hours review.');
-                    const confirmed=resolveEmergencyShift(inspected.start,{...profile,id:profile.staffId,staffId:profile.staffId},head.exists()?head.data():null);
-                    const shift=resolveAttendanceShift(inspected.start,scheduleSnap,{[inspected.start.staffName]:profile});
-                    proposalHoursReviewed=confirmed?.emergencyShiftConfirmed===true||shift?.reliefReviewVerified===true;
+                    const currentShift=resolveAttendanceShift(logs[0],scheduleSnap,{[logs[0].staffName]:profile});
+                    if(verifiedWorkedShiftProposal(req,logs[0],currentShift,scheduleSnap)){
+                        proposalHoursReviewed=true;proposalActualTimeInAt=new Date(attendanceMillis(logs[0].timestamp)).toISOString();
+                    }else{
+                        const inspected=await inspectStaffShiftProposal(window,req,{assertCurrent:assertOpening});assertOpening();
+                        logs=logs.map(log=>log.id===inspected.start.id?inspected.start:log);proposalActualTimeInAt=inspected.actualTimeInAt;
+                        const head=await window.getDocFromServer(window.doc(window.db,'attendance_shift_confirmations',inspected.start.id));assertOpening();
+                        if(!head||head.metadata?.fromCache||head.metadata?.hasPendingWrites)throw Error('Reconnect to confirm the saved assigned-hours review.');
+                        const confirmed=resolveEmergencyShift(inspected.start,{...profile,id:profile.staffId,staffId:profile.staffId},head.exists()?head.data():null);
+                        const shift=resolveAttendanceShift(inspected.start,scheduleSnap,{[inspected.start.staffName]:profile});
+                        proposalHoursReviewed=confirmed?.emergencyShiftConfirmed===true||shift?.reliefReviewVerified===true;
+                    }
                 }catch(error){assertOpening();proposalReferenceError=error.message||'The saved proposed shift needs a fresh review.';}
             }
             assertOpening();window.lateRequestContext = { requestId: docId,request:{...req,id:docId}, action, logs, minutes, profile,
@@ -13341,9 +13350,12 @@ window.runProductReport = function() {
 // ========================================================
 window.loadSalesHistoryTab = async function() {
     const reportSession = historyLive.start();
+    const historyUser=window.auth?.currentUser,historySessionUser=window.sessionUser;
     const historyScope = () => JSON.stringify([window.auth?.currentUser?.uid,window.sessionUser?.uid,window.sessionUser?.email,window.sessionUser?.permissions,window.sessionUser?.allowedBranches,window.sessionUser?.branch,window.sessionUser?.isFranchisee]);
     const historyAccount = historyScope();
-    const historyCurrent = () => reportSession.active() && historyAccount === historyScope();
+    let selectedHistoryScope;
+    const selectedScope=()=>JSON.stringify(['histBranchFilter','histStartDate','histEndDate','histArchiveSelect'].map(id=>document.getElementById(id)?.value));
+    const historyCurrent = () => reportSession.active() && window.auth?.currentUser===historyUser && window.sessionUser===historySessionUser && historyAccount === historyScope() && (!selectedHistoryScope||selectedHistoryScope===selectedScope());
     const tbodyTx = document.getElementById('historyTableBody');
     const tbodyShifts = document.getElementById('historyShiftsBody');
     const tbodyDaily = document.getElementById('historyDailyBody');
@@ -13379,6 +13391,10 @@ window.loadSalesHistoryTab = async function() {
     // 🔥 NEW: Check if we are reading Live Data or Cold Storage
     let dataSourceSelect = document.getElementById('histArchiveSelect');
     let dataSource = dataSourceSelect ? dataSourceSelect.value : "LIVE";
+    selectedHistoryScope=selectedScope();
+    const reportStatus=text=>{if(historyCurrent()){const node=document.getElementById('histLiveStatus');if(node)node.textContent=text;}};
+    const pendingFigures=text=>{for(const id of ['histSumNet','histSumCogs','histSumMargin','histSumGrab','histSumFoodpanda','histCountGrab','histCountFoodpanda','histCogsPct','histMarginPct']){const node=document.getElementById(id);if(node)node.innerText=text;}};
+    pendingFigures('—');reportStatus('Loading sales report…');
 
     try {
         const qInv = window.query ? window.collection(window.db, "inventory") : collection(db, "inventory");
@@ -13390,10 +13406,18 @@ window.loadSalesHistoryTab = async function() {
 
         let getDocsFn = window.getDocs || getDocs;
         
-        const [invSnap, bomSnap, menuSnap, shiftSnap, rejectedSnap, parkedSnap] = await Promise.all([
-            getDocsFn(qInv), getDocsFn(qBom), getDocsFn(qMenu), 
-            getDocsFn(qShifts), getDocsFn(qRej), getDocsFn(qParked)
-        ]);
+        // Repeated refreshes share still-running support reads for this exact
+        // account/range. A UI deadline does not cancel the physical SDK reads.
+        const inputKey=JSON.stringify([historyAccount,selectedHistoryScope]);
+        const pendingInputs=window.loadSalesHistoryTab.pendingInputs ||= new Map();
+        let input=pendingInputs.get(inputKey);
+        if(!input||input.user!==historyUser||input.session!==historySessionUser){
+            const reads=[qInv,qBom,qMenu,qShifts,qRej,qParked].map(ref=>Promise.resolve().then(()=>getDocsFn(ref)));
+            input={user:historyUser,session:historySessionUser,promise:Promise.all(reads)};pendingInputs.set(inputKey,input);
+            const entry=input;void Promise.allSettled(reads).then(()=>{if(pendingInputs.get(inputKey)===entry)pendingInputs.delete(inputKey);});
+        }
+        let inputTimer;
+        const [invSnap, bomSnap, menuSnap, shiftSnap, rejectedSnap, parkedSnap] = await Promise.race([input.promise,new Promise((_,reject)=>{inputTimer=window.setTimeout?.(()=>reject(Error('Sales report inputs took too long. Reconnect and use Update Report to retry.')),20000);})]).finally(()=>window.clearTimeout?.(inputTimer));
 
         if (!historyCurrent()) return;
         // 1. PROCESS COSTS & MENU CATEGORIES
@@ -13799,7 +13823,8 @@ window.loadSalesHistoryTab = async function() {
     } catch (e) {
         if (!historyCurrent()) return;
         console.error("History Error:", e);
-        if(tbodyTx) tbodyTx.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px; color: red;">Failed to fetch history.</td></tr>';
+        pendingFigures('Unavailable');reportStatus('Sales report unavailable · use Update Report to retry');
+        for(const body of [tbodyTx,tbodyShifts,tbodyDaily,tbodyMonthly])if(body)body.innerHTML = '<tr><td colspan="10" class="text-center" style="padding: 30px; color: red;">Sales report could not finish loading. Check your connection and use Update Report to retry. Pending Verifications has its own receipt-loading status.</td></tr>';
     }
 };
 // ========================================================
@@ -24194,28 +24219,9 @@ window.openEmployeeProfile = function(docId) {
 
     document.getElementById('employeeProfileModal').style.display = 'flex';
 
-    // Render Contracts
-    let vaultContainer = document.getElementById('contractVaultContainer');
-    let vaultBtns = document.getElementById('contractVaultButtons');
-    if (vaultContainer && vaultBtns) {
-        vaultBtns.innerHTML = '';
-        if (data.signedContracts && Object.keys(data.signedContracts).length > 0) {
-            vaultContainer.style.display = 'block';
-            let safeData = encodeURIComponent(JSON.stringify(data));
-            
-            if (data.signedContracts.initial) {
-                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Initial', '${safeData}', '${data.signedContracts.initial}')" style="background:#0f766e; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 Initial</button>`;
-            }
-            if (data.signedContracts.extension) {
-                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Extension', '${safeData}', '${data.signedContracts.extension}')" style="background:#0ea5e9; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 6-Mo Ext</button>`;
-            }
-            if (data.signedContracts.regularization) {
-                vaultBtns.innerHTML += `<button onclick="window.reprintContract('Regularization', '${safeData}', '${data.signedContracts.regularization}')" style="background:#10b981; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; font-weight:bold; font-size:12px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">📄 Regularization</button>`;
-            }
-        } else {
-            vaultContainer.style.display = 'none';
-        }
-    }
+    // Signed contract buttons carry only the exact employee ID. The printer
+    // refreshes the saved signature date, employment term and private wage.
+    renderOwnerContractVault(window,document,docId,data);
 
     // Render History
     let tbody = document.getElementById('empProfileHistoryBody');
@@ -27038,7 +27044,8 @@ for (const name of ['openBomEditor','openNewProductModal']) {
 const loginOriginalSwitchView = window.switchView;
 window.switchView = function(view,...args) {
     const result = loginOriginalSwitchView.call(this,view,...args);
-    if (view === 'history') window.loadHistoryShiftDropdown();
+    if (view === 'history' && window.auth?.currentUser?.uid && window.sessionUser?.uid===window.auth.currentUser.uid && canOpenWorkspacePage(window.sessionUser,'history')) {window.loadHistoryShiftDropdown();void window.loadSalesHistoryTab();}
+    if (view !== 'history') window.pendingPaymentReader?.invalidate();
     logisticsFeed.syncVisibility();
     return result;
 };
@@ -27048,6 +27055,7 @@ installFranchiseWorkspace();
 installMonthlyBills();
 installStaffRateHistory(window,document);
 installMasterEmployeeDocuments(window,{d:document});
+installOwnerContractPrinting(window,document);
 installStaffSalaryDateUI(window,document);
 installSopChecklistExport(window,document);
 installCustomerHubSettings(window,document);

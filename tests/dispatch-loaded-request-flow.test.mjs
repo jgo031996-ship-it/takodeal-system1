@@ -30,6 +30,7 @@ function environment({status='Pending',changes={},cart=[],stored={},oldRequests=
         renderDispatchCart(){for(const key of Object.keys(elements))if(key.startsWith('cartQty_'))delete elements[key];api.dispatchCart.forEach((row,index)=>{elements['cartQty_'+index]={value:String(row.rawQty??row.qty)};});},
         invalidateCache(){},async loadDispatchDashboard(){},loadDispatchLogs(){},async loadFinancialFlow(){},async submitMultiDispatch(){throw Error('The legacy submission path must not run.');},async revertAndEditRestock(){throw Error('The legacy restock reversal path must not run.');},
         ManagerUI:{notify:message=>notifications.push(message)}};
+    const readDocs=api.getDocsFromServer;api.where=(key,op,value)=>({key,op,value});api.limit=count=>({limit:count});api.getDocsFromServer=async q=>{const result=await readDocs({...q,filters:(q.filters||[]).filter(filter=>filter.op!=='in'&&!filter.limit)}),limited=(q.filters||[]).find(filter=>filter.limit);return {docs:result.docs.filter(row=>(q.filters||[]).filter(filter=>filter.op==='in').every(filter=>filter.value.includes(row.data()[filter.key]))).slice(0,limited?.limit)};};
     api.getDocs=api.getDocsFromServer;api.getDoc=api.getDocFromServer;api.isBranchAllowed=branch=>api.sessionUser.allowedBranches.includes(branch);
     const document={getElementById:id=>elements[id]||null},Swal={async fire(...args){dialogs.push(args);return args[0]?.input==='text'?{isConfirmed:true,value:'Synthetic Driver'}:{isConfirmed:false};}};
     installDispatchRestockUI(api,{document,storage,dialogs:Swal});api.renderDispatchCart();
@@ -210,4 +211,62 @@ test('saved quantity reference remains viewable after recovery leaves no cart or
 test('saved reference viewer rechecks current branch scope and never renders out-of-scope quantities',async()=>{
     const f=brokenDraft();confirmRecovery(f);await f.api.resetDispatchDraftLinks();f.api.sessionUser.allowedBranches=['Cabantian'];const before=state(f),stored=local(f),count=f.dialogs.length;
     await f.api.showDispatchDraftBackup();const calls=f.dialogs.slice(count);assert.equal(calls.some(args=>args[0]?.titleText==='Saved quantity reference'),false);assert.match(calls.flat().filter(value=>typeof value==='string').join(' '),/outside|access/i);assert.deepEqual(state(f),before);assert.deepEqual(local(f),stored);
+});
+
+function restorableReference({originals=['old'],attempts={dispatch:null,setAside:null},stored={},...options}={}){
+ const reference={version:1,actorUid:user.uid,savedAt:'2026-11-07T00:00:00Z',source:'Main Office',destination:'Maa',items:[{...manual,qty:2750,rawQty:2.75}],purchaseOrderIds:originals,attempts};
+ return environment({...options,stored:{[recoveryKey]:JSON.stringify(reference),...stored},oldRequests:{old:{status:'Completed',dispatchBatchId:'old-batch'},...(options.oldRequests||{})}});
+}
+function confirmReload(f,{beforeConfirm=()=>{},requestId='fresh',cancel=false}={}){
+ const fire=f.dialogService.fire;f.dialogService.fire=async(...args)=>{
+  if(args[0]?.titleText==='Saved quantity reference'&&args[0].confirmButtonText==='Load back to dispatch cart'){f.dialogs.push(args);return {isConfirmed:true};}
+  if(args[0]?.titleText==='Choose the current stock request'){f.dialogs.push(args);return {isConfirmed:true,value:requestId};}
+  if(args[0]?.confirmButtonText==='Load quantities into cart'){f.dialogs.push(args);beforeConfirm();return {isConfirmed:!cancel};}
+  return fire(...args);
+ };
+}
+test('saved reference offers explicit reload, reviews its replacement request and restores only the local edited cart',async()=>{
+ const f=restorableReference(),before=state(f),old=copy(f.h.get('purchase_orders/old'));confirmReload(f);assert.equal(await f.api.showDispatchDraftBackup(),true);
+ assert.deepEqual(state(f),before);assert.deepEqual(f.h.get('purchase_orders/old'),old);assert.equal(f.storage.getItem('takodeal_active_po'),'fresh');assert.equal(f.api.dispatchCart[0].rawQty,2.75);assert.equal(f.api.dispatchCart[0].qty,2750);assert.equal(f.api.dispatchCart[0].sourceId,'hq');assert.equal(f.elements.cartQty_0.value,'2.75');assert.equal(f.elements.dispFrom.value,'Main Office');assert.equal(f.elements.dispTo.value,'Maa');assert.ok(JSON.parse(f.storage.getItem(recoveryKey)).recovery.loadedAt);
+ assert.ok(f.dialogs.some(args=>args[0]?.titleText==='Review recovered dispatch cart'&&/old.*records will stay unchanged/.test(args[0].html)));assert.equal(rows(f,'dispatch_logs').length,0);assert.equal(rows(f,'hq_restocks').length,0);
+});
+test('reloaded quantities send through the original atomic flow once and the reference cannot be reused afterward',async()=>{
+ const f=restorableReference();confirmReload(f);await f.api.restoreDispatchDraftBackup();const old=copy(f.h.get('purchase_orders/old'));f.h.loseNextAck();await f.send();assert.ok(f.storage.getItem('takodeal_dispatch_attempt'));assert.equal(rows(f,'dispatch_logs').length,1);assert.equal(rows(f,'dispatch_logs')[0][1].qty,2750);const saved=state(f);await f.send();assert.deepEqual(state(f),saved);assert.deepEqual(f.api.dispatchCart,[]);assert.deepEqual(f.h.get('purchase_orders/old'),old);assert.equal(request(f).status,'Completed');
+ assert.equal(await f.api.restoreDispatchDraftBackup(),false);assert.deepEqual(state(f),saved);assert.deepEqual(f.api.dispatchCart,[]);const count=f.dialogs.length;await f.api.showDispatchDraftBackup();assert.ok(f.dialogs.slice(count).some(args=>args[0]?.titleText==='Saved quantity reference'&&args[0].confirmButtonText==='Close'));
+});
+test('eligible original requests stay linked without replacement or any request-status write',async()=>{
+ const f=restorableReference({originals:['fresh']}),before=state(f);confirmReload(f);assert.equal(await f.api.restoreDispatchDraftBackup(),true);assert.equal(f.storage.getItem('takodeal_active_po'),'fresh');assert.equal(request(f).status,'Pending');assert.deepEqual(state(f),before);assert.equal(f.dialogs.some(args=>args[0]?.titleText==='Choose the current stock request'),false);
+});
+test('cancelled concrete recovery plan leaves reference, cart and all records unchanged',async()=>{
+ const f=restorableReference(),before=state(f),stored=local(f);confirmReload(f,{cancel:true});assert.equal(await f.api.restoreDispatchDraftBackup(),false);assert.deepEqual(state(f),before);assert.deepEqual(local(f),stored);assert.deepEqual(f.api.dispatchCart,[]);
+});
+test('no compatible open request keeps the saved quantities with an actionable explanation',async()=>{
+ const f=restorableReference({status:'Completed'}),before=state(f),stored=local(f);confirmReload(f);assert.equal(await f.api.restoreDispatchDraftBackup(),false);assert.match(errors(f),/Open or create the correct stock request/);assert.deepEqual(state(f),before);assert.deepEqual(local(f),stored);
+});
+for(const condition of ['memory cart','persisted cart','dispatch attempt','set-aside attempt'])test(`reload cannot overwrite an existing ${condition}`,async()=>{
+ const f=restorableReference();if(condition==='memory cart')f.api.dispatchCart=[copy(manual)];if(condition==='persisted cart')f.storage.setItem('takodeal_dispatch_cart',JSON.stringify([manual]));if(condition==='dispatch attempt')f.storage.setItem('takodeal_dispatch_attempt','{"id":"unresolved"}');if(condition==='set-aside attempt')f.storage.setItem('takodeal_set_aside_attempt','bad json');const before=state(f),stored=local(f),cart=copy(f.api.dispatchCart);confirmReload(f);assert.equal(await f.api.restoreDispatchDraftBackup(),false);assert.deepEqual(state(f),before);assert.deepEqual(local(f),stored);assert.deepEqual(f.api.dispatchCart,cart);
+});
+for(const condition of ['dispatch commit','dispatch log','set-aside commit'])test(`saved-copy ${condition} proof prevents recovery after the old attempt fields were reset`,async()=>{
+ const kind=condition==='set-aside commit'?'setAside':'dispatch',f=restorableReference({attempts:{[kind]:JSON.stringify({id:'uncertain-save'})}});f.h.put(condition==='dispatch commit'?'settings/dispatch_commit_uncertain-save':condition==='dispatch log'?'dispatch_logs/uncertain-save-0':'purchase_orders/uncertain-save',{id:'uncertain-save'});const before=state(f),stored=local(f);confirmReload(f);assert.equal(await f.api.restoreDispatchDraftBackup(),false);assert.match(errors(f),/already recorded/);assert.deepEqual(state(f),before);assert.deepEqual(local(f),stored);
+});
+for(const kind of ['dispatch','setAside'])test(`an unconfirmed ${kind} attempt retained only inside the reference cannot create a fresh save ID`,async()=>{
+ const f=restorableReference({attempts:{[kind]:JSON.stringify({id:'unconfirmed-save'})}}),before=state(f),stored=local(f);confirmReload(f);assert.equal(await f.api.restoreDispatchDraftBackup(),false);assert.match(errors(f),/still unconfirmed/);assert.deepEqual(state(f),before);assert.deepEqual(local(f),stored);assert.deepEqual(f.api.dispatchCart,[]);
+});
+test('replacement request search filters open states on the saved route and refuses an incomplete candidate list',async()=>{
+ const f=restorableReference(),read=f.api.getDocsFromServer,queries=[];f.api.getDocsFromServer=async q=>{queries.push(q);return read(q);};for(let i=0;i<101;i++)f.h.put('purchase_orders/open-'+i,{...copy(f.po),status:'Pending'});const before=state(f),stored=local(f);confirmReload(f);assert.equal(await f.api.restoreDispatchDraftBackup(),false);const query=queries.find(row=>row.table==='purchase_orders');assert.ok(query.filters.some(row=>row.key==='branch'&&row.value==='Maa'));assert.ok(query.filters.some(row=>row.key==='status'&&row.op==='in'&&row.value.includes('Approved')&&!row.value.includes('Completed')));assert.ok(query.filters.some(row=>row.limit===101));assert.match(errors(f),/More than 100 open/);assert.deepEqual(state(f),before);assert.deepEqual(local(f),stored);
+});
+for(const condition of ['conversion','base unit','missing item','duplicate item','inactive branch','extra request item'])test(`changed ${condition} blocks the entire reference before local publication`,async()=>{
+ const f=restorableReference();if(condition==='conversion')f.h.put('inventory/hq',{...stock,conversionRate:2000});if(condition==='base unit')f.h.put('inventory/hq',{...stock,uom:'Kilogram'});if(condition==='missing item')f.h.docs.delete('inventory/hq');if(condition==='duplicate item')f.h.put('inventory/duplicate',copy(stock));if(condition==='inactive branch')f.h.put('branches/branch-1',{name:'Maa',active:false});if(condition==='extra request item')f.h.put('purchase_orders/fresh',{...request(f),items:[copy(item),{name:'Unseen goods',qty:100}]});const before=state(f),stored=local(f);confirmReload(f);assert.equal(await f.api.restoreDispatchDraftBackup(),false);assert.deepEqual(state(f),before);assert.deepEqual(local(f),stored);assert.deepEqual(f.api.dispatchCart,[]);
+});
+for(const condition of ['request completed','request quantities','inventory conversion','account','scope','cart','backup'])test(`post-confirmation ${condition} race cannot publish a stale recovered cart`,async()=>{
+ const f=restorableReference();let expected,stored;confirmReload(f,{beforeConfirm:()=>{if(condition==='request completed')f.h.put('purchase_orders/fresh',{...request(f),status:'Completed'});if(condition==='request quantities')f.h.put('purchase_orders/fresh',{...request(f),items:[{...item,qty:9999}]});if(condition==='inventory conversion')f.h.put('inventory/hq',{...stock,conversionRate:2000});if(condition==='account')f.api.auth.currentUser={...user,uid:'other'};if(condition==='scope')f.api.sessionUser.allowedBranches=['Cabantian'];if(condition==='cart')f.api.dispatchCart=[copy(manual)];if(condition==='backup')f.storage.setItem(recoveryKey,f.storage.getItem(recoveryKey)+' ');expected=state(f);stored=local(f);}});assert.equal(await f.api.restoreDispatchDraftBackup(),false);assert.deepEqual(state(f),expected);assert.deepEqual(local(f),stored);assert.equal(f.api.dispatchCart.length,condition==='cart'?1:0);
+});
+test('failed cart persistence rolls back the consumption marker and every local draft key',async()=>{
+ const f=restorableReference(),before=state(f),stored=local(f),set=f.storage.setItem;let fail=true;f.storage.setItem=(key,value)=>{if(key==='takodeal_active_po'&&fail){fail=false;throw Error('Synthetic storage failure');}set(key,value);};confirmReload(f);assert.equal(await f.api.restoreDispatchDraftBackup(),false);assert.deepEqual(state(f),before);assert.deepEqual(local(f),stored);assert.deepEqual(f.api.dispatchCart,[]);assert.equal(JSON.parse(f.storage.getItem(recoveryKey)).recovery,undefined);assert.equal(f.elements.btnSubmitDispatch.disabled,false);
+});
+test('a full 113-item branch reference retains zero rows and sends only its positive quantities under the existing batch limit',async()=>{
+ const f=restorableReference(),reference=JSON.parse(f.storage.getItem(recoveryKey)),requests=[];reference.items=[];
+ for(let i=0;i<113;i++){const name='Branch item '+String(i).padStart(3,'0');f.h.put('inventory/stock-'+i,{...stock,name});reference.items.push({...manual,name,itemName:name,qty:i<3?1000:0,rawQty:i<3?1:0});requests.push({...item,name,itemName:name,qty:1000,rawQty:1});}
+ f.storage.setItem(recoveryKey,JSON.stringify(reference));f.h.put('purchase_orders/fresh',{...request(f),items:requests});const before=state(f);confirmReload(f);assert.equal(await f.api.restoreDispatchDraftBackup(),true);assert.equal(f.api.dispatchCart.length,113);assert.equal(f.api.dispatchCart.filter(row=>row.qty>0).length,3);assert.deepEqual(state(f),before);
+ await f.send();assert.equal(rows(f,'dispatch_logs').length,3,errors(f));assert.equal(request(f).status,'Completed');assert.equal(rows(f,'purchase_orders').find(([path,row])=>row.type==='Delayed Delivery')[1].items.length,110);assert.equal(f.h.get('inventory/stock-3').currentStock,stock.currentStock);
 });

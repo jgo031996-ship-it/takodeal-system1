@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v131-global-swaps-20261107';
+const CACHE_NAME = 'takodeal-manager-core-v132-owner-recovery-20261107';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
@@ -6,6 +6,7 @@ const CORE_ASSETS = [
 CORE_ASSETS.push('./manual-attendance-review.js','./payroll-confirmed-shifts.js');
 CORE_ASSETS.push('./ai-board.js','./ai-board-model.js','./ai-board.css');
 CORE_ASSETS.push('./schedule-swap-model.js','./schedule-swap-review.js');
+CORE_ASSETS.push('./dispatch-recovery-draft.js','./owner-contract-print.js','./late-request-worked-shift-ui.js');
 CORE_ASSETS.push('./payroll-straight-review.js');
 CORE_ASSETS.push('./payroll-bonus-templates.js');
 CORE_ASSETS.push('./cashier-device-approval.js');

@@ -4,12 +4,19 @@ import {loadClockOutSchedule} from './attendance-schedule-reader.js';
 import {resolveAttendanceShift,attendanceLateMinutes,isLatenessRequest,requestLateMinutes,legacyAttendanceCandidates,reviewLateRequest} from './payroll-safety.js';
 import {attendanceAmendmentReviewFingerprint} from './attendance-amendment-review-model.js';
 import {memoizedAttendanceTransaction} from './attendance-transaction-reader.js';
-import {inspectStaffShiftProposal} from './saved-shift-proposal.js';
+import {inspectStaffShiftProposal,validateSavedShiftProposal} from './saved-shift-proposal.js';
 import {resolveEmergencyShift} from './emergency-shift-model.js';
+import {createScheduleHistoryStore} from './schedule-history.js';
 
 const idEncoder=new TextEncoder();
 const validId=value=>typeof value==='string'&&value.length>0&&value!=='.'&&value!=='..'&&!/[\/\u0000-\u001f\u007f-\u009f]/u.test(value)&&idEncoder.encode(value).length<=1500;
 const key=value=>String(value??'').trim().replace(/\s+/g,' ').toLowerCase();
+export function verifiedWorkedShiftProposal(request,log,shift,history){
+ const proposal=request?.staffShiftProposal,month=proposal?.workDate?.slice(0,7),archive=history?.historyMonths?.[month];
+ if(!proposal||!shift?.workedShiftCorrectionId||shift.needsScheduleReview||shift.amendmentNeedsReview||shift.workDate!==proposal.workDate||shift.shiftId!==proposal.shiftId||+new Date(shift.expectedStartAt)!==Date.parse(proposal.expectedStartAt)||+new Date(shift.expectedEndAt)!==Date.parse(proposal.expectedEndAt)||request.attendanceLogId!==log.id||request.staffId&&request.staffId!==log.staffId||request.branch!==log.branch)return false;
+ const source=archive?.revisions?.find(row=>row.revisionId===proposal.sourceRevisionId);if(!source)return false;
+ try{validateSavedShiftProposal({historyMonths:{[month]:{...archive,revisions:[source]}}},{start:log,staffId:request.staffId||log.staffId,staffName:request.staffName},proposal);return true;}catch{return false;}
+}
 const instant=value=>value?.toMillis?.()??(value?.seconds!==undefined?value.seconds*1000+Math.floor((value.nanoseconds||0)/1e6):value instanceof Date?+value:Date.parse(value));
 const canonical=value=>value instanceof Date||value?.seconds!==undefined||typeof value?.toMillis==='function'?{at:instant(value)}:Array.isArray(value)?value.map(canonical):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(name=>[name,canonical(value[name])])):value??null;
 function authority(api){const user=api.auth?.currentUser,session=api.sessionUser;if(!user?.uid||user.email?.toLowerCase()!==OWNER_EMAIL||user.emailVerified!==true||!user.providerData?.some(row=>row.providerId==='google.com')||session?.uid!==user.uid||session.email?.toLowerCase()!==OWNER_EMAIL||session.isOwner!==true||session.isFranchisee===true)throw Error('The verified Owner must resolve this corrected attendance letter.');return JSON.stringify([user.uid,user.email,session.uid,session.email,session.isOwner,session.isFranchisee,session.permissions,session.allowedBranches]);}
@@ -66,7 +73,10 @@ export async function reviewOriginalLateRequest(api,{requestId,attendanceId,prof
   if(!reqSnap.exists()||!logSnap.exists()||!personSnap.exists())throw Error('The letter, original Time In or exact employee profile is missing.');
   const request={...reqSnap.data(),id:requestId},log={...logSnap.data(),id:attendanceId},person=personSnap.data();branch=log.branch;guard();
   if(!isLatenessRequest(request)||!branch||request.branch!==branch||key(request.staffName)!==key(log.staffName)||key(person.cashierName)!==key(log.staffName)||request.staffId&&request.staffId!==profileId||log.staffId&&log.staffId!==profileId||String(log.type).toUpperCase()!=='TIME IN'||log.deleted||['Voided','Cancelled','Canceled','Deleted'].includes(log.status)||request.attendanceLogId&&request.attendanceLogId!==attendanceId||!request.attendanceLogId&&!legacyAttendanceCandidates(request,[log]).length)throw Error('The selected letter, Time In and employee profile do not match. Reopen the exact record.');
-  const history=await loadClockOutSchedule({db:api.db,doc:api.doc},log,{...person,id:profileId,staffId:profileId},{read,assertCurrent:guard}),shift=resolveAttendanceShift(log,history,{[log.staffName]:{...person,staffId:profileId}},log.staffName);guard();
+   const history=request.staffShiftProposal
+    ?await createScheduleHistoryStore({db:api.db,doc:api.doc,getDocFromServer:read}).loadRange(new Date(instant(log.timestamp)-86400000),new Date(instant(log.timestamp)+86400000))
+    :await loadClockOutSchedule({db:api.db,doc:api.doc},log,{...person,id:profileId,staffId:profileId},{read,assertCurrent:guard});
+   const shift=resolveAttendanceShift(log,history,{[log.staffName]:{...person,staffId:profileId}},log.staffName);guard();
   if(shift?.attendanceCorrectionVerified===true||shift?.amendmentNeedsReview===true||shift?.assignmentReconciliationRequired===true)throw Error('A dated schedule correction now applies to this attendance. Open its HR review before resolving the original letter.');
   if(request.staffShiftProposal&&action==='Approved'){
    const message='Review this proposed shift on linked attendance first or reject the proposed schedule; original records stay on file.';
@@ -76,10 +86,15 @@ export async function reviewOriginalLateRequest(api,{requestId,attendanceId,prof
     if(reply.trim().length<8)throw Error('Explain the Owner decision to reject the proposed schedule and keep the original assigned hours (at least 8 characters).');
     proposalReview={schemaVersion:1,decision:'Rejected - original assigned hours retained',attendanceId,reviewedByUid:user.uid,reviewedByEmail:key(user.email),reviewedAt:api.serverTimestamp(),reason:reply.trim()};
    }else{
-    await inspectStaffShiftProposal(api,request,{read,assertCurrent:guard});
-    const headSnap=await read(reference('attendance_shift_confirmations',attendanceId)),confirmed=headSnap.exists()?resolveEmergencyShift(log,{...person,id:profileId,staffId:profileId},headSnap.data()):null;
-    if(!confirmed&&shift?.reliefReviewVerified!==true)throw Error(message);
-    proposalReview={schemaVersion:1,decision:'Assigned hours reviewed separately',attendanceId,confirmationRevisionId:headSnap.exists()?headSnap.data().revisionId:null,reviewedByUid:user.uid,reviewedByEmail:key(user.email),reviewedAt:api.serverTimestamp(),reason:reply.trim()};
+     if(verifiedWorkedShiftProposal(request,log,shift,history)){
+      authority(api);
+      proposalReview={schemaVersion:1,decision:'Worked shift reviewed separately',attendanceId,workedShiftCorrectionId:shift.workedShiftCorrectionId,reviewedByUid:user.uid,reviewedByEmail:key(user.email),reviewedAt:api.serverTimestamp(),reason:reply.trim()};
+     }else{
+      await inspectStaffShiftProposal(api,request,{read,assertCurrent:guard});
+      const headSnap=await read(reference('attendance_shift_confirmations',attendanceId)),confirmed=headSnap.exists()?resolveEmergencyShift(log,{...person,id:profileId,staffId:profileId},headSnap.data()):null;
+      if(!confirmed&&shift?.reliefReviewVerified!==true)throw Error(message);
+      proposalReview={schemaVersion:1,decision:'Assigned hours reviewed separately',attendanceId,confirmationRevisionId:headSnap.exists()?headSnap.data().revisionId:null,reviewedByUid:user.uid,reviewedByEmail:key(user.email),reviewedAt:api.serverTimestamp(),reason:reply.trim()};
+     }
    }
   }
   return callback(bound);
