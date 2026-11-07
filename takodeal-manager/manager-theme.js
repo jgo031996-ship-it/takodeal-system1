@@ -6,6 +6,7 @@ import { installHQProfile } from './hq-profile.js';
 import { initPosConfigWorkspace } from './pos-config-workspace.js';
 // Shared presentation and workspace initialization; preserve business calculations.
 export const MANAGER_PAGES = Object.freeze({
+    'ai-board': ['Private advisory', 'AI Board of Directors', 'Seven directors. Evidence, options and recommendations for the owner.'],
     dashboard: ['Overview', 'Global Dashboard', 'Your sales, branch performance, and team in one place.'],
     accounts: ['Finance', 'Cash & Budget', 'Schedule branch bills, review reminders, and keep monthly spending in view.'],
     'financial-flow': ['Finance', 'Financial Flow', 'Follow revenue, expenses, and the movement of funds.'],

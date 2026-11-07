@@ -1,118 +1,67 @@
-# TAKODEÁL AI Board — Foundation Plan
+# TAKODEÁL AI Board implementation
 
-**Status:** Phase 1 foundation specification  
-**Target application:** Existing `takodeal-manager` Owner App / HQ  
-**Access:** Owner only  
-**Authority:** Recommendation-only; no business actions  
-**Data:** Existing TAKODEÁL Firestore and application readers  
-**Deployment:** Not authorized in this phase
+Status: implemented in draft PR #155; production release still requires live acceptance checks.
 
-## Product goal
+## Verified architecture (2026-11-07)
 
-Give the TAKODEÁL owner a private AI Board that turns verified operating data into clear explanations, risks, options, and recommendations. The AI Board is an advisory workspace, not an autonomous operator.
+- Repository: jgo031996-ship-it/takodeal-system1; Owner source: takodeal-manager.
+- Vercel: takodeal-owner, project prj_J5GsPdpl2tXLaILQakPa2zqrfNrS, team team_sn9jiCslNUcQOBNirKiMCDjn.
+- Production: https://takodeal-owner.vercel.app. Initial production SHA: beea33e3b2adacfe866fba04fc53d5eeef682055.
+- Firebase takodeal-pos (248826111383) was verified ACTIVE using the authenticated Firebase CLI.
+- The designated owner UID/email were verified against Firebase Authentication; the account was enabled and email verified. UID is pinned in server configuration.
+- Field-only live samples confirmed transactions, expenses, inventory, stock_logs, shifts and attendance_logs. No operational records were written.
 
-## Board membership
+Owner App -> same-origin /api/ai-board -> signed Firebase token verification -> fresh account/revocation lookup -> projected Firestore reads using the same owner token -> deterministic evidence -> OpenAI Responses -> validated advisory report.
 
-1. **Finance Director** — revenue, expenses, margins, cash flow, branch comparisons, and investment scenarios.
-2. **Audit Director** — data consistency, duplicate or unusual records, reconciliation gaps, and control exceptions.
-3. **Inventory Director** — stock movement, usage, wastage, purchasing signals, and inventory variance.
-4. **HR Director** — staffing coverage, attendance and schedule insights, training needs, and people-process risks.
-5. **Operations Director** — branch performance, SOP adherence, service consistency, and operational bottlenecks.
-6. **Marketing Director** — promotion performance, customer demand, channel mix, and campaign recommendations.
-7. **AI Mentor & Strategic Advisor** — the owner's decision partner. It frames decisions, identifies missing evidence, compares options, challenges assumptions, presents the strongest counterargument, explains trade-offs, and recommends proceed / reconsider / wait with a practical plan.
+No Firebase admin credentials, service accounts, operational writes, database rules changes, AI tools, background polling or report persistence are introduced. Existing Firestore rules still apply. Static build output excludes server/API source, scripts, package metadata and Markdown; Vercel bundles the API separately.
 
-The AI Mentor may synthesize reports from the six specialist directors. It must clearly distinguish measured facts, estimates, assumptions, and unknowns. It must not simply agree with the owner.
+## Authorization and request boundaries
 
-## Owner decision workspace
+The server verifies Google's RS256 signature, exact Firebase project issuer/audience, expiry, issued/auth times, verified owner email and configured UID. Every request performs a fresh account lookup to reject disabled, changed or revoked identities before source reads. Broad all-tab, role-label and AI Hub permissions never grant Board access. The actual workspace router and UI also enforce the owner gate.
 
-The Mentor should support:
-- **Ask the Mentor:** open-ended business questions grounded in available company data.
-- **Decision Brief:** decision, objective, options, constraints, evidence, risks, recommendation, confidence, and next steps.
-- **Challenge My Decision:** stress-test the owner's proposed decision; include a credible argument against it.
-- **Scenario Comparison:** compare explicitly stated assumptions without presenting projections as actual results.
-- **Board Consultation:** request relevant specialist perspectives, then provide a consolidated answer.
+Questions are limited to 4,000 characters and 31 inclusive Philippine business days, using the dashboard's 08:30 cutoff. Source queries have explicit projections, dates, optional exact branch filters and hard caps with a sentinel document for truncation. Missing index/permission does not trigger an unrestricted fallback.
 
-Ask only for essential missing information. Never invent sales, costs, staff events, branch results, or historical facts. If the data is incomplete or stale, say so and reduce confidence.
+## Seven director workspaces
 
-## Security and authority requirements
+| Director | Sources | Analysis |
+| --- | --- | --- |
+| Finance | transactions, expenses | Recorded sales, valid average receipt, recorded cash outflows |
+| Audit | transactions, expenses, shifts | Duplicate branch receipt IDs, payment-verification gaps, invalid amounts, cash differences |
+| Inventory | inventory, stock_logs | Current negative/low stock and recorded count differences |
+| HR | attendance_logs, shifts | Aggregate attendance/manual-entry and shift process signals |
+| Operations | transactions, shifts, attendance_logs | Branch sales, shift evidence and overdue open shifts |
+| Marketing | transactions | Recorded payment-channel mix and discounts |
+| AI Mentor | All approved sources | Synthesis, decision briefs, challenges, explicitly assumed scenarios and board consultation |
 
-- Only the verified TAKODEÁL owner account may open or call AI Board features.
-- Do not inherit AI Hub / bulletin publishing permissions. Existing bulletin access is broader than the owner-only requirement and is not an authorization boundary for this product.
-- Enforce owner authorization on every server endpoint using the authenticated Firebase identity and a trusted owner allowlist or server-verified claim. A hidden navigation item is not security.
-- Enforce matching Firestore rules for all AI Board collections.
-- Source business data is read-only. The AI service may write only to its dedicated AI Board collections.
-- No tools or code paths for publishing announcements, changing sales, inventory, purchases, expenses, payroll, schedules, employee sanctions, permissions, or other business records.
-- Keep the OpenAI API key server-side only. Never ship it in browser JavaScript or client configuration.
-- Record owner requests, report generation metadata, data coverage, and failures in an audit trail without unnecessarily storing sensitive prompts or personal data.
-- Fail closed on missing identity, insufficient permission, unavailable data, or uncertain writes.
+Missing sources are unavailable, never zero. Capped figures are explicitly samples. Customer identities, staff names, photos, signatures, locations and PINs are excluded by Firestore projections. Only calculated summaries and the owner's question are sent to OpenAI; the UI explains this before submission. No raw records are passed to the model.
 
-## Proposed architecture
+Output must cite existing evidence IDs. Incomplete/malformed reports and invented citations are rejected. Source/model strings are HTML-escaped. Partial coverage prevents high confidence. Reports clear on navigation; stale responses are canceled/discarded. A warm-instance concurrency/rate guard, input/output limits and service timeouts bound requests. The rate guard is not a distributed global quota.
 
-1. **Owner App UI:** a dedicated AI Board route within the existing HQ shell, with a board overview and seven director workspaces.
-2. **Authentication:** reuse Firebase Authentication for identity, but create a separate strict owner-only authorization check for AI Board endpoints.
-3. **Server boundary:** Vercel server-side endpoints authenticate the Firebase ID token, authorize the owner, load bounded read-only data, calculate deterministic metrics, and call the OpenAI API.
-4. **Verified calculations:** financial totals, inventory variance, reconciliation checks, and other arithmetic are calculated in deterministic application code. The model explains those results; it does not invent or independently calculate source-of-truth totals.
-5. **AI layer:** structured inputs and outputs, explicit evidence references, confidence and coverage fields, and clear separation between facts and recommendations.
-6. **Persistence:** isolated collections proposed below. No writes to operational collections.
-7. **Scheduling:** only after manual analysis is validated; any scheduled analysis must remain advisory and owner-visible.
+Server logs contain request ID, director, coverage counts, status and duration; no questions, credentials or raw records. No reports are saved.
 
-## Proposed AI-only Firestore collections
+## Explicit limitations
 
-- `ai_board_reports` — completed board/director reports and decision briefs.
-- `ai_board_insights` — owner-visible recommendations and follow-up status.
-- `ai_board_runs` — run metadata, source coverage, model/version metadata, and failures.
-- `ai_board_settings` — owner-controlled preferences and enabled director configuration.
-- `ai_board_feedback` — owner feedback on usefulness and accuracy.
+Cash outflows can include purchases/transfers and do not establish profit, margin or bank cash. Stock is a current snapshot, not historical stock; differing units are not summed. Attendance events do not establish unique staff, approved hours, lateness or absence. Count variance does not establish wastage/theft. Channel sales do not establish campaign attribution, ROI, conversion or acquisition cost. This version does not include historical recipe costs, payroll accruals, staff rosters or SOP completion evidence. Directors disclose these gaps and cannot make employment decisions or execute recommendations.
 
-These are proposed names, not a claim that the collections already exist. Security rules must deny all non-owner access and deny client writes except where a narrowly scoped owner workflow explicitly requires them. Prefer server-mediated writes.
+## Server configuration
 
-## Existing code observations to carry into implementation
+- AI_BOARD_OWNER_UID: trusted UID verified from takodeal-pos Authentication.
+- OPENAI_API_KEY: private key entered directly into Vercel as Sensitive for Preview and Production.
+- AI_BOARD_MODEL: optional; default gpt-4.1-mini, using Responses structured outputs and store:false.
 
-- `ai-hub.js` and `ai-hub-model.js` currently implement deterministic announcement drafting and publishing, not an OpenAI-powered board. Do not repurpose their bulletin publishing flow as the AI Board.
-- `ai-hub-model.js` exposes `canPublish` that can grant access through broad permissions such as `all` or `bulletin`; that is not sufficient for owner-only AI Board access.
-- `workspace-access-model.js` contains an owner email constant and broad workspace permission helpers. Do not assume a client-side email check alone secures a server endpoint.
-- `inventory-intelligence-reader.js` contains bounded read-only inventory reads and branch-access logic. Validate its identity/authorization behavior before reuse in a strictly owner-only server context.
-- `financial-flow-model.js` is a candidate for deterministic financial calculations, subject to source and test review.
+Missing configuration fails closed. Firebase public web configuration matches the existing app. Vercel preview protection remains enabled. Origins are limited to the Owner domain and exact Vercel deployment/branch system URLs.
 
-## Delivery phases and acceptance gates
+## Test and release gates
 
-### Phase 1 — Repository, data, and security audit
-- Map the actual Owner App entry points, Vercel project/root configuration, Firebase setup, Firestore rules, and server deployment conventions.
-- Map the actual collections and fields for branches, sales, expenses, inventory, stock deductions, staff, schedules, payroll, and marketing evidence.
-- Identify and test reusable read-only readers and deterministic calculation modules.
-- Document data freshness, completeness, branch identifiers, and known gaps.
-- **Gate:** no AI endpoint or UI activation until owner-only enforcement and source mapping are verified.
+Local tests in tests/ai-board-runtime.test.mjs execute real synthetic RSA verification, owner/revocation boundaries, request limits, projected scoped reads, deterministic totals, all seven director pipelines with controlled upstream fixtures, blocked methods/origins/writes, unavailable/capped sources, citation validation, escaping and a real local HTTP integration. Existing regression tests and SDK/rules checks also run. The Owner build copies existing app assets while excluding server source.
 
-### Phase 2 — AI Board foundation
-- Add owner-only navigation and the seven director workspaces in the existing Owner App.
-- Add isolated AI Board server routes and collections with deny-by-default access.
-- Add structured report contracts, run logging, and a disabled-by-default feature flag.
-- **Gate:** non-owner access tests pass; source business collections remain unchanged.
+Controlled tests do not prove live OpenAI/Firebase integration. Before merging or publishing:
 
-### Phase 3 — Finance and Audit pilots
-- Start with read-only historical reports and deterministic totals.
-- Reconcile report outputs against known records and existing dashboards.
-- Display coverage, date range, branch scope, and limitations on every report.
-- **Gate:** owner validates results against actual records before broader use.
+1. Run unit, integration, security, regression, syntax and build checks on the final commit.
+2. Verify GitHub CI and the protected Vercel preview for that same commit.
+3. Sign in as the verified owner on preview; verify anonymous/non-owner denial.
+4. Execute every director against real OpenAI and live Firebase evidence. Reconcile exact figures with existing Owner reports using the same branch/date/cutoff. Verify partial and empty-source states.
+5. Check desktop/mobile UI, safe navigation, absence of writes and preservation of existing operations.
+6. Merge only after acceptance; stage and verify a production build, promote that tested build and verify production alias/runtime results.
 
-### Phase 4 — Inventory
-- Add stock movement, wastage, usage, and purchasing insights using verified readers.
-- Avoid any automatic stock adjustments or purchase actions.
-
-### Phase 5 — HR and Operations
-- Add workforce and branch-process analysis with careful access controls and data minimization.
-- Do not make employment decisions or issue sanctions.
-
-### Phase 6 — Marketing and executive synthesis
-- Add campaign and channel analysis where reliable source data exists.
-- Enable AI Mentor board consultations and decision briefs using validated specialist reports.
-
-## Non-goals and explicit safeguards
-
-This project does not rebuild the POS, Manager, Staff, Customer, or Franchisee apps. It does not automate business decisions. It does not execute recommendations. It does not alter operational records, permissions, or deployment settings as part of progress reviews.
-
-## Current starting point
-
-The initial source inspection found an existing Owner/Manager application and candidate finance/inventory modules, but the complete Firestore map, Firestore security rules, actual Vercel project configuration, and server deployment location still require verification. No AI Board implementation or verified OpenAI integration was present in the reviewed files at the time of this plan.
-
-**Next engineering task:** complete Phase 1 mapping and tests before creating production AI routes or connecting the model.
+Keep PR #155 in draft until these gates complete. Build success alone does not establish a working published Board.

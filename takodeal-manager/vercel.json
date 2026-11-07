@@ -1,0 +1,6 @@
+{
+  "buildCommand":"npm run build",
+  "outputDirectory":"dist",
+  "functions":{"api/ai-board.mjs":{"maxDuration":60}},
+  "headers":[{"source":"/api/ai-board","headers":[{"key":"Cache-Control","value":"private, no-store"}]}]
+}

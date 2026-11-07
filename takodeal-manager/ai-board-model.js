@@ -15,8 +15,9 @@ export const AI_BOARD_DIRECTORS = Object.freeze([
 // Never inherit broad "all", "owner" role labels, or AI Hub publishing permissions.
 const normalize = value => String(value ?? '').trim().toLowerCase();
 export function isAIBoardOwner(user) {
-  return !!user?.uid && normalize(user.email) === AI_BOARD_OWNER_EMAIL;
+  return !!user?.uid && user.emailVerified === true && normalize(user.email) === AI_BOARD_OWNER_EMAIL;
 }
+export const isAIBoardSessionOwner=(user,session)=>isAIBoardOwner(user)&&session?.uid===user.uid;
 
 export function assertAIBoardOwner(user) {
   if (!isAIBoardOwner(user)) {
@@ -27,15 +28,11 @@ export function assertAIBoardOwner(user) {
   return true;
 }
 
-// The Board may read only named operational sources. Writes are limited to its own
-// report/insight/feedback namespace and must be performed by a separate server service.
+// The deployed Board has no persistence or operational write functions.
 export const AI_BOARD_READ_COLLECTIONS = Object.freeze([
-  'transactions','expenses','inventory','stock_logs','inventory_logs','purchases',
-  'recipes','menu','branches','cashiers','hq_managers','shifts','payroll_records',
-  'budgets','monthly_bills','platform_payouts','platform_orders'
+  'transactions','expenses','inventory','stock_logs','shifts','attendance_logs'
 ]);
 export const AI_BOARD_OUTPUT_COLLECTIONS = Object.freeze([
-  'ai_board_reports','ai_board_insights','ai_board_runs','ai_board_feedback'
 ]);
 
 export function assertAIBoardRead(collection, operation='read') {
@@ -57,16 +54,16 @@ const validISODate = value => {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0,10) === value;
 };
 
-export function createAIBoardRequest({ directorId, question, period, branch='All' } = {}) {
+export function createAIBoardRequest({ directorId, question, period, branch='All',consultation='ask' } = {}) {
   if (!directorById(directorId)) throw new Error('Choose a valid AI Board director.');
   const prompt = String(question ?? '').trim();
   if (!prompt || prompt.length > 4000) throw new Error('Enter a question (up to 4,000 characters).');
-  if (period && (!validISODate(period.start) || !validISODate(period.end) || period.start >= period.end)) {
+  if (!period || !validISODate(period.start) || !validISODate(period.end) || period.start > period.end || Date.parse(period.end)-Date.parse(period.start)>30*86400000) {
     throw new Error('Choose a valid reporting period.');
   }
   return Object.freeze({
     directorId, question:prompt, branch:String(branch || 'All').trim().slice(0,100),
     period:period ? Object.freeze({start:period.start,end:period.end}) : null,
-    mode:'recommendation-only', sourcePolicy:'read-only'
+    consultation
   });
 }
