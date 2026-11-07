@@ -132,6 +132,13 @@ test('unclassified provider 429 errors and type-only quota errors stay actionabl
     await assert.rejects(()=>interpret({evidence:[{id:'sales.net'}]},validateQuery(base,now),{apiKey:'test',fetcher:async()=>new Response(JSON.stringify(body),{status:429})}),error=>error.code===code&&!JSON.stringify(error).includes('sk-proj-private'));
   }
 });
+test('model confidence is bounded by partial coverage and the limited operational evidence set',async()=>{
+  for(const [partial,expected]of [[true,'low'],[false,'medium']]){
+    const r={...report(['sales.net']),confidence:'high'};
+    const result=await interpret({partial,evidence:[{id:'sales.net'}]},validateQuery(base,now),{apiKey:'fixture',fetcher:async()=>response({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(r)}]}]})});
+    assert.equal(result.report.confidence,expected);
+  }
+});
 test('HTTP integration returns private structured reports and rejects unauthenticated requests',async t=>{
   const handler=createBoardHandler({env,fetcher:fetchFixture([]),now:()=>now,log:()=>{}});
   const server=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;try{req.body=raw?JSON.parse(raw):undefined;}catch{res.writeHead(400);res.end();return;}res.status=n=>{res.statusCode=n;return res;};res.json=value=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));};await handler(req,res);});
