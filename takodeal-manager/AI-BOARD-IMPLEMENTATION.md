@@ -37,7 +37,7 @@ Missing sources are unavailable, never zero. Capped figures are explicitly sampl
 
 Output must cite existing evidence IDs. Incomplete/malformed reports and invented citations are rejected. Source/model strings are HTML-escaped. Partial coverage prevents high confidence. Reports clear on navigation; stale responses are canceled/discarded. A warm-instance concurrency/rate guard, input/output limits and service timeouts bound requests. The rate guard is not a distributed global quota.
 
-Server logs contain request ID, director, coverage counts, status and duration; no questions, credentials or raw records. No reports are saved.
+Server logs contain request ID, director, coverage counts, status and duration; no questions, credentials or raw records. A separate metadata-only usage event records the configured supported model, a bounded response status and available input/output/total token counts, reasoning tokens, cache-read/write counts and 30-minute/12-hour cache-write counts. Only non-negative safe integers from known usage fields are copied. This event is emitted before report validation, including incomplete generations that are rejected; no exact billed-dollar estimate is logged. No reports are saved.
 
 ## Explicit limitations
 
@@ -47,7 +47,17 @@ Cash outflows can include purchases/transfers and do not establish profit, margi
 
 - AI_BOARD_OWNER_UID: trusted UID verified from takodeal-pos Authentication.
 - OPENAI_API_KEY: private key entered directly into Vercel as Sensitive for Preview and Production.
-- AI_BOARD_MODEL: optional; default gpt-5.6-terra with low reasoning effort and a 4,500-token output/reasoning limit, using Responses structured outputs and store:false. The smaller former default did not meet live interpretation-quality checks. Unknowns are constrained to the packet's actual source limitations in the schema and validated again at runtime.
+- AI_BOARD_MODEL: optional; default gpt-6.1-terra. The explicit supported set is gpt-6.1-terra and gpt-5.6-terra; both use low reasoning effort, low text verbosity and a 4,500-token output/reasoning limit, with Responses structured outputs and store:false. An unsupported or empty override fails closed with an actionable setup error before source reads or paid generation. The smaller former default did not meet live interpretation-quality checks. Unknowns are constrained to the packet's actual source limitations in the schema and validated again at runtime.
+
+## Cost controls and model acceptance
+
+Each requested consultation makes one OpenAI call, including Board consultation mode; selecting a director does not fan out into seven calls. Reports aim for 350–500 words, at most three specialist findings or six Mentor findings, four exact permitted assumptions/unknowns, two options and three next steps. The array limits are enforced in both the structured schema and runtime validation. Evidence citations, current-stock distinctions and restrictions against unsupported completeness/control claims remain required.
+
+The 4,500-token ceiling includes hidden reasoning and visible output. It leaves headroom for a valid structured report; it is not a reservation charge or a monthly spending cap. A response can consume tokens and still fail as incomplete, so lowering this ceiling without measuring usage can increase manual retries. Source caps, question length, timeouts and the warm-instance rate guard bound individual work but do not establish a distributed account-wide budget. Token metadata supports comparison of actual request usage without claiming an exact bill.
+
+Official model documentation checked on 2026-11-07 lists lower input/output token rates for gpt-6.1-terra than gpt-5.6-terra. This motivates the new default but does not establish equal report quality or a guaranteed percentage saving: input size, actual output/reasoning usage and cache behavior also matter. The final gpt-6.1-terra implementation must pass all seven live director acceptance checks before release; the previously accepted gpt-5.6-terra remains an explicit supported fallback.
+
+Prompt caching is not an application report cache. GPT-5.6 and later models charge for cache writes, and changing source-specific schemas, questions and timestamps can prevent reuse. This change does not introduce explicit cache breakpoints, report persistence or automatic retries. Current primary references: [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra), [GPT-5.6 Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra), [reasoning/output limits](https://developers.openai.com/api/docs/guides/reasoning), and [prompt caching](https://developers.openai.com/api/docs/guides/prompt-caching).
 
 Missing configuration fails closed. Firebase public web configuration matches the existing app. Vercel preview protection remains enabled. Origins are limited to the Owner domain and exact Vercel deployment/branch system URLs.
 
@@ -55,7 +65,7 @@ Branch/date reads require collection-scope composite indexes on branch ascending
 
 ## Test and release gates
 
-Local tests in tests/ai-board-runtime.test.mjs execute real synthetic RSA verification, owner/revocation boundaries, request limits, projected scoped reads, deterministic totals, all seven director pipelines with controlled upstream fixtures, blocked methods/origins/writes, unavailable/capped sources, citation validation, escaping and a real local HTTP integration. Existing regression tests and SDK/rules checks also run. The Owner build copies existing app assets while excluding server source.
+Local tests in tests/ai-board-runtime.test.mjs execute real synthetic RSA verification, owner/revocation boundaries, request limits, projected scoped reads, deterministic totals, all seven director pipelines with controlled upstream fixtures, both supported model configurations, unsupported-model rejection before reads, concise schema/runtime limits, sanitized usage for completed/incomplete responses, blocked methods/origins/writes, unavailable/capped sources, citation validation, escaping and a real local HTTP integration. Existing regression tests and SDK/rules checks also run. The Owner build copies existing app assets while excluding server source.
 
 Controlled tests do not prove live OpenAI/Firebase integration. Before merging or publishing:
 
