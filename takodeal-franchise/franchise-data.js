@@ -8,6 +8,7 @@ import {staffProfileForWork,staffRateWorkDate} from './staff-rate-model.js';
 export const RELEASE = 'franchise-business-v2-20261023';
 export const ROUTES = {
  dashboard: ['Store Dashboard','Sales, expenses and staff activity for your branch.','loadDashboard',true],
+ 'ai-board': ['AI Board','Seven short perspectives on the recorded evidence for your branch.','loadFranchiseAIBoard',true],
  accounts: ['Cash & Budget','Manage branch cash accounts and monthly spending.','loadAccountsView',false],
  'hq-billing': ['HQ Billing & Royalties','Review charges, payments and your balance with Main Office.','loadHQBilling',false],
  'hq-conversations': ['HQ Conversations','Discuss branch questions and updates with HQ.','loadHQConversations',false],
@@ -82,6 +83,7 @@ export function branchScope(data,email,registered=[],masterEmail='jgo031996@gmai
 export function canVisit(session,route) {
  if (!session || !ROUTES[route] || !session.allowedBranches?.includes(session.branch)) return false;
  const permissions=configuredPermissions(session);
+ if(route==='ai-board')return session.email?.toLowerCase()==='jgo031996@gmail.com'&&session.isOwner===true||session.isFranchisee===true&&permissions.some(permission=>['dashboard','all','ai-board'].includes(permission));
  if (session.isOwner || permissions.includes('all')) return true;
  if(route==='staff')return permissions.some(p=>['staff','payroll','feed'].includes(p));
  if(route==='b2b')return permissions.includes('b2b')||permissions.includes('dispatch');

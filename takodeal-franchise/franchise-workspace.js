@@ -22,6 +22,7 @@ import {installFranchiseItemPicker} from './franchise-item-picker.js';
 import {installFranchisePayrollControls} from './franchise-payroll-controls.js';
 import {installStockAudits} from './stock-audit-ui.js';
 import {wasteRows} from './operations-model.js';
+import {installFranchiseAIBoard} from './franchise-ai-board.js';
 const isWasteRequest=row=>String(row?.type||'').trim().toLowerCase()==='waste report';
 
 export function installFranchiseWorkspace(api) {
@@ -31,8 +32,9 @@ export function installFranchiseWorkspace(api) {
  const accountScope=()=>{const s=session();return JSON.stringify([api.auth?.currentUser?.uid,s.email,s.branch,s.cashierName,s.allowedBranches,s.permissions]);};
  const payrollContext=()=>JSON.stringify([accountScope(),payrollControls.getRange()]);
  const reader=createFranchiseReads(api,{scope:accountScope});
+ const board=installFranchiseAIBoard(api,{document,getRoute:()=>state.route,getContext:()=>({branch:api.sessionUser?.branch,from:$('globalStartDate').value,to:$('globalEndDate').value})});api.franchiseBoard=board;
  const hq=installFranchiseHQUI(api,{document,session,getRoute:()=>state.route,read:(...args)=>read(...args),refresh:route=>api.switchView(route),onError:showActionError});api.franchiseHQ=hq;
- api.clearFranchiseReadRequests=()=>{reader.reset();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();stockAudits?.dispose();payrollControls?.reset();};
+ api.clearFranchiseReadRequests=()=>{board.invalidate();reader.reset();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();stockAudits?.dispose();payrollControls?.reset();};
  const selectedRange=()=>range($('globalStartDate').value,$('globalEndDate').value);
  const element=(tag,cls,text)=>{const el=document.createElement(tag);el.className=cls || '';if(text!=null)el.textContent=text;return el;};
  function button(text,action,cls='secondary-button') {const el=element('button',cls,text);el.type='button';el.addEventListener('click',()=>Promise.resolve(action()).catch(showActionError));return el;}
@@ -94,7 +96,7 @@ export function installFranchiseWorkspace(api) {
  api.switchView=async route=>{
   if(!ROUTES[route])throw new Error('This page is unavailable.');if(!canVisit(api.sessionUser,route))throw new Error('This page is outside your assigned access.');
   if(state.schedule?.dirty && route!=='schedule' && state.route==='schedule') {const answer=await Swal.fire({title:'Keep unsaved schedule?',text:'Stay here to save your changes, or leave without saving.',showCancelButton:true,confirmButtonText:'Stay and save',cancelButtonText:'Leave without saving'});if(answer.isConfirmed)return;state.schedule=null;}
-  if(state.route!==route){if(state.pending)throw Error('Wait for the current save to finish before changing pages.');hq.stop();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();stockAudits?.dispose();}state.route=route;
+  if(state.route!==route){if(state.pending)throw Error('Wait for the current save to finish before changing pages.');board.invalidate();hq.stop();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();stockAudits?.dispose();}state.route=route;
   for(const [key,meta] of Object.entries(ROUTES)){$('view-'+key).classList.toggle('active',key===route);const nav=$('nav-'+key);nav.classList.toggle('active',key===route);nav.setAttribute('aria-current',key===route?'page':'false');}
   for(const group of ['hr','inventory']) {const active=ROUTES[route][4]===group;$('nav-'+group).classList.toggle('active',active);$(group+'Submenu').classList.toggle('open',active);$('nav-'+group).setAttribute('aria-expanded',String(active));if(active)$('sidebar').classList.remove('collapsed');}
   $('pageTitle').textContent=ROUTES[route][0];$('pageDescription').textContent=ROUTES[route][1];$('headingBranch').textContent='/ '+session().branch;$('globalDateControls').hidden=route==='payroll'||route==='inv-audits'||!ROUTES[route][3];
@@ -110,12 +112,13 @@ export function installFranchiseWorkspace(api) {
   if(state.pending){$('franchiseBranchSelect').value=previous;throw Error('Wait for the current save to finish before changing branches.');}
   if(!session().allowedBranches.includes(next))throw new Error('This branch is outside your assigned access.');
   if(state.cart.length || state.schedule?.dirty || hq.hasDraft() || hq.isPending()) {if(hq.isPending())throw Error('An HQ message is still sending. Wait for it to finish before changing branches.');const answer=await Swal.fire({title:'Switch branch?',text:'Unsaved supply requests, schedule changes and HQ message drafts belong to the current branch. Save them first, or discard them to switch.',showCancelButton:true,confirmButtonText:'Discard and switch'});if(!answer.isConfirmed){$('franchiseBranchSelect').value=previous;return;}hq.clearDrafts();}
-  hq.stop();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();
+  board.invalidate();hq.stop();api.franchiseDiscipline?.invalidate();api.franchiseSupplyDocuments?.invalidate();state.itemPicker?.destroy();state.itemPicker=null;payslips?.close();
   reader.reset();state.generation++;api.sessionUser.branch=next;state.cart=[];state.cartBranch=next;state.inventory.clear();state.loaded.clear();state.schedule=null;
   for(const key of Object.keys(ROUTES))root(key).replaceChildren();
   await api.switchView(state.route);
  };
  api.applyPermissions=()=>{
+  board.invalidate();
   for(const route of Object.keys(ROUTES))$('nav-'+route).hidden=!canVisit(api.sessionUser,route);
   for(const group of ['hr','inventory'])$('nav-'+group).hidden=!Object.keys(ROUTES).some(k=>ROUTES[k][4]===group && canVisit(api.sessionUser,k));
   const branches=session().allowedBranches,select=$('franchiseBranchSelect');select.replaceChildren(...branches.map(b=>new Option(b,b)));select.disabled=branches.length<2;select.value=session().branch;
@@ -130,9 +133,10 @@ export function installFranchiseWorkspace(api) {
  function connection() {const online=navigator.onLine;$('connectionStatus').textContent=online?'Online':'Offline';$('connectionStatus').classList.toggle('offline',!online);$('loginConnection').textContent=online?'Secure Google sign-in + PIN':'Offline · reconnect to verify your account';}
  addEventListener('online',connection);addEventListener('offline',connection);connection();
 
+ define('ai-board',async r=>{const host=element('section');r.append(host);board.mount(host);});
  define('dashboard',async r=>{
   const access=card(r,'Branch tools'),quick=element('div','card-body button-row');
-  for(const [route,title]of [['b2b','Request stock from HQ'],['staff','Branch staff'],['schedule','Schedule manager'],['hq-billing','HQ billing'],['hq-conversations','HQ conversations']])quick.append(canVisit(session(),route)?button(title,()=>api.switchView(route)):element('span','badge warning',title+' · Owner approval needed'));
+  for(const [route,title]of [['b2b','Request stock from HQ'],['ai-board','AI Board'],['staff','Branch staff'],['schedule','Schedule manager'],['hq-billing','HQ billing'],['hq-conversations','HQ conversations']])quick.append(canVisit(session(),route)?button(title,()=>api.switchView(route)):element('span','badge warning',title+' · Owner approval needed'));
   access.card.append(quick,element('p','notice','If a feature is missing, the Owner can review Access Control → Edit permissions. HQ billing and conversations use Franchise HQ Hub; Simulator is separate. Sign in again after permissions are saved.'));
   const dates=selectedRange(),endDay=$('globalEndDate').value,trendStart=range(addDays(endDay,-6),endDay).start;
   const [transactions,expenses,attendance]=await Promise.all([read('transactions',{time:'timestamp',start:new Date(Math.min(+dates.start,+trendStart)),end:dates.end}),read('expenses',{time:'timestamp',...dates}),read('attendance_logs')]);
