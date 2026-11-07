@@ -10,10 +10,18 @@ export class BoardError extends Error {
 }
 const fail=(status,code,message)=>{throw new BoardError(status,code,message);};
 const json=async(fetcher,url,options={},timeout=12000)=>{
+  const service=url.startsWith('https://api.openai.com/')?'openai':url.startsWith('https://firestore.googleapis.com/')?'firestore':url.startsWith('https://identitytoolkit.googleapis.com/')?'firebase-auth':'firebase-certificates';
   let response;
   try { response=await fetcher(url,{...options,signal:AbortSignal.timeout(timeout),redirect:'error'}); }
   catch { fail(503,'upstream-unavailable','A required service is unavailable. Please retry manually.'); }
-  if(!response.ok) fail(response.status===401?401:503,'upstream-unavailable','A required service rejected this request. No report was generated.');
+  if(!response.ok){
+    let body;try{body=await response.json();}catch{}
+    const knownCodes=new Set(['insufficient_quota','invalid_api_key','model_not_found','invalid_json_schema','permission_denied','rate_limit_exceeded','unsupported_parameter']);
+    const providerCode=knownCodes.has(body?.error?.code)?body.error.code:'unclassified';
+    const quota=service==='openai'&&providerCode==='insufficient_quota';
+    const error=new BoardError(service==='firebase-auth'&&[400,401].includes(response.status)?401:503,quota?'provider-quota':'upstream-unavailable',quota?'The AI provider has no available API quota. Review API billing or spending limits before retrying.':'A required service rejected this request. No report was generated.');
+    Object.assign(error,{service,upstreamStatus:response.status,providerCode});throw error;
+  }
   try{return await response.json();}catch{fail(502,'invalid-upstream','A required service returned an invalid response.');}
 };
 export function createFirebaseVerifier({fetcher=fetch,now=Date.now}={}) {
@@ -242,7 +250,7 @@ export function createBoardHandler({env=process.env,fetcher=fetch,now=Date.now,v
       return send(200,{...result,packet,advisoryOnly:true,requestId});
     }catch(error){
       const status=error instanceof BoardError?error.status:500;
-      log({event:'ai-board-error',requestId,status,code:error instanceof BoardError?error.code:'internal',durationMs:now()-started});
+      log({event:'ai-board-error',requestId,status,code:error instanceof BoardError?error.code:'internal',...(error.service?{service:error.service,upstreamStatus:error.upstreamStatus,providerCode:error.providerCode}:{}),durationMs:now()-started});
       return send(status,{error:{code:error instanceof BoardError?error.code:'internal',message:error instanceof BoardError?error.message:'The report could not be generated.'},requestId});
     }finally{if(acquired)active.delete(uid);}
   };

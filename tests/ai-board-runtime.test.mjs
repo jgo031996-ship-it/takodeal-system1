@@ -120,6 +120,11 @@ test('rendering treats model output and branch strings as text, with visible sou
   const html=renderBoardReport({packet,report:r,model:'fixture',requestId:'test'});
   assert.doesNotMatch(html,/<script>|<img/);assert.match(html,/&lt;script&gt;/);assert.match(html,/Partial evidence/);assert.match(html,/Source coverage/);
 });
+test('provider quota failures have safe diagnostics and never echo a key or upstream message',async()=>{
+  const q=validateQuery(base,now);
+  try{await interpret({evidence:[{id:'sales.net'}]},q,{apiKey:'private-do-not-log',fetcher:async()=>new Response(JSON.stringify({error:{code:'insufficient_quota',message:'private-do-not-log'}}),{status:429})});assert.fail('Expected quota rejection');}
+  catch(error){assert.equal(error.code,'provider-quota');assert.equal(error.service,'openai');assert.equal(error.upstreamStatus,429);assert.equal(error.providerCode,'insufficient_quota');assert.doesNotMatch(error.message,/private-do-not-log/);}
+});
 test('HTTP integration returns private structured reports and rejects unauthenticated requests',async t=>{
   const handler=createBoardHandler({env,fetcher:fetchFixture([]),now:()=>now,log:()=>{}});
   const server=createServer(async(req,res)=>{let raw='';for await(const chunk of req)raw+=chunk;try{req.body=raw?JSON.parse(raw):undefined;}catch{res.writeHead(400);res.end();return;}res.status=n=>{res.statusCode=n;return res;};res.json=value=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(value));};await handler(req,res);});
