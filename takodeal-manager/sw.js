@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v134-variance-timein-20261108';
+const CACHE_NAME = 'takodeal-manager-core-v135-staff-vault-payslip-20261108';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [
@@ -15,6 +15,8 @@ CORE_ASSETS.push('./cashier-appearance-model.js','./cashier-appearance-owner.js'
 CORE_ASSETS.push('./staff-setup-codes.js','./staff-setup-codes.css');
 CORE_ASSETS.push('./owner-app-update.js','./owner-update-notice.js');
 CORE_ASSETS.push('./attendance-swap-declaration.js');
+CORE_ASSETS.push('./employee-photo.js','./owner-dispatch-details.js','./staff-payslip-publication.js','./staff-payslip-snapshot.js');
+CORE_ASSETS.push('./staff-payslip-publication-ui.js');
 CORE_ASSETS.push('./login-update.js');
 CORE_ASSETS.push('./owner-dialogs.css');
 CORE_ASSETS.push('./staff-lifecycle-model.js');

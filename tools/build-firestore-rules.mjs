@@ -9,6 +9,8 @@ import {lowerFirestorePaths,assertPathLoweringEquivalent} from './firestore-sele
 import {lowerFirestoreMapMethods,assertMapMethodLoweringEquivalent} from './firestore-selector-sharing/map-methods.mjs';
 import {lowerRequestEqualities,assertRequestEqualitiesEquivalent} from './firestore-selector-sharing/request-equalities.mjs';
 import {shareBoundedText,assertBoundedTextSharingEquivalent} from './firestore-selector-sharing/bounded-text.mjs';
+import {shareConstantMapGets,assertConstantMapGetsEquivalent} from './firestore-selector-sharing/constant-map-gets.mjs';
+import {shareBoundedNumbers,assertBoundedNumbersEquivalent} from './firestore-selector-sharing/bounded-numbers.mjs';
 import {lowerLiteralFalseRules,assertLiteralFalseLoweringEquivalent} from './firestore-selector-sharing/literal-false-rules.mjs';
 export {GENERATED_RULES_HEADER,tokenizeRules,buildFirestoreRulesAlpha,assertRuleAlphaEquivalent};
 const sha=value=>createHash('sha256').update(value).digest('hex');
@@ -19,6 +21,23 @@ const fail=message=>{throw Error('Rules build: '+message);};
 const inlineWageFunctions=['staffRateHQAny','staffRateHQ','staffRateValue','staffRateValid','staffRateMarker','staffRateDatedMarker','staffRateLegacyCorrection','staffRateEvent','staffRateAuditCreateV1','staffRateAuditCreateV2','staffRateAuditCreate','staffRateProfileLink'];
 const inlinePathFunctions=['readData','nextData','transactionBefore','transactionAfter','staffDeductionAfter','sharedHQGrant','disciplineRelated','disciplineScope','disciplineReview','disciplineChoice','disciplinePolicyRevision',...inlineWageFunctions];
 const inlineMapFunctions=['cashShortagePayrollRow','disciplineReview','disciplineSavedAction',...inlineWageFunctions];
+// These supported maximum-size operations already use almost all1000 runtime
+// expressions. A terminal selector in any shared authority/metadata callee can
+// exceed that limit, even when the top-level row validator stays inline. Keep
+// their complete transitive call paths byte-exact in the additional passes.
+function additionalSharingExclusions(source){
+ const code=tokenizeRules(source).filter(token=>!['whitespace','comment'].includes(token.type)),functions=new Map();
+ for(let at=0;at<code.length;at++)if(code[at].text==='function'){
+  const name=code[at+1].text;while(code[at]?.text!=='{')at++;const open=at;let depth=1;
+  while(depth){at++;if(code[at].text==='{')depth++;else if(code[at].text==='}')depth--;}
+  functions.set(name,code.slice(open+1,at));
+ }
+ const excluded=new Set(inlineMapFunctions),visited=new Set();
+ function visit(name){if(!functions.has(name)||visited.has(name))return;visited.add(name);excluded.add(name);const body=functions.get(name);for(let at=0;at<body.length;at++)if(body[at-1]?.text!=='.'&&body[at+1]?.text==='('&&functions.has(body[at].text))visit(body[at].text);}
+ // Include the caller's version dispatch as well as its per-case validators.
+ for(const name of ['selectorHrSanctionsUpdate','selectorPayrollRecordsCreate'])visit(name);
+ return [...excluded].sort();
+}
 const pipeline=[
  {name:'conditional-map-reads',lower:source=>factorConditionalMapReads(source,{excludedFunctions:inlineWageFunctions}),verify:assertConditionalMapReadsEquivalent},
  {name:'constant-string-arrays',lower:poolConstantStringArrays,verify:assertConstantStringArrayPoolingEquivalent},
@@ -26,6 +45,8 @@ const pipeline=[
  {name:'map-methods',lower:source=>lowerFirestoreMapMethods(source,{excludedFunctions:inlineMapFunctions}),verify:assertMapMethodLoweringEquivalent},
  {name:'request-equalities',lower:source=>lowerRequestEqualities(source,{excludedFunctions:inlineWageFunctions}),verify:assertRequestEqualitiesEquivalent},
  {name:'bounded-text',lower:source=>shareBoundedText(source,{includeSingleBounds:true,excludedFunctions:inlineWageFunctions}),verify:assertBoundedTextSharingEquivalent},
+ {name:'constant-map-gets',lower:source=>shareConstantMapGets(source,{excludedFunctions:additionalSharingExclusions(source)}),verify:assertConstantMapGetsEquivalent},
+ {name:'bounded-numbers',lower:source=>shareBoundedNumbers(source,{includeSingleBounds:true,excludedFunctions:additionalSharingExclusions(source)}),verify:assertBoundedNumbersEquivalent},
  {name:'literal-false-rules',lower:lowerLiteralFalseRules,verify:assertLiteralFalseLoweringEquivalent}
 ];
 function sharingEligibility(source){
@@ -46,7 +67,7 @@ export function lowerFirestoreRuleSelectors(policy){
   if(pass.verify(input,source,result.proof,{returnSource:true})!==input)fail('selector inverse differs: '+pass.name);
   stages.push({name:pass.name,input,output:source,proof:result.proof});
  }
- return {source,stages,mode:eligibility.enabled?'seven-pass':'alpha-fragment',reason:eligibility.enabled?null:eligibility.reason};
+ return {source,stages,mode:eligibility.enabled?'nine-pass':'alpha-fragment',reason:eligibility.enabled?null:eligibility.reason};
 }
 export function assertRuleBuildEquivalent(policy,generated,mappingInput,options={}){
  const shared=lowerFirestoreRuleSelectors(policy);

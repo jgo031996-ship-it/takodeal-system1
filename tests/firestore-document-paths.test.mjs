@@ -6,11 +6,14 @@ import {lowerFirestorePaths,assertPathLoweringEquivalent} from '../tools/firesto
 const hash=value=>createHash('sha256').update(value).digest('hex');
 const wrap=body=>"rules_version = '2'; service cloud.firestore { match /databases/{database}/documents { "+body+' } }';
 const changedProof=(proof,source)=>({...proof,loweredSha256:hash(source)});
-test('the actual frozen policy lowers all96 paths, including eight deep staff-document paths, and independently reverses exactly',()=>{
+test('the reviewed policy lowers all98 paths, including eight deep staff-document paths, and independently reverses exactly',()=>{
  const original=fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),result=lowerFirestorePaths(original);
- assert.equal(result.proof.calls,96);assert.deepEqual(result.proof.depths,{2:88,4:8});
- assert.equal(result.proof.originalSha256,'feac9db09e84be2964c2577cab21ec86cdbff263c4b81e331738c5c5600ccb12');
+ assert.equal(result.proof.calls,98);assert.deepEqual(result.proof.depths,{2:90,4:8});
+ assert.equal(result.proof.originalSha256,'c2feb217f0aa5a5b83bd92feeaf787e18bdbfa46b30252c60a5283767bacbcab');
+ const start=original.indexOf('function staffPayslipPreview(data,id)'),end=original.indexOf('match /staff_payslip_previews/',start);assert.ok(start>=0&&end>start);
+ const publication=lowerFirestorePaths(wrap(original.slice(start,end)));assert.equal(publication.proof.calls,2);assert.deepEqual(publication.proof.depths,{2:2});assert.match(original.slice(start,end),/payroll_records\/\$\(payrollId\)/);assert.match(original.slice(start,end),/payroll_records\/\$\(refundId\)/);
  assert.equal(assertPathLoweringEquivalent(original,result.source,result.proof).allOtherBytesExact,true);
+ assert.equal(fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),original);
 });
 test('already shared document readers can retain inline paths with an exact inverse and no added selector frame',()=>{
  const first='function readData(collection,id) { return get(/databases/$(database)/documents/$(collection)/$(id)).data; }',second='function subject(id) { return exists(/databases/$(database)/documents/items/$(id)); }',original=wrap(first+second),result=lowerFirestorePaths(original,{excludedFunctions:['readData']});

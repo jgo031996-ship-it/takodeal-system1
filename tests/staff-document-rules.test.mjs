@@ -78,9 +78,10 @@ test('legacy operational authority remains while new rate metadata is protected'
     const profileCreate = body(profile, 'function selectorCashiersCreate('), profileUpdate = body(profile, 'function selectorCashiersUpdate(');
     assert.match(profile, /allow read: if true;/);
     assert.match(profile, /allow create: if selectorCashiersCreate\(request\.resource\.data\);/);
-    assert.match(profileCreate, /return isHQUser\(\) && !data\.keys\(\)\.hasAny\(\['rateHistory','onboardingStartConfirmation','contractTerms'\]\)/);
+    assert.match(profileCreate, /return isHQUser\(\) && !data\.keys\(\)\.hasAny\(\['rateHistory','onboardingStartConfirmation','contractTerms','payslipPinManaged','payslipPinVersion'\]\)/);
     assert.match(profileCreate, /staffRateProfileLink\(cashierId, \{\}, data\)/);
-    assert.match(profile, /allow delete: if isHQUser\(\) && !resource\.data\.keys\(\)\.hasAny\(\['onboardingStartConfirmation','contractTerms'\]\);/);
+    assert.match(profile, /allow delete: if isHQUser\(\) && resource\.data\.get\('payslipPinManaged',false\) != true && !resource\.data\.keys\(\)\.hasAny\(\['onboardingStartConfirmation','contractTerms'\]\);/);
+    assert.match(profileUpdate, /before\.get\('payslipPinManaged',false\) != true/);
     assert.match(profileUpdate, /affectedKeys\(\)\.hasAny\(\['onboardingStartConfirmation','contractTerms'\]\)/);
     assert.match(profileUpdate, /onboardingProfileLink\(cashierId,before,data\)/);
     const attendance = expandVerifiedAliases(body(legacy, 'match /attendance_logs/{logId}'));
@@ -101,7 +102,7 @@ test('legacy operational authority remains while new rate metadata is protected'
     // authorization and atomic-link requirements; they must not inherit the
     // preceding unrestricted update grant.
     assert.match(profile, /allow update: if selectorCashiersUpdate\(request\.resource\.data,resource == null \? null : resource\.data\);/);
-    assert.match(profileUpdate, /return !data\.diff\(before\)\.affectedKeys\(\)\.hasAny\(\['rateHistory'\]\)/);
+    assert.match(profileUpdate, /return !data\.diff\(before\)\.affectedKeys\(\)\.hasAny\(\['rateHistory','payslipPinManaged','payslipPinVersion'\]\)/);
     assert.match(profileUpdate, /affectedKeys\(\)\.hasAny\(\['latestRateRaise', 'staffRateAuditId','salaryRateVersion','salaryRateRevision'\]\)/);
     assert.match(profileUpdate, /before\.get\('salaryRateVersion',0\) == 1 && data\.diff\(before\)\.affectedKeys\(\)\.hasAny\(\['hourlyRate','dailyRate','branch'\]\)/);
     assert.match(profileUpdate, /staffRateProfileLink\(cashierId, before, data\)/);

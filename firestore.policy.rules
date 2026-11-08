@@ -1381,13 +1381,16 @@ service cloud.firestore {
 
       allow read: if true;
       function selectorCashiersCreate(data) {
-        return isHQUser() && !data.keys().hasAny(['rateHistory','onboardingStartConfirmation','contractTerms'])
+        return isHQUser() && !data.keys().hasAny(['rateHistory','onboardingStartConfirmation','contractTerms','payslipPinManaged','payslipPinVersion'])
         && (!data.keys().hasAny(rateKeys())
           || staffRateProfileLink(cashierId, {}, data));
       }
       allow create: if selectorCashiersCreate(newData());
       function selectorCashiersUpdate(data,before) {
-        return !data.diff(before).affectedKeys().hasAny(['rateHistory'])
+        // Managed Payslip PINs can only be changed by the verified recovery
+        // service. Ordinary profile edits cannot remove the protection marker.
+        return !data.diff(before).affectedKeys().hasAny(['rateHistory','payslipPinManaged','payslipPinVersion'])
+        && (before.get('payslipPinManaged',false) != true || !data.diff(before).affectedKeys().hasAny(['payslipPin']))
         && (!data.diff(before).affectedKeys().hasAny(['onboardingStartConfirmation','contractTerms'])
           || onboardingProfileLink(cashierId,before,data))
         && (!(data.diff(before).affectedKeys().hasAny(rateKeys())
@@ -1395,7 +1398,47 @@ service cloud.firestore {
           || staffRateProfileLink(cashierId, before, data));
       }
       allow update: if selectorCashiersUpdate(newData(),resource == null ? null : oldData());
-      allow delete: if isHQUser() && !oldData().keys().hasAny(['onboardingStartConfirmation','contractTerms']);
+      allow delete: if isHQUser() && oldData().get('payslipPinManaged',false) != true && !oldData().keys().hasAny(['onboardingStartConfirmation','contractTerms']);
+    }
+    // Sharing a reviewed payslip never creates a payment or settlement record.
+    // Staff access uses the same private, HQ-approved device identity as their
+    // documents; a shared login PIN or selected staff ID grants no access.
+    function staffPayslipPreviewCents(value) {
+      return value >= 0 ? int(value * 100 + 0.5) : -int(-value * 100 + 0.5);
+    }
+    function staffPayslipPreview(data,id) {
+      let payrollId = 'payroll-' + data.staffId + '-' + data.startDate + '-' + data.endDate;
+      let refundId = 'refund-payroll-' + data.staffId + '-' + data.startDate + '-' + data.endDate;
+      return protectedHROwner()
+        && data.keys().hasOnly(['schemaVersion','kind','status','staffId','staffName','branch','startDate','endDate','revision','publishedAt','publishedByUid','publishedByEmail','snapshot','finalNetPay'])
+        && data.schemaVersion == 1 && data.kind == 'owner-shared-payslip' && data.status == 'Published'
+        && protectedHRId(data.staffId) && data.staffName is string && data.staffName.size() > 0 && data.staffName.size() <= 160
+        && data.branch is string && data.branch.size() > 0 && data.branch.size() <= 128
+        && protectedHRDate(data.startDate) && protectedHRDate(data.endDate) && data.startDate <= data.endDate
+        && id == data.staffId + '-' + data.startDate + '-' + data.endDate
+        && data.revision is int && data.revision >= 1 && data.revision <= 1000000
+        && data.publishedAt == reqTime() && data.publishedByUid == reqUid() && data.publishedByEmail == reqEmail()
+        && data.snapshot is map && data.snapshot.size() <= 80
+        && data.snapshot.staffId == data.staffId && data.snapshot.name == data.staffName && data.snapshot.branch == data.branch
+        && data.snapshot.start == data.startDate && data.snapshot.end == data.endDate && data.snapshot.isPaid == false
+        && data.finalNetPay is number && data.finalNetPay >= -1000000000 && data.finalNetPay <= 1000000000
+        && data.snapshot.finalNetPay == data.finalNetPay
+        && data.snapshot.grossPay is number && data.snapshot.grossPay >= 0 && data.snapshot.grossPay <= 1000000000
+        && data.snapshot.totalDeductions is number && data.snapshot.totalDeductions >= 0 && data.snapshot.totalDeductions <= 1000000000
+        && staffPayslipPreviewCents(data.snapshot.grossPay) - staffPayslipPreviewCents(data.snapshot.totalDeductions) == staffPayslipPreviewCents(data.finalNetPay)
+        && data.snapshot.customDeductions is list && data.snapshot.customDeductions.size() <= 100
+        && data.snapshot.logs is list && data.snapshot.logs.size() <= 1000
+        && data.snapshot.profile is map
+        && !exists(/databases/$(database)/documents/payroll_records/$(payrollId))
+        && !exists(/databases/$(database)/documents/payroll_records/$(refundId));
+    }
+    match /staff_payslip_previews/{previewId} {
+      allow read: if protectedHROwner() || (docVaultEnabled() && docVaultOwn(oldData().staffId));
+      allow create: if staffPayslipPreview(newData(),previewId) && newData().revision == 1;
+      allow update: if staffPayslipPreview(newData(),previewId)
+        && newData().staffId == oldData().staffId && newData().startDate == oldData().startDate && newData().endDate == oldData().endDate
+        && newData().revision == oldData().revision + 1;
+      // No delete permission is granted.
     }
     function earlyTimeOutHQ(branch) {
       let email = isSignedIn() ? request.auth.token.get('email', '') : '';

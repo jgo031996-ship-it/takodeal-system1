@@ -15,7 +15,7 @@ import {normalizeDisciplinePolicy} from '../takodeal-manager/discipline-case-mod
 const host='127.0.0.1',port=8794,projectId='demo-discipline-case-review',endpoint=host+':'+port;
 if(process.env.FIRESTORE_EMULATOR_HOST&&process.env.FIRESTORE_EMULATOR_HOST!==endpoint)throw Error('Refusing another Firestore endpoint.');
 process.env.FIRESTORE_EMULATOR_HOST=endpoint;
-const root=fileURLToPath(new URL('../',import.meta.url)),tools=resolve(root,'../staff-nextlevel-tools'),requireTools=createRequire(resolve(tools,'package.json'));
+const root=fileURLToPath(new URL('../',import.meta.url)),tools=resolve(process.env.TAKODEAL_TEST_TOOLS||resolve(root,'../staff-nextlevel-tools')),requireTools=createRequire(resolve(tools,'package.json'));
 const {initializeTestEnvironment,assertSucceeds,assertFails}=requireTools('@firebase/rules-unit-testing'),sdk=requireTools('firebase/firestore');
 const {doc,collection,query,where,orderBy,limit,getDocsFromServer,getDocFromServer,runTransaction,serverTimestamp,setDoc,updateDoc,deleteDoc,writeBatch}=sdk;sdk.setLogLevel('silent');
 const java=JSON.parse(readFileSync(resolve(tools,'runtime.json'))).java,jar=resolve(tools,'emulators/cloud-firestore-emulator-v1.22.0.jar');

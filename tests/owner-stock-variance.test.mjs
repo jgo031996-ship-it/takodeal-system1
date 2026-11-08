@@ -68,6 +68,6 @@ test('the visible Dispatch button is escaped, opens the exact linked report with
 test('closing an exact-report lookup or replacing its account cannot reopen a late report',async()=>{
  for(const change of ['close','account']){const hold=deferred(),f=fixture({onDocument:()=>hold.promise}),d=dom(),ui=installStockAudits(f.w,d),pending=ui.openRequest('count-request-saved-count');await drain();const dialog=d.querySelector('dialog');if(change==='close')dialog.querySelector('[data-audit-close]').click();else f.w.auth.currentUser={...f.w.auth.currentUser};hold.resolve(f.snapshot('purchase_orders/count-request-saved-count'));await pending;assert.equal(change==='close'?d.querySelector('dialog'):dialog.textContent.includes('5 g'),change==='close'?null:false);ui.dispose();}
 });
-test('both actual Dispatch feed layouts use the exact PO button helper while preserving Review and Dispatch controls',()=>{
- const main=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');assert.match(main,/stockRequestVarianceButton\(docSnap\.id\)/);assert.match(main,/stockRequestVarianceButton\(req\.id\)/);assert.match(main,/window\.reviewPurchaseOrder\(/);assert.match(main,/window\.dispatchB2BOrder\(/);
+test('both actual Dispatch feed layouts use the exact PO button helper and preserve review-to-draft plus the separate Send flow',()=>{
+ const main=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8');assert.match(main,/stockRequestVarianceButton\(docSnap\.id\)/);assert.match(main,/stockRequestVarianceButton\(req\.id\)/);assert.match(main,/window\.reviewPurchaseOrder\(/);assert.match(main,/window\.submitMultiDispatch = async function/);assert.doesNotMatch(main,/window\.dispatchB2BOrder\(/);
 });

@@ -15,6 +15,9 @@ import {installPaymentReconciliation} from './payment-reconciliation-ui.js';
 import {installOwnerStockAudits} from './owner-stock-audits.js';
 import {installPendingPaymentReader} from './pending-payment-reader.js';
 import {installOwnerContractPrinting,renderOwnerContractVault} from './owner-contract-print.js';
+import {installEmployeePhoto} from './employee-photo.js';
+import {installOwnerDispatchDetails} from './owner-dispatch-details.js';
+import {installOwnerPayslipSharing} from './staff-payslip-publication-ui.js';
 import {reviewLateRequestWorkedShift,reviewLateRequestDatedAttendance} from './late-request-worked-shift-ui.js';
 import {installOwnerDeductionHistory,readOwnerPayrollRecoveryHistory,ownerDeductionHistoryRow} from './owner-deduction-history.js';
 import {installOwnerDeductions} from './owner-deduction-ui.js';
@@ -30,6 +33,8 @@ import {installMenuOptions} from './menu-options-ui.js';
 import {installProductEditorLayout} from './product-editor-layout.js';
 import {installProductAddonDrafts,readProductAddonRows} from './product-options-draft.js';
 const runManagerDomReady = fn => document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", fn, {once:true}) : queueMicrotask(fn);
+runManagerDomReady(() => {installEmployeePhoto(window,document);installOwnerDispatchDetails(window,document);});
+runManagerDomReady(() => installOwnerPayslipSharing(window,document,{actorKey:()=>payrollActorKey(window),assertFresh:data=>Promise.all([assertPayrollScheduleFresh(window,data),assertPayrollSalaryFresh(window,data)])}));
 runManagerDomReady(() => {installStaffSetupCodes(window,document);installScheduleProposalReview(window,document);installPayrollAdjustmentUI(window,document);installPayrollAdjustmentRefresh(window,document);installPayrollMessenger(window,document,{presentSaved:async(saved,context)=>{context.assertCurrent();const frozen={...saved.frozenData,name:saved.frozenData?.name||context.name,staffId:context.staffId,branch:saved.frozenData?.branch||context.branch,start:context.start,end:context.end,isPaid:true,finalNetPay:saved.finalNetPay,...(saved.processedAt?{processedAt:saved.processedAt}:{}),...(saved.staffSignature?{staffSignature:saved.staffSignature}:{})};signedPayslipSnapshots.set(frozen,context.assertCurrent);await window.openPayslipModal(frozen.name,frozen);context.assertCurrent();return frozen;}});});
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {lateRequestSummary,lateRequestSummaryHTML,lateRequestRecoveryContext} from './late-request-summary.js';
@@ -1682,7 +1687,7 @@ window.loadPrepBatchLogs = async function() {
                         <span style="color: #0ea5e9; font-size: 11px; font-weight: bold;">${purchDisplay}</span>
                     </td>
                     <td style="padding: 12px 15px;">
-                        <button onclick="window.undoKitchenPrep('${log.id}', '${log.item.replace(/'/g, "\\'")}', ${log.variance})" style="background: white; color: #dc2626; border: 1px solid #fecaca; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 11px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">✖ Undo</button>
+                        <span style="font-size:11px;color:#64748b">Saved prep record. Review stock corrections separately.</span>
                     </td>
                 </tr>
             `;
@@ -1886,7 +1891,7 @@ window.loadDispatchLogs = async function() {
                 : `<div style="display: flex; justify-content: flex-end; gap: 8px;">
                        <button onclick="window.reviewPurchaseOrder('${docSnap.id}')" style="background:#0ea5e9; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Review</button>
                        ${stockRequestVarianceButton(docSnap.id)}
-                       <button onclick="window.dispatchB2BOrder('${docSnap.id}')" style="background:#10b981; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(16,185,129,0.3);">🚚 Dispatch</button>
+                       <span style="font-size:11px;color:#64748b">Review to add quantities to the dispatch draft. Send separately after checking.</span>
                    </div>`;
             
             poHtml += `<tr style="background:#fffbeb; border-bottom:2px solid #fde68a;">
@@ -1931,7 +1936,7 @@ window.loadDispatchLogs = async function() {
                     <div style="font-size:11px; color:#94a3b8; margin-top:4px;">📅 ${del.date} at ${del.time}</div>
                 </td>
                 <td style="padding:15px; text-align:center;"><span style="background:${badgeColor}; color:white; padding:4px 8px; border-radius:4px; font-size:11px; font-weight:bold;">${del.status}</span></td>
-                <td style="padding:15px; text-align:right;"><button onclick="window.viewDispatchDetails('${safeItemsJson}', '${del.toBranch}', '${del.driver}', '${del.date}', '${del.time}')" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Full Details</button></td>
+                <td style="padding:15px; text-align:right;"><button onclick="window.viewDispatchDetails('${safeItemsJson.replace(/'/g,'%27')}', decodeURIComponent('${encodeURIComponent(del.toBranch).replace(/'/g,'%27')}'))" style="background: white; color: #0ea5e9; border: 1px solid #0ea5e9; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">🔍 Full Details</button></td>
             </tr>`;
         });
 
@@ -10905,6 +10910,7 @@ window.openPayslipModal = async function(staffName, savedHistoryData = null) {
     window.currentPayslipData = data;
     const paidView=!!(data.isPaid||window.paidPayrollSnapshots?.has(data));
     const heldView=!paidView&&!!(data.attendanceReviewRequired||data.salaryReviewRequired);
+    window.staffPayslipSharing?.sync(data,{history:!!savedHistoryData});
     const reviewReasons=Array.isArray(data.payrollReviewReasons)&&data.payrollReviewReasons.length?data.payrollReviewReasons:Array.isArray(data.attendanceReviewReasons)?data.attendanceReviewReasons:[];
     const reviewContext=JSON.parse(JSON.stringify({staffId:data.staffId||data.profile?.staffId||data.profile?.id,staffName:data.name,branch:data.branch,from:data.start,to:data.end,
         payrollReviewReasons:reviewReasons,attendanceLogId:data.attendanceLogIds?.[0],attendanceLogIds:data.attendanceLogIds||[],attendanceIssues:data.attendanceIssues||[],recordedHours:Object.hasOwn(data,'recordedHours')?data.recordedHours:data.hours}));
@@ -24113,6 +24119,7 @@ runManagerDomReady(() => {
 window.addNewStaff = function() {
     window.employeeSssUI?.reset();
     window.staffProfileFormGeneration=(window.staffProfileFormGeneration || 0)+1;window.staffProfileSaveOwner=null;
+    window.ownerEmployeePhoto?.reset();
     const saveButton=document.getElementById('btnSaveEmpProfile');if(saveButton){saveButton.disabled=false;saveButton.innerText='💾 Save Data';}
     window.staffProfileBaseline={id:'',exists:false,rate:null,rateRevision:null};window.pendingEmployeeProfileRef=null;
     const setVal = (id, val) => { let el = document.getElementById(id); if(el) el.value = val; };
@@ -24162,6 +24169,7 @@ window.openEmployeeProfile = function(docId) {
     if (!data) return;
     window.employeeSssUI?.reset();
     window.staffProfileFormGeneration=(window.staffProfileFormGeneration || 0)+1;window.staffProfileSaveOwner=null;
+    window.ownerEmployeePhoto?.reset();
     const saveButton=document.getElementById('btnSaveEmpProfile');if(saveButton){saveButton.disabled=false;saveButton.innerText='💾 Save Data';}
     window.staffProfileBaseline={id:docId,exists:true,rate:data.salaryRateVersion===1&&data.salaryRateTimeline?staffRateForDate(data):dailyStaffRate(data),rateRevision:data.salaryRateRevision??null};window.pendingEmployeeProfileRef=null;
 
@@ -24380,6 +24388,7 @@ window.saveEmployeeProfile = async function() {
         emergencyPhone: document.getElementById('empEmergencyPhone').value.trim(),
         email: document.getElementById('empEmail').value.trim(),
         scheduleNickname: document.getElementById('empScheduleName').value.trim(),
+        ...(window.ownerEmployeePhoto?.capture() || {}),
     };
 
     if (!docId) {

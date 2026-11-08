@@ -49,7 +49,9 @@ export function installAIBoard(w=window,d=document) {
     if(view==='ai-board'&&!allowed())return;
     if(view!=='ai-board'){clear();root.style.display='none';}
     const answer=previous.call(this,view,...args);
-    if(view==='ai-board'){root.style.display='block';el('pageTitle').textContent='AI Board of Directors';connect();}
+    // The existing view/active classes also handle direct inventory sub-tabs.
+    // An inline display:block would keep this Board visible after they leave.
+    if(view==='ai-board'){root.style.display='';el('pageTitle').textContent='AI Board of Directors';connect();}
     return answer;
   };
   el('board-question-form').addEventListener('submit',async event=>{

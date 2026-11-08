@@ -7,7 +7,7 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="apple-touch-icon" href="icon-192.png">
     <link rel="manifest" href="manifest.json?v=staff-device-fleet-20261004-r3">
-    <meta name="takodeal-release" content="staff-time-in-declarations-20261108">
+    <meta name="takodeal-release" content="staff-vault-payslip-20261108">
     <meta name="theme-color" content="#173f35">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="TAKODEÁL Staff">
@@ -109,7 +109,7 @@
                     </div>
                 </div>
 
-                <section class="profile-security"><h3>Payslip PIN</h3><p>Set up or change your private Payslip PIN here. Use it to unlock your rate and payslips.</p><button type="button" class="btn-outline" onclick="window.openVaultPin('change')">Set up or change Payslip PIN</button></section>
+                <section class="profile-security"><h3>Payslip PIN</h3><p>Set up or change your private Payslip PIN here. Use it to unlock your rate and payslips.</p><button type="button" class="btn-outline" onclick="window.openVaultPin('change')">Set up or change Payslip PIN</button><button type="button" class="btn-outline" onclick="window.openVaultRecovery()">Forgot Payslip PIN?</button></section>
                 <section class="staff-rate-card" aria-labelledby="profileRateTitle"><div><span class="document-eyebrow">YOUR PAY</span><h3 id="profileRateTitle">Daily rate</h3><p id="profileRateState">Private · Payslip PIN required</p></div><strong id="profileDailyRate">Locked</strong><div class="document-actions"><button id="profileRateUnlock" type="button" onclick="window.ensureStaffRateUnlocked()">Unlock rate</button><button id="profileRateLock" type="button" onclick="window.lockProfileRate()" hidden>Lock rate</button></div><p id="profileRateCongratulations" class="rate-congratulations" hidden></p></section>
                 <section id="staffDocumentsPanel" class="staff-documents-panel" aria-labelledby="staffDocumentsTitle"><div class="document-section-heading"><div><span class="document-eyebrow">EMPLOYEE RECORDS</span><h3 id="staffDocumentsTitle">Required documents</h3></div><button id="staffDocumentRefresh" type="button">Refresh</button></div><p>Upload a clear photo of your Valid ID, Health Card and either NBI or Police Clearance. HQ can download these for your employment records.</p><p id="staffDocumentsStatus" role="status" aria-live="polite">Open your profile to check required documents.</p><button id="staffDocumentDeviceRequest" type="button" hidden>Ask HQ to approve this phone for uploads</button><div id="staffDocumentCards" class="staff-document-grid"></div></section>
 
@@ -192,7 +192,7 @@
 
                 <h3 style="color: #b45309; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #fde68a; padding-bottom: 5px;">💸 Loan Ledger & Agreements</h3>
                 <div id="profLoans" style="background: #fffbeb; padding: 15px; border-radius: 8px; border: 1px dashed #fcd34d; font-size: 13px; color: #92400e; margin-bottom: 25px;">
-                    <i>No active loan contracts found. (Coming Soon)</i>
+                    <p>Loan agreements are not shown in this section yet. Check the deductions in your Payslip Vault or ask HQ for your loan agreement and current balance.</p>
                 </div>
                 
                 <h3 style="color: #16a34a; font-size: 14px; margin: 20px 0 10px 0; border-bottom: 2px solid #bbf7d0; padding-bottom: 5px;">🔒 Security & System</h3>
@@ -410,7 +410,7 @@
                 </div>
 
                 <div class="vault-toolbar"><span class="status-pill" id="vaultState">Private · PIN required</span><div><button class="btn-outline" onclick="window.openVaultPin('change')">Manage PIN</button><button class="btn-outline" id="vaultLockButton" hidden onclick="window.lockPayslipVault()">Lock vault</button></div></div>
-                <section id="vaultGate" class="vault-gate"><span class="vault-symbol" aria-hidden="true">🔒</span><span class="eyebrow">YOUR PAY IS PERSONAL</span><h3>Your Payslip Vault is locked</h3><p>Enter your separate Payslip PIN to see estimates, pending payouts, and past payslips. Set up or change your PIN in your Profile.</p><button class="btn-primary" onclick="window.openVaultPin()">Unlock Payslip Vault</button><small>Locks when you leave Pay, hide the app, or stay idle for 2 minutes.</small></section>
+                <section id="vaultGate" class="vault-gate"><span class="vault-symbol" aria-hidden="true">🔒</span><span class="eyebrow">YOUR PAY IS PERSONAL</span><h3>Your Payslip Vault is locked</h3><p>Enter your separate Payslip PIN to see estimates, pending payouts, and past payslips. Set up or change your PIN in your Profile.</p><button class="btn-primary" onclick="window.openVaultPin()">Unlock Payslip Vault</button><button type="button" class="btn-outline" onclick="window.openVaultRecovery()">Forgot Payslip PIN?</button><small>Locks when you leave Pay, hide the app, or stay idle for 2 minutes.</small></section>
                 <div id="vaultContent" hidden>
                 <div style="display: flex; gap: 10px; margin-bottom: 20px; background: white; padding: 5px; border-radius: 10px; border: 1px solid #cbd5e1; box-shadow: 0 2px 4px rgba(0,0,0,0.02);">
                     <button id="btnTabLivePay" onclick="window.switchPayslipTab('Live')" style="flex: 1; padding: 12px; background: #0f766e; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.2s;">Live Estimate</button>
@@ -496,7 +496,7 @@
                 <label class="field-label" id="vaultCurrentLabel" for="vaultCurrentPin">Payslip PIN</label><input type="password" id="vaultCurrentPin" inputmode="numeric" autocomplete="off" required>
                 <div id="vaultNewFields" hidden><label class="field-label" for="vaultNewPin">New Payslip PIN · 6–8 digits</label><input type="password" id="vaultNewPin" inputmode="numeric" maxlength="8" autocomplete="new-password"><label class="field-label" for="vaultConfirmPin">Confirm new PIN</label><input type="password" id="vaultConfirmPin" inputmode="numeric" maxlength="8" autocomplete="new-password"></div>
                 <button type="submit" class="btn-primary" id="vaultSubmit">Unlock vault</button>
-            </form><p id="vaultError" class="form-error" role="alert" hidden></p><p class="pin-help">Keep this PIN to yourself. It is separate from your staff login PIN.</p>
+            </form><p id="vaultError" class="form-error" role="alert" hidden></p><button type="button" class="btn-outline" onclick="window.openVaultRecovery()">Forgot Payslip PIN?</button><p class="pin-help">Keep this PIN to yourself. It is separate from your staff login PIN.</p>
         </div>
     </div>
 
@@ -664,6 +664,6 @@
         import {installStaffAppUpdate} from "./staff-phone.js";
         installStaffAppUpdate();
       </script>
-      <script type="module" src="app.js?v=staff-time-in-declarations-20261108"></script>
+      <script type="module" src="app.js?v=staff-vault-payslip-20261108"></script>
 </body>
 </html>
