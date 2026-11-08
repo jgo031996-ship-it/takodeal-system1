@@ -2,6 +2,9 @@ export const GENERATED_RULES_HEADER='// Generated from firestore.policy.rules by
 const identifierStart=character=>/[A-Za-z_]/.test(character||'');
 const identifierPart=character=>/[A-Za-z0-9_]/.test(character||'');
 const builtinNames=new Set(['get','getAfter','exists','existsAfter','debug','path','string','int','float','bool','latlng','timestamp','duration','math','hashing','request','resource','service','match','allow','if','return','let','function','true','false','null','rules_version','is','in','map','list','set','number','constraint','database','cloud','firestore']);
+// Also keep generated aliases valid in the executable JavaScript equivalence
+// fixtures. This does not change which original Rules helpers are accepted.
+const reservedAliasNames=new Set(['as','do','of','var','try','new','for','case','else','enum','this','void','with','await','break','catch','class','const','super','throw','while','yield','delete','export','import','public','static','switch','typeof','default','extends','finally','package','private','continue','debugger','interface','protected','implements','instanceof']);
 const fail=message=>{throw Error('Rules build: '+message);};
 
 // Retain every source byte in a token. Strings and comments are opaque; a regex
@@ -107,9 +110,16 @@ function analyze(source){
  return{tokens,code,definitions,scopes,boundSites};
 }
 const helperSite=(code,index)=>code[index-1]?.text==='function'||(code[index+1]?.text==='('&&code[index-1]?.text!=='.');
+function helperAlias(sequence){
+ // Reserve all one-character identifiers for the much more frequent local
+ // bindings. Enumerate aa..ZZ, then aaa.. without a fixed-capacity pool.
+ const alphabet='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';let value=sequence+alphabet.length,result='';
+ do{result=alphabet[value%alphabet.length]+result;value=Math.floor(value/alphabet.length)-1;}while(value>=0);
+ return result;
+}
 function mappingFor(analysis){
  const occupied=new Set(analysis.code.filter(token=>token.type==='identifier').map(token=>token.text)),mapping=new Map();let sequence=0;
- for(const name of analysis.definitions.keys()){let candidate;do{candidate='r'+(sequence++).toString(36);}while(occupied.has(candidate)||builtinNames.has(candidate));occupied.add(candidate);mapping.set(name,candidate);}
+ for(const name of analysis.definitions.keys()){let candidate;do{candidate=helperAlias(sequence++);}while(occupied.has(candidate)||builtinNames.has(candidate)||reservedAliasNames.has(candidate));occupied.add(candidate);mapping.set(name,candidate);}
  return mapping;
 }
 function localsFor(analysis,helperMapping){
@@ -125,7 +135,7 @@ export function assertRuleAlphaEquivalent(policy,generated,mappingInput,options=
  const original=analyze(policy),mapping=mappingInput instanceof Map?mappingInput:new Map(mappingInput);
  if(mapping.size!==original.definitions.size||[...original.definitions.keys()].some(name=>!mapping.has(name)))fail('the helper mapping does not match the readable policy.');
  const oldNames=new Set(original.code.filter(token=>token.type==='identifier').map(token=>token.text)),shortNames=new Set();
- for(const short of mapping.values()){if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(short)||oldNames.has(short)||shortNames.has(short)||builtinNames.has(short))fail('the generated helper name collides with the readable policy.');shortNames.add(short);}
+ for(const short of mapping.values()){if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(short)||oldNames.has(short)||shortNames.has(short)||builtinNames.has(short)||reservedAliasNames.has(short))fail('the generated helper name collides with the readable policy.');shortNames.add(short);}
  if(typeof generated!=='string'||!generated.startsWith(GENERATED_RULES_HEADER))fail('the generated header is missing or changed.');
  const body=generated.slice(GENERATED_RULES_HEADER.length),result=analyze(body),reverse=new Map([...mapping].map(([name,short])=>[short,name])),locals=localsFor(original,mapping);
  if(original.tokens.length!==result.tokens.length)fail('generation changed the token structure.');

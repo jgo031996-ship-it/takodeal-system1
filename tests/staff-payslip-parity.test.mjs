@@ -24,13 +24,13 @@ function fixture(){
   return {h,data,publish:options=>publishStaffPayslip(h.api,{data,finalNetPay:net,expectedRevision:0,...options})};
 }
 function paid(data,extra={}){return {id:'paid-original',staffId,staffName:name,branch,startDate:start,endDate:end,finalNetPay:net,acknowledged:false,processedAt:{seconds:1893456000},frozenData:validateOrdinaryPayrollSnapshot(data,net),...extra};}
-async function privateReader(f,{binding={},privateError=null}={}){
-  const primaryQueries=[],privateQueries=[],read=f.h.api.getDocsFromServer;
-  const api={...f.h.api,getDocsFromServer:async q=>{primaryQueries.push(q);return read(q);}};
+async function privateReader(f,{binding={},privateError=null,beforeSharedRead,beforeExactRead,assertCurrent=()=>{}}={}){
+  const primaryQueries=[],privateQueries=[],exactReads=[],read=f.h.api.getDocsFromServer,readDoc=f.h.api.getDocFromServer;
+  const api={...f.h.api,getDocsFromServer:async q=>{primaryQueries.push(q);return read(q);},getDocFromServer:async ref=>{exactReads.push(ref);await beforeExactRead?.(ref,auth);return readDoc(ref);}};
   const user={uid:'private-approved'},auth={currentUser:user};f.h.put('staff_document_devices/'+user.uid,{uid:user.uid,staffId,branch,active:true,...binding});
-  const sdk={...f.h.api,getDocsFromServer:async q=>{privateQueries.push(q);if(privateError)throw privateError;return read(q);}};
-  const state=await readStaffSavedPayslips(api,{staffId,staffName:name,profile:f.data.profile,createVault:async()=>({auth,db:{},sdk})});
-  return {state,primaryQueries,privateQueries,auth};
+  const sdk={...f.h.api,getDocsFromServer:async q=>{privateQueries.push(q);if(privateError)throw privateError;await beforeSharedRead?.(q);return read(q);}};
+  const state=await readStaffSavedPayslips(api,{staffId,staffName:name,profile:f.data.profile,createVault:async()=>({auth,db:{},sdk}),assertCurrent});
+  return {state,primaryQueries,privateQueries,exactReads,auth};
 }
 
 test('Owner-edited deductions and explicit zero incomes roundtrip through publication into the exact Staff snapshot',async()=>{
@@ -126,6 +126,33 @@ test('Staff reads new shared snapshots only through its fresh approved private-d
   assert.equal(first.primaryQueries.some(q=>q.table==='staff_payslip_previews'),false);assert.equal(first.privateQueries.filter(q=>q.table==='staff_payslip_previews').length,1);
   f.h.put('payroll_records/paid-original',paid(f.data));const original=structuredClone(f.h.get('payroll_records/paid-original')),after=await privateReader(f);
   assert.equal(after.state.shared.length,0);assert.equal(after.state.paid.length,1);assert.equal(after.state.paid[0].data.recordState,'paid');assert.deepEqual(f.h.get('payroll_records/paid-original'),original);
+});
+test('an ordinary, refund or random legacy payment saved during a delayed private read replaces the earlier shared result',async()=>{
+  for(const kind of ['ordinary','refund','legacy']){
+    const f=fixture();f.data.profile.scheduleAliases=['Previous Crew Name'];await f.publish();const gate=deferred(),started=deferred();
+    const loading=privateReader(f,{beforeSharedRead:async()=>{started.resolve();await gate.promise;}});await started.promise;
+    const frozen=validateOrdinaryPayrollSnapshot({...f.data,basicPay:500},430.73),record=paid(f.data,{finalNetPay:430.73,frozenData:frozen});
+    const recordId=kind==='ordinary'?'payroll-'+key:kind==='refund'?'refund-payroll-'+key:'random-new-legacy';
+    if(kind==='legacy'){delete record.staffId;delete record.startDate;delete record.endDate;record.staffName='Previous Crew Name';record.frozenData.name='Previous Crew Name';record.frozenData.startDate=start;record.frozenData.endDate=end;delete record.frozenData.start;delete record.frozenData.end;}
+    f.h.put('payroll_records/'+recordId,record);const before=structuredClone([...f.h.docs]);gate.resolve();const {state}=await loading;
+    assert.equal(state.shared.length,0,kind);assert.equal(state.paid.length,1,kind);assert.equal(state.paid[0].record.id,recordId);assert.equal(state.paid[0].data.finalNetPay,430.73);assert.deepEqual([...f.h.docs],before,'the late confirmation performs no writes');
+  }
+});
+test('a payment arriving after the final history union is caught by the exact ordinary/refund cutoff check',async()=>{
+  for(const prefix of ['payroll-','refund-payroll-']){
+    const f=fixture();await f.publish();let saved=false;
+    const result=await privateReader(f,{beforeExactRead:async ref=>{if(!saved&&ref.id===prefix+key){saved=true;f.h.put('payroll_records/'+ref.id,paid(f.data));}}});
+    assert.equal(result.state.shared.length,0);assert.equal(result.state.paid.length,1);assert.deepEqual(new Set(result.exactReads.map(ref=>ref.id)),new Set(['payroll-'+key,'refund-payroll-'+key]));
+  }
+});
+test('an unconfirmed exact payment read holds a draft, and closing the vault during that read cannot return private figures',async()=>{
+  const f=fixture();await f.publish();const blocked=await privateReader(f,{beforeExactRead:()=>{throw Error('Sample payment connection unavailable');}});
+  assert.equal(blocked.state.shared.length,0);assert.equal(blocked.state.held.length,1);assert.match(blocked.state.held[0].message,/payment status/);
+  let current=true;await assert.rejects(privateReader(f,{beforeExactRead:()=>{current=false;},assertCurrent:()=>{if(!current)throw Error('Vault closed');}}),/Vault closed/);
+});
+test('private-auth replacement during the final paid check cannot publish the earlier private shared snapshot',async()=>{
+  const f=fixture();await f.publish();let replaced=false;const result=await privateReader(f,{beforeExactRead:(_ref,auth)=>{if(!replaced){replaced=true;auth.currentUser={uid:'different-private-phone'};}}});
+  assert.equal(result.state.shared.length,0);assert.match(result.state.errors.join(' '),/private Staff account changed/);
 });
 test('a legacy paid freeze using frozen startDate/endDate suppresses a same-cutoff shared pending card',async()=>{
   const f=fixture();await f.publish();const row=paid(f.data);delete row.startDate;delete row.endDate;delete row.frozenData.start;delete row.frozenData.end;row.frozenData.startDate=start;row.frozenData.endDate=end;

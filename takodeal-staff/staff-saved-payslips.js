@@ -9,32 +9,62 @@ function rows(result){
   const list=Array.isArray(result?.docs)?result.docs:null;if(!list||list.length>250)throw Error('Saved payslip history is incomplete or too large. Ask HQ to confirm the exact cutoff.');
   return list.map(row=>{if(row.metadata?.fromCache||row.metadata?.hasPendingWrites)throw Error('A saved payslip is still syncing.');return {...row.data(),id:row.id};});
 }
+const rawCutoff=row=>JSON.stringify([row.startDate??row.frozenData?.start??row.frozenData?.startDate,row.endDate??row.frozenData?.end??row.frozenData?.endDate]);
+async function checkExactPaidCutoffs(api,staffId,candidates,guard){
+  const found=[],blocked=new Set(),jobs=candidates.flatMap(record=>['payroll-','refund-payroll-'].map(prefix=>({id:prefix+staffId+'-'+record.startDate+'-'+record.endDate,cutoff:JSON.stringify([record.startDate,record.endDate])})));
+  let next=0,stopped=false;
+  const work=async()=>{while(!stopped&&next<jobs.length){const job=jobs[next++];try{
+    const snapshot=await api.getDocFromServer(api.doc(api.db,'payroll_records',job.id));if(stopped)return;guard();
+    if(!snapshot||typeof snapshot.exists!=='function'||snapshot.metadata?.fromCache||snapshot.metadata?.hasPendingWrites||snapshot.id!==job.id)throw Error('Payment status could not be confirmed.');
+    if(snapshot.exists()){found.push({...snapshot.data(),id:job.id});blocked.add(job.cutoff);}
+  }catch{if(stopped)return;guard();blocked.add(job.cutoff);}}};
+  try{await deadline(Promise.all(Array.from({length:Math.min(8,jobs.length)},work)));}
+  catch{guard();for(const job of jobs)blocked.add(job.cutoff);}
+  finally{stopped=true;}
+  guard();return {found,blocked};
+}
 export async function readStaffSavedPayslips(api,{staffId,staffName,profile={},createVault,assertCurrent=()=>{}}={}){
   const aliases=[...new Set([staffName,profile.cashierName,profile.fullName,profile.name,profile.scheduleNickname,profile.scheduleName,profile.nickname,...(Array.isArray(profile.scheduleAliases)?profile.scheduleAliases:[])].map(text).filter(Boolean))];
   const guard=()=>assertCurrent();guard();
   const queryPaid=(field,value,op='==')=>deadline(api.getDocsFromServer(api.query(api.collection(api.db,'payroll_records'),api.where(field,op,value),...(api.limit?[api.limit(251)]:[])))).then(result=>{guard();return rows(result);});
   if(aliases.length>10)throw Error('The saved payroll names need HQ confirmation before loading this vault.');
-  const jobs=['staffId','frozenData.staffId','frozenData.profile.staffId','frozenData.profile.id'].map(field=>queryPaid(field,staffId));
-  if(aliases.length)jobs.push(queryPaid('staffName',aliases,'in'),queryPaid('frozenData.name',aliases,'in'));
-  const paidResults=await Promise.allSettled(jobs);guard();
-  const paidRows=[...new Map(paidResults.flatMap(result=>result.status==='fulfilled'?result.value:[]).map(row=>[row.id,row])).values()];
-  const ownRows=paidRows.filter(row=>{
+  const paidJobs=()=>['staffId','frozenData.staffId','frozenData.profile.staffId','frozenData.profile.id'].map(field=>queryPaid(field,staffId)).concat(aliases.length?[queryPaid('staffName',aliases,'in'),queryPaid('frozenData.name',aliases,'in')]:[]);
+  let paidResults=await Promise.allSettled(paidJobs());guard();
+  const paidRows=new Map(paidResults.flatMap(result=>result.status==='fulfilled'?result.value:[]).map(row=>[row.id,row]));
+  const own=()=>[...paidRows.values()].filter(row=>{
     const ids=[row.staffId,row.frozenData?.staffId,row.frozenData?.profile?.staffId,row.frozenData?.profile?.id].filter(Boolean);
     return ids.length?ids.includes(staffId):aliases.includes(text(row.staffName||row.frozenData?.name));
   });
-  const legacyNames=[];
-  for(const name of [...new Set(ownRows.filter(row=>![row.staffId,row.frozenData?.staffId,row.frozenData?.profile?.staffId,row.frozenData?.profile?.id].some(Boolean)).map(row=>text(row.staffName||row.frozenData?.name)))]){
-    try{const result=await deadline(api.getDocsFromServer(api.query(api.collection(api.db,'cashiers'),api.where('cashierName','==',name),...(api.limit?[api.limit(2)]:[]))));guard();if(!result.metadata?.fromCache&&!result.metadata?.hasPendingWrites&&result.docs?.length===1&&result.docs[0].id===staffId)legacyNames.push(name);}catch{guard();}
-  }
-  let sharedRows=[],sharedError='';
+  let sharedRows=[],sharedError='',privateCurrent=()=>{};
   try{
     const client=await deadline(createVault());guard();const user=client.auth?.currentUser,uid=user?.uid;if(!uid)throw Error('Reconnect the approved private Staff phone to read Owner-shared payslips.');
     const same=()=>{guard();if(client.auth.currentUser!==user||client.auth.currentUser?.uid!==uid)throw Error('The private Staff account changed.');};
+    privateCurrent=same;
     const sdk=client.sdk,access=await deadline(sdk.getDocFromServer(sdk.doc(client.db,'staff_document_devices',uid)));same();
     const binding=access?.exists?.()?access.data():null;
     if(access.metadata?.fromCache||access.metadata?.hasPendingWrites||binding?.active!==true||binding.uid!==uid||binding.staffId!==staffId)throw Error('Ask HQ to approve this phone for private payslips.');
     const result=await deadline(sdk.getDocsFromServer(sdk.query(sdk.collection(client.db,'staff_payslip_previews'),sdk.where('staffId','==',staffId),...(sdk.limit?[sdk.limit(251)]:[]))));same();sharedRows=rows(result);
   }catch(error){guard();sharedError=error.message;}
+  // A payment can finish while approval/private snapshot reads are pending.
+  // Refresh the bounded identity union to catch newly saved legacy/random IDs,
+  // then check exact modern payment IDs immediately before admitting a draft.
+  const initiallyPaid=new Set(own().map(rawCutoff));
+  if(sharedRows.some(record=>record.staffId===staffId&&!initiallyPaid.has(JSON.stringify([record.startDate,record.endDate])))){
+    paidResults=await Promise.allSettled(paidJobs());guard();
+    for(const result of paidResults)if(result.status==='fulfilled')for(const record of result.value)paidRows.set(record.id,record);
+  }
+  const legacyNames=[];
+  for(const name of [...new Set(own().filter(row=>![row.staffId,row.frozenData?.staffId,row.frozenData?.profile?.staffId,row.frozenData?.profile?.id].some(Boolean)).map(row=>text(row.staffName||row.frozenData?.name)))]){
+    try{const result=await deadline(api.getDocsFromServer(api.query(api.collection(api.db,'cashiers'),api.where('cashierName','==',name),...(api.limit?[api.limit(2)]:[]))));guard();if(!result.metadata?.fromCache&&!result.metadata?.hasPendingWrites&&result.docs?.length===1&&result.docs[0].id===staffId)legacyNames.push(name);}catch{guard();}
+  }
+  const confirmedCutoffs=new Set(own().map(rawCutoff)),candidates=[];
+  if(paidResults.every(result=>result.status==='fulfilled'))for(const record of sharedRows){
+    if(record.staffId!==staffId||confirmedCutoffs.has(JSON.stringify([record.startDate,record.endDate])))continue;
+    try{normalizeStaffPayslip(record,{staffId},{shared:true});candidates.push(record);}catch{}
+  }
+  const exact=await checkExactPaidCutoffs(api,staffId,candidates,guard);for(const record of exact.found)paidRows.set(record.id,record);
+  try{privateCurrent();}catch(error){guard();sharedRows=[];sharedError=error.message;}
+  const ownRows=own();
   const state={paid:[],shared:[],held:[],errors:[],paidComplete:paidResults.every(result=>result.status==='fulfilled')};
   if(!state.paidComplete)state.errors.push('Saved paid payroll could not be fully confirmed. Owner-shared drafts are held until payment records can be checked.');
   if(sharedError)state.errors.push(sharedError);
@@ -45,6 +75,7 @@ export async function readStaffSavedPayslips(api,{staffId,staffName,profile={},c
   if(state.paidComplete)for(const record of sharedRows){
     if(record.staffId!==staffId)continue;
     if(paidCutoffs.has(JSON.stringify([record.startDate,record.endDate])))continue;
+    if(exact.blocked.has(JSON.stringify([record.startDate,record.endDate]))){state.held.push({record,message:'The saved payment status for this cutoff needs confirmation. Refresh Pay or ask HQ to review it.'});continue;}
     try{state.shared.push({record,data:normalizeStaffPayslip(record,{staffId},{shared:true})});}catch(error){state.held.push({record,message:error.message});}
   }
   state.paid.sort((a,b)=>(stamp(b.record.processedAt)||0)-(stamp(a.record.processedAt)||0));

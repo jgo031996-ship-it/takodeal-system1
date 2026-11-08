@@ -14,7 +14,7 @@ import {createOwnerDeductionService} from '../takodeal-manager/owner-deductions.
 const host='127.0.0.1',port=8812,projectId='demo-owner-deduction-recovery',endpoint=host+':'+port;
 if(process.env.FIRESTORE_EMULATOR_HOST&&process.env.FIRESTORE_EMULATOR_HOST!==endpoint)throw Error('Refusing a non-test Firestore endpoint.');
 process.env.FIRESTORE_EMULATOR_HOST=endpoint;
-const root=fileURLToPath(new URL('../',import.meta.url)),tools=resolve(root,'../staff-nextlevel-tools'),req=createRequire(resolve(tools,'package.json'));
+const root=fileURLToPath(new URL('../',import.meta.url)),tools=resolve(process.env.TAKODEAL_TEST_TOOLS||resolve(root,'../staff-nextlevel-tools')),req=createRequire(resolve(tools,'package.json'));
 const {initializeTestEnvironment,assertSucceeds,assertFails}=req('@firebase/rules-unit-testing');
 const sdk=req('firebase/firestore');sdk.setLogLevel('silent');
 const {doc,setDoc,updateDoc,deleteDoc,getDocFromServer,getDocsFromServer,collection,query,where,writeBatch,serverTimestamp,deleteField}=sdk;

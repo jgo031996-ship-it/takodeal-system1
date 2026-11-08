@@ -6,7 +6,7 @@ import {join,resolve,dirname,basename} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import vm from 'node:vm';
-import {GENERATED_RULES_HEADER,tokenizeRules,buildFirestoreRules,assertRuleBuildEquivalent} from '../tools/build-firestore-rules.mjs';
+import {GENERATED_RULES_HEADER,tokenizeRules,buildFirestoreRules,buildFirestoreRulesAlpha,assertRuleAlphaEquivalent,assertRuleBuildEquivalent} from '../tools/build-firestore-rules.mjs';
 
 const fixture=String.raw`rules_version = '2';
 // decide() and preparedCancellation() must stay readable in comments.
@@ -56,6 +56,25 @@ function r7(data) { return data.get('first', false); }
 match /r3/{r4} { allow read: if first(resource.data); }`,built=buildFirestoreRules(source),occupied=new Set(tokenizeRules(source).filter(token=>token.type==='identifier').map(token=>token.text)),names=built.mapping.map(([,name])=>name);
  assert.equal(new Set(names).size,names.length);for(const name of names)assert.equal(occupied.has(name),false);for(const preserved of [' = 1',' = 2','.r2','match /r3/{r4}'])assert.ok(built.source.includes(preserved));
  assert.equal(buildFirestoreRules(source).source,built.source);
+});
+
+test('compact helper aliases reserve one-letter locals, skip collisions/keywords and grow beyond all two-letter names',()=>{
+ const source='function collision(aa,ab){let ac=aa;return ac&&ab;}\n'+Array.from({length:2710},(_,index)=>`function sourceHelper${index}(value){return value;}`).join('\n'),built=buildFirestoreRulesAlpha(source),mapping=new Map(built.mapping),aliases=[...mapping.values()],occupied=new Set(tokenizeRules(source).filter(token=>token.type==='identifier').map(token=>token.text));
+ assert.equal(new Set(aliases).size,aliases.length);for(const alias of aliases){assert.match(alias,/^[A-Za-z]{2,3}$/);assert.equal(occupied.has(alias),false);assert.notEqual(alias,'do');assert.notEqual(alias,'if');assert.notEqual(alias,'in');assert.notEqual(alias,'is');}
+ assert.ok(aliases.some(alias=>alias.length===3),'a larger policy must continue beyond the two-letter pool');
+ assert.doesNotThrow(()=>new vm.Script(built.source));assert.equal(vm.runInNewContext(built.source+'\n'+mapping.get('sourceHelper2709')+'(true);'),true);
+ assert.match(parameter(built,'sourceHelper0'),/^[A-Za-z_]$/,'one-letter local aliases remain available');
+ assert.equal(assertRuleAlphaEquivalent(source,built.source,built.mapping,{returnSource:true}),source);
+});
+
+test('compact aliases shorten the real generated policy without changing any expressions, locals or call frames',()=>{
+ const {policy,built}=actualBuild(),lowered=built.loweredPolicy,occupied=new Set(tokenizeRules(lowered).filter(token=>token.type==='identifier').map(token=>token.text)),legacyMapping=[];let sequence=0;
+ for(const [name] of built.mapping){let alias;do{alias='r'+(sequence++).toString(36);}while(occupied.has(alias));occupied.add(alias);legacyMapping.push([name,alias]);}
+ const legacyByOriginal=new Map(legacyMapping),legacyByCurrent=new Map(built.mapping.map(([name,alias])=>[alias,legacyByOriginal.get(name)])),legacySource=GENERATED_RULES_HEADER+tokenizeRules(built.source.slice(GENERATED_RULES_HEADER.length)).map(token=>token.type==='identifier'&&legacyByCurrent.has(token.text)?legacyByCurrent.get(token.text):token.text).join('');
+ assert.equal(assertRuleAlphaEquivalent(lowered,legacySource,legacyMapping,{returnSource:true}),lowered);
+ assert.equal(assertRuleBuildEquivalent(policy,built.source,built.mapping,{returnSource:true}),policy);
+ assert.equal(tokenizeRules(built.source).length,tokenizeRules(legacySource).length);
+ assert.ok(Buffer.byteLength(legacySource)-Buffer.byteLength(built.source)>=1500,'shorten at least1500 helper-identifier bytes with zero additional expressions');
 });
 test('nested unique helper scopes preserve their declaration and call graph without rewriting member calls',()=>{
  const source=`function outer(data){ return data.inner() && inner(data); }
@@ -124,7 +143,7 @@ test('unsupported embedded path segments fail closed instead of reclassifying th
  for(const segment of ['owner$(id)','$(id)-id','owner@id'])assert.throws(()=>buildFirestoreRules(`function inspect(id) { return exists(/databases/$(database)/documents/${segment}); }`),/literal path/);
 });
 test('all local aliases are fresh against every original identifier and unique within each function',()=>{
- const policy=`match /items/{a} { function inspect(data, row) { let amount = data.a + row.b; let another = amount + c; return another + d; } allow read: if inspect(resource.data, resource.data); }`,built=buildFirestoreRules(policy),occupied=new Set(tokenizeRules(policy).filter(token=>token.type==='identifier').map(token=>token.text)),aliases=[...built.source.matchAll(/(?:function r\w+\(([^)]+)\)|let ([A-Za-z_]) =)/g)].flatMap(match=>match[1]?match[1].split(',').map(value=>value.trim()):[match[2]]);
+ const policy=`match /items/{a} { function inspect(data, row) { let amount = data.a + row.b; let another = amount + c; return another + d; } allow read: if inspect(resource.data, resource.data); }`,built=buildFirestoreRules(policy),occupied=new Set(tokenizeRules(policy).filter(token=>token.type==='identifier').map(token=>token.text)),helperNames=built.mapping.map(([,name])=>name).join('|'),aliases=[...built.source.matchAll(new RegExp('(?:function (?:'+helperNames+')\\(([^)]+)\\)|let ([A-Za-z_]) =)','g'))].flatMap(match=>match[1]?match[1].split(',').map(value=>value.trim()):[match[2]]);
  assert.equal(aliases.length,4);assert.equal(new Set(aliases).size,4);for(const alias of aliases){assert.match(alias,/^[A-Za-z_]$/);assert.equal(occupied.has(alias),false);}assert.ok(built.source.includes(' + c;'));assert.ok(built.source.includes(' + d;'));assert.ok(built.source.includes('match /items/{a}'));
 });
 test('duplicate, nested, shadowed-helper and ambiguous pre-initializer bindings fail closed',()=>{
@@ -156,7 +175,7 @@ test('actual generated Rules match the deterministic build and every selector an
  const {policy,generated,built}=actualBuild(),proof=assertRuleBuildEquivalent(policy,generated,built.mapping);
  assert.equal(generated,built.source);assert.ok(proof.helpers>200);assert.ok(proof.replacements>1000);assert.ok(built.statistics.identifierBytesSaved>12000);assert.ok(Buffer.byteLength(generated)<Buffer.byteLength(policy));
  assert.ok(proof.bindings>700);assert.ok(proof.localReplacements>4500);assert.ok(built.statistics.identifierBytesSaved>34000);
- assert.equal(proof.selectorSharing.exactInverseBytes,true);assert.equal(proof.selectorSharing.passes,7);
+ assert.equal(proof.selectorSharing.exactInverseBytes,true);assert.equal(proof.selectorSharing.passes,9);
  const originalTokens=tokenizeRules(built.loweredPolicy),outputTokens=tokenizeRules(generated.slice(GENERATED_RULES_HEADER.length));assert.deepEqual(outputTokens.filter(token=>['comment','string','whitespace','punctuation'].includes(token.type)).map(token=>[token.type,token.text]),originalTokens.filter(token=>['comment','string','whitespace','punctuation'].includes(token.type)).map(token=>[token.type,token.text]));
  const beforePrepared=originalTokens.filter(token=>token.type==='identifier'&&token.text==='preparedCancellation'),afterPrepared=outputTokens.filter(token=>token.type==='identifier'&&token.text==='preparedCancellation');assert.equal(beforePrepared.length-afterPrepared.length,2);assert.equal(afterPrepared.length,2);
 });
