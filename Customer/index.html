@@ -6,7 +6,7 @@
     <title>TAKODEÁL | Order fresh takoyaki</title>
     <meta name="theme-color" content="#173f35">
     <meta name="description" content="Choose a TAKODEÁL branch, browse its menu, and order takoyaki, drinks and more for pickup or delivery.">
-    <link rel="stylesheet" href="customer-theme.css?v=customer-hub-20261009">
+    <link rel="stylesheet" href="customer-theme.css?v=customer-order-details-20261108">
     <link rel="stylesheet" href="customer-browser-help.css?v=online-orders-20261008-r1">
     <script type="module" src="customer-browser-help.js?v=online-orders-20261008-r1"></script>
     <link rel="stylesheet" href="customer-install.css?v=customer-install-20261013-r1">
@@ -94,7 +94,7 @@
 
     <!-- 🌟 LIVE ORDER TRACKER (GRABFOOD STYLE) -->
     <div id="liveOrderTracker" class="hidden fixed bottom-0 left-0 w-full bg-brandred text-white p-5 z-[100] rounded-t-3xl shadow-[0_-15px_30px_rgba(220,38,38,0.4)] transition-transform transform translate-y-0">
-        <div class="max-w-2xl mx-auto flex justify-between items-center cursor-pointer" onclick="document.getElementById('trackerDetails').classList.toggle('hidden')">
+        <div class="max-w-2xl mx-auto flex justify-between items-center">
             <div>
                 <div class="text-[10px] font-black uppercase tracking-widest text-red-200 mb-1" id="trackerCode">Order: TKDL-XXXXX</div>
                 <div class="font-black text-xl leading-tight" id="trackerStatus">Pending Confirmation</div>
@@ -105,7 +105,9 @@
             </div>
         </div>
         
-        <div id="trackerDetails" class="hidden mt-4 pt-4 border-t border-red-800/50 flex flex-col gap-3">
+        <details id="trackerDetails" class="customer-tracker-details">
+            <summary>View order details</summary>
+            <div id="trackerOrderSummary"></div>
             <!-- ✨ NEW: Rider Profile Display -->
             <div id="riderProfileBox" class="hidden bg-red-950/50 p-3 rounded-xl border border-red-800 flex items-center justify-between">
                 <div class="flex items-center gap-3">
@@ -125,7 +127,7 @@
             <button id="btnOrderReceived" onclick="window.confirmOrderReceived()" class="hidden w-full bg-white text-brandred font-black py-3 rounded-xl shadow-lg hover:bg-red-50 transition active:scale-95 text-sm uppercase tracking-widest">
                 ✅ I have received my order
             </button>
-        </div>
+        </details>
     </div>
 
     <!-- Hidden Receipt Template for Image Generation -->
@@ -511,6 +513,7 @@
         import {franchiseInquiry} from './customer-franchise.js?v=customer-repair-20261004';
         import {CUSTOMER_SITE_PROFILE_DOC, branchOpeningNotice} from './customer-site-settings.js?v=customer-hub-20261009';
         import {renderCustomerSiteProfile} from './customer-site-view.js?v=customer-hub-20261009';
+        import {renderOrderHistoryCard, clearTrackedOrderDetails, updateTrackedOrderDetails} from './customer-order-details.js?v=customer-order-details-20261108';
         const customerStorage=(()=>{try{return localStorage;}catch{return {getItem:()=>null,setItem:()=>{},removeItem:()=>{}};}})();
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
@@ -613,6 +616,7 @@
             }
             const tracker = document.getElementById('liveOrderTracker');
             if (tracker) {tracker.classList.add('translate-y-full');tracker.classList.add('hidden');}
+            clearTrackedOrderDetails(document);
             if (Swal.getPopup?.()?.dataset.customerOrderReview) Swal.close();
         };
 
@@ -1602,10 +1606,14 @@
                 if (window.customerPrepInterval) clearInterval(window.customerPrepInterval);
                 if (window.customerTrackerRevealTimer) clearTimeout(window.customerTrackerRevealTimer);
                 window.customerPrepInterval = null; window.customerTrackerRevealTimer = null;
-                if (snap.empty) { window.activeTrackedOrderId = null; window.lastKnownOrderStatus = null; tracker.classList.add('translate-y-full'); return; }
+                if (snap.empty) { window.activeTrackedOrderId = null; window.lastKnownOrderStatus = null; clearTrackedOrderDetails(document); tracker.classList.add('translate-y-full'); tracker.classList.add('hidden'); return; }
                 
                 let orders = [];
-                snap.forEach(d => orders.push({ id: d.id, ...d.data() }));
+                snap.forEach(d => {
+                    const saved = d.data();
+                    if (saved.customerEmail === email) orders.push({...saved, id:d.id});
+                });
+                if (!orders.length) { window.activeTrackedOrderId = null; window.lastKnownOrderStatus = null; clearTrackedOrderDetails(document); tracker.classList.add('hidden'); return; }
                 
                 orders.sort((a,b) => (b.timestamp ? (b.timestamp.toMillis ? b.timestamp.toMillis() : new Date(b.timestamp).getTime()) : 0) - (a.timestamp ? (a.timestamp.toMillis ? a.timestamp.toMillis() : new Date(a.timestamp).getTime()) : 0));
                 
@@ -1614,7 +1622,9 @@
                 
                 if (order.status === 'completed' || order.status === 'rejected') {
                     window.activeTrackedOrderId = null;
+                    clearTrackedOrderDetails(document);
                     tracker.classList.add('translate-y-full');
+                    tracker.classList.add('hidden');
                     if (order.status === 'completed' && !order.reviewPrompted) {
                         window.promptReview(order.orderCode, order.id);
                     }
@@ -1629,6 +1639,7 @@
                 }, 100);
                 
                 document.getElementById('trackerCode').innerText = `Order: ${order.orderCode || 'Unknown'}`;
+                updateTrackedOrderDetails(document, order);
                 
                 let statusText = "Pending Confirmation";
                 let timeStr = "Awaiting Kitchen...";
@@ -1971,7 +1982,10 @@
                 if (!current()) return;
                 
                 let orders = [];
-                snap.forEach(d => orders.push({ id: d.id, ...d.data() }));
+                snap.forEach(d => {
+                    const saved = d.data();
+                    if (saved.customerEmail === profileUser.email) orders.push({...saved, id:d.id});
+                });
                 
                 // 🔥 THE FIX: We sort the dates manually using JavaScript instead!
                 orders.sort((a, b) => {
@@ -2011,44 +2025,7 @@
                 }
                 document.getElementById('loyaltyStampsGrid').innerHTML = stampsHtml;
 
-                // Order History List
-                let html = '';
-                orders.forEach(o => {
-                    let dateStr = 'Recent';
-                    if (o.timestamp) {
-                        if (typeof o.timestamp.toDate === 'function') dateStr = o.timestamp.toDate().toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
-                        else dateStr = new Date(o.timestamp).toLocaleDateString('en-US', {month: 'short', day: 'numeric', year: 'numeric'});
-                    }
-
-                    let statCol = o.status === 'completed' ? 'text-green-500' : (o.status === 'rejected' ? 'text-red-500' : 'text-brandgold');
-                    let displayStatus = o.status === 'mobile_queue' ? 'Pending' : o.status;
-                    
-                    let itemsHtml = '';
-                    if (o.items && Array.isArray(o.items)) {
-                        itemsHtml = o.items.map(i => `<div class="text-sm text-zinc-300">• ${i.quantity || i.qty || 1}x ${i.name || i.itemName || 'Item'}</div>`).join('');
-                    }
-                    
-                    // 🔥 THE FIX: Safely force totalAmount to be a number so it doesn't crash the layout!
-                    let totalAmt = parseFloat(o.totalAmount) || 0;
-
-                    html += `
-                        <div class="bg-cardbg border border-zinc-800 p-5 rounded-2xl shadow-sm">
-                            <div class="flex justify-between items-start border-b border-zinc-800 pb-3 mb-3">
-                                <div>
-                                    <div class="font-black text-white text-lg">${o.orderCode || 'Order'}</div>
-                                    <div class="text-xs text-zinc-500 font-bold">${dateStr} • ${o.branch || 'Unknown'}</div>
-                                </div>
-                                <div class="text-right">
-                                    <div class="font-black text-brandred text-lg">₱${totalAmt.toFixed(2)}</div>
-                                    <div class="text-xs font-bold uppercase ${statCol}">${displayStatus}</div>
-                                </div>
-                            </div>
-                            <div class="space-y-1">
-                                ${itemsHtml}
-                            </div>
-                        </div>
-                    `;
-                });
+                const html = orders.map(renderOrderHistoryCard).join('');
                 
                 list.innerHTML = html || '<div class="text-zinc-500 py-10 font-medium text-center bg-cardbg rounded-2xl border border-zinc-800">You have no past orders yet.</div>';
 
