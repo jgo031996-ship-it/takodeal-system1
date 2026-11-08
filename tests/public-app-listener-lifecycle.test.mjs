@@ -14,6 +14,7 @@ import {chooseClockInSchedule} from '../takodeal-staff/attendance-shift-declarat
 import * as scheduleDeclarations from '../takodeal-staff/attendance-shift-declaration.js';
 import * as staffSwaps from '../takodeal-staff/staff-swap-request.js';
 import * as swapModel from '../takodeal-staff/schedule-swap-model.js';
+import * as customerOrderDetails from '../Customer/customer-order-details.js';
 
 const staff = readFileSync(new URL('../takodeal-staff/app.js', import.meta.url), 'utf8').replace(/\r\n/g,'\n');
 const customer = readFileSync(new URL('../Customer/index.html', import.meta.url), 'utf8');
@@ -198,6 +199,8 @@ test('Cashier uses one notice stream, responds at PH midnight and prevents stale
 
 function customerApp() {
     const h=harness();h.context.onAuthStateChanged=(_auth,fn)=>{h.authChanged=fn;};h.context.auth={};
+    Object.assign(h.context,customerOrderDetails);
+    h.node('trackerDetails').open=false;h.node('trackerOrderSummary');
     h.window.promptReview=()=>{};h.window.renderUserProfile=()=>{};
     h.run(section(customer,'window.customerTrackerEpoch = 0;','window.rawMenuCache = []'));
     h.run(section(customer,'window.startOrderTracker = function(email)','window.promptReview = function'));
@@ -205,19 +208,21 @@ function customerApp() {
     return h;
 }
 const user=(id='a')=>({uid:id,email:id+'@example.invalid',displayName:id});
-const prep={id:'order-a',status:'preparing',acceptedAt:new Date(),prepTime:5,timestamp:new Date(),orderCode:'A'};
+const prep={id:'order-a',customerEmail:user().email,status:'preparing',acceptedAt:new Date(),prepTime:5,timestamp:new Date(),orderCode:'A',totalAmount:80,items:[{name:'Synthetic tracked meal',quantity:1,price:80,lineTotalFinal:80,addons:{}}]};
 
 test('Customer tracker starts once for the current Google identity and sign-out stops its listener and timers',()=>{
     const h=customerApp();h.authChanged(user());h.authChanged(user());h.window.startOrderTracker(user().email);assert.equal(h.subscriptions.length,1);
     h.emit(h.subscriptions[0],[prep]);assert.equal(h.intervals.size,1);assert.equal(h.timeouts.size,1);
+    assert.match(h.node('trackerOrderSummary').innerHTML,/Synthetic tracked meal/);
     h.authChanged(null);assert.equal(h.subscriptions[0].stops,1);assert.equal(h.intervals.size,0);assert.equal(h.timeouts.size,0);
     assert.equal(h.window.activeTrackedOrderId,null);assert.equal(h.node('liveOrderTracker').classList.contains('hidden'),true);
+    assert.equal(h.node('trackerOrderSummary').innerHTML,'');assert.equal(h.node('trackerDetails').open,false);
     h.emit(h.subscriptions[0],[prep]);assert.equal(h.intervals.size,0);assert.equal(h.timeouts.size,0);assert.equal(h.window.activeTrackedOrderId,null);
 });
 
 test('Customer account switch invalidates queued old listener and timer callbacks and retains email-scoped queries',()=>{
     const h=customerApp();h.authChanged(user('a'));h.emit(h.subscriptions[0],[prep]);const timer=[...h.intervals.values()][0].fn,reveal=[...h.timeouts.values()][0].fn;
-    h.authChanged(user('b'));h.emit(h.subscriptions[1],[{...prep,id:'order-b',orderCode:'B',status:'ready'}]);
+    h.authChanged(user('b'));h.emit(h.subscriptions[1],[{...prep,id:'order-b',customerEmail:user('b').email,orderCode:'B',status:'ready'}]);
     const currentText=h.node('trackerTime').innerText, currentReveal=h.window.customerTrackerRevealTimer;timer();reveal();h.emit(h.subscriptions[0],[prep]);
     assert.equal(h.window.activeTrackedOrderId,'order-b');assert.equal(h.node('trackerTime').innerText,currentText);assert.equal(h.intervals.size,0);
     assert.equal(h.window.customerTrackerRevealTimer,currentReveal);
@@ -236,7 +241,7 @@ test('Customer slow order confirmation cannot leave the next account disabled or
     h.authChanged(user('a'));h.emit(h.subscriptions[0],[{...prep,status:'ready'}]);h.node('btnOrderReceived').innerText='Order received';
     const first=h.window.confirmOrderReceived();assert.equal(h.node('btnOrderReceived').disabled,true);
     h.authChanged(user('b'));assert.equal(h.node('btnOrderReceived').disabled,false);assert.equal(h.node('btnOrderReceived').innerText,'Order received');
-    h.emit(h.subscriptions[1],[{...prep,id:'order-b',status:'ready'}]);const second=h.window.confirmOrderReceived();
+    h.emit(h.subscriptions[1],[{...prep,id:'order-b',customerEmail:user('b').email,status:'ready'}]);const second=h.window.confirmOrderReceived();
     finish.get('order-a')();await first;assert.equal(h.window.isConfirmingOrderReceived,true);assert.equal(h.node('btnOrderReceived').disabled,true);
     finish.get('order-b')();await second;assert.equal(h.window.isConfirmingOrderReceived,false);assert.equal(h.node('btnOrderReceived').disabled,false);assert.deepEqual(calls,['order-a','order-b']);
 });
@@ -245,7 +250,7 @@ test('Customer old profile history fetch cannot render or fetch loyalty after an
     const h=customerApp();h.authChanged(user('a'));let finish,reads=0;
     h.context.getDocs=()=>{reads++;return new Promise(resolve=>{finish=resolve;});};
     h.run(section(customer,'window.renderUserProfile = async function','window.logoutCustomer = async function'));
-    const pending=h.window.renderUserProfile();h.authChanged(user('b'));finish(snapshot([{id:'private-a',orderCode:'private-a'}]));await pending;
+    const pending=h.window.renderUserProfile();h.authChanged(user('b'));finish(snapshot([{id:'private-a',customerEmail:user('a').email,orderCode:'private-a'}]));await pending;
     assert.equal(reads,1);assert.equal(h.node('orderHistoryList').innerHTML.includes('private-a'),false);
 });
 
