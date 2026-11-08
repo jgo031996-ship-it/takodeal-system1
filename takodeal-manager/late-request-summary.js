@@ -1,6 +1,7 @@
 import {isLatenessRequest,attendanceLateMinutes,legacyAttendanceCandidates} from './payroll-safety.js';
 import {historyTime} from './request-history.js';
 import {scheduleDateKey} from './schedule-history.js';
+import {scheduleDeclarationHTML,declarationCanonical} from './attendance-swap-declaration.js';
 
 const escape=value=>String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
 const key=value=>String(value??'').trim().replace(/\s+/g,' ').toLowerCase();
@@ -14,6 +15,7 @@ function savedLetterResolution(request,originalMinutes){
  try{
   const proof=JSON.parse(marker.sourceFingerprint),letter=proof.request,attendance=JSON.parse(proof.attendanceReview),review=proof.confirmedReview;
   for(const field of ['id','type','staffId','staffName','branch','attendanceLogId','lateMinutes','explanationCause','explanationMessage','payrollReviewVersion','lateDeductionHours','payrollEffect','penaltyCharged'])if(letter?.[field]!== (request[field]??null))return null;
+  if(JSON.stringify(letter.scheduleDeclaration??null)!==JSON.stringify(declarationCanonical(request.scheduleDeclaration??null)))return null;
   if(letter.timestamp?.at!==historyTime(request.timestamp)||attendance.staffName!==request.staffName||attendance.branch!==request.branch||request.staffId&&attendance.staffId!==request.staffId||attendance.expectedStartAt?.at!==historyTime(marker.expectedStartAt)||JSON.stringify(attendance.amendmentIds)!==JSON.stringify(marker.scheduleAmendmentIds)||(review?(review.auditId!==marker.scheduleReviewAuditId||review.lateMinutes!==0):marker.scheduleReviewAuditId!==''||attendance.correctedLateMinutes!==0))return null;
   return {minutes:0,recordedAt:phTime(marker.recordedAt)};
  }catch{return null;}
@@ -41,14 +43,14 @@ export function lateRequestSummary(request,{attendance=null,shift=null}={}){
  return result;
 }
 export function lateRequestSummaryHTML(request,options={}){
- const summary=lateRequestSummary(request,options);if(!summary)return '<strong>Cause: '+escape(request.explanationCause||'Variance')+'</strong><br><small>'+escape(request.explanationMessage||'No explanation provided')+'</small>';
+ const summary=lateRequestSummary(request,options);if(!summary)return '<strong>Cause: '+escape(request.explanationCause||'Variance')+'</strong><br><small>'+escape(request.explanationMessage||'No explanation provided')+'</small>'+scheduleDeclarationHTML(request);
  let html='<strong>Cause: '+escape(request.explanationCause||'Tardiness / Late Arrival')+'</strong><div style="margin-top:5px;"><small><b>Original submission'+(summary.originalMinutes===null?'':' · '+summary.originalMinutes+' minutes reported')+'</b><br>'+escape(summary.originalText)+'</small></div>';
  if(summary.savedResolutionMinutes===0)html+='<p style="margin:6px 0;color:#166653;"><b>Saved dated letter resolution: 0 minutes late</b><br><small>'+escape(summary.savedResolutionAt)+'. This is the letter’s saved resolution. Open linked attendance for the latest review.</small></p>';
  if(summary.reviewedMinutes!==null)html+='<p style="margin:6px 0;color:#166653;"><b>'+escape(summary.reviewLabel)+': '+summary.reviewedMinutes+' minutes late</b></p>';
  else html+='<p style="margin:6px 0;color:#6a5844;font-size:12px;">'+escape(summary.reviewLabel)+(summary.reviewRequired&&summary.correctedMinutes!==null?' · corrected schedule indicates '+summary.correctedMinutes+' minutes late.':'.')+'</p>';
  if(summary.clockIn||summary.expectedStart)html+='<small>'+(summary.clockIn?'Time In: '+escape(summary.clockIn):'')+(summary.expectedStart?'<br>Verified dated start: '+escape(summary.expectedStart):'')+'</small>';
  html+='<p style="margin:6px 0;font-size:11px;color:#64748b;">Changing shift rules alone does not confirm past attendance. Review the correct work date; original punches and paid payslips stay on file.</p>';
- return html;
+ return html+scheduleDeclarationHTML(request);
 }
 export function lateRequestRecoveryContext(request){
  if(!isLatenessRequest(request))return null;

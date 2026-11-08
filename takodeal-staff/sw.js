@@ -1,10 +1,11 @@
-const CACHE_NAME = 'takodeal-staff-v47-global-swaps-20261107';
+const CACHE_NAME = 'takodeal-staff-v48-time-in-declarations-20261108';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./schedule-swap-model.js','./staff-swap-request.js');
 SHELL.push('./worked-shift-reference.js');
 SHELL.push('./payroll-confirmed-shifts.js');
 SHELL.push('./payroll-bonus-templates.js');
 SHELL.push('./attendance-schedule-preview.js');
+SHELL.push('./attendance-shift-declaration.js','./attendance-shift-declaration-ui.js');
 SHELL.push('./staff-setup-access.js','./staff-setup.css');
 SHELL.push('./sanction-schedule.js');
 SHELL.push('./time-out-request-display.js');

@@ -157,12 +157,15 @@ test('daily-close dialog reads live schedule, honors the selected closing stage,
     api.getDocFromServer=async()=>{throw Error('offline')};await assert.rejects(confirmMallDailyClose(api,input),/offline/);
 });
 
-test('delivery-date broadcasts preserve editable request day, time and enabled settings',async()=> {
+test('delivery-date broadcasts select manual count review while preserving the date and unrelated saved settings',async()=> {
     const source=readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),start=source.indexOf('window.broadcastDeliveryDate ='),end=source.indexOf('\n};',start)+3;
-    let settings={requestDay:4,requestTime:'17:30',requestEnabled:false};
+    for(const enabled of [true,false,undefined]){
+    let settings={requestDay:4,requestTime:'17:30',requestEnabled:enabled,branchNotes:'Keep this saved setting'};const writes=[],alerts=[];
     const window={sessionUser:{cashierName:'Test'}},button={innerText:'Broadcast',disabled:false};
-    vm.runInNewContext(source.slice(start,end),{window,db:{},doc:()=>({}),setDoc:async(ref,data,options)=>{settings=options?.merge?{...settings,...data}:data;},serverTimestamp:()=>1,document:{getElementById:id=>id==='fcTargetDate'?{value:'2026-10-08'}:button},Swal:{fire:()=>{}},console});
+    vm.runInNewContext(source.slice(start,end),{window,db:{},doc:(_,table,id)=>({path:table+'/'+id}),setDoc:async(ref,data,options)=>{writes.push({ref,data,options});settings=options?.merge?{...settings,...data}:data;},serverTimestamp:()=>1,document:{getElementById:id=>id==='fcTargetDate'?{value:'2026-10-08'}:button},Swal:{fire:value=>alerts.push(value)},console});
     await window.broadcastDeliveryDate();assert.equal(settings.requestDay,4);assert.equal(settings.requestTime,'17:30');assert.equal(settings.requestEnabled,false);assert.equal(settings.nextDeliveryDate,'2026-10-08');
+    assert.equal(settings.branchNotes,'Keep this saved setting');assert.equal(writes.length,1);assert.equal(writes[0].ref.path,'settings/global_delivery_schedule');assert.equal(writes[0].options.merge,true);assert.equal(writes[0].data.requestEnabled,false);assert.equal(stockRequestDue(settings,new Date('2026-10-08T09:30:00Z')),false);assert.match(alerts[0].text,/physical count.*logged waste.*manually/);assert.doesNotMatch(alerts[0].text,/instantly|14-day AI|automatically/i);assert.equal(button.disabled,false);assert.equal(button.innerText,'Broadcast');
+    }
 });
 
 function environment() {
@@ -343,13 +346,12 @@ function stockRequestClient(h, clock) {
     vm.runInNewContext(source.slice(start,end),{window,Date,Math,Number,parseFloat,crypto:globalThis.crypto,console:{error(){}},document:{getElementById:()=>null},localStorage:{getItem:key=>memory.get(key),setItem:(key,value)=>memory.set(key,value)},businessClock:()=>businessClock(clock),stockRequestDue:settings=>stockRequestDue(settings,clock),autoRequestId:branch=>autoRequestId(branch,clock)});
     return {run:window.runAutonomousRestockAI,reads:()=>reads};
 }
-test('actual Cashier scheduler makes no early reads and uses a shared daily lock across tablets and request deletion',async()=> {
+test('the retired Cashier scheduler never creates or recreates a request on any tablet',async()=> {
     const h=environment();h.put('inventory/city',{branch:'Citygate',name:'Fork',currentStock:0,maintainingStock:10,conversionRate:1,uom:'piece'});
-    const early=stockRequestClient(h,new Date('2026-10-09T09:59:00Z'));await early.run();assert.equal(early.reads(),0);
-    const a=stockRequestClient(h,new Date('2026-10-09T10:00:00Z')),b=stockRequestClient(h,new Date('2026-10-09T10:00:00Z'));await Promise.all([a.run(),b.run()]);
-    assert.equal([...h.docs.keys()].filter(key=>key.startsWith('purchase_orders/')).length,1);
-    const requestId=autoRequestId('Citygate',new Date('2026-10-09T10:00:00Z'));assert.equal(h.get('purchase_orders/'+requestId).items[0].physicalStock,undefined);
-    h.docs.delete('purchase_orders/'+requestId);const another=stockRequestClient(h,new Date('2026-10-09T11:00:00Z'));await another.run();assert.equal(h.get('purchase_orders/'+requestId),undefined);
+    const before=structuredClone([...h.docs]);
+    const early=stockRequestClient(h,new Date('2026-10-09T09:59:00Z')),a=stockRequestClient(h,new Date('2026-10-09T10:00:00Z')),b=stockRequestClient(h,new Date('2026-10-09T10:00:00Z'));
+    await Promise.all([early.run(),a.run(),b.run()]);
+    assert.equal(early.reads()+a.reads()+b.reads(),0);assert.deepEqual([...h.docs],before);
 });
 
 

@@ -12,6 +12,8 @@ import {createEarlyTimeOutService} from '../Takodeal-POS/early-time-out-actions.
 import {createAttendanceMetadataReader} from '../Takodeal-POS/attendance-metadata-reader.js';
 import {metadataFetch} from './helpers/attendance-metadata-fixture.mjs';
 import * as schedulePreview from '../takodeal-staff/attendance-schedule-preview.js';
+import {chooseClockInSchedule} from '../takodeal-staff/attendance-shift-declaration-ui.js';
+import * as scheduleDeclarations from '../takodeal-staff/attendance-shift-declaration.js';
 import {activeStaffProfile} from '../takodeal-staff/staff-lifecycle-model.js';
 import {staffSwapAliases} from '../takodeal-staff/staff-swap-request.js';
 import {SWAP_PENDING_STATUS,SWAP_REVIEW_STATUS,SWAP_REQUEST_VERSION} from '../takodeal-staff/schedule-swap-model.js';
@@ -58,7 +60,7 @@ function staffClock(h,clock) {
     const ui=dom(),fix={branch:'Maa',distance:2,accuracy:10,lat:7,lng:125,timestamp:+new Date(clock)};
     const window={...h.api,getAttendanceLocation:async()=>fix,checkActiveSanctions:async()=>false,loadMyAttendance(){},verifyAttendanceFace:async()=>({photoBase64:'data:image/jpeg;base64,verified',faceCheck:{faceCount:1,capturedAt:new Date(clock).toISOString()}}),assertAttendanceFaceFresh(){}};
     Object.assign(window,{Swal:ui.Swal,document:ui.document});
-    const context={...h.api,...ui,...payroll,...reconciliation,...schedulePreview,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock)};
+    const context={...h.api,...ui,...payroll,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock)};
     const start=staffSource.indexOf('window.punchTime = async function');
     vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('// 📥 STAFF REQUESTS & INBOX ENGINE',start)),context);
     return {...ui,window};
@@ -75,12 +77,72 @@ function cashierClock(h,clock,{cachedProfile=true,lastTimeInHours=null,pin='test
         return h.api.getDocs(q);
     }};api.getDocsFromServer=async q=>{if(h.serverError)throw h.serverError;return api.getDocs(q);};Object.assign(window,api);
     Object.assign(window,{Swal:ui.Swal,document:ui.document});
-    const context={...api,...ui,...payroll,...sanctions,...reconciliation,...schedulePreview,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock),
+    const context={...api,...ui,...payroll,...sanctions,...reconciliation,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clock)})}),window,Date:dateAt(clock),
         navigator:{geolocation:{getCurrentPosition:ok=>{gpsDone=ok({coords:{latitude:7,longitude:125}});}}}};
     const start=cashierSource.indexOf('window.submitAttendance = async function');
     vm.runInNewContext(cashierSource.slice(start,cashierSource.indexOf('// 📥 STAFF REQUEST HUB (WITH INBOX)',start)),context);
     return {...ui,window,wait:()=>gpsDone};
 }
+
+async function declarationClockFixture(appName,{crossBranch=false,clock='2026-10-06T09:02:00+08:00'}={}){
+    const plan=schedule(),h=memory({'cashiers/staff-id':profile,'settings/global_schedule':plan});h.clock=clock;
+    plan.employees=[{staffId:'staff-id',cashierName:profile.cashierName,name:'Sample',branch:'Maa'},
+        {staffId:'coworker-id',cashierName:'Synthetic Other Crew',name:'Other',branch:crossBranch?'Citygate':'Maa'}];
+    const targetBranch=crossBranch?'Citygate':'Maa';
+    const targetRule={id:'coworker-slot',name:'Other saved hours',startTime:'10:00',endTime:'18:30',active:true};
+    if(crossBranch){plan.branchConfig.Citygate=[targetRule];plan.currentSchedule[6].Citygate={scheduled:{'coworker-slot':'Other'}};}
+    else{plan.branchConfig.Maa.push(targetRule);plan.currentSchedule[6].Maa.scheduled['coworker-slot']='Other';}
+    await h.store.save(plan,{effectiveFrom:'2026-10-06',expectedRevisionId:null});
+    const before=h.writes.length,originalDoc=h.api.doc,originalBatch=h.api.writeBatch;
+    h.api.doc=(...args)=>{const path=originalDoc(...args);return args.length===1?{path,id:path.split('/').at(-1)}:path;};
+    h.api.writeBatch=()=>{const batch=originalBatch();return{set:(ref,data)=>batch.set(ref.path||ref,data),commit:()=>batch.commit()};};
+    const history=await h.store.loadRange(new Date(clock),new Date(clock)),input={at:new Date(clock),staffId:'staff-id',staffName:profile.cashierName,profile,branch:'Maa'};
+    const choice=scheduleDeclarations.clockInSwapChoices(history,input)[0],app=appName==='staff'?staffClock(h,clock):cashierClock(h,clock);
+    const show=app.Swal.fire;
+    app.Swal.fire=async(...args)=>{
+        const options=args[0];if(options?.input==='radio'){app.alerts.push(args);return {isConfirmed:true,value:'swap'};}
+        if(options?.title==='Declare an unrequested shift swap'){
+            app.alerts.push(args);if(app.cancelDeclaration)return {isConfirmed:false};
+            options.didOpen();app.node('attendanceSwapCoworker').value='coworker-id';app.node('attendanceSwapCoworker').onchange();app.node('attendanceSwapShift').value=choice.key;
+            app.node('attendanceSwapExplanation').value='We agreed that I cover these saved hours; HQ must confirm the swap.';
+            const value=options.preConfirm();return {isConfirmed:!!value,value};
+        }return show(...args);
+    };
+    return {h,app,before,targetBranch,punch:async()=>{if(appName==='staff')await app.window.punchTime('TIME IN');else{await app.window.submitAttendance('TIME IN');await app.wait();}}};
+}
+
+test('both actual Time In paths atomically link one nonlate declaration without changing assigned hours or lateness',async()=>{
+    for(const appName of ['staff','cashier'])for(const crossBranch of [false,true]){
+        const {h,app,before,targetBranch,punch}=await declarationClockFixture(appName,{crossBranch});await punch();
+        const paths=h.writes.slice(before);assert.equal(paths.length,2,appName+': '+JSON.stringify(app.alerts));
+        const attendancePath=paths.find(path=>path.startsWith('attendance_logs/')),requestPath=paths.find(path=>path.startsWith('staff_requests/'));
+        const attendance=h.records.get(attendancePath),request=h.records.get(requestPath);
+        assert.equal(attendance.type,'TIME IN');assert.equal(attendance.branch,'Maa');assert.equal(attendance.scheduleSnapshot.shiftId,'slot');assert.equal(attendance.scheduleSnapshot.lateMinutes,2);
+        assert.equal(request.type,'Schedule Declaration');assert.equal(request.status,'Pending');assert.equal(request.lateMinutes,2);assert.equal(request.attendanceLogId,attendancePath.split('/').at(-1));
+        assert.equal(attendance.scheduleDeclarationRequestId,requestPath.split('/').at(-1));assert.deepEqual(attendance.scheduleDeclaration,request.scheduleDeclaration);
+        assert.equal(request.scheduleDeclaration.targetBranch,targetBranch);assert.equal(request.scheduleDeclaration.referenceOnly,true);assert.equal(request.scheduleDeclaration.coworkerStaffId,'coworker-id');
+        assert.equal(attendance.lateReasonRequestId,undefined);assert.equal(request.proofImageUrl,undefined);
+        if(crossBranch)assert.equal(request.staffShiftProposal,undefined);else assert.equal(request.staffShiftProposal.shiftId,'coworker-slot');
+    }
+});
+
+test('both actual Time In paths cancel a declared swap before saving either attendance or its request',async()=>{
+    for(const appName of ['staff','cashier']){const {h,app,before,punch}=await declarationClockFixture(appName);app.cancelDeclaration=true;await punch();assert.equal(h.writes.length,before);}
+});
+
+test('Cashier declared swaps preserve its existing late minutes and do not adopt a new proof policy',async()=>{
+    const {h,before,punch}=await declarationClockFixture('cashier',{clock:'2026-10-06T09:15:00+08:00'});await punch();
+    const rows=h.writes.slice(before).map(path=>h.records.get(path)),attendance=rows.find(row=>row.type==='TIME IN'),request=rows.find(row=>row.type==='Schedule Declaration');
+    assert.equal(attendance.scheduleSnapshot.lateMinutes,15);assert.equal(request.lateMinutes,15);assert.equal(request.type,'Schedule Declaration');assert.equal(request.proofImageUrl,undefined);assert.equal(request.status,'Pending');
+});
+
+test('fresh coworker identity changes during either actual camera check cannot save a stale swap declaration',async()=>{
+    for(const appName of ['staff','cashier']){
+        const {h,app,before,punch}=await declarationClockFixture(appName);const camera=app.window.verifyAttendanceFace;
+        app.window.verifyAttendanceFace=async()=>{h.records.get('settings/global_schedule').employees[1].active=false;return camera();};
+        await punch();assert.equal(h.writes.length,before);assert.match(String(app.alerts.at(-1)?.[1]||app.alerts.at(-1)?.[0]),/coworker|dated shift/);
+    }
+});
 
 test('actual Staff clock-in saves the November rule while the live head still shows October; later edits cannot alter that punch',async()=>{
     const h=memory({'settings/global_schedule':schedule(),'cashiers/staff-id':profile});
@@ -271,7 +333,7 @@ test('actual Staff SOP screen follows an ID-matched Cashier shift instead of a G
 
 function scheduleView(h,selected='2026-11') {
     const ui=dom();ui.node('staffMonthPicker').value=selected;
-    const window={...h.api};const context={...h.api,...ui,...schedulePreview,window,createScheduleHistoryStore,loadScheduleMonthView,scheduleDateKey,monthKey,resolveScheduleForDate,structuredClone,Date:dateAt(now)};
+    const window={...h.api};const context={...h.api,...ui,...schedulePreview,...scheduleDeclarations,chooseClockInSchedule,window,createScheduleHistoryStore,loadScheduleMonthView,scheduleDateKey,monthKey,resolveScheduleForDate,structuredClone,Date:dateAt(now)};
     const start=staffSource.indexOf('window.loadStaffSchedule = async function');
     vm.runInNewContext(staffSource.slice(start,staffSource.indexOf('window.cancelSwapRequest =',start)),context);
     return {...ui,window,context};

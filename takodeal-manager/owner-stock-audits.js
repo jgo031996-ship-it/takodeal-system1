@@ -16,5 +16,7 @@ export function installOwnerStockAudits(w=window,d=document){
   }catch(error){if(current()){ui.dispose();status.textContent=error.message;panel.textContent='No audit was calculated. Retry after confirming the branch.';}}
  }
  select.onchange=()=>{epoch++;ui.dispose();if(select.value)void ui.load({branch:select.value});else panel.textContent='Choose one branch to review its physical stock reports.';};
- w.loadInventoryAudits=load;return {load,dispose(){epoch++;ui.dispose();select.replaceChildren();panel.replaceChildren();}};
+ const reviewRequest=event=>{const button=event.target.closest?.('[data-stock-request-variance]');if(!button)return;event.preventDefault();void ui.openRequest(button.dataset.stockRequestVariance);};
+ d.body.addEventListener('click',reviewRequest);w.openStockRequestVariance=requestId=>ui.openRequest(requestId);
+ w.loadInventoryAudits=load;return {load,dispose(){epoch++;ui.dispose();d.body.removeEventListener?.('click',reviewRequest);select.replaceChildren();panel.replaceChildren();}};
 }

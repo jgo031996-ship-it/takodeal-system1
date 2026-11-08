@@ -27,39 +27,11 @@ function harness(items=[],memory={},updateHook=()=>{}) {
 }
 const chicken={id:'chicken',name:'Chicken Powder',uom:'Gram',purchaseUom:'Pack',conversionRate:1000,currentStock:1500,maintainingStock:3000};
 
-test('actual Manual Count saves base stock and a frozen whole/loose count separately from the restock request',async()=>{
-    const h=harness([{...chicken}],{chicken_purch:'1',chicken_base:'250'});await h.window.submitAllManualCounts();
-    assert.deepEqual(h.writes.filter(row=>row.action==='update'),[{action:'update',collection:'inventory',id:'chicken',payload:{currentStock:1250}}]);
-    const log=h.writes.find(row=>row.collection==='stock_logs').payload;
-    assert.equal(log.oldQty,1500);assert.equal(log.newQty,1250);assert.equal(log.variance,-250);assert.equal(log.uom,'Gram');
-    assert.deepEqual(log.countSnapshot,{version:1,baseUom:'Gram',purchaseUom:'Pack',conversionRate:1000,purchaseCount:1,baseCount:250,totalBaseQty:1250});
-    const request=h.writes.find(row=>row.collection==='purchase_orders').payload;
-    assert.equal(request.branch,'Maa');assert.equal(request.items.length,1);
-    const row=request.items[0];assert.equal(row.qty,2000);assert.equal(row.rawQty,2);assert.equal(row.displayQty,2);assert.equal(row.physicalStock,1250);assert.equal(row.systemStock,1500);
-    assert.deepEqual(row.countSnapshot,log.countSnapshot);assert.equal(stockReportQuantities(row).reported.text,'1 Pack + 250 Gram');assert.equal(stockReportQuantities(row).requested.text,'2 Pack');
-    assert.deepEqual(h.removed,['takodeal_stock_count_memory']);assert.equal(h.nodes.manualCountSearch.value,'');assert.equal(h.refreshes,1);assert.equal(h.nodes.btnSubmitAllCounts.disabled,false);
+test('retired legacy submission cannot bypass the secure count engine or silently create requests',async()=>{
+    const memory={chicken_purch:'1',chicken_base:'250'},h=harness([{...chicken}],memory);await h.window.submitAllManualCounts();
+    assert.deepEqual(h.writes,[]);assert.deepEqual(h.removed,[]);assert.deepEqual(h.window.stockCountMemory,memory);assert.equal(h.refreshes,0);assert.equal(h.dialogs[0][0],'Stock Report is starting');
 });
-test('submission freezes units before the first write so a concurrent catalog refresh cannot change its saved request conversion',async()=>{
-    const item={...chicken,id:'second'};const h=harness([{...chicken},item],{chicken_purch:'1',second_purch:'1'},()=>{item.conversionRate=500;item.purchaseUom='Carton';item.uom='Milliliter';});
-    await h.window.submitAllManualCounts();const row=h.writes.find(write=>write.collection==='purchase_orders').payload.items[1];
-    assert.equal(row.physicalStock,1000);assert.equal(row.qty,2000);assert.equal(row.rawQty,2);assert.equal(row.displayUom,'Pack');assert.equal(row.uom,'Gram');assert.equal(row.countSnapshot.conversionRate,1000);
-});
-test('one invalid count rejects the complete preparation before any stock, log or request write',async()=>{
-    const h=harness([{...chicken},{...chicken,id:'bad'}],{chicken_purch:'1',bad_purch:'-1'});await h.window.submitAllManualCounts();
-    assert.deepEqual(h.writes,[]);assert.deepEqual(h.removed,[]);assert.equal(h.window.stockCountMemory.chicken_purch,'1');assert.equal(h.refreshes,0);assert.equal(h.nodes.btnSubmitAllCounts.disabled,false);
-    assert.equal(h.dialogs[0][0],'Check Stock Count');
-});
-test('zero physical count stays zero, blank rows stay unreported and a count above par creates no request',async()=>{
-    const h=harness([{...chicken},{...chicken,id:'enough'},{...chicken,id:'blank'}],{chicken_base:'0',enough_purch:'4'});await h.window.submitAllManualCounts();
-    assert.deepEqual(h.writes.filter(row=>row.action==='update').map(row=>row.payload.currentStock),[0,4000]);
-    const request=h.writes.find(row=>row.collection==='purchase_orders').payload;assert.equal(request.items.length,1);assert.equal(request.items[0].physicalStock,0);assert.equal(request.items[0].qty,3000);
-    assert.equal(stockReportQuantities(request.items[0]).reported.text,'0 Gram');assert.equal(h.writes.filter(row=>row.collection==='stock_logs').length,2);
-});
-test('ordinary single-unit physical count saves correct stock without an automatic request',async()=>{
-    const h=harness([{id:'cup',name:'Cup',uom:'Piece',currentStock:5,maintainingStock:0}],{cup_base:'7'});await h.window.submitAllManualCounts();
-    assert.equal(h.writes[0].payload.currentStock,7);const log=h.writes[1].payload;assert.equal(log.variance,2);assert.equal(log.countSnapshot.totalBaseQty,7);assert.equal(log.countSnapshot.conversionRate,1);
-    assert.equal(h.writes.some(row=>row.collection==='purchase_orders'),false);
-});
+
 test('actual report modal recovers legacy package ratios without rewriting base fields or confusing the count and requested deficit',()=>{
     const h=harness(),order={status:'Pending',items:[
         {name:'Chicken Powder',physicalStock:1000,qty:1000,rawQty:1,uom:'Gram',purchaseUom:'Pack',displayUom:'Pack'},

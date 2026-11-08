@@ -1,6 +1,6 @@
 // In Cashier sw.js, REPLACE ONLY its existing line starting const CORE =
 // with this line. Do not add a second const CORE. Keep PHOTOS unchanged.
-const CORE = 'takodeal-pos-core-update-progress-20261108-r1';
+const CORE = 'takodeal-pos-core-variance-timein-20261108-r1';
 
 const PHOTOS = 'takodeal-pos-photos-offline02';
 const ROOT = new URL('./', self.location.href);
@@ -56,7 +56,8 @@ async function prepareApp() {
   for (const path of ['./logo.jpg', './logo.png', './style.css'])
     await fetchRequired(cache, new URL(path, ROOT).href).catch(() => {});
 }
-required.push('./stock-cycle.js','./stock-count-engine.js','./stock-count-ui.js','./stock-count-ui.css');
+required.push('./stock-cycle.js','./stock-count-engine.js','./stock-count-ui.js','./stock-count-ui.css','./stock-count-evidence.js');
+required.push('./attendance-shift-declaration.js','./attendance-shift-declaration-ui.js');
 required.push('./attendance-amendment-review-model.js','./attendance-metadata-reader.js');
 required.push("./relief-attendance-model.js","./relief-schedule-review-model.js");
 self.addEventListener('install', event => {

@@ -33,6 +33,7 @@ const runManagerDomReady = fn => document.readyState === "loading" ? document.ad
 runManagerDomReady(() => {installStaffSetupCodes(window,document);installScheduleProposalReview(window,document);installPayrollAdjustmentUI(window,document);installPayrollAdjustmentRefresh(window,document);installPayrollMessenger(window,document,{presentSaved:async(saved,context)=>{context.assertCurrent();const frozen={...saved.frozenData,name:saved.frozenData?.name||context.name,staffId:context.staffId,branch:saved.frozenData?.branch||context.branch,start:context.start,end:context.end,isPaid:true,finalNetPay:saved.finalNetPay,...(saved.processedAt?{processedAt:saved.processedAt}:{}),...(saved.staffSignature?{staffSignature:saved.staffSignature}:{})};signedPayslipSnapshots.set(frozen,context.assertCurrent);await window.openPayslipModal(frozen.name,frozen);context.assertCurrent();return frozen;}});});
 import {installOwnerInbox,installInboxBadge} from './owner-inbox.js';
 import {lateRequestSummary,lateRequestSummaryHTML,lateRequestRecoveryContext} from './late-request-summary.js';
+import {installScheduleDeclarationReview,scheduleDeclarationSourceFingerprint} from './attendance-swap-declaration.js';
 import {resolveCorrectedLateRequest,lateRequestResolutionFingerprint,reviewOriginalLateRequest,verifiedWorkedShiftProposal} from './late-request-resolution.js';
 import {finalizeRefundPayroll} from './refund-payroll.js';
 import {finalizeOrdinaryPayroll,readPayrollCashShortages} from './payroll-settlement.js';
@@ -173,7 +174,7 @@ import { installRecipeReplacement } from './recipe-bulk.js';
 import { installCustomerHubSettings } from './customer-hub-settings.js';
 import {installRiderManagementSafety} from './rider-management.js';
 import {installRiderManagementViews} from './rider-management-view.js';
-import {renderStockRequestReview} from './stock-request-review.js';
+import {renderStockRequestReview,stockRequestVarianceButton} from './stock-request-review.js';
 import {loadStockRequestDraft} from './dispatch-request-draft.js';
 import {installRecipeCostUI} from './recipe-cost-ui.js';
 import { loadRecipeState, createRecipeBatch, operationFor, recipePlan, saveRecipePlan, readRecipeRevision, recipeOperationApplied, loadInventoryDeletionState, inventoryDeletionPlan, inventoryDeletionConfirmation, inventoryDeletionPreflight } from './recipe-changes.js';
@@ -1884,6 +1885,7 @@ window.loadDispatchLogs = async function() {
                 ? `<span style="color:#ca8a04; font-weight:bold; font-size:11px;">⏳ Waiting for HQ</span>`
                 : `<div style="display: flex; justify-content: flex-end; gap: 8px;">
                        <button onclick="window.reviewPurchaseOrder('${docSnap.id}')" style="background:#0ea5e9; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(14,165,233,0.3);">🔍 Review</button>
+                       ${stockRequestVarianceButton(docSnap.id)}
                        <button onclick="window.dispatchB2BOrder('${docSnap.id}')" style="background:#10b981; color:white; border:none; padding:6px 12px; border-radius:6px; font-weight:bold; cursor:pointer; font-size:12px; box-shadow: 0 2px 4px rgba(16,185,129,0.3);">🚚 Dispatch</button>
                    </div>`;
             
@@ -2965,6 +2967,7 @@ window.renderLogisticsUI = function() {
                         <div style="display: flex; gap: 10px; align-items: center;">
                             ${statBadge}
                             <button onclick="if(typeof window.reviewStockRequest === 'function') window.reviewStockRequest('${req.id}')" style="background: #0ea5e9; color: white; border: none; padding: 10px 15px; border-radius: 6px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(14,165,233,0.3); transition: 0.2s;">🔍 Review Request</button>
+                            ${stockRequestVarianceButton(req.id)}
                         </div>
                     </div>
                 `;
@@ -9924,6 +9927,7 @@ window.submitReasonLetter = function() {
 
 // Keep the sidebar badge live while respecting the current account scope.
 installInboxBadge(window,document);
+installScheduleDeclarationReview(window,document);
 
 window.loadInbox = async function() {
     return (window.ownerInbox || installOwnerInbox(window,document)).load();
@@ -9994,6 +9998,7 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
         const snap = await tkOwnerDoc(window.doc(window.db, 'staff_requests', docId));
         if (!snap.exists()) throw new Error('This request no longer exists. Refresh the inbox.');
         req = snap.data();
+        if(req.type==='Schedule Declaration')return window.reviewScheduleDeclaration(docId);
         if(req.type==='Waste Report'){window.switchView('inventory');window.switchInvTab('Waste');return window.openInventoryWasteReport?.(docId);}
         if(req.type==='Leave'||req.type==='Leave Change')return window.getManagerLeaveUI().review(docId,action);
         if(req.type==='Early Time Out'&&req.emergencyRelief?.version===1&&req.timeOutLogId)return window.openAttendanceRecovery({staffId:req.staffId,staffName:req.staffName,branch:req.branch,attendanceLogId:req.timeInLogId,workDate:scheduleDateKey(req.timeInAt),requestId:docId});
@@ -10043,7 +10048,8 @@ window.handleRequest = async function(docId, action, type, amount, staffName) {
                 }catch(error){assertOpening();proposalReferenceError=error.message||'The saved proposed shift needs a fresh review.';}
             }
             assertOpening();window.lateRequestContext = { requestId: docId,request:{...req,id:docId}, action, logs, minutes, profile,
-                schedule: scheduleSnap,proposalHoursReviewed,proposalReferenceError,proposalActualTimeInAt };
+                schedule: scheduleSnap,proposalHoursReviewed,proposalReferenceError,proposalActualTimeInAt,
+                declarationFingerprint:req.scheduleDeclaration?scheduleDeclarationSourceFingerprint({...req,id:docId},logs[0]):undefined };
         }
     } catch (error) { return Swal.fire('Check request', error.message, 'warning'); }
     const isLateLetter = isLatenessRequest(req);
@@ -10110,6 +10116,7 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
     try {
         const originalRequest = await tkOwnerDoc(window.doc(window.db, 'staff_requests', docId));
         if (!originalRequest.exists()) throw new Error('This request no longer exists. Refresh the inbox.');
+        if(originalRequest.data().type==='Schedule Declaration')throw Error('Use Review declaration for this staff statement. It cannot be approved, rejected or charged through an ordinary request reply.');
         if(originalRequest.data().type==='Leave'||originalRequest.data().type==='Leave Change'){
             document.getElementById('dynamicReplyModal')?.remove();
             return window.getManagerLeaveUI().review(docId,action);
@@ -10137,6 +10144,7 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
                 requestId: docId, attendanceId: document.getElementById('replyAttendanceLog').value,
                 profileId:context.profile.staffId || context.profile.id,
                 proposalDecision:document.getElementById('replyStaffShiftDecision')?.value||undefined,
+                expectedDeclaration:context.declarationFingerprint,
                 action, reply: replyMsg, actor: window.sessionUser?.cashierName || 'Manager'
             });
             if(!ownsLateReply())return;
@@ -10165,13 +10173,14 @@ window.submitRequestReply = async function(docId, action, type, amount, staffNam
 
         // 🔥 1. FETCH ORIGINAL REQUEST DATE FIRST
         const reqRef = window.doc(window.db, "staff_requests", docId);
-        const reqSnap = await window.getDoc(reqRef);
+        const reqSnap = await tkOwnerDoc(reqRef);
         
         let originalDate = new Date();
         let reqData = {};
         
         if (reqSnap.exists()) {
             reqData = reqSnap.data();
+            if(reqData.type==='Schedule Declaration')throw Error('This is a staff shift statement. Reopen Review declaration; no ordinary approval or deduction was saved.');
             if (reqData.timestamp) {
                 originalDate = reqData.timestamp.toDate ? reqData.timestamp.toDate() : new Date(reqData.timestamp);
             }
@@ -22448,13 +22457,14 @@ window.broadcastDeliveryDate = async function() {
     try {
         await setDoc(doc(db, "settings", "global_delivery_schedule"), {
             nextDeliveryDate: targetDateStr,
+            requestEnabled: false,
             updatedAt: serverTimestamp(),
             updatedBy: window.sessionUser ? window.sessionUser.cashierName : 'Manager'
         }, { merge: true });
 
         Swal.fire({
-            title: '📢 Broadcast Sent!', 
-            text: `All branches have been alerted. Their POS systems will instantly run a localized 14-day AI burn rate to calculate exactly what they need to survive until ${targetDateStr}.`, 
+            title: 'Delivery date saved',
+            text: `Delivery date: ${targetDateStr}. Branch staff can save their physical count, review shortages and logged waste, then confirm quantities and send a restock request manually.`,
             icon: 'success', 
             customClass: { popup: 'rounded-2xl' }
         });

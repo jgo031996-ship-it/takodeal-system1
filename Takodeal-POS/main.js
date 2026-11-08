@@ -21,11 +21,13 @@ import { createPrinterConnections, createPrinterWriter, printerMode, rawBtIntent
 import {loadPrinterLogo} from './printer-logo.js';
 import { confirmMallDailyClose } from './shift-close-ui.js';
 import { receiveDispatch } from './dispatch-safety.js';
-import { MALL_FLOAT, mallOpeningCash, stockRequestDue, autoRequestId, businessClock } from './branch-operations.js';
+import { MALL_FLOAT, mallOpeningCash, businessClock } from './branch-operations.js';
 import { closeShiftAtomic, closeLegacyShiftAtomic, captureShiftCloseIdentity, assertShiftCloseIdentity, resolveShiftCloseIdentity, readBranchPolicy, readMallOpeningCash } from './cash-settlement.js';
 import { createRemittanceAttemptStore, readRemittanceDrawer, submitRemittanceAtomic, readClosedCashCarry, recordOpeningCashReview } from './remittance-safety.js';
 import {captureAttendanceSchedule} from './payroll-safety.js';
 import {renderAttendanceSchedulePreview, assertAttendanceScheduleUnchanged, emergencyReliefForClockIn, emergencyReliefTimeOutNotice} from './attendance-schedule-preview.js';
+import {chooseClockInSchedule} from './attendance-shift-declaration-ui.js';
+import {revalidateClockInScheduleDeclaration,clockInDeclarationSavedProposal,clockInDeclarationRequest} from './attendance-shift-declaration.js';
 import {prepareEarlyTimeOut} from './early-time-out-ui.js';
 import {createCountSnapshot, stockReportQuantities} from './stock-report-units.js';
 import {createScheduleHistoryStore} from './schedule-history.js';
@@ -3420,7 +3422,7 @@ window.submitAttendance = async function(type) {
     // ==========================================
     // 🌍 GPS GEOFENCING & AUTO-ROUTING
     // ==========================================
-    let timeInSchedule = null, timeInSchedulePreview = null;
+    let timeInSchedule = null, timeInSchedulePreview = null, timeInScheduleDeclaration = null;
     const readClockSchedule = async at => {
         const api = {...window, db, doc, getDocFromServer: async reference => {
             const saved = await getDocFromServer(reference);
@@ -3435,11 +3437,10 @@ window.submitAttendance = async function(type) {
             timeInSchedule = await readClockSchedule(at);
             timeInSchedulePreview = captureAttendanceSchedule(at, branch, staffName, timeInSchedule, {[staffName]:staffProfile});
             const reliefPreview=emergencyReliefForClockIn(timeInSchedulePreview,staffProfile,branch);
-            const choice = await Swal.fire({titleText:reliefPreview?'Emergency branch cover':'Check your assigned hours',
-                html:renderAttendanceSchedulePreview(timeInSchedulePreview,{staffName,branch,at,emergencyRelief:reliefPreview}),
-                showCancelButton:true,confirmButtonText:'Continue to Time In',cancelButtonText:'Back to Time Clock',
-                confirmButtonColor:'#17604c',allowOutsideClick:false});
-            if(!choice.isConfirmed){unlockUI();return;}
+            const choice = await chooseClockInSchedule({Swal,document,history:timeInSchedule,snapshot:timeInSchedulePreview,profile:staffProfile,staffId:staffProfile.id,staffName,branch,at,emergencyRelief:reliefPreview,
+                title:reliefPreview?'Emergency branch cover':'Check your assigned hours',titleText:true,assertCurrent:()=>{if(!clockStillSelected())throw Error('The Time Clock account changed. Choose your account again.');}});
+            if(!choice.proceed){unlockUI();return;}
+            timeInScheduleDeclaration=choice.declaration;
             if(!clockStillSelected())throw Error('The Time Clock account changed. Choose your account again. No Time In was created.');
             await window.prepareAttendanceCamera();
         }
@@ -3549,14 +3550,26 @@ window.submitAttendance = async function(type) {
                 assertAttendanceScheduleUnchanged(timeInSchedulePreview,attendance.scheduleSnapshot);
                 const emergencyRelief=emergencyReliefForClockIn(attendance.scheduleSnapshot,staffProfile,finalBranch);
                 if(emergencyRelief){attendance.emergencyRelief=emergencyRelief;attendance.lateMinutes=0;}
+                if(timeInScheduleDeclaration){
+                    attendance.scheduleDeclaration=revalidateClockInScheduleDeclaration(schedule,{staffId:staffProfile.id,staffName,profile:staffProfile,branch:finalBranch,at:attendanceAt,snapshot:attendance.scheduleSnapshot},timeInScheduleDeclaration);
+                }
             }
             if (type === 'TIME OUT') {
                 timeOutResult=await earlyClockOut.service.close({start:activeTimeIn,staffId:staffProfile.id,staffName,pin:inputPin,attendance,records:pendingAttendanceRecords,reliefForReview:earlyClockOut.reliefForReview===true,assertCurrent:assertClockCurrent});
                 assertClockCurrent();
-            } else if (pendingAttendanceRecords.length) {
+            } else if (pendingAttendanceRecords.length || attendance.scheduleDeclaration) {
                 const batch=writeBatch(db);
                 pendingAttendanceRecords.forEach(row=>batch.set(row.ref,row.data));
-                batch.set(doc(collection(db, 'attendance_logs')),attendance);
+                const attendanceRef=doc(collection(db,'attendance_logs'));
+                if(attendance.scheduleDeclaration){
+                    const requestRef=doc(collection(db,'staff_requests'));
+                    attendance.scheduleDeclarationRequestId=requestRef.id;
+                    const request=clockInDeclarationRequest({declaration:attendance.scheduleDeclaration,attendanceLogId:attendanceRef.id,lateMinutes:attendance.lateMinutes??attendance.scheduleSnapshot.lateMinutes,timestamp:serverTimestamp()});
+                    const proposal=clockInDeclarationSavedProposal(schedule,{start:{id:attendanceRef.id,type:'TIME IN',staffId:staffProfile.id,staffName,branch:finalBranch,timestamp:attendanceAt},staffId:staffProfile.id,staffName},attendance.scheduleDeclaration);
+                    if(proposal)request.staffShiftProposal=proposal;
+                    batch.set(requestRef,request);
+                }
+                batch.set(attendanceRef,attendance);
                 await batch.commit();
             } else await addDoc(collection(db, "attendance_logs"), attendance);
             
@@ -5343,364 +5356,21 @@ function initializeSavedCashierBranch(){refreshCashierBranchLabel(window,documen
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initializeSavedCashierBranch,{once:true});else initializeSavedCashierBranch();
 
 // ========================================================
-// 🤖 ULTRA AI: AUTONOMOUS 7-DAY FORECASTER & RESTOCK ENGINE
+// Stock counts and reviewed requests are separate protected actions.
+// Kept as a compatibility entry point for older callers; it never forecasts,
+// reads inventory, creates requests or schedules background work.
 // ========================================================
-window.stockReqItemsFlat = [];
-window.itemVelocityCache = {};
-
-window.calculateBranchVelocity = async function(branch) {
-    let fourteenDaysAgo = new Date();
-    fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-
-    try {
-        const logsQ = window.query(
-            window.collection(window.db, "stock_logs"),
-            window.where("branch", "==", branch),
-            window.where("timestamp", ">=", fourteenDaysAgo)
-        );
-        const logsSnap = await window.getDocs(logsQ);
-
-        let burnData = {};
-        logsSnap.forEach(docSnap => {
-            let log = docSnap.data();
-            let v = parseFloat(log.variance) || 0;
-            let t = (log.type || "").toLowerCase();
-            let itemName = (log.item || "").trim().toLowerCase();
-
-            if (v < 0 && (
-                t.includes("sales") || t.includes("deduction") || 
-                t.includes("waste") || t.includes("spoilage") || 
-                t.includes("store use") || t.includes("prep") || 
-                t.includes("adjustment")
-            )) {
-                if (!burnData[itemName]) burnData[itemName] = 0;
-                burnData[itemName] += Math.abs(v);
-            }
-        });
-
-        window.itemVelocityCache = {};
-        for (let item in burnData) {
-            window.itemVelocityCache[item] = burnData[item] / 14; // Average Daily Burn Rate
-        }
-        return window.itemVelocityCache;
-    } catch (e) {
-        console.error("Velocity Calculation Error:", e);
-        return {};
+window.runAutonomousRestockAI = async function(forceRun = false) {
+    if (forceRun && typeof Swal !== 'undefined') {
+        await Swal.fire('Review stock requests', 'Save your physical count, then use “Review saved count stock request” to review maintaining-target suggestions before sending to HQ.', 'info');
     }
+    return {disabled:true};
 };
 
-// ========================================================
-// 🤖 ULTRA AI: AUTONOMOUS 7-DAY FORECASTER & RESTOCK ENGINE
-// ========================================================
-window.runAutonomousRestockAI = function(forceRun = false) {
-    let branch = localStorage.getItem('takodeal_device_branch');
-    if (!branch || branch === 'Main Office') return Promise.resolve();
-
-    const active = window.restockRequestFlight;
-    if (active) {
-        // One automatic evaluation can serve repeated timer calls. An explicit
-        // manual forecast still gets its own fresh force-run after an auto run.
-        if (forceRun && !active.forceRun && active.branch === branch) {
-            active.manual ||= active.promise.then(() => {
-                if (localStorage.getItem('takodeal_device_branch') === branch) return window.runAutonomousRestockAI(true);
-            });
-            return active.manual;
-        }
-        return active.promise;
-    }
-    if (window.restockRequestRunning) return Promise.resolve();
-    const clock = businessClock();
-    const lockKey = 'takodeal_ai_restock_' + branch;
-    const schedule = window.restockSchedule || {};
-    if (!forceRun && (!stockRequestDue(schedule) || localStorage.getItem(lockKey) === clock.day)) return Promise.resolve();
-    const flight = {branch,forceRun:Boolean(forceRun),promise:null,manual:null};
-    window.restockRequestFlight = flight;
-    window.restockRequestRunning = true;
-    flight.promise = Promise.resolve().then(async () => {
-    try {
-        // An existing request suppresses forecasting, so confirm that first.
-        // Only existence matters: do not download every pending request.
-        const pendingQ = window.query(
-            window.collection(window.db, "purchase_orders"),
-            window.where("branch", "==", branch),
-            window.where("status", "in", ["Pending", "Drafting", "Delayed"]),
-            window.limit(1)
-        );
-        const earlyPending = await window.getDocs(pendingQ);
-        if (!earlyPending.empty) {
-            if (forceRun && typeof Swal !== 'undefined') Swal.fire('Queue Full', 'HQ is still processing your active stock requests. Please wait until they are dispatched before generating new ones.', 'info');
-            return;
-        }
-
-        // 1. Fetch live velocity & inventory
-        await window.calculateBranchVelocity(branch);
-        
-        const qBranch = window.query(window.collection(window.db, "inventory"), window.where("branch", "==", branch));
-        const snapBranch = await window.getDocs(qBranch);
-
-        // 2. Fetch delivery schedule to determine timeline
-        let cycleDays = 7; 
-        try {
-            const schedSnap = await window.getDoc(window.doc(window.db, "settings", "global_delivery_schedule"));
-            if (schedSnap.exists()) window.restockSchedule = schedSnap.data();
-            if (!forceRun && !stockRequestDue(window.restockSchedule || {})) return;
-            if (schedSnap.exists() && schedSnap.data().nextDeliveryDate) {
-                let targetDate = new Date(schedSnap.data().nextDeliveryDate + 'T00:00:00');
-                let today = new Date(); today.setHours(0,0,0,0);
-                let diffDays = Math.ceil((targetDate - today) / (1000 * 3600 * 24));
-                if (diffDays > 0) cycleDays = diffDays + 7; // Cover until delivery + full cycle
-            }
-        } catch(e) {}
-
-        // 3. Keep the final fresh check: another tablet may have requested stock
-        // while this device was reading inventory and calculating its forecast.
-        const pendingSnap = await window.getDocs(pendingQ);
-        if (!pendingSnap.empty) {
-            if (forceRun && typeof Swal !== 'undefined') Swal.fire('Queue Full', 'HQ is still processing your active stock requests. Please wait until they are dispatched before generating new ones.', 'info');
-            return;
-        }
-
-        let aiDraftCart = [];
-        let hasCriticalTrigger = false;
-
-        snapBranch.forEach(docSnap => {
-            let item = docSnap.data();
-            if (item.allowRequest === false) return;
-
-            let conv = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-            let currentStockBase = parseFloat(item.currentStock || 0);
-            let currentStockPurch = currentStockBase / conv;
-
-            let normName = (item.name || "").trim().toLowerCase();
-            let dailyBurnBase = window.itemVelocityCache[normName] || 0;
-            let dailyBurnPurch = dailyBurnBase / conv;
-
-            // Priority 1: Manager Par Levels (Maintaining Stock)
-            let targetPar = parseFloat(item.maintainingStock) || 0;
-            let targetParPurch = targetPar / conv;
-            let deficitPurch = 0;
-            let requestType = "";
-
-            if (targetPar > 0) {
-                deficitPurch = Math.ceil(targetParPurch - currentStockPurch);
-                requestType = "Maintaining Stock (Par Fill)";
-            } else {
-                // Priority 2: AI Dynamic Forecasting
-                let userSetMinSafety = (parseFloat(item.reorderLevel) || parseFloat(item.lowStockAlert) || 5) / conv;
-                let dynamicThresholdPurch = Math.max((dailyBurnPurch * 3), userSetMinSafety);
-             
-                let targetStockPurch = (dailyBurnPurch * cycleDays) + dynamicThresholdPurch;
-                if (targetStockPurch <= 0) targetStockPurch = dynamicThresholdPurch * 2;
-                
-                deficitPurch = Math.ceil(targetStockPurch - currentStockPurch);
-                requestType = currentStockPurch <= 0 ? "Out of Stock (AI Auto)" : "Weekly Restock (AI Forecast)";
-            }
-
-            if (deficitPurch > 0) {
-                hasCriticalTrigger = true;
-                let pUom = item.purchaseUom || item.uom || 'units';
-                let bUom = item.uom || 'units';
-
-                aiDraftCart.push({
-                    itemName: item.name, name: item.name, sourceId: docSnap.id,
-                    qty: deficitPurch * conv, rawQty: deficitPurch,
-                    origRawQty: deficitPurch, origBaseQty: deficitPurch * conv,
-                    uom: bUom, baseUom: bUom, purchaseUom: pUom, friendlyUom: pUom, displayUom: pUom,
-                    selectedUom: (pUom.toLowerCase() !== bUom.toLowerCase()) ? 'purch' : 'base',
-                    convRate: conv, conversionRate: conv, category: item.category || "Ingredients",
-                    requestType: requestType,
-                    systemStock: currentStockBase, isForecast: true, displayQty: deficitPurch,
-                    dailyBurnPurch: dailyBurnPurch.toFixed(2), runwayDays: dailyBurnPurch > 0 ? (currentStockPurch / dailyBurnPurch).toFixed(1) : "N/A"
-                });
-            }
-        });
-
-        // 4. Auto-submit PO batch if triggered
-        if (hasCriticalTrigger && aiDraftCart.length > 0) {
-            const requestId = forceRun ? 'manual-' + crypto.randomUUID() : autoRequestId(branch);
-            const lockRef = window.doc(window.db, 'settings', 'restock_request_' + encodeURIComponent(branch));
-            const requestRef = window.doc(window.db, 'purchase_orders', requestId);
-            const created = await window.runTransaction(window.db, async tx => {
-                const existing = await tx.get(requestRef);
-                const lock = await tx.get(lockRef);
-                if (existing.exists() || (!forceRun && lock.exists() && lock.data().lastRequestDay >= clock.day)) return false;
-                tx.set(requestRef, {branch, type: forceRun ? 'Manual Forecast' : 'AI Weekly Auto Forecast', items:aiDraftCart,status:'Pending',requestedBy:'TAKODEÁL AI FORECASTER',timestamp:window.serverTimestamp(),requestId,requestDay:clock.day,isForecast:true});
-                if (!forceRun) tx.set(lockRef,{branch,lastRequestDay:clock.day,requestId,updatedAt:window.serverTimestamp()});
-                return true;
-            });
-            localStorage.setItem(lockKey, clock.day);
-            if (!created) return;
-            if (document.getElementById('view-stockreq') && document.getElementById('view-stockreq').classList.contains('active')) {
-                if (typeof window.loadStockRequestUI === 'function') window.loadStockRequestUI();
-            }
-
-            if (typeof Swal !== 'undefined') {
-                Swal.fire({
-                    toast: true, position: 'top-end', icon: 'info',
-                    title: '🤖 AI Forecaster: Weekly Restock PO Dispatched!',
-                    showConfirmButton: false, timer: 4500
-                });
-            }
-        } else if (forceRun && typeof Swal !== 'undefined') {
-            Swal.fire('Optimal Inventory', 'Based on the Maintaining Stock numbers and Burn Rate, you have enough inventory for the week. No request is needed.', 'success');
-        }
-    } catch (e) {
-        console.error("AI Forecaster Error:", e);
-    } finally {
-        if (window.restockRequestFlight === flight) {
-            window.restockRequestFlight = null;
-            window.restockRequestRunning = false;
-        }
-    }
-    });
-    return flight.promise;
-};
-
-// Periodic Background Evaluation (Every 15 minutes) - Will silently abort if it's not Friday!
-setInterval(window.runAutonomousRestockAI, 15 * 60 * 1000);
-
+// The cycle-count installer replaces this fail-closed startup fallback. Keep
+// drafts intact if secure count modules have not finished loading.
 window.submitAllManualCounts = async function() {
-    let btn = document.getElementById('btnSubmitAllCounts');
-    let itemsToProcess = [];
-
-    try { window.currentStockChecklist.forEach(item => {
-        let memPurch = window.stockCountMemory[`${item.id}_purch`];
-        let memBase = window.stockCountMemory[`${item.id}_base`];
-        
-        if ((memPurch === undefined || memPurch === '') && (memBase === undefined || memBase === '')) {
-            return; 
-        }
-
-        let pVal = parseFloat(memPurch) || 0;
-        let bVal = parseFloat(memBase) || 0;
-        let convRate = parseFloat(item.conversionRate) || parseFloat(item.conversion) || 1;
-
-        let physicalTotalBase = (pVal * convRate) + bVal;
-        const countSnapshot=createCountSnapshot({
-            baseUom:item.baseUom || item.uom || 'units',
-            purchaseUom:item.purchaseUom || item.purchUom || item.uom || 'units',
-            conversionRate:convRate,purchaseCount:pVal,baseCount:bVal,totalBaseQty:physicalTotalBase
-        });
-
-        itemsToProcess.push({
-            item: item,
-            pVal: pVal,
-            bVal: bVal,
-            physicalTotalBase: physicalTotalBase,
-            countSnapshot
-        });
-    }); } catch(error) {
-        return Swal.fire('Check Stock Count',error.message,'warning');
-    }
-
-    if (itemsToProcess.length === 0) {
-        return Swal.fire('Blank Form', 'You have not entered any counts. Please enter your quantities before submitting.', 'warning');
-    }
-
-    let origText = btn.innerHTML;
-    btn.innerHTML = "⏳ Syncing..."; btn.disabled = true;
-
-    try {
-        // 🔥 BULLETPROOF FIREBASE BINDINGS (Bypasses missing batch imports!)
-        const fDB = window.db || db;
-        const fDoc = window.doc || doc;
-        const fCol = window.collection || collection;
-        const fUpdate = window.updateDoc || updateDoc;
-        const fAdd = window.addDoc || addDoc;
-        const fTime = window.serverTimestamp || serverTimestamp;
-
-        let itemsForAutoRequest = [];
-        let cashier = (window.sessionUser && window.sessionUser.cashierName) ? window.sessionUser.cashierName : 'Staff';
-
-        for (let data of itemsToProcess) {
-            let item = data.item;
-            let currentSystemStock = parseFloat(item.currentStock) || 0;
-            let parLevelBase = parseFloat(item.maintainingStock) || 0;
-            
-            const {purchaseUom:pUom,baseUom:bUom,conversionRate:convRate}=data.countSnapshot;
-
-            // A. Update live stock count directly
-            const invRef = fDoc(fDB, "inventory", item.id);
-            await fUpdate(invRef, { currentStock: data.physicalTotalBase });
-
-            // B. Write to Stock History Logs directly
-            let noteText = `Manual Count: ${data.physicalTotalBase} ${bUom}`;
-            if (convRate > 1 && pUom !== bUom) {
-                noteText = `Manual Count: ${data.pVal} ${pUom} + ${data.bVal} ${bUom}`;
-            }
-
-            await fAdd(fCol(fDB, "stock_logs"), {
-                branch: window.sessionUser.branch,
-                item: item.name,
-                uom: bUom,
-                oldQty: currentSystemStock,
-                newQty: data.physicalTotalBase,
-                variance: data.physicalTotalBase - currentSystemStock,
-                type: "Staff Physical Count",
-                note: noteText,
-                countSnapshot:data.countSnapshot,
-                user: cashier,
-                timestamp: fTime()
-            });
-
-            // C. Silent AI Request Generator
-            if (parLevelBase > 0 && data.physicalTotalBase < parLevelBase) {
-                let deficitBase = parLevelBase - data.physicalTotalBase;
-                let requestPurchQty = Math.ceil(deficitBase / convRate);
-
-                itemsForAutoRequest.push({
-                    itemName: item.name,
-                    name: item.name,
-                    qty: requestPurchQty * convRate,
-                    rawQty: requestPurchQty,
-                    uom: bUom,
-                    purchaseUom: pUom,
-                    displayUom: pUom,
-                    displayQty:requestPurchQty,
-                    baseUom:bUom,
-                    convRate:convRate,
-                    conversionRate:convRate,
-                    countSnapshot:data.countSnapshot,
-                    requestType: "Maintaining Stock (Auto-Fill)",
-                    physicalStock: data.physicalTotalBase,
-                    systemStock: currentSystemStock
-                });
-            }
-        }
-
-        // D. Create a single combined Purchase Order for all missing items!
-        if (itemsForAutoRequest.length > 0) {
-            await fAdd(fCol(fDB, "purchase_orders"), {
-                branch: window.sessionUser.branch,
-                items: itemsForAutoRequest,
-                status: "Pending",
-                type: "Silent Auto-Request",
-                requestedBy: "System (via Staff Count)",
-                timestamp: fTime()
-            });
-        }
-
-        // 4. Clean up and Reset
-        window.stockCountMemory = {};
-        localStorage.removeItem('takodeal_stock_count_memory');
-        let searchInput = document.getElementById('manualCountSearch');
-        if (searchInput) searchInput.value = '';
-        
-        Swal.fire({
-            title: '✅ Sync Complete!',
-            text: `Successfully saved counts for ${itemsToProcess.length} items. Automated requests were sent to HQ.`,
-            icon: 'success',
-            customClass: { popup: 'rounded-2xl' }
-        });
-
-        window.loadStockRequestUI(); 
-
-    } catch (e) {
-        console.error("Submission Error:", e);
-        Swal.fire('Error', 'Failed to save counts to cloud.', 'error');
-    } finally {
-        if (btn) { btn.innerHTML = origText; btn.disabled = false; }
-    }
+    return Swal.fire('Stock Report is starting', 'Reopen Stock Report once tablet approval is ready. Your entries are kept; no count or stock request was sent.', 'info');
 };
 
 window.filterStockReq = function() {
