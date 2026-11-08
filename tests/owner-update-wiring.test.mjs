@@ -39,26 +39,40 @@ test('the actual login entry retries a failed shell registration from its explic
     ready.resolve(registration);await tick();assert.equal(calls.at(-1),'update');
 });
 
-function fleet(waiter){
-    const calls={reloads:0,waits:[],lookups:0},status={textContent:''},registration={},serviceWorker={getRegistration:async()=>{calls.lookups++;return registration;}};
-    const w={location:{reload(){calls.reloads++;}},addEventListener(){},switchView(){}},nav={onLine:true,serviceWorker};
-    const context={window:w,document:{getElementById:()=>status,addEventListener(){}},navigator:nav,clearTimeout(){},
+function fleet(waiter,{lookup}={}){
+    const calls={reloads:0,waits:[],lookups:0,noticeChecks:0},status={textContent:''},progress={hidden:true},registration={},timers=new Map(),serviceWorker={getRegistration:async()=>{calls.lookups++;return lookup?lookup():registration;}};let timerId=0;
+    const w={location:{reload(){calls.reloads++;}},ownerUpdateNotice:{async check(){calls.noticeChecks++;}},addEventListener(){},switchView(){}},nav={onLine:true,serviceWorker};
+    const context={window:w,document:{getElementById:id=>id==='deviceFleetUpdateProgress'?progress:status,addEventListener(){}},navigator:nav,AbortController,setTimeout(fn,ms){const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout(id){timers.delete(id);},
         waitForAppUpdate(...args){calls.waits.push(args);return waiter(...args);}};
     const source=read('device-fleet.js');assert.match(source,/import\s*\{waitForAppUpdate\}\s*from\s*'\.\/owner-app-update\.js'/);
     vm.runInNewContext(executable(source)+'\ninstallDeviceFleet();',context);
-    return {calls,w,status,registration,serviceWorker};
+    return {calls,w,status,progress,registration,serviceWorker,timers,expire(){const [id,timer]=[...timers][0];timers.delete(id);timer.fn();}};
 }
 
-test('the actual Device Fleet update passes its container and cannot reload before the waiter finishes',async()=>{
+test('the actual Device Fleet update reports phases and offers the save-edits notice without automatically reloading the workspace',async()=>{
     const hold=deferred(),f=fleet(()=>hold.promise),pending=f.w.checkManagerAppUpdate();await tick();
     assert.equal(f.calls.waits.length,1);assert.equal(f.calls.waits[0][0],f.registration);assert.equal(f.calls.waits[0][1].serviceWorker,f.serviceWorker);assert.equal(f.calls.reloads,0);
-    await f.w.checkManagerAppUpdate();assert.equal(f.calls.lookups,1);hold.resolve();await pending;assert.equal(f.calls.reloads,1);
+    assert.equal(f.progress.hidden,false);f.calls.waits[0][1].onProgress({phase:'downloading',message:'Downloading the latest app files…'});assert.match(f.status.textContent,/Downloading/);
+    await f.w.checkManagerAppUpdate();assert.equal(f.calls.lookups,1);hold.resolve();await pending;assert.equal(f.calls.reloads,0);assert.equal(f.calls.noticeChecks,1);assert.match(f.status.textContent,/save your edits/);assert.equal(f.progress.hidden,true);assert.equal(f.timers.size,0);
 });
 
 test('the actual Device Fleet failure keeps the page open, reports the error and permits a later retry',async()=>{
     let failing=true;const f=fleet(async()=>{if(failing)throw Error('Synthetic activation failed');});
     await f.w.checkManagerAppUpdate();assert.equal(f.calls.reloads,0);assert.equal(f.status.textContent,'Synthetic activation failed');
-    failing=false;await f.w.checkManagerAppUpdate();assert.equal(f.calls.waits.length,2);assert.equal(f.calls.reloads,1);
+    failing=false;await f.w.checkManagerAppUpdate();assert.equal(f.calls.waits.length,2);assert.equal(f.calls.reloads,0);assert.equal(f.calls.noticeChecks,1);
+});
+
+test('Device Fleet stops a stalled lookup and late completion cannot start an old worker check or reload',async()=>{
+    const lookup=deferred();let count=0;const f=fleet(async()=>{},{lookup:()=>++count===1?lookup.promise:{id:'new'}}),pending=f.w.checkManagerAppUpdate();await tick();f.expire();await pending;
+    assert.match(f.status.textContent,/stopped after 40 seconds/);assert.equal(f.progress.hidden,true);assert.equal(f.calls.waits.length,0);await f.w.checkManagerAppUpdate();assert.equal(f.calls.waits.length,1);
+    lookup.resolve({id:'old'});await tick();assert.equal(f.calls.waits.length,1);assert.equal(f.calls.reloads,0);assert.equal(f.calls.noticeChecks,1);assert.equal(f.timers.size,0);
+});
+
+test('the login and Device Fleet use named indeterminate progress with live phase descriptions',()=>{
+    const html=read('index.html');for(const id of ['loginUpdateProgress','deviceFleetUpdateProgress']){
+        const tag=html.match(new RegExp('<progress\\b[^>]*id="'+id+'"[^>]*>'))?.[0];assert.ok(tag,id);assert.match(tag,/aria-label="Owner app update"/);assert.match(tag,/aria-describedby=/);assert.doesNotMatch(tag,/\b(?:value|max)=/);assert.match(tag,/\bhidden\b/);
+    }
+    assert.match(html,/id="loginUpdateStatus"[^>]*role="status"[^>]*aria-live="polite"/);assert.match(read('login.css'),/\.login-update-progress/);
 });
 
 function worker(){

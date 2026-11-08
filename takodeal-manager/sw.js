@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-manager-core-v132-owner-recovery-20261107';
+const CACHE_NAME = 'takodeal-manager-core-v133-update-progress-20261108';
 const VENDOR_CACHE = 'takodeal-manager-vendors-v1';
 const IMAGE_CACHE = 'takodeal-manager-images-v1';
 const CORE_ASSETS = [

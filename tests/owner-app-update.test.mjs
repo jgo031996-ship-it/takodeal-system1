@@ -11,13 +11,13 @@ function events(properties={}){
         emit(type){for(const handler of [...handlers.get(type)||[]])handler();},
         listeners(){return [...handlers.values()].reduce((total,list)=>total+list.size,0);}},properties);
 }
-function fixture({state='installing',container=false,update}={}){
+function fixture({state='installing',container=false,update,onProgress,signal}={}){
     const worker=events({state}),old=events({state:'activated'}),sw=events({controller:old}),registration=events({active:state==='activating'||state==='activated'?worker:old,update:update||(async()=>{})});
     if(state==='installing')registration.installing=worker;
     if(state==='installed')registration.waiting=worker;
     if(state==='redundant')registration.installing=worker;
     let expire,cleared=0;
-    const options={delay(fn,ms){assert.equal(ms,30000);expire=fn;return 7;},cancelDelay(){cleared++;},...(container?{serviceWorker:sw}:{})};
+    const options={delay(fn,ms){assert.equal(ms,30000);expire=fn;return 7;},cancelDelay(){cleared++;},onProgress,signal,...(container?{serviceWorker:sw}:{})};
     const promise=waitForAppUpdate(registration,options);
     return {worker,old,sw,registration,options,promise,expire:()=>expire(),cleared:()=>cleared,
         state(value){worker.state=value;worker.emit('statechange');},control(value=worker){sw.controller=value;sw.emit('controllerchange');},
@@ -116,4 +116,27 @@ test('a missing active worker cannot satisfy explicit controller convergence',as
     await assert.rejects(waitForAppUpdate(registration,{serviceWorker:sw,delay:()=>1,cancelDelay(){cleared++;}}),/could not be confirmed/);
     assert.equal(registration.listeners(),0);assert.equal(sw.listeners(),0);assert.equal(cleared,1);
     await waitForAppUpdate({update:async()=>{}},{delay:()=>1,cancelDelay(){}});
+});
+
+test('progress reports actual installation, activation and document-control phases without promising readiness early',async()=>{
+    const phases=[],f=fixture({container:true,onProgress:event=>phases.push(event)});await tick();
+    f.state('installed');f.state('installed');f.registration.installing=null;f.registration.active=f.worker;f.state('activating');f.state('activated');await tick();
+    assert.deepEqual(phases.map(row=>row.phase),['checking','downloading','waiting','activating','controller']);
+    assert.equal(phases.some(row=>row.phase==='ready'),false);assert.ok(phases.every(row=>typeof row.message==='string'&&!/\d+%/.test(row.message)));
+    f.control();await f.promise;assert.equal(phases.at(-1).phase,'ready');f.clean();
+});
+
+test('cancellation removes all worker observers and late events cannot publish readiness or trigger activation',async()=>{
+    const controller=new AbortController(),hold=deferred(),phases=[],f=fixture({container:true,update:()=>hold.promise,signal:controller.signal,onProgress:event=>phases.push(event.phase)});
+    f.worker.postMessage=()=>assert.fail('A canceled check must never request activation');await tick();controller.abort();await assert.rejects(f.promise,{name:'AbortError'});f.clean();
+    const before=[...phases];hold.resolve();f.state('activated');f.control();f.registration.emit('updatefound');await tick();assert.deepEqual(phases,before);f.clean();
+});
+
+test('an already canceled attempt never checks or activates a worker',async()=>{
+    const controller=new AbortController();controller.abort();const registration=events({update(){assert.fail('Canceled update must not start');}});
+    await assert.rejects(waitForAppUpdate(registration,{signal:controller.signal,delay(){assert.fail('Canceled update needs no deadline');}}),{name:'AbortError'});assert.equal(registration.listeners(),0);
+});
+
+test('progress rendering failures cannot skip worker readiness checks',async()=>{
+    const f=fixture({container:true,onProgress(){throw Error('Synthetic display failure');}});await tick();f.state('activated');let done=false;f.promise.then(()=>done=true);await tick();assert.equal(done,false);f.control();await f.promise;f.clean();
 });

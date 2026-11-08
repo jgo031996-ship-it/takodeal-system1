@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {installOwnerLoginUpdate} from '../takodeal-manager/login-update.js';
+import {waitForAppUpdate} from '../takodeal-manager/owner-app-update.js';
 
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};};
 const drain=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
@@ -12,12 +13,12 @@ function harness({online=true,worker=true,getRegistration,waitForUpdate,stage='g
  const w={isLoggingIn:false,location:{reload:()=>calls.reloads++},ownerUpdateNotice:{check:()=>calls.noticeChecks++},setTimeout:(fn,delay)=>{const id=++timerId;timers.set(id,{fn,delay});return id;},clearTimeout:id=>{calls.cleared.push(id);timers.delete(id);}};
  for(const key of ['auth','sessionUser','localStorage','sessionStorage','indexedDB','managerPin','ManagerLogin'])deny(w,key);
  const nav={onLine:online,...(worker?{serviceWorker}: {})};for(const key of ['storage','credentials'])deny(nav,key);
- const nodes={loginUpdateButton:button,loginUpdateStatus:status,loginOverlay:overlay,loginStage1:{hidden:stage!=='google'},loginStage2:{hidden:stage!=='pin'}};
+ const progress={hidden:true},nodes={loginUpdateButton:button,loginUpdateStatus:status,loginUpdateProgress:progress,loginOverlay:overlay,loginStage1:{hidden:stage!=='google'},loginStage2:{hidden:stage!=='pin'}};
  const d={getElementById:id=>{assert.ok(Object.hasOwn(nodes,id),'Only app-update controls may be read.');assert.notEqual(id,'loginStage1');assert.notEqual(id,'loginStage2');return nodes[id];}};
  const lookup=()=>{calls.lookups++;return getRegistration?getRegistration():Promise.resolve(registration);};serviceWorker.getRegistration=lookup;
  const installation=installOwnerLoginUpdate(w,d,nav,{...(defaultLookup?{}:{getRegistration:lookup}),waitForUpdate:async(...args)=>{calls.waits.push(args);return waitForUpdate?.(...args);}});
- return {w,d,nav,button,status,overlay,registration,serviceWorker,calls,timers,attributes,classes,listeners,installation,
-  click:()=>Promise.all([...listeners].map(callback=>callback())),deadline:()=>{assert.equal(timers.size,1,'One bounded UI deadline is active.');const [id,timer]=[...timers][0];timers.delete(id);timer.fn();return timer;}};
+ return {w,d,nav,button,status,progress,overlay,registration,serviceWorker,calls,timers,attributes,classes,listeners,installation,
+  click:()=>Promise.all([...listeners].map(callback=>callback())),deadline:(delay=40000)=>{const entry=[...timers].find(([,timer])=>timer.delay===delay);assert.ok(entry,'The requested bounded timer is active.');const [id,timer]=entry;timers.delete(id);timer.fn();return timer;}};
 }
 
 for(const stage of ['google','pin'])test('the '+stage+' locked screen can update app files without touching authentication or credentials',async()=>{
@@ -37,9 +38,9 @@ test('offline and unsupported-browser attempts do not contact a worker and remai
 test('a stalled registration lookup reaches its deadline and an old late completion cannot reload a newer pending attempt',async()=>{
  const lookup=deferred(),oldActivation=deferred(),newActivation=deferred(),oldRegistration={id:'old'},newRegistration={id:'new'};let attempts=0;
  const f=harness({getRegistration:()=>++attempts===1?lookup.promise:Promise.resolve(newRegistration),waitForUpdate:registration=>registration===oldRegistration?oldActivation.promise:newActivation.promise});
- const first=f.click();assert.equal(f.deadline().delay,40000);await first;assert.equal(f.calls.reloads,0);assert.equal(f.button.disabled,false);assert.match(f.status.textContent,/Unable to confirm/);assert.equal(f.classes.has('error'),true);
+ const first=f.click();assert.equal(f.deadline().delay,40000);await first;assert.equal(f.calls.reloads,0);assert.equal(f.button.disabled,false);assert.match(f.status.textContent,/stopped after 40 seconds/);assert.equal(f.classes.has('error'),true);assert.equal(f.button.textContent,'Retry update');
  const retry=f.click();await drain();assert.equal(f.calls.lookups,2);assert.equal(f.calls.reloads,0);assert.equal(f.button.disabled,true);
- lookup.resolve(oldRegistration);await drain();oldActivation.resolve();await drain();assert.equal(f.calls.reloads,0,'The timed-out attempt has no reload continuation.');assert.equal(f.button.disabled,true,'The old completion cannot unlock the retry.');
+ lookup.resolve(oldRegistration);await drain();oldActivation.resolve();await drain();assert.equal(f.calls.waits.length,1,'The expired lookup cannot even start an old worker update.');assert.equal(f.calls.reloads,0,'The timed-out attempt has no reload continuation.');assert.equal(f.button.disabled,true,'The old completion cannot unlock the retry.');
  newActivation.resolve();await retry;assert.equal(f.calls.reloads,1);assert.equal(f.button.disabled,false);assert.equal(f.timers.size,0);
 });
 test('a helper failure and an absent registration report an error, then a new explicit attempt can succeed',async()=>{
@@ -68,4 +69,28 @@ test('disposing a pending update removes its listener and cannot reload or publi
 });
 test('missing login update controls are a safe no-op',()=>{
  let calls=0;const installation=installOwnerLoginUpdate({}, {getElementById:()=>null}, {},{getRegistration:()=>calls++});assert.doesNotThrow(()=>installation.dispose());assert.equal(calls,0);
+});
+
+test('a visible indeterminate progress bar follows real worker phases and a slow check offers a bounded retry',async()=>{
+ const activation=deferred(),f=harness({waitForUpdate:()=>activation.promise}),pending=f.click();await drain();
+ assert.equal(f.progress.hidden,false);const options=f.calls.waits[0][1];assert.equal(options.signal.aborted,false);
+ options.onProgress({phase:'downloading',message:'Downloading the latest app files…'});assert.match(f.status.textContent,/Downloading/);
+ f.deadline(12000);assert.match(f.status.textContent,/taking longer than usual/);assert.match(f.status.textContent,/40 seconds/);assert.equal(f.calls.reloads,0);
+ f.deadline();await pending;assert.equal(options.signal.aborted,true);assert.equal(f.progress.hidden,true);assert.equal(f.button.textContent,'Retry update');assert.equal(f.timers.size,0);
+ const message=f.status.textContent;options.onProgress({phase:'ready',message:'Stale completion'});activation.resolve();await drain();assert.equal(f.status.textContent,message);assert.equal(f.calls.reloads,0);
+});
+
+test('the login deadline cancels the real worker waiter, preventing late control events and cleanup from affecting a retry',async()=>{
+ class Events extends EventTarget{constructor(values={}){super();Object.assign(this,values);this.count=0;}addEventListener(...args){super.addEventListener(...args);this.count++;}removeEventListener(...args){super.removeEventListener(...args);this.count--;}emit(type){this.dispatchEvent(new Event(type));}}
+ const hold=deferred(),old=new Events({state:'activated'}),worker=new Events({state:'installing'}),sw=new Events({controller:old}),registration=new Events({active:old,installing:worker,update:()=>hold.promise});
+ let f;f=harness({getRegistration:async()=>registration,waitForUpdate:(reg,options)=>waitForAppUpdate(reg,{...options,serviceWorker:sw,delay:f.w.setTimeout,cancelDelay:f.w.clearTimeout})});
+ const pending=f.click();await drain();assert.match(f.status.textContent,/Downloading/);assert.equal(f.progress.hidden,false);assert.equal(worker.count,1);
+ f.deadline();await pending;assert.equal(worker.count,0);assert.equal(registration.count,0);assert.equal(sw.count,0);assert.equal(f.timers.size,0);
+ const message=f.status.textContent;registration.installing=null;registration.active=worker;worker.state='activated';worker.emit('statechange');sw.controller=worker;sw.emit('controllerchange');hold.resolve();await drain();
+ assert.equal(f.calls.reloads,0);assert.equal(f.status.textContent,message);assert.deepEqual(f.calls.denied,[]);
+});
+
+test('disposal retires a stalled lookup immediately and a late registration cannot start any worker action',async()=>{
+ const lookup=deferred(),f=harness({getRegistration:()=>lookup.promise}),pending=f.click();assert.equal(f.progress.hidden,false);const message=f.status.textContent;
+ f.installation.dispose();await pending;assert.equal(f.timers.size,0);lookup.resolve(f.registration);await drain();assert.equal(f.calls.waits.length,0);assert.equal(f.calls.reloads,0);assert.equal(f.status.textContent,message);
 });
