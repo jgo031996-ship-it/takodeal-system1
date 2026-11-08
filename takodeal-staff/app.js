@@ -16,6 +16,10 @@ window.getStaffLeaveUI=()=>window.staffLeaveUI||installStaffLeaveUI(window,docum
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>window.getStaffLeaveUI(),{once:true});else queueMicrotask(()=>window.getStaffLeaveUI());
 import {onlineRefundReviewHTML} from './online-refund-pay.js';
 import {payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,snapshotPayrollDeductionRows} from './payroll-deduction-details.js';
+import {payslipSavedAmounts,savedPayslipCents} from './staff-payslip-snapshot.js';
+import {readStaffSavedPayslips,installStaffSavedPayslipViews} from './staff-saved-payslips.js';
+import {createStaffVaultRecoveryForPhone} from './staff-vault-recovery.js';
+import {installStaffVaultRecovery} from './staff-vault-recovery-ui.js';
 import {isPayrollAdjustment,payrollAdjustmentDetailsHTML,payrollAdjustmentHistoryHTML} from './payroll-adjustment-model.js';
 import {readStaffPayrollAdjustments,staffPayrollAdjustmentEstimate} from './staff-payroll-adjustments.js';
 import {readStaffPayrollRecoveryHistory} from './payroll-adjustment-history.js';
@@ -49,7 +53,7 @@ import {revalidateClockInScheduleDeclaration,clockInDeclarationSavedProposal,clo
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 // 🔥 UPGRADE: Imported the Offline Cache Engines!
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDocsFromServer, getDoc, getDocFromServer, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, onSnapshot, enableNetwork, disableNetwork, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, getDocs, getDocsFromServer, getDoc, getDocFromServer, query, where, doc, updateDoc, addDoc, setDoc, deleteDoc, serverTimestamp, orderBy, limit, onSnapshot, enableNetwork, disableNetwork, writeBatch, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { getStorage, ref, uploadBytes, uploadBytesResumable, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
   
 const firebaseConfig = {
@@ -92,6 +96,7 @@ window.doc = doc;
 window.setDoc = setDoc;
 window.serverTimestamp = serverTimestamp;
 window.orderBy = orderBy;
+window.limit = limit;
 window.onSnapshot = onSnapshot;
 window.enableNetwork = enableNetwork;
 window.disableNetwork = disableNetwork;
@@ -2033,6 +2038,9 @@ window.loadPayslipVault = async function() {
     if (!staffName || !staffId || !window.staffVaultSession?.allows(staffId)) return;
     const vaultEpoch = window.staffVaultSession.epoch;
     const stillOpen = () => window.staffVaultSession.allows(staffId, vaultEpoch) && localStorage.getItem('takodeal_staff_id') === staffId;
+    const savedViews=installStaffSavedPayslipViews(window,document);savedViews.restoreLive();
+    let savedPayslips={paid:[],shared:[],held:[],errors:[]};
+    const renderSaved=(processingHTML='',processingCount=0)=>{if(stillOpen())savedViews.render(savedPayslips,{staffId,epoch:vaultEpoch,start:startDateStr,end:endDateStr,processingHTML,processingCount});};
 
     const safeDate = (fbDate) => {
         if (!fbDate) return new Date();
@@ -2076,6 +2084,8 @@ window.loadPayslipVault = async function() {
         if (!stillOpen()) return;
         if(staffProfile.salaryRateVersion===1){try{staffProfile=await loadStaffSalaryTimeline(window,staffProfile);}catch{salaryHistoryUnavailable=true;}}
         if(!stillOpen())return;
+        savedPayslips=await readStaffSavedPayslips(window,{staffId,staffName,profile:staffProfile,createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id')),assertCurrent:()=>{if(!stillOpen())throw Error('The Payslip Vault closed or changed. Reopen Pay.');}});
+        if(!stillOpen())return;renderSaved();
         let dailyRate = salaryHistoryUnavailable?0:staffRateForDate(staffProfile) ?? 0;
         let ratePerHour = dailyRate / 8;
         let nickname = staffProfile.scheduleNickname || staffName;
@@ -2441,21 +2451,9 @@ window.loadPayslipVault = async function() {
         detailsHtml+=onlineRefundReviewHTML(onlineRows,onlineStaffId);
         logsContainer.innerHTML = detailsHtml;
 
-        const prSnap = await getDocs(query(collection(db, "payroll_records"), where("staffName", "in", [...new Set([staffName, nickname])].slice(0, 10))));
-        if (!stillOpen()) return;
+        let pendingHtml = ''; let pendingCount = 0;
+        const hasPrevCutoffRecord=[...savedPayslips.paid,...savedPayslips.shared].some(entry=>entry.data.start===prevStartStr&&entry.data.end===prevEndStr)||savedPayslips.held.some(entry=>(entry.record.startDate??entry.record.frozenData?.start??entry.record.frozenData?.startDate??entry.record.snapshot?.start)===prevStartStr&&(entry.record.endDate??entry.record.frozenData?.end??entry.record.frozenData?.endDate??entry.record.snapshot?.end)===prevEndStr);
 
-        let pendingHtml = ''; let pastHtml = ''; let pendingCount = 0;
-        let allRecords = [];
-        
-        prSnap.forEach(docSnap => {
-            if (isMatch(docSnap.data().staffName)) {
-                allRecords.push({id: docSnap.id, ...docSnap.data()});
-            }
-        });
-        allRecords.sort((a, b) => safeDate(b.processedAt).getTime() - safeDate(a.processedAt).getTime());
-
-        let hasPrevCutoffRecord = allRecords.some(r => r.startDate === prevStartStr || (r.frozenData && r.frozenData.start === prevStartStr));
-        
         if (!hasPrevCutoffRecord) {
             pendingCount++;
             
@@ -2511,60 +2509,13 @@ window.loadPayslipVault = async function() {
             `;
         }
 
-        allRecords.forEach(d => {
-            let pd = d.frozenData || {};
-            pd.processedAt = d.processedAt; 
-            pd.finalNetPay = d.finalNetPay; 
-            pd.startDate = d.startDate;
-            pd.endDate = d.endDate;
-            
-            let dateStr = d.processedAt ? safeDate(d.processedAt).toLocaleDateString('en-PH', {month:'short', day:'numeric', year:'numeric'}) : 'Recently';
-            let safeData = encodeURIComponent(JSON.stringify(pd));
-
-            if (d.acknowledged === false) {
-                pendingCount++;
-                pendingHtml += `
-                    <div style="background: #fffbeb; border: 1px solid #fcd34d; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <h3 style="margin: 0 0 5px 0; color: #b45309; font-size: 15px;">Cutoff: ${d.startDate || '?'} to ${d.endDate || '?'}</h3>
-                            <div style="font-size: 12px; color: #d97706; font-weight: bold;">⚠️ Signature Required</div>
-                            <div style="font-size: 18px; font-weight: 900; color: #dc2626; margin-top: 5px;">Net: ₱${(d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
-                        </div>
-                        <div>
-                            <button onclick="window.openPayslipSignatureModal('${d.id}', '${safeData}')" style="background: #d97706; color: white; border: none; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(217, 119, 6, 0.3); transition: 0.2s; animation: pulse 2s infinite;">✍️ Review & Sign</button>
-                        </div>
-                    </div>
-                `;
-            } else {
-                pastHtml += `
-                    <div style="background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 15px; margin-bottom: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <h3 style="margin: 0 0 5px 0; color: #0f172a; font-size: 15px;">Cutoff: ${d.startDate || '?'} to ${d.endDate || '?'}</h3>
-                            <div style="font-size: 12px; color: #16a34a; font-weight: bold;">✅ Acknowledged on ${d.acknowledgedAt ? safeDate(d.acknowledgedAt).toLocaleDateString() : 'Unknown'}</div>
-                            <div style="font-size: 16px; font-weight: 900; color: #16a34a; margin-top: 5px;">Net: ₱${(d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2})}</div>
-                        </div>
-                        <div>
-                            <button onclick="window.viewPastPayslip('${safeData}')" style="background: #f0f9ff; color: #0284c7; border: 1px solid #bae6fd; padding: 10px 15px; border-radius: 8px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.05); transition: 0.2s;">🔍 View Record</button>
-                        </div>
-                    </div>
-                `;
-            }
-        });
-
-        document.getElementById('payslipPendingList').innerHTML = pendingHtml || '<div style="text-align:center; padding: 40px; color: #16a34a; font-weight: bold;">🎉 All payslips have been acknowledged!</div>';
-        let histList = document.getElementById('payslipHistoryList');
-        if (histList) histList.innerHTML = pastHtml || '<div style="text-align:center; padding: 40px; color: #94a3b8;">No past payslips found.</div>';
-
-        let badge = document.getElementById('pendingPayBadge');
-        if (badge) {
-            badge.innerText = pendingCount;
-            badge.style.display = pendingCount > 0 ? 'inline-block' : 'none';
-        }
+        renderSaved(pendingHtml,pendingCount);
 
     } catch (e) {
         if (!stillOpen()) return;
         console.error("Payslip Fetch Error:", e);
         document.getElementById('liveEstNetPay').innerText = "Error";
+        renderSaved();
         let parentEl = document.getElementById('liveEstNetPay').parentElement;
         if(parentEl && !parentEl.querySelector('.error-text')) {
             parentEl.innerHTML += `<p class="error-text" style="color: #fca5a5; font-size: 12px; font-weight: bold; margin-top: 10px;">Error loading data.</p>`;
@@ -2585,30 +2536,16 @@ window.viewPastPayslip = function(encodedData) {
         let pDate = d.processedAt.seconds ? new Date(d.processedAt.seconds * 1000) : new Date(d.processedAt);
         disbursedDateStr = pDate.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
     } else {
-        disbursedDateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        disbursedDateStr = d.recordState==='shared'?'Awaiting payment':'Not recorded';
     }
 
-    let basicPay = parseFloat(d.basicPay || 0).toFixed(2);
-    let otPay = parseFloat(d.nightBonus || d.overtime || 0).toFixed(2);
-    let straightPay = parseFloat(d.straightBonus || 0).toFixed(2);
-    let holPay = parseFloat(d.holidayPayTotal || d.holiday || 0).toFixed(2);
-    // 🔥 Added Performance Bonus
-    let perfBonus = parseFloat(d.perfBonus ?? d.performanceBonus ?? 0).toFixed(2);
-    let payrollAdjustmentPay = parseFloat(d.payrollAdjustments || 0).toFixed(2);
-    
-    let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay) + parseFloat(perfBonus) + parseFloat(payrollAdjustmentPay)).toFixed(2);
-
-    let lateDeduct = parseFloat(d.lateDeduction || 0).toFixed(2);
-    let sss = parseFloat(d.sss || 0).toFixed(2);
-    let phil = parseFloat(d.philhealth || 0).toFixed(2);
-    let pagibig = parseFloat(d.pagibig || 0).toFixed(2);
-    let vale = parseFloat(d.advances || 0).toFixed(2);
-    let loans = parseFloat(d.loans || 0).toFixed(2);
-    let meals = parseFloat(d.meals || 0).toFixed(2);
-    let customDeducts = parseFloat(d.customDeductionsTotal || 0).toFixed(2);
-    
-    let totalDeduct = payslipDeductionBreakdown(d).total.toFixed(2);
-    let netPay = parseFloat(d.finalNetPay ?? (grossIncome - totalDeduct)).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    let savedAmounts;
+    try{if(d.staffId&&d.staffId!==localStorage.getItem('takodeal_staff_id'))throw Error('This payslip belongs to another employee.');savedAmounts=payslipSavedAmounts(d);d={...d,...savedAmounts,finalNetPay:savedPayslipCents(d.finalNetPay,{negative:true})/100};}
+    catch(error){return Swal.fire('Saved payslip needs review',error.message,'warning');}
+    const basicPay=savedAmounts.basicPay.toFixed(2),otPay=savedAmounts.nightBonus.toFixed(2),straightPay=savedAmounts.straightBonus.toFixed(2),holPay=savedAmounts.holidayPayTotal.toFixed(2),perfBonus=savedAmounts.perfBonus.toFixed(2),payrollAdjustmentPay=savedAmounts.payrollAdjustments.toFixed(2);
+    const grossIncome=savedAmounts.grossPay.toFixed(2),totalDeduct=savedAmounts.totalDeductions.toFixed(2);
+    const netPay=d.finalNetPay.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    encodedData=encodeURIComponent(JSON.stringify(d)).replace(/'/g,'%27');
 
     let logoUrl = "https://takodeal-owner.vercel.app/payslip%20logo.jpg";
 
@@ -2691,6 +2628,7 @@ window.viewPastPayslip = function(encodedData) {
                 <button id="btnDownloadStaffPayslip" onclick="window.downloadStaffPayslipImage('${encodedData}')" style="background: #10b981; color: white; border: none; padding: 12px 20px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);">⬇️ Download HD Image</button>
             </div>
 
+            ${d.recordState==='shared'?'<p style="padding:12px;background:#fff8e8;color:#76501c;text-align:left">Owner-shared payslip · Payment pending. These are the exact saved Owner figures. This document is not a payment or a signature request.</p>':''}
             <div id="printableStaffPayslip" style="width: 750px; background: white; padding: 25px; font-family: 'Segoe UI', Arial, sans-serif; color: black; text-align: left; box-sizing: border-box; margin: 0 auto; box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
                 <div style="border: 3px solid black; padding: 2px;">
                     <div style="border: 1px solid black; padding: 20px;">
@@ -3645,26 +3583,13 @@ window.openPayslipSignatureModal = function(recordId, encodedData) {
     const signatureCurrent = () => localStorage.getItem('takodeal_staff_id')===payStaffId && window.staffVaultSession.allows(payStaffId,payEpoch);
     let d = JSON.parse(decodeURIComponent(encodedData));
     
-    // Calculate preview math
-    let basicPay = parseFloat(d.basicPay || 0).toFixed(2);
-    let otPay = parseFloat(d.nightBonus || d.overtime || 0).toFixed(2);
-    let straightPay = parseFloat(d.straightBonus || 0).toFixed(2);
-    let holPay = parseFloat(d.holidayPayTotal || d.holiday || 0).toFixed(2);
-    let perfBonus = parseFloat(d.perfBonus ?? d.performanceBonus ?? 0).toFixed(2);
-    let payrollAdjustmentPay = parseFloat(d.payrollAdjustments || 0).toFixed(2);
-    let grossIncome = (parseFloat(basicPay) + parseFloat(otPay) + parseFloat(straightPay) + parseFloat(holPay) + parseFloat(perfBonus) + parseFloat(payrollAdjustmentPay)).toFixed(2);
-
-    let lateDeduct = parseFloat(d.lateDeduction || 0).toFixed(2);
-    let sss = parseFloat(d.sss || 0).toFixed(2);
-    let phil = parseFloat(d.philhealth || 0).toFixed(2);
-    let pagibig = parseFloat(d.pagibig || 0).toFixed(2);
-    let vale = parseFloat(d.advances || 0).toFixed(2);
-    let loans = parseFloat(d.loans || 0).toFixed(2);
-    let meals = parseFloat(d.meals || 0).toFixed(2);
-    let customDeducts = parseFloat(d.customDeductionsTotal || 0).toFixed(2);
-    
-    let totalDeduct = payslipDeductionBreakdown(d).total.toFixed(2);
-    let netPayFmt = (d.finalNetPay || 0).toLocaleString(undefined, {minimumFractionDigits:2});
+    if(d.recordState==='shared'||d.isPaid===false)return Swal.fire('Payment pending','This is an Owner-shared unpaid payslip. It cannot be acknowledged as a payment.','info');
+    let savedAmounts;
+    try{if(d.staffId&&d.staffId!==payStaffId)throw Error('This payslip belongs to another employee.');savedAmounts=payslipSavedAmounts(d);d={...d,...savedAmounts,finalNetPay:savedPayslipCents(d.finalNetPay,{negative:true})/100};}
+    catch(error){return Swal.fire('Saved payslip needs review',error.message,'warning');}
+    const basicPay=savedAmounts.basicPay.toFixed(2),otPay=savedAmounts.nightBonus.toFixed(2),straightPay=savedAmounts.straightBonus.toFixed(2),holPay=savedAmounts.holidayPayTotal.toFixed(2),perfBonus=savedAmounts.perfBonus.toFixed(2),payrollAdjustmentPay=savedAmounts.payrollAdjustments.toFixed(2);
+    const grossIncome=savedAmounts.grossPay.toFixed(2),totalDeduct=savedAmounts.totalDeductions.toFixed(2),netPayFmt=d.finalNetPay.toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2});
+    encodedData=encodeURIComponent(JSON.stringify(d)).replace(/'/g,'%27');
 
     return Swal.fire({
         title: `<h3 style="margin: 0; color: #b45309; text-transform: uppercase;">Acknowledge Payslip</h3>`,
@@ -4110,6 +4035,8 @@ installStaffRegistration({projectId:firebaseConfig.projectId,apiKey:firebaseConf
         if(changed)callback();
     })
 }});
+window.getStaffVaultRecoveryClient=(options={})=>createStaffVaultRecoveryForPhone({...options,auth:staffPrimaryAuth,authority:()=>window.staffSetupAccess,identity:()=>localStorage.getItem('takodeal_staff_id'),deviceId:()=>localStorage.getItem('takodeal_device_id'),createPrivateClient:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
+installStaffVaultRecovery(window,document,{createClient:options=>window.getStaffVaultRecoveryClient(options)});
 installStaffPhone();
 installStaffDocuments(window,{createVault:()=>createStaffDocumentFirebase(firebaseConfig,()=>localStorage.getItem('takodeal_staff_id'))});
 

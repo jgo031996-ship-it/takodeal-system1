@@ -2,10 +2,14 @@ import test from 'node:test';import assert from 'node:assert/strict';import fs f
 import {lowerFirestoreMapMethods,assertMapMethodLoweringEquivalent}from'../tools/firestore-selector-sharing/map-methods.mjs';
 const wrap=body=>"rules_version='2'; service cloud.firestore { match /databases/{database}/documents { "+body+' } }';
 const hash=value=>createHash('sha256').update(value).digest('hex'),changed=(proof,source)=>({...proof,loweredSha256:hash(source)});
-test('actual frozen policy factors120 eligible chains and independently restores every original byte',()=>{
+test('reviewed policy factors122 eligible chains and independently restores every original byte',()=>{
  const original=fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),result=lowerFirestoreMapMethods(original);
- assert.equal(result.proof.calls,120);assert.deepEqual(result.proof.counts,{affectedKeys:60,changedKeys:1,addedKeys:1,removedKeys:1,keysOnly:60});
+ assert.equal(result.proof.calls,122);assert.deepEqual(result.proof.counts,{affectedKeys:61,changedKeys:1,addedKeys:1,removedKeys:1,keysOnly:61});
+ const start=original.indexOf('function staffPayslipPreview(data,id)'),end=original.indexOf('match /staff_payslip_previews/',start);assert.ok(start>=0&&end>start);
+ const publication=lowerFirestoreMapMethods(wrap(original.slice(start,end)),{minimumUses:1});assert.equal(publication.proof.calls,1);assert.equal(publication.proof.counts.keysOnly,1,'publication has one new exact-key whitelist');
+ const managed="&& (before.get('payslipPinManaged',false) != true || !data.diff(before).affectedKeys().hasAny(['payslipPin']))";assert.ok(original.includes(managed));const previousCensus=lowerFirestoreMapMethods((original.slice(0,start)+original.slice(end)).replace(managed,''));assert.equal(previousCensus.proof.calls,120,'publication keys and the managed-PIN affected-key guard explain both new chains');
  assert.equal(assertMapMethodLoweringEquivalent(original,result.source,result.proof).allOtherBytesExact,true);
+ assert.equal(fs.readFileSync(new URL('../firestore.policy.rules',import.meta.url),'utf8'),original);
 });
 test('shared per-row validators retain their original inline map checks without an extra selector call',()=>{
  const shared='function cashShortagePayrollRow(item) { return item.keys().hasOnly(["id","amount"]); }',other='function subject(data) { return data.keys().hasOnly(["id","amount"]); }',original=wrap(shared+other),result=lowerFirestoreMapMethods(original,{minimumUses:1,excludedFunctions:['cashShortagePayrollRow']});

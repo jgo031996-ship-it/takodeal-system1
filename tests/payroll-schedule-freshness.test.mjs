@@ -35,7 +35,9 @@ test('both Owner generators stamp previews and use shared amendment-aware minute
  assert.equal((source.match(/const scheduleEvidenceStamp=payrollScheduleStamp\(scheduleData,\{start:(?:startDateRaw|startInput),end:(?:endDateRaw|endInput)\}\)/g)||[]).length,2);
  assert.equal((source.match(/scheduleEvidenceStamp:payrollScheduleStamp\(scheduleData,\{start:(?:startDateRaw|startInput),end:(?:endDateRaw|endInput)\},\{bonusBranches:payrollBonusBranches\(d\.logs,d\.branch\)\}\)/g)||[]).length,2);
  assert.equal((source.match(/attendanceLateMinutes\(log, matchedShift\)/g)||[]).length,2);
- assert.equal((source.match(/assertPayrollScheduleFresh\(window,data\)/g)||[]).length,2);
+ // The two payment checks remain, and sharing explicitly uses the same guard.
+ assert.equal((source.match(/assertPayrollScheduleFresh\(window,data\)/g)||[]).length,3);
+ assert.match(source,/installOwnerPayslipSharing\(window,document,\{actorKey:.*assertFresh:data=>Promise\.all\(\[assertPayrollScheduleFresh\(window,data\),assertPayrollSalaryFresh\(window,data\)\]\)/);
  assert.ok(source.includes('attendanceLateMinutes(data, matchedShift)'));
 });
 

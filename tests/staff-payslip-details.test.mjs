@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
 import {snapshotPayrollDeductionRows,payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,deductionEntryHTML} from '../takodeal-staff/payroll-deduction-details.js';
 import {payrollAdjustmentDetailsHTML} from '../takodeal-staff/payroll-adjustment-model.js';
+import {payslipSavedAmounts,savedPayslipCents} from '../takodeal-staff/staff-payslip-snapshot.js';
 const legacy=()=>({name:'Sample Staff',staffId:'sample-staff',start:'2030-01-01',end:'2030-01-15',basicPay:4000,nightBonus:350,meals:534.5,customDeductionsTotal:218,profile:{customDeductions:[{name:'Wi-Fi',amount:50},{name:'Cancelled Orders',amount:168}]},isPaid:true,finalNetPay:3597.5});
 test('an older paid snapshot separates meals, Wi-Fi and cancelled orders without altering the total or borrowing current charges',()=>{
  const saved=legacy(),before=structuredClone(saved),breakdown=payslipDeductionBreakdown(saved);
@@ -49,7 +50,7 @@ test('invalid, duplicate and missing allocations cannot create a frozen receipt 
 async function actualPayslipFunction(name,endMarker){
  const app=await readFile(new URL('../takodeal-staff/app.js',import.meta.url),'utf8'),start=app.indexOf(`window.${name} = function`),end=app.indexOf(endMarker,start);
  assert.ok(start>0&&end>start);const script=app.slice(start,end);let shown;
- const sandbox={window:{staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:()=> 'sample-staff'},document:{},payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,payrollAdjustmentDetailsHTML,Swal:{fire:options=>{shown=options;return Promise.resolve({isConfirmed:false});}},console};
+ const sandbox={window:{staffVaultSession:{epoch:1,allows:()=>true}},localStorage:{getItem:()=> 'sample-staff'},document:{},payslipSavedAmounts,savedPayslipCents,payslipDeductionBreakdown,payslipDeductionSummaryHTML,payslipDeductionDetailsHTML,payrollAdjustmentDetailsHTML,Swal:{fire:options=>{shown=options;return Promise.resolve({isConfirmed:false});}},console};
  vm.runInNewContext(script,sandbox);return {call:async data=>{await sandbox.window[name]('id',encodeURIComponent(JSON.stringify(data)));return shown;},view:async data=>{await sandbox.window[name](encodeURIComponent(JSON.stringify(data)));return shown;}};
 }
 test('the actual acknowledgment dialog presents saved custom names and preserves the paid net amount',async()=>{
@@ -59,6 +60,23 @@ test('the actual acknowledgment dialog presents saved custom names and preserves
 test('the actual full payslip includes readable saved detail and receipt items rather than a Foods/Penalties lump',async()=>{
  const fn=await actualPayslipFunction('viewPastPayslip','// 🔥 NEW: DEDICATED IMAGE DOWNLOADER');const result=await fn.view({...legacy(),perfBonus:25});
  assert.match(result.html,/Wi-Fi/);assert.match(result.html,/Cancelled Orders/);assert.match(result.html,/3,597\.50/);assert.match(result.html,/4375\.00/);assert.doesNotMatch(result.html,/Foods \/ Penalties/);
+});
+for(const [name,endMarker]of [['viewPastPayslip','// 🔥 NEW: DEDICATED IMAGE DOWNLOADER'],['openPayslipSignatureModal','// ========================================================\n// 💳 STAFF APP: MY LOAN LEDGER VIEWER']])test('actual '+name+' preserves manually zeroed saved income and edited deductions without legacy/profile fallback',async()=>{
+ const fn=await actualPayslipFunction(name,endMarker),data={...legacy(),basicPay:1000,nightBonus:0,overtime:999,holidayPayTotal:0,holiday:777,perfBonus:0,performanceBonus:888,
+  meals:0,sss:1,philhealth:2,pagibig:3,customDeductions:[{name:'Edited Wi-Fi',amount:17.35}],customDeductionsTotal:17.35,finalNetPay:976.65};
+ const result=name==='viewPastPayslip'?await fn.view(data):await fn.call(data);
+ assert.match(result.html,/Edited Wi-Fi/);assert.match(result.html,/17\.35/);assert.match(result.html,/976\.65/);assert.match(result.html,/1000\.00/);assert.doesNotMatch(result.html,/999\.00|777\.00|888\.00|3597\.50|4375\.00/);
+});
+test('actual Staff full view labels Owner-shared figures unpaid, and the signature entry refuses them',async()=>{
+ const data={...legacy(),recordState:'shared',isPaid:false,processedAt:null};
+ const full=await actualPayslipFunction('viewPastPayslip','// 🔥 NEW: DEDICATED IMAGE DOWNLOADER'),shown=await full.view(data);
+ assert.match(shown.html,/Owner-shared payslip/);assert.match(shown.html,/Awaiting payment/);assert.match(shown.html,/not a payment or a signature request/);
+ assert.match(shown.html,/Saved Owner-reviewed figures\. Payment is pending/);assert.doesNotMatch(shown.html,/Your paid total stays unchanged/);
+ const sign=await actualPayslipFunction('openPayslipSignatureModal','// ========================================================\n// 💳 STAFF APP: MY LOAN LEDGER VIEWER');assert.equal(await sign.call(data),'Payment pending');
+});
+test('shared deduction detail wording is explicit while ordinary paid and live wording retain their existing behavior',()=>{
+ const shared=payslipDeductionDetailsHTML({...legacy(),recordState:'shared'});assert.match(shared,/Saved Owner-reviewed figures\. Payment is pending/);assert.doesNotMatch(shared,/Your paid total/);
+ assert.match(payslipDeductionDetailsHTML(legacy()),/Your paid total stays unchanged/);assert.match(payslipDeductionDetailsHTML(legacy(),{live:true}),/Current estimate/);
 });
 test('Staff and HQ freeze the same public deduction-detail schema',async()=>{assert.equal(await readFile(new URL('../takodeal-staff/payroll-deduction-details.js',import.meta.url),'utf8'),await readFile(new URL('../takodeal-manager/payroll-deduction-details.js',import.meta.url),'utf8'));});
 

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'takodeal-staff-v48-time-in-declarations-20261108';
+const CACHE_NAME = 'takodeal-staff-v49-vault-payslip-20261108';
 const SHELL = ['./', './index.html', './style.css', './staff-theme.css', './app.js', './staff-portal.js', './staff-location.js', './staff-registration.js', './staff-phone.js', './app-update.js', './staff-privacy.js', './payroll-safety.js','./schedule-history.js', './logo.jpg', './icon-192.png', './icon-512.png', './icon-maskable-512.png', './manifest.json'];
 SHELL.push('./schedule-swap-model.js','./staff-swap-request.js');
 SHELL.push('./worked-shift-reference.js');
@@ -64,3 +64,4 @@ SHELL.push('./saved-shift-proposal.js','./payroll-adjustment-model.js','./payrol
 SHELL.push('./payroll-vault-freshness.js');
 
 SHELL.push('./payroll-adjustment-history.js');
+SHELL.push('./staff-vault-recovery.js','./staff-vault-recovery-ui.js','./staff-payslip-snapshot.js','./staff-saved-payslips.js');

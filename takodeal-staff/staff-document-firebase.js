@@ -1,8 +1,8 @@
 import {initializeApp,getApp} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js';
 import {getAuth,signInAnonymously,onAuthStateChanged} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js';
-import {getFirestore,doc,getDocFromServer,runTransaction,serverTimestamp,query,where,collection,getDocsFromServer} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
+import {getFirestore,doc,getDocFromServer,runTransaction,serverTimestamp,query,where,collection,getDocsFromServer,limit} from 'https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js';
 import {createDocumentStore} from './staff-document-store.js';
-export const documentSdk={doc,getDocFromServer,runTransaction,serverTimestamp,query,where,collection,getDocsFromServer,onAuthStateChanged};
+export const documentSdk={doc,getDocFromServer,runTransaction,serverTimestamp,query,where,collection,getDocsFromServer,limit,onAuthStateChanged};
 export async function createStaffDocumentFirebase(config,identity,{isHQ=false}={}) {
     let app;
     if(isHQ)app=getApp();

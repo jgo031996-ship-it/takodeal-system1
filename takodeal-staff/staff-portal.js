@@ -31,6 +31,8 @@ export function installStaffPortal() {
     window.lockPayslipVault = function({preserveRateRequest=false}={}) {
         rate.lock({preserveRequest:preserveRateRequest});
         session.lock(); modalEpoch++; busy = false; wipeInputs();
+        window.clearStaffSavedPayslips?.();
+        window.closeVaultRecovery?.();
         $('vaultPinModal').style.display = 'none';
         // Remove values and encoded payroll actions rather than merely covering them.
         $('vaultContent').innerHTML = payTemplate;
@@ -49,6 +51,10 @@ export function installStaffPortal() {
         $('vaultSubmit').disabled = false;
         try {
             const data = await profile(id); if (!current(token)) return;
+            if (data.payslipPinManaged === true && mode !== 'unlock') {
+                window.closeVaultPin();
+                return window.openVaultRecovery();
+            }
             if (!data.payslipPin && mode === 'unlock') {
                 window.closeVaultPin(); window.openProfile();
                 document.querySelector('.profile-security')?.scrollIntoView?.({block:'center'});

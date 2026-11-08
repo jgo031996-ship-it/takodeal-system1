@@ -1,4 +1,4 @@
-import {createHash,randomBytes,scrypt as scryptCallback,timingSafeEqual} from 'node:crypto';
+import {createHash,randomBytes,scrypt as scryptCallback,pbkdf2 as pbkdf2Callback,timingSafeEqual} from 'node:crypto';
 import {promisify} from 'node:util';
 import {isIP} from 'node:net';
 
@@ -12,6 +12,11 @@ export const MAX_REQUEST_BYTES=4096;
 export const MAX_ACTIVE_DEVICES=2;
 export const RATE_LIMITS=Object.freeze({windowMs:15*60*1000,uid:12,ip:80,global:500});
 const scrypt=promisify(scryptCallback),PARAMS=Object.freeze({N:16384,r:8,p:1,maxmem:64*1024*1024});
+const pbkdf2=promisify(pbkdf2Callback),PIN_ITERATIONS=300000;
+const vaultPin=value=>typeof value==='string'&&/^\d{6,8}$/.test(value);
+const pinVerifier=value=>object(value)&&Object.keys(value).sort().join(',')==='hash,iterations,salt,version'&&value.version===1&&value.iterations===PIN_ITERATIONS&&/^[a-f0-9]{32}$/.test(value.salt)&&/^[a-f0-9]{64}$/.test(value.hash);
+export async function hashVaultPin(value){if(!vaultPin(value))throw Error('Use a PIN with 6 to 8 digits.');const salt=randomBytes(16).toString('hex'),hash=await pbkdf2(value,Buffer.from(salt,'hex'),PIN_ITERATIONS,32,'sha256');return {version:1,salt,hash:hash.toString('hex'),iterations:PIN_ITERATIONS};}
+export async function verifyVaultPin(value,verifier){if(!vaultPin(value)||!pinVerifier(verifier))return false;const hash=await pbkdf2(value,Buffer.from(verifier.salt,'hex'),PIN_ITERATIONS,32,'sha256');return timingSafeEqual(hash,Buffer.from(verifier.hash,'hex'));}
 const canonical=value=>JSON.stringify(value,(_,item)=>item&&typeof item==='object'&&!Array.isArray(item)?Object.fromEntries(Object.entries(item).sort(([a],[b])=>a.localeCompare(b))):item);
 const sha=value=>createHash('sha256').update(value).digest('hex');
 const id=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(value);
@@ -21,7 +26,7 @@ const code=value=>typeof value==='string'&&/^\d{10}$/.test(value);
 const object=value=>Boolean(value&&typeof value==='object'&&!Array.isArray(value)&&[Object.prototype,null].includes(Object.getPrototypeOf(value)));
 const plainText=(value,max)=>typeof value==='string'&&value.trim().length>0&&value.length<=max&&!/[\u0000-\u001f\u007f]/.test(value);
 const version=value=>Number.isSafeInteger(value)&&value>=0;
-const routes=new Set(['/config','/policy','/code-status','/issue-code','/disable-code','/activate','/device-status','/device-action']);
+const routes=new Set(['/config','/policy','/code-status','/issue-code','/disable-code','/activate','/device-status','/device-action','/vault-pin-status','/vault-pin-reset']);
 const ownerRoutes=new Set(['/policy','/code-status','/issue-code','/disable-code','/device-action']);
 const configPath='staff_app_setup_config/current';
 const bindingPath=uid=>'staff_app_bindings/'+uid,indexPath=key=>'staff_app_device_index/'+key,mirrorPath=key=>'pos_devices/'+key,credentialPath=key=>'staff_setup_credentials/'+key;
@@ -90,19 +95,20 @@ function bodyFor(path,body) {
  const fields={
   '/config':[], '/policy':['enabled','expectedRevision','operationId'], '/code-status':['staffId'],
   '/issue-code':['staffId','code','expectedVersion','operationId'], '/disable-code':['staffId','expectedVersion','operationId'],
-  '/activate':['staffId','code','deviceId','deviceName','operationId'], '/device-status':['deviceId'], '/device-action':['deviceId','action','operationId']
+  '/activate':['staffId','code','deviceId','deviceName','operationId'], '/device-status':['deviceId'], '/device-action':['deviceId','action','operationId'],
+  '/vault-pin-status':['deviceId','staffId'], '/vault-pin-reset':['deviceId','staffId','code','newPin','expectedVersion','operationId']
  }[path];
  if(Object.keys(body).sort().join(',')!==[...fields].sort().join(','))fail(400,'invalid-request','Check the setup request and try again.');
  if(fields.includes('staffId')&&!id(body.staffId)||fields.includes('deviceId')&&!deviceId(body.deviceId)||fields.includes('operationId')&&!operationId(body.operationId)
   ||fields.includes('code')&&!code(body.code)||fields.includes('expectedVersion')&&!version(body.expectedVersion)||fields.includes('expectedRevision')&&!version(body.expectedRevision)
   ||fields.includes('enabled')&&typeof body.enabled!=='boolean'||fields.includes('deviceName')&&!plainText(body.deviceName,80)
-  ||fields.includes('action')&&!['block','unblock','delete'].includes(body.action))fail(400,'invalid-request','Check the setup request and try again.');
+  ||fields.includes('newPin')&&!vaultPin(body.newPin)||fields.includes('action')&&!['block','unblock','delete'].includes(body.action))fail(400,'invalid-request','Check the setup request and try again.');
  return body;
 }
 
 // store.transaction(callback) must provide atomic get(path), set(path,data), delete(path).
 // All transaction reads precede writes. The production adapter uses Admin SDK ADC.
-export function createStaffDeviceSetup({verifyToken,store,now=Date.now,hashCode=hashSetupCode,verifyCode=verifySetupCode,allowedOrigins=PRODUCTION_ORIGINS,ownerEmail=OWNER_EMAIL}={}) {
+export function createStaffDeviceSetup({verifyToken,store,now=Date.now,hashCode=hashSetupCode,verifyCode=verifySetupCode,hashPin=hashVaultPin,verifyPin=verifyVaultPin,allowedOrigins=PRODUCTION_ORIGINS,ownerEmail=OWNER_EMAIL}={}) {
  if(typeof verifyToken!=='function'||typeof store?.transaction!=='function')throw Error('Trusted authentication and atomic storage are required.');
  const origins=new Set(allowedOrigins);
  if([...origins].some(origin=>{try{const url=new URL(origin);return url.protocol!=='https:'||url.origin!==origin||url.username||url.password;}catch{return true;}}))throw Error('Setup origins must be exact HTTPS origins.');
@@ -136,7 +142,7 @@ export function createStaffDeviceSetup({verifyToken,store,now=Date.now,hashCode=
   if(!id(actor?.uid)||!object(actor.firebase)||typeof actor.firebase.sign_in_provider!=='string')fail(401,'authentication-required','Connect and sign in again before setting up this phone.');
   return actor;
  }
- const requestHash=(route,body,uid)=>sha(canonical({route,uid,body:Object.fromEntries(Object.entries(body).filter(([key])=>key!=='code'))}));
+ const requestHash=(route,body,uid)=>sha(canonical({route,uid,body:Object.fromEntries(Object.entries(body).filter(([key])=>!['code','newPin'].includes(key)))}));
  async function readPrior(tx,operationId) {
   const [prior,audit]=await Promise.all([tx.get('staff_setup_operations/'+operationId),tx.get('staff_setup_audit/'+operationId)]);
   if(Boolean(prior)!==Boolean(audit))fail(503,'operation-unavailable','HQ must review this setup operation before it can be retried.');
@@ -148,9 +154,10 @@ export function createStaffDeviceSetup({verifyToken,store,now=Date.now,hashCode=
   if(Object.hasOwn(body,'code')&&(!safeVerifier(prior.codeVerifier)||!await verifyCode(body.code,prior.codeVerifier)))fail(409,'operation-conflict','This retry does not match the original request. Refresh before continuing.');
   return structuredClone(prior.result);
  }
- function saveOperation(tx,route,body,actor,result,stamp,verifier=null,details={}) {
+ function saveOperation(tx,route,body,actor,result,stamp,verifier=null,details={},savedPinVerifier=null) {
   const operation={protocolVersion:1,actorUid:actor.uid,route,requestHash:requestHash(route,body,actor.uid),result,recordedAt:stamp};
   if(verifier)operation.codeVerifier=verifier;
+  if(savedPinVerifier)operation.pinVerifier=savedPinVerifier;
   tx.set('staff_setup_operations/'+body.operationId,operation);
   tx.set('staff_setup_audit/'+body.operationId,{protocolVersion:1,operationId:body.operationId,actorUid:actor.uid,event:route.slice(1),recordedAt:stamp,...details});
  }
@@ -168,6 +175,40 @@ export function createStaffDeviceSetup({verifyToken,store,now=Date.now,hashCode=
   });
  }
  async function configuration(){return store.transaction(async tx=>({...configOf(await tx.get(configPath)),deviceLimit:MAX_ACTIVE_DEVICES}));}
+ // Recovery authority is this protected Firebase UID's fresh personal-phone
+ // registration plus the current private setup code, never public login fields.
+ async function vaultScope(tx,body,actor){
+  const [config,savedCredential,profile,rawBinding,index,mirror,savedSlots,docConfig,docBinding]=await Promise.all([tx.get(configPath),tx.get(credentialPath(body.staffId)),tx.get('cashiers/'+body.staffId),tx.get(bindingPath(actor.uid)),tx.get(indexPath(body.deviceId)),tx.get(mirrorPath(body.deviceId)),tx.get(slotsPath(body.staffId)),tx.get('staff_document_config/current'),tx.get('staff_document_devices/'+actor.uid)]);
+  const credential=credentialOf(savedCredential,body.staffId);if(!activeSetupStaff(profile)||!credential?.enabled||!safeVerifier(credential.verifier))unavailable();
+  const privatePhone=object(docConfig)&&docConfig.enabled===true&&docConfig.policyVersion===2&&docConfig.brokerEndpoint==='https://asia-southeast1-takodeal-pos.cloudfunctions.net/staffDocumentBroker'
+   &&object(docBinding)&&docBinding.active===true&&docBinding.uid===actor.uid&&docBinding.staffId===body.staffId&&docBinding.deviceId===body.deviceId&&docBinding.branch===profile.branch.trim();
+  if(!privatePhone){
+   if(!configOf(config).enabled)fail(409,'setup-not-enabled','Use an HQ-approved personal phone and personal setup code. Ask HQ to confirm private phone approval before recovering this PIN.');
+   const binding=bindingOf(rawBinding,actor.uid);if(!binding||binding.staffId!==body.staffId||binding.deviceId!==body.deviceId)unavailable();
+   const slots=await readSlots(tx,body.staffId,savedSlots,credential);assertBindingSlot(slots,binding);
+   if(protectedDevice(binding,index,mirror,profile).status!=='Active')unavailable();
+  }
+  const managed=profile.payslipPinManaged===true,version=managed?profile.payslipPinVersion:0;
+  if(managed&&(!Number.isSafeInteger(version)||version<1)||!managed&&profile.payslipPinVersion!=null&&profile.payslipPinVersion!==0)fail(503,'vault-settings-unavailable','HQ must review these Payslip PIN settings before recovery.');
+  return{profile,credential,version,configured:profile.payslipPin!=null};
+ }
+ async function vaultStatus(body,actor){return store.transaction(async tx=>{const state=await vaultScope(tx,body,actor);return{staffId:body.staffId,deviceId:body.deviceId,version:state.version,configured:state.configured};});}
+ async function resetVaultPin(body,actor,trustedIP){
+  await consumeAttempt(actor,trustedIP);let generated;
+  return store.transaction(async tx=>{
+   const [state,prior]=await Promise.all([vaultScope(tx,body,actor),readPrior(tx,body.operationId)]);
+   if(!await verifyCode(body.code,state.credential.verifier))invalidCode();
+   const retry=await priorResult(prior,'/vault-pin-reset',body,actor);
+   if(retry){if(!pinVerifier(prior.pinVerifier)||!await verifyPin(body.newPin,prior.pinVerifier))fail(409,'operation-conflict','This retry does not match the original request. Refresh before continuing.');if(state.version!==retry.version||state.profile.payslipPinManaged!==true||canonical(state.profile.payslipPin)!==canonical(prior.pinVerifier))changed();return retry;}
+   if(body.expectedVersion!==state.version)changed();
+   if(String(state.profile.pin??'')===body.newPin||String(state.profile.securityPin??'')===body.newPin)fail(400,'pin-not-separate','Choose a Payslip PIN different from your daily Staff login PIN.');
+   generated??=await hashPin(body.newPin);if(!pinVerifier(generated))throw Error('Trusted PIN verifier is invalid.');
+   if(!Number.isSafeInteger(state.version+1))fail(503,'vault-settings-unavailable','HQ must review this PIN version before recovery.');
+   const stamp=new Date(time()).toISOString(),result={version:state.version+1,configured:true};
+   tx.set('cashiers/'+body.staffId,{...state.profile,payslipPin:generated,payslipPinManaged:true,payslipPinVersion:result.version});
+   saveOperation(tx,'/vault-pin-reset',body,actor,result,stamp,state.credential.verifier,{staffId:body.staffId,deviceId:body.deviceId,version:result.version},generated);return result;
+  });
+ }
  async function policy(body,actor) {
   return store.transaction(async tx=>{
    const [prior,record]=await Promise.all([readPrior(tx,body.operationId),tx.get(configPath)]),current=configOf(record),retry=await priorResult(prior,'/policy',body,actor);
@@ -285,6 +326,7 @@ export function createStaffDeviceSetup({verifyToken,store,now=Date.now,hashCode=
    if(ownerRoutes.has(request.path)&&(!owner(actor)||request.origin!==PRODUCTION_ORIGINS[1]))fail(403,'owner-required','The verified Owner account is required.');
    if(request.path==='/activate'&&request.origin!==PRODUCTION_ORIGINS[0])fail(403,'staff-origin-required','Use the Staff app to set up this phone.');
    if(request.path==='/device-status'&&!owner(actor)&&actor.firebase.sign_in_provider!=='anonymous')fail(403,'staff-auth-required','Use the Staff app to check this phone.');
+   if(request.path.startsWith('/vault-pin-')&&(request.origin!==PRODUCTION_ORIGINS[0]||actor.firebase.sign_in_provider!=='anonymous'))fail(403,'staff-auth-required','Recover the Payslip PIN through your personally approved Staff phone.');
    let result;
    switch(request.path){
     case '/config':result=await configuration();break;
@@ -294,6 +336,8 @@ export function createStaffDeviceSetup({verifyToken,store,now=Date.now,hashCode=
     case '/activate':result=await activate(body,actor,request.trustedIP);break;
     case '/device-status':result=await deviceStatus(body,actor);break;
     case '/device-action':result=await deviceAction(body,actor);break;
+    case '/vault-pin-status':result=await vaultStatus(body,actor);break;
+    case '/vault-pin-reset':result=await resetVaultPin(body,actor,request.trustedIP);break;
    }
    return {status:200,headers,body:result};
   }catch(error){return {status:error instanceof SetupError?error.status:503,headers,body:{error:{code:error instanceof SetupError?error.kind:'service-unavailable',message:error instanceof SetupError?error.message:'Staff setup is temporarily unavailable. Check your connection and retry the same request.'}}};}

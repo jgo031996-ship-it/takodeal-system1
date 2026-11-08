@@ -39,11 +39,13 @@ test('upgrade keeps paid receipts, photos and the offline sale ledger through Ca
     assert.match(worker,/workspace-access-model\.js/);
     assert.ok(assets('Takodeal-POS','required').includes('printer-logo.js'),'new logo encoder is available offline');
     assert.match(worker,/const PHOTOS = 'takodeal-pos-photos-offline02'/);
-    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v134-variance-timein-20261108/);
-    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v134-variance-timein-20261108/);
+    assert.match(source('takodeal-manager/sw.js'),/takodeal-manager-core-v135-staff-vault-payslip-20261108/);
+    assert.match(source('takodeal-manager/owner-update-notice.js'),/takodeal-manager-core-v135-staff-vault-payslip-20261108/);
     for(const file of ['schedule-calendar.js','schedule-leave-markers.js'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Schedule repair is available after app update');
     for(const file of ['schedule-workspace.js','schedule-workspace.css'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Schedule workspace is available after app update');
-    assert.match(source('takodeal-staff/sw.js'),/takodeal-staff-v48-time-in-declarations-20261108/);
+    assert.match(source('takodeal-staff/sw.js'),/takodeal-staff-v49-vault-payslip-20261108/);
+    for(const file of ['employee-photo.js','owner-dispatch-details.js','staff-payslip-publication.js','staff-payslip-publication-ui.js','staff-payslip-snapshot.js'])assert.ok(assets('takodeal-manager','CORE_ASSETS').includes(file),'Owner update includes '+file);
+    for(const file of ['staff-vault-recovery.js','staff-vault-recovery-ui.js','staff-payslip-snapshot.js','staff-saved-payslips.js'])assert.ok(assets('takodeal-staff','SHELL').includes(file),'Staff update includes '+file);
     for(const [app,list] of [['takodeal-manager','CORE_ASSETS'],['takodeal-staff','SHELL']])assert.ok(assets(app,list).includes('time-out-request-display.js'),app+' caches schedule-review labels');
     assert.doesNotMatch(worker,/deleteDatabase|localStorage\.clear/);
     assert.match(source('Takodeal-POS/index.html'),/cashier-tablet\.css\?v=tablet-attendance-stock-20261009-r1/);
