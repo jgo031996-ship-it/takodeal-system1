@@ -34,17 +34,17 @@ const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const hold=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return{promise,resolve,reject};};
 const nextRelease='takodeal-manager-core-v101-future-fix-20261029';
 function fixture(options={}){
- const d=new Document(),serviceWorker=new Events(),registration=new Events(),calls={messages:[],wait:[],reload:0,channels:[],timers:0};
+ const d=new Document(),serviceWorker=new Events(),registration=new Events(),calls={messages:[],wait:[],reload:0,channels:[],timers:0},timers=new Map();let timerId=0;
  class Channel{
   constructor(){const a={closed:false,start(){},close(){this.closed=true;}},b={closed:false,close(){this.closed=true;},postMessage(data){queueMicrotask(()=>{if(!a.closed)a.onmessage?.({data});});}};this.port1=a;this.port2=b;calls.channels.push(this);}
  }
  const worker=(release=nextRelease,reply=true)=>Object.assign(new Events(),{state:'activated',postMessage(message,ports){calls.messages.push({worker:this,message,ports});if(reply)ports[0].postMessage({type:'OWNER_RELEASE',release});}});
  serviceWorker.controller=worker(Object.hasOwn(options,'release')?options.release:nextRelease,options.reply!==false);registration.active=serviceWorker.controller;
- const w={MessageChannel:Channel,setTimeout(fn,ms){calls.timers++;return setTimeout(fn,ms);},clearTimeout,getComputedStyle:node=>({display:node.style.display||'block',visibility:node.style.visibility||'visible'}),location:{reload(){calls.reload++;}}};
+ const w={MessageChannel:Channel,setTimeout(fn,ms){calls.timers++;if(!options.clock)return setTimeout(fn,ms);const id=++timerId;timers.set(id,{fn,ms});return id;},clearTimeout(id){if(options.clock)timers.delete(id);else clearTimeout(id);},getComputedStyle:node=>({display:node.style.display||'block',visibility:node.style.visibility||'visible'}),location:{reload(){calls.reload++;}}};
  const waitForUpdate=async(...args)=>{calls.wait.push(args);return options.wait?options.wait(...args):undefined;};
  const ui=installOwnerUpdateNotice(w,d,{serviceWorker},registration,{timeoutMs:options.timeoutMs??100,waitForUpdate,...options.install});
  const banner=()=>d.body.children.find(node=>Object.hasOwn(node.attributes,'data-owner-update-notice'))||null;
- return{w,d,serviceWorker,registration,calls,ui,worker,banner,button:()=>banner()?.children[1],message:()=>banner()?.children[0].textContent};
+ return{w,d,serviceWorker,registration,calls,ui,worker,banner,timers,button:()=>banner()?.children[1],progress:()=>banner()?.children[2],message:()=>banner()?.children[0].textContent,expire(ms){const entry=[...timers].find(([,timer])=>timer.ms===ms);assert.ok(entry,'The bounded timer exists.');timers.delete(entry[0]);entry[1].fn();}};
 }
 
 test('a new active generation shows a persistent notice and never reloads automatically',async()=>{
@@ -137,4 +137,13 @@ test('installing twice shares one notice; disposal removes listeners and invalid
 
 test('unsupported service worker or MessageChannel leaves the normal app unchanged',async()=>{
  const d=new Document(),w={};const ui=installOwnerUpdateNotice(w,d,{},null);assert.equal(await ui.check(),null);assert.equal(d.body.children.length,0);ui.dispose();
+});
+
+test('signed-in progress follows the worker, times out with retry, and ignores a retired attempt after a new attempt begins',async()=>{
+ const first=hold(),second=hold();let attempt=0;const f=fixture({clock:true,wait:()=>++attempt===1?first.promise:second.promise});await tick();
+ const pending=f.button().emit('click');await tick();assert.equal(f.progress().tagName,'PROGRESS');assert.equal(f.progress().hidden,false);assert.equal(f.progress().attributes.value,undefined);
+ const options=f.calls.wait[0][1];options.onProgress({phase:'activating',message:'Activating the downloaded app files…'});assert.match(f.message(),/Activating/);
+ f.expire(12000);assert.match(f.message(),/taking longer than usual/);f.expire(40000);await pending;assert.equal(options.signal.aborted,true);assert.equal(f.progress().hidden,true);assert.equal(f.button().textContent,'Retry update');assert.equal(f.calls.reload,0);assert.equal(f.timers.size,0);
+ const retry=f.button().emit('click');await tick();const message=f.message();options.onProgress({phase:'ready',message:'Stale ready'});first.resolve();await tick();assert.equal(f.message(),message);assert.equal(f.button().disabled,true);assert.equal(f.calls.reload,0);
+ second.resolve();await retry;assert.equal(f.calls.reload,1);assert.equal(f.progress().hidden,true);assert.equal(f.timers.size,0);f.ui.dispose();
 });

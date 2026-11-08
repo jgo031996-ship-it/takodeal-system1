@@ -1,4 +1,5 @@
-import {CASHIER_RELEASE,businessDate,dayWindow,attendanceRows,imageFor,updateBlocker,labelSettings,drinkLabels,parkedOrderDetails} from './cashier-data.js';
+import {businessDate,dayWindow,attendanceRows,imageFor,labelSettings,drinkLabels,parkedOrderDetails} from './cashier-data.js';
+import {installCashierUpdates} from './cashier-app-update.js';
 import {installCartLayout} from './cart-layout.js';
 import {installSalesActions} from './sales-actions.js';
 import './mobile-hub-upgrade.js';
@@ -8,7 +9,6 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp
 const dateTime = value => { const date = value?.toDate?.() || new Date(value); return Number.isFinite(+date) ? date.toLocaleString('en-PH',{timeZone:'Asia/Manila',dateStyle:'medium',timeStyle:'short'}) : 'Awaiting sync'; };
 const titles = {pos:'Point of Sale',sales:'Shift Sales',mobilehub:'Mobile Hub',stockreq:'Stock Reports',prep:'Kitchen Prep',consumables:'Consumables',waste:'Log Waste',schedule:'Branch Schedule',bulletin:'Bulletin Board',remit:'Cash Remittance',printer:'Printer Hub',settings:'POS Settings',timeclock:'Time Clock',sop:'Daily SOPs'};
 let attendanceStop = null, attendanceLogs = [], attendanceGeneration = 0, remitCursor = null, remitBranch = '', remitBusy = false;
-let releaseRegistration, activateRequested = false;
 
 function page(id,title,description) {
   const section = document.createElement('section'); section.id='view-'+id; section.className='view-container cashier-page';
@@ -223,45 +223,7 @@ function installTheme(){
   document.addEventListener('keydown',e=>{if(e.key==='Escape')el('posSettingsDropdown').style.display='none';});
   el('topBarTitle').textContent=titles.pos;
 }
-function showCashierUpdateNotice(state,title,message){
-  const banner=el('updateAppBanner');banner.dataset.updateState=state;
-  el('cashierUpdateTitle').textContent=title;el('cashierUpdateText').textContent=message;
-  el('cashierUpdateSymbol').textContent=['current','updated'].includes(state)?'✓':'↻';
-  el('cashierUpdateNow').textContent=state==='ready'?'Update app':'Check again';
-  el('cashierUpdateNow').disabled=state==='checking';
-  banner.style.display='flex';
-}
-function installUpdates(){
-  const banner=el('updateAppBanner');banner.removeAttribute('onclick');banner.className='cashier-update-notice';
-  document.body.append(banner);banner.setAttribute('role','status');banner.setAttribute('aria-live','polite');
-  banner.innerHTML='<div class="cashier-update-symbol" id="cashierUpdateSymbol" aria-hidden="true">↻</div><div class="cashier-update-copy"><strong id="cashierUpdateTitle">Check for a Cashier update</strong><span id="cashierUpdateText">Finish or park your order before updating.</span></div><button id="cashierUpdateClose" aria-label="Dismiss update notice">×</button><div class="cashier-update-actions"><button class="cashier-button" id="cashierUpdateDismiss">Dismiss</button><button class="cashier-button primary" id="cashierUpdateNow">Check for update</button></div>';
-  el('cashierUpdateDismiss').onclick=()=>{banner.style.display='none';};
-  el('cashierUpdateClose').onclick=el('cashierUpdateDismiss').onclick;
-  window.showCashierUpdateNotice=showCashierUpdateNotice;
-  window.checkCashierUpdate=async function(){
-    const blocked=updateBlocker(window);if(blocked){showCashierUpdateNotice('blocked','Finish your current work',blocked);return;}
-    if(!navigator.onLine){showCashierUpdateNotice('offline','Waiting for a connection','Connect to the internet to check for an update. Saved offline sales stay on this device.');return;}
-    showCashierUpdateNotice('checking','Checking for updates','Please wait while we check the latest Cashier app.');
-    try{
-      releaseRegistration ||= await navigator.serviceWorker?.getRegistration();
-      if(!releaseRegistration){showCashierUpdateNotice('error','App setup is incomplete','Reopen the app when online to finish installation.');return;}
-      await releaseRegistration.update();
-      const changed=updateBlocker(window);if(changed){showCashierUpdateNotice('blocked','Finish your current work',changed);return;}
-      if(releaseRegistration.waiting){activateRequested=true;releaseRegistration.waiting.postMessage({type:'TK_ACTIVATE_UPDATE'});showCashierUpdateNotice('checking','Opening the updated app','Your saved offline sales and printer settings are retained.');}
-      else if(releaseRegistration.installing)showCashierUpdateNotice('downloading','Update downloading','Keep the app open. We will let you know when it is ready.');
-      else {window.CASHIER_UPDATE_WAITING=false;showCashierUpdateNotice('current','Your Cashier app is up to date','This device has the latest version. You are ready to continue.');}
-    }catch(error){showCashierUpdateNotice('error','Could not check for updates','Check your connection and try again. Your saved data is retained.');console.error(error);}
-  };
-  el('cashierUpdateNow').onclick=()=>window.checkCashierUpdate();
-  window.forceAppUpdate=window.manualHardUpdate=window.executeCacheWipe=()=>window.checkCashierUpdate();
-  const ready=registration=>{releaseRegistration=registration;const show=()=>{window.CASHIER_UPDATE_WAITING=true;showCashierUpdateNotice('ready','Cashier update ready','Finish or park your order, then update. Saved offline sales and printer settings are retained.');};
-    if(registration.waiting)show();registration.addEventListener('updatefound',()=>{const worker=registration.installing;worker?.addEventListener('statechange',()=>{if(worker.state==='installed' && navigator.serviceWorker.controller)show();});});};
-  navigator.serviceWorker?.getRegistration().then(reg=>{if(reg)ready(reg);});
-  navigator.serviceWorker?.addEventListener('controllerchange',()=>{if(activateRequested && !updateBlocker(window)){if(window.TARGET_UPDATE_VERSION)localStorage.setItem('takodeal_local_version',String(window.TARGET_UPDATE_VERSION));location.reload();}});
-  window.addEventListener('cashier-worker-ready',event=>ready(event.detail));
-  window.setInterval(()=>{if(document.visibilityState==='visible' && navigator.onLine)releaseRegistration?.update().catch(()=>{});},15*60*1000);
-  if(localStorage.getItem('takodeal_cashier_seen_release')!==CASHIER_RELEASE){showCashierUpdateNotice('updated','POS Settings updated','Signed-in staff can use printer and branch tools directly. Open Settings to connect your receipt printer.');localStorage.setItem('takodeal_cashier_seen_release',CASHIER_RELEASE);}
-}
+function installUpdates(){installCashierUpdates({window,document,navigator});}
 function install(){installTheme();installRemittance();window.installCashRemittance?.();installClock();installPrinterHub();installTabletControls();installParkedOrders();installUpdates();installSalesActions();window.installPOSSettings?.();}
 if(document.readyState==='complete')install();else window.addEventListener('load',install,{once:true});
 

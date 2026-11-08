@@ -45,11 +45,24 @@ export function installDeviceFleet(config) {
     let updating=false;
     window.checkManagerAppUpdate=async()=>{
         if(updating)return;
-        if(!navigator.onLine){status('Connect to the internet to update the Manager app.');return;}
-        updating=true;status('Checking for app updates…');
-        try {await waitForAppUpdate(await navigator.serviceWorker?.getRegistration(),{serviceWorker:navigator.serviceWorker});window.location.reload();}
-        catch(e){status(e.message || 'Update unavailable. Check your connection and try again.');}
-        finally{updating=false;}
+        const say=text=>{const node=document.getElementById('deviceFleetUpdateStatus')||document.getElementById('deviceFleetStatus');if(node)node.textContent=text;},progress=document.getElementById('deviceFleetUpdateProgress');
+        if(!navigator.onLine){say('Connect to the internet, then check for app updates again.');return;}
+        if(!navigator.serviceWorker){say('Open the Owner app in Edge or Chrome to check its saved app files.');return;}
+        const controller=new AbortController();let timer,timedOut=false;
+        updating=true;if(progress)progress.hidden=false;say('Finding this device’s saved Owner app files…');
+        try {
+            await Promise.race([(async()=>{
+                const registration=await navigator.serviceWorker.getRegistration();
+                if(controller.signal.aborted)return;
+                if(!registration)throw Error('App files are still being prepared. Try the update check again.');
+                await waitForAppUpdate(registration,{serviceWorker:navigator.serviceWorker,signal:controller.signal,onProgress:event=>{if(!controller.signal.aborted&&event?.message)say(event.message);}});
+                if(controller.signal.aborted)return;
+                await window.ownerUpdateNotice?.check?.();
+                if(!controller.signal.aborted)say('App-file check finished. If an update notice appears, save your edits before choosing its reload button.');
+            })(),new Promise((_,reject)=>{timer=setTimeout(()=>{timedOut=true;controller.abort();reject(Error('The update check stopped after 40 seconds. Keep your work open and check for updates again.'));},40000);})]);
+        }
+        catch(e){say(timedOut?'The update check stopped after 40 seconds. Keep your work open and check for updates again.':e.message || 'Update unavailable. Check your connection and try again.');}
+        finally{clearTimeout(timer);controller.abort();updating=false;if(progress)progress.hidden=true;}
     };
     window.loadDeviceFleet = () => {
         stop(); const token=epoch, body=document.getElementById('deviceFleetBody'); if(!body)return;

@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {updateBlocker} from '../Takodeal-POS/cashier-data.js';
 import {installMealCheckout} from '../Takodeal-POS/meal-checkout.js';
 const html=readFileSync(new URL('../Takodeal-POS/index.html',import.meta.url),'utf8');
 function checkout(){
@@ -48,18 +47,4 @@ test('owner branch options include Main Office and branch names from the server'
  const source=readFileSync(new URL('../Takodeal-POS/main.js',import.meta.url),'utf8');const start=source.indexOf('let branchOptions = {};',source.indexOf('// 3. SUCCESS! Fetch active branches'));const end=source.indexOf('// 4. Show the Teleporter Dropdown',start);
  const context={bSnap:{forEach:fn=>['Main Office','Maa','Cabantian'].forEach(name=>fn({data:()=>({name})}))}};
  vm.runInNewContext(source.slice(start,end)+'globalThis.options=branchOptions;',context);assert.deepEqual(Object.keys(context.options),['Main Office','Maa','Cabantian']);
-});
-function updates(registration){
- const source=readFileSync(new URL('../Takodeal-POS/cashier-workspace.js',import.meta.url),'utf8'),elements={};
- for(const id of ['updateAppBanner','cashierUpdateTitle','cashierUpdateText','cashierUpdateSymbol','cashierUpdateNow','cashierUpdateDismiss','cashierUpdateClose'])elements[id]={style:{},dataset:{},setAttribute(){},removeAttribute(){}};
- const context={el:id=>elements[id],window:{addEventListener(){},setInterval(){}},document:{body:{append(){}}},navigator:{onLine:true,serviceWorker:{getRegistration:async()=>registration,addEventListener(){},controller:{}}},updateBlocker,localStorage:{getItem:()=> 'test-release',setItem(){}},CASHIER_RELEASE:'test-release',console};
- vm.runInNewContext('let releaseRegistration, activateRequested = false;'+source.slice(source.indexOf('function showCashierUpdateNotice('),source.indexOf('function install(){')),context);vm.runInNewContext('installUpdates();',context);
- return {context,elements};
-}
-test('successful update check displays an up-to-date title and enabled check button',async()=>{
- const {context,elements}=updates({update:async()=>{},addEventListener(){}});await context.window.checkCashierUpdate();assert.equal(elements.updateAppBanner.dataset.updateState,'current');assert.match(elements.cashierUpdateTitle.textContent,/up to date/);assert.equal(elements.cashierUpdateNow.disabled,false);
-});
-test('work started during update checking prevents activation of the waiting release',async()=>{
- let activated=0,context;const app=updates({update:async()=>{context.window.isBluetoothPrinting=true;},waiting:{postMessage:()=>activated++},addEventListener(){}});context=app.context;
- await context.window.checkCashierUpdate();assert.equal(activated,0);assert.equal(app.elements.updateAppBanner.dataset.updateState,'blocked');assert.equal(app.elements.cashierUpdateNow.disabled,false);
 });

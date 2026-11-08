@@ -66,6 +66,8 @@
 .login-device p { font-size:10px; line-height:1.5; color:#899184; margin:8px 0 0; }
 #loginUpdateStatus.login-update-status { color:#58715c; font-size:11px; line-height:1.6; overflow-wrap:anywhere; }
 #loginUpdateStatus:empty { display:none; }
+.login-update-progress { display:block; width:100%; height:8px; margin:14px 0 6px; border:0; border-radius:5px; accent-color:#14634f; }
+#loginUpdateStatus.error { color:#a43f35; }
 .login-install-dialog { max-width:410px; width:calc(100% - 30px); border:1px solid #dce4d8; border-radius:16px; padding:27px; font-family:'Segoe UI',sans-serif; color:#294836; box-shadow:0 20px 60px #133d3129; z-index:100000; }
 .login-install-dialog::backdrop { background:#16372c65; }
 .login-install-dialog h2 { margin:0 0 12px; font-size:23px; }
