@@ -1,0 +1,16 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const source=fs.readFileSync(new URL('../takodeal-manager/main.js',import.meta.url),'utf8'),start=source.indexOf('window.submitRequestReply = async function('),handler=source.slice(start,source.indexOf('\n};',start)+3);
+function harness({changedOnSecondRead=false,proof=true}={}){
+ const calls={reads:0,uploads:0,writes:[],alerts:[]},button={innerText:'Confirm Approved',disabled:false},modal={remove(){calls.removed=true;}},nodes={btnSubmitReply:button,dynamicReplyModal:modal,replyMessage:{value:'A stale generic form reply'},replyProofImage:{files:proof?[{name:'synthetic.png'}]:[]}};
+ const api={db:{},auth:{currentUser:{uid:'owner'}},sessionUser:{uid:'owner'},lateRequestContext:null,doc:(_,table,id)=>({path:table+'/'+id,id}),isBranchAllowed:()=>true,ref:()=>({}),uploadBytes:async()=>{calls.uploads++;return{ref:{}};},getDownloadURL:async()=>'/synthetic',serverTimestamp:()=>new Date(),updateDoc:async(...args)=>calls.writes.push(['update',...args]),addDoc:async(...args)=>calls.writes.push(['add',...args]),collection:(_,table)=>({table})};
+ const document={getElementById:id=>nodes[id]||null},context=vm.createContext({window:api,document,Date,console:{error(){}},isLatenessRequest:()=>false,tkOwnerDoc:async()=>{calls.reads++;return{exists:()=>true,data:()=>({type:changedOnSecondRead&&calls.reads===1?'Cash Advance':'Schedule Declaration',status:'Pending',branch:'Synthetic Branch'})};},Swal:{fire:(...args)=>calls.alerts.push(args)}});vm.runInContext(handler,context);return{api,calls,button};
+}
+for(const type of ['Cash Advance','Staff Meal','Reason Letter'])test('a stale '+type+' reply cannot approve a saved Schedule Declaration or upload proof/create deductions',async()=>{
+ const f=harness();await f.api.submitRequestReply('synthetic','Approved',type,999,'Untrusted retained name');assert.equal(f.calls.reads,1);assert.equal(f.calls.uploads,0);assert.deepEqual(f.calls.writes,[]);assert.match(f.calls.alerts.at(-1)[1],/Review declaration/);assert.equal(f.button.disabled,false);
+});
+test('a saved type changing before the second server gate cannot receive ordinary status or financial writes',async()=>{
+ const f=harness({changedOnSecondRead:true,proof:false});await f.api.submitRequestReply('synthetic','Approved','Cash Advance',999,'Synthetic Crew');assert.equal(f.calls.reads,2);assert.equal(f.calls.uploads,0);assert.deepEqual(f.calls.writes,[]);assert.match(f.calls.alerts.at(-1)[1],/Reopen Review declaration/);assert.equal(f.button.disabled,false);
+});

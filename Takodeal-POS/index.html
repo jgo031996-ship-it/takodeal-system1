@@ -932,7 +932,7 @@
         <div class="cashier-stock-heading" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding: 20px 30px; background: #ffffff; flex-wrap: wrap; gap: 15px;">
           <div>
             <h2 style="margin: 0; color: #0f172a; font-size: 20px; font-weight: 900; display: flex; align-items: center; gap: 10px;"><span style="font-size: 24px;">📋</span> Stock Counts & History</h2>
-            <p style="color: #64748b; font-size: 12px; margin: 4px 0 0 0;">Count physical stock by restock cycle. Variances are saved in Owner Audits.</p>
+            <p style="color: #64748b; font-size: 12px; margin: 4px 0 0 0;">Save physical stock by cycle. Review stock requests separately before sending to HQ.</p>
           </div>
           <div class="cashier-stock-tabs" style="display: flex; gap: 10px; flex-wrap: wrap;">
              <button onclick="window.openDeliveryHistoryModal()" style="background: #f0f9ff; color: #0ea5e9; border: 1px solid #bae6fd; padding: 10px 18px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 13px; transition: 0.2s;">🚚 Delivery History</button>
@@ -964,7 +964,7 @@
                 </div>
 
                 <button id="btnSubmitAllCounts" onclick="window.submitAllManualCounts()" style="background: #10b981; color: white; border: none; padding: 10px 24px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 14px; box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2); transition: 0.2s; display: flex; align-items: center; gap: 6px;">
-                    <span style="font-size: 16px;">💾</span> Submit All Counts
+                    <span style="font-size: 16px;">💾</span> Save Selected Cycle Counts
                 </button>
             </div>
 
@@ -4529,7 +4529,7 @@ window.showMobileOrders = function() {
             });
         };
     </script>
-    <script type="module" src="main.js?v=tablet-attendance-stock-20261009-r1"></script>
+    <script type="module" src="main.js?v=variance-timein-20261108-r1"></script>
     <script>
     // 🛡️ PROGRESSIVE WEB APP (PWA) INSTALLER
     if ('serviceWorker' in navigator) {

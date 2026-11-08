@@ -1,4 +1,4 @@
-import {stockAuditRange,stockAuditMillis,normalizeStockAuditReport,explainStockAudit} from './stock-audit-model.js';
+import {stockAuditRange,stockAuditMillis,normalizeStockAuditReport,explainStockAudit,stockAuditWasteEvidence} from './stock-audit-model.js';
 const DAY=86400000;
 const owner='jgo031996@gmail.com';
 const legacyAudit=row=>({...row,id:'legacy-inventory-'+row.id,sourceRecordId:row.id,version:1,cashier:row.loggedBy,counts:[{itemId:row.itemId||row.inventoryId,name:row.itemName,systemQty:row.systemQty,physicalQty:row.actualQty,variance:row.variance,uom:row.unit,cost:null}]});
@@ -8,6 +8,14 @@ export function createStockAuditReader(api,{scope=()=>identity(api),authorize=br
  const cache=new Map(),flights=new Map(),details=new Map();let epoch=0;
  const check=(key,branch)=>{if(key!==scope()||!authorize(branch))throw Error('The account or selected branch changed. Reopen this inventory report.');};
  const capture=branch=>{const key=scope(),user=api.auth?.currentUser,session=api.sessionUser;return()=>{check(key,branch);if(api.auth?.currentUser!==user||api.sessionUser!==session)throw Error('The account or workspace was replaced. Reopen this inventory report.');};};
+ async function document(table,id,assertCurrent){
+  if(typeof id!=='string'||!id||id.length>180||id.includes('/')||['.','..'].includes(id))throw Error('The saved report or request link is invalid.');assertCurrent();
+  const key=JSON.stringify(['document',scope(),table,id]),user=api.auth?.currentUser,session=api.sessionUser;let flight=flights.get(key);if(flight?.expired)throw Error('The earlier saved report read is still pending. Wait before retrying.');
+  if(flight&&(flight.user!==user||flight.session!==session))throw Error('The earlier report belongs to a replaced workspace. Wait before retrying.');
+  if(!flight){flight={expired:false,user,session,promise:Promise.resolve().then(()=>{assertCurrent();return api.getDocFromServer(api.doc(api.db,table,id));})};flights.set(key,flight);const cleanup=()=>{if(flights.get(key)===flight)flights.delete(key);};flight.promise.then(cleanup,cleanup);}
+  let timer,snapshot;try{snapshot=await Promise.race([flight.promise,new Promise((_,reject)=>{timer=setTimeout(()=>{flight.expired=true;reject(Error('The saved report read took too long. Reconnect and retry.'));},timeoutMs);})]);}finally{clearTimeout(timer);}
+  assertCurrent();if(!snapshot||snapshot.metadata?.fromCache||snapshot.metadata?.hasPendingWrites||!snapshot.exists())throw Error('The saved report or request could not be confirmed from the server. No variance was calculated.');return snapshot.data();
+ }
  async function queryRows(table,branch,start,end,{cap=limit,field='timestamp',refresh=false,cursor=null,filters=[]}={}){
   if(!branch||branch==='All'||!authorize(branch))throw Error('Choose a branch in your saved inventory access.');const actor=scope(),user=api.auth?.currentUser,session=api.sessionUser,assertCurrent=capture(branch),generation=epoch,key=JSON.stringify([actor,table,branch,+start,+end,cap,field,cursor?.id||'',filters]);assertCurrent();if(cursor&&typeof api.startAfter!=='function')throw Error('Evidence pagination is unavailable. Update this app before loading more.');
   const saved=cache.get(key);if(!refresh&&saved&&saved.user===user&&saved.session===session&&now()-saved.at<ttlMs)return saved.result;
@@ -21,6 +29,26 @@ export function createStockAuditReader(api,{scope=()=>identity(api),authorize=br
  }
  return{
   invalidate(){epoch++;cache.clear();details.clear();},
+  async report({branch,reportId}){
+   if(!branch||branch==='All'||typeof reportId!=='string'||!reportId||reportId.length>180||reportId.includes('/')||['.','..'].includes(reportId))throw Error('This request has no valid saved count report link.');
+   const assertCurrent=capture(branch),generation=epoch,saved=await document('inventory_audit_reports',reportId,assertCurrent);
+   assertCurrent();if(generation!==epoch)throw Error('The inventory review changed. Open this request again.');
+   if(saved.version!==3||saved.id!==reportId||saved.branch!==branch||!Array.isArray(saved.counts)||!saved.counts.length||saved.counts.length>150)throw Error('The linked count report does not match this request branch or saved report identity.');
+   return normalizeStockAuditReport({...saved,id:reportId});
+  },
+  async request({requestId}){
+   const user=api.auth?.currentUser,session=api.sessionUser,key=scope(),generation=epoch,assertCurrent=()=>{if(!user?.uid||session?.uid!==user.uid||api.auth.currentUser!==user||api.sessionUser!==session||scope()!==key||generation!==epoch)throw Error('The account or inventory review changed. Open this request again.');};
+   const saved=await document('purchase_orders',requestId,assertCurrent);assertCurrent();
+   if(!saved.countSubmissionId)throw Error('No immutable count report is linked to this request. Older forecast or manual requests do not establish a physical variance.');
+   const report=await this.report({branch:saved.branch,reportId:saved.countSubmissionId}),fresh=await document('purchase_orders',requestId,assertCurrent);assertCurrent();
+   if(fresh.branch!==saved.branch||fresh.countSubmissionId!==saved.countSubmissionId)throw Error('The request’s branch or count report changed while loading. Open it again.');capture(saved.branch)();return report;
+  },
+  async waste(source){
+   const report=normalizeStockAuditReport(source),initial=stockAuditWasteEvidence(report),assertCurrent=capture(report.branch);assertCurrent();if(!initial.period)return {...initial,coverage:[{table:'waste history',complete:false,error:'The saved report period or cutoff is unavailable.'}]};
+   const {start,end}=initial.period,tables=['stock_logs','inventory_logs','staff_requests'],results=await Promise.allSettled(tables.map(table=>queryRows(table,report.branch,new Date(start),new Date(end),{cap:300,refresh:true,...(table==='staff_requests'?{filters:[['type','==','Waste Report']]}:{})})));assertCurrent();
+   const coverage=results.map((result,index)=>{const complete=result.status==='fulfilled'&&result.value.complete&&result.value.rows.length===Math.min(result.value.readCount,300);return {table:tables[index],complete,...(result.status==='fulfilled'?{records:result.value.rows.length,limit:300,...(!complete?{error:'Read limit or source-scope validation was incomplete.'}:{})}:{error:'Source unavailable; waste evidence is incomplete.'})};});
+   return {...stockAuditWasteEvidence(report,{stockLogs:results[0].status==='fulfilled'?results[0].value.rows:[],inventoryLogs:results[1].status==='fulfilled'?results[1].value.rows:[],wasteRequests:results[2].status==='fulfilled'?results[2].value.rows:[],complete:coverage.every(row=>row.complete)}),coverage};
+  },
   async list({branch,from,to,cycle,refresh=false}){
    const period=stockAuditRange(from,to),assertCurrent=capture(branch),tables=['inventory_audit_reports','stock_counts','inventory_logs'],results=await Promise.allSettled(tables.map(table=>queryRows(table,branch,period.start,period.end,{refresh,...(table==='inventory_logs'?{filters:[['type','==','Audit']]}:{})})));assertCurrent();
    const warnings=[],sources=new Map(),coverage=[];for(let index=0;index<results.length;index++){const result=results[index],table=tables[index];if(result.status==='rejected'){warnings.push(table+': '+result.reason.message);coverage.push({table,complete:false});continue;}coverage.push({table,complete:result.value.complete,limit:result.value.limit});if(!result.value.complete)warnings.push('More '+table+' exist than this bounded page can show. Narrow the dates.');for(let row of result.value.rows){if(table==='inventory_logs')row=legacyAudit(row);if(table==='inventory_audit_reports'||!sources.has(row.id))sources.set(row.id,normalizeStockAuditReport(row,{legacy:table!=='inventory_audit_reports'}));}}

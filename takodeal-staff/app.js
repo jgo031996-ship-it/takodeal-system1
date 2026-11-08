@@ -44,6 +44,8 @@ import {swapCandidates,SWAP_PENDING_STATUS,SWAP_REVIEW_STATUS,SWAP_REQUEST_VERSI
 import {activeStaffProfile} from './staff-lifecycle-model.js';
 import {loadStaffSwapContext,staffSwapAliases,swapCandidateKey,staffSwapContextKey,incomingSwapDetailsHTML,swapEscape} from './staff-swap-request.js';
 import {savedShiftChoices,savedShiftChoicesHTML,selectedSavedShiftChoice,makeSavedShiftProposal} from './saved-shift-proposal.js';
+import {chooseClockInSchedule} from './attendance-shift-declaration-ui.js';
+import {revalidateClockInScheduleDeclaration,clockInDeclarationSavedProposal,clockInDeclarationRequest} from './attendance-shift-declaration.js';
 // Takodeál Staff Engine v3.0 - Fleet Access & Offline Sync Fix
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 // 🔥 UPGRADE: Imported the Offline Cache Engines!
@@ -1292,7 +1294,7 @@ window.punchTime = async function(type) {
     const attendanceRef = doc(collection(db, 'attendance_logs'));
     const lateRequestRef = doc(collection(db, 'staff_requests'));
     let pendingLateRequest = null, pendingStaffShiftChoice = null;
-    let punchScheduleData = null, punchScheduleProfiles = {}, punchSchedulePreview = null;
+    let punchScheduleData = null, punchScheduleProfiles = {}, punchSchedulePreview = null, punchScheduleDeclaration = null;
     let activeTimeIn = null;
     const assertPunchIdentity=()=>{if(localStorage.getItem('takodeal_staff_id')!==punchStaffId||localStorage.getItem('takodeal_staff_name')!==staffName)throw Error('Your staff session changed. Sign in again.');};
     const readFreshPunchSchedule=async at=>createScheduleHistoryStore({db,doc,getDocFromServer:async reference=>{
@@ -1370,9 +1372,10 @@ window.punchTime = async function(type) {
                     const snapshot = captureAttendanceSchedule(clockDate, closestBranch, staffName, scheduleData, staffProfiles);
                     punchSchedulePreview = snapshot;
                     const reliefPreview=emergencyReliefForClockIn(snapshot,staffProfiles[staffName],closestBranch);
-                    const reviewedShift = await Swal.fire({title:reliefPreview?'Emergency branch cover':'Review your assigned hours',html:renderAttendanceSchedulePreview(snapshot,{staffName,branch:closestBranch,at:clockDate,emergencyRelief:reliefPreview}),showCancelButton:true,
-                        confirmButtonText:'Continue Time In',cancelButtonText:'Back to Clock',allowOutsideClick:false,confirmButtonColor:'#16634e'});
-                    assertPunchIdentity();if(!reviewedShift.isConfirmed)return;
+                    const reviewedShift = await chooseClockInSchedule({Swal,document,history:scheduleData,snapshot,profile:staffProfiles[staffName],staffId:punchStaffId,staffName,branch:closestBranch,at:clockDate,emergencyRelief:reliefPreview,
+                        title:reliefPreview?'Emergency branch cover':'Review your assigned hours',assertCurrent:assertPunchIdentity});
+                    assertPunchIdentity();if(!reviewedShift.proceed)return;
+                    punchScheduleDeclaration=reviewedShift.declaration;
                     let lateMinutes = snapshot.needsScheduleReview || snapshot.wasScheduled!==true ? 0 : resolveAttendanceShift({staffName, branch:closestBranch, timestamp:clockDate, scheduleSnapshot:snapshot}, scheduleData, staffProfiles)?.lateMinutes || 0;
                     
                     // Trigger Interceptor Letter if they are more than 3 minutes late!
@@ -1516,6 +1519,13 @@ window.punchTime = async function(type) {
             if(pendingLateRequest&&pendingStaffShiftChoice)pendingLateRequest.staffShiftProposal=makeSavedShiftProposal(punchScheduleData,{start:{id:attendanceRef.id,type:'TIME IN',staffId:punchStaffId,staffName,branch:closestBranch,timestamp:clockDate},staffId:punchStaffId,staffName},pendingStaffShiftChoice);
             const emergencyRelief=emergencyReliefForClockIn(attendance.scheduleSnapshot,punchScheduleProfiles[staffName],closestBranch);
             if(emergencyRelief){attendance.emergencyRelief=emergencyRelief;attendance.lateMinutes=0;pendingLateRequest=null;}
+            if(punchScheduleDeclaration){
+                const declaration=revalidateClockInScheduleDeclaration(punchScheduleData,{staffId:punchStaffId,staffName,profile:punchScheduleProfiles[staffName],branch:closestBranch,at:clockDate,snapshot:attendance.scheduleSnapshot},punchScheduleDeclaration);
+                attendance.scheduleDeclaration=declaration;
+                attendance.scheduleDeclarationRequestId=lateRequestRef.id;
+                pendingLateRequest=clockInDeclarationRequest({declaration,attendanceLogId:attendanceRef.id,lateRequest:pendingLateRequest,lateMinutes:attendance.lateMinutes??attendance.scheduleSnapshot.lateMinutes,timestamp:serverTimestamp()});
+                if(!pendingLateRequest.staffShiftProposal){const proposal=clockInDeclarationSavedProposal(punchScheduleData,{start:{id:attendanceRef.id,type:'TIME IN',staffId:punchStaffId,staffName,branch:closestBranch,timestamp:clockDate},staffId:punchStaffId,staffName},declaration);if(proposal)pendingLateRequest.staffShiftProposal=proposal;}
+            }
         }
         Swal.fire({title:'Saving attendance…',text:'Keep this screen open until HQ confirms your attendance.',allowOutsideClick:false,allowEscapeKey:false,showConfirmButton:false,didOpen:()=>Swal.showLoading()});
         if (type === 'TIME OUT') {
@@ -1528,7 +1538,7 @@ window.punchTime = async function(type) {
                 pendingLateRequest.lateMinutes = attendance.lateMinutes;
                 pendingLateRequest.explanationMessage = pendingLateRequest.explanationMessage.replace(/^Clocked in \d+ minutes late\./, `Clocked in ${attendance.lateMinutes} minutes late.`);
             }
-            attendance.lateReasonRequestId = lateRequestRef.id;
+            if(pendingLateRequest.type==='Reason Letter')attendance.lateReasonRequestId = lateRequestRef.id;
             batch.set(lateRequestRef, pendingLateRequest);
         }
         batch.set(attendanceRef, attendance);

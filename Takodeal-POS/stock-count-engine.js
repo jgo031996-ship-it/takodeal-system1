@@ -1,9 +1,15 @@
 import {createCountSnapshot} from './stock-report-units.js';
 import {units,stockCycle} from './stock-cycle.js';
-import {STOCK_AUDIT_CYCLES,stockAuditPeriod,stockAuditRange,stockAuditNumber} from './stock-audit-model.js';
+import {STOCK_AUDIT_CYCLES,stockAuditPeriod,stockAuditRange,stockAuditNumber,normalizeStockAuditReport} from './stock-audit-model.js';
 const safeId=id=>{if(!/^[-\w]{1,180}$/.test(id||''))throw Error('Invalid saved inventory or submission ID.');return id;};
 const qty=value=>{if(value==null||value==='')return 0;const n=stockAuditNumber(value);if(n===null||n<0)throw Error('Counts must be zero or a positive number.');return n;};
 export function countEntries(items,memory,{cycle}={}){return items.filter(item=>(!cycle||stockCycle(item.restockCycle)===cycle)&&[memory[item.id+'_purch'],memory[item.id+'_base']].some(v=>v!=null&&v!=='')).map(item=>{const u=units(item),p=qty(memory[item.id+'_purch']),b=qty(memory[item.id+'_base']);return {id:safeId(item.id),name:item.name,...u,purchaseCount:p,baseCount:b,physicalQty:p*u.conversionRate+b};});}
+export function stockCountRequestItems(source){
+ const report=normalizeStockAuditReport(source);
+ if(report.version!==3||report.issues.length||report.counts.some(row=>row.warnings.length))throw Error('The frozen count report needs HQ review before requesting stock.');
+ return report.counts.map(c=>{const target=c.targetSnapshot,u=c.countSnapshot,targetQty=stockAuditNumber(target?.targetBaseQty);if(!u||!target||Object.keys(units(u)).some(key=>units(u)[key]!==units(target)[key])||targetQty!==null&&targetQty<0)throw Error('The saved maintaining target needs HQ review.');const needed=targetQty===null?0:Math.max(0,targetQty-c.physicalQty);return {sourceId:c.itemId,itemName:c.name,name:c.name,qty:needed,rawQty:needed/u.conversionRate,uom:c.uom,...units(u),displayQty:needed/u.conversionRate,displayUom:u.purchaseUom,countSnapshot:u,targetSnapshot:target,countReportVersion:2,physicalStock:c.physicalQty,systemStock:c.systemQty,requestType:'Reviewed maintaining target'};}).filter(item=>item.qty>0);
+}
+const requestIntent=(report,items)=>JSON.stringify({countSubmissionId:report.id,branch:report.branch,staffId:report.staffId,cashier:report.cashier,actorUid:report.actorUid,items});
 export function createStockCountEngine(api,{actor=()=>api.sessionUser,now=()=>Date.now()}={}){return {async submit({id,branch,cashier,entries,selectedCycle='Weekly',periodStart,periodEnd}){
     safeId(id);if(!entries.length||entries.length>150||new Set(entries.map(e=>e.id)).size!==entries.length)throw Error('Submit between 1 and 150 different items.');
     const identity=actor(),user=api.auth?.currentUser,uid=user?.uid,staffId=identity?.staffId;
@@ -20,10 +26,22 @@ export function createStockCountEngine(api,{actor=()=>api.sessionUser,now=()=>Da
             if(stockCycle(live.restockCycle)!==selectedCycle)throw Error(`${e.name} belongs to another count cycle. Its draft is kept separately.`);
             const costValue=live.baseCost,cost=(typeof costValue==='number'||typeof costValue==='string'&&costValue.trim()!=='')&&Number.isFinite(Number(costValue))&&Number(costValue)>=0?Number(costValue):null;
             return {itemId:e.id,name:e.name,physicalQty:countSnapshot.totalBaseQty,systemQty,variance:countSnapshot.totalBaseQty-systemQty,uom:u.baseUom,cost,countSnapshot,targetSnapshot:{...u,targetBaseQty,cycle:stockCycle(live.restockCycle)}};});
-        const items=counts.map(c=>{const u=c.countSnapshot,needed=c.targetSnapshot.targetBaseQty===null?0:Math.max(0,c.targetSnapshot.targetBaseQty-c.physicalQty);return {itemName:c.name,name:c.name,qty:needed,rawQty:needed/u.conversionRate,uom:u.baseUom,...units(u),displayQty:needed/u.conversionRate,displayUom:u.purchaseUom,countSnapshot:u,targetSnapshot:c.targetSnapshot,countReportVersion:2,physicalStock:c.physicalQty,systemStock:c.systemQty,requestType:needed>0?'Below maintaining target':'Target met'};});
         check();const time=api.serverTimestamp(),record={version:3,id,intent,branch,cashier,staffId,actorUid:uid,selectedCycle,periodStart,periodEnd,counts,timestamp:time,cutoff:time};tx.set(receipt,record);tx.set(reportRef,{...record,source:'Cashier cycle count'});
         for(const c of counts){tx.update(ref('inventory',c.itemId),{currentStock:c.physicalQty});tx.set(ref('stock_logs',id+'-'+c.itemId),{branch,inventoryId:c.itemId,item:c.name,uom:c.uom,oldQty:c.systemQty,newQty:c.physicalQty,variance:c.variance,type:'Staff Physical Count',note:'Cycle count · '+c.targetSnapshot.cycle,countSnapshot:c.countSnapshot,countSubmissionId:id,user:cashier,timestamp:time});}
-        if(items.some(i=>i.qty>0))tx.set(ref('purchase_orders',id),{version:2,branch,items,status:'Pending',type:'Cycle Count Report',countSubmissionId:id,requestedBy:cashier,timestamp:time});
         return {id,alreadySaved:false,itemCount:counts.length,reportAvailable:true};
+    });
+},async request({report:preview}){
+    const id=safeId(preview?.id),branch=preview?.branch,cashier=preview?.cashier,identity=actor(),user=api.auth?.currentUser,uid=user?.uid,staffId=identity?.staffId;
+    const check=()=>{api.assertStockAuditCurrent?.();if(actor()!==identity||identity?.branch!==branch||identity?.cashierName!==cashier||staffId!==preview?.staffId||api.auth?.currentUser!==user||!uid||!staffId||uid!==preview?.actorUid)throw Error('The cashier, secure tablet or saved count changed. Reopen your saved count.');};check();
+    const expectedItems=stockCountRequestItems(preview),expected=requestIntent(preview,expectedItems);if(!expectedItems.length)throw Error('No items are below a saved maintaining target. Ask HQ about items without a target.');
+    const requestId=safeId('count-request-'+id),ref=(c,k)=>api.doc(api.db,c,k);
+    return api.runTransaction(api.db,async tx=>{
+        const saved=await tx.get(ref('inventory_audit_reports',id)),receipt=await tx.get(ref('stock_counts',id)),existing=await tx.get(ref('purchase_orders',requestId)),legacy=await tx.get(ref('purchase_orders',id)),staff=await tx.get(ref('cashiers',safeId(staffId)));check();
+        if(!saved.exists()||!receipt.exists())throw Error('The frozen count report is unavailable. Ask HQ to review the saved count.');
+        const report=saved.data(),source=receipt.data(),items=stockCountRequestItems(report);if(report.id!==id||source.version!==3||source.intent!==report.intent||source.branch!==branch||requestIntent(report,items)!==expected)throw Error('The frozen count report changed. Reopen it before sending a request.');
+        const account=staff.exists()?staff.data():null;if(!account||account.branch!==branch||account.cashierName!==cashier||account.active===false||account.archived===true||account.blocked===true||/blocked|revoked|terminated|resigned|inactive|disabled|archived|deleted/i.test(account.status||''))throw Error('The active staff account could not be confirmed for this branch.');
+        if(legacy.exists()){if(legacy.data().branch!==branch||legacy.data().countSubmissionId!==id)throw Error('An older request reference needs HQ review.');return{id:legacy.id,alreadySaved:true,legacy:true};}
+        if(existing.exists()){if(existing.data().requestIntent!==expected||existing.data().countSubmissionId!==id||existing.data().branch!==branch)throw Error('This request reference changed. Ask HQ to review it.');return{id:requestId,alreadySaved:true};}
+        check();tx.set(ref('purchase_orders',requestId),{version:2,branch,items,status:'Pending',type:'Reviewed Cycle Count Request',countSubmissionId:id,requestedBy:cashier,staffId,actorUid:uid,requestIntent:expected,timestamp:api.serverTimestamp()});return{id:requestId,alreadySaved:false};
     });
 }};}

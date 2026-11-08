@@ -7,6 +7,7 @@ import {memoizedAttendanceTransaction} from './attendance-transaction-reader.js'
 import {inspectStaffShiftProposal,validateSavedShiftProposal} from './saved-shift-proposal.js';
 import {resolveEmergencyShift} from './emergency-shift-model.js';
 import {createScheduleHistoryStore} from './schedule-history.js';
+import {scheduleDeclarationSourceFingerprint} from './attendance-swap-declaration.js';
 
 const idEncoder=new TextEncoder();
 const validId=value=>typeof value==='string'&&value.length>0&&value!=='.'&&value!=='..'&&!/[\/\u0000-\u001f\u007f-\u009f]/u.test(value)&&idEncoder.encode(value).length<=1500;
@@ -25,7 +26,8 @@ function fresh(snapshot){if(!snapshot||typeof snapshot.exists!=='function'||snap
 // are excluded so a lost acknowledgement can confirm the same saved operation.
 export function lateRequestResolutionFingerprint(request,attendance,shift){
  const fields=['id','type','staffId','staffName','branch','attendanceLogId','lateMinutes','explanationCause','explanationMessage','timestamp','payrollReviewVersion','lateDeductionHours','payrollEffect','penaltyCharged'];
- return JSON.stringify(canonical({request:Object.fromEntries(fields.map(name=>[name,request?.[name]??null])),attendanceReview:attendanceAmendmentReviewFingerprint(attendance,shift),confirmedReview:attendance.scheduleAmendmentReview||null}));
+ if(request?.scheduleDeclaration||attendance?.scheduleDeclaration)fields.push('scheduleDeclaration');
+ return JSON.stringify(canonical({request:Object.fromEntries(fields.map(name=>[name,request?.[name]??null])),attendanceReview:attendanceAmendmentReviewFingerprint(attendance,shift),confirmedReview:attendance.scheduleAmendmentReview||null,...(request?.scheduleDeclaration||attendance?.scheduleDeclaration?{declarationSource:scheduleDeclarationSourceFingerprint(request,attendance)}:{})}));
 }
 export async function resolveCorrectedLateRequest(api,{requestId,attendanceId,expectedFingerprint,action,reply=''}){
  if(!validId(requestId)||!validId(attendanceId)||typeof expectedFingerprint!=='string'||!expectedFingerprint||expectedFingerprint.length>60000||!['Approved','Rejected'].includes(action)||typeof reply!=='string'||reply.length>1500)throw Error('Reopen the exact corrected attendance letter before confirming.');
@@ -60,7 +62,7 @@ export async function resolveCorrectedLateRequest(api,{requestId,attendanceId,ex
 // The original decision path remains available to approved HQ managers. Its
 // schedule guard runs in the very same transaction as the unchanged legacy
 // attendance updates, so a correction arriving after preview cannot be missed.
-export async function reviewOriginalLateRequest(api,{requestId,attendanceId,profileId,action,reply='',actor,proposalDecision}){
+export async function reviewOriginalLateRequest(api,{requestId,attendanceId,profileId,action,reply='',actor,proposalDecision,expectedDeclaration}){
  if(!validId(requestId)||!validId(attendanceId)||!validId(profileId)||!['Approved','Rejected'].includes(action)||typeof reply!=='string'||reply.length>1500||typeof actor!=='string'||!actor.trim()||actor.length>200)throw Error('Reopen the original attendance letter and its exact employee profile.');
  const identity=()=>{const user=api.auth?.currentUser,session=api.sessionUser;if(!user?.uid||!user.email||user.emailVerified!==true||!user.providerData?.some(row=>row.providerId==='google.com')||session?.uid!==user.uid||key(session.email)!==key(user.email)||session.isFranchisee===true||!canOpenWorkspacePage(session,'inbox'))throw Error('Sign in with approved HQ Request Inbox access to review this letter.');return JSON.stringify([user.uid,user.email,session.uid,session.email,session.role,session.isOwner,session.isFranchisee,session.permissions,session.allowedBranches,session.branch]);};
  const user=api.auth?.currentUser,session=api.sessionUser,captured=identity(),current=()=>{if(api.auth?.currentUser!==user||api.sessionUser!==session||identity()!==captured)throw Error('The signed-in HQ account changed. Reopen the attendance letter.');};
@@ -72,6 +74,7 @@ export async function reviewOriginalLateRequest(api,{requestId,attendanceId,prof
   const reference=(table,id)=>api.doc(db,table,id),[reqSnap,logSnap,personSnap]=await Promise.all([read(reference('staff_requests',requestId)),read(reference('attendance_logs',attendanceId)),read(reference('cashiers',profileId))]);
   if(!reqSnap.exists()||!logSnap.exists()||!personSnap.exists())throw Error('The letter, original Time In or exact employee profile is missing.');
   const request={...reqSnap.data(),id:requestId},log={...logSnap.data(),id:attendanceId},person=personSnap.data();branch=log.branch;guard();
+  if((request.scheduleDeclaration||log.scheduleDeclaration||expectedDeclaration)&&scheduleDeclarationSourceFingerprint(request,log)!==expectedDeclaration)throw Error('The staff shift statement or its original punch changed. Reopen the exact letter.');
   if(!isLatenessRequest(request)||!branch||request.branch!==branch||key(request.staffName)!==key(log.staffName)||key(person.cashierName)!==key(log.staffName)||request.staffId&&request.staffId!==profileId||log.staffId&&log.staffId!==profileId||String(log.type).toUpperCase()!=='TIME IN'||log.deleted||['Voided','Cancelled','Canceled','Deleted'].includes(log.status)||request.attendanceLogId&&request.attendanceLogId!==attendanceId||!request.attendanceLogId&&!legacyAttendanceCandidates(request,[log]).length)throw Error('The selected letter, Time In and employee profile do not match. Reopen the exact record.');
    const history=request.staffShiftProposal
     ?await createScheduleHistoryStore({db:api.db,doc:api.doc,getDocFromServer:read}).loadRange(new Date(instant(log.timestamp)-86400000),new Date(instant(log.timestamp)+86400000))

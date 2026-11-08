@@ -5,7 +5,9 @@ import vm from 'node:vm';
 import * as payroll from '../takodeal-staff/payroll-safety.js';
 import * as reconciliation from '../takodeal-staff/attendance-reconcile.js';
 import * as savedShiftProposals from '../takodeal-staff/saved-shift-proposal.js';
-import {createScheduleHistoryStore} from '../takodeal-staff/schedule-history.js';
+import {chooseClockInSchedule} from '../takodeal-staff/attendance-shift-declaration-ui.js';
+import * as scheduleDeclarations from '../takodeal-staff/attendance-shift-declaration.js';
+import {createScheduleHistoryStore,createScheduleRevision} from '../takodeal-staff/schedule-history.js';
 import {prepareEarlyTimeOut} from '../takodeal-staff/early-time-out-ui.js';
 import {createEarlyTimeOutService} from '../takodeal-staff/early-time-out-actions.js';
 import {renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,emergencyReliefForClockIn,emergencyReliefTimeOutNotice} from '../takodeal-staff/attendance-schedule-preview.js';
@@ -54,7 +56,7 @@ function harness({late=true}={}) {
         captureOptionalAttendancePhoto:()=>'',loadMyAttendance:()=>events.push('refresh'),
         async uploadAttendanceProof(request){events.push('proof:start');uploadCalls.push(request);request.assertCurrent();const result=h.upload?await h.upload(request):{url:proofUrl};events.push('proof:done');return result;}};
     class ClockDate extends Date {constructor(...args){super(...(args.length?args:[clockMs]));}static now(){return clockMs;}}
-    const Swal={async fire(...args){alerts.push(args);const options=args[0];if(options?.title==='Review your assigned hours'){events.push('schedule:preview');return {isConfirmed:h.cancelPreview!==true};}if(options?.title?.includes('You are Late')){
+    const Swal={async fire(...args){alerts.push(args);const options=args[0];if(options?.title==='Review your assigned hours'){events.push('schedule:preview');return {isConfirmed:h.cancelPreview!==true,value:h.swapChoice?'swap':'assigned'};}if(options?.title==='Declare an unrequested shift swap'){options.didOpen?.();node('attendanceSwapCoworker').value=h.swapChoice.coworker;node('attendanceSwapCoworker').onchange();node('attendanceSwapShift').value=h.swapChoice.key;node('attendanceSwapExplanation').value='We agreed to cover the saved later shift; please check this declaration with HQ.';const value=options.preConfirm();return {isConfirmed:!!value,value};}if(options?.title?.includes('You are Late')){
             if(h.cancelDialog)return {isConfirmed:false};
             options.didOpen?.();
             if(h.lateForm.reason!==null)node('lateReason').value=h.lateForm.reason;
@@ -64,7 +66,7 @@ function harness({late=true}={}) {
         }return {isConfirmed:true};},close(){},showLoading(){},showValidationMessage(message){events.push('validation');alerts.push(['Validation',message]);}};
     const document={hidden:false,getElementById:node,querySelector:()=>null,querySelectorAll:()=>[]};
     node('view-timeclock').classList={contains:value=>value==='active'};
-    vm.runInNewContext(handler,{...api,...payroll,...reconciliation,...savedShiftProposals,renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,emergencyReliefForClockIn,emergencyReliefTimeOutNotice,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clockMs)})}),window,auth:window.auth,localStorage,document,Swal,Date:ClockDate,console:{error(){},warn(){},log(){}}});
+    vm.runInNewContext(handler,{...api,...payroll,...reconciliation,...savedShiftProposals,...scheduleDeclarations,chooseClockInSchedule,renderAttendanceSchedulePreview,assertAttendanceScheduleUnchanged,emergencyReliefForClockIn,emergencyReliefTimeOutNotice,createScheduleHistoryStore,prepareEarlyTimeOut:(api,input)=>prepareEarlyTimeOut(api,input,{service:createEarlyTimeOutService(api,{now:()=>new Date(clockMs)})}),window,auth:window.auth,localStorage,document,Swal,Date:ClockDate,console:{error(){},warn(){},log(){}}});
     return Object.assign(h,{window,punch:type=>window.punchTime(type),advance:milliseconds=>{clockMs+=milliseconds;}});
 }
 
@@ -144,6 +146,42 @@ test('late upload success saves one linked reason and Time In in the same batch,
     assert.ok(h.events.indexOf('fresh')>h.events.lastIndexOf('gps'));
     assert.ok(h.events.indexOf('commit:start')>h.events.indexOf('fresh'));
     assert.equal(h.window.staffPunchBusy,false);assert.equal(h.node('btnTimeIn').disabled,false);assert.equal(h.node('btnTimeOut').disabled,false);
+});
+
+function declaredSwapHarness(){
+    const h=harness(),plan=h.records.get('settings/global_schedule');
+    plan.employees=[{staffId:'staff-id',cashierName:profile.cashierName,name:'Synthetic',branch:'Maa'},
+        {staffId:'coworker-id',cashierName:'Synthetic Coworker',name:'Coworker',branch:'Maa'}];
+    plan.branchConfig.Maa.push({id:'later-slot',name:'Later saved shift',startTime:'10:00',endTime:'18:30',active:true});
+    plan.currentSchedule[6].Maa.scheduled['later-slot']='Coworker';
+    const revision=createScheduleRevision(plan,{revisionId:'declaration-roster',effectiveFrom:'2026-10-06',savedAt:new Date('2026-10-06T06:00:00+08:00')});
+    h.records.set('settings/schedule_month_2026_10',{revisionIds:[revision.revisionId],latestRevisionId:revision.revisionId});
+    h.records.set('settings/schedule_revision_'+revision.revisionId,revision);
+    const selectChoice=JSON.stringify(['coworker-id','2026-10-06','Maa','later-slot',revision.revisionId]);
+    h.swapChoice={coworker:'coworker-id',key:selectChoice};
+    h.declarationPlan=plan;
+    return h;
+}
+
+test('declaring a swap during actual late Staff Time In preserves the required proof and saves one combined linked Reason Letter',async()=>{
+    const h=declaredSwapHarness();await h.punch('TIME IN');
+    assert.equal(h.uploadCalls.length,1);assert.equal(h.batches.length,1);assert.equal(h.batches[0].length,2);
+    const attendance=h.records.get('attendance_logs/auto-1'),request=h.records.get('staff_requests/auto-2');
+    assert.equal(request.type,'Reason Letter');assert.equal(request.status,'Pending');assert.equal(request.lateMinutes,15);assert.equal(request.proofImageUrl,proofUrl);
+    assert.equal(attendance.scheduleSnapshot.shiftId,'slot');assert.equal(attendance.scheduleSnapshot.lateMinutes,15);assert.equal(attendance.lateMinutes,15);
+    assert.equal(attendance.scheduleDeclarationRequestId,attendance.lateReasonRequestId);assert.equal(request.attendanceLogId,'auto-1');
+    assert.deepEqual(request.scheduleDeclaration,attendance.scheduleDeclaration);assert.equal(request.scheduleDeclaration.coworkerStaffId,'coworker-id');
+    assert.equal(request.staffShiftProposal.shiftId,'later-slot');assert.equal(request.staffShiftProposal.referenceOnly,true);assert.match(request.explanationCause,/Tardiness \/ Late Arrival/);
+    assert.match(request.explanationMessage,/Delayed public transport/);assert.match(request.explanationMessage,/agreed to cover/);
+});
+
+test('a selected swap cannot bypass required Staff lateness proof or write a declaration separately',async()=>{
+    const h=declaredSwapHarness();h.lateForm.file=null;await h.punch('TIME IN');assertNoAttendance(h);assert.equal(h.uploadCalls.length,0);
+});
+
+test('a coworker becoming inactive while the late proof uploads prevents both the Time In and declaration request',async()=>{
+    const h=declaredSwapHarness();h.upload=async()=>{h.declarationPlan.employees[1].active=false;return {url:proofUrl};};await h.punch('TIME IN');
+    assertNoAttendance(h);assert.equal(h.uploadCalls.length,1);assert.match(h.alerts.at(-1)[1],/coworker|dated shift/);assert.equal(h.window.staffLateProofDraft.file,screenshot);
 });
 
 test('failed upload keeps the screenshot and reason for an explicit same-employee retry without relaxing required proof',async()=>{

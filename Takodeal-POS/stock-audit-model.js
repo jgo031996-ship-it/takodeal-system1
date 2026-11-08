@@ -35,6 +35,46 @@ const rowItem=row=>text(row.inventoryId||row.itemId);
 const isCount=row=>/audit|physical count|cycle count|manual count/i.test(text(row.type));
 const isSaleLog=row=>/sales? deduction|sale ingredient|transaction voided/i.test(text(row.type));
 const nameOf=row=>text(row.item||row.itemName||row.name);
+/** Waste is context beside the frozen expected balance, never another deduction.
+ * `complete` means every bounded source finished from the server without a cap.
+ * Unknown identities/units suppress a no-waste reminder for the affected item. */
+export function stockAuditWasteEvidence(source,{stockLogs=[],inventoryLogs=[],wasteRequests=[],complete=false}={}){
+ const report=normalizeStockAuditReport(source);let period=null;
+ try{const range=stockAuditRange(report.periodStart,report.periodEnd);if(report.time!==null&&report.time>=+range.start&&report.time<+range.end)period={from:report.periodStart,to:report.periodEnd,start:+range.start,end:Math.min(+range.end,report.time+1)};}catch{}
+ const valid=report.version===3&&!report.legacy&&!report.issues.length&&period!==null;
+ const items=report.counts.map(item=>({...item,loggedQuantity:0,appliedQuantity:0,hasLoggedWaste:false,unknown:!valid||item.warnings.length>0}));
+ const inside=row=>{const time=eventTime(row);return row.branch===report.branch&&time!==null&&period&&time>=period.start&&time<period.end;};
+ const affect=(row,{request=false}={})=>{
+  if(!row||typeof row!=='object'){for(const item of items)item.unknown=true;return;}
+  const id=text(request?row.id:rowItem(row)),name=nameOf(row),unit=text(row.uom||row.unit||row.baseUom),amount=stockAuditNumber(request?row.qty:row.variance);
+  for(const item of items){
+   if(id!==item.itemId){if(!id&&(!name||name===item.name))item.unknown=true;continue;}
+   if(unit!==item.uom||amount===null||request&&amount<=0||!request&&amount>=0){item.unknown=true;continue;}
+   item.hasLoggedWaste=true;if(request)item.loggedQuantity+=amount;else item.appliedQuantity-=amount;
+  }
+ };
+ const logs=new Map();for(const row of stockLogs){if(!inside(row)||!/waste|spoil/i.test(text(row.type)))continue;if(!row.id){for(const item of items)item.unknown=true;continue;}logs.set(row.id,{...row});}
+ for(const row of inventoryLogs){
+  if(!inside(row)||!/waste|spoil/i.test(text(row.type)))continue;
+  const mirror=logs.get(row.id)||[...logs.values()].find(other=>other.inventoryLogId===row.id||other.sourceInventoryLogId===row.id);
+  if(mirror){
+   const agrees=nameOf(mirror)===nameOf(row)&&stockAuditNumber(mirror.variance)!==null&&stockAuditNumber(mirror.variance)===stockAuditNumber(row.variance)&&text(mirror.uom||mirror.unit)===text(row.uom||row.unit)&&eventTime(mirror)===eventTime(row);
+   if(agrees&&!rowItem(mirror)&&rowItem(row))mirror.inventoryId=rowItem(row);
+   else if(!agrees||rowItem(mirror)&&rowItem(row)&&rowItem(mirror)!==rowItem(row)){for(const item of items)if([rowItem(row),rowItem(mirror)].includes(item.itemId)||[nameOf(row),nameOf(mirror)].includes(item.name))item.unknown=true;}
+   continue;
+  }
+  if(!row.id){for(const item of items)item.unknown=true;continue;}logs.set('inventory_logs/'+row.id,row);
+ }
+ for(const row of logs.values())affect(row);
+ for(const request of wasteRequests){
+  if(!inside(request)||!/^Waste Report$/i.test(text(request.type)))continue;
+  if(!Array.isArray(request.items)||!request.items.length){for(const item of items)item.unknown=true;continue;}
+  for(const item of request.items)affect(item,{request:true});
+ }
+ for(const item of items){item.complete=Boolean(complete&&valid&&!item.unknown);item.state=item.hasLoggedWaste?'Waste logged':item.complete?'No waste logged in this period':'Waste evidence incomplete';}
+ const unloggedShortageIds=items.filter(item=>item.complete&&item.variance<0&&!same(item.variance,0)&&!item.hasLoggedWaste).map(item=>item.itemId);
+ return{period,items,complete:Boolean(complete&&valid&&items.every(item=>!item.unknown)),shouldWarn:unloggedShortageIds.length>0,unloggedShortageIds};
+}
 /** Frozen systemQty already includes applied sales. Ledger reconstruction is an
  * explanation alongside it, never another subtraction from that saved balance. */
 export function explainStockAudit(source,{baselines=[],transactions=[],stockLogs=[],inventoryLogs=[],complete=true,coverage=[]}={}){
