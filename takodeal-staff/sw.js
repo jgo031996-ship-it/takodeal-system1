@@ -13,6 +13,7 @@ SHELL.push('./online-refund-pay.js');
 SHELL.push('./payroll-deduction-details.js');
 SHELL.push('./attendance-reconcile.js','./attendance-proof.js');
 SHELL.push('./staff-document-broker.js');
+SHELL.push('./document-metadata-client.js');
 SHELL.push('./payroll-attendance.js');
 SHELL.push('./staff-payroll-reader.js');
 SHELL.push('./staff-rate-privacy.js','./staff-documents.js','./staff-documents.css','./staff-document-model.js','./staff-document-store.js','./staff-document-firebase.js','./attendance-camera.js','./attendance-camera.css');
